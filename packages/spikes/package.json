@@ -1,0 +1,17 @@
+{
+  "name": "@okmodel/spikes",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Private architecture spikes. Not published.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@okmodel/harness": "workspace:*"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "postgres": "^3.4.9"
+  }
+}

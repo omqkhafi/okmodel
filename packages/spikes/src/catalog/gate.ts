@@ -1,9 +1,13 @@
+/**
+ * Shared Postgres skip/fail gate for spike tests.
+ */
+
 import { expect, test } from "bun:test";
 
-import { postgresDecision, type DockerDecision } from "../packages/harness/src/index.js";
+import { postgresDecision, type DockerDecision } from "@okmodel/harness";
 
 /**
- * Probes the topology once per test file and prints the skip reason.
+ * Probes the topology once per test file.
  *
  * @returns The decision for Postgres tests in this process
  */
@@ -19,13 +23,13 @@ export async function loadPostgresGate(): Promise<DockerDecision> {
  * @param decision - Result of {@link loadPostgresGate}
  * @param name - Test name
  * @param fn - Test body
- * @param timeoutMs - Test timeout. The default matches Bun's limit
+ * @param timeoutMs - Test timeout
  */
 export function postgresTest(
   decision: DockerDecision,
   name: string,
   fn: () => Promise<void>,
-  timeoutMs = 5_000,
+  timeoutMs = 60_000,
 ): void {
   if (decision.run) {
     test(name, fn, { timeout: timeoutMs });

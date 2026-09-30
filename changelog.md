@@ -39,3 +39,5 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `bun run type-cost` reads `tsc --extendedDiagnostics` for a trivial type and writes the counters as JSON. No ceilings yet.
 - `@ark/attest` runs on TypeScript 6 in its own CI job. It is not part of `bun run check`.
 - `bun run bench` writes timings as JSON. Baselines can be stored beside the script; nothing compares them yet.
+- A private catalog spike in `packages/spikes` checks one object contract, dependency order, deterministic hashes, and a scratch-database round trip. Findings are in `packages/spikes/catalog/FINDINGS.md`.
+- The replication test waits up to 30 seconds, matching its replay wait, so other Postgres tests can run beside it.
