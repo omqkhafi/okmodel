@@ -16,6 +16,7 @@ needed). Large groups add `####` area headings so the list stays scannable.
 - Source layers use the folder names `contracts`, `dialects`, `adapters`, `runtime`, and `tooling`.
 - Lint and format use oxlint and oxfmt. Layer and purity checks read imports from the Oxc AST.
 - Declaration emit no longer requires `isolatedDeclarations`, so exported types may be inferred.
+- The package description names typed queries, safe migrations, and replica-aware routing. The README says the API has not stabilised yet.
 
 ### ✨ Added
 

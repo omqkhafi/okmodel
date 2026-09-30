@@ -1,5 +1,7 @@
 # OKModel
 
+Early stage: the API has not stabilised yet.
+
 OKModel (OKM) is a catalog-first TypeScript ORM. Work in progress.
 
 ## Install

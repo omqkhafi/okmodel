@@ -1,7 +1,7 @@
 {
   "name": "okmodel",
   "version": "0.0.0",
-  "description": "A catalog-first TypeScript ORM, work in progress",
+  "description": "Catalog-first TypeScript ORM: typed queries, safe migrations and replica-aware routing. PostgreSQL first, zero runtime dependencies.",
   "license": "Apache-2.0",
   "author": "Omq Khafi",
   "repository": {
