@@ -41,6 +41,17 @@
         "postgres": "^3.4.9",
       },
     },
+    "packages/spikes": {
+      "name": "@okmodel/spikes",
+      "version": "0.0.0",
+      "dependencies": {
+        "@okmodel/harness": "workspace:*",
+      },
+      "devDependencies": {
+        "@electric-sql/pglite": "^0.5.8",
+        "postgres": "^3.4.9",
+      },
+    },
   },
   "packages": {
     "@andrewbranch/untar.js": ["@andrewbranch/untar.js@1.0.4", "", {}, "sha512-pVXSwPsLuw8IGLo2Di0EaOfsk+ntVvpkk942J/sHYIkwvtKUakEcPh7HBgZ6tuimgzKSEHgCvO4XgQ05DEbwDw=="],
@@ -70,6 +81,8 @@
     "@okmodel/bench": ["@okmodel/bench@workspace:packages/bench"],
 
     "@okmodel/harness": ["@okmodel/harness@workspace:packages/harness"],
+
+    "@okmodel/spikes": ["@okmodel/spikes@workspace:packages/spikes"],
 
     "@oxc-parser/binding-android-arm-eabi": ["@oxc-parser/binding-android-arm-eabi@0.152.0", "", { "os": "android", "cpu": "arm" }, "sha512-393VtirINkae4XHBTkq/yQxhOwEr4V+r0et37P2fp+sYZSdYgZTRDPo5Um8vBh0QjMZ+RmaMy4PP0qwr4cTMwA=="],
 

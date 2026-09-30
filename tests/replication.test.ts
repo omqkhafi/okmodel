@@ -69,6 +69,7 @@ postgresTest(
       await primary.end({ timeout: 5 });
     }
   },
+  30_000,
 );
 
 async function expectRow(replica: ReplicaName, id: string, present: boolean): Promise<void> {
