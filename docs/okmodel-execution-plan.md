@@ -1,0 +1,147 @@
+# OKModel — Execution plan
+
+Companion to `okmodel-api-design.md` (draft 17). The spec is normative; this file fixes the order of work.
+
+## How we work
+
+1. Claude writes one prompt (one branch). Ali gives it to Cursor.
+2. Cursor implements and ends with the **execution report** (template below).
+3. Ali sends the report to Claude. Claude checks it against the spec and the prompt.
+   - Problem or deviation: Claude writes a **correction prompt** (same branch). Repeat.
+   - Clean: Claude writes the **next prompt**.
+4. Every branch ends green: typecheck, tests, repository checks. Nothing is merged red.
+5. Gates (marked GATE) are reviews of evidence, not of code: measurements and findings, each classified as correctness bug, specification contradiction, measurable DX problem, measurable performance problem, or genuinely missing capability. No new API surface for imagined edge cases.
+6. The spec changes only through a recorded decision (D-number). If implementation contradicts the spec, the report says so and Claude decides: fix the code or amend the spec.
+7. Guarantees grow with the code. Every prompt that adds behavior also adds its tests: conformance tests for semantics, a registration in the final safety verifier for anything that adds or changes a rule, and the CI test named in the spec for any invariant it touches. A prompt is not done while a guarantee it introduces has no test.
+8. Order rule: a prompt may use only what earlier prompts delivered. Where a later prompt completes a behavior, the earlier prompt ships the conservative version (stated in its row) so every branch is safe on its own.
+
+### Execution report template (end of every prompt)
+
+- Branch and commits
+- What was built (bullets, mapped to spec sections)
+- Commands run and results (typecheck, test, checks)
+- Deviations from the prompt or spec, each with the reason
+- Decisions Cursor made on its own, each with the reason
+- Problems found, classified (bug, contradiction, DX, performance, missing capability)
+- Measurements, if the prompt asked for any
+- Not done, and why
+
+## Order
+
+Each step depends on the ones above it (dependency audit of draft 16: section "Dependency notes" at the end). IDs are stable from here on; prompts are written one at a time because each depends on what was really built.
+
+### Phase 0 — Foundation
+
+| ID | Branch | Delivers | Done when |
+|---|---|---|---|
+| P00 | `main` | repository bootstrap (done by hand-off): package `okmodel` at the repository root, workspaces under `packages/*`, git identity and commit rules, `AGENTS.md`, license, README, first commit, npm name reserved (`okmodel@0.0.0` already published) |
+| P01 | `p01-foundation` | TypeScript 7 config (D111) and strictness, lint/format without the compiler API (Biome or oxlint), tooling, CI, repository checks, layer folders and entrypoints, contribution files (on top of P00) | CI green end to end on a trivial package (typecheck, test, build, publint, attw, size, core-purity and layer checks) |
+| P02 | `p02-test-harness` | Postgres test harness (PGlite and a real Postgres via Docker), a Docker Compose topology with a primary and two streaming replicas (replay pausable) for CI and local runs, fixture generator for 10/50/200/500 tables, `@ark/attest` setup in its own job on `@typescript/typescript6` (D111), benchmark skeleton | fixtures generated deterministically; attest measures a trivial type; both databases reachable from tests; the replicated topology starts and replicates in CI |
+
+### Phase 1 — M0: validate the architecture (GATE at the end)
+
+Spike code lives in the private workspace package `packages/spikes`; what proves useful is promoted later.
+
+| ID | Branch | Validates |
+|---|---|---|
+| P03 | `p03-spike-catalog` | one object contract for table, column, index, constraint, sequence, extension, view, materialized view, function, trigger, policy, domain and a partitioned table; namespace templates; overload identity; dependency graph and ordering; deterministic hashes; scratch-database round trip; 63-character identifiers |
+| P04 | `p04-spike-types` | inferred vs emitted row types on all fixtures; `Register` across files; generics suite; extension type inference; hover and error snapshots |
+| P05 | `p05-spike-safety` | tagged operators cost; runtime identifier validation; final safety verification property tests over presets, traits and filters |
+| P06 | `p06-spike-drivers` | capability registry linked to conformance tests on postgres.js and PGlite; cancellation; the `prepared` flag; atomic `batch` conformance including a batch-mode harness adapter over a real database, `outcome_unknown` on a killed connection, batch inside `tx()` on a savepoint; compatibility table generated from results |
+| P07 | `p07-spike-migrations` | random catalog pairs A→B applied on real Postgres introspect to B; normalisation and scratch-database round trip for rewritten expressions; dependency-aware recreate; lock information |
+| P08 | `p08-spike-infra` | roles and grants, extension introspection on containers, archivable feasibility with migrations |
+| P08A | `p08a-spike-topology` | on real streaming replication (primary and two replicas in containers): automatic routing and the primary-required property test, `.primary()` / `.replica()` strictness, internal read-only transactions on a replica, health filtering, selection strategies, lag eligibility, fallback, per-endpoint pools, transaction affinity, pool exhaustion, and the commit-position mechanism itself (`pg_current_wal_insert_lsn()` after commit versus the commit LSN, replay paused, monotonic replay cache, capability unavailable, cost and extra fallback rate) |
+| P08B | `p08b-spike-targets` | Target ≠ connection (resolver, database-per-tenant, registry, credential rotation, pool cap over 200 tenants, plans without connection details), target runner over 3 schemas and 3 databases with rollout control (`--canary`, `--class`, concurrency defaults, `--max-failures`, contract gating, second pass), migration failure and resume (transactional and non-transactional steps, per-target lock), snapshot provisioning equal to a fully migrated target with measured time, preview and rehearsal (snapshot preview, clone rehearsal, aliasing guard), `reference` rows, protected-target policy over every operation class |
+| P09 | `p09-m0-gate` | consolidated findings report; decisions: catalog contract frozen, row-type default, cold start and size budgets, commit-position mechanism confirmed or amended. Claude amends the spec if needed (draft 18) |
+
+### Phase 2 — Train 0.1 Skeleton
+
+| ID | Branch | Delivers |
+|---|---|---|
+| P10 | `p10-catalog-core` | production catalog: kinds for table, column, index, constraint, sequence; identity with namespaces; ownership (`managed` / `external`) in the contract for every kind; canonical form; hash |
+| P11 | `p11-column-types` | `okmodel/pg` column types, codecs, picklists |
+| P12 | `p12-tables-schema` | `table()`, `schema()`, `Register`, row types (per the gate), guards OKM1020–1023 |
+| P13 | `p13-drivers` | public `Driver` contract first (`open` → `DriverPool` with `execute`, atomic `batch`, `reserve`, `stats`, `close`; `DriverError`; flags; spec 4.2), then capability registry, postgres.js and PGlite adapters (one pool per endpoint, `timeouts.acquire` with OKM1846), conformance suite v1 (execute, codecs, batch contract, reservation; error-mapping tests arrive with P14) |
+| P14 | `p14-errors` | `OkmError`, database error mapping from `DriverError`, categories, `outcome_unknown`, `toHttp`, `match`, `safe`, `fix`, nearest-name hints, error registry; error-mapping conformance |
+| P15 | `p15-query-core` | logical query, physical plan, Postgres SQL for find, one, insert, update, delete, count, exists; fingerprints; `inspect()` and `sql()`; the L3 runtime: `connect()` with a single endpoint and the Target / Topology / Endpoint / Pool / Router shape, so routing is a decision from the first release (invariants B, C, K) and `inspect()` shows it; an internal transaction runner (reserved connection, begin, commit, savepoint) used by chunked inserts and other multi-statement writes |
+| P16 | `p16-migrations-basic` | snapshots, diff, dialect normalisation and scratch-database comparison, plan, apply, history, `okm_meta`, declared renames, step classification by operation kind (`expand`, `contract`, unclassified: the protected-target policy needs it), named `targets` with required `--target` (OKM1853) and the aliasing guard (OKM1852), atomic-per-migration apply with split non-transactional steps, checkpoints, resume and the per-target advisory lock (OKM1522), forward-only semantics, `okm migrate status`, the protected-target policy (`assertTargetPolicy`, spec 19.7), CLI (`build`, `generate`, `migrate`, `push`, `check`, `doctor`, `dev` with PGlite) |
+| P17 | `p17-release-0.1` | quickstart, docs check, conformance run, release checklist, 0.1.0; docs for environments, the preview recipe and the rehearsal recipe (spec 19.8) |
+
+### Phase 3 — Train 0.2 Safety
+
+| ID | Branch | Delivers |
+|---|---|---|
+| P20 | `p20-tagged-operators` | tagged operators, identifier validation, filter operators |
+| P21 | `p21-final-safety` | provenance with source locations and the final safety verification framework: rules register into it; P22–P28 each register theirs and extend `safety.property`, and P30 runs the full composition |
+| P22 | `p22-field-exposure` | guarded, hidden, sensitive, input stripping |
+| P23 | `p23-traits` | trait framework, `timestamps`, schema default traits |
+| P24 | `p24-tenancy-column` | column tenancy, context client, `global`, composite foreign keys, tenant uniques |
+| P25 | `p25-archivable` | archivable (column strategy), archive contract, cascade, `archiveId`, restore |
+| P26 | `p26-validation` | inline and options validation, Standard Schema, branded skip |
+| P27 | `p27-relations-includes` | relations, single-statement includes, `.required()`, `page`, `aggregate`, relation filters |
+| P28 | `p28-presets` | presets, reserved names, OKM1040 |
+| P29 | `p29-transactions` | public `tx` on a reserved connection (affinity, on top of the internal runner from P15), public atomic `batch` per the contract, nested savepoints, retry (never on `outcome_unknown`), row locks, advisory locks, cancellation, timeouts, snapshot reads |
+| P30 | `p30-gate-0.2` | isolation, safety, statement-count and archive correctness property tests; release 0.2 |
+
+### Phase 4 — Train 0.3 Objects
+
+| ID | Branch | Delivers |
+|---|---|---|
+| P40 | `p40-extensions` | `extension()` contract, lifecycle through migrations, `citext`, `pg_trgm`, `okm ext` |
+| P41 | `p41-functions-triggers` | `fn`, `trigger`, dependency ordering, `timestamps` with trigger enforcement |
+| P42 | `p42-views` | views and materialized views, tenancy on views, dependency-aware drop and recreate around column changes (OKM1821, never `CASCADE`) |
+| P43 | `p43-roles-grants` | `roles`, grants, default privileges |
+| P44 | `p44-gate-0.3` | object round-trip tests; release 0.3 |
+
+### Phase 5 — Train 0.4 Migration depth
+
+| ID | Branch | Delivers |
+|---|---|---|
+| P50 | `p50-classification-linter` | expand/contract classification, linter core, safe rewrites |
+| P51 | `p51-locks-recreate-verify` | lock display with row estimates; recreate verified across every object kind |
+| P52 | `p52-backfill-runner` | `backfill()`, `TargetRunner` (one target) |
+| P53 | `p53-drift-verify` | catalog hash fast path, previous-catalog check, migration verification, serialised catalog |
+| P53A | `p53a-provisioning` | provisioning from the current snapshot, `reference` data, snapshot ↔ replayed-history equivalence in `okm migrate check` (OKM1521), OKM1542, OKM1851 |
+| P54 | `p54-testing-package` | factories, `expectQueries`, isolation check, seeds |
+| P55 | `p55-gate-0.4` | the full `protected.policy` enumeration (every operation class through the CLI, engine, `backfill()`, `okm seed`, runner and `provision`); release 0.4 |
+
+### Phase 6 — Train 0.5 Topology
+
+| ID | Branch | Delivers |
+|---|---|---|
+| P60 | `p60-topology-runtime` | `connect({ primary, replicas })`, topology and endpoint construction, per-endpoint pools, health and position probes, `ReplicaState` seam |
+| P61 | `p61-read-routing` | automatic read routing, `.primary()`, `.replica()`, fallback policy, OKM1840/1843/1844, routing in `inspect()`. Conservative until P63: a session that has written reads from the primary (the position-unknown path) and the first healthy replica is picked |
+| P62 | `p62-selection` | candidate filtering (health, consistency and lag, capacity) and the four strategies plus custom `select` |
+| P63 | `p63-consistency-position` | commit position after commit, session and root watermarks, position-unknown handling, capability gate, `maxLag` |
+| P64 | `p64-topology-conformance` | streaming-replication CI containers, topology conformance and property tests (`routing.*`, `pool.separation`, `tx.affinity`, `consistency.position`) |
+| P65 | `p65-reference-app` | the small reference app (private workspace package `packages/reference-app`) promised by M1: multi-tenant, traits, archive, migrations, objects, and a replica topology; runs in CI as the end-to-end proof, including a preview workflow (a database per job, `migrate apply` from the snapshot) and a rehearsal against a populated clone |
+| P66 | `p66-gate-m1` | release 0.5; M1 complete; OKE `store.sql` prototype starts |
+
+### Later phases (prompts written when reached)
+
+M2 Depth (tenancy `path`/`composite`/`rls`, `filters()`, SQL builder lane, typed raw SQL, full linter, `okm pull`, `versioned`/`sortable`, extension packs, several catalogs, dev inspector, `explain()`, `okmodel/otel`, GitHub Action, adapters), M3 SQLite, M4 MySQL, M5 Hardening (schema-per-tenant and database-per-tenant with `tenancy.registry`, target resolution, tenant provisioning and rollout control (`--class`, `--canary`, `--concurrency`, `--max-failures`, contract gating, second pass), studio, live docs), then the 1.0 gate.
+
+## Dependency notes (audit of draft 16)
+
+Problems found in the earlier order and how the table above resolves them:
+
+- **Replica infrastructure:** P08A needs a replicated Postgres; P02 now builds the compose topology.
+- **Errors before queries:** `OkmError` and error mapping are needed by the query core (guards, mapped failures), so P14 is errors and P15 is the query core. Conformance v1 in P13 excludes error mapping until P14.
+- **Transactions before P29:** chunked inserts, `sync` and archive cascades need an atomic multi-statement write long before the public `tx`; P15 ships an internal runner and P29 exposes the public API.
+- **`connect()` had no owner:** P15 builds the L3 runtime with the single-endpoint Router, Endpoint and Pool.
+- **Final safety verifier before its rules exist:** P21 builds the framework; each later prompt registers its rules (process rule 7); P30 tests the composition.
+- **Classification needed by the protected policy:** P16 classifies steps by operation kind; P50 adds linting and P53 the previous-catalog check.
+- **Ownership needed by every object kind:** it is in the P10 contract.
+- **Recreate needed by views:** dependency-aware recreate moved from P51 to P42; P51 keeps lock display and cross-kind verification.
+- **`protected.policy` enumeration needs seed:** `okm seed` arrives in P54, so the full enumeration test sits in P55.
+- **Routing before consistency:** P61 ships the conservative behavior (writers read from the primary) until P63 adds commit positions.
+- **The M1 reference app had no prompt:** P65.
+- **Named targets and apply semantics are foundations, not M5 features:** environments and previews need `--target`, resume and the per-target lock from the first release, so they are in P16; only the multi-target rollout flags wait for M5.
+
+## Repository conventions (fixed at bootstrap)
+
+- The published package (`okmodel`, see D110) lives at the repository root (`src/`, `package.json`, `dist/` ignored). Every other package lives under `packages/*` as a Bun workspace: private ones (`packages/spikes`, `packages/reference-app`, `packages/bench`) and later published ones (for example a studio or an MCP server). Their dependencies never enter the root `package.json`.
+- The tarball is controlled by a `files` whitelist (`dist`, `README.md`, `LICENSE`); repository tooling (`tools/`, `docs/`, `packages/`) is never published.
+- The repository belongs to `github.com/omqkhafi`; copyright is `Copyright 2026 Omq Khafi`; Apache-2.0.
+- Every commit carries exactly two trailers: `Signed-off-by: Omq Khafi <omqkhafi@gmail.com>` (DCO) and `Co-authored-by: Ali Alnaghmoush <alialnaghmoush@gmail.com>`. No other trailer (no tool or assistant attribution) and no other personal address in any file or commit beyond these two.
+- `AGENTS.md` is the single source of agent rules; `CLAUDE.md` imports it.

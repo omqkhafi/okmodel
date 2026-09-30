@@ -12,8 +12,20 @@
     "LICENSE"
   ],
   "exports": "./dist/index.js",
+  "bin": {
+    "okm": "./dist/okm.js",
+    "okmodel": "./dist/okmodel.js"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "build": "bun build ./src/index.ts --outdir ./dist --format esm --target node",
-    "publish:dry": "bun publish --dry-run"
+    "build": "bun build ./src/index.ts ./src/cli.ts --outdir ./dist --format esm --target node && bun ./scripts/write-bin-wrappers.ts",
+    "typecheck": "bunx tsc --noEmit",
+    "publish:dry": "bun publish --dry-run",
+    "prepublishOnly": "bun run build"
+  },
+  "devDependencies": {
+    "typescript": "7"
   }
 }
