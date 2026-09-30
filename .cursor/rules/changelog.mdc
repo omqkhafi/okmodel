@@ -1,0 +1,16 @@
+---
+description: After implementation, append user-visible notes to changelog.md under Unreleased
+globs: *
+alwaysApply: true
+---
+
+# Changelog
+
+Before claiming implementation work done, follow [`.agents/skills/okm-ship`](.agents/skills/okm-ship/SKILL.md).
+
+- Append notes to `changelog.md` under `## Unreleased`.
+- Use `### ✨ Added`, `### 💥 Breaking Changes`, `### ♻️ Changed`, `### ⚠️ Deprecated`, `### 🔥 Removed`, `### 🐛 Fixed`, `### 🔒 Security`.
+- When a group has 8 or more bullets, group them under `#### L0 contracts`, `#### L1 dialects`, `#### L2 adapters`, `#### L3 runtime`, `#### L4 tooling`, or `#### Docs`.
+- Never append under a shipped `## vX.Y.Z` section.
+- Do not bump the version here. `bun run bump` promotes `## Unreleased`.
+- Skip pure typo or format-only edits.

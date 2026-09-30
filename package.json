@@ -1,17 +1,13 @@
 {
   "name": "okmodel",
   "version": "0.0.0",
-  "description": "A catalog-first TypeScript ORM, work in progress",
-  "type": "module",
+  "description": "Catalog-first TypeScript ORM: typed queries, safe migrations and replica-aware routing. PostgreSQL first, zero runtime dependencies.",
   "license": "Apache-2.0",
   "author": "Omq Khafi",
-  "repository": "https://github.com/omqkhafi/okmodel",
-  "files": [
-    "dist",
-    "README.md",
-    "LICENSE"
-  ],
-  "exports": "./dist/index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/omqkhafi/okmodel.git"
+  },
   "bin": {
     "okm": "./dist/okm.js",
     "okmodel": "./dist/okmodel.js"
@@ -19,13 +15,57 @@
   "workspaces": [
     "packages/*"
   ],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/contracts/index.d.ts",
+      "import": "./dist/contracts/index.js"
+    },
+    "./pg": {
+      "types": "./dist/dialects/pg/index.d.ts",
+      "import": "./dist/dialects/pg/index.js"
+    },
+    "./migrate": {
+      "types": "./dist/tooling/migrate/index.d.ts",
+      "import": "./dist/tooling/migrate/index.js"
+    },
+    "./testing": {
+      "types": "./dist/tooling/testing/index.d.ts",
+      "import": "./dist/tooling/testing/index.js"
+    }
+  },
   "scripts": {
-    "build": "bun build ./src/index.ts ./src/cli.ts --outdir ./dist --format esm --target node && bun ./scripts/write-bin-wrappers.ts",
-    "typecheck": "bunx tsc --noEmit",
+    "build": "rm -rf dist && bun build ./src/contracts/index.ts ./src/dialects/pg/index.ts ./src/tooling/migrate/index.ts ./src/tooling/testing/index.ts ./src/tooling/cli.ts --outdir ./dist --root ./src --format esm --target node && bunx tsc -p tsconfig.build.json && bun ./scripts/write-bin-wrappers.ts",
+    "typecheck": "bunx tsc --noEmit -p tsconfig.json",
+    "lint": "oxlint",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
+    "layers-check": "bun ./scripts/layers-check.ts",
+    "core-purity": "bun ./scripts/core-purity.ts",
+    "docs:check": "bun ./scripts/docs-check.ts",
+    "compiler-api": "bun ./scripts/compiler-api.ts",
+    "publint": "publint run . --strict --pack bun",
+    "attw": "bun ./scripts/attw.ts",
+    "size": "bun ./scripts/size.ts",
+    "test": "bun test",
+    "check": "bun run format:check && bun run lint && bun run typecheck && bun run layers-check && bun run core-purity && bun run docs:check && bun run compiler-api && bun run build && bun test && bun run publint && bun run attw && bun run size",
+    "bump": "bun ./scripts/bump-version.ts",
     "publish:dry": "bun publish --dry-run",
     "prepublishOnly": "bun run build"
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
+    "@types/bun": "^1.4.2",
+    "oxc-parser": "^0.152.0",
+    "oxfmt": "0.71.0",
+    "oxlint": "^1.86.0",
+    "oxlint-tsgolint": "^7.0.2003",
+    "publint": "^0.3.24",
     "typescript": "7"
   }
 }

@@ -1,0 +1,17 @@
+{
+  "printWidth": 100,
+  "tabWidth": 2,
+  "useTabs": false,
+  "semi": true,
+  "singleQuote": false,
+  "ignorePatterns": [
+    "docs",
+    "dist",
+    "node_modules",
+    ".agents",
+    ".cursor",
+    "bun.lock",
+    "tests/fixtures",
+    "*.tgz"
+  ]
+}

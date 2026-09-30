@@ -19,19 +19,35 @@ This file is the single source of rules for this repository. `CLAUDE.md` imports
 
 ## Layers
 
-Imports go only downward:
+Contracts is the lowest layer, tooling the highest. Imports only go down.
 
-- L0 contracts
-- L1 dialects
-- L2 adapters
-- L3 runtime
-- L4 tooling
+- contracts
+- dialects
+- adapters
+- runtime
+- tooling
 
-A layer may import layers below it. It must not import a layer above it.
+A layer may import layers below it. It must not import a layer above it. Adapters import contracts or other adapter files, not dialects. The order is the rank map in `scripts/layers.ts`. `bun run layers-check` enforces it.
+
+## Scripts
+
+- `bun run check` runs format, lint, typecheck, `layers-check`, `core-purity`, `docs:check`, the compiler-API scan, build, tests, publint, arethetypeswrong, and the size budget.
+- `bun run build` writes JavaScript with `bun build --target node` and declarations with `tsc` (`emitDeclarationOnly`).
+- `bun run typecheck` runs `tsc --noEmit`.
+- `bun run lint` uses oxlint with type-aware rules. `bun run format:check` uses oxfmt. `bun run format` rewrites formatting.
+- `bun run layers-check` fails when an import goes upward.
+- `bun run core-purity` fails on a `node:*` import below tooling and on runtime `dependencies`.
+- `bun run docs:check` checks relative links, `§` references, and decision numbers.
+- `bun test` covers package exports, the bins, and the check fixtures.
+- `bun run bump` promotes `changelog.md` and the package version. It does not publish.
 
 ## Docs
 
 Documents in `docs/` are normative.
+
+## Changelog
+
+Before claiming work done, run [`.agents/skills/okm-ship`](.agents/skills/okm-ship/SKILL.md). Append notes to `changelog.md` under `## Unreleased`. Never append under a shipped `## v…` section. `bun run bump` promotes Unreleased into the next `## vX.Y.Z — <date>`.
 
 ## Commits
 
