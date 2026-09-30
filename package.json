@@ -1,0 +1,19 @@
+{
+  "name": "okmodel",
+  "version": "0.0.0",
+  "description": "A catalog-first TypeScript ORM, work in progress",
+  "type": "module",
+  "license": "Apache-2.0",
+  "author": "Omq Khafi",
+  "repository": "https://github.com/omqkhafi/okmodel",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": "./dist/index.js",
+  "scripts": {
+    "build": "bun build ./src/index.ts --outdir ./dist --format esm --target node",
+    "publish:dry": "bun publish --dry-run"
+  }
+}
