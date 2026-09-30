@@ -4,7 +4,7 @@ Status: design draft, 2026-09-30. Not yet approved for implementation. Supersede
 
 Name: **OKModel** (short **OKM**). Package `okmodel` on npm and repository `omqkhafi/okmodel`, CLI bins `okm` and `okmodel` (same program), error class `OkmError`, error codes `OKM1xxx`, config file `okm.config.ts`, generated folder `.okm/`, metadata table `okm_meta`. The bin names are not npm package names, so a bare `bunx okm` without a local or global install could fetch an unrelated package; the README tells developers to install first (`bun add -d okmodel`, then `bunx okm`, or a global install).
 
-Toolchain: **TypeScript 7** (the native compiler, still invoked as `tsc`) for typecheck, declaration emit and editor support, with `strict` on. TypeScript 7.0 has no stable programmatic API (expected in 7.1), so no OKModel tool may depend on the TypeScript compiler API: `okm` reads user TypeScript by executing it through the runtime and emits source as text (`okm pull`). Type-level measurement with `@ark/attest` needs that API, so until 7.1 it runs in a separate CI job on the TypeScript 6 compatibility package (`@typescript/typescript6`, binary `tsc6`); M0 records both compilers for the editor-facing checks. Linting does not use typescript-eslint until it supports TypeScript 7. See D111.
+Toolchain: **TypeScript 7** (the native compiler, still invoked as `tsc`) for typecheck, declaration emit and editor support, with `strict` on. TypeScript 7.0 has no stable programmatic API (expected in 7.1), so no OKModel tool may depend on the TypeScript compiler API: `okm` reads user TypeScript by executing it through the runtime and emits source as text (`okm pull`). Type-level checks need no compiler API: type correctness is asserted with `expect-type` style assertions in `*.test-d.ts` files compiled by `tsc`, and type cost (instantiations, check time) is read from the compiler's own diagnostics by a script; a tool that does need the API, such as `@ark/attest`, may only run in a separate CI job on the TypeScript 6 compatibility package (`@typescript/typescript6`, binary `tsc6`), never in the main checks (D114). M0 records both compilers for the editor-facing checks. Linting does not use typescript-eslint until it supports TypeScript 7. See D111.
 
 **Internal goal:** Keep the data model understandable as the system grows, while safety, capabilities and correctness scale with it.
 
@@ -34,7 +34,7 @@ Moved to `okmodel-decisions.md` (D1–D109). This file is the normative spec; ev
 
 ### Measuring the internal goal
 
-Understandability — `@ark/attest` in CI on 10-, 50- and 200-table fixtures:
+Understandability — type measurement in CI (D114) on 10-, 50- and 200-table fixtures:
 
 | Measure | Pass condition |
 |---|---|
@@ -1337,7 +1337,7 @@ Execution order and prompts: `okmodel-execution-plan.md`. Inside M1, work ships 
 | **M3 — SQLite** | `okmodel/sqlite`, `okmodel/sql`, SQLite adapters (D1 as a batch-mode adapter), `auditable`; PostGIS pack |
 | **M4 — MySQL** | `okmodel/mysql`, mysql2 adapter, MariaDB differences, generated-column partial uniques |
 | **M5 — Hardening** | studio, published budgets and benchmarks, complete docs, codemods for all 0.x breaks, schema-per-tenant and database-per-tenant strategies with the multi-target `TargetRunner`, `tenancy.registry`, target resolution with credential rotation and pool caps, tenant provisioning, and rollout control (`--class`, `--canary`, `--concurrency`, `--max-failures`, contract gating, second pass) |
-| **1.0 gate** | OKE's `store.sql` running on OKModel in production and at least one other real app; published attest budgets and benchmarks; stability policy; a second maintainer |
+| **1.0 gate** | OKE's `store.sql` running on OKModel in production and at least one other real app; published type budgets and benchmarks; stability policy; a second maintainer |
 
 ## 24. M0 spikes
 
@@ -1345,7 +1345,7 @@ M0 validates and measures the architecture; it is not another API redesign round
 
 | Spike | Pass condition |
 |---|---|
-| Row-type strategy: inferred vs emitted `.okm/types.d.ts` | the faster one under attest on the 200-table fixture becomes the default; ceilings recorded |
+| Row-type strategy: inferred vs emitted `.okm/types.d.ts` | the faster one under the type measurement (D114) on the 200-table fixture becomes the default; ceilings recorded |
 | `Register` across table files | autocomplete works on TypeScript 7 without circularity errors, or fall back to emitted names |
 | Tagged operators | readable errors, no measurable type cost versus object operators |
 | Generics suite | `Crud<N>`, `TablesWith`, `TablesWithColumn` compile without casts |
