@@ -19,15 +19,15 @@ This file is the single source of rules for this repository. `CLAUDE.md` imports
 
 ## Layers
 
-Imports go only downward:
+Contracts is the lowest layer, tooling the highest. Imports only go down.
 
-- L0 contracts
-- L1 dialects
-- L2 adapters
-- L3 runtime
-- L4 tooling
+- contracts
+- dialects
+- adapters
+- runtime
+- tooling
 
-A layer may import layers below it. It must not import a layer above it. L2 adapters import L0 contracts or other L2 files, not L1 dialects. `bun run layers-check` enforces this.
+A layer may import layers below it. It must not import a layer above it. Adapters import contracts or other adapter files, not dialects. The order is the rank map in `scripts/layers.ts`. `bun run layers-check` enforces it.
 
 ## Scripts
 
@@ -36,7 +36,7 @@ A layer may import layers below it. It must not import a layer above it. L2 adap
 - `bun run typecheck` runs `tsc --noEmit`.
 - `bun run lint` and `bun run format:check` use Biome. `bun run format` rewrites formatting.
 - `bun run layers-check` fails when an import goes upward.
-- `bun run core-purity` fails on a `node:*` import in L0–L3 and on runtime `dependencies`.
+- `bun run core-purity` fails on a `node:*` import below tooling and on runtime `dependencies`.
 - `bun run docs:check` checks relative links, `§` references, and decision numbers.
 - `bun test` covers package exports, the bins, and the check fixtures.
 - `bun run bump` promotes `changelog.md` and the package version. It does not publish.

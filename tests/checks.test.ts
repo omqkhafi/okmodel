@@ -19,7 +19,7 @@ test("layers-check fails when an import goes upward, including import type", () 
 
 test("layers-check fails when an adapter imports a dialect", () => {
   const problems = checkLayers(join(fixtures, "layers", "adapter-dialect"));
-  expect(problems.some((problem) => problem.includes("l2-adapters/bad.ts"))).toBe(true);
+  expect(problems.some((problem) => problem.includes("adapters/bad.ts"))).toBe(true);
 });
 
 test("layers-check allows a downward import", () => {
@@ -45,7 +45,7 @@ test("core-purity fails on runtime dependencies", () => {
   expect(problems.some((problem) => problem.includes("left-pad"))).toBe(true);
 });
 
-test("core-purity allows node imports in L4 and an empty dependency list", () => {
+test("core-purity allows node imports in tooling and an empty dependency list", () => {
   const problems = checkCorePurity({
     root: join(fixtures, "core-purity", "clean"),
     packageJsonPath: join(fixtures, "core-purity", "clean", "package.json"),

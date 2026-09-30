@@ -2,22 +2,15 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 
 import { listTypeScriptFiles } from "./files.js";
+import { type LayerName, isLayerName, layerRank } from "./layers.js";
 import { exitOnProblems } from "./report.js";
 import { repoRoot } from "./root.js";
 import { moduleSpecifiers } from "./specifiers.js";
 
-const LAYERS = [
-  { dir: "l0-contracts", name: "L0 contracts" },
-  { dir: "l1-dialects", name: "L1 dialects" },
-  { dir: "l2-adapters", name: "L2 adapters" },
-  { dir: "l3-runtime", name: "L3 runtime" },
-  { dir: "l4-tooling", name: "L4 tooling" },
-] as const;
-
 /**
- * Reports relative imports that point upward, and adapter imports that are not L0 or L2.
+ * Reports relative imports that point upward, and adapter imports that are not contracts.
  *
- * Dependencies point downward only (spec §4.2). An adapter imports L0 contracts
+ * Dependencies point downward only (spec §4.2). An adapter imports `contracts`
  * or other adapter files, not a dialect.
  */
 export function checkLayers(root: string): readonly string[] {
@@ -51,36 +44,38 @@ export function checkLayers(root: string): readonly string[] {
         continue;
       }
       if (!importAllowed(from, to)) {
-        const fromName = LAYERS[from]?.name ?? String(from);
-        const toName = LAYERS[to]?.name ?? String(to);
-        problems.push(`${display(root, file)} imports ${specifier} (${toName}) from ${fromName}`);
+        problems.push(`${display(root, file)} imports ${specifier} (${to}) from ${from}`);
       }
     }
   }
   return problems;
 }
 
-function importAllowed(from: number, to: number): boolean {
-  if (to > from) {
+function importAllowed(from: LayerName, to: LayerName): boolean {
+  const fromRank = layerRank(from);
+  const toRank = layerRank(to);
+  if (fromRank === undefined || toRank === undefined) {
     return false;
   }
-  if (from === 2 && to !== 0 && to !== 2) {
+  if (toRank > fromRank) {
+    return false;
+  }
+  if (from === "adapters" && to !== "contracts" && to !== "adapters") {
     return false;
   }
   return true;
 }
 
-function layerOf(root: string, file: string): number | undefined {
+function layerOf(root: string, file: string): LayerName | undefined {
   const rel = relative(root, file);
   if (rel.startsWith("..") || rel.startsWith("/")) {
     return undefined;
   }
   const top = rel.split(sep)[0];
-  if (top === undefined) {
+  if (top === undefined || !isLayerName(top)) {
     return undefined;
   }
-  const index = LAYERS.findIndex((layer) => layer.dir === top);
-  return index === -1 ? undefined : index;
+  return top;
 }
 
 function resolveRelative(fromFile: string, specifier: string): string | undefined {

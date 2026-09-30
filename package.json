@@ -16,20 +16,20 @@
   ],
   "exports": {
     ".": {
-      "types": "./dist/l0-contracts/index.d.ts",
-      "import": "./dist/l0-contracts/index.js"
+      "types": "./dist/contracts/index.d.ts",
+      "import": "./dist/contracts/index.js"
     },
     "./pg": {
-      "types": "./dist/l1-dialects/pg/index.d.ts",
-      "import": "./dist/l1-dialects/pg/index.js"
+      "types": "./dist/dialects/pg/index.d.ts",
+      "import": "./dist/dialects/pg/index.js"
     },
     "./migrate": {
-      "types": "./dist/l4-tooling/migrate/index.d.ts",
-      "import": "./dist/l4-tooling/migrate/index.js"
+      "types": "./dist/tooling/migrate/index.d.ts",
+      "import": "./dist/tooling/migrate/index.js"
     },
     "./testing": {
-      "types": "./dist/l4-tooling/testing/index.d.ts",
-      "import": "./dist/l4-tooling/testing/index.js"
+      "types": "./dist/tooling/testing/index.d.ts",
+      "import": "./dist/tooling/testing/index.js"
     }
   },
   "bin": {
@@ -40,7 +40,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "rm -rf dist && bun build ./src/l0-contracts/index.ts ./src/l1-dialects/pg/index.ts ./src/l4-tooling/migrate/index.ts ./src/l4-tooling/testing/index.ts ./src/l4-tooling/cli.ts --outdir ./dist --root ./src --format esm --target node && bunx tsc -p tsconfig.build.json && bun ./scripts/write-bin-wrappers.ts",
+    "build": "rm -rf dist && bun build ./src/contracts/index.ts ./src/dialects/pg/index.ts ./src/tooling/migrate/index.ts ./src/tooling/testing/index.ts ./src/tooling/cli.ts --outdir ./dist --root ./src --format esm --target node && bunx tsc -p tsconfig.build.json && bun ./scripts/write-bin-wrappers.ts",
     "typecheck": "bunx tsc --noEmit -p tsconfig.json",
     "lint": "biome lint .",
     "format": "biome format --write .",

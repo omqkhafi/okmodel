@@ -11,6 +11,10 @@ needed). Large groups add `####` area headings so the list stays scannable.
 
 ## Unreleased
 
+### ♻️ Changed
+
+- Source layers use the folder names `contracts`, `dialects`, `adapters`, `runtime`, and `tooling`.
+
 ### ✨ Added
 
 - Stub exports for `okmodel`, `okmodel/pg`, `okmodel/migrate`, and `okmodel/testing`.

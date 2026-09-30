@@ -2,15 +2,16 @@ import { readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
 import { listTypeScriptFiles } from "./files.js";
+import { isCoreFolder } from "./layers.js";
 import { exitOnProblems } from "./report.js";
 import { repoRoot } from "./root.js";
 import { moduleSpecifiers } from "./specifiers.js";
 
 /**
- * Reports `node:*` imports in L0–L3 and runtime `dependencies` in package.json.
+ * Reports `node:*` imports below `tooling`, and runtime `dependencies` in package.json.
  *
  * Bare Node built-in specifiers (`fs`, `path`, …) count as the same dependency.
- * L4 tooling may import Node.
+ * The tooling layer may import Node.
  */
 export function checkCorePurity(options: {
   readonly root: string;
@@ -72,7 +73,7 @@ function dependencyProblems(packageJsonPath: string): readonly string[] {
 
 function isCoreFile(root: string, file: string): boolean {
   const top = relative(root, file).split(sep)[0];
-  return top !== "l4-tooling";
+  return isCoreFolder(top);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
