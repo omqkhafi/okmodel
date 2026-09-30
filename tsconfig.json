@@ -18,6 +18,6 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src", "scripts", "tests"],
-  "exclude": ["tests/fixtures"]
+  "include": ["src", "scripts", "tests", "packages/harness", "packages/bench"],
+  "exclude": ["tests/fixtures", "packages/attest", "packages/bench/results"]
 }

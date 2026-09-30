@@ -1,13 +1,16 @@
 #!/usr/bin/env bun
 /**
- * Bumps the root `okmodel` package version and promotes `## Unreleased`
- * in `changelog.md` into `## v<new> — <today>`.
+ * Moves the root `okmodel` package version.
+ *
+ * - `next` sets `<next minor>-next.N` and does not touch the changelog.
+ * - `release` drops a `-next.N` suffix and promotes `## Unreleased`.
+ * - `patch`, `minor`, `major`, and `--set` still promote `## Unreleased`.
  *
  * Does not touch git, tags, or workspace packages under `packages/*`.
  *
  * Usage:
- *   bun run scripts/bump-version.ts [patch|minor|major] [--dry-run]
- *   bun run scripts/bump-version.ts --set 0.1.0 [--dry-run]
+ *   bun run scripts/bump-version.ts [patch|minor|major|next|release] [--dry-run]
+ *   bun run scripts/bump-version.ts --set X.Y.Z [--dry-run]
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -18,8 +21,23 @@ const REPO_ROOT = join(import.meta.dir, "..");
 const PACKAGE_PATH = join(REPO_ROOT, "package.json");
 const CHANGELOG_PATH = join(REPO_ROOT, "changelog.md");
 
-/** Semver bump kind. */
-type BumpKind = "patch" | "minor" | "major";
+/** Semver bump kind, including the pre-release and release flows. */
+export type BumpKind = "patch" | "minor" | "major" | "next" | "release";
+
+/** What a bump will write. `next` leaves the changelog alone. */
+export type BumpPlan = {
+  readonly version: string;
+  readonly promoteChangelog: boolean;
+};
+
+const VERSION_PATTERN = /^(\d+)\.(\d+)\.(\d+)(?:-next\.(\d+))?$/;
+
+type ParsedVersion = {
+  readonly major: number;
+  readonly minor: number;
+  readonly patch: number;
+  readonly next: number | undefined;
+};
 
 /**
  * Parses CLI flags for the bump script.
@@ -40,13 +58,56 @@ function parseFlags(): {
     args: process.argv.slice(2),
   });
   const kindRaw = positionals[0];
-  const kind =
-    kindRaw === "patch" || kindRaw === "minor" || kindRaw === "major" ? kindRaw : undefined;
+  const kind = isBumpKind(kindRaw) ? kindRaw : undefined;
+  if (kindRaw !== undefined && kind === undefined) {
+    throw new Error(
+      `Unknown bump kind '${kindRaw}'. Expected patch, minor, major, next, or release.`,
+    );
+  }
   return {
     kind,
     set: values.set,
     dryRun: values["dry-run"] ?? false,
   };
+}
+
+function isBumpKind(value: string | undefined): value is BumpKind {
+  return (
+    value === "patch" ||
+    value === "minor" ||
+    value === "major" ||
+    value === "next" ||
+    value === "release"
+  );
+}
+
+/**
+ * Plans the next version and whether `## Unreleased` is promoted.
+ *
+ * @param current - Current package version (`X.Y.Z` or `X.Y.Z-next.N`)
+ * @param request - A bump kind or an explicit `--set` version
+ * @returns The version to write and whether the changelog is promoted
+ */
+export function planBump(
+  current: string,
+  request: { readonly kind?: BumpKind; readonly set?: string },
+): BumpPlan {
+  if (request.set !== undefined && request.kind !== undefined) {
+    throw new Error("Pass either a bump kind or --set, not both.");
+  }
+  if (request.set !== undefined) {
+    return { version: parseSetVersion(request.set), promoteChangelog: true };
+  }
+  if (request.kind === undefined) {
+    throw new Error("Pass a bump kind or --set.");
+  }
+  if (request.kind === "next") {
+    return { version: nextVersion(current), promoteChangelog: false };
+  }
+  if (request.kind === "release") {
+    return { version: releaseVersion(current), promoteChangelog: true };
+  }
+  return { version: bumpRelease(current, request.kind), promoteChangelog: true };
 }
 
 /**
@@ -70,69 +131,96 @@ function setManifestVersion(path: string, version: string, dryRun: boolean): voi
 }
 
 /**
- * Parses `X.Y.Z` into numeric parts.
+ * Parses `X.Y.Z` or `X.Y.Z-next.N`.
  *
- * @param version - Semver string
- * @returns Major, minor, and patch
+ * @param version - Version string, optional leading `v`
+ * @returns The numeric parts and the pre-release counter when present
  */
-function parseSemver(version: string): [number, number, number] {
-  const parts = version.trim().replace(/^v/, "").split(".");
-  if (parts.length !== 3 || parts.some((part) => !/^\d+$/.test(part))) {
-    throw new Error(`Invalid version '${version}'. Expected X.Y.Z.`);
+function parseVersion(version: string): ParsedVersion {
+  const match = VERSION_PATTERN.exec(version.trim().replace(/^v/, ""));
+  if (match === null) {
+    throw new Error(`Invalid version '${version}'. Expected X.Y.Z or X.Y.Z-next.N.`);
   }
-  return [
-    Number.parseInt(parts[0] ?? "", 10),
-    Number.parseInt(parts[1] ?? "", 10),
-    Number.parseInt(parts[2] ?? "", 10),
-  ];
+  return {
+    major: Number(match[1]),
+    minor: Number(match[2]),
+    patch: Number(match[3]),
+    next: match[4] === undefined ? undefined : Number(match[4]),
+  };
 }
 
 /**
- * Applies a bump kind to a version string.
+ * Accepts an explicit `--set` version. Pre-release numbers use `next` instead.
  *
- * @param version - Current version
- * @param kind - patch, minor, or major
- * @returns The next version
+ * @param version - Bare `X.Y.Z`, optional leading `v`
+ * @returns The version without a leading `v`
  */
-function bump(version: string, kind: BumpKind): string {
-  const [major, minor, patch] = parseSemver(version);
-  switch (kind) {
-    case "patch":
-      return `${major}.${minor}.${patch + 1}`;
-    case "minor":
-      return `${major}.${minor + 1}.0`;
-    case "major":
-      return `${major + 1}.0.0`;
+function parseSetVersion(version: string): string {
+  const parsed = parseVersion(version);
+  if (parsed.next !== undefined) {
+    throw new Error(`--set expects X.Y.Z, got '${version.trim()}'.`);
   }
+  return formatBare(parsed);
 }
 
 /**
- * Resolves the next version from an explicit `--set` or a bump kind.
+ * Moves to `<next minor>-next.1`, or increments `N` when already on `-next.N`.
+ *
+ * `0.0.0` becomes `0.1.0-next.1`. `0.1.0-next.1` becomes `0.1.0-next.2`.
+ * A released `0.1.0` becomes `0.2.0-next.1`.
  *
  * @param current - Current package version
- * @param set - Explicit version from `--set`, when present
- * @param kind - Bump kind, when `--set` is absent
+ * @returns The next pre-release version
+ */
+function nextVersion(current: string): string {
+  const parsed = parseVersion(current);
+  if (parsed.next !== undefined) {
+    return `${formatBare(parsed)}-next.${parsed.next + 1}`;
+  }
+  return `${parsed.major}.${parsed.minor + 1}.0-next.1`;
+}
+
+/**
+ * Drops a `-next.N` suffix, leaving the release version.
+ *
+ * @param current - A version of the form `X.Y.Z-next.N`
+ * @returns The bare release version
+ */
+function releaseVersion(current: string): string {
+  const parsed = parseVersion(current);
+  if (parsed.next === undefined) {
+    throw new Error(`release expects an X.Y.Z-next.N version, got '${current}'.`);
+  }
+  return formatBare(parsed);
+}
+
+/**
+ * Applies patch, minor, or major to the bare version, dropping any `-next` suffix.
+ *
+ * @param current - Current package version
+ * @param kind - patch, minor, or major
  * @returns The next bare version
  */
-function resolveNextVersion(
-  current: string,
-  set: string | undefined,
-  kind: BumpKind | undefined,
-): string {
-  if (set !== undefined) {
-    parseSemver(set);
-    return set.replace(/^v/, "");
+function bumpRelease(current: string, kind: "patch" | "minor" | "major"): string {
+  const parsed = parseVersion(current);
+  switch (kind) {
+    case "patch":
+      return `${parsed.major}.${parsed.minor}.${parsed.patch + 1}`;
+    case "minor":
+      return `${parsed.major}.${parsed.minor + 1}.0`;
+    case "major":
+      return `${parsed.major + 1}.0.0`;
   }
-  if (kind === undefined) {
-    throw new Error("Pass a bump kind or --set.");
-  }
-  return bump(current, kind);
+}
+
+function formatBare(parsed: ParsedVersion): string {
+  return `${parsed.major}.${parsed.minor}.${parsed.patch}`;
 }
 
 /**
  * Reads the root package version.
  *
- * @returns Current `X.Y.Z` version
+ * @returns Current version string
  */
 function readRootVersion(): string {
   const pkg = JSON.parse(readFileSync(PACKAGE_PATH, "utf-8")) as { version?: unknown };
@@ -226,26 +314,25 @@ async function main(): Promise<void> {
   const flags = parseFlags();
   if (!flags.set && !flags.kind) {
     console.error(
-      "[bump] Usage: bun run scripts/bump-version.ts [patch|minor|major] [--dry-run]\n" +
+      "[bump] Usage: bun run scripts/bump-version.ts [patch|minor|major|next|release] [--dry-run]\n" +
         "       bun run scripts/bump-version.ts --set X.Y.Z [--dry-run]",
     );
     process.exit(2);
   }
-  if (flags.set && flags.kind) {
-    console.error("[bump] Pass either a bump kind or --set, not both.");
-    process.exit(2);
-  }
 
   const current = readRootVersion();
-  const next = resolveNextVersion(current, flags.set, flags.kind);
+  const plan = planBump(current, {
+    ...(flags.kind !== undefined ? { kind: flags.kind } : {}),
+    ...(flags.set !== undefined ? { set: flags.set } : {}),
+  });
 
-  setManifestVersion(PACKAGE_PATH, next, flags.dryRun);
-  applyChangelog(next, flags.dryRun);
+  setManifestVersion(PACKAGE_PATH, plan.version, flags.dryRun);
+  if (plan.promoteChangelog) applyChangelog(plan.version, flags.dryRun);
 
   const prefix = flags.dryRun ? "Would bump" : "Bumped";
-  console.error(`[bump] ${prefix}: ${current} → ${next}`);
+  console.error(`[bump] ${prefix}: ${current} → ${plan.version}`);
   console.error(`[bump]   ${PACKAGE_PATH}`);
-  console.error(`[bump]   ${CHANGELOG_PATH}`);
+  if (plan.promoteChangelog) console.error(`[bump]   ${CHANGELOG_PATH}`);
 }
 
 if (import.meta.main) {

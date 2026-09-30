@@ -1,5 +1,7 @@
 # Packages
 
-Workspace packages will live here (`packages/*`). There are none yet.
+Private workspaces live here. Their dependencies stay in their own `package.json` and never go into the root `package.json`. None of them are published.
 
-Dependencies of these packages stay in their own `package.json`. They never go into the root `package.json`.
+- `harness` — PGlite, a Docker Postgres topology, and schema fixtures
+- `bench` — timings written as JSON, with a place for baselines
+- `attest` — `@ark/attest` on TypeScript 6

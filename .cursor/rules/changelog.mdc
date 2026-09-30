@@ -10,7 +10,7 @@ Before claiming implementation work done, follow [`.agents/skills/okm-ship`](.ag
 
 - Append notes to `changelog.md` under `## Unreleased`.
 - Use `### ✨ Added`, `### 💥 Breaking Changes`, `### ♻️ Changed`, `### ⚠️ Deprecated`, `### 🔥 Removed`, `### 🐛 Fixed`, `### 🔒 Security`.
-- When a group has 8 or more bullets, group them under `#### L0 contracts`, `#### L1 dialects`, `#### L2 adapters`, `#### L3 runtime`, `#### L4 tooling`, or `#### Docs`.
+- When a group has 8 or more bullets, group them under `#### contracts`, `#### dialects`, `#### adapters`, `#### runtime`, `#### tooling`, or `#### docs`.
 - Never append under a shipped `## vX.Y.Z` section.
-- Do not bump the version here. `bun run bump` promotes `## Unreleased`.
+- After the notes, run `bun run bump next`. A gate prompt that releases runs `bun run bump release` instead.
 - Skip pure typo or format-only edits.
