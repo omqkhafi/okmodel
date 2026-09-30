@@ -31,4 +31,4 @@ The sign-off is the DCO certificate of origin.
 
 ## Toolchain
 
-TypeScript 7 (`tsc`) typechecks the repository and emits declarations. Nothing in that typecheck uses the TypeScript compiler API. `@ark/attest` runs separately, in `packages/attest`, on `@typescript/typescript6` (`tsc6`). Lint goes through oxlint, including its type-aware rules. Format goes through oxfmt.
+TypeScript 7 (`tsc`) typechecks the repository and emits declarations. Nothing in that typecheck uses the TypeScript compiler API. Type assertions live in `*.test-d.ts` files and use `expect-type`. `bun run type-cost` reads `tsc --extendedDiagnostics` and writes JSON, with no ceilings. `@ark/attest` runs separately, in `packages/attest`, on `@typescript/typescript6` (`tsc6`), and is not part of `bun run check`. Lint goes through oxlint, including its type-aware rules. Format goes through oxfmt.

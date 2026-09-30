@@ -35,5 +35,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Tests can open an isolated PGlite database or a connection to that topology. They skip when Docker or Postgres is down, and fail when `REQUIRE_DOCKER=1`.
 - Replay on either replica can be paused and resumed, and tests can read the primary insert LSN and a replica's replay LSN.
 - A seeded generator builds schema fixtures of 10, 50, 200, and 500 tables, including a tenant-column variant, as a neutral description and Postgres DDL.
-- `@ark/attest` measures types on TypeScript 6 (`tsc6`) in its own CI job, separate from the TypeScript 7 typecheck.
+- Type correctness uses `expect-type` in `*.test-d.ts` files compiled by the TypeScript 7 typecheck. A wrong assertion stays in a fixture, and a test shows that `tsc` rejects it.
+- `bun run type-cost` reads `tsc --extendedDiagnostics` for a trivial type and writes the counters as JSON. No ceilings yet.
+- `@ark/attest` runs on TypeScript 6 in its own CI job. It is not part of `bun run check`.
 - `bun run bench` writes timings as JSON. Baselines can be stored beside the script; nothing compares them yet.

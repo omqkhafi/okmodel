@@ -1,6 +1,6 @@
 {
   "name": "okmodel",
-  "version": "0.1.0-next.1",
+  "version": "0.1.0-next.2",
   "description": "Catalog-first TypeScript ORM: typed queries, safe migrations and replica-aware routing. PostgreSQL first, zero runtime dependencies.",
   "license": "Apache-2.0",
   "author": "Omq Khafi",
@@ -42,6 +42,7 @@
   "scripts": {
     "build": "rm -rf dist && bun build ./src/contracts/index.ts ./src/dialects/pg/index.ts ./src/tooling/migrate/index.ts ./src/tooling/testing/index.ts ./src/tooling/cli.ts --outdir ./dist --root ./src --format esm --target node && bunx tsc -p tsconfig.build.json && bun ./scripts/write-bin-wrappers.ts",
     "typecheck": "bunx tsc --noEmit -p tsconfig.json",
+    "type-cost": "bun ./scripts/type-cost.ts",
     "lint": "oxlint",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
@@ -53,7 +54,7 @@
     "attw": "bun ./scripts/attw.ts",
     "size": "bun ./scripts/size.ts",
     "test": "bun test",
-    "check": "bun run format:check && bun run lint && bun run typecheck && bun run layers-check && bun run core-purity && bun run docs:check && bun run compiler-api && bun run build && bun test && bun run publint && bun run attw && bun run size",
+    "check": "bun run format:check && bun run lint && bun run typecheck && bun run type-cost && bun run layers-check && bun run core-purity && bun run docs:check && bun run compiler-api && bun run build && bun test && bun run publint && bun run attw && bun run size",
     "bump": "bun ./scripts/bump-version.ts",
     "release-check": "bun ./scripts/release-check.ts",
     "db:up": "bun ./packages/harness/src/docker-cli.ts up",
@@ -66,6 +67,7 @@
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
     "@types/bun": "^1.4.2",
+    "expect-type": "^1.4.0",
     "oxc-parser": "^0.152.0",
     "oxfmt": "0.71.0",
     "oxlint": "^1.86.0",
