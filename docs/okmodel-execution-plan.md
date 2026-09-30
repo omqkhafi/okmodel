@@ -14,6 +14,7 @@ Companion to `okmodel-api-design.md` (draft 17). The spec is normative; this fil
 6. The spec changes only through a recorded decision (D-number). If implementation contradicts the spec, the report says so and Claude decides: fix the code or amend the spec.
 7. Guarantees grow with the code. Every prompt that adds behavior also adds its tests: conformance tests for semantics, a registration in the final safety verifier for anything that adds or changes a rule, and the CI test named in the spec for any invariant it touches. A prompt is not done while a guarantee it introduces has no test.
 8. Order rule: a prompt may use only what earlier prompts delivered. Where a later prompt completes a behavior, the earlier prompt ships the conservative version (stated in its row) so every branch is safe on its own.
+9. Changelog and version: every prompt adds its notes under `## Unreleased` in `changelog.md` (what changed for someone using or building the package, one line each) and ends with `bun run bump next`, so `package.json` moves with every merged prompt. A gate prompt that releases ends with `bun run bump release` instead (D113). The pull request fails CI if either is missing.
 
 ### Execution report template (end of every prompt)
 
@@ -144,4 +145,6 @@ Problems found in the earlier order and how the table above resolves them:
 - The tarball is controlled by a `files` whitelist (`dist`, `README.md`, `LICENSE`); repository tooling (`tools/`, `docs/`, `packages/`) is never published.
 - The repository belongs to `github.com/omqkhafi`; copyright is `Copyright 2026 Omq Khafi`; Apache-2.0.
 - Every commit carries exactly two trailers: `Signed-off-by: Omq Khafi <omqkhafi@gmail.com>` (DCO) and `Co-authored-by: Ali Alnaghmoush <alialnaghmoush@gmail.com>`. No other trailer (no tool or assistant attribution) and no other personal address in any file or commit beyond these two.
+- Versioning (D113): versions are `<next release>-next.N` while a train is in progress (`0.1.0-next.1`, `0.1.0-next.2`, ...). The gate prompt of a train releases it: P17 is 0.1.0, P30 is 0.2.0, P44 is 0.3.0, P55 is 0.4.0, P66 is 0.5.0. Only released versions are published to npm and tagged (`v0.1.0`); `-next` versions stay in the repository.
+- No commit, pull request description, comment or file may mention the tool that produced it (no `Co-authored-by` for a tool, no "Made with" lines).
 - `AGENTS.md` is the single source of agent rules; `CLAUDE.md` imports it.

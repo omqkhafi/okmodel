@@ -1234,7 +1234,7 @@ test("today view runs one query", async () => {
 
 **Testing principles.** Tests assert observable results, state changes, errors and emitted events of production code. The database is never mocked in ORM tests (PGlite or real Postgres); mock only external boundaries. File-content checks are for shipped artifacts, exports and cross-runtime contracts, never for source strings.
 
-**Repository checks (CI).** `docs:check` (section references, error codes against the registry, milestone consistency), `publint` and `arethetypeswrong` for exports across ESM, CJS and runtimes, an API report that fails on accidental public-API changes, no runtime dependencies in the core, no `node:*` imports in the core, the layer import graph (`layers-check`), and a size budget.
+**Repository checks (CI).** `docs:check` (section references, error codes against the registry, milestone consistency), `publint` and `arethetypeswrong` for the exports of an ESM-only package across Node, bundlers and runtimes (D112), an API report that fails on accidental public-API changes, no runtime dependencies in the core, no `node:*` imports in the core, the layer import graph (`layers-check`), and a size budget.
 
 **Capability matrix.** The registry and the conformance suite are tied together in CI: every capability a driver declares has at least one conformance test that the driver passes, and a test that needs an undeclared capability is skipped explicitly. A declared capability without a test fails the build. `emulated` features run the same tests (the result is checked, not the mechanism). The docs' compatibility table is generated from these results, not written by hand.
 
