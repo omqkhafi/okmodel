@@ -5,13 +5,33 @@
   "type": "module",
   "license": "Apache-2.0",
   "author": "Omq Khafi",
-  "repository": "https://github.com/omqkhafi/okmodel",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/omqkhafi/okmodel.git"
+  },
   "files": [
     "dist",
     "README.md",
     "LICENSE"
   ],
-  "exports": "./dist/index.js",
+  "exports": {
+    ".": {
+      "types": "./dist/l0-contracts/index.d.ts",
+      "import": "./dist/l0-contracts/index.js"
+    },
+    "./pg": {
+      "types": "./dist/l1-dialects/pg/index.d.ts",
+      "import": "./dist/l1-dialects/pg/index.js"
+    },
+    "./migrate": {
+      "types": "./dist/l4-tooling/migrate/index.d.ts",
+      "import": "./dist/l4-tooling/migrate/index.js"
+    },
+    "./testing": {
+      "types": "./dist/l4-tooling/testing/index.d.ts",
+      "import": "./dist/l4-tooling/testing/index.js"
+    }
+  },
   "bin": {
     "okm": "./dist/okm.js",
     "okmodel": "./dist/okmodel.js"
@@ -20,12 +40,30 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "bun build ./src/index.ts ./src/cli.ts --outdir ./dist --format esm --target node && bun ./scripts/write-bin-wrappers.ts",
-    "typecheck": "bunx tsc --noEmit",
+    "build": "rm -rf dist && bun build ./src/l0-contracts/index.ts ./src/l1-dialects/pg/index.ts ./src/l4-tooling/migrate/index.ts ./src/l4-tooling/testing/index.ts ./src/l4-tooling/cli.ts --outdir ./dist --root ./src --format esm --target node && bunx tsc -p tsconfig.build.json && bun ./scripts/write-bin-wrappers.ts",
+    "typecheck": "bunx tsc --noEmit -p tsconfig.json",
+    "lint": "biome lint .",
+    "format": "biome format --write .",
+    "format:check": "biome check --formatter-enabled=true --linter-enabled=false --assist-enabled=false .",
+    "layers-check": "bun ./scripts/layers-check.ts",
+    "core-purity": "bun ./scripts/core-purity.ts",
+    "docs:check": "bun ./scripts/docs-check.ts",
+    "compiler-api": "bun ./scripts/compiler-api.ts",
+    "publint": "publint run . --strict --pack bun",
+    "attw": "bun ./scripts/attw.ts",
+    "size": "bun ./scripts/size.ts",
+    "test": "bun test",
+    "check": "bun run format:check && bun run lint && bun run typecheck && bun run layers-check && bun run core-purity && bun run docs:check && bun run compiler-api && bun run build && bun test && bun run publint && bun run attw && bun run size",
+    "bump": "bun ./scripts/bump-version.ts",
     "publish:dry": "bun publish --dry-run",
     "prepublishOnly": "bun run build"
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
+    "@biomejs/biome": "^2.5.15",
+    "@types/bun": "^1.4.2",
+    "@types/node": "^26.6.3",
+    "publint": "^0.3.24",
     "typescript": "7"
   }
 }

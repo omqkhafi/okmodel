@@ -1,0 +1,1 @@
+L2 adapters: driver implementations of the Driver contract, such as `okmodel/pg/postgresjs` and `okmodel/pg/pglite`.

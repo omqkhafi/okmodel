@@ -27,11 +27,27 @@ Imports go only downward:
 - L3 runtime
 - L4 tooling
 
-A layer may import layers below it. It must not import a layer above it.
+A layer may import layers below it. It must not import a layer above it. L2 adapters import L0 contracts or other L2 files, not L1 dialects. `bun run layers-check` enforces this.
+
+## Scripts
+
+- `bun run check` runs format, lint, typecheck, `layers-check`, `core-purity`, `docs:check`, the compiler-API scan, build, tests, publint, arethetypeswrong, and the size budget.
+- `bun run build` writes JavaScript with `bun build --target node` and declarations with `tsc` (`emitDeclarationOnly`).
+- `bun run typecheck` runs `tsc --noEmit`.
+- `bun run lint` and `bun run format:check` use Biome. `bun run format` rewrites formatting.
+- `bun run layers-check` fails when an import goes upward.
+- `bun run core-purity` fails on a `node:*` import in L0–L3 and on runtime `dependencies`.
+- `bun run docs:check` checks relative links, `§` references, and decision numbers.
+- `bun test` covers package exports, the bins, and the check fixtures.
+- `bun run bump` promotes `changelog.md` and the package version. It does not publish.
 
 ## Docs
 
 Documents in `docs/` are normative.
+
+## Changelog
+
+Before claiming work done, run [`.agents/skills/okm-ship`](.agents/skills/okm-ship/SKILL.md). Append notes to `changelog.md` under `## Unreleased`. Never append under a shipped `## v…` section. `bun run bump` promotes Unreleased into the next `## vX.Y.Z — <date>`.
 
 ## Commits
 
