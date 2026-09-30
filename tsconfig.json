@@ -7,8 +7,6 @@
     "erasableSyntaxOnly": true,
     "noImplicitOverride": true,
     "noFallthroughCasesInSwitch": true,
-    "isolatedDeclarations": true,
-    "declaration": true,
     "noImplicitReturns": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,

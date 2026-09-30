@@ -27,4 +27,4 @@ The sign-off is the DCO certificate of origin.
 
 ## Toolchain
 
-TypeScript 7 (`tsc`) is the only compiler. Nothing in this repository may use the TypeScript compiler API. Lint and format go through Biome.
+TypeScript 7 (`tsc`) is the only compiler. Nothing in this repository may use the TypeScript compiler API. Lint goes through oxlint, including its type-aware rules. Format goes through oxfmt.

@@ -34,7 +34,7 @@ A layer may import layers below it. It must not import a layer above it. Adapter
 - `bun run check` runs format, lint, typecheck, `layers-check`, `core-purity`, `docs:check`, the compiler-API scan, build, tests, publint, arethetypeswrong, and the size budget.
 - `bun run build` writes JavaScript with `bun build --target node` and declarations with `tsc` (`emitDeclarationOnly`).
 - `bun run typecheck` runs `tsc --noEmit`.
-- `bun run lint` and `bun run format:check` use Biome. `bun run format` rewrites formatting.
+- `bun run lint` uses oxlint with type-aware rules. `bun run format:check` uses oxfmt. `bun run format` rewrites formatting.
 - `bun run layers-check` fails when an import goes upward.
 - `bun run core-purity` fails on a `node:*` import below tooling and on runtime `dependencies`.
 - `bun run docs:check` checks relative links, `§` references, and decision numbers.

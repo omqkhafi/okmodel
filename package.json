@@ -2,18 +2,25 @@
   "name": "okmodel",
   "version": "0.0.0",
   "description": "A catalog-first TypeScript ORM, work in progress",
-  "type": "module",
   "license": "Apache-2.0",
   "author": "Omq Khafi",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/omqkhafi/okmodel.git"
   },
+  "bin": {
+    "okm": "./dist/okm.js",
+    "okmodel": "./dist/okmodel.js"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
   "files": [
     "dist",
     "README.md",
     "LICENSE"
   ],
+  "type": "module",
   "exports": {
     ".": {
       "types": "./dist/contracts/index.d.ts",
@@ -32,19 +39,12 @@
       "import": "./dist/tooling/testing/index.js"
     }
   },
-  "bin": {
-    "okm": "./dist/okm.js",
-    "okmodel": "./dist/okmodel.js"
-  },
-  "workspaces": [
-    "packages/*"
-  ],
   "scripts": {
     "build": "rm -rf dist && bun build ./src/contracts/index.ts ./src/dialects/pg/index.ts ./src/tooling/migrate/index.ts ./src/tooling/testing/index.ts ./src/tooling/cli.ts --outdir ./dist --root ./src --format esm --target node && bunx tsc -p tsconfig.build.json && bun ./scripts/write-bin-wrappers.ts",
     "typecheck": "bunx tsc --noEmit -p tsconfig.json",
-    "lint": "biome lint .",
-    "format": "biome format --write .",
-    "format:check": "biome check --formatter-enabled=true --linter-enabled=false --assist-enabled=false .",
+    "lint": "oxlint",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
     "layers-check": "bun ./scripts/layers-check.ts",
     "core-purity": "bun ./scripts/core-purity.ts",
     "docs:check": "bun ./scripts/docs-check.ts",
@@ -60,9 +60,11 @@
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
-    "@biomejs/biome": "^2.5.15",
     "@types/bun": "^1.4.2",
-    "@types/node": "^26.6.3",
+    "oxc-parser": "^0.152.0",
+    "oxfmt": "0.71.0",
+    "oxlint": "^1.86.0",
+    "oxlint-tsgolint": "^7.0.2003",
     "publint": "^0.3.24",
     "typescript": "7"
   }
