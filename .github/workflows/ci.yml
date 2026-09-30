@@ -14,6 +14,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -25,3 +27,56 @@ jobs:
 
       - name: Check
         run: bun run check
+
+      - name: Release flow
+        if: github.event_name == 'pull_request'
+        run: bun ./scripts/release-check.ts --base ${{ github.event.pull_request.base.sha }}
+
+  postgres:
+    name: postgres
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Start Postgres
+        run: bun run db:up
+        env:
+          POSTGRES_VERSION: "17"
+
+      - name: Postgres tests
+        run: bun test tests/harness.test.ts tests/fixtures-schema.test.ts tests/replication.test.ts
+        env:
+          REQUIRE_DOCKER: "1"
+          POSTGRES_VERSION: "17"
+
+      - name: Stop Postgres
+        if: always()
+        run: bun run db:down
+
+  attest:
+    name: attest
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Attest
+        run: bun run attest

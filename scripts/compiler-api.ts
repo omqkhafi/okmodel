@@ -71,5 +71,15 @@ function isCompilerApi(specifier: string): boolean {
 
 if (import.meta.main) {
   const root = repoRoot();
-  exitOnProblems(checkCompilerApi([join(root, "src"), join(root, "scripts"), join(root, "tests")]));
+  // packages/attest is the TypeScript 6 attest job. It is the one place that
+  // may import the compiler API, so it is not scanned here.
+  exitOnProblems(
+    checkCompilerApi([
+      join(root, "src"),
+      join(root, "scripts"),
+      join(root, "tests"),
+      join(root, "packages", "harness"),
+      join(root, "packages", "bench"),
+    ]),
+  );
 }

@@ -10,6 +10,10 @@ Each prompt in `docs/okmodel-execution-plan.md` gets its own branch (`p01-founda
 
 Run `bun run check` before opening a pull request. It formats, lints, typechecks, runs the repository checks, builds, tests, and checks the package.
 
+A pull request fails CI when `package.json`'s version equals the base branch, or when `changelog.md` has no new lines under `## Unreleased`. A release that promotes Unreleased into a dated heading is allowed.
+
+`bun run db:up` starts the Postgres topology (one primary and two streaming replicas). Set `POSTGRES_VERSION` to 15, 16, 17, or 18. `bun run db:down` stops it and removes its data. Tests that need Postgres skip when Docker is not running, and fail when `REQUIRE_DOCKER=1`.
+
 `bun run format` rewrites formatting. `bun run format:check` only reports it.
 
 Every behavior change ships with a test. Repository checks that can fail have a fixture that proves the failure.
@@ -27,4 +31,4 @@ The sign-off is the DCO certificate of origin.
 
 ## Toolchain
 
-TypeScript 7 (`tsc`) is the only compiler. Nothing in this repository may use the TypeScript compiler API. Lint goes through oxlint, including its type-aware rules. Format goes through oxfmt.
+TypeScript 7 (`tsc`) typechecks the repository and emits declarations. Nothing in that typecheck uses the TypeScript compiler API. `@ark/attest` runs separately, in `packages/attest`, on `@typescript/typescript6` (`tsc6`). Lint goes through oxlint, including its type-aware rules. Format goes through oxfmt.

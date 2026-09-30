@@ -55,6 +55,11 @@
     "test": "bun test",
     "check": "bun run format:check && bun run lint && bun run typecheck && bun run layers-check && bun run core-purity && bun run docs:check && bun run compiler-api && bun run build && bun test && bun run publint && bun run attw && bun run size",
     "bump": "bun ./scripts/bump-version.ts",
+    "release-check": "bun ./scripts/release-check.ts",
+    "db:up": "bun ./packages/harness/src/docker-cli.ts up",
+    "db:down": "bun ./packages/harness/src/docker-cli.ts down",
+    "bench": "bun ./packages/bench/src/run.ts",
+    "attest": "ATTEST_shouldFormat=0 ATTEST_updateSnapshots=0 bun ./packages/attest/src/measure.bench.ts",
     "publish:dry": "bun publish --dry-run",
     "prepublishOnly": "bun run build"
   },

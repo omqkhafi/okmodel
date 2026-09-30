@@ -1,0 +1,90 @@
+# One primary and two hot-standby physical replicas.
+# Ports follow OKM_PRIMARY_PORT, OKM_REPLICA_A_PORT, and OKM_REPLICA_B_PORT.
+# POSTGRES_VERSION selects the image major: 15, 16, 17, or 18.
+
+name: okmodel
+
+services:
+  primary:
+    image: postgres:${POSTGRES_VERSION:-17}
+    environment:
+      POSTGRES_USER: okm
+      POSTGRES_PASSWORD: okm
+      POSTGRES_DB: okm
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+    command:
+      - postgres
+      - -c
+      - listen_addresses=*
+      - -c
+      - wal_level=replica
+      - -c
+      - hot_standby=on
+      - -c
+      - max_wal_senders=10
+      - -c
+      - max_replication_slots=10
+      - -c
+      - wal_keep_size=64MB
+    ports:
+      - "${OKM_PRIMARY_PORT:-55432}:5432"
+    volumes:
+      - ./primary-init.sh:/docker-entrypoint-initdb.d/10-replication.sh:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'psql -U okm -d okm -tAc "SELECT count(*) FROM pg_replication_slots WHERE slot_name IN (''replica_a'',''replica_b'')" | grep -qx 2',
+        ]
+      interval: 2s
+      timeout: 5s
+      retries: 40
+      start_period: 10s
+
+  replica-a:
+    image: postgres:${POSTGRES_VERSION:-17}
+    environment:
+      PRIMARY_HOST: primary
+      SLOT_NAME: replica_a
+      REPLICATOR_PASSWORD: replicator
+      PGUSER: okm
+      PGPASSWORD: okm
+      PGDATABASE: okm
+    entrypoint: ["bash", "/scripts/replica-entrypoint.sh"]
+    ports:
+      - "${OKM_REPLICA_A_PORT:-55433}:5432"
+    volumes:
+      - ./replica-entrypoint.sh:/scripts/replica-entrypoint.sh:ro
+    depends_on:
+      primary:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "psql -U okm -d okm -tAc 'SELECT pg_is_in_recovery()' | grep -qx t"]
+      interval: 2s
+      timeout: 5s
+      retries: 40
+      start_period: 15s
+
+  replica-b:
+    image: postgres:${POSTGRES_VERSION:-17}
+    environment:
+      PRIMARY_HOST: primary
+      SLOT_NAME: replica_b
+      REPLICATOR_PASSWORD: replicator
+      PGUSER: okm
+      PGPASSWORD: okm
+      PGDATABASE: okm
+    entrypoint: ["bash", "/scripts/replica-entrypoint.sh"]
+    ports:
+      - "${OKM_REPLICA_B_PORT:-55434}:5432"
+    volumes:
+      - ./replica-entrypoint.sh:/scripts/replica-entrypoint.sh:ro
+    depends_on:
+      primary:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "psql -U okm -d okm -tAc 'SELECT pg_is_in_recovery()' | grep -qx t"]
+      interval: 2s
+      timeout: 5s
+      retries: 40
+      start_period: 15s

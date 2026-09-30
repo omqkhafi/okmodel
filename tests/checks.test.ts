@@ -5,6 +5,7 @@ import { checkCompilerApi } from "../scripts/compiler-api.js";
 import { checkCorePurity } from "../scripts/core-purity.js";
 import { checkDocs } from "../scripts/docs-check.js";
 import { checkLayers } from "../scripts/layers-check.js";
+import { checkReleaseDirs } from "../scripts/release-check.js";
 import { repoRoot } from "../scripts/root.js";
 import { checkDistSize } from "../scripts/size.js";
 
@@ -91,13 +92,73 @@ test("compiler-api check fails on a typescript import", () => {
 });
 
 test("compiler-api check accepts the repository", () => {
-  expect(checkCompilerApi([join(root, "src"), join(root, "scripts"), join(root, "tests")])).toEqual(
-    [],
-  );
+  expect(
+    checkCompilerApi([
+      join(root, "src"),
+      join(root, "scripts"),
+      join(root, "tests"),
+      join(root, "packages", "harness"),
+      join(root, "packages", "bench"),
+    ]),
+  ).toEqual([]);
 });
 
 test("size check fails above the ceiling and passes under it", () => {
   const dir = join(fixtures, "size");
   expect(checkDistSize(dir, 8).length).toBeGreaterThan(0);
   expect(checkDistSize(dir, 1000)).toEqual([]);
+});
+
+const releaseFixtures = join(fixtures, "release-check");
+
+test("release check fails when the version and Unreleased notes are unchanged", () => {
+  const problems = checkReleaseDirs(
+    join(releaseFixtures, "unchanged", "base"),
+    join(releaseFixtures, "unchanged", "head"),
+  );
+  expect(problems.some((problem) => problem.includes("equals the base branch"))).toBe(true);
+  expect(problems.some((problem) => problem.includes("no new lines"))).toBe(true);
+});
+
+test("release check fails when the version matches even if Unreleased gained a line", () => {
+  const problems = checkReleaseDirs(
+    join(releaseFixtures, "same-version", "base"),
+    join(releaseFixtures, "same-version", "head"),
+  );
+  expect(problems.some((problem) => problem.includes("equals the base branch"))).toBe(true);
+  expect(problems.some((problem) => problem.includes("no new lines"))).toBe(false);
+});
+
+test("release check fails when the version moved but Unreleased did not", () => {
+  const problems = checkReleaseDirs(
+    join(releaseFixtures, "version-only", "base"),
+    join(releaseFixtures, "version-only", "head"),
+  );
+  expect(problems).toEqual(["changelog.md has no new lines under ## Unreleased"]);
+});
+
+test("release check accepts a new Unreleased line and a new version", () => {
+  expect(
+    checkReleaseDirs(
+      join(releaseFixtures, "notes", "base"),
+      join(releaseFixtures, "notes", "head"),
+    ),
+  ).toEqual([]);
+});
+
+test("release check accepts a release that promotes Unreleased", () => {
+  expect(
+    checkReleaseDirs(
+      join(releaseFixtures, "release", "base"),
+      join(releaseFixtures, "release", "head"),
+    ),
+  ).toEqual([]);
+});
+
+test("release check rejects an emptied Unreleased that is not the suffix drop", () => {
+  const problems = checkReleaseDirs(
+    join(releaseFixtures, "not-release", "base"),
+    join(releaseFixtures, "not-release", "head"),
+  );
+  expect(problems).toEqual(["changelog.md has no new lines under ## Unreleased"]);
 });
