@@ -1,0 +1,3 @@
+exit 1
+<project>/probe.ts(10,14): error TS2322: Type 'RowFromColumns<NamedColumns<"same", { readonly id: ColumnBuilder<string, { readonly nullable: false; readonly hasDefault: false; readonly generated: false; readonly id: true; readonly hidden: false; readonly guarded: false; }, undefined>; readonly name: ColumnBuilder<...>; }>> | RowFromColumns<...>' is not assignable to type '{ readonly name: string; }'.
+  Property 'name' is missing in type 'RowFromColumns<NamedColumns<"same", { readonly id: ColumnBuilder<string, { readonly nullable: false; readonly hasDefault: false; readonly generated: false; readonly id: true; readonly hidden: false; readonly guarded: false; }, undefined>; readonly title: ColumnBuilder<...>; }>>' but required in type '{ readonly name: string; }'.

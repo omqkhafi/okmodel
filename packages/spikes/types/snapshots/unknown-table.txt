@@ -1,0 +1,2 @@
+exit 1
+<project>/probe.ts(4,27): error TS2344: Type '"missing"' does not satisfy the constraint 'TableName<Schema<readonly [Table<"users", NamedColumns<"users", { readonly id: ColumnBuilder<string, { readonly nullable: false; readonly hasDefault: false; readonly generated: false; readonly id: true; readonly hidden: false; readonly guarded: false; }, undefined>; readonly email: ColumnBuilder<...>; readonly nickn...'.

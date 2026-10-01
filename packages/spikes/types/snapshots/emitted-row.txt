@@ -1,0 +1,52 @@
+/**
+ * Emitted row types for seed 1, 1 tables.
+ * Written by the types spike. Not a TypeScript language-service hover.
+ */
+
+export type TableId<TName extends string> = string & { readonly "~table": TName };
+
+export interface Row_t000 {
+  readonly id: TableId<"t000">;
+  readonly c00: string;
+  readonly c01: number;
+  readonly c02: number;
+  readonly c03: number;
+  readonly c04: string;
+  readonly c05: { readonly [key: string]: unknown };
+}
+
+export interface Insert_t000 {
+  readonly c00: string;
+  readonly c01: number;
+  readonly c02: number;
+  readonly c03: number;
+  readonly c04: string;
+  readonly c05: { readonly [key: string]: unknown };
+}
+
+export interface Update_t000 {
+  readonly c00?: string;
+  readonly c01?: number;
+  readonly c02?: number;
+  readonly c03?: number;
+  readonly c04?: string;
+  readonly c05?: { readonly [key: string]: unknown };
+}
+
+export interface Rows {
+  readonly t000: Row_t000;
+}
+
+export interface Inserts {
+  readonly t000: Insert_t000;
+}
+
+export interface Updates {
+  readonly t000: Update_t000;
+}
+
+export type Row<N extends keyof Rows> = Rows[N];
+
+export type Insert<N extends keyof Inserts> = Inserts[N];
+
+export type Update<N extends keyof Updates> = Updates[N];

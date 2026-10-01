@@ -1,0 +1,2 @@
+exit 1
+<project>/probe.ts(3,14): error TS2740: Type '{}' is missing the following properties from type 'Insert_t000': c00, c01, c02, c03, and 2 more.

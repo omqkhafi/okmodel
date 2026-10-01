@@ -1,0 +1,2 @@
+exit 1
+<project>/a.ts(7,14): error TS2322: Type '1' is not assignable to type '"b"'.
