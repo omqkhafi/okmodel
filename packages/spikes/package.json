@@ -7,7 +7,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./types": "./src/types/index.ts",
-    "./safety": "./src/safety/index.ts"
+    "./safety": "./src/safety/index.ts",
+    "./drivers": "./src/drivers/index.ts"
   },
   "dependencies": {
     "@okmodel/harness": "workspace:*"

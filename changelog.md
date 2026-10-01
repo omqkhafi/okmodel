@@ -43,5 +43,6 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - A private types spike compares inferred and emitted row types on the 10, 50, 200, and 500 table fixtures. Findings are in `packages/spikes/types/FINDINGS.md`.
 - A private types spike compares inferred and emitted row types on the 10, 50, 200, and 500 table fixtures. Findings are in `packages/spikes/types/FINDINGS.md`.
 - A private safety spike measures tagged operators, runtime identifier checks, and final safety verification over presets, traits, and filters. Findings are in `packages/spikes/safety/FINDINGS.md`.
+- A private drivers spike checks one driver contract and a capability registry against postgres.js and PGlite, including cancellation, the `prepared` flag, and atomic `batch`. Findings are in `packages/spikes/drivers/FINDINGS.md`.
 - `bun run spikes:update` rewrites the spike type-cost locks from a fresh `tsc` run.
 - The replication test waits up to 30 seconds, matching its replay wait, so other Postgres tests can run beside it.
