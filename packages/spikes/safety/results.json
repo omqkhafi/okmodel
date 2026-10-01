@@ -1,0 +1,62 @@
+{
+  "compiler": "7.0.2",
+  "seed": 1,
+  "rows": [
+    {
+      "label": "empty",
+      "strategy": "baseline",
+      "tables": 0,
+      "instantiations": 0,
+      "types": 340,
+      "exitCode": 0
+    },
+    {
+      "label": "tagged-10",
+      "strategy": "tagged",
+      "tables": 10,
+      "instantiations": 663,
+      "types": 972,
+      "exitCode": 0
+    },
+    {
+      "label": "tagged-50",
+      "strategy": "tagged",
+      "tables": 50,
+      "instantiations": 663,
+      "types": 1062,
+      "exitCode": 0
+    },
+    {
+      "label": "tagged-200",
+      "strategy": "tagged",
+      "tables": 200,
+      "instantiations": 663,
+      "types": 1421,
+      "exitCode": 0
+    },
+    {
+      "label": "equality-200",
+      "strategy": "equality",
+      "tables": 200,
+      "instantiations": 24,
+      "types": 872,
+      "exitCode": 0
+    },
+    {
+      "label": "inferred-equality-200",
+      "strategy": "inferred-equality",
+      "tables": 200,
+      "instantiations": 97846,
+      "types": 10291,
+      "exitCode": 0
+    },
+    {
+      "label": "inferred-tagged-200",
+      "strategy": "inferred-tagged",
+      "tables": 200,
+      "instantiations": 98487,
+      "types": 10781,
+      "exitCode": 0
+    }
+  ]
+}

@@ -42,4 +42,6 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - A private catalog spike in `packages/spikes` checks one object contract, dependency order, deterministic hashes, and a scratch-database round trip. Findings are in `packages/spikes/catalog/FINDINGS.md`.
 - A private types spike compares inferred and emitted row types on the 10, 50, 200, and 500 table fixtures. Findings are in `packages/spikes/types/FINDINGS.md`.
 - A private types spike compares inferred and emitted row types on the 10, 50, 200, and 500 table fixtures. Findings are in `packages/spikes/types/FINDINGS.md`.
+- A private safety spike measures tagged operators, runtime identifier checks, and final safety verification over presets, traits, and filters. Findings are in `packages/spikes/safety/FINDINGS.md`.
+- `bun run spikes:update` rewrites the spike type-cost locks from a fresh `tsc` run.
 - The replication test waits up to 30 seconds, matching its replay wait, so other Postgres tests can run beside it.

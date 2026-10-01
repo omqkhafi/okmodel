@@ -6,13 +6,15 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./types": "./src/types/index.ts"
+    "./types": "./src/types/index.ts",
+    "./safety": "./src/safety/index.ts"
   },
   "dependencies": {
     "@okmodel/harness": "workspace:*"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
+    "fast-check": "^4.10.2",
     "postgres": "^3.4.9"
   }
 }
