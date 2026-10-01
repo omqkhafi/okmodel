@@ -5,7 +5,8 @@
   "description": "Private architecture spikes. Not published.",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./types": "./src/types/index.ts"
   },
   "dependencies": {
     "@okmodel/harness": "workspace:*"

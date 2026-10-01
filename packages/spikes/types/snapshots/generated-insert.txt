@@ -1,0 +1,2 @@
+exit 1
+<project>/probe.ts(10,58): error TS2353: Object literal may only specify known properties, and 'rank' does not exist in type 'InsertFromColumns<NamedColumns<"item", { readonly id: ColumnBuilder<string, { readonly nullable: false; readonly hasDefault: false; readonly generated: false; readonly id: true; readonly hidden: false; readonly guarded: false; }, undefined>; readonly title: ColumnBuilder<...>; readonly rank: ColumnBuilder<...>; }>>'.

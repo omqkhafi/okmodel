@@ -1,0 +1,47 @@
+exit 0
+/**
+ * Subject for `tsc --declaration`.
+ *
+ * The emitted `.d.ts` is the hover proxy. The compiler API is not used.
+ */
+declare const tasks: import("./table.js").Table<"tasks", import("./table.js").NamedColumns<"tasks", {
+    readonly id: import("./column.js").ColumnBuilder<string, {
+        readonly nullable: false;
+        readonly hasDefault: false;
+        readonly generated: false;
+        readonly id: true;
+        readonly hidden: false;
+        readonly guarded: false;
+    }, undefined>;
+    readonly title: import("./column.js").ColumnBuilder<string, {
+        readonly nullable: false;
+        readonly hasDefault: false;
+        readonly generated: false;
+        readonly id: false;
+        readonly hidden: false;
+        readonly guarded: false;
+    }, undefined>;
+    readonly notes: import("./column.js").ColumnBuilder<string, import("./column.js").FlagTrue<{
+        readonly nullable: false;
+        readonly hasDefault: false;
+        readonly generated: false;
+        readonly id: false;
+        readonly hidden: false;
+        readonly guarded: false;
+    }, "nullable">, undefined>;
+    readonly status: import("./column.js").ColumnBuilder<"active" | "draft", import("./column.js").FlagTrue<{
+        readonly nullable: false;
+        readonly hasDefault: false;
+        readonly generated: false;
+        readonly id: false;
+        readonly hidden: false;
+        readonly guarded: false;
+    }, "hasDefault">, undefined>;
+}>, []>;
+/** Inferred row, as declaration emit sees it. */
+export type TaskRow = (typeof tasks)["~row"];
+/** Inferred insert, as declaration emit sees it. */
+export type TaskInsert = (typeof tasks)["~insert"];
+/** Inferred update, as declaration emit sees it. */
+export type TaskUpdate = (typeof tasks)["~update"];
+export {};

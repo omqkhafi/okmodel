@@ -1,0 +1,3 @@
+exit 1
+<project>/probe.ts(3,14): error TS2322: Type '{}' is not assignable to type 'InsertFromColumns<NamedColumns<"users", { readonly id: ColumnBuilder<string, { readonly nullable: false; readonly hasDefault: false; readonly generated: false; readonly id: true; readonly hidden: false; readonly guarded: false; }, undefined>; readonly email: ColumnBuilder<...>; readonly nickname: ColumnBuilder<...>;...'.
+  Property 'email' is missing in type '{}' but required in type '{ readonly email: string; }'.
