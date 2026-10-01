@@ -82,33 +82,56 @@ export function mergeResults(
  * @returns Markdown
  */
 export function renderCompatibility(file: ResultsFile): string {
+  const versions = DRIVERS.flatMap((driver) => {
+    const version = file.versions[driver];
+    return version === undefined ? [] : [[label(driver), version]];
+  });
+  const tests: string[] = [];
+  for (const record of file.records) {
+    if (!tests.includes(record.testId)) tests.push(record.testId);
+  }
+  const rows = tests.map((testId) => [
+    testId,
+    ...DRIVERS.map((driver) => {
+      const record = file.records.find((item) => item.driver === driver && item.testId === testId);
+      return record === undefined ? "" : cell(record);
+    }),
+  ]);
   const lines = [
     "# Driver compatibility",
     "",
     "Generated from conformance results. Do not edit by hand.",
     "",
-    "| Driver | Server |",
-    "| --- | --- |",
+    ...markdownTable(["Driver", "Server"], versions),
+    "",
+    ...markdownTable(["Test", "postgres.js", "PGlite", "batch-mode"], rows),
+    "",
   ];
-  for (const driver of DRIVERS) {
-    const version = file.versions[driver];
-    if (version === undefined) continue;
-    lines.push(`| ${label(driver)} | ${version} |`);
-  }
-  lines.push("", "| Test | postgres.js | PGlite | batch-mode |", "| --- | --- | --- | --- |");
-  const tests: string[] = [];
-  for (const record of file.records) {
-    if (!tests.includes(record.testId)) tests.push(record.testId);
-  }
-  for (const testId of tests) {
-    const cells = DRIVERS.map((driver) => {
-      const record = file.records.find((item) => item.driver === driver && item.testId === testId);
-      return record === undefined ? "" : cell(record);
-    });
-    lines.push(`| ${testId} | ${cells.join(" | ")} |`);
-  }
-  lines.push("");
   return lines.join("\n");
+}
+
+/**
+ * Renders a GitHub-flavoured table with padded columns.
+ *
+ * The padding matches oxfmt, so a generated file stays formatted.
+ *
+ * @param headers - Column titles
+ * @param rows - Body cells, one array per row
+ * @returns The table lines, without a trailing blank line
+ */
+function markdownTable(headers: readonly string[], rows: readonly (readonly string[])[]): string[] {
+  const widths = headers.map((header, column) => {
+    let width = header.length;
+    for (const row of rows) {
+      const value = row[column] ?? "";
+      if (value.length > width) width = value.length;
+    }
+    return Math.max(width, 3);
+  });
+  const format = (cells: readonly string[]): string =>
+    `| ${cells.map((value, column) => value.padEnd(widths[column] ?? 0)).join(" | ")} |`;
+  const rule = `| ${widths.map((width) => "-".repeat(width)).join(" | ")} |`;
+  return [format(headers), rule, ...rows.map((row) => format(row))];
 }
 
 /**

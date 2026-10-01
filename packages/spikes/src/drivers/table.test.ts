@@ -25,9 +25,11 @@ test("the compatibility table is rendered from records", () => {
   };
   const markdown = renderCompatibility(file);
   expect(markdown).toContain("Generated from conformance results.");
-  expect(markdown).toContain("| execute.rows | pass | pass | pass |");
   expect(markdown).toContain(
-    "| execute.cancel | pass | skip: cancel is not declared | fail: timed out |",
+    "| execute.rows   | pass        | pass                         | pass            |",
+  );
+  expect(markdown).toContain(
+    "| execute.cancel | pass        | skip: cancel is not declared | fail: timed out |",
   );
 });
 
