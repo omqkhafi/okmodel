@@ -1,0 +1,400 @@
+{
+  "generated": true,
+  "versions": {
+    "pglite": "18.3",
+    "postgresjs": "17.11 (Debian 17.11-1.pgdg13+2)",
+    "batch-mode": "17.11 (Debian 17.11-1.pgdg13+2)"
+  },
+  "records": [
+    {
+      "driver": "postgresjs",
+      "testId": "execute.rows",
+      "status": "pass"
+    },
+    {
+      "driver": "pglite",
+      "testId": "execute.rows",
+      "status": "pass"
+    },
+    {
+      "driver": "batch-mode",
+      "testId": "execute.rows",
+      "status": "pass"
+    },
+    {
+      "driver": "postgresjs",
+      "testId": "execute.params",
+      "status": "pass"
+    },
+    {
+      "driver": "pglite",
+      "testId": "execute.params",
+      "status": "pass"
+    },
+    {
+      "driver": "batch-mode",
+      "testId": "execute.params",
+      "status": "pass"
+    },
+    {
+      "driver": "postgresjs",
+      "testId": "execute.codecs",
+      "status": "pass"
+    },
+    {
+      "driver": "pglite",
+      "testId": "execute.codecs",
+      "status": "pass"
+    },
+    {
+      "driver": "batch-mode",
+      "testId": "execute.codecs",
+      "status": "pass"
+    },
+    {
+      "driver": "postgresjs",
+      "testId": "execute.notices",
+      "status": "pass"
+    },
+    {
+      "driver": "pglite",
+      "testId": "execute.notices",
+      "status": "pass"
+    },
+    {
+      "driver": "batch-mode",
+      "testId": "execute.notices",
+      "status": "pass"
+    },
+    {
+      "driver": "postgresjs",
+      "testId": "execute.errors",
+      "status": "pass"
+    },
+    {
+      "driver": "pglite",
+      "testId": "execute.errors",
+      "status": "pass"
+    },
+    {
+      "driver": "batch-mode",
+      "testId": "execute.errors",
+      "status": "pass"
+    },
+    {
+      "driver": "postgresjs",
+      "testId": "signal.preaborted",
+      "status": "pass"
+    },
+    {
+      "driver": "pglite",
+      "testId": "signal.preaborted",
+      "status": "pass"
+    },
+    {
+      "driver": "batch-mode",
+      "testId": "signal.preaborted",
+      "status": "pass"
+    },
+    {
+      "driver": "postgresjs",
+      "testId": "execute.cancel",
+      "status": "pass"
+    },
+    {
+      "driver": "pglite",
+      "testId": "execute.cancel",
+      "status": "skip",
+      "reason": "cancel is not declared"
+    },
+    {
+      "driver": "batch-mode",
+      "testId": "execute.cancel",
+      "status": "pass"
+    },
+    {
+      "driver": "postgresjs",
+      "testId": "timeout.declaration",
+      "status": "pass"
+    },
+    {
+      "driver": "pglite",
+      "testId": "timeout.declaration",
+      "status": "pass"
+    },
+    {
+      "driver": "batch-mode",
+      "testId": "timeout.declaration",
+      "status": "pass"
+    },
+    {
+      "driver": "postgresjs",
+      "testId": "transactions.interactive",
+      "status": "pass"
+    },
+    {
+      "driver": "pglite",
+      "testId": "transactions.interactive",
+      "status": "pass"
+    },
+    {
+      "driver": "batch-mode",
+      "testId": "transactions.interactive",
+      "status": "skip",
+      "reason": "transactions interactive is not declared"
+    },
+    {
+      "driver": "postgresjs",
+      "testId": "transactions.batch",
+      "status": "skip",
+      "reason": "transactions batch is not declared"
+    },
+    {
+      "driver": "pglite",
+      "testId": "transactions.batch",
+      "status": "skip",
+      "reason": "transactions batch is not declared"
+    },
+    {
+      "driver": "batch-mode",
+      "testId": "transactions.batch",
+      "status": "pass"
+    },
+    {
+      "driver": "postgresjs",
+      "testId": "stream.cursor",
+      "status": "pass"
+    },
+    {
+      "driver": "pglite",
+      "testId": "stream.cursor",
+      "status": "skip",
+      "reason": "stream is not declared"
+    },
+    {
+      "driver": "batch-mode",
+      "testId": "stream.cursor",
+      "status": "skip",
+      "reason": "stream is not declared"
+    },
+    {
+      "driver": "postgresjs",
+      "testId": "listen.notify",
+      "status": "pass"
+    },
+    {
+      "driver": "pglite",
+      "testId": "listen.notify",
+      "status": "pass"
+    },
+    {
+      "driver": "batch-mode",
+      "testId": "listen.notify",
+      "status": "skip",
+      "reason": "listen is not declared"
+    },
+    {
+      "driver": "postgresjs",
+      "testId": "describe.query",
+      "status": "pass"
+    },
+    {
+      "driver": "pglite",
+      "testId": "describe.query",
+      "status": "pass"
+    },
+    {
+      "driver": "batch-mode",
+      "testId": "describe.query",
+      "status": "skip",
+      "reason": "describe is not declared"
+    },
+    {
+      "driver": "postgresjs",
+      "testId": "prepared.named",
+      "status": "pass"
+    },
+    {
+      "driver": "pglite",
+      "testId": "prepared.named",
+      "status": "skip",
+      "reason": "prepared named is not declared"
+    },
+    {
+      "driver": "batch-mode",
+      "testId": "prepared.named",
+      "status": "skip",
+      "reason": "prepared named is not declared"
+    },
+    {
+      "driver": "postgresjs",
+      "testId": "prepared.unnamed",
+      "status": "pass"
+    },
+    {
+      "driver": "pglite",
+      "testId": "prepared.unnamed",
+      "status": "pass"
+    },
+    {
+      "driver": "batch-mode",
+      "testId": "prepared.unnamed",
+      "status": "skip",
+      "reason": "prepared unnamed is not declared"
+    },
+    {
+      "driver": "postgresjs",
+      "testId": "prepared.none",
+      "status": "pass"
+    },
+    {
+      "driver": "pglite",
+      "testId": "prepared.none",
+      "status": "pass"
+    },
+    {
+      "driver": "batch-mode",
+      "testId": "prepared.none",
+      "status": "pass"
+    },
+    {
+      "driver": "postgresjs",
+      "testId": "stats.shape",
+      "status": "pass"
+    },
+    {
+      "driver": "pglite",
+      "testId": "stats.shape",
+      "status": "pass"
+    },
+    {
+      "driver": "batch-mode",
+      "testId": "stats.shape",
+      "status": "pass"
+    },
+    {
+      "driver": "postgresjs",
+      "testId": "batch.atomic.success",
+      "status": "pass"
+    },
+    {
+      "driver": "pglite",
+      "testId": "batch.atomic.success",
+      "status": "pass"
+    },
+    {
+      "driver": "batch-mode",
+      "testId": "batch.atomic.success",
+      "status": "pass"
+    },
+    {
+      "driver": "postgresjs",
+      "testId": "batch.atomic.failure",
+      "status": "pass"
+    },
+    {
+      "driver": "pglite",
+      "testId": "batch.atomic.failure",
+      "status": "pass"
+    },
+    {
+      "driver": "batch-mode",
+      "testId": "batch.atomic.failure",
+      "status": "pass"
+    },
+    {
+      "driver": "postgresjs",
+      "testId": "batch.atomic.deferred",
+      "status": "pass"
+    },
+    {
+      "driver": "pglite",
+      "testId": "batch.atomic.deferred",
+      "status": "pass"
+    },
+    {
+      "driver": "batch-mode",
+      "testId": "batch.atomic.deferred",
+      "status": "pass"
+    },
+    {
+      "driver": "postgresjs",
+      "testId": "batch.atomic.sequences",
+      "status": "pass"
+    },
+    {
+      "driver": "pglite",
+      "testId": "batch.atomic.sequences",
+      "status": "pass"
+    },
+    {
+      "driver": "batch-mode",
+      "testId": "batch.atomic.sequences",
+      "status": "pass"
+    },
+    {
+      "driver": "postgresjs",
+      "testId": "batch.atomic.cancel",
+      "status": "pass"
+    },
+    {
+      "driver": "pglite",
+      "testId": "batch.atomic.cancel",
+      "status": "skip",
+      "reason": "cancel is not declared"
+    },
+    {
+      "driver": "batch-mode",
+      "testId": "batch.atomic.cancel",
+      "status": "pass"
+    },
+    {
+      "driver": "postgresjs",
+      "testId": "batch.atomic.timeout",
+      "status": "pass"
+    },
+    {
+      "driver": "pglite",
+      "testId": "batch.atomic.timeout",
+      "status": "skip",
+      "reason": "cancel is not declared, so an in-flight timeout cannot be enforced"
+    },
+    {
+      "driver": "batch-mode",
+      "testId": "batch.atomic.timeout",
+      "status": "pass"
+    },
+    {
+      "driver": "postgresjs",
+      "testId": "batch.atomic.savepoint",
+      "status": "pass"
+    },
+    {
+      "driver": "pglite",
+      "testId": "batch.atomic.savepoint",
+      "status": "pass"
+    },
+    {
+      "driver": "batch-mode",
+      "testId": "batch.atomic.savepoint",
+      "status": "skip",
+      "reason": "transactions interactive is not declared"
+    },
+    {
+      "driver": "postgresjs",
+      "testId": "batch.atomic.outcome",
+      "status": "pass"
+    },
+    {
+      "driver": "pglite",
+      "testId": "batch.atomic.outcome",
+      "status": "skip",
+      "reason": "no separate backend to terminate"
+    },
+    {
+      "driver": "batch-mode",
+      "testId": "batch.atomic.outcome",
+      "status": "pass"
+    }
+  ]
+}
