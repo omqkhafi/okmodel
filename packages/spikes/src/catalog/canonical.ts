@@ -149,14 +149,26 @@ function definitionToJson(object: CatalogObject): Json {
         partitionMethod: object.definition.partitionBy?.method ?? "",
         rowSecurity: object.definition.rowSecurity,
       };
-    case "column":
-      return {
+    case "column": {
+      const column: Record<string, Json> = {
         defaultSql: object.definition.defaultSql ?? "",
         nullable: object.definition.nullable,
         type: object.definition.type,
       };
-    case "index":
-      return { columns: object.definition.columns, unique: object.definition.unique };
+      if (object.definition.generatedSql !== undefined) {
+        column.generatedSql = object.definition.generatedSql;
+      }
+      return column;
+    }
+    case "index": {
+      const index: Record<string, Json> = {
+        columns: object.definition.columns,
+        unique: object.definition.unique,
+      };
+      if (object.definition.expression !== undefined)
+        index.expression = object.definition.expression;
+      return index;
+    }
     case "constraint":
       return {
         columns: object.definition.columns,
@@ -213,12 +225,24 @@ function definitionToJson(object: CatalogObject): Json {
         checkSql: object.definition.checkSql ?? "",
         notNull: object.definition.notNull,
       };
-    case "partition":
-      return {
+    case "partition": {
+      const partition: Record<string, Json> = {
         from: object.definition.from,
         parent: object.definition.parent,
         to: object.definition.to,
       };
+      if (object.definition.method !== undefined && object.definition.method !== "range") {
+        partition.method = object.definition.method;
+      }
+      if (object.definition.values !== undefined && object.definition.values.length > 0) {
+        partition.values = [...object.definition.values];
+      }
+      if (object.definition.method === "hash") {
+        partition.modulus = object.definition.modulus ?? 0;
+        partition.remainder = object.definition.remainder ?? 0;
+      }
+      return partition;
+    }
     default:
       return assertNever(object);
   }

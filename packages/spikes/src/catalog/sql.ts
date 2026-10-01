@@ -40,6 +40,48 @@ export function normalizeExpression(expression: string): string {
   return stripParens(text);
 }
 
+/**
+ * Range bound stored on a normalised partition.
+ *
+ * Integer bounds stay `from:to`, which is what introspection already produced
+ * for P03. Timestamptz bounds use a `|` separator because the literal contains
+ * colons.
+ *
+ * @param from - Lower bound without SQL quotes
+ * @param to - Upper bound without SQL quotes
+ * @returns Comparable bound text
+ */
+export function canonicalRangeBound(from: string, to: string): string {
+  if (/^-?\d+$/.test(from) && /^-?\d+$/.test(to)) return `${from}:${to}`;
+  return `timestamptz:${from}|${to}`;
+}
+
+/**
+ * Turns `pg_get_expr` partition bound text into the normalised bound.
+ *
+ * Quotes are stripped first, because Postgres quotes integer bounds.
+ *
+ * @param raw - Bound expression from `pg_get_expr`
+ * @returns Comparable bound text
+ */
+export function parsePartitionBound(raw: string): string {
+  const bound = raw.trim().replace(/\s+/g, " ").replaceAll("'", "");
+  const hash = /^for values with \(modulus (\d+), remainder (\d+)\)$/i.exec(bound);
+  if (hash !== null) return `hash:${hash[1] ?? ""}:${hash[2] ?? ""}`;
+  const list = /^for values in \((.*)\)$/i.exec(bound);
+  if (list !== null) {
+    const values = (list[1] ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0)
+      .join(",");
+    return `list:${values}`;
+  }
+  const range = /^for values from \((.*?)\) to \((.*)\)$/i.exec(bound);
+  if (range !== null) return canonicalRangeBound((range[1] ?? "").trim(), (range[2] ?? "").trim());
+  return bound;
+}
+
 function stripParens(text: string): string {
   let current = text.trim();
   while (

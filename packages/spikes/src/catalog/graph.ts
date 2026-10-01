@@ -25,9 +25,16 @@ export type RecreatePlan = {
 /**
  * Checks identity, name length, and that every dependency target exists.
  *
+ * `partial` skips the dependency-existence check so a planner can render one
+ * object whose dependencies are already in the database.
+ *
  * @param objects - Catalog objects
+ * @param options - Set `partial` to allow missing dependency targets
  */
-export function assertCatalog(objects: readonly CatalogObject[]): void {
+export function assertCatalog(
+  objects: readonly CatalogObject[],
+  options?: { readonly partial?: boolean },
+): void {
   const keys = new Set<string>();
   for (const object of objects) {
     if (object.kind !== object.identity.kind) {
@@ -54,6 +61,7 @@ export function assertCatalog(objects: readonly CatalogObject[]): void {
       }
     }
   }
+  if (options?.partial === true) return;
   for (const object of objects) {
     for (const edge of object.dependencies) {
       if (!keys.has(identityKey(edge.identity))) {
