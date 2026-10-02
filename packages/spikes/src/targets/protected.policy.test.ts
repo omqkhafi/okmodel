@@ -15,6 +15,8 @@ import {
   policyDecision,
   type OperationClass,
 } from "./policy.js";
+import { createMemoryRegistry } from "./registry.js";
+import { parsePostgresUrl } from "./url.js";
 
 const READ_ONLY = [
   "plan",
@@ -82,6 +84,62 @@ test("aliasing guard refuses an unprotected target on a protected database", () 
     assertNoProtectedAlias([protectedTenant, { ...shared, port: "5433" }]),
   ).not.toThrow();
 });
+
+test("schema-per-tenant mixed protection is one database", () => {
+  const origin = "postgres://okm:okm@127.0.0.1:55432/okm";
+  const schema = createMemoryRegistry({
+    strategy: "schemaPerTenant",
+    origin,
+    appPassword: "okm",
+    migrationPassword: "okm",
+    database: "okm",
+    prefix: "unused",
+  });
+  schema.addTenant("open");
+  schema.addTenant("keep", { protected: true });
+  const open = resolved(schema.resolve("open", { role: "migration" }), "tenant:open");
+  const keep = resolved(schema.resolve("keep", { role: "migration" }), "tenant:keep");
+  const shared = resolved({ url: origin, protected: false }, "default");
+  expect(open.host).toBe(keep.host);
+  expect(open.port).toBe(keep.port);
+  expect(open.database).toBe(keep.database);
+  expect(open.database).toBe(shared.database);
+  expect(schema.schemaName("open")).toBe("tenant_open");
+  expect(schema.schemaName("keep")).toBe("tenant_keep");
+  expect(() => assertNoProtectedAlias([open, keep, shared])).toThrow(/OKM1852/);
+  expect(() =>
+    assertNoProtectedAlias([{ ...open, protected: true }, keep, { ...shared, protected: true }]),
+  ).not.toThrow();
+
+  const databases = createMemoryRegistry({
+    strategy: "databasePerTenant",
+    origin,
+    appPassword: "okm",
+    migrationPassword: "okm",
+    database: "okm",
+    prefix: "p08b",
+  });
+  databases.addTenant("open");
+  databases.addTenant("keep", { protected: true });
+  const separateOpen = resolved(databases.resolve("open", { role: "migration" }), "tenant:open");
+  const separateKeep = resolved(databases.resolve("keep", { role: "migration" }), "tenant:keep");
+  expect(separateOpen.database).not.toBe(separateKeep.database);
+  expect(() => assertNoProtectedAlias([separateOpen, separateKeep])).not.toThrow();
+});
+
+function resolved(
+  connection: { readonly url: string; readonly protected: boolean },
+  name: string,
+): PhysicalTarget {
+  const parts = parsePostgresUrl(connection.url);
+  return {
+    name,
+    protected: connection.protected,
+    host: parts.host,
+    port: parts.port,
+    database: parts.database,
+  };
+}
 
 function target(name: string, protectedTarget: boolean): PhysicalTarget {
   return {
