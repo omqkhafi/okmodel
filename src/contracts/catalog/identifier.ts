@@ -9,7 +9,8 @@
 
 import { catalogError } from "../error.js";
 import { sha256 } from "../sha256.js";
-import { RESERVED_WORDS } from "./words.js";
+import { truncateUtf8, utf8ByteLength } from "../utf8.js";
+import { reservedWords } from "./words.js";
 
 /** Maximum Postgres identifier size in bytes. `NAMEDATALEN - 1`. */
 export const POSTGRES_IDENTIFIER_MAX_BYTES = 63;
@@ -27,32 +28,7 @@ const NAME_TAG: { readonly [K in Exclude<NamePurpose, "primaryKey">]: string } =
   index: "idx",
 };
 
-/**
- * UTF-8 byte length of a string.
- *
- * @param value - Text to measure
- * @returns Byte length
- */
-export function utf8ByteLength(value: string): number {
-  let bytes = 0;
-  for (let index = 0; index < value.length; index++) {
-    const code = value.charCodeAt(index);
-    const next = value.charCodeAt(index + 1);
-    if (code >= 0xd800 && code <= 0xdbff && next >= 0xdc00 && next <= 0xdfff) {
-      bytes += 4;
-      index += 1;
-      continue;
-    }
-    if (code <= 0x7f) {
-      bytes += 1;
-    } else if (code <= 0x7ff) {
-      bytes += 2;
-    } else {
-      bytes += 3;
-    }
-  }
-  return bytes;
-}
+export { utf8ByteLength };
 
 /**
  * Reports whether a name is an unquoted reserved word.
@@ -63,7 +39,7 @@ export function utf8ByteLength(value: string): number {
  * @returns `true` when Postgres would reject the unquoted word
  */
 export function isReservedIdentifier(name: string): boolean {
-  return RESERVED_WORDS.has(name.toLowerCase());
+  return reservedWords().has(name.toLowerCase());
 }
 
 /**
@@ -172,7 +148,7 @@ function assertLimit(limit: number): void {
   if (!Number.isSafeInteger(limit) || limit < SUFFIX_BYTES) {
     catalogError(
       "OKM1122",
-      `Identifier limit ${String(limit)} is below ${String(SUFFIX_BYTES)} bytes.`,
+      `Identifier limit is ${String(limit)} bytes. It must be at least ${String(SUFFIX_BYTES)} so a fitted name can keep its hash suffix.`,
     );
   }
 }
@@ -185,35 +161,4 @@ function hasControl(value: string): boolean {
     }
   }
   return false;
-}
-
-function truncateUtf8(value: string, budget: number): string {
-  if (budget <= 0) {
-    return "";
-  }
-  let bytes = 0;
-  let end = 0;
-  for (let index = 0; index < value.length; index++) {
-    const code = value.charCodeAt(index);
-    const next = value.charCodeAt(index + 1);
-    let width = 1;
-    let step = 1;
-    if (code >= 0xd800 && code <= 0xdbff && next >= 0xdc00 && next <= 0xdfff) {
-      width = 4;
-      step = 2;
-    } else if (code <= 0x7f) {
-      width = 1;
-    } else if (code <= 0x7ff) {
-      width = 2;
-    } else {
-      width = 3;
-    }
-    if (bytes + width > budget) {
-      break;
-    }
-    bytes += width;
-    index += step - 1;
-    end = index + 1;
-  }
-  return value.slice(0, end);
 }

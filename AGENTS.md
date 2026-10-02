@@ -15,7 +15,7 @@ This file is the single source of rules for this repository. `CLAUDE.md` imports
 
 - The published package is `okmodel` at the repository root: ESM only, Apache-2.0, `sideEffects: false`.
 - Other packages live under `packages/*` as Bun workspaces. Their dependencies never go into the root `package.json`.
-- Normative docs are draft 18 (`docs/okmodel-api-design.md`) and decisions D1–D127. The M0 spike implementations are on the `m0-spikes` tag. `packages/spikes` keeps the row-type and operator fixtures the type ceilings measure. Findings stay in `docs/m0-findings.md`.
+- Normative docs are draft 18 (`docs/okmodel-api-design.md`) and decisions D1–D129. The M0 spike implementations are on the `m0-spikes` tag. `packages/spikes` keeps the row-type and operator fixtures the type ceilings measure. Findings stay in `docs/m0-findings.md`.
 
 ## Errors
 
@@ -51,10 +51,22 @@ A layer may import layers below it. It must not import a layer above it. Adapter
 - The size check keeps the `dist/` ceiling and also requires the runtime entry (`src/contracts/index.ts`) ≤ 60 KB minified, ≤ 20 KB gzip, and a cold Node import ≤ 15 ms. The import time is printed.
 - `bun run attest` measures a trivial type with `@ark/attest` on TypeScript 6, outside `bun run check`.
 - `bun run bench` writes a JSON timing for the 200-table fixture. Baselines live in `packages/bench/baselines` and are not enforced.
+- `bun run catalog-bench` times hash, canonical form, and topological order on the 200-table fixture. It prints the sample and does not enforce a ceiling.
 
 ## Docs
 
-Documents in `docs/` are normative. The spec is draft 18. Decisions run D1–D127.
+Documents in `docs/` are normative. The spec is draft 18. Decisions run D1–D129.
+
+## Engineering standards
+
+D129. Built for performance, speed, lightness, and cold start, not only to pass tests.
+
+- Nothing enters the runtime entry (`src/contracts/index.ts`) without need. Tooling stays out of it. No module-level computation. Lazy work. `sideEffects: false`.
+- No duplicated logic: one helper, one place.
+- Small, obvious public API. Clear names. Precise types. Actionable errors.
+- No avoidable allocation or repeated work on hot paths.
+- Every report states runtime entry size (minified and gzip), cold import, and any type-cost change.
+- Every prompt ends with a self-review against these rules before the report.
 
 ## Hygiene
 

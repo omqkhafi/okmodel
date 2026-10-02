@@ -50,7 +50,7 @@ export function templateNamespace(pattern: string): Namespace {
   if (!/^[A-Za-z0-9_]*$/.test(stripped)) {
     catalogError(
       "OKM1122",
-      `Namespace template ${pattern} has a character that cannot enter an identifier.`,
+      `Namespace template ${pattern} may contain only letters, digits, underscores, and {id}.`,
     );
   }
   return { form: "template", pattern };
@@ -222,7 +222,7 @@ function namespaceIdentityJson(identity: NamespaceIdentity): Json {
 
 function functionIdentityJson(identity: FunctionIdentity): Json {
   return {
-    argTypes: [...identity.argTypes],
+    argTypes: identity.argTypes,
     kind: identity.kind,
     name: identity.name,
     namespace: namespaceToJson(identity.namespace),
@@ -264,7 +264,7 @@ function canonicalTenantId(tenantId: string): string {
   if (/^[a-z0-9_]+$/.test(tenantId)) {
     return tenantId;
   }
-  catalogError("OKM1122", `Tenant id ${tenantId} is not uuid hex or [a-z0-9_].`);
+  catalogError("OKM1122", `Tenant id ${tenantId} must be a UUID or lowercase [a-z0-9_].`);
 }
 
 function assertNever(value: never): never {

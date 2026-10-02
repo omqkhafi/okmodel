@@ -65,36 +65,75 @@ function isJsonRecord(value: Json): value is { readonly [key: string]: Json | un
 }
 
 function encodeString(value: string): string {
-  let out = '"';
-  for (const char of value) {
-    const code = char.codePointAt(0) ?? 0;
-    if (char.length === 2) {
-      out += hexEscape(char.charCodeAt(0));
-      out += hexEscape(char.charCodeAt(1));
-      continue;
-    }
-    if (code === 0x22) {
-      out += '\\"';
-    } else if (code === 0x5c) {
-      out += "\\\\";
-    } else if (code === 0x08) {
-      out += "\\b";
-    } else if (code === 0x0c) {
-      out += "\\f";
-    } else if (code === 0x0a) {
-      out += "\\n";
-    } else if (code === 0x0d) {
-      out += "\\r";
-    } else if (code === 0x09) {
-      out += "\\t";
-    } else if (code < 0x20 || code > 0x7e) {
-      out += hexEscape(code);
-    } else {
-      out += char;
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    if (code === 0x22 || code === 0x5c || code < 0x20 || code > 0x7e) {
+      return encodeEscaped(value);
     }
   }
-  out += '"';
-  return out;
+  return `"${value}"`;
+}
+
+function encodeEscaped(value: string): string {
+  const parts: string[] = ['"'];
+  let start = 0;
+  for (let index = 0; index < value.length;) {
+    const code = value.charCodeAt(index);
+    const next = value.charCodeAt(index + 1);
+    if (code >= 0xd800 && code <= 0xdbff && next >= 0xdc00 && next <= 0xdfff) {
+      if (index > start) {
+        parts.push(value.slice(start, index));
+      }
+      parts.push(hexEscape(code), hexEscape(next));
+      index += 2;
+      start = index;
+      continue;
+    }
+    if (needsEscape(code)) {
+      if (index > start) {
+        parts.push(value.slice(start, index));
+      }
+      parts.push(escapeUnit(code));
+      index += 1;
+      start = index;
+      continue;
+    }
+    index += 1;
+  }
+  if (start < value.length) {
+    parts.push(value.slice(start));
+  }
+  parts.push('"');
+  return parts.join("");
+}
+
+function needsEscape(code: number): boolean {
+  return code === 0x22 || code === 0x5c || code < 0x20 || code > 0x7e;
+}
+
+function escapeUnit(code: number): string {
+  if (code === 0x22) {
+    return '\\"';
+  }
+  if (code === 0x5c) {
+    return "\\\\";
+  }
+  if (code === 0x08) {
+    return "\\b";
+  }
+  if (code === 0x0c) {
+    return "\\f";
+  }
+  if (code === 0x0a) {
+    return "\\n";
+  }
+  if (code === 0x0d) {
+    return "\\r";
+  }
+  if (code === 0x09) {
+    return "\\t";
+  }
+  return hexEscape(code);
 }
 
 function hexEscape(code: number): string {

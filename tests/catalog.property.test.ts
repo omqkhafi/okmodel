@@ -4,21 +4,23 @@ import * as fc from "fast-check";
 import {
   POSTGRES_IDENTIFIER_MAX_BYTES,
   OkmError,
-  catalog,
-  catalogHash,
   column,
   deterministicName,
   fitIdentifier,
   isReservedIdentifier,
-  parseCatalog,
   resolveNamespace,
-  serializeCatalog,
   staticNamespace,
   table,
   templateNamespace,
   utf8ByteLength,
   type NamePurpose,
 } from "../src/contracts/index.js";
+import {
+  catalog,
+  catalogHash,
+  parseCatalog,
+  serializeCatalog,
+} from "../src/contracts/catalog/document.js";
 
 const provenance = { origin: "file" as const, name: "db/schema.ts" };
 

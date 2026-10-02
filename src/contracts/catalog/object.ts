@@ -155,7 +155,7 @@ export function column(input: ColumnInput): ColumnObject {
   if (modes > 1) {
     catalogError(
       "OKM1020",
-      `Column ${input.name} has more than one of default, identity, and generated.`,
+      `Column ${input.name} sets more than one of default, identity, and generated. Set only one.`,
     );
   }
   if (input.defaultExpression !== undefined) {
@@ -214,7 +214,7 @@ export function index(input: IndexInput): IndexObject {
     assertIdentifier(name, "index column");
   }
   if (columns.length === 0 && input.expression === undefined) {
-    catalogError("OKM1020", `Index on ${input.parent.name} names no column.`);
+    catalogError("OKM1020", `Index on ${input.parent.name} needs a column or an expression.`);
   }
   if (input.predicate !== undefined) {
     assertStoredText(input.predicate, "index predicate");
@@ -287,7 +287,7 @@ export function constraint(input: ConstraintInput): ConstraintObject {
   ) {
     catalogError(
       "OKM1020",
-      `Constraint on ${input.parent.name} sets nulls not distinct on ${input.constraintKind}.`,
+      `Constraint on ${input.parent.name} sets nullsNotDistinct on ${input.constraintKind}. nullsNotDistinct applies only to a primary key or a unique constraint.`,
     );
   }
   if (input.constraintKind === "foreignKey") {
@@ -300,10 +300,10 @@ export function constraint(input: ConstraintInput): ConstraintObject {
     }
   } else if (input.constraintKind === "check") {
     if (input.expression === undefined || input.expression.length === 0) {
-      catalogError("OKM1020", `Check on ${input.parent.name} has no expression.`);
+      catalogError("OKM1020", `Check on ${input.parent.name} needs an expression.`);
     }
   } else if (columns.length === 0) {
-    catalogError("OKM1020", `${input.constraintKind} on ${input.parent.name} names no column.`);
+    catalogError("OKM1020", `${input.constraintKind} on ${input.parent.name} needs a column.`);
   }
   if (input.expression !== undefined) {
     assertStoredText(input.expression, "constraint expression");
@@ -321,7 +321,7 @@ export function constraint(input: ConstraintInput): ConstraintObject {
     columns.length === 0 &&
     (input.nameKey === undefined || input.nameKey.length === 0)
   ) {
-    catalogError("OKM1020", `Check on ${input.parent.name} has no name key.`);
+    catalogError("OKM1020", `Check on ${input.parent.name} needs a name key.`);
   }
   const nameKey = input.nameKey ?? defaultNameKey(input.constraintKind, columns);
   assertIdentifierTextKey(nameKey);
@@ -466,12 +466,12 @@ function defaultNameKey(kind: ConstraintKind, columns: readonly string[]): strin
 
 function assertIdentifierTextKey(nameKey: string): void {
   if (nameKey.length === 0) {
-    catalogError("OKM1122", "name key is empty.");
+    catalogError("OKM1122", "Name key is empty.");
   }
   if (nameKey.includes("\u0000")) {
-    catalogError("OKM1122", "name key contains NUL.");
+    catalogError("OKM1122", "Name key contains NUL.");
   }
-  assertStoredText(nameKey, "name key");
+  assertStoredText(nameKey, "Name key");
 }
 
 function assertInteger(value: string, role: string): void {
@@ -484,7 +484,7 @@ function assertInteger(value: string, role: string): void {
 function assertProvenance(provenance: Provenance): void {
   assertStoredText(provenance.name, "provenance");
   if (provenance.name.length === 0) {
-    catalogError("OKM1020", "Provenance has no name.");
+    catalogError("OKM1020", "Provenance name is empty.");
   }
 }
 
@@ -492,7 +492,7 @@ function copyPartition(
   partition: NonNullable<TableDefinition["partition"]>,
 ): NonNullable<TableDefinition["partition"]> {
   if (partition.columns.length === 0) {
-    catalogError("OKM1020", "Partition names no column.");
+    catalogError("OKM1020", "Partition needs a column.");
   }
   for (const name of partition.columns) {
     assertIdentifier(name, "partition column");

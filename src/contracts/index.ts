@@ -1,8 +1,9 @@
 /**
  * Public entry for the `okmodel` package.
  *
- * The query API arrives in later prompts. The catalog and hashing live here
- * so later layers do not depend on a host crypto API.
+ * Builders, identity, and names live here. Catalog documents (serialisation,
+ * parsing, hashing, and dependency order) stay in the catalog document module
+ * so tooling does not enter this entry.
  */
 
 export { CATALOG_CODES, OkmError, catalogError, type CatalogCode } from "./error.js";
@@ -18,12 +19,8 @@ export {
   POSTGRES_IDENTIFIER_MAX_BYTES,
   assertIdentifier,
   assertNamespace,
-  catalog,
-  catalogHash,
   column,
   constraint,
-  creationOrder,
-  dependencyOrder,
   deterministicName,
   fitIdentifier,
   identityKey,
@@ -31,13 +28,10 @@ export {
   identifierLimitApplies,
   index,
   isReservedIdentifier,
-  parseCatalog,
-  renameColumn,
   resolveNamespace,
   sameNamespace,
   sameRef,
   sequence,
-  serializeCatalog,
   staticNamespace,
   table,
   templateNamespace,

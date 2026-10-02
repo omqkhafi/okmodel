@@ -38,6 +38,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `bun run type-cost` reads `tsc --extendedDiagnostics` and fails when an inferred 200-table type, the per-table rate, the emitted consumer, or the tagged-operator surcharge exceeds its D127 ceiling.
 - `@ark/attest` runs on TypeScript 6 in its own CI job. It is not part of `bun run check`.
 - `bun run bench` writes timings as JSON. Baselines can be stored beside the script; nothing compares them yet.
+- `bun run catalog-bench` times canonical form, SHA-256, and topological order on the 200-table fixture. It prints the sample and does not enforce a ceiling.
 - The replication test waits up to 30 seconds, matching its replay wait, so other Postgres tests can run beside it.
 - The runtime entry must stay within 60 KB minified and 20 KB gzip. A cold import on Node is printed and must stay within 15 ms.
 - `bun run bundle-purity` fails when a runtime bundle contains an npm package, or when `src/` imports the harness barrel.
@@ -47,6 +48,12 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The M0 gate findings are in `docs/m0-findings.md`, with a Resolved by column for each row.
 
 ### ♻️ Changed
+
+#### contracts
+
+- Catalog serialisation, parsing, hashing, rename, and dependency order are no longer on the runtime entry. They stay in the catalog document module for tooling. Builders, identity, and names stay on `okmodel`.
+- SHA-256 round constants and the reserved-word set are built on first use. UTF-8 length and encoding share one helper. An ordering pass computes each identity key once.
+- Catalog errors name the accepted value. Error codes are unchanged.
 
 #### tooling
 
@@ -63,6 +70,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The package description names typed queries, safe migrations, and replica-aware routing. The README says the API has not stabilised yet.
 - Changelog area headings are the layer names: `contracts`, `dialects`, `adapters`, `runtime`, `tooling`, and `docs`.
 - Normative docs match spec draft 18 and decisions D1–D127.
+- Engineering standards (D129) are in `AGENTS.md` and the ship skill. Reports state runtime entry size, cold import, and type-cost change.
 
 ### 🔥 Removed
 
