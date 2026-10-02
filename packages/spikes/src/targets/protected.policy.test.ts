@@ -15,7 +15,7 @@ import {
   policyDecision,
   type OperationClass,
 } from "./policy.js";
-import { createMemoryRegistry } from "./registry.js";
+import { createMemoryRegistry, type ResolvedConnection } from "./registry.js";
 import { parsePostgresUrl } from "./url.js";
 
 const READ_ONLY = [
@@ -127,14 +127,14 @@ test("schema-per-tenant mixed protection is one database", () => {
   expect(() => assertNoProtectedAlias([separateOpen, separateKeep])).not.toThrow();
 });
 
-function resolved(
-  connection: { readonly url: string; readonly protected: boolean },
-  name: string,
-): PhysicalTarget {
+function resolved(connection: ResolvedConnection, name: string): PhysicalTarget {
+  if (typeof connection === "string" || !("url" in connection)) {
+    throw new Error(`${name} did not resolve to a URL.`);
+  }
   const parts = parsePostgresUrl(connection.url);
   return {
     name,
-    protected: connection.protected,
+    protected: connection.protected ?? false,
     host: parts.host,
     port: parts.port,
     database: parts.database,
