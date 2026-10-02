@@ -208,20 +208,20 @@ export function runtimeBudgetProblems(
 }
 
 /**
- * Reports when the 10-table app bundle is over a D133 byte ceiling or the D134 cold-import gate.
+ * Reports when the 10-table app bundle is over its D137 byte gate.
+ *
+ * Cold import is printed with the measurement. The 25 ms CI failure stays on
+ * the runtime entry (D134). This bundle runs `schema()` at import, so that
+ * sample is not the same gate.
  *
  * @param measured - Minified bytes, gzip bytes, and one cold Node import
- * @param options - `ci` selects the 25 ms gate. Defaults to the `CI` environment variable
  * @returns Problem lines. Empty when the bundle is inside the ceilings
  */
-export function appBudgetProblems(
-  measured: RuntimeSize,
-  options?: { readonly ci?: boolean },
-): readonly string[] {
+export function appBudgetProblems(measured: RuntimeSize): readonly string[] {
   return entryBudgetProblems(measured, {
     maxMinBytes: APP_MAX_MIN_BYTES,
     maxGzipBytes: APP_MAX_GZIP_BYTES,
-    maxColdImportMs: coldImportCeiling(options?.ci ?? ciEnabled()),
+    maxColdImportMs: Number.POSITIVE_INFINITY,
   });
 }
 
@@ -560,7 +560,7 @@ if (import.meta.main) {
     }
     const app = measureStartup(root, APP_ENTRY, "app-startup.js", ["postgres"]);
     console.log(formatEntry(app, ci));
-    problems.push(...appBudgetProblems(app, { ci }));
+    problems.push(...appBudgetProblems(app));
     printColdImportFinding(app, ci);
     problems.push(...shakenOperatorProblems(root));
     for (const entry of CONNECT_ENTRIES) {

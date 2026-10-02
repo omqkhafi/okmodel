@@ -121,28 +121,22 @@ test("size check fails above the ceiling and passes under it", () => {
 });
 
 test("app bundle budget fails above the D133 ceilings", () => {
-  const over = appBudgetProblems(
-    {
-      entry: "scripts/app-startup.ts",
-      minBytes: 80_000,
-      gzipBytes: 25_000,
-      coldImportMs: 30,
-    },
-    { ci: true },
-  );
+  const over = appBudgetProblems({
+    entry: "scripts/app-startup.ts",
+    minBytes: 80_000,
+    gzipBytes: 25_000,
+    coldImportMs: 30,
+  });
   expect(over.some((problem) => problem.includes("minified"))).toBe(true);
   expect(over.some((problem) => problem.includes("gzip"))).toBe(true);
-  expect(over.some((problem) => problem.includes("cold import"))).toBe(true);
+  expect(over.some((problem) => problem.includes("cold import"))).toBe(false);
   expect(
-    appBudgetProblems(
-      {
-        entry: "scripts/app-startup.ts",
-        minBytes: 38_000,
-        gzipBytes: 12_000,
-        coldImportMs: 20,
-      },
-      { ci: true },
-    ).some((problem) => problem.includes("cold import")),
+    appBudgetProblems({
+      entry: "scripts/app-startup.ts",
+      minBytes: 38_000,
+      gzipBytes: 12_000,
+      coldImportMs: 20,
+    }).some((problem) => problem.includes("cold import")),
   ).toBe(false);
   expect(
     appBudgetProblems({
