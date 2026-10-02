@@ -15,7 +15,7 @@ import {
   type ObjectKind,
 } from "./object.js";
 import { type NamespaceBinding } from "./render.js";
-import { normalizeExpression } from "./sql.js";
+import { canonicalRangeBound, normalizeExpression } from "./sql.js";
 
 /** Structural fields that a scratch database can reproduce. */
 export type NormalizedObject = {
@@ -174,13 +174,22 @@ function attributesOf(object: CatalogObject): Readonly<Record<string, string>> {
     }
     case "column":
       return {
-        default: object.definition.defaultSql ?? "",
+        default:
+          object.definition.generatedSql === undefined ? (object.definition.defaultSql ?? "") : "",
+        generated:
+          object.definition.generatedSql === undefined
+            ? ""
+            : normalizeExpression(object.definition.generatedSql),
         nullable: object.definition.nullable ? "true" : "false",
         type: object.definition.type,
       };
     case "index":
       return {
         columns: object.definition.columns.join(","),
+        expression:
+          object.definition.expression === undefined
+            ? ""
+            : normalizeExpression(object.definition.expression),
         unique: object.definition.unique ? "true" : "false",
       };
     case "constraint": {
@@ -238,16 +247,31 @@ function attributesOf(object: CatalogObject): Readonly<Record<string, string>> {
     case "domain":
       return {
         baseType: object.definition.baseType,
+        check:
+          object.definition.checkSql === undefined
+            ? ""
+            : normalizeExpression(object.definition.checkSql),
         notNull: object.definition.notNull ? "true" : "false",
       };
     case "partition":
       return {
-        bound: `${object.definition.from}:${object.definition.to}`,
+        bound: partitionBound(object.definition),
         parent: object.definition.parent,
       };
     default:
       return assertNever(object);
   }
+}
+
+function partitionBound(
+  definition: Extract<CatalogObject, { kind: "partition" }>["definition"],
+): string {
+  const method = definition.method ?? "range";
+  if (method === "list") return `list:${(definition.values ?? []).join(",")}`;
+  if (method === "hash") {
+    return `hash:${String(definition.modulus ?? 0)}:${String(definition.remainder ?? 0)}`;
+  }
+  return canonicalRangeBound(definition.from, definition.to);
 }
 
 function label(object: NormalizedObject): string {

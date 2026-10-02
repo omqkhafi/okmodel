@@ -101,9 +101,12 @@ export type ObjectIdentity =
   | SchemaIdentity<"domain">
   | ParentIdentity<"partition">;
 
+/** How a partitioned table assigns rows. */
+export type PartitionMethod = "range" | "list" | "hash";
+
 /** How a table is split, when it is partitioned. */
 export type PartitionBy = {
-  readonly method: "range";
+  readonly method: PartitionMethod;
   readonly columns: readonly string[];
 };
 
@@ -113,17 +116,28 @@ export type TableDefinition = {
   readonly rowSecurity: boolean;
 };
 
-/** Column definition. `defaultSql` is an integer literal in this spike. */
+/**
+ * Column definition.
+ *
+ * `defaultSql` is an integer literal in this spike. `generatedSql` is a stored
+ * generated expression. A column has at most one of the two.
+ */
 export type ColumnDefinition = {
   readonly type: string;
   readonly nullable: boolean;
   readonly defaultSql?: string;
+  readonly generatedSql?: string;
 };
 
-/** Secondary index. Primary keys and unique constraints are constraints. */
+/**
+ * Secondary index. Primary keys and unique constraints are constraints.
+ *
+ * `expression` is an expression index. Column indexes leave it unset.
+ */
 export type IndexDefinition = {
   readonly columns: readonly string[];
   readonly unique: boolean;
+  readonly expression?: string;
 };
 
 /** Constraint definition shared by primary keys, uniques, foreign keys, and checks. */
@@ -202,11 +216,21 @@ export type DomainDefinition = {
   readonly checkSql?: string;
 };
 
-/** One range bound on a partition of a partitioned table. */
+/**
+ * One partition of a partitioned table.
+ *
+ * Range partitions use `from` and `to` (integers or timestamptz literals).
+ * List partitions use `values`. Hash partitions use `modulus` and `remainder`.
+ * `method` defaults to range when it is omitted, which is the P03 shape.
+ */
 export type PartitionDefinition = {
   readonly parent: string;
   readonly from: string;
   readonly to: string;
+  readonly method?: PartitionMethod;
+  readonly values?: readonly string[];
+  readonly modulus?: number;
+  readonly remainder?: number;
 };
 
 /** Shared fields on every catalog object. */

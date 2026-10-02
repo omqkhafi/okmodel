@@ -25,15 +25,20 @@ export type NamespaceBinding = {
 /**
  * Renders `CREATE` statements for managed objects.
  *
+ * `partial` allows a subset whose dependencies already exist. The migration
+ * planner uses that to render one create at a time.
+ *
  * @param objects - Catalog
  * @param bindings - Logical namespace to concrete schema
+ * @param options - Set `partial` to skip the dependency-existence check
  * @returns SQL statements in create order
  */
 export function renderCatalog(
   objects: readonly CatalogObject[],
   bindings: readonly NamespaceBinding[],
+  options?: { readonly partial?: boolean },
 ): readonly string[] {
-  assertCatalog(objects);
+  assertCatalog(objects, options);
   const managed = objects.filter((object) => object.owner === "managed");
   const statements: string[] = [];
   for (const object of creationOrder(managed)) {
@@ -156,6 +161,10 @@ function emitTable(
     throw new CatalogError(`Table ${table.identity.name} has no columns.`);
   }
   const lines = columns.map((column) => {
+    if (column.definition.generatedSql !== undefined) {
+      const nullable = column.definition.nullable ? "" : " not null";
+      return `${quoteIdent(column.identity.name)} ${column.definition.type} generated always as (${column.definition.generatedSql}) stored${nullable}`;
+    }
     const nullable = column.definition.nullable ? "" : " not null";
     const defaultSql =
       column.definition.defaultSql === undefined ? "" : ` default ${column.definition.defaultSql}`;
@@ -229,9 +238,12 @@ function emitIndex(
   bindings: readonly NamespaceBinding[],
 ): string {
   const unique = index.definition.unique ? "unique " : "";
-  const columns = index.definition.columns.map((column) => quoteIdent(column)).join(", ");
+  const keys =
+    index.definition.expression === undefined
+      ? index.definition.columns.map((column) => quoteIdent(column)).join(", ")
+      : `(${index.definition.expression})`;
   const table = qualify(index.identity.namespace, index.identity.parent, bindings);
-  return `create ${unique}index ${quoteIdent(index.identity.name)} on ${table} (${columns})`;
+  return `create ${unique}index ${quoteIdent(index.identity.name)} on ${table} (${keys})`;
 }
 
 function emitSequence(
@@ -249,7 +261,9 @@ function emitDomain(
   const name = qualify(domain.identity.namespace, domain.identity.name, bindings);
   const notNull = domain.definition.notNull ? " not null" : "";
   const check =
-    domain.definition.checkSql === undefined ? "" : ` check (${domain.definition.checkSql})`;
+    domain.definition.checkSql === undefined
+      ? ""
+      : ` constraint ${quoteIdent(`${domain.identity.name}_check`)} check (${domain.definition.checkSql})`;
   return `create domain ${name} as ${domain.definition.baseType}${notNull}${check}`;
 }
 
@@ -257,12 +271,46 @@ function emitPartition(
   partition: Extract<CatalogObject, { kind: "partition" }>,
   bindings: readonly NamespaceBinding[],
 ): string {
-  if (!/^-?\d+$/.test(partition.definition.from) || !/^-?\d+$/.test(partition.definition.to)) {
-    throw new CatalogError(`Partition ${partition.identity.name} bounds must be integers.`);
-  }
   const name = qualify(partition.identity.namespace, partition.identity.name, bindings);
   const parent = qualify(partition.identity.namespace, partition.definition.parent, bindings);
-  return `create table ${name} partition of ${parent} for values from (${partition.definition.from}) to (${partition.definition.to})`;
+  const method = partition.definition.method ?? "range";
+  if (method === "list") {
+    const values = partition.definition.values ?? [];
+    if (values.length === 0) {
+      throw new CatalogError(`Partition ${partition.identity.name} has no list values.`);
+    }
+    if (values.some((value) => !/^-?\d+$/.test(value))) {
+      throw new CatalogError(`Partition ${partition.identity.name} list values must be integers.`);
+    }
+    return `create table ${name} partition of ${parent} for values in (${values.join(", ")})`;
+  }
+  if (method === "hash") {
+    const modulus = partition.definition.modulus;
+    const remainder = partition.definition.remainder;
+    if (modulus === undefined || remainder === undefined) {
+      throw new CatalogError(`Partition ${partition.identity.name} needs modulus and remainder.`);
+    }
+    return `create table ${name} partition of ${parent} for values with (modulus ${String(modulus)}, remainder ${String(remainder)})`;
+  }
+  const from = partition.definition.from;
+  const to = partition.definition.to;
+  if (/^-?\d+$/.test(from) && /^-?\d+$/.test(to)) {
+    return `create table ${name} partition of ${parent} for values from (${from}) to (${to})`;
+  }
+  if (!isTimestampLiteral(from) || !isTimestampLiteral(to)) {
+    throw new CatalogError(
+      `Partition ${partition.identity.name} bounds are not integers or timestamps.`,
+    );
+  }
+  return `create table ${name} partition of ${parent} for values from (${quoteTimestamp(from)}) to (${quoteTimestamp(to)})`;
+}
+
+function isTimestampLiteral(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}[+-]\d{2}$/.test(value);
+}
+
+function quoteTimestamp(value: string): string {
+  return `'${value}'`;
 }
 
 function emitFunction(

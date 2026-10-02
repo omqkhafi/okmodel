@@ -6,7 +6,7 @@
  */
 
 import { type ObjectKind } from "./object.js";
-import { normalizeExpression, quoteLiteral } from "./sql.js";
+import { normalizeExpression, parsePartitionBound, quoteLiteral } from "./sql.js";
 
 /** A connection that can run one statement or one query. */
 export type SqlRunner = {
@@ -93,7 +93,8 @@ async function readColumns(
 ): Promise<readonly IntrospectedObject[]> {
   const rows = await runner.query(`
     select n.nspname as schema, c.relname as parent, a.attname as name, t.typname as type,
-      a.attnotnull as not_null, pg_get_expr(ad.adbin, ad.adrelid) as default_expr
+      a.attnotnull as not_null, a.attgenerated as generated,
+      pg_get_expr(ad.adbin, ad.adrelid) as default_expr
     from pg_class c
     join pg_namespace n on n.oid = c.relnamespace
     join pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
@@ -103,13 +104,16 @@ async function readColumns(
       and c.relkind in ('r', 'p')
       and not exists (select 1 from pg_inherits i where i.inhrelid = c.oid)
   `);
-  return rows.map((row) =>
-    item("column", text(row, "schema"), text(row, "parent"), text(row, "name"), undefined, {
-      default: normalizeDefault(text(row, "default_expr")),
+  return rows.map((row) => {
+    const generated = text(row, "generated") === "s";
+    const expression = text(row, "default_expr");
+    return item("column", text(row, "schema"), text(row, "parent"), text(row, "name"), undefined, {
+      default: generated ? "" : normalizeDefault(expression),
+      generated: generated ? normalizeExpression(expression) : "",
       nullable: flag(row, "not_null") === "true" ? "false" : "true",
       type: text(row, "type"),
-    }),
-  );
+    });
+  });
 }
 
 async function readConstraints(
@@ -176,7 +180,8 @@ async function readIndexes(
         from unnest(i.indkey) with ordinality as cols(attnum, ord)
         join pg_attribute a on a.attrelid = tbl.oid and a.attnum = cols.attnum
         where cols.attnum > 0
-      ) as columns
+      ) as columns,
+      pg_get_expr(i.indexprs, i.indrelid) as index_expr
     from pg_index i
     join pg_class idx on idx.oid = i.indexrelid
     join pg_class tbl on tbl.oid = i.indrelid
@@ -184,10 +189,12 @@ async function readIndexes(
     where n.nspname in (${schemas})
       and not i.indisprimary
       and not exists (select 1 from pg_constraint con where con.conindid = i.indexrelid)
+      and not exists (select 1 from pg_inherits inh where inh.inhrelid = tbl.oid)
   `);
   return rows.map((row) =>
     item("index", text(row, "schema"), text(row, "parent"), text(row, "name"), undefined, {
       columns: text(row, "columns"),
+      expression: normalizeExpression(text(row, "index_expr")),
       unique: flag(row, "is_unique"),
     }),
   );
@@ -220,7 +227,13 @@ async function readDomains(
   schemas: string,
 ): Promise<readonly IntrospectedObject[]> {
   const rows = await runner.query(`
-    select n.nspname as schema, t.typname as name, bt.typname as base_type, t.typnotnull as not_null
+    select n.nspname as schema, t.typname as name, bt.typname as base_type, t.typnotnull as not_null,
+      (
+        select pg_get_constraintdef(c.oid)
+        from pg_constraint c
+        where c.contypid = t.oid and c.contype = 'c'
+        limit 1
+      ) as check_expr
     from pg_type t
     join pg_namespace n on n.oid = t.typnamespace
     join pg_type bt on bt.oid = t.typbasetype
@@ -229,6 +242,7 @@ async function readDomains(
   return rows.map((row) =>
     item("domain", text(row, "schema"), undefined, text(row, "name"), undefined, {
       baseType: text(row, "base_type"),
+      check: normalizeExpression(text(row, "check_expr")),
       notNull: flag(row, "not_null"),
     }),
   );
@@ -248,23 +262,12 @@ async function readPartitions(
     where n.nspname in (${schemas})
       and child.relkind in ('r', 'p')
   `);
-  return rows.map((row) => {
-    const bound = text(row, "bound").trim().replace(/\s+/g, " ").replaceAll("'", "");
-    const match = /^FOR VALUES FROM \((-?\d+)\) TO \((-?\d+)\)$/i.exec(bound.trim());
-    const from = match?.[1] ?? "";
-    const to = match?.[2] ?? "";
-    return item(
-      "partition",
-      text(row, "schema"),
-      text(row, "parent"),
-      text(row, "name"),
-      undefined,
-      {
-        bound: from === "" ? bound.trim() : `${from}:${to}`,
-        parent: text(row, "parent"),
-      },
-    );
-  });
+  return rows.map((row) =>
+    item("partition", text(row, "schema"), text(row, "parent"), text(row, "name"), undefined, {
+      bound: parsePartitionBound(text(row, "bound")),
+      parent: text(row, "parent"),
+    }),
+  );
 }
 
 async function readRelations(

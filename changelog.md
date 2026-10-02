@@ -20,6 +20,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Lint and format use oxlint and oxfmt. Layer and purity checks read imports from the Oxc AST.
 - Declaration emit no longer requires `isolatedDeclarations`, so exported types may be inferred.
 - The package description names typed queries, safe migrations, and replica-aware routing. The README says the API has not stabilised yet.
+- The migrations spike property test defaults to 100 catalog pairs during `bun run check`. `OKM_MIGRATION_CASES` raises that count. Pairs can now include policies, materialized views, sequences, and extensions the database can install.
 - Changelog area headings are the layer names: `contracts`, `dialects`, `adapters`, `runtime`, `tooling`, and `docs`.
 
 ### ✨ Added
@@ -44,5 +45,6 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - A private types spike compares inferred and emitted row types on the 10, 50, 200, and 500 table fixtures. Findings are in `packages/spikes/types/FINDINGS.md`.
 - A private safety spike measures tagged operators, runtime identifier checks, and final safety verification over presets, traits, and filters. Findings are in `packages/spikes/safety/FINDINGS.md`.
 - A private drivers spike checks one driver contract and a capability registry against postgres.js and PGlite, including cancellation, the `prepared` flag, and atomic `batch`. Findings are in `packages/spikes/drivers/FINDINGS.md`.
+- A private migrations spike checks that a catalog diff applied on Postgres matches the target catalog, including rewritten expressions, dependency-aware recreate, lock claims, and a drift hash of the normalised structure. Findings are in `packages/spikes/migrations/FINDINGS.md`.
 - `bun run spikes:update` rewrites the spike type-cost locks from a fresh `tsc` run.
 - The replication test waits up to 30 seconds, matching its replay wait, so other Postgres tests can run beside it.
