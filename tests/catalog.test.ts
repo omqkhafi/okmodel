@@ -434,7 +434,7 @@ test("OKM1020 rejects an index column that is not in the catalog", () => {
   ).toBe("OKM1020");
 });
 
-test("OKM1020 rejects a dependency cycle", () => {
+test("OKM1026 rejects a dependency cycle", () => {
   const tasks = parent("tasks");
   const left = { kind: "column" as const, parent: tasks, name: "alpha" };
   const right = { kind: "column" as const, parent: tasks, name: "beta" };
@@ -460,7 +460,7 @@ test("OKM1020 rejects a dependency cycle", () => {
         }),
       ]),
     ),
-  ).toBe("OKM1020");
+  ).toBe("OKM1026");
 });
 
 test("OKM1020 rejects a self-dependency", () => {
@@ -519,15 +519,20 @@ test("OKM1021 rejects a foreign key whose column is missing", () => {
   ).toBe("OKM1021");
 });
 
-test("OKM1020 rejects catalog JSON that is not valid", () => {
-  expect(thrownCode(() => parseCatalog("{"))).toBe("OKM1020");
+test("OKM1027 rejects catalog JSON that is not valid", () => {
+  expect(thrownCode(() => parseCatalog("{"))).toBe("OKM1027");
+  expect(thrownCode(() => parseCatalog("null"))).toBe("OKM1027");
+  expect(thrownCode(() => parseCatalog("[]"))).toBe("OKM1027");
 });
 
-test("OKM1020 rejects an unsupported catalog version", () => {
+test("OKM1027 rejects an unsupported catalog version", () => {
   const text = serializeCatalog(catalog([table({ namespace: ns, name: "tasks", provenance })]));
-  const document = JSON.parse(text) as { version: number };
+  const document = JSON.parse(text) as { version: number; extra?: boolean };
   document.version = 2;
-  expect(thrownCode(() => parseCatalog(JSON.stringify(document)))).toBe("OKM1020");
+  expect(thrownCode(() => parseCatalog(JSON.stringify(document)))).toBe("OKM1027");
+  document.version = 1;
+  document.extra = true;
+  expect(thrownCode(() => parseCatalog(JSON.stringify(document)))).toBe("OKM1027");
 });
 
 test("OKM1020 rejects a kind that does not match its identity", () => {

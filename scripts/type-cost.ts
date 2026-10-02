@@ -3,8 +3,8 @@
  *
  * The trivial project stays in the report. The ceilings cover the inferred
  * 200- and 500-table fixtures, the instantiations added per table, the emitted
- * consumer, and the tagged-operator surcharge. Check time is reported and is
- * not a ceiling.
+ * consumer, the tagged-operator surcharge, and the column-type sample. Check
+ * time is reported and is not a ceiling.
  */
 
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -85,7 +85,20 @@ export const TYPE_CEILINGS = {
   instantiationsPerAddedTable: 300,
   emittedConsumerTypes: 700,
   taggedOperatorSurcharge: 800,
+  columnInstantiations: 6_600,
+  columnTypes: 8_200,
 } as const;
+
+/** Column-type sample measured beside the table fixtures. */
+const columnProject = "tests/fixtures/type-cost-columns";
+
+/** Instantiations and types for the column-type sample. */
+export type ColumnTypeCost = {
+  readonly project: string;
+  readonly instantiations: number;
+  readonly types: number;
+  readonly checkTimeSeconds: number;
+};
 
 /** One fixture measured for the ceilings. */
 export type TypeBudgetRow = {
@@ -117,6 +130,7 @@ export type TypeBudgetReport = {
 function writeReport(report: {
   readonly trivial: TypeCostReport;
   readonly budgets: TypeBudgetReport;
+  readonly columns: ColumnTypeCost;
 }): void {
   const results = join(repoRoot(), "packages", "bench", "results");
   mkdirSync(results, { recursive: true });
@@ -327,11 +341,56 @@ function traceOptionsPresent(help: string): readonly string[] {
   return traceFlags.filter((flag) => help.includes(`--${flag}`));
 }
 
+/**
+ * Measures the column-type sample.
+ *
+ * @returns Instantiations, types, and check time
+ */
+export function measureColumnTypes(): ColumnTypeCost {
+  const output = runTsc([
+    "--noEmit",
+    "--pretty",
+    "false",
+    "--extendedDiagnostics",
+    "-p",
+    join(repoRoot(), columnProject),
+  ]);
+  const fields = parseDiagnosticFields(output);
+  return {
+    project: columnProject,
+    instantiations: requireField(fields, "Instantiations"),
+    types: requireField(fields, "Types"),
+    checkTimeSeconds: requireField(fields, "Check time"),
+  };
+}
+
+/**
+ * Reports a column-type sample over its ceiling.
+ *
+ * @param measured - Output of {@link measureColumnTypes}
+ * @returns Problem lines. Empty when the sample is inside the ceilings
+ */
+export function columnTypeProblems(measured: ColumnTypeCost): readonly string[] {
+  const problems: string[] = [];
+  if (measured.instantiations > TYPE_CEILINGS.columnInstantiations) {
+    problems.push(
+      `type-cost: column types used ${String(measured.instantiations)} instantiations, above ${String(TYPE_CEILINGS.columnInstantiations)}`,
+    );
+  }
+  if (measured.types > TYPE_CEILINGS.columnTypes) {
+    problems.push(
+      `type-cost: column types used ${String(measured.types)} types, above ${String(TYPE_CEILINGS.columnTypes)}`,
+    );
+  }
+  return problems;
+}
+
 if (import.meta.main) {
   try {
     const budgets = measureTypeBudgets();
-    const problems = ceilingProblems(budgets);
-    writeReport({ trivial: measureTypeCost(), budgets });
+    const columns = measureColumnTypes();
+    const problems = [...ceilingProblems(budgets), ...columnTypeProblems(columns)];
+    writeReport({ trivial: measureTypeCost(), budgets, columns });
     for (const problem of problems) {
       console.error(problem);
     }

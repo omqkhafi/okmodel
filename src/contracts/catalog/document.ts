@@ -42,7 +42,7 @@ import { CATALOG_VERSION, OWNERS } from "./types.js";
  * Checks a set of objects and returns them in identity-key order.
  *
  * Duplicate identities are OKM1023. A foreign key whose target is missing is
- * OKM1021. Anything else the graph cannot resolve, including a cycle, is
+ * OKM1021. A dependency cycle is OKM1026. A self-edge or a missing target is
  * OKM1020.
  *
  * @param objects - Built objects, in any order
@@ -155,20 +155,26 @@ export function parseCatalog(text: string): Catalog {
   try {
     parsed = JSON.parse(text);
   } catch {
-    catalogError("OKM1020", "Catalog text is not valid JSON.");
+    catalogError("OKM1027", "Catalog text is not valid JSON.");
   }
-  const record = requireRecord(parsed, "catalog");
-  rejectUnknown(record, ["objects", "version"], "catalog");
-  if (record.version !== CATALOG_VERSION) {
+  if (!isPlainRecord(parsed)) {
+    catalogError("OKM1027", "Catalog document is not an object.");
+  }
+  for (const key of Object.keys(parsed)) {
+    if (key !== "objects" && key !== "version") {
+      catalogError("OKM1027", `Catalog has unexpected field ${key}.`);
+    }
+  }
+  if (parsed.version !== CATALOG_VERSION) {
     catalogError(
-      "OKM1020",
-      `Catalog version ${String(record.version)} cannot be read. This build reads version ${String(CATALOG_VERSION)}.`,
+      "OKM1027",
+      `Catalog version ${String(parsed.version)} cannot be read. This build reads version ${String(CATALOG_VERSION)}.`,
     );
   }
-  if (!Array.isArray(record.objects)) {
-    catalogError("OKM1020", "Catalog field objects must be an array.");
+  if (!Array.isArray(parsed.objects)) {
+    catalogError("OKM1027", "Catalog field objects must be an array.");
   }
-  return catalog(record.objects.map((item) => parseObject(item)));
+  return catalog(parsed.objects.map((item) => parseObject(item)));
 }
 
 function assertForeignKeys(objects: readonly CatalogObject[], keys: ReadonlySet<string>): void {

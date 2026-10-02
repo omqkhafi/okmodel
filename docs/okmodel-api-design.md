@@ -1,6 +1,6 @@
-# OKModel — API design (draft 18)
+# OKModel — API design (draft 20)
 
-Status: design draft, 2026-09-30. Not yet approved for implementation. Draft 18 applies the M0 gate decisions D115–D127 (evidence: `docs/m0-findings.md` in the repository). Supersedes drafts 1–17 of this file and the API sections of `orm-research-design.md`. Evidence for the draft-4 changes is in `okmodel-gap-research.md`.
+Status: design draft, 2026-09-30. Not yet approved for implementation. Draft 18 applied the M0 gate decisions D115–D127 (evidence: `docs/m0-findings.md` in the repository); draft 19 added D128 (catalog error codes); draft 20 adds D130 (column definition and codec error codes). Supersedes drafts 1–19 of this file and the API sections of `orm-research-design.md`. Evidence for the draft-4 changes is in `okmodel-gap-research.md`.
 
 Name: **OKModel** (short **OKM**). Package `okmodel` on npm and repository `omqkhafi/okmodel`, CLI bins `okm` and `okmodel` (same program), error class `OkmError`, error codes `OKM1xxx`, config file `okm.config.ts`, generated folder `.okm/`, metadata table `okm_meta`. The bin names are not npm package names, so a bare `bunx okm` without a local or global install could fetch an unrelated package; the README tells developers to install first (`bun add -d okmodel`, then `bunx okm`, or a global install).
 
@@ -10,7 +10,7 @@ Toolchain: **TypeScript 7** (the native compiler, still invoked as `tsc`) for ty
 
 ## 1. Decisions log
 
-Moved to `okmodel-decisions.md` (D1–D127). This file is the normative spec; every section states a rule, an example and the guard that enforces it.
+Moved to `okmodel-decisions.md` (D1–D130). This file is the normative spec; every section states a rule, an example and the guard that enforces it.
 
 ## 2. Design rules and the internal goal
 
@@ -705,7 +705,7 @@ Ownership is a field and a preset (`ownedBy`). Tenancy is the isolation boundary
 | `rls` (pg) | database-enforced policies (9.4) |
 | `schemaPerTenant`, `databasePerTenant` | physical isolation |
 
-**Physical strategies.** In `schemaPerTenant` the tenant tables live in the namespace template (`namespace: "tenant_{id}"`, a deterministic string with no code); in `databasePerTenant` the catalog is instantiated once per tenant database. Neither puts connection details in `schema()`. The registry, which knows which tenants exist and where, is deployment data, defined once in a project module and passed to `connect()` as `tenancy: { registry }` and to `defineConfig()` as `tenants`. It resolves a tenant id to a Target and a Target to its connection configuration; it is not a connection (invariant G). Its shape: `list()` returns the Targets, `resolve(id, { role })` returns a URL, a topology or `{ url, protected }` for the `app` or `migration` role, and an optional `create(id)` creates the empty database for database-per-tenant (infrastructure, outside OKModel). The tenant id passes a sanitizer (uuid hex or `[a-z0-9_]`) before it enters an identifier (OKM1120 still applies).
+**Physical strategies.** In `schemaPerTenant` the tenant tables live in the namespace template (`namespace: "tenant_{id}"`, a deterministic string with no code); in `databasePerTenant` the catalog is instantiated once per tenant database. Neither puts connection details in `schema()`. The registry, which knows which tenants exist and where, is deployment data, defined once in a project module and passed to `connect()` as `tenancy: { registry }` and to `defineConfig()` as `tenants`. It resolves a tenant id to a Target and a Target to its connection configuration; it is not a connection (invariant G). Its shape: `list()` returns the Targets, `resolve(id, { role })` returns a URL, a topology or `{ url, protected }` for the `app` or `migration` role, and an optional `create(id)` creates the empty database for database-per-tenant (infrastructure, outside OKModel). The tenant id passes a sanitizer (uuid hex or `[a-z0-9_]`) before it enters an identifier (a failing id is OKM1122).
 
 ### 9.2 Inheritance and integrity
 
@@ -1255,6 +1255,10 @@ test("today view runs one query", async () => {
 | Unknown table, FK problems, duplicate names | types + startup | OKM1020–1023 |
 | Table file not in schema | `okm check` | OKM1024 |
 | More than one `Register` | `okm check` | OKM1025 |
+| Dependency cycle in the catalog | schema | OKM1026 |
+| Catalog document this version cannot read (unknown version or malformed) | load | OKM1027 |
+| Invalid column definition: length, precision, scale, array rank, interval qualifier, empty or duplicate picklist or enum values | schema | OKM1060 |
+| A codec rejects a value (not numeric text, not a valid temporal value, wrong shape) | runtime | OKM1210 |
 | Validation in two places | types + `okm check` | OKM1030 |
 | Preset name collides with a client method | types | OKM1040 |
 | Trait field conflict | schema | OKM1012 |

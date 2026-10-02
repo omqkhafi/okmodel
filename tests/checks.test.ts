@@ -1,7 +1,11 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
 
-import { npmPackageProblems, scanHarnessBarrel } from "../scripts/bundle-purity.js";
+import {
+  duplicatedModuleProblems,
+  npmPackageProblems,
+  scanHarnessBarrel,
+} from "../scripts/bundle-purity.js";
 import { checkCompilerApi } from "../scripts/compiler-api.js";
 import { checkCorePurity } from "../scripts/core-purity.js";
 import { checkDocs } from "../scripts/docs-check.js";
@@ -142,6 +146,21 @@ test("bundle purity rejects the harness barrel and an npm package in the metafil
   expect(bundled.some((problem) => problem.includes("postgres"))).toBe(true);
   expect(
     npmPackageProblems({ inputs: { "src/contracts/sha256.ts": { bytes: 1 } } }, "root"),
+  ).toEqual([]);
+  const duplicated = duplicatedModuleProblems({
+    outputs: {
+      "contracts/index.js": { inputs: { "src/contracts/sha256.ts": { bytes: 1 } } },
+      "dialects/pg/index.js": { inputs: { "src/contracts/sha256.ts": { bytes: 1 } } },
+    },
+  });
+  expect(duplicated.some((problem) => problem.includes("sha256.ts"))).toBe(true);
+  expect(
+    duplicatedModuleProblems({
+      outputs: {
+        "contracts/index.js": { inputs: { "src/contracts/index.ts": { bytes: 1 } } },
+        "shared/chunk.js": { inputs: { "src/contracts/sha256.ts": { bytes: 1 } } },
+      },
+    }),
   ).toEqual([]);
 });
 

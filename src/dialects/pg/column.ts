@@ -1,0 +1,610 @@
+/**
+ * Column builder shared by every Postgres type.
+ *
+ * Modifiers allocate a new builder when called. Importing this module does
+ * not build a codec table. `.references()` and `.validate()` are slots for
+ * later prompts; this one does not add those methods.
+ */
+
+import { readArray, writeArray } from "./array-literal.js";
+import { definition, rejected } from "./misuse.js";
+import { quoteLiteral } from "./quote.js";
+
+/** Flags that decide the row, insert, and update shapes of one column. */
+export type ColumnFlags = {
+  readonly nullable: boolean;
+  readonly hasDefault: boolean;
+  readonly generated: boolean;
+  readonly guarded: boolean;
+  readonly hidden: boolean;
+  readonly omitWrite: boolean;
+};
+
+/** Flags for a required column with no default. */
+export type PlainFlags = {
+  readonly nullable: false;
+  readonly hasDefault: false;
+  readonly generated: false;
+  readonly guarded: false;
+  readonly hidden: false;
+  readonly omitWrite: false;
+};
+
+/** Flags for {@link id}. Insert and update omit it. */
+export type IdFlags = {
+  readonly nullable: false;
+  readonly hasDefault: true;
+  readonly generated: false;
+  readonly guarded: true;
+  readonly hidden: false;
+  readonly omitWrite: true;
+};
+
+/** Flags for {@link identity}. The database fills the value. */
+export type IdentityFlags = {
+  readonly nullable: false;
+  readonly hasDefault: true;
+  readonly generated: false;
+  readonly guarded: false;
+  readonly hidden: false;
+  readonly omitWrite: true;
+};
+
+/**
+ * Turns one flag on.
+ *
+ * @typeParam TFlags - Current flags
+ * @typeParam K - Flag to set
+ */
+export type FlagTrue<TFlags extends ColumnFlags, K extends keyof ColumnFlags> = {
+  readonly [P in keyof TFlags]: P extends K ? true : TFlags[P];
+};
+
+/**
+ * Marks a column generated, which also counts as having a default.
+ *
+ * @typeParam TFlags - Current flags
+ */
+export type WithGenerated<TFlags extends ColumnFlags> = {
+  readonly [P in keyof TFlags]: P extends "generated" | "hasDefault" ? true : TFlags[P];
+};
+
+/** How a default expression is spelled in the catalog. */
+export type SqlForm = "raw" | "quote" | "json" | "jsonb" | "cast";
+
+/**
+ * A reference, stored when a later prompt adds `.references()`.
+ */
+export type ReferenceModifier = {
+  readonly table: string;
+  readonly options?: Readonly<Record<string, unknown>>;
+};
+
+/**
+ * Validation rules, stored when a later prompt adds `.validate()`.
+ */
+export type ValidateModifier = {
+  readonly rules: readonly unknown[];
+};
+
+/** Nested readonly arrays of rank `D`. Ranks above 3 stay `unknown[]`. */
+export type ArrayOf<T, D extends number> = D extends 0
+  ? T
+  : D extends 1
+    ? readonly T[]
+    : D extends 2
+      ? readonly (readonly T[])[]
+      : D extends 3
+        ? readonly (readonly (readonly T[])[])[]
+        : readonly unknown[];
+
+/**
+ * Value stored on a column, including null when the column is nullable.
+ *
+ * Hidden columns are absent from the default row (`never`).
+ *
+ * @typeParam TFlags - Column flags
+ * @typeParam TValue - Scalar or array value
+ */
+export type ColumnRow<TFlags extends ColumnFlags, TValue> = TFlags["hidden"] extends true
+  ? never
+  : TFlags["nullable"] extends true
+    ? TValue | null
+    : TValue;
+
+/** Whether insert requires the value, allows it to be omitted, or drops it. */
+export type InsertKind<TFlags extends ColumnFlags> = TFlags["omitWrite"] extends true
+  ? "omit"
+  : TFlags["generated"] extends true
+    ? "omit"
+    : TFlags["guarded"] extends true
+      ? "omit"
+      : TFlags["hasDefault"] extends true
+        ? "optional"
+        : TFlags["nullable"] extends true
+          ? "optional"
+          : "required";
+
+/**
+ * Insert shape of one column.
+ *
+ * `undefined` means the field is omitted. `never` means it is not writable.
+ *
+ * @typeParam TFlags - Column flags
+ * @typeParam TValue - Scalar or array value
+ */
+export type ColumnInsert<TFlags extends ColumnFlags, TValue> =
+  InsertKind<TFlags> extends "omit"
+    ? never
+    : InsertKind<TFlags> extends "optional"
+      ? TFlags["nullable"] extends true
+        ? TValue | null | undefined
+        : TValue | undefined
+      : TValue;
+
+/**
+ * Update shape of one column. Writable values are optional.
+ *
+ * @typeParam TFlags - Column flags
+ * @typeParam TValue - Scalar or array value
+ */
+export type ColumnUpdate<TFlags extends ColumnFlags, TValue> =
+  InsertKind<TFlags> extends "omit"
+    ? never
+    : TFlags["nullable"] extends true
+      ? TValue | null | undefined
+      : TValue | undefined;
+
+/**
+ * Row shape of a builder.
+ *
+ * @typeParam TBuilder - Column builder
+ */
+export type ColumnRowOf<TBuilder> =
+  TBuilder extends ColumnBuilder<infer TValue, infer TFlags> ? ColumnRow<TFlags, TValue> : never;
+
+/**
+ * Insert shape of a builder.
+ *
+ * @typeParam TBuilder - Column builder
+ */
+export type ColumnInsertOf<TBuilder> =
+  TBuilder extends ColumnBuilder<infer TValue, infer TFlags> ? ColumnInsert<TFlags, TValue> : never;
+
+/**
+ * Update shape of a builder.
+ *
+ * @typeParam TBuilder - Column builder
+ */
+export type ColumnUpdateOf<TBuilder> =
+  TBuilder extends ColumnBuilder<infer TValue, infer TFlags> ? ColumnUpdate<TFlags, TValue> : never;
+
+/** Runtime definition a modifier updates and compile reads. */
+export type ColumnState<TValue> = {
+  readonly baseType: string;
+  readonly dims: number;
+  readonly nullable: boolean;
+  readonly hasDefault: boolean;
+  readonly defaultSql: string | undefined;
+  readonly defaultValue: unknown;
+  readonly identity: { readonly always: boolean } | undefined;
+  readonly generated: { readonly stored: boolean; readonly expression: string } | undefined;
+  readonly unique:
+    | { readonly reason: string | undefined; readonly global: boolean | undefined }
+    | undefined;
+  readonly picklist: { readonly values: readonly string[]; readonly check: boolean } | undefined;
+  readonly guarded: boolean;
+  readonly hidden: boolean;
+  readonly omitWrite: boolean;
+  readonly renamedFrom: string | undefined;
+  readonly sqlName: string | undefined;
+  readonly comment: string | undefined;
+  readonly extension: string | undefined;
+  readonly typeDependency: string | undefined;
+  readonly domain: { readonly base: string; readonly check: string } | undefined;
+  readonly references: ReferenceModifier | undefined;
+  readonly validate: ValidateModifier | undefined;
+  readonly sqlForm: SqlForm;
+  readonly encode: (value: TValue) => string;
+  readonly decode: (wire: string) => TValue;
+  readonly elementEncode: (value: unknown) => string;
+  readonly elementDecode: (wire: string) => unknown;
+};
+
+/** Fields a scalar builder sets. Flags are passed beside the codec. */
+export type OpenColumn<TValue> = {
+  readonly baseType: string;
+  readonly nullable: boolean;
+  readonly hasDefault: boolean;
+  readonly generated: boolean;
+  readonly guarded: boolean;
+  readonly hidden: boolean;
+  readonly omitWrite: boolean;
+  readonly encode: (value: TValue) => string;
+  readonly decode: (wire: string) => TValue;
+  readonly sqlForm: SqlForm;
+  readonly defaultSql?: string;
+  readonly identity?: { readonly always: boolean };
+  readonly extension?: string;
+  readonly typeDependency?: string;
+  readonly domain?: { readonly base: string; readonly check: string };
+};
+
+/**
+ * Chainable column definition.
+ *
+ * Call {@link ColumnBuilder.encode} and {@link ColumnBuilder.decode} for the
+ * codec. Catalog compilation lives in `compileColumn` so a caller that only
+ * encodes does not load it.
+ *
+ * @typeParam TValue - TypeScript value
+ * @typeParam TFlags - Nullability, defaults, generation, and exposure
+ */
+export class ColumnBuilder<TValue, TFlags extends ColumnFlags> {
+  /** Phantom value, so the class carries `TValue`. */
+  declare readonly "~value": TValue;
+  /** Phantom flags. */
+  declare readonly "~flags": TFlags;
+  /** Definition. Modifiers replace the builder instead of mutating it. */
+  readonly state: ColumnState<TValue>;
+
+  /**
+   * @param state - Definition
+   */
+  constructor(state: ColumnState<TValue>) {
+    this.state = state;
+  }
+
+  /**
+   * Encodes a value to the text the catalog and the driver store.
+   *
+   * @param value - Application value
+   * @returns Wire text
+   */
+  encode(value: TValue): string {
+    return this.state.encode(value);
+  }
+
+  /**
+   * Decodes wire text to the application value.
+   *
+   * @param wire - Text from {@link encode}
+   * @returns Application value
+   */
+  decode(wire: string): TValue {
+    return this.state.decode(wire);
+  }
+
+  /**
+   * Allows SQL NULL.
+   *
+   * @returns The same column, nullable
+   */
+  nullable(): ColumnBuilder<TValue, FlagTrue<TFlags, "nullable">> {
+    return rebuild<TValue, FlagTrue<TFlags, "nullable">>(this.state, { nullable: true });
+  }
+
+  /**
+   * Stores a JavaScript default. The catalog receives its SQL spelling.
+   *
+   * @param value - Default value
+   * @returns The same column, with a default
+   */
+  default(
+    value: TFlags["nullable"] extends true ? TValue | null : TValue,
+  ): ColumnBuilder<TValue, FlagTrue<TFlags, "hasDefault">> {
+    if (value === null && this.state.nullable === false) {
+      definition("A null default is only accepted on a nullable column. Call .nullable() first.");
+    }
+    if (this.state.picklist !== undefined && value !== null) {
+      const text = String(value);
+      if (!this.state.picklist.values.includes(text)) {
+        definition(
+          `Default ${text} is not in the picklist ${this.state.picklist.values.join(", ")}.`,
+        );
+      }
+    }
+    return rebuild<TValue, FlagTrue<TFlags, "hasDefault">>(this.state, {
+      hasDefault: true,
+      defaultSql: value === null ? "NULL" : sqlOf(this.state, value as TValue),
+      defaultValue: value,
+      generated: undefined,
+    });
+  }
+
+  /**
+   * Stores a SQL default expression as written.
+   *
+   * @param expression - SQL expression
+   * @returns The same column, with a default
+   */
+  defaultSql(expression: string): ColumnBuilder<TValue, FlagTrue<TFlags, "hasDefault">> {
+    if (expression.length === 0) {
+      definition("defaultSql must be a non-empty SQL expression.");
+    }
+    return rebuild<TValue, FlagTrue<TFlags, "hasDefault">>(this.state, {
+      hasDefault: true,
+      defaultSql: expression,
+      defaultValue: undefined,
+      generated: undefined,
+    });
+  }
+
+  /**
+   * Records a unique constraint. Tenancy later reads `global`.
+   *
+   * @param options - Exemption reason, and whether the unique ignores the tenant key
+   * @returns The same column
+   */
+  unique(options?: {
+    readonly reason?: string;
+    readonly global?: boolean;
+  }): ColumnBuilder<TValue, TFlags> {
+    return rebuild<TValue, TFlags>(this.state, {
+      unique: { reason: options?.reason, global: options?.global },
+    });
+  }
+
+  /**
+   * Narrows a string column to a literal union.
+   *
+   * `{ check: false }` keeps the list in the type and skips the catalog CHECK.
+   * An empty list or a repeated value is OKM1060.
+   *
+   * @param values - Allowed literals, in stored order
+   * @param options - Whether the catalog gets a CHECK
+   * @returns The column typed as that union
+   */
+  picklist<const TValues extends readonly (TValue & string)[]>(
+    values: TValues,
+    options?: { readonly check?: boolean },
+  ): ColumnBuilder<TValues[number], TFlags> {
+    if (values.length === 0) {
+      definition("A picklist must contain at least one value.");
+    }
+    const allowed = new Set<string>();
+    for (const value of values) {
+      if (value.length === 0) {
+        definition("Picklist values must be non-empty strings.");
+      }
+      if (allowed.has(value)) {
+        definition(`Picklist value ${value} is repeated. Each value is accepted once.`);
+      }
+      allowed.add(value);
+    }
+    if (typeof this.state.defaultValue === "string" && !allowed.has(this.state.defaultValue)) {
+      definition(`Default ${this.state.defaultValue} is not in the picklist ${values.join(", ")}.`);
+    }
+    const previous = this.state.elementEncode;
+    const elementEncode = (value: unknown): string => {
+      if (typeof value !== "string" || !allowed.has(value)) {
+        rejected(
+          `Picklist rejected ${String(value)}. Accepted values: ${[...allowed].join(", ")}.`,
+        );
+      }
+      return previous(value);
+    };
+    return rebuild<TValues[number], TFlags>(this.state as ColumnState<TValues[number]>, {
+      picklist: { values: values.slice(), check: options?.check !== false },
+      elementEncode,
+      encode: elementEncode as (value: TValues[number]) => string,
+    });
+  }
+
+  /**
+   * Stores a generated expression. Insert and update omit the column.
+   *
+   * @param expression - SQL expression
+   * @param options - `stored` defaults to true
+   * @returns The same column, generated
+   */
+  generated(
+    expression: string,
+    options?: { readonly stored?: boolean },
+  ): ColumnBuilder<TValue, WithGenerated<TFlags>> {
+    if (expression.length === 0) {
+      definition("generated() must be a non-empty SQL expression.");
+    }
+    return rebuild<TValue, WithGenerated<TFlags>>(this.state, {
+      generated: { stored: options?.stored !== false, expression },
+      hasDefault: true,
+      defaultSql: undefined,
+      defaultValue: undefined,
+    });
+  }
+
+  /**
+   * Omits the column from insert and update input.
+   *
+   * @returns The same column, guarded
+   */
+  guarded(): ColumnBuilder<TValue, FlagTrue<TFlags, "guarded">> {
+    return rebuild<TValue, FlagTrue<TFlags, "guarded">>(this.state, { guarded: true });
+  }
+
+  /**
+   * Excludes the column from the default row.
+   *
+   * @returns The same column, hidden
+   */
+  hidden(): ColumnBuilder<TValue, FlagTrue<TFlags, "hidden">> {
+    return rebuild<TValue, FlagTrue<TFlags, "hidden">>(this.state, { hidden: true });
+  }
+
+  /**
+   * Records the previous SQL name. Migrations read it later.
+   *
+   * @param name - Previous column name
+   * @returns The same column
+   */
+  renamedFrom(name: string): ColumnBuilder<TValue, TFlags> {
+    if (name.length === 0) {
+      definition("renamedFrom must be a non-empty previous column name.");
+    }
+    return rebuild<TValue, TFlags>(this.state, { renamedFrom: name });
+  }
+
+  /**
+   * Sets the catalog column name when it differs from the field name.
+   *
+   * @param name - SQL identifier
+   * @returns The same column
+   */
+  sqlName(name: string): ColumnBuilder<TValue, TFlags> {
+    if (name.length === 0) {
+      definition("sqlName must be a non-empty SQL identifier.");
+    }
+    return rebuild<TValue, TFlags>(this.state, { sqlName: name });
+  }
+
+  /**
+   * Stores a comment. The catalog column object has no comment field yet,
+   * so compile returns it beside the column.
+   *
+   * @param text - Comment text
+   * @returns The same column
+   */
+  comment(text: string): ColumnBuilder<TValue, TFlags> {
+    return rebuild<TValue, TFlags>(this.state, { comment: text });
+  }
+
+  /**
+   * Wraps the value in an array. `dims` defaults to one more rank, starting at 1.
+   *
+   * @param options - Explicit rank from 1 to 6
+   * @returns An array column
+   */
+  array<const D extends number = 1>(options?: {
+    readonly dims?: D;
+  }): ColumnBuilder<ArrayOf<TValue, D>, TFlags> {
+    if (this.state.dims !== 0) {
+      definition("array() accepts a scalar column. This column is already an array.");
+    }
+    const dims = options?.dims ?? 1;
+    if (!Number.isInteger(dims) || dims < 1 || dims > 6) {
+      definition(`Array dims ${String(dims)} must be an integer from 1 to 6.`);
+    }
+    const elementEncode = this.state.elementEncode;
+    const elementDecode = this.state.elementDecode;
+    const raw = this.state.sqlForm === "raw";
+    return rebuild<ArrayOf<TValue, D>, TFlags>(this.state as ColumnState<ArrayOf<TValue, D>>, {
+      dims,
+      encode: (value) => writeArray(value, dims, elementEncode, raw),
+      decode: (wire) => readArray(wire, dims, elementDecode) as ArrayOf<TValue, D>,
+    });
+  }
+}
+
+/** Codec and SQL type, without the flag booleans {@link required} fills in. */
+export type RequiredBody<TValue> = Omit<
+  OpenColumn<TValue>,
+  "nullable" | "hasDefault" | "generated" | "guarded" | "hidden" | "omitWrite"
+>;
+
+/**
+ * Starts a required scalar column.
+ *
+ * @typeParam TValue - TypeScript value
+ * @param body - Type and codec
+ * @returns A builder with {@link PlainFlags}
+ */
+export function required<TValue>(body: RequiredBody<TValue>): ColumnBuilder<TValue, PlainFlags> {
+  return openColumn({
+    nullable: false,
+    hasDefault: false,
+    generated: false,
+    guarded: false,
+    hidden: false,
+    omitWrite: false,
+    ...body,
+  });
+}
+
+/**
+ * Starts a scalar column.
+ *
+ * @typeParam TValue - TypeScript value
+ * @typeParam TFlags - Flags the caller names
+ * @param input - Type, codec, and flags
+ * @returns A builder
+ */
+export function openColumn<TValue, TFlags extends ColumnFlags>(
+  input: OpenColumn<TValue>,
+): ColumnBuilder<TValue, TFlags> {
+  const elementEncode = input.encode as (value: unknown) => string;
+  const elementDecode = input.decode as (wire: string) => unknown;
+  return new ColumnBuilder({
+    baseType: input.baseType,
+    dims: 0,
+    nullable: input.nullable,
+    hasDefault: input.hasDefault,
+    defaultSql: input.defaultSql,
+    defaultValue: undefined,
+    identity: input.identity,
+    generated: undefined,
+    unique: undefined,
+    picklist: undefined,
+    guarded: input.guarded,
+    hidden: input.hidden,
+    omitWrite: input.omitWrite,
+    renamedFrom: undefined,
+    sqlName: undefined,
+    comment: undefined,
+    extension: input.extension,
+    typeDependency: input.typeDependency,
+    domain: input.domain,
+    references: undefined,
+    validate: undefined,
+    sqlForm: input.sqlForm,
+    encode: input.encode,
+    decode: input.decode,
+    elementEncode,
+    elementDecode,
+  });
+}
+
+/**
+ * SQL type name, with `[]` repeated for each array rank.
+ *
+ * @param baseType - Scalar SQL type
+ * @param dims - Array rank, 0 for a scalar
+ * @returns Catalog `dataType`
+ */
+export function formatType(baseType: string, dims: number): string {
+  if (dims === 0) {
+    return baseType;
+  }
+  return baseType + "[]".repeat(dims);
+}
+
+/**
+ * SQL spelling of a default value.
+ *
+ * @param state - Column definition
+ * @param value - Application value
+ * @returns A default expression
+ */
+export function sqlOf<TValue>(state: ColumnState<TValue>, value: TValue): string {
+  const encoded = state.encode(value);
+  const typed = formatType(state.baseType, state.dims);
+  if (state.sqlForm === "cast") {
+    return `${quoteLiteral(encoded)}::${typed}`;
+  }
+  if (state.sqlForm === "json") {
+    return `${quoteLiteral(encoded)}::json`;
+  }
+  if (state.sqlForm === "jsonb") {
+    return `${quoteLiteral(encoded)}::jsonb`;
+  }
+  if (state.dims > 0 || state.sqlForm === "quote") {
+    return quoteLiteral(encoded);
+  }
+  return encoded;
+}
+
+function rebuild<TValue, TFlags extends ColumnFlags>(
+  state: ColumnState<TValue>,
+  patch: Partial<ColumnState<TValue>>,
+): ColumnBuilder<TValue, TFlags> {
+  return new ColumnBuilder({ ...state, ...patch });
+}

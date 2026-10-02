@@ -10,6 +10,9 @@ import { repoRoot } from "./root.js";
 /** Published entry the runtime budget measures. D127. */
 export const RUNTIME_ENTRY = "src/contracts/index.ts";
 
+/** Postgres entry. Printed beside the runtime budget. It has no separate ceiling. */
+export const PG_ENTRY = "src/dialects/pg/index.ts";
+
 /** Minified runtime entry ceiling, in bytes (60 KB). */
 export const RUNTIME_MAX_MIN_BYTES = 60 * 1024;
 
@@ -99,31 +102,36 @@ export function runtimeBudgetProblems(measured: RuntimeSize): readonly string[] 
  * @returns Sizes and the cold-import sample
  */
 export function measureRuntimeEntry(root: string): RuntimeSize {
+  return measureEntry(root, RUNTIME_ENTRY);
+}
+
+/**
+ * Minifies one entry, gzips it, and imports it once in a fresh Node process.
+ *
+ * A single-entry build inlines that entry's own modules. The published package
+ * uses code splitting so those modules are not copied into a second entry.
+ *
+ * @param root - Repository root
+ * @param entry - Source entry, relative to `root`
+ * @returns Sizes and the cold-import sample
+ */
+export function measureEntry(root: string, entry: string): RuntimeSize {
   const dir = mkdtempSync(join(tmpdir(), "okm-size-"));
   const outfile = join(dir, "runtime.js");
   try {
     const proc = Bun.spawnSync(
-      [
-        "bun",
-        "build",
-        join(root, RUNTIME_ENTRY),
-        "--target",
-        "node",
-        "--minify",
-        "--outfile",
-        outfile,
-      ],
+      ["bun", "build", join(root, entry), "--target", "node", "--minify", "--outfile", outfile],
       { cwd: root, stdout: "pipe", stderr: "pipe" },
     );
     if (proc.exitCode !== 0) {
       throw new Error(
-        `bun build ${RUNTIME_ENTRY} exited ${String(proc.exitCode)}\n${proc.stderr.toString()}`,
+        `bun build ${entry} exited ${String(proc.exitCode)}\n${proc.stderr.toString()}`,
       );
     }
     const bytes = readFileSync(outfile);
     const coldImportMs = coldImportMsOnNode(outfile);
     return {
-      entry: RUNTIME_ENTRY,
+      entry,
       minBytes: bytes.byteLength,
       gzipBytes: gzipSync(bytes, { level: 9 }).byteLength,
       coldImportMs,
@@ -177,6 +185,10 @@ if (import.meta.main) {
       `size: ${runtime.entry} min ${String(runtime.minBytes)} bytes, gzip ${String(runtime.gzipBytes)} bytes, cold import ${runtime.coldImportMs.toFixed(3)} ms`,
     );
     problems.push(...runtimeBudgetProblems(runtime));
+    const pg = measureEntry(root, PG_ENTRY);
+    console.log(
+      `size: ${pg.entry} min ${String(pg.minBytes)} bytes, gzip ${String(pg.gzipBytes)} bytes, cold import ${pg.coldImportMs.toFixed(3)} ms`,
+    );
   } catch (error) {
     problems.push(`size: ${error instanceof Error ? error.message : String(error)}`);
   }
