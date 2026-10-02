@@ -5,6 +5,7 @@
  * `schema()` does that.
  */
 
+import { throwNamed } from "../../contracts/error.js";
 import { type ColumnInsertOf, type ColumnRowOf, type ColumnUpdateOf } from "./column.js";
 import { definition, unavailable } from "./misuse.js";
 
@@ -303,7 +304,13 @@ export function rejectLater(
     }
     if (!known.has(key)) {
       const accepted = [...known].sort().join(", ");
-      definition(`${where} option ${key} is not supported. Accepted options: ${accepted}.`);
+      const candidates = [...known, ...Object.keys(later)];
+      throwNamed(
+        "OKM1060",
+        key,
+        candidates,
+        `${where} option ${key} is not supported. Accepted options: ${accepted}.`,
+      );
     }
   }
 }

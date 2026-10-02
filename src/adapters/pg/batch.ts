@@ -6,8 +6,9 @@
  * (D124). A timeout stays kind `timeout`. An abort stays kind `cancelled`.
  */
 
+import { isConnectionFailure } from "../../contracts/connection.js";
 import type { ExecuteResult, Statement, WireValue } from "../../contracts/driver.js";
-import { DriverError, mapDriverError } from "../error.js";
+import { DriverError, mapDriverError, outcomeUnknown } from "../error.js";
 import type { Watch } from "./call.js";
 
 /** A connection that can run the batch protocol. */
@@ -107,6 +108,7 @@ async function transaction(
     try {
       await session.commit(watch);
     } catch (error) {
+      if (isConnectionFailure(error)) throw outcomeUnknown(error);
       throw stamp(error, null);
     }
     return results;

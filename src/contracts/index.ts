@@ -9,11 +9,27 @@
 export {
   CATALOG_CODES,
   COLUMN_CODES,
+  ERROR_CATEGORIES,
+  ERROR_KINDS,
   OkmError,
   catalogError,
+  safe,
+  throwNamed,
   type CatalogCode,
   type ColumnCode,
+  type ErrorCategory,
+  type ErrorColumns,
+  type ErrorFields,
+  type ErrorFix,
+  type ErrorKind,
+  type ErrorLog,
+  type ErrorStatuses,
+  type HttpError,
+  type HttpErrorBody,
+  type OkmErrorOptions,
+  type SafeResult,
 } from "./error.js";
+export { nearestName } from "./nearest.js";
 export { sha256 } from "./sha256.js";
 export type {
   AnySchema,

@@ -85,15 +85,21 @@ export type DriverStats = {
   readonly waiting: number;
 };
 
-/** Why a call ended before a statement result (D124). */
-export type DriverFailureKind = "timeout" | "cancelled";
+/**
+ * Why a call ended before a statement result (D124).
+ *
+ * `outcome_unknown` means a commit was sent and the result never arrived.
+ * The dialect maps it to OKM1401. Adapters do not construct `OkmError`.
+ */
+export type DriverFailureKind = "timeout" | "cancelled" | "outcome_unknown";
 
 /**
  * Fields on {@link DriverError}.
  *
  * `batchIndex` is the failing statement, or `null` when the failure is the
- * commit itself (a deferred constraint). `kind` is set for a timeout or an
- * abort and is absent on a database error.
+ * commit itself (a deferred constraint). `kind` is set for a timeout, an
+ * abort, or a commit whose result never arrived, and is absent on a database
+ * error.
  */
 export type DriverErrorFields = {
   readonly sqlstate?: string;

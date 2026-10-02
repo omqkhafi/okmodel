@@ -2,7 +2,7 @@
  * Driver conformance suite v1.
  *
  * The same cases run against any adapter. A case that needs a capability the
- * adapter did not declare is skipped. Error-mapping cases are a later prompt.
+ * adapter did not declare is skipped. Error-mapping cases are a separate suite.
  */
 
 import { expect } from "bun:test";
