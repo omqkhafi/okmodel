@@ -22,6 +22,9 @@ export const OBJECT_KINDS = [
   "policy",
   "domain",
   "partition",
+  "role",
+  "grant",
+  "default_privilege",
 ] as const;
 
 /** A catalog object kind. */
@@ -85,6 +88,87 @@ export type ExtensionIdentity = {
   readonly name: string;
 };
 
+/**
+ * Privileges this spike will grant.
+ *
+ * The list is the SQL keyword, lowercased. It is not a Postgres identifier.
+ */
+export const GRANT_PRIVILEGES = [
+  "select",
+  "insert",
+  "update",
+  "delete",
+  "truncate",
+  "references",
+  "trigger",
+  "usage",
+  "create",
+] as const;
+
+/** One privilege keyword from {@link GRANT_PRIVILEGES}. */
+export type GrantPrivilege = (typeof GRANT_PRIVILEGES)[number];
+
+/** What a grant attaches to. */
+export const GRANT_OBJECT_KINDS = ["table", "schema", "sequence"] as const;
+
+/** A grant target kind. */
+export type GrantObjectKind = (typeof GRANT_OBJECT_KINDS)[number];
+
+/** Object classes `ALTER DEFAULT PRIVILEGES` can name. */
+export const DEFAULT_PRIVILEGE_OBJECT_TYPES = [
+  "tables",
+  "sequences",
+  "functions",
+  "types",
+] as const;
+
+/** One `ALTER DEFAULT PRIVILEGES` object class. */
+export type DefaultPrivilegeObjectType = (typeof DEFAULT_PRIVILEGE_OBJECT_TYPES)[number];
+
+/**
+ * Role identity.
+ *
+ * Roles are cluster-wide. The name is the identity; there is no namespace and
+ * no database.
+ */
+export type RoleIdentity = {
+  readonly kind: "role";
+  readonly name: string;
+};
+
+/**
+ * Grant identity.
+ *
+ * Spec section 5.7 names this `(role, object, privilege)`. `parent` is the
+ * relation, or empty when the grant is on the schema. `name` repeats the
+ * triple so the shared identity key stays unique; it is not a Postgres name.
+ */
+export type GrantIdentity = {
+  readonly kind: "grant";
+  readonly namespace: NamespaceName;
+  readonly parent: string;
+  readonly name: string;
+  readonly role: string;
+  readonly objectKind: GrantObjectKind;
+  readonly privilege: GrantPrivilege;
+};
+
+/**
+ * Default-privilege identity.
+ *
+ * One object per privilege. `forRole` is the role whose future objects receive
+ * the grant. `role` is the grantee.
+ */
+export type DefaultPrivilegeIdentity = {
+  readonly kind: "default_privilege";
+  readonly namespace: NamespaceName;
+  readonly name: string;
+  readonly forRole: string;
+  readonly role: string;
+  readonly objectType: DefaultPrivilegeObjectType;
+  readonly privilege: GrantPrivilege;
+};
+
 /** Stable identity. The variant depends on the kind. */
 export type ObjectIdentity =
   | SchemaIdentity<"table">
@@ -93,6 +177,9 @@ export type ObjectIdentity =
   | ParentIdentity<"constraint">
   | SchemaIdentity<"sequence">
   | ExtensionIdentity
+  | RoleIdentity
+  | GrantIdentity
+  | DefaultPrivilegeIdentity
   | SchemaIdentity<"view">
   | SchemaIdentity<"materialized_view">
   | FunctionIdentity
@@ -133,11 +220,13 @@ export type ColumnDefinition = {
  * Secondary index. Primary keys and unique constraints are constraints.
  *
  * `expression` is an expression index. Column indexes leave it unset.
+ * `predicate` is the `WHERE` clause of a partial index, without the keyword.
  */
 export type IndexDefinition = {
   readonly columns: readonly string[];
   readonly unique: boolean;
   readonly expression?: string;
+  readonly predicate?: string;
 };
 
 /** Constraint definition shared by primary keys, uniques, foreign keys, and checks. */
@@ -161,9 +250,34 @@ export type SequenceDefinition = {
   readonly increment: string;
 };
 
-/** Extension definition. Version is whatever the server installs. */
+/**
+ * Extension definition.
+ *
+ * `version` and `schema` are omitted when the plan should accept whatever the
+ * server installs. `relocatable` is the server's flag, stored so a schema move
+ * can be refused before apply.
+ */
 export type ExtensionDefinition = {
   readonly name: string;
+  readonly version?: string;
+  readonly schema?: string;
+  readonly relocatable?: boolean;
+};
+
+/** Role definition. Passwords stay out of the catalog. */
+export type RoleDefinition = {
+  readonly login: boolean;
+  readonly inherit: boolean;
+};
+
+/** Grant definition. The target and the privilege live on the identity. */
+export type GrantDefinition = {
+  readonly grantable: boolean;
+};
+
+/** Default-privilege definition. The target class lives on the identity. */
+export type DefaultPrivilegeDefinition = {
+  readonly grantable: boolean;
 };
 
 /** View definition. `sql` is authoring text, not the drift canonical form. */
@@ -265,6 +379,19 @@ export type SequenceObject = Envelope<"sequence", SchemaIdentity<"sequence">, Se
 /** An extension. */
 export type ExtensionObject = Envelope<"extension", ExtensionIdentity, ExtensionDefinition>;
 
+/** A cluster role. */
+export type RoleObject = Envelope<"role", RoleIdentity, RoleDefinition>;
+
+/** A privilege on one object. */
+export type GrantObject = Envelope<"grant", GrantIdentity, GrantDefinition>;
+
+/** One default privilege for objects a role creates later. */
+export type DefaultPrivilegeObject = Envelope<
+  "default_privilege",
+  DefaultPrivilegeIdentity,
+  DefaultPrivilegeDefinition
+>;
+
 /** A view. */
 export type ViewObject = Envelope<"view", SchemaIdentity<"view">, ViewDefinition>;
 
@@ -308,6 +435,9 @@ export type CatalogObject =
   | ConstraintObject
   | SequenceObject
   | ExtensionObject
+  | RoleObject
+  | GrantObject
+  | DefaultPrivilegeObject
   | ViewObject
   | MaterializedViewObject
   | FunctionObject
@@ -376,10 +506,10 @@ export function resolveNamespace(namespace: NamespaceName, id = ""): string {
  * Namespace of an identity, if the kind has one.
  *
  * @param identity - Object identity
- * @returns The namespace, or `undefined` for an extension
+ * @returns The namespace, or `undefined` for an extension or a role
  */
 export function namespaceOf(identity: ObjectIdentity): NamespaceName | undefined {
-  if (identity.kind === "extension") return undefined;
+  if (identity.kind === "extension" || identity.kind === "role") return undefined;
   return identity.namespace;
 }
 
@@ -397,10 +527,61 @@ export function parentOf(identity: ObjectIdentity): string | undefined {
     case "trigger":
     case "policy":
     case "partition":
+    case "grant":
       return identity.parent;
     default:
       return undefined;
   }
+}
+
+/**
+ * Identity `name` for a grant.
+ *
+ * The shared key is `(kind, namespace, parent, name)`. The name carries the
+ * grantee and the privilege so two grants on one table stay distinct.
+ *
+ * @param role - Grantee
+ * @param objectKind - Table, schema, or sequence
+ * @param privilege - Privilege keyword
+ * @returns The identity name
+ */
+export function grantIdentityName(
+  role: string,
+  objectKind: GrantObjectKind,
+  privilege: GrantPrivilege,
+): string {
+  return `${objectKind}:${role}:${privilege}`;
+}
+
+/**
+ * Identity `name` for one default privilege.
+ *
+ * @param forRole - Role that will create the objects
+ * @param objectType - Object class the default applies to
+ * @param role - Grantee
+ * @param privilege - Privilege keyword
+ * @returns The identity name
+ */
+export function defaultPrivilegeIdentityName(
+  forRole: string,
+  objectType: DefaultPrivilegeObjectType,
+  role: string,
+  privilege: GrantPrivilege,
+): string {
+  return `${forRole}:${objectType}:${role}:${privilege}`;
+}
+
+/**
+ * Accepts a privilege keyword.
+ *
+ * @param privilege - Candidate keyword
+ * @returns The same keyword when it is in {@link GRANT_PRIVILEGES}
+ */
+export function assertPrivilege(privilege: string): GrantPrivilege {
+  if (!(GRANT_PRIVILEGES as readonly string[]).includes(privilege)) {
+    throw new CatalogError(`Privilege ${privilege} is not in the spike allowlist.`);
+  }
+  return privilege as GrantPrivilege;
 }
 
 /**

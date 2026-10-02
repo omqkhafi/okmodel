@@ -15,7 +15,14 @@ import {
   type ColumnObject,
   type ConstraintObject,
 } from "../catalog/object.js";
-import { renderCatalog, type NamespaceBinding } from "../catalog/render.js";
+import {
+  alterExtensionSql,
+  defaultPrivilegeSql,
+  grantSql,
+  renderCatalog,
+  roleSql,
+  type NamespaceBinding,
+} from "../catalog/render.js";
 import { quoteIdent } from "../catalog/sql.js";
 import { diffCatalog, mappedKey, type ColumnRename } from "./diff.js";
 import { MigrationError } from "./error.js";
@@ -85,6 +92,7 @@ export function planMigration(
   const steps: PlanStep[] = [];
   for (const object of dropOrder(before)) {
     if (!toDrop.has(identityKey(object.identity))) continue;
+    if (object.owner !== "managed") continue;
     if (coveredByDroppedTable(object, before, toDrop)) continue;
     const sql = dropSql(object, bindings);
     if (sql !== undefined) steps.push(step(sql, "drop"));
@@ -103,6 +111,22 @@ export function planMigration(
     if (pair.before.kind !== "domain" || pair.after.kind !== "domain") continue;
     if (classify(pair.before, pair.after) !== "inplace-domain") continue;
     for (const sql of domainAlterSql(pair.before, pair.after, bindings)) {
+      steps.push(step(sql, "alter"));
+    }
+  }
+
+  for (const pair of diff.matched) {
+    if (pair.before.owner !== "managed" || pair.after.owner !== "managed") continue;
+    if (pair.before.kind !== "role" || pair.after.kind !== "role") continue;
+    if (classify(pair.before, pair.after) !== "alter-role") continue;
+    steps.push(step(roleSql(pair.after, "alter"), "alter"));
+  }
+
+  for (const pair of diff.matched) {
+    if (pair.before.owner !== "managed" || pair.after.owner !== "managed") continue;
+    if (pair.before.kind !== "extension" || pair.after.kind !== "extension") continue;
+    if (classify(pair.before, pair.after) !== "alter-extension") continue;
+    for (const sql of alterExtensionSql(pair.before, pair.after)) {
       steps.push(step(sql, "alter"));
     }
   }
@@ -194,6 +218,8 @@ type Change =
   | "inplace-column"
   | "inplace-domain"
   | "replace-function"
+  | "alter-role"
+  | "alter-extension"
   | "recreate"
   | "recreate-table";
 
@@ -233,6 +259,15 @@ function classify(before: CatalogObject, after: CatalogObject): Change {
   }
   if (before.kind === "table" && after.kind === "table") {
     return tableSignature(before) === tableSignature(after) ? "same" : "recreate-table";
+  }
+  if (before.kind === "role" && after.kind === "role") {
+    return snapshot(before) === snapshot(after) ? "same" : "alter-role";
+  }
+  if (before.kind === "extension" && after.kind === "extension") {
+    const version = (before.definition.version ?? "") !== (after.definition.version ?? "");
+    const schema = (before.definition.schema ?? "") !== (after.definition.schema ?? "");
+    if (before.definition.name !== after.definition.name) return "recreate";
+    return version || schema ? "alter-extension" : "same";
   }
   return snapshot(before) === snapshot(after) ? "same" : "recreate";
 }
@@ -291,7 +326,8 @@ function namesColumn(object: CatalogObject, column: ColumnObject): boolean {
   if (object.kind === "index") {
     return (
       object.definition.columns.includes(column.identity.name) ||
-      mentions(object.definition.expression, column.identity.name)
+      mentions(object.definition.expression, column.identity.name) ||
+      mentions(object.definition.predicate, column.identity.name)
     );
   }
   if (object.kind === "constraint") {
@@ -415,6 +451,12 @@ function dropSql(object: CatalogObject, bindings: readonly NamespaceBinding[]): 
       return `drop policy ${quoteIdent(object.identity.name)} on ${qualifyObject(object, object.identity.parent, bindings)}`;
     case "extension":
       return `drop extension ${quoteIdent(object.identity.name)}`;
+    case "role":
+      return roleSql(object, "drop");
+    case "grant":
+      return grantSql(object, bindings, "revoke");
+    case "default_privilege":
+      return defaultPrivilegeSql(object, bindings, "revoke");
     default:
       return undefined;
   }

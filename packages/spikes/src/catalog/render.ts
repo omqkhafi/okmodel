@@ -12,9 +12,13 @@ import {
   type CatalogObject,
   type ColumnObject,
   type ConstraintObject,
+  type DefaultPrivilegeObject,
+  type ExtensionObject,
+  type GrantObject,
   type NamespaceName,
+  type RoleObject,
 } from "./object.js";
-import { quoteIdent } from "./sql.js";
+import { quoteIdent, quoteLiteral } from "./sql.js";
 
 /** Maps a logical namespace onto the schema used for one apply. */
 export type NamespaceBinding = {
@@ -102,7 +106,13 @@ function emit(
     case "policy":
       return [emitPolicy(object, bindings)];
     case "extension":
-      return [`create extension ${quoteIdent(object.identity.name)}`];
+      return [createExtensionSql(object)];
+    case "role":
+      return [roleSql(object, "create")];
+    case "grant":
+      return [grantSql(object, bindings, "grant")];
+    case "default_privilege":
+      return [defaultPrivilegeSql(object, bindings, "grant")];
     default:
       return assertNever(object);
   }
@@ -139,6 +149,12 @@ function emitDrop(
       return `drop policy ${quoteIdent(object.identity.name)} on ${qualify(object.identity.namespace, object.identity.parent, bindings)}`;
     case "extension":
       return `drop extension ${quoteIdent(object.identity.name)}`;
+    case "role":
+      return roleSql(object, "drop");
+    case "grant":
+      return grantSql(object, bindings, "revoke");
+    case "default_privilege":
+      return defaultPrivilegeSql(object, bindings, "revoke");
     default:
       return assertNever(object);
   }
@@ -243,7 +259,117 @@ function emitIndex(
       ? index.definition.columns.map((column) => quoteIdent(column)).join(", ")
       : `(${index.definition.expression})`;
   const table = qualify(index.identity.namespace, index.identity.parent, bindings);
-  return `create ${unique}index ${quoteIdent(index.identity.name)} on ${table} (${keys})`;
+  const where =
+    index.definition.predicate === undefined ? "" : ` where (${index.definition.predicate})`;
+  return `create ${unique}index ${quoteIdent(index.identity.name)} on ${table} (${keys})${where}`;
+}
+
+/**
+ * `CREATE ROLE`, `ALTER ROLE`, or `DROP ROLE`.
+ *
+ * @param role - Role object
+ * @param mode - Which statement
+ * @returns One statement
+ */
+export function roleSql(role: RoleObject, mode: "create" | "alter" | "drop"): string {
+  const name = quoteIdent(role.identity.name);
+  if (mode === "drop") return `drop role ${name}`;
+  const login = role.definition.login ? "login" : "nologin";
+  const inherit = role.definition.inherit ? "inherit" : "noinherit";
+  const verb = mode === "create" ? "create role" : "alter role";
+  return `${verb} ${name} ${login} ${inherit}`;
+}
+
+/**
+ * `CREATE EXTENSION`, including version and schema when the catalog sets them.
+ *
+ * @param extension - Extension object
+ * @returns One statement
+ */
+export function createExtensionSql(extension: ExtensionObject): string {
+  const version =
+    extension.definition.version === undefined
+      ? ""
+      : ` version ${quoteLiteral(extension.definition.version)}`;
+  const schema =
+    extension.definition.schema === undefined
+      ? ""
+      : ` schema ${quoteIdent(extension.definition.schema)}`;
+  return `create extension ${quoteIdent(extension.identity.name)}${version}${schema}`;
+}
+
+/**
+ * `ALTER EXTENSION` for a version raise, a schema move, or both.
+ *
+ * A schema move is emitted even when `relocatable` is false. Postgres rejects
+ * that statement. The planner does not know the server flag unless the catalog
+ * stored it, and this spike records the refusal from the server.
+ *
+ * @param before - Extension already installed
+ * @param after - Target extension
+ * @returns Statements. Empty when version and schema are unchanged
+ */
+export function alterExtensionSql(
+  before: ExtensionObject,
+  after: ExtensionObject,
+): readonly string[] {
+  const name = quoteIdent(after.identity.name);
+  const statements: string[] = [];
+  if ((before.definition.version ?? "") !== (after.definition.version ?? "")) {
+    if (after.definition.version === undefined) {
+      throw new CatalogError(`Extension ${after.identity.name} cannot drop its version.`);
+    }
+    statements.push(`alter extension ${name} update to ${quoteLiteral(after.definition.version)}`);
+  }
+  if ((before.definition.schema ?? "") !== (after.definition.schema ?? "")) {
+    if (after.definition.schema === undefined) {
+      throw new CatalogError(`Extension ${after.identity.name} cannot drop its schema.`);
+    }
+    statements.push(`alter extension ${name} set schema ${quoteIdent(after.definition.schema)}`);
+  }
+  return statements;
+}
+
+/**
+ * `GRANT` or `REVOKE` for one privilege.
+ *
+ * @param grant - Grant object
+ * @param bindings - Logical namespace to concrete schema
+ * @param mode - Grant or revoke
+ * @returns One statement
+ */
+export function grantSql(
+  grant: GrantObject,
+  bindings: readonly NamespaceBinding[],
+  mode: "grant" | "revoke",
+): string {
+  const privilege = grant.identity.privilege;
+  const role = quoteIdent(grant.identity.role);
+  const target = grantTarget(grant, bindings);
+  const option = mode === "grant" && grant.definition.grantable ? " with grant option" : "";
+  const verb = mode === "grant" ? "grant" : "revoke";
+  const tail = mode === "grant" ? `to ${role}${option}` : `from ${role}`;
+  return `${verb} ${privilege} on ${target} ${tail}`;
+}
+
+/**
+ * `ALTER DEFAULT PRIVILEGES` grant or revoke.
+ *
+ * @param privilege - Default privilege
+ * @param bindings - Logical namespace to concrete schema
+ * @param mode - Grant or revoke
+ * @returns One statement
+ */
+export function defaultPrivilegeSql(
+  privilege: DefaultPrivilegeObject,
+  bindings: readonly NamespaceBinding[],
+  mode: "grant" | "revoke",
+): string {
+  const schema = quoteIdent(concreteSchema(privilege.identity.namespace, bindings));
+  const verb = mode === "grant" ? "grant" : "revoke";
+  const direction = mode === "grant" ? "to" : "from";
+  const option = mode === "grant" && privilege.definition.grantable ? " with grant option" : "";
+  return `alter default privileges for role ${quoteIdent(privilege.identity.forRole)} in schema ${schema} ${verb} ${privilege.identity.privilege} on ${privilege.identity.objectType} ${direction} ${quoteIdent(privilege.identity.role)}${option}`;
 }
 
 function emitSequence(
@@ -377,6 +503,14 @@ function emitPolicy(
   const using = policy.definition.using === "" ? "" : ` using (${policy.definition.using})`;
   const check = policy.definition.check === "" ? "" : ` with check (${policy.definition.check})`;
   return `create policy ${quoteIdent(policy.identity.name)} on ${table} as ${permissive} for ${command}${using}${check}`;
+}
+
+function grantTarget(grant: GrantObject, bindings: readonly NamespaceBinding[]): string {
+  if (grant.identity.objectKind === "schema") {
+    return `schema ${quoteIdent(concreteSchema(grant.identity.namespace, bindings))}`;
+  }
+  const relation = qualify(grant.identity.namespace, grant.identity.parent, bindings);
+  return `${grant.identity.objectKind} ${relation}`;
 }
 
 function qualify(

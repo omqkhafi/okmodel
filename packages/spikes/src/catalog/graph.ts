@@ -10,6 +10,8 @@ import { identityKey } from "./canonical.js";
 import { assertIdentifierFits } from "./identifier.js";
 import {
   CatalogError,
+  defaultPrivilegeIdentityName,
+  grantIdentityName,
   namespaceOf,
   parentOf,
   type CatalogObject,
@@ -45,7 +47,32 @@ export function assertCatalog(
     const key = identityKey(object.identity);
     if (keys.has(key)) throw new CatalogError(`Duplicate identity ${key}.`);
     keys.add(key);
-    assertIdentifierFits(object.identity.name, object.kind);
+    if (object.kind !== "grant" && object.kind !== "default_privilege") {
+      assertIdentifierFits(object.identity.name, object.kind);
+    }
+    if (object.kind === "grant") {
+      const expected = grantIdentityName(
+        object.identity.role,
+        object.identity.objectKind,
+        object.identity.privilege,
+      );
+      if (object.identity.name !== expected) {
+        throw new CatalogError(`Grant ${object.identity.name} does not match ${expected}.`);
+      }
+    }
+    if (object.kind === "default_privilege") {
+      const expected = defaultPrivilegeIdentityName(
+        object.identity.forRole,
+        object.identity.objectType,
+        object.identity.role,
+        object.identity.privilege,
+      );
+      if (object.identity.name !== expected) {
+        throw new CatalogError(
+          `Default privilege ${object.identity.name} does not match ${expected}.`,
+        );
+      }
+    }
     const parent = parentOf(object.identity);
     if (parent !== undefined) assertIdentifierFits(parent, `${object.kind} parent`);
     const namespace = namespaceOf(object.identity);

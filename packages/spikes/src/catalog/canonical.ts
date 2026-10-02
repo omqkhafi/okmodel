@@ -128,6 +128,17 @@ function identityToJson(identity: ObjectIdentity): Json {
   if (parent !== undefined) json.parent = parent;
   const argTypes = argTypesOf(identity);
   if (argTypes !== undefined) json.argTypes = [...argTypes];
+  if (identity.kind === "grant") {
+    json.objectKind = identity.objectKind;
+    json.privilege = identity.privilege;
+    json.role = identity.role;
+  }
+  if (identity.kind === "default_privilege") {
+    json.forRole = identity.forRole;
+    json.objectType = identity.objectType;
+    json.privilege = identity.privilege;
+    json.role = identity.role;
+  }
   return json;
 }
 
@@ -167,6 +178,7 @@ function definitionToJson(object: CatalogObject): Json {
       };
       if (object.definition.expression !== undefined)
         index.expression = object.definition.expression;
+      if (object.definition.predicate !== undefined) index.predicate = object.definition.predicate;
       return index;
     }
     case "constraint":
@@ -185,8 +197,21 @@ function definitionToJson(object: CatalogObject): Json {
         increment: object.definition.increment,
         start: object.definition.start,
       };
-    case "extension":
-      return { name: object.definition.name };
+    case "extension": {
+      const extension: Record<string, Json> = { name: object.definition.name };
+      if (object.definition.relocatable !== undefined) {
+        extension.relocatable = object.definition.relocatable;
+      }
+      if (object.definition.schema !== undefined) extension.schema = object.definition.schema;
+      if (object.definition.version !== undefined) extension.version = object.definition.version;
+      return extension;
+    }
+    case "role":
+      return { inherit: object.definition.inherit, login: object.definition.login };
+    case "grant":
+      return { grantable: object.definition.grantable };
+    case "default_privilege":
+      return { grantable: object.definition.grantable };
     case "view":
       return { columns: object.definition.columns, sql: object.definition.sql };
     case "materialized_view":
