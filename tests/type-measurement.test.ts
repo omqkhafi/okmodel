@@ -47,7 +47,7 @@ test("type-cost parses TypeScript 7 diagnostics for a trivial type", () => {
   expect(report.traceOptions).toContain("generateTrace");
 });
 
-test("type ceilings fail when a fixture is over the D127 limits", () => {
+test("type ceilings fail when a fixture is over the D133 limits", () => {
   const rows: TypeBudgetRow[] = [
     row("inferred-50", 50, 15_000, 3_000),
     row("inferred-200", 200, 80_000, 12_000),
@@ -74,7 +74,7 @@ test("column type ceilings fail when the sample is over the limit", () => {
   const problems = columnTypeProblems(over);
   expect(problems.some((problem) => problem.includes("instantiations"))).toBe(true);
   expect(problems.some((problem) => problem.includes("types"))).toBe(true);
-  expect(columnTypeProblems({ ...over, instantiations: 5_000, types: 6_000 })).toEqual([]);
+  expect(columnTypeProblems({ ...over, instantiations: 500, types: 800 })).toEqual([]);
 });
 
 function row(label: string, tables: number, instantiations: number, types: number): TypeBudgetRow {

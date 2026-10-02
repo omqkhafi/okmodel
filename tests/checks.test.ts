@@ -12,7 +12,7 @@ import { checkDocs } from "../scripts/docs-check.js";
 import { checkLayers } from "../scripts/layers-check.js";
 import { checkReleaseDirs } from "../scripts/release-check.js";
 import { repoRoot } from "../scripts/root.js";
-import { checkDistSize, runtimeBudgetProblems } from "../scripts/size.js";
+import { appBudgetProblems, checkDistSize, runtimeBudgetProblems } from "../scripts/size.js";
 
 const root = repoRoot();
 const fixtures = join(root, "tests", "fixtures");
@@ -113,6 +113,26 @@ test("size check fails above the ceiling and passes under it", () => {
   const dir = join(fixtures, "size");
   expect(checkDistSize(dir, 8).length).toBeGreaterThan(0);
   expect(checkDistSize(dir, 1000)).toEqual([]);
+});
+
+test("app bundle budget fails above the D133 ceilings", () => {
+  const over = appBudgetProblems({
+    entry: "scripts/app-startup.ts",
+    minBytes: 50_000,
+    gzipBytes: 16_000,
+    coldImportMs: 20,
+  });
+  expect(over.some((problem) => problem.includes("minified"))).toBe(true);
+  expect(over.some((problem) => problem.includes("gzip"))).toBe(true);
+  expect(over.some((problem) => problem.includes("cold import"))).toBe(true);
+  expect(
+    appBudgetProblems({
+      entry: "scripts/app-startup.ts",
+      minBytes: 38_000,
+      gzipBytes: 12_000,
+      coldImportMs: 5,
+    }),
+  ).toEqual([]);
 });
 
 test("runtime size budget fails above the ceilings", () => {

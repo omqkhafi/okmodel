@@ -7,7 +7,7 @@ This file is the single source of rules for this repository. `CLAUDE.md` imports
 - Use Bun only (`bun`, `bunx`). Do not use npm, pnpm, yarn, or another package manager.
 - TypeScript 7 is the compiler for typecheck and declaration emit (`tsc`). TypeScript 7.0 has no stable programmatic API, so nothing in `src/`, the typecheck, or the repository checks imports it.
 - Type correctness uses `expect-type` (`expectTypeOf`) in `*.test-d.ts` files compiled by that typecheck (D114).
-- `bun run type-cost` reads `tsc --extendedDiagnostics` and enforces the D127 ceilings: inferred 200 tables ≤ 61,000 instantiations and ≤ 9,700 types; inferred 500 tables ≤ 140,000 instantiations; ≤ 300 instantiations per added table; emitted consumer ≤ 700 types; tagged-operator surcharge ≤ 800 instantiations; column types ≤ 6,600 instantiations and ≤ 8,200 types. Check time is reported and is not a ceiling.
+- `bun run type-cost` reads `tsc --extendedDiagnostics` and enforces the D133 ceilings on built declarations: inferred 200 tables ≤ 17,300 instantiations and ≤ 6,500 types; inferred 500 tables ≤ 42,400 instantiations; ≤ 84 instantiations per added table; emitted consumer ≤ 700 types; column sample ≤ 720 instantiations and ≤ 1,100 types. The tagged-operator surcharge stays ≤ 800 on the source measurement. Check time is reported and is not a ceiling.
 - Core hashing is pure-TypeScript SHA-256 in `contracts`. No `Bun` or Node crypto globals, and no `node:*` imports, in that layer.
 - `@ark/attest` may run only in its own CI job, on `@typescript/typescript6` (`tsc6`). It is not part of `bun run check`.
 
@@ -15,7 +15,7 @@ This file is the single source of rules for this repository. `CLAUDE.md` imports
 
 - The published package is `okmodel` at the repository root: ESM only, Apache-2.0, `sideEffects: false`.
 - Other packages live under `packages/*` as Bun workspaces. Their dependencies never go into the root `package.json`.
-- Normative docs are draft 22 (`docs/okmodel-api-design.md`) and decisions D1–D132. The M0 spike implementations are on the `m0-spikes` tag. `packages/spikes` keeps the row-type and operator fixtures the type ceilings measure. Findings stay in `docs/m0-findings.md`.
+- Normative docs are draft 22 (`docs/okmodel-api-design.md`) and decisions D1–D133. The M0 spike implementations are on the `m0-spikes` tag. `packages/spikes` keeps the row-type and operator fixtures the type ceilings measure. Findings stay in `docs/m0-findings.md`.
 
 ## Errors
 
@@ -55,7 +55,7 @@ A layer may import layers below it. It must not import a layer above it. Adapter
 
 ## Docs
 
-Documents in `docs/` are normative. The spec is draft 22. Decisions run D1–D132.
+Documents in `docs/` are normative. The spec is draft 22. Decisions run D1–D133.
 
 ## Engineering standards
 

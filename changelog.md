@@ -45,7 +45,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Replay on either replica can be paused and resumed, and tests can read the primary insert LSN and a replica's replay LSN.
 - A seeded generator builds schema fixtures of 10, 50, 200, and 500 tables, including a tenant-column variant, as a neutral description and Postgres DDL.
 - Type correctness uses `expect-type` in `*.test-d.ts` files compiled by the TypeScript 7 typecheck. A wrong assertion stays in a fixture, and a test shows that `tsc` rejects it.
-- `bun run type-cost` reads `tsc --extendedDiagnostics` and fails when an inferred 200-table type, the per-table rate, the emitted consumer, the tagged-operator surcharge, or the column sample exceeds its D127 ceiling. The gate compiles those fixtures against the built declarations. The source compilation is printed and is not gated.
+- `bun run type-cost` reads `tsc --extendedDiagnostics` and fails when an inferred 200-table type, the per-table rate, the emitted consumer, the tagged-operator surcharge, or the column sample exceeds its D133 ceiling. The gate compiles those fixtures against the built declarations. The source compilation is printed and is not gated, except the tagged-operator surcharge, which stays on the source number.
 - `@ark/attest` runs on TypeScript 6 in its own CI job. It is not part of `bun run check`.
 - `bun run bench` writes timings as JSON. Baselines can be stored beside the script; nothing compares them yet.
 - `bun run catalog-bench` times canonical form, SHA-256, and topological order on the 200-table fixture. It prints the sample and does not enforce a ceiling.
@@ -76,6 +76,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Source layers use the folder names `contracts`, `dialects`, `adapters`, `runtime`, and `tooling`.
 - `okmodel` and `okmodel/pg` are built with code splitting. A shared module, including the catalog identity, is emitted once. The bundle-purity check fails when a module is copied into two outputs.
 - The published `dist/` is 146975 bytes after code splitting (it was 169519 when each entry inlined the catalog). The ceiling is 184000 bytes, that size plus 25%.
+- D133 ratchets type cost to the declaration measurement plus 25 percent, raises the `dist/` ceiling to 241000 bytes, and gates the 10-table app bundle at 48000 bytes minified, 15800 gzip, and 15 ms cold import. The tagged-operator ceiling stays 800 on the source measurement.
 - Lint and format use oxlint and oxfmt. Layer and purity checks read imports from the Oxc AST.
 - Declaration emit no longer requires `isolatedDeclarations`, so exported types may be inferred.
 - The published package sets `sideEffects` to false.
@@ -86,7 +87,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - The package description names typed queries, safe migrations, and replica-aware routing. The README says the API has not stabilised yet.
 - Changelog area headings are the layer names: `contracts`, `dialects`, `adapters`, `runtime`, `tooling`, and `docs`.
-- Normative docs match spec draft 22 and decisions D1–D132. The spec registry names OKM1026, OKM1027, OKM1060, OKM1061, and OKM1210.
+- Normative docs match spec draft 22 and decisions D1–D133. The spec registry names OKM1026, OKM1027, OKM1060, OKM1061, and OKM1210.
 - Engineering standards (D129) are in `AGENTS.md` and the ship skill. Reports state runtime entry size, cold import, and type-cost change.
 
 ### 🔥 Removed

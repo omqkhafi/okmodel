@@ -79,16 +79,22 @@ export function measureTypeCost(): TypeCostReport {
   };
 }
 
-/** D127 type ceilings. Check time is reported beside these and is not capped. */
+/**
+ * Type ceilings after D133.
+ *
+ * Table and column ceilings apply to declaration consumers. The tagged-operator
+ * surcharge stays on the source measurement, because the declaration figure is 0.
+ * Check time is reported and is not capped.
+ */
 export const TYPE_CEILINGS = {
-  inferred200Instantiations: 61_000,
-  inferred200Types: 9_700,
-  inferred500Instantiations: 140_000,
-  instantiationsPerAddedTable: 300,
+  inferred200Instantiations: 17_300,
+  inferred200Types: 6_500,
+  inferred500Instantiations: 42_400,
+  instantiationsPerAddedTable: 84,
   emittedConsumerTypes: 700,
   taggedOperatorSurcharge: 800,
-  columnInstantiations: 6_600,
-  columnTypes: 8_200,
+  columnInstantiations: 720,
+  columnTypes: 1_100,
 } as const;
 
 /** Column-type sample measured beside the table fixtures. */
@@ -244,12 +250,16 @@ export function budgetReport(rows: readonly TypeBudgetRow[]): TypeBudgetCore {
 }
 
 /**
- * Reports rows that exceed a D127 ceiling.
+ * Reports rows that exceed a D133 ceiling.
  *
  * @param report - Consumer rows from {@link measureTypeBudgets}
+ * @param taggedSurcharge - Source-based tagged-operator surcharge. Defaults to the figure on `report`
  * @returns Problem lines. Empty when every ceiling holds
  */
-export function ceilingProblems(report: TypeBudgetCore): readonly string[] {
+export function ceilingProblems(
+  report: TypeBudgetCore,
+  taggedSurcharge: number = report.taggedOperatorSurcharge,
+): readonly string[] {
   const problems: string[] = [];
   const inferred200 = rowNamed(report.rows, "inferred-200");
   const inferred500 = rowNamed(report.rows, "inferred-500");
@@ -281,9 +291,9 @@ export function ceilingProblems(report: TypeBudgetCore): readonly string[] {
       );
     }
   }
-  if (report.taggedOperatorSurcharge > TYPE_CEILINGS.taggedOperatorSurcharge) {
+  if (taggedSurcharge > TYPE_CEILINGS.taggedOperatorSurcharge) {
     problems.push(
-      `type-cost: tagged operators added ${String(report.taggedOperatorSurcharge)} instantiations, above ${String(TYPE_CEILINGS.taggedOperatorSurcharge)}`,
+      `type-cost: tagged operators added ${String(taggedSurcharge)} instantiations, above ${String(TYPE_CEILINGS.taggedOperatorSurcharge)}`,
     );
   }
   return problems;
@@ -493,7 +503,10 @@ if (import.meta.main) {
   try {
     const budgets = measureTypeBudgets();
     const columnsSource = measureColumnTypes();
-    const problems = [...ceilingProblems(budgets), ...columnTypeProblems(budgets.columns)];
+    const problems = [
+      ...ceilingProblems(budgets, budgets.source.taggedOperatorSurcharge),
+      ...columnTypeProblems(budgets.columns),
+    ];
     writeReport({
       trivial: measureTypeCost(),
       budgets,

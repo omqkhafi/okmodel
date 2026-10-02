@@ -171,3 +171,5 @@ Problems found in the earlier order and how the table above resolves them:
 - P12 measurement rule: consumer type cost is measured against the built declarations (`.d.ts`, `skipLibCheck`), because a consumer project never type-checks the library's function bodies; the source-based number is reported but not gated.
 - P12 finding: loading the serialised catalog (11.1 ms) was slower than building it with `schema()` (8.8 ms) on the 200-table fixture, so the `.okm/catalog.json` cold-start path has no benefit yet; decide at P17 whether to make the loader cheaper (trust the hash, skip re-validation, lazy objects) or soften spec 19.3.
 - P16: `okm build` wires emitted types, including the table-name union for `references` (D132).
+- P16: fast catalog loader that trusts the build artifact (D133); `okm check` and dev keep full validation.
+- P13–P16: watch the 0.1 runtime budget (60 KB min): core plus schema is already 38 KB (D133).
