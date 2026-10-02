@@ -73,3 +73,46 @@ function tableWithColumns(
   };
   return [table, ...columnObjects, primaryKey];
 }
+
+/**
+ * `roles(id, label)` for `reference` rows.
+ *
+ * @param namespace - Logical namespace
+ * @returns Managed objects
+ */
+export function rolesCatalog(namespace: NamespaceName): readonly CatalogObject[] {
+  const tableId: ObjectIdentity = { kind: "table", namespace, name: "roles" };
+  const table: CatalogObject = {
+    kind: "table",
+    identity: tableId,
+    owner: "managed",
+    definition: { rowSecurity: false },
+    dependencies: [],
+    provenance,
+  };
+  const columns = ["id", "label"].map((name): CatalogObject => {
+    return {
+      kind: "column",
+      identity: { kind: "column", namespace, parent: "roles", name },
+      owner: "managed",
+      definition: { type: "text", nullable: false },
+      dependencies: [{ identity: tableId }],
+      provenance,
+    };
+  });
+  const primaryKey: CatalogObject = {
+    kind: "constraint",
+    identity: { kind: "constraint", namespace, parent: "roles", name: "roles_pkey" },
+    owner: "managed",
+    definition: {
+      constraintKind: "primary_key",
+      columns: ["id"],
+      deferrable: false,
+      initially: "immediate",
+      nullsNotDistinct: false,
+    },
+    dependencies: [{ identity: tableId }],
+    provenance,
+  };
+  return [table, ...columns, primaryKey];
+}

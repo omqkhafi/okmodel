@@ -186,9 +186,11 @@ function assertStep(
   options: { readonly protected: boolean; readonly allowProtected?: boolean },
   step: PlannedStep,
 ): void {
-  assertTargetPolicy({ protected: options.protected }, step.class satisfies OperationClass, {
-    allowProtected: options.allowProtected,
-  });
+  assertTargetPolicy(
+    { protected: options.protected },
+    step.class satisfies OperationClass,
+    options.allowProtected === undefined ? {} : { allowProtected: options.allowProtected },
+  );
 }
 
 function contractReady(

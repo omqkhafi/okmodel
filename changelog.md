@@ -50,3 +50,4 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `bun run spikes:update` rewrites the spike type-cost locks from a fresh `tsc` run.
 - The replication test waits up to 30 seconds, matching its replay wait, so other Postgres tests can run beside it.
 - A private topology spike routes reads across a Postgres primary and two replicas and checks read-your-writes by WAL position. Findings are in `packages/spikes/topology/FINDINGS.md`.
+- A private targets spike resolves a target at execution time, runs migrations across schemas and databases with rollout and resume, and provisions a snapshot that matches a fully migrated target. Findings are in `packages/spikes/targets/FINDINGS.md`.

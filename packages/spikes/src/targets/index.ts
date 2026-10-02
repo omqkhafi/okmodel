@@ -9,7 +9,15 @@ export {
   dropEmptyDatabase,
 } from "./admin.js";
 export { TargetError, type TargetCode } from "./error.js";
-export { itemsCatalog, itemsCatalogWithNote } from "./fixture.js";
+export { itemsCatalog, itemsCatalogWithNote, rolesCatalog } from "./fixture.js";
+export { assertNoProtectedAlias, type PhysicalTarget } from "./alias.js";
+export {
+  cloneDatabase,
+  introspectNamespace,
+  provisionTarget,
+  type ProvisionResult,
+} from "./provision.js";
+export { referenceInserts, type ReferenceDeclaration, type ReferenceRow } from "./reference.js";
 export { applyToTarget, type TargetApplyResult } from "./apply.js";
 export { acquireTargetLock, advisoryLockKey, releaseTargetLock } from "./lock.js";
 export {

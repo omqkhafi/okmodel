@@ -11,8 +11,8 @@ import type { Sql } from "postgres";
 import { applyToTarget, type TargetApplyResult } from "./apply.js";
 import { TargetError } from "./error.js";
 import type { PlannedStep, TargetPlan } from "./plan.js";
-import type { RegistryRole, TargetSource } from "./resolver.js";
-import { connectionUrl, resolveTarget } from "./resolver.js";
+import type { RegistryRole } from "./registry.js";
+import { connectionUrl, resolveTarget, type TargetSource } from "./resolver.js";
 import { saveControlRow, type ControlRow } from "./state.js";
 import { sharedTarget, type Target, type TargetStrategy } from "./target.js";
 import { schemaNameForTenant } from "./sanitize.js";
@@ -36,7 +36,7 @@ export type Rollout = {
 /** One target in the runner report. */
 export type TargetReport = {
   readonly name: string;
-  readonly state: "current" | "failed" | "pending" | "skipped";
+  readonly state: "current" | "failed" | "pending" | "running" | "skipped";
   readonly checkpoint: string | null;
   readonly error: string | null;
   readonly durations: TargetApplyResult["durations"];
@@ -305,16 +305,19 @@ async function runOne(
   const schema = schemaFor(target, context.strategy);
   let result: TargetApplyResult;
   try {
+    const allowProtected = context.rollout?.allowProtected;
     result = await applyToTarget({
       targetName: target.name,
       url: connectionUrl(resolveTarget(context.source, target, context.role)),
       schema,
       steps,
       protected: target.protected,
-      allowProtected: context.rollout?.allowProtected,
+      ...(allowProtected === undefined ? {} : { allowProtected }),
       applicationName: context.applicationName,
       catalogHash: context.catalogHash,
-      requiredStepIds: context.requiredStepIds,
+      ...(context.requiredStepIds === undefined
+        ? {}
+        : { requiredStepIds: context.requiredStepIds }),
       onUnit: async (checkpoint) => {
         const previous = context.reports.get(target.name) ?? emptyReport(target.name);
         const nextReport: TargetReport = { ...previous, checkpoint, state: "running" };
