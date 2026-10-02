@@ -145,9 +145,10 @@ export function entryBudgetProblems(
 }
 
 /**
- * Minifies the runtime entry, gzips it, and imports it once in a fresh Node process.
+ * Minifies the runtime entry, gzips it, and imports it in fresh Node processes.
  *
- * The timer wraps `import()` only. Process start is not included.
+ * The reported cold import is the median of five processes. The timer wraps
+ * `import()` only. Process start is not included.
  *
  * @param root - Repository root
  * @returns Sizes and the cold-import sample
@@ -157,7 +158,10 @@ export function measureRuntimeEntry(root: string): RuntimeSize {
 }
 
 /**
- * Minifies one entry, gzips it, and imports it once in a fresh Node process.
+ * Minifies one entry, gzips it, and imports it in fresh Node processes.
+ *
+ * The reported cold import is the median of five processes. The timer wraps
+ * `import()` only. Process start is not included.
  *
  * A single-entry build inlines that entry's own modules. The published package
  * uses code splitting so those modules are not copied into a second entry.
@@ -192,7 +196,19 @@ export function measureEntry(root: string, entry: string): RuntimeSize {
   }
 }
 
+/** Fresh Node processes sampled for one cold import. The median ignores one slow tick. */
+const COLD_IMPORT_SAMPLES = 5;
+
 function coldImportMsOnNode(file: string): number {
+  const samples: number[] = [];
+  for (let index = 0; index < COLD_IMPORT_SAMPLES; index += 1) {
+    samples.push(oneColdImport(file));
+  }
+  samples.sort((left, right) => left - right);
+  return samples[Math.floor(samples.length / 2)] ?? 0;
+}
+
+function oneColdImport(file: string): number {
   const href = pathToFileURL(file).href;
   const source = `const started = performance.now(); await import(${JSON.stringify(href)}); process.stdout.write(String(performance.now() - started));`;
   const proc = Bun.spawnSync(["node", "--input-type=module", "-e", source], {

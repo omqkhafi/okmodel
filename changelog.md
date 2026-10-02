@@ -76,7 +76,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Source layers use the folder names `contracts`, `dialects`, `adapters`, `runtime`, and `tooling`.
 - `okmodel` and `okmodel/pg` are built with code splitting. A shared module, including the catalog identity, is emitted once. The bundle-purity check fails when a module is copied into two outputs.
 - The published `dist/` is 146975 bytes after code splitting (it was 169519 when each entry inlined the catalog). The ceiling is 184000 bytes, that size plus 25%.
-- D133 ratchets type cost to the declaration measurement plus 25 percent, raises the `dist/` ceiling to 241000 bytes, and gates the 10-table app bundle at 48000 bytes minified, 15800 gzip, and 15 ms cold import. The tagged-operator ceiling stays 800 on the source measurement.
+- D133 ratchets type cost to the declaration measurement plus 25 percent, raises the `dist/` ceiling to 241000 bytes, and gates the 10-table app bundle at 48000 bytes minified, 15800 gzip, and 15 ms cold import. The tagged-operator ceiling stays 800 on the source measurement. The cold-import sample is the median of five fresh Node processes.
+- `schema()` compiles unique, index, and check options only when a table sets them, so startup does not compile those paths.
 - Lint and format use oxlint and oxfmt. Layer and purity checks read imports from the Oxc AST.
 - Declaration emit no longer requires `isolatedDeclarations`, so exported types may be inferred.
 - The published package sets `sideEffects` to false.

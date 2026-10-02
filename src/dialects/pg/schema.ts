@@ -326,9 +326,15 @@ function compileTable(
     );
   }
 
-  compileUniques(item.name, options, parent, provenance, byField, objects);
-  compileIndexes(item.name, options, handles, parent, provenance, objects);
-  compileChecks(item.name, options, handles, parent, provenance, byField, objects);
+  if (options?.unique !== undefined) {
+    compileUniques(item.name, options, parent, provenance, byField, objects);
+  }
+  if (options?.indexes !== undefined) {
+    compileIndexes(item.name, options, handles, parent, provenance, objects);
+  }
+  if (options?.checks !== undefined) {
+    compileChecks(item.name, options, handles, parent, provenance, byField, objects);
+  }
 
   return {
     tsName: item.name,
