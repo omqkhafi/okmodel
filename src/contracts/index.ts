@@ -15,6 +15,16 @@ export {
   type ColumnCode,
 } from "./error.js";
 export { sha256 } from "./sha256.js";
+export type {
+  AnySchema,
+  AnyTableShape,
+  Insert,
+  Register,
+  Row,
+  SchemaOf,
+  TableName,
+  Update,
+} from "./rows.js";
 
 export {
   BUILT_KINDS,
@@ -74,6 +84,7 @@ export {
   type Owner,
   type PartitionMethod,
   type Provenance,
+  type ReferentialAction,
   type RoleIdentity,
   type SequenceDefinition,
   type SequenceInput,

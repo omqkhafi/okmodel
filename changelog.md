@@ -30,6 +30,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `.picklist()` narrows a string column to a literal union and can add a CHECK. An empty list or a repeated value is OKM1060. A value outside the list is OKM1210.
 - `enum` and `domain` are exported under those names. An invalid enum or domain definition is OKM1060. A label a codec rejects is OKM1210.
 - Date and time codecs read the `Temporal` global. okmodel does not ship a polyfill. A missing global is OKM1210 and the message says to assign one to `globalThis.Temporal`.
+- `table()` and `schema()` compile columns, references, indexes, checks, and unique constraints into a catalog. Options that arrive later throw OKM1061 and name that prompt, or say later when the plan has no row for them.
+- `Row`, `Insert`, and `Update` read a `Register` schema. `emitRowTypes` writes the same shapes (`Tasks`, `TasksInsert`, `TasksUpdate`). `schema({ types })` records `emitted` or `inferred`.
 
 #### tooling
 
@@ -43,7 +45,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Replay on either replica can be paused and resumed, and tests can read the primary insert LSN and a replica's replay LSN.
 - A seeded generator builds schema fixtures of 10, 50, 200, and 500 tables, including a tenant-column variant, as a neutral description and Postgres DDL.
 - Type correctness uses `expect-type` in `*.test-d.ts` files compiled by the TypeScript 7 typecheck. A wrong assertion stays in a fixture, and a test shows that `tsc` rejects it.
-- `bun run type-cost` reads `tsc --extendedDiagnostics` and fails when an inferred 200-table type, the per-table rate, the emitted consumer, or the tagged-operator surcharge exceeds its D127 ceiling.
+- `bun run type-cost` reads `tsc --extendedDiagnostics` and fails when an inferred 200-table type, the per-table rate, the emitted consumer, the tagged-operator surcharge, or the column sample exceeds its D127 ceiling. The gate compiles those fixtures against the built declarations. The source compilation is printed and is not gated.
 - `@ark/attest` runs on TypeScript 6 in its own CI job. It is not part of `bun run check`.
 - `bun run bench` writes timings as JSON. Baselines can be stored beside the script; nothing compares them yet.
 - `bun run catalog-bench` times canonical form, SHA-256, and topological order on the 200-table fixture. It prints the sample and does not enforce a ceiling.
@@ -55,6 +57,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - The M0 gate findings are in `docs/m0-findings.md`, with a Resolved by column for each row.
 - Spec section 21 records OKM1026 for a catalog dependency cycle and OKM1027 for a catalog document this version cannot read.
+- `docs/editor-check.md` lists a manual check for row-type hover, table-name completion, and a bad reference. It was not run.
 
 ### ♻️ Changed
 
@@ -63,6 +66,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Catalog serialisation, parsing, hashing, rename, and dependency order are no longer on the runtime entry. They stay in the catalog document module for tooling. Builders, identity, and names stay on `okmodel`.
 - SHA-256 round constants and the reserved-word set are built on first use. UTF-8 length and encoding share one helper. An ordering pass computes each identity key once.
 - Catalog errors name the accepted value.
+- A foreign key whose column type does not match its target is OKM1022. Foreign keys store `onDelete` and `onUpdate`.
+- A table or schema option that the types accept but this version does not implement is OKM1061. OKM1060 stays an invalid column definition.
 - A catalog dependency cycle is OKM1026. A catalog document this version cannot read is OKM1027. OKM1020 stays the code for an unknown table.
 - An invalid column definition is OKM1060. A value a codec rejects is OKM1210. Messages name the accepted values.
 
@@ -81,7 +86,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - The package description names typed queries, safe migrations, and replica-aware routing. The README says the API has not stabilised yet.
 - Changelog area headings are the layer names: `contracts`, `dialects`, `adapters`, `runtime`, `tooling`, and `docs`.
-- Normative docs match spec draft 20 and decisions D1–D130. The spec registry names OKM1026, OKM1027, OKM1060, and OKM1210.
+- Normative docs match spec draft 22 and decisions D1–D132. The spec registry names OKM1026, OKM1027, OKM1060, OKM1061, and OKM1210.
 - Engineering standards (D129) are in `AGENTS.md` and the ship skill. Reports state runtime entry size, cold import, and type-cost change.
 
 ### 🔥 Removed

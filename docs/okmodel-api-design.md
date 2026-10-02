@@ -1,6 +1,6 @@
-# OKModel — API design (draft 20)
+# OKModel — API design (draft 22)
 
-Status: design draft, 2026-09-30. Not yet approved for implementation. Draft 18 applied the M0 gate decisions D115–D127 (evidence: `docs/m0-findings.md` in the repository); draft 19 added D128 (catalog error codes); draft 20 adds D130 (column definition and codec error codes). Supersedes drafts 1–19 of this file and the API sections of `orm-research-design.md`. Evidence for the draft-4 changes is in `okmodel-gap-research.md`.
+Status: design draft, 2026-09-30. Not yet approved for implementation. Draft 18 applied the M0 gate decisions D115–D127 (evidence: `docs/m0-findings.md` in the repository); draft 19 added D128 (catalog error codes); draft 20 added D130 (column definition and codec error codes); draft 21 added D131 (removing a picklist or enum value); draft 22 adds D132 (reserved options, reference names). Supersedes drafts 1–21 of this file and the API sections of `orm-research-design.md`. Evidence for the draft-4 changes is in `okmodel-gap-research.md`.
 
 Name: **OKModel** (short **OKM**). Package `okmodel` on npm and repository `omqkhafi/okmodel`, CLI bins `okm` and `okmodel` (same program), error class `OkmError`, error codes `OKM1xxx`, config file `okm.config.ts`, generated folder `.okm/`, metadata table `okm_meta`. The bin names are not npm package names, so a bare `bunx okm` without a local or global install could fetch an unrelated package; the README tells developers to install first (`bun add -d okmodel`, then `bunx okm`, or a global install).
 
@@ -10,7 +10,7 @@ Toolchain: **TypeScript 7** (the native compiler, still invoked as `tsc`) for ty
 
 ## 1. Decisions log
 
-Moved to `okmodel-decisions.md` (D1–D130). This file is the normative spec; every section states a rule, an example and the guard that enforces it.
+Moved to `okmodel-decisions.md` (D1–D132). This file is the normative spec; every section states a rule, an example and the guard that enforces it.
 
 ## 2. Design rules and the internal goal
 
@@ -581,7 +581,7 @@ export const tasks = table("tasks", {
 
 ### 6.3 References by name
 
-Autocomplete through `Register`; validated by the schema at type level and startup: unknown table OKM1020, missing/ambiguous FK OKM1021, FK type mismatch OKM1022, duplicate names OKM1023, unlisted table file OKM1024.
+References are plain table-name strings (a generic table-name argument cycles through `Register` and blew up type counts in P12, D132). Table names autocomplete in `Row<"…">`, `Insert<"…">` and `Update<"…">`; with emitted types the emitted file also offers the table-name union to `references` (wired with `okm build`). Validated by the schema at construction and startup: unknown table OKM1020, missing/ambiguous FK OKM1021, FK type mismatch OKM1022, duplicate names OKM1023, unlisted table file OKM1024.
 
 ### 6.4 Column types (Postgres)
 
@@ -616,7 +616,7 @@ status: t.varchar(20).picklist(["draft", "accepted", "sent", "returned", "cancel
 
 - TypeScript type becomes the literal union.
 - Database: `CHECK (status IN (...))`; `{ check: false }` keeps the list in types and validation only.
-- Changing the list generates `ADD CONSTRAINT … NOT VALID` + `VALIDATE`; removing a value is flagged data-dependent (OKM1541).
+- Adding a value generates `ADD CONSTRAINT … NOT VALID` + `VALIDATE`. **Removing a value needs a replacement, and the replacement never lives in the schema** (D131): the schema lists the current values only. `okm generate` compares with the last snapshot, and for every removed value it needs `--replace <table>.<column>.<old>=<new>` (or `=null` for a nullable column); without it generation fails with OKM1541 and the error's `fix` shows the exact flag. The replacement must be in the new list (no chains). The mapping is written into the generated migration as a `backfill()` step (batched by primary key, resumable), in two parts: **expand** moves the existing rows and keeps the old value allowed by the old constraint (so a release still running can write it); **contract** runs a final sweep, then swaps the constraint (`NOT VALID` + `VALIDATE`). A removal never touches the schema file again, and once the migration is applied the schema stays clean. `t.enum` follows the same rule; its contract step recreates the type (Postgres cannot drop an enum value). Several removed values may map to the same or different replacements.
 - Display labels (Arabic, English) belong to the UI, not the schema. User-editable lists are lookup tables with FKs, not picklists.
 
 ### 6.6 Codecs
@@ -1258,6 +1258,7 @@ test("today view runs one query", async () => {
 | Dependency cycle in the catalog | schema | OKM1026 |
 | Catalog document this version cannot read (unknown version or malformed) | load | OKM1027 |
 | Invalid column definition: length, precision, scale, array rank, interval qualifier, empty or duplicate picklist or enum values | schema | OKM1060 |
+| A table or schema option that exists in the types but is not available in this version (reserved slot) | schema | OKM1061 |
 | A codec rejects a value (not numeric text, not a valid temporal value, wrong shape) | runtime | OKM1210 |
 | Validation in two places | types + `okm check` | OKM1030 |
 | Preset name collides with a client method | types | OKM1040 |

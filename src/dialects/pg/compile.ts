@@ -15,7 +15,31 @@ import type {
   Owner,
   Provenance,
 } from "../../contracts/catalog/types.js";
-import { type ColumnBuilder, type ColumnFlags, formatType } from "./column.js";
+import { formatType } from "./column.js";
+
+/** Column fields {@link compileColumn} reads. Builders satisfy this structurally. */
+export type CompilableColumn = {
+  readonly state: {
+    readonly baseType: string;
+    readonly dims: number;
+    readonly nullable: boolean;
+    readonly defaultSql: string | undefined;
+    readonly identity: { readonly always: boolean } | undefined;
+    readonly generated: { readonly stored: boolean; readonly expression: string } | undefined;
+    readonly unique:
+      | { readonly reason: string | undefined; readonly global: boolean | undefined }
+      | undefined;
+    readonly picklist: { readonly values: readonly string[]; readonly check: boolean } | undefined;
+    readonly guarded: boolean;
+    readonly hidden: boolean;
+    readonly renamedFrom: string | undefined;
+    readonly sqlName: string | undefined;
+    readonly comment: string | undefined;
+    readonly extension: string | undefined;
+    readonly typeDependency: string | undefined;
+    readonly domain: { readonly base: string; readonly check: string } | undefined;
+  };
+};
 import { quoteLiteral } from "./quote.js";
 
 /** Where the column is compiled. */
@@ -24,6 +48,7 @@ export type CompileColumnInput = {
   readonly name: string;
   readonly provenance: Provenance;
   readonly owner?: Owner;
+  readonly dependencies?: readonly ObjectIdentity[];
 };
 
 /**
@@ -53,8 +78,8 @@ export type CompiledColumn = {
  * @param input - Parent table, field name, and provenance
  * @returns The column and any constraints
  */
-export function compileColumn<TValue, TFlags extends ColumnFlags>(
-  builder: ColumnBuilder<TValue, TFlags>,
+export function compileColumn(
+  builder: CompilableColumn,
   input: CompileColumnInput,
 ): CompiledColumn {
   const state = builder.state;
@@ -93,7 +118,9 @@ export function compileColumn<TValue, TFlags extends ColumnFlags>(
     ...(state.defaultSql !== undefined ? { defaultExpression: state.defaultSql } : {}),
     ...(state.identity !== undefined ? { identity: state.identity } : {}),
     ...(state.generated !== undefined ? { generated: state.generated } : {}),
-    ...(dependencies.length > 0 ? { dependencies } : {}),
+    ...(dependencies.length > 0 || (input.dependencies?.length ?? 0) > 0
+      ? { dependencies: [...dependencies, ...(input.dependencies ?? [])] }
+      : {}),
   });
   const check =
     state.picklist !== undefined && state.picklist.check

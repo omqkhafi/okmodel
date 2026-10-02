@@ -16,6 +16,7 @@
 export const CATALOG_CODES = [
   "OKM1020",
   "OKM1021",
+  "OKM1022",
   "OKM1023",
   "OKM1026",
   "OKM1027",
@@ -28,11 +29,13 @@ export const CATALOG_CODES = [
 export type CatalogCode = (typeof CATALOG_CODES)[number];
 
 /**
- * Column definition and codec failures (D130).
+ * Column definition, reserved options, and codec failures (D130, D132).
  *
- * OKM1060 is an invalid column definition. OKM1210 is a value a codec rejects.
+ * OKM1060 is an invalid column definition. OKM1061 is a table or schema option
+ * the types accept but this version does not implement. OKM1210 is a value a
+ * codec rejects.
  */
-export const COLUMN_CODES = ["OKM1060", "OKM1210"] as const;
+export const COLUMN_CODES = ["OKM1060", "OKM1061", "OKM1210"] as const;
 
 /**
  * A column or codec error code.

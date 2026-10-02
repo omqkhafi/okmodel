@@ -14,26 +14,28 @@ import {
   fitIdentifier,
 } from "./identifier.js";
 import { assertNamespace, identityKey } from "./identity.js";
-import type {
-  AnchoredIdentity,
-  ColumnDefinition,
-  ColumnObject,
-  ConstraintDefinition,
-  ConstraintKind,
-  ConstraintObject,
-  DependencyEdge,
-  IndexDefinition,
-  IndexObject,
-  Namespace,
-  NamespaceIdentity,
-  ObjectIdentity,
-  ObjectRef,
-  Owner,
-  Provenance,
-  SequenceDefinition,
-  SequenceObject,
-  TableDefinition,
-  TableObject,
+import {
+  referentialAction,
+  type AnchoredIdentity,
+  type ColumnDefinition,
+  type ColumnObject,
+  type ConstraintDefinition,
+  type ConstraintKind,
+  type ConstraintObject,
+  type DependencyEdge,
+  type IndexDefinition,
+  type IndexObject,
+  type Namespace,
+  type NamespaceIdentity,
+  type ObjectIdentity,
+  type ObjectRef,
+  type Owner,
+  type Provenance,
+  type ReferentialAction,
+  type SequenceDefinition,
+  type SequenceObject,
+  type TableDefinition,
+  type TableObject,
 } from "./types.js";
 
 /** Fields every factory accepts. */
@@ -83,6 +85,8 @@ export type ConstraintInput = CommonInput & {
   readonly references?: {
     readonly parent: ObjectRef;
     readonly columns: readonly string[];
+    readonly onDelete?: ReferentialAction;
+    readonly onUpdate?: ReferentialAction;
   };
   readonly deferrable?: boolean;
   readonly initially?: "immediate" | "deferred";
@@ -315,6 +319,8 @@ export function constraint(input: ConstraintInput): ConstraintObject {
     for (const name of references.columns) {
       assertIdentifier(name, "referenced column");
     }
+    assertAction(references.onDelete, input.parent.name);
+    assertAction(references.onUpdate, input.parent.name);
   }
   if (
     input.constraintKind === "check" &&
@@ -351,6 +357,8 @@ export function constraint(input: ConstraintInput): ConstraintObject {
           references: {
             parent: references.parent,
             columns: [...references.columns],
+            ...(references.onDelete !== undefined ? { onDelete: references.onDelete } : {}),
+            ...(references.onUpdate !== undefined ? { onUpdate: references.onUpdate } : {}),
           },
         }
       : {}),
@@ -478,6 +486,18 @@ function assertInteger(value: string, role: string): void {
   assertStoredText(value, role);
   if (!/^-?\d+$/.test(value)) {
     catalogError("OKM1020", `${role} ${value} is not an integer.`);
+  }
+}
+
+function assertAction(action: ReferentialAction | undefined, parent: string): void {
+  if (action === undefined) {
+    return;
+  }
+  if (referentialAction(action) === undefined) {
+    catalogError(
+      "OKM1020",
+      `Foreign key on ${parent} has referential action ${action}. Accepted actions: cascade, no action, restrict, set default, set null.`,
+    );
   }
 }
 

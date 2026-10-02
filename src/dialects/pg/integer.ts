@@ -68,6 +68,7 @@ export function bigint<const TAs extends BigintAs = "string">(options?: {
       encode: encodeBigintNumber,
       decode: decodeBigintNumber,
       sqlForm: "raw",
+      typeLabel: "number",
     }) as unknown as ColumnBuilder<BigintValue<TAs>, PlainFlags>;
   }
   if (mode === "bigint") {
@@ -76,6 +77,7 @@ export function bigint<const TAs extends BigintAs = "string">(options?: {
       encode: encodeBigintValue,
       decode: decodeBigintValue,
       sqlForm: "raw",
+      typeLabel: "bigint",
     }) as unknown as ColumnBuilder<BigintValue<TAs>, PlainFlags>;
   }
   if (mode !== "string") {
@@ -107,6 +109,7 @@ export function identity<const TAs extends BigintAs = "string">(options?: {
       ...identityFlags(),
       encode: encodeBigintNumber,
       decode: decodeBigintNumber,
+      typeLabel: "number",
     }) as unknown as ColumnBuilder<BigintValue<TAs>, IdentityFlags>;
   }
   if (mode === "bigint") {
@@ -114,6 +117,7 @@ export function identity<const TAs extends BigintAs = "string">(options?: {
       ...identityFlags(),
       encode: encodeBigintValue,
       decode: decodeBigintValue,
+      typeLabel: "bigint",
     }) as unknown as ColumnBuilder<BigintValue<TAs>, IdentityFlags>;
   }
   if (mode !== "string") {
@@ -234,6 +238,7 @@ function identityFlags(): {
   readonly omitWrite: true;
   readonly sqlForm: "raw";
   readonly identity: { readonly always: true };
+  readonly primaryKey: true;
 } {
   return {
     baseType: "bigint",
@@ -245,6 +250,7 @@ function identityFlags(): {
     omitWrite: true,
     sqlForm: "raw",
     identity: { always: true },
+    primaryKey: true,
   };
 }
 
