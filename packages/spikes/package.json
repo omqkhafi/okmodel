@@ -11,7 +11,8 @@
     "./drivers": "./src/drivers/index.ts",
     "./migrations": "./src/migrations/index.ts",
     "./infra": "./src/infra/index.ts",
-    "./topology": "./src/topology/index.ts"
+    "./topology": "./src/topology/index.ts",
+    "./targets": "./src/targets/index.ts"
   },
   "dependencies": {
     "@okmodel/harness": "workspace:*"
