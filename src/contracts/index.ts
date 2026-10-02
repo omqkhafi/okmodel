@@ -17,6 +17,7 @@ export {
   throwNamed,
   type CatalogCode,
   type ColumnCode,
+  type QueryCode,
   type ErrorCategory,
   type ErrorColumns,
   type ErrorFields,

@@ -21,7 +21,7 @@ export type ErrorDoc = {
 /**
  * Every OKM code spec §21 names, in numeric order.
  *
- * OKM1111 is reserved for a later prompt and is not listed.
+ * OKM1111 is a dynamic call the driver's capabilities do not allow.
  */
 export const ERROR_DOCS: readonly ErrorDoc[] = [
   {
@@ -145,6 +145,12 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     title: "Engine version",
     summary: "The feature needs a newer engine than schema({ requires }) allows.",
     fix: "Raise requires, or stop using the feature. The error names both versions.",
+  },
+  {
+    code: "OKM1111",
+    title: "Missing capability",
+    summary: "The call needs a driver capability this driver does not have.",
+    fix: "Use a driver that declares the capability, or drop the call. The error names the flag.",
   },
   {
     code: "OKM1120",

@@ -9,8 +9,6 @@
 import postgres, { type Sql } from "postgres";
 
 import type {
-  DescribeResult,
-  DriverConnection,
   DriverPool,
   DriverPoolConfig,
   DriverStats,
@@ -19,17 +17,10 @@ import type {
   WireValue,
 } from "../../contracts/driver.js";
 import { POSTGRESJS_CAPABILITIES } from "../capabilities.js";
-import {
-  acquireTimeout,
-  cancelled,
-  DriverError,
-  errorField,
-  mapDriverError,
-  timedOut,
-} from "../error.js";
-import { type BatchSession, nextTransactionDepth, runAtomicBatch } from "./batch.js";
-import { runCall, type Watch } from "./call.js";
-import { EMPTY_NOTICES, resultFrom, rowsFrom } from "./result.js";
+import { driverErrors, mapFailure, rejectClosed } from "../failure.js";
+import type { BatchSession } from "./batch.js";
+import { nextTransactionDepth, runCall, type Watch } from "./call.js";
+import { EMPTY_NOTICES, resultFrom } from "./result.js";
 
 export {
   POSTGRESJS_CAPABILITIES as capabilities,
@@ -42,28 +33,38 @@ export { DriverError } from "../error.js";
 export type PostgresJsConfig = DriverPoolConfig & {
   /** Connection URL for this endpoint. */
   readonly url: string;
+  /**
+   * Named prepared statements, or the unnamed protocol.
+   *
+   * Unnamed is the default. It stays valid behind a pooler in transaction mode.
+   */
+  readonly prepared?: "named" | "unnamed";
+  /** Session search path for every connection in the pool. */
+  readonly searchPath?: string;
+  /** TLS mode passed to postgres.js. */
+  readonly ssl?: boolean | "require" | "allow" | "prefer" | "verify-full" | object;
 };
 
-type Canceller = {
+/** Something an in-flight query can abort. */
+export type Canceller = {
   cancel(): void;
 };
 
 type Pending = Canceller & Promise<unknown>;
 
-type Counters = {
+/** Pool occupancy. Shared by execute and by a reserved connection. */
+export type Counters = {
   reserved: number;
   busy: number;
   reservedBusy: number;
   waiting: number;
 };
 
-type NoticeBuffer = {
+/** Notice slice shared by the pool. */
+export type NoticeBuffer = {
   start(): number;
   since(start: number): readonly Notice[];
 };
-
-const RESET_ALL = "RESET ALL";
-const UNLOCK = "SELECT pg_advisory_unlock_all()";
 
 /**
  * Opens a postgres.js pool for one endpoint.
@@ -80,55 +81,34 @@ export function open(config: PostgresJsConfig): DriverPool {
   let closed = false;
   const isClosed = (): boolean => closed;
 
+  const named = config.prepared === "named";
   const sql = postgres(config.url, {
     max,
-    prepare: true,
+    prepare: named,
     idle_timeout: 30,
     connect_timeout: 5,
     types: WIRE_TYPES,
-    connection: { application_name: "okmodel" },
+    ...(config.ssl !== undefined ? { ssl: config.ssl } : {}),
+    connection: {
+      application_name: "okmodel",
+      ...(config.searchPath !== undefined ? { search_path: config.searchPath } : {}),
+    },
     onnotice(notice) {
       notices.push(notice);
     },
   });
 
-  const root = new PgSession(sql, counters, "pool", poolInflight, isClosed, undefined, notices);
-
-  async function checkout(): Promise<DriverConnection> {
-    if (closed) throw new DriverError("The pool is closed.");
-    const reserved = await reserveConnection(sql, acquireMs, counters);
-    counters.reserved += 1;
-    const local = new Set<Canceller>();
-    const session = new PgSession(
-      reserved,
-      counters,
-      "reserved",
-      local,
-      isClosed,
-      poolInflight,
-      notices,
-    );
-    let released = false;
-    return {
-      execute: (text, params, options) =>
-        runCall(closed, options, (watch) => session.query(text, params, watch)),
-      batch: (statements, options) =>
-        runCall(closed, options, (watch) => runAtomicBatch(session, statements, watch)),
-      cancel() {
-        session.cancel();
-      },
-      async release() {
-        if (released) return;
-        released = true;
-        try {
-          await resetConnection(reserved, session.depth());
-        } finally {
-          counters.reserved = Math.max(0, counters.reserved - 1);
-          reserved.release();
-        }
-      },
-    };
-  }
+  const root = new PgSession(
+    sql,
+    counters,
+    "pool",
+    poolInflight,
+    isClosed,
+    undefined,
+    notices,
+    named,
+  );
+  const held = { sql, acquireMs, counters, isClosed, notices, named, poolInflight };
 
   return {
     capabilities: POSTGRESJS_CAPABILITIES,
@@ -136,16 +116,20 @@ export function open(config: PostgresJsConfig): DriverPool {
       return runCall(closed, options, (watch) => root.query(text, params, watch));
     },
     async batch(statements, options) {
-      const connection = await checkout();
+      const { checkout } = await import("./postgres-extra.js");
+      const connection = await checkout(held);
       try {
         return await connection.batch(statements, options);
       } finally {
         await connection.release();
       }
     },
-    reserve: () => checkout(),
-    describe: (text, params) => root.describe(text, params),
-    stream: (text, params) => root.stream(text, params),
+    reserve: () => import("./postgres-extra.js").then((mod) => mod.checkout(held)),
+    describe: (text, params) =>
+      import("./postgres-extra.js").then((mod) => mod.describe(sql, text, params)),
+    stream(text, params) {
+      return loadStream(sql, text, params);
+    },
     async listen(channel, onNotify) {
       const listening = await sql.listen(channel, onNotify);
       return async () => {
@@ -163,7 +147,7 @@ export function open(config: PostgresJsConfig): DriverPool {
   };
 }
 
-class PgSession implements BatchSession {
+export class PgSession implements BatchSession {
   readonly canCancel = true;
   private transactionDepth = 0;
   private readonly sql: Sql;
@@ -173,6 +157,7 @@ class PgSession implements BatchSession {
   private readonly isClosed: () => boolean;
   private readonly shared: Set<Canceller> | undefined;
   private readonly notices: NoticeBuffer;
+  private readonly named: boolean;
 
   /**
    * @param sql - Root client or a reserved connection
@@ -191,6 +176,7 @@ class PgSession implements BatchSession {
     isClosed: () => boolean,
     shared: Set<Canceller> | undefined,
     notices: NoticeBuffer,
+    named: boolean,
   ) {
     this.sql = sql;
     this.counters = counters;
@@ -199,6 +185,7 @@ class PgSession implements BatchSession {
     this.isClosed = isClosed;
     this.shared = shared;
     this.notices = notices;
+    this.named = named;
   }
 
   /** @inheritdoc */
@@ -207,10 +194,10 @@ class PgSession implements BatchSession {
     params: readonly WireValue[] | undefined,
     watch: Watch | undefined,
   ): Promise<ExecuteResult> {
-    if (this.isClosed()) return Promise.reject(new DriverError("The pool is closed."));
+    if (this.isClosed()) return rejectClosed();
     const start = this.notices.start();
     this.enter();
-    const pending = send(this.sql, text, params);
+    const pending = send(this.sql, text, params, this.named);
     if (watch === undefined) {
       return pending.then(
         (result) => {
@@ -220,87 +207,23 @@ class PgSession implements BatchSession {
         },
         (error: unknown) => {
           this.leave();
-          throw mapDriverError(error);
+          return mapFailure(error).then((mapped) => {
+            throw mapped;
+          });
         },
       );
     }
     return this.watched(pending, watch, start, text);
   }
 
-  /**
-   * Describes a statement.
-   *
-   * @param text - SQL
-   * @param params - Wire parameters
-   * @returns Column names and the parameter count
-   */
-  async describe(text: string, params?: readonly WireValue[]): Promise<DescribeResult> {
-    const pending = this.sql.unsafe(text, asParams(params), { prepare: true });
-    const described = await pending.describe();
-    return {
-      columns: described.columns.map((column) => column.name),
-      parameterCount: described.types.length,
-    };
-  }
-
-  /**
-   * Yields cursor chunks.
-   *
-   * @param text - SQL
-   * @param params - Wire parameters
-   * @returns Chunks of wire rows
-   */
-  async *stream(
-    text: string,
-    params?: readonly WireValue[],
-  ): AsyncIterable<readonly (readonly WireValue[])[]> {
-    const pending = this.sql.unsafe(text, asParams(params));
-    for await (const chunk of pending.cursor(64)) {
-      yield rowsFrom(chunk);
-    }
-  }
-
-  /** @inheritdoc */
-  begin(watch: Watch | undefined): Promise<void> {
-    return this.control("BEGIN", watch);
-  }
-
-  /** @inheritdoc */
-  commit(watch: Watch | undefined): Promise<void> {
-    return this.control("COMMIT", watch);
-  }
-
-  /** @inheritdoc */
-  rollback(): Promise<void> {
-    return this.sql.unsafe("ROLLBACK").then(
-      () => {
-        this.transactionDepth = 0;
-      },
-      (error: unknown) => {
-        this.transactionDepth = 0;
-        throw mapDriverError(error);
-      },
-    );
-  }
-
-  /** @inheritdoc */
-  savepoint(name: string): Promise<void> {
-    return this.sql.unsafe(`SAVEPOINT ${name}`).then(() => undefined);
-  }
-
-  /** @inheritdoc */
-  releaseSavepoint(name: string): Promise<void> {
-    return this.sql.unsafe(`RELEASE SAVEPOINT ${name}`).then(() => undefined);
-  }
-
-  /** @inheritdoc */
-  rollbackTo(name: string): Promise<void> {
-    return this.sql.unsafe(`ROLLBACK TO SAVEPOINT ${name}`).then(() => undefined);
-  }
-
   /** @inheritdoc */
   inTransaction(): boolean {
     return this.transactionDepth > 0;
+  }
+
+  /** @inheritdoc */
+  abandon(): void {
+    this.transactionDepth = 0;
   }
 
   /**
@@ -315,10 +238,6 @@ class PgSession implements BatchSession {
   /** Aborts in-flight statements on this connection. */
   cancel(): void {
     for (const pending of this.local) pending.cancel();
-  }
-
-  private control(text: "BEGIN" | "COMMIT", watch: Watch | undefined): Promise<void> {
-    return this.query(text, undefined, watch).then(() => undefined);
   }
 
   private note(text: string): void {
@@ -361,14 +280,13 @@ class PgSession implements BatchSession {
       (result) => {
         this.finishWatched(pending, watch, onAbort);
         const why = watch.reason();
-        if (why === "timeout") throw timedOut();
-        if (why === "cancelled") throw cancelled();
+        if (why === "timeout" || why === "cancelled") return classify(why, watch);
         this.note(text);
         return resultFrom(result, this.notices.since(start));
       },
       (error: unknown) => {
         this.finishWatched(pending, watch, onAbort);
-        throw classify(error, watch);
+        return classify(error, watch);
       },
     );
   }
@@ -380,9 +298,23 @@ class PgSession implements BatchSession {
   }
 }
 
-function send(sql: Sql, text: string, params: readonly WireValue[] | undefined): Pending {
-  if (params === undefined || params.length === 0) return sql.unsafe(text).raw();
-  return sql.unsafe(text, asParams(params)).raw();
+async function* loadStream(
+  sql: Sql,
+  text: string,
+  params: readonly WireValue[] | undefined,
+): AsyncIterable<readonly (readonly WireValue[])[]> {
+  const { stream } = await import("./postgres-extra.js");
+  yield* stream(sql, text, params);
+}
+
+function send(
+  sql: Sql,
+  text: string,
+  params: readonly WireValue[] | undefined,
+  named: boolean,
+): Pending {
+  if (!named && (params === undefined || params.length === 0)) return sql.unsafe(text).raw();
+  return sql.unsafe(text, asParams(params), { prepare: named }).raw();
 }
 
 function asParams(params: readonly WireValue[] | undefined): string[] {
@@ -390,12 +322,17 @@ function asParams(params: readonly WireValue[] | undefined): string[] {
   return params as unknown as string[];
 }
 
-function classify(error: unknown, watch: Watch): unknown {
-  if (error instanceof DriverError) return error;
-  const why = watch.reason();
-  if (why === "timeout") return timedOut(error);
-  if (why === "cancelled" || errorField(error, "code") === "57014") return cancelled(error);
-  return mapDriverError(error);
+async function classify(error: unknown, watch: Watch): Promise<never> {
+  const errors = await driverErrors();
+  if (error instanceof errors.DriverError) return Promise.reject(error);
+  const why = typeof error === "string" ? error : watch.reason();
+  if (why === "timeout")
+    return Promise.reject(errors.timedOut(typeof error === "string" ? undefined : error));
+  const code = errors.errorField(error, "code");
+  if (why === "cancelled" || code === "57014") {
+    return Promise.reject(errors.cancelled(typeof error === "string" ? undefined : error));
+  }
+  return Promise.reject(errors.mapDriverError(error));
 }
 
 function statsOf(counters: Counters, size: number): DriverStats {
@@ -427,60 +364,6 @@ function noticeBuffer(): NoticeBuffer & { push(notice: postgres.Notice): void } 
       return notices.slice(start);
     },
   };
-}
-
-type ReservedConnection = Sql & {
-  release(): void;
-};
-
-function reserveConnection(
-  sql: Sql,
-  acquireMs: number | undefined,
-  counters: Counters,
-): Promise<ReservedConnection> {
-  counters.waiting += 1;
-  let settled = false;
-  return new Promise((resolve, reject) => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    if (acquireMs !== undefined) {
-      timer = setTimeout(() => {
-        settled = true;
-        counters.waiting = Math.max(0, counters.waiting - 1);
-        reject(acquireTimeout());
-      }, acquireMs);
-    }
-    sql.reserve().then(
-      (connection) => {
-        if (settled) {
-          void resetConnection(connection, 0).finally(() => {
-            connection.release();
-          });
-          return;
-        }
-        if (timer !== undefined) clearTimeout(timer);
-        counters.waiting = Math.max(0, counters.waiting - 1);
-        resolve(connection);
-      },
-      (error: unknown) => {
-        if (settled) return;
-        if (timer !== undefined) clearTimeout(timer);
-        counters.waiting = Math.max(0, counters.waiting - 1);
-        reject(mapDriverError(error));
-      },
-    );
-  });
-}
-
-async function resetConnection(sql: Sql, depth: number): Promise<void> {
-  if (depth > 0) await sql.unsafe("ROLLBACK").catch(() => undefined);
-  try {
-    await sql.unsafe(RESET_ALL);
-    await sql.unsafe(UNLOCK);
-  } catch {
-    await sql.unsafe("ROLLBACK").catch(() => undefined);
-    await sql.unsafe(RESET_ALL);
-    await sql.unsafe(UNLOCK);
-  }
 }
 
 function wire(to: number, from: readonly number[]) {

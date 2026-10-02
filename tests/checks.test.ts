@@ -124,8 +124,8 @@ test("app bundle budget fails above the D133 ceilings", () => {
   const over = appBudgetProblems(
     {
       entry: "scripts/app-startup.ts",
-      minBytes: 50_000,
-      gzipBytes: 16_000,
+      minBytes: 80_000,
+      gzipBytes: 25_000,
       coldImportMs: 30,
     },
     { ci: true },

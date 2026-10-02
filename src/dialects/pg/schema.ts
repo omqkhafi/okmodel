@@ -27,7 +27,10 @@ import type {
 } from "../../contracts/catalog/types.js";
 import { compileColumn, type CompilableColumn } from "./compile.js";
 import { ColumnBuilder, type ReferenceModifier } from "./column.js";
-import { definition } from "./misuse.js";
+import { type ColumnModel, type RelationModel, type TableModel } from "./model.js";
+import { definition, unavailable } from "./misuse.js";
+import { isRelationCall } from "./relations.js";
+import { decodeText } from "./text.js";
 import {
   type AnyTable,
   type ColumnHandle,
@@ -94,6 +97,8 @@ export type BuiltSchema<TTables extends readonly AnyTable[]> = {
   readonly codecs: SchemaCodecs;
   readonly requires: SchemaRequires | undefined;
   readonly tables: TTables;
+  /** Query model. Built once, beside the catalog document. */
+  readonly model: { readonly [T in TTables[number] as T["~name"]]: TableModel };
 };
 
 const SCHEMA_KNOWN = new Set(["casing", "codecs", "requires", "tables", "types"]);
@@ -130,6 +135,8 @@ type ColumnView = CompilableColumn & {
     readonly primaryKey: boolean;
     readonly typeLabel: string | undefined;
     readonly references: ReferenceModifier | undefined;
+    readonly encode: (value: unknown) => string;
+    readonly decode: (wire: string) => unknown;
   };
 };
 
@@ -139,6 +146,17 @@ type PreparedColumn = {
   readonly dataType: string;
   readonly nullable: boolean;
   readonly references: ReferenceModifier | undefined;
+  readonly encode: (value: unknown) => string;
+  readonly decode: ((wire: string) => unknown) | undefined;
+  readonly hidden: boolean;
+};
+
+type FkEdge = {
+  readonly fromTable: string;
+  readonly fromField: string;
+  readonly fromSql: string;
+  readonly toTable: string;
+  readonly toSql: string;
 };
 
 type Prepared = {
@@ -150,6 +168,7 @@ type Prepared = {
   readonly primary: readonly string[];
   readonly byField: ReadonlyMap<string, PreparedColumn>;
   readonly bySql: ReadonlyMap<string, PreparedColumn>;
+  readonly relationOptions: unknown;
 };
 
 /**
@@ -194,8 +213,13 @@ export function schema<const TTables extends readonly AnyTable[]>(
   for (const item of prepared) {
     byName.set(item.tsName, item);
   }
+  const edges: FkEdge[] = [];
   for (const item of prepared) {
-    compileForeignKeys(item, byName, accepted, objects);
+    compileForeignKeys(item, byName, accepted, objects, edges);
+  }
+  const model = {} as Record<string, TableModel>;
+  for (const item of prepared) {
+    model[item.tsName] = tableModel(item, edges, byName, accepted);
   }
 
   return {
@@ -205,6 +229,7 @@ export function schema<const TTables extends readonly AnyTable[]>(
     codecs,
     requires,
     tables: config.tables,
+    model,
   } as unknown as BuiltSchema<TTables>;
 }
 
@@ -293,12 +318,16 @@ function compileTable(
     if (compiled.unique !== undefined) {
       objects.push(compiled.unique);
     }
+    const decode = column.state.decode;
     const prepared: PreparedColumn = {
       field,
       sqlName: compiled.column.identity.name,
       dataType: compiled.column.definition.dataType,
       nullable: compiled.column.definition.nullable,
       references: column.state.references,
+      encode: column.state.encode as (value: unknown) => string,
+      decode: decode === decodeText ? undefined : (decode as (wire: string) => unknown),
+      hidden: column.state.hidden,
     };
     columns.push(prepared);
     byField.set(field, prepared);
@@ -345,7 +374,17 @@ function compileTable(
     primary,
     byField,
     bySql,
+    relationOptions: relationInput(item.name, options),
   };
+}
+
+function relationInput(tableName: string, options: StoredOptions | undefined): unknown {
+  const relations = (options as { readonly relations?: unknown } | undefined)?.relations;
+  if (relations === undefined) return undefined;
+  if (typeof relations !== "object" || relations === null || Array.isArray(relations)) {
+    definition(`Table ${tableName} relations must be an object of one() and many() calls.`);
+  }
+  return relations;
 }
 
 function compileUniques(
@@ -462,6 +501,7 @@ function compileForeignKeys(
   byName: ReadonlyMap<string, Prepared>,
   accepted: readonly string[],
   objects: CatalogObject[],
+  edges: FkEdge[],
 ): void {
   for (const column of item.columns) {
     const reference = column.references;
@@ -515,6 +555,13 @@ function compileForeignKeys(
         },
       }),
     );
+    edges.push({
+      fromTable: item.tsName,
+      fromField: column.field,
+      fromSql: column.sqlName,
+      toTable: target.tsName,
+      toSql: remote.sqlName,
+    });
   }
 }
 
@@ -651,6 +698,102 @@ function readCodecs(codecs: SchemaInput<readonly AnyTable[]>["codecs"]): SchemaC
     definition(`schema() codecs.timestamps ${String(timestamps)} must be temporal.`);
   }
   return { bigint, numeric, timestamps };
+}
+
+function tableModel(
+  item: Prepared,
+  edges: readonly FkEdge[],
+  byName: ReadonlyMap<string, Prepared>,
+  accepted: readonly string[],
+): TableModel {
+  const columns: ColumnModel[] = item.columns.map((column) => ({
+    field: column.field,
+    sql: column.sqlName,
+    dataType: column.dataType,
+    encode: column.encode,
+    decode: column.decode,
+    hidden: column.hidden,
+  }));
+  const primary: string[] = [];
+  for (const sqlName of item.primary) {
+    const column = item.bySql.get(sqlName);
+    if (column !== undefined) primary.push(column.field);
+  }
+  return {
+    name: item.tsName,
+    sql: item.sqlName,
+    primary,
+    columns,
+    relations: resolveRelations(item, edges, byName, accepted),
+  };
+}
+
+function resolveRelations(
+  item: Prepared,
+  edges: readonly FkEdge[],
+  byName: ReadonlyMap<string, Prepared>,
+  accepted: readonly string[],
+): readonly RelationModel[] {
+  const raw = item.relationOptions;
+  if (raw === undefined) return [];
+  const record = raw as Record<string, unknown>;
+  const names = Object.keys(record);
+  const resolved: RelationModel[] = [];
+  const seen = new Set<string>();
+  for (const name of names) {
+    if (seen.has(name)) continue;
+    seen.add(name);
+    const call = record[name];
+    if (!isRelationCall(call)) {
+      unavailable(
+        `Table ${item.tsName} relation ${name} is not available yet. one() and many() are accepted. manyThrough and morph arrive later.`,
+      );
+    }
+    if (!byName.has(call.table)) {
+      throwNamed(
+        "OKM1020",
+        call.table,
+        accepted,
+        `Relation ${item.tsName}.${name} names ${call.table}, which is not in the schema. Accepted names: ${list(accepted)}.`,
+      );
+    }
+    const field = call.field;
+    const matches =
+      call.kind === "one"
+        ? edges.filter(
+            (edge) =>
+              edge.fromTable === item.tsName &&
+              edge.toTable === call.table &&
+              (field === undefined || edge.fromField === field),
+          )
+        : edges.filter(
+            (edge) =>
+              edge.toTable === item.tsName &&
+              edge.fromTable === call.table &&
+              (field === undefined || edge.fromField === field),
+          );
+    if (matches.length !== 1) {
+      const hint = matches.map((edge) => edge.fromField).sort();
+      const which = hint.length === 0 ? "none" : hint.join(", ");
+      catalogError(
+        "OKM1021",
+        `Relation ${item.tsName}.${name} on ${call.table} is ambiguous. Accepted columns: ${which}.`,
+      );
+    }
+    const edge = matches[0];
+    if (edge === undefined) {
+      catalogError(
+        "OKM1021",
+        `Relation ${item.tsName}.${name} on ${call.table} is ambiguous. Accepted columns: (none).`,
+      );
+    }
+    resolved.push(
+      call.kind === "one"
+        ? { name, kind: "one", table: call.table, local: [edge.fromSql], remote: [edge.toSql] }
+        : { name, kind: "many", table: call.table, local: [edge.toSql], remote: [edge.fromSql] },
+    );
+  }
+  return resolved;
 }
 
 function readRequires(requires: SchemaRequires | undefined): SchemaRequires | undefined {

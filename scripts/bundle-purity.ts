@@ -21,8 +21,8 @@ import { moduleSpecifiers } from "./specifiers.js";
 
 /** Adapter entries. They may import a driver package only as an external. */
 export const ADAPTER_ENTRIES = [
-  { entry: "src/adapters/pg/postgresjs.ts", external: "postgres" },
-  { entry: "src/adapters/pg/pglite.ts", external: "@electric-sql/pglite" },
+  { entry: "src/runtime/pg/postgresjs.ts", external: "postgres" },
+  { entry: "src/runtime/pg/pglite.ts", external: "@electric-sql/pglite" },
 ] as const;
 
 /** Published library entries that must not contain an npm package. */

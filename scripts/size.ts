@@ -13,11 +13,21 @@ export const RUNTIME_ENTRY = "src/contracts/index.ts";
 /** Postgres entry. Gated at the D135 ceiling. */
 export const PG_ENTRY = "src/dialects/pg/index.ts";
 
-/** Minified `okmodel/pg` ceiling, in bytes (D135). */
-export const PG_MAX_MIN_BYTES = 66_900;
+/**
+ * Minified `okmodel/pg` ceiling, in bytes (D137).
+ *
+ * Measured 68,611. Plus 3 percent is 70,669, above the 70,500 cap, so the
+ * gate is the cap.
+ */
+export const PG_MAX_MIN_BYTES = 70_500;
 
-/** Gzipped `okmodel/pg` ceiling, in bytes (D135). */
-export const PG_MAX_GZIP_BYTES = 20_900;
+/**
+ * Gzipped `okmodel/pg` ceiling, in bytes (D137).
+ *
+ * Measured 21,411. Plus 3 percent is 22,053, above the 22,000 cap, so the
+ * gate is the cap.
+ */
+export const PG_MAX_GZIP_BYTES = 22_000;
 
 /** Minified runtime entry ceiling, in bytes (60 KB). */
 export const RUNTIME_MAX_MIN_BYTES = 60 * 1024;
@@ -43,11 +53,64 @@ export const CI_COLD_IMPORT_MS = 25;
 /** Tree-shaken 10-table app. D133. */
 export const APP_ENTRY = "scripts/app-startup.ts";
 
-/** Minified app-bundle ceiling, in bytes. */
-export const APP_MAX_MIN_BYTES = 48_000;
+/**
+ * Minified app-fixture ceiling, in bytes (D137).
+ *
+ * Startup graph measured 72,513. Plus 3 percent is 74,688, under the 75,000 cap.
+ */
+export const APP_MAX_MIN_BYTES = 74_688;
 
-/** Gzipped app-bundle ceiling, in bytes. */
-export const APP_MAX_GZIP_BYTES = 15_800;
+/**
+ * Gzipped app-fixture ceiling, in bytes (D137).
+ *
+ * Startup graph measured 23,940. Plus 3 percent is 24,658, above the 24,000
+ * cap, so the gate is the cap.
+ */
+export const APP_MAX_GZIP_BYTES = 24_000;
+
+/**
+ * Public connect entries, driver left external (D137).
+ *
+ * The startup graph excludes chunks loaded on first failure, include, or checkout.
+ * Gates are the measured startup size plus 5 percent.
+ */
+export const CONNECT_ENTRIES = [
+  {
+    entry: "src/runtime/pg/postgresjs.ts",
+    file: "postgresjs.js",
+    external: ["postgres"],
+    maxMinBytes: 36_713,
+    maxGzipBytes: 12_837,
+  },
+  {
+    entry: "src/runtime/pg/pglite.ts",
+    file: "pglite.js",
+    external: ["@electric-sql/pglite"],
+    maxMinBytes: 35_439,
+    maxGzipBytes: 12_531,
+  },
+] as const;
+
+/** Operator modules the app fixture does not import. They must not be in its startup graph. */
+const SHAKEN_OPERATORS = [
+  "lt",
+  "lte",
+  "gt",
+  "gte",
+  "between",
+  "startsWith",
+  "contains",
+  "endsWith",
+  "like",
+  "ilike",
+  "inList",
+  "notIn",
+  "not",
+  "or",
+  "has",
+  "none",
+  "every",
+] as const;
 
 /**
  * Adapter entries.
@@ -282,6 +345,139 @@ export function measureEntry(
   }
 }
 
+const staticImport = /from\s*"(\.\/[^"]+)"/g;
+const dynamicImport = /import\s*\(\s*"(\.\/[^"]+)"\s*\)/g;
+const sideEffectImport = /import\s*"(\.\/[^"]+)"/g;
+
+/**
+ * Minifies an entry with splitting and counts only the static-import graph.
+ *
+ * `import()` chunks load later (first failure, first include, first checkout).
+ * They are not part of cold start. Gzip is the concatenation of the startup chunks.
+ *
+ * @param root - Repository root
+ * @param entry - Source entry, relative to `root`
+ * @param file - Built entry filename
+ * @param external - Packages left outside the bundle
+ * @returns Sizes and the cold-import sample of the entry file
+ */
+export function measureStartup(
+  root: string,
+  entry: string,
+  file: string,
+  external: readonly string[] = [],
+): RuntimeSize {
+  const parent = external.length > 0 ? join(root, "node_modules") : tmpdir();
+  const dir = mkdtempSync(join(parent, external.length > 0 ? ".okm-size-" : "okm-size-"));
+  try {
+    const proc = Bun.spawnSync(
+      [
+        "bun",
+        "build",
+        join(root, entry),
+        "--target",
+        "node",
+        "--minify",
+        "--splitting",
+        "--outdir",
+        dir,
+        ...external.flatMap((name) => ["--external", name]),
+      ],
+      { cwd: root, stdout: "pipe", stderr: "pipe" },
+    );
+    if (proc.exitCode !== 0) {
+      throw new Error(
+        `bun build ${entry} exited ${String(proc.exitCode)}\n${proc.stderr.toString()}`,
+      );
+    }
+    const startup = new Set<string>();
+    const lazy = new Set<string>();
+    walkStartup(dir, file, startup, lazy);
+    for (const name of lazy) startup.delete(name);
+    const parts: Buffer[] = [];
+    let minBytes = 0;
+    for (const name of startup) {
+      const bytes = readFileSync(join(dir, name));
+      minBytes += bytes.byteLength;
+      parts.push(bytes);
+    }
+    const outfile = join(dir, file);
+    return {
+      entry,
+      minBytes,
+      gzipBytes: gzipSync(Buffer.concat(parts), { level: 9 }).byteLength,
+      coldImportMs: coldImportMsOnNode(outfile),
+    };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function walkStartup(dir: string, file: string, seen: Set<string>, lazy: Set<string>): void {
+  if (seen.has(file)) return;
+  seen.add(file);
+  const text = readFileSync(join(dir, file), "utf8");
+  for (const match of text.matchAll(dynamicImport)) {
+    const name = match[1]?.replace("./", "");
+    if (name !== undefined) lazy.add(name);
+  }
+  for (const match of text.matchAll(staticImport)) {
+    const name = match[1]?.replace("./", "");
+    if (name !== undefined && !lazy.has(name)) walkStartup(dir, name, seen, lazy);
+  }
+  for (const match of text.matchAll(sideEffectImport)) {
+    const name = match[1]?.replace("./", "");
+    if (name !== undefined && !lazy.has(name)) walkStartup(dir, name, seen, lazy);
+  }
+}
+
+/**
+ * Fails when the app fixture's startup graph contains an operator it does not import.
+ *
+ * @param root - Repository root
+ * @returns Problem lines. Empty when only `eq` is present
+ */
+export function shakenOperatorProblems(root: string): readonly string[] {
+  const dir = mkdtempSync(join(tmpdir(), "okm-shake-"));
+  try {
+    const proc = Bun.spawnSync(
+      [
+        "bun",
+        "build",
+        join(root, APP_ENTRY),
+        "--target",
+        "node",
+        "--splitting",
+        "--outdir",
+        dir,
+        "--external",
+        "postgres",
+      ],
+      { cwd: root, stdout: "pipe", stderr: "pipe" },
+    );
+    if (proc.exitCode !== 0) {
+      return [`size: operator shake build exited ${String(proc.exitCode)}`];
+    }
+    let text = "";
+    for (const name of readdirSync(dir)) {
+      if (!name.endsWith(".js")) continue;
+      text += readFileSync(join(dir, name), "utf8");
+    }
+    const problems: string[] = [];
+    if (!text.includes("src/dialects/pg/ops/eq.ts")) {
+      problems.push("size: app fixture dropped eq, which it imports");
+    }
+    for (const name of SHAKEN_OPERATORS) {
+      if (text.includes(`src/dialects/pg/ops/${name}.ts`)) {
+        problems.push(`size: app fixture kept okmodel/pg operator ${name}`);
+      }
+    }
+    return problems;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 /** Fresh Node processes sampled for one cold import. The median ignores one slow tick. */
 const COLD_IMPORT_SAMPLES = 5;
 
@@ -362,10 +558,22 @@ if (import.meta.main) {
         }),
       );
     }
-    const app = measureEntry(root, APP_ENTRY);
+    const app = measureStartup(root, APP_ENTRY, "app-startup.js", ["postgres"]);
     console.log(formatEntry(app, ci));
     problems.push(...appBudgetProblems(app, { ci }));
     printColdImportFinding(app, ci);
+    problems.push(...shakenOperatorProblems(root));
+    for (const entry of CONNECT_ENTRIES) {
+      const measured = measureStartup(root, entry.entry, entry.file, entry.external);
+      console.log(formatEntry(measured, ci));
+      problems.push(
+        ...entryBudgetProblems(measured, {
+          maxMinBytes: entry.maxMinBytes,
+          maxGzipBytes: entry.maxGzipBytes,
+          maxColdImportMs: Number.POSITIVE_INFINITY,
+        }),
+      );
+    }
   } catch (error) {
     problems.push(`size: ${error instanceof Error ? error.message : String(error)}`);
   }

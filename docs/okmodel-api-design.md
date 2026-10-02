@@ -1270,6 +1270,7 @@ test("today view runs one query", async () => {
 | `upsert` target not unique | types | OKM1104 |
 | To-many include without `limit` | types | OKM1105 |
 | Feature needs a newer engine than `requires` allows | types | OKM1110 |
+| Driver lacks a capability (a dynamic call) | runtime | OKM1111 |
 | Unknown field name at runtime | runtime | OKM1120 |
 | Object where a value is expected | runtime | OKM1121 |
 | Cursor used with a different order | runtime | OKM1130 |

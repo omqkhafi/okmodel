@@ -21,6 +21,7 @@ import {
   writeColumnProject,
   writeProductionEmittedProject,
   writeProductionInferredProject,
+  writeQueryProject,
   type LibraryTarget,
 } from "./type-projects.js";
 import { repoRoot } from "./root.js";
@@ -145,6 +146,8 @@ export type TypeBudgetReport = TypeBudgetCore & {
   readonly source: SourceTypeCost;
   /** Column sample compiled against declarations. Gated. */
   readonly columns: ColumnTypeCost;
+  /** Read queries on 10, 50, and 200 tables. Gated by the D133 inferred-200 ceilings. */
+  readonly queries: readonly TypeBudgetRow[];
 };
 
 /**
@@ -180,6 +183,11 @@ export function measureTypeBudgets(): TypeBudgetReport {
     writeColumnProject(columnDir, declarations);
     const columns = measureProjectFile(columnDir, "columns-declarations");
     const rows = measureFixtureRows(join(root, "consumer"), { declarations }, operators);
+    const queries = ([10, 50, 200] as const).map((tables) =>
+      measureProject(join(root, "consumer"), `query-${String(tables)}`, tables, (dir) => {
+        writeQueryProject(dir, generateFixture({ seed: 1, tables }), { declarations });
+      }),
+    );
     const sourceRows = measureFixtureRows(join(root, "source"));
     const source = budgetReport(sourceRows);
     return {
@@ -190,6 +198,7 @@ export function measureTypeBudgets(): TypeBudgetReport {
         taggedOperatorSurcharge: source.taggedOperatorSurcharge,
       },
       columns,
+      queries,
     };
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -257,7 +266,7 @@ export function budgetReport(rows: readonly TypeBudgetRow[]): TypeBudgetCore {
  * @returns Problem lines. Empty when every ceiling holds
  */
 export function ceilingProblems(
-  report: TypeBudgetCore,
+  report: TypeBudgetCore & { readonly queries?: readonly TypeBudgetRow[] },
   taggedSurcharge: number = report.taggedOperatorSurcharge,
 ): readonly string[] {
   const problems: string[] = [];
@@ -290,6 +299,17 @@ export function ceilingProblems(
         `type-cost: ${String(step.fromTables)} to ${String(step.toTables)} tables added ${step.instantiations.toFixed(1)} instantiations per table, above ${String(TYPE_CEILINGS.instantiationsPerAddedTable)}`,
       );
     }
+  }
+  const query200 = report.queries?.find((entry) => entry.label === "query-200");
+  if (query200 !== undefined && query200.instantiations > TYPE_CEILINGS.inferred200Instantiations) {
+    problems.push(
+      `type-cost: query 200 tables used ${String(query200.instantiations)} instantiations, above ${String(TYPE_CEILINGS.inferred200Instantiations)}`,
+    );
+  }
+  if (query200 !== undefined && query200.types > TYPE_CEILINGS.inferred200Types) {
+    problems.push(
+      `type-cost: query 200 tables used ${String(query200.types)} types, above ${String(TYPE_CEILINGS.inferred200Types)}`,
+    );
   }
   if (taggedSurcharge > TYPE_CEILINGS.taggedOperatorSurcharge) {
     problems.push(

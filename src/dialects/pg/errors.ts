@@ -6,7 +6,13 @@
  */
 
 import { isConnectionFailure, isConnectionSqlstate } from "../../contracts/connection.js";
-import { OkmError, matchingParen, stripRowValues, type ErrorKind } from "../../contracts/error.js";
+import {
+  OkmError,
+  matchingParen,
+  stripRowValues,
+  type ErrorKind,
+  type ErrorStatuses,
+} from "../../contracts/error.js";
 
 /** Options for {@link mapPostgresError}. */
 export type MapPostgresErrorOptions = {
@@ -16,6 +22,8 @@ export type MapPostgresErrorOptions = {
    * The summary, the log, and {@link OkmError.fields} still omit them.
    */
   readonly includeValues?: boolean;
+  /** Category overrides from `connect({ errors })`. */
+  readonly http?: ErrorStatuses;
 };
 
 /**
@@ -50,6 +58,7 @@ export function mapPostgresError(error: unknown, options?: MapPostgresErrorOptio
     ...(options?.includeValues === true && values !== undefined
       ? { includeValues: true, values }
       : {}),
+    ...(options?.http !== undefined ? { http: options.http } : {}),
   });
 }
 

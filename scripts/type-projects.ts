@@ -67,6 +67,70 @@ export function writeProductionInferredProject(
 }
 
 /**
+ * Writes a read-path project: filter, select, include, and orderBy.
+ *
+ * The fixture tables stay. Two related tables carry the query so include has
+ * a target. The probe types a connected client from the built declarations.
+ *
+ * @param dir - Project directory
+ * @param fixture - Harness fixture
+ * @param target - Declarations a consumer would read, or the library source
+ */
+export function writeQueryProject(
+  dir: string,
+  fixture: SchemaFixture,
+  target?: LibraryTarget,
+): void {
+  mkdirSync(dir, { recursive: true });
+  const pg = libraryFile(dir, target, "dialects/pg/index");
+  const runtime = libraryFile(dir, target, "runtime/types");
+  const lines: string[] = [`import { many, one, schema, table, t } from "${pg}";`, ""];
+  lines.push(
+    'export const owner = table("owner", { id: t.id(), email: t.text() }, { relations: { notes: many("note") } });',
+    "",
+    'export const note = table("note", {',
+    "  id: t.id(),",
+    '  ownerId: t.uuid().references("owner"),',
+    "  body: t.text(),",
+    '}, { relations: { owner: one("owner") } });',
+    "",
+  );
+  const names = ["owner", "note"];
+  for (const item of fixture.tables) {
+    names.push(item.name);
+    lines.push(`export const ${item.name} = table("${item.name}", {`);
+    for (const column of item.columns) {
+      lines.push(`  ${column.name}: ${columnCall(item, column)},`);
+    }
+    lines.push("});", "");
+  }
+  lines.push("export const appSchema = schema({");
+  lines.push(`  tables: [${names.join(", ")}],`);
+  lines.push("});", "");
+  writeFileSync(join(dir, "tables.ts"), `${lines.join("\n")}\n`);
+  writeFileSync(
+    join(dir, "probe.ts"),
+    [
+      'import { eq } from "' + pg + '";',
+      'import type { Connected } from "' + runtime + '";',
+      'import { appSchema } from "./tables.js";',
+      "",
+      "export function read(db: Connected<typeof appSchema>) {",
+      "  return db.note.find({",
+      '    where: { body: eq("a") },',
+      '    select: ["id", "body"] as const,',
+      '    orderBy: { body: "asc" },',
+      "    limit: 2,",
+      '    include: { owner: { select: ["email"] as const } },',
+      "  });",
+      "}",
+      "",
+    ].join("\n"),
+  );
+  writeConfig(dir, ["probe.ts", "tables.ts"]);
+}
+
+/**
  * Writes an emitted project from {@link emitRowTypes}.
  *
  * The probe reads the declaration file and does not import the builders.

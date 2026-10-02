@@ -9,6 +9,7 @@
 import { OkmError } from "../src/contracts/index.js";
 import {
   boolean,
+  eq,
   id,
   integer,
   jsonb,
@@ -19,6 +20,7 @@ import {
   timestamptz,
   uuid,
 } from "../src/dialects/pg/index.js";
+import { connect } from "../src/runtime/pg/postgresjs.js";
 
 const users = table("users", {
   id: id(),
@@ -91,3 +93,14 @@ export const app = schema({
 
 /** Keeps the contracts entry in the bundle. Tree-shaking drops the unused exports. */
 export const startupError = OkmError;
+
+/**
+ * One read through `connect`. Not called at import, so startup does not open a pool.
+ *
+ * @param url - Postgres connection string
+ * @returns The first matching user
+ */
+export function readUser(url: string) {
+  const db = connect(url, { schema: app });
+  return db.users.find({ where: { email: eq("a@b.c") }, limit: 1 });
+}
