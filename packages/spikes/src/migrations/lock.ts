@@ -51,7 +51,7 @@ export function lockInfo(mode: LockMode, relation: string): LockInfo {
 export function lockForStatement(sql: string): LockInfo {
   const text = sql.trim().toLowerCase();
   if (
-    /^(create( or replace)? function|drop function|create domain|drop domain|alter domain|create sequence|drop sequence)\b/.test(
+    /^(create( or replace)? function|drop function|create domain|drop domain|alter domain|create sequence|drop sequence|create role|drop role|alter role|grant |revoke |alter default privileges|alter extension)\b/.test(
       text,
     )
   ) {

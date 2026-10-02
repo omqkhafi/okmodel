@@ -190,6 +190,10 @@ function attributesOf(object: CatalogObject): Readonly<Record<string, string>> {
           object.definition.expression === undefined
             ? ""
             : normalizeExpression(object.definition.expression),
+        predicate:
+          object.definition.predicate === undefined
+            ? ""
+            : normalizeExpression(object.definition.predicate),
         unique: object.definition.unique ? "true" : "false",
       };
     case "constraint": {
@@ -216,6 +220,26 @@ function attributesOf(object: CatalogObject): Readonly<Record<string, string>> {
       };
     case "extension":
       return { installed: "true" };
+    case "role":
+      return {
+        inherit: object.definition.inherit ? "true" : "false",
+        login: object.definition.login ? "true" : "false",
+      };
+    case "grant":
+      return {
+        grantable: object.definition.grantable ? "true" : "false",
+        objectKind: object.identity.objectKind,
+        privilege: object.identity.privilege,
+        role: object.identity.role,
+      };
+    case "default_privilege":
+      return {
+        forRole: object.identity.forRole,
+        grantable: object.definition.grantable ? "true" : "false",
+        objectType: object.identity.objectType,
+        privilege: object.identity.privilege,
+        role: object.identity.role,
+      };
     case "view":
       return { columns: object.definition.columns.join(",") };
     case "materialized_view":

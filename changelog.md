@@ -46,5 +46,6 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - A private safety spike measures tagged operators, runtime identifier checks, and final safety verification over presets, traits, and filters. Findings are in `packages/spikes/safety/FINDINGS.md`.
 - A private drivers spike checks one driver contract and a capability registry against postgres.js and PGlite, including cancellation, the `prepared` flag, and atomic `batch`. Findings are in `packages/spikes/drivers/FINDINGS.md`.
 - A private migrations spike checks that a catalog diff applied on Postgres matches the target catalog, including rewritten expressions, dependency-aware recreate, lock claims, and a drift hash of the normalised structure. Findings are in `packages/spikes/migrations/FINDINGS.md`.
+- A private infra spike checks roles, grants, default privileges, extension inventory on Postgres 15–18, and whether archived rows follow column-strategy migrations. Findings are in `packages/spikes/infra/FINDINGS.md`.
 - `bun run spikes:update` rewrites the spike type-cost locks from a fresh `tsc` run.
 - The replication test waits up to 30 seconds, matching its replay wait, so other Postgres tests can run beside it.

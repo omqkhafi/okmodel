@@ -9,7 +9,8 @@
     "./types": "./src/types/index.ts",
     "./safety": "./src/safety/index.ts",
     "./drivers": "./src/drivers/index.ts",
-    "./migrations": "./src/migrations/index.ts"
+    "./migrations": "./src/migrations/index.ts",
+    "./infra": "./src/infra/index.ts"
   },
   "dependencies": {
     "@okmodel/harness": "workspace:*"

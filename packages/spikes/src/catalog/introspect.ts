@@ -181,7 +181,8 @@ async function readIndexes(
         join pg_attribute a on a.attrelid = tbl.oid and a.attnum = cols.attnum
         where cols.attnum > 0
       ) as columns,
-      pg_get_expr(i.indexprs, i.indrelid) as index_expr
+      pg_get_expr(i.indexprs, i.indrelid) as index_expr,
+      pg_get_expr(i.indpred, i.indrelid) as predicate
     from pg_index i
     join pg_class idx on idx.oid = i.indexrelid
     join pg_class tbl on tbl.oid = i.indrelid
@@ -195,6 +196,7 @@ async function readIndexes(
     item("index", text(row, "schema"), text(row, "parent"), text(row, "name"), undefined, {
       columns: text(row, "columns"),
       expression: normalizeExpression(text(row, "index_expr")),
+      predicate: normalizeExpression(text(row, "predicate")),
       unique: flag(row, "is_unique"),
     }),
   );
@@ -310,6 +312,12 @@ async function readFunctions(
     join pg_type rt on rt.oid = p.prorettype
     join pg_language l on l.oid = p.prolang
     where n.nspname in (${schemas}) and p.prokind = 'f'
+      and not exists (
+        select 1 from pg_depend d
+        where d.classid = 'pg_proc'::regclass
+          and d.objid = p.oid
+          and d.deptype = 'e'
+      )
   `);
   return rows.map((row) => {
     const argTypes = stringList(row.arg_types);
