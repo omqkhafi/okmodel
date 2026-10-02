@@ -19,6 +19,9 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 #### contracts
 
 - `sha256` is a pure-TypeScript SHA-256 in the contracts layer. Fixture hashes use it.
+- Catalog objects share one envelope: kind, identity, owner, definition, dependencies, and provenance. Tables, columns, indexes, constraints, and sequences are built here. Views, functions, triggers, extensions, roles, grants, and default privileges use the same envelope.
+- Constraint and index names are generated from a stable key. A name past the dialect limit keeps a SHA-256 suffix. Renaming a field does not rename those constraints or indexes.
+- A catalog serialises to canonical JSON with a version field. The hash is SHA-256 of that JSON, so the same catalog yields the same bytes on every runtime. Namespace templates stay templates.
 
 #### tooling
 
@@ -48,6 +51,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 #### tooling
 
 - Source layers use the folder names `contracts`, `dialects`, `adapters`, `runtime`, and `tooling`.
+- The published `dist/` ceiling is 100000 bytes. The previous 8192 byte ceiling fit the empty package only.
 - Lint and format use oxlint and oxfmt. Layer and purity checks read imports from the Oxc AST.
 - Declaration emit no longer requires `isolatedDeclarations`, so exported types may be inferred.
 - The published package sets `sideEffects` to false.
