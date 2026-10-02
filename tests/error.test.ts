@@ -34,6 +34,7 @@ const SPEC_CODES = [
   "OKM1104",
   "OKM1105",
   "OKM1110",
+  "OKM1111",
   "OKM1120",
   "OKM1121",
   "OKM1122",
@@ -281,8 +282,6 @@ test("the error registry lists every spec 21 code and stays off the runtime entr
     expect(doc.fix.length).toBeGreaterThan(0);
     expect(errorDoc(doc.code)).toBe(doc);
   }
-  expect(errorDoc("OKM1111")).toBeUndefined();
-  expect(ERROR_DOCS.some((doc) => doc.code === "OKM1111")).toBe(false);
 
   const root = repoRoot();
   const entry = readFileSync(join(root, "src/contracts/index.ts"), "utf8");

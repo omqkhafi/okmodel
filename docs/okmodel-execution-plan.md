@@ -68,7 +68,8 @@ Spike code lives in the private workspace package `packages/spikes`; what proves
 | P12 | `p12-tables-schema` | `table()`, `schema()`, `Register`, row types (per the gate), guards OKM1020–1023 |
 | P13 | `p13-drivers` | public `Driver` contract first (`open` → `DriverPool` with `execute`, atomic `batch`, `reserve`, `stats`, `close`; `DriverError`; flags; spec 4.2), then capability registry, postgres.js and PGlite adapters (one pool per endpoint, `timeouts.acquire` with OKM1846), conformance suite v1 (execute, codecs, batch contract, reservation; error-mapping tests arrive with P14) |
 | P14 | `p14-errors` | `OkmError`, database error mapping from `DriverError`, categories, `outcome_unknown`, `toHttp`, `match`, `safe`, `fix`, nearest-name hints, error registry; error-mapping conformance |
-| P15 | `p15-query-core` | logical query, physical plan, Postgres SQL for find, one, insert, update, delete, count, exists; fingerprints; `inspect()` and `sql()`; the L3 runtime: `connect()` with a single endpoint and the Target / Topology / Endpoint / Pool / Router shape, so routing is a decision from the first release (invariants B, C, K) and `inspect()` shows it; an internal transaction runner (reserved connection, begin, commit, savepoint) used by chunked inserts and other multi-statement writes |
+| P15 | `p15-query-core` | read path: logical query, physical plan, Postgres SQL for `find`, `one`, `count`, `exists` (where with tagged operators, select, orderBy, limit, includes as `LATERAL`), fingerprints, `inspect()` and `sql()`, `.safe()`; the L3 runtime: `connect()` with a single endpoint and the Target / Topology / Endpoint / Pool / Router shape, so routing is a decision from the first release (invariants B, C, K) and `inspect()` shows it; typed client from the schema (type-cost benchmark queries gated); OKM1111; named-statement evaluation |
+| P15B | `p15b-write-path` | `insert`, `update`, `delete` (with returning, per-row lists, `expect`), chunked inserts, conflict modes as far as the spec fixes them, an internal transaction runner (reserved connection, begin, commit, savepoint) used by chunked inserts and other multi-statement writes; the write-side guards that need no policy layer |
 | P16 | `p16-migrations-basic` | snapshots, diff, dialect normalisation and scratch-database comparison, plan, apply, history, `okm_meta`, declared renames, step classification by operation kind (`expand`, `contract`, unclassified: the protected-target policy needs it), named `targets` with required `--target` (OKM1853) and the aliasing guard (OKM1852), atomic-per-migration apply with split non-transactional steps, checkpoints, resume and the per-target advisory lock (OKM1522), forward-only semantics, `okm migrate status`, the protected-target policy (`assertTargetPolicy`, spec 19.7), CLI (`build`, `generate`, `migrate`, `push`, `check`, `doctor`, `dev` with PGlite) |
 | P17 | `p17-release-0.1` | quickstart, docs check, conformance run, release checklist, 0.1.0; docs for environments, the preview recipe and the rehearsal recipe (spec 19.8) |
 
@@ -76,14 +77,14 @@ Spike code lives in the private workspace package `packages/spikes`; what proves
 
 | ID | Branch | Delivers |
 |---|---|---|
-| P20 | `p20-tagged-operators` | tagged operators, identifier validation, filter operators |
+| P20 | `p20-tagged-operators` | what P15 did not ship of the filter operators (json, array, range, text-search operators, extension operators), identifier-validation and operator property tests (the basic operators and OKM1121/OKM1122 are in P15) |
 | P21 | `p21-final-safety` | provenance with source locations and the final safety verification framework: rules register into it; P22–P28 each register theirs and extend `safety.property`, and P30 runs the full composition |
 | P22 | `p22-field-exposure` | guarded, hidden, sensitive, input stripping |
 | P23 | `p23-traits` | trait framework, `timestamps`, schema default traits |
 | P24 | `p24-tenancy-column` | column tenancy, context client, `global`, composite foreign keys, tenant uniques |
 | P25 | `p25-archivable` | archivable (column strategy), archive contract, cascade, `archiveId`, restore |
 | P26 | `p26-validation` | inline and options validation, Standard Schema, branded skip |
-| P27 | `p27-relations-includes` | relations, single-statement includes, `.required()`, `page`, `aggregate`, relation filters |
+| P27 | `p27-relations-includes` | what P15 did not ship: `manyThrough`, `.required()`, `page` (cursor), `aggregate`, nested relation-filter edge cases (basic relations, includes and `has` / `none` / `every` are in P15) |
 | P28 | `p28-presets` | presets, reserved names, OKM1040 |
 | P29 | `p29-transactions` | public `tx` on a reserved connection (affinity, on top of the internal runner from P15), public atomic `batch` per the contract, nested savepoints, retry (never on `outcome_unknown`), row locks, advisory locks, cancellation, timeouts, snapshot reads |
 | P30 | `p30-gate-0.2` | isolation, safety, statement-count and archive correctness property tests; release 0.2 |
@@ -174,3 +175,8 @@ Problems found in the earlier order and how the table above resolves them:
 - P16: fast catalog loader that trusts the build artifact (D133); `okm check` and dev keep full validation.
 - P13–P16: watch the 0.1 runtime budget (60 KB min): core plus schema is already 38 KB (D133).
 - P15: OKM1111 (driver lacks a capability, runtime) with its first consumer; evaluate a named-statement option for the postgres.js adapter (D135) with a benchmark against unnamed; keep the pooler-safe default.
+- P15 split: P15 is the read path and `connect()`, P15B the write path and the internal transaction runner (the original P15 row was too large for one reviewable prompt).
+- P17 hygiene: gate adapter entries on incremental bytes over the runtime entry (shared code is double-counted in standalone bundles); look again at the size of `OkmError` (6.4 KB min).
+- P29: real two-session serialization and deadlock races and a live connection kill during commit (P14 simulated them with ERRCODE and a unit test).
+- P15 stopped at the size gate (app fixture 87,179 / 27,620 vs 60,000 / 20,000). D137: optimisation pass first (lazy error mapping and include planner, per-operator tree-shaking, no batch or routing code on the read path, one decode path), then gates at measured +3% under a hard cap of 75,000 / 24,000; P15B adds at most 12,000 / 3,800; P17 finalises the 0.1 app budget.
+- P15B: automate `docs/editor-check.md` as a language-server (tsserver) snapshot check over the P15 and P15B query surface; no manual run.

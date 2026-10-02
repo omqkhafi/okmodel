@@ -30,55 +30,11 @@ export type BatchSession = {
   ): Promise<ExecuteResult>;
   /** Reports whether a transaction is open on this connection. */
   inTransaction(): boolean;
-  /** Starts a transaction. */
-  begin(watch: Watch | undefined): Promise<void>;
-  /** Commits the open transaction. */
-  commit(watch: Watch | undefined): Promise<void>;
-  /** Rolls the open transaction back. */
-  rollback(): Promise<void>;
-  /**
-   * Opens a savepoint.
-   *
-   * @param name - Savepoint name
-   */
-  savepoint(name: string): Promise<void>;
-  /**
-   * Releases a savepoint.
-   *
-   * @param name - Savepoint name
-   */
-  releaseSavepoint(name: string): Promise<void>;
-  /**
-   * Rolls back to a savepoint.
-   *
-   * @param name - Savepoint name
-   */
-  rollbackTo(name: string): Promise<void>;
+  /** Forgets a transaction after a rollback that did not complete. */
+  abandon(): void;
 };
 
 let savepointIds = 0;
-
-/**
- * Next transaction depth after one statement.
- *
- * `execute("BEGIN")` opens a transaction the batch must see. Only a whole
- * command matches, so `ROLLBACK TO SAVEPOINT` stays inside the transaction.
- *
- * @param depth - Depth before the statement
- * @param text - Statement text
- * @returns Depth after a successful statement
- */
-export function nextTransactionDepth(depth: number, text: string): number {
-  const command = text.trim().replace(/;\s*$/, "").trim().toLowerCase();
-  if (command === "begin" || command === "begin work" || command === "begin transaction") {
-    return depth + 1;
-  }
-  if (command === "commit" || command === "commit work" || command === "end") {
-    return Math.max(0, depth - 1);
-  }
-  if (command === "rollback" || command === "rollback work") return 0;
-  return depth;
-}
 
 /**
  * Runs statements as one atomic unit.
@@ -103,17 +59,17 @@ async function transaction(
   watch: Watch | undefined,
 ): Promise<readonly ExecuteResult[]> {
   try {
-    await session.begin(watch);
+    await control(session, "BEGIN", watch);
     const results = await statementsOf(session, statements, watch);
     try {
-      await session.commit(watch);
+      await control(session, "COMMIT", watch);
     } catch (error) {
       if (isConnectionFailure(error)) throw outcomeUnknown(error);
       throw stamp(error, null);
     }
     return results;
   } catch (error) {
-    await session.rollback().catch(() => undefined);
+    await rollback(session);
     throw error;
   }
 }
@@ -126,13 +82,25 @@ async function savepoint(
   savepointIds += 1;
   const name = `okm_b${String(savepointIds)}`;
   try {
-    await session.savepoint(name);
+    await control(session, `SAVEPOINT ${name}`, watch);
     const results = await statementsOf(session, statements, watch);
-    await session.releaseSavepoint(name);
+    await control(session, `RELEASE SAVEPOINT ${name}`, watch);
     return results;
   } catch (error) {
-    await session.rollbackTo(name).catch(() => undefined);
+    await rollback(session, `ROLLBACK TO SAVEPOINT ${name}`);
     throw error;
+  }
+}
+
+function control(session: BatchSession, text: string, watch: Watch | undefined): Promise<void> {
+  return session.query(text, undefined, watch).then(() => undefined);
+}
+
+async function rollback(session: BatchSession, text = "ROLLBACK"): Promise<void> {
+  try {
+    await session.query(text, undefined, undefined);
+  } catch {
+    session.abandon();
   }
 }
 

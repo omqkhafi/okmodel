@@ -8,6 +8,7 @@
 import { throwNamed } from "../../contracts/error.js";
 import { type ColumnInsertOf, type ColumnRowOf, type ColumnUpdateOf } from "./column.js";
 import { definition, unavailable } from "./misuse.js";
+import { type RelationCall } from "./relations.js";
 
 /**
  * A column as seen by `indexes` and `checks`.
@@ -67,11 +68,12 @@ export type TableOptions<TColumns> = {
   readonly traits?: unknown;
   readonly omitDefaults?: unknown;
   readonly tenancy?: unknown;
-  readonly relations?: unknown;
   readonly computed?: unknown;
   readonly presets?: unknown;
   readonly policies?: unknown;
   readonly reference?: unknown;
+  /** `one` and `many`. Other relation kinds stay reserved. */
+  readonly relations?: unknown;
 };
 
 /**
@@ -91,13 +93,19 @@ export type Handles<TColumns> = {
  *
  * @typeParam TName - Table name
  * @typeParam TColumns - Column builders
+ * @typeParam TRelations - Relations declared on this table
  */
-export type Table<TName extends string, TColumns> = {
+export type Table<
+  TName extends string,
+  TColumns,
+  TRelations extends Readonly<Record<string, RelationCall>> = Readonly<Record<string, never>>,
+> = {
   readonly "~name": TName;
   readonly "~columns": TColumns;
   readonly "~row": RowFrom<TColumns>;
   readonly "~insert": InsertFrom<TColumns>;
   readonly "~update": UpdateFrom<TColumns>;
+  readonly "~relations": TRelations;
   readonly name: TName;
   readonly columns: TColumns;
   readonly options?: TableOptions<TColumns>;
@@ -111,6 +119,7 @@ export type AnyTable = {
   readonly "~row": unknown;
   readonly "~insert": unknown;
   readonly "~update": unknown;
+  readonly "~relations"?: Readonly<Record<string, RelationCall>>;
   readonly name: string;
   readonly columns: Readonly<Record<string, object>>;
   readonly options?: object;
@@ -149,7 +158,15 @@ export type UpdateFrom<TColumns> = {
   ]: ColumnUpdateOf<TColumns[K]>;
 };
 
-const TABLE_KNOWN = new Set(["checks", "comment", "indexes", "renamedFrom", "sqlName", "unique"]);
+const TABLE_KNOWN = new Set([
+  "checks",
+  "comment",
+  "indexes",
+  "relations",
+  "renamedFrom",
+  "sqlName",
+  "unique",
+]);
 
 /**
  * Later table options, and the prompt that adds each one.
@@ -162,7 +179,6 @@ const TABLE_LATER: Readonly<Record<string, string>> = {
   policies: "later",
   presets: "P28",
   reference: "P53A",
-  relations: "P27",
   tenancy: "P24",
   traits: "P23",
   validate: "P26",
@@ -184,15 +200,46 @@ const TABLE_LATER: Readonly<Record<string, string>> = {
 export function table<
   const TName extends string,
   const TColumns extends Readonly<Record<string, object>>,
->(name: TName, columns: TColumns, options?: TableOptions<TColumns>): Table<TName, TColumns> {
+>(name: TName, columns: TColumns): Table<TName, TColumns, Readonly<Record<string, never>>>;
+export function table<
+  const TName extends string,
+  const TColumns extends Readonly<Record<string, object>>,
+  const TOptions extends TableOptions<TColumns>,
+>(name: TName, columns: TColumns, options: TOptions): Table<TName, TColumns, RelationsOf<TOptions>>;
+export function table<
+  const TName extends string,
+  const TColumns extends Readonly<Record<string, object>>,
+>(
+  name: TName,
+  columns: TColumns,
+  options?: TableOptions<TColumns>,
+): Table<TName, TColumns, Readonly<Record<string, RelationCall>>> {
   if (name.length === 0) {
     definition("table() needs a name.");
   }
   if (options !== undefined) {
     rejectLater(options, TABLE_KNOWN, TABLE_LATER, `Table ${name}`);
   }
-  return { name, columns, ...(options !== undefined ? { options } : {}) } as Table<TName, TColumns>;
+  return { name, columns, ...(options !== undefined ? { options } : {}) } as unknown as Table<
+    TName,
+    TColumns,
+    Readonly<Record<string, RelationCall>>
+  >;
 }
+
+/**
+ * Relation map stored on a table.
+ *
+ * Absent relations are an empty map, so a table without `relations` does not
+ * grow a conditional at every call.
+ *
+ * @typeParam TOptions - Options argument, or `undefined`
+ */
+type RelationsOf<TOptions> = TOptions extends { readonly relations: infer R }
+  ? R extends Readonly<Record<string, RelationCall>>
+    ? R
+    : Readonly<Record<string, never>>
+  : Readonly<Record<string, never>>;
 
 /**
  * Declares an index from column handles.

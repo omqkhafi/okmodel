@@ -40,6 +40,22 @@ export const COLUMN_CODES = ["OKM1060", "OKM1061", "OKM1210"] as const;
 /** A column or codec error code. */
 export type ColumnCode = (typeof COLUMN_CODES)[number];
 
+/**
+ * Query, capability, and connect codes the read path throws.
+ *
+ * These are spec §21 codes. They are a type only, so the runtime entry does
+ * not gain a second registry.
+ */
+export type QueryCode =
+  | "OKM1101"
+  | "OKM1105"
+  | "OKM1111"
+  | "OKM1120"
+  | "OKM1121"
+  | "OKM1801"
+  | "OKM1802"
+  | "OKM1843";
+
 /** Kinds from spec §14, in category order. */
 export const ERROR_KINDS = [
   "invalid",
@@ -151,6 +167,12 @@ export type OkmErrorOptions = {
    */
   readonly includeValues?: boolean;
   readonly values?: Readonly<Record<string, string>>;
+  /**
+   * Category overrides from `connect({ errors })`.
+   *
+   * {@link OkmError.toHttp} uses them when the caller does not pass statuses.
+   */
+  readonly http?: ErrorStatuses;
 };
 
 /** Success or a mapped {@link OkmError}. */
@@ -244,6 +266,8 @@ export class OkmError extends Error {
   #fields: ErrorFields | undefined;
   /** Row values. Present only when the caller opted in. Not logged. */
   readonly #values: Readonly<Record<string, string>> | undefined;
+  /** Status overrides from `connect()`. Not logged. */
+  readonly #http: ErrorStatuses | undefined;
 
   /**
    * Same text as `message`.
@@ -277,6 +301,7 @@ export class OkmError extends Error {
     this.batchIndex = options?.batchIndex === undefined ? null : options.batchIndex;
     this.fieldReason = options?.fieldReason ?? kind;
     this.#values = options?.includeValues === true ? options.values : undefined;
+    this.#http = options?.http;
   }
 
   /**
@@ -360,7 +385,8 @@ export class OkmError extends Error {
    * @returns Status and `{ code, reason, fields }`
    */
   toHttp(statuses?: ErrorStatuses): HttpError {
-    const override = statuses?.[this.category];
+    const chosen = statuses ?? this.#http;
+    const override = chosen?.[this.category];
     return {
       status: override ?? DEFAULT_STATUS[this.category],
       body: {
@@ -456,7 +482,7 @@ export function catalogError(code: CatalogCode, message: string, options?: OkmEr
  * @param message - What failed, including the accepted values
  */
 export function throwNamed(
-  code: CatalogCode | ColumnCode,
+  code: CatalogCode | ColumnCode | QueryCode,
   input: string,
   candidates: readonly string[],
   message: string,

@@ -18,9 +18,15 @@ import type {
   WireValue,
 } from "../../contracts/driver.js";
 import { PGLITE_CAPABILITIES } from "../capabilities.js";
-import { acquireTimeout, cancelled, DriverError, mapDriverError, timedOut } from "../error.js";
-import { type BatchSession, nextTransactionDepth, runAtomicBatch } from "./batch.js";
-import { runCall, type Watch } from "./call.js";
+import {
+  driverErrors,
+  mapFailure,
+  rejectCancelled,
+  rejectClosed,
+  rejectTimedOut,
+} from "../failure.js";
+import type { BatchSession } from "./batch.js";
+import { nextTransactionDepth, runCall, type Watch } from "./call.js";
 import { EMPTY_NOTICES, resultFrom } from "./result.js";
 
 export {
@@ -78,14 +84,17 @@ export async function open(config: PgliteConfig = {}): Promise<DriverPool> {
   );
 
   async function lease(): Promise<DriverConnection> {
-    if (closed) throw new DriverError("The pool is closed.");
+    if (closed) return rejectClosed();
     await slot.acquire(acquireMs);
     let released = false;
     return {
       execute: (text, params, options) =>
         runCall(closed, options, (watch) => session.query(text, params, watch)),
       batch: (statements, options) =>
-        runCall(closed, options, (watch) => runAtomicBatch(session, statements, watch)),
+        runCall(closed, options, async (watch) => {
+          const { runAtomicBatch } = await import("./batch.js");
+          return runAtomicBatch(session, statements, watch);
+        }),
       async release() {
         if (released) return;
         released = true;
@@ -184,8 +193,8 @@ class PgliteSession implements BatchSession {
     watch: Watch | undefined,
   ): Promise<ExecuteResult> {
     const why = watch?.reason();
-    if (why === "timeout") return Promise.reject(timedOut());
-    if (why === "cancelled" || watch?.signal.aborted === true) return Promise.reject(cancelled());
+    if (why === "timeout") return rejectTimedOut();
+    if (why === "cancelled" || watch?.signal.aborted === true) return rejectCancelled();
     this.enter();
     const pending =
       params === undefined || params.length === 0
@@ -200,22 +209,24 @@ class PgliteSession implements BatchSession {
       (error: unknown) => {
         this.leave();
         this.notices.take();
-        throw mapDriverError(error);
+        return mapFailure(error).then((mapped) => {
+          throw mapped;
+        });
       },
     );
   }
 
   /** @inheritdoc */
-  begin(watch: Watch | undefined): Promise<void> {
-    return this.control("BEGIN", watch);
+  inTransaction(): boolean {
+    return this.transactionDepth > 0;
   }
 
   /** @inheritdoc */
-  commit(watch: Watch | undefined): Promise<void> {
-    return this.control("COMMIT", watch);
+  abandon(): void {
+    this.transactionDepth = 0;
   }
 
-  /** @inheritdoc */
+  /** Rolls back after a failed reserved session. Depth is cleared either way. */
   rollback(): Promise<void> {
     return this.query("ROLLBACK", undefined, undefined).then(
       () => {
@@ -226,30 +237,6 @@ class PgliteSession implements BatchSession {
         throw error;
       },
     );
-  }
-
-  /** @inheritdoc */
-  savepoint(name: string): Promise<void> {
-    return this.query(`SAVEPOINT ${name}`, undefined, undefined).then(() => undefined);
-  }
-
-  /** @inheritdoc */
-  releaseSavepoint(name: string): Promise<void> {
-    return this.query(`RELEASE SAVEPOINT ${name}`, undefined, undefined).then(() => undefined);
-  }
-
-  /** @inheritdoc */
-  rollbackTo(name: string): Promise<void> {
-    return this.query(`ROLLBACK TO SAVEPOINT ${name}`, undefined, undefined).then(() => undefined);
-  }
-
-  /** @inheritdoc */
-  inTransaction(): boolean {
-    return this.transactionDepth > 0;
-  }
-
-  private control(text: "BEGIN" | "COMMIT", watch: Watch | undefined): Promise<void> {
-    return this.query(text, undefined, watch).then(() => undefined);
   }
 
   private note(text: string): void {
@@ -311,7 +298,9 @@ class Slot {
         waiter.timer = setTimeout(() => {
           const index = this.waiters.indexOf(waiter);
           if (index !== -1) this.waiters.splice(index, 1);
-          reject(acquireTimeout());
+          void driverErrors().then((errors) => {
+            reject(errors.acquireTimeout());
+          });
         }, acquireMs);
       }
       this.waiters.push(waiter);

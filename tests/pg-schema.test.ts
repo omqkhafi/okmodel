@@ -233,9 +233,11 @@ test("later options are OKM1061 and name the prompt that adds them", () => {
   expect(error.code).toBe("OKM1061");
   expect(error.message).toContain("not available yet");
   expect(error.message).toContain("P23");
-  const tableError = capture(() => table("tasks", { id: t.id() }, { relations: { owner: true } }));
+  const tableError = capture(() =>
+    schema({ tables: [table("tasks", { id: t.id() }, { relations: { owner: true } })] }),
+  );
   expect(tableError.code).toBe("OKM1061");
-  expect(tableError.message).toContain("P27");
+  expect(tableError.message).toContain("one() and many()");
   expect(tableError.message).toContain("not available yet");
   const computed = capture(() => table("tasks", { id: t.id() }, { computed: { label: true } }));
   expect(computed.code).toBe("OKM1061");
