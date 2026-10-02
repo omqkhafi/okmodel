@@ -173,3 +173,4 @@ Problems found in the earlier order and how the table above resolves them:
 - P16: `okm build` wires emitted types, including the table-name union for `references` (D132).
 - P16: fast catalog loader that trusts the build artifact (D133); `okm check` and dev keep full validation.
 - P13–P16: watch the 0.1 runtime budget (60 KB min): core plus schema is already 38 KB (D133).
+- P15: OKM1111 (driver lacks a capability, runtime) with its first consumer; evaluate a named-statement option for the postgres.js adapter (D135) with a benchmark against unnamed; keep the pooler-safe default.

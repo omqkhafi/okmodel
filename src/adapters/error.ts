@@ -1,9 +1,9 @@
 /**
  * Errors an adapter throws.
  *
- * Database failures stay {@link DriverError}. Acquire exhaustion is OKM1846
- * on {@link OkmError}: that code is the pool's own deadline (spec §15.2), not
- * a SQLSTATE mapping. SQLSTATE mapping to `OkmError` kinds is a later prompt.
+ * Database failures stay {@link DriverError}. The Postgres dialect maps that
+ * to {@link OkmError}. Acquire exhaustion is OKM1846 on {@link OkmError}:
+ * that code is the pool's own deadline (spec §15.2), not a SQLSTATE.
  */
 
 import { OkmError } from "../contracts/error.js";
@@ -95,9 +95,22 @@ export function timedOut(cause?: unknown): DriverError {
 }
 
 /**
+ * A commit was sent and its result never arrived (OKM1401 once mapped).
+ *
+ * @param cause - Underlying error, when one exists
+ * @returns Kind `outcome_unknown`, batch index `null`
+ */
+export function outcomeUnknown(cause?: unknown): DriverError {
+  return new DriverError(
+    "The commit outcome is unknown. The result never arrived.",
+    driverFields({ kind: "outcome_unknown", cause, batchIndex: null }),
+  );
+}
+
+/**
  * The pool did not hand out a connection within `timeouts.acquire`.
  *
- * @returns OKM1846
+ * @returns OKM1846, kind `timeout`
  */
 export function acquireTimeout(): OkmError {
   return new OkmError(

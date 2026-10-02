@@ -10,8 +10,14 @@ import { repoRoot } from "./root.js";
 /** Published entry the runtime budget measures. D127. */
 export const RUNTIME_ENTRY = "src/contracts/index.ts";
 
-/** Postgres entry. Printed beside the runtime budget. It has no separate ceiling. */
+/** Postgres entry. Gated at the D135 ceiling. */
 export const PG_ENTRY = "src/dialects/pg/index.ts";
+
+/** Minified `okmodel/pg` ceiling, in bytes (D135). */
+export const PG_MAX_MIN_BYTES = 66_900;
+
+/** Gzipped `okmodel/pg` ceiling, in bytes (D135). */
+export const PG_MAX_GZIP_BYTES = 20_900;
 
 /** Minified runtime entry ceiling, in bytes (60 KB). */
 export const RUNTIME_MAX_MIN_BYTES = 60 * 1024;
@@ -43,10 +49,26 @@ export const APP_MAX_MIN_BYTES = 48_000;
 /** Gzipped app-bundle ceiling, in bytes. */
 export const APP_MAX_GZIP_BYTES = 15_800;
 
-/** Adapter entries. Printed beside the runtime budget. They have no separate ceiling. */
+/**
+ * Adapter entries.
+ *
+ * Cold import is printed and not gated (D135): the driver packages dominate it.
+ * Byte ceilings are the P14 measurement plus 25 percent. OkmError is in these
+ * bundles, so the P13 figures no longer fit.
+ */
 export const ADAPTER_ENTRIES = [
-  "src/adapters/pg/postgresjs.ts",
-  "src/adapters/pg/pglite.ts",
+  {
+    entry: "src/adapters/pg/postgresjs.ts",
+    external: ["postgres"],
+    maxMinBytes: 19_850,
+    maxGzipBytes: 6_870,
+  },
+  {
+    entry: "src/adapters/pg/pglite.ts",
+    external: ["@electric-sql/pglite"],
+    maxMinBytes: 17_870,
+    maxGzipBytes: 6_230,
+  },
 ] as const;
 
 /** Ceilings for one minified entry. */
@@ -303,25 +325,16 @@ function printColdImportFinding(measured: RuntimeSize, ci: boolean): void {
   if (finding !== undefined) console.log(`size: finding: ${measured.entry} ${finding}`);
 }
 
-function readCeiling(path: string): number {
-  const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
-  if (!isRecord(parsed) || typeof parsed.maxDistBytes !== "number") {
-    throw new Error(`${path} must contain maxDistBytes`);
-  }
-  return parsed.maxDistBytes;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 if (import.meta.main) {
   const root = repoRoot();
-  const maxBytes = readCeiling(join(root, "size-budget.json"));
   const dir = join(root, "dist");
-  const problems = [...checkDistSize(dir, maxBytes)];
-  if (problems.length === 0) {
-    console.log(`size: dist ${String(distByteSize(dir))} bytes (ceiling ${String(maxBytes)})`);
+  const problems: string[] = [];
+  try {
+    console.log(`size: dist ${String(distByteSize(dir))} bytes (reported, not gated)`);
+  } catch (error) {
+    problems.push(
+      `size: cannot read ${dir}: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
   try {
     const runtime = measureRuntimeEntry(root);
@@ -331,9 +344,23 @@ if (import.meta.main) {
     printColdImportFinding(runtime, ci);
     const pg = measureEntry(root, PG_ENTRY);
     console.log(formatEntry(pg, ci));
+    problems.push(
+      ...entryBudgetProblems(pg, {
+        maxMinBytes: PG_MAX_MIN_BYTES,
+        maxGzipBytes: PG_MAX_GZIP_BYTES,
+        maxColdImportMs: Number.POSITIVE_INFINITY,
+      }),
+    );
     for (const entry of ADAPTER_ENTRIES) {
-      const adapter = measureEntry(root, entry, ["postgres", "@electric-sql/pglite"]);
+      const adapter = measureEntry(root, entry.entry, entry.external);
       console.log(formatEntry(adapter, ci));
+      problems.push(
+        ...entryBudgetProblems(adapter, {
+          maxMinBytes: entry.maxMinBytes,
+          maxGzipBytes: entry.maxGzipBytes,
+          maxColdImportMs: Number.POSITIVE_INFINITY,
+        }),
+      );
     }
     const app = measureEntry(root, APP_ENTRY);
     console.log(formatEntry(app, ci));

@@ -5,6 +5,7 @@
  * Each builder is a separate export so a bundle can keep only the ones it calls.
  */
 
+export { mapPostgresError, type MapPostgresErrorOptions } from "./errors.js";
 export { emitRowTypes } from "./emit.js";
 export {
   schema,

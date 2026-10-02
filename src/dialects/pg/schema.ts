@@ -4,7 +4,7 @@
  * Work happens here, not in `table()` and not at import.
  */
 
-import { catalogError } from "../../contracts/error.js";
+import { catalogError, throwNamed } from "../../contracts/error.js";
 import { catalog } from "../../contracts/catalog/build.js";
 import { staticNamespace } from "../../contracts/catalog/identity.js";
 import {
@@ -369,8 +369,10 @@ function compileUniques(
     for (const field of fields) {
       const column = byField.get(field);
       if (column === undefined) {
-        catalogError(
+        throwNamed(
           "OKM1020",
+          field,
+          accepted,
           `Unique ${tableName}.${name} names ${field}, which is not a column of ${tableName}. Accepted names: ${list(accepted)}.`,
         );
       }
@@ -468,8 +470,10 @@ function compileForeignKeys(
     }
     const target = byName.get(reference.table);
     if (target === undefined) {
-      catalogError(
+      throwNamed(
         "OKM1020",
+        reference.table,
+        accepted,
         `Table ${reference.table} is not in the schema. Accepted names: ${list(accepted)}.`,
       );
     }
@@ -527,8 +531,10 @@ function resolveTarget(
     for (const name of named) {
       const match = target.byField.get(name) ?? target.bySql.get(name);
       if (match === undefined) {
-        catalogError(
+        throwNamed(
           "OKM1021",
+          name,
+          accepted,
           `Foreign key ${item.tsName}.${column.field} references ${name} on ${target.tsName}, which is not a column. Accepted columns: ${list(accepted)}.`,
         );
       }
