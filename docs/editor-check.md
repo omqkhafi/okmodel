@@ -1,12 +1,13 @@
-# Editor check (P12)
+# Editor check
 
-Hover and autocomplete are unmeasured (D111, D120). This list is for a person to run in an editor. It was not run as part of the change that added it.
+`bun run editor-check` drives the TypeScript 6 language server over stdio. TypeScript 7 ships `tsc` and no `tsserver`, so the server is the dev-only `typescript-editor` package. The script does not import it, and it is not part of a bundle.
 
-Open a TypeScript file in this repository, or a small project that imports `okmodel` and `okmodel/pg`.
+The fixture is `tests/fixtures/editor/surface.ts`. Markers name a hover binding, a completion site, or a diagnostic. The check compares hover text, completion names, and diagnostic text with `tests/fixtures/editor/surface.snap.txt`.
 
-1. Hover `Row<"tasks">` after `declare module "okmodel" { interface Register { readonly schema: typeof appSchema } }`. The hover should show the task fields (`id`, `title`, and the rest), not a builder type. Hidden fields are absent.
-2. Type `Row<"` and accept a completion. The names should be the table names on the registered schema. `Insert<"` and `Update<"` should offer the same names.
-3. Type `Row<"` and accept a completion for a reference target, then write `ownerId: t.uuid().references("users")`. The `references()` argument stays a `string` (a generic table-name argument cycles through `Register`). Autocomplete of table names is the `Row` / `Insert` / `Update` argument, not the `references()` argument.
-4. Pass a table name that is not in `schema({ tables })`, then call `schema()`. The failure is OKM1020. The message names the missing table and the accepted names. This is a construction error, not a recursive type error.
+It covers the read surface and the write surface:
 
-`okm check` reporting a second `Register` is OKM1025 and is not part of this check.
+- Completions in `where`, `insert`, and `update` `set` include the column names.
+- Hover on a `find` result and an `insert` result shows the row fields (`id`, `email`, and the value types), not a column builder.
+- A missing `select` column and a missing table each produce a diagnostic that names `missing`.
+
+`bun run editor-check --write` replaces the snapshot after a review. The check is part of `bun run check`.

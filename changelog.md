@@ -35,6 +35,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Date and time codecs read the `Temporal` global. okmodel does not ship a polyfill. A missing global is OKM1210 and the message says to assign one to `globalThis.Temporal`.
 - `table()` and `schema()` compile columns, references, indexes, checks, and unique constraints into a catalog. `one()` and `many()` declare relations. `manyThrough` and `morph` stay OKM1061. Options that arrive later throw OKM1061 and name that prompt, or say later when the plan has no row for them.
 - Tagged operators are one function per operator (`eq`, `lt`, `inList`, `or`, and the rest). An app that imports `eq` does not ship the others.
+- `inc` adds to a numeric column in an `update` `set`. JSON and array operators are not in this version.
 - `mapPostgresError` turns a `DriverError` into an `OkmError`. SQLSTATE picks the kind. A catalog constraint name (`{table}_{nameKey}_key`, `_fkey`, `_check`, or `{table}_pkey`) picks the column reason. `57014` without a caller abort is `timeout`.
 - `Row`, `Insert`, and `Update` read a `Register` schema. `emitRowTypes` writes the same shapes (`Tasks`, `TasksInsert`, `TasksUpdate`). `schema({ types })` records `emitted` or `inferred`.
 
@@ -42,6 +43,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - `okmodel/pg/postgresjs` and `okmodel/pg/pglite` are separate entries. postgres.js and PGlite are optional peers, not dependencies of the core. One pool per endpoint. PGlite is a pool of one. Acquire timeout is OKM1846. Release runs `RESET ALL` and `pg_advisory_unlock_all()`. A timeout stays kind `timeout`. An abort from `signal` is `cancelled`. A commit whose connection dies first is kind `outcome_unknown` on `DriverError`, not an `OkmError`.
 - Capability flags are readable per driver. `stream` on a driver that does not have it is OKM1111.
+- `prepared: "named"` is not for transaction-mode poolers.
 
 #### runtime
 
@@ -49,7 +51,9 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Reads are `find`, `one`, `count`, and `exists`, with `where`, `select`, `orderBy`, `limit`, and `include`. A find needs a limit (OKM1101). A to-many include needs a limit (OKM1105). Includes are one LATERAL statement. `one` and `many` resolve through catalog foreign keys.
 - `inspect`, `sql`, and `safe` report the plan, the statement, and `{ ok, value }` or `{ ok, error }`. Plans are cached by shape (FNV-1a, 64 entries). One endpoint until topology arrives. `stream` on a driver without it is OKM1111.
 - SQLSTATE mapping and driver errors load on the first failure. The include planner loads on the first include. Checkout, describe, and stream load on first use. A successful find does not pay for them.
-- Named prepared statements are opt-in (`prepared: "named"`). On a direct connection they were about 40 percent faster at p50 than unnamed. Unnamed stays the default.
+- Named prepared statements are opt-in (`prepared: "named"`). On a direct connection they were about 40 percent faster at p50 than unnamed. Unnamed stays the default. `prepared: "named"` is not for transaction-mode poolers.
+- `insert`, `update`, and `delete` write rows. Unknown insert keys are dropped. A guarded field is OKM1190. A missing `where` is OKM1102 unless `.all(reason)`. `onConflict` is `"error"`, `"ignore"`, an update of named columns, or `{ on, return: true }`. `on` must name a unique constraint or the primary key (OKM1104). `expect` throws `not_found` when the count differs. Inserts chunk at 2048 parameters and commit together. A connection lost at commit is OKM1401 (`outcome_unknown`).
+- Write planning loads on the first write. Conflict and upsert SQL loads only when `onConflict` is used. A plain insert does not load it. Hover on a row shows the field names and value types.
 
 #### tooling
 
@@ -69,7 +73,9 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `bun run catalog-bench` times canonical form, SHA-256, and topological order on the 200-table fixture. It prints the sample and does not enforce a ceiling.
 - The replication test waits up to 30 seconds, matching its replay wait, so other Postgres tests can run beside it.
 - The runtime entry must stay within 60 KB minified and 20 KB gzip. A cold import on Node is the median of five fresh processes. CI fails above 25 ms (D134). Locally the script prints the 15 ms reference and records a finding above it.
-- The app fixture gate is the startup graph (static imports only): 74,688 minified bytes and 24,000 gzip (D137). `okmodel/pg` is 70,500 / 22,000. The public connect entries are gated on that same startup graph at the measured size plus 5 percent. Standalone adapter ceilings stay at the D135 numbers. The app fixture's cold import is printed and is not the 25 ms CI failure. That failure stays on the runtime entry (D134), because the app runs `schema()` at import.
+- The app fixture gate is the startup graph (static imports only): 76,444 minified bytes and 25,205 gzip (D138, measured 74,218 / 24,471 plus 3 percent, under the 86,688 / 27,800 cap). The total graph, lazy chunks included, is printed and not gated. First-find and first-include latency are printed beside cold import. `okmodel/pg` is 70,500 / 22,000. The public connect entries stay at the measured size plus 5 percent. Standalone adapter ceilings stay at the D135 numbers. The app fixture's cold import is printed and is not the 25 ms CI failure. That failure stays on the runtime entry (D134), because the app runs `schema()` at import.
+- `bun run editor-check` compares hover, completions, and diagnostics from the TypeScript 6 language server with a snapshot. TypeScript 7 has no language server, so the server is the dev-only `typescript-editor` package. It is not imported and not bundled. The check is part of `bun run check`.
+- The Postgres CI job also runs the read and write tests.
 - `bun run type-cost` also typechecks a find with filter, select, include, and orderBy on 10, 50, and 200 tables, against the built declarations. Those projects use the D133 inferred-200 ceilings.
 - `bun run bundle-purity` fails when a runtime bundle contains an npm package, or when `src/` imports the harness barrel. Adapter entries must leave `postgres` and `@electric-sql/pglite` external.
 - A conformance suite runs the same driver cases on either adapter: execute, nulls, timestamps, numeric, bigint, json, arrays, batch (including a savepoint inside a reserved transaction), reservation, stats, close, and session reset. Cancel, timeout, and stream run only when the adapter declares them.
@@ -82,7 +88,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - The M0 gate findings are in `docs/m0-findings.md`, with a Resolved by column for each row.
 - Spec section 21 records OKM1026 for a catalog dependency cycle and OKM1027 for a catalog document this version cannot read.
-- `docs/editor-check.md` lists a manual check for row-type hover, table-name completion, and a bad reference. It was not run.
+- `docs/editor-check.md` describes the language-server snapshot for row hover, column completion, and a missing column or table.
 
 ### ♻️ Changed
 

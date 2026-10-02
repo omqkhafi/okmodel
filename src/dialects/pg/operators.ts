@@ -28,7 +28,8 @@ export type OperatorName =
   | "or"
   | "has"
   | "none"
-  | "every";
+  | "every"
+  | "inc";
 
 /** A tagged operator. `value` is the operand the helper stored. */
 export type Tagged<Name extends OperatorName, V> = {

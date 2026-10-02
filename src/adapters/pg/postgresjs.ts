@@ -37,6 +37,7 @@ export type PostgresJsConfig = DriverPoolConfig & {
    * Named prepared statements, or the unnamed protocol.
    *
    * Unnamed is the default. It stays valid behind a pooler in transaction mode.
+   * `prepared: "named"` is not for transaction-mode poolers.
    */
   readonly prepared?: "named" | "unnamed";
   /** Session search path for every connection in the pool. */

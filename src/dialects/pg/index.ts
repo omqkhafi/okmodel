@@ -69,6 +69,7 @@ export { endsWith } from "./ops/endsWith.js";
 export { eq } from "./ops/eq.js";
 export { every } from "./ops/every.js";
 export { gt } from "./ops/gt.js";
+export { inc } from "./ops/inc.js";
 export { gte } from "./ops/gte.js";
 export { has } from "./ops/has.js";
 export { ilike } from "./ops/ilike.js";

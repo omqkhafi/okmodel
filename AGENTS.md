@@ -5,7 +5,7 @@ This file is the single source of rules for this repository. `CLAUDE.md` imports
 ## Toolchain
 
 - Use Bun only (`bun`, `bunx`). Do not use npm, pnpm, yarn, or another package manager.
-- TypeScript 7 is the compiler for typecheck and declaration emit (`tsc`). TypeScript 7.0 has no stable programmatic API, so nothing in `src/`, the typecheck, or the repository checks imports it.
+- TypeScript 7 is the compiler for typecheck and declaration emit (`tsc`). TypeScript 7.0 has no stable programmatic API and ships no language server, so nothing in `src/`, the typecheck, or the repository checks imports it. `bun run editor-check` spawns TypeScript 6 (`typescript-editor`, dev-only) over stdio for hover, completions, and diagnostics. That package is never imported and never bundled.
 - Type correctness uses `expect-type` (`expectTypeOf`) in `*.test-d.ts` files compiled by that typecheck (D114).
 - `bun run type-cost` reads `tsc --extendedDiagnostics` and enforces the D133 ceilings on built declarations: inferred 200 tables ≤ 17,300 instantiations and ≤ 6,500 types; inferred 500 tables ≤ 42,400 instantiations; ≤ 84 instantiations per added table; emitted consumer ≤ 700 types; column sample ≤ 720 instantiations and ≤ 1,100 types. The tagged-operator surcharge stays ≤ 800 on the source measurement. Check time is reported and is not a ceiling.
 - Core hashing is pure-TypeScript SHA-256 in `contracts`. No `Bun` or Node crypto globals, and no `node:*` imports, in that layer.
@@ -35,7 +35,7 @@ A layer may import layers below it. It must not import a layer above it. Adapter
 
 ## Scripts
 
-- `bun run check` runs format, lint, typecheck, `type-cost`, `layers-check`, `core-purity`, `docs:check`, the compiler-API scan, `bundle-purity`, build, tests, publint, arethetypeswrong, and the size budget. It does not run `@ark/attest`.
+- `bun run check` runs format, lint, typecheck, `editor-check`, `type-cost`, `layers-check`, `core-purity`, `docs:check`, the compiler-API scan, `bundle-purity`, build, tests, publint, arethetypeswrong, and the size budget. It does not run `@ark/attest`.
 - `bun run build` writes JavaScript with `bun build --target node` and declarations with `tsc` (`emitDeclarationOnly`).
 - `bun run typecheck` runs `tsc --noEmit`.
 - `bun run lint` uses oxlint with type-aware rules. `bun run format:check` uses oxfmt. `bun run format` rewrites formatting.

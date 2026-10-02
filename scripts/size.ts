@@ -54,19 +54,18 @@ export const CI_COLD_IMPORT_MS = 25;
 export const APP_ENTRY = "scripts/app-startup.ts";
 
 /**
- * Minified app-fixture ceiling, in bytes (D137).
+ * Minified app-fixture ceiling, in bytes (D138).
  *
- * Startup graph measured 72,513. Plus 3 percent is 74,688, under the 75,000 cap.
+ * Startup graph measured 74,218. Plus 3 percent is 76,444, under the 86,688 cap.
  */
-export const APP_MAX_MIN_BYTES = 74_688;
+export const APP_MAX_MIN_BYTES = 76_444;
 
 /**
- * Gzipped app-fixture ceiling, in bytes (D137).
+ * Gzipped app-fixture ceiling, in bytes (D138).
  *
- * Startup graph measured 23,940. Plus 3 percent is 24,658, above the 24,000
- * cap, so the gate is the cap.
+ * Startup graph measured 24,471. Plus 3 percent is 25,205, under the 27,800 cap.
  */
-export const APP_MAX_GZIP_BYTES = 24_000;
+export const APP_MAX_GZIP_BYTES = 25_205;
 
 /**
  * Public connect entries, driver left external (D137).
@@ -184,6 +183,16 @@ export type RuntimeSize = {
   readonly minBytes: number;
   readonly gzipBytes: number;
   readonly coldImportMs: number;
+};
+
+/**
+ * Startup graph plus the lazy chunks that load on first include, failure, or write.
+ *
+ * The gate uses {@link RuntimeSize}. The total is reported and not gated (D138).
+ */
+export type StartupMeasurement = RuntimeSize & {
+  readonly totalMinBytes: number;
+  readonly totalGzipBytes: number;
 };
 
 /**
@@ -366,7 +375,7 @@ export function measureStartup(
   entry: string,
   file: string,
   external: readonly string[] = [],
-): RuntimeSize {
+): StartupMeasurement {
   const parent = external.length > 0 ? join(root, "node_modules") : tmpdir();
   const dir = mkdtempSync(join(parent, external.length > 0 ? ".okm-size-" : "okm-size-"));
   try {
@@ -401,15 +410,38 @@ export function measureStartup(
       minBytes += bytes.byteLength;
       parts.push(bytes);
     }
+    const all = new Set<string>();
+    walkAll(dir, file, all);
+    const totalParts: Buffer[] = [];
+    let totalMinBytes = 0;
+    for (const name of [...all].sort()) {
+      const bytes = readFileSync(join(dir, name));
+      totalMinBytes += bytes.byteLength;
+      totalParts.push(bytes);
+    }
     const outfile = join(dir, file);
     return {
       entry,
       minBytes,
       gzipBytes: gzipSync(Buffer.concat(parts), { level: 9 }).byteLength,
       coldImportMs: coldImportMsOnNode(outfile),
+      totalMinBytes,
+      totalGzipBytes: gzipSync(Buffer.concat(totalParts), { level: 9 }).byteLength,
     };
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function walkAll(dir: string, file: string, seen: Set<string>): void {
+  if (seen.has(file)) return;
+  seen.add(file);
+  const text = readFileSync(join(dir, file), "utf8");
+  for (const pattern of [dynamicImport, staticImport, sideEffectImport]) {
+    for (const match of text.matchAll(pattern)) {
+      const name = match[1]?.replace("./", "");
+      if (name !== undefined) walkAll(dir, name, seen);
+    }
   }
 }
 
@@ -508,6 +540,26 @@ function oneColdImport(file: string): number {
   return ms;
 }
 
+function printQueryLatency(root: string): readonly string[] {
+  const proc = Bun.spawnSync(["bun", join(root, "scripts/query-latency.ts")], {
+    cwd: root,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const output = proc.stdout.toString().trim();
+  if (output.length > 0) console.log(output);
+  if (proc.exitCode !== 0) {
+    return [
+      `size: query latency exited ${String(proc.exitCode)}\n${proc.stderr.toString()}${output}`,
+    ];
+  }
+  return [];
+}
+
+function formatTotal(measured: StartupMeasurement): string {
+  return `size: ${measured.entry} total graph min ${String(measured.totalMinBytes)} bytes, gzip ${String(measured.totalGzipBytes)} bytes (lazy chunks included, not gated)`;
+}
+
 function formatEntry(measured: RuntimeSize, ci: boolean): string {
   const gate = ci
     ? `CI gate ${String(CI_COLD_IMPORT_MS)} ms`
@@ -560,12 +612,15 @@ if (import.meta.main) {
     }
     const app = measureStartup(root, APP_ENTRY, "app-startup.js", ["postgres"]);
     console.log(formatEntry(app, ci));
+    console.log(formatTotal(app));
     problems.push(...appBudgetProblems(app));
     printColdImportFinding(app, ci);
     problems.push(...shakenOperatorProblems(root));
+    problems.push(...printQueryLatency(root));
     for (const entry of CONNECT_ENTRIES) {
       const measured = measureStartup(root, entry.entry, entry.file, entry.external);
       console.log(formatEntry(measured, ci));
+      console.log(formatTotal(measured));
       problems.push(
         ...entryBudgetProblems(measured, {
           maxMinBytes: entry.maxMinBytes,

@@ -180,3 +180,6 @@ Problems found in the earlier order and how the table above resolves them:
 - P29: real two-session serialization and deadlock races and a live connection kill during commit (P14 simulated them with ERRCODE and a unit test).
 - P15 stopped at the size gate (app fixture 87,179 / 27,620 vs 60,000 / 20,000). D137: optimisation pass first (lazy error mapping and include planner, per-operator tree-shaking, no batch or routing code on the read path, one decode path), then gates at measured +3% under a hard cap of 75,000 / 24,000; P15B adds at most 12,000 / 3,800; P17 finalises the 0.1 app budget.
 - P15B: automate `docs/editor-check.md` as a language-server (tsserver) snapshot check over the P15 and P15B query surface; no manual run.
+- P15 merged with D137/D138: app fixture gate measures the startup graph (74,688 / 24,000), total graph reported; P15B ceiling +12,000 / 3,800.
+- P15B and P17: report first-include latency and the total (lazy) graph size; docs must warn that `prepared: "named"` is not for transaction-mode poolers.
+- P16: evaluate computing the catalog hash and serialisation lazily (not inside `schema()`), because app cold import on CI is 20 to 34 ms; same prompt as the fast catalog loader.
