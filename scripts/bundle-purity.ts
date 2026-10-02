@@ -19,6 +19,12 @@ import { exitOnProblems } from "./report.js";
 import { repoRoot } from "./root.js";
 import { moduleSpecifiers } from "./specifiers.js";
 
+/** Adapter entries. They may import a driver package only as an external. */
+export const ADAPTER_ENTRIES = [
+  { entry: "src/adapters/pg/postgresjs.ts", external: "postgres" },
+  { entry: "src/adapters/pg/pglite.ts", external: "@electric-sql/pglite" },
+] as const;
+
 /** Published library entries that must not contain an npm package. */
 export const RUNTIME_ENTRIES = ["src/contracts/index.ts", "src/dialects/pg/index.ts"] as const;
 
@@ -97,6 +103,7 @@ export function npmPackageProblems(metafile: unknown, label: string): readonly s
 export function checkBundlePurity(root: string): readonly string[] {
   const problems: string[] = [...harnessBarrelProblems(root)];
   problems.push(...bundleRuntimeEntries(root));
+  problems.push(...bundleAdapterEntries(root));
   problems.push(...bundleHarnessProbe(root));
   return problems;
 }
@@ -121,6 +128,43 @@ export function duplicatedModuleProblems(metafile: unknown): readonly string[] {
       }
       problems.push(
         `bundle-purity: ${input} is duplicated in ${previous} and ${output}. Shared modules must be emitted once.`,
+      );
+    }
+  }
+  return problems;
+}
+
+/**
+ * Reports an adapter entry that does not leave its driver package external.
+ *
+ * Bun's metafile omits external imports, so this reads the emitted files.
+ * A bundled package is also reported by {@link npmPackageProblems}.
+ *
+ * @param metafile - Parsed `bun build --metafile` for the adapter entries
+ * @param dir - Build output directory
+ * @returns Problem lines
+ */
+export function adapterExternalProblems(metafile: unknown, dir: string): readonly string[] {
+  if (!isRecord(metafile) || !isRecord(metafile.outputs)) {
+    return ["bundle-purity: adapter metafile has no outputs"];
+  }
+  const problems: string[] = [];
+  const outputs = Object.keys(metafile.outputs);
+  for (const spec of ADAPTER_ENTRIES) {
+    const built = Object.values(metafile.outputs).some(
+      (value) => isRecord(value) && value.entryPoint === spec.entry,
+    );
+    if (!built) {
+      problems.push(`bundle-purity: ${spec.entry} is missing from the adapter build`);
+      continue;
+    }
+    const needle = `from "${spec.external}"`;
+    const external = outputs.some((output) =>
+      readFileSync(join(dir, output), "utf8").includes(needle),
+    );
+    if (!external) {
+      problems.push(
+        `bundle-purity: ${spec.entry} must import ${spec.external} as an external, not a bundled package`,
       );
     }
   }
@@ -159,6 +203,50 @@ function bundleRuntimeEntries(root: string): readonly string[] {
     return [...npmPackageProblems(parsed, "runtime entries"), ...duplicatedModuleProblems(parsed)];
   } catch (error) {
     return [`bundle-purity: runtime entries: ${messageOf(error)}`];
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function bundleAdapterEntries(root: string): readonly string[] {
+  const dir = mkdtempSync(join(tmpdir(), "okm-bundle-"));
+  const metafile = join(dir, "meta.json");
+  try {
+    const proc = Bun.spawnSync(
+      [
+        "bun",
+        "build",
+        ...ADAPTER_ENTRIES.map((spec) => join(root, spec.entry)),
+        "--target",
+        "node",
+        "--format",
+        "esm",
+        "--splitting",
+        "--chunk-naming=shared/[hash].js",
+        "--outdir",
+        dir,
+        "--root",
+        join(root, "src"),
+        `--metafile=${metafile}`,
+        "--external",
+        "postgres",
+        "--external",
+        "@electric-sql/pglite",
+      ],
+      { cwd: root, stdout: "pipe", stderr: "pipe" },
+    );
+    if (proc.exitCode !== 0) {
+      return [
+        `bundle-purity: bun build adapter entries exited ${String(proc.exitCode)}\n${proc.stderr.toString()}`,
+      ];
+    }
+    const parsed: unknown = JSON.parse(readFileSync(metafile, "utf8"));
+    return [
+      ...npmPackageProblems(parsed, "adapter entries"),
+      ...adapterExternalProblems(parsed, dir),
+    ];
+  } catch (error) {
+    return [`bundle-purity: adapter entries: ${messageOf(error)}`];
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

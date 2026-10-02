@@ -16,6 +16,14 @@
         "publint": "^0.3.24",
         "typescript": "7",
       },
+      "peerDependencies": {
+        "@electric-sql/pglite": "^0.5.8",
+        "postgres": "^3.4.9",
+      },
+      "optionalPeers": [
+        "@electric-sql/pglite",
+        "postgres",
+      ],
     },
     "packages/attest": {
       "name": "@okmodel/attest",

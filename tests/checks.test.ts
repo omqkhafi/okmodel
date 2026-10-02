@@ -12,7 +12,12 @@ import { checkDocs } from "../scripts/docs-check.js";
 import { checkLayers } from "../scripts/layers-check.js";
 import { checkReleaseDirs } from "../scripts/release-check.js";
 import { repoRoot } from "../scripts/root.js";
-import { appBudgetProblems, checkDistSize, runtimeBudgetProblems } from "../scripts/size.js";
+import {
+  appBudgetProblems,
+  checkDistSize,
+  coldImportFinding,
+  runtimeBudgetProblems,
+} from "../scripts/size.js";
 
 const root = repoRoot();
 const fixtures = join(root, "tests", "fixtures");
@@ -116,15 +121,29 @@ test("size check fails above the ceiling and passes under it", () => {
 });
 
 test("app bundle budget fails above the D133 ceilings", () => {
-  const over = appBudgetProblems({
-    entry: "scripts/app-startup.ts",
-    minBytes: 50_000,
-    gzipBytes: 16_000,
-    coldImportMs: 20,
-  });
+  const over = appBudgetProblems(
+    {
+      entry: "scripts/app-startup.ts",
+      minBytes: 50_000,
+      gzipBytes: 16_000,
+      coldImportMs: 30,
+    },
+    { ci: true },
+  );
   expect(over.some((problem) => problem.includes("minified"))).toBe(true);
   expect(over.some((problem) => problem.includes("gzip"))).toBe(true);
   expect(over.some((problem) => problem.includes("cold import"))).toBe(true);
+  expect(
+    appBudgetProblems(
+      {
+        entry: "scripts/app-startup.ts",
+        minBytes: 38_000,
+        gzipBytes: 12_000,
+        coldImportMs: 20,
+      },
+      { ci: true },
+    ).some((problem) => problem.includes("cold import")),
+  ).toBe(false);
   expect(
     appBudgetProblems({
       entry: "scripts/app-startup.ts",
@@ -136,15 +155,31 @@ test("app bundle budget fails above the D133 ceilings", () => {
 });
 
 test("runtime size budget fails above the ceilings", () => {
-  const over = runtimeBudgetProblems({
-    entry: "src/contracts/index.ts",
-    minBytes: 70_000,
-    gzipBytes: 25_000,
-    coldImportMs: 40,
-  });
+  const over = runtimeBudgetProblems(
+    {
+      entry: "src/contracts/index.ts",
+      minBytes: 70_000,
+      gzipBytes: 25_000,
+      coldImportMs: 40,
+    },
+    { ci: true },
+  );
   expect(over.some((problem) => problem.includes("minified"))).toBe(true);
   expect(over.some((problem) => problem.includes("gzip"))).toBe(true);
   expect(over.some((problem) => problem.includes("cold import"))).toBe(true);
+  expect(
+    runtimeBudgetProblems(
+      {
+        entry: "src/contracts/index.ts",
+        minBytes: 70_000,
+        gzipBytes: 25_000,
+        coldImportMs: 40,
+      },
+      { ci: false },
+    ).some((problem) => problem.includes("cold import")),
+  ).toBe(false);
+  expect(coldImportFinding(20)).toContain("15");
+  expect(coldImportFinding(5)).toBeUndefined();
   expect(
     runtimeBudgetProblems({
       entry: "src/contracts/index.ts",
