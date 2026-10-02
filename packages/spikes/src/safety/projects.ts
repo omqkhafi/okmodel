@@ -36,16 +36,21 @@ export function writeOperatorBaseline(dir: string): void {
  * @param dir - Project directory
  * @param fixture - Harness fixture
  * @param strategy - Equality baseline or tagged operators
+ * @param declarations - Built `.d.ts` directory. Absent means the spike source
  */
 export function writeOperatorProject(
   dir: string,
   fixture: SchemaFixture,
   strategy: OperatorStrategy,
+  declarations?: string,
 ): void {
   mkdirSync(dir, { recursive: true });
   const typeName = strategy === "equality" ? "EqWhere" : "Where";
   const file = strategy === "equality" ? "eq-where.ts" : "operators.ts";
-  const imported = specifier(dir, join(safetyRoot, file));
+  const imported =
+    declarations === undefined
+      ? specifier(dir, join(safetyRoot, file))
+      : specifier(dir, join(declarations, file.replace(/\.ts$/, ".d.ts")));
   const tables = fixture.tables
     .map((table) => {
       const fields = table.columns

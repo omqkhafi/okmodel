@@ -1,9 +1,30 @@
 /**
  * Public entry for `okmodel/pg`.
  *
- * Column types, codecs, and picklists. `table()` and `schema()` arrive later.
+ * Column types, codecs, picklists, `table()`, and `schema()`.
  * Each builder is a separate export so a bundle can keep only the ones it calls.
  */
+
+export { emitRowTypes } from "./emit.js";
+export {
+  schema,
+  type BuiltSchema,
+  type SchemaCodecs,
+  type SchemaInput,
+  type SchemaRequires,
+} from "./schema.js";
+export {
+  index,
+  sql,
+  table,
+  type AnyTable,
+  type ColumnHandle,
+  type IndexCall,
+  type SqlText,
+  type SqlValue,
+  type Table,
+  type TableOptions,
+} from "./table.js";
 
 export { compileColumn, type CompiledColumn, type CompileColumnInput } from "./compile.js";
 export { custom } from "./custom.js";
@@ -22,6 +43,7 @@ export type {
   IdentityFlags,
   PlainFlags,
   ReferenceModifier,
+  ReferenceOptions,
   SqlForm,
   ValidateModifier,
   WithGenerated,

@@ -1,10 +1,10 @@
 /**
  * Measures type cost with TypeScript 7's own diagnostics and applies D127 ceilings.
  *
- * The trivial project stays in the report. The ceilings cover the inferred
- * 200- and 500-table fixtures, the instantiations added per table, the emitted
- * consumer, the tagged-operator surcharge, and the column-type sample. Check
- * time is reported and is not a ceiling.
+ * The gated numbers compile fixtures against the built `.d.ts` files with
+ * `skipLibCheck`, which is what a consumer project pays. The same fixtures
+ * compiled against library source are reported and are not gated. Check time
+ * is reported and is not a ceiling.
  */
 
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -18,9 +18,11 @@ import {
   runTsc as runProjectTsc,
 } from "../packages/spikes/src/types/diagnostics.js";
 import {
-  writeEmittedProject,
-  writeInferredProject,
-} from "../packages/spikes/src/types/projects.js";
+  writeColumnProject,
+  writeProductionEmittedProject,
+  writeProductionInferredProject,
+  type LibraryTarget,
+} from "./type-projects.js";
 import { repoRoot } from "./root.js";
 
 /** Counters parsed from `tsc --extendedDiagnostics`, plus which trace flags exist. */
@@ -77,16 +79,22 @@ export function measureTypeCost(): TypeCostReport {
   };
 }
 
-/** D127 type ceilings. Check time is reported beside these and is not capped. */
+/**
+ * Type ceilings after D133.
+ *
+ * Table and column ceilings apply to declaration consumers. The tagged-operator
+ * surcharge stays on the source measurement, because the declaration figure is 0.
+ * Check time is reported and is not capped.
+ */
 export const TYPE_CEILINGS = {
-  inferred200Instantiations: 61_000,
-  inferred200Types: 9_700,
-  inferred500Instantiations: 140_000,
-  instantiationsPerAddedTable: 300,
+  inferred200Instantiations: 17_300,
+  inferred200Types: 6_500,
+  inferred500Instantiations: 42_400,
+  instantiationsPerAddedTable: 84,
   emittedConsumerTypes: 700,
   taggedOperatorSurcharge: 800,
-  columnInstantiations: 6_600,
-  columnTypes: 8_200,
+  columnInstantiations: 720,
+  columnTypes: 1_100,
 } as const;
 
 /** Column-type sample measured beside the table fixtures. */
@@ -116,12 +124,27 @@ export type PerTableCost = {
   readonly instantiations: number;
 };
 
-/** Ceiling inputs written next to the trivial measurement. */
-export type TypeBudgetReport = {
+/** Source-compiled fixtures. Reported, not gated. */
+export type SourceTypeCost = {
+  readonly rows: readonly TypeBudgetRow[];
+  readonly perAddedTable: readonly PerTableCost[];
+  readonly taggedOperatorSurcharge: number;
+};
+
+/** Fixture rows the ceilings read. */
+export type TypeBudgetCore = {
   readonly rows: readonly TypeBudgetRow[];
   readonly perAddedTable: readonly PerTableCost[];
   readonly taggedOperatorSurcharge: number;
   readonly ceilings: typeof TYPE_CEILINGS;
+};
+
+/** Ceiling inputs written next to the trivial measurement. */
+export type TypeBudgetReport = TypeBudgetCore & {
+  /** The same fixtures compiled against library source. Not gated. */
+  readonly source: SourceTypeCost;
+  /** Column sample compiled against declarations. Gated. */
+  readonly columns: ColumnTypeCost;
 };
 
 /**
@@ -131,6 +154,7 @@ function writeReport(report: {
   readonly trivial: TypeCostReport;
   readonly budgets: TypeBudgetReport;
   readonly columns: ColumnTypeCost;
+  readonly columnsSource: ColumnTypeCost;
 }): void {
   const results = join(repoRoot(), "packages", "bench", "results");
   mkdirSync(results, { recursive: true });
@@ -150,35 +174,59 @@ export function measureTypeBudgets(): TypeBudgetReport {
   const root = join(tmpdir(), `okm-type-budgets-${String(Date.now())}`);
   mkdirSync(root, { recursive: true });
   try {
-    const rows: TypeBudgetRow[] = [];
-    for (const tables of [50, 200, 500] as const) {
-      const fixture = generateFixture({ seed: 1, tables });
-      rows.push(
-        measureProject(root, `inferred-${String(tables)}`, tables, (dir) => {
-          writeInferredProject(dir, fixture);
-        }),
-      );
-    }
-    const twoHundred = generateFixture({ seed: 1, tables: 200 });
-    rows.push(
-      measureProject(root, "emitted-200", 200, (dir) => {
-        writeEmittedProject(dir, twoHundred);
-      }),
-    );
-    rows.push(
-      measureProject(root, "equality-200", 200, (dir) => {
-        writeOperatorProject(dir, twoHundred, "equality");
-      }),
-    );
-    rows.push(
-      measureProject(root, "tagged-200", 200, (dir) => {
-        writeOperatorProject(dir, twoHundred, "tagged");
-      }),
-    );
-    return budgetReport(rows);
+    const declarations = emitLibraryDeclarations();
+    const operators = emitOperatorDeclarations(join(root, "operators"));
+    const columnDir = join(root, "columns");
+    writeColumnProject(columnDir, declarations);
+    const columns = measureProjectFile(columnDir, "columns-declarations");
+    const rows = measureFixtureRows(join(root, "consumer"), { declarations }, operators);
+    const sourceRows = measureFixtureRows(join(root, "source"));
+    const source = budgetReport(sourceRows);
+    return {
+      ...budgetReport(rows),
+      source: {
+        rows: source.rows,
+        perAddedTable: source.perAddedTable,
+        taggedOperatorSurcharge: source.taggedOperatorSurcharge,
+      },
+      columns,
+    };
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+}
+
+function measureFixtureRows(
+  root: string,
+  target?: LibraryTarget,
+  operators?: string,
+): TypeBudgetRow[] {
+  const rows: TypeBudgetRow[] = [];
+  for (const tables of [50, 200, 500] as const) {
+    const fixture = generateFixture({ seed: 1, tables });
+    rows.push(
+      measureProject(root, `inferred-${String(tables)}`, tables, (dir) => {
+        writeProductionInferredProject(dir, fixture, target);
+      }),
+    );
+  }
+  const twoHundred = generateFixture({ seed: 1, tables: 200 });
+  rows.push(
+    measureProject(root, "emitted-200", 200, (dir) => {
+      writeProductionEmittedProject(dir, twoHundred);
+    }),
+  );
+  rows.push(
+    measureProject(root, "equality-200", 200, (dir) => {
+      writeOperatorProject(dir, twoHundred, "equality", operators);
+    }),
+  );
+  rows.push(
+    measureProject(root, "tagged-200", 200, (dir) => {
+      writeOperatorProject(dir, twoHundred, "tagged", operators);
+    }),
+  );
+  return rows;
 }
 
 /**
@@ -187,7 +235,7 @@ export function measureTypeBudgets(): TypeBudgetReport {
  * @param rows - Inferred, emitted, and operator projects
  * @returns The report `ceilingProblems` checks
  */
-export function budgetReport(rows: readonly TypeBudgetRow[]): TypeBudgetReport {
+export function budgetReport(rows: readonly TypeBudgetRow[]): TypeBudgetCore {
   const tagged = rowNamed(rows, "tagged-200");
   const equality = rowNamed(rows, "equality-200");
   return {
@@ -202,12 +250,16 @@ export function budgetReport(rows: readonly TypeBudgetRow[]): TypeBudgetReport {
 }
 
 /**
- * Reports rows that exceed a D127 ceiling.
+ * Reports rows that exceed a D133 ceiling.
  *
- * @param report - Output of {@link measureTypeBudgets}
+ * @param report - Consumer rows from {@link measureTypeBudgets}
+ * @param taggedSurcharge - Source-based tagged-operator surcharge. Defaults to the figure on `report`
  * @returns Problem lines. Empty when every ceiling holds
  */
-export function ceilingProblems(report: TypeBudgetReport): readonly string[] {
+export function ceilingProblems(
+  report: TypeBudgetCore,
+  taggedSurcharge: number = report.taggedOperatorSurcharge,
+): readonly string[] {
   const problems: string[] = [];
   const inferred200 = rowNamed(report.rows, "inferred-200");
   const inferred500 = rowNamed(report.rows, "inferred-500");
@@ -239,9 +291,9 @@ export function ceilingProblems(report: TypeBudgetReport): readonly string[] {
       );
     }
   }
-  if (report.taggedOperatorSurcharge > TYPE_CEILINGS.taggedOperatorSurcharge) {
+  if (taggedSurcharge > TYPE_CEILINGS.taggedOperatorSurcharge) {
     problems.push(
-      `type-cost: tagged operators added ${String(report.taggedOperatorSurcharge)} instantiations, above ${String(TYPE_CEILINGS.taggedOperatorSurcharge)}`,
+      `type-cost: tagged operators added ${String(taggedSurcharge)} instantiations, above ${String(TYPE_CEILINGS.taggedOperatorSurcharge)}`,
     );
   }
   return problems;
@@ -385,12 +437,82 @@ export function columnTypeProblems(measured: ColumnTypeCost): readonly string[] 
   return problems;
 }
 
+/**
+ * Emits library declarations the consumer fixtures import.
+ *
+ * Uses the package build config so the `.d.ts` layout matches `okmodel` and
+ * `okmodel/pg`. `bun run build` replaces `dist/` afterwards.
+ *
+ * @returns The `dist/` declaration root
+ */
+function emitLibraryDeclarations(): string {
+  const ran = runProjectTsc(["-p", join(repoRoot(), "tsconfig.build.json")], repoRoot());
+  if (ran.exitCode !== 0) {
+    throw new Error(`declaration emit failed\n${ran.output}`);
+  }
+  return join(repoRoot(), "dist");
+}
+
+/**
+ * Emits the spike operator types as declarations.
+ *
+ * Tagged operators are not in the package yet. The consumer probe still reads
+ * declarations, not the spike function bodies.
+ *
+ * @param dir - Output directory
+ * @returns Directory of the emitted `.d.ts` files
+ */
+function emitOperatorDeclarations(dir: string): string {
+  mkdirSync(dir, { recursive: true });
+  const outDir = join(dir, "out");
+  const safety = join(repoRoot(), "packages/spikes/src/safety");
+  const config = join(dir, "tsconfig.json");
+  writeFileSync(
+    config,
+    `${JSON.stringify(
+      {
+        compilerOptions: {
+          strict: true,
+          declaration: true,
+          emitDeclarationOnly: true,
+          module: "nodenext",
+          moduleResolution: "nodenext",
+          target: "es2023",
+          skipLibCheck: true,
+          rootDir: safety,
+          outDir,
+        },
+        files: [
+          join(safety, "errors.ts"),
+          join(safety, "eq-where.ts"),
+          join(safety, "operators.ts"),
+        ],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  const ran = runProjectTsc(["-p", config], repoRoot());
+  if (ran.exitCode !== 0) {
+    throw new Error(`operator declaration emit failed\n${ran.output}`);
+  }
+  return outDir;
+}
+
 if (import.meta.main) {
   try {
     const budgets = measureTypeBudgets();
-    const columns = measureColumnTypes();
-    const problems = [...ceilingProblems(budgets), ...columnTypeProblems(columns)];
-    writeReport({ trivial: measureTypeCost(), budgets, columns });
+    const columnsSource = measureColumnTypes();
+    const problems = [
+      ...ceilingProblems(budgets, budgets.source.taggedOperatorSurcharge),
+      ...columnTypeProblems(budgets.columns),
+    ];
+    writeReport({
+      trivial: measureTypeCost(),
+      budgets,
+      columns: budgets.columns,
+      columnsSource,
+    });
     for (const problem of problems) {
       console.error(problem);
     }
@@ -399,4 +521,21 @@ if (import.meta.main) {
     console.error(error instanceof Error ? error.message : error);
     process.exit(1);
   }
+}
+
+function measureProjectFile(dir: string, project: string): ColumnTypeCost {
+  const ran = runProjectTsc(
+    ["--noEmit", "--pretty", "false", "--extendedDiagnostics", "-p", dir],
+    repoRoot(),
+  );
+  if (ran.exitCode !== 0) {
+    throw new Error(`${project} failed to typecheck\n${ran.output}`);
+  }
+  const diagnostics = parseDiagnostics(ran.output, ran.exitCode);
+  return {
+    project,
+    instantiations: diagnostics.instantiations,
+    types: diagnostics.types,
+    checkTimeSeconds: diagnostics.checkTimeSeconds,
+  };
 }

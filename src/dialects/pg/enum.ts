@@ -47,6 +47,7 @@ export function enumColumn<const TValues extends readonly string[]>(
   return required({
     baseType: name,
     typeDependency: name,
+    typeLabel: values.map((value) => JSON.stringify(value)).join(" | "),
     encode: (value) => {
       if (!allowed.has(value)) {
         rejected(`enum rejected ${value}. Accepted labels: ${[...allowed].join(", ")}.`);

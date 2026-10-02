@@ -10,6 +10,7 @@ import {
   deterministicName,
   fitIdentifier,
   identifierLimitApplies,
+  identityKey,
   index,
   resolveNamespace,
   sequence,
@@ -286,6 +287,16 @@ test("dependency order does not follow edge order", () => {
   expect(serializeCatalog(catalog([second, tableObject, forward, first]))).toBe(
     serializeCatalog(catalog([first, backward, second, tableObject])),
   );
+});
+
+test("a plain identity key matches canonical JSON", () => {
+  expect(identityKey({ kind: "table", namespace: ns, name: "users" })).toBe(
+    '{"kind":"table","name":"users","namespace":{"form":"static","name":"public"}}',
+  );
+  expect(identityKey({ kind: "column", parent: parent("users"), name: "id" })).toBe(
+    '{"kind":"column","name":"id","parent":{"name":"users","namespace":{"form":"static","name":"public"}}}',
+  );
+  expect(identityKey({ kind: "table", namespace: ns, name: 'say "hi"' })).toContain('\\"');
 });
 
 test("canonical bytes survive a non-ascii name", () => {

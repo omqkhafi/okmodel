@@ -33,6 +33,7 @@ export function numeric<const TAs extends NumericAs = "string">(
       encode: encodeNumericNumber,
       decode: decodeNumericNumber,
       sqlForm: "raw",
+      typeLabel: "number",
     }) as unknown as ColumnBuilder<NumericValue<TAs>, PlainFlags>;
   }
   if (options !== undefined && options.as !== undefined && options.as !== "string") {

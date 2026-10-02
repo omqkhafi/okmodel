@@ -22,6 +22,25 @@ export const RUNTIME_MAX_GZIP_BYTES = 20 * 1024;
 /** Cold `import()` ceiling on Node, in milliseconds. The script also prints the sample. */
 export const RUNTIME_MAX_COLD_IMPORT_MS = 15;
 
+/** Tree-shaken 10-table app. D133. */
+export const APP_ENTRY = "scripts/app-startup.ts";
+
+/** Minified app-bundle ceiling, in bytes. */
+export const APP_MAX_MIN_BYTES = 48_000;
+
+/** Gzipped app-bundle ceiling, in bytes. */
+export const APP_MAX_GZIP_BYTES = 15_800;
+
+/** Cold import ceiling for the app bundle, in milliseconds. */
+export const APP_MAX_COLD_IMPORT_MS = 15;
+
+/** Ceilings for one minified entry. */
+export type EntryCeilings = {
+  readonly maxMinBytes: number;
+  readonly maxGzipBytes: number;
+  readonly maxColdImportMs: number;
+};
+
 /**
  * Byte size of every file under `dir`.
  */
@@ -74,29 +93,62 @@ export type RuntimeSize = {
  * @returns Problem lines. Empty when the entry is inside the ceilings
  */
 export function runtimeBudgetProblems(measured: RuntimeSize): readonly string[] {
+  return entryBudgetProblems(measured, {
+    maxMinBytes: RUNTIME_MAX_MIN_BYTES,
+    maxGzipBytes: RUNTIME_MAX_GZIP_BYTES,
+    maxColdImportMs: RUNTIME_MAX_COLD_IMPORT_MS,
+  });
+}
+
+/**
+ * Reports when the 10-table app bundle is over a D133 ceiling.
+ *
+ * @param measured - Minified bytes, gzip bytes, and one cold Node import
+ * @returns Problem lines. Empty when the bundle is inside the ceilings
+ */
+export function appBudgetProblems(measured: RuntimeSize): readonly string[] {
+  return entryBudgetProblems(measured, {
+    maxMinBytes: APP_MAX_MIN_BYTES,
+    maxGzipBytes: APP_MAX_GZIP_BYTES,
+    maxColdImportMs: APP_MAX_COLD_IMPORT_MS,
+  });
+}
+
+/**
+ * Reports when a minified entry is over the given ceilings.
+ *
+ * @param measured - Minified bytes, gzip bytes, and one cold Node import
+ * @param ceilings - Byte and cold-import limits
+ * @returns Problem lines. Empty when the entry is inside the ceilings
+ */
+export function entryBudgetProblems(
+  measured: RuntimeSize,
+  ceilings: EntryCeilings,
+): readonly string[] {
   const problems: string[] = [];
-  if (measured.minBytes > RUNTIME_MAX_MIN_BYTES) {
+  if (measured.minBytes > ceilings.maxMinBytes) {
     problems.push(
-      `size: ${measured.entry} minified is ${String(measured.minBytes)} bytes, above ${String(RUNTIME_MAX_MIN_BYTES)}`,
+      `size: ${measured.entry} minified is ${String(measured.minBytes)} bytes, above ${String(ceilings.maxMinBytes)}`,
     );
   }
-  if (measured.gzipBytes > RUNTIME_MAX_GZIP_BYTES) {
+  if (measured.gzipBytes > ceilings.maxGzipBytes) {
     problems.push(
-      `size: ${measured.entry} gzip is ${String(measured.gzipBytes)} bytes, above ${String(RUNTIME_MAX_GZIP_BYTES)}`,
+      `size: ${measured.entry} gzip is ${String(measured.gzipBytes)} bytes, above ${String(ceilings.maxGzipBytes)}`,
     );
   }
-  if (measured.coldImportMs > RUNTIME_MAX_COLD_IMPORT_MS) {
+  if (measured.coldImportMs > ceilings.maxColdImportMs) {
     problems.push(
-      `size: ${measured.entry} cold import on Node is ${measured.coldImportMs.toFixed(3)} ms, above ${String(RUNTIME_MAX_COLD_IMPORT_MS)}`,
+      `size: ${measured.entry} cold import on Node is ${measured.coldImportMs.toFixed(3)} ms, above ${String(ceilings.maxColdImportMs)}`,
     );
   }
   return problems;
 }
 
 /**
- * Minifies the runtime entry, gzips it, and imports it once in a fresh Node process.
+ * Minifies the runtime entry, gzips it, and imports it in fresh Node processes.
  *
- * The timer wraps `import()` only. Process start is not included.
+ * The reported cold import is the median of five processes. The timer wraps
+ * `import()` only. Process start is not included.
  *
  * @param root - Repository root
  * @returns Sizes and the cold-import sample
@@ -106,7 +158,10 @@ export function measureRuntimeEntry(root: string): RuntimeSize {
 }
 
 /**
- * Minifies one entry, gzips it, and imports it once in a fresh Node process.
+ * Minifies one entry, gzips it, and imports it in fresh Node processes.
+ *
+ * The reported cold import is the median of five processes. The timer wraps
+ * `import()` only. Process start is not included.
  *
  * A single-entry build inlines that entry's own modules. The published package
  * uses code splitting so those modules are not copied into a second entry.
@@ -141,7 +196,19 @@ export function measureEntry(root: string, entry: string): RuntimeSize {
   }
 }
 
+/** Fresh Node processes sampled for one cold import. The median ignores one slow tick. */
+const COLD_IMPORT_SAMPLES = 5;
+
 function coldImportMsOnNode(file: string): number {
+  const samples: number[] = [];
+  for (let index = 0; index < COLD_IMPORT_SAMPLES; index += 1) {
+    samples.push(oneColdImport(file));
+  }
+  samples.sort((left, right) => left - right);
+  return samples[Math.floor(samples.length / 2)] ?? 0;
+}
+
+function oneColdImport(file: string): number {
   const href = pathToFileURL(file).href;
   const source = `const started = performance.now(); await import(${JSON.stringify(href)}); process.stdout.write(String(performance.now() - started));`;
   const proc = Bun.spawnSync(["node", "--input-type=module", "-e", source], {
@@ -189,6 +256,11 @@ if (import.meta.main) {
     console.log(
       `size: ${pg.entry} min ${String(pg.minBytes)} bytes, gzip ${String(pg.gzipBytes)} bytes, cold import ${pg.coldImportMs.toFixed(3)} ms`,
     );
+    const app = measureEntry(root, APP_ENTRY);
+    console.log(
+      `size: ${app.entry} min ${String(app.minBytes)} bytes, gzip ${String(app.gzipBytes)} bytes, cold import ${app.coldImportMs.toFixed(3)} ms`,
+    );
+    problems.push(...appBudgetProblems(app));
   } catch (error) {
     problems.push(`size: ${error instanceof Error ? error.message : String(error)}`);
   }

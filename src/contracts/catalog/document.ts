@@ -19,8 +19,9 @@ import {
   staticNamespace,
   templateNamespace,
 } from "./identity.js";
-import { compareText, column, constraint, index, sequence, table } from "./object.js";
-import { dependencyOrder, indexObjects, orderIndexed } from "./order.js";
+import { catalog } from "./build.js";
+import { column, compareText, constraint, index, sequence, table } from "./object.js";
+import { dependencyOrder } from "./order.js";
 import type {
   Catalog,
   CatalogObject,
@@ -36,34 +37,9 @@ import type {
   SequenceObject,
   TableObject,
 } from "./types.js";
-import { CATALOG_VERSION, OWNERS } from "./types.js";
+import { CATALOG_VERSION, OWNERS, referentialAction, type ReferentialAction } from "./types.js";
 
-/**
- * Checks a set of objects and returns them in identity-key order.
- *
- * Duplicate identities are OKM1023. A foreign key whose target is missing is
- * OKM1021. A dependency cycle is OKM1026. A self-edge or a missing target is
- * OKM1020.
- *
- * @param objects - Built objects, in any order
- * @returns A catalog document
- */
-export function catalog(objects: readonly CatalogObject[]): Catalog {
-  for (const object of objects) {
-    if (object.kind !== object.identity.kind) {
-      catalogError("OKM1020", `${identityLabel(object.identity)} has kind ${object.kind}.`);
-    }
-  }
-  const indexed = indexObjects(objects);
-  const keys = new Set<string>();
-  for (const item of indexed) {
-    keys.add(item.key);
-  }
-  assertForeignKeys(objects, keys);
-  orderIndexed(indexed);
-  const sorted = [...indexed].sort((left, right) => compareText(left.key, right.key));
-  return { version: CATALOG_VERSION, objects: sorted.map((item) => item.object) };
-}
+export { catalog };
 
 /**
  * Create order for a catalog.
@@ -175,38 +151,6 @@ export function parseCatalog(text: string): Catalog {
     catalogError("OKM1027", "Catalog field objects must be an array.");
   }
   return catalog(parsed.objects.map((item) => parseObject(item)));
-}
-
-function assertForeignKeys(objects: readonly CatalogObject[], keys: ReadonlySet<string>): void {
-  for (const object of objects) {
-    if (object.kind !== "constraint" || object.definition.constraintKind !== "foreignKey") {
-      continue;
-    }
-    const references = object.definition.references;
-    if (references === undefined) {
-      catalogError("OKM1021", `Foreign key ${object.identity.name} is missing its target.`);
-    }
-    const tableKey = identityKey({
-      kind: "table",
-      namespace: references.parent.namespace,
-      name: references.parent.name,
-    });
-    if (!keys.has(tableKey)) {
-      catalogError(
-        "OKM1021",
-        `Foreign key ${object.identity.name} references missing table ${references.parent.name}.`,
-      );
-    }
-    for (const name of references.columns) {
-      const columnKey = identityKey({ kind: "column", parent: references.parent, name });
-      if (!keys.has(columnKey)) {
-        catalogError(
-          "OKM1021",
-          `Foreign key ${object.identity.name} references missing column ${name}.`,
-        );
-      }
-    }
-  }
 }
 
 function rewriteRenamed(
@@ -321,6 +265,8 @@ function rewriteConstraint(
       ? {
           parent: references.parent,
           columns: renameList(references.columns, change.from, change.to),
+          ...(references.onDelete !== undefined ? { onDelete: references.onDelete } : {}),
+          ...(references.onUpdate !== undefined ? { onUpdate: references.onUpdate } : {}),
         }
       : references;
   return constraint({
@@ -447,6 +393,8 @@ function definitionToJson(object: CatalogObject): Json {
           ? {
               references: {
                 columns: references.columns,
+                ...(references.onDelete !== undefined ? { onDelete: references.onDelete } : {}),
+                ...(references.onUpdate !== undefined ? { onUpdate: references.onUpdate } : {}),
                 parent: {
                   name: references.parent.name,
                   namespace: namespaceToJson(references.parent.namespace),
@@ -804,13 +752,34 @@ function parsePartition(value: unknown): {
 function parseReferences(value: unknown): {
   readonly parent: ObjectRef;
   readonly columns: readonly string[];
+  readonly onDelete?: ReferentialAction;
+  readonly onUpdate?: ReferentialAction;
 } {
   const record = requireRecord(value, "references");
-  rejectUnknown(record, ["columns", "parent"], "references");
+  rejectUnknown(record, ["columns", "onDelete", "onUpdate", "parent"], "references");
+  const onDelete = parseAction(record.onDelete, "onDelete");
+  const onUpdate = parseAction(record.onUpdate, "onUpdate");
   return {
     parent: parseRef(record.parent),
     columns: requireStrings(record.columns, "referenced columns"),
+    ...(onDelete !== undefined ? { onDelete } : {}),
+    ...(onUpdate !== undefined ? { onUpdate } : {}),
   };
+}
+
+function parseAction(value: unknown, role: string): ReferentialAction | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const text = requireString(value, role);
+  const action = referentialAction(text);
+  if (action === undefined) {
+    catalogError(
+      "OKM1020",
+      `Referential action ${text} is not a catalog action. Accepted actions: cascade, no action, restrict, set default, set null.`,
+    );
+  }
+  return action;
 }
 
 function parseAlways(value: unknown): { readonly always: boolean } {

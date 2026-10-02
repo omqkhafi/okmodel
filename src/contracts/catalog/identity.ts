@@ -99,7 +99,83 @@ export function resolveNamespace(namespace: Namespace, tenantId = ""): string {
  * @returns Canonical JSON of the identity
  */
 export function identityKey(identity: ObjectIdentity): string {
+  const plain = plainIdentityKey(identity);
+  if (plain !== undefined) {
+    return plain;
+  }
   return canonicalJson(identityToJson(identity));
+}
+
+/**
+ * Canonical JSON for identities whose text needs no escaping.
+ *
+ * The general encoder stays unused on this path, so a schema of plain names
+ * does not compile it. Any quote, backslash, or non-ASCII character falls
+ * through to {@link canonicalJson}.
+ *
+ * @param identity - Object identity
+ * @returns Canonical text, or `undefined` when the general encoder is required
+ */
+function plainIdentityKey(identity: ObjectIdentity): string | undefined {
+  switch (identity.kind) {
+    case "table":
+    case "view":
+    case "materializedView":
+    case "sequence":
+    case "type":
+      return namespaceIdentityKey(identity.kind, identity.name, identity.namespace);
+    case "column":
+    case "index":
+    case "constraint":
+    case "trigger":
+    case "policy":
+      return anchoredIdentityKey(identity.kind, identity.name, identity.parent);
+    case "role":
+    case "extension":
+      if (!isPlainJsonText(identity.name)) {
+        return undefined;
+      }
+      return `{"kind":"${identity.kind}","name":"${identity.name}"}`;
+    default:
+      return undefined;
+  }
+}
+
+function namespaceIdentityKey(
+  kind: string,
+  name: string,
+  namespace: Namespace,
+): string | undefined {
+  const encoded = staticNamespaceKey(namespace);
+  if (encoded === undefined || !isPlainJsonText(name)) {
+    return undefined;
+  }
+  return `{"kind":"${kind}","name":"${name}","namespace":${encoded}}`;
+}
+
+function anchoredIdentityKey(kind: string, name: string, parent: ObjectRef): string | undefined {
+  const encoded = staticNamespaceKey(parent.namespace);
+  if (encoded === undefined || !isPlainJsonText(name) || !isPlainJsonText(parent.name)) {
+    return undefined;
+  }
+  return `{"kind":"${kind}","name":"${name}","parent":{"name":"${parent.name}","namespace":${encoded}}}`;
+}
+
+function staticNamespaceKey(namespace: Namespace): string | undefined {
+  if (namespace.form !== "static" || !isPlainJsonText(namespace.name)) {
+    return undefined;
+  }
+  return `{"form":"static","name":"${namespace.name}"}`;
+}
+
+function isPlainJsonText(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code === 0x22 || code === 0x5c || code < 0x20 || code > 0x7e) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /**

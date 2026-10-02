@@ -40,6 +40,7 @@ export {
   type Owner,
   type PartitionMethod,
   type Provenance,
+  type ReferentialAction,
   type RoleIdentity,
   type SequenceDefinition,
   type SequenceObject,

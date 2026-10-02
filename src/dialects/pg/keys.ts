@@ -28,6 +28,7 @@ export function id(): ColumnBuilder<string, IdFlags> {
     hidden: false,
     omitWrite: true,
     defaultSql: "uuidv7()",
+    primaryKey: true,
     encode: encodeUuid,
     decode: decodeUuid,
     sqlForm: "quote",

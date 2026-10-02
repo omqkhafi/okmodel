@@ -254,5 +254,5 @@ export function specifier(fromDir: string, file: string): string {
   if (!spec.startsWith(".")) {
     spec = `./${spec}`;
   }
-  return spec.replace(/\.ts$/, ".js");
+  return spec.replace(/\.d\.ts$/, ".js").replace(/\.ts$/, ".js");
 }

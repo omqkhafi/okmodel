@@ -250,6 +250,37 @@ export type IndexDefinition = {
 /** Constraint family. */
 export type ConstraintKind = "primaryKey" | "unique" | "foreignKey" | "check";
 
+/**
+ * What Postgres does when a referenced row changes.
+ *
+ * Stored on the foreign key so `onDelete` and `onUpdate` survive compile.
+ */
+export const REFERENTIAL_ACTIONS = [
+  "cascade",
+  "no action",
+  "restrict",
+  "set default",
+  "set null",
+] as const;
+
+/** One referential action. */
+export type ReferentialAction = (typeof REFERENTIAL_ACTIONS)[number];
+
+/**
+ * Returns the action when `value` is one this catalog stores.
+ *
+ * @param value - Author or document text
+ * @returns The action, or `undefined` when it is not in the list
+ */
+export function referentialAction(value: string): ReferentialAction | undefined {
+  for (const action of REFERENTIAL_ACTIONS) {
+    if (action === value) {
+      return action;
+    }
+  }
+  return undefined;
+}
+
 /** Constraint definition. `nameKey` stays put when a field is renamed. */
 export type ConstraintDefinition = {
   readonly constraintKind: ConstraintKind;
@@ -262,6 +293,8 @@ export type ConstraintDefinition = {
   readonly references?: {
     readonly parent: ObjectRef;
     readonly columns: readonly string[];
+    readonly onDelete?: ReferentialAction;
+    readonly onUpdate?: ReferentialAction;
   };
 };
 

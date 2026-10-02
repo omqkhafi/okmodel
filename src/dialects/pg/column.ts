@@ -2,10 +2,14 @@
  * Column builder shared by every Postgres type.
  *
  * Modifiers allocate a new builder when called. Importing this module does
- * not build a codec table. `.references()` and `.validate()` are slots for
- * later prompts; this one does not add those methods.
+ * not build a codec table. `.validate()` stays a slot for P26.
  */
 
+import {
+  REFERENTIAL_ACTIONS,
+  referentialAction,
+  type ReferentialAction,
+} from "../../contracts/catalog/types.js";
 import { readArray, writeArray } from "./array-literal.js";
 import { definition, rejected } from "./misuse.js";
 import { quoteLiteral } from "./quote.js";
@@ -73,11 +77,25 @@ export type WithGenerated<TFlags extends ColumnFlags> = {
 export type SqlForm = "raw" | "quote" | "json" | "jsonb" | "cast";
 
 /**
- * A reference, stored when a later prompt adds `.references()`.
+ * A foreign key declared on a column.
+ *
+ * `columns` names the target columns. When it is omitted, `schema()` uses
+ * that table's primary key.
  */
 export type ReferenceModifier = {
   readonly table: string;
-  readonly options?: Readonly<Record<string, unknown>>;
+  readonly onDelete?: ReferentialAction;
+  readonly onUpdate?: ReferentialAction;
+  readonly columns?: readonly string[];
+};
+
+/**
+ * Options for {@link ColumnBuilder.references}.
+ */
+export type ReferenceOptions = {
+  readonly onDelete?: ReferentialAction;
+  readonly onUpdate?: ReferentialAction;
+  readonly columns?: readonly string[];
 };
 
 /**
@@ -202,6 +220,8 @@ export type ColumnState<TValue> = {
   readonly extension: string | undefined;
   readonly typeDependency: string | undefined;
   readonly domain: { readonly base: string; readonly check: string } | undefined;
+  readonly primaryKey: boolean;
+  readonly typeLabel: string | undefined;
   readonly references: ReferenceModifier | undefined;
   readonly validate: ValidateModifier | undefined;
   readonly sqlForm: SqlForm;
@@ -228,6 +248,8 @@ export type OpenColumn<TValue> = {
   readonly extension?: string;
   readonly typeDependency?: string;
   readonly domain?: { readonly base: string; readonly check: string };
+  readonly primaryKey?: boolean;
+  readonly typeLabel?: string;
 };
 
 /**
@@ -432,6 +454,33 @@ export class ColumnBuilder<TValue, TFlags extends ColumnFlags> {
   }
 
   /**
+   * Points this column at another table.
+   *
+   * `schema()` checks that the table exists (OKM1020). The argument stays a
+   * string so the column type does not cycle through `Register`.
+   *
+   * @param table - Target table name
+   * @param options - Referential actions and target columns
+   * @returns The same column, with the reference stored
+   */
+  references(table: string, options?: ReferenceOptions): ColumnBuilder<TValue, TFlags> {
+    if (table.length === 0) {
+      definition("references() needs a table name.");
+    }
+    const onDelete = readAction(options?.onDelete, "onDelete");
+    const onUpdate = readAction(options?.onUpdate, "onUpdate");
+    const columns = readReferenceColumns(options?.columns);
+    return rebuild<TValue, TFlags>(this.state, {
+      references: {
+        table,
+        ...(onDelete !== undefined ? { onDelete } : {}),
+        ...(onUpdate !== undefined ? { onUpdate } : {}),
+        ...(columns !== undefined ? { columns } : {}),
+      },
+    });
+  }
+
+  /**
    * Records the previous SQL name. Migrations read it later.
    *
    * @param name - Previous column name
@@ -553,6 +602,8 @@ export function openColumn<TValue, TFlags extends ColumnFlags>(
     extension: input.extension,
     typeDependency: input.typeDependency,
     domain: input.domain,
+    primaryKey: input.primaryKey === true,
+    typeLabel: input.typeLabel,
     references: undefined,
     validate: undefined,
     sqlForm: input.sqlForm,
@@ -600,6 +651,40 @@ export function sqlOf<TValue>(state: ColumnState<TValue>, value: TValue): string
     return quoteLiteral(encoded);
   }
   return encoded;
+}
+
+function readAction(
+  action: ReferentialAction | undefined,
+  role: string,
+): ReferentialAction | undefined {
+  if (action === undefined) {
+    return undefined;
+  }
+  if (referentialAction(action) === undefined) {
+    definition(
+      `references() ${role} ${action} is not a referential action. Accepted actions: ${REFERENTIAL_ACTIONS.join(", ")}.`,
+    );
+  }
+  return action;
+}
+
+function readReferenceColumns(
+  columns: readonly string[] | undefined,
+): readonly string[] | undefined {
+  if (columns === undefined) {
+    return undefined;
+  }
+  if (columns.length === 0) {
+    definition("references() columns must name at least one target column.");
+  }
+  const copy: string[] = [];
+  for (const name of columns) {
+    if (name.length === 0) {
+      definition("references() columns must be non-empty names.");
+    }
+    copy.push(name);
+  }
+  return copy;
 }
 
 function rebuild<TValue, TFlags extends ColumnFlags>(
