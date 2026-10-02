@@ -1,6 +1,6 @@
 {
   "name": "okmodel",
-  "version": "0.1.0-next.17",
+  "version": "0.1.0-next.18",
   "description": "Catalog-first TypeScript ORM: typed queries, safe migrations and replica-aware routing. PostgreSQL first, zero runtime dependencies.",
   "license": "Apache-2.0",
   "author": "Omq Khafi",
@@ -38,10 +38,19 @@
     "./testing": {
       "types": "./dist/tooling/testing/index.d.ts",
       "import": "./dist/tooling/testing/index.js"
+    },
+    "./pg/postgresjs": {
+      "types": "./dist/adapters/pg/postgresjs.d.ts",
+      "import": "./dist/adapters/pg/postgresjs.js"
+    },
+    "./pg/pglite": {
+      "types": "./dist/adapters/pg/pglite.d.ts",
+      "import": "./dist/adapters/pg/pglite.js"
     }
   },
   "scripts": {
-    "build": "rm -rf dist && bun build ./src/contracts/index.ts ./src/dialects/pg/index.ts ./src/tooling/migrate/index.ts ./src/tooling/testing/index.ts ./src/tooling/cli.ts --outdir ./dist --root ./src --format esm --target node --splitting --chunk-naming=shared/[hash].js && bunx tsc -p tsconfig.build.json && bun ./scripts/write-bin-wrappers.ts",
+    "build": "rm -rf dist && bun build ./src/contracts/index.ts ./src/dialects/pg/index.ts ./src/adapters/pg/postgresjs.ts ./src/adapters/pg/pglite.ts ./src/tooling/migrate/index.ts ./src/tooling/testing/index.ts ./src/tooling/cli.ts --outdir ./dist --root ./src --format esm --target node --splitting --chunk-naming=shared/[hash].js --external postgres --external @electric-sql/pglite && bunx tsc -p tsconfig.build.json && bun ./scripts/write-bin-wrappers.ts",
+    "driver-bench": "bun ./scripts/driver-bench.ts",
     "typecheck": "bunx tsc --noEmit -p tsconfig.json",
     "type-cost": "bun ./scripts/type-cost.ts",
     "lint": "oxlint",
@@ -78,5 +87,17 @@
     "oxlint-tsgolint": "^7.0.2003",
     "publint": "^0.3.24",
     "typescript": "7"
+  },
+  "peerDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "postgres": "^3.4.9"
+  },
+  "peerDependenciesMeta": {
+    "@electric-sql/pglite": {
+      "optional": true
+    },
+    "postgres": {
+      "optional": true
+    }
   }
 }

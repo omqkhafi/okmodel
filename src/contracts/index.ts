@@ -93,3 +93,21 @@ export {
   type TableInput,
   type TableObject,
 } from "./catalog/index.js";
+
+export type {
+  DescribeResult,
+  DriverCapabilities,
+  DriverConnection,
+  DriverErrorFields,
+  DriverFailureKind,
+  DriverPool,
+  DriverPoolConfig,
+  DriverStats,
+  ExecuteOptions,
+  ExecuteResult,
+  Notice,
+  PreparedMode,
+  Statement,
+  TransactionMode,
+  WireValue,
+} from "./driver.js";

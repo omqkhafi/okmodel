@@ -22,6 +22,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Catalog objects share one envelope: kind, identity, owner, definition, dependencies, and provenance. Tables, columns, indexes, constraints, and sequences are built here. Views, functions, triggers, extensions, roles, grants, and default privileges use the same envelope.
 - Constraint and index names are generated from a stable key. A name past the dialect limit keeps a SHA-256 suffix. Renaming a field does not rename those constraints or indexes.
 - A catalog serialises to canonical JSON with a version field. The hash is SHA-256 of that JSON, so the same catalog yields the same bytes on every runtime. Namespace templates stay templates.
+- The driver contract is types only: `open` returns a pool with `execute`, atomic `batch`, `reserve`, `stats`, and `close`. Optional `stream`, `describe`, `listen`, and `cancel` follow capability flags. `DriverError` carries the server fields, `kind` (`timeout` or `cancelled`), and `batchIndex` (`null` when the failure is the commit).
 
 #### dialects
 
@@ -32,6 +33,11 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Date and time codecs read the `Temporal` global. okmodel does not ship a polyfill. A missing global is OKM1210 and the message says to assign one to `globalThis.Temporal`.
 - `table()` and `schema()` compile columns, references, indexes, checks, and unique constraints into a catalog. Options that arrive later throw OKM1061 and name that prompt, or say later when the plan has no row for them.
 - `Row`, `Insert`, and `Update` read a `Register` schema. `emitRowTypes` writes the same shapes (`Tasks`, `TasksInsert`, `TasksUpdate`). `schema({ types })` records `emitted` or `inferred`.
+
+#### adapters
+
+- `okmodel/pg/postgresjs` and `okmodel/pg/pglite` are separate entries. postgres.js and PGlite are optional peers, not dependencies of the core. One pool per endpoint. PGlite is a pool of one. Acquire timeout is OKM1846. Release runs `RESET ALL` and `pg_advisory_unlock_all()`. A timeout stays kind `timeout`. An abort from `signal` is `cancelled`.
+- Capability flags are readable per driver. The registry does not throw for a missing flag: spec section 21 has no OKM11xx for that case.
 
 #### tooling
 
@@ -50,8 +56,11 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `bun run bench` writes timings as JSON. Baselines can be stored beside the script; nothing compares them yet.
 - `bun run catalog-bench` times canonical form, SHA-256, and topological order on the 200-table fixture. It prints the sample and does not enforce a ceiling.
 - The replication test waits up to 30 seconds, matching its replay wait, so other Postgres tests can run beside it.
-- The runtime entry must stay within 60 KB minified and 20 KB gzip. A cold import on Node is printed and must stay within 15 ms.
-- `bun run bundle-purity` fails when a runtime bundle contains an npm package, or when `src/` imports the harness barrel.
+- The runtime entry must stay within 60 KB minified and 20 KB gzip. A cold import on Node is the median of five fresh processes. CI fails above 25 ms (D134). Locally the script prints the 15 ms reference and records a finding above it.
+- `bun run bundle-purity` fails when a runtime bundle contains an npm package, or when `src/` imports the harness barrel. Adapter entries must leave `postgres` and `@electric-sql/pglite` external.
+- A conformance suite runs the same driver cases on either adapter: execute, nulls, timestamps, numeric, bigint, json, arrays, batch (including a savepoint inside a reserved transaction), reservation, stats, close, and session reset. Cancel, timeout, and stream run only when the adapter declares them.
+- `bun run driver-bench` times `execute` against calling postgres.js directly. It prints the median and does not enforce a ceiling.
+- The Postgres CI job runs the driver conformance suite with `REQUIRE_DOCKER=1`.
 
 #### docs
 
@@ -84,12 +93,13 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The published package sets `sideEffects` to false.
 - The harness barrel no longer re-exports Postgres or PGlite.
 - Postgres tests share one Docker skip rule.
+- Cold import fails on CI above 25 ms (D134). A local sample above the 15 ms reference is printed as a finding and does not fail the script. Byte ceilings are unchanged.
 
 #### docs
 
 - The package description names typed queries, safe migrations, and replica-aware routing. The README says the API has not stabilised yet.
 - Changelog area headings are the layer names: `contracts`, `dialects`, `adapters`, `runtime`, `tooling`, and `docs`.
-- Normative docs match spec draft 22 and decisions D1–D133. The spec registry names OKM1026, OKM1027, OKM1060, OKM1061, and OKM1210.
+- Normative docs match spec draft 22 and decisions D1–D134. The spec registry names OKM1026, OKM1027, OKM1060, OKM1061, and OKM1210.
 - Engineering standards (D129) are in `AGENTS.md` and the ship skill. Reports state runtime entry size, cold import, and type-cost change.
 
 ### 🔥 Removed

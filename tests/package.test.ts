@@ -14,7 +14,9 @@ test("package exports resolve under node and bun", async () => {
     'import * as pg from "okmodel/pg";',
     'import * as migrate from "okmodel/migrate";',
     'import * as testing from "okmodel/testing";',
-    "const kinds = [okmodel, pg, migrate, testing].map((entry) => typeof entry);",
+    'import * as postgresjs from "okmodel/pg/postgresjs";',
+    'import * as pglite from "okmodel/pg/pglite";',
+    "const kinds = [okmodel, pg, migrate, testing, postgresjs, pglite].map((entry) => typeof entry);",
     "if (kinds.some((kind) => kind !== 'object')) throw new Error(kinds.join(','));",
     "console.log('ok');",
   ].join("\n");
