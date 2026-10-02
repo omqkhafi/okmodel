@@ -21,7 +21,9 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `sha256` is a pure-TypeScript SHA-256 in the contracts layer. Fixture hashes use it.
 - Catalog objects share one envelope: kind, identity, owner, definition, dependencies, and provenance. Tables, columns, indexes, constraints, and sequences are built here. Views, functions, triggers, extensions, roles, grants, and default privileges use the same envelope.
 - Constraint and index names are generated from a stable key. A name past the dialect limit keeps a SHA-256 suffix. Renaming a field does not rename those constraints or indexes.
-- A catalog serialises to canonical JSON with a version field. The hash is SHA-256 of that JSON, so the same catalog yields the same bytes on every runtime. Namespace templates stay templates.
+- A catalog serialises to canonical JSON with a version field. The hash is SHA-256 of that JSON, so the same catalog yields the same bytes on every runtime. Namespace templates stay templates. The hash and the serialised text are computed on first use.
+- `loadTrustedCatalog` checks the stored hash and version, then trusts the objects. It does not rebuild the catalog. `parseCatalog` stays the validating read.
+- A declared rename rewrites identifier references inside check expressions, index predicates, and generated expressions. String literals stay as written. Constraint and index names stay.
 - The driver contract is types only: `open` returns a pool with `execute`, atomic `batch`, `reserve`, `stats`, and `close`. Optional `stream`, `describe`, `listen`, and `cancel` follow capability flags. `DriverError` carries the server fields, `kind` (`timeout`, `cancelled`, or `outcome_unknown`), and `batchIndex` (`null` when the failure is the commit).
 - `OkmError` carries `kind`, `category`, `summary`, `fields()`, `toHttp()`, `log()`, `retryable`, and `fix`. `safe()` returns `{ ok, value }` or `{ ok, error }`. `error.match` handles a category or `_`. `OkmError.is` narrows the kind and, for a registered table, the columns. Row values stay out of the error unless `includeValues` is set, and `log()` never prints them. `cancelled` is not retried. Every timeout is kind `timeout`. OKM1401 (`outcome_unknown`) is not retried and its fix says to check an idempotency key.
 - `nearestName` suggests a close name for an unknown table, field, preset, or option. The error still lists the accepted values.
@@ -33,7 +35,9 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `.picklist()` narrows a string column to a literal union and can add a CHECK. An empty list or a repeated value is OKM1060. A value outside the list is OKM1210.
 - `enum` and `domain` are exported under those names. An invalid enum or domain definition is OKM1060. A label a codec rejects is OKM1210.
 - Date and time codecs read the `Temporal` global. okmodel does not ship a polyfill. A missing global is OKM1210 and the message says to assign one to `globalThis.Temporal`.
-- `table()` and `schema()` compile columns, references, indexes, checks, and unique constraints into a catalog. `one()` and `many()` declare relations. `manyThrough` and `morph` stay OKM1061. Options that arrive later throw OKM1061 and name that prompt, or say later when the plan has no row for them.
+- `table()` and `schema()` compile columns, references, indexes, checks, and unique constraints into a catalog. `one()` and `many()` declare relations. `manyThrough` and `morph` stay OKM1061. Options that arrive later throw OKM1061 and name that prompt, or say later when the plan has no row for them. `schema()` defers the catalog document until `.catalog` is read.
+- Postgres introspection builds a catalog from a schema. Copied partition primary keys and inherited indexes are left out. Check expressions and index predicates come back as the database's text.
+- The same DDL renderer plans a migration and builds a scratch schema, so a statement has one spelling.
 - Tagged operators are one function per operator (`eq`, `lt`, `inList`, `or`, and the rest). An app that imports `eq` does not ship the others.
 - `inc` adds to a numeric column in an `update` `set`. JSON and array operators are not in this version.
 - `mapPostgresError` turns a `DriverError` into an `OkmError`. SQLSTATE picks the kind. A catalog constraint name (`{table}_{nameKey}_key`, `_fkey`, `_check`, or `{table}_pkey`) picks the column reason. `57014` without a caller abort is `timeout`.
@@ -57,7 +61,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### tooling
 
-- Stub exports for `okmodel/migrate` and `okmodel/testing`.
+- `okmodel/migrate` plans migrations. `defineConfig` lives on that entry. `okm build` validates the schema and writes `.okm/` (catalog, hash, declarations, emitted row types, and the table-name union for `references`). `okm generate` writes SQL only. `okm migrate plan <name>` prints the plan and its class. `okm check` reports a stale `renamedFrom` and a table file the schema does not import (OKM1024).
+- An unexplained drop-and-add is OKM1530. The fix shows the line to add. The planner does not prompt.
+- Removing a picklist or enum value needs `--replace table.column.old=new` (or `=null`). Without it, OKM1541's fix names the flag. The plan's expand step updates rows and keeps the old constraint; the contract step sweeps and swaps the constraint (`NOT VALID`, then `VALIDATE`). An enum removal recreates the type in the contract step. Those data steps are plain statements. Batching them is later.
+- Stub export for `okmodel/testing`.
 - `okm --version` and `okmodel --version` print the package version.
 - Repository checks for layer imports, core purity, docs links and decision numbers, publint, arethetypeswrong, a `dist/` size ceiling, and bundle purity.
 - `bun run bump next` moves the version to `<next release>-next.N` and leaves the changelog in place. `bun run bump release` drops that suffix and promotes Unreleased.
@@ -124,6 +131,16 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Changelog area headings are the layer names: `contracts`, `dialects`, `adapters`, `runtime`, `tooling`, and `docs`.
 - Normative docs match spec draft 22 and decisions D1–D135. The spec registry names OKM1026, OKM1027, OKM1060, OKM1061, and OKM1210.
 - Engineering standards (D129) are in `AGENTS.md` and the ship skill. Reports state runtime entry size, cold import, and type-cost change.
+
+### 🐛 Fixed
+
+#### runtime
+
+- Inside `insert({ ... })`, completions list the property under the cursor and every insertable column not already written. Optional columns are optional keys. A guarded column, or one insert omits, stays out. One row stays one row.
+
+#### docs
+
+- `docs/editor-check.md` records that insert completions include the unfilled insertable columns.
 
 ### 🔥 Removed
 

@@ -164,6 +164,11 @@ async function writeSuite(db: Client, pool: DriverPool): Promise<void> {
   await expectRejection(db.tasks.update({ set: { title: "x" } } as never), "OKM1102");
   await db.tasks.update({ set: { title: "all" } } as never).all("reset titles");
   expect((await db.tasks.one({ where: { id: TASK } }))?.title).toBe("all");
+  await db.tasks.update({ where: { id: TASK }, set: { title: "one" } }).expect(1);
+  await expectRejection(
+    db.tasks.update({ where: { id: rowId(9_999) }, set: { title: "none" } }).expect(1),
+    "not_found",
+  );
 
   const conflict = await expectRejection(
     db.users.insert({ id: rowId(10), email: "a@b.c", name: "Eve" }),

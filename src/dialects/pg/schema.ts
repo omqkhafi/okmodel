@@ -227,8 +227,14 @@ export function schema<const TTables extends readonly AnyTable[]>(
     model[item.tsName] = tableModel(item, edges, byName, accepted);
   }
 
+  // Identity-key order and the cycle check run on first read. Import does not
+  // serialise or hash the catalog (D138).
+  let document: Catalog | undefined;
   return {
-    catalog: catalog(objects),
+    get catalog(): Catalog {
+      document ??= catalog(objects);
+      return document;
+    },
     types,
     casing,
     codecs,

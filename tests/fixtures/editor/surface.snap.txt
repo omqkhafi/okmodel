@@ -1,19 +1,19 @@
 hover rows
-const rows: readonly { readonly id: string; readonly email: string; readonly name: string | null; readonly role: string; }[]
+const rows: readonly { readonly id: string; readonly email: string; readonly name: string | null; readonly city: string | null; readonly role: string; }[]
 
 hover created
-const created: { readonly id: string; readonly email: string; readonly name: string | null; readonly role: string; }
+const created: { readonly id: string; readonly email: string; readonly name: string | null; readonly city: string | null; readonly role: string; }
 
 complete where
-email id name role value
+city email id name role value
 
 complete insert
-email
+city email
 
 complete set
 ownerId position title
 
 diagnostics
-No overload matches this call. Overload 1 of 2, '(options: ReadOptions<BuiltSchema<readonly [Table<"users", { readonly id: ColumnBuilder<string, IdFlags>; readonly email: ColumnBuilder<string, PlainFlags>; readonly name: ColumnBuilder<...>; readonly role: ColumnBuilder<...>; }, Readonly<...>>, Table<...>]>, "users"> & { ...; } & { ...; }): Read<...>', gave the following error. Type '"missing"' is not assignable to type '"id" | "email" | "name" | "role"'. Overload 2 of 2, '(options: FindOptions<BuiltSchema<readonly [Table<"users", { readonly id: ColumnBuilder<string, IdFlags>; readonly email: ColumnBuilder<string, PlainFlags>; readonly name: ColumnBuilder<...>; readonly role: ColumnBuilder<...>; }, Readonly<...>>, Table<...>]>, "users">): { ...; }', gave the following error. Type '"missing"' is not assignable to type '"id" | "email" | "name" | "role"'.
-Property 'missing' does not exist on type 'Connected<BuiltSchema<readonly [Table<"users", { readonly id: ColumnBuilder<string, IdFlags>; readonly email: ColumnBuilder<string, PlainFlags>; readonly name: ColumnBuilder<...>; readonly role: ColumnBuilder<...>; }, Readonly<...>>, Table<...>]>>'.
+No overload matches this call. Overload 1 of 2, '(options: ReadOptions<BuiltSchema<readonly [Table<"users", { readonly id: ColumnBuilder<string, IdFlags>; readonly email: ColumnBuilder<string, PlainFlags>; readonly name: ColumnBuilder<...>; readonly city: ColumnBuilder<...>; readonly role: ColumnBuilder<...>; }, Readonly<...>>, Table<...>]>, "users"> & { ...; } & { ...; }): Read<...>', gave the following error. Type '"missing"' is not assignable to type '"id" | "email" | "name" | "city" | "role"'. Overload 2 of 2, '(options: FindOptions<BuiltSchema<readonly [Table<"users", { readonly id: ColumnBuilder<string, IdFlags>; readonly email: ColumnBuilder<string, PlainFlags>; readonly name: ColumnBuilder<...>; readonly city: ColumnBuilder<...>; readonly role: ColumnBuilder<...>; }, Readonly<...>>, Table<...>]>, "users">): { ...; }', gave the following error. Type '"missing"' is not assignable to type '"id" | "email" | "name" | "city" | "role"'.
+Property 'missing' does not exist on type 'Connected<BuiltSchema<readonly [Table<"users", { readonly id: ColumnBuilder<string, IdFlags>; readonly email: ColumnBuilder<string, PlainFlags>; readonly name: ColumnBuilder<...>; readonly city: ColumnBuilder<...>; readonly role: ColumnBuilder<...>; }, Readonly<...>>, Table<...>]>>'.
 

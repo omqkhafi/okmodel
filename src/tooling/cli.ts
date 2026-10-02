@@ -2,11 +2,25 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { OkmError } from "../contracts/error.js";
+import { run } from "./migrate/commands.js";
+
 const here = dirname(fileURLToPath(import.meta.url));
 const packageJsonPath = join(here, "..", "..", "package.json");
 
 if (process.argv.includes("--version")) {
   process.stdout.write(`${readPackageVersion(packageJsonPath)}\n`);
+} else if (process.argv.length > 2) {
+  try {
+    await run(process.argv.slice(2));
+  } catch (error) {
+    if (error instanceof OkmError) {
+      process.stderr.write(`${error.code}: ${error.message}\n${error.fix.summary}\n`);
+      process.exitCode = 1;
+    } else {
+      throw error;
+    }
+  }
 }
 
 function readPackageVersion(path: string): string {

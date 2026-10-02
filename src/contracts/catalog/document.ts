@@ -9,6 +9,7 @@
 import { catalogError } from "../error.js";
 import { sha256 } from "../sha256.js";
 import { canonicalJson, type Json } from "./json.js";
+import { replaceIdentifier } from "./rewrite.js";
 import {
   identityKey,
   identityLabel,
@@ -87,6 +88,41 @@ export function renameColumn(
 }
 
 /**
+ * Renames a table without renaming its constraints or indexes.
+ *
+ * Column, index, and constraint parents move to the new name. Expression text
+ * that names the table is rewritten. Constraint and index names stay.
+ *
+ * @param source - Catalog document
+ * @param change - Namespace, current table name, and the new name
+ * @returns A new catalog
+ */
+export function renameTable(
+  source: Catalog,
+  change: { readonly namespace: Namespace; readonly from: string; readonly to: string },
+): Catalog {
+  const fromIdentity: ObjectIdentity = {
+    kind: "table",
+    namespace: change.namespace,
+    name: change.from,
+  };
+  const toIdentity: ObjectIdentity = {
+    kind: "table",
+    namespace: change.namespace,
+    name: change.to,
+  };
+  const fromKey = identityKey(fromIdentity);
+  const found = source.objects.some((object) => identityKey(object.identity) === fromKey);
+  if (!found) {
+    catalogError("OKM1020", `Table ${change.from} is not in the catalog.`);
+  }
+  const next = source.objects.map((object) =>
+    rewriteTableName(object, change, fromKey, toIdentity),
+  );
+  return catalog(next);
+}
+
+/**
  * Canonical JSON for a catalog.
  *
  * Templates stay templates. Object keys are sorted and objects are ordered by
@@ -95,16 +131,23 @@ export function renameColumn(
  * @param source - Catalog document
  * @returns Canonical text
  */
+const serializedText = new WeakMap<Catalog, string>();
+const serializedHash = new WeakMap<Catalog, string>();
+
 export function serializeCatalog(source: Catalog): string {
+  const cached = serializedText.get(source);
+  if (cached !== undefined) return cached;
   const indexed = source.objects.map((object) => ({
     object,
     key: identityKey(object.identity),
   }));
   indexed.sort((left, right) => compareText(left.key, right.key));
-  return canonicalJson({
+  const text = canonicalJson({
     objects: indexed.map((item) => objectToJson(item.object)),
     version: source.version,
   });
+  serializedText.set(source, text);
+  return text;
 }
 
 /**
@@ -117,7 +160,50 @@ export function serializeCatalog(source: Catalog): string {
  * @returns Lowercase hex digest
  */
 export function catalogHash(source: Catalog): string {
-  return sha256(serializeCatalog(source));
+  const cached = serializedHash.get(source);
+  if (cached !== undefined) return cached;
+  const hash = sha256(serializeCatalog(source));
+  serializedHash.set(source, hash);
+  return hash;
+}
+
+/**
+ * Loads a build artifact without validating objects.
+ *
+ * `okm build` already validated the catalog. Production startup checks the
+ * stored hash and the version, then trusts the objects (D133). `okm check`
+ * and dev keep {@link parseCatalog}.
+ *
+ * @param text - Canonical catalog JSON
+ * @param hash - SHA-256 of `text`, stored beside the artifact
+ * @returns The catalog document
+ */
+export function loadTrustedCatalog(text: string, hash: string): Catalog {
+  if (sha256(text) !== hash) {
+    catalogError("OKM1027", "Catalog hash does not match the build artifact.");
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    catalogError("OKM1027", "Catalog text is not valid JSON.");
+  }
+  if (!isPlainRecord(parsed) || !Array.isArray(parsed.objects)) {
+    catalogError("OKM1027", "Catalog document is not an object.");
+  }
+  if (parsed.version !== CATALOG_VERSION) {
+    catalogError(
+      "OKM1027",
+      `Catalog version ${String(parsed.version)} cannot be read. This build reads version ${String(CATALOG_VERSION)}.`,
+    );
+  }
+  const loaded: Catalog = {
+    version: CATALOG_VERSION,
+    objects: parsed.objects as Catalog["objects"],
+  };
+  serializedText.set(loaded, text);
+  serializedHash.set(loaded, hash);
+  return loaded;
 }
 
 /**
@@ -213,6 +299,7 @@ function rewriteColumn(
   const renamed =
     sameRef(object.identity.parent, change.parent) && object.identity.name === change.from;
   const definition = object.definition;
+  const local = sameRef(object.identity.parent, change.parent);
   return column({
     parent: object.identity.parent,
     name: renamed ? change.to : object.identity.name,
@@ -222,10 +309,17 @@ function rewriteColumn(
     provenance: object.provenance,
     dependencies,
     ...(definition.defaultExpression !== undefined
-      ? { defaultExpression: definition.defaultExpression }
+      ? { defaultExpression: rewriteExpr(definition.defaultExpression, change, local) }
       : {}),
     ...(definition.identity !== undefined ? { identity: definition.identity } : {}),
-    ...(definition.generated !== undefined ? { generated: definition.generated } : {}),
+    ...(definition.generated !== undefined
+      ? {
+          generated: {
+            stored: definition.generated.stored,
+            expression: rewriteExpr(definition.generated.expression, change, local),
+          },
+        }
+      : {}),
   });
 }
 
@@ -247,8 +341,12 @@ function rewriteIndex(
     owner: object.owner,
     provenance: object.provenance,
     dependencies,
-    ...(definition.predicate !== undefined ? { predicate: definition.predicate } : {}),
-    ...(definition.expression !== undefined ? { expression: definition.expression } : {}),
+    ...(definition.predicate !== undefined
+      ? { predicate: rewriteExpr(definition.predicate, change, local) }
+      : {}),
+    ...(definition.expression !== undefined
+      ? { expression: rewriteExpr(definition.expression, change, local) }
+      : {}),
   });
 }
 
@@ -283,9 +381,150 @@ function rewriteConstraint(
     owner: object.owner,
     provenance: object.provenance,
     dependencies,
-    ...(definition.expression !== undefined ? { expression: definition.expression } : {}),
+    ...(definition.expression !== undefined
+      ? { expression: rewriteExpr(definition.expression, change, local) }
+      : {}),
     ...(referenced !== undefined ? { references: referenced } : {}),
   });
+}
+
+function rewriteExpr(
+  text: string,
+  change: { readonly from: string; readonly to: string },
+  active: boolean,
+): string {
+  if (!active) return text;
+  return replaceIdentifier(text, change.from, change.to);
+}
+
+function rewriteTableName(
+  object: CatalogObject,
+  change: { readonly namespace: Namespace; readonly from: string; readonly to: string },
+  fromKey: string,
+  toIdentity: ObjectIdentity,
+): CatalogObject {
+  const dependencies = retarget(object.dependencies, fromKey, toIdentity);
+  const named =
+    object.kind === "table" &&
+    object.identity.name === change.from &&
+    sameNamespace(object.identity.namespace, change.namespace);
+  if (object.kind === "table") {
+    return table({
+      namespace: object.identity.namespace,
+      name: named ? change.to : object.identity.name,
+      owner: object.owner,
+      provenance: object.provenance,
+      dependencies,
+      ...(object.definition.partition === undefined
+        ? {}
+        : { partition: object.definition.partition }),
+    });
+  }
+  if (object.kind === "column" || object.kind === "index" || object.kind === "constraint") {
+    const parent = movedParent(object.identity.parent, change);
+    const local = parent.name !== object.identity.parent.name;
+    if (object.kind === "column") {
+      return column({
+        parent,
+        name: object.identity.name,
+        dataType: object.definition.dataType,
+        nullable: object.definition.nullable,
+        owner: object.owner,
+        provenance: object.provenance,
+        dependencies,
+        ...(object.definition.defaultExpression !== undefined
+          ? {
+              defaultExpression: rewriteExpr(
+                object.definition.defaultExpression,
+                { from: change.from, to: change.to },
+                local,
+              ),
+            }
+          : {}),
+        ...(object.definition.identity !== undefined
+          ? { identity: object.definition.identity }
+          : {}),
+        ...(object.definition.generated !== undefined
+          ? { generated: object.definition.generated }
+          : {}),
+      });
+    }
+    if (object.kind === "index") {
+      return index({
+        parent,
+        name: object.identity.name,
+        nameKey: object.definition.nameKey,
+        columns: [...object.definition.columns],
+        unique: object.definition.unique,
+        owner: object.owner,
+        provenance: object.provenance,
+        dependencies,
+        ...(object.definition.predicate !== undefined
+          ? {
+              predicate: rewriteExpr(
+                object.definition.predicate,
+                { from: change.from, to: change.to },
+                local,
+              ),
+            }
+          : {}),
+        ...(object.definition.expression !== undefined
+          ? {
+              expression: rewriteExpr(
+                object.definition.expression,
+                { from: change.from, to: change.to },
+                local,
+              ),
+            }
+          : {}),
+      });
+    }
+    const references = object.definition.references;
+    const referenced =
+      references === undefined
+        ? undefined
+        : {
+            parent: movedParent(references.parent, change),
+            columns: [...references.columns],
+            ...(references.onDelete !== undefined ? { onDelete: references.onDelete } : {}),
+            ...(references.onUpdate !== undefined ? { onUpdate: references.onUpdate } : {}),
+          };
+    return constraint({
+      parent,
+      constraintKind: object.definition.constraintKind,
+      name: object.identity.name,
+      nameKey: object.definition.nameKey,
+      columns: [...object.definition.columns],
+      deferrable: object.definition.deferrable,
+      initially: object.definition.initially,
+      nullsNotDistinct: object.definition.nullsNotDistinct,
+      owner: object.owner,
+      provenance: object.provenance,
+      dependencies,
+      ...(object.definition.expression !== undefined
+        ? {
+            expression: rewriteExpr(
+              object.definition.expression,
+              { from: change.from, to: change.to },
+              local,
+            ),
+          }
+        : {}),
+      ...(referenced !== undefined ? { references: referenced } : {}),
+    });
+  }
+  if (object.kind !== "sequence") return assertNever(object);
+  return rewriteSequence(object, dependencies);
+}
+
+function movedParent(
+  parent: ObjectRef,
+  change: { readonly namespace: Namespace; readonly from: string; readonly to: string },
+): ObjectRef {
+  if (parent.name === change.from && sameNamespace(parent.namespace, change.namespace)) {
+    return { namespace: parent.namespace, name: change.to };
+  }
+  return parent;
 }
 
 function rewriteSequence(

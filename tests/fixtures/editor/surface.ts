@@ -17,6 +17,7 @@ const users = table("users", {
   id: id(),
   email: text(),
   name: text().nullable(),
+  city: text().nullable(),
   role: text().guarded(),
 });
 
