@@ -3,3 +3,4 @@ dist
 *.tgz
 .attest
 packages/bench/results
+packages/spikes/.m0-measure
