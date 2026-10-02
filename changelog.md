@@ -51,3 +51,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The replication test waits up to 30 seconds, matching its replay wait, so other Postgres tests can run beside it.
 - A private topology spike routes reads across a Postgres primary and two replicas and checks read-your-writes by WAL position. Findings are in `packages/spikes/topology/FINDINGS.md`.
 - A private targets spike resolves a target at execution time, runs migrations across schemas and databases with rollout and resume, and provisions a snapshot that matches a fully migrated target. Findings are in `packages/spikes/targets/FINDINGS.md`.
+- A private script bundles the catalog diff, the safety verifier, the router, and the driver registry and prints raw, gzip, and brotli size plus import time.
+
+#### docs
+
+- The M0 gate findings are in `docs/m0-findings.md`: one row per spike finding, the spec sentences those rows contradict, and the cold-start and size measurements.
