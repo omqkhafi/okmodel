@@ -4,6 +4,7 @@
   "private": true,
   "description": "Private Postgres and fixture harness for OKModel tests. Not published.",
   "type": "module",
+  "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
     "./fixtures": "./src/fixtures.ts"

@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 
-import { withPgliteSchema, withPostgresSchema } from "../packages/harness/src/index.js";
+import { withPgliteSchema } from "../packages/harness/src/pglite.js";
+import { withPostgresSchema } from "../packages/harness/src/postgres.js";
 import {
   FIXTURE_SIZES,
   fixtureHash,
@@ -10,7 +11,11 @@ import {
   type FixtureTenancy,
 } from "../packages/harness/src/fixtures.js";
 
-import { loadPostgresGate, postgresTest, requirePostgresWhenAsked } from "./postgres-gate.js";
+import {
+  loadPostgresGate,
+  postgresTest,
+  requirePostgresWhenAsked,
+} from "../packages/harness/src/postgres-test.js";
 
 /**
  * SHA-256 of the seed-1 fixture and its DDL.

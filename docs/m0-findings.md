@@ -1,10 +1,10 @@
 # M0 findings
 
-Consolidated evidence for the M0 gate. Sources are the eight `FINDINGS.md` files under `packages/spikes` and [driver compatibility](../packages/spikes/drivers/COMPATIBILITY.md). Spike code is unchanged. Nothing here is a budget, a spec edit, or a choice among the options in the decision sections.
+Consolidated evidence for the M0 gate. Sources are the eight `FINDINGS.md` files under `packages/spikes` and [driver compatibility](../packages/spikes/drivers/COMPATIBILITY.md). The implementations are on the `m0-spikes` tag. The row-type and operator fixtures remain so the type ceilings can be measured. Draft 18 recorded the choices. Resolved by names the decision, the prompt from the plan's M0 follow-ups, or `accepted` when the row needs no change.
 
 The class on two topology rows was longer than the five class names. `bug if used as the watermark` is recorded as `bug`, and the statement keeps the condition. `missing capability is still real` is recorded as `missing capability`. Every other class is the spike's own label. Rows are not merged across spikes.
 
-`decision` means the gate has to choose. It is not a recommendation. An implementation task names the prompt that would carry the work if the spec stays as written.
+`decision` in Disposition is the class the spike recorded. An implementation task names the prompt that carries the work. Resolved by is the choice draft 18 made.
 
 ## Counts
 
@@ -31,76 +31,76 @@ The class on two topology rows was longer than the five class names. `bug if use
 
 ## Findings
 
-| Id | Spike | Class | Statement | Evidence | Spec | Disposition |
-| --- | --- | --- | --- | --- | --- | --- |
-| M0-01 | catalog (P03) | contradiction | Drift hash and source SQL agree only if the hashed definition is the normalised structure. | `packages/spikes/catalog/FINDINGS.md` | §5.7, §19.3 | decision |
-| M0-02 | catalog (P03) | missing capability | PGlite `pg_constraint` has no `connullsnotdistinct` column, so reading it aborts introspection. | PGlite `server_version` 18.3; `pg_get_constraintdef` still prints `UNIQUE NULLS NOT DISTINCT` | none | implementation task P13 |
-| M0-03 | catalog (P03) | missing capability | `CREATE EXTENSION citext` fails on PGlite and succeeds on Postgres 17. | `extension "citext" is not available` | §4.1 | accepted |
-| M0-04 | catalog (P03) | missing capability | An extension is database-scoped, so a schema-scoped scratch target cannot hold it. | Postgres test creates and drops a database | §4.1 | implementation task P40 |
-| M0-05 | catalog (P03) | missing capability | A plpgsql body that mentions a table has no `pg_depend` edge; `BEGIN ATOMIC` SQL does. | `touch()` count 0; `task_count()` count greater than 0 | §5.7 | accepted |
-| M0-06 | catalog (P03) | DX | Copied partition primary keys and inherited indexes show up as extra objects unless introspection drops them. | Round trip reported `events_low_pkey` and index rows in `pg_inherits` | §5.1 | implementation task P10 |
-| M0-07 | catalog (P03) | DX | Integer partition bounds come back quoted. | Database text `FOR VALUES FROM ('0') TO ('100')` for authored `0:100` | §19.3 | implementation task P16 |
-| M0-08 | types (P04) | DX | Inferred errors print `ColumnBuilder` and the flag object, not the row. | `packages/spikes/types/snapshots/unknown-table.txt` | §6.8 | decision |
-| M0-09 | types (P04) | DX | Declaration emit does not expand `~row`. | `packages/spikes/types/snapshots/declaration.txt` | §6.8 | decision |
-| M0-10 | types (P04) | missing capability | Duplicate table names typecheck and become a union of the two row types. | `packages/spikes/types/snapshots/duplicate-name.txt`; OKM1023 | §6.3 | implementation task P12 |
-| M0-11 | types (P04) | performance | Recursive duplicate detection does not scale onto `schema()`. | 500 names: 262,107 instantiations; 500-table inferred schema: 126,532 | §6.3 | implementation task P12 |
-| M0-12 | types (P04) | DX | An unknown reference is a giant assignability error. The missing name is buried under the builder. | `packages/spikes/types/snapshots/missing-ref.txt` | §6.3 | decision |
-| M0-13 | types (P04) | performance | Branded ids add type weight. | Inferred 200-table: 53,410 instantiations branded, 43,676 unbranded | §6.8 | accepted |
-| M0-14 | safety (P05) | contradiction | A plain value means equality, and a plain object is OKM1121, so a jsonb column has no equality form. | Spec §10.1; the operator list has no `eq()` helper | §10.1 | decision |
-| M0-15 | safety (P05) | DX | `where` does not say whether it appends or replaces, so a preset function can erase a caller filter. | A find with only `pending()` verifies; the caller filter was never recorded | §10.1 | decision |
-| M0-16 | safety (P05) | DX | OKM1190 names one rule when several rules fail. | The spike returns every violation, sorted; `rule` is the first of that list | §5.2 | decision |
-| M0-17 | safety (P05) | missing capability | Structural identifier rejection has no OKM code of its own. | Length, NUL, controls, and unquoted reserved words use OKM1120 with rule `identifier` | §10.1 | decision |
-| M0-18 | safety (P05) | missing capability | A hidden allowlist has no OKM code. | The spike uses OKM1190 `hidden` | §10.2 | decision |
-| M0-19 | safety (P05) | performance | Tagged operators are a fixed type cost. | +639 instantiations and +549 types at 200 tables; the same 663 instantiations at 10 and 50 | §10.1 | accepted |
-| M0-20 | safety (P05) | performance | Verification is linear in predicates and tables. | 1 predicate mean 4.6 µs; 128 predicates mean 232 µs; 40 tables mean 220 µs | §5.2 | accepted |
-| M0-21 | safety (P05) | missing capability | The checker is structural, not a SQL prover. | `NOT (tenant_id <> $tenant)` is not representable; unverifiable SQL is the `trusted` hatch | §16 | accepted |
-| M0-22 | safety (P05) | missing capability | Cascade, to-many bounds, and capabilities are not checked. | The spike checks tenant, archive mode, guarded input, hidden projection, redaction, read bounds, write filters, and parameters | §5.2 | implementation task P21 |
-| M0-23 | drivers (P06) | missing capability | PGlite cannot cancel an in-flight statement and does not enforce `statement_timeout`. | `pg_sleep(0.35)` took 352 ms after `statement_timeout` 40 ms; `cancel` is not declared | §4, §15 | accepted |
-| M0-24 | drivers (P06) | DX | postgres.js `unsafe` ignores the connection `prepare` flag unless the call repeats it. | Named prepares were invisible until `{ prepare: true, simple: false }` | §4.2 | implementation task P13 |
-| M0-25 | drivers (P06) | DX | postgres.js rewrites wire-text parameters in its serializers. | Boolean `"t"` was stored as false until serialize was overridden | §4.2 | implementation task P13 |
-| M0-26 | drivers (P06) | DX | Unnamed extended statements do not appear in `pg_prepared_statements`. | The trigger saw `<none>` and `current_query()` containing `$1` | §4 | accepted |
-| M0-27 | drivers (P06) | bug | postgres.js throws off-promise if a write is queued after `pg_terminate_backend`. | `socket.write` of null in `connection.js` `nextWrite` | §15 | implementation task P13 |
-| M0-28 | drivers (P06) | contradiction | Kind for a timeout is `timeout` in the error table and `cancelled` for a batch. | This spike uses `timeout` for `execute` and `cancelled` for `batch` | §14, §15 | decision |
-| M0-29 | drivers (P06) | contradiction | A deferred constraint failure is `COMMIT`, so `batchIndex` is null. | SQLSTATE 23505 at commit; the suite records null | §15 | decision |
-| M0-30 | drivers (P06) | bug | Neither adapter clears session state when a connection is released. | `okm.p06=yes` was still visible on the next checkout | §15.2 | implementation task P13 |
-| M0-31 | drivers (P06) | missing capability | postgres.js has no `stats()`. | Adapter counters; `size` stays at the configured max after a backend is killed | §4.2 | implementation task P13 |
-| M0-32 | drivers (P06) | missing capability | The batch-mode harness is `BEGIN`/`COMMIT`, not a native atomic batch, and it can cancel. | It does not model an HTTP request already sent | §15 | no action |
-| M0-33 | drivers (P06) | performance | Atomic batch sends N+2 statements and does not pipeline. | 8 statements plus `BEGIN` and `COMMIT`: mean 1.794 ms on postgres.js; raw pipeline of 8 `SELECT 1` was 0.607 ms | §15 | accepted |
-| M0-34 | migrations (P07) | contradiction | The structural hash is unchanged when only a view's SQL changes. Confirms M0-01. | Sections 5.7 and 19.3; the spec was not edited | §5.7, §19.3 | decision |
-| M0-35 | migrations (P07) | missing capability | A plpgsql function with no declared edge survives `DROP TABLE` and then fails when called. | `task_rows` reads `tasks`; `pg_depend` has no edge | §5.7 | accepted |
-| M0-36 | migrations (P07) | bug | The ambiguous-rename scan was quadratic. Fixed in the spike. | 200-table diff was 819 ms, then 5.96 ms | §19.1 | no action |
-| M0-37 | migrations (P07) | DX | Quoted integer partition bounds are unchanged from P03. List, hash, and timestamptz bounds need their own spellings. | Normalised forms `0:100`, `list:1,2`, `hash:2:0` | §19.3 | implementation task P16 |
-| M0-38 | migrations (P07) | DX | `LANGUAGE sql` takes `AccessShareLock` on the tables it reads. plpgsql takes none. | Lock table in `packages/spikes/migrations/FINDINGS.md` | §19.1 | implementation task P51 |
-| M0-39 | migrations (P07) | bug | Recreating a table dropped `touch()` while its trigger still called it. Fixed in the spike. | Seed 8: `cannot drop function touch() because other objects depend on it` | §5.7 | no action |
-| M0-40 | infra (P08) | contradiction | The version path is checked at apply, not while planning, and the planner never raises OKM1814. | Postgres 17 accepts `1.4` to `1.6` and rejects `1.6` to `999` with `22023`; paths downward from `1.6` are empty | §4.1 | decision |
-| M0-41 | infra (P08) | contradiction | Extension members are omitted, not recorded as `external`. | 47 `citext` functions filtered by `pg_depend` deptype `e`; 2 types and 26 operators are not catalog kinds | §4.1 | decision |
-| M0-42 | infra (P08) | missing capability | `DROP ROLE` is cluster-wide and the before catalog of one database cannot see the other database's grant. | `2BP01`: `1 object in database d_…` | §5.7 | decision |
-| M0-43 | infra (P08) | missing capability | `CREATE ROLE` has no `IF NOT EXISTS`. A managed role that already exists fails unless the before catalog marks it `external`. | SQLSTATE `42710` | §5.7 | implementation task P43 |
-| M0-44 | infra (P08) | missing capability | The plan cannot see `CREATEROLE`. `NOSUPERUSER NOCREATEROLE` fails at apply. | `42501` versus success with `CREATEROLE` | §5.7 | implementation task P43 |
-| M0-45 | infra (P08) | missing capability | Default privileges follow the creating role, and the plan emits no `SET ROLE`. | A table created by the session user did not receive the default; a table created after `SET ROLE mig` did | §5.7 | decision |
-| M0-46 | infra (P08) | missing capability | The archive parent rule is not enforced. A child can clear `archived_at` while its parent stays archived. | The foreign key stayed valid | §8 | implementation task P25 |
-| M0-47 | infra (P08) | missing capability | The plan can emit `SET SCHEMA` for an extension that is not relocatable. | `plpgsql` fails with `0A000` | §4.1 | implementation task P40 |
-| M0-48 | infra (P08) | DX | Grant identity `(role, object, privilege)` is longer than 63 bytes and is not a stored name. | `assertCatalog` does not apply the identifier limit to grants or default privileges | §5.7 | decision |
-| M0-49 | infra (P08) | DX | A full unique constraint sees archived duplicates. The partial unique does not. | `UNIQUE (sku)` failed with `23505` because two archived rows shared `sku` | §8 | implementation task P25 |
-| M0-50 | infra (P08) | DX | The lock helper's fallback would call `GRANT` an `AccessExclusiveLock`. | `pg_locks` showed `AccessShareLock` on `pg_class` and no lock on the table | §19.1 | implementation task P51 |
-| M0-51 | topology (P08A) | contradiction | The in-transaction insert LSN is the start of the commit record. §15.1 says that reading is below the commit record. | Delta 0 on every sample; the record is 34 bytes and starts at that LSN | §15.1 | decision |
-| M0-52 | topology (P08A) | bug | `pg_current_wal_lsn()` under `synchronous_commit` off sits before the commit record if it is used as the watermark. | 7 of 7 sync-off samples; the insert LSN was past the record on the same round trip | §15.1 | accepted |
-| M0-53 | topology (P08A) | bug | The postgres.js adapter holds one mutex for the whole pool, so a second checkout waits until the first connection is released. | A second primary connection failed as OKM1846 after 2000 ms | §15.2 | implementation task P13 |
-| M0-54 | topology (P08A) | bug | `connection.batch()` inside an open SQL transaction commits the outer transaction. | The spike runs batches inside `tx()` as savepoints; the adapter batch is `BEGIN`/`COMMIT` | §15 | implementation task P29 |
-| M0-55 | topology (P08A) | performance | The position read is a second round trip after `COMMIT`, not pipelined with it. | One `pg_current_wal_insert_lsn` per committed write | §15.1 | implementation task P63 |
-| M0-56 | topology (P08A) | DX | The spike prompt names `random` and `least-loaded`. §15.1 names `leastConnections` and `latencyAware`. | `least-loaded` is `leastConnections`; `random` is implemented as well | §15.1 | no action |
-| M0-57 | topology (P08A) | missing capability | `PUBLIC` can execute the position functions on this image. The capability is still missing when `EXECUTE` is revoked. | `has_function_privilege` is true for `PUBLIC`; a non-superuser replica login fails the probe after revoke | §15.1 | accepted |
-| M0-58 | targets (P08B) | contradiction | A protected tenant and an unprotected target on a schema-per-tenant database are the same host, port, and database, so OKM1852 fires. | Test `schema-per-tenant mixed protection is one database` | §19.5, §19.7, §19.8 | decision |
-| M0-59 | targets (P08B) | contradiction | §19.8 refuses an unprotected target on a protected database. It does not refuse two unprotected targets on one database. | The code follows the spec; the spike prompt asked to refuse every alias | §19.8 | decision |
-| M0-60 | targets (P08B) | missing capability | A `NOT NULL` column with no default installs on an empty target and fails on a populated clone. | `column "note" of relation "items" contains null values` | §19.1 | implementation task P50 |
-| M0-61 | targets (P08B) | DX | `--canary 1` treats only that tenant as in scope, so the shared contract runs after it. | §19.5 says every tenant in scope | §19.5 | decision |
-| M0-62 | targets (P08B) | DX | `--class shared` puts no tenant in scope, so the shared contract is not held back. | Rollout test in `packages/spikes/targets/FINDINGS.md` | §19.5 | decision |
-| M0-63 | targets (P08B) | DX | `protected` is a flag beside the progress states, not a progress state of its own. A protected target can also be behind. | §19.4 lists `protected` among status states | §19.4, §19.5 | decision |
-| M0-64 | targets (P08B) | DX | A failed transaction reports the first pending step of that migration, not a later statement in the same unit. | Resume tests in `packages/spikes/targets/FINDINGS.md` | §19.2 | implementation task P16 |
-| M0-65 | targets (P08B) | missing capability | The runner does not retry `lock_timeout`. | §19.2 describes retry and backoff | §19.2 | implementation task P16 |
-| M0-66 | targets (P08B) | missing capability | The planner does not emit `CREATE INDEX CONCURRENTLY`. The runner can resume an explicit non-transactional step. | P07 does not emit the statement; resume drops an invalid index | §19.2 | implementation task P50 |
-| M0-67 | targets (P08B) | performance | Throughput does not scale with concurrency on one primary. | 200 schema targets: 88/s at concurrency 1, 260/s at concurrency 8 | §19.5 | accepted |
-| M0-68 | targets (P08B) | bug | Terminating the reserved postgres.js connection raises `socket.write` of null on a later write. | Resume was tested by SIGKILL of a child process instead | §15 | implementation task P13 |
+| Id | Spike | Class | Statement | Evidence | Spec | Disposition | Resolved by |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| M0-01 | catalog (P03) | contradiction | Drift hash and source SQL agree only if the hashed definition is the normalised structure. | `packages/spikes/catalog/FINDINGS.md` | §5.7, §19.3 | decision | D117 |
+| M0-02 | catalog (P03) | missing capability | PGlite `pg_constraint` has no `connullsnotdistinct` column, so reading it aborts introspection. | PGlite `server_version` 18.3; `pg_get_constraintdef` still prints `UNIQUE NULLS NOT DISTINCT` | none | implementation task P13 | P13 |
+| M0-03 | catalog (P03) | missing capability | `CREATE EXTENSION citext` fails on PGlite and succeeds on Postgres 17. | `extension "citext" is not available` | §4.1 | accepted | accepted |
+| M0-04 | catalog (P03) | missing capability | An extension is database-scoped, so a schema-scoped scratch target cannot hold it. | Postgres test creates and drops a database | §4.1 | implementation task P40 | P40 |
+| M0-05 | catalog (P03) | missing capability | A plpgsql body that mentions a table has no `pg_depend` edge; `BEGIN ATOMIC` SQL does. | `touch()` count 0; `task_count()` count greater than 0 | §5.7 | accepted | accepted |
+| M0-06 | catalog (P03) | DX | Copied partition primary keys and inherited indexes show up as extra objects unless introspection drops them. | Round trip reported `events_low_pkey` and index rows in `pg_inherits` | §5.1 | implementation task P10 | P10 |
+| M0-07 | catalog (P03) | DX | Integer partition bounds come back quoted. | Database text `FOR VALUES FROM ('0') TO ('100')` for authored `0:100` | §19.3 | implementation task P16 | P16 |
+| M0-08 | types (P04) | DX | Inferred errors print `ColumnBuilder` and the flag object, not the row. | `packages/spikes/types/snapshots/unknown-table.txt` | §6.8 | decision | D120 |
+| M0-09 | types (P04) | DX | Declaration emit does not expand `~row`. | `packages/spikes/types/snapshots/declaration.txt` | §6.8 | decision | D120 |
+| M0-10 | types (P04) | missing capability | Duplicate table names typecheck and become a union of the two row types. | `packages/spikes/types/snapshots/duplicate-name.txt`; OKM1023 | §6.3 | implementation task P12 | P12 |
+| M0-11 | types (P04) | performance | Recursive duplicate detection does not scale onto `schema()`. | 500 names: 262,107 instantiations; 500-table inferred schema: 126,532 | §6.3 | implementation task P12 | P12 |
+| M0-12 | types (P04) | DX | An unknown reference is a giant assignability error. The missing name is buried under the builder. | `packages/spikes/types/snapshots/missing-ref.txt` | §6.3 | decision | D120 |
+| M0-13 | types (P04) | performance | Branded ids add type weight. | Inferred 200-table: 53,410 instantiations branded, 43,676 unbranded | §6.8 | accepted | accepted |
+| M0-14 | safety (P05) | contradiction | A plain value means equality, and a plain object is OKM1121, so a jsonb column has no equality form. | Spec §10.1; the operator list has no `eq()` helper | §10.1 | decision | D125 |
+| M0-15 | safety (P05) | DX | `where` does not say whether it appends or replaces, so a preset function can erase a caller filter. | A find with only `pending()` verifies; the caller filter was never recorded | §10.1 | decision | D125 |
+| M0-16 | safety (P05) | DX | OKM1190 names one rule when several rules fail. | The spike returns every violation, sorted; `rule` is the first of that list | §5.2 | decision | D126 |
+| M0-17 | safety (P05) | missing capability | Structural identifier rejection has no OKM code of its own. | Length, NUL, controls, and unquoted reserved words use OKM1120 with rule `identifier` | §10.1 | decision | D126 |
+| M0-18 | safety (P05) | missing capability | A hidden allowlist has no OKM code. | The spike uses OKM1190 `hidden` | §10.2 | decision | D126 |
+| M0-19 | safety (P05) | performance | Tagged operators are a fixed type cost. | +639 instantiations and +549 types at 200 tables; the same 663 instantiations at 10 and 50 | §10.1 | accepted | accepted |
+| M0-20 | safety (P05) | performance | Verification is linear in predicates and tables. | 1 predicate mean 4.6 µs; 128 predicates mean 232 µs; 40 tables mean 220 µs | §5.2 | accepted | accepted |
+| M0-21 | safety (P05) | missing capability | The checker is structural, not a SQL prover. | `NOT (tenant_id <> $tenant)` is not representable; unverifiable SQL is the `trusted` hatch | §16 | accepted | accepted |
+| M0-22 | safety (P05) | missing capability | Cascade, to-many bounds, and capabilities are not checked. | The spike checks tenant, archive mode, guarded input, hidden projection, redaction, read bounds, write filters, and parameters | §5.2 | implementation task P21 | P21 |
+| M0-23 | drivers (P06) | missing capability | PGlite cannot cancel an in-flight statement and does not enforce `statement_timeout`. | `pg_sleep(0.35)` took 352 ms after `statement_timeout` 40 ms; `cancel` is not declared | §4, §15 | accepted | accepted |
+| M0-24 | drivers (P06) | DX | postgres.js `unsafe` ignores the connection `prepare` flag unless the call repeats it. | Named prepares were invisible until `{ prepare: true, simple: false }` | §4.2 | implementation task P13 | P13 |
+| M0-25 | drivers (P06) | DX | postgres.js rewrites wire-text parameters in its serializers. | Boolean `"t"` was stored as false until serialize was overridden | §4.2 | implementation task P13 | P13 |
+| M0-26 | drivers (P06) | DX | Unnamed extended statements do not appear in `pg_prepared_statements`. | The trigger saw `<none>` and `current_query()` containing `$1` | §4 | accepted | accepted |
+| M0-27 | drivers (P06) | bug | postgres.js throws off-promise if a write is queued after `pg_terminate_backend`. | `socket.write` of null in `connection.js` `nextWrite` | §15 | implementation task P13 | P13 |
+| M0-28 | drivers (P06) | contradiction | Kind for a timeout is `timeout` in the error table and `cancelled` for a batch. | This spike uses `timeout` for `execute` and `cancelled` for `batch` | §14, §15 | decision | D124 |
+| M0-29 | drivers (P06) | contradiction | A deferred constraint failure is `COMMIT`, so `batchIndex` is null. | SQLSTATE 23505 at commit; the suite records null | §15 | decision | D124 |
+| M0-30 | drivers (P06) | bug | Neither adapter clears session state when a connection is released. | `okm.p06=yes` was still visible on the next checkout | §15.2 | implementation task P13 | D124 |
+| M0-31 | drivers (P06) | missing capability | postgres.js has no `stats()`. | Adapter counters; `size` stays at the configured max after a backend is killed | §4.2 | implementation task P13 | P13 |
+| M0-32 | drivers (P06) | missing capability | The batch-mode harness is `BEGIN`/`COMMIT`, not a native atomic batch, and it can cancel. | It does not model an HTTP request already sent | §15 | no action | accepted |
+| M0-33 | drivers (P06) | performance | Atomic batch sends N+2 statements and does not pipeline. | 8 statements plus `BEGIN` and `COMMIT`: mean 1.794 ms on postgres.js; raw pipeline of 8 `SELECT 1` was 0.607 ms | §15 | accepted | accepted |
+| M0-34 | migrations (P07) | contradiction | The structural hash is unchanged when only a view's SQL changes. Confirms M0-01. | Sections 5.7 and 19.3; the spec was not edited | §5.7, §19.3 | decision | D117 |
+| M0-35 | migrations (P07) | missing capability | A plpgsql function with no declared edge survives `DROP TABLE` and then fails when called. | `task_rows` reads `tasks`; `pg_depend` has no edge | §5.7 | accepted | accepted |
+| M0-36 | migrations (P07) | bug | The ambiguous-rename scan was quadratic. Fixed in the spike. | 200-table diff was 819 ms, then 5.96 ms | §19.1 | no action | accepted |
+| M0-37 | migrations (P07) | DX | Quoted integer partition bounds are unchanged from P03. List, hash, and timestamptz bounds need their own spellings. | Normalised forms `0:100`, `list:1,2`, `hash:2:0` | §19.3 | implementation task P16 | P16 |
+| M0-38 | migrations (P07) | DX | `LANGUAGE sql` takes `AccessShareLock` on the tables it reads. plpgsql takes none. | Lock table in `packages/spikes/migrations/FINDINGS.md` | §19.1 | implementation task P51 | P51 |
+| M0-39 | migrations (P07) | bug | Recreating a table dropped `touch()` while its trigger still called it. Fixed in the spike. | Seed 8: `cannot drop function touch() because other objects depend on it` | §5.7 | no action | accepted |
+| M0-40 | infra (P08) | contradiction | The version path is checked at apply, not while planning, and the planner never raises OKM1814. | Postgres 17 accepts `1.4` to `1.6` and rejects `1.6` to `999` with `22023`; paths downward from `1.6` are empty | §4.1 | decision | D118 |
+| M0-41 | infra (P08) | contradiction | Extension members are omitted, not recorded as `external`. | 47 `citext` functions filtered by `pg_depend` deptype `e`; 2 types and 26 operators are not catalog kinds | §4.1 | decision | D118 |
+| M0-42 | infra (P08) | missing capability | `DROP ROLE` is cluster-wide and the before catalog of one database cannot see the other database's grant. | `2BP01`: `1 object in database d_…` | §5.7 | decision | D119 |
+| M0-43 | infra (P08) | missing capability | `CREATE ROLE` has no `IF NOT EXISTS`. A managed role that already exists fails unless the before catalog marks it `external`. | SQLSTATE `42710` | §5.7 | implementation task P43 | P43 |
+| M0-44 | infra (P08) | missing capability | The plan cannot see `CREATEROLE`. `NOSUPERUSER NOCREATEROLE` fails at apply. | `42501` versus success with `CREATEROLE` | §5.7 | implementation task P43 | P43 |
+| M0-45 | infra (P08) | missing capability | Default privileges follow the creating role, and the plan emits no `SET ROLE`. | A table created by the session user did not receive the default; a table created after `SET ROLE mig` did | §5.7 | decision | D119 |
+| M0-46 | infra (P08) | missing capability | The archive parent rule is not enforced. A child can clear `archived_at` while its parent stays archived. | The foreign key stayed valid | §8 | implementation task P25 | P25 |
+| M0-47 | infra (P08) | missing capability | The plan can emit `SET SCHEMA` for an extension that is not relocatable. | `plpgsql` fails with `0A000` | §4.1 | implementation task P40 | D118 |
+| M0-48 | infra (P08) | DX | Grant identity `(role, object, privilege)` is longer than 63 bytes and is not a stored name. | `assertCatalog` does not apply the identifier limit to grants or default privileges | §5.7 | decision | D119 |
+| M0-49 | infra (P08) | DX | A full unique constraint sees archived duplicates. The partial unique does not. | `UNIQUE (sku)` failed with `23505` because two archived rows shared `sku` | §8 | implementation task P25 | P25 |
+| M0-50 | infra (P08) | DX | The lock helper's fallback would call `GRANT` an `AccessExclusiveLock`. | `pg_locks` showed `AccessShareLock` on `pg_class` and no lock on the table | §19.1 | implementation task P51 | P51 |
+| M0-51 | topology (P08A) | contradiction | The in-transaction insert LSN is the start of the commit record. §15.1 says that reading is below the commit record. | Delta 0 on every sample; the record is 34 bytes and starts at that LSN | §15.1 | decision | D121 |
+| M0-52 | topology (P08A) | bug | `pg_current_wal_lsn()` under `synchronous_commit` off sits before the commit record if it is used as the watermark. | 7 of 7 sync-off samples; the insert LSN was past the record on the same round trip | §15.1 | accepted | accepted |
+| M0-53 | topology (P08A) | bug | The postgres.js adapter holds one mutex for the whole pool, so a second checkout waits until the first connection is released. | A second primary connection failed as OKM1846 after 2000 ms | §15.2 | implementation task P13 | P13 |
+| M0-54 | topology (P08A) | bug | `connection.batch()` inside an open SQL transaction commits the outer transaction. | The spike runs batches inside `tx()` as savepoints; the adapter batch is `BEGIN`/`COMMIT` | §15 | implementation task P29 | D124 |
+| M0-55 | topology (P08A) | performance | The position read is a second round trip after `COMMIT`, not pipelined with it. | One `pg_current_wal_insert_lsn` per committed write | §15.1 | implementation task P63 | D121 |
+| M0-56 | topology (P08A) | DX | The spike prompt names `random` and `least-loaded`. §15.1 names `leastConnections` and `latencyAware`. | `least-loaded` is `leastConnections`; `random` is implemented as well | §15.1 | no action | accepted |
+| M0-57 | topology (P08A) | missing capability | `PUBLIC` can execute the position functions on this image. The capability is still missing when `EXECUTE` is revoked. | `has_function_privilege` is true for `PUBLIC`; a non-superuser replica login fails the probe after revoke | §15.1 | accepted | accepted |
+| M0-58 | targets (P08B) | contradiction | A protected tenant and an unprotected target on a schema-per-tenant database are the same host, port, and database, so OKM1852 fires. | Test `schema-per-tenant mixed protection is one database` | §19.5, §19.7, §19.8 | decision | D122 |
+| M0-59 | targets (P08B) | contradiction | §19.8 refuses an unprotected target on a protected database. It does not refuse two unprotected targets on one database. | The code follows the spec; the spike prompt asked to refuse every alias | §19.8 | decision | D122 |
+| M0-60 | targets (P08B) | missing capability | A `NOT NULL` column with no default installs on an empty target and fails on a populated clone. | `column "note" of relation "items" contains null values` | §19.1 | implementation task P50 | P50 |
+| M0-61 | targets (P08B) | DX | `--canary 1` treats only that tenant as in scope, so the shared contract runs after it. | §19.5 says every tenant in scope | §19.5 | decision | D123 |
+| M0-62 | targets (P08B) | DX | `--class shared` puts no tenant in scope, so the shared contract is not held back. | Rollout test in `packages/spikes/targets/FINDINGS.md` | §19.5 | decision | D123 |
+| M0-63 | targets (P08B) | DX | `protected` is a flag beside the progress states, not a progress state of its own. A protected target can also be behind. | §19.4 lists `protected` among status states | §19.4, §19.5 | decision | D122 |
+| M0-64 | targets (P08B) | DX | A failed transaction reports the first pending step of that migration, not a later statement in the same unit. | Resume tests in `packages/spikes/targets/FINDINGS.md` | §19.2 | implementation task P16 | P16 |
+| M0-65 | targets (P08B) | missing capability | The runner does not retry `lock_timeout`. | §19.2 describes retry and backoff | §19.2 | implementation task P16 | P16 |
+| M0-66 | targets (P08B) | missing capability | The planner does not emit `CREATE INDEX CONCURRENTLY`. The runner can resume an explicit non-transactional step. | P07 does not emit the statement; resume drops an invalid index | §19.2 | implementation task P50 | P50 |
+| M0-67 | targets (P08B) | performance | Throughput does not scale with concurrency on one primary. | 200 schema targets: 88/s at concurrency 1, 260/s at concurrency 8 | §19.5 | accepted | accepted |
+| M0-68 | targets (P08B) | bug | Terminating the reserved postgres.js connection raises `socket.write` of null on a later write. | Resume was tested by SIGKILL of a child process instead | §15 | implementation task P13 | P13 |
 
 ## Contradictions
 
@@ -263,7 +263,7 @@ Full tables remain in each spike's `FINDINGS.md`. Compatibility passes and skips
 
 ## Decision inputs
 
-Options are listed. None is selected.
+Options are listed. Draft 18 selected them. Resolved by names the decision.
 
 ### Catalog contract
 
@@ -389,13 +389,13 @@ Kinds and codes the spikes found missing or inconsistent:
 
 | Item | What the spec says | What the spike did |
 | --- | --- | --- |
-| M0-28 | §14 lists `timeout`. §15 says an aborted call and a cancellable batch fail as `cancelled`. | `timeout` for `execute`, `cancelled` for `batch` |
-| M0-29 | §15 says the failing statement's error carries `batchIndex`. | null when the failure is `COMMIT` |
-| M0-14 | §10.1: a plain value means equality, and a plain object is OKM1121. | no equality form for jsonb |
-| M0-16 | §5.2: OKM1190 names the rule and the contribution. | every violation, sorted; `rule` is the first |
-| M0-17 | OKM1120 is "unknown field". | length, NUL, controls, and unquoted reserved words reuse OKM1120 with rule `identifier` |
-| M0-18 | §10.2: hidden fields can never be allowlisted. No code is named. | OKM1190 `hidden` |
-| M0-15 | Presets are written as `(q) => q.where(...)`. | a function can replace `where` before the caller filter is recorded |
+| M0-28 | §14 lists `timeout`. §15 says an aborted call and a cancellable batch fail as `cancelled`. | `timeout` for `execute`, `cancelled` for `batch`  |
+| M0-29 | §15 says the failing statement's error carries `batchIndex`. | null when the failure is `COMMIT`  |
+| M0-14 | §10.1: a plain value means equality, and a plain object is OKM1121. | no equality form for jsonb  |
+| M0-16 | §5.2: OKM1190 names the rule and the contribution. | every violation, sorted; `rule` is the first  |
+| M0-17 | OKM1120 is "unknown field". | length, NUL, controls, and unquoted reserved words reuse OKM1120 with rule `identifier`  |
+| M0-18 | §10.2: hidden fields can never be allowlisted. No code is named. | OKM1190 `hidden`  |
+| M0-15 | Presets are written as `(q) => q.where(...)`. | a function can replace `where` before the caller filter is recorded  |
 
 Options:
 
@@ -408,9 +408,9 @@ Options:
 
 ## Cold start and size
 
-Order-of-magnitude inputs for later budgets. Not budgets.
+Order-of-magnitude inputs the gate used. D127 records the ceilings.
 
-Command, per entry: `bun build <entry> --target node --minify`. Gzip level 9. Brotli quality 11. Import time is `performance.now` around `import()` in a fresh process, 20 runs, arithmetic mean, nearest-rank p95 (`ceil(0.95 * 20) - 1`). The process start is not included. Warm: one warmup import, then 20 imports of the same file. Cold: each run writes a new file with `fcntl` `F_NOCACHE` (48) before the first read. Reproduce with `bun ./packages/spikes/src/m0/measure.ts`.
+Command, per entry: `bun build <entry> --target node --minify`. Gzip level 9. Brotli quality 11. Import time is `performance.now` around `import()` in a fresh process, 20 runs, arithmetic mean, nearest-rank p95 (`ceil(0.95 * 20) - 1`). The process start is not included. Warm: one warmup import, then 20 imports of the same file. Cold: each run writes a new file with `fcntl` `F_NOCACHE` (48) before the first read. Reproduce from the `m0-spikes` tag with `bun ./packages/spikes/src/m0/measure.ts`.
 
 Gate host: `Alis-MacBook-Air.local`, Apple M4, 24 GiB, darwin 27.0.0 arm64. Node v26.7.0. Bun 1.4.2. TypeScript 7.0.2. No Postgres was required for this measurement.
 
@@ -450,6 +450,6 @@ The router imports `compareLsn` from `@okmodel/harness`. That package's entry al
 
 `@okmodel/spikes` depends on `@okmodel/harness` and has `postgres`, `@electric-sql/pglite`, and `fast-check` in `devDependencies` only. `fast-check` is not in any measured bundle.
 
-The catalog bundle calls `Bun.CryptoHasher` inside `sha256`. That is a Bun global, not an npm package. Import succeeded on Node. Calling `sha256` on Node would not.
+The catalog bundle calls `Bun.CryptoHasher` inside `sha256`. That is a Bun global, not an npm package. Import succeeded on Node. Calling `sha256` on Node would not. Contracts now hash with pure-TypeScript SHA-256 instead.
 
 So the check holds for the catalog diff, the verifier, and the registry. It does not hold for the router or the combined bundle, until the router stops importing the harness barrel.

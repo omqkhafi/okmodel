@@ -86,7 +86,7 @@ bun run bump next
 # → changelog is left untouched
 ```
 
-A gate prompt that releases (P17, P30, P44, P55, P66) runs this instead:
+D115: hygiene finishes before a release bump. P09A is the cleanup after the M0 gate (spike leftovers, duplicated helpers, flaky tests, doc sync to draft 18, dependency audit, D127 budgets). A later gate (P17, P30, P44, P55, P66) does a lighter pass of that list, then runs:
 
 ```bash
 bun run bump release

@@ -1,13 +1,26 @@
 /**
- * Measures a trivial type with TypeScript 7's own diagnostics.
+ * Measures type cost with TypeScript 7's own diagnostics and applies D127 ceilings.
  *
- * Runs `tsc --extendedDiagnostics` on `tests/fixtures/type-cost` and writes
- * the parsed counters as JSON. No ceilings.
+ * The trivial project stays in the report. The ceilings cover the inferred
+ * 200- and 500-table fixtures, the instantiations added per table, the emitted
+ * consumer, and the tagged-operator surcharge. Check time is reported and is
+ * not a ceiling.
  */
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { generateFixture } from "../packages/harness/src/fixtures.js";
+import { writeOperatorProject } from "../packages/spikes/src/safety/projects.js";
+import {
+  parseDiagnostics,
+  runTsc as runProjectTsc,
+} from "../packages/spikes/src/types/diagnostics.js";
+import {
+  writeEmittedProject,
+  writeInferredProject,
+} from "../packages/spikes/src/types/projects.js";
 import { repoRoot } from "./root.js";
 
 /** Counters parsed from `tsc --extendedDiagnostics`, plus which trace flags exist. */
@@ -64,15 +77,205 @@ export function measureTypeCost(): TypeCostReport {
   };
 }
 
+/** D127 type ceilings. Check time is reported beside these and is not capped. */
+export const TYPE_CEILINGS = {
+  inferred200Instantiations: 61_000,
+  inferred200Types: 9_700,
+  inferred500Instantiations: 140_000,
+  instantiationsPerAddedTable: 300,
+  emittedConsumerTypes: 700,
+  taggedOperatorSurcharge: 800,
+} as const;
+
+/** One fixture measured for the ceilings. */
+export type TypeBudgetRow = {
+  readonly label: string;
+  readonly tables: number;
+  readonly instantiations: number;
+  readonly types: number;
+  readonly checkTimeSeconds: number;
+};
+
+/** Instantiations added when the fixture grows from one size to the next. */
+export type PerTableCost = {
+  readonly fromTables: number;
+  readonly toTables: number;
+  readonly instantiations: number;
+};
+
+/** Ceiling inputs written next to the trivial measurement. */
+export type TypeBudgetReport = {
+  readonly rows: readonly TypeBudgetRow[];
+  readonly perAddedTable: readonly PerTableCost[];
+  readonly taggedOperatorSurcharge: number;
+  readonly ceilings: typeof TYPE_CEILINGS;
+};
+
 /**
- * Writes the report as JSON under `packages/bench/results` and prints it.
+ * Writes the trivial measurement and the ceiling report as JSON.
  */
-function writeReport(report: TypeCostReport): void {
+function writeReport(report: {
+  readonly trivial: TypeCostReport;
+  readonly budgets: TypeBudgetReport;
+}): void {
   const results = join(repoRoot(), "packages", "bench", "results");
   mkdirSync(results, { recursive: true });
   const json = `${JSON.stringify(report, null, 2)}\n`;
   writeFileSync(join(results, "type-cost.json"), json);
   process.stdout.write(json);
+}
+
+/**
+ * Measures the fixture sizes the D127 ceilings name.
+ *
+ * Projects are written under a temporary directory and deleted afterwards.
+ *
+ * @returns Rows, the per-table rate, and the operator surcharge
+ */
+export function measureTypeBudgets(): TypeBudgetReport {
+  const root = join(tmpdir(), `okm-type-budgets-${String(Date.now())}`);
+  mkdirSync(root, { recursive: true });
+  try {
+    const rows: TypeBudgetRow[] = [];
+    for (const tables of [50, 200, 500] as const) {
+      const fixture = generateFixture({ seed: 1, tables });
+      rows.push(
+        measureProject(root, `inferred-${String(tables)}`, tables, (dir) => {
+          writeInferredProject(dir, fixture);
+        }),
+      );
+    }
+    const twoHundred = generateFixture({ seed: 1, tables: 200 });
+    rows.push(
+      measureProject(root, "emitted-200", 200, (dir) => {
+        writeEmittedProject(dir, twoHundred);
+      }),
+    );
+    rows.push(
+      measureProject(root, "equality-200", 200, (dir) => {
+        writeOperatorProject(dir, twoHundred, "equality");
+      }),
+    );
+    rows.push(
+      measureProject(root, "tagged-200", 200, (dir) => {
+        writeOperatorProject(dir, twoHundred, "tagged");
+      }),
+    );
+    return budgetReport(rows);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Builds the ceiling report from measured rows.
+ *
+ * @param rows - Inferred, emitted, and operator projects
+ * @returns The report `ceilingProblems` checks
+ */
+export function budgetReport(rows: readonly TypeBudgetRow[]): TypeBudgetReport {
+  const tagged = rowNamed(rows, "tagged-200");
+  const equality = rowNamed(rows, "equality-200");
+  return {
+    rows,
+    perAddedTable: [
+      perTable(rowNamed(rows, "inferred-50"), rowNamed(rows, "inferred-200")),
+      perTable(rowNamed(rows, "inferred-200"), rowNamed(rows, "inferred-500")),
+    ],
+    taggedOperatorSurcharge: tagged.instantiations - equality.instantiations,
+    ceilings: TYPE_CEILINGS,
+  };
+}
+
+/**
+ * Reports rows that exceed a D127 ceiling.
+ *
+ * @param report - Output of {@link measureTypeBudgets}
+ * @returns Problem lines. Empty when every ceiling holds
+ */
+export function ceilingProblems(report: TypeBudgetReport): readonly string[] {
+  const problems: string[] = [];
+  const inferred200 = rowNamed(report.rows, "inferred-200");
+  const inferred500 = rowNamed(report.rows, "inferred-500");
+  const emitted200 = rowNamed(report.rows, "emitted-200");
+  if (inferred200.instantiations > TYPE_CEILINGS.inferred200Instantiations) {
+    problems.push(
+      `type-cost: inferred 200 tables used ${String(inferred200.instantiations)} instantiations, above ${String(TYPE_CEILINGS.inferred200Instantiations)}`,
+    );
+  }
+  if (inferred200.types > TYPE_CEILINGS.inferred200Types) {
+    problems.push(
+      `type-cost: inferred 200 tables used ${String(inferred200.types)} types, above ${String(TYPE_CEILINGS.inferred200Types)}`,
+    );
+  }
+  if (inferred500.instantiations > TYPE_CEILINGS.inferred500Instantiations) {
+    problems.push(
+      `type-cost: inferred 500 tables used ${String(inferred500.instantiations)} instantiations, above ${String(TYPE_CEILINGS.inferred500Instantiations)}`,
+    );
+  }
+  if (emitted200.types > TYPE_CEILINGS.emittedConsumerTypes) {
+    problems.push(
+      `type-cost: emitted 200-table consumer used ${String(emitted200.types)} types, above ${String(TYPE_CEILINGS.emittedConsumerTypes)}`,
+    );
+  }
+  for (const step of report.perAddedTable) {
+    if (step.instantiations > TYPE_CEILINGS.instantiationsPerAddedTable) {
+      problems.push(
+        `type-cost: ${String(step.fromTables)} to ${String(step.toTables)} tables added ${step.instantiations.toFixed(1)} instantiations per table, above ${String(TYPE_CEILINGS.instantiationsPerAddedTable)}`,
+      );
+    }
+  }
+  if (report.taggedOperatorSurcharge > TYPE_CEILINGS.taggedOperatorSurcharge) {
+    problems.push(
+      `type-cost: tagged operators added ${String(report.taggedOperatorSurcharge)} instantiations, above ${String(TYPE_CEILINGS.taggedOperatorSurcharge)}`,
+    );
+  }
+  return problems;
+}
+
+function measureProject(
+  root: string,
+  label: string,
+  tables: number,
+  write: (dir: string) => void,
+): TypeBudgetRow {
+  const dir = join(root, label);
+  write(dir);
+  const ran = runProjectTsc(
+    ["--noEmit", "--pretty", "false", "--extendedDiagnostics", "-p", dir],
+    repoRoot(),
+  );
+  if (ran.exitCode !== 0) {
+    throw new Error(`${label} failed to typecheck\n${ran.output}`);
+  }
+  const diagnostics = parseDiagnostics(ran.output, ran.exitCode);
+  return {
+    label,
+    tables,
+    instantiations: diagnostics.instantiations,
+    types: diagnostics.types,
+    checkTimeSeconds: diagnostics.checkTimeSeconds,
+  };
+}
+
+function perTable(earlier: TypeBudgetRow, later: TypeBudgetRow): PerTableCost {
+  const added = later.tables - earlier.tables;
+  if (added <= 0) {
+    throw new Error(`type-cost: ${later.label} does not add tables after ${earlier.label}`);
+  }
+  return {
+    fromTables: earlier.tables,
+    toTables: later.tables,
+    instantiations: (later.instantiations - earlier.instantiations) / added,
+  };
+}
+
+function rowNamed(rows: readonly TypeBudgetRow[], label: string): TypeBudgetRow {
+  const row = rows.find((entry) => entry.label === label);
+  if (row === undefined) {
+    throw new Error(`type-cost: missing ${label}`);
+  }
+  return row;
 }
 
 function runTsc(args: readonly string[]): string {
@@ -126,7 +329,13 @@ function traceOptionsPresent(help: string): readonly string[] {
 
 if (import.meta.main) {
   try {
-    writeReport(measureTypeCost());
+    const budgets = measureTypeBudgets();
+    const problems = ceilingProblems(budgets);
+    writeReport({ trivial: measureTypeCost(), budgets });
+    for (const problem of problems) {
+      console.error(problem);
+    }
+    if (problems.length > 0) process.exit(1);
   } catch (error: unknown) {
     console.error(error instanceof Error ? error.message : error);
     process.exit(1);

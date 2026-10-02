@@ -1,12 +1,8 @@
 import { expect, test } from "bun:test";
 
-import {
-  assertPostgresVersion,
-  decideDocker,
-  postgresVersionFromEnv,
-  withPglite,
-  withPgliteSchema,
-} from "../packages/harness/src/index.js";
+import { decideDocker } from "../packages/harness/src/docker-gate.js";
+import { withPglite, withPgliteSchema } from "../packages/harness/src/pglite.js";
+import { assertPostgresVersion, postgresVersionFromEnv } from "../packages/harness/src/version.js";
 
 test("postgres versions 15 through 18 are accepted", () => {
   expect(assertPostgresVersion("15")).toBe("15");

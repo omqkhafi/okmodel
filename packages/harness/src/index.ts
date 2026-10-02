@@ -1,23 +1,12 @@
 /**
- * Private test harness. Nothing here is part of the published `okmodel` package.
+ * Private test harness barrel.
+ *
+ * This file does not re-export Postgres, PGlite, or the Docker gate. Importing
+ * it must not pull those npm packages into a bundle. Open a driver from
+ * `./postgres.js` or `./pglite.js` directly.
  */
 
-export {
-  decideDocker,
-  dockerDaemonRunning,
-  postgresDecision,
-  type DockerDecision,
-} from "./docker-gate.js";
 export { compareLsn, lsnToBigInt } from "./lsn.js";
-export { openPglite, withPglite, withPgliteSchema } from "./pglite.js";
-export { openPostgres, postgresReachable, withPostgres, withPostgresSchema } from "./postgres.js";
-export {
-  pauseWalReplay,
-  readInsertLsn,
-  readReplayLsn,
-  resumeWalReplay,
-  waitForReplayLsn,
-} from "./replication.js";
 export { isolatedSchemaName } from "./schema-name.js";
 export { primaryUrl, replicaUrl, type ReplicaName } from "./topology.js";
 export {

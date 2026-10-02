@@ -1,6 +1,6 @@
 # OKModel — Execution plan
 
-Companion to `okmodel-api-design.md` (draft 17). The spec is normative; this file fixes the order of work.
+Companion to `okmodel-api-design.md` (draft 18). The spec is normative; this file fixes the order of work.
 
 ## How we work
 
@@ -14,7 +14,8 @@ Companion to `okmodel-api-design.md` (draft 17). The spec is normative; this fil
 6. The spec changes only through a recorded decision (D-number). If implementation contradicts the spec, the report says so and Claude decides: fix the code or amend the spec.
 7. Guarantees grow with the code. Every prompt that adds behavior also adds its tests: conformance tests for semantics, a registration in the final safety verifier for anything that adds or changes a rule, and the CI test named in the spec for any invariant it touches. A prompt is not done while a guarantee it introduces has no test.
 8. Order rule: a prompt may use only what earlier prompts delivered. Where a later prompt completes a behavior, the earlier prompt ships the conservative version (stated in its row) so every branch is safe on its own.
-9. Changelog and version: every prompt adds its notes under `## Unreleased` in `changelog.md` (what changed for someone using or building the package, one line each) and ends with `bun run bump next`, so `package.json` moves with every merged prompt. A gate prompt that releases ends with `bun run bump release` instead (D113). The pull request fails CI if either is missing.
+9. Hygiene (D115): P09A is a cleanup round after the M0 gate; every later gate (P17, P30, P44, P55, P66) ends with a lighter hygiene step (dead code, duplicated helpers, flaky tests, doc sync, dependency audit, budgets re-checked) before `bun run bump release`.
+10. Changelog and version: every prompt adds its notes under `## Unreleased` in `changelog.md` (what changed for someone using or building the package, one line each) and ends with `bun run bump next`, so `package.json` moves with every merged prompt. A gate prompt that releases ends with `bun run bump release` instead (D113). The pull request fails CI if either is missing.
 
 ### Execution report template (end of every prompt)
 
@@ -54,6 +55,7 @@ Spike code lives in the private workspace package `packages/spikes`; what proves
 | P08A | `p08a-spike-topology` | on real streaming replication (primary and two replicas in containers): automatic routing and the primary-required property test, `.primary()` / `.replica()` strictness, internal read-only transactions on a replica, health filtering, selection strategies, lag eligibility, fallback, per-endpoint pools, transaction affinity, pool exhaustion, and the commit-position mechanism itself (`pg_current_wal_insert_lsn()` after commit versus the commit LSN, replay paused, monotonic replay cache, capability unavailable, cost and extra fallback rate) |
 | P08B | `p08b-spike-targets` | Target ≠ connection (resolver, database-per-tenant, registry, credential rotation, pool cap over 200 tenants, plans without connection details), target runner over 3 schemas and 3 databases with rollout control (`--canary`, `--class`, concurrency defaults, `--max-failures`, contract gating, second pass), migration failure and resume (transactional and non-transactional steps, per-target lock), snapshot provisioning equal to a fully migrated target with measured time, preview and rehearsal (snapshot preview, clone rehearsal, aliasing guard), `reference` rows, protected-target policy over every operation class |
 | P09 | `p09-m0-gate` | consolidated findings report; decisions: catalog contract frozen, row-type default, cold start and size budgets, commit-position mechanism confirmed or amended. Claude amends the spec if needed (draft 18) |
+| P09A | `p09a-cleanup` | hygiene after the M0 gate (D115). Sync `docs/` with spec draft 18, decisions D1–D127 and this plan. Add a "Resolved by" column to `docs/m0-findings.md` (mapping in decisions appendix). Tag `m0-spikes`, then promote the spike code that production needs and delete or archive the rest (findings stay as docs). Dedupe helpers, results locks and scripts; harden flaky timeouts; one Docker-skip rule; refresh `AGENTS.md` and the `okm-ship` skill; changelog tidy; dependency audit. Add the first type ceilings and size budgets (D127) and the bundle-purity CI check (no npm package inside runtime bundles; the router must not import the harness barrel); pure-TypeScript SHA-256 replaces `Bun.CryptoHasher` in core. No new behavior |
 
 ### Phase 2 — Train 0.1 Skeleton
 
@@ -148,3 +150,13 @@ Problems found in the earlier order and how the table above resolves them:
 - Versioning (D113): versions are `<next release>-next.N` while a train is in progress (`0.1.0-next.1`, `0.1.0-next.2`, ...). The gate prompt of a train releases it: P17 is 0.1.0, P30 is 0.2.0, P44 is 0.3.0, P55 is 0.4.0, P66 is 0.5.0. Only released versions are published to npm and tagged (`v0.1.0`); `-next` versions stay in the repository.
 - No commit, pull request description, comment or file may mention the tool that produced it (no `Co-authored-by` for a tool, no "Made with" lines).
 - `AGENTS.md` is the single source of agent rules; `CLAUDE.md` imports it.
+
+## M0 follow-ups placed in prompts (from `docs/m0-findings.md`)
+
+- P41 (function and trigger recreate): drop triggers before functions even when `DROP TABLE` removes them (found by the P07 property test).
+- P12/P13: emitted types as default (D120) with a manual editor hover check; `schema()` build versus `.okm/catalog.json` load measured; evaluate `COMMIT; SELECT pg_current_wal_insert_lsn()` as one message (P13/P63).
+- P25/P40: OKM1122, OKM1123 and OKM1190 `violations` (D126); `eq()` and additive-only presets (D125).
+- P43: extension planning rules (D118), including `path-unverified` and the non-relocatable refusal.
+- P50/P51: role and grant rules (D119); OKM1852 under D122.
+- P29/P63/P64: driver contract clarifications (D124); commit-position fallback rate under write load (P64).
+- P16/P60: contract gating over the whole registry (D123).

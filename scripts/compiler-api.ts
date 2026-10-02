@@ -80,6 +80,7 @@ if (import.meta.main) {
       join(root, "tests"),
       join(root, "packages", "harness"),
       join(root, "packages", "bench"),
+      join(root, "packages", "spikes"),
     ]),
   );
 }

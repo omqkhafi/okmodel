@@ -1,7 +1,12 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
 
-import { measureTypeCost } from "../scripts/type-cost.js";
+import {
+  budgetReport,
+  ceilingProblems,
+  measureTypeCost,
+  type TypeBudgetRow,
+} from "../scripts/type-cost.js";
 import { repoRoot } from "../scripts/root.js";
 
 const root = repoRoot();
@@ -39,3 +44,24 @@ test("type-cost parses TypeScript 7 diagnostics for a trivial type", () => {
   expect(report.fields["Types"]).toBe(report.types);
   expect(report.traceOptions).toContain("generateTrace");
 });
+
+test("type ceilings fail when a fixture is over the D127 limits", () => {
+  const rows: TypeBudgetRow[] = [
+    row("inferred-50", 50, 15_000, 3_000),
+    row("inferred-200", 200, 80_000, 12_000),
+    row("inferred-500", 500, 200_000, 20_000),
+    row("emitted-200", 200, 0, 900),
+    row("equality-200", 200, 20, 800),
+    row("tagged-200", 200, 2_000, 1_400),
+  ];
+  const problems = ceilingProblems(budgetReport(rows));
+  expect(problems.some((problem) => problem.includes("inferred 200"))).toBe(true);
+  expect(problems.some((problem) => problem.includes("inferred 500"))).toBe(true);
+  expect(problems.some((problem) => problem.includes("emitted"))).toBe(true);
+  expect(problems.some((problem) => problem.includes("per table"))).toBe(true);
+  expect(problems.some((problem) => problem.includes("tagged operators"))).toBe(true);
+});
+
+function row(label: string, tables: number, instantiations: number, types: number): TypeBudgetRow {
+  return { label, tables, instantiations, types, checkTimeSeconds: 0 };
+}

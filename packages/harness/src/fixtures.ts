@@ -5,6 +5,8 @@
  * Later prompts turn the description into OKModel schemas.
  */
 
+import { sha256 } from "../../../src/contracts/sha256.js";
+
 /** Column types the generator mixes into every fixture. */
 export const FIXTURE_COLUMN_TYPES = [
   "int4",
@@ -148,11 +150,7 @@ export function renderFixtureDdl(fixture: SchemaFixture): string {
  * @returns Lowercase hex digest
  */
 export function fixtureHash(fixture: SchemaFixture, ddl: string): string {
-  const hasher = new Bun.CryptoHasher("sha256");
-  hasher.update(JSON.stringify(fixture));
-  hasher.update("\n");
-  hasher.update(ddl);
-  return hasher.digest("hex");
+  return sha256(`${JSON.stringify(fixture)}\n${ddl}`);
 }
 
 function makeTable(

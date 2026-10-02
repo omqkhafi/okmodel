@@ -1,13 +1,14 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
 
+import { npmPackageProblems, scanHarnessBarrel } from "../scripts/bundle-purity.js";
 import { checkCompilerApi } from "../scripts/compiler-api.js";
 import { checkCorePurity } from "../scripts/core-purity.js";
 import { checkDocs } from "../scripts/docs-check.js";
 import { checkLayers } from "../scripts/layers-check.js";
 import { checkReleaseDirs } from "../scripts/release-check.js";
 import { repoRoot } from "../scripts/root.js";
-import { checkDistSize } from "../scripts/size.js";
+import { checkDistSize, runtimeBudgetProblems } from "../scripts/size.js";
 
 const root = repoRoot();
 const fixtures = join(root, "tests", "fixtures");
@@ -99,6 +100,7 @@ test("compiler-api check accepts the repository", () => {
       join(root, "tests"),
       join(root, "packages", "harness"),
       join(root, "packages", "bench"),
+      join(root, "packages", "spikes"),
     ]),
   ).toEqual([]);
 });
@@ -107,6 +109,40 @@ test("size check fails above the ceiling and passes under it", () => {
   const dir = join(fixtures, "size");
   expect(checkDistSize(dir, 8).length).toBeGreaterThan(0);
   expect(checkDistSize(dir, 1000)).toEqual([]);
+});
+
+test("runtime size budget fails above the ceilings", () => {
+  const over = runtimeBudgetProblems({
+    entry: "src/contracts/index.ts",
+    minBytes: 70_000,
+    gzipBytes: 25_000,
+    coldImportMs: 40,
+  });
+  expect(over.some((problem) => problem.includes("minified"))).toBe(true);
+  expect(over.some((problem) => problem.includes("gzip"))).toBe(true);
+  expect(over.some((problem) => problem.includes("cold import"))).toBe(true);
+  expect(
+    runtimeBudgetProblems({
+      entry: "src/contracts/index.ts",
+      minBytes: 1000,
+      gzipBytes: 400,
+      coldImportMs: 2,
+    }),
+  ).toEqual([]);
+});
+
+test("bundle purity rejects the harness barrel and an npm package in the metafile", () => {
+  const barrel = scanHarnessBarrel(join(fixtures, "bundle-purity", "src"), fixtures);
+  expect(barrel.some((problem) => problem.includes("harness barrel"))).toBe(true);
+  expect(scanHarnessBarrel(join(root, "src"), root)).toEqual([]);
+  const bundled = npmPackageProblems(
+    { inputs: { "node_modules/postgres/src/index.js": { bytes: 1 } } },
+    "router",
+  );
+  expect(bundled.some((problem) => problem.includes("postgres"))).toBe(true);
+  expect(
+    npmPackageProblems({ inputs: { "src/contracts/sha256.ts": { bytes: 1 } } }, "root"),
+  ).toEqual([]);
 });
 
 const releaseFixtures = join(fixtures, "release-check");
