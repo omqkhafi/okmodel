@@ -10,7 +10,8 @@
     "./safety": "./src/safety/index.ts",
     "./drivers": "./src/drivers/index.ts",
     "./migrations": "./src/migrations/index.ts",
-    "./infra": "./src/infra/index.ts"
+    "./infra": "./src/infra/index.ts",
+    "./topology": "./src/topology/index.ts"
   },
   "dependencies": {
     "@okmodel/harness": "workspace:*"
