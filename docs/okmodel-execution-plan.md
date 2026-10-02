@@ -1,6 +1,6 @@
 # OKModel — Execution plan
 
-Companion to `okmodel-api-design.md` (draft 19). The spec is normative; this file fixes the order of work.
+Companion to `okmodel-api-design.md` (draft 20). The spec is normative; this file fixes the order of work.
 
 ## How we work
 
@@ -164,3 +164,6 @@ Problems found in the earlier order and how the table above resolves them:
 - P16/P60: contract gating over the whole registry (D123).
 - P16: normalise check expressions and index predicates through the database (stored as text in P10, D128); declared renames must update references inside that text; drop copied partition primary keys and inherited indexes while introspecting (M0-06, D116).
 - Every train: report the runtime entry size; P10 measured 29.6 KB minified / 8.9 KB gzip / 5.8 ms cold import against the 0.1 budget of 60 KB / 20 KB / 15 ms, so P11–P16 must stay within the remaining half; trim before P17 if tooling code is reachable from the runtime entry.
+- P10A moved catalog document IO (serialise, parse, hash, rename, dependency order) off the runtime entry (29.6 KB to 16.5 KB). The runtime still needs the catalog hash check and `.okm/catalog.json` load at `connect()` (spec 19.3): P15 imports only the lean pieces it needs from a subpath, and loads them lazily.
+- Every prompt ends with: commit, push the branch and open the pull request (Cursor stopped doing this after P10A; the prompts now say it explicitly).
+- Published bundles must share modules (code splitting): the catalog identity must exist once per process (D112), so `okmodel` and `okmodel/pg` may not each inline the catalog helpers.

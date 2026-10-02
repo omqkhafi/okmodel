@@ -4,7 +4,9 @@ import { join } from "node:path";
 import {
   budgetReport,
   ceilingProblems,
+  columnTypeProblems,
   measureTypeCost,
+  type ColumnTypeCost,
   type TypeBudgetRow,
 } from "../scripts/type-cost.js";
 import { repoRoot } from "../scripts/root.js";
@@ -60,6 +62,19 @@ test("type ceilings fail when a fixture is over the D127 limits", () => {
   expect(problems.some((problem) => problem.includes("emitted"))).toBe(true);
   expect(problems.some((problem) => problem.includes("per table"))).toBe(true);
   expect(problems.some((problem) => problem.includes("tagged operators"))).toBe(true);
+});
+
+test("column type ceilings fail when the sample is over the limit", () => {
+  const over: ColumnTypeCost = {
+    project: "tests/fixtures/type-cost-columns",
+    instantiations: 7_000,
+    types: 9_000,
+    checkTimeSeconds: 0,
+  };
+  const problems = columnTypeProblems(over);
+  expect(problems.some((problem) => problem.includes("instantiations"))).toBe(true);
+  expect(problems.some((problem) => problem.includes("types"))).toBe(true);
+  expect(columnTypeProblems({ ...over, instantiations: 5_000, types: 6_000 })).toEqual([]);
 });
 
 function row(label: string, tables: number, instantiations: number, types: number): TypeBudgetRow {

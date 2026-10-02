@@ -1,6 +1,9 @@
 /**
- * Fails when a runtime bundle contains an npm package, or when `src/` imports
- * the harness barrel.
+ * Fails when a runtime bundle contains an npm package, when `src/` imports
+ * the harness barrel, or when one module is copied into more than one output.
+ *
+ * `okmodel` and `okmodel/pg` are built together with code splitting so a shared
+ * module, including the catalog identity, is emitted once (D112).
  *
  * The barrel re-exports drivers. A router that imports `@okmodel/harness`
  * pulls those packages into the runtime bundle. Deep imports of one harness
@@ -93,11 +96,72 @@ export function npmPackageProblems(metafile: unknown, label: string): readonly s
  */
 export function checkBundlePurity(root: string): readonly string[] {
   const problems: string[] = [...harnessBarrelProblems(root)];
-  for (const entry of RUNTIME_ENTRIES) {
-    problems.push(...bundleFile(root, join(root, entry), entry));
-  }
+  problems.push(...bundleRuntimeEntries(root));
   problems.push(...bundleHarnessProbe(root));
   return problems;
+}
+
+/**
+ * Reports a source module that appears in more than one bundle output.
+ *
+ * @param metafile - Parsed `bun build --metafile` for one splitting build
+ * @returns Problem lines. Empty when each module is emitted once
+ */
+export function duplicatedModuleProblems(metafile: unknown): readonly string[] {
+  if (!isRecord(metafile) || !isRecord(metafile.outputs)) return [];
+  const seen = new Map<string, string>();
+  const problems: string[] = [];
+  for (const [output, value] of Object.entries(metafile.outputs)) {
+    if (!isRecord(value) || !isRecord(value.inputs)) continue;
+    for (const input of Object.keys(value.inputs)) {
+      const previous = seen.get(input);
+      if (previous === undefined) {
+        seen.set(input, output);
+        continue;
+      }
+      problems.push(
+        `bundle-purity: ${input} is duplicated in ${previous} and ${output}. Shared modules must be emitted once.`,
+      );
+    }
+  }
+  return problems;
+}
+
+function bundleRuntimeEntries(root: string): readonly string[] {
+  const dir = mkdtempSync(join(tmpdir(), "okm-bundle-"));
+  const metafile = join(dir, "meta.json");
+  try {
+    const proc = Bun.spawnSync(
+      [
+        "bun",
+        "build",
+        ...RUNTIME_ENTRIES.map((entry) => join(root, entry)),
+        "--target",
+        "node",
+        "--format",
+        "esm",
+        "--splitting",
+        "--chunk-naming=shared/[hash].js",
+        "--outdir",
+        dir,
+        "--root",
+        join(root, "src"),
+        `--metafile=${metafile}`,
+      ],
+      { cwd: root, stdout: "pipe", stderr: "pipe" },
+    );
+    if (proc.exitCode !== 0) {
+      return [
+        `bundle-purity: bun build runtime entries exited ${String(proc.exitCode)}\n${proc.stderr.toString()}`,
+      ];
+    }
+    const parsed: unknown = JSON.parse(readFileSync(metafile, "utf8"));
+    return [...npmPackageProblems(parsed, "runtime entries"), ...duplicatedModuleProblems(parsed)];
+  } catch (error) {
+    return [`bundle-purity: runtime entries: ${messageOf(error)}`];
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 function bundleHarnessProbe(root: string): readonly string[] {

@@ -42,8 +42,8 @@ export function indexObjects(objects: readonly CatalogObject[]): readonly Indexe
 /**
  * Orders objects so each dependency appears before the object that needs it.
  *
- * A cycle, a self-edge, or a target that is not in `objects` is OKM1020.
- * A duplicate identity is OKM1023.
+ * A cycle is OKM1026. A self-edge, or a target that is not in `objects`, is
+ * OKM1020. A duplicate identity is OKM1023.
  *
  * @param objects - Catalog objects to order
  * @returns Create order
@@ -55,7 +55,8 @@ export function dependencyOrder(objects: readonly CatalogObject[]): readonly Cat
 /**
  * Topological order of objects whose identity keys are already known.
  *
- * A cycle, a self-edge, or a target that is not in `indexed` is OKM1020.
+ * A cycle is OKM1026. A self-edge, or a target that is not in `indexed`, is
+ * OKM1020.
  * `indexed` must not contain duplicate keys.
  *
  * @param indexed - Objects paired with identity keys
@@ -121,7 +122,7 @@ export function orderIndexed(indexed: readonly IndexedObject[]): readonly Catalo
   }
 
   if (ordered.length !== byKey.size) {
-    catalogError("OKM1020", "Catalog has a dependency cycle.");
+    catalogError("OKM1026", "Catalog has a dependency cycle.");
   }
   return ordered;
 }

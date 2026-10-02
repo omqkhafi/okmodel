@@ -6,7 +6,14 @@
  * so tooling does not enter this entry.
  */
 
-export { CATALOG_CODES, OkmError, catalogError, type CatalogCode } from "./error.js";
+export {
+  CATALOG_CODES,
+  COLUMN_CODES,
+  OkmError,
+  catalogError,
+  type CatalogCode,
+  type ColumnCode,
+} from "./error.js";
 export { sha256 } from "./sha256.js";
 
 export {

@@ -23,9 +23,17 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Constraint and index names are generated from a stable key. A name past the dialect limit keeps a SHA-256 suffix. Renaming a field does not rename those constraints or indexes.
 - A catalog serialises to canonical JSON with a version field. The hash is SHA-256 of that JSON, so the same catalog yields the same bytes on every runtime. Namespace templates stay templates.
 
+#### dialects
+
+- `okmodel/pg` builds Postgres column types: keys, numbers, text, boolean, bytea, json, date and time, ranges, network, point and line, tsvector, ltree, enums, domains, arrays, and `custom`. Each one compiles to a catalog column. `citext` and `ltree` record an extension dependency.
+- Codecs default to decimal strings for bigint and numeric, and to Temporal for timestamps. `t.bigint({ as: "number" })` and `t.numeric(p, s, { as: "number" })` override a field. `jsonReplacer` writes a bigint as a decimal string.
+- `.picklist()` narrows a string column to a literal union and can add a CHECK. An empty list or a repeated value is OKM1060. A value outside the list is OKM1210.
+- `enum` and `domain` are exported under those names. An invalid enum or domain definition is OKM1060. A label a codec rejects is OKM1210.
+- Date and time codecs read the `Temporal` global. okmodel does not ship a polyfill. A missing global is OKM1210 and the message says to assign one to `globalThis.Temporal`.
+
 #### tooling
 
-- Stub exports for `okmodel`, `okmodel/pg`, `okmodel/migrate`, and `okmodel/testing`.
+- Stub exports for `okmodel/migrate` and `okmodel/testing`.
 - `okm --version` and `okmodel --version` print the package version.
 - Repository checks for layer imports, core purity, docs links and decision numbers, publint, arethetypeswrong, a `dist/` size ceiling, and bundle purity.
 - `bun run bump next` moves the version to `<next release>-next.N` and leaves the changelog in place. `bun run bump release` drops that suffix and promotes Unreleased.
@@ -46,6 +54,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 #### docs
 
 - The M0 gate findings are in `docs/m0-findings.md`, with a Resolved by column for each row.
+- Spec section 21 records OKM1026 for a catalog dependency cycle and OKM1027 for a catalog document this version cannot read.
 
 ### ♻️ Changed
 
@@ -53,12 +62,15 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - Catalog serialisation, parsing, hashing, rename, and dependency order are no longer on the runtime entry. They stay in the catalog document module for tooling. Builders, identity, and names stay on `okmodel`.
 - SHA-256 round constants and the reserved-word set are built on first use. UTF-8 length and encoding share one helper. An ordering pass computes each identity key once.
-- Catalog errors name the accepted value. Error codes are unchanged.
+- Catalog errors name the accepted value.
+- A catalog dependency cycle is OKM1026. A catalog document this version cannot read is OKM1027. OKM1020 stays the code for an unknown table.
+- An invalid column definition is OKM1060. A value a codec rejects is OKM1210. Messages name the accepted values.
 
 #### tooling
 
 - Source layers use the folder names `contracts`, `dialects`, `adapters`, `runtime`, and `tooling`.
-- The published `dist/` ceiling is 100000 bytes. The previous 8192 byte ceiling fit the empty package only.
+- `okmodel` and `okmodel/pg` are built with code splitting. A shared module, including the catalog identity, is emitted once. The bundle-purity check fails when a module is copied into two outputs.
+- The published `dist/` is 146975 bytes after code splitting (it was 169519 when each entry inlined the catalog). The ceiling is 184000 bytes, that size plus 25%.
 - Lint and format use oxlint and oxfmt. Layer and purity checks read imports from the Oxc AST.
 - Declaration emit no longer requires `isolatedDeclarations`, so exported types may be inferred.
 - The published package sets `sideEffects` to false.
@@ -69,7 +81,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - The package description names typed queries, safe migrations, and replica-aware routing. The README says the API has not stabilised yet.
 - Changelog area headings are the layer names: `contracts`, `dialects`, `adapters`, `runtime`, `tooling`, and `docs`.
-- Normative docs match spec draft 18 and decisions D1–D127.
+- Normative docs match spec draft 20 and decisions D1–D130. The spec registry names OKM1026, OKM1027, OKM1060, and OKM1210.
 - Engineering standards (D129) are in `AGENTS.md` and the ship skill. Reports state runtime entry size, cold import, and type-cost change.
 
 ### 🔥 Removed
