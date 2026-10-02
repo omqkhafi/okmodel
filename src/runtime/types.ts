@@ -7,6 +7,7 @@
 
 import type { SafeResult } from "../contracts/error.js";
 import type { QuerySchema } from "../dialects/pg/model.js";
+import type { Inc } from "../dialects/pg/ops/inc.js";
 import type {
   Between,
   Compare,
@@ -155,12 +156,19 @@ type IncludeRows<S extends QuerySchema, K extends keyof S["~byName"], Inc> = [In
     }
   : unknown;
 
+/**
+ * Rewrites a row so an editor shows the fields.
+ *
+ * A key-remapped alias such as `RowFrom` stays collapsed in hover and prints
+ * the column builders. This mapped type is what quickinfo expands.
+ */
+type Show<T> = { [K in keyof T]: T[K] } & {};
+
 /** Find or one row, plus includes. */
-export type ResultRow<S extends QuerySchema, K extends keyof S["~byName"], O> = Selected<
-  RowOf<S, K>,
-  O extends { readonly select: infer Sel } ? Sel : undefined
-> &
-  IncludeRows<S, K, O extends { readonly include: infer Inc } ? Inc : undefined>;
+export type ResultRow<S extends QuerySchema, K extends keyof S["~byName"], O> = Show<
+  Selected<RowOf<S, K>, O extends { readonly select: infer Sel } ? Sel : undefined> &
+    IncludeRows<S, K, O extends { readonly include: infer Inc } ? Inc : undefined>
+>;
 
 /** Options shared by reads. */
 export type ReadOptions<S extends QuerySchema, K extends keyof S["~byName"]> = {
@@ -261,6 +269,87 @@ export type Router = {
   }): RoutingDecision;
 };
 
+/** Insert shape of one table. */
+export type InsertOf<
+  S extends QuerySchema,
+  K extends keyof S["~byName"],
+> = S["~byName"][K] extends {
+  readonly "~insert": infer I;
+}
+  ? I
+  : never;
+
+/** Update shape of one table. */
+export type UpdateOf<
+  S extends QuerySchema,
+  K extends keyof S["~byName"],
+> = S["~byName"][K] extends {
+  readonly "~update": infer U;
+}
+  ? U
+  : never;
+
+/** `set` values. `undefined` leaves the field unchanged. `inc` adds to it. */
+export type UpdateSet<S extends QuerySchema, K extends keyof S["~byName"]> = {
+  readonly [F in keyof UpdateOf<S, K>]?: UpdateOf<S, K>[F] | Inc<NonNullable<UpdateOf<S, K>[F]>>;
+};
+
+/** Conflict handling on `insert` (spec §11). */
+export type OnConflict<S extends QuerySchema, K extends keyof S["~byName"]> =
+  | "error"
+  | "ignore"
+  | {
+      readonly on: string | readonly string[];
+      readonly update: readonly (keyof UpdateOf<S, K> & string)[];
+    }
+  | { readonly on: string | readonly string[]; readonly return: true };
+
+/** Options for `insert`. */
+export type InsertOptions<S extends QuerySchema, K extends keyof S["~byName"]> = {
+  readonly onConflict?: OnConflict<S, K>;
+  readonly returning?: readonly (keyof RowOf<S, K> & string)[];
+  readonly expect?: number;
+  readonly signal?: AbortSignal;
+  readonly timeout?: number;
+};
+
+/** Options for `update` and `delete`. */
+export type WriteOptions<S extends QuerySchema, K extends keyof S["~byName"]> = {
+  readonly returning?: readonly (keyof RowOf<S, K> & string)[];
+  readonly expect?: number;
+  readonly signal?: AbortSignal;
+  readonly timeout?: number;
+};
+
+/** `{ count }` from an update or delete without `returning`. */
+export type WriteCount = { readonly count: number };
+
+/** A write handle. Await it, or read its SQL before it runs. */
+export type Write<T> = Promise<T> & {
+  /** Statement text and parameters, one entry per chunk. */
+  sql(): Promise<{
+    readonly statements: readonly {
+      readonly text: string;
+      readonly params?: readonly (string | null)[];
+    }[];
+  }>;
+  /** `{ ok, value }` or `{ ok, error }`. */
+  safe(): Promise<SafeResult<T>>;
+  /** Throws `not_found` when the changed-row count is not `count`. */
+  expect(count: number): Write<T>;
+  /** Allows `update` or `delete` without `where`. */
+  all(reason: string): Write<T>;
+};
+
+/** One update, or a per-row list in one statement. */
+export type UpdateTarget<S extends QuerySchema, K extends keyof S["~byName"]> =
+  | { readonly where?: WhereOf<S, K>; readonly set: UpdateSet<S, K> }
+  | readonly {
+      readonly id?: unknown;
+      readonly where?: WhereOf<S, K>;
+      readonly set: UpdateSet<S, K>;
+    }[];
+
 /** Methods on one table. */
 export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & string> = {
   find<const O extends FindOptions<S, K> & { readonly limit: number }>(
@@ -272,6 +361,20 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   one<const O extends ReadOptions<S, K>>(options?: O): Read<ResultRow<S, K, O> | null>;
   count(options?: { readonly where?: WhereOf<S, K> }): Read<number>;
   exists(options?: { readonly where?: WhereOf<S, K> }): Read<boolean>;
+  /** Inserts one row or a list. Unknown keys are dropped. The list is one transaction. */
+  insert(data: InsertOf<S, K>, options?: InsertOptions<S, K>): Write<Show<RowOf<S, K>>>;
+  /** Inserts one row or a list. Unknown keys are dropped. The list is one transaction. */
+  insert(
+    data: readonly InsertOf<S, K>[],
+    options?: InsertOptions<S, K>,
+  ): Write<readonly Show<RowOf<S, K>>[]>;
+  /** Updates matching rows, or a per-row list in one statement. `where` is required. */
+  update(target: UpdateTarget<S, K>, options?: WriteOptions<S, K>): Write<WriteCount>;
+  /** Deletes matching rows. `where` is required. */
+  delete(
+    target: { readonly where?: WhereOf<S, K> },
+    options?: WriteOptions<S, K>,
+  ): Write<WriteCount>;
 };
 
 /** A client typed by its own schema. */

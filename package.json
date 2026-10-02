@@ -1,6 +1,6 @@
 {
   "name": "okmodel",
-  "version": "0.1.0-next.21",
+  "version": "0.1.0-next.22",
   "description": "Catalog-first TypeScript ORM: typed queries, safe migrations and replica-aware routing. PostgreSQL first, zero runtime dependencies.",
   "license": "Apache-2.0",
   "author": "Omq Khafi",
@@ -52,6 +52,7 @@
     "build": "rm -rf dist && bun build ./src/contracts/index.ts ./src/dialects/pg/index.ts ./src/runtime/pg/postgresjs.ts ./src/runtime/pg/pglite.ts ./src/tooling/migrate/index.ts ./src/tooling/testing/index.ts ./src/tooling/cli.ts --outdir ./dist --root ./src --format esm --target node --splitting --chunk-naming=shared/[hash].js --external postgres --external @electric-sql/pglite && bunx tsc -p tsconfig.build.json && bun ./scripts/write-bin-wrappers.ts",
     "driver-bench": "bun ./scripts/driver-bench.ts",
     "typecheck": "bunx tsc --noEmit -p tsconfig.json",
+    "editor-check": "bun ./scripts/editor-check.ts",
     "type-cost": "bun ./scripts/type-cost.ts",
     "lint": "oxlint",
     "format": "oxfmt",
@@ -65,7 +66,7 @@
     "size": "bun ./scripts/size.ts",
     "bundle-purity": "bun ./scripts/bundle-purity.ts",
     "test": "bun test",
-    "check": "bun run format:check && bun run lint && bun run typecheck && bun run type-cost && bun run layers-check && bun run core-purity && bun run docs:check && bun run compiler-api && bun run bundle-purity && bun run build && bun test && bun run publint && bun run attw && bun run size",
+    "check": "bun run format:check && bun run lint && bun run typecheck && bun run editor-check && bun run type-cost && bun run layers-check && bun run core-purity && bun run docs:check && bun run compiler-api && bun run bundle-purity && bun run build && bun test && bun run publint && bun run attw && bun run size",
     "bump": "bun ./scripts/bump-version.ts",
     "release-check": "bun ./scripts/release-check.ts",
     "db:up": "bun ./packages/harness/src/docker-cli.ts up",
@@ -86,7 +87,8 @@
     "oxlint": "^1.86.0",
     "oxlint-tsgolint": "^7.0.2003",
     "publint": "^0.3.24",
-    "typescript": "7"
+    "typescript": "7",
+    "typescript-editor": "npm:typescript@6.0.3"
   },
   "peerDependencies": {
     "@electric-sql/pglite": "^0.5.8",

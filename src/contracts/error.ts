@@ -48,10 +48,13 @@ export type ColumnCode = (typeof COLUMN_CODES)[number];
  */
 export type QueryCode =
   | "OKM1101"
+  | "OKM1102"
+  | "OKM1104"
   | "OKM1105"
   | "OKM1111"
   | "OKM1120"
   | "OKM1121"
+  | "OKM1190"
   | "OKM1801"
   | "OKM1802"
   | "OKM1843";

@@ -916,7 +916,10 @@ function literalPattern(value: string, mode: "startsWith" | "contains" | "endsWi
   return `%${out}%`;
 }
 
-function decodeRow(outputs: Outputs, row: readonly (string | null)[]): Record<string, unknown> {
+export function decodeRow(
+  outputs: Outputs,
+  row: readonly (string | null)[],
+): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const field of outputs.fields) {
     result[field.key] = cell(row[field.at], field.decode);
@@ -988,9 +991,15 @@ export function fail(code: QueryCode, message: string): never {
       ? { summary: "Use eq for an object value, or has, none, or every for a relation." }
       : code === "OKM1101"
         ? { summary: "Pass limit, or call .all(reason)." }
-        : code === "OKM1105"
-          ? { summary: "Pass limit on the include, or call .all(reason)." }
-          : undefined;
+        : code === "OKM1102"
+          ? { summary: "Pass where, or call .all(reason) to match every row." }
+          : code === "OKM1104"
+            ? { summary: "Set on to the columns of a unique constraint or the primary key." }
+            : code === "OKM1105"
+              ? { summary: "Pass limit on the include, or call .all(reason)." }
+              : code === "OKM1190"
+                ? { summary: "Remove the guarded field. Input cannot set it." }
+                : undefined;
   throw new OkmError(code, message, fix === undefined ? undefined : { fix });
 }
 

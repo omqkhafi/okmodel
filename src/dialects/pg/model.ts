@@ -4,7 +4,7 @@
  * `schema()` fills it once. Query planning does not walk column builders again.
  */
 
-/** One column the planner can filter, select, and decode. */
+/** One column the planner can filter, select, decode, and write. */
 export type ColumnModel = {
   /** Field name. */
   readonly field: string;
@@ -23,6 +23,10 @@ export type ColumnModel = {
   readonly decode: ((wire: string) => unknown) | undefined;
   /** Excluded from a default select. Named selects still return it. */
   readonly hidden: boolean;
+  /** Refused when present in insert or update input. */
+  readonly guarded: boolean;
+  /** Included in insert and update. Guarded, generated, and omitted columns are not. */
+  readonly writable: boolean;
 };
 
 /**
@@ -47,6 +51,12 @@ export type TableModel = {
   readonly sql: string;
   /** Primary-key field names, in catalog order. */
   readonly primary: readonly string[];
+  /**
+   * Field lists that `onConflict.on` may name.
+   *
+   * Each list is a primary key or a unique constraint. Order is the catalog order.
+   */
+  readonly uniques: readonly (readonly string[])[];
   readonly columns: readonly ColumnModel[];
   readonly relations: readonly RelationModel[];
 };

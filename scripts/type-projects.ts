@@ -125,6 +125,18 @@ export function writeQueryProject(
       "  });",
       "}",
       "",
+      "export function write(db: Connected<typeof appSchema>) {",
+      '  return db.note.insert({ ownerId: "00000000-0000-4000-8000-000000000001", body: "a" });',
+      "}",
+      "",
+      "export function change(db: Connected<typeof appSchema>) {",
+      '  return db.note.update({ where: { body: "a" }, set: { body: "b" } });',
+      "}",
+      "",
+      "export function remove(db: Connected<typeof appSchema>) {",
+      '  return db.note.delete({ where: { body: "b" } });',
+      "}",
+      "",
     ].join("\n"),
   );
   writeConfig(dir, ["probe.ts", "tables.ts"]);

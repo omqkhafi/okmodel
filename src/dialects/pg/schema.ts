@@ -137,6 +137,7 @@ type ColumnView = CompilableColumn & {
     readonly references: ReferenceModifier | undefined;
     readonly encode: (value: unknown) => string;
     readonly decode: (wire: string) => unknown;
+    readonly omitWrite: boolean;
   };
 };
 
@@ -149,6 +150,9 @@ type PreparedColumn = {
   readonly encode: (value: unknown) => string;
   readonly decode: ((wire: string) => unknown) | undefined;
   readonly hidden: boolean;
+  readonly guarded: boolean;
+  readonly writable: boolean;
+  readonly unique: boolean;
 };
 
 type FkEdge = {
@@ -166,6 +170,7 @@ type Prepared = {
   readonly provenance: Provenance;
   readonly columns: readonly PreparedColumn[];
   readonly primary: readonly string[];
+  readonly uniques: readonly (readonly string[])[];
   readonly byField: ReadonlyMap<string, PreparedColumn>;
   readonly bySql: ReadonlyMap<string, PreparedColumn>;
   readonly relationOptions: unknown;
@@ -328,6 +333,12 @@ function compileTable(
       encode: column.state.encode as (value: unknown) => string,
       decode: decode === decodeText ? undefined : (decode as (wire: string) => unknown),
       hidden: column.state.hidden,
+      guarded: column.state.guarded,
+      writable:
+        column.state.guarded !== true &&
+        column.state.omitWrite !== true &&
+        column.state.generated === undefined,
+      unique: column.state.unique !== undefined,
     };
     columns.push(prepared);
     byField.set(field, prepared);
@@ -372,10 +383,36 @@ function compileTable(
     provenance,
     columns,
     primary,
+    uniques: uniqueTargets(primary, columns, bySql, options),
     byField,
     bySql,
     relationOptions: relationInput(item.name, options),
   };
+}
+
+function uniqueTargets(
+  primary: readonly string[],
+  columns: readonly PreparedColumn[],
+  bySql: ReadonlyMap<string, PreparedColumn>,
+  options: StoredOptions | undefined,
+): readonly (readonly string[])[] {
+  const uniques: string[][] = [];
+  if (primary.length > 0) {
+    const fields: string[] = [];
+    for (const sqlName of primary) {
+      const column = bySql.get(sqlName);
+      if (column !== undefined) fields.push(column.field);
+    }
+    if (fields.length > 0) uniques.push(fields);
+  }
+  for (const column of columns) {
+    if (column.unique) uniques.push([column.field]);
+  }
+  const named = options?.unique;
+  if (named !== undefined) {
+    for (const fields of Object.values(named)) uniques.push([...fields]);
+  }
+  return uniques;
 }
 
 function relationInput(tableName: string, options: StoredOptions | undefined): unknown {
@@ -713,6 +750,8 @@ function tableModel(
     encode: column.encode,
     decode: column.decode,
     hidden: column.hidden,
+    guarded: column.guarded,
+    writable: column.writable,
   }));
   const primary: string[] = [];
   for (const sqlName of item.primary) {
@@ -723,6 +762,7 @@ function tableModel(
     name: item.tsName,
     sql: item.sqlName,
     primary,
+    uniques: item.uniques,
     columns,
     relations: resolveRelations(item, edges, byName, accepted),
   };

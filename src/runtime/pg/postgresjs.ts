@@ -26,6 +26,7 @@ export type PostgresConnectOptions<S extends QuerySchema> = ConnectOptions<S> &
  * Connects one Postgres endpoint and returns a client for `schema`.
  *
  * Named prepared statements are off unless `prepared` is `"named"`.
+ * `prepared: "named"` is not for transaction-mode poolers.
  *
  * @typeParam S - Schema
  * @param target - URL or an existing pool

@@ -129,7 +129,101 @@ function tableApi(session: Session, table: string): TableApi<QuerySchema, string
     exists(options: object = {}) {
       return start(session, "exists", table, options, {});
     },
+    insert(data: unknown, options: object = {}) {
+      return writeHandle(session, "insert", table, data, options, {});
+    },
+    update(target: unknown, options: object = {}) {
+      return writeHandle(session, "update", table, target, options, {});
+    },
+    delete(target: unknown, options: object = {}) {
+      return writeHandle(session, "delete", table, target, options, {});
+    },
   } as unknown as TableApi<QuerySchema, string>;
+}
+
+type WriteOp = "insert" | "update" | "delete";
+type WriteMods = { readonly all?: string; readonly expect?: number };
+
+let writers: Promise<typeof import("./write.js")> | undefined;
+
+function loadWrite(): Promise<typeof import("./write.js")> {
+  writers ??= import("./write.js");
+  return writers;
+}
+
+function writeHandle(
+  session: Session,
+  op: WriteOp,
+  table: string,
+  input: unknown,
+  options: object,
+  mods: WriteMods,
+): Promise<unknown> & Record<string, unknown> {
+  let pending: Promise<unknown> | undefined;
+  const run = (): Promise<unknown> => {
+    pending ??= runWrite(session, op, table, input, options, mods);
+    return pending;
+  };
+  const self = {
+    // oxlint-disable-next-line unicorn/no-thenable
+    then(onFulfilled?: (value: unknown) => unknown, onRejected?: (error: unknown) => unknown) {
+      return run().then(onFulfilled, onRejected);
+    },
+    catch(onRejected?: (error: unknown) => unknown) {
+      return self.then(undefined, onRejected);
+    },
+    finally(fn: () => void) {
+      return self.then(
+        (value) => {
+          fn();
+          return value;
+        },
+        (error: unknown) => {
+          fn();
+          throw error;
+        },
+      );
+    },
+    safe() {
+      return safe(run());
+    },
+    sql() {
+      return loadWrite().then((mod) =>
+        mod.explainWrite(session.schema, op, table, input, options, mods),
+      );
+    },
+    expect(count: number) {
+      return writeHandle(session, op, table, input, options, { ...mods, expect: count });
+    },
+    all(reason: string) {
+      return writeHandle(session, op, table, input, options, { ...mods, all: reason });
+    },
+  };
+  return self as unknown as Promise<unknown> & Record<string, unknown>;
+}
+
+async function runWrite(
+  session: Session,
+  op: WriteOp,
+  table: string,
+  input: unknown,
+  options: object,
+  mods: WriteMods,
+): Promise<unknown> {
+  await session.connected;
+  const mod = await loadWrite();
+  try {
+    return await mod.executeWrite(
+      { schema: session.schema, pool: session.pool },
+      op,
+      table,
+      input,
+      options,
+      mods,
+    );
+  } catch (error) {
+    throw logged(session, await mapError(session, error));
+  }
 }
 
 function start(
