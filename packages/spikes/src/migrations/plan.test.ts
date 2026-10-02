@@ -15,9 +15,37 @@ import {
   renamePair,
   typeChangePair,
 } from "./generate.js";
+
+const propertyExtensions = ["pgcrypto"] as const;
 import { planMigration, planSql } from "./plan.js";
 
 const bindings = [{ logical: staticNamespace("app"), concrete: "scratch" }];
+
+test("property mutations reach policies, matviews, sequences, and extensions", () => {
+  const seen = new Set<string>();
+  for (const seed of PROPERTY_SEEDS) {
+    const pair = migrationPair(seed, { extensions: propertyExtensions });
+    for (const object of [...pair.before, ...pair.after]) seen.add(object.kind);
+  }
+  expect(seen.has("policy")).toBe(true);
+  expect(seen.has("materialized_view")).toBe(true);
+  expect(seen.has("sequence")).toBe(true);
+  expect(seen.has("extension")).toBe(true);
+});
+
+test("a dropped function's trigger is dropped first", () => {
+  let seen = false;
+  for (const seed of PROPERTY_SEEDS) {
+    const pair = migrationPair(seed, { extensions: propertyExtensions });
+    const sql = planSql(planMigration(pair.before, pair.after, bindings, pair.renames));
+    const dropTrigger = sql.findIndex((statement) => statement.startsWith("drop trigger"));
+    const dropFunction = sql.findIndex((statement) => statement.startsWith("drop function"));
+    if (dropTrigger < 0 || dropFunction < 0) continue;
+    seen = true;
+    expect(dropTrigger).toBeLessThan(dropFunction);
+  }
+  expect(seen).toBe(true);
+});
 
 test("an unchanged catalog plans no statements", () => {
   const pair = migrationPair(1);
@@ -27,7 +55,7 @@ test("an unchanged catalog plans no statements", () => {
 
 test("every property pair plans without CASCADE", () => {
   for (const seed of PROPERTY_SEEDS) {
-    const pair = migrationPair(seed);
+    const pair = migrationPair(seed, { extensions: propertyExtensions });
     const sql = planSql(planMigration(pair.before, pair.after, bindings, pair.renames)).join("\n");
     expect(sql.toLowerCase()).not.toContain("cascade");
   }

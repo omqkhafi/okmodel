@@ -18,9 +18,13 @@ export { MigrationError } from "./error.js";
 export {
   PROPERTY_SEEDS,
   dependencyPair,
+  describePair,
   migrationPair,
+  propertyCaseCount,
+  propertySeeds,
   renamePair,
   typeChangePair,
+  type MigrationOptions,
 } from "./generate.js";
 export { lockForStatement, lockInfo, type LockInfo, type LockMode } from "./lock.js";
 export { timeDiffAndPlan, timeScratch, type PlanTiming, type ScratchTiming } from "./measure.js";

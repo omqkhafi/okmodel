@@ -6,9 +6,10 @@
  * (`pg_get_expr` for defaults, checks, generated columns, index expressions,
  * domain checks). Owner, provenance, and authoring SQL are not part of it.
  *
- * View bodies and function bodies are not in that structure. P03 showed the
- * server rewrites them, so source text cannot be the hashed form. Those two
- * are equal only when a scratch database reprints them the same way.
+ * View bodies, materialized view bodies, and function bodies are not in that
+ * structure. P03 showed the server rewrites them, so source text cannot be the
+ * hashed form. Those texts are equal only when a scratch database reprints
+ * them the same way.
  */
 
 import { canonicalJson, identityKey, sha256, type Json } from "../catalog/canonical.js";
@@ -92,7 +93,7 @@ export function structuralMismatches(
  *
  * @param runner - Scratch database
  * @param schema - Concrete schema
- * @returns One row per view and function, with the schema name replaced
+ * @returns One row per view, materialized view, and function, with the schema name replaced
  */
 export async function readRewrittenExpressions(
   runner: SqlRunner,
@@ -104,6 +105,11 @@ export async function readRewrittenExpressions(
     from pg_class c
     join pg_namespace n on n.oid = c.relnamespace
     where n.nspname = ${literal} and c.relkind = 'v'
+    union all
+    select 'materialized_view:' || c.relname, pg_get_viewdef(c.oid, true)
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = ${literal} and c.relkind = 'm'
     union all
     select 'function:' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')',
            pg_get_functiondef(p.oid)

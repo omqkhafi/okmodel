@@ -314,6 +314,7 @@ function coveredByDroppedTable(
   toDrop: ReadonlySet<string>,
 ): boolean {
   if (object.kind === "partition" || object.kind === "table") return false;
+  if (object.kind === "trigger" && triggerFunctionIsDropped(object, objects, toDrop)) return false;
   const parent = parentOf(object.identity);
   if (parent === undefined) return false;
   const namespace = namespaceOf(object.identity)?.name;
@@ -324,6 +325,22 @@ function coveredByDroppedTable(
       namespaceOf(item.identity)?.name === namespace,
   );
   return table !== undefined && toDrop.has(identityKey(table.identity));
+}
+
+function triggerFunctionIsDropped(
+  trigger: Extract<CatalogObject, { kind: "trigger" }>,
+  objects: readonly CatalogObject[],
+  toDrop: ReadonlySet<string>,
+): boolean {
+  const namespace = namespaceOf(trigger.identity)?.name;
+  const fn = objects.find(
+    (item) =>
+      item.kind === "function" &&
+      item.identity.name === trigger.definition.function &&
+      namespaceOf(item.identity)?.name === namespace &&
+      item.identity.argTypes.join(",") === trigger.definition.functionArgTypes.join(","),
+  );
+  return fn !== undefined && toDrop.has(identityKey(fn.identity));
 }
 
 function isFoldedIntoNewTable(

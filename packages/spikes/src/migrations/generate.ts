@@ -4,8 +4,12 @@
  * Every pair starts from one catalog that already contains a table, columns,
  * an index, a check, a generated column, an expression index, a domain, a
  * partitioned table, a view, a plpgsql function, a SQL function, and a trigger.
- * A few mutations produce B. Renames are not guessed here; the recreate test
- * declares them.
+ * Mutations may add or change a policy, a materialized view, a sequence, or an
+ * extension. Renames are not guessed here; the recreate test declares them.
+ *
+ * `OKM_MIGRATION_CASES` sets how many seeds {@link PROPERTY_SEEDS} contains.
+ * The default is 100, which is what `bun run check` runs. A larger run sets
+ * the variable (the recorded 500-case run uses `500`).
  */
 
 import { identityKey } from "../catalog/canonical.js";
@@ -50,6 +54,7 @@ type TableSpec = {
   readonly primaryKey: readonly string[];
   readonly indexes: readonly IndexSpec[];
   readonly checks: readonly CheckSpec[];
+  readonly rowSecurity?: boolean;
   readonly partition?: {
     readonly method: "range" | "list" | "hash";
     readonly columns: readonly string[];
@@ -104,6 +109,18 @@ type Spec = {
   readonly includeRankIndex: boolean;
   readonly includeKind: boolean;
   readonly includeNote: boolean;
+  readonly includePolicy: boolean;
+  readonly policyUsing: string;
+  readonly includeMatview: boolean;
+  readonly matviewWhere: string;
+  readonly includeSequence: boolean;
+  readonly sequenceIncrement: string;
+  readonly extension: string | undefined;
+};
+
+/** Extensions the property test may install. Empty means none are available. */
+export type MigrationOptions = {
+  readonly extensions?: readonly string[];
 };
 
 /** A pair the property test applies. */
@@ -114,16 +131,44 @@ export type MigrationPair = {
   readonly renames: readonly ColumnRename[];
 };
 
-/** Seeds the property test runs. Twenty pairs, each a few mutations from the template. */
-export const PROPERTY_SEEDS = Array.from({ length: 20 }, (_, index) => index + 1);
+/**
+ * How many property seeds to run.
+ *
+ * Unset or blank is 100. `OKM_MIGRATION_CASES` must be a positive integer.
+ *
+ * @returns The case count
+ */
+export function propertyCaseCount(): number {
+  const raw = process.env.OKM_MIGRATION_CASES;
+  if (raw === undefined || raw.trim() === "") return 100;
+  if (!/^[1-9]\d*$/.test(raw.trim())) {
+    throw new Error(`OKM_MIGRATION_CASES must be a positive integer, got ${raw}.`);
+  }
+  return Number(raw.trim());
+}
+
+/**
+ * Seeds `1..count` for the property test.
+ *
+ * @param count - How many seeds. Defaults to {@link propertyCaseCount}
+ * @returns Seed numbers
+ */
+export function propertySeeds(count: number = propertyCaseCount()): readonly number[] {
+  return Array.from({ length: count }, (_, index) => index + 1);
+}
+
+/** Seeds the property test runs. One hundred pairs unless `OKM_MIGRATION_CASES` is set. */
+export const PROPERTY_SEEDS = propertySeeds();
 
 /**
  * Builds catalog A and catalog B for one seed.
  *
  * @param seed - Deterministic seed
+ * @param options - Extensions the database can install. Omit when none are available
  * @returns Both catalogs in the `app` namespace
  */
-export function migrationPair(seed: number): MigrationPair {
+export function migrationPair(seed: number, options: MigrationOptions = {}): MigrationPair {
+  const extensions = options.extensions ?? [];
   const before = template();
   let after = template();
   const random = mulberry32(seed);
@@ -132,7 +177,7 @@ export function migrationPair(seed: number): MigrationPair {
   for (let index = 0; index < count; index += 1) {
     const mutation = MUTATIONS[(start + index) % MUTATIONS.length];
     if (mutation === undefined) continue;
-    after = mutation(after, seed + index);
+    after = mutation(after, seed + index, extensions);
   }
   if (
     identityKeyList(buildCatalog(before)) === identityKeyList(buildCatalog(after)) &&
@@ -237,10 +282,17 @@ function template(): Spec {
     includeRankIndex: false,
     includeKind: true,
     includeNote: false,
+    includePolicy: false,
+    policyUsing: "true",
+    includeMatview: false,
+    matviewWhere: '"id" > 0',
+    includeSequence: false,
+    sequenceIncrement: "1",
+    extension: undefined,
   };
 }
 
-const MUTATIONS: readonly ((spec: Spec, seed: number) => Spec)[] = [
+const MUTATIONS: readonly ((spec: Spec, seed: number, extensions: readonly string[]) => Spec)[] = [
   addNote,
   dropKind,
   flipDefault,
@@ -253,6 +305,17 @@ const MUTATIONS: readonly ((spec: Spec, seed: number) => Spec)[] = [
   cyclePartition,
   addNotes,
   dropNotes,
+  addPolicy,
+  dropPolicy,
+  flipPolicy,
+  addMatview,
+  dropMatview,
+  flipMatview,
+  addSequence,
+  dropSequence,
+  flipSequence,
+  addExtension,
+  dropExtension,
 ];
 
 function addNote(spec: Spec): Spec {
@@ -308,6 +371,63 @@ function dropNotes(spec: Spec): Spec {
   return { ...spec, includeNotes: false };
 }
 
+function addPolicy(spec: Spec): Spec {
+  if (spec.includePolicy) return spec;
+  return { ...spec, includePolicy: true, policyUsing: "true" };
+}
+
+function dropPolicy(spec: Spec): Spec {
+  if (!spec.includePolicy) return spec;
+  return { ...spec, includePolicy: false };
+}
+
+function flipPolicy(spec: Spec): Spec {
+  if (!spec.includePolicy) return { ...spec, includePolicy: true, policyUsing: "id > 0" };
+  return { ...spec, policyUsing: spec.policyUsing === "true" ? "id > 0" : "true" };
+}
+
+function addMatview(spec: Spec): Spec {
+  if (spec.includeMatview) return spec;
+  return { ...spec, includeMatview: true };
+}
+
+function dropMatview(spec: Spec): Spec {
+  if (!spec.includeMatview) return spec;
+  return { ...spec, includeMatview: false };
+}
+
+function flipMatview(spec: Spec): Spec {
+  if (!spec.includeMatview) return { ...spec, includeMatview: true, matviewWhere: '"id" > 1' };
+  return { ...spec, matviewWhere: spec.matviewWhere === '"id" > 0' ? '"id" > 1' : '"id" > 0' };
+}
+
+function addSequence(spec: Spec): Spec {
+  if (spec.includeSequence) return spec;
+  return { ...spec, includeSequence: true, sequenceIncrement: "1" };
+}
+
+function dropSequence(spec: Spec): Spec {
+  if (!spec.includeSequence) return spec;
+  return { ...spec, includeSequence: false };
+}
+
+function flipSequence(spec: Spec): Spec {
+  if (!spec.includeSequence) return { ...spec, includeSequence: true, sequenceIncrement: "2" };
+  return { ...spec, sequenceIncrement: spec.sequenceIncrement === "1" ? "2" : "1" };
+}
+
+function addExtension(spec: Spec, seed: number, extensions: readonly string[]): Spec {
+  if (spec.extension !== undefined || extensions.length === 0) return spec;
+  const name = extensions[Math.abs(seed) % extensions.length];
+  if (name === undefined) return spec;
+  return { ...spec, extension: name };
+}
+
+function dropExtension(spec: Spec): Spec {
+  if (spec.extension === undefined) return spec;
+  return { ...spec, extension: undefined };
+}
+
 function buildCatalog(
   spec: Spec,
   namespace: NamespaceName = staticNamespace("app"),
@@ -350,6 +470,13 @@ function buildCatalog(
       },
     ],
     triggers: [{ name: "tasks_touch", table: "tasks", fn: "touch" }],
+    includePolicy: spec.includePolicy,
+    policyUsing: spec.policyUsing,
+    includeMatview: spec.includeMatview,
+    matviewWhere: spec.matviewWhere,
+    includeSequence: spec.includeSequence,
+    sequenceIncrement: spec.sequenceIncrement,
+    extension: spec.extension,
   };
   return buildSpec(filled, namespace);
 }
@@ -377,6 +504,7 @@ function tablesFor(spec: Spec): readonly TableSpec[] {
       primaryKey: ["id"],
       indexes,
       checks: [{ name: "tasks_id_check", columns: ["id"], expression: spec.checkExpression }],
+      rowSecurity: spec.includePolicy,
     },
     eventsTable(spec.eventsStyle),
   ];
@@ -617,9 +745,9 @@ function buildSpec(spec: Spec, namespace: NamespaceName): readonly CatalogObject
       owner: "managed",
       definition:
         table.partition === undefined
-          ? { rowSecurity: false }
+          ? { rowSecurity: table.rowSecurity === true }
           : {
-              rowSecurity: false,
+              rowSecurity: table.rowSecurity === true,
               partitionBy: { method: table.partition.method, columns: table.partition.columns },
             },
       dependencies: domainDeps,
@@ -780,6 +908,59 @@ function buildSpec(spec: Spec, namespace: NamespaceName): readonly CatalogObject
       provenance,
     });
   }
+  if (spec.includePolicy) {
+    objects.push({
+      kind: "policy",
+      identity: { kind: "policy", namespace, parent: "tasks", name: "tasks_read" },
+      owner: "managed",
+      definition: {
+        command: "select",
+        permissive: true,
+        using: spec.policyUsing,
+        check: "",
+      },
+      dependencies: [{ identity: { kind: "table", namespace, name: "tasks" } }],
+      provenance,
+    });
+  }
+  if (spec.includeMatview) {
+    objects.push({
+      kind: "materialized_view",
+      identity: { kind: "materialized_view", namespace, name: "task_titles" },
+      owner: "managed",
+      definition: {
+        sql: `select "id", "title" from ${qualified(namespace, "tasks")} where ${spec.matviewWhere}`,
+        columns: ["id", "title"],
+        withData: false,
+      },
+      dependencies: [
+        { identity: { kind: "table", namespace, name: "tasks" } },
+        { identity: { kind: "column", namespace, parent: "tasks", name: "id" } },
+        { identity: { kind: "column", namespace, parent: "tasks", name: "title" } },
+      ],
+      provenance,
+    });
+  }
+  if (spec.includeSequence) {
+    objects.push({
+      kind: "sequence",
+      identity: { kind: "sequence", namespace, name: "task_seq" },
+      owner: "managed",
+      definition: { dataType: "int8", start: "1", increment: spec.sequenceIncrement },
+      dependencies: [],
+      provenance,
+    });
+  }
+  if (spec.extension !== undefined) {
+    objects.push({
+      kind: "extension",
+      identity: { kind: "extension", name: spec.extension },
+      owner: "managed",
+      definition: { name: spec.extension },
+      dependencies: [],
+      provenance,
+    });
+  }
   for (const view of spec.views) {
     const sql = view.sql === "" ? `select "rank" from ${qualified(namespace, "tasks")}` : view.sql;
     objects.push({
@@ -833,8 +1014,47 @@ function sameBodies(left: Spec, right: Spec): boolean {
     left.includeNotes === right.includeNotes &&
     left.includeRankIndex === right.includeRankIndex &&
     left.includeKind === right.includeKind &&
-    left.includeNote === right.includeNote
+    left.includeNote === right.includeNote &&
+    left.includePolicy === right.includePolicy &&
+    left.policyUsing === right.policyUsing &&
+    left.includeMatview === right.includeMatview &&
+    left.matviewWhere === right.matviewWhere &&
+    left.includeSequence === right.includeSequence &&
+    left.sequenceIncrement === right.sequenceIncrement &&
+    left.extension === right.extension
   );
+}
+
+/**
+ * Short description of how catalog B differs from catalog A.
+ *
+ * @param pair - One generated pair
+ * @returns Added, removed, and changed objects
+ */
+export function describePair(pair: MigrationPair): string {
+  const before = new Map(pair.before.map((object) => [identityKey(object.identity), object]));
+  const after = new Map(pair.after.map((object) => [identityKey(object.identity), object]));
+  const added: string[] = [];
+  const removed: string[] = [];
+  const changed: string[] = [];
+  for (const [key, object] of after) {
+    const prior = before.get(key);
+    if (prior === undefined) added.push(labelOf(object));
+    else if (JSON.stringify(prior.definition) !== JSON.stringify(object.definition)) {
+      changed.push(labelOf(object));
+    }
+  }
+  for (const [key, object] of before) {
+    if (!after.has(key)) removed.push(labelOf(object));
+  }
+  return `added [${added.sort().join(", ")}]; removed [${removed.sort().join(", ")}]; changed [${changed.sort().join(", ")}]`;
+}
+
+function labelOf(object: CatalogObject): string {
+  const parent = parentName(object);
+  return parent === undefined
+    ? `${object.kind} ${object.identity.name}`
+    : `${object.kind} ${parent}.${object.identity.name}`;
 }
 
 function mulberry32(seed: number): () => number {

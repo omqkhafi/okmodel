@@ -20,6 +20,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Lint and format use oxlint and oxfmt. Layer and purity checks read imports from the Oxc AST.
 - Declaration emit no longer requires `isolatedDeclarations`, so exported types may be inferred.
 - The package description names typed queries, safe migrations, and replica-aware routing. The README says the API has not stabilised yet.
+- The migrations spike property test defaults to 100 catalog pairs during `bun run check`. `OKM_MIGRATION_CASES` raises that count. Pairs can now include policies, materialized views, sequences, and extensions the database can install.
 - Changelog area headings are the layer names: `contracts`, `dialects`, `adapters`, `runtime`, `tooling`, and `docs`.
 
 ### ✨ Added
