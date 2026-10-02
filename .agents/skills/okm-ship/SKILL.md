@@ -97,8 +97,20 @@ bun run bump release
 
 Do **not** invent `## v{next}` yourself. `patch`, `minor`, `major`, and `--set` remain available; they still promote the changelog. `--dry-run` prints the plan and writes nothing.
 
+## Engineering standards (D129)
+
+Before the execution report, review the change against these rules. The report states the measurements.
+
+- Built for performance, speed, lightness, and cold start, not only to pass tests.
+- Nothing enters the runtime entry (`src/contracts/index.ts`) without need. Tooling stays out. No module-level computation. Lazy work. `sideEffects: false`.
+- No duplicated logic: one helper, one place.
+- Small, obvious public API. Clear names. Precise types. Actionable errors.
+- No avoidable allocation or repeated work on hot paths.
+- Report runtime entry size (minified and gzip), cold import, and any type-cost change.
+
 ## Done
 
 - [ ] Notes under `## Unreleased` → matching `###` group and `####` area when the group is large
 - [ ] Nothing appended under a released `## v…` section
 - [ ] `bun run bump next` has run, or `bun run bump release` on a gate prompt
+- [ ] Self-review against the engineering standards, with runtime entry size, cold import, and type-cost change in the report

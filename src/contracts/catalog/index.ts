@@ -1,5 +1,9 @@
 /**
- * Catalog contract: envelope, identity, names, order, and canonical JSON.
+ * Catalog contract for the runtime entry: envelope, identity, and names.
+ *
+ * Document checks, serialisation, parsing, hashing, and dependency order live
+ * in `document.ts` and `order.ts`. They are tooling and are not re-exported
+ * from the package entry.
  */
 
 export {
@@ -77,14 +81,3 @@ export {
   type SequenceInput,
   type TableInput,
 } from "./object.js";
-
-export { dependencyOrder } from "./order.js";
-
-export {
-  catalog,
-  catalogHash,
-  creationOrder,
-  parseCatalog,
-  renameColumn,
-  serializeCatalog,
-} from "./document.js";

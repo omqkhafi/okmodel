@@ -20,7 +20,7 @@ import {
   templateNamespace,
 } from "./identity.js";
 import { compareText, column, constraint, index, sequence, table } from "./object.js";
-import { dependencyOrder } from "./order.js";
+import { dependencyOrder, indexObjects, orderIndexed } from "./order.js";
 import type {
   Catalog,
   CatalogObject,
@@ -49,23 +49,20 @@ import { CATALOG_VERSION, OWNERS } from "./types.js";
  * @returns A catalog document
  */
 export function catalog(objects: readonly CatalogObject[]): Catalog {
-  const keys = new Set<string>();
   for (const object of objects) {
     if (object.kind !== object.identity.kind) {
       catalogError("OKM1020", `${identityLabel(object.identity)} has kind ${object.kind}.`);
     }
-    const key = identityKey(object.identity);
-    if (keys.has(key)) {
-      catalogError("OKM1023", `Duplicate identity for ${identityLabel(object.identity)}.`);
-    }
-    keys.add(key);
+  }
+  const indexed = indexObjects(objects);
+  const keys = new Set<string>();
+  for (const item of indexed) {
+    keys.add(item.key);
   }
   assertForeignKeys(objects, keys);
-  dependencyOrder(objects);
-  const sorted = [...objects].sort((left, right) =>
-    compareText(identityKey(left.identity), identityKey(right.identity)),
-  );
-  return { version: CATALOG_VERSION, objects: sorted };
+  orderIndexed(indexed);
+  const sorted = [...indexed].sort((left, right) => compareText(left.key, right.key));
+  return { version: CATALOG_VERSION, objects: sorted.map((item) => item.object) };
 }
 
 /**
@@ -123,11 +120,13 @@ export function renameColumn(
  * @returns Canonical text
  */
 export function serializeCatalog(source: Catalog): string {
-  const objects = [...source.objects].sort((left, right) =>
-    compareText(identityKey(left.identity), identityKey(right.identity)),
-  );
+  const indexed = source.objects.map((object) => ({
+    object,
+    key: identityKey(object.identity),
+  }));
+  indexed.sort((left, right) => compareText(left.key, right.key));
   return canonicalJson({
-    objects: objects.map((object) => objectToJson(object)),
+    objects: indexed.map((item) => objectToJson(item.object)),
     version: source.version,
   });
 }
@@ -156,15 +155,18 @@ export function parseCatalog(text: string): Catalog {
   try {
     parsed = JSON.parse(text);
   } catch {
-    catalogError("OKM1020", "Catalog JSON is not valid.");
+    catalogError("OKM1020", "Catalog text is not valid JSON.");
   }
   const record = requireRecord(parsed, "catalog");
   rejectUnknown(record, ["objects", "version"], "catalog");
   if (record.version !== CATALOG_VERSION) {
-    catalogError("OKM1020", `Catalog version ${String(record.version)} is not supported.`);
+    catalogError(
+      "OKM1020",
+      `Catalog version ${String(record.version)} cannot be read. This build reads version ${String(CATALOG_VERSION)}.`,
+    );
   }
   if (!Array.isArray(record.objects)) {
-    catalogError("OKM1020", "Catalog objects are not an array.");
+    catalogError("OKM1020", "Catalog field objects must be an array.");
   }
   return catalog(record.objects.map((item) => parseObject(item)));
 }
@@ -363,10 +365,17 @@ function retarget(
   return edges.map((edge) => (identityKey(edge.target) === fromKey ? to : edge.target));
 }
 
+function dependencyJson(edges: readonly DependencyEdge[]): Json[] {
+  const indexed = edges.map((edge) => ({
+    key: identityKey(edge.target),
+    target: identityToJson(edge.target),
+  }));
+  indexed.sort((left, right) => compareText(left.key, right.key));
+  return indexed.map((item) => ({ target: item.target }));
+}
+
 function objectToJson(object: CatalogObject): Json {
-  const dependencies = [...object.dependencies]
-    .sort((left, right) => compareText(identityKey(left.target), identityKey(right.target)))
-    .map((edge) => ({ target: identityToJson(edge.target) }));
+  const dependencies = dependencyJson(object.dependencies);
   return {
     definition: definitionToJson(object),
     dependencies,
@@ -384,7 +393,7 @@ function definitionToJson(object: CatalogObject): Json {
       if (partition === undefined) {
         return {};
       }
-      return { partition: { columns: [...partition.columns], method: partition.method } };
+      return { partition: { columns: partition.columns, method: partition.method } };
     }
     case "column": {
       const definition = object.definition;
@@ -410,7 +419,7 @@ function definitionToJson(object: CatalogObject): Json {
     case "index": {
       const definition = object.definition;
       return {
-        columns: [...definition.columns],
+        columns: definition.columns,
         nameKey: definition.nameKey,
         unique: definition.unique,
         ...(definition.expression !== undefined ? { expression: definition.expression } : {}),
@@ -421,7 +430,7 @@ function definitionToJson(object: CatalogObject): Json {
       const definition = object.definition;
       const references = definition.references;
       return {
-        columns: [...definition.columns],
+        columns: definition.columns,
         constraintKind: definition.constraintKind,
         deferrable: definition.deferrable,
         initially: definition.initially,
@@ -431,7 +440,7 @@ function definitionToJson(object: CatalogObject): Json {
         ...(references !== undefined
           ? {
               references: {
-                columns: [...references.columns],
+                columns: references.columns,
                 parent: {
                   name: references.parent.name,
                   namespace: namespaceToJson(references.parent.namespace),
@@ -462,7 +471,10 @@ function parseObject(value: unknown): CatalogObject {
   );
   const kind = requireString(record.kind, "kind");
   if (!isBuiltKind(kind)) {
-    catalogError("OKM1020", `Kind ${kind} is not part of this catalog.`);
+    catalogError(
+      "OKM1020",
+      `Kind ${kind} is not built yet. Built kinds are table, column, index, constraint, and sequence.`,
+    );
   }
   const identity = parseIdentity(record.identity);
   if (identity.kind !== kind) {
@@ -496,7 +508,7 @@ function parseTable(
   dependencies: readonly ObjectIdentity[],
 ): CatalogObject {
   if (identity.kind !== "table") {
-    catalogError("OKM1020", "Table identity is not a table.");
+    catalogError("OKM1020", `Table object identity is ${identity.kind}, not a table.`);
   }
   rejectUnknown(definition, ["partition"], "table definition");
   const partition = definition.partition;
@@ -518,7 +530,7 @@ function parseColumn(
   dependencies: readonly ObjectIdentity[],
 ): CatalogObject {
   if (identity.kind !== "column") {
-    catalogError("OKM1020", "Column identity is not a column.");
+    catalogError("OKM1020", `Column object identity is ${identity.kind}, not a column.`);
   }
   rejectUnknown(
     definition,
@@ -551,7 +563,7 @@ function parseIndex(
   dependencies: readonly ObjectIdentity[],
 ): CatalogObject {
   if (identity.kind !== "index") {
-    catalogError("OKM1020", "Index identity is not an index.");
+    catalogError("OKM1020", `Index object identity is ${identity.kind}, not an index.`);
   }
   rejectUnknown(
     definition,
@@ -584,7 +596,7 @@ function parseConstraint(
   dependencies: readonly ObjectIdentity[],
 ): CatalogObject {
   if (identity.kind !== "constraint") {
-    catalogError("OKM1020", "Constraint identity is not a constraint.");
+    catalogError("OKM1020", `Constraint object identity is ${identity.kind}, not a constraint.`);
   }
   rejectUnknown(
     definition,
@@ -607,11 +619,14 @@ function parseConstraint(
     constraintKind !== "foreignKey" &&
     constraintKind !== "check"
   ) {
-    catalogError("OKM1020", `Constraint kind ${constraintKind} is not known.`);
+    catalogError(
+      "OKM1020",
+      `Constraint kind ${constraintKind} must be primaryKey, unique, foreignKey, or check.`,
+    );
   }
   const initially = requireString(definition.initially, "initially");
   if (initially !== "immediate" && initially !== "deferred") {
-    catalogError("OKM1020", `Constraint initially ${initially} is not known.`);
+    catalogError("OKM1020", `Constraint initially ${initially} must be immediate or deferred.`);
   }
   const references = definition.references;
   return constraint({
@@ -641,12 +656,12 @@ function parseSequence(
   dependencies: readonly ObjectIdentity[],
 ): CatalogObject {
   if (identity.kind !== "sequence") {
-    catalogError("OKM1020", "Sequence identity is not a sequence.");
+    catalogError("OKM1020", `Sequence object identity is ${identity.kind}, not a sequence.`);
   }
   rejectUnknown(definition, ["cycle", "dataType", "increment", "start"], "sequence definition");
   const dataType = requireString(definition.dataType, "sequence type");
   if (dataType !== "smallint" && dataType !== "integer" && dataType !== "bigint") {
-    catalogError("OKM1020", `Sequence type ${dataType} is not known.`);
+    catalogError("OKM1020", `Sequence type ${dataType} must be smallint, integer, or bigint.`);
   }
   return sequence({
     namespace: identity.namespace,
@@ -722,7 +737,7 @@ function parseIdentity(value: unknown): ObjectIdentity {
       rejectUnknown(record, ["kind", "name"], "identity");
       return { kind, name: requireString(record.name, "name") };
     default:
-      catalogError("OKM1020", `Identity kind ${kind} is not known.`);
+      catalogError("OKM1020", `Identity kind ${kind} is not a catalog identity.`);
   }
 }
 
@@ -737,7 +752,7 @@ function parseNamespace(value: unknown): Namespace {
     rejectUnknown(record, ["form", "pattern"], "namespace");
     return templateNamespace(requireString(record.pattern, "namespace template"));
   }
-  catalogError("OKM1020", `Namespace form ${form} is not known.`);
+  catalogError("OKM1020", `Namespace form ${form} must be static or template.`);
 }
 
 function parseRef(value: unknown): ObjectRef {
@@ -758,7 +773,7 @@ function parseGrantObject(value: unknown): {
   rejectUnknown(record, ["kind", "name", "namespace"], "grant object");
   const kind = requireString(record.kind, "grant object kind");
   if (kind !== "table" && kind !== "sequence" && kind !== "namespace") {
-    catalogError("OKM1020", `Grant object kind ${kind} is not known.`);
+    catalogError("OKM1020", `Grant object kind ${kind} must be table, sequence, or namespace.`);
   }
   return {
     kind,
@@ -775,7 +790,7 @@ function parsePartition(value: unknown): {
   rejectUnknown(record, ["columns", "method"], "partition");
   const method = requireString(record.method, "partition method");
   if (method !== "range" && method !== "list" && method !== "hash") {
-    catalogError("OKM1020", `Partition method ${method} is not known.`);
+    catalogError("OKM1020", `Partition method ${method} must be range, list, or hash.`);
   }
   return { method, columns: requireStrings(record.columns, "partition columns") };
 }
@@ -810,7 +825,7 @@ function parseGenerated(value: unknown): { readonly stored: boolean; readonly ex
 function parseOwner(value: unknown): Owner {
   const owner = requireString(value, "owner");
   if (!isOwner(owner)) {
-    catalogError("OKM1020", `Owner ${owner} is not known.`);
+    catalogError("OKM1020", `Owner ${owner} must be managed, external, or ignored.`);
   }
   return owner;
 }
@@ -821,14 +836,14 @@ function parseProvenance(value: unknown): Provenance {
   const origin = requireString(record.origin, "provenance origin");
   const name = requireString(record.name, "provenance name");
   if (origin !== "file" && origin !== "trait" && origin !== "extension") {
-    catalogError("OKM1020", `Provenance origin ${origin} is not known.`);
+    catalogError("OKM1020", `Provenance origin ${origin} must be file, trait, or extension.`);
   }
   return { origin, name };
 }
 
 function parseDependencies(value: unknown): readonly ObjectIdentity[] {
   if (!Array.isArray(value)) {
-    catalogError("OKM1020", "Dependencies are not an array.");
+    catalogError("OKM1020", "Dependencies must be an array of targets.");
   }
   return value.map((item) => {
     const record = requireRecord(item, "dependency");

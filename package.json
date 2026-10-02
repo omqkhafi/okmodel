@@ -1,6 +1,6 @@
 {
   "name": "okmodel",
-  "version": "0.1.0-next.14",
+  "version": "0.1.0-next.15",
   "description": "Catalog-first TypeScript ORM: typed queries, safe migrations and replica-aware routing. PostgreSQL first, zero runtime dependencies.",
   "license": "Apache-2.0",
   "author": "Omq Khafi",
@@ -62,6 +62,7 @@
     "db:up": "bun ./packages/harness/src/docker-cli.ts up",
     "db:down": "bun ./packages/harness/src/docker-cli.ts down",
     "bench": "bun ./packages/bench/src/run.ts",
+    "catalog-bench": "bun ./scripts/catalog-bench.ts",
     "attest": "ATTEST_shouldFormat=0 ATTEST_updateSnapshots=0 bun ./packages/attest/src/measure.bench.ts",
     "publish:dry": "bun publish --dry-run",
     "prepublishOnly": "bun run build"

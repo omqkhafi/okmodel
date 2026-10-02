@@ -5,20 +5,14 @@ import {
   KIND_OPERATIONS,
   OBJECT_KINDS,
   POSTGRES_IDENTIFIER_MAX_BYTES,
-  catalog,
-  catalogHash,
   column,
   constraint,
-  creationOrder,
   deterministicName,
   fitIdentifier,
   identifierLimitApplies,
   index,
-  parseCatalog,
-  renameColumn,
   resolveNamespace,
   sequence,
-  serializeCatalog,
   staticNamespace,
   table,
   templateNamespace,
@@ -27,6 +21,14 @@ import {
   type ObjectRef,
   type Provenance,
 } from "../src/contracts/index.js";
+import {
+  catalog,
+  catalogHash,
+  creationOrder,
+  parseCatalog,
+  renameColumn,
+  serializeCatalog,
+} from "../src/contracts/catalog/document.js";
 
 const provenance: Provenance = { origin: "file", name: "db/tasks.ts" };
 const ns = staticNamespace("public");
