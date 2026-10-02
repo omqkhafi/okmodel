@@ -1,19 +1,20 @@
 import { expect } from "bun:test";
 
+import { compareLsn } from "../packages/harness/src/lsn.js";
+import { openPostgres } from "../packages/harness/src/postgres.js";
 import {
-  compareLsn,
-  openPostgres,
   pauseWalReplay,
-  primaryUrl,
   readInsertLsn,
   readReplayLsn,
-  replicaUrl,
   resumeWalReplay,
   waitForReplayLsn,
-  type ReplicaName,
-} from "../packages/harness/src/index.js";
-
-import { loadPostgresGate, postgresTest, requirePostgresWhenAsked } from "./postgres-gate.js";
+} from "../packages/harness/src/replication.js";
+import { primaryUrl, replicaUrl, type ReplicaName } from "../packages/harness/src/topology.js";
+import {
+  loadPostgresGate,
+  postgresTest,
+  requirePostgresWhenAsked,
+} from "../packages/harness/src/postgres-test.js";
 
 const decision = await loadPostgresGate();
 requirePostgresWhenAsked(decision);

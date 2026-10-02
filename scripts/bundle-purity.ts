@@ -1,0 +1,195 @@
+/**
+ * Fails when a runtime bundle contains an npm package, or when `src/` imports
+ * the harness barrel.
+ *
+ * The barrel re-exports drivers. A router that imports `@okmodel/harness`
+ * pulls those packages into the runtime bundle. Deep imports of one harness
+ * file are not the barrel.
+ */
+
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, relative, resolve, sep } from "node:path";
+
+import { listTypeScriptFiles } from "./files.js";
+import { exitOnProblems } from "./report.js";
+import { repoRoot } from "./root.js";
+import { moduleSpecifiers } from "./specifiers.js";
+
+/** Published library entries that must not contain an npm package. */
+export const RUNTIME_ENTRIES = ["src/contracts/index.ts", "src/dialects/pg/index.ts"] as const;
+
+const BARREL_SPECIFIERS = new Set([
+  "@okmodel/harness",
+  "@okmodel/harness/index.js",
+  "@okmodel/harness/index.ts",
+]);
+
+/**
+ * Reports `src/` files that import the harness barrel.
+ *
+ * @param root - Repository root
+ * @returns Problem lines
+ */
+export function harnessBarrelProblems(root: string): readonly string[] {
+  return scanHarnessBarrel(join(root, "src"), root);
+}
+
+/**
+ * Reports files under `source` that import the harness barrel.
+ *
+ * @param source - Directory to scan
+ * @param root - Path prefix stripped from problem lines
+ * @returns Problem lines
+ */
+export function scanHarnessBarrel(source: string, root: string): readonly string[] {
+  let files: readonly string[];
+  try {
+    files = listTypeScriptFiles(source);
+  } catch (error) {
+    return [`bundle-purity: cannot read ${source}: ${messageOf(error)}`];
+  }
+  const problems: string[] = [];
+  for (const file of files) {
+    const text = readFileSync(file, "utf8");
+    for (const specifier of moduleSpecifiers(text)) {
+      if (isHarnessBarrel(file, specifier)) {
+        problems.push(
+          `${relative(root, file)} imports the harness barrel (${specifier}). Import one harness file, not @okmodel/harness.`,
+        );
+      }
+    }
+  }
+  return problems;
+}
+
+/**
+ * Reports npm packages named in a `bun build --metafile` document.
+ *
+ * @param metafile - Parsed metafile JSON
+ * @param label - Entry the bundle was built from
+ * @returns Problem lines
+ */
+export function npmPackageProblems(metafile: unknown, label: string): readonly string[] {
+  const paths = inputPaths(metafile);
+  const packages = new Set<string>();
+  for (const path of paths) {
+    const name = npmPackageName(path);
+    if (name !== undefined) packages.add(name);
+  }
+  if (packages.size === 0) return [];
+  return [`bundle-purity: ${label} contains npm packages: ${[...packages].sort().join(", ")}`];
+}
+
+/**
+ * Bundles the runtime entries and a harness-barrel probe.
+ *
+ * The probe imports `compareLsn` from `@okmodel/harness`. That import is the
+ * mistake the router made. The barrel must still bundle with no npm package,
+ * and `src/` must not contain the import.
+ *
+ * @param root - Repository root
+ * @returns Problem lines
+ */
+export function checkBundlePurity(root: string): readonly string[] {
+  const problems: string[] = [...harnessBarrelProblems(root)];
+  for (const entry of RUNTIME_ENTRIES) {
+    problems.push(...bundleFile(root, join(root, entry), entry));
+  }
+  problems.push(...bundleHarnessProbe(root));
+  return problems;
+}
+
+function bundleHarnessProbe(root: string): readonly string[] {
+  const entry = join(root, "tests", "fixtures", "bundle-purity", "src", "router.ts");
+  return bundleFile(root, entry, "harness barrel probe");
+}
+
+function bundleFile(root: string, entry: string, label: string): readonly string[] {
+  const dir = mkdtempSync(join(tmpdir(), "okm-bundle-"));
+  const metafile = join(dir, "meta.json");
+  const outfile = join(dir, "out.js");
+  try {
+    const proc = Bun.spawnSync(
+      [
+        "bun",
+        "build",
+        entry,
+        "--target",
+        "node",
+        "--minify",
+        "--outfile",
+        outfile,
+        `--metafile=${metafile}`,
+      ],
+      { cwd: root, stdout: "pipe", stderr: "pipe" },
+    );
+    if (proc.exitCode !== 0) {
+      return [
+        `bundle-purity: bun build ${label} exited ${String(proc.exitCode)}\n${proc.stderr.toString()}`,
+      ];
+    }
+    const parsed: unknown = JSON.parse(readFileSync(metafile, "utf8"));
+    return npmPackageProblems(parsed, label);
+  } catch (error) {
+    return [`bundle-purity: ${label}: ${messageOf(error)}`];
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function isHarnessBarrel(file: string, specifier: string): boolean {
+  if (BARREL_SPECIFIERS.has(specifier)) return true;
+  if (!specifier.startsWith(".")) return false;
+  const target = resolve(join(file, ".."), specifier);
+  const normalized = target.split(sep).join("/");
+  return (
+    normalized.endsWith("/packages/harness/src/index.ts") ||
+    normalized.endsWith("/packages/harness/src/index.js")
+  );
+}
+
+function inputPaths(metafile: unknown): readonly string[] {
+  if (!isRecord(metafile)) return [];
+  const paths: string[] = [];
+  collectPaths(metafile.inputs, paths);
+  const outputs = metafile.outputs;
+  if (isRecord(outputs)) {
+    for (const output of Object.values(outputs)) {
+      if (isRecord(output)) collectPaths(output.inputs, paths);
+    }
+  }
+  return paths;
+}
+
+function collectPaths(value: unknown, paths: string[]): void {
+  if (!isRecord(value)) return;
+  for (const key of Object.keys(value)) {
+    paths.push(key);
+  }
+}
+
+function npmPackageName(path: string): string | undefined {
+  const marker = "node_modules/";
+  const at = path.lastIndexOf(marker);
+  if (at === -1) return undefined;
+  const rest = path.slice(at + marker.length);
+  const parts = rest.split("/");
+  const scope = parts[0];
+  const name = parts[1];
+  if (scope === undefined) return undefined;
+  if (scope.startsWith("@") && name !== undefined) return `${scope}/${name}`;
+  return scope;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+if (import.meta.main) {
+  exitOnProblems(checkBundlePurity(repoRoot()));
+}

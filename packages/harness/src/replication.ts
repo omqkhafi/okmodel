@@ -127,7 +127,14 @@ async function waitUntil(
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (await predicate()) return;
-    await Bun.sleep(50);
+    await pause(50);
   }
   throw new Error(message);
+}
+
+/** Gap between probes. The caller already awaits the condition itself. */
+function pause(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }

@@ -1,6 +1,6 @@
-# OKModel — API design (draft 17)
+# OKModel — API design (draft 18)
 
-Status: design draft, 2026-09-30. Not yet approved for implementation. Supersedes drafts 1–16 of this file and the API sections of `orm-research-design.md`. Evidence for the draft-4 changes is in `okmodel-gap-research.md`.
+Status: design draft, 2026-09-30. Not yet approved for implementation. Draft 18 applies the M0 gate decisions D115–D127 (evidence: `docs/m0-findings.md` in the repository). Supersedes drafts 1–17 of this file and the API sections of `orm-research-design.md`. Evidence for the draft-4 changes is in `okmodel-gap-research.md`.
 
 Name: **OKModel** (short **OKM**). Package `okmodel` on npm and repository `omqkhafi/okmodel`, CLI bins `okm` and `okmodel` (same program), error class `OkmError`, error codes `OKM1xxx`, config file `okm.config.ts`, generated folder `.okm/`, metadata table `okm_meta`. The bin names are not npm package names, so a bare `bunx okm` without a local or global install could fetch an unrelated package; the README tells developers to install first (`bun add -d okmodel`, then `bunx okm`, or a global install).
 
@@ -10,7 +10,7 @@ Toolchain: **TypeScript 7** (the native compiler, still invoked as `tsc`) for ty
 
 ## 1. Decisions log
 
-Moved to `okmodel-decisions.md` (D1–D109). This file is the normative spec; every section states a rule, an example and the guard that enforces it.
+Moved to `okmodel-decisions.md` (D1–D127). This file is the normative spec; every section states a rule, an example and the guard that enforces it.
 
 ## 2. Design rules and the internal goal
 
@@ -310,12 +310,12 @@ TimescaleDB, ParadeDB and pg_partman add catalog objects rather than types and a
 | Change | SQL | Class |
 |---|---|---|
 | add | `CREATE EXTENSION ... VERSION ... SCHEMA ...` | expand |
-| raise `version` | `ALTER EXTENSION ... UPDATE TO ...`, with the path checked in `pg_extension_update_paths` at planning time | expand |
-| move schema | `ALTER EXTENSION ... SET SCHEMA` (relocatable only) | contract |
+| raise `version` | `ALTER EXTENSION ... UPDATE TO ...`; the path is checked in `pg_extension_update_paths` at planning time when a server is attached; an offline plan marks the step `path-unverified` and apply preflight checks it before any step | expand |
+| move schema | `ALTER EXTENSION ... SET SCHEMA` (relocatable only; a non-relocatable extension is refused at planning, OKM1814) | contract |
 | remove | `DROP EXTENSION`, never `CASCADE`; refused by the linter while a column or index depends on it | contract |
 | lower `version` | not supported by Postgres | refused (OKM1814) |
 
-Objects created by an extension are recorded as `external` and never diffed. `CREATE EXTENSION` runs from the migration role only; the application never installs anything. `okm migrate plan` and `okm doctor` compare the declaration with `pg_available_extensions` on the connected server, so an unavailable extension fails at planning, not at deploy. Object names are schema-qualified; nothing depends on `search_path`.
+Objects that belong to an extension (found through `pg_depend` deptype `e`) are excluded from introspection: never loaded, never diffed. Objects declared in `provides` stay `external`. The extension version is unpinned by default: the installed version is recorded for information and drift ignores it unless the declaration pins one (D118). `CREATE EXTENSION` runs from the migration role only; the application never installs anything. `okm migrate plan` and `okm doctor` compare the declaration with `pg_available_extensions` on the connected server, so an unavailable extension fails at planning, not at deploy. Object names are schema-qualified; nothing depends on `search_path`.
 
 **Runtime settings** (`hnsw.ef_search`, `pg_trgm.similarity_threshold`) are per operation, not per connection: `vector.cosine(col, q, { efSearch: 100 })` wraps the statement in a short transaction with `SET LOCAL`, which stays correct behind poolers in transaction mode.
 
@@ -360,7 +360,7 @@ L0 contracts  catalog, identity, hashing, logical query types, Driver and Dialec
 ### 5.1 The catalog
 
 - `schema()` produces one deterministic catalog. It is the single source for types, runtime metadata, query compilation, migrations, capability checks, error mapping, diagnostics and tooling.
-- The catalog models every database object with one contract (kind, identity, owner, canonical definition, dependencies, provenance; section 5.7). The object family is tables, columns, indexes, constraints, sequences, extensions, views, materialized views, functions, triggers, policies and grants; procedures, aggregates, operators, casts, event triggers, foreign tables and partitions fit the same contract and are checked in the M0 spike.
+- The catalog models every database object with one contract (kind, identity, owner, canonical definition, dependencies, provenance; section 5.7). The object family is tables, columns, indexes, constraints, sequences, extensions, views, materialized views, functions, triggers, policies and grants; partitioned tables (range, list, hash), roles and default privileges are part of the family. M0 confirmed the contract for table, column, index, constraint, sequence, extension, view, materialized view, function, trigger, policy, domain, partitioned table, role, grant and default privilege; procedures, aggregates, operators, casts, event triggers and foreign tables fit the same contract but are not yet checked. Copied partition primary keys and inherited indexes are not catalog objects. The contract is frozen (D116).
 - Every object has a stable identity. Constraint and index names are generated deterministically (dialect identifier limits handled with a hash suffix) and stored in the catalog; renaming a field does not silently rename its constraints. Error mapping, migration diffs and introspection rely on these names.
 - Ownership is part of the catalog contract from M1, for every object kind (tables, views, materialized views, functions, triggers, grants, extension-owned objects). M1 implements `managed` and `external`; M2 adds `ignored` and the explicit `owner:` declaration on tables. `managed` (OKModel owns the DDL), `external` (known and queryable, never altered: PostGIS tables, DBA-created indexes, views owned by another team), `ignored` (invisible to diffs). `table(name, fields, { owner: "external" })`.
 
@@ -377,7 +377,7 @@ API call
   → decode, projection, hookm
 ```
 
-- **Final safety verification** runs after every contribution and before planning. It re-checks: tenant predicate on every tenant table touched, guarded fields absent from writes, hidden fields absent from default projections, bounds on reads and to-many includes, filters on writes, archive rules (active set by default, cascade contract), every value parameterised, capability requirements. A violation throws OKM1190 naming the rule and the contribution that caused it. Only the explicit escape hatches (`unscoped(reason)`, `.all(reason)`, `.trusted(reason)`, `allow`) pass, and they are recorded in the plan.
+- **Final safety verification** runs after every contribution and before planning. It re-checks: tenant predicate on every tenant table touched, guarded fields absent from writes, hidden fields absent from default projections, bounds on reads and to-many includes, filters on writes, archive rules (active set by default, cascade contract), every value parameterised, capability requirements. A violation throws OKM1190 with `violations`: every violated rule in a stable sorted order, each naming the rule and the contribution that caused it (`rule` and `contribution` repeat the first). Caller filters are recorded with provenance `caller` before presets run, so contributions can add predicates but never remove one (D125, D126). Only the explicit escape hatches (`unscoped(reason)`, `.all(reason)`, `.trusted(reason)`, `allow`) pass, and they are recorded in the plan.
 - Hookm are read-only in 0.x; nothing outside the pipeline can rewrite a query.
 
 ### 5.3 API taxonomy and guarantees
@@ -479,12 +479,14 @@ Raw SQL is not a database object. A declared view, function, trigger or grant is
 | column, index, constraint | `(parent, name)`, deterministic names |
 | function | `(schema, name, argTypes[])`, so overloads are distinct |
 | trigger, policy | `(table, name)` |
-| grant | `(role, object, privilege)` |
+| grant | `(role, object, privilege)`, a structured key exempt from the 63-byte rule |
+| default privilege | `(forRole, namespace, objectKind, grantee, privilege)` |
+| role | `name` (cluster object) |
 | extension | `name` |
 
 **Templates in identity.** Snapshots and diffs store the logical identity, including the namespace template, never the concrete tenant names. A migration is therefore written once and resolved to concrete namespaces at execution time (section 19.5).
 
-Every node carries: owner (`managed` / `external` / `ignored`), a canonical definition (its hash drives diff and drift), dependency edges at object or **column** granularity, and provenance (which trait, extension or file contributed it). Each kind declares its operations: create, replace (when compatible), alter, drop, and recreate-with-dependents.
+Every node carries: owner (`managed` / `external` / `ignored`), a canonical definition: the normalised structure, never authoring text (view, materialized view and function bodies are judged by a scratch reprint); its hash drives diff and drift (D117), dependency edges at object or **column** granularity, and provenance (which trait, extension or file contributed it). Each kind declares its operations: create, replace (when compatible), alter, drop, and recreate-with-dependents.
 
 **Views.** Defined with the OKModel query builder, so column types and dependencies are inferred like `find`; alternatively SQL with declared columns, verified against a scratch database where dependencies are read from `pg_depend`. Views are read-only in the client: `db.views.activeTasks.find(...)`.
 
@@ -494,7 +496,7 @@ Every node carries: owner (`managed` / `external` / `ignored`), a canonical defi
 
 **Triggers.** `trigger(name, { on, timing, events, level, when, calls })` in the schema's `triggers` list. Dependencies: the table (and `UPDATE OF` columns) and the function. Traits contribute triggers and functions with provenance (`timestamps({ enforce: "trigger" })`, `auditable()`), and `inspect()` and `okm doctor` list the triggers that affect a table.
 
-**Grants.** With `roles: { migration, app }` the catalog emits `GRANT` and `ALTER DEFAULT PRIVILEGES` for the application role on every managed object, so a new table is reachable without manual steps; fine-grained grants come in M2.
+**Grants.** With `roles: { migration, app }` the catalog emits `GRANT` and `ALTER DEFAULT PRIVILEGES FOR ROLE <migration role>` for the application role on every managed object, so a new table is reachable without manual steps; fine-grained grants come in M2. Migrations run as the migration role: a login role, or the runner issues `SET ROLE` once at session start, recorded in the run report and never inside a plan. Roles are cluster objects: a role named in `roles` must exist and is `external` by default (checked by `okm doctor`); a declared managed role is created if missing (existence read from `pg_roles`, no `IF NOT EXISTS`), altered in place and never dropped by a plan. `CREATEROLE` is checked in doctor and apply preflight (D119).
 
 **Planning rules.**
 
@@ -652,7 +654,7 @@ type TaskInput = Input<"tasks">; // before transforms
 type TaskPatch = Update<"tasks">;
 ```
 
-Row types are either inferred from table files or emitted by `okm dev` into `.okm/types.d.ts`; the M0 spike decides (D25).
+Row types are emitted by default into `.okm/types.d.ts` by `okm build` and `okm dev` (config `types: "emitted"` or `"inferred"`, default emitted). Inferred is the zero-build mode; both give the same shapes (a CI test with `expectTypeOf`). Emitted names derive from table names (`Tasks`, `TasksInsert`, `TasksUpdate`); duplicate table names are rejected at `schema()` construction and by `okm check` (OKM1023), and unknown references are reported at build (OKM1020). M0 measured 0 consumer instantiations for emitted against 53,410 inferred at 200 tables (D120); editor hover is unmeasured, so P12 includes a manual hover and autocomplete check.
 
 ## 7. Validation
 
@@ -681,6 +683,7 @@ Row types are either inferred from table files or emitted by `okm dev` into `.ok
 - **Strategies.** `archivable({ strategy: "column" })` (default, M1) keeps archived rows in the same table with `archivedAt` and `archiveId`, so migrations apply to them automatically. `strategy: "table"` (moving rows to a shared archive table) is deferred: archived snapshots would keep the table's old shape and break restore after migrations; it ships only once snapshots can follow migrations, with the same public contract.
 - **`archiveId` is provenance.** Every `archive()` call creates a new `archiveId` shared by every row it archives, including cascaded children. `archive()` returns `{ count, archiveId }`. `restore()` clears `archivedAt` and `archiveId`. Archive → restore → archive produces two different ids; `archiveId` never identifies a record.
 - **Cascade.** Children listed in `cascade` are archived in the same operation with the same `archiveId`. `restore` of a row brings back only the rows that carry its `archiveId`; a child archived earlier on its own stays archived. `restore({ archiveId })` restores a whole operation.
+- **Unique conflicts.** A restore that would violate a unique now held by an active row fails with the mapped `unique` error naming the key.
 - **Parents first.** Restoring a row whose referenced parent is still archived fails (category `input`, naming the parent); restore the parent's operation instead. Same rule for every strategy.
 - **Foreign-key contract.** With the column strategy archived rows stay in place, so database FK actions never fire on `archive`. With the table strategy (when it ships), every FK pointing at an archivable table whose delete action is not `RESTRICT`/`NO ACTION` (`CASCADE`, `SET NULL`, `SET DEFAULT`) must be listed in `cascade`, otherwise schema validation fails naming the child table, the FK and its action (OKM1051).
 - **Includes.** A to-one include of an archived parent returns `null` unless `withArchived()`; to-many includes exclude archived children.
@@ -753,7 +756,7 @@ for await (const row of scoped.tasks.find({ where: { listId } }).all("export").s
 ### 10.1 Filters with tagged operators
 
 ```ts
-import { lt, lte, gt, between, startsWith, contains, inList, not, has, none, every, or } from "okmodel/pg";
+import { eq, lt, lte, gt, between, startsWith, contains, inList, not, has, none, every, or } from "okmodel/pg";
 
 const today = await scoped.tasks.pending().ownedBy(userId).find({
   where: {
@@ -772,7 +775,7 @@ const today = await scoped.tasks.pending().ownedBy(userId).find({
 ```
 
 - A plain value means equality; `null` means `IS NULL`.
-- Operators and relation filters are tagged values created by helpers. JSON cannot create them, so request data can never add an operator or traverse a relation. A plain object where a value is expected is rejected at runtime (OKM1121).
+- Operators and relation filters are tagged values created by helpers. JSON cannot create them, so request data can never add an operator or traverse a relation. A plain object where a value is expected is rejected at runtime (OKM1121, its fix names `eq`); `eq(value)` is the equality form for object (json, jsonb) values. An identifier that fails the rules (length, NUL, control characters, unquoted reserved word) is rejected at runtime (OKM1122). Allowlisting a hidden field in a filter or sort allowlist fails at build (OKM1123). A preset's `where` appends (AND) and the preset builder exposes only additive methods, never replacement (D125, D126).
 - Field names in `where`, `select`, `orderBy` and `include` are checked against the catalog at runtime (OKM1120).
 - `undefined` in `find` filters means "no filter"; in `update`/`delete`, a `where` that becomes empty throws OKM1102.
 - One logical operation per call (section 5.3). Reads and relation loading: the statement count depends on query shape, never on result cardinality; no lazy loading. Writes may be split by input size or driver limits, within the operation's declared atomicity.
@@ -886,7 +889,7 @@ err.retryable   // false
 | `conflict` | unique, exclusion, conflict | 409 |
 | `not_found` | not_found, not_unique | 404 |
 | `forbidden` | forbidden | 403 |
-| `transient` | serialization, deadlock, lock_timeout, timeout, unavailable | 503 (retryable) |
+| `transient` | serialization, deadlock, lock_timeout, timeout, cancelled, unavailable | 503 (retryable, except `cancelled`) |
 | `internal` | schema_drift, driver, read_only, outcome_unknown | 500 |
 
 `outcome_unknown` (OKM1401) means a commit or batch was sent and its result never arrived, so the write may or may not have happened; it is never retried automatically (`retryable: false`) and its `fix` says to check by an idempotency key. `OkmError` also carries `fix` (a structured, applicable suggestion, for people and coding agents) and, for unknown tables, fields, presets and options, a nearest-name hint ("did you mean `dueAt`?"). Every OKM code has a documentation page (cause, fix, example) generated from the error registry.
@@ -925,6 +928,7 @@ await scoped.batch([
 
 - Row locks on reads: `find({ lock: "update" | "share", wait: "nowait" | "skip" })` inside `tx()` only (OKM1830 outside one). `t.advisoryLock(key)` takes a transaction-level advisory lock.
 - `connect({ timeouts })` keys: `acquire` (waiting for a connection), `statement`, `transaction`, `idleInTransaction`. Cancelling a call inside `tx()` fails the transaction and rolls it back; cancelling after completion has no effect. Server notices reach `hookm.onNotice`.
+- Every timeout (statement, transaction, batch) is kind `timeout`; `cancelled` arises only from the caller's `signal` and is never retried (D124).
 - Cancellation and timeouts: every operation accepts `{ signal, timeout }`; an aborted call cancels the statement where the driver has `cancel`, and fails as kind `cancelled` (category `transient`, never retried). `connect({ timeouts })` sets ceilings.
 - `tx()` exists only on drivers with `transactions: "interactive"`; `batch()` exists on every driver and is atomic (batch contract below).
 - A transaction is bound to the primary and to one reserved connection for its whole life (section 15.2). Nested `tx()` become savepoints on the same connection; context is preserved.
@@ -934,10 +938,10 @@ await scoped.batch([
 
 - All commit or none does; results come back in the order given. Operations are independent: none consumes another's result (use `tx()` for that).
 - The guarantee is part of the Driver contract, not a capability: `DriverPool.batch` is a required member and an adapter that cannot provide exactly this guarantee is not an OKModel driver (`okm driver test` fails). Interactive drivers implement it as `BEGIN … COMMIT` on a reserved connection; batch-mode drivers use their native atomic call (Neon HTTP transaction, D1 `batch`). `tx()` is the only difference between the two, and it is gated by the `transactions` flag.
-- A failing statement rolls the whole batch back; the error is the mapped database error and carries `batchIndex`.
+- A failing statement rolls the whole batch back; the error is the mapped database error and carries `batchIndex`, a `number`, or `null` when the failure happens at commit (a deferred constraint); the whole batch is then rolled back.
 - Isolation is the database default. The contract promises atomicity and statement order, nothing more; conformance assumes nothing more. Non-transactional effects (sequence values) are not rolled back, as documented for `tx()`.
-- `signal` and `timeout` apply to the whole batch. Where the driver can cancel, the batch rolls back (kind `cancelled`). Where it cannot (an HTTP request already sent), an abort or a lost response yields `outcome_unknown` (OKM1401), never a claim of rollback.
-- Inside `tx()` a batch runs on a savepoint of the transaction connection: a failure rolls back to it and throws; the transaction survives if the caller handles the error.
+- `signal` and `timeout` apply to the whole batch. Where the driver can cancel, the batch rolls back (a timeout is kind `timeout`, an abort kind `cancelled`). Where it cannot (an HTTP request already sent), an abort or a lost response yields `outcome_unknown` (OKM1401), never a claim of rollback.
+- Inside `tx()` a batch runs on a savepoint of the transaction connection: a failure rolls back to it and throws; the transaction survives if the caller handles the error. `DriverConnection.batch` on a connection with an open transaction always uses a savepoint and never commits the outer transaction (conformance test).
 - A batch requires the primary; `.replica()` on it fails with OKM1840.
 - The `batch.atomic` conformance suite runs on every adapter: all-or-nothing on success and on a failure at each position, failure index, deferred constraints, cancellation, timeout, batch inside `tx()`, connection loss mid-batch (`outcome_unknown`), and sequences not rolled back.
 
@@ -997,7 +1001,7 @@ all replicas → health → consistency and lag → capacity → selection strat
 
 **Consistency by commit position.**
 
-- After a write commits, the session watermark becomes the primary's WAL position read **after** the commit, on the committing connection. PostgreSQL does not return a commit LSN to clients, so this is `pg_current_wal_insert_lsn()`: an upper bound of the commit record's LSN, hence safe, occasionally stricter than needed. Reading it inside the transaction would be wrong (below the commit record). It costs one extra statement per committed write, pipelined on the same connection, and only when replicas are configured and `consistency` is `"session"`. M0 verifies the mechanism and measures the cost and the extra fallback rate (section 24).
+- After a write commits, the session watermark becomes the primary's WAL position read **after** the commit, on the committing connection. PostgreSQL does not return a commit LSN to clients, so this is `pg_current_wal_insert_lsn()`: an upper bound of the commit record's LSN, hence safe, occasionally stricter than needed. Reading it inside the transaction would be wrong: it gives the start of the commit record, which a replica can reach before it has applied the commit; `pg_current_wal_lsn()` is also wrong under `synchronous_commit=off`. The read is sent on the same connection immediately after commit; sending `COMMIT; SELECT pg_current_wal_insert_lsn()` as one simple-query message is evaluated in P13 and P63, otherwise it costs one extra round trip. It applies only when replicas are configured and `consistency` is `"session"`. M0 confirmed the mechanism (the after-commit value was 40 bytes past the start of a 34-byte commit record; 0 read-your-writes violations); the extra fallback rate under write load is measured in P64 (D121).
 - A replica may serve a read for a session when its replay position is at or beyond the watermark. Replay positions only move forward, so the last observed value (from a probe or an earlier check) is a safe lower bound: if it satisfies the watermark no round trip is needed; otherwise one on-demand `pg_last_wal_replay_lsn()` check runs, then the next candidate or the fallback.
 - If the position read fails after a successful commit, the session is marked `position unknown` and its reads go to the primary until its next successful position read.
 - The watermark is monotonic per session. A read issued after a write's promise resolved sees that write; reads concurrent with an in-flight write get no guarantee. `db.for()` clients each have a session; the root client and `db.unscoped()` share one client-wide watermark, which is conservative.
@@ -1111,7 +1115,7 @@ connect(url, { schema: appSchema, hookm: [tracing(onSpan)] });
 
 **Comparison pipeline:** introspect, then the dialect's `normalize`, then compare. Expressions that the database rewrites (defaults, checks, generated columns, view and function bodies) are not compared as text: the declared definition is applied to a scratch database and read back, and both sides go through the database before comparing.
 
-Fast path: each migration stores the catalog hash in `okm_meta`; `connect()` compares it with the code's catalog hash in one cheap query and runs the detailed check only when they differ. `okm build` also emits a serialised catalog (`.okm/catalog.json`) that production bundles can load instead of rebuilding the catalog at start (cold start).
+The catalog hash is computed over the normalised structure (D117). Fast path: each migration stores the catalog hash in `okm_meta`; `connect()` compares it with the code's catalog hash in one cheap query and runs the detailed check only when they differ. `okm build` also emits a serialised catalog (`.okm/catalog.json`) that production bundles can load instead of rebuilding the catalog at start (cold start).
 
 The startup check is a compatibility check: the database may be ahead of the code by `expand` migrations; ahead by a `contract` migration, or behind, fails closed in production (OKM1520).
 
@@ -1126,7 +1130,7 @@ The startup check is a compatibility check: the database may be ahead of the cod
 | `okm check` | capabilities, unlisted tables, validation conflicts, stale renames, lint |
 | `okm migrate plan <name>` | plan, classify, lint |
 | `okm migrate apply` | apply with timeouts, retries, checkpoints and resume; on an empty target it provisions from the current snapshot (section 19.6). Flags: `--target <name>` (required when several targets exist), `--allow-protected`; with many targets also `--class shared\|tenant`, `--canary <n>`, `--concurrency <n>`, `--max-failures <n>` (section 19.5) |
-| `okm migrate status` | per target: version, catalog hash, state (current, behind by `expand`, behind by `contract`, ahead, failed at step, protected) |
+| `okm migrate status` | per target: version, catalog hash, state (current, behind by `expand`, behind by `contract`, ahead, failed at step), with a separate `protected` column |
 | `okm migrate check` | CI: commutativity, lint, stale lockfile, snapshot ↔ replayed history equivalence (OKM1521) |
 | `okm generate` | produce migration SQL from the schema, including extension lifecycle; no TS is generated |
 | `okm push` | prototype sync; blocked on `protected` targets (section 19.7) and in production |
@@ -1154,11 +1158,11 @@ The migration engine works on a list of Targets from the start (a list of one in
 |---|---|
 | `--target <name>` (repeatable) | only these targets; a tenant target is named `tenant:<id>`, the shared and named environment targets by their names |
 | `--class shared\|tenant` | only one class |
-| `--canary <n>` | apply to the first `n` tenants in registry order and stop; a later plain `apply` continues with the rest from their checkpoints |
+| `--canary <n>` | apply to the first `n` tenants in registry order and stop; contract steps are skipped and reported as pending; a later plain `apply` continues with the rest from their checkpoints |
 | `--concurrency <n>` | targets in parallel; the default is 2 for `schemaPerTenant` (tenants share one catalog and its locks) and 8 for `databasePerTenant` |
 | `--max-failures <n>` | stop scheduling new targets after `n` failures (default 3), so a migration that breaks every tenant is halted early; unstarted targets stay pending |
 
-- **Contract gating.** A `contract` step applies to a tenant only if that tenant already has every earlier migration. The `contract` step on the shared target applies only after it succeeded on every tenant in scope; if any tenant failed or is pending, the shared step does not run. No tenant is left referencing something already removed.
+- **Contract gating.** A `contract` step applies to a tenant only if that tenant already has every earlier migration. The shared `contract` step is evaluated against the whole registry, not the scope: it runs only when every registered tenant has the migration. Any partial scope (`--canary`, `--class`, a `--target` subset) skips contract steps and reports "contract pending (N tenants not at this migration)"; if any tenant failed or is pending, the shared step does not run (D123). No tenant is left referencing something already removed.
 - **Second pass.** When the run finishes the runner reads the registry again and processes tenants created while it was running.
 - **Failures are isolated and resumable.** A failed target is recorded with its step and error; the exit code is non-zero; a later `apply` processes only failed and pending targets.
 - `okm migrate status` shows all targets in one table, with the same states used by the runtime check.
@@ -1192,14 +1196,14 @@ A new Target is created from the current provisionable snapshot, not by replayin
 
 - Blocked operations run with `--allow-protected`. It is a per-invocation flag (and the `allowProtected` option of the engine API); there is no environment variable that implies it, and in a multi-target run it applies only to the selected targets and is printed in the report.
 - A blocked step fails that Target with OKM1850 and the runner continues with the others (failure isolation).
-- Protection never affects the application's runtime `connect()`, and it is a property of the Target: the registry may mark individual tenants `protected`.
+- Protection never affects the application's runtime `connect()`. It is a property of the physical database (D122): under `schemaPerTenant` all tenants share one database, so protection must be uniform and a mixed registry fails with OKM1852; per-tenant protection requires `databasePerTenant`.
 
 ### 19.8 Environments and previews
 
 An environment is a named Target. Nothing about an environment is inferred from `NODE_ENV` or a URL.
 
 - **Named targets.** `production`, `staging` and `preview` are entries of `targets` (section 3.1); protection is declared on the entry that needs it. A pipeline names its target explicitly (`okm migrate apply --target production`), so a preview job cannot act on production by omission (OKM1853).
-- **Aliasing guard.** `okm check` and `okm doctor` compare the resolved hosts and database names of all targets and fail when an unprotected target points at the same database as a protected one (OKM1852).
+- **Aliasing guard.** `okm check` and `okm doctor` compare the resolved hosts and database names of all targets and fail when targets that resolve to the same host, port and database differ in protection (OKM1852); two unprotected targets may share a database.
 - **Preview environments.** One ephemeral database or schema per pull request, created by infrastructure (Neon branching, `CREATE DATABASE`, a container; the OKModel CI recipe uses Docker Compose). Steps: create the empty database, `okm migrate apply --target preview` (installs the head snapshot and `reference` rows without replaying history, section 19.6), optionally `okm seed`, deploy the application with the preview URL. Deleting it when the pull request closes is the infrastructure's job: OKModel never drops a database.
 - **Migration rehearsal.** To test pending migrations against realistic data, clone or branch the production database, register the clone as a target, and run `okm migrate apply --target rehearsal`. The report gives per-step duration, the locks taken, retries and failures, on the real history and data shape rather than on an empty snapshot. It is a recipe over existing commands, not a separate command.
 - **Reproducibility.** A preview built from the head snapshot and a rehearsal built by applying history must reach the same catalog; `okm migrate check` already proves that equivalence (OKM1521).
@@ -1287,7 +1291,9 @@ test("today view runs one query", async () => {
 | Declared extension unavailable on the server | plan / `okm doctor` | OKM1811 |
 | Feature not in the declared versions | build | OKM1812 |
 | Extension defined twice | build | OKM1813 |
-| Extension downgrade, or drop with dependents | plan | OKM1814 |
+| Extension downgrade, move of a non-relocatable extension, or drop with dependents | plan | OKM1814 |
+| Identifier fails the rules (length, NUL, control characters, unquoted reserved word) | runtime | OKM1122 |
+| Hidden field allowlisted in a filter or sort allowlist | build | OKM1123 |
 | View over tenant tables without the tenant key or `global` | `okm check` | OKM1820 |
 | Incompatible replace needs recreate of dependents (shown, never `CASCADE`) | plan | OKM1821 |
 | `REFRESH CONCURRENTLY` without a unique index | plan | OKM1822 |
@@ -1304,7 +1310,7 @@ test("today view runs one query", async () => {
 | Connection acquire timeout on an endpoint's pool | runtime | OKM1846 |
 | Operation blocked by the protection policy on a `protected` target without `--allow-protected` | CLI / engine | OKM1850 |
 | Provisioning a target that is not empty | CLI / engine | OKM1851 |
-| An unprotected target resolves to the same database as a protected one | `okm check` / `okm doctor` | OKM1852 |
+| Targets resolving to the same database differ in protection, or tenants of one `schemaPerTenant` database differ in protection | `okm check` / `okm doctor` | OKM1852 |
 | Several targets configured and none named (`--target`) | CLI | OKM1853 |
 
 ## 22. Non-goals
@@ -1380,6 +1386,8 @@ M0 validates and measures the architecture; it is not another API redesign round
 | Migration round trip | property test: random catalog pairs A→B; the plan applied to A on real Postgres introspects to exactly B; dependency-aware recreate holds |
 | Cold start and size | `schema()` build time on the 200-table fixture versus loading `.okm/catalog.json`; core size budget recorded |
 | Decision gate | after M0: if inferred row types exceed the budget, emitted types become the default; the catalog contract is frozen only after the catalog-object spike passes |
+
+**M0 outcome.** The spikes ran in P03–P08B and the evidence is `docs/m0-findings.md` (68 findings). The decision gate passed: findings that needed a decision became D116–D127 and are applied in this draft; the rest are implementation tasks in the plan. Emitted row types are the default (D120), the catalog contract is frozen (D116), and ceilings and first size budgets are recorded in D127 (core hashing is pure-TypeScript SHA-256 in L0, no `Bun` or Node globals).
 
 ## 25. Deferred directions (not scheduled)
 
