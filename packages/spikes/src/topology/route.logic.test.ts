@@ -351,6 +351,19 @@ test("replay cache only moves forward and the circuit opens after consecutive fa
   expect(state.replayLsn).toBe("0/30");
 });
 
+test("a replica that cannot read positions is not used after a write", () => {
+  const choice = decide("read", [replica("a", { positionCapable: false, replayLsn: "0/20" })], {
+    watermark: "0/10",
+  });
+  expect(choice.decision.reason).toBe("fallback:position-unknown");
+  expect(() =>
+    decide("read", [replica("a", { positionCapable: false })], {
+      watermark: "0/10",
+      constraint: { kind: "replica" },
+    }),
+  ).toThrow(TopologyError);
+});
+
 test("a session watermark is monotonic per mark", () => {
   const root = emptyMark();
   const other = emptyMark();

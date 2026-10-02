@@ -7,8 +7,9 @@
  * connection it reserved.
  */
 
-import { openPostgresJs } from "../drivers/postgresjs.js";
+import { compareLsn } from "@okmodel/harness";
 import { isConnectionLoss } from "../drivers/errors.js";
+import { openPostgresJs } from "../drivers/postgresjs.js";
 import type { DriverPool, ExecuteResult, Statement } from "../drivers/types.js";
 import { lagBytes, lagTimeMs, parseMaxLag, parseProbe } from "./lag.js";
 import {
@@ -18,8 +19,8 @@ import {
   type PoolStats,
   type StatementEvent,
 } from "./pool.js";
-import { applyProbe, initialProbe, type ProbeState } from "./probe.js";
-import { decideRoute } from "./route.js";
+import { applyProbe, forwardLsn, initialProbe, type ProbeState } from "./probe.js";
+import { decideRoute, type RouteChoice } from "./route.js";
 import { emptyMark, markUnknown, noteCommit, type SessionMark } from "./session.js";
 import {
   initialSelectState,
@@ -84,6 +85,8 @@ export type CallResult = {
   readonly results: readonly ExecuteResult[];
   /** Time spent in `decideRoute`, in microseconds. */
   readonly decideUs: number;
+  /** On-demand `pg_last_wal_replay_lsn` reads for this operation. */
+  readonly positionChecks: number;
 };
 
 /** A connection inside `tx()`. Statements share it. */
@@ -263,6 +266,8 @@ export class TopologyClient implements SessionClient {
   private primaryPositionCapable = true;
   private timer: ReturnType<typeof setInterval> | undefined;
   private closed = false;
+  /** Position reads to fail on purpose, so a commit can succeed and the read can fail. */
+  private positionFaults = 0;
 
   /**
    * @param options - Connection and routing options
@@ -502,19 +507,70 @@ export class TopologyClient implements SessionClient {
   }
 
   /**
+   * Makes the next commit-position read fail.
+   *
+   * The commit itself still succeeds. The session is marked position-unknown.
+   */
+  failNextPositionRead(): void {
+    this.positionFaults += 1;
+  }
+
+  /**
+   * Highest replay or insert LSN cached for an endpoint.
+   *
+   * @param name - Endpoint name
+   * @returns The cached LSN, or null
+   */
+  cachedReplay(name: string): string | null {
+    if (name === "primary") return this.primaryLsn;
+    return this.replicaSlot(name).probe.replayLsn;
+  }
+
+  /**
+   * Lag of a replica against the cached primary insert LSN.
+   *
+   * @param name - Replica name
+   * @returns Byte and time lag. Time lag is zero when the replica is caught up
+   */
+  endpointLag(name: string): { readonly bytes: bigint | null; readonly ms: number | null } {
+    const probe = this.replicaSlot(name).probe;
+    const bytes = lagBytes(this.primaryLsn, probe.replayLsn);
+    return { bytes, ms: lagTimeMs(bytes, probe.replayedAtMs, Date.now()) };
+  }
+
+  /**
    * Position read after a committed write, on the committing connection.
    *
-   * The routing spike leaves this empty. The commit-position spike fills it.
+   * One statement, and only when replicas are configured and consistency is
+   * session. A failure marks the session position-unknown.
    *
-   * @param _held - Connection that just committed
-   * @param _mark - Session that owns the write
-   * @param _kind - Operation class
+   * @param held - Connection that just committed
+   * @param mark - Session that owns the write
+   * @param kind - Operation class
    */
   async rememberCommit(
-    _held: HeldConnection,
-    _mark: SessionMark,
-    _kind: OperationKind,
-  ): Promise<void> {}
+    held: HeldConnection,
+    mark: SessionMark,
+    kind: OperationKind,
+  ): Promise<void> {
+    if (!this.tracksCommit(kind)) return;
+    const fault = this.positionFaults > 0;
+    if (fault) this.positionFaults -= 1;
+    const text = fault
+      ? "SELECT pg_catalog.okm_no_such_position_fn()"
+      : "SELECT pg_current_wal_insert_lsn()::text";
+    try {
+      const result = await held.execute(text);
+      const lsn = result.rows[0]?.[0];
+      if (lsn === null || lsn === undefined || lsn === "") {
+        markUnknown(mark);
+        return;
+      }
+      noteCommit(mark, lsn);
+    } catch {
+      markUnknown(mark);
+    }
+  }
 
   private bind(mark: SessionMark): SessionClient {
     return {
@@ -539,11 +595,8 @@ export class TopologyClient implements SessionClient {
     let rerouted = false;
     let previous: unknown;
     for (;;) {
-      const started = performance.now();
-      const choice = decideRoute(this.routeInput(request, mark, masked));
-      this.selectState = choice.state;
-      this.last = choice.decision;
-      const decideUs = (performance.now() - started) * 1000;
+      const chosen = await this.choose(request, mark, masked);
+      const choice = chosen.choice;
       if (masked.has(choice.decision.endpoint)) {
         if (previous instanceof Error) throw previous;
         throw new Error("No remaining endpoint.");
@@ -556,7 +609,12 @@ export class TopologyClient implements SessionClient {
         const results = await this.executeOn(held, request, mark, () => {
           produced = true;
         });
-        return { decision: choice.decision, results, decideUs };
+        return {
+          decision: choice.decision,
+          results,
+          decideUs: chosen.decideUs,
+          positionChecks: chosen.positionChecks,
+        };
       } catch (error) {
         if (!produced && !rerouted && isConnectionLoss(error)) {
           rerouted = true;
@@ -610,6 +668,7 @@ export class TopologyClient implements SessionClient {
             decision: choice.decision,
             results: [identity],
             decideUs,
+            positionChecks: 0,
             pid: row?.[0] ?? "",
             recovery: row?.[1] ?? "",
             slot: row?.[2] ?? "",
@@ -667,6 +726,109 @@ export class TopologyClient implements SessionClient {
     }
     if (request.kind !== "internal-read") await this.rememberCommit(held, mark, request.kind);
     return results;
+  }
+
+  private tracksCommit(kind: OperationKind): boolean {
+    if (this.policy.consistency !== "session") return false;
+    if (this.replicas.length === 0) return false;
+    return kind === "write" || kind === "batch" || kind === "tx";
+  }
+
+  private tracksReplay(request: RunRequest, mark: SessionMark): boolean {
+    if (request.kind !== "read" && request.kind !== "internal-read") return false;
+    if (mark.unknown || mark.lsn === null) return false;
+    const constraint = request.constraint ?? { kind: "auto" as const };
+    if (constraint.kind === "primary") return false;
+    const consistency =
+      constraint.kind === "replica"
+        ? (constraint.consistency ?? this.policy.consistency)
+        : this.policy.consistency;
+    return consistency === "session";
+  }
+
+  private async choose(
+    request: RunRequest,
+    mark: SessionMark,
+    masked: ReadonlySet<string>,
+  ): Promise<{ choice: RouteChoice; decideUs: number; positionChecks: number }> {
+    let decideUs = 0;
+    const route = (input: Parameters<typeof decideRoute>[0]): RouteChoice => {
+      const started = performance.now();
+      const choice = decideRoute(input);
+      decideUs += (performance.now() - started) * 1000;
+      return choice;
+    };
+    const base = this.routeInput(request, mark, masked);
+    if (!this.tracksReplay(request, mark) || mark.lsn === null) {
+      const choice = route(base);
+      this.keep(choice);
+      return { choice, decideUs, positionChecks: 0 };
+    }
+    const watermark = mark.lsn;
+    const capable = base.replicas.filter((replica) => replica.positionCapable);
+    if (capable.length === 0) {
+      const choice = route(base);
+      this.keep(choice);
+      return { choice, decideUs, positionChecks: 0 };
+    }
+    const fresh = capable.filter(
+      (replica) => replica.replayLsn !== null && compareLsn(replica.replayLsn, watermark) >= 0,
+    );
+    if (fresh.length > 0) {
+      const choice = route({ ...base, replicas: fresh });
+      this.keep(choice);
+      return { choice, decideUs, positionChecks: 0 };
+    }
+    let pending = [...capable];
+    let checks = 0;
+    let state = this.selectState;
+    while (pending.length > 0) {
+      const picked = route({
+        ...base,
+        watermark: null,
+        positionUnknown: false,
+        replicas: pending,
+        state,
+      });
+      state = picked.state;
+      if (picked.decision.role !== "replica") break;
+      checks += 1;
+      const live = await this.fetchReplay(picked.decision.endpoint);
+      if (live !== null && compareLsn(live, watermark) >= 0) {
+        this.selectState = state;
+        this.last = picked.decision;
+        return { choice: picked, decideUs, positionChecks: checks };
+      }
+      pending = pending.filter((replica) => replica.name !== picked.decision.endpoint);
+    }
+    this.selectState = state;
+    const choice = route({ ...base, state: this.selectState });
+    this.keep(choice);
+    return { choice, decideUs, positionChecks: checks };
+  }
+
+  private keep(choice: RouteChoice): void {
+    this.selectState = choice.state;
+    this.last = choice.decision;
+  }
+
+  private async fetchReplay(name: string): Promise<string | null> {
+    const slot = this.replicaSlot(name);
+    try {
+      const result = await slot.pool.query("SELECT pg_last_wal_replay_lsn()::text");
+      const observed = result.rows[0]?.[0] ?? null;
+      const next = forwardLsn(slot.probe.replayLsn, observed === "" ? null : observed);
+      slot.probe = { ...slot.probe, replayLsn: next };
+      return next;
+    } catch {
+      return slot.probe.replayLsn;
+    }
+  }
+
+  private replicaSlot(name: string): Slot {
+    const found = this.replicas.find((replica) => replica.pool.name === name);
+    if (found === undefined) throw new Error(`Unknown replica '${name}'.`);
+    return found;
   }
 
   private routeInput(request: RunRequest, mark: SessionMark, masked: ReadonlySet<string>) {

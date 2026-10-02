@@ -18,6 +18,7 @@ import { loadPostgresGate, postgresTest, requirePostgresWhenAsked } from "../cat
 import { connectTopology, type TopologyClient, type TopologyOptions } from "./client.js";
 import { TopologyError } from "./error.js";
 import type { StatementEvent } from "./pool.js";
+import { withReplayLock } from "./replay-lock.js";
 
 const decision = await loadPostgresGate();
 requirePostgresWhenAsked(decision);
@@ -283,34 +284,36 @@ postgresTest(decision, "selection strategies land on the replica they name", asy
 });
 
 postgresTest(decision, "lag eligibility and fallback", async () => {
-  const schema = isolatedSchemaName();
-  await withClient(
-    { routing: { select: "roundRobin", maxLag: "1B", probe: "0ms" } },
-    async (client) => {
-      try {
-        await client.write(`CREATE SCHEMA ${schema}`);
-        await client.write(`CREATE TABLE ${schema}.tick (id int)`);
-        const caught = await readInsertLsn();
-        await waitForReplayLsn("a", caught);
-        await waitForReplayLsn("b", caught);
-        await pauseWalReplay("a");
-        await client.write(`INSERT INTO ${schema}.tick VALUES (1)`);
-        const target = await readInsertLsn();
-        await waitForReplayLsn("b", target);
-        await client.probe();
-        for (let index = 0; index < 4; index += 1) {
-          const read = await client
-            .read("SELECT COALESCE((SELECT slot_name FROM pg_stat_wal_receiver LIMIT 1), '')")
-            .run();
-          expect(read.decision.endpoint).toBe("b");
-          expect(read.results[0]?.rows[0]?.[0]).toBe("replica_b");
+  await withReplayLock(async () => {
+    const schema = isolatedSchemaName();
+    await withClient(
+      { routing: { select: "roundRobin", maxLag: "1B", probe: "0ms" } },
+      async (client) => {
+        try {
+          await client.write(`CREATE SCHEMA ${schema}`);
+          await client.write(`CREATE TABLE ${schema}.tick (id int)`);
+          const caught = await readInsertLsn();
+          await waitForReplayLsn("a", caught);
+          await waitForReplayLsn("b", caught);
+          await pauseWalReplay("a");
+          await client.write(`INSERT INTO ${schema}.tick VALUES (1)`);
+          const target = await readInsertLsn();
+          await waitForReplayLsn("b", target);
+          await client.probe();
+          for (let index = 0; index < 4; index += 1) {
+            const read = await client
+              .read("SELECT COALESCE((SELECT slot_name FROM pg_stat_wal_receiver LIMIT 1), '')")
+              .run();
+            expect(read.decision.endpoint).toBe("b");
+            expect(read.results[0]?.rows[0]?.[0]).toBe("replica_b");
+          }
+        } finally {
+          await resumeWalReplay("a");
+          await client.write(`DROP SCHEMA IF EXISTS ${schema} CASCADE`).catch(() => undefined);
         }
-      } finally {
-        await resumeWalReplay("a");
-        await client.write(`DROP SCHEMA IF EXISTS ${schema} CASCADE`).catch(() => undefined);
-      }
-    },
-  );
+      },
+    );
+  });
 });
 
 postgresTest(decision, "fallback:error is OKM1844 and does not read the primary", async () => {

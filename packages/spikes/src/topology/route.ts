@@ -84,15 +84,15 @@ export function decideRoute(input: RouteInput): RouteChoice {
   const healthy = input.replicas.filter((replica) => replica.healthy && !replica.circuitOpen);
   if (healthy.length === 0) return miss(input, "unhealthy", strict);
 
-  const caughtUp =
-    consistency === "session" && input.watermark !== null
-      ? healthy.filter(
-          (replica) =>
-            replica.positionCapable &&
-            replica.replayLsn !== null &&
-            compareLsn(replica.replayLsn, input.watermark as string) >= 0,
-        )
-      : healthy;
+  let caughtUp = healthy;
+  if (consistency === "session" && input.watermark !== null) {
+    const watermark = input.watermark;
+    const capable = healthy.filter((replica) => replica.positionCapable);
+    if (capable.length === 0) return miss(input, "position-unknown", strict);
+    caughtUp = capable.filter(
+      (replica) => replica.replayLsn !== null && compareLsn(replica.replayLsn, watermark) >= 0,
+    );
+  }
   if (caughtUp.length === 0) return miss(input, "behind", strict);
 
   const within =

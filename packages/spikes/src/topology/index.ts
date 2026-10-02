@@ -28,6 +28,7 @@ export {
   type ProbeState,
 } from "./probe.js";
 export { decideRoute, type RouteChoice, type RouteInput } from "./route.js";
+export { addLsn, findCommitLsn, lsnGap } from "./waldump.js";
 export { selectReplica, type Selection } from "./select.js";
 export { emptyMark, markUnknown, noteCommit, type SessionMark } from "./session.js";
 export {
