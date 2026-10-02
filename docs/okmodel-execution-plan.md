@@ -1,6 +1,6 @@
 # OKModel — Execution plan
 
-Companion to `okmodel-api-design.md` (draft 18). The spec is normative; this file fixes the order of work.
+Companion to `okmodel-api-design.md` (draft 19). The spec is normative; this file fixes the order of work.
 
 ## How we work
 
@@ -15,7 +15,8 @@ Companion to `okmodel-api-design.md` (draft 18). The spec is normative; this fil
 7. Guarantees grow with the code. Every prompt that adds behavior also adds its tests: conformance tests for semantics, a registration in the final safety verifier for anything that adds or changes a rule, and the CI test named in the spec for any invariant it touches. A prompt is not done while a guarantee it introduces has no test.
 8. Order rule: a prompt may use only what earlier prompts delivered. Where a later prompt completes a behavior, the earlier prompt ships the conservative version (stated in its row) so every branch is safe on its own.
 9. Hygiene (D115): P09A is a cleanup round after the M0 gate; every later gate (P17, P30, P44, P55, P66) ends with a lighter hygiene step (dead code, duplicated helpers, flaky tests, doc sync, dependency audit, budgets re-checked) before `bun run bump release`.
-10. Changelog and version: every prompt adds its notes under `## Unreleased` in `changelog.md` (what changed for someone using or building the package, one line each) and ends with `bun run bump next`, so `package.json` moves with every merged prompt. A gate prompt that releases ends with `bun run bump release` instead (D113). The pull request fails CI if either is missing.
+10. Engineering standards (D129): every prompt optimises for performance, speed, lightness and cold start, avoids duplicated code, keeps the public API small and clear, and ends with a self-review against these rules; the report states runtime entry size, cold import and type-cost change.
+11. Changelog and version: every prompt adds its notes under `## Unreleased` in `changelog.md` (what changed for someone using or building the package, one line each) and ends with `bun run bump next`, so `package.json` moves with every merged prompt. A gate prompt that releases ends with `bun run bump release` instead (D113). The pull request fails CI if either is missing.
 
 ### Execution report template (end of every prompt)
 
@@ -62,6 +63,7 @@ Spike code lives in the private workspace package `packages/spikes`; what proves
 | ID | Branch | Delivers |
 |---|---|---|
 | P10 | `p10-catalog-core` | production catalog: kinds for table, column, index, constraint, sequence; identity with namespaces; ownership (`managed` / `external`) in the contract for every kind; canonical form; hash |
+| P10A | `p10a-standards` | engineering standards (D129) into `AGENTS.md` and the ship skill; audit of P10 for size, duplication and DX; trim what the runtime entry reaches (tooling-only code stays out). No new behavior |
 | P11 | `p11-column-types` | `okmodel/pg` column types, codecs, picklists |
 | P12 | `p12-tables-schema` | `table()`, `schema()`, `Register`, row types (per the gate), guards OKM1020–1023 |
 | P13 | `p13-drivers` | public `Driver` contract first (`open` → `DriverPool` with `execute`, atomic `batch`, `reserve`, `stats`, `close`; `DriverError`; flags; spec 4.2), then capability registry, postgres.js and PGlite adapters (one pool per endpoint, `timeouts.acquire` with OKM1846), conformance suite v1 (execute, codecs, batch contract, reservation; error-mapping tests arrive with P14) |
@@ -160,3 +162,5 @@ Problems found in the earlier order and how the table above resolves them:
 - P50/P51: role and grant rules (D119); OKM1852 under D122.
 - P29/P63/P64: driver contract clarifications (D124); commit-position fallback rate under write load (P64).
 - P16/P60: contract gating over the whole registry (D123).
+- P16: normalise check expressions and index predicates through the database (stored as text in P10, D128); declared renames must update references inside that text; drop copied partition primary keys and inherited indexes while introspecting (M0-06, D116).
+- Every train: report the runtime entry size; P10 measured 29.6 KB minified / 8.9 KB gzip / 5.8 ms cold import against the 0.1 budget of 60 KB / 20 KB / 15 ms, so P11–P16 must stay within the remaining half; trim before P17 if tooling code is reachable from the runtime entry.
