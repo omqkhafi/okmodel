@@ -1,6 +1,6 @@
 {
   "name": "okmodel",
-  "version": "0.1.0-next.13",
+  "version": "0.1.0-next.14",
   "description": "Catalog-first TypeScript ORM: typed queries, safe migrations and replica-aware routing. PostgreSQL first, zero runtime dependencies.",
   "license": "Apache-2.0",
   "author": "Omq Khafi",
@@ -70,6 +70,7 @@
     "@arethetypeswrong/cli": "^0.18.5",
     "@types/bun": "^1.4.2",
     "expect-type": "^1.4.0",
+    "fast-check": "^4.10.2",
     "oxc-parser": "^0.152.0",
     "oxfmt": "0.71.0",
     "oxlint": "^1.86.0",
