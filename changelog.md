@@ -60,6 +60,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `bun run bundle-purity` fails when a runtime bundle contains an npm package, or when `src/` imports the harness barrel. Adapter entries must leave `postgres` and `@electric-sql/pglite` external.
 - A conformance suite runs the same driver cases on either adapter: execute, nulls, timestamps, numeric, bigint, json, arrays, batch (including a savepoint inside a reserved transaction), reservation, stats, close, and session reset. Cancel, timeout, and stream run only when the adapter declares them.
 - `bun run driver-bench` times `execute` against calling postgres.js directly. It prints the median and does not enforce a ceiling.
+- The Postgres CI job runs the driver conformance suite with `REQUIRE_DOCKER=1`.
 
 #### docs
 
