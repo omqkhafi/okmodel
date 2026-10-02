@@ -5,7 +5,12 @@
 export { runAtomicBatch } from "./batch.js";
 export { DriverCallError, DriverError, isConnectionLoss, type CallKind } from "./errors.js";
 export { openPglite } from "./pglite.js";
-export { openBatchMode, openPostgresJs, terminateBackend } from "./postgresjs.js";
+export {
+  openBatchMode,
+  openPostgresJs,
+  terminateBackend,
+  type PostgresJsOptions,
+} from "./postgresjs.js";
 export {
   assertRegistryLinked,
   CONTRACT_TESTS,

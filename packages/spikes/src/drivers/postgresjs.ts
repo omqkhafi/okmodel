@@ -47,14 +47,25 @@ type QueryClient = {
   release?: () => void;
 };
 
+/** Limits and names for one postgres.js pool. Omitted fields keep the P06 defaults. */
+export type PostgresJsOptions = {
+  /** Connections in this pool. Default 4. */
+  readonly max?: number;
+  /** `application_name` on each connection. Default `okm-p06-<manifest>`. */
+  readonly applicationName?: string;
+  /** Seconds an idle connection stays open. Default 30. */
+  readonly idleTimeout?: number;
+};
+
 /**
  * Opens a postgres.js pool with the interactive capability set.
  *
  * @param url - Connection URL
+ * @param options - Pool size, application name, and idle timeout
  * @returns A pool for one endpoint
  */
-export function openPostgresJs(url: string): DriverPool {
-  return openPostgresPool(url, manifestFor("postgresjs"));
+export function openPostgresJs(url: string, options?: PostgresJsOptions): DriverPool {
+  return openPostgresPool(url, manifestFor("postgresjs"), options);
 }
 
 /**
@@ -65,10 +76,11 @@ export function openPostgresJs(url: string): DriverPool {
  * connection can cancel.
  *
  * @param url - Connection URL
+ * @param options - Pool size, application name, and idle timeout
  * @returns A batch-mode pool
  */
-export function openBatchMode(url: string): DriverPool {
-  return openPostgresPool(url, manifestFor("batch-mode"));
+export function openBatchMode(url: string, options?: PostgresJsOptions): DriverPool {
+  return openPostgresPool(url, manifestFor("batch-mode"), options);
 }
 
 /**
@@ -104,13 +116,18 @@ export async function terminateBackend(url: string, marker: string): Promise<num
   }
 }
 
-function openPostgresPool(url: string, manifest: DriverManifest): DriverPool {
+function openPostgresPool(
+  url: string,
+  manifest: DriverManifest,
+  options?: PostgresJsOptions,
+): DriverPool {
+  const max = options?.max ?? 4;
   const notices: Notice[] = [];
   let statements = 0;
   const root = postgres(url, {
-    max: 4,
+    max,
     prepare: true,
-    idle_timeout: 30,
+    idle_timeout: options?.idleTimeout ?? 30,
     connect_timeout: 5,
     types: WIRE_TYPES,
     onnotice: (notice) => {
@@ -123,7 +140,7 @@ function openPostgresPool(url: string, manifest: DriverManifest): DriverPool {
     debug: () => {
       statements += 1;
     },
-    connection: { application_name: `okm-p06-${manifest.id}` },
+    connection: { application_name: options?.applicationName ?? `okm-p06-${manifest.id}` },
   });
   const gate = new Gate();
   const main = new PostgresSession(asClient(root), manifest, notices);
@@ -144,7 +161,7 @@ function openPostgresPool(url: string, manifest: DriverManifest): DriverPool {
         }
       });
     },
-    stats: () => gate.stats(4),
+    stats: () => gate.stats(max),
     takeStatements() {
       const count = statements;
       statements = 0;
