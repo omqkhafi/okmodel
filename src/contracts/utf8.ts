@@ -11,6 +11,16 @@
  * @returns Byte length
  */
 export function utf8ByteLength(value: string): number {
+  const length = value.length;
+  for (let index = 0; index < length; index += 1) {
+    if (value.charCodeAt(index) > 0x7f) {
+      return utf8ByteLengthFull(value);
+    }
+  }
+  return length;
+}
+
+function utf8ByteLengthFull(value: string): number {
   let bytes = 0;
   for (let index = 0; index < value.length;) {
     const unit = readCode(value, index);
