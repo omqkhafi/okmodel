@@ -49,3 +49,4 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - A private infra spike checks roles, grants, default privileges, extension inventory on Postgres 15–18, and whether archived rows follow column-strategy migrations. Findings are in `packages/spikes/infra/FINDINGS.md`.
 - `bun run spikes:update` rewrites the spike type-cost locks from a fresh `tsc` run.
 - The replication test waits up to 30 seconds, matching its replay wait, so other Postgres tests can run beside it.
+- A private topology spike routes reads across a Postgres primary and two replicas and checks read-your-writes by WAL position. Findings are in `packages/spikes/topology/FINDINGS.md`.
