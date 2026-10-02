@@ -5,6 +5,7 @@
  * tenant connection (invariant H, test `plan.no-connection`).
  */
 
+import { quoteIdent, quoteLiteral } from "../catalog/sql.js";
 import type { MigrationPlan } from "../migrations/plan.js";
 
 /** How a step is classified for rollout and the protected-target policy. */
@@ -24,6 +25,10 @@ export type PlannedStep = {
   readonly transactional: boolean;
   /** Lock mode name from the planner, or `none`. */
   readonly lock: string;
+  /** Which target class runs this step. */
+  readonly scope: "shared" | "tenant";
+  /** Unqualified index name. Resume drops it when it is invalid. */
+  readonly indexName?: string;
 };
 
 /**
@@ -86,6 +91,7 @@ const FORBIDDEN_KEYS = new Set([
  * @param targetNames - Logical target names
  * @param migration - Planner output
  * @param stepClass - Class for steps that are not drops
+ * @param scope - Shared or tenant. Default `tenant`
  * @returns A plan with no connection fields
  */
 export function targetPlanFromMigration(
@@ -93,6 +99,7 @@ export function targetPlanFromMigration(
   targetNames: readonly string[],
   migration: MigrationPlan,
   stepClass: StepClass = "expand",
+  scope: "shared" | "tenant" = "tenant",
 ): TargetPlan {
   return {
     id,
@@ -104,8 +111,25 @@ export function targetPlanFromMigration(
       class: step.action === "drop" ? "contract" : stepClass,
       transactional: transactionalSql(step.sql),
       lock: step.lock.mode,
+      scope,
     })),
   };
+}
+
+/** Concrete schema token emitted when a plan is rendered once and bound later. */
+export const SCHEMA_PLACEHOLDER = "__schema__";
+
+/**
+ * Replaces the schema placeholder with a concrete, quoted identifier.
+ *
+ * @param sql - Statement rendered against {@link SCHEMA_PLACEHOLDER}
+ * @param schema - Physical schema name
+ * @returns SQL for one target
+ */
+export function bindSchema(sql: string, schema: string): string {
+  return sql
+    .replaceAll(`"${SCHEMA_PLACEHOLDER}"`, quoteIdent(schema))
+    .replaceAll(`'${SCHEMA_PLACEHOLDER}'`, quoteLiteral(schema));
 }
 
 /**

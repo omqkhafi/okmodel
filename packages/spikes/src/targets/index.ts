@@ -10,9 +10,13 @@ export {
 } from "./admin.js";
 export { TargetError, type TargetCode } from "./error.js";
 export { itemsCatalog, itemsCatalogWithNote } from "./fixture.js";
+export { applyToTarget, type TargetApplyResult } from "./apply.js";
+export { acquireTargetLock, advisoryLockKey, releaseTargetLock } from "./lock.js";
 export {
   connectionDetailHits,
   initialRunState,
+  SCHEMA_PLACEHOLDER,
+  bindSchema,
   targetPlanFromMigration,
   type PlannedStep,
   type StepClass,
@@ -20,6 +24,33 @@ export {
   type TargetRunRecord,
   type TargetRunState,
 } from "./plan.js";
+export {
+  assertTargetPolicy,
+  OPERATION_CLASSES,
+  policyDecision,
+  type OperationClass,
+} from "./policy.js";
+export {
+  applyRun,
+  controlSharedTarget,
+  defaultConcurrency,
+  type ApplyReport,
+  type Rollout,
+  type TargetReport,
+} from "./runner.js";
+export {
+  assertTenantCompatible,
+  migrationStatus,
+  type StatusRow,
+  type StatusState,
+} from "./status.js";
+export {
+  dropControlSchema,
+  ensureControlSchema,
+  readControlRows,
+  saveControlRow,
+  type ControlRow,
+} from "./state.js";
 export {
   isAuthFailure,
   openTargetPools,
