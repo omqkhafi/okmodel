@@ -54,39 +54,41 @@ export const CI_COLD_IMPORT_MS = 25;
 export const APP_ENTRY = "scripts/app-startup.ts";
 
 /**
- * Minified app-fixture ceiling, in bytes (D138).
+ * Minified app-fixture ceiling, in bytes (D138, D141).
  *
- * Startup graph measured 74,218. Plus 3 percent is 76,444, under the 86,688 cap.
+ * P16B startup graph measured 76,933. Plus 3 percent is 79,240, under the 86,688 cap.
  */
-export const APP_MAX_MIN_BYTES = 76_444;
+export const APP_MAX_MIN_BYTES = 79_240;
 
 /**
- * Gzipped app-fixture ceiling, in bytes (D138).
+ * Gzipped app-fixture ceiling, in bytes (D138, D141).
  *
- * Startup graph measured 24,471. Plus 3 percent is 25,205, under the 27,800 cap.
+ * P16B startup graph measured 25,444. Plus 3 percent is 26,207, under the 27,800 cap.
  */
-export const APP_MAX_GZIP_BYTES = 25_205;
+export const APP_MAX_GZIP_BYTES = 26_207;
 
 /**
  * Public connect entries, driver left external (D137).
  *
- * The startup graph excludes chunks loaded on first failure, include, or checkout.
- * Gates are the measured startup size plus 5 percent.
+ * The startup graph excludes chunks loaded on first failure, include, or the
+ * mismatch path of the catalog check. Gates are the measured startup size plus
+ * 5 percent. P16B put the hash query on this path: postgres.js 37,495 / 13,020,
+ * PGlite 35,897 / 12,713.
  */
 export const CONNECT_ENTRIES = [
   {
     entry: "src/runtime/pg/postgresjs.ts",
     file: "postgresjs.js",
     external: ["postgres"],
-    maxMinBytes: 36_713,
-    maxGzipBytes: 12_837,
+    maxMinBytes: 39_369,
+    maxGzipBytes: 13_671,
   },
   {
     entry: "src/runtime/pg/pglite.ts",
     file: "pglite.js",
     external: ["@electric-sql/pglite"],
-    maxMinBytes: 35_439,
-    maxGzipBytes: 12_531,
+    maxMinBytes: 37_691,
+    maxGzipBytes: 13_348,
   },
 ] as const;
 
