@@ -3,15 +3,27 @@
  */
 
 import { expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { exportNames } from "../scripts/api-surface.js";
 import { repoRoot } from "../scripts/root.js";
 import { exportShakeProblems } from "../scripts/size.js";
 
 test("okmodel/pg exports do not keep unrelated modules", () => {
   expect(exportShakeProblems(repoRoot())).toEqual([]);
+});
+
+test("public barrels do not export the moved helpers", () => {
+  const root = repoRoot();
+  const pg = exportNames(readFileSync(join(root, "src/dialects/pg/index.ts"), "utf8"));
+  const migrate = exportNames(readFileSync(join(root, "src/tooling/migrate/index.ts"), "utf8"));
+  expect(pg).not.toContain("compileColumn");
+  expect(pg).not.toContain("emitRowTypes");
+  expect(pg).not.toContain("mapPostgresError");
+  expect(pg).not.toContain("isOperator");
+  expect(migrate).toEqual(["MigrateConfig", "TargetInput", "defineConfig"]);
 });
 
 test("an export that imports the rest of the barrel fails the shake check", () => {

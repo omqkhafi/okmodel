@@ -509,14 +509,6 @@
       "kind": "stable"
     },
     {
-      "name": "CompileColumnInput",
-      "kind": "internal"
-    },
-    {
-      "name": "CompiledColumn",
-      "kind": "internal"
-    },
-    {
       "name": "FlagTrue",
       "kind": "stable"
     },
@@ -539,10 +531,6 @@
     {
       "name": "ManyRelation",
       "kind": "stable"
-    },
-    {
-      "name": "MapPostgresErrorOptions",
-      "kind": "internal"
     },
     {
       "name": "NumericAs",
@@ -653,10 +641,6 @@
       "kind": "stable"
     },
     {
-      "name": "compileColumn",
-      "kind": "internal"
-    },
-    {
       "name": "contains",
       "kind": "stable"
     },
@@ -679,10 +663,6 @@
     {
       "name": "double",
       "kind": "stable"
-    },
-    {
-      "name": "emitRowTypes",
-      "kind": "internal"
     },
     {
       "name": "endsWith",
@@ -757,10 +737,6 @@
       "kind": "stable"
     },
     {
-      "name": "isOperator",
-      "kind": "internal"
-    },
-    {
       "name": "json",
       "kind": "stable"
     },
@@ -805,10 +781,6 @@
       "kind": "stable"
     },
     {
-      "name": "mapPostgresError",
-      "kind": "internal"
-    },
-    {
       "name": "none",
       "kind": "stable"
     },
@@ -831,14 +803,6 @@
     {
       "name": "one",
       "kind": "stable"
-    },
-    {
-      "name": "operatorName",
-      "kind": "internal"
-    },
-    {
-      "name": "operatorValue",
-      "kind": "internal"
     },
     {
       "name": "or",
@@ -875,10 +839,6 @@
     {
       "name": "table",
       "kind": "stable"
-    },
-    {
-      "name": "tag",
-      "kind": "internal"
     },
     {
       "name": "text",
@@ -995,128 +955,16 @@
   ],
   "okmodel/migrate": [
     {
-      "name": "CommandIo",
-      "kind": "internal"
-    },
-    {
-      "name": "InvokeFlags",
-      "kind": "internal"
-    },
-    {
       "name": "MigrateConfig",
       "kind": "stable"
-    },
-    {
-      "name": "MigrationClass",
-      "kind": "internal"
-    },
-    {
-      "name": "MigrationPlan",
-      "kind": "internal"
-    },
-    {
-      "name": "PlanRequest",
-      "kind": "internal"
-    },
-    {
-      "name": "PlanStep",
-      "kind": "internal"
-    },
-    {
-      "name": "PolicyOperation",
-      "kind": "internal"
-    },
-    {
-      "name": "Replacement",
-      "kind": "internal"
     },
     {
       "name": "TargetInput",
       "kind": "stable"
     },
     {
-      "name": "TargetRecord",
-      "kind": "internal"
-    },
-    {
-      "name": "assertDirectConnection",
-      "kind": "internal"
-    },
-    {
-      "name": "assertTargetAlias",
-      "kind": "internal"
-    },
-    {
-      "name": "assertTargetPolicy",
-      "kind": "internal"
-    },
-    {
-      "name": "buildProject",
-      "kind": "internal"
-    },
-    {
-      "name": "catalogsEqual",
-      "kind": "internal"
-    },
-    {
-      "name": "checkProject",
-      "kind": "internal"
-    },
-    {
       "name": "defineConfig",
       "kind": "stable"
-    },
-    {
-      "name": "formatPlan",
-      "kind": "internal"
-    },
-    {
-      "name": "generateProject",
-      "kind": "internal"
-    },
-    {
-      "name": "listTargets",
-      "kind": "internal"
-    },
-    {
-      "name": "loadTrustedCatalog",
-      "kind": "internal"
-    },
-    {
-      "name": "parsePlan",
-      "kind": "internal"
-    },
-    {
-      "name": "parseReplace",
-      "kind": "internal"
-    },
-    {
-      "name": "planMigration",
-      "kind": "internal"
-    },
-    {
-      "name": "planProject",
-      "kind": "internal"
-    },
-    {
-      "name": "projectHead",
-      "kind": "internal"
-    },
-    {
-      "name": "run",
-      "kind": "internal"
-    },
-    {
-      "name": "selectTarget",
-      "kind": "internal"
-    },
-    {
-      "name": "staleRenames",
-      "kind": "internal"
-    },
-    {
-      "name": "unlistedTableFiles",
-      "kind": "internal"
     }
   ]
 }

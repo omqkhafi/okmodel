@@ -25,6 +25,24 @@ test("each public subpath matches the API snapshot", () => {
   }
 });
 
+test("a public subpath has no internal export", () => {
+  for (const entry of API_ENTRIES) {
+    if (entry.subpath === "okmodel/internal") continue;
+    const actual = classifyEntry(readEntry(join(root, entry.file)), entry.subpath);
+    const internal = actual.filter((item) => item.kind === "internal").map((item) => item.name);
+    expect(internal, entry.subpath).toEqual([]);
+  }
+});
+
+test("okmodel/internal export statements carry @internal", () => {
+  const source = readFileSync(join(root, "src/contracts/internal.ts"), "utf8");
+  const parts = source.split(/\nexport /);
+  expect(parts.length).toBeGreaterThan(1);
+  for (const before of parts.slice(0, -1)) {
+    expect(before).toContain("@internal");
+  }
+});
+
 test("package exports are the snapshot subpaths", () => {
   const parsed: unknown = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
   if (!isRecord(parsed) || !isRecord(parsed.exports)) {

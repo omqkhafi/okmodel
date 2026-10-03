@@ -26,21 +26,6 @@ export type ApiExport = {
   readonly kind: ApiKind;
 };
 
-const PG_INTERNAL = new Set([
-  "CompiledColumn",
-  "CompileColumnInput",
-  "MapPostgresErrorOptions",
-  "compileColumn",
-  "emitRowTypes",
-  "isOperator",
-  "mapPostgresError",
-  "operatorName",
-  "operatorValue",
-  "tag",
-]);
-
-const MIGRATE_STABLE = new Set(["MigrateConfig", "TargetInput", "defineConfig"]);
-
 /**
  * Names a source entry exports, including types.
  *
@@ -72,9 +57,8 @@ export function exportNames(source: string): readonly string[] {
 /**
  * Classifies one export.
  *
- * `okmodel/internal` is entirely internal. `domain` is experimental until 0.3.
- * Dialect-author helpers on `okmodel/pg` and the migration engine stay
- * exported and are classified internal.
+ * `okmodel/internal` is entirely internal. A public subpath is stable.
+ * `domain` is experimental until 0.3.
  *
  * @param subpath - Package subpath
  * @param name - Export name
@@ -83,8 +67,6 @@ export function exportNames(source: string): readonly string[] {
 export function classifyExport(subpath: string, name: string): ApiKind {
   if (subpath === "okmodel/internal") return "internal";
   if (subpath === "okmodel/pg" && name === "domain") return "experimental";
-  if (subpath === "okmodel/pg" && PG_INTERNAL.has(name)) return "internal";
-  if (subpath === "okmodel/migrate" && !MIGRATE_STABLE.has(name)) return "internal";
   return "stable";
 }
 

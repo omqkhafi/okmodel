@@ -5,8 +5,6 @@
  * Each builder is a separate export so a bundle can keep only the ones it calls.
  */
 
-export { mapPostgresError, type MapPostgresErrorOptions } from "./errors.js";
-export { emitRowTypes } from "./emit.js";
 export {
   schema,
   type BuiltSchema,
@@ -27,7 +25,6 @@ export {
   type TableOptions,
 } from "./table.js";
 
-export { compileColumn, type CompiledColumn, type CompileColumnInput } from "./compile.js";
 export { custom } from "./custom.js";
 export { ColumnBuilder } from "./column.js";
 export type {
@@ -82,5 +79,4 @@ export { not } from "./ops/not.js";
 export { notIn } from "./ops/notIn.js";
 export { or } from "./ops/or.js";
 export { startsWith } from "./ops/startsWith.js";
-export { isOperator, operatorName, operatorValue, tag } from "./operators.js";
 export { many, one, type ManyRelation, type OneRelation, type RelationCall } from "./relations.js";

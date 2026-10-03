@@ -2,6 +2,8 @@
 
 These builders and options throw OKM1061, or are not methods yet. The version is the release train in [`okmodel-execution-plan.md`](okmodel-execution-plan.md). `later` means the plan has not assigned a 0.x release.
 
+`okmodel/internal` has no stability promise. Names on that subpath can change or disappear in any release. Its exports are marked `@internal`.
+
 | Item | Version | Prompt |
 | --- | --- | --- |
 | `.hidden()` | 0.2 | P22 |

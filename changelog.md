@@ -84,7 +84,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `bun run bench` writes timings as JSON. Baselines can be stored beside the script; nothing compares them yet.
 - `bun run catalog-bench` times canonical form, SHA-256, and topological order on the 200-table fixture. It prints the sample and does not enforce a ceiling.
 - The replication test waits up to 30 seconds, matching its replay wait, so other Postgres tests can run beside it.
-- The runtime entry must stay within 60 KB minified and 20 KB gzip. A cold import on Node is the median of five fresh processes. CI fails above 25 ms (D134). Locally the script prints the 15 ms reference and records a finding above it.
+- The runtime-entry size gate is the measurement plus 10 percent: 6,100 minified bytes and 2,250 gzip (D144). A cold import on Node is the median of five fresh processes. CI fails above 25 ms (D134). Locally the script prints the 15 ms reference and records a finding above it.
 - The 0.1 app startup budget is the startup graph after the trim: 77,524 minified bytes and 25,641 gzip, gate 79,849 / 26,410 (measured plus 3 percent, under the 86,688 / 27,800 cap). The total graph is printed and not gated. `okmodel/pg` is printed and not gated; a per-export tree-shake test and the app fixture are the gates. Connect entries stay gated on bytes (postgres.js 39,849 / 13,815, PGlite 38,146 / 13,505, measured plus 5 percent). Their cold import is printed, including a driver-stubbed sample, and is not gated. The 15 ms local reference applies to our own code with the driver stubbed. Adapter entries are gated on minified bytes that are not already in the runtime entry (postgres.js 15,093, PGlite 12,010). The app fixture's cold import is printed and is not the 25 ms CI failure. That failure stays on the runtime entry (D134), because the app runs `schema()` at import. Public subpaths are `okmodel`, `okmodel/pg`, `okmodel/pg/postgresjs`, `okmodel/pg/pglite`, `okmodel/migrate`, and `okmodel/internal`. `okmodel/testing` is reserved until 0.4 and is not exported.
 - `bun run editor-check` compares hover, completions, and diagnostics from the TypeScript 6 language server with a snapshot. It also checks the row types `okm build` emits, including an enum column. TypeScript 7 has no language server, so the server is the dev-only `typescript-editor` package. It is not imported and not bundled. The check is part of `bun run check`.
 - The Postgres CI job also runs the read and write tests.
@@ -105,7 +105,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The Postgres CI job also runs the apply tests.
 - An API snapshot fails CI when a public subpath gains or loses an export. Each export is classified stable, experimental, or internal.
 - The per-export tree-shake check fails when one `okmodel/pg` export keeps an unrelated module.
-- A quickstart test packs the tarball, installs it in a fresh project, runs `okm build`, applies the generated migration on PGlite, and reads and writes a row.
+- A quickstart test packs the tarball, installs it in a fresh project, and runs the commands in the quickstart doc: `okm build`, `okm generate`, and `okm migrate apply`, then the read and write calls.
 - The compatibility table is generated from the conformance run on postgres.js and PGlite.
 
 #### docs
@@ -145,7 +145,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The published package sets `sideEffects` to false.
 - The harness barrel no longer re-exports Postgres or PGlite.
 - Postgres tests share one Docker skip rule.
-- Cold import fails on CI above 25 ms (D134). A local sample above the 15 ms reference is printed as a finding and does not fail the script. Byte ceilings are unchanged.
+- Cold import fails on CI above 25 ms (D134). A local sample above the 15 ms reference is printed as a finding and does not fail the script.
+- The runtime-entry gate is measured plus 10 percent (6,100 minified bytes, 2,250 gzip). The 25 ms CI cold-import gate stays on that entry. App startup and connect gates stay.
 - `dist/` size is reported and no longer fails the check (D135). `size-budget.json` is removed. Adapter entries are gated on minified bytes that are not already in the runtime entry, so shared code is not counted twice.
 
 #### docs
@@ -153,6 +154,9 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The package description names typed queries, safe migrations, and replica-aware routing. The README is the 0.1 install note.
 - Changelog area headings are the layer names: `contracts`, `dialects`, `adapters`, `runtime`, `tooling`, and `docs`.
 - Normative docs match spec draft 22 and decisions D1–D143. The spec lists builders and options that throw OKM1061, and it says a production target must set `protected`. The spec registry names OKM1026, OKM1027, OKM1060, OKM1061, and OKM1210.
+- The quickstart test runs the commands in `docs/quickstart.md`, including `okm migrate apply`. Production and preview `apply` run in CI. Creating a preview database, seeding, deploying, deleting it, and cloning production for rehearsal do not: those steps are infrastructure, and CI has no production clone.
+- `okmodel/internal` has no stability promise. The README and the known-limits page say so, and its exports are marked `@internal`.
+- `docs/release.md` includes starting the Release workflow from the GitHub Actions page on the `v0.1.0` tag, next to the `gh` command.
 - Engineering standards (D129) are in `AGENTS.md` and the ship skill. Reports state runtime entry size, cold import, and type-cost change.
 
 ### 🐛 Fixed
@@ -173,3 +177,4 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - The M0 spike implementations are deleted. They remain on the `m0-spikes` tag. Findings stay in `docs/`. The row-type and operator fixtures remain so the type ceilings can be measured.
 - The empty `okmodel/testing` export. The name is reserved until 0.4.
+- Internal helpers leave the public subpaths. `okmodel/pg` no longer exports `compileColumn`, `emitRowTypes`, `mapPostgresError`, or the operator tag helpers. `okmodel/migrate` exports `defineConfig`, `MigrateConfig`, and `TargetInput`. The CLI imports its helpers from the package.

@@ -7,6 +7,7 @@ import { expect, test } from "bun:test";
 import { OkmError } from "../src/contracts/index.js";
 import { staticNamespace, table, type Provenance } from "../src/contracts/internal.js";
 import { catalog, catalogHash } from "../src/contracts/catalog/document.js";
+import { compileColumn } from "../src/dialects/pg/compile.js";
 import {
   bigint,
   boolean,
@@ -14,7 +15,6 @@ import {
   char,
   cidr,
   citext,
-  compileColumn,
   custom,
   date,
   daterange,
