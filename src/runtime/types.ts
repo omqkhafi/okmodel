@@ -269,6 +269,27 @@ export type Router = {
   }): RoutingDecision;
 };
 
+/**
+ * Required keys of an insert row.
+ *
+ * A key whose value includes `undefined` is optional. Marking it required makes
+ * the editor offer only the property under the cursor (D139).
+ *
+ * @typeParam T - Insert shape
+ */
+type RequiredInsert<T> = {
+  readonly [K in keyof T as undefined extends T[K] ? never : K]: T[K];
+};
+
+/**
+ * Optional keys of an insert row.
+ *
+ * @typeParam T - Insert shape
+ */
+type OptionalInsert<T> = {
+  readonly [K in keyof T as undefined extends T[K] ? K : never]?: T[K];
+};
+
 /** Insert shape of one table. */
 export type InsertOf<
   S extends QuerySchema,
@@ -361,9 +382,16 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   one<const O extends ReadOptions<S, K>>(options?: O): Read<ResultRow<S, K, O> | null>;
   count(options?: { readonly where?: WhereOf<S, K> }): Read<number>;
   exists(options?: { readonly where?: WhereOf<S, K> }): Read<boolean>;
-  /** Inserts one row or a list. Unknown keys are dropped. The list is one transaction. */
-  insert(data: InsertOf<S, K>, options?: InsertOptions<S, K>): Write<Show<RowOf<S, K>>>;
-  /** Inserts one row or a list. Unknown keys are dropped. The list is one transaction. */
+  /**
+   * Inserts one row. Unknown keys are dropped.
+   *
+   * Optional columns are optional keys, so completion lists the ones not yet written.
+   */
+  insert(
+    data: RequiredInsert<InsertOf<S, K>> & OptionalInsert<InsertOf<S, K>>,
+    options?: InsertOptions<S, K>,
+  ): Write<Show<RowOf<S, K>>>;
+  /** Inserts a list in one transaction. Unknown keys are dropped. */
   insert(
     data: readonly InsertOf<S, K>[],
     options?: InsertOptions<S, K>,

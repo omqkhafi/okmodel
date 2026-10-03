@@ -160,11 +160,14 @@ function assertSurface(report: Report): readonly string[] {
     problems.push("editor-check: where completions are missing a column name");
   }
   const insert = names("insert");
-  if (!insert.includes("email")) {
-    problems.push("editor-check: insert completions are missing a column name");
+  if (!insert.includes("email") || !insert.includes("city")) {
+    problems.push("editor-check: insert completions do not list the insertable columns");
   }
-  if (insert.includes("role")) {
-    problems.push("editor-check: insert completions include the guarded role field");
+  if (insert.includes("role") || insert.includes("id")) {
+    problems.push("editor-check: insert completions include a column that insert omits");
+  }
+  if (hover("created").includes("[]")) {
+    problems.push("editor-check: insert result collapsed to an array");
   }
   const set = names("set");
   if (!set.includes("title") || !set.includes("position")) {
