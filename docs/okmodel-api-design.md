@@ -1,6 +1,6 @@
-# OKModel — API design (draft 23)
+# OKModel — API design (draft 25)
 
-Status: design draft, 2026-09-30. Not yet approved for implementation. Draft 18 applied the M0 gate decisions D115–D127 (evidence: `docs/m0-findings.md` in the repository); draft 19 added D128 (catalog error codes); draft 20 added D130 (column definition and codec error codes); draft 21 added D131 (removing a picklist or enum value); draft 22 adds D132 (reserved options, reference names). Supersedes drafts 1–21 of this file and the API sections of `orm-research-design.md`. Evidence for the draft-4 changes is in `okmodel-gap-research.md`.
+Status: design draft, 2026-09-30. Not yet approved for implementation. Draft 18 applied the M0 gate decisions D115–D127 (evidence: `docs/m0-findings.md` in the repository); draft 19 added D128 (catalog error codes); draft 20 added D130 (column definition and codec error codes); draft 21 added D131 (removing a picklist or enum value); draft 22 adds D132 (reserved options, reference names); draft 24 adds the 0.2 operator set (section 10.1); draft 25 takes the primary-key and Postgres 15 floor edits made in P17G (D148, D151) and renames the uuid default to `uuidv4` (D153). Supersedes drafts 1–21 of this file and the API sections of `orm-research-design.md`. Evidence for the draft-4 changes is in `okmodel-gap-research.md`.
 
 Name: **OKModel** (short **OKM**). Package `okmodel` on npm and repository `omqkhafi/okmodel`, CLI bins `okm` and `okmodel` (same program), error class `OkmError`, error codes `OKM1xxx`, config file `okm.config.ts`, generated folder `.okm/`, metadata table `okm_meta`. The bin names are not npm package names, so a bare `bunx okm` without a local or global install could fetch an unrelated package; the README tells developers to install first (`bun add -d okmodel`, then `bunx okm`, or a global install).
 
@@ -588,7 +588,7 @@ References are plain table-name strings (a generic table-name argument cycles th
 
 | Group | Builders |
 |---|---|
-| Keys | `t.id()` (uuid; default `uuidv7()`, or `{ default: "random" }` for `gen_random_uuid()`, or `{ default: "none" }` when the caller supplies the id), `t.identity()`, `t.uuid()`, `.primaryKey()` on a column, `primaryKey` on the table |
+| Keys | `t.id()` (uuid; default `uuidv7()`, or `{ default: "uuidv4" }` for `gen_random_uuid()` (D153), or `{ default: "none" }` when the caller supplies the id), `t.identity()`, `t.uuid()`, `.primaryKey()` on a column, `primaryKey` on the table |
 | Integers | `t.smallint()`, `t.integer()`, `t.bigint()` |
 | Decimals | `t.numeric(p, s)`, `t.real()`, `t.double()` |
 | Text | `t.text()`, `t.varchar(n)`, `t.char(n)`, `t.citext()` |
@@ -605,7 +605,9 @@ References are plain table-name strings (a generic table-name argument cycles th
 
 Modifiers: `.nullable()`, `.default(v)`, `.defaultSql(sql)`, `.primaryKey()`, `.unique({ reason, global })`, `.references(table, opts)`, `.picklist([...], { check })`, `.generated(sql, { stored })`, `.guarded()`, `.renamedFrom(name)`, `.sqlName()`, `.comment()`. `.hidden()` and `.validate(rules | schema)` are not in 0.1.
 
-`t.id()` with `uuidv7()` or `random`, and `t.identity()`, are omitted from insert and update. `t.id({ default: "none" })`, `.primaryKey()`, and a composite `primaryKey` are required on insert (optional when the column already has a default) and omitted from update. A declared `requires` below Postgres 18 rejects `uuidv7()` at schema build (OKM1812) and the message names `t.id({ default: "random" })`.
+`t.id()` with `uuidv7()` or `uuidv4`, and `t.identity()`, are omitted from insert and update. `t.id({ default: "none" })`, `.primaryKey()`, and a composite `primaryKey` are required on insert (optional when the column already has a default) and omitted from update. A declared `requires` below Postgres 18 rejects `uuidv7()` at schema build (OKM1812) and the message names `t.id({ default: "uuidv4" })`.
+
+**Client defaults and id generators (0.2, D153, D154).** `.default(x)` takes a literal or a client generator (`uuidv4`, `uuidv7`, `okid(...)`, or a function): the client fills the field on insert when it is omitted, nothing enters the database catalog or its hash, and the column has no database default, so a writer that bypasses okmodel must supply the value. `.defaultSql(sql)` is the database default. `schema({ tables, defaults: { id } })` sets what a bare `t.id()` means; a per-column option wins; `connect({ generators })` replaces a built-in generator for tests. OKID columns are `text` with `COLLATE "C"` so sortable ids order as time. All of this ships in P19.
 
 **Not in this version.** A builder or option in this table throws OKM1061 and names the version that adds it. `.hidden()` and `.sensitive()` are not methods yet. `later` means no 0.x version is assigned yet.
 
@@ -795,6 +797,21 @@ const today = await scoped.tasks.pending().ownedBy(userId).find({
 - `undefined` in `find` filters means "no filter"; in `update`/`delete`, a `where` that becomes empty throws OKM1102.
 - One logical operation per call (section 5.3). Reads and relation loading: the statement count depends on query shape, never on result cardinality; no lazy loading. Writes may be split by input size or driver limits, within the operation's declared atomicity.
 - To-many `include` requires `limit` or `.all("reason")` (OKM1105); hidden fields and archived rows are excluded from includes.
+
+#### Operators by column type (0.2)
+
+All are tagged helpers from `okmodel/pg`. The planner picks the SQL from the column type, so one name serves several types, and an operator that does not apply to its column is rejected at compile time and at runtime (OKM1124).
+
+| Helper | Column types | SQL |
+|---|---|---|
+| `contains(x)` | text: substring (as in 0.1); array, jsonb, range: containment | `@>` |
+| `containedBy(x)` | array, jsonb, range | `<@` |
+| `overlaps(x)` | array, range | `&&` |
+| `hasKey(k)`, `hasAnyKey(ks)` | jsonb | `jsonb_exists`, `jsonb_exists_any` (function forms, so a `?` never appears in SQL text) |
+| `path(segments, op)` | json, jsonb | `col #>> $1::text[]` compared with `op`; the operand type of `op` picks the cast (number to numeric, boolean to boolean, string to text) |
+| `matches(q, { mode?, config? })` | tsvector | `@@` with `websearch_to_tsquery` (default, never throws on user input), `plainto_tsquery` (`"plain"`) or `phraseto_tsquery` (`"phrase"`) |
+
+Atomic write operators (section 11) are `json.set(path, v)`, `arr.append(v)`, `arr.remove(v)`, exported as namespaces (`export * as json`) so each member tree-shakes. Trigram similarity and citext operators arrive with extensions (M2); text search on a plain `text` column is not supported (it needs an expression index) and fails with a clear error.
 
 ### 10.2 User-driven filtering
 
