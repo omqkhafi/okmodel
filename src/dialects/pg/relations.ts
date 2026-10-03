@@ -2,7 +2,7 @@
  * `one` and `many` relations.
  *
  * They name a table. `schema()` resolves the foreign key. An ambiguous key
- * is OKM1021. `manyThrough` and `morph` stay reserved.
+ * is OKM1021. `manyThrough` arrives in 0.2. `morph` stays reserved.
  */
 
 /** A to-one relation. `field` is the local foreign key when the table has several. */

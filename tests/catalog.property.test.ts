@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import * as fc from "fast-check";
 
+import { OkmError } from "../src/contracts/index.js";
 import {
   POSTGRES_IDENTIFIER_MAX_BYTES,
-  OkmError,
   column,
   deterministicName,
   fitIdentifier,
@@ -14,7 +14,7 @@ import {
   templateNamespace,
   utf8ByteLength,
   type NamePurpose,
-} from "../src/contracts/index.js";
+} from "../src/contracts/internal.js";
 import {
   catalog,
   catalogHash,

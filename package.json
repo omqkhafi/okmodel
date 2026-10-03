@@ -1,6 +1,6 @@
 {
   "name": "okmodel",
-  "version": "0.1.0-next.26",
+  "version": "0.1.0",
   "description": "Catalog-first TypeScript ORM: typed queries, safe migrations and replica-aware routing. PostgreSQL first, zero runtime dependencies.",
   "license": "Apache-2.0",
   "author": "Omq Khafi",
@@ -31,13 +31,13 @@
       "types": "./dist/dialects/pg/index.d.ts",
       "import": "./dist/dialects/pg/index.js"
     },
+    "./internal": {
+      "types": "./dist/contracts/internal.d.ts",
+      "import": "./dist/contracts/internal.js"
+    },
     "./migrate": {
       "types": "./dist/tooling/migrate/index.d.ts",
       "import": "./dist/tooling/migrate/index.js"
-    },
-    "./testing": {
-      "types": "./dist/tooling/testing/index.d.ts",
-      "import": "./dist/tooling/testing/index.js"
     },
     "./pg/postgresjs": {
       "types": "./dist/runtime/pg/postgresjs.d.ts",
@@ -49,7 +49,7 @@
     }
   },
   "scripts": {
-    "build": "rm -rf dist && bun build ./src/contracts/index.ts ./src/dialects/pg/index.ts ./src/runtime/pg/postgresjs.ts ./src/runtime/pg/pglite.ts ./src/tooling/migrate/index.ts ./src/tooling/testing/index.ts ./src/tooling/cli.ts --outdir ./dist --root ./src --format esm --target node --splitting --chunk-naming=shared/[hash].js --external postgres --external @electric-sql/pglite && bunx tsc -p tsconfig.build.json && bun ./scripts/write-bin-wrappers.ts",
+    "build": "rm -rf dist && bun build ./src/contracts/index.ts ./src/contracts/internal.ts ./src/dialects/pg/index.ts ./src/runtime/pg/postgresjs.ts ./src/runtime/pg/pglite.ts ./src/tooling/migrate/index.ts ./src/tooling/cli.ts --outdir ./dist --root ./src --format esm --target node --splitting --chunk-naming=shared/[hash].js --external postgres --external @electric-sql/pglite && bunx tsc -p tsconfig.build.json && bun ./scripts/write-bin-wrappers.ts",
     "driver-bench": "bun ./scripts/driver-bench.ts",
     "typecheck": "bunx tsc --noEmit -p tsconfig.json",
     "editor-check": "bun ./scripts/editor-check.ts",

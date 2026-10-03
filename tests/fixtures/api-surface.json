@@ -1,0 +1,1122 @@
+{
+  "okmodel": [
+    {
+      "name": "AnySchema",
+      "kind": "stable"
+    },
+    {
+      "name": "AnyTableShape",
+      "kind": "stable"
+    },
+    {
+      "name": "CATALOG_CODES",
+      "kind": "stable"
+    },
+    {
+      "name": "COLUMN_CODES",
+      "kind": "stable"
+    },
+    {
+      "name": "CatalogCode",
+      "kind": "stable"
+    },
+    {
+      "name": "ColumnCode",
+      "kind": "stable"
+    },
+    {
+      "name": "DescribeResult",
+      "kind": "stable"
+    },
+    {
+      "name": "DriverCapabilities",
+      "kind": "stable"
+    },
+    {
+      "name": "DriverConnection",
+      "kind": "stable"
+    },
+    {
+      "name": "DriverErrorFields",
+      "kind": "stable"
+    },
+    {
+      "name": "DriverFailureKind",
+      "kind": "stable"
+    },
+    {
+      "name": "DriverPool",
+      "kind": "stable"
+    },
+    {
+      "name": "DriverPoolConfig",
+      "kind": "stable"
+    },
+    {
+      "name": "DriverStats",
+      "kind": "stable"
+    },
+    {
+      "name": "ERROR_CATEGORIES",
+      "kind": "stable"
+    },
+    {
+      "name": "ERROR_KINDS",
+      "kind": "stable"
+    },
+    {
+      "name": "ErrorCategory",
+      "kind": "stable"
+    },
+    {
+      "name": "ErrorColumns",
+      "kind": "stable"
+    },
+    {
+      "name": "ErrorFields",
+      "kind": "stable"
+    },
+    {
+      "name": "ErrorFix",
+      "kind": "stable"
+    },
+    {
+      "name": "ErrorKind",
+      "kind": "stable"
+    },
+    {
+      "name": "ErrorLog",
+      "kind": "stable"
+    },
+    {
+      "name": "ErrorStatuses",
+      "kind": "stable"
+    },
+    {
+      "name": "ExecuteOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "ExecuteResult",
+      "kind": "stable"
+    },
+    {
+      "name": "HttpError",
+      "kind": "stable"
+    },
+    {
+      "name": "HttpErrorBody",
+      "kind": "stable"
+    },
+    {
+      "name": "Insert",
+      "kind": "stable"
+    },
+    {
+      "name": "Notice",
+      "kind": "stable"
+    },
+    {
+      "name": "OkmError",
+      "kind": "stable"
+    },
+    {
+      "name": "OkmErrorOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "PreparedMode",
+      "kind": "stable"
+    },
+    {
+      "name": "QueryCode",
+      "kind": "stable"
+    },
+    {
+      "name": "Register",
+      "kind": "stable"
+    },
+    {
+      "name": "Row",
+      "kind": "stable"
+    },
+    {
+      "name": "SafeResult",
+      "kind": "stable"
+    },
+    {
+      "name": "SchemaOf",
+      "kind": "stable"
+    },
+    {
+      "name": "Statement",
+      "kind": "stable"
+    },
+    {
+      "name": "TableName",
+      "kind": "stable"
+    },
+    {
+      "name": "TransactionMode",
+      "kind": "stable"
+    },
+    {
+      "name": "Update",
+      "kind": "stable"
+    },
+    {
+      "name": "WireValue",
+      "kind": "stable"
+    },
+    {
+      "name": "safe",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/internal": [
+    {
+      "name": "AnchoredIdentity",
+      "kind": "internal"
+    },
+    {
+      "name": "BUILT_KINDS",
+      "kind": "internal"
+    },
+    {
+      "name": "BuiltKind",
+      "kind": "internal"
+    },
+    {
+      "name": "CATALOG_VERSION",
+      "kind": "internal"
+    },
+    {
+      "name": "Catalog",
+      "kind": "internal"
+    },
+    {
+      "name": "CatalogEnvelope",
+      "kind": "internal"
+    },
+    {
+      "name": "CatalogObject",
+      "kind": "internal"
+    },
+    {
+      "name": "ColumnDefinition",
+      "kind": "internal"
+    },
+    {
+      "name": "ColumnInput",
+      "kind": "internal"
+    },
+    {
+      "name": "ColumnObject",
+      "kind": "internal"
+    },
+    {
+      "name": "ConstraintDefinition",
+      "kind": "internal"
+    },
+    {
+      "name": "ConstraintInput",
+      "kind": "internal"
+    },
+    {
+      "name": "ConstraintKind",
+      "kind": "internal"
+    },
+    {
+      "name": "ConstraintObject",
+      "kind": "internal"
+    },
+    {
+      "name": "DefaultPrivilegeIdentity",
+      "kind": "internal"
+    },
+    {
+      "name": "DependencyEdge",
+      "kind": "internal"
+    },
+    {
+      "name": "ExtensionIdentity",
+      "kind": "internal"
+    },
+    {
+      "name": "FunctionIdentity",
+      "kind": "internal"
+    },
+    {
+      "name": "GrantIdentity",
+      "kind": "internal"
+    },
+    {
+      "name": "GrantObjectRef",
+      "kind": "internal"
+    },
+    {
+      "name": "IndexDefinition",
+      "kind": "internal"
+    },
+    {
+      "name": "IndexInput",
+      "kind": "internal"
+    },
+    {
+      "name": "IndexObject",
+      "kind": "internal"
+    },
+    {
+      "name": "KIND_OPERATIONS",
+      "kind": "internal"
+    },
+    {
+      "name": "NamePurpose",
+      "kind": "internal"
+    },
+    {
+      "name": "Namespace",
+      "kind": "internal"
+    },
+    {
+      "name": "NamespaceIdentity",
+      "kind": "internal"
+    },
+    {
+      "name": "OBJECT_KINDS",
+      "kind": "internal"
+    },
+    {
+      "name": "OBJECT_OPERATIONS",
+      "kind": "internal"
+    },
+    {
+      "name": "OWNERS",
+      "kind": "internal"
+    },
+    {
+      "name": "ObjectIdentity",
+      "kind": "internal"
+    },
+    {
+      "name": "ObjectKind",
+      "kind": "internal"
+    },
+    {
+      "name": "ObjectOperation",
+      "kind": "internal"
+    },
+    {
+      "name": "ObjectRef",
+      "kind": "internal"
+    },
+    {
+      "name": "Owner",
+      "kind": "internal"
+    },
+    {
+      "name": "POSTGRES_IDENTIFIER_MAX_BYTES",
+      "kind": "internal"
+    },
+    {
+      "name": "PartitionMethod",
+      "kind": "internal"
+    },
+    {
+      "name": "Provenance",
+      "kind": "internal"
+    },
+    {
+      "name": "ReferentialAction",
+      "kind": "internal"
+    },
+    {
+      "name": "RoleIdentity",
+      "kind": "internal"
+    },
+    {
+      "name": "SequenceDefinition",
+      "kind": "internal"
+    },
+    {
+      "name": "SequenceInput",
+      "kind": "internal"
+    },
+    {
+      "name": "SequenceObject",
+      "kind": "internal"
+    },
+    {
+      "name": "TableDefinition",
+      "kind": "internal"
+    },
+    {
+      "name": "TableInput",
+      "kind": "internal"
+    },
+    {
+      "name": "TableObject",
+      "kind": "internal"
+    },
+    {
+      "name": "assertIdentifier",
+      "kind": "internal"
+    },
+    {
+      "name": "assertNamespace",
+      "kind": "internal"
+    },
+    {
+      "name": "catalogError",
+      "kind": "internal"
+    },
+    {
+      "name": "column",
+      "kind": "internal"
+    },
+    {
+      "name": "constraint",
+      "kind": "internal"
+    },
+    {
+      "name": "deterministicName",
+      "kind": "internal"
+    },
+    {
+      "name": "fitIdentifier",
+      "kind": "internal"
+    },
+    {
+      "name": "identifierLimitApplies",
+      "kind": "internal"
+    },
+    {
+      "name": "identityKey",
+      "kind": "internal"
+    },
+    {
+      "name": "identityLabel",
+      "kind": "internal"
+    },
+    {
+      "name": "index",
+      "kind": "internal"
+    },
+    {
+      "name": "isReservedIdentifier",
+      "kind": "internal"
+    },
+    {
+      "name": "nearestName",
+      "kind": "internal"
+    },
+    {
+      "name": "resolveNamespace",
+      "kind": "internal"
+    },
+    {
+      "name": "sameNamespace",
+      "kind": "internal"
+    },
+    {
+      "name": "sameRef",
+      "kind": "internal"
+    },
+    {
+      "name": "sequence",
+      "kind": "internal"
+    },
+    {
+      "name": "sha256",
+      "kind": "internal"
+    },
+    {
+      "name": "staticNamespace",
+      "kind": "internal"
+    },
+    {
+      "name": "table",
+      "kind": "internal"
+    },
+    {
+      "name": "templateNamespace",
+      "kind": "internal"
+    },
+    {
+      "name": "throwNamed",
+      "kind": "internal"
+    },
+    {
+      "name": "utf8ByteLength",
+      "kind": "internal"
+    }
+  ],
+  "okmodel/pg": [
+    {
+      "name": "AnyTable",
+      "kind": "stable"
+    },
+    {
+      "name": "ArrayOf",
+      "kind": "stable"
+    },
+    {
+      "name": "BigintAs",
+      "kind": "stable"
+    },
+    {
+      "name": "BigintValue",
+      "kind": "stable"
+    },
+    {
+      "name": "BuiltSchema",
+      "kind": "stable"
+    },
+    {
+      "name": "ColumnBuilder",
+      "kind": "stable"
+    },
+    {
+      "name": "ColumnFlags",
+      "kind": "stable"
+    },
+    {
+      "name": "ColumnHandle",
+      "kind": "stable"
+    },
+    {
+      "name": "ColumnInsert",
+      "kind": "stable"
+    },
+    {
+      "name": "ColumnInsertOf",
+      "kind": "stable"
+    },
+    {
+      "name": "ColumnRow",
+      "kind": "stable"
+    },
+    {
+      "name": "ColumnRowOf",
+      "kind": "stable"
+    },
+    {
+      "name": "ColumnUpdate",
+      "kind": "stable"
+    },
+    {
+      "name": "ColumnUpdateOf",
+      "kind": "stable"
+    },
+    {
+      "name": "CompileColumnInput",
+      "kind": "internal"
+    },
+    {
+      "name": "CompiledColumn",
+      "kind": "internal"
+    },
+    {
+      "name": "FlagTrue",
+      "kind": "stable"
+    },
+    {
+      "name": "IdFlags",
+      "kind": "stable"
+    },
+    {
+      "name": "IdentityFlags",
+      "kind": "stable"
+    },
+    {
+      "name": "IndexCall",
+      "kind": "stable"
+    },
+    {
+      "name": "Line",
+      "kind": "stable"
+    },
+    {
+      "name": "ManyRelation",
+      "kind": "stable"
+    },
+    {
+      "name": "MapPostgresErrorOptions",
+      "kind": "internal"
+    },
+    {
+      "name": "NumericAs",
+      "kind": "stable"
+    },
+    {
+      "name": "NumericValue",
+      "kind": "stable"
+    },
+    {
+      "name": "OneRelation",
+      "kind": "stable"
+    },
+    {
+      "name": "PlainFlags",
+      "kind": "stable"
+    },
+    {
+      "name": "Point",
+      "kind": "stable"
+    },
+    {
+      "name": "Range",
+      "kind": "stable"
+    },
+    {
+      "name": "ReferenceModifier",
+      "kind": "stable"
+    },
+    {
+      "name": "ReferenceOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "RelationCall",
+      "kind": "stable"
+    },
+    {
+      "name": "SchemaCodecs",
+      "kind": "stable"
+    },
+    {
+      "name": "SchemaInput",
+      "kind": "stable"
+    },
+    {
+      "name": "SchemaRequires",
+      "kind": "stable"
+    },
+    {
+      "name": "SqlForm",
+      "kind": "stable"
+    },
+    {
+      "name": "SqlText",
+      "kind": "stable"
+    },
+    {
+      "name": "SqlValue",
+      "kind": "stable"
+    },
+    {
+      "name": "Table",
+      "kind": "stable"
+    },
+    {
+      "name": "TableOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "TimeWithOffset",
+      "kind": "stable"
+    },
+    {
+      "name": "ValidateModifier",
+      "kind": "stable"
+    },
+    {
+      "name": "WithGenerated",
+      "kind": "stable"
+    },
+    {
+      "name": "between",
+      "kind": "stable"
+    },
+    {
+      "name": "bigint",
+      "kind": "stable"
+    },
+    {
+      "name": "boolean",
+      "kind": "stable"
+    },
+    {
+      "name": "bytea",
+      "kind": "stable"
+    },
+    {
+      "name": "char",
+      "kind": "stable"
+    },
+    {
+      "name": "cidr",
+      "kind": "stable"
+    },
+    {
+      "name": "citext",
+      "kind": "stable"
+    },
+    {
+      "name": "compileColumn",
+      "kind": "internal"
+    },
+    {
+      "name": "contains",
+      "kind": "stable"
+    },
+    {
+      "name": "custom",
+      "kind": "stable"
+    },
+    {
+      "name": "date",
+      "kind": "stable"
+    },
+    {
+      "name": "daterange",
+      "kind": "stable"
+    },
+    {
+      "name": "domain",
+      "kind": "experimental"
+    },
+    {
+      "name": "double",
+      "kind": "stable"
+    },
+    {
+      "name": "emitRowTypes",
+      "kind": "internal"
+    },
+    {
+      "name": "endsWith",
+      "kind": "stable"
+    },
+    {
+      "name": "enum",
+      "kind": "stable"
+    },
+    {
+      "name": "eq",
+      "kind": "stable"
+    },
+    {
+      "name": "every",
+      "kind": "stable"
+    },
+    {
+      "name": "gt",
+      "kind": "stable"
+    },
+    {
+      "name": "gte",
+      "kind": "stable"
+    },
+    {
+      "name": "has",
+      "kind": "stable"
+    },
+    {
+      "name": "id",
+      "kind": "stable"
+    },
+    {
+      "name": "identity",
+      "kind": "stable"
+    },
+    {
+      "name": "ilike",
+      "kind": "stable"
+    },
+    {
+      "name": "inList",
+      "kind": "stable"
+    },
+    {
+      "name": "inc",
+      "kind": "stable"
+    },
+    {
+      "name": "index",
+      "kind": "stable"
+    },
+    {
+      "name": "inet",
+      "kind": "stable"
+    },
+    {
+      "name": "int4range",
+      "kind": "stable"
+    },
+    {
+      "name": "int8range",
+      "kind": "stable"
+    },
+    {
+      "name": "integer",
+      "kind": "stable"
+    },
+    {
+      "name": "interval",
+      "kind": "stable"
+    },
+    {
+      "name": "isOperator",
+      "kind": "internal"
+    },
+    {
+      "name": "json",
+      "kind": "stable"
+    },
+    {
+      "name": "jsonReplacer",
+      "kind": "stable"
+    },
+    {
+      "name": "jsonb",
+      "kind": "stable"
+    },
+    {
+      "name": "like",
+      "kind": "stable"
+    },
+    {
+      "name": "line",
+      "kind": "stable"
+    },
+    {
+      "name": "lt",
+      "kind": "stable"
+    },
+    {
+      "name": "lte",
+      "kind": "stable"
+    },
+    {
+      "name": "ltree",
+      "kind": "stable"
+    },
+    {
+      "name": "macaddr",
+      "kind": "stable"
+    },
+    {
+      "name": "macaddr8",
+      "kind": "stable"
+    },
+    {
+      "name": "many",
+      "kind": "stable"
+    },
+    {
+      "name": "mapPostgresError",
+      "kind": "internal"
+    },
+    {
+      "name": "none",
+      "kind": "stable"
+    },
+    {
+      "name": "not",
+      "kind": "stable"
+    },
+    {
+      "name": "notIn",
+      "kind": "stable"
+    },
+    {
+      "name": "numeric",
+      "kind": "stable"
+    },
+    {
+      "name": "numrange",
+      "kind": "stable"
+    },
+    {
+      "name": "one",
+      "kind": "stable"
+    },
+    {
+      "name": "operatorName",
+      "kind": "internal"
+    },
+    {
+      "name": "operatorValue",
+      "kind": "internal"
+    },
+    {
+      "name": "or",
+      "kind": "stable"
+    },
+    {
+      "name": "point",
+      "kind": "stable"
+    },
+    {
+      "name": "real",
+      "kind": "stable"
+    },
+    {
+      "name": "schema",
+      "kind": "stable"
+    },
+    {
+      "name": "smallint",
+      "kind": "stable"
+    },
+    {
+      "name": "sql",
+      "kind": "stable"
+    },
+    {
+      "name": "startsWith",
+      "kind": "stable"
+    },
+    {
+      "name": "t",
+      "kind": "stable"
+    },
+    {
+      "name": "table",
+      "kind": "stable"
+    },
+    {
+      "name": "tag",
+      "kind": "internal"
+    },
+    {
+      "name": "text",
+      "kind": "stable"
+    },
+    {
+      "name": "time",
+      "kind": "stable"
+    },
+    {
+      "name": "timestamp",
+      "kind": "stable"
+    },
+    {
+      "name": "timestamptz",
+      "kind": "stable"
+    },
+    {
+      "name": "timetz",
+      "kind": "stable"
+    },
+    {
+      "name": "tstzrange",
+      "kind": "stable"
+    },
+    {
+      "name": "tsvector",
+      "kind": "stable"
+    },
+    {
+      "name": "uuid",
+      "kind": "stable"
+    },
+    {
+      "name": "varchar",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/pg/postgresjs": [
+    {
+      "name": "DriverError",
+      "kind": "stable"
+    },
+    {
+      "name": "PostgresConnectOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "PostgresJsConfig",
+      "kind": "stable"
+    },
+    {
+      "name": "PostgresTarget",
+      "kind": "stable"
+    },
+    {
+      "name": "capabilities",
+      "kind": "stable"
+    },
+    {
+      "name": "connect",
+      "kind": "stable"
+    },
+    {
+      "name": "hasCapability",
+      "kind": "stable"
+    },
+    {
+      "name": "open",
+      "kind": "stable"
+    },
+    {
+      "name": "readCapability",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/pg/pglite": [
+    {
+      "name": "DriverError",
+      "kind": "stable"
+    },
+    {
+      "name": "PgliteConfig",
+      "kind": "stable"
+    },
+    {
+      "name": "PgliteConnectOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "PgliteTarget",
+      "kind": "stable"
+    },
+    {
+      "name": "capabilities",
+      "kind": "stable"
+    },
+    {
+      "name": "connect",
+      "kind": "stable"
+    },
+    {
+      "name": "hasCapability",
+      "kind": "stable"
+    },
+    {
+      "name": "open",
+      "kind": "stable"
+    },
+    {
+      "name": "readCapability",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/migrate": [
+    {
+      "name": "CommandIo",
+      "kind": "internal"
+    },
+    {
+      "name": "InvokeFlags",
+      "kind": "internal"
+    },
+    {
+      "name": "MigrateConfig",
+      "kind": "stable"
+    },
+    {
+      "name": "MigrationClass",
+      "kind": "internal"
+    },
+    {
+      "name": "MigrationPlan",
+      "kind": "internal"
+    },
+    {
+      "name": "PlanRequest",
+      "kind": "internal"
+    },
+    {
+      "name": "PlanStep",
+      "kind": "internal"
+    },
+    {
+      "name": "PolicyOperation",
+      "kind": "internal"
+    },
+    {
+      "name": "Replacement",
+      "kind": "internal"
+    },
+    {
+      "name": "TargetInput",
+      "kind": "stable"
+    },
+    {
+      "name": "TargetRecord",
+      "kind": "internal"
+    },
+    {
+      "name": "assertDirectConnection",
+      "kind": "internal"
+    },
+    {
+      "name": "assertTargetAlias",
+      "kind": "internal"
+    },
+    {
+      "name": "assertTargetPolicy",
+      "kind": "internal"
+    },
+    {
+      "name": "buildProject",
+      "kind": "internal"
+    },
+    {
+      "name": "catalogsEqual",
+      "kind": "internal"
+    },
+    {
+      "name": "checkProject",
+      "kind": "internal"
+    },
+    {
+      "name": "defineConfig",
+      "kind": "stable"
+    },
+    {
+      "name": "formatPlan",
+      "kind": "internal"
+    },
+    {
+      "name": "generateProject",
+      "kind": "internal"
+    },
+    {
+      "name": "listTargets",
+      "kind": "internal"
+    },
+    {
+      "name": "loadTrustedCatalog",
+      "kind": "internal"
+    },
+    {
+      "name": "parsePlan",
+      "kind": "internal"
+    },
+    {
+      "name": "parseReplace",
+      "kind": "internal"
+    },
+    {
+      "name": "planMigration",
+      "kind": "internal"
+    },
+    {
+      "name": "planProject",
+      "kind": "internal"
+    },
+    {
+      "name": "projectHead",
+      "kind": "internal"
+    },
+    {
+      "name": "run",
+      "kind": "internal"
+    },
+    {
+      "name": "selectTarget",
+      "kind": "internal"
+    },
+    {
+      "name": "staleRenames",
+      "kind": "internal"
+    },
+    {
+      "name": "unlistedTableFiles",
+      "kind": "internal"
+    }
+  ]
+}

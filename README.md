@@ -1,22 +1,44 @@
 # OKModel
 
-Early stage: the API has not stabilised yet.
-
-OKModel (OKM) is a catalog-first TypeScript ORM. Work in progress.
+Catalog-first TypeScript ORM for PostgreSQL. Version 0.1.
 
 ## Install
 
-Install first. A bare `bunx okm` without installing can fetch an unrelated package.
-
 ```sh
-bun add -d okmodel
-bunx okm
+bun add okmodel
 ```
 
-Or install globally:
+postgres.js and PGlite are optional peers. Install the one you connect with.
 
 ```sh
-bun add -g okmodel
+bun add postgres
+# or
+bun add @electric-sql/pglite
 ```
+
+The repository docs have the [quickstart](docs/quickstart.md), the [production checklist](docs/production.md), and the [known limits](docs/known-limits.md). Those files are not in the npm tarball.
+
+```ts
+import { schema, table, t } from "okmodel/pg";
+import { defineConfig } from "okmodel/migrate";
+
+export const notes = table("notes", {
+  id: t.uuid(),
+  title: t.text(),
+});
+
+export const app = schema({ tables: [notes] });
+
+export default defineConfig({ schema: "./schema.ts" });
+```
+
+```sh
+bunx okm build
+bunx okm generate init
+```
+
+`table` and `index` for a schema come from `okmodel/pg`. Stable, experimental, and internal exports are listed in `tests/fixtures/api-surface.json` in the repository.
+
+A production target sets `protected: true`. A production `connect` sets `requireMeta: true`. `prepared: "named"` is not for a transaction-mode pooler.
 
 Apache-2.0.

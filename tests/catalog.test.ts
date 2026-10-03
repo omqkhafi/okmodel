@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { OkmError, sha256 } from "../src/contracts/index.js";
+import { OkmError } from "../src/contracts/index.js";
 import {
   KIND_OPERATIONS,
   OBJECT_KINDS,
@@ -14,6 +14,7 @@ import {
   index,
   resolveNamespace,
   sequence,
+  sha256,
   staticNamespace,
   table,
   templateNamespace,
@@ -21,7 +22,7 @@ import {
   type Catalog,
   type ObjectRef,
   type Provenance,
-} from "../src/contracts/index.js";
+} from "../src/contracts/internal.js";
 import {
   catalog,
   catalogHash,

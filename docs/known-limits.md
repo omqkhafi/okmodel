@@ -1,0 +1,30 @@
+# Known limits
+
+These builders and options throw OKM1061, or are not methods yet. The version is the release train in [`okmodel-execution-plan.md`](okmodel-execution-plan.md). `later` means the plan has not assigned a 0.x release.
+
+| Item | Version | Prompt |
+| --- | --- | --- |
+| `.hidden()` | 0.2 | P22 |
+| `.sensitive()` | 0.2 | P22 |
+| `.validate()` | 0.2 | P26 |
+| `table({ validate, validation, presets, omitDefaults })` and `schema({ validation })` | 0.2 | P26, P28, P23 |
+| tenancy on `table()` and `schema()` | 0.2 | P24 |
+| traits on `table()` and `schema()` | 0.2 | P23 |
+| presets | 0.2 | P28 |
+| `manyThrough` | 0.2 | P27 |
+| `t.domain` | 0.3 | P40 |
+| extensions | 0.3 | P40 |
+| functions | 0.3 | P41 |
+| triggers | 0.3 | P41 |
+| views | 0.3 | P42 |
+| `reference` | 0.4 | P53A |
+| `okmodel/testing` | 0.4 | P54 |
+| `morph` | later | M2 |
+| `computed` | later | no 0.x prompt |
+| `policies` | later | no 0.x prompt |
+
+`.hidden()` already records the flag, and emitted row types omit that field. Excluding it from default selects is the 0.2 behaviour (P22). `.sensitive()` and `.validate()` are not methods.
+
+`one()` and `many()` work. A relation value that is not one of those throws OKM1061 and names 0.2 for `manyThrough`.
+
+Installing the head snapshot, snapshot-versus-replay equivalence (OKM1521), and `reference` rows arrive in P53A. In 0.1, `okm migrate apply` replays migration files. See [environments](environments.md).

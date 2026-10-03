@@ -11,12 +11,12 @@ test("package exports resolve under node and bun", async () => {
   linkSelfPackage();
   const source = [
     'import * as okmodel from "okmodel";',
+    'import * as internal from "okmodel/internal";',
     'import * as pg from "okmodel/pg";',
     'import * as migrate from "okmodel/migrate";',
-    'import * as testing from "okmodel/testing";',
     'import * as postgresjs from "okmodel/pg/postgresjs";',
     'import * as pglite from "okmodel/pg/pglite";',
-    "const kinds = [okmodel, pg, migrate, testing, postgresjs, pglite].map((entry) => typeof entry);",
+    "const kinds = [okmodel, internal, pg, migrate, postgresjs, pglite].map((entry) => typeof entry);",
     "if (kinds.some((kind) => kind !== 'object')) throw new Error(kinds.join(','));",
     "console.log('ok');",
   ].join("\n");

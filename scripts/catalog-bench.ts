@@ -18,7 +18,7 @@ import {
   staticNamespace,
   table,
   type CatalogObject,
-} from "../src/contracts/index.js";
+} from "../src/contracts/internal.js";
 import { sha256 } from "../src/contracts/sha256.js";
 import { utf8ByteLength } from "../src/contracts/utf8.js";
 

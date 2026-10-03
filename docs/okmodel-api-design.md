@@ -613,7 +613,8 @@ Modifiers: `.nullable()`, `.default(v)`, `.defaultSql(sql)`, `.unique({ reason, 
 | `schema({ tenancy, traits, validation })` and the same options on `table()` | 0.2 |
 | `table({ omitDefaults, presets, validate, validation })`, `.hidden()`, `.sensitive()` | 0.2 |
 | `table({ reference })` | 0.4 |
-| `manyThrough`, `morph`, `table({ computed, policies })` | later |
+| `manyThrough` | 0.2 |
+| `morph`, `table({ computed, policies })` | later |
 
 - Fields are `NOT NULL` unless `.nullable()`.
 - Extensions required by a type (`citext`, `ltree`) are added to migrations automatically.
@@ -1213,6 +1214,8 @@ A new Target is created from the current provisionable snapshot, not by replayin
 
 An environment is a named Target. Nothing about an environment is inferred from `NODE_ENV` or a URL.
 
+In 0.1, `okm migrate apply` replays migration files. Installing the head snapshot on an empty target (section 19.6) arrives with provisioning in P53A. A preview and a rehearsal in 0.1 both replay history.
+
 - **Named targets.** `production`, `staging` and `preview` are entries of `targets` (section 3.1); protection is declared on the entry that needs it. A pipeline names its target explicitly (`okm migrate apply --target production`), so a preview job cannot act on production by omission (OKM1853).
 - **Production is declared protected.** A target named `production` is not protected by its name. Set `protected: true` on that entry. `connect({ requireMeta: true })` is the matching runtime check for a missing `okm_meta`; it is also explicit and is not inferred from the name.
 - **Aliasing guard.** `okm check` and `okm doctor` compare the resolved hosts and database names of all targets and fail when targets that resolve to the same host, port and database differ in protection (OKM1852); two unprotected targets may share a database.
@@ -1246,7 +1249,7 @@ test("today view runs one query", async () => {
 });
 ```
 
-`testing` ships a cross-tenant isolation check that runs every table's basic queries under two tenants and fails on any leak.
+`testing` ships a cross-tenant isolation check that runs every table's basic queries under two tenants and fails on any leak. The `okmodel/testing` name is reserved. It is not an export in 0.1. Factories and the isolation check arrive in 0.4 (P54).
 
 **Testing principles.** Tests assert observable results, state changes, errors and emitted events of production code. The database is never mocked in ORM tests (PGlite or real Postgres); mock only external boundaries. File-content checks are for shipped artifacts, exports and cross-runtime contracts, never for source strings.
 

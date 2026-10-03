@@ -8,7 +8,8 @@ import { join } from "node:path";
 
 import { repoRoot } from "../scripts/root.js";
 import { DriverError, outcomeUnknown, timedOut } from "../src/adapters/error.js";
-import { OkmError, nearestName, safe, throwNamed } from "../src/contracts/index.js";
+import { OkmError, safe } from "../src/contracts/index.js";
+import { nearestName, throwNamed } from "../src/contracts/internal.js";
 import { mapPostgresError } from "../src/dialects/pg/errors.js";
 import { id, schema, table, text } from "../src/dialects/pg/index.js";
 import { ERROR_DOCS, errorDoc } from "../src/tooling/errors/registry.js";

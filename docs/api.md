@@ -1,0 +1,17 @@
+# API
+
+0.1 classifies every export as **stable**, **experimental**, or **internal**. The list CI checks is [`tests/fixtures/api-surface.json`](../tests/fixtures/api-surface.json). An export that is not in that file fails the test.
+
+Stable exports are the application API this release commits to. Experimental exports exist and may change their behaviour when the feature arrives (`domain` throws OKM1061 until 0.3). Internal exports are for dialect authors and the sibling entries. They are not the application API.
+
+`okmodel` exports `OkmError`, `safe`, the row types (`Row`, `Insert`, `Update`, `Register`), and the driver types. Catalog builders are not on this entry. `table` and `index` for a schema are `okmodel/pg`.
+
+`okmodel/internal` holds `sha256`, `throwNamed`, `nearestName`, `catalogError`, and the catalog builders, including the catalog `table` and `index`. The subpath is not an application import. It is there so those names are not on `okmodel`.
+
+`okmodel/pg` is the schema API: column builders, `table`, `schema`, `index`, operators, `one`, and `many`. `compileColumn`, `emitRowTypes`, `mapPostgresError`, and the operator tag helpers are internal. `domain` is experimental.
+
+`okmodel/pg/postgresjs` and `okmodel/pg/pglite` export `connect` and the pool opener for that driver.
+
+`okmodel/migrate` exports `defineConfig` for the application. The planning and apply functions on that entry are internal; the CLI is the interface.
+
+`okmodel/testing` is reserved for 0.4 (P54) and is not in the exports map.

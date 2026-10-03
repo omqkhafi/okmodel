@@ -54,7 +54,7 @@ jobs:
           POSTGRES_VERSION: "17"
 
       - name: Postgres tests
-        run: bun test tests/harness.test.ts tests/fixtures-schema.test.ts tests/replication.test.ts tests/driver-suite.test.ts tests/pg-read.test.ts tests/pg-write.test.ts tests/apply-pg.test.ts
+        run: bun test tests/harness.test.ts tests/fixtures-schema.test.ts tests/replication.test.ts tests/driver-suite.test.ts tests/error-suite.test.ts tests/compatibility.test.ts tests/pg-read.test.ts tests/pg-write.test.ts tests/apply-pg.test.ts
         env:
           REQUIRE_DOCKER: "1"
           POSTGRES_VERSION: "17"

@@ -1,9 +1,10 @@
 /**
  * Public entry for the `okmodel` package.
  *
- * Builders, identity, and names live here. Catalog documents (serialisation,
- * parsing, hashing, and dependency order) stay in the catalog document module
- * so tooling does not enter this entry.
+ * Application code imports `OkmError`, `safe`, the row types, and the driver
+ * types from here. Catalog builders and the helpers a dialect author calls
+ * live on `okmodel/internal`, so `table` and `index` on this entry are not a
+ * second schema API.
  */
 
 export {
@@ -12,9 +13,7 @@ export {
   ERROR_CATEGORIES,
   ERROR_KINDS,
   OkmError,
-  catalogError,
   safe,
-  throwNamed,
   type CatalogCode,
   type ColumnCode,
   type QueryCode,
@@ -30,8 +29,7 @@ export {
   type OkmErrorOptions,
   type SafeResult,
 } from "./error.js";
-export { nearestName } from "./nearest.js";
-export { sha256 } from "./sha256.js";
+
 export type {
   AnySchema,
   AnyTableShape,
@@ -42,74 +40,6 @@ export type {
   TableName,
   Update,
 } from "./rows.js";
-
-export {
-  BUILT_KINDS,
-  CATALOG_VERSION,
-  KIND_OPERATIONS,
-  OBJECT_KINDS,
-  OBJECT_OPERATIONS,
-  OWNERS,
-  POSTGRES_IDENTIFIER_MAX_BYTES,
-  assertIdentifier,
-  assertNamespace,
-  column,
-  constraint,
-  deterministicName,
-  fitIdentifier,
-  identityKey,
-  identityLabel,
-  identifierLimitApplies,
-  index,
-  isReservedIdentifier,
-  resolveNamespace,
-  sameNamespace,
-  sameRef,
-  sequence,
-  staticNamespace,
-  table,
-  templateNamespace,
-  utf8ByteLength,
-  type AnchoredIdentity,
-  type BuiltKind,
-  type Catalog,
-  type CatalogEnvelope,
-  type CatalogObject,
-  type ColumnDefinition,
-  type ColumnInput,
-  type ColumnObject,
-  type ConstraintDefinition,
-  type ConstraintInput,
-  type ConstraintKind,
-  type ConstraintObject,
-  type DefaultPrivilegeIdentity,
-  type DependencyEdge,
-  type ExtensionIdentity,
-  type FunctionIdentity,
-  type GrantIdentity,
-  type GrantObjectRef,
-  type IndexDefinition,
-  type IndexInput,
-  type IndexObject,
-  type NamePurpose,
-  type Namespace,
-  type NamespaceIdentity,
-  type ObjectIdentity,
-  type ObjectKind,
-  type ObjectOperation,
-  type ObjectRef,
-  type Owner,
-  type PartitionMethod,
-  type Provenance,
-  type ReferentialAction,
-  type RoleIdentity,
-  type SequenceDefinition,
-  type SequenceInput,
-  type SequenceObject,
-  type TableDefinition,
-  type TableInput,
-  type TableObject,
-} from "./catalog/index.js";
 
 export type {
   DescribeResult,

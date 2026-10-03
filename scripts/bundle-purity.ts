@@ -26,7 +26,11 @@ export const ADAPTER_ENTRIES = [
 ] as const;
 
 /** Published library entries that must not contain an npm package. */
-export const RUNTIME_ENTRIES = ["src/contracts/index.ts", "src/dialects/pg/index.ts"] as const;
+export const RUNTIME_ENTRIES = [
+  "src/contracts/index.ts",
+  "src/contracts/internal.ts",
+  "src/dialects/pg/index.ts",
+] as const;
 
 const BARREL_SPECIFIERS = new Set([
   "@okmodel/harness",
