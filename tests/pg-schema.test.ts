@@ -243,6 +243,7 @@ test("later options are OKM1061 and name the version that adds them", () => {
   );
   expect(tableError.code).toBe("OKM1061");
   expect(tableError.message).toContain("one() and many()");
+  expect(tableError.message).toContain("manyThrough arrives in 0.2");
   expect(tableError.message).toContain("not available yet");
   const computed = capture(() => table("tasks", { id: t.id() }, { computed: { label: true } }));
   expect(computed.code).toBe("OKM1061");

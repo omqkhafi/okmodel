@@ -12,7 +12,7 @@ import type {
   ObjectKind,
   Owner,
   Provenance,
-} from "../src/contracts/index.js";
+} from "../src/contracts/internal.js";
 
 expectTypeOf<Owner>().toEqualTypeOf<"managed" | "external" | "ignored">();
 

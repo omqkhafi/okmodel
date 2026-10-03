@@ -124,19 +124,33 @@ export const ADAPTER_ENTRIES = [
   },
 ] as const;
 
+/** One export that must keep its module and drop the others. */
+export type ExportShake = {
+  /** Module the import names. */
+  readonly from: string;
+  /** Export name to import. */
+  readonly name: string;
+  /** Path fragment that must remain. */
+  readonly keep: string;
+  /** Path fragments that must be absent. */
+  readonly drop: readonly string[];
+};
+
 /** One barrel export that must not keep unrelated modules. */
-const EXPORT_SHAKES = [
+const EXPORT_SHAKES: readonly ExportShake[] = [
   {
+    from: "src/dialects/pg/index.ts",
     name: "text",
     keep: "src/dialects/pg/text.ts",
     drop: ["src/dialects/pg/search.ts", "src/dialects/pg/geometry.ts", "src/dialects/pg/enum.ts"],
   },
   {
+    from: "src/dialects/pg/index.ts",
     name: "eq",
     keep: "src/dialects/pg/ops/eq.ts",
     drop: ["src/dialects/pg/ops/lt.ts", "src/dialects/pg/ops/gt.ts", "src/dialects/pg/ops/like.ts"],
   },
-] as const;
+];
 
 /** Ceilings for one minified entry. */
 export type EntryCeilings = {
@@ -668,20 +682,28 @@ export function incrementalBudgetProblems(
 }
 
 /**
- * Fails when importing one `okmodel/pg` export keeps an unrelated module.
+ * Fails when importing one export keeps an unrelated module.
  *
- * @param root - Repository root
+ * The default list is the `okmodel/pg` barrel. A caller can pass a barrel
+ * that re-exports everything to show the check fails.
+ *
+ * @param root - Repository root, or the directory that holds the modules
+ * @param items - Exports to import. Defaults to the Postgres barrel
  * @returns Problem lines. Empty when each export shakes
  */
-export function exportShakeProblems(root: string): readonly string[] {
+export function exportShakeProblems(
+  root: string,
+  items: readonly ExportShake[] = EXPORT_SHAKES,
+): readonly string[] {
   const problems: string[] = [];
-  for (const item of EXPORT_SHAKES) {
+  for (const item of items) {
     const dir = mkdtempSync(join(root, "node_modules", ".okm-shake-"));
     const entry = join(dir, "entry.ts");
+    const from = item.from.startsWith("/") ? item.from : join(root, item.from);
     try {
       writeFileSync(
         entry,
-        `import { ${item.name} } from ${JSON.stringify(join(root, "src/dialects/pg/index.ts"))};\nexport const keep = ${item.name};\n`,
+        `import { ${item.name} } from ${JSON.stringify(from)};\nexport const keep = ${item.name};\n`,
       );
       const proc = Bun.spawnSync(
         ["bun", "build", entry, "--target", "node", "--outdir", dir, "--external", "postgres"],

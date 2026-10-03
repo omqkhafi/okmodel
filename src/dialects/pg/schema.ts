@@ -869,7 +869,7 @@ function resolveRelations(
     const call = record[name];
     if (!isRelationCall(call)) {
       unavailable(
-        `Table ${item.tsName} relation ${name} is not available yet. one() and many() are accepted. manyThrough and morph arrive later.`,
+        `Table ${item.tsName} relation ${name} is not available yet. one() and many() are accepted. manyThrough arrives in 0.2. morph arrives later.`,
       );
     }
     if (!byName.has(call.table)) {

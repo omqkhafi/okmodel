@@ -14,6 +14,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+## v0.1.0 — 2026-10-03
+
 ### ✨ Added
 
 #### contracts
@@ -36,7 +38,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `.picklist()` narrows a string column to a literal union and can add a CHECK. An empty list or a repeated value is OKM1060. A value outside the list is OKM1210.
 - `enum` and `domain` are exported under those names. An invalid enum definition is OKM1060. `domain` throws OKM1061 and names 0.3. A label a codec rejects is OKM1210.
 - Date and time codecs read the `Temporal` global. okmodel does not ship a polyfill. A missing global is OKM1210 and the message says to assign one to `globalThis.Temporal`.
-- `table()` and `schema()` compile columns, references, indexes, checks, and unique constraints into a catalog. `one()` and `many()` declare relations. `manyThrough` and `morph` stay OKM1061 and say later. Options that arrive later throw OKM1061 and name the version (0.2, 0.3, or 0.4), or say later when no version is assigned. `schema()` defers the catalog document until `.catalog` is read.
+- `table()` and `schema()` compile columns, references, indexes, checks, and unique constraints into a catalog. `one()` and `many()` declare relations. `manyThrough` throws OKM1061 and names 0.2. `morph` stays OKM1061 and says later. Options that arrive later throw OKM1061 and name the version (0.2, 0.3, or 0.4), or say later when no version is assigned. `schema()` defers the catalog document until `.catalog` is read.
 - Postgres introspection builds a catalog from a schema. Copied partition primary keys and inherited indexes are left out. Check expressions and index predicates come back as the database's text. Enum labels are read from `pg_enum`, and a column of that type depends on it.
 - `schema()` stores one type object per enum name. Columns that share the name share the object. Two different label lists for one name are OKM1020.
 - The same DDL renderer plans a migration and builds a scratch schema, so a statement has one spelling.
@@ -67,7 +69,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okmodel/migrate` plans migrations. `defineConfig` lives on that entry. `okm build` validates the schema and writes `.okm/` (catalog, hash, emitted row types, and the table-name union for `references`). `okm generate` writes SQL only. `okm migrate plan <name>` prints the plan and its class. `okm check` reports a stale `renamedFrom` and a table file the schema does not import (OKM1024). Enum labels live in the catalog, not in a side file.
 - An unexplained drop-and-add is OKM1530. The fix shows the line to add. The planner does not prompt.
 - Removing a picklist or enum value needs `--replace table.column.old=new` (or `=null`). Without it, OKM1541's fix names the flag. The plan's expand step updates rows and keeps the old constraint; the contract step sweeps and swaps the constraint (`NOT VALID`, then `VALIDATE`). An enum removal recreates the type after that sweep: rename, `CREATE TYPE … AS ENUM`, `ALTER COLUMN … TYPE … USING`, then `DROP TYPE`. Adding a label is `ALTER TYPE … ADD VALUE`, marked non-transactional. `CREATE TYPE` is planned before the table. The type is dropped after the last column that uses it. Those data steps are plain statements. Batching them is later.
-- Stub export for `okmodel/testing`.
+- `okmodel/testing` is reserved for 0.4 and is not an export in 0.1.
 - `okm --version` and `okmodel --version` print the package version.
 - Repository checks for layer imports, core purity, docs links and decision numbers, publint, arethetypeswrong, a `dist/` size ceiling, and bundle purity.
 - `bun run bump next` moves the version to `<next release>-next.N` and leaves the changelog in place. `bun run bump release` drops that suffix and promotes Unreleased.
@@ -83,7 +85,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `bun run catalog-bench` times canonical form, SHA-256, and topological order on the 200-table fixture. It prints the sample and does not enforce a ceiling.
 - The replication test waits up to 30 seconds, matching its replay wait, so other Postgres tests can run beside it.
 - The runtime entry must stay within 60 KB minified and 20 KB gzip. A cold import on Node is the median of five fresh processes. CI fails above 25 ms (D134). Locally the script prints the 15 ms reference and records a finding above it.
-- The 0.1 app startup budget is the startup graph after the trim: 77,524 minified bytes and 25,641 gzip, gate 79,849 / 26,410 (measured plus 3 percent, under the 86,688 / 27,800 cap). The total graph is printed and not gated. `okmodel/pg` is printed and not gated; a per-export tree-shake test and the app fixture are the gates. Connect entries stay gated on bytes (postgres.js 39,849 / 13,815, PGlite 38,146 / 13,505, measured plus 5 percent). Their cold import is printed, including a driver-stubbed sample, and is not gated. The 15 ms local reference applies to our own code with the driver stubbed. Adapter entries are gated on minified bytes that are not already in the runtime entry (postgres.js 15,093, PGlite 12,010). The app fixture's cold import is printed and is not the 25 ms CI failure. That failure stays on the runtime entry (D134), because the app runs `schema()` at import. Public subpaths stay `okmodel`, `okmodel/pg`, `okmodel/pg/postgresjs`, `okmodel/pg/pglite`, `okmodel/migrate`, and `okmodel/testing` (reserved, no exports).
+- The 0.1 app startup budget is the startup graph after the trim: 77,524 minified bytes and 25,641 gzip, gate 79,849 / 26,410 (measured plus 3 percent, under the 86,688 / 27,800 cap). The total graph is printed and not gated. `okmodel/pg` is printed and not gated; a per-export tree-shake test and the app fixture are the gates. Connect entries stay gated on bytes (postgres.js 39,849 / 13,815, PGlite 38,146 / 13,505, measured plus 5 percent). Their cold import is printed, including a driver-stubbed sample, and is not gated. The 15 ms local reference applies to our own code with the driver stubbed. Adapter entries are gated on minified bytes that are not already in the runtime entry (postgres.js 15,093, PGlite 12,010). The app fixture's cold import is printed and is not the 25 ms CI failure. That failure stays on the runtime entry (D134), because the app runs `schema()` at import. Public subpaths are `okmodel`, `okmodel/pg`, `okmodel/pg/postgresjs`, `okmodel/pg/pglite`, `okmodel/migrate`, and `okmodel/internal`. `okmodel/testing` is reserved until 0.4 and is not exported.
 - `bun run editor-check` compares hover, completions, and diagnostics from the TypeScript 6 language server with a snapshot. It also checks the row types `okm build` emits, including an enum column. TypeScript 7 has no language server, so the server is the dev-only `typescript-editor` package. It is not imported and not bundled. The check is part of `bun run check`.
 - The Postgres CI job also runs the read and write tests.
 - `bun run type-cost` also typechecks a find with filter, select, include, and orderBy on 10, 50, and 200 tables, against the built declarations. Instantiations stay under the D133 inferred-200 ceiling. The composite probe's own types ceiling is 7,100 (D140). The emitted-consumer measurement typechecks the row types `okm build` writes.
@@ -101,18 +103,24 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okm migrate status` reports each target's version, catalog hash, state (current, behind by expand, behind by contract, ahead, failed at a step), and whether it is protected.
 - `okm push` applies the current plan as a prototype sync. `okm dev` starts a local PGlite database in `.okm/dev-db` when no target named `dev` is configured.
 - The Postgres CI job also runs the apply tests.
+- An API snapshot fails CI when a public subpath gains or loses an export. Each export is classified stable, experimental, or internal.
+- The per-export tree-shake check fails when one `okmodel/pg` export keeps an unrelated module.
+- A quickstart test packs the tarball, installs it in a fresh project, runs `okm build`, applies the generated migration on PGlite, and reads and writes a row.
+- The compatibility table is generated from the conformance run on postgres.js and PGlite.
 
 #### docs
 
 - The M0 gate findings are in `docs/m0-findings.md`, with a Resolved by column for each row.
 - Spec section 21 records OKM1026 for a catalog dependency cycle and OKM1027 for a catalog document this version cannot read.
 - `docs/editor-check.md` describes the language-server snapshot for row hover, column completion, and a missing column or table, and the same check on emitted row types.
+- The quickstart, production checklist, environment recipes, known limits, measured size, API classification, compatibility table, and the 0.1.0 release checklist.
 
 ### ♻️ Changed
 
 #### contracts
 
-- Catalog serialisation, parsing, hashing, rename, and dependency order are no longer on the runtime entry. They stay in the catalog document module for tooling. Builders, identity, and names stay on `okmodel`.
+- Catalog serialisation, parsing, hashing, rename, and dependency order are no longer on the runtime entry. They stay in the catalog document module for tooling.
+- `sha256`, `throwNamed`, `nearestName`, `catalogError`, and the catalog builders move to `okmodel/internal`. `okmodel` keeps `OkmError`, `safe`, the row types, and the driver types. `table` and `index` for a schema are `okmodel/pg`.
 - SHA-256 round constants and the reserved-word set are built on first use. UTF-8 length and encoding share one helper. An ordering pass computes each identity key once.
 - Catalog errors name the accepted value.
 - A foreign key whose column type does not match its target is OKM1022. Foreign keys store `onDelete` and `onUpdate`.
@@ -142,7 +150,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### docs
 
-- The package description names typed queries, safe migrations, and replica-aware routing. The README says the API has not stabilised yet.
+- The package description names typed queries, safe migrations, and replica-aware routing. The README is the 0.1 install note.
 - Changelog area headings are the layer names: `contracts`, `dialects`, `adapters`, `runtime`, `tooling`, and `docs`.
 - Normative docs match spec draft 22 and decisions D1–D143. The spec lists builders and options that throw OKM1061, and it says a production target must set `protected`. The spec registry names OKM1026, OKM1027, OKM1060, OKM1061, and OKM1210.
 - Engineering standards (D129) are in `AGENTS.md` and the ship skill. Reports state runtime entry size, cold import, and type-cost change.
@@ -164,3 +172,4 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 ### 🔥 Removed
 
 - The M0 spike implementations are deleted. They remain on the `m0-spikes` tag. Findings stay in `docs/`. The row-type and operator fixtures remain so the type ceilings can be measured.
+- The empty `okmodel/testing` export. The name is reserved until 0.4.

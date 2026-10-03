@@ -1,31 +1,45 @@
 name: Release
 
-# Manual only. This workflow does not publish.
+# Manual. Ali runs this after the v0.1.0 tag is on the commit whose
+# package.json version is 0.1.0. This file does not run on push.
 #
-# When publishing is turned on, this workflow will:
-# - check out the release commit
-# - install with a frozen lockfile
-# - run the repository checks
-# - publish okmodel to npm with provenance
-#
-# npm provenance is an attestation that the tarball was built by this
-# workflow on the public repository. Turning it on means:
-# - permissions.id-token: write (and contents: read)
-# - a trusted publisher, or `bun publish` / `npm publish --provenance`
-#   from GitHub Actions, so npm attaches the provenance statement
+# Provenance: id-token write lets npm attach a statement that this
+# workflow built the tarball. The package needs a trusted publisher for
+# this repository and this workflow. No npm token is stored here.
 on:
   workflow_dispatch:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   release:
     name: release
     runs-on: ubuntu-latest
     steps:
+      - name: Require the v0.1.0 tag
+        run: |
+          if [ "$GITHUB_REF" != "refs/tags/v0.1.0" ]; then
+            echo "Refusing to publish from $GITHUB_REF. Run: gh workflow run release.yml --ref v0.1.0"
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Not publishing
-        run: echo "Release is not implemented yet. This workflow does not publish."
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Check
+        run: bun run check
+
+      - name: Publish
+        run: bun publish --access public
+        env:
+          NPM_CONFIG_PROVENANCE: "true"
