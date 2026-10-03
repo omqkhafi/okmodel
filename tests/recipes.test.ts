@@ -10,6 +10,7 @@ import { expect, test } from "bun:test";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { createIsolatedDatabase } from "../packages/harness/src/postgres.js";
 import { repoRoot } from "../scripts/root.js";
 import {
   command,
@@ -20,6 +21,7 @@ import {
   removeProject,
   shellCommands,
   tempProject,
+  type ListeningPostgres,
 } from "./doc-run.js";
 
 const SCHEMA = `import { schema, table, t } from "okmodel/pg";
@@ -112,6 +114,19 @@ function recipeCommands(markdown: string): readonly string[] {
   return [...fenced, ...inlineOkmCommands(markdown)];
 }
 
+/**
+ * Real Postgres when this process is the Docker run. The wire server otherwise.
+ *
+ * @returns A URL and a close function
+ */
+async function openDatabase(): Promise<ListeningPostgres> {
+  if (process.env.REQUIRE_DOCKER === "1") {
+    const database = await createIsolatedDatabase();
+    return { url: database.url, close: () => database.close() };
+  }
+  return listenPostgres();
+}
+
 async function runRecipe(tarball: string, markdown: string, line: string): Promise<void> {
   const config = markdownFences(markdown).find(
     (fence) => fence.lang === "ts" && fence.code.includes("defineConfig"),
@@ -121,7 +136,7 @@ async function runRecipe(tarball: string, markdown: string, line: string): Promi
   if (envName === undefined)
     throw new Error(`${line} config does not read an environment variable`);
 
-  const server = await listenPostgres();
+  const server = await openDatabase();
   const dir = tempProject("okm-recipe-");
   try {
     writeFileSync(

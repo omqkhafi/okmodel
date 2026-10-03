@@ -8,6 +8,7 @@ import { registerErrorMappingSuite } from "../packages/harness/src/error-suite.j
 import { registerDriverSuite, type SuiteTest } from "../packages/harness/src/driver-suite.js";
 import { postgresDecision } from "../packages/harness/src/docker-gate.js";
 import { primaryUrl } from "../packages/harness/src/topology.js";
+import { POSTGRES_VERSIONS } from "../packages/harness/src/version.js";
 import type { DriverCapabilities, DriverPool } from "../src/contracts/driver.js";
 import {
   capabilities as pgliteCapabilities,
@@ -39,12 +40,15 @@ export function renderCompatibility(cells: readonly CompatibilityCell[]): string
   const names = unique(cells.map((cell) => cell.name));
   const lookup = new Map(cells.map((cell) => [`${cell.driver}\n${cell.name}`, cell.result]));
   const header = ["Case", ...drivers];
+  const majors = englishList(POSTGRES_VERSIONS);
   const lines = [
     "# Driver compatibility",
     "",
     "Generated from the conformance run (`tests/driver-suite.test.ts` and `tests/error-suite.test.ts`). Do not edit by hand.",
     "",
-    "PGlite runs in the check job. postgres.js runs in the postgres job (`REQUIRE_DOCKER=1`). A skip means the adapter did not declare the capability that case needs.",
+    `Supported majors are Postgres ${majors}. Identity columns need Postgres 10. \`gen_random_uuid()\` is built in from Postgres 13, and that version is the floor because the portable UUID default uses it. \`uuidv7()\` needs Postgres 18. The postgres job runs the suite on each of these majors. A failure on an older major in this list stays in the run.`,
+    "",
+    "PGlite runs in the check job. The in-process wire server runs in the check job. postgres.js runs in the postgres job (`REQUIRE_DOCKER=1`). A skip means the adapter did not declare the capability that case needs.",
     "",
     `| ${header.join(" | ")} |`,
     `| ${header.map(() => "---").join(" | ")} |`,
@@ -153,6 +157,12 @@ function strip(prefix: string, name: string): string {
 
 function unique(values: readonly string[]): readonly string[] {
   return [...new Set(values)];
+}
+
+function englishList(values: readonly string[]): string {
+  if (values.length <= 1) return values[0] ?? "";
+  const last = values[values.length - 1] ?? "";
+  return `${values.slice(0, -1).join(", ")}, and ${last}`;
 }
 
 function rank(name: string): number {

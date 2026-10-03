@@ -62,6 +62,52 @@ export async function withPostgresSchema<T>(
   }
 }
 
+/** An empty database on the primary, dropped when {@link IsolatedDatabase.close} runs. */
+export type IsolatedDatabase = {
+  /** `postgres://` URL whose path is the new database. */
+  readonly url: string;
+  /** Drops the database and closes the admin connection. */
+  close(): Promise<void>;
+};
+
+/**
+ * Creates an empty database on the primary.
+ *
+ * `okm` opens its own connection, so a schema on the admin session is not enough.
+ * `close` drops the database with `FORCE`, which Postgres 13 and newer accept.
+ *
+ * @param base - Admin URL. Defaults to the topology primary
+ * @returns The new database URL and a close function
+ */
+export async function createIsolatedDatabase(
+  base: string = primaryUrl(),
+): Promise<IsolatedDatabase> {
+  const admin = openPostgres(base);
+  const name = `okm_${crypto.randomUUID().replaceAll("-", "")}`;
+  try {
+    await admin.unsafe(`create database ${name}`);
+  } catch (error) {
+    await admin.end({ timeout: 5 });
+    throw error;
+  }
+  const url = new URL(base);
+  url.pathname = `/${name}`;
+  const href = url.href.replace(/\/$/, "");
+  let closed = false;
+  return {
+    url: href,
+    async close() {
+      if (closed) return;
+      closed = true;
+      try {
+        await admin.unsafe(`drop database if exists ${name} with (force)`);
+      } finally {
+        await admin.end({ timeout: 5 });
+      }
+    },
+  };
+}
+
 /**
  * Returns whether a connection can run `select 1`.
  *

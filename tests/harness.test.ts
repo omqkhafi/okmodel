@@ -2,16 +2,22 @@ import { expect, test } from "bun:test";
 
 import { decideDocker } from "../packages/harness/src/docker-gate.js";
 import { withPglite, withPgliteSchema } from "../packages/harness/src/pglite.js";
-import { assertPostgresVersion, postgresVersionFromEnv } from "../packages/harness/src/version.js";
+import { createIsolatedDatabase, openPostgres } from "../packages/harness/src/postgres.js";
+import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
+import {
+  POSTGRES_VERSIONS,
+  assertPostgresVersion,
+  postgresVersionFromEnv,
+} from "../packages/harness/src/version.js";
 
-test("postgres versions 15 through 18 are accepted", () => {
-  expect(assertPostgresVersion("15")).toBe("15");
-  expect(assertPostgresVersion("16")).toBe("16");
-  expect(assertPostgresVersion("17")).toBe("17");
-  expect(assertPostgresVersion("18")).toBe("18");
+test("postgres versions 13 through 18 are accepted", () => {
+  expect([...POSTGRES_VERSIONS]).toEqual(["13", "14", "15", "16", "17", "18"]);
+  for (const version of POSTGRES_VERSIONS) {
+    expect(assertPostgresVersion(version)).toBe(version);
+  }
   expect(postgresVersionFromEnv({})).toBe("17");
-  expect(() => assertPostgresVersion("14")).toThrow(/outside 15/);
-  expect(() => assertPostgresVersion("19")).toThrow(/outside 15/);
+  expect(() => assertPostgresVersion("12")).toThrow(/outside 13/);
+  expect(() => assertPostgresVersion("19")).toThrow(/outside 13/);
 });
 
 test("docker tests fail only when Docker is required", () => {
@@ -30,6 +36,20 @@ test("docker tests fail only when Docker is required", () => {
   if (requiredDaemon.run) throw new Error("expected a failure");
   expect(requiredDaemon.fail).toBe(true);
   expect(decideDocker({ daemon: false, reachable: true, required: true })).toEqual({ run: true });
+});
+
+const decision = await loadPostgresGate();
+
+postgresTest(decision, "an isolated database accepts a connection and then drops", async () => {
+  const database = await createIsolatedDatabase();
+  const sql = openPostgres(database.url);
+  try {
+    const rows = await sql<{ n: number }[]>`select 1 as n`;
+    expect(rows[0]?.n).toBe(1);
+  } finally {
+    await sql.end({ timeout: 5 });
+    await database.close();
+  }
 });
 
 test("pglite databases are isolated", async () => {
