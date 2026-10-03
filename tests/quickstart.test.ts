@@ -94,6 +94,10 @@ function sharedTarball(): string {
 async function runDocs(tarball: string, url: string): Promise<void> {
   const path = join(root, "docs/quickstart.md");
   const markdown = readFileSync(path, "utf8");
+  expect(markdown).toContain("t.identity()");
+  expect(markdown).toContain("PostgreSQL 17");
+  expect(markdown).toContain("30 seconds");
+  if (UUID_LITERAL.test(markdown)) throw new Error(`${path} hard-codes a UUID`);
   const fences = markdownFences(markdown);
   for (const fence of fences) {
     if (fence.lang === "ts" && fenceFileName(fence.label) === undefined) {
@@ -131,6 +135,10 @@ async function runDocs(tarball: string, url: string): Promise<void> {
 async function runReadme(tarball: string, pushUrl: string, applyUrl: string): Promise<void> {
   const path = join(root, "README.md");
   const markdown = readFileSync(path, "utf8");
+  expect(markdown).toContain('t.identity({ as: "number" })');
+  expect(markdown).toContain("PostgreSQL 17");
+  expect(markdown).toContain("30 seconds");
+  expect(markdown).toContain("pick one per database");
   if (markdown.includes("db.connected")) {
     throw new Error("README.md awaits db.connected. Every call already waits for it.");
   }
@@ -263,8 +271,8 @@ function typescriptFiles(
  * README usage fences, in order, as one `run.ts`.
  *
  * The loader's first schema export is the default export. `okm check` accepts
- * that module. Ids are `crypto.randomUUID()`, and `db.close()` is only the
- * last block.
+ * that module. Ids are identity values the insert returns, and `db.close()`
+ * is only the last block.
  *
  * @param fences - README fences
  * @returns The script the test runs
@@ -282,8 +290,16 @@ function readmeScript(fences: readonly MarkdownFence[]): string {
   const script = usage.join("\n");
   const sources = [...labeled, script].join("\n");
   if (UUID_LITERAL.test(sources)) throw new Error("README.md hard-codes a UUID");
-  if (!sources.includes("crypto.randomUUID()")) {
-    throw new Error("README.md does not take ids from crypto.randomUUID()");
+  if (sources.includes("crypto.randomUUID()")) {
+    throw new Error("README.md supplies ids with crypto.randomUUID()");
+  }
+  if (!sources.includes("t.identity()")) throw new Error("README.md does not use t.identity()");
+  if (sources.includes("t.id()")) throw new Error("README.md mentions t.id()");
+  if (!sources.includes("t.bigint()")) {
+    throw new Error("README.md foreign key is not t.bigint()");
+  }
+  if (!script.includes('db.authors.insert({ name: "Ada" })')) {
+    throw new Error("README.md does not insert an author by name");
   }
   if (!script.includes("include:")) throw new Error("README.md find has no include");
   if (!script.includes("safe(")) throw new Error("README.md does not call safe");

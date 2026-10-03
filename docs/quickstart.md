@@ -22,13 +22,17 @@ export default defineConfig({
 });
 ```
 
+`t.identity()` is the primary key. An insert omits the id, and the row that comes back carries it. Identity ids come back as strings by default. `t.identity({ as: "number" })` returns numbers. Push and reviewed migrations are two ways to do the same job: pick one per database. This file uses reviewed migrations.
+
+Tested on PostgreSQL 17.
+
 `schema.ts`:
 
 ```ts
 import { schema, table, t } from "okmodel/pg";
 
 export const notes = table("notes", {
-  id: t.uuid(),
+  id: t.identity(),
   title: t.text(),
 });
 
@@ -53,12 +57,15 @@ if (url === undefined || url.length === 0) throw new Error("DATABASE_URL is not 
 
 const db = connect(url, { schema: app });
 await db.connected;
-const id = "11111111-1111-4111-8111-111111111111";
-const inserted = await db.notes.insert({ id, title: "hello" });
-if (inserted.title !== "hello") throw new Error("insert did not return the title");
-const found = await db.notes.find({ where: { id }, limit: 5 });
+const inserted = await db.notes.insert({ title: "hello" });
+if (inserted.title !== "hello" || inserted.id.length === 0) {
+  throw new Error("insert did not return the title");
+}
+const found = await db.notes.find({ where: { id: inserted.id }, limit: 5 });
 if (found.length !== 1 || found[0]?.title !== "hello") throw new Error("find did not return the row");
 await db.close();
 ```
+
+Close the client when the script is finished. Without `db.close()` the script exits after about 30 seconds (the idle timeout).
 
 Production targets and `requireMeta` are in [production](production.md). What 0.1 does not ship is in [known limits](known-limits.md).

@@ -32,6 +32,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 ### 🐛 Fixed
 
 - `find` with a to-one `include` returned null for the related row when that table had no primary key. The first projected column is the presence check in that case.
+- Identity columns failed in `okm push` and `okm generate` and are fixed.
 
 ## v0.1.0 — 2026-10-03
 

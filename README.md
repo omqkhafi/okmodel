@@ -64,7 +64,9 @@ export default defineConfig({
 
 ### Schema
 
-`t.id()` is the UUID primary key, and it defaults to `uuidv7()`, so these ids are unique columns the application fills.
+`t.identity()` is the primary key. An insert omits the id, and the row that comes back carries it. Identity ids come back as strings by default. `t.identity({ as: "number" })` returns numbers. Push and reviewed migrations are two ways to do the same job: pick one per database.
+
+Tested on PostgreSQL 17.
 
 `schema.ts`:
 
@@ -72,16 +74,16 @@ export default defineConfig({
 import { one, schema, table, t } from "okmodel/pg";
 
 const authors = table("authors", {
-  id: t.uuid().unique(),
-  name: t.text(),
+  id: t.identity(),
+  name: t.text().unique(),
 });
 
 const notes = table(
   "notes",
   {
-    id: t.uuid().unique(),
+    id: t.identity(),
     title: t.text(),
-    authorId: t.uuid().references("authors", { columns: ["id"] }),
+    authorId: t.bigint().references("authors", { columns: ["id"] }),
   },
   { relations: { author: one("authors") } },
 );
@@ -134,13 +136,12 @@ Insert an author, then a note that points at the author's id.
 ```ts
 import { db } from "./db.ts";
 
-const author = await db.authors.insert({ id: crypto.randomUUID(), name: "Ada" });
+const author = await db.authors.insert({ name: "Ada" });
 const note = await db.notes.insert({
-  id: crypto.randomUUID(),
   title: "hello",
   authorId: author.id,
 });
-if (author.name !== "Ada" || note.title !== "hello") {
+if (author.name !== "Ada" || note.title !== "hello" || author.id.length === 0) {
   throw new Error("insert did not return the row");
 }
 ```
@@ -163,12 +164,12 @@ if (row?.title !== "hello" || row.author?.name !== "Ada") {
 
 ### Errors
 
-`safe` returns the `OkmError` instead of throwing when the id is already used.
+`safe` returns the `OkmError` instead of throwing when the author name is already used.
 
 ```ts
 import { OkmError, safe } from "okmodel";
 
-const duplicate = await safe(db.notes.insert({ id: note.id, title: "again", authorId: author.id }));
+const duplicate = await safe(db.authors.insert({ name: "Ada" }));
 if (duplicate.ok || !(duplicate.error instanceof OkmError) || duplicate.error.kind !== "unique") {
   throw new Error("expected an OkmError of kind unique");
 }
@@ -176,7 +177,7 @@ if (duplicate.ok || !(duplicate.error instanceof OkmError) || duplicate.error.ki
 
 ### Close the script
 
-Close the pool here because the script is finished; a server keeps the client.
+Close the pool here because the script is finished; a server keeps the client. Without it the script exits after about 30 seconds (the idle timeout).
 
 ```ts
 await db.close();
