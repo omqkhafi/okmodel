@@ -45,6 +45,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### ♻️ Changed
 
+- A push to main runs check and attest. The Postgres suite and the tarball job stay on pull requests, the release workflow, and the weekly run.
 - A declared server below 18 that uses `uuidv7()` fails with OKM1812, and the message names `defaults.id`.
 - `okmodel/pg/pg` and `okmodel/pg/bun` connect entries are gated at the measured size plus 3 percent (D156).
 - `t.id()` and `t.identity()` stay omitted from insert and update. A plain primary key is writable on insert and omitted from update. Changing it is OKM1190.
