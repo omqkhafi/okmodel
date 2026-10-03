@@ -445,9 +445,23 @@ export type ConnectOptions<S extends QuerySchema> = {
     error?(entry: { readonly code: string; readonly summary: string }): void;
   };
   readonly errors?: {
+    /**
+     * Statuses for {@link OkmError.toHttp}.
+     *
+     * `toHttp()` uses these when the caller does not pass statuses.
+     * `toHttp(statuses)` replaces them for that call.
+     */
     readonly http?: import("../contracts/error.js").ErrorStatuses;
     readonly includeValues?: boolean;
   };
+  /**
+   * Fail `connect` when `okm_meta` has no catalog hash (OKM1520).
+   *
+   * Omitted, a database with no recorded hash skips the drift check so an
+   * existing database can adopt OKModel. Set this on a production connection.
+   * The target name and `NODE_ENV` do not turn it on.
+   */
+  readonly requireMeta?: boolean;
   readonly signal?: AbortSignal;
   readonly timeout?: number;
 };

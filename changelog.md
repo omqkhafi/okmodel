@@ -31,12 +31,12 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### dialects
 
-- `okmodel/pg` builds Postgres column types: keys, numbers, text, boolean, bytea, json, date and time, ranges, network, point and line, tsvector, ltree, enums, domains, arrays, and `custom`. Each one compiles to a catalog column. `citext` and `ltree` record an extension dependency.
+- `okmodel/pg` builds Postgres column types: keys, numbers, text, boolean, bytea, json, date and time, ranges, network, point and line, tsvector, ltree, enums, arrays, and `custom`. Each one compiles to a catalog column. `citext` and `ltree` record an extension dependency. `t.domain()` throws OKM1061 until 0.3.
 - Codecs default to decimal strings for bigint and numeric, and to Temporal for timestamps. `t.bigint({ as: "number" })` and `t.numeric(p, s, { as: "number" })` override a field. `jsonReplacer` writes a bigint as a decimal string.
 - `.picklist()` narrows a string column to a literal union and can add a CHECK. An empty list or a repeated value is OKM1060. A value outside the list is OKM1210.
-- `enum` and `domain` are exported under those names. An invalid enum or domain definition is OKM1060. A label a codec rejects is OKM1210.
+- `enum` and `domain` are exported under those names. An invalid enum definition is OKM1060. `domain` throws OKM1061 and names 0.3. A label a codec rejects is OKM1210.
 - Date and time codecs read the `Temporal` global. okmodel does not ship a polyfill. A missing global is OKM1210 and the message says to assign one to `globalThis.Temporal`.
-- `table()` and `schema()` compile columns, references, indexes, checks, and unique constraints into a catalog. `one()` and `many()` declare relations. `manyThrough` and `morph` stay OKM1061. Options that arrive later throw OKM1061 and name that prompt, or say later when the plan has no row for them. `schema()` defers the catalog document until `.catalog` is read.
+- `table()` and `schema()` compile columns, references, indexes, checks, and unique constraints into a catalog. `one()` and `many()` declare relations. `manyThrough` and `morph` stay OKM1061 and say later. Options that arrive later throw OKM1061 and name the version (0.2, 0.3, or 0.4), or say later when no version is assigned. `schema()` defers the catalog document until `.catalog` is read.
 - Postgres introspection builds a catalog from a schema. Copied partition primary keys and inherited indexes are left out. Check expressions and index predicates come back as the database's text. Enum labels are read from `pg_enum`, and a column of that type depends on it.
 - `schema()` stores one type object per enum name. Columns that share the name share the object. Two different label lists for one name are OKM1020.
 - The same DDL renderer plans a migration and builds a scratch schema, so a statement has one spelling.
@@ -60,7 +60,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Named prepared statements are opt-in (`prepared: "named"`). On a direct connection they were about 40 percent faster at p50 than unnamed. Unnamed stays the default. `prepared: "named"` is not for transaction-mode poolers.
 - `insert`, `update`, and `delete` write rows. Unknown insert keys are dropped. A guarded field is OKM1190. A missing `where` is OKM1102 unless `.all(reason)`. `onConflict` is `"error"`, `"ignore"`, an update of named columns, or `{ on, return: true }`. `on` must name a unique constraint or the primary key (OKM1104). `expect` throws `not_found` when the count differs. Inserts chunk at 2048 parameters and commit together. A connection lost at commit is OKM1401 (`outcome_unknown`).
 - Write planning loads on the first write. Conflict and upsert SQL loads only when `onConflict` is used. A plain insert does not load it. Hover on a row shows the field names and value types.
-- `connect` reads the catalog hash from `okm_meta` in the same dialect query. Matching hashes return immediately. A database with no `okm_meta` skips the check. Ahead by an expand migration is allowed. Ahead by a contract migration, or behind the code, fails with OKM1520. `loadTrustedCatalog` runs only on that mismatch, and only when `.okm/catalog.json` is present.
+- `connect` reads the catalog hash from `okm_meta` in the same dialect query. Matching hashes return immediately. A database with no `okm_meta` skips the check. `connect({ requireMeta: true })` makes that missing hash OKM1520. The target name and `NODE_ENV` do not turn it on. Ahead by an expand migration is allowed. Ahead by a contract migration, or behind the code, fails with OKM1520. `loadTrustedCatalog` runs only on that mismatch, and only when `.okm/catalog.json` is present. `errors.http` is the default for `toHttp()` on errors thrown from the client. `toHttp(statuses)` replaces that default for one call.
 
 #### tooling
 
@@ -83,7 +83,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `bun run catalog-bench` times canonical form, SHA-256, and topological order on the 200-table fixture. It prints the sample and does not enforce a ceiling.
 - The replication test waits up to 30 seconds, matching its replay wait, so other Postgres tests can run beside it.
 - The runtime entry must stay within 60 KB minified and 20 KB gzip. A cold import on Node is the median of five fresh processes. CI fails above 25 ms (D134). Locally the script prints the 15 ms reference and records a finding above it.
-- The app fixture gate is the startup graph (static imports only): 79,240 minified bytes and 26,207 gzip (D138 and D141, P16B measured 76,933 / 25,444 plus 3 percent, under the 86,688 / 27,800 cap). The total graph, lazy chunks included, is printed and not gated. First-find and first-include latency are printed beside cold import. `okmodel/pg` stays 70,500 / 22,000 and this step left it at 70,349 / 21,921. The public connect entries are the measured size plus 5 percent (postgres.js 39,369 / 13,671, PGlite 37,691 / 13,348), because the catalog-hash query is on that path. Standalone adapter ceilings stay at the D135 numbers. The app fixture's cold import is printed and is not the 25 ms CI failure. That failure stays on the runtime entry (D134), because the app runs `schema()` at import.
+- The 0.1 app startup budget is the startup graph after the trim: 77,524 minified bytes and 25,641 gzip, gate 79,849 / 26,410 (measured plus 3 percent, under the 86,688 / 27,800 cap). The total graph is printed and not gated. `okmodel/pg` is printed and not gated; a per-export tree-shake test and the app fixture are the gates. Connect entries stay gated on bytes (postgres.js 39,849 / 13,815, PGlite 38,146 / 13,505, measured plus 5 percent). Their cold import is printed, including a driver-stubbed sample, and is not gated. The 15 ms local reference applies to our own code with the driver stubbed. Adapter entries are gated on minified bytes that are not already in the runtime entry (postgres.js 15,093, PGlite 12,010). The app fixture's cold import is printed and is not the 25 ms CI failure. That failure stays on the runtime entry (D134), because the app runs `schema()` at import. Public subpaths stay `okmodel`, `okmodel/pg`, `okmodel/pg/postgresjs`, `okmodel/pg/pglite`, `okmodel/migrate`, and `okmodel/testing` (reserved, no exports).
 - `bun run editor-check` compares hover, completions, and diagnostics from the TypeScript 6 language server with a snapshot. It also checks the row types `okm build` emits, including an enum column. TypeScript 7 has no language server, so the server is the dev-only `typescript-editor` package. It is not imported and not bundled. The check is part of `bun run check`.
 - The Postgres CI job also runs the read and write tests.
 - `bun run type-cost` also typechecks a find with filter, select, include, and orderBy on 10, 50, and 200 tables, against the built declarations. Instantiations stay under the D133 inferred-200 ceiling. The composite probe's own types ceiling is 7,100 (D140). The emitted-consumer measurement typechecks the row types `okm build` writes.
@@ -97,7 +97,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - One session advisory lock covers the apply. A second apply fails at once with OKM1522. `lock_timeout` and `statement_timeout` are set on every step, and a lock timeout retries with backoff.
 - A known pooler URL is refused unless `--allow-pooler` or `allowPooler` is set.
 - Named `targets`. More than one requires `--target` (OKM1853). Two names for one database must agree on protection (OKM1852).
-- A protected target allows read-only commands and expand. Contract, unclassified, push, backfill, seed, and history repair need `--allow-protected`. Drop and rollback stay refused. `push` is also refused on a target named `production`.
+- A protected target allows read-only commands and expand. Contract, unclassified, push, backfill, seed, and history repair need `--allow-protected`. Drop and rollback stay refused. `push` is refused only when the target sets `protected`. A target named `production` is not special; production targets must set `protected`.
 - `okm migrate status` reports each target's version, catalog hash, state (current, behind by expand, behind by contract, ahead, failed at a step), and whether it is protected.
 - `okm push` applies the current plan as a prototype sync. `okm dev` starts a local PGlite database in `.okm/dev-db` when no target named `dev` is configured.
 - The Postgres CI job also runs the apply tests.
@@ -120,6 +120,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - A catalog dependency cycle is OKM1026. A catalog document this version cannot read is OKM1027. OKM1020 stays the code for an unknown table.
 - An invalid column definition is OKM1060. A value a codec rejects is OKM1210. Messages name the accepted values.
 
+#### dialects
+
+- `schema()` builds the query model immediately and defers catalog object construction until `.catalog` is read.
+
 #### tooling
 
 - Source layers use the folder names `contracts`, `dialects`, `adapters`, `runtime`, and `tooling`.
@@ -134,13 +138,13 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The harness barrel no longer re-exports Postgres or PGlite.
 - Postgres tests share one Docker skip rule.
 - Cold import fails on CI above 25 ms (D134). A local sample above the 15 ms reference is printed as a finding and does not fail the script. Byte ceilings are unchanged.
-- `dist/` size is reported and no longer fails the check (D135). `size-budget.json` is removed. `okmodel/pg` stays at 66900 bytes minified and 20900 gzip. The adapter entries are gated at the P14 measurement plus 25 percent, because `OkmError` is in those bundles.
+- `dist/` size is reported and no longer fails the check (D135). `size-budget.json` is removed. Adapter entries are gated on minified bytes that are not already in the runtime entry, so shared code is not counted twice.
 
 #### docs
 
 - The package description names typed queries, safe migrations, and replica-aware routing. The README says the API has not stabilised yet.
 - Changelog area headings are the layer names: `contracts`, `dialects`, `adapters`, `runtime`, `tooling`, and `docs`.
-- Normative docs match spec draft 22 and decisions D1–D135. The spec registry names OKM1026, OKM1027, OKM1060, OKM1061, and OKM1210.
+- Normative docs match spec draft 22 and decisions D1–D143. The spec lists builders and options that throw OKM1061, and it says a production target must set `protected`. The spec registry names OKM1026, OKM1027, OKM1060, OKM1061, and OKM1210.
 - Engineering standards (D129) are in `AGENTS.md` and the ship skill. Reports state runtime entry size, cold import, and type-cost change.
 
 ### 🐛 Fixed

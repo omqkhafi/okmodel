@@ -225,9 +225,10 @@ export async function applyProject(cwd: string, flags: InvokeFlags): Promise<str
 }
 
 /**
- * Prototype sync. Blocked on a protected target and on a target named production.
+ * Prototype sync. Blocked on a protected target.
  *
- * The plan's statements run as one migration. Data steps run as written.
+ * A target named production is not special. Protection is the `protected`
+ * flag (spec §19.8). The plan's statements run as one migration.
  *
  * @param cwd - Project directory
  * @param flags - Target and protection flags
@@ -236,8 +237,7 @@ export async function applyProject(cwd: string, flags: InvokeFlags): Promise<str
 export async function pushProject(cwd: string, flags: InvokeFlags): Promise<string> {
   const config = await loadConfig(cwd);
   const target = selectTarget(config, flags.target);
-  const guarded = target.protected || target.name === "production";
-  assertTargetPolicy({ name: target.name, protected: guarded }, "push", flags.allowProtected);
+  assertTargetPolicy(target, "push", flags.allowProtected);
   const head = await projectHead(cwd);
   const plan = planMigration({
     before: head.previous,
@@ -249,7 +249,7 @@ export async function pushProject(cwd: string, flags: InvokeFlags): Promise<stri
   const report = await applyTarget({
     url: target.url,
     target: target.name,
-    protected: guarded,
+    protected: target.protected,
     allowProtected: flags.allowProtected,
     allowPooler: flags.allowPooler || config.allowPooler === true,
     migrations: [

@@ -8,6 +8,7 @@ import { expect, test } from "bun:test";
 import fc from "fast-check";
 
 import type { DriverPool } from "../src/contracts/driver.js";
+import { OkmError } from "../src/contracts/error.js";
 import {
   between,
   boolean,
@@ -318,6 +319,55 @@ test("values stay parameters", async () => {
     { numRuns: 20 },
   );
   await db.close();
+});
+
+test("requireMeta makes a missing okm_meta OKM1520 and toHttp uses connect statuses", async () => {
+  const pool = {
+    capabilities: {
+      transactions: "interactive",
+      stream: false,
+      listen: false,
+      cancel: false,
+      prepared: "unnamed",
+      describe: false,
+    },
+    execute: () =>
+      Promise.resolve({ rows: [["170000", "PostgreSQL 17", null]], count: 1, notices: [] }),
+    batch: () => Promise.resolve([]),
+    stats: () => ({ size: 1, idle: 1, inflight: 0, waiting: 0 }),
+    close: () => Promise.resolve(),
+  } as DriverPool;
+  const adopted = await connectPglite(pool, { schema: app });
+  await adopted.connected;
+  await adopted.close();
+  const strict = await connectPglite(pool, {
+    schema: app,
+    requireMeta: true,
+    errors: { http: { internal: 599, input: 418 } },
+  });
+  try {
+    await strict.connected;
+    throw new Error("missing okm_meta should fail");
+  } catch (error) {
+    expect(error).toBeInstanceOf(OkmError);
+    if (!(error instanceof OkmError)) return;
+    expect(error.code).toBe("OKM1520");
+    expect(error.toHttp().status).toBe(599);
+    expect(error.toHttp({ internal: 400 }).status).toBe(400);
+  }
+  let thrown: unknown;
+  try {
+    const lookup = (name: string): unknown => strict.table(name as "tasks");
+    lookup("missing");
+  } catch (error) {
+    thrown = error;
+  }
+  expect(thrown).toBeInstanceOf(OkmError);
+  if (thrown instanceof OkmError) {
+    expect(thrown.code).toBe("OKM1120");
+    expect(thrown.toHttp().status).toBe(418);
+  }
+  await strict.close();
 });
 
 const gate = await loadPostgresGate();

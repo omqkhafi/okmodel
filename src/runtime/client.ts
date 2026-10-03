@@ -78,12 +78,20 @@ export function createClient<S extends QuerySchema>(
     readonly timeout?: number | undefined;
     readonly catalog?: CatalogArtifact | undefined;
     readonly catalogDir?: string | undefined;
+    readonly requireMeta?: boolean | undefined;
   },
 ): Connected<S> {
-  const connected = checkServer(pool, schema, options.http, callOptions(options), {
-    ...(options.catalog !== undefined ? { catalog: options.catalog } : {}),
-    ...(options.catalogDir !== undefined ? { catalogDir: options.catalogDir } : {}),
-  });
+  const connected = checkServer(
+    pool,
+    schema,
+    options.http,
+    options.requireMeta === true,
+    callOptions(options),
+    {
+      ...(options.catalog !== undefined ? { catalog: options.catalog } : {}),
+      ...(options.catalogDir !== undefined ? { catalogDir: options.catalogDir } : {}),
+    },
+  );
   const session: Session = {
     schema,
     pool,
@@ -102,15 +110,18 @@ export function createClient<S extends QuerySchema>(
     ...tables,
     table(name: string) {
       const found = tables[name];
-      if (found === undefined) {
+      if (found !== undefined) return found;
+      try {
         throwNamed(
           "OKM1120",
           name,
           Object.keys(tables),
           `Table ${name} is not in the schema. Accepted names: ${Object.keys(tables).join(", ")}.`,
         );
+      } catch (error) {
+        if (error instanceof OkmError) throw attachHttp(session.http, error);
+        throw error;
       }
-      return found;
     },
     close() {
       return options.ownsPool ? pool.close() : Promise.resolve();
@@ -412,6 +423,7 @@ async function checkServer(
   pool: DriverPool,
   schema: QuerySchema,
   http: ErrorStatuses | undefined,
+  requireMeta: boolean,
   options: ExecuteOptions | undefined,
   source: { readonly catalog?: CatalogArtifact; readonly catalogDir?: string },
 ): Promise<void> {
@@ -434,9 +446,27 @@ async function checkServer(
     );
   }
   const recorded = rows[0]?.[2];
-  if (recorded !== null && recorded !== undefined && recorded.length > 0) {
+  if (recorded === null || recorded === undefined || recorded.length === 0) {
+    if (requireMeta) {
+      throw new OkmError(
+        "OKM1520",
+        "okm_meta has no catalog hash.",
+        withHttp(http, {
+          fix: {
+            summary:
+              "Apply migrations so okm_meta records the catalog, or omit requireMeta to adopt this database.",
+          },
+        }),
+      );
+    }
+  } else {
     const { assertCompatible } = await import("./drift.js");
-    await assertCompatible(pool, schema, recorded, source, options);
+    try {
+      await assertCompatible(pool, schema, recorded, source, options);
+    } catch (error) {
+      if (error instanceof OkmError) throw attachHttp(http, error);
+      throw error;
+    }
   }
   const requires = schema.requires?.postgres;
   if (requires === undefined) return;
@@ -507,6 +537,18 @@ function inspection(plan: Plan, params: readonly (string | null)[], call: ReadCa
 
 function withHttp(http: ErrorStatuses | undefined, options: OkmErrorOptions): OkmErrorOptions {
   return http === undefined ? options : { ...options, http };
+}
+
+/**
+ * Copies `error` so {@link OkmError.toHttp} uses the statuses from `connect`.
+ *
+ * @param http - Statuses from `connect({ errors })`. Omitted, `error` is returned
+ * @param error - Failure that did not carry those statuses
+ * @returns The error `toHttp()` reads
+ */
+function attachHttp(http: ErrorStatuses | undefined, error: OkmError): OkmError {
+  if (http === undefined) return error;
+  return new OkmError(error.code, error.message, { ...errorFields(error), http });
 }
 
 function callOptions(input: {

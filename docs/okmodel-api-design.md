@@ -598,11 +598,22 @@ References are plain table-name strings (a generic table-name argument cycles th
 | Network | `t.inet()`, `t.cidr()`, `t.macaddr()`, `t.macaddr8()` |
 | Geometry | `t.point()`, `t.line()` (PostGIS via an extension package) |
 | Search / trees | `t.tsvector()`, `t.ltree()` |
-| Enums / domains | `t.enum("name", [...])`, `t.domain("name", base, check)` |
+| Enums / domains | `t.enum("name", [...])`. `t.domain("name", base, check)` throws OKM1061 until 0.3 |
 | Arrays | `.array()`, `.array({ dims: 2 })` |
 | Custom | `t.custom({ sqlType, encode, decode, tsType })` |
 
-Modifiers: `.nullable()`, `.default(v)`, `.defaultSql(sql)`, `.unique({ reason, global })`, `.references(table, opts)`, `.picklist([...], { check })`, `.generated(sql, { stored })`, `.guarded()`, `.hidden()`, `.renamedFrom(name)`, `.sqlName()`, `.comment()`, `.validate(rules | schema)`.
+Modifiers: `.nullable()`, `.default(v)`, `.defaultSql(sql)`, `.unique({ reason, global })`, `.references(table, opts)`, `.picklist([...], { check })`, `.generated(sql, { stored })`, `.guarded()`, `.renamedFrom(name)`, `.sqlName()`, `.comment()`. `.hidden()` and `.validate(rules | schema)` are not in 0.1.
+
+**Not in this version.** A builder or option in this table throws OKM1061 and names the version that adds it. `.hidden()` and `.sensitive()` are not methods yet. `later` means no 0.x version is assigned yet.
+
+| Builder or option | Version |
+|---|---|
+| `t.domain()` | 0.3 |
+| `schema({ extensions, functions, triggers, views })` | 0.3 |
+| `schema({ tenancy, traits, validation })` and the same options on `table()` | 0.2 |
+| `table({ omitDefaults, presets, validate, validation })`, `.hidden()`, `.sensitive()` | 0.2 |
+| `table({ reference })` | 0.4 |
+| `manyThrough`, `morph`, `table({ computed, policies })` | later |
 
 - Fields are `NOT NULL` unless `.nullable()`.
 - Extensions required by a type (`citext`, `ltree`) are added to migrations automatically.
@@ -1117,7 +1128,7 @@ connect(url, { schema: appSchema, hookm: [tracing(onSpan)] });
 
 The catalog hash is computed over the normalised structure (D117). Fast path: each migration stores the catalog hash in `okm_meta`; `connect()` compares it with the code's catalog hash in one cheap query and runs the detailed check only when they differ. `okm build` also emits a serialised catalog (`.okm/catalog.json`) that production bundles can load instead of rebuilding the catalog at start (cold start).
 
-The startup check is a compatibility check: the database may be ahead of the code by `expand` migrations; ahead by a `contract` migration, or behind, fails closed in production (OKM1520).
+The startup check is a compatibility check: the database may be ahead of the code by `expand` migrations; ahead by a `contract` migration, or behind, fails with OKM1520. A database with no recorded catalog hash skips the check, so an existing database can adopt OKModel. `connect({ requireMeta: true })` makes that missing hash OKM1520. The option is explicit: the target name and `NODE_ENV` do not turn it on. A production connection sets `requireMeta`.
 
 `okm migrate check` also verifies that the previous release's catalog (stored with each migration) is satisfied by the new schema. This establishes schema-level compatibility with the previous release's OKModel catalog (columns, types, nullability and constraints the old catalog relies on); it does not prove application behavior. Any violation must be classified `contract`.
 
@@ -1133,7 +1144,7 @@ The startup check is a compatibility check: the database may be ahead of the cod
 | `okm migrate status` | per target: version, catalog hash, state (current, behind by `expand`, behind by `contract`, ahead, failed at step), with a separate `protected` column |
 | `okm migrate check` | CI: commutativity, lint, stale lockfile, snapshot ↔ replayed history equivalence (OKM1521) |
 | `okm generate` | produce migration SQL from the schema, including extension lifecycle; no TS is generated |
-| `okm push` | prototype sync; blocked on `protected` targets (section 19.7) and in production |
+| `okm push` | prototype sync; blocked on a `protected` target (section 19.7). A target named `production` is not blocked unless that entry sets `protected` |
 | `okm pull` | introspect an existing database into table files and a schema (M2) |
 | `okm ext list\|check\|test\|scaffold` | list supported and installed extensions against the connected server; check versions; conformance test; scaffold a definition (M2) |
 | `okm seed <file>` | seeds with factories |
@@ -1203,6 +1214,7 @@ A new Target is created from the current provisionable snapshot, not by replayin
 An environment is a named Target. Nothing about an environment is inferred from `NODE_ENV` or a URL.
 
 - **Named targets.** `production`, `staging` and `preview` are entries of `targets` (section 3.1); protection is declared on the entry that needs it. A pipeline names its target explicitly (`okm migrate apply --target production`), so a preview job cannot act on production by omission (OKM1853).
+- **Production is declared protected.** A target named `production` is not protected by its name. Set `protected: true` on that entry. `connect({ requireMeta: true })` is the matching runtime check for a missing `okm_meta`; it is also explicit and is not inferred from the name.
 - **Aliasing guard.** `okm check` and `okm doctor` compare the resolved hosts and database names of all targets and fail when targets that resolve to the same host, port and database differ in protection (OKM1852); two unprotected targets may share a database.
 - **Preview environments.** One ephemeral database or schema per pull request, created by infrastructure (Neon branching, `CREATE DATABASE`, a container; the OKModel CI recipe uses Docker Compose). Steps: create the empty database, `okm migrate apply --target preview` (installs the head snapshot and `reference` rows without replaying history, section 19.6), optionally `okm seed`, deploy the application with the preview URL. Deleting it when the pull request closes is the infrastructure's job: OKModel never drops a database.
 - **Migration rehearsal.** To test pending migrations against realistic data, clone or branch the production database, register the clone as a target, and run `okm migrate apply --target rehearsal`. The report gives per-step duration, the locks taken, retries and failures, on the real history and data shape rather than on an empty snapshot. It is a recipe over existing commands, not a separate command.

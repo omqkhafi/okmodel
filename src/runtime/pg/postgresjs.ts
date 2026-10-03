@@ -47,6 +47,7 @@ export function connect<const S extends QuerySchema>(
       timeout: options.timeout,
       catalog: options.catalog,
       catalogDir: options.catalogDir,
+      requireMeta: options.requireMeta,
     });
   }
   const url = target;
@@ -67,6 +68,7 @@ export function connect<const S extends QuerySchema>(
     timeout: options.timeout,
     catalog: options.catalog,
     catalogDir: options.catalogDir,
+    requireMeta: options.requireMeta,
   });
 }
 

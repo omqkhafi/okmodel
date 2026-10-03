@@ -76,6 +76,7 @@ test("protected policy matches the operation table", () => {
     expect(() => assertTargetPolicy(target, operation, true)).not.toThrow();
   }
   expect(() => assertTargetPolicy({ name: "dev", protected: false }, "push")).not.toThrow();
+  expect(() => assertTargetPolicy({ name: "production", protected: false }, "push")).not.toThrow();
 });
 
 test("several targets require --target and a shared database must agree", () => {

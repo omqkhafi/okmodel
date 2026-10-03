@@ -48,14 +48,14 @@ A layer may import layers below it. It must not import a layer above it. Adapter
 - `bun run db:up` and `bun run db:down` start and stop the Postgres topology. `POSTGRES_VERSION` selects 15, 16, 17, or 18 (default 17).
 - `bun run type-cost` writes TypeScript 7 extended diagnostics as JSON and fails when a D127 ceiling is exceeded.
 - `bun run bundle-purity` fails when a runtime bundle contains an npm package, or when `src/` imports the `@okmodel/harness` barrel.
-- The size check keeps the `dist/` ceiling and also requires the runtime entry (`src/contracts/index.ts`) ≤ 60 KB minified, ≤ 20 KB gzip, and a cold Node import ≤ 15 ms. The import time is printed.
+- The size check reports `dist/` and does not gate it. The runtime entry (`src/contracts/index.ts`) stays ≤ 60 KB minified and ≤ 20 KB gzip. CI fails a runtime-entry cold import above 25 ms. A local sample above 15 ms is a finding. The app startup budget is the 0.1 gate in `scripts/size.ts` (startup graph, static imports). Connect-entry cold imports are printed, not gated; the 15 ms local reference is our own code with the driver stubbed. `okmodel/pg` is printed, not gated. Adapter entries are gated on minified bytes over the runtime entry.
 - `bun run attest` measures a trivial type with `@ark/attest` on TypeScript 6, outside `bun run check`.
 - `bun run bench` writes a JSON timing for the 200-table fixture. Baselines live in `packages/bench/baselines` and are not enforced.
 - `bun run catalog-bench` times hash, canonical form, and topological order on the 200-table fixture. It prints the sample and does not enforce a ceiling.
 
 ## Docs
 
-Documents in `docs/` are normative. The spec is draft 22. Decisions run D1–D133.
+Documents in `docs/` are normative. The spec is draft 22. Decisions run D1–D143.
 
 ## Engineering standards
 
