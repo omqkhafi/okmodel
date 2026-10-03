@@ -55,6 +55,42 @@ export const PGLITE_CAPABILITIES = {
 } as const satisfies DriverCapabilities;
 
 /**
+ * node-postgres execution flags.
+ *
+ * Interactive transactions, cursor streaming, listen, and cancel are set
+ * because the conformance suite passes them. Describe is false: `pg` cannot
+ * describe a statement without running it, and that case is skipped.
+ * Parameterized queries use the unnamed extended protocol.
+ */
+export const NODE_POSTGRES_CAPABILITIES = {
+  transactions: "interactive",
+  stream: true,
+  listen: true,
+  cancel: true,
+  prepared: "unnamed",
+  describe: false,
+} as const satisfies DriverCapabilities;
+
+/**
+ * Bun.sql execution flags.
+ *
+ * Interactive transactions, cursor streaming, and listen pass the conformance
+ * suite. `cancel` is false: `Query.cancel()` does not abort the backend
+ * (Bun 1.4), so the cancel and in-flight timeout cases are skipped.
+ * `describe` is false: Bun.sql has no describe API. RAISE NOTICE is not
+ * surfaced, so the notice case is skipped. `prepare` is off, so a
+ * parameterized query does not leave a named statement.
+ */
+export const BUNSQL_CAPABILITIES = {
+  transactions: "interactive",
+  stream: true,
+  listen: true,
+  cancel: false,
+  prepared: "unnamed",
+  describe: false,
+} as const satisfies DriverCapabilities;
+
+/**
  * Reads one capability flag.
  *
  * @param flags - Declared capabilities

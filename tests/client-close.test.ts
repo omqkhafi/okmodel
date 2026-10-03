@@ -11,6 +11,10 @@ import { join } from "node:path";
 import type { DriverPool, ExecuteResult } from "../src/contracts/driver.js";
 import { POSTGRESJS_CAPABILITIES } from "../src/adapters/capabilities.js";
 import { open } from "../src/adapters/pg/postgresjs.js";
+import { open as openPg } from "../src/adapters/pg/nodepostgres.js";
+import { open as openBun } from "../src/adapters/pg/bunsql.js";
+import { connect as connectPg } from "../src/runtime/pg/pg.js";
+import { connect as connectBun } from "../src/runtime/pg/bun.js";
 import { schema, table, t } from "../src/dialects/pg/index.js";
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
 import { primaryUrl } from "../packages/harness/src/topology.js";
@@ -109,6 +113,102 @@ postgresTest(
   20_000,
 );
 
+postgresTest(
+  gate,
+  "a finished node-postgres script exits on bun and node",
+  async () => {
+    const dir = mkdtempSync(join(tmpdir(), "okm-pg-exit-"));
+    writeFileSync(join(dir, "bun.ts"), exitScript(join(root, "src/runtime/pg/pg.ts")));
+    writeFileSync(
+      join(dir, "node.mjs"),
+      exitScript(
+        join(root, "dist", "runtime", "pg", "pg.js"),
+        join(root, "dist", "dialects", "pg", "index.js"),
+      ),
+    );
+    const bun = await runWithin(["bun", join(dir, "bun.ts")], dir, 5_000);
+    const node = await runWithin(["node", join(dir, "node.mjs")], dir, 5_000);
+    expect(bun).toBeLessThan(5_000);
+    expect(node).toBeLessThan(5_000);
+  },
+  20_000,
+);
+
+postgresTest(
+  gate,
+  "a finished bun.sql script exits on bun",
+  async () => {
+    if (typeof Bun === "undefined" || typeof Bun.SQL !== "function") {
+      throw new Error("Bun.sql runs only under Bun");
+    }
+    const dir = mkdtempSync(join(tmpdir(), "okm-bun-exit-"));
+    writeFileSync(join(dir, "bun.ts"), exitScript(join(root, "src/runtime/pg/bun.ts")));
+    const bun = await runWithin(["bun", join(dir, "bun.ts")], dir, 5_000);
+    expect(bun).toBeLessThan(5_000);
+  },
+  15_000,
+);
+
+postgresTest(
+  gate,
+  "a live node-postgres pool keeps the connection",
+  async () => {
+    const pool = openPg({ url: primaryUrl() });
+    try {
+      const first = await pool.execute("select pg_backend_pid()");
+      await new Promise((resolve) => setTimeout(resolve, 3_000));
+      const second = await pool.execute("select pg_backend_pid()");
+      expect(second.rows[0]?.[0]).toBe(first.rows[0]?.[0]);
+    } finally {
+      await pool.close();
+    }
+  },
+  15_000,
+);
+
+postgresTest(
+  gate,
+  "a live bun.sql pool keeps the connection",
+  async () => {
+    if (typeof Bun === "undefined" || typeof Bun.SQL !== "function") {
+      throw new Error("Bun.sql runs only under Bun");
+    }
+    const pool = openBun({ url: primaryUrl() });
+    try {
+      const first = await pool.execute("select pg_backend_pid()");
+      await new Promise((resolve) => setTimeout(resolve, 3_000));
+      const second = await pool.execute("select pg_backend_pid()");
+      expect(second.rows[0]?.[0]).toBe(first.rows[0]?.[0]);
+    } finally {
+      await pool.close();
+    }
+  },
+  15_000,
+);
+
+postgresTest(gate, "node-postgres await using closes the client", async () => {
+  {
+    await using db = connectPg(primaryUrl(), { schema: app, max: 1 });
+    await db.connected;
+  }
+  const again = connectPg(primaryUrl(), { schema: app, max: 1 });
+  await again.connected;
+  await again.close();
+});
+
+postgresTest(gate, "bun.sql await using closes the client", async () => {
+  if (typeof Bun === "undefined" || typeof Bun.SQL !== "function") {
+    throw new Error("Bun.sql runs only under Bun");
+  }
+  {
+    await using db = connectBun(primaryUrl(), { schema: app, max: 1 });
+    await db.connected;
+  }
+  const again = connectBun(primaryUrl(), { schema: app, max: 1 });
+  await again.connected;
+  await again.close();
+});
+
 /**
  * A pool whose only job is the startup check and counting closes.
  *
@@ -148,6 +248,27 @@ function asyncDispose(client: object): (() => Promise<void>) | undefined {
  */
 function pgliteEntry(): string {
   return join(root, "node_modules", "@electric-sql", "pglite", "dist", "index.js");
+}
+
+/**
+ * A script that connects and does not close.
+ *
+ * @param connectEntry - `connect` module
+ * @param schemaEntry - Schema module. Omitted, the script imports the TypeScript source
+ * @returns The script
+ */
+function exitScript(connectEntry: string, schemaEntry?: string): string {
+  const schema = schemaEntry ?? join(root, "src/dialects/pg/index.ts");
+  return `import { connect } from ${JSON.stringify(connectEntry)};
+import { schema, table, t } from ${JSON.stringify(schema)};
+
+const notes = table("notes", { title: t.text() });
+const app = schema({ tables: [notes] });
+const url = process.env.DATABASE_URL;
+if (url === undefined || url.length === 0) throw new Error("DATABASE_URL is not set");
+const db = connect(url, { schema: app });
+await db.connected;
+`;
 }
 
 /**

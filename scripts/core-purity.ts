@@ -12,7 +12,8 @@ import { moduleSpecifiers } from "./specifiers.js";
  *
  * Bare Node built-in specifiers (`fs`, `path`, …) count as the same dependency.
  * The tooling layer may import Node. The postgres.js adapter may import
- * `node:net` so a finished script can unref its sockets.
+ * `node:net` to unref an idle socket. The node-postgres adapter may import
+ * it to send a CancelRequest.
  */
 export function checkCorePurity(options: {
   readonly root: string;
@@ -83,21 +84,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * postgres.js does not hand back its socket. This file opens one and unrefs it.
- * The check root is `src/`, so the path has no `src` prefix.
+ * The two core imports of `node:net`.
+ *
+ * postgres.js does not hand back its socket, so that adapter opens one and
+ * unrefs it. node-postgres cancel opens a side socket and unrefs it. The
+ * check root is `src/`, so the path has no `src` prefix.
  */
-const SOCKET_UNREF = join("adapters", "pg", "postgresjs.ts");
+const NODE_NET = new Set([
+  join("adapters", "pg", "postgresjs.ts"),
+  join("adapters", "pg", "nodepostgres.ts"),
+]);
 
 /**
- * The one core import of Node that the socket unref needs.
+ * The core imports of Node that a driver socket needs.
  *
  * @param root - Repository or fixture root
  * @param file - Source file
  * @param specifier - Import specifier
- * @returns Whether this import is the postgres.js socket
+ * @returns Whether this import is an allowed driver socket
  */
 function nodeImportAllowed(root: string, file: string, specifier: string): boolean {
-  return relative(root, file) === SOCKET_UNREF && specifier === "node:net";
+  return specifier === "node:net" && NODE_NET.has(relative(root, file));
 }
 
 function messageOf(error: unknown): string {

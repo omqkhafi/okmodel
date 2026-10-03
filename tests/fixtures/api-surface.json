@@ -953,6 +953,86 @@
       "kind": "stable"
     }
   ],
+  "okmodel/pg/pg": [
+    {
+      "name": "DriverError",
+      "kind": "stable"
+    },
+    {
+      "name": "NodePostgresConfig",
+      "kind": "stable"
+    },
+    {
+      "name": "NodePostgresConnectOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "NodePostgresTarget",
+      "kind": "stable"
+    },
+    {
+      "name": "capabilities",
+      "kind": "stable"
+    },
+    {
+      "name": "connect",
+      "kind": "stable"
+    },
+    {
+      "name": "hasCapability",
+      "kind": "stable"
+    },
+    {
+      "name": "open",
+      "kind": "stable"
+    },
+    {
+      "name": "readCapability",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/pg/bun": [
+    {
+      "name": "BunSqlConfig",
+      "kind": "stable"
+    },
+    {
+      "name": "BunSqlConnectOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "BunSqlTarget",
+      "kind": "stable"
+    },
+    {
+      "name": "BunSqlTls",
+      "kind": "stable"
+    },
+    {
+      "name": "DriverError",
+      "kind": "stable"
+    },
+    {
+      "name": "capabilities",
+      "kind": "stable"
+    },
+    {
+      "name": "connect",
+      "kind": "stable"
+    },
+    {
+      "name": "hasCapability",
+      "kind": "stable"
+    },
+    {
+      "name": "open",
+      "kind": "stable"
+    },
+    {
+      "name": "readCapability",
+      "kind": "stable"
+    }
+  ],
   "okmodel/migrate": [
     {
       "name": "MigrateConfig",

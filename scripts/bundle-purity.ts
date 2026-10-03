@@ -23,6 +23,8 @@ import { moduleSpecifiers } from "./specifiers.js";
 export const ADAPTER_ENTRIES = [
   { entry: "src/runtime/pg/postgresjs.ts", external: "postgres" },
   { entry: "src/runtime/pg/pglite.ts", external: "@electric-sql/pglite" },
+  { entry: "src/runtime/pg/pg.ts", external: "pg" },
+  { entry: "src/runtime/pg/bun.ts", external: "bun" },
 ] as const;
 
 /** Published library entries that must not contain an npm package. */
@@ -236,6 +238,10 @@ function bundleAdapterEntries(root: string): readonly string[] {
         "postgres",
         "--external",
         "@electric-sql/pglite",
+        "--external",
+        "pg",
+        "--external",
+        "bun",
       ],
       { cwd: root, stdout: "pipe", stderr: "pipe" },
     );

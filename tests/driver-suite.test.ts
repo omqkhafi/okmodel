@@ -19,6 +19,11 @@ import {
   open as openPostgres,
   capabilities as postgresCapabilities,
 } from "../src/adapters/pg/postgresjs.js";
+import {
+  open as openNodePostgres,
+  capabilities as nodePostgresCapabilities,
+} from "../src/adapters/pg/nodepostgres.js";
+import { BUNSQL_CAPABILITIES } from "../src/adapters/capabilities.js";
 
 const decision = await loadPostgresGate();
 requirePostgresWhenAsked(decision);
@@ -56,3 +61,56 @@ registerDriverSuite({
   capabilities: postgresCapabilities,
   test: postgresCases,
 });
+
+registerDriverSuite({
+  name: "node-postgres",
+  open: () => openNodePostgres({ url: primaryUrl(), max: 4, timeouts: { acquire: 5_000 } }),
+  openLimited: () => openNodePostgres({ url: primaryUrl(), max: 1, timeouts: { acquire: 150 } }),
+  openOther: () => openNodePostgres({ url: primaryUrl(), max: 2 }),
+  size: 4,
+  capabilities: nodePostgresCapabilities,
+  test: postgresCases,
+});
+
+const bunSql = bunSqlAvailable() ? await import("../src/adapters/pg/bunsql.js") : undefined;
+const bunUnavailable = (): never => {
+  throw new Error("Bun.sql runs only under Bun");
+};
+
+registerDriverSuite({
+  name: "bun.sql",
+  open: () =>
+    bunSql?.open({ url: primaryUrl(), max: 4, timeouts: { acquire: 5_000 } }) ?? bunUnavailable(),
+  openLimited: () =>
+    bunSql?.open({ url: primaryUrl(), max: 1, timeouts: { acquire: 150 } }) ?? bunUnavailable(),
+  openOther: () => bunSql?.open({ url: primaryUrl(), max: 2 }) ?? bunUnavailable(),
+  size: 4,
+  capabilities: bunSql?.capabilities ?? BUNSQL_CAPABILITIES,
+  notices: false,
+  test: bunSql === undefined ? skipped("Bun.sql runs only under Bun") : postgresCases,
+});
+
+/**
+ * Reports whether this process can open Bun.sql.
+ *
+ * @returns `true` on Bun
+ */
+function bunSqlAvailable(): boolean {
+  return typeof Bun !== "undefined" && typeof Bun.SQL === "function";
+}
+
+/**
+ * Skips every case with one reason.
+ *
+ * @param reason - Why the driver is not running
+ * @returns A registrar that skips
+ */
+function skipped(reason: string): SuiteTest {
+  const register: SuiteTest = (name, fn) => {
+    test.skip(`${name} (${reason})`, fn);
+  };
+  register.skip = (name, fn) => {
+    test.skip(`${name} (${reason})`, fn);
+  };
+  return register;
+}

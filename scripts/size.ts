@@ -88,6 +88,17 @@ export const CONNECT_ENTRIES = [
     maxMinBytes: 38_146,
     maxGzipBytes: 13_505,
   },
+  {
+    entry: "src/runtime/pg/pg.ts",
+    file: "pg.js",
+    external: ["pg"],
+  },
+  {
+    entry: "src/runtime/pg/bun.ts",
+    file: "bun.js",
+    external: ["bun"],
+    nodeColdImport: false,
+  },
 ] as const;
 
 /** Operator modules the app fixture does not import. They must not be in its startup graph. */
@@ -399,6 +410,7 @@ const sideEffectImport = /import\s*"(\.\/[^"]+)"/g;
  * @param file - Built entry filename
  * @param external - Packages left outside the bundle
  * @param stubSpecifier - When set, a second import replaces this package with an empty module
+ * @param nodeImport - When false, skip the Node cold import. Bun.sql has no Node build
  * @returns Sizes and the cold-import sample of the entry file
  */
 export function measureStartup(
@@ -407,6 +419,7 @@ export function measureStartup(
   file: string,
   external: readonly string[] = [],
   stubSpecifier?: string,
+  nodeImport = true,
 ): StartupMeasurement {
   const parent = external.length > 0 ? join(root, "node_modules") : tmpdir();
   const dir = mkdtempSync(join(parent, external.length > 0 ? ".okm-size-" : "okm-size-"));
@@ -452,7 +465,7 @@ export function measureStartup(
       totalParts.push(bytes);
     }
     const outfile = join(dir, file);
-    const coldImportMs = coldImportMsOnNode(outfile);
+    const coldImportMs = nodeImport ? coldImportMsOnNode(outfile) : 0;
     const stubbedColdImportMs =
       stubSpecifier === undefined ? undefined : stubbedImport(dir, outfile, stubSpecifier);
     return {
@@ -752,7 +765,7 @@ function stubbedImport(dir: string, file: string, specifier: string): number {
   const stub = join(dir, "okm-driver-stub.mjs");
   writeFileSync(
     stub,
-    "export default function driver() { return {}; }\nexport class PostgresError extends Error {}\nexport class PGlite {}\n",
+    "export default function driver() { return {}; }\nexport class PostgresError extends Error {}\nexport class PGlite {}\nexport class Pool {}\nexport class SQL {}\n",
   );
   const href = JSON.stringify(pathToFileURL(stub).href);
   rewriteSpecifier(dir, specifier, href);
@@ -846,23 +859,32 @@ if (import.meta.main) {
     problems.push(...exportShakeProblems(root));
     problems.push(...printQueryLatency(root));
     for (const entry of CONNECT_ENTRIES) {
+      const nodeImport = !("nodeColdImport" in entry) || entry.nodeColdImport !== false;
       const measured = measureStartup(
         root,
         entry.entry,
         entry.file,
         entry.external,
         entry.external[0],
+        nodeImport,
       );
-      console.log(formatEntry(measured, ci));
+      if (nodeImport) console.log(formatEntry(measured, ci));
+      else {
+        console.log(
+          `size: ${measured.entry} min ${String(measured.minBytes)} bytes, gzip ${String(measured.gzipBytes)} bytes (Node cold import skipped: Bun.sql runs only on Bun)`,
+        );
+      }
       console.log(formatTotal(measured));
       printStubbed(measured, ci);
-      problems.push(
-        ...entryBudgetProblems(measured, {
-          maxMinBytes: entry.maxMinBytes,
-          maxGzipBytes: entry.maxGzipBytes,
-          maxColdImportMs: Number.POSITIVE_INFINITY,
-        }),
-      );
+      if ("maxMinBytes" in entry && "maxGzipBytes" in entry) {
+        problems.push(
+          ...entryBudgetProblems(measured, {
+            maxMinBytes: entry.maxMinBytes,
+            maxGzipBytes: entry.maxGzipBytes,
+            maxColdImportMs: Number.POSITIVE_INFINITY,
+          }),
+        );
+      }
     }
   } catch (error) {
     problems.push(`size: ${error instanceof Error ? error.message : String(error)}`);

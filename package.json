@@ -1,6 +1,6 @@
 {
   "name": "okmodel",
-  "version": "0.2.0-next.2",
+  "version": "0.2.0-next.3",
   "description": "okmodel is a catalog-first TypeScript ORM, PostgreSQL first.",
   "keywords": [
     "migrations",
@@ -57,10 +57,18 @@
     "./pg/pglite": {
       "types": "./dist/runtime/pg/pglite.d.ts",
       "import": "./dist/runtime/pg/pglite.js"
+    },
+    "./pg/pg": {
+      "types": "./dist/runtime/pg/pg.d.ts",
+      "import": "./dist/runtime/pg/pg.js"
+    },
+    "./pg/bun": {
+      "types": "./dist/runtime/pg/bun.d.ts",
+      "import": "./dist/runtime/pg/bun.js"
     }
   },
   "scripts": {
-    "build": "rm -rf dist && bun build ./src/contracts/index.ts ./src/contracts/internal.ts ./src/dialects/pg/index.ts ./src/runtime/pg/postgresjs.ts ./src/runtime/pg/pglite.ts ./src/tooling/migrate/index.ts ./src/tooling/cli.ts --outdir ./dist --root ./src --format esm --target node --splitting --chunk-naming=shared/[hash].js --external postgres --external @electric-sql/pglite && bunx tsc -p tsconfig.build.json && bun ./scripts/write-bin-wrappers.ts",
+    "build": "rm -rf dist && bun build ./src/contracts/index.ts ./src/contracts/internal.ts ./src/dialects/pg/index.ts ./src/runtime/pg/postgresjs.ts ./src/runtime/pg/pglite.ts ./src/runtime/pg/pg.ts ./src/runtime/pg/bun.ts ./src/tooling/migrate/index.ts ./src/tooling/cli.ts --outdir ./dist --root ./src --format esm --target node --splitting --chunk-naming=shared/[hash].js --external postgres --external @electric-sql/pglite --external pg --external bun && bunx tsc -p tsconfig.build.json && bun ./scripts/write-bin-wrappers.ts",
     "driver-bench": "bun ./scripts/driver-bench.ts",
     "typecheck": "bunx tsc --noEmit -p tsconfig.json",
     "editor-check": "bun ./scripts/editor-check.ts",
@@ -108,10 +116,14 @@
   },
   "peerDependencies": {
     "@electric-sql/pglite": "^0.5.8",
+    "pg": "^8.16.0",
     "postgres": "^3.4.9"
   },
   "peerDependenciesMeta": {
     "@electric-sql/pglite": {
+      "optional": true
+    },
+    "pg": {
       "optional": true
     },
     "postgres": {

@@ -20,6 +20,11 @@ import {
   open as openPostgres,
   capabilities as postgresCapabilities,
 } from "../src/adapters/pg/postgresjs.js";
+import {
+  open as openNodePostgres,
+  capabilities as nodePostgresCapabilities,
+} from "../src/adapters/pg/nodepostgres.js";
+import { BUNSQL_CAPABILITIES } from "../src/adapters/capabilities.js";
 
 const decision = await loadPostgresGate();
 requirePostgresWhenAsked(decision);
@@ -51,3 +56,47 @@ registerErrorMappingSuite({
   capabilities: postgresCapabilities,
   test: postgresCases,
 });
+
+registerErrorMappingSuite({
+  name: "node-postgres",
+  open: () => openNodePostgres({ url: primaryUrl(), max: 4 }),
+  capabilities: nodePostgresCapabilities,
+  test: postgresCases,
+});
+
+const bunSql = bunSqlAvailable() ? await import("../src/adapters/pg/bunsql.js") : undefined;
+const bunUnavailable = (): never => {
+  throw new Error("Bun.sql runs only under Bun");
+};
+
+registerErrorMappingSuite({
+  name: "bun.sql",
+  open: () => bunSql?.open({ url: primaryUrl(), max: 4 }) ?? bunUnavailable(),
+  capabilities: bunSql?.capabilities ?? BUNSQL_CAPABILITIES,
+  test: bunSql === undefined ? skipped("Bun.sql runs only under Bun") : postgresCases,
+});
+
+/**
+ * Reports whether this process can open Bun.sql.
+ *
+ * @returns `true` on Bun
+ */
+function bunSqlAvailable(): boolean {
+  return typeof Bun !== "undefined" && typeof Bun.SQL === "function";
+}
+
+/**
+ * Skips every case with one reason.
+ *
+ * @param reason - Why the driver is not running
+ * @returns A registrar that skips
+ */
+function skipped(reason: string): SuiteTest {
+  const register: SuiteTest = (name, fn) => {
+    test.skip(`${name} (${reason})`, fn);
+  };
+  register.skip = (name, fn) => {
+    test.skip(`${name} (${reason})`, fn);
+  };
+  return register;
+}

@@ -18,6 +18,11 @@ import {
   capabilities as postgresCapabilities,
   open as openPostgres,
 } from "../src/adapters/pg/postgresjs.js";
+import {
+  capabilities as nodePostgresCapabilities,
+  open as openNodePostgres,
+} from "../src/adapters/pg/nodepostgres.js";
+import { BUNSQL_CAPABILITIES } from "../src/adapters/capabilities.js";
 
 /** One case on one driver. */
 export type CompatibilityCell = {
@@ -47,7 +52,7 @@ export function renderCompatibility(cells: readonly CompatibilityCell[]): string
     "",
     supportSentence(),
     "",
-    "PGlite runs in the check job. The in-process wire server runs in the check job. postgres.js runs in the postgres job (`REQUIRE_DOCKER=1`). A skip means the adapter did not declare the capability that case needs.",
+    "PGlite runs in the check job. The in-process wire server runs in the check job. postgres.js, node-postgres, and Bun.sql run in the postgres job (`REQUIRE_DOCKER=1`). Bun.sql runs only under Bun. A skip means the adapter did not declare the capability that case needs. node-postgres and Bun.sql do not describe a statement without running it. Bun.sql does not surface RAISE NOTICE and does not abort an in-flight statement.",
     "",
     `| ${header.join(" | ")} |`,
     `| ${header.map(() => "---").join(" | ")} |`,
@@ -89,6 +94,25 @@ export async function collectCompatibility(): Promise<readonly CompatibilityCell
       size: 4,
       capabilities: postgresCapabilities,
     });
+    await runDriver("node-postgres", "node-postgres", cells, {
+      open: () => openNodePostgres({ url: primaryUrl(), max: 4, timeouts: { acquire: 5_000 } }),
+      openLimited: () =>
+        openNodePostgres({ url: primaryUrl(), max: 1, timeouts: { acquire: 150 } }),
+      openOther: () => openNodePostgres({ url: primaryUrl(), max: 2 }),
+      size: 4,
+      capabilities: nodePostgresCapabilities,
+    });
+    if (typeof Bun !== "undefined" && typeof Bun.SQL === "function") {
+      const bunSql = await import("../src/adapters/pg/bunsql.js");
+      await runDriver("bun.sql", "Bun.sql", cells, {
+        open: () => bunSql.open({ url: primaryUrl(), max: 4, timeouts: { acquire: 5_000 } }),
+        openLimited: () => bunSql.open({ url: primaryUrl(), max: 1, timeouts: { acquire: 150 } }),
+        openOther: () => bunSql.open({ url: primaryUrl(), max: 2 }),
+        size: 4,
+        capabilities: BUNSQL_CAPABILITIES,
+        notices: false,
+      });
+    }
   }
   return cells;
 }
@@ -99,6 +123,7 @@ type Openers = {
   readonly openOther: () => DriverPool | Promise<DriverPool>;
   readonly size: number;
   readonly capabilities: DriverCapabilities;
+  readonly notices?: boolean;
 };
 
 async function runDriver(
@@ -116,6 +141,7 @@ async function runDriver(
     openOther: openers.openOther,
     size: openers.size,
     capabilities: openers.capabilities,
+    ...(openers.notices !== undefined ? { notices: openers.notices } : {}),
     test,
   });
   registerErrorMappingSuite({
@@ -177,7 +203,7 @@ function englishList(values: readonly string[]): string {
 }
 
 function rank(name: string): number {
-  const preferred = ["postgres.js", "PGlite"];
+  const preferred = ["postgres.js", "node-postgres", "Bun.sql", "PGlite"];
   const index = preferred.indexOf(name);
   return index === -1 ? preferred.length : index;
 }

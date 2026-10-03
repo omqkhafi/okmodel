@@ -9,19 +9,24 @@ const root = repoRoot();
 
 test("package exports resolve under node and bun", async () => {
   linkSelfPackage();
-  const source = [
-    'import * as okmodel from "okmodel";',
-    'import * as internal from "okmodel/internal";',
-    'import * as pg from "okmodel/pg";',
-    'import * as migrate from "okmodel/migrate";',
-    'import * as postgresjs from "okmodel/pg/postgresjs";',
-    'import * as pglite from "okmodel/pg/pglite";',
-    "const kinds = [okmodel, internal, pg, migrate, postgresjs, pglite].map((entry) => typeof entry);",
-    "if (kinds.some((kind) => kind !== 'object')) throw new Error(kinds.join(','));",
-    "console.log('ok');",
-  ].join("\n");
-
   for (const runtime of ["node", "bun"]) {
+    const bunImport = runtime === "bun" ? 'import * as bunSql from "okmodel/pg/bun";\n' : "";
+    const bunName = runtime === "bun" ? ", bunSql" : "";
+    const source = [
+      'import * as okmodel from "okmodel";',
+      'import * as internal from "okmodel/internal";',
+      'import * as pg from "okmodel/pg";',
+      'import * as migrate from "okmodel/migrate";',
+      'import * as postgresjs from "okmodel/pg/postgresjs";',
+      'import * as pglite from "okmodel/pg/pglite";',
+      'import * as nodePostgres from "okmodel/pg/pg";',
+      bunImport.trimEnd(),
+      `const kinds = [okmodel, internal, pg, migrate, postgresjs, pglite, nodePostgres${bunName}].map((entry) => typeof entry);`,
+      "if (kinds.some((kind) => kind !== 'object')) throw new Error(kinds.join(','));",
+      "console.log('ok');",
+    ]
+      .filter((line) => line.length > 0)
+      .join("\n");
     const args =
       runtime === "node" ? ["--input-type=module", "--eval", source] : ["--eval", source];
     const proc = Bun.spawn([runtime, ...args], {
@@ -35,6 +40,19 @@ test("package exports resolve under node and bun", async () => {
     expect(code, stderr).toBe(0);
     expect(stdout.trim()).toBe("ok");
   }
+});
+
+test("node does not load okmodel/pg/bun because Bun.sql runs only on Bun", async () => {
+  linkSelfPackage();
+  const proc = Bun.spawn(["node", "--input-type=module", "--eval", 'import "okmodel/pg/bun";'], {
+    cwd: root,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const stderr = await new Response(proc.stderr).text();
+  const code = await proc.exited;
+  expect(code).not.toBe(0);
+  expect(stderr.toLowerCase()).toContain("bun");
 });
 
 test("each export's JavaScript file has a sibling declaration", () => {

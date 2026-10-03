@@ -20,10 +20,12 @@
       },
       "peerDependencies": {
         "@electric-sql/pglite": "^0.5.8",
+        "pg": "^8.16.0",
         "postgres": "^3.4.9",
       },
       "optionalPeers": [
         "@electric-sql/pglite",
+        "pg",
         "postgres",
       ],
     },
