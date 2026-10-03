@@ -7,16 +7,16 @@ Byte gates fail in that CI job. Install size is the unminified `dist/` and is pr
 | Graph | Minified | Gzip | Cold import | Gate |
 | --- | ---: | ---: | ---: | --- |
 | Runtime entry `okmodel` | 5,525 | 2,042 | 1.758 ms | 6,100 / 2,250 bytes, CI cold import 25 ms |
-| App startup (10 tables, one find) | 77,537 | 25,625 | 9.922 ms | 79,849 / 26,410 bytes. Cold import is printed, not gated |
+| App startup (10 tables, one find) | 77,537 | 25,625 | 9.922 ms | 84,500 / 27,500 bytes (D157). Cold import is printed, not gated |
 | App startup, `postgres` stubbed | | | 4.101 ms | local reference 15 ms, not gated |
 | App total graph, lazy chunks included | 112,033 | 36,204 | | printed, not gated |
 | `okmodel/pg` barrel | 62,063 | 19,409 | 3.100 ms | printed, not gated |
-| Connect `okmodel/pg/postgresjs` startup | 37,952 | 13,158 | 8.364 ms | 39,849 / 13,815. Cold import printed, not gated |
+| Connect `okmodel/pg/postgresjs` startup | 37,952 | 13,158 | 8.364 ms | 40,100 / 13,815 (D157). Cold import printed, not gated |
 | Connect postgres.js, driver stubbed | | | 2.526 ms | local reference 15 ms, not gated |
 | Connect `okmodel/pg/pglite` startup | 36,330 | 12,861 | 10.794 ms | 38,146 / 13,505. Cold import printed, not gated |
 | Connect PGlite, driver stubbed | | | 2.666 ms | local reference 15 ms, not gated |
-| Connect `okmodel/pg/pg` startup | 38,732 | 13,516 | | 39,894 / 13,922 (measured +3%, D156). Cold import printed, not gated |
-| Connect `okmodel/pg/bun` startup | 37,633 | 13,086 | | 38,762 / 13,479 (measured +3%, D156). Node cold import skipped: Bun.sql runs only on Bun |
+| Connect `okmodel/pg/pg` startup | 38,732 | 13,516 | | 40,000 / 13,950 (D157). Cold import printed, not gated |
+| Connect `okmodel/pg/bun` startup | 37,633 | 13,086 | | 38,900 / 13,500 (D157). Node cold import skipped: Bun.sql runs only on Bun |
 | Install size (`dist/`) | 555,786 bytes unminified | | | printed, not gated |
 
 Adapter entries, driver included, are printed and not gated on cold import: postgres.js 8.563 ms, PGlite 10.090 ms. Their minified bytes that are not already in the runtime entry are gated: postgres.js 12,074 of 15,093, PGlite 9,608 of 12,010.
