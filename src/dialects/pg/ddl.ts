@@ -15,7 +15,9 @@ import type {
   IndexObject,
   SequenceObject,
   TableObject,
+  TypeObject,
 } from "../../contracts/catalog/types.js";
+import { quoteLiteral } from "./quote.js";
 
 /**
  * Quotes one identifier.
@@ -40,8 +42,14 @@ export function quoteIdent(name: string): string {
 export function renderCatalog(source: Catalog, schema: string): readonly string[] {
   const folded = foldedKeys(source);
   const statements: string[] = [];
-  for (const object of creationOrder(source)) {
-    if (object.owner === "ignored") continue;
+  const ordered = creationOrder(source);
+  for (const object of ordered) {
+    if (object.kind !== "type" || object.owner === "ignored") continue;
+    const sql = createObjectSql(object, schema);
+    if (sql !== undefined) statements.push(sql);
+  }
+  for (const object of ordered) {
+    if (object.kind === "type" || object.owner === "ignored") continue;
     const key = identityKey(object.identity);
     if (object.kind === "table") {
       statements.push(createTableSql(object, source, schema));
@@ -77,6 +85,8 @@ export function dropObjectSql(object: CatalogObject, schema: string): string | u
       return `alter table ${qualify(schema, object.identity.parent.name)} drop constraint ${quoteIdent(object.identity.name)}`;
     case "sequence":
       return `drop sequence ${qualify(schema, object.identity.name)}`;
+    case "type":
+      return `drop type ${qualify(schema, object.identity.name)}`;
     default:
       return undefined;
   }
@@ -99,6 +109,8 @@ export function createObjectSql(object: CatalogObject, schema: string): string |
       return `alter table ${qualify(schema, object.identity.parent.name)} add constraint ${quoteIdent(object.identity.name)} ${constraintBody(object, schema)}`;
     case "sequence":
       return createSequenceSql(object, schema);
+    case "type":
+      return createEnumSql(object, schema);
     case "table":
       return undefined;
     default:
@@ -202,6 +214,11 @@ export function createTableSql(tableObject: TableObject, source: Catalog, schema
       ? ""
       : ` partition by ${partition.method} (${partition.columns.map((name) => quoteIdent(name)).join(", ")})`;
   return `create table ${qualify(schema, parent)} (\n  ${lines.join(",\n  ")}\n)${tail}`;
+}
+
+function createEnumSql(object: TypeObject, schema: string): string {
+  const labels = object.definition.labels.map((label) => quoteLiteral(label)).join(", ");
+  return `create type ${qualify(schema, object.identity.name)} as enum (${labels})`;
 }
 
 function columnSql(column: ColumnObject): string {

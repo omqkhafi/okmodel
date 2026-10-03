@@ -93,6 +93,8 @@ export const TYPE_CEILINGS = {
   inferred500Instantiations: 42_400,
   instantiationsPerAddedTable: 84,
   emittedConsumerTypes: 700,
+  /** Query composite probe on 200 tables (D140). Separate from the inferred-schema baseline. */
+  queryCompositeTypes: 7_100,
   taggedOperatorSurcharge: 800,
   columnInstantiations: 720,
   columnTypes: 1_100,
@@ -306,9 +308,9 @@ export function ceilingProblems(
       `type-cost: query 200 tables used ${String(query200.instantiations)} instantiations, above ${String(TYPE_CEILINGS.inferred200Instantiations)}`,
     );
   }
-  if (query200 !== undefined && query200.types > TYPE_CEILINGS.inferred200Types) {
+  if (query200 !== undefined && query200.types > TYPE_CEILINGS.queryCompositeTypes) {
     problems.push(
-      `type-cost: query 200 tables used ${String(query200.types)} types, above ${String(TYPE_CEILINGS.inferred200Types)}`,
+      `type-cost: query 200 tables used ${String(query200.types)} types, above ${String(TYPE_CEILINGS.queryCompositeTypes)}`,
     );
   }
   if (taggedSurcharge > TYPE_CEILINGS.taggedOperatorSurcharge) {

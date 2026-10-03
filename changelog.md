@@ -19,7 +19,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 #### contracts
 
 - `sha256` is a pure-TypeScript SHA-256 in the contracts layer. Fixture hashes use it.
-- Catalog objects share one envelope: kind, identity, owner, definition, dependencies, and provenance. Tables, columns, indexes, constraints, and sequences are built here. Views, functions, triggers, extensions, roles, grants, and default privileges use the same envelope.
+- Catalog objects share one envelope: kind, identity, owner, definition, dependencies, and provenance. Tables, columns, indexes, constraints, sequences, and enum types are built here. Views, functions, triggers, extensions, roles, grants, and default privileges use the same envelope.
+- An enum is a catalog object of kind `type`. Identity is `(namespace, name)`. The definition is the ordered label list, and that order is part of the catalog hash. Each column that uses the enum depends on the type.
 - Constraint and index names are generated from a stable key. A name past the dialect limit keeps a SHA-256 suffix. Renaming a field does not rename those constraints or indexes.
 - A catalog serialises to canonical JSON with a version field. The hash is SHA-256 of that JSON, so the same catalog yields the same bytes on every runtime. Namespace templates stay templates. The hash and the serialised text are computed on first use.
 - `loadTrustedCatalog` checks the stored hash and version, then trusts the objects. It does not rebuild the catalog. `parseCatalog` stays the validating read.
@@ -36,7 +37,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `enum` and `domain` are exported under those names. An invalid enum or domain definition is OKM1060. A label a codec rejects is OKM1210.
 - Date and time codecs read the `Temporal` global. okmodel does not ship a polyfill. A missing global is OKM1210 and the message says to assign one to `globalThis.Temporal`.
 - `table()` and `schema()` compile columns, references, indexes, checks, and unique constraints into a catalog. `one()` and `many()` declare relations. `manyThrough` and `morph` stay OKM1061. Options that arrive later throw OKM1061 and name that prompt, or say later when the plan has no row for them. `schema()` defers the catalog document until `.catalog` is read.
-- Postgres introspection builds a catalog from a schema. Copied partition primary keys and inherited indexes are left out. Check expressions and index predicates come back as the database's text.
+- Postgres introspection builds a catalog from a schema. Copied partition primary keys and inherited indexes are left out. Check expressions and index predicates come back as the database's text. Enum labels are read from `pg_enum`, and a column of that type depends on it.
+- `schema()` stores one type object per enum name. Columns that share the name share the object. Two different label lists for one name are OKM1020.
 - The same DDL renderer plans a migration and builds a scratch schema, so a statement has one spelling.
 - Tagged operators are one function per operator (`eq`, `lt`, `inList`, `or`, and the rest). An app that imports `eq` does not ship the others.
 - `inc` adds to a numeric column in an `update` `set`. JSON and array operators are not in this version.
@@ -61,9 +63,9 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### tooling
 
-- `okmodel/migrate` plans migrations. `defineConfig` lives on that entry. `okm build` validates the schema and writes `.okm/` (catalog, hash, declarations, emitted row types, and the table-name union for `references`). `okm generate` writes SQL only. `okm migrate plan <name>` prints the plan and its class. `okm check` reports a stale `renamedFrom` and a table file the schema does not import (OKM1024).
+- `okmodel/migrate` plans migrations. `defineConfig` lives on that entry. `okm build` validates the schema and writes `.okm/` (catalog, hash, emitted row types, and the table-name union for `references`). `okm generate` writes SQL only. `okm migrate plan <name>` prints the plan and its class. `okm check` reports a stale `renamedFrom` and a table file the schema does not import (OKM1024). Enum labels live in the catalog, not in a side file.
 - An unexplained drop-and-add is OKM1530. The fix shows the line to add. The planner does not prompt.
-- Removing a picklist or enum value needs `--replace table.column.old=new` (or `=null`). Without it, OKM1541's fix names the flag. The plan's expand step updates rows and keeps the old constraint; the contract step sweeps and swaps the constraint (`NOT VALID`, then `VALIDATE`). An enum removal recreates the type in the contract step. Those data steps are plain statements. Batching them is later.
+- Removing a picklist or enum value needs `--replace table.column.old=new` (or `=null`). Without it, OKM1541's fix names the flag. The plan's expand step updates rows and keeps the old constraint; the contract step sweeps and swaps the constraint (`NOT VALID`, then `VALIDATE`). An enum removal recreates the type after that sweep: rename, `CREATE TYPE … AS ENUM`, `ALTER COLUMN … TYPE … USING`, then `DROP TYPE`. Adding a label is `ALTER TYPE … ADD VALUE`, marked non-transactional. `CREATE TYPE` is planned before the table. The type is dropped after the last column that uses it. Those data steps are plain statements. Batching them is later.
 - Stub export for `okmodel/testing`.
 - `okm --version` and `okmodel --version` print the package version.
 - Repository checks for layer imports, core purity, docs links and decision numbers, publint, arethetypeswrong, a `dist/` size ceiling, and bundle purity.
@@ -81,9 +83,9 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The replication test waits up to 30 seconds, matching its replay wait, so other Postgres tests can run beside it.
 - The runtime entry must stay within 60 KB minified and 20 KB gzip. A cold import on Node is the median of five fresh processes. CI fails above 25 ms (D134). Locally the script prints the 15 ms reference and records a finding above it.
 - The app fixture gate is the startup graph (static imports only): 76,444 minified bytes and 25,205 gzip (D138, measured 74,218 / 24,471 plus 3 percent, under the 86,688 / 27,800 cap). The total graph, lazy chunks included, is printed and not gated. First-find and first-include latency are printed beside cold import. `okmodel/pg` is 70,500 / 22,000. The public connect entries stay at the measured size plus 5 percent. Standalone adapter ceilings stay at the D135 numbers. The app fixture's cold import is printed and is not the 25 ms CI failure. That failure stays on the runtime entry (D134), because the app runs `schema()` at import.
-- `bun run editor-check` compares hover, completions, and diagnostics from the TypeScript 6 language server with a snapshot. TypeScript 7 has no language server, so the server is the dev-only `typescript-editor` package. It is not imported and not bundled. The check is part of `bun run check`.
+- `bun run editor-check` compares hover, completions, and diagnostics from the TypeScript 6 language server with a snapshot. It also checks the row types `okm build` emits, including an enum column. TypeScript 7 has no language server, so the server is the dev-only `typescript-editor` package. It is not imported and not bundled. The check is part of `bun run check`.
 - The Postgres CI job also runs the read and write tests.
-- `bun run type-cost` also typechecks a find with filter, select, include, and orderBy on 10, 50, and 200 tables, against the built declarations. Those projects use the D133 inferred-200 ceilings.
+- `bun run type-cost` also typechecks a find with filter, select, include, and orderBy on 10, 50, and 200 tables, against the built declarations. Instantiations stay under the D133 inferred-200 ceiling. The composite probe's own types ceiling is 7,100 (D140). The emitted-consumer measurement typechecks the row types `okm build` writes.
 - `bun run bundle-purity` fails when a runtime bundle contains an npm package, or when `src/` imports the harness barrel. Adapter entries must leave `postgres` and `@electric-sql/pglite` external.
 - A conformance suite runs the same driver cases on either adapter: execute, nulls, timestamps, numeric, bigint, json, arrays, batch (including a savepoint inside a reserved transaction), reservation, stats, close, and session reset. Cancel, timeout, and stream run only when the adapter declares them.
 - Error-mapping conformance runs on postgres.js and PGlite: unique, not-null, check, foreign key, exclusion, serialization, deadlock, lock timeout, statement timeout, cancelled, connection failure, and `batchIndex` (a number, or null at commit).
@@ -95,7 +97,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - The M0 gate findings are in `docs/m0-findings.md`, with a Resolved by column for each row.
 - Spec section 21 records OKM1026 for a catalog dependency cycle and OKM1027 for a catalog document this version cannot read.
-- `docs/editor-check.md` describes the language-server snapshot for row hover, column completion, and a missing column or table.
+- `docs/editor-check.md` describes the language-server snapshot for row hover, column completion, and a missing column or table, and the same check on emitted row types.
 
 ### ♻️ Changed
 
@@ -133,6 +135,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Engineering standards (D129) are in `AGENTS.md` and the ship skill. Reports state runtime entry size, cold import, and type-cost change.
 
 ### 🐛 Fixed
+
+#### dialects
+
+- `schema().catalog` accepts an enum column. It no longer raises OKM1020 because the enum type was missing from the catalog.
 
 #### runtime
 

@@ -12,11 +12,7 @@ import { pathToFileURL } from "node:url";
 import { catalog } from "../../contracts/catalog/build.js";
 import { catalogHash, parseCatalog, serializeCatalog } from "../../contracts/catalog/document.js";
 import { OkmError } from "../../contracts/error.js";
-import {
-  schemaDeclarations,
-  type EnumSnapshot,
-  type SchemaDeclarations,
-} from "../../dialects/pg/declarations.js";
+import { schemaDeclarations } from "../../dialects/pg/declarations.js";
 import { emitRowTypes } from "../../dialects/pg/emit.js";
 import type { BuiltSchema } from "../../dialects/pg/schema.js";
 import type { AnyTable } from "../../dialects/pg/table.js";
@@ -29,7 +25,6 @@ type Built = BuiltSchema<readonly AnyTable[]>;
 
 type Previous = {
   readonly catalog: Catalog;
-  readonly enums: readonly EnumSnapshot[];
 };
 
 /**
@@ -68,10 +63,6 @@ export async function generateProject(
   const sqlPath = join(directory, `${base}.sql`);
   writeFileSync(sqlPath, formatPlan(prepared.plan));
   writeFileSync(join(directory, `${base}.catalog.json`), serializeCatalog(prepared.built.catalog));
-  writeFileSync(
-    join(directory, `${base}.declarations.json`),
-    `${JSON.stringify(schemaDeclarations(prepared.built))}\n`,
-  );
   return sqlPath;
 }
 
@@ -166,8 +157,6 @@ async function prepare(
     after: built.catalog,
     renames: declarations.renames,
     replacements: flags.map((flag) => parseReplace(flag)),
-    enumsBefore: previous?.enums ?? [],
-    enumsAfter: declarations.enums,
     name,
   });
   return { config, built, plan };
@@ -179,10 +168,6 @@ function writeArtifact(cwd: string, config: MigrateConfig, built: Built): string
   const text = serializeCatalog(built.catalog);
   writeFileSync(join(directory, "catalog.json"), text);
   writeFileSync(join(directory, "catalog.hash"), `${catalogHash(built.catalog)}\n`);
-  writeFileSync(
-    join(directory, "declarations.json"),
-    `${JSON.stringify(schemaDeclarations(built))}\n`,
-  );
   writeFileSync(
     join(directory, "types.d.ts"),
     `${emitRowTypes(built)}${referenceAugmentation(built)}`,
@@ -227,32 +212,7 @@ function readPrevious(directory: string): Previous | undefined {
   const latest = catalogs.at(-1);
   if (latest === undefined) return undefined;
   const text = readFileSync(join(directory, latest), "utf8");
-  const declarationsName = latest.replace(/\.catalog\.json$/, ".declarations.json");
-  const declarationsPath = join(directory, declarationsName);
-  const declarations = existsSync(declarationsPath)
-    ? readDeclarations(readFileSync(declarationsPath, "utf8"))
-    : undefined;
-  return { catalog: parseCatalog(text), enums: declarations?.enums ?? [] };
-}
-
-function readDeclarations(text: string): SchemaDeclarations | undefined {
-  const parsed: unknown = JSON.parse(text);
-  if (!isRecord(parsed) || !Array.isArray(parsed.enums)) return undefined;
-  const enums: EnumSnapshot[] = [];
-  for (const item of parsed.enums) {
-    if (!isRecord(item)) continue;
-    if (typeof item.table !== "string" || typeof item.column !== "string") continue;
-    if (typeof item.typeName !== "string" || !Array.isArray(item.labels)) continue;
-    const labels = item.labels.filter((label): label is string => typeof label === "string");
-    enums.push({
-      table: item.table,
-      column: item.column,
-      typeName: item.typeName,
-      labels,
-      nullable: item.nullable === true,
-    });
-  }
-  return { renames: [], enums };
+  return { catalog: parseCatalog(text) };
 }
 
 function referenceAugmentation(source: Built): string {

@@ -37,6 +37,7 @@ export type CompilableColumn = {
     readonly comment: string | undefined;
     readonly extension: string | undefined;
     readonly typeDependency: string | undefined;
+    readonly enumLabels: readonly string[] | undefined;
     readonly domain: { readonly base: string; readonly check: string } | undefined;
   };
 };

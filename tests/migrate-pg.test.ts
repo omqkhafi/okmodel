@@ -9,6 +9,7 @@ import type { Sql } from "postgres";
 import { catalog } from "../src/contracts/catalog/build.js";
 import { serializeCatalog } from "../src/contracts/catalog/document.js";
 import { staticNamespace } from "../src/contracts/catalog/identity.js";
+import { enumType } from "../src/contracts/catalog/enum.js";
 import { column, constraint, index, table } from "../src/contracts/catalog/object.js";
 import type { CatalogObject, Provenance } from "../src/contracts/catalog/types.js";
 import { renderCatalog } from "../src/dialects/pg/ddl.js";
@@ -23,6 +24,7 @@ import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres
 import { withPostgresSchema } from "../packages/harness/src/postgres.js";
 import { catalogsEqual } from "../src/tooling/migrate/equal.js";
 import { planMigration } from "../src/tooling/migrate/plan.js";
+import { parseReplace } from "../src/tooling/migrate/values.js";
 
 const provenance: Provenance = { origin: "file", name: "database" };
 const namespace = staticNamespace("public");
@@ -175,6 +177,175 @@ postgresTest(
   60_000,
 );
 
+postgresTest(
+  gate,
+  "enum create, add, remove, and many-to-one keep the table readable",
+  async () => {
+    await withPostgresSchema(async (sql, schemaName) => {
+      const created = colored(["red", "blue"]);
+      await apply(sql, renderCatalog(created.catalog, schemaName));
+      const found = await introspectSchema(queryOf(sql), schemaName, "public");
+      const labels = enumLabels(found);
+      expect(labels).toEqual(["red", "blue"]);
+      const status = found.objects.find(
+        (object) => object.kind === "column" && object.identity.name === "status",
+      );
+      expect(
+        status?.dependencies.some(
+          (edge) => edge.target.kind === "type" && edge.target.name === "color",
+        ),
+      ).toBe(true);
+      await sql.unsafe(`drop table ${q(schemaName)}.tasks`);
+      await sql.unsafe(`drop type ${q(schemaName)}.color`);
+      await apply(sql, renderCatalog(found, schemaName));
+      const round = await introspectSchema(queryOf(sql), schemaName, "public");
+      expect(catalogsEqual(found, round)).toBe(true);
+      await sql.unsafe(`insert into ${q(schemaName)}.tasks (id, status) values (1, 'red')`);
+
+      const added = colored(["red", "green", "blue"]);
+      const addPlan = planMigration({
+        before: created.catalog,
+        after: added.catalog,
+        schema: schemaName,
+        name: "add",
+      });
+      expect(addPlan.steps.some((step) => step.transactional === false)).toBe(true);
+      await applyReadable(
+        sql,
+        schemaName,
+        addPlan.steps.map((step) => step.sql),
+      );
+      await sql.unsafe(`insert into ${q(schemaName)}.tasks (id, status) values (2, 'green')`);
+      expect(enumLabels(await introspectSchema(queryOf(sql), schemaName, "public"))).toEqual([
+        "red",
+        "green",
+        "blue",
+      ]);
+
+      const removed = colored(["red", "green"]);
+      const removePlan = planMigration({
+        before: added.catalog,
+        after: removed.catalog,
+        replacements: [parseReplace("tasks.status.blue=red")],
+        schema: schemaName,
+        name: "remove",
+      });
+      let sawContract = false;
+      for (const step of removePlan.steps) {
+        if (!sawContract && step.class === "contract" && step.action === "backfill") {
+          await sql.unsafe(`insert into ${q(schemaName)}.tasks (id, status) values (3, 'blue')`);
+          await sql.unsafe(`select status::text from ${q(schemaName)}.tasks`);
+          sawContract = true;
+        }
+        await sql.unsafe(step.sql);
+        await sql.unsafe(`select status::text from ${q(schemaName)}.tasks`);
+      }
+      expect(sawContract).toBe(true);
+      const left = await sql.unsafe(
+        `select status::text as status from ${q(schemaName)}.tasks order by id`,
+      );
+      expect(left.map((row) => String(row.status))).toEqual(["red", "green", "red"]);
+      expect(enumLabels(await introspectSchema(queryOf(sql), schemaName, "public"))).toEqual([
+        "red",
+        "green",
+      ]);
+
+      await sql.unsafe(`drop table ${q(schemaName)}.tasks`);
+      await sql.unsafe(`drop type ${q(schemaName)}.color`);
+      const shared = schema({
+        tables: [
+          defineTable("tasks", {
+            id: t.integer(),
+            status: t.enum("color", ["red", "blue", "green"]),
+            shade: t.enum("color", ["red", "blue", "green"]),
+          }),
+        ],
+      });
+      const narrowed = schema({
+        tables: [
+          defineTable("tasks", {
+            id: t.integer(),
+            status: t.enum("color", ["red"]),
+            shade: t.enum("color", ["red"]),
+          }),
+        ],
+      });
+      await apply(sql, renderCatalog(shared.catalog, schemaName));
+      await sql.unsafe(
+        `insert into ${q(schemaName)}.tasks (id, status, shade) values (1, 'blue', 'green'), (2, 'green', 'blue')`,
+      );
+      const many = planMigration({
+        before: shared.catalog,
+        after: narrowed.catalog,
+        replacements: [
+          parseReplace("tasks.status.blue=red"),
+          parseReplace("tasks.status.green=red"),
+          parseReplace("tasks.shade.blue=red"),
+          parseReplace("tasks.shade.green=red"),
+        ],
+        schema: schemaName,
+        name: "many",
+      });
+      await applyReadable(
+        sql,
+        schemaName,
+        many.steps.map((step) => step.sql),
+      );
+      const rows = await sql.unsafe(
+        `select status::text as status, shade::text as shade from ${q(schemaName)}.tasks order by id`,
+      );
+      expect(rows.map((row) => `${String(row.status)}:${String(row.shade)}`)).toEqual([
+        "red:red",
+        "red:red",
+      ]);
+
+      const bare = schema({ tables: [defineTable("tasks", { id: t.integer() })] });
+      const drop = planMigration({
+        before: narrowed.catalog,
+        after: bare.catalog,
+        schema: schemaName,
+        name: "drop",
+      });
+      const dropSql = drop.steps.map((step) => step.sql);
+      expect(dropSql.findIndex((statement) => statement.includes("drop column"))).toBeLessThan(
+        dropSql.findIndex((statement) => statement.startsWith("drop type")),
+      );
+      await applyReadable(sql, schemaName, dropSql);
+      const gone = await introspectSchema(queryOf(sql), schemaName, "public");
+      expect(gone.objects.some((object) => object.kind === "type")).toBe(false);
+    });
+  },
+  60_000,
+);
+
+function colored(labels: readonly string[]) {
+  return schema({
+    tables: [defineTable("tasks", { id: t.integer(), status: t.enum("color", labels) })],
+  });
+}
+
+function enumLabels(source: {
+  readonly objects: readonly { readonly kind: string; readonly definition: unknown }[];
+}): string[] {
+  const object = source.objects.find((item) => item.kind === "type");
+  if (object === undefined || !("labels" in (object.definition as object))) return [];
+  const labels = (object.definition as { readonly labels?: unknown }).labels;
+  return Array.isArray(labels)
+    ? labels.filter((label): label is string => typeof label === "string")
+    : [];
+}
+
+async function applyReadable(
+  sql: Sql,
+  schemaName: string,
+  statements: readonly string[],
+): Promise<void> {
+  for (const statement of statements) {
+    await sql.unsafe(statement);
+    await sql.unsafe(`select * from ${q(schemaName)}.tasks`);
+  }
+}
+
 function baseObjects(): CatalogObject[] {
   const users = { namespace, name: "users" };
   const tasks = { namespace, name: "tasks" };
@@ -194,6 +365,15 @@ function baseObjects(): CatalogObject[] {
     column({ parent: tasks, name: "id", dataType: "integer", nullable: false, provenance }),
     column({ parent: tasks, name: "owner_id", dataType: "integer", nullable: false, provenance }),
     column({ parent: tasks, name: "title", dataType: "text", nullable: true, provenance }),
+    enumType({ namespace, name: "color", labels: ["red", "blue"], provenance }),
+    column({
+      parent: tasks,
+      name: "color",
+      dataType: "color",
+      nullable: false,
+      provenance,
+      dependencies: [{ kind: "type", namespace, name: "color" }],
+    }),
     constraint({ parent: tasks, constraintKind: "primaryKey", columns: ["id"], provenance }),
     constraint({
       parent: tasks,
@@ -222,6 +402,17 @@ function mutate(objects: CatalogObject[], seed: number): CatalogObject[] {
     next.push(
       column({ parent: tasks, name: "note", dataType: "text", nullable: true, provenance }),
     );
+    return next.map((object) => {
+      if (object.kind === "type" && object.identity.name === "color") {
+        return enumType({
+          namespace,
+          name: "color",
+          labels: ["red", "blue", "green"],
+          provenance,
+        });
+      }
+      return object;
+    });
   } else if (seed % 5 === 2) {
     return next.map((object) => {
       if (object.kind === "column" && object.identity.name === "title") {

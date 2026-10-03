@@ -1,4 +1,4 @@
-# OKModel — API design (draft 22)
+# OKModel — API design (draft 23)
 
 Status: design draft, 2026-09-30. Not yet approved for implementation. Draft 18 applied the M0 gate decisions D115–D127 (evidence: `docs/m0-findings.md` in the repository); draft 19 added D128 (catalog error codes); draft 20 added D130 (column definition and codec error codes); draft 21 added D131 (removing a picklist or enum value); draft 22 adds D132 (reserved options, reference names). Supersedes drafts 1–21 of this file and the API sections of `orm-research-design.md`. Evidence for the draft-4 changes is in `okmodel-gap-research.md`.
 
@@ -63,7 +63,7 @@ Safety and correctness — also in CI:
 ### 3.1 `okm.config.ts`
 
 ```ts
-import { defineConfig } from "okmodel";
+import { defineConfig } from "okmodel/migrate";
 
 export default defineConfig({
   schema: "./db/schema.ts",
@@ -1270,7 +1270,6 @@ test("today view runs one query", async () => {
 | `upsert` target not unique | types | OKM1104 |
 | To-many include without `limit` | types | OKM1105 |
 | Feature needs a newer engine than `requires` allows | types | OKM1110 |
-| Driver lacks a capability (a dynamic call) | runtime | OKM1111 |
 | Unknown field name at runtime | runtime | OKM1120 |
 | Object where a value is expected | runtime | OKM1121 |
 | Cursor used with a different order | runtime | OKM1130 |

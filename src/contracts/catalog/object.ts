@@ -501,7 +501,12 @@ function assertAction(action: ReferentialAction | undefined, parent: string): vo
   }
 }
 
-function assertProvenance(provenance: Provenance): void {
+/**
+ * Rejects a provenance that cannot be stored.
+ *
+ * @param provenance - Origin and name
+ */
+export function assertProvenance(provenance: Provenance): void {
   assertStoredText(provenance.name, "provenance");
   if (provenance.name.length === 0) {
     catalogError("OKM1020", "Provenance name is empty.");
