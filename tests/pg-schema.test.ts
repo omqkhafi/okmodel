@@ -228,7 +228,7 @@ test("OKM1023 names a duplicate table and the accepted names", () => {
   expect(error.message).toContain("Accepted names: tasks");
 });
 
-test("later options are OKM1061 and name the prompt that adds them", () => {
+test("later options are OKM1061 and name the version that adds them", () => {
   const error = capture(() =>
     schema({
       tables: [table("tasks", { id: t.id() })],
@@ -237,7 +237,7 @@ test("later options are OKM1061 and name the prompt that adds them", () => {
   );
   expect(error.code).toBe("OKM1061");
   expect(error.message).toContain("not available yet");
-  expect(error.message).toContain("P23");
+  expect(error.message).toContain("0.2");
   const tableError = capture(() =>
     schema({ tables: [table("tasks", { id: t.id() }, { relations: { owner: true } })] }),
   );

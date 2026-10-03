@@ -5,14 +5,8 @@
  * the enum, and `schema()` stores that enum as a catalog type.
  */
 
-import {
-  type ColumnBuilder,
-  type ColumnFlags,
-  type PlainFlags,
-  openColumn,
-  required,
-} from "./column.js";
-import { definition, rejected } from "./misuse.js";
+import { type ColumnBuilder, type ColumnFlags, type PlainFlags, required } from "./column.js";
+import { definition, rejected, unavailable } from "./misuse.js";
 
 /**
  * A named enum. The TypeScript type is the literal union.
@@ -68,41 +62,18 @@ export function enumColumn<const TValues extends readonly string[]>(
 /**
  * A named domain over a scalar column.
  *
- * The column's SQL type is the domain name. `base` supplies the codec.
- * `check` is kept for a later `CREATE DOMAIN` and is not a column CHECK.
+ * Domains are not catalog objects in this version. Calling the builder fails
+ * with OKM1061 until 0.3, when a domain becomes a `type` subkind (D141).
  *
  * @param name - Domain name
  * @param base - Scalar column the domain is based on
  * @param check - Domain check expression
- * @returns A domain column with the base codec
+ * @returns A domain column with the base codec, once 0.3 supports it
  */
 export function domain<TValue, TFlags extends ColumnFlags>(
-  name: string,
-  base: ColumnBuilder<TValue, TFlags>,
-  check: string,
+  _name: string,
+  _base: ColumnBuilder<TValue, TFlags>,
+  _check: string,
 ): ColumnBuilder<TValue, PlainFlags> {
-  if (name.length === 0) {
-    definition("domain name must be a non-empty type name.");
-  }
-  if (check.length === 0) {
-    definition("domain check must be a non-empty SQL expression.");
-  }
-  if (base.state.dims !== 0) {
-    definition("domain base must be a scalar column (array dims 0).");
-  }
-  return openColumn({
-    baseType: name,
-    nullable: false,
-    hasDefault: false,
-    generated: false,
-    guarded: false,
-    hidden: false,
-    omitWrite: false,
-    encode: base.state.encode,
-    decode: base.state.decode,
-    sqlForm: base.state.sqlForm,
-    typeDependency: name,
-    domain: { base: base.state.baseType, check },
-    ...(base.state.extension !== undefined ? { extension: base.state.extension } : {}),
-  });
+  unavailable("t.domain() is not available yet. It arrives in 0.3.");
 }

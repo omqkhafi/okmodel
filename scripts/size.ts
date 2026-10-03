@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -10,24 +10,13 @@ import { repoRoot } from "./root.js";
 /** Published entry the runtime budget measures. D127. */
 export const RUNTIME_ENTRY = "src/contracts/index.ts";
 
-/** Postgres entry. Gated at the D135 ceiling. */
+/**
+ * Postgres barrel. Printed, not gated (D141, P17).
+ *
+ * The barrel exports every builder, so its size counts features. The app
+ * fixture and {@link exportShakeProblems} are the gates.
+ */
 export const PG_ENTRY = "src/dialects/pg/index.ts";
-
-/**
- * Minified `okmodel/pg` ceiling, in bytes (D137).
- *
- * Measured 68,611. Plus 3 percent is 70,669, above the 70,500 cap, so the
- * gate is the cap.
- */
-export const PG_MAX_MIN_BYTES = 70_500;
-
-/**
- * Gzipped `okmodel/pg` ceiling, in bytes (D137).
- *
- * Measured 21,411. Plus 3 percent is 22,053, above the 22,000 cap, so the
- * gate is the cap.
- */
-export const PG_MAX_GZIP_BYTES = 22_000;
 
 /** Minified runtime entry ceiling, in bytes (60 KB). */
 export const RUNTIME_MAX_MIN_BYTES = 60 * 1024;
@@ -54,41 +43,41 @@ export const CI_COLD_IMPORT_MS = 25;
 export const APP_ENTRY = "scripts/app-startup.ts";
 
 /**
- * Minified app-fixture ceiling, in bytes (D138, D141).
+ * Minified app-fixture ceiling, in bytes (D143).
  *
- * P16B startup graph measured 76,933. Plus 3 percent is 79,240, under the 86,688 cap.
+ * P17 startup graph measured 77,524. Plus 3 percent is 79,849, under the 86,688 cap.
  */
-export const APP_MAX_MIN_BYTES = 79_240;
+export const APP_MAX_MIN_BYTES = 79_849;
 
 /**
- * Gzipped app-fixture ceiling, in bytes (D138, D141).
+ * Gzipped app-fixture ceiling, in bytes (D143).
  *
- * P16B startup graph measured 25,444. Plus 3 percent is 26,207, under the 27,800 cap.
+ * P17 startup graph measured 25,641. Plus 3 percent is 26,410, under the 27,800 cap.
  */
-export const APP_MAX_GZIP_BYTES = 26_207;
+export const APP_MAX_GZIP_BYTES = 26_410;
 
 /**
- * Public connect entries, driver left external (D137).
+ * Public connect entries, driver left external (D142, D143).
  *
  * The startup graph excludes chunks loaded on first failure, include, or the
- * mismatch path of the catalog check. Gates are the measured startup size plus
- * 5 percent. P16B put the hash query on this path: postgres.js 37,495 / 13,020,
- * PGlite 35,897 / 12,713.
+ * mismatch path of the catalog check. Gates are the P17 measurement plus 5
+ * percent: postgres.js 37,952 / 13,158, PGlite 36,330 / 12,862. Cold import is
+ * printed, including a driver-stubbed sample, and is not gated.
  */
 export const CONNECT_ENTRIES = [
   {
     entry: "src/runtime/pg/postgresjs.ts",
     file: "postgresjs.js",
     external: ["postgres"],
-    maxMinBytes: 39_369,
-    maxGzipBytes: 13_671,
+    maxMinBytes: 39_849,
+    maxGzipBytes: 13_815,
   },
   {
     entry: "src/runtime/pg/pglite.ts",
     file: "pglite.js",
     external: ["@electric-sql/pglite"],
-    maxMinBytes: 37_691,
-    maxGzipBytes: 13_348,
+    maxMinBytes: 38_146,
+    maxGzipBytes: 13_505,
   },
 ] as const;
 
@@ -116,22 +105,36 @@ const SHAKEN_OPERATORS = [
 /**
  * Adapter entries.
  *
- * Cold import is printed and not gated (D135): the driver packages dominate it.
- * Byte ceilings are the P14 measurement plus 25 percent. OkmError is in these
- * bundles, so the P13 figures no longer fit.
+ * The gate is minified bytes that are not already in the runtime entry.
+ * A standalone bundle counts that shared code again. Cold import is printed
+ * and not gated (D135): the driver packages dominate it.
+ *
+ * Ceilings are the P17 measurement plus 25 percent (D127).
  */
 export const ADAPTER_ENTRIES = [
   {
     entry: "src/adapters/pg/postgresjs.ts",
     external: ["postgres"],
-    maxMinBytes: 19_850,
-    maxGzipBytes: 6_870,
+    maxIncrementalMinBytes: 15_093,
   },
   {
     entry: "src/adapters/pg/pglite.ts",
     external: ["@electric-sql/pglite"],
-    maxMinBytes: 17_870,
-    maxGzipBytes: 6_230,
+    maxIncrementalMinBytes: 12_010,
+  },
+] as const;
+
+/** One barrel export that must not keep unrelated modules. */
+const EXPORT_SHAKES = [
+  {
+    name: "text",
+    keep: "src/dialects/pg/text.ts",
+    drop: ["src/dialects/pg/search.ts", "src/dialects/pg/geometry.ts", "src/dialects/pg/enum.ts"],
+  },
+  {
+    name: "eq",
+    keep: "src/dialects/pg/ops/eq.ts",
+    drop: ["src/dialects/pg/ops/lt.ts", "src/dialects/pg/ops/gt.ts", "src/dialects/pg/ops/like.ts"],
   },
 ] as const;
 
@@ -195,6 +198,8 @@ export type RuntimeSize = {
 export type StartupMeasurement = RuntimeSize & {
   readonly totalMinBytes: number;
   readonly totalGzipBytes: number;
+  /** Cold import after the driver package is replaced with an empty module. */
+  readonly stubbedColdImportMs?: number;
 };
 
 /**
@@ -370,6 +375,7 @@ const sideEffectImport = /import\s*"(\.\/[^"]+)"/g;
  * @param entry - Source entry, relative to `root`
  * @param file - Built entry filename
  * @param external - Packages left outside the bundle
+ * @param stubSpecifier - When set, a second import replaces this package with an empty module
  * @returns Sizes and the cold-import sample of the entry file
  */
 export function measureStartup(
@@ -377,6 +383,7 @@ export function measureStartup(
   entry: string,
   file: string,
   external: readonly string[] = [],
+  stubSpecifier?: string,
 ): StartupMeasurement {
   const parent = external.length > 0 ? join(root, "node_modules") : tmpdir();
   const dir = mkdtempSync(join(parent, external.length > 0 ? ".okm-size-" : "okm-size-"));
@@ -422,13 +429,17 @@ export function measureStartup(
       totalParts.push(bytes);
     }
     const outfile = join(dir, file);
+    const coldImportMs = coldImportMsOnNode(outfile);
+    const stubbedColdImportMs =
+      stubSpecifier === undefined ? undefined : stubbedImport(dir, outfile, stubSpecifier);
     return {
       entry,
       minBytes,
       gzipBytes: gzipSync(Buffer.concat(parts), { level: 9 }).byteLength,
-      coldImportMs: coldImportMsOnNode(outfile),
+      coldImportMs,
       totalMinBytes,
       totalGzipBytes: gzipSync(Buffer.concat(totalParts), { level: 9 }).byteLength,
+      ...(stubbedColdImportMs !== undefined ? { stubbedColdImportMs } : {}),
     };
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -558,6 +569,181 @@ function printQueryLatency(root: string): readonly string[] {
   return [];
 }
 
+/** Minified contribution of each input, from a bun metafile. */
+type InputBytes = {
+  readonly total: number;
+  readonly files: ReadonlyMap<string, number>;
+};
+
+/**
+ * Minifies `entry` and reads each input's bytes in the output.
+ *
+ * @param root - Repository root
+ * @param entry - Source entry, relative to `root`
+ * @param external - Packages left outside the bundle
+ * @returns Per-file minified bytes
+ */
+export function bundleInputBytes(
+  root: string,
+  entry: string,
+  external: readonly string[] = [],
+): InputBytes {
+  const dir = mkdtempSync(join(tmpdir(), "okm-meta-"));
+  const meta = join(dir, "meta.json");
+  try {
+    const proc = Bun.spawnSync(
+      [
+        "bun",
+        "build",
+        join(root, entry),
+        "--target",
+        "node",
+        "--minify",
+        "--outdir",
+        dir,
+        `--metafile=${meta}`,
+        ...external.flatMap((name) => ["--external", name]),
+      ],
+      { cwd: root, stdout: "pipe", stderr: "pipe" },
+    );
+    if (proc.exitCode !== 0) {
+      throw new Error(
+        `bun build ${entry} exited ${String(proc.exitCode)}\n${proc.stderr.toString()}`,
+      );
+    }
+    const graph = JSON.parse(readFileSync(meta, "utf8")) as {
+      outputs: Record<string, { inputs: Record<string, { bytesInOutput: number }> }>;
+    };
+    const files = new Map<string, number>();
+    let total = 0;
+    for (const output of Object.values(graph.outputs)) {
+      for (const [file, info] of Object.entries(output.inputs)) {
+        const key = file.startsWith(root) ? file.slice(root.length + 1) : file;
+        const bytes = info.bytesInOutput;
+        files.set(key, (files.get(key) ?? 0) + bytes);
+        total += bytes;
+      }
+    }
+    return { total, files };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Bytes in `adapter` whose source file is not in `runtime`.
+ *
+ * Shared modules are in both graphs. Counting them again is what a standalone
+ * adapter bundle does.
+ *
+ * @param adapter - Adapter bundle inputs
+ * @param runtime - Runtime entry inputs
+ * @returns Minified bytes unique to the adapter
+ */
+export function incrementalMinBytes(adapter: InputBytes, runtime: InputBytes): number {
+  let unique = 0;
+  for (const [file, bytes] of adapter.files) {
+    if (!runtime.files.has(file)) unique += bytes;
+  }
+  return unique;
+}
+
+/**
+ * Fails when an adapter's unique minified bytes exceed its ceiling.
+ *
+ * @param entry - Adapter source entry
+ * @param incremental - Bytes not in the runtime entry
+ * @param maxBytes - Ceiling
+ * @returns Problem lines. Empty when the adapter is inside the ceiling
+ */
+export function incrementalBudgetProblems(
+  entry: string,
+  incremental: number,
+  maxBytes: number,
+): readonly string[] {
+  if (incremental <= maxBytes) return [];
+  return [
+    `size: ${entry} adds ${String(incremental)} minified bytes over the runtime entry, above ${String(maxBytes)}`,
+  ];
+}
+
+/**
+ * Fails when importing one `okmodel/pg` export keeps an unrelated module.
+ *
+ * @param root - Repository root
+ * @returns Problem lines. Empty when each export shakes
+ */
+export function exportShakeProblems(root: string): readonly string[] {
+  const problems: string[] = [];
+  for (const item of EXPORT_SHAKES) {
+    const dir = mkdtempSync(join(root, "node_modules", ".okm-shake-"));
+    const entry = join(dir, "entry.ts");
+    try {
+      writeFileSync(
+        entry,
+        `import { ${item.name} } from ${JSON.stringify(join(root, "src/dialects/pg/index.ts"))};\nexport const keep = ${item.name};\n`,
+      );
+      const proc = Bun.spawnSync(
+        ["bun", "build", entry, "--target", "node", "--outdir", dir, "--external", "postgres"],
+        { cwd: root, stdout: "pipe", stderr: "pipe" },
+      );
+      if (proc.exitCode !== 0) {
+        problems.push(`size: export shake build exited ${String(proc.exitCode)}`);
+        continue;
+      }
+      let text = "";
+      for (const name of readdirSync(dir)) {
+        if (!name.endsWith(".js")) continue;
+        text += readFileSync(join(dir, name), "utf8");
+      }
+      if (!text.includes(item.keep)) {
+        problems.push(`size: export shake dropped ${item.keep}`);
+      }
+      for (const banned of item.drop) {
+        if (text.includes(banned)) problems.push(`size: export shake kept ${banned}`);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+  return problems;
+}
+
+/**
+ * Replaces `specifier` in every built file, then imports `file`.
+ *
+ * @param dir - Bundle directory
+ * @param file - Entry to import
+ * @param specifier - Driver package the bundle imports
+ * @returns Median of five imports, in milliseconds
+ */
+function stubbedImport(dir: string, file: string, specifier: string): number {
+  const stub = join(dir, "okm-driver-stub.mjs");
+  writeFileSync(
+    stub,
+    "export default function driver() { return {}; }\nexport class PostgresError extends Error {}\nexport class PGlite {}\n",
+  );
+  const href = JSON.stringify(pathToFileURL(stub).href);
+  rewriteSpecifier(dir, specifier, href);
+  return coldImportMsOnNode(file);
+}
+
+function rewriteSpecifier(dir: string, specifier: string, href: string): void {
+  for (const name of readdirSync(dir)) {
+    const path = join(dir, name);
+    if (statSync(path).isDirectory()) {
+      rewriteSpecifier(path, specifier, href);
+      continue;
+    }
+    if (!name.endsWith(".js")) continue;
+    const source = readFileSync(path, "utf8");
+    const rewritten = source
+      .replaceAll(`from"${specifier}"`, `from${href}`)
+      .replaceAll(`from "${specifier}"`, `from${href}`);
+    if (rewritten !== source) writeFileSync(path, rewritten);
+  }
+}
+
 function formatTotal(measured: StartupMeasurement): string {
   return `size: ${measured.entry} total graph min ${String(measured.totalMinBytes)} bytes, gzip ${String(measured.totalGzipBytes)} bytes (lazy chunks included, not gated)`;
 }
@@ -567,6 +753,16 @@ function formatEntry(measured: RuntimeSize, ci: boolean): string {
     ? `CI gate ${String(CI_COLD_IMPORT_MS)} ms`
     : `local reference ${String(LOCAL_COLD_IMPORT_MS)} ms`;
   return `size: ${measured.entry} min ${String(measured.minBytes)} bytes, gzip ${String(measured.gzipBytes)} bytes, cold import ${measured.coldImportMs.toFixed(3)} ms (${gate})`;
+}
+
+function printStubbed(measured: StartupMeasurement, ci: boolean): void {
+  if (measured.stubbedColdImportMs === undefined) return;
+  console.log(
+    `size: ${measured.entry} driver stubbed cold import ${measured.stubbedColdImportMs.toFixed(3)} ms (local reference ${String(LOCAL_COLD_IMPORT_MS)} ms, not gated)`,
+  );
+  if (ci) return;
+  const finding = coldImportFinding(measured.stubbedColdImportMs);
+  if (finding !== undefined) console.log(`size: finding: ${measured.entry} stubbed ${finding}`);
 }
 
 function printColdImportFinding(measured: RuntimeSize, ci: boolean): void {
@@ -593,36 +789,42 @@ if (import.meta.main) {
     problems.push(...runtimeBudgetProblems(runtime, { ci }));
     printColdImportFinding(runtime, ci);
     const pg = measureEntry(root, PG_ENTRY);
-    console.log(formatEntry(pg, ci));
-    problems.push(
-      ...entryBudgetProblems(pg, {
-        maxMinBytes: PG_MAX_MIN_BYTES,
-        maxGzipBytes: PG_MAX_GZIP_BYTES,
-        maxColdImportMs: Number.POSITIVE_INFINITY,
-      }),
-    );
+    console.log(`${formatEntry(pg, ci)} (reported, not gated)`);
+    const runtimeInputs = bundleInputBytes(root, RUNTIME_ENTRY);
     for (const entry of ADAPTER_ENTRIES) {
       const adapter = measureEntry(root, entry.entry, entry.external);
+      const incremental = incrementalMinBytes(
+        bundleInputBytes(root, entry.entry, entry.external),
+        runtimeInputs,
+      );
       console.log(formatEntry(adapter, ci));
+      console.log(
+        `size: ${entry.entry} incremental min ${String(incremental)} bytes over the runtime entry (gate ${String(entry.maxIncrementalMinBytes)})`,
+      );
       problems.push(
-        ...entryBudgetProblems(adapter, {
-          maxMinBytes: entry.maxMinBytes,
-          maxGzipBytes: entry.maxGzipBytes,
-          maxColdImportMs: Number.POSITIVE_INFINITY,
-        }),
+        ...incrementalBudgetProblems(entry.entry, incremental, entry.maxIncrementalMinBytes),
       );
     }
-    const app = measureStartup(root, APP_ENTRY, "app-startup.js", ["postgres"]);
+    const app = measureStartup(root, APP_ENTRY, "app-startup.js", ["postgres"], "postgres");
     console.log(formatEntry(app, ci));
     console.log(formatTotal(app));
+    printStubbed(app, ci);
     problems.push(...appBudgetProblems(app));
     printColdImportFinding(app, ci);
     problems.push(...shakenOperatorProblems(root));
+    problems.push(...exportShakeProblems(root));
     problems.push(...printQueryLatency(root));
     for (const entry of CONNECT_ENTRIES) {
-      const measured = measureStartup(root, entry.entry, entry.file, entry.external);
+      const measured = measureStartup(
+        root,
+        entry.entry,
+        entry.file,
+        entry.external,
+        entry.external[0],
+      );
       console.log(formatEntry(measured, ci));
       console.log(formatTotal(measured));
+      printStubbed(measured, ci);
       problems.push(
         ...entryBudgetProblems(measured, {
           maxMinBytes: entry.maxMinBytes,

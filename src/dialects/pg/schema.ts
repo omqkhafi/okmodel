@@ -28,7 +28,7 @@ import type {
   Provenance,
 } from "../../contracts/catalog/types.js";
 import { compileColumn, type CompilableColumn } from "./compile.js";
-import { ColumnBuilder, type ReferenceModifier } from "./column.js";
+import { ColumnBuilder, formatType, type ReferenceModifier } from "./column.js";
 import { type ColumnModel, type RelationModel, type TableModel } from "./model.js";
 import { definition, unavailable } from "./misuse.js";
 import { isRelationCall } from "./relations.js";
@@ -105,15 +105,15 @@ export type BuiltSchema<TTables extends readonly AnyTable[]> = {
 
 const SCHEMA_KNOWN = new Set(["casing", "codecs", "requires", "tables", "types"]);
 
-/** Later schema options, and the prompt that adds each one. */
+/** Later schema options, and the version that adds each one. */
 const SCHEMA_LATER: Readonly<Record<string, string>> = {
-  extensions: "P40",
-  functions: "P41",
-  tenancy: "P24",
-  traits: "P23",
-  triggers: "P41",
-  validation: "P26",
-  views: "P42",
+  extensions: "0.3",
+  functions: "0.3",
+  tenancy: "0.2",
+  traits: "0.2",
+  triggers: "0.3",
+  validation: "0.2",
+  views: "0.3",
 };
 
 const BIGINT_CODECS = new Set(["string", "number", "bigint"]);
@@ -156,6 +156,21 @@ type PreparedColumn = {
   readonly writable: boolean;
   readonly unique: boolean;
 };
+
+/** Fills catalog objects on the first `.catalog` read. `schema()` itself does not. */
+type CatalogJob = (objects: CatalogObject[]) => void;
+
+/**
+ * Runs `build` when `.catalog` is read.
+ *
+ * @param jobs - Work deferred from `schema()`
+ * @param build - One catalog object
+ */
+function stage(jobs: CatalogJob[], build: () => CatalogObject): void {
+  jobs.push((objects) => {
+    objects.push(build());
+  });
+}
 
 type FkEdge = {
   readonly fromTable: string;
@@ -201,13 +216,13 @@ export function schema<const TTables extends readonly AnyTable[]>(
   const requires = readRequires(config.requires);
   const namespace = staticNamespace("public");
   const accepted = acceptTables(config.tables);
-  const objects: CatalogObject[] = [];
+  const jobs: CatalogJob[] = [];
   const prepared: Prepared[] = [];
   const sqlNames = new Set<string>();
   const enums = new Map<string, EnumNote>();
 
   for (const item of config.tables) {
-    const built = compileTable(item, namespace, casing, codecs, objects, enums);
+    const built = compileTable(item, namespace, casing, codecs, jobs, enums);
     if (sqlNames.has(built.sqlName)) {
       catalogError(
         "OKM1023",
@@ -217,37 +232,41 @@ export function schema<const TTables extends readonly AnyTable[]>(
     sqlNames.add(built.sqlName);
     prepared.push(built);
   }
-  for (const [name, note] of [...enums.entries()].sort((left, right) =>
-    compareText(left[0], right[0]),
-  )) {
-    objects.push(
-      enumType({
-        namespace,
-        name,
-        labels: note.labels,
-        provenance: note.provenance,
-      }),
-    );
-  }
   const byName = new Map<string, Prepared>();
   for (const item of prepared) {
     byName.set(item.tsName, item);
   }
   const edges: FkEdge[] = [];
   for (const item of prepared) {
-    compileForeignKeys(item, byName, accepted, objects, edges);
+    compileForeignKeys(item, byName, accepted, jobs, edges);
   }
   const model = {} as Record<string, TableModel>;
   for (const item of prepared) {
     model[item.tsName] = tableModel(item, edges, byName, accepted);
   }
 
-  // Identity-key order and the cycle check run on first read. Import does not
-  // serialise or hash the catalog (D138).
+  // Catalog objects, enum types, and the cycle check run on first read.
+  // Import pays for the query model only (D138).
   let document: Catalog | undefined;
   return {
     get catalog(): Catalog {
-      document ??= catalog(objects);
+      if (document === undefined) {
+        const objects: CatalogObject[] = [];
+        for (const job of jobs) job(objects);
+        for (const [name, note] of [...enums.entries()].sort((left, right) =>
+          compareText(left[0], right[0]),
+        )) {
+          objects.push(
+            enumType({
+              namespace,
+              name,
+              labels: note.labels,
+              provenance: note.provenance,
+            }),
+          );
+        }
+        document = catalog(objects);
+      }
       return document;
     },
     types,
@@ -319,7 +338,7 @@ function compileTable(
   namespace: ReturnType<typeof staticNamespace>,
   casing: "snake" | undefined,
   codecs: SchemaCodecs,
-  objects: CatalogObject[],
+  jobs: CatalogJob[],
   enums: Map<string, EnumNote>,
 ): Prepared {
   const options = item.options as StoredOptions | undefined;
@@ -328,7 +347,7 @@ function compileTable(
   assertIdentifier(sqlName, `table ${item.name}`);
   const provenance: Provenance = { origin: "file", name: item.name };
   const parent: ObjectRef = { namespace, name: sqlName };
-  objects.push(catalogTable({ namespace, name: sqlName, provenance }));
+  stage(jobs, () => catalogTable({ namespace, name: sqlName, provenance }));
 
   const columns: PreparedColumn[] = [];
   const primary: string[] = [];
@@ -344,38 +363,35 @@ function compileTable(
     const columnSql = column.state.sqlName ?? (casing === "snake" ? snakeCase(field) : field);
     assertCodec(item.name, field, column, codecs);
     const identity = column.state.identity;
-    const extra: ObjectIdentity[] = [];
     if (identity !== undefined) {
       const seqName = fitIdentifier(`${sqlName}_${columnSql}_seq`);
-      const seq = sequence({
-        namespace,
-        name: seqName,
-        dataType: "bigint",
-        provenance,
-        dependencies: [{ kind: "table", namespace, name: sqlName }],
+      jobs.push((objects) => {
+        const seq = sequence({
+          namespace,
+          name: seqName,
+          dataType: "bigint",
+          provenance,
+          dependencies: [{ kind: "table", namespace, name: sqlName }],
+        });
+        objects.push(seq);
+        pushCompiled(objects, column, {
+          parent,
+          name: columnSql,
+          provenance,
+          dependencies: [seq.identity],
+        });
       });
-      objects.push(seq);
-      extra.push(seq.identity);
-    }
-    const compiled = compileColumn(column, {
-      parent,
-      name: columnSql,
-      provenance,
-      ...(extra.length > 0 ? { dependencies: extra } : {}),
-    });
-    objects.push(compiled.column);
-    if (compiled.check !== undefined) {
-      objects.push(compiled.check);
-    }
-    if (compiled.unique !== undefined) {
-      objects.push(compiled.unique);
+    } else {
+      jobs.push((objects) => {
+        pushCompiled(objects, column, { parent, name: columnSql, provenance });
+      });
     }
     const decode = column.state.decode;
     const prepared: PreparedColumn = {
       field,
-      sqlName: compiled.column.identity.name,
-      dataType: compiled.column.definition.dataType,
-      nullable: compiled.column.definition.nullable,
+      sqlName: columnSql,
+      dataType: formatType(column.state.baseType, column.state.dims),
+      nullable: column.state.nullable,
       references: column.state.references,
       encode: column.state.encode as (value: unknown) => string,
       decode: decode === decodeText ? undefined : (decode as (wire: string) => unknown),
@@ -407,7 +423,7 @@ function compileTable(
     );
   }
   if (primary.length === 1) {
-    objects.push(
+    stage(jobs, () =>
       constraint({
         parent,
         constraintKind: "primaryKey",
@@ -418,13 +434,13 @@ function compileTable(
   }
 
   if (options?.unique !== undefined) {
-    compileUniques(item.name, options, parent, provenance, byField, objects);
+    compileUniques(item.name, options, parent, provenance, byField, jobs);
   }
   if (options?.indexes !== undefined) {
-    compileIndexes(item.name, options, handles, parent, provenance, objects);
+    compileIndexes(item.name, options, handles, parent, provenance, jobs);
   }
   if (options?.checks !== undefined) {
-    compileChecks(item.name, options, handles, parent, provenance, byField, objects);
+    compileChecks(item.name, options, handles, parent, provenance, byField, jobs);
   }
 
   return {
@@ -475,13 +491,29 @@ function relationInput(tableName: string, options: StoredOptions | undefined): u
   return relations;
 }
 
+function pushCompiled(
+  objects: CatalogObject[],
+  column: ColumnView,
+  input: {
+    readonly parent: ObjectRef;
+    readonly name: string;
+    readonly provenance: Provenance;
+    readonly dependencies?: readonly ObjectIdentity[];
+  },
+): void {
+  const compiled = compileColumn(column, input);
+  objects.push(compiled.column);
+  if (compiled.check !== undefined) objects.push(compiled.check);
+  if (compiled.unique !== undefined) objects.push(compiled.unique);
+}
+
 function compileUniques(
   tableName: string,
   options: StoredOptions | undefined,
   parent: ObjectRef,
   provenance: Provenance,
   byField: ReadonlyMap<string, PreparedColumn>,
-  objects: CatalogObject[],
+  jobs: CatalogJob[],
 ): void {
   const unique = options?.unique;
   if (unique === undefined) {
@@ -505,7 +537,7 @@ function compileUniques(
       }
       columns.push(column.sqlName);
     }
-    objects.push(
+    stage(jobs, () =>
       constraint({
         parent,
         constraintKind: "unique",
@@ -523,7 +555,7 @@ function compileIndexes(
   handles: Readonly<Record<string, ColumnHandle>>,
   parent: ObjectRef,
   provenance: Provenance,
-  objects: CatalogObject[],
+  jobs: CatalogJob[],
 ): void {
   const build = options?.indexes;
   if (build === undefined) {
@@ -535,7 +567,7 @@ function compileIndexes(
   }
   for (const call of calls) {
     const built = readIndex(tableName, call);
-    objects.push(
+    stage(jobs, () =>
       catalogIndex({
         parent,
         columns: built.columns,
@@ -554,7 +586,7 @@ function compileChecks(
   parent: ObjectRef,
   provenance: Provenance,
   byField: ReadonlyMap<string, PreparedColumn>,
-  objects: CatalogObject[],
+  jobs: CatalogJob[],
 ): void {
   const checks = options?.checks;
   if (checks === undefined) {
@@ -571,7 +603,7 @@ function compileChecks(
         columns.push(column.sqlName);
       }
     }
-    objects.push(
+    stage(jobs, () =>
       constraint({
         parent,
         constraintKind: "check",
@@ -588,7 +620,7 @@ function compileForeignKeys(
   item: Prepared,
   byName: ReadonlyMap<string, Prepared>,
   accepted: readonly string[],
-  objects: CatalogObject[],
+  jobs: CatalogJob[],
   edges: FkEdge[],
 ): void {
   for (const column of item.columns) {
@@ -628,7 +660,7 @@ function compileForeignKeys(
         `Foreign key ${item.tsName}.${column.field} is ${localType} and ${target.tsName}.${remote.field} is ${remote.dataType}. Accepted type: ${remote.dataType}.`,
       );
     }
-    objects.push(
+    stage(jobs, () =>
       constraint({
         parent: item.parent,
         constraintKind: "foreignKey",

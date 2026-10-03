@@ -25,7 +25,7 @@ After any implementation that changes behavior, API surface, CLI, dialects, adap
 Task:
 - [ ] 1. Diff the change — list user-visible impact
 - [ ] 2. Changelog — append under ## Unreleased → ### group + #### area
-- [ ] 3. Version — bun run bump next (gate prompts: bun run bump release)
+- [ ] 3. Version — bun run bump next (a release prompt: bun run bump release)
 ```
 
 ### 1. Inventory impact
@@ -86,7 +86,7 @@ bun run bump next
 # → changelog is left untouched
 ```
 
-D115: hygiene finishes before a release bump. P09A is the cleanup after the M0 gate (spike leftovers, duplicated helpers, flaky tests, doc sync to draft 18, dependency audit, D127 budgets). A later gate (P17, P30, P44, P55, P66) does a lighter pass of that list, then runs:
+D115: hygiene finishes before a release bump. P09A is the cleanup after the M0 gate (spike leftovers, duplicated helpers, flaky tests, doc sync, dependency audit, D127 budgets). A hygiene prompt that is not itself the release runs `bun run bump next`. P17 is that prompt for 0.1; P17B is the release. The release prompt of a train runs:
 
 ```bash
 bun run bump release
@@ -94,6 +94,8 @@ bun run bump release
 # → renames ## Unreleased → ## v{version} — {today}
 # → leaves a fresh empty ## Unreleased
 ```
+
+That release prompt is P17B for 0.1.0, then P30, P44, P55, and P66.
 
 Do **not** invent `## v{next}` yourself. `patch`, `minor`, `major`, and `--set` remain available; they still promote the changelog. `--dry-run` prints the plan and writes nothing.
 
@@ -106,11 +108,11 @@ Before the execution report, review the change against these rules. The report s
 - No duplicated logic: one helper, one place.
 - Small, obvious public API. Clear names. Precise types. Actionable errors.
 - No avoidable allocation or repeated work on hot paths.
-- Report runtime entry size (minified and gzip), cold import, and any type-cost change.
+- Report runtime entry size (minified and gzip), cold import, and any type-cost change. Also report the app startup graph, the total graph, and connect-entry cold imports. A measurement within 3% of a type ceiling is called out. Connect-entry cold import is reported, not gated; the 15 ms local reference is our own code with the driver stubbed.
 
 ## Done
 
 - [ ] Notes under `## Unreleased` → matching `###` group and `####` area when the group is large
 - [ ] Nothing appended under a released `## v…` section
-- [ ] `bun run bump next` has run, or `bun run bump release` on a gate prompt
+- [ ] `bun run bump next` has run, or `bun run bump release` on a release prompt
 - [ ] Self-review against the engineering standards, with runtime entry size, cold import, and type-cost change in the report

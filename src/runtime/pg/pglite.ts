@@ -38,6 +38,7 @@ export async function connect<const S extends QuerySchema>(
     includeValues: options.errors?.includeValues,
     logger: options.logger,
     signal: options.signal,
+    requireMeta: options.requireMeta,
     timeout: options.timeout,
     catalog: options.catalog,
     catalogDir: options.catalogDir,

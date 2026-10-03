@@ -169,20 +169,20 @@ const TABLE_KNOWN = new Set([
 ]);
 
 /**
- * Later table options, and the prompt that adds each one.
+ * Later table options, and the version that adds each one.
  *
- * `later` names no prompt: the execution plan has no row for that option.
+ * `later` names no version: the execution plan has no release for that option.
  */
 const TABLE_LATER: Readonly<Record<string, string>> = {
   computed: "later",
-  omitDefaults: "P23",
+  omitDefaults: "0.2",
   policies: "later",
-  presets: "P28",
-  reference: "P53A",
-  tenancy: "P24",
-  traits: "P23",
-  validate: "P26",
-  validation: "P26",
+  presets: "0.2",
+  reference: "0.4",
+  tenancy: "0.2",
+  traits: "0.2",
+  validate: "0.2",
+  validation: "0.2",
 };
 
 /**

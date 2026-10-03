@@ -102,14 +102,6 @@ test("every builder compiles to a stable catalog column", () => {
       "color",
     ],
     [
-      "domain",
-      (() => domain("email", text(), "VALUE LIKE '%@%'")) as () => ColumnBuilder<
-        unknown,
-        ColumnFlags
-      >,
-      "email",
-    ],
-    [
       "custom",
       (() =>
         custom<string>({
@@ -121,7 +113,7 @@ test("every builder compiles to a stable catalog column", () => {
     ],
   ];
 
-  expect(cases).toHaveLength(39);
+  expect(cases).toHaveLength(38);
   for (const [name, build, dataType] of cases) {
     const first = compileColumn(build(), input);
     const second = compileColumn(build(), input);
@@ -129,6 +121,19 @@ test("every builder compiles to a stable catalog column", () => {
     expect(first.column.definition.dataType, name).toBe(dataType);
     expect(first.column.definition.nullable, name).toBe(false);
     expect(t).toHaveProperty(name === "enum" ? "enum" : name);
+  }
+});
+
+test("t.domain fails until 0.3", () => {
+  expect(() => domain("email", text(), "VALUE LIKE '%@%'")).toThrow(OkmError);
+  try {
+    domain("email", text(), "VALUE LIKE '%@%'");
+  } catch (error) {
+    expect(error).toBeInstanceOf(OkmError);
+    if (error instanceof OkmError) {
+      expect(error.code).toBe("OKM1061");
+      expect(error.message).toContain("0.3");
+    }
   }
 });
 

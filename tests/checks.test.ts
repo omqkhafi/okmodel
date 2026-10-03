@@ -16,6 +16,7 @@ import {
   appBudgetProblems,
   checkDistSize,
   coldImportFinding,
+  incrementalBudgetProblems,
   runtimeBudgetProblems,
 } from "../scripts/size.js";
 
@@ -120,11 +121,11 @@ test("size check fails above the ceiling and passes under it", () => {
   expect(checkDistSize(dir, 1000)).toEqual([]);
 });
 
-test("app bundle budget fails above the D138 ceilings", () => {
+test("app bundle budget fails above the startup ceilings", () => {
   const over = appBudgetProblems({
     entry: "scripts/app-startup.ts",
-    minBytes: 80_000,
-    gzipBytes: 27_000,
+    minBytes: 100_000,
+    gzipBytes: 40_000,
     coldImportMs: 30,
   });
   expect(over.some((problem) => problem.includes("minified"))).toBe(true);
@@ -146,6 +147,13 @@ test("app bundle budget fails above the D138 ceilings", () => {
       coldImportMs: 5,
     }),
   ).toEqual([]);
+});
+
+test("adapter incremental budget fails above its ceiling", () => {
+  expect(
+    incrementalBudgetProblems("src/adapters/pg/postgresjs.ts", 16_000, 15_093).length,
+  ).toBeGreaterThan(0);
+  expect(incrementalBudgetProblems("src/adapters/pg/postgresjs.ts", 12_000, 15_093)).toEqual([]);
 });
 
 test("runtime size budget fails above the ceilings", () => {
