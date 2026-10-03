@@ -138,7 +138,7 @@ postgresTest(
         await roundTrip(sql, schemaName, ref, "add-key", openItems(), keyedItems());
         await roundTrip(sql, schemaName, ref, "change-key", keyedItems(), compositeItems());
         await roundTrip(sql, schemaName, ref, "drop-key", keyedItems(), openItems());
-        await roundTrip(sql, schemaName, ref, "create-random-id", undefined, randomSessions());
+        await roundTrip(sql, schemaName, ref, "create-uuidv4", undefined, uuidv4Sessions());
         const version = await sql<
           { v: string }[]
         >`select current_setting('server_version_num') as v`;
@@ -508,10 +508,10 @@ function compositeItems(): Catalog {
   }).catalog;
 }
 
-function randomSessions(): Catalog {
+function uuidv4Sessions(): Catalog {
   return schema({
     requires: { postgres: ">=15" },
-    tables: [defineTable("sessions", { id: t.id({ default: "random" }) })],
+    tables: [defineTable("sessions", { id: t.id({ default: "uuidv4" }) })],
   }).catalog;
 }
 

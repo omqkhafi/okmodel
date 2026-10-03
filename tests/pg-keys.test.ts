@@ -1,5 +1,5 @@
 /**
- * Primary keys on a real Postgres: natural, composite, caller-supplied, and random ids.
+ * Primary keys on a real Postgres: natural, composite, caller-supplied, and uuidv4 ids.
  */
 
 import { expect } from "bun:test";
@@ -25,7 +25,7 @@ const app = schema({
       { primaryKey: ["userId", "orgId"] },
     ),
     table("events", { id: t.id({ default: "none" }), name: t.text() }),
-    table("sessions", { id: t.id({ default: "random" }) }),
+    table("sessions", { id: t.id({ default: "uuidv4" }) }),
   ],
 });
 

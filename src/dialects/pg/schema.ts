@@ -980,8 +980,8 @@ function refuseUuidV7(
   if (!(declared > 0) || declared >= 18) return;
   throw new OkmError(
     "OKM1812",
-    `Column ${tableName}.${field} uses uuidv7(). t.id({ default: "random" }).`,
-    { fix: { summary: "Use random." } },
+    `Column ${tableName}.${field} uses uuidv7(). t.id({ default: "uuidv4" }).`,
+    { fix: { summary: "Use uuidv4." } },
   );
 }
 

@@ -16,14 +16,14 @@ import { emitRowTypes } from "../src/dialects/pg/emit.js";
 import { index, schema, sql, table, t } from "../src/dialects/pg/index.js";
 
 const users = table("users", {
-  id: t.id({ default: "random" }),
+  id: t.id({ default: "uuidv4" }),
   email: t.text().unique(),
 });
 
 const tasks = table(
   "tasks",
   {
-    id: t.id({ default: "random" }),
+    id: t.id({ default: "uuidv4" }),
     ownerId: t.uuid().references("users"),
     listId: t.uuid().references("lists", { onDelete: "cascade" }),
     title: t.varchar(200),
@@ -41,7 +41,7 @@ const tasks = table(
 );
 
 const lists = table("lists", {
-  id: t.id({ default: "random" }),
+  id: t.id({ default: "uuidv4" }),
   name: t.text(),
 });
 
@@ -370,7 +370,7 @@ test("a column primary key and a composite key are catalog constraints", () => {
   expect(code?.guardUpdate).toBe(true);
 });
 
-test("uuidv7 below the declared Postgres 18 names the random default", () => {
+test("uuidv7 below the declared Postgres 18 names the uuidv4 default", () => {
   const error = capture(() =>
     schema({
       requires: { postgres: ">=17" },
@@ -379,20 +379,20 @@ test("uuidv7 below the declared Postgres 18 names the random default", () => {
   );
   expect(error.code).toBe("OKM1812");
   expect(error.message).toContain("uuidv7()");
-  expect(error.message).toContain('t.id({ default: "random" })');
-  expect(error.fix.summary).toContain("random");
+  expect(error.message).toContain('t.id({ default: "uuidv4" })');
+  expect(error.fix.summary).toContain("uuidv4");
   const allowed = schema({
     requires: { postgres: ">=18" },
     tables: [table("sessions", { id: t.id() })],
   });
   const column = allowed.catalog.objects.find((object) => object.kind === "column");
   expect(column?.kind === "column" ? column.definition.defaultExpression : "").toBe("uuidv7()");
-  const random = schema({
+  const uuidv4 = schema({
     requires: { postgres: ">=15" },
-    tables: [table("sessions", { id: t.id({ default: "random" }) })],
+    tables: [table("sessions", { id: t.id({ default: "uuidv4" }) })],
   });
-  const randomColumn = random.catalog.objects.find((object) => object.kind === "column");
-  expect(randomColumn?.kind === "column" ? randomColumn.definition.defaultExpression : "").toBe(
+  const uuidv4Column = uuidv4.catalog.objects.find((object) => object.kind === "column");
+  expect(uuidv4Column?.kind === "column" ? uuidv4Column.definition.defaultExpression : "").toBe(
     "gen_random_uuid()",
   );
 });

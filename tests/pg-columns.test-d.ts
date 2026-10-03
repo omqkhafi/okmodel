@@ -21,9 +21,9 @@ expectTypeOf<ColumnRowOf<typeof key>>().toEqualTypeOf<string>();
 expectTypeOf<ColumnInsertOf<typeof key>>().toEqualTypeOf<never>();
 expectTypeOf<ColumnUpdateOf<typeof key>>().toEqualTypeOf<never>();
 
-const randomKey = t.id({ default: "random" });
-expectTypeOf<ColumnInsertOf<typeof randomKey>>().toEqualTypeOf<never>();
-expectTypeOf<ColumnUpdateOf<typeof randomKey>>().toEqualTypeOf<never>();
+const uuidv4Key = t.id({ default: "uuidv4" });
+expectTypeOf<ColumnInsertOf<typeof uuidv4Key>>().toEqualTypeOf<never>();
+expectTypeOf<ColumnUpdateOf<typeof uuidv4Key>>().toEqualTypeOf<never>();
 
 const supplied = t.id({ default: "none" });
 expectTypeOf<ColumnRowOf<typeof supplied>>().toEqualTypeOf<string>();

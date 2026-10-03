@@ -179,7 +179,7 @@ test("picklist check can be omitted, and arrays record rank", () => {
 
 test("keys, identity, generated, and extensions record the catalog fields", () => {
   expect(compileColumn(id(), input).column.definition.defaultExpression).toBe("uuidv7()");
-  expect(compileColumn(id({ default: "random" }), input).column.definition.defaultExpression).toBe(
+  expect(compileColumn(id({ default: "uuidv4" }), input).column.definition.defaultExpression).toBe(
     "gen_random_uuid()",
   );
   expect(compileColumn(id({ default: "none" }), input).column.definition.defaultExpression).toBe(

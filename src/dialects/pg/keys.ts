@@ -13,12 +13,12 @@ import {
 import { definition, rejected } from "./misuse.js";
 
 /** How {@link id} fills the primary key. */
-export type IdDefault = "uuidv7" | "random" | "none";
+export type IdDefault = "uuidv7" | "uuidv4" | "none";
 
 /**
  * UUID primary key.
  *
- * The default is `uuidv7()` (Postgres 18). `random` is `gen_random_uuid()`
+ * The default is `uuidv7()` (Postgres 18). `uuidv4` stores `gen_random_uuid()`
  * (built in from Postgres 13). `none` takes the id on insert. A database
  * default is omitted from insert and update. `none` is required on insert
  * and omitted from update.
@@ -29,15 +29,15 @@ export type IdDefault = "uuidv7" | "random" | "none";
 export function id(): ColumnBuilder<string, IdFlags>;
 export function id(options: { readonly default: "none" }): ColumnBuilder<string, IdSuppliedFlags>;
 export function id(options: {
-  readonly default: "uuidv7" | "random";
+  readonly default: "uuidv7" | "uuidv4";
 }): ColumnBuilder<string, IdFlags>;
 export function id(options?: {
   readonly default?: IdDefault;
 }): ColumnBuilder<string, IdFlags | IdSuppliedFlags> {
   const mode = options?.default ?? "uuidv7";
   const supplied = mode === "none";
-  if (!supplied && mode !== "uuidv7" && mode !== "random") {
-    definition(`id() default ${String(mode)} must be uuidv7, random, or none.`);
+  if (!supplied && mode !== "uuidv7" && mode !== "uuidv4") {
+    definition(`id() default ${String(mode)} must be uuidv7, uuidv4, or none.`);
   }
   return openColumn<string, IdFlags | IdSuppliedFlags>({
     baseType: "uuid",
@@ -48,7 +48,7 @@ export function id(options?: {
     hidden: false,
     omitWrite: !supplied,
     omitUpdate: true,
-    ...(supplied ? {} : { defaultSql: mode === "random" ? "gen_random_uuid()" : "uuidv7()" }),
+    ...(supplied ? {} : { defaultSql: mode === "uuidv4" ? "gen_random_uuid()" : "uuidv7()" }),
     primaryKey: true,
     encode: encodeUuid,
     decode: decodeUuid,
