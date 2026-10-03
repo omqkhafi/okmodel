@@ -1,7 +1,7 @@
 {
   "name": "okmodel",
   "version": "0.1.1",
-  "description": "Catalog-first TypeScript ORM for PostgreSQL. Zero runtime dependencies.",
+  "description": "okmodel is a catalog-first TypeScript ORM, PostgreSQL first. Other SQL databases are the direction. Version 0.1 supports PostgreSQL only. The schema is the single source. Migrations and queries come from it.",
   "keywords": [
     "migrations",
     "orm",
