@@ -18,11 +18,20 @@ export const RUNTIME_ENTRY = "src/contracts/index.ts";
  */
 export const PG_ENTRY = "src/dialects/pg/index.ts";
 
-/** Minified runtime entry ceiling, in bytes (60 KB). */
-export const RUNTIME_MAX_MIN_BYTES = 60 * 1024;
+/**
+ * Minified runtime entry ceiling, in bytes (D144).
+ *
+ * Measured 5,525. Plus 10 percent, rounded to 6,100. The 60 KB figure stays
+ * the long-term target in D127; this gate is the one that fails CI.
+ */
+export const RUNTIME_MAX_MIN_BYTES = 6_100;
 
-/** Gzipped runtime entry ceiling, in bytes (20 KB). */
-export const RUNTIME_MAX_GZIP_BYTES = 20 * 1024;
+/**
+ * Gzipped runtime entry ceiling, in bytes (D144).
+ *
+ * Measured 2,042. Plus 10 percent, rounded to 2,250.
+ */
+export const RUNTIME_MAX_GZIP_BYTES = 2_250;
 
 /**
  * Cold-import reference on a developer machine, in milliseconds (D127, D134).

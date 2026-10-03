@@ -6,7 +6,7 @@ import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { emitRowTypes } from "../src/dialects/pg/index.js";
+import { emitRowTypes } from "../src/dialects/pg/emit.js";
 import { repoRoot } from "../scripts/root.js";
 import { appSchema } from "./row-types-schema.js";
 

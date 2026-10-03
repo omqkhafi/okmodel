@@ -6,12 +6,12 @@ Stable exports are the application API this release commits to. Experimental exp
 
 `okmodel` exports `OkmError`, `safe`, the row types (`Row`, `Insert`, `Update`, `Register`), and the driver types. Catalog builders are not on this entry. `table` and `index` for a schema are `okmodel/pg`.
 
-`okmodel/internal` holds `sha256`, `throwNamed`, `nearestName`, `catalogError`, and the catalog builders, including the catalog `table` and `index`. The subpath is not an application import. It is there so those names are not on `okmodel`.
+`okmodel/internal` holds `sha256`, `throwNamed`, `nearestName`, `catalogError`, and the catalog builders, including the catalog `table` and `index`. The subpath is not an application import. It has no stability promise. Its exports are marked `@internal`.
 
-`okmodel/pg` is the schema API: column builders, `table`, `schema`, `index`, operators, `one`, and `many`. `compileColumn`, `emitRowTypes`, `mapPostgresError`, and the operator tag helpers are internal. `domain` is experimental.
+`okmodel/pg` is the schema API: column builders, `table`, `schema`, `index`, operators, `one`, and `many`. `domain` is experimental. Catalog compilation, row-type emit, Postgres error mapping, and the operator tag helpers are not exported.
 
 `okmodel/pg/postgresjs` and `okmodel/pg/pglite` export `connect` and the pool opener for that driver.
 
-`okmodel/migrate` exports `defineConfig` for the application. The planning and apply functions on that entry are internal; the CLI is the interface.
+`okmodel/migrate` exports `defineConfig`, `MigrateConfig`, and `TargetInput`. The CLI imports the planning and apply helpers from the package. Those helpers are not exports.
 
 `okmodel/testing` is reserved for 0.4 (P54) and is not in the exports map.

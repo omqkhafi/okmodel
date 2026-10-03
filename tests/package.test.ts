@@ -52,6 +52,15 @@ test("each export's JavaScript file has a sibling declaration", () => {
   }
 });
 
+test("built okmodel/internal declarations carry @internal", () => {
+  const source = readFileSync(join(root, "dist/contracts/internal.d.ts"), "utf8");
+  const parts = source.split(/\nexport /);
+  expect(parts.length).toBeGreaterThan(1);
+  for (const before of parts.slice(0, -1)) {
+    expect(before).toContain("@internal");
+  }
+});
+
 test("bins print the package version under node and bun", async () => {
   const version = readVersion();
   for (const bin of ["dist/okm.js", "dist/okmodel.js"]) {

@@ -12,7 +12,8 @@ import {
   serializeCatalog,
 } from "../src/contracts/catalog/document.js";
 import { creationOrder } from "../src/contracts/catalog/document.js";
-import { index, schema, sql, table, t, emitRowTypes } from "../src/dialects/pg/index.js";
+import { emitRowTypes } from "../src/dialects/pg/emit.js";
+import { index, schema, sql, table, t } from "../src/dialects/pg/index.js";
 
 const users = table("users", {
   id: t.id(),

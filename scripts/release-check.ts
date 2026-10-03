@@ -3,7 +3,8 @@
  * changelog has no new lines under `## Unreleased`.
  *
  * A release that drops a `-next.N` suffix and promotes Unreleased into
- * `## vX.Y.Z` is allowed to leave Unreleased empty.
+ * `## vX.Y.Z` is allowed to leave Unreleased empty. Before that tag exists,
+ * notes added under the release heading are allowed and the version stays.
  *
  * Usage:
  *   bun ./scripts/release-check.ts --base <git-rev>
@@ -22,19 +23,31 @@ export type ReleaseSnapshot = {
   readonly changelog: string;
 };
 
+/** When the release version is not tagged yet, notes may land under its heading. */
+export type ReleaseCheckOptions = {
+  /**
+   * `vX.Y.Z` is not a git tag. Notes added under `## vX.Y.Z` are the release,
+   * and the version may stay `X.Y.Z`.
+   */
+  readonly untaggedRelease?: boolean;
+};
+
 /**
  * Compares a head snapshot with its base.
  *
  * @param base - Version and changelog on the base branch
  * @param head - Version and changelog on the pull request
+ * @param options - Allows notes on an untagged release heading
  * @returns Problem lines. Empty when the pull request moves the version and the notes
  */
 export function checkReleaseSnapshots(
   base: ReleaseSnapshot,
   head: ReleaseSnapshot,
+  options?: ReleaseCheckOptions,
 ): readonly string[] {
   const problems: string[] = [];
-  if (head.version === base.version) {
+  const preTag = options?.untaggedRelease === true && hasNewReleaseNotes(base, head);
+  if (head.version === base.version && !preTag) {
     problems.push(`package.json version ${head.version} equals the base branch`);
   }
   const headSection = unreleasedSection(head.changelog);
@@ -42,7 +55,11 @@ export function checkReleaseSnapshots(
     problems.push("changelog.md has no ## Unreleased section");
     return problems;
   }
-  if (!hasNewUnreleasedLines(base.changelog, head.changelog) && !isReleasePromotion(base, head)) {
+  if (
+    !hasNewUnreleasedLines(base.changelog, head.changelog) &&
+    !isReleasePromotion(base, head) &&
+    !preTag
+  ) {
     problems.push("changelog.md has no new lines under ## Unreleased");
   }
   return problems;
@@ -132,6 +149,31 @@ function dropNextSuffix(version: string): string | undefined {
   return match?.[1];
 }
 
+function hasNewReleaseNotes(base: ReleaseSnapshot, head: ReleaseSnapshot): boolean {
+  if (!/^\d+\.\d+\.\d+$/.test(head.version) || head.version !== base.version) return false;
+  const baseLines = new Set(sectionLines(base.changelog, head.version));
+  return sectionLines(head.changelog, head.version).some((line) => !baseLines.has(line));
+}
+
+function sectionLines(changelog: string, version: string): readonly string[] {
+  const escaped = version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const heading = new RegExp(`^## v${escaped}(?:\\s|$)`);
+  const lines = changelog.replace(/\r\n/g, "\n").split("\n");
+  const start = lines.findIndex((line) => heading.test(line));
+  if (start === -1) return [];
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^##\s+/.test(lines[i] ?? "")) {
+      end = i;
+      break;
+    }
+  }
+  return lines
+    .slice(start + 1, end)
+    .map((line) => line.trim())
+    .filter((line) => line !== "");
+}
+
 function hasVersionHeading(changelog: string, version: string): boolean {
   const escaped = version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(`^## v${escaped}(?:\\s|$)`, "m").test(changelog);
@@ -158,11 +200,18 @@ if (import.meta.main) {
       process.exit(2);
     }
     const root = repoRoot();
+    const head = readReleaseSnapshot(root);
     const base: ReleaseSnapshot = {
       version: readVersion(gitShow(baseRev, "package.json"), `${baseRev}:package.json`),
       changelog: gitShow(baseRev, "changelog.md"),
     };
-    exitOnProblems(checkReleaseSnapshots(base, readReleaseSnapshot(root)));
+    const tag = Bun.spawnSync(["git", "tag", "-l", `v${head.version}`], { cwd: root });
+    if (tag.exitCode !== 0) {
+      throw new Error(`git tag -l v${head.version} failed`);
+    }
+    exitOnProblems(
+      checkReleaseSnapshots(base, head, { untaggedRelease: tag.stdout.toString().trim() === "" }),
+    );
   } catch (error) {
     console.error("[release-check]", error instanceof Error ? error.message : error);
     process.exit(2);

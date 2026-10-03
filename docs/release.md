@@ -23,6 +23,8 @@ Run the Release workflow on the tag. It checks out that commit, runs `bun run ch
 gh workflow run release.yml --ref v0.1.0
 ```
 
+The same run can be started from the GitHub Actions page: open Actions, choose Release, run the workflow, and select the `v0.1.0` tag. The workflow refuses any other ref.
+
 Provenance is the npm attestation that GitHub Actions built the tarball. The workflow sets `permissions.id-token` to `write` so npm can attach it.
 
 ## Dry run

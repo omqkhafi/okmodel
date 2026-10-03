@@ -1,14 +1,19 @@
 /**
  * Undocumented entry for `okmodel/internal`.
  *
- * Dialect authors and the sibling entries import these. Application code
- * imports `table` and `index` from `okmodel/pg`, not the catalog builders here.
+ * No stability promise. Dialect authors and the sibling entries import these.
+ * Application code imports `table` and `index` from `okmodel/pg`, not the
+ * catalog builders here.
  */
 
+/** @internal */
 export { catalogError, throwNamed } from "./error.js";
+/** @internal */
 export { nearestName } from "./nearest.js";
+/** @internal */
 export { sha256 } from "./sha256.js";
 
+/** @internal */
 export {
   BUILT_KINDS,
   CATALOG_VERSION,

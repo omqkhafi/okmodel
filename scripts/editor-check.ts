@@ -10,8 +10,9 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { emitRowTypes } from "../src/dialects/pg/emit.js";
 import { enumColumn } from "../src/dialects/pg/enum.js";
-import { emitRowTypes, id, integer, schema, table, text, uuid } from "../src/dialects/pg/index.js";
+import { id, integer, schema, table, text, uuid } from "../src/dialects/pg/index.js";
 import { exitOnProblems } from "./report.js";
 import { repoRoot } from "./root.js";
 

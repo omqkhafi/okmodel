@@ -1,9 +1,9 @@
 # Quickstart
 
-The CI test packs the tarball, installs it in a fresh project, and runs these files. The copies CI uses are [`schema.ts`](../tests/fixtures/quickstart/schema.ts), [`okmodel.config.ts`](../tests/fixtures/quickstart/okmodel.config.ts), and [`run.ts`](../tests/fixtures/quickstart/run.ts).
+Set `DATABASE_URL` to a direct Postgres URL, not a pooler. The CI test packs the tarball, installs it in a fresh project, and runs the commands and the read and write calls in this file.
 
 ```sh
-bun add okmodel @electric-sql/pglite
+bun add okmodel postgres
 ```
 
 `okmodel.config.ts`:
@@ -11,8 +11,14 @@ bun add okmodel @electric-sql/pglite
 ```ts
 import { defineConfig } from "okmodel/migrate";
 
+const url = process.env.DATABASE_URL;
+if (url === undefined || url.length === 0) {
+  throw new Error("DATABASE_URL is not set");
+}
+
 export default defineConfig({
   schema: "./schema.ts",
+  database: url,
 });
 ```
 
@@ -32,38 +38,20 @@ export const app = schema({ tables: [notes] });
 ```sh
 bunx okm build
 bunx okm generate init
+bunx okm migrate apply
 ```
 
-`okm migrate apply` speaks a Postgres URL. This quickstart applies the generated SQL on PGlite, then uses `connect` from `okmodel/pg/pglite`:
+`run.ts`:
 
 ```ts
-import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-
-import { connect, open } from "okmodel/pg/pglite";
+import { connect } from "okmodel/pg/postgresjs";
 
 import { app } from "./schema.ts";
 
-const directory = ".okm/app-db";
-const sqlPath = readdirSync("migrations")
-  .filter((name) => name.endsWith(".sql"))
-  .sort()
-  .at(-1);
-if (sqlPath === undefined) throw new Error("okm generate did not write a migration");
+const url = process.env.DATABASE_URL;
+if (url === undefined || url.length === 0) throw new Error("DATABASE_URL is not set");
 
-const statements = readFileSync(join("migrations", sqlPath), "utf8")
-  .split("\n")
-  .filter((line) => !line.trimStart().startsWith("--"))
-  .join("\n")
-  .split(";")
-  .map((statement) => statement.trim())
-  .filter((statement) => statement.length > 0);
-
-const pool = await open({ dataDir: directory });
-for (const statement of statements) await pool.execute(statement);
-await pool.close();
-
-const db = await connect(directory, { schema: app });
+const db = connect(url, { schema: app });
 await db.connected;
 const id = "11111111-1111-4111-8111-111111111111";
 const inserted = await db.notes.insert({ id, title: "hello" });

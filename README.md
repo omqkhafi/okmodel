@@ -37,7 +37,7 @@ bunx okm build
 bunx okm generate init
 ```
 
-`table` and `index` for a schema come from `okmodel/pg`. Stable, experimental, and internal exports are listed in `tests/fixtures/api-surface.json` in the repository.
+`table` and `index` for a schema come from `okmodel/pg`. Stable, experimental, and internal exports are listed in `tests/fixtures/api-surface.json` in the repository. `okmodel/internal` has no stability promise.
 
 A production target sets `protected: true`. A production `connect` sets `requireMeta: true`. `prepared: "named"` is not for a transaction-mode pooler.
 

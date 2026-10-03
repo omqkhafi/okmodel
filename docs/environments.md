@@ -14,6 +14,24 @@ One ephemeral database per pull request. Infrastructure creates it (a branch, `C
 4. Optionally seed, then deploy the application with the preview URL.
 5. Deleting the database when the pull request closes is the infrastructure's job.
 
+Register the preview target in `okmodel.config.ts`:
+
+```ts
+import { defineConfig } from "okmodel/migrate";
+
+const url = process.env.PREVIEW_DATABASE_URL;
+if (url === undefined || url.length === 0) {
+  throw new Error("PREVIEW_DATABASE_URL is not set");
+}
+
+export default defineConfig({
+  schema: "./schema.ts",
+  targets: {
+    preview: url,
+  },
+});
+```
+
 ## Rehearsal
 
 To try pending migrations against realistic data, clone or branch the production database, register the clone as a target, and run:

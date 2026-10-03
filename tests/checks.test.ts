@@ -10,7 +10,7 @@ import { checkCompilerApi } from "../scripts/compiler-api.js";
 import { checkCorePurity } from "../scripts/core-purity.js";
 import { checkDocs } from "../scripts/docs-check.js";
 import { checkLayers } from "../scripts/layers-check.js";
-import { checkReleaseDirs } from "../scripts/release-check.js";
+import { checkReleaseDirs, checkReleaseSnapshots } from "../scripts/release-check.js";
 import { repoRoot } from "../scripts/root.js";
 import {
   appBudgetProblems,
@@ -265,6 +265,20 @@ test("release check accepts a release that promotes Unreleased", () => {
       join(releaseFixtures, "release", "head"),
     ),
   ).toEqual([]);
+});
+
+test("release check accepts notes under an untagged release heading", () => {
+  const base = {
+    version: "0.1.0",
+    changelog: "# Changelog\n\n## Unreleased\n\n## v0.1.0 — 2026-10-03\n\n- First.\n",
+  };
+  const head = {
+    version: "0.1.0",
+    changelog:
+      "# Changelog\n\n## Unreleased\n\n## v0.1.0 — 2026-10-03\n\n- First.\n- Public subpaths keep public names.\n",
+  };
+  expect(checkReleaseSnapshots(base, head).length).toBeGreaterThan(0);
+  expect(checkReleaseSnapshots(base, head, { untaggedRelease: true })).toEqual([]);
 });
 
 test("release check rejects an emptied Unreleased that is not the suffix drop", () => {
