@@ -331,7 +331,7 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     code: "OKM1812",
     title: "Feature version",
     summary: "A feature needs a newer Postgres or extension version than the one declared.",
-    fix: 'Raise the declared version, or avoid the feature. uuidv7() below 18 can use t.id({ default: "uuidv4" }) for gen_random_uuid(). Core features are never gated on an extension.',
+    fix: 'Raise the declared version, or avoid the feature. uuidv7() below 18 can set defaults.id to "uuidv4" or a client generator. Core features are never gated on an extension.',
   },
   {
     code: "OKM1813",

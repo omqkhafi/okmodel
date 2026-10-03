@@ -11,6 +11,7 @@ import { readFileSync } from "node:fs";
 export const API_ENTRIES = [
   { subpath: "okmodel", file: "src/contracts/index.ts" },
   { subpath: "okmodel/internal", file: "src/contracts/internal.ts" },
+  { subpath: "okmodel/ids", file: "src/runtime/ids/index.ts" },
   { subpath: "okmodel/pg", file: "src/dialects/pg/index.ts" },
   { subpath: "okmodel/pg/postgresjs", file: "src/runtime/pg/postgresjs.ts" },
   { subpath: "okmodel/pg/pglite", file: "src/runtime/pg/pglite.ts" },

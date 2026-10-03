@@ -2,6 +2,7 @@
  * UUID keys.
  */
 
+import { readClientGenerator, type ClientGenerator } from "../../contracts/generator.js";
 import {
   type ColumnBuilder,
   type IdFlags,
@@ -11,47 +12,66 @@ import {
   required,
 } from "./column.js";
 import { definition, rejected } from "./misuse.js";
+import { decodeText, encodeText } from "./text.js";
 
 /** How {@link id} fills the primary key. */
 export type IdDefault = "uuidv7" | "uuidv4" | "none";
 
 /**
- * UUID primary key.
+ * Primary key.
  *
- * The default is `uuidv7()` (Postgres 18). `uuidv4` stores `gen_random_uuid()`
- * (built in from Postgres 13). `none` takes the id on insert. A database
- * default is omitted from insert and update. `none` is required on insert
- * and omitted from update.
+ * With no options, the database default is `uuidv7()` unless
+ * `schema({ defaults: { id } })` says otherwise. `uuidv4` stores
+ * `gen_random_uuid()` (built in from Postgres 13). `none` takes the id on
+ * insert. A client generator (`uuidv4`, `uuidv7`, or `okid(...)` from
+ * `okmodel/ids`) is filled on insert and stored with no database default.
+ * OKID is `text` with collation `C`. A database default is omitted from
+ * insert and update. `none` is required on insert and omitted from update.
  *
- * @param options - Which default to store. Omitted means `uuidv7`
+ * @param options - Which default to store. Omitted means the schema default, or `uuidv7()`
  * @returns An id column
  */
 export function id(): ColumnBuilder<string, IdFlags>;
 export function id(options: { readonly default: "none" }): ColumnBuilder<string, IdSuppliedFlags>;
 export function id(options: {
-  readonly default: "uuidv7" | "uuidv4";
+  readonly default: "uuidv7" | "uuidv4" | ClientGenerator<string>;
 }): ColumnBuilder<string, IdFlags>;
 export function id(options?: {
-  readonly default?: IdDefault;
+  readonly default?: IdDefault | ClientGenerator<string>;
 }): ColumnBuilder<string, IdFlags | IdSuppliedFlags> {
-  const mode = options?.default ?? "uuidv7";
-  const supplied = mode === "none";
-  if (!supplied && mode !== "uuidv7" && mode !== "uuidv4") {
-    definition(`id() default ${String(mode)} must be uuidv7, uuidv4, or none.`);
+  const chosen = options?.default;
+  const client = typeof chosen === "function" ? readClientGenerator(chosen) : undefined;
+  const okid = client?.name === "okid";
+  const supplied = chosen === "none";
+  if (
+    client === undefined &&
+    chosen !== undefined &&
+    chosen !== "uuidv7" &&
+    chosen !== "uuidv4" &&
+    chosen !== "none"
+  ) {
+    definition(
+      `id() default ${String(chosen)} must be uuidv7, uuidv4, none, or a client generator.`,
+    );
   }
   return openColumn<string, IdFlags | IdSuppliedFlags>({
-    baseType: "uuid",
+    baseType: okid ? "text" : "uuid",
     nullable: false,
-    hasDefault: !supplied,
+    hasDefault: client !== undefined || !supplied,
     generated: false,
-    guarded: !supplied,
+    guarded: client !== undefined || !supplied,
     hidden: false,
-    omitWrite: !supplied,
+    omitWrite: client !== undefined || !supplied,
     omitUpdate: true,
-    ...(supplied ? {} : { defaultSql: mode === "uuidv4" ? "gen_random_uuid()" : "uuidv7()" }),
+    ...(client !== undefined ? { clientDefault: client } : {}),
+    ...(okid ? { collation: "C" } : {}),
+    idSource: chosen === undefined ? "implicit" : "column",
+    ...(client === undefined && !supplied
+      ? { defaultSql: chosen === "uuidv4" ? "gen_random_uuid()" : "uuidv7()" }
+      : {}),
     primaryKey: true,
-    encode: encodeUuid,
-    decode: decodeUuid,
+    encode: okid ? encodeText : encodeUuid,
+    decode: okid ? decodeText : decodeUuid,
     sqlForm: "quote",
   });
 }

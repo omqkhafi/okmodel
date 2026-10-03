@@ -16,17 +16,37 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### ✨ Added
 
+#### dialects
+
 - A column can be a primary key with `.primaryKey()`, and a table can declare a composite primary key with `primaryKey`. A natural key and a caller-supplied id insert, and `find` looks them up.
-- `t.id()` still defaults to `uuidv7()`. `t.id({ default: "uuidv4" })` uses `gen_random_uuid()`. `t.id({ default: "none" })` has no default and is required on insert.
-- `connect()` refuses a Postgres server below 15 with OKM1803. `schema({ requires })` that names an older major keeps the OKM1802 check instead.
-- The README lists the key options. The quickstart stays on `t.identity()`.
-- The roadmap is a public board. Each release is a milestone, and a pull request ends with `Closes #N`.
+- `t.id()` still defaults to database `uuidv7()`. `t.id({ default: "uuidv4" })` uses `gen_random_uuid()`. `t.id({ default: "none" })` has no default and is required on insert. A column choice wins over `schema({ defaults: { id } })`.
+- `schema({ defaults: { id } })` sets the generator for every bare `t.id()`. `"uuidv4"` and `"uuidv7"` stay database defaults. A function is filled in the application.
+- An OKID id is `text` with collation `C`. Collation is part of the catalog: create, diff, introspect, and plan.
+
+#### adapters
+
 - `okmodel/pg/pg` connects with node-postgres, and `okmodel/pg/bun` connects with Bun.sql. Both are optional peers. The default stays postgres.js. Bun.sql loads only on Bun.
 - node-postgres cancels an in-flight statement and returns notices. Bun.sql does not abort an in-flight statement and does not surface RAISE NOTICE. Neither describes a statement without running it. A plain pool of either exits after the last query.
 
+#### runtime
+
+- `connect()` refuses a Postgres server below 15 with OKM1803. `schema({ requires })` that names an older major keeps the OKM1802 check instead.
+- `okmodel/ids` exports `uuidv4`, `uuidv7`, and `okid`. Pass one to `.default()` or `defaults.id`. A literal passed to `.default()` stays a database default. `.defaultSql()` stays a database expression. The generated value is not in the catalog, so changing a generator does not produce a migration. Insert fills each omitted value once, including each row of a batch, and the returned row carries it.
+- `connect({ generators })` replaces a built-in generator by name.
+
+#### tooling
+
+- `engines.node` is `>=22`. The checks that can run do so on Node, Bun, and Deno, and the runtime entry is imported as an edge bundle. A runtime that cannot run a check prints the reason.
+
+#### docs
+
+- The README lists the key options. The quickstart stays on `t.identity()`. Schema says how ids are generated and how to change the default.
+- The roadmap is a public board. Each release is a milestone, and a pull request ends with `Closes #N`.
+
 ### ♻️ Changed
 
-- A declared server below 18 that uses `uuidv7()` fails with OKM1812, and the message names `t.id({ default: "uuidv4" })`.
+- A declared server below 18 that uses `uuidv7()` fails with OKM1812, and the message names `defaults.id`.
+- `okmodel/pg/pg` and `okmodel/pg/bun` connect entries are gated at the measured size plus 3 percent (D156).
 - `t.id()` and `t.identity()` stay omitted from insert and update. A plain primary key is writable on insert and omitted from update. Changing it is OKM1190.
 - A postgres.js pool opened with TLS still lingers about 30 s after the last query on Node and Bun. A plain pool exits on its own. `close()` or `await using` releases it.
 - A release checks the tag, packs one tarball, tests that file on Postgres, and publishes that same file. The GitHub Release closes the milestone.

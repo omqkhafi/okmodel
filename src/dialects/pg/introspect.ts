@@ -120,6 +120,7 @@ export async function introspectSchema(
     const identity = text(row, "identity");
     const generated = text(row, "generated") === "s";
     const expression = text(row, "expression");
+    const collation = text(row, "collation");
     const sequenceName = text(row, "sequence");
     const dataType = text(row, "type");
     const extra: ObjectIdentity[] = [];
@@ -140,6 +141,7 @@ export async function introspectSchema(
       ...(!generated && identity !== "a" && identity !== "d" && expression.length > 0
         ? { defaultExpression: expression }
         : {}),
+      ...(collation.length > 0 ? { collation } : {}),
     });
     objects.push(built);
   }
@@ -246,6 +248,10 @@ const COLUMNS = `
       else format_type(a.atttypid, a.atttypmod)
     end as type,
     a.attnotnull as not_null, a.attidentity as identity, a.attgenerated as generated,
+    case
+      when a.attcollation = 0 or a.attcollation = ty.typcollation then ''
+      else coalesce((select col.collname from pg_collation col where col.oid = a.attcollation), '')
+    end as collation,
     pg_get_expr(ad.adbin, ad.adrelid) as expression,
     (
       select owned.relname

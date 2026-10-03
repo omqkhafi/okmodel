@@ -4,6 +4,8 @@
  * `schema()` fills it once. Query planning does not walk column builders again.
  */
 
+import type { ClientFill } from "../../contracts/generator.js";
+
 /** One column the planner can filter, select, decode, and write. */
 export type ColumnModel = {
   /** Field name. */
@@ -29,6 +31,15 @@ export type ColumnModel = {
   readonly writable: boolean;
   /** Refused on update. Insert may still set it. A caller-supplied primary key. */
   readonly guardUpdate: boolean;
+  /**
+   * Catalog-output label for a client default.
+   *
+   * The hashed catalog does not store it. Changing the generator does not
+   * change the catalog hash.
+   */
+  readonly clientDefault?: "client";
+  /** Called once per inserted row when the field is omitted. */
+  readonly fill?: ClientFill;
 };
 
 /**

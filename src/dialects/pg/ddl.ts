@@ -134,9 +134,12 @@ export function alterColumnSql(
   const statements: string[] = [];
   const table = qualify(schema, after.identity.parent.name);
   const name = quoteIdent(after.identity.name);
-  if (before.definition.dataType !== after.definition.dataType) {
+  const typeChanged = before.definition.dataType !== after.definition.dataType;
+  const collationChanged = before.definition.collation !== after.definition.collation;
+  if (typeChanged || collationChanged) {
+    const using = typeChanged ? ` using ${name}::${after.definition.dataType}` : "";
     statements.push(
-      `alter table ${table} alter column ${name} set data type ${after.definition.dataType} using ${name}::${after.definition.dataType}`,
+      `alter table ${table} alter column ${name} set data type ${after.definition.dataType}${collateSql(after.definition.collation)}${using}`,
     );
   }
   if (before.definition.nullable !== after.definition.nullable) {
@@ -216,6 +219,11 @@ export function createTableSql(tableObject: TableObject, source: Catalog, schema
   return `create table ${qualify(schema, parent)} (\n  ${lines.join(",\n  ")}\n)${tail}`;
 }
 
+function collateSql(collation: string | undefined): string {
+  if (collation === undefined) return "";
+  return ` collate ${quoteIdent(collation)}`;
+}
+
 function createEnumSql(object: TypeObject, schema: string): string {
   const labels = object.definition.labels.map((label) => quoteLiteral(label)).join(", ");
   return `create type ${qualify(schema, object.identity.name)} as enum (${labels})`;
@@ -223,7 +231,7 @@ function createEnumSql(object: TypeObject, schema: string): string {
 
 function columnSql(column: ColumnObject): string {
   const definition = column.definition;
-  let sql = `${quoteIdent(column.identity.name)} ${definition.dataType}`;
+  let sql = `${quoteIdent(column.identity.name)} ${definition.dataType}${collateSql(definition.collation)}`;
   if (definition.identity !== undefined) {
     sql += definition.identity.always
       ? " generated always as identity"

@@ -1,0 +1,12 @@
+{
+  "okengine": {
+    "okid.ts": "f5cd3f403f47bf66eef1436030f6ff6fa968e8805f956b8808f359426beb602a",
+    "okid-shared.ts": "610ff8c154847a836970609deab6300488087e8b75367ba2146c1b65ba64c6e2",
+    "okid-extended.ts": "bd485337c2ae3228c25538f92a653e00317c5de4d6e67c118a099bcd641263cb"
+  },
+  "copy": {
+    "okid.ts": "48ded31dd9f93939d67c12f47eab10bd1ee3413fd84947bbcc306c60b0e36fc9",
+    "okid-shared.ts": "2af10297edad3991fedc6e87592016775dd8349133a142575f21c57bd4a3f788",
+    "okid-extended.ts": "603ba9377b6d1baf757c076df537af26e062b49d693acaf693769529cd739d70"
+  }
+}

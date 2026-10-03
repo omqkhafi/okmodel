@@ -173,6 +173,32 @@
       "kind": "stable"
     }
   ],
+  "okmodel/ids": [
+    {
+      "name": "ClientGenerator",
+      "kind": "stable"
+    },
+    {
+      "name": "IdGenerators",
+      "kind": "stable"
+    },
+    {
+      "name": "OkidOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "okid",
+      "kind": "stable"
+    },
+    {
+      "name": "uuidv4",
+      "kind": "stable"
+    },
+    {
+      "name": "uuidv7",
+      "kind": "stable"
+    }
+  ],
   "okmodel/internal": [
     {
       "name": "AnchoredIdentity",

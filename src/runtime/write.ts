@@ -7,6 +7,7 @@
 
 import type { DriverPool, ExecuteOptions, ExecuteResult, Statement } from "../contracts/driver.js";
 import { OkmError, throwNamed } from "../contracts/error.js";
+import type { ClientFill, IdGenerators } from "../contracts/generator.js";
 import type { ColumnModel } from "../dialects/pg/model.js";
 import type { QuerySchema } from "../dialects/pg/model.js";
 import { isOperator, operatorName, operatorValue } from "../dialects/pg/operators.js";
@@ -42,6 +43,7 @@ export type WriteMods = {
 export type WriteHost = {
   readonly schema: QuerySchema;
   readonly pool: DriverPool;
+  readonly generators?: IdGenerators;
 };
 
 type Cell =
@@ -80,7 +82,7 @@ export async function executeWrite(
   options: object,
   mods: WriteMods,
 ): Promise<unknown> {
-  const planned = await planWrite(host.schema, op, table, input, options, mods);
+  const planned = await planWrite(host.schema, host.generators, op, table, input, options, mods);
   if (planned.statements.length === 0) return finish([], planned, table);
   const results = await runWrite(host.pool, planned.statements, callOptions(options));
   return finish(results, planned, table);
@@ -95,6 +97,7 @@ export async function executeWrite(
  * @param input - Rows, or the update or delete target
  * @param options - Returning, conflict, expect, signal, timeout
  * @param mods - `.all` and `.expect`
+ * @param generators - Built-in replacements. Omitted uses the functions stored on the columns
  * @returns The statements in order
  */
 export async function explainWrite(
@@ -104,13 +107,15 @@ export async function explainWrite(
   input: unknown,
   options: object,
   mods: WriteMods,
+  generators?: IdGenerators,
 ): Promise<{ readonly statements: readonly Statement[] }> {
-  const planned = await planWrite(schema, op, table, input, options, mods);
+  const planned = await planWrite(schema, generators, op, table, input, options, mods);
   return { statements: planned.statements };
 }
 
 async function planWrite(
   schema: QuerySchema,
+  generators: IdGenerators | undefined,
   op: WriteOp,
   tableName: string,
   input: unknown,
@@ -123,7 +128,7 @@ async function planWrite(
   }
   const record = isRecord(options) ? options : {};
   rejectKeys(record, op === "insert" ? INSERT_OPTIONS : FILTER_OPTIONS, op);
-  if (op === "insert") return planInsert(table, input, record, mods);
+  if (op === "insert") return planInsert(table, input, record, mods, generators);
   if (op === "update") return planUpdate(schema, table, input, record, mods);
   return planDelete(schema, table, input, record, mods);
 }
@@ -133,9 +138,11 @@ async function planInsert(
   input: unknown,
   options: Record<string, unknown>,
   mods: WriteMods,
+  generators: IdGenerators | undefined,
 ): Promise<Planned> {
   const many = Array.isArray(input);
   const rows = (many ? input : [input]).map((row) => insertRow(table, row));
+  fillInsert(table, rows, generators);
   const columns = writtenColumns(table, rows);
   const returning = selectedColumns(table, options.returning);
   const outputs = outputsOf(returning);
@@ -542,6 +549,33 @@ function cellsFor(
   });
 }
 
+function fillInsert(
+  table: Indexed,
+  rows: Record<string, unknown>[],
+  generators: IdGenerators | undefined,
+): void {
+  const fills: ColumnModel[] = [];
+  for (const column of table.model.columns) {
+    if (column.fill !== undefined) fills.push(column);
+  }
+  if (fills.length === 0) return;
+  for (const row of rows) {
+    for (const column of fills) {
+      if (Object.hasOwn(row, column.field)) continue;
+      const fill = column.fill;
+      if (fill === undefined) continue;
+      row[column.field] = nextFill(fill, generators);
+    }
+  }
+}
+
+function nextFill(fill: ClientFill, generators: IdGenerators | undefined): unknown {
+  if (fill.name === "uuidv4" && generators?.uuidv4 !== undefined) return generators.uuidv4();
+  if (fill.name === "uuidv7" && generators?.uuidv7 !== undefined) return generators.uuidv7();
+  if (fill.name === "okid" && generators?.okid !== undefined) return generators.okid();
+  return fill.call();
+}
+
 function writtenColumns(table: Indexed, rows: readonly Record<string, unknown>[]): ColumnModel[] {
   const present = new Set<string>();
   for (const row of rows) {
@@ -549,7 +583,9 @@ function writtenColumns(table: Indexed, rows: readonly Record<string, unknown>[]
   }
   const columns: ColumnModel[] = [];
   for (const column of table.model.columns) {
-    if (column.writable && present.has(column.field)) columns.push(column);
+    if (present.has(column.field) && (column.writable || column.fill !== undefined)) {
+      columns.push(column);
+    }
   }
   return columns;
 }

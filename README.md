@@ -16,7 +16,6 @@ Version 0.1.1. Apache-2.0.
   - [Insert](#insert)
   - [Find](#find)
   - [Errors](#errors)
-  - [Close](#close)
 - [Keys](#keys)
 - [Commands](#commands)
 - [Roadmap](#roadmap)
@@ -62,6 +61,8 @@ export default defineConfig({
 ### Schema
 
 `t.identity()` is the primary key. An insert omits the id, and the row that comes back carries it. Identity ids come back as strings by default. `t.identity({ as: "number" })` returns numbers. Push and reviewed migrations are two ways to do the same job: pick one per database.
+
+Ids can also be generated in the application. Import `uuidv4`, `uuidv7`, or `okid` from `okmodel/ids` and pass one to `.default()`, or set `defaults.id` on `schema()` for every id column that does not choose its own. A column choice wins. A literal stays a database default. A generator is not stored in the catalog, so changing it does not create a migration, and an insert that bypasses okmodel has to supply the value. An OKID column is text with collation C, so a sortable id orders the same everywhere. Sortable ids include the time they were created.
 
 Tested on PostgreSQL 15 to 18.
 
@@ -171,32 +172,6 @@ if (duplicate.ok || !(duplicate.error instanceof OkmError) || duplicate.error.ki
   throw new Error("expected an OkmError of kind unique");
 }
 ```
-
-### Close
-
-A script exits when its queries finish. It does not need `close()` for that. `await using` closes the pool at the end of the block. `db.close()` is that call on a line you choose. A server keeps the client and its connections. A pool opened with `ssl` still waits out the driver's 30 second idle timer.
-
-`script.ts`:
-
-```ts
-import { connect } from "okmodel/pg/postgresjs";
-
-import schema from "./schema.ts";
-
-const url = process.env.DATABASE_URL;
-if (url === undefined || url.length === 0) throw new Error("DATABASE_URL is not set");
-
-await using db = connect(url, { schema });
-const author = await db.authors.insert({ name: "Lin" });
-if (author.name !== "Lin" || author.id.length === 0) {
-  throw new Error("insert did not return the row");
-}
-```
-
-```ts
-await db.close();
-```
-
 ## Keys
 
 `t.identity()` is a bigint identity primary key. Insert and update omit it. It works on every supported Postgres version. The quickstart uses it.

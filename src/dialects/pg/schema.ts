@@ -27,12 +27,17 @@ import type {
   ObjectRef,
   Provenance,
 } from "../../contracts/catalog/types.js";
+import {
+  readClientGenerator,
+  type ClientFill,
+  type ClientGenerator,
+} from "../../contracts/generator.js";
 import { compileColumn, type CompilableColumn } from "./compile.js";
-import { ColumnBuilder, formatType, type ReferenceModifier } from "./column.js";
+import { ColumnBuilder, formatType, type ColumnState, type ReferenceModifier } from "./column.js";
 import { type ColumnModel, type RelationModel, type TableModel } from "./model.js";
 import { definition, unavailable } from "./misuse.js";
 import { isRelationCall } from "./relations.js";
-import { decodeText } from "./text.js";
+import { decodeText, encodeText } from "./text.js";
 import {
   type AnyTable,
   type ColumnHandle,
@@ -72,6 +77,15 @@ export type SchemaInput<TTables extends readonly AnyTable[]> = {
     readonly timestamps?: SchemaCodecs["timestamps"];
   };
   readonly types?: "emitted" | "inferred";
+  /**
+   * What a bare `t.id()` means.
+   *
+   * `"uuidv7"` and `"uuidv4"` are database defaults. A client generator is
+   * filled on insert and stays out of the catalog. A column option wins.
+   */
+  readonly defaults?: {
+    readonly id?: "uuidv7" | "uuidv4" | ClientGenerator<string>;
+  };
   readonly traits?: unknown;
   readonly tenancy?: unknown;
   readonly validation?: unknown;
@@ -103,7 +117,7 @@ export type BuiltSchema<TTables extends readonly AnyTable[]> = {
   readonly model: { readonly [T in TTables[number] as T["~name"]]: TableModel };
 };
 
-const SCHEMA_KNOWN = new Set(["casing", "codecs", "requires", "tables", "types"]);
+const SCHEMA_KNOWN = new Set(["casing", "codecs", "defaults", "requires", "tables", "types"]);
 
 /** Later schema options, and the version that adds each one. */
 const SCHEMA_LATER: Readonly<Record<string, string>> = {
@@ -134,14 +148,7 @@ type StoredOptions = {
 
 /** Fields `schema()` reads from a column. Avoids instantiating {@link ColumnBuilder}. */
 type ColumnView = CompilableColumn & {
-  readonly state: CompilableColumn["state"] & {
-    readonly primaryKey: boolean;
-    readonly typeLabel: string | undefined;
-    readonly references: ReferenceModifier | undefined;
-    readonly encode: (value: unknown) => string;
-    readonly decode: (wire: string) => unknown;
-    readonly omitWrite: boolean;
-  };
+  readonly state: ColumnState<unknown>;
 };
 
 type PreparedColumn = {
@@ -156,6 +163,9 @@ type PreparedColumn = {
   readonly guarded: boolean;
   readonly writable: boolean;
   readonly unique: boolean;
+  /** Catalog-output label. Set when insert fills the column. Not hashed. */
+  readonly clientDefault: "client" | undefined;
+  readonly fill: ClientFill | undefined;
 };
 
 /** Fills catalog objects on the first `.catalog` read. `schema()` itself does not. */
@@ -215,6 +225,7 @@ export function schema<const TTables extends readonly AnyTable[]>(
   const casing = readCasing(config.casing);
   const codecs = readCodecs(config.codecs);
   const requires = readRequires(config.requires);
+  const idDefault = readIdDefault(config.defaults);
   const namespace = staticNamespace("public");
   const accepted = acceptTables(config.tables);
   const jobs: CatalogJob[] = [];
@@ -223,7 +234,7 @@ export function schema<const TTables extends readonly AnyTable[]>(
   const enums = new Map<string, EnumNote>();
 
   for (const item of config.tables) {
-    const built = compileTable(item, namespace, casing, codecs, requires, jobs, enums);
+    const built = compileTable(item, namespace, casing, codecs, requires, idDefault, jobs, enums);
     if (sqlNames.has(built.sqlName)) {
       catalogError(
         "OKM1023",
@@ -340,6 +351,7 @@ function compileTable(
   casing: "snake" | undefined,
   codecs: SchemaCodecs,
   requires: SchemaRequires | undefined,
+  idDefault: SchemaIdDefault | undefined,
   jobs: CatalogJob[],
   enums: Map<string, EnumNote>,
 ): Prepared {
@@ -361,7 +373,7 @@ function compileTable(
     if (!(builder instanceof ColumnBuilder)) {
       definition(`Column ${item.name}.${field} must be a column builder.`);
     }
-    const column = builder as unknown as ColumnView;
+    const column = applySchemaId(builder as unknown as ColumnView, idDefault);
     const columnSql = column.state.sqlName ?? (casing === "snake" ? snakeCase(field) : field);
     assertCodec(item.name, field, column, codecs);
     const identity = column.state.identity;
@@ -404,6 +416,8 @@ function compileTable(
         column.state.omitWrite !== true &&
         column.state.generated === undefined,
       unique: column.state.unique !== undefined,
+      clientDefault: column.state.clientDefault === undefined ? undefined : "client",
+      fill: column.state.clientDefault,
     };
     columns.push(prepared);
     byField.set(field, prepared);
@@ -857,6 +871,7 @@ function tableModel(
     guarded: column.guarded,
     writable: column.writable,
     guardUpdate: column.writable && primary.includes(column.field),
+    ...(column.fill !== undefined ? { fill: column.fill, clientDefault: "client" as const } : {}),
   }));
   return {
     name: item.tsName,
@@ -962,6 +977,66 @@ function readPrimaryKey(
   return columns;
 }
 
+/** Database default or client generator that replaces a bare `t.id()`. */
+type SchemaIdDefault =
+  | { readonly kind: "database"; readonly sql: "uuidv7()" | "gen_random_uuid()" }
+  | { readonly kind: "client"; readonly fill: ClientFill };
+
+/**
+ * Applies `defaults.id` to a bare `t.id()`. A column choice is left alone.
+ *
+ * @param column - Column as declared
+ * @param idDefault - Schema id default, when set
+ * @returns The column insert and the catalog should see
+ */
+function applySchemaId(column: ColumnView, idDefault: SchemaIdDefault | undefined): ColumnView {
+  if (idDefault === undefined || column.state.idSource !== "implicit") return column;
+  const fill = idDefault.kind === "client" ? idDefault.fill : undefined;
+  const okid = fill?.name === "okid";
+  return new ColumnBuilder({
+    ...column.state,
+    defaultSql: idDefault.kind === "database" ? idDefault.sql : undefined,
+    clientDefault: fill,
+    idSource: "column",
+    ...(okid
+      ? {
+          baseType: "text",
+          collation: "C",
+          encode: encodeText,
+          decode: decodeText,
+          sqlForm: "quote" as const,
+        }
+      : {}),
+  } as ColumnState<unknown>) as unknown as ColumnView;
+}
+
+/**
+ * Reads `defaults.id`.
+ *
+ * @param defaults - Schema option
+ * @returns The id default, or `undefined` when the option is omitted
+ */
+function readIdDefault(
+  defaults: SchemaInput<readonly AnyTable[]>["defaults"],
+): SchemaIdDefault | undefined {
+  if (defaults === undefined) return undefined;
+  if (typeof defaults !== "object" || defaults === null) {
+    definition("schema() defaults must be an object.");
+  }
+  for (const key of Object.keys(defaults)) {
+    if (key !== "id") {
+      definition(`schema() defaults.${key} is not a schema default. Accepted names: id.`);
+    }
+  }
+  const id = defaults.id;
+  if (id === undefined) return undefined;
+  if (id === "uuidv7") return { kind: "database", sql: "uuidv7()" };
+  if (id === "uuidv4") return { kind: "database", sql: "gen_random_uuid()" };
+  const fill = readClientGenerator(id);
+  if (fill !== undefined) return { kind: "client", fill };
+  definition('schema() defaults.id must be "uuidv7", "uuidv4", or a client generator.');
+}
+
 /**
  * Rejects `uuidv7()` when the schema declares a Postgres older than 18.
  *
@@ -980,8 +1055,8 @@ function refuseUuidV7(
   if (!(declared > 0) || declared >= 18) return;
   throw new OkmError(
     "OKM1812",
-    `Column ${tableName}.${field} uses uuidv7(). t.id({ default: "uuidv4" }).`,
-    { fix: { summary: "Use uuidv4." } },
+    `Column ${tableName}.${field} uses uuidv7(). Set defaults.id to "uuidv4" or a client generator.`,
+    { fix: { summary: "Set defaults.id." } },
   );
 }
 
