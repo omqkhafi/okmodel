@@ -21,6 +21,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `connect()` refuses a Postgres server below 15 with OKM1803. `schema({ requires })` that names an older major keeps the OKM1802 check instead.
 - The README lists the key options. The quickstart stays on `t.identity()`.
 - The roadmap is a public board. Each release is a milestone, and a pull request ends with `Closes #N`.
+- `okmodel/pg/pg` connects with node-postgres, and `okmodel/pg/bun` connects with Bun.sql. Both are optional peers. The default stays postgres.js. Bun.sql loads only on Bun.
+- node-postgres cancels an in-flight statement and returns notices. Bun.sql does not abort an in-flight statement and does not surface RAISE NOTICE. Neither describes a statement without running it. A plain pool of either exits after the last query.
 
 ### ♻️ Changed
 

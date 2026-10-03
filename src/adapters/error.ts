@@ -133,6 +133,33 @@ export function errorField(error: unknown, key: string): string | undefined {
 }
 
 /**
+ * SQLSTATE from a driver's own error object.
+ *
+ * postgres.js and node-postgres put it on `code`. Bun.sql puts
+ * `ERR_POSTGRES_SERVER_ERROR` on `code` and the SQLSTATE on `errno`.
+ *
+ * @param error - Caught value
+ * @returns A five-character SQLSTATE, or `undefined`
+ */
+function sqlstateOf(error: unknown): string | undefined {
+  const code = errorField(error, "code");
+  if (isSqlstate(code)) return code;
+  const errno = errorField(error, "errno");
+  if (isSqlstate(errno)) return errno;
+  return errorField(error, "sqlstate");
+}
+
+/**
+ * Reports whether `value` is a SQLSTATE.
+ *
+ * @param value - A driver field
+ * @returns `true` for five characters from `0-9` and `A-Z`
+ */
+function isSqlstate(value: string | undefined): value is string {
+  return value !== undefined && /^[0-9A-Z]{5}$/.test(value);
+}
+
+/**
  * Maps a driver exception into {@link DriverError}.
  *
  * {@link OkmError} and {@link DriverError} pass through. A batch index on an
@@ -151,7 +178,7 @@ export function mapDriverError(error: unknown, batchIndex?: number | null): unkn
   return new DriverError(
     message,
     driverFields({
-      sqlstate: errorField(error, "code") ?? errorField(error, "sqlstate"),
+      sqlstate: sqlstateOf(error),
       constraint: errorField(error, "constraint_name") ?? errorField(error, "constraint"),
       table: errorField(error, "table_name") ?? errorField(error, "table"),
       column: errorField(error, "column_name") ?? errorField(error, "column"),

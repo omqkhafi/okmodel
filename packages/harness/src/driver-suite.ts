@@ -39,6 +39,12 @@ export type DriverSuite = {
   readonly size: number;
   /** Flags the opener declares. Undeclared cases are skipped. */
   readonly capabilities: DriverCapabilities;
+  /**
+   * When false, the notice case is skipped.
+   *
+   * Omitted means the driver returns server notices. Bun.sql does not.
+   */
+  readonly notices?: boolean;
   /** Test registrar. Postgres passes the shared skip rule. */
   readonly test: SuiteTest;
 };
@@ -113,7 +119,8 @@ export function registerDriverSuite(suite: DriverSuite): void {
     });
   });
 
-  test(`${name} returns notices`, async () => {
+  const notices = suite.notices === false ? skipped(test) : test;
+  notices(`${name} returns notices`, async () => {
     await using(suite.open, async (pool) => {
       const result = await pool.execute("DO $$ BEGIN RAISE NOTICE 'okm-p13'; END $$");
       expect(result.notices.some((notice) => notice.message.includes("okm-p13"))).toBe(true);

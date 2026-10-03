@@ -25,19 +25,15 @@ Version 0.1.1. Apache-2.0.
 
 ## Install
 
-Install okmodel and the postgres.js driver.
+Four Postgres drivers. Pick the one the runtime already has. postgres.js is the default, on Node and Bun. node-postgres is the other choice on Node and Bun when `pg` is already installed. Bun.sql is built into Bun and runs only there. PGlite is in-process, on Node and Bun.
 
 ```sh
 bun add okmodel postgres
-```
-
-PGlite is the in-process driver.
-
-```sh
+bun add okmodel pg
 bun add okmodel @electric-sql/pglite
 ```
 
-okmodel has no runtime dependencies. The driver is a peer.
+Bun.sql needs no extra package: `import { connect } from "okmodel/pg/bun"`. okmodel has no runtime dependencies. Each installed driver is an optional peer.
 
 ## Quickstart
 
