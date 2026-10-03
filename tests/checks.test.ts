@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -9,6 +10,8 @@ import {
 import { checkCompilerApi } from "../scripts/compiler-api.js";
 import { checkCorePurity } from "../scripts/core-purity.js";
 import { checkDocs } from "../scripts/docs-check.js";
+import { checkReadme } from "../scripts/readme-check.js";
+import { releaseRefProblem } from "../scripts/release-ref.js";
 import { checkLayers } from "../scripts/layers-check.js";
 import { checkReleaseDirs, checkReleaseSnapshots } from "../scripts/release-check.js";
 import { repoRoot } from "../scripts/root.js";
@@ -287,4 +290,50 @@ test("release check rejects an emptied Unreleased that is not the suffix drop", 
     join(releaseFixtures, "not-release", "head"),
   );
   expect(problems).toEqual(["changelog.md has no new lines under ## Unreleased"]);
+});
+
+test("release check accepts a bare version cut with notes under the new heading", () => {
+  const base = {
+    version: "0.1.0",
+    changelog: "# Changelog\n\n## Unreleased\n\n- Note.\n\n## v0.1.0 — 2026-10-03\n\n- First.\n",
+  };
+  const head = {
+    version: "0.1.1",
+    changelog:
+      "# Changelog\n\n## Unreleased\n\n## v0.1.1 — 2026-10-03\n\n- Note.\n\n## v0.1.0 — 2026-10-03\n\n- First.\n",
+  };
+  expect(checkReleaseSnapshots(base, head)).toEqual([]);
+});
+
+test("readme check fails on a relative link and on an image", () => {
+  expect(checkReadme("[quickstart](docs/quickstart.md)")).toEqual([
+    "README.md contains a relative link: docs/quickstart.md",
+  ]);
+  expect(checkReadme("![logo](./logo.png)")).toEqual(["README.md contains an image: ./logo.png"]);
+  expect(checkReadme("![logo][logo]\n\n[logo]: ./logo.png")).toEqual([
+    "README.md contains an image: logo",
+    "README.md contains an image: ./logo.png",
+  ]);
+  expect(checkReadme('<img src="logo.png">')).toEqual(["README.md contains an image: <img"]);
+});
+
+test("readme check ignores fences and accepts absolute links", () => {
+  const fenced = ["```md", "[quickstart](docs/quickstart.md)", "```", ""].join("\n");
+  expect(checkReadme(fenced)).toEqual([]);
+  expect(
+    checkReadme("[quickstart](https://github.com/omqkhafi/okmodel/blob/main/docs/quickstart.md)"),
+  ).toEqual([]);
+  expect(checkReadme("[commands](#commands)")).toEqual([]);
+});
+
+test("readme check accepts the repository readme", () => {
+  expect(checkReadme(readFileSync(join(root, "README.md"), "utf8"))).toEqual([]);
+});
+
+test("release ref accepts v plus the package version and refuses anything else", () => {
+  expect(releaseRefProblem("refs/tags/v0.1.1", "0.1.1")).toBeUndefined();
+  expect(releaseRefProblem("refs/tags/v0.1.0", "0.1.1")).toBe(
+    "Refusing to publish from refs/tags/v0.1.0. package.json is 0.1.1, so the tag must be v0.1.1. Run: gh workflow run release.yml --ref v0.1.1",
+  );
+  expect(releaseRefProblem(undefined, "0.1.1")).toContain("Refusing to publish from (unset)");
 });

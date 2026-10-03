@@ -3,8 +3,10 @@
  * changelog has no new lines under `## Unreleased`.
  *
  * A release that drops a `-next.N` suffix and promotes Unreleased into
- * `## vX.Y.Z` is allowed to leave Unreleased empty. Before that tag exists,
- * notes added under the release heading are allowed and the version stays.
+ * `## vX.Y.Z` is allowed to leave Unreleased empty. A cut from one bare
+ * version to the next, with notes under the new heading, is allowed too.
+ * Before that tag exists, notes added under the release heading are allowed
+ * and the version stays.
  *
  * Usage:
  *   bun ./scripts/release-check.ts --base <git-rev>
@@ -58,6 +60,7 @@ export function checkReleaseSnapshots(
   if (
     !hasNewUnreleasedLines(base.changelog, head.changelog) &&
     !isReleasePromotion(base, head) &&
+    !isBareReleaseCut(base, head) &&
     !preTag
   ) {
     problems.push("changelog.md has no new lines under ## Unreleased");
@@ -142,6 +145,29 @@ function isReleasePromotion(base: ReleaseSnapshot, head: ReleaseSnapshot): boole
   return (
     hasVersionHeading(head.changelog, released) && !hasVersionHeading(base.changelog, released)
   );
+}
+
+/**
+ * A published bare version moving to another bare version, with notes under the new heading.
+ *
+ * `0.1.0` to `0.1.1` with `## v0.1.1` is a release. A `-next.N` base is not:
+ * that promotion is {@link isReleasePromotion}, and a jump that skips the
+ * suffix drop stays a failure.
+ *
+ * @param base - Version and changelog on the base branch
+ * @param head - Version and changelog on the pull request
+ * @returns Whether Unreleased may be empty
+ */
+function isBareReleaseCut(base: ReleaseSnapshot, head: ReleaseSnapshot): boolean {
+  if (!isBareVersion(base.version) || !isBareVersion(head.version)) return false;
+  if (head.version === base.version) return false;
+  if (hasVersionHeading(base.changelog, head.version)) return false;
+  if (!hasVersionHeading(head.changelog, head.version)) return false;
+  return sectionLines(head.changelog, head.version).some((line) => line.startsWith("-"));
+}
+
+function isBareVersion(version: string): boolean {
+  return /^\d+\.\d+\.\d+$/.test(version);
 }
 
 function dropNextSuffix(version: string): string | undefined {

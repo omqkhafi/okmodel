@@ -14,6 +14,23 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+## v0.1.1 — 2026-10-03
+
+### ✨ Added
+
+- The published README is enough to install okmodel, write a schema, generate and apply a migration, then connect, insert, and find with an include. The quickstart test runs those code blocks.
+- `bun run check` fails when `README.md` contains a relative link or an image.
+
+### ♻️ Changed
+
+- The Release workflow publishes only from the tag `v` plus the `package.json` version, and the message names that tag when it refuses.
+- npm metadata now has a description, keywords, a homepage, and a bugs URL.
+- A pull request that cuts one bare version to the next, with the notes under the new `## vX.Y.Z` heading, is accepted with an empty Unreleased section.
+
+### 🐛 Fixed
+
+- `find` with a to-one `include` returned null for the related row when that table had no primary key. The first projected column is the presence check in that case.
+
 ## v0.1.0 — 2026-10-03
 
 ### ✨ Added

@@ -1,35 +1,36 @@
-# Release 0.1.0
+# Release
 
 Nothing in this repository publishes on push. Ali publishes after the release commit is on `main`.
 
-The version in `package.json` is `0.1.0`. The changelog section is `## v0.1.0`.
+The tag is `v` plus the `package.json` version. The changelog section is `## v` plus that version. The Release workflow reads the version from the checked-out commit and accepts only `refs/tags/v` plus that version. Any other ref is refused, and the message names the tag to pass.
 
 ## Tag
 
 ```sh
 git checkout main
 git pull
-git tag -a v0.1.0 -m "v0.1.0"
-git push origin v0.1.0
+version="$(bun -e 'console.log(require("./package.json").version)')"
+git tag -a "v${version}" -m "v${version}"
+git push origin "v${version}"
 ```
 
 ## Publish
 
 npm needs a trusted publisher for `okmodel`: repository `omqkhafi/okmodel`, workflow `release.yml`. No token is stored in the repository.
 
-Run the Release workflow on the tag. It checks out that commit, runs `bun run check`, and runs `npm publish --access public` with `NPM_CONFIG_PROVENANCE=true`. `npm` performs the trusted-publisher login.
+Run the Release workflow on that tag. It checks out the commit, refuses the run unless the tag is `v` plus `package.json` version, runs `bun run check`, and runs `npm publish --access public` with `NPM_CONFIG_PROVENANCE=true`. `npm` performs the trusted-publisher login.
 
 ```sh
-gh workflow run release.yml --ref v0.1.0
+gh workflow run release.yml --ref "v${version}"
 ```
 
-The same run can be started from the GitHub Actions page: open Actions, choose Release, run the workflow, and select the `v0.1.0` tag. The workflow refuses any other ref.
+The same run can be started from the GitHub Actions page: open Actions, choose Release, run the workflow, and select the `v` plus version tag.
 
 Provenance is the npm attestation that GitHub Actions built the tarball. The workflow sets `permissions.id-token` to `write` so npm can attach it.
 
 ## Dry run
 
-Before the tag, from a commit whose `package.json` version is `0.1.0`:
+Before the tag, from the commit you are about to tag:
 
 ```sh
 bun run build
