@@ -1,6 +1,6 @@
-# OKModel — API design (draft 23)
+# OKModel — API design (draft 25)
 
-Status: design draft, 2026-09-30. Not yet approved for implementation. Draft 18 applied the M0 gate decisions D115–D127 (evidence: `docs/m0-findings.md` in the repository); draft 19 added D128 (catalog error codes); draft 20 added D130 (column definition and codec error codes); draft 21 added D131 (removing a picklist or enum value); draft 22 adds D132 (reserved options, reference names). Supersedes drafts 1–21 of this file and the API sections of `orm-research-design.md`. Evidence for the draft-4 changes is in `okmodel-gap-research.md`.
+Status: design draft, 2026-09-30. Not yet approved for implementation. Draft 18 applied the M0 gate decisions D115–D127 (evidence: `docs/m0-findings.md` in the repository); draft 19 added D128 (catalog error codes); draft 20 added D130 (column definition and codec error codes); draft 21 added D131 (removing a picklist or enum value); draft 22 adds D132 (reserved options, reference names); draft 24 adds the 0.2 operator set (section 10.1); draft 25 takes the primary-key and Postgres 15 floor edits made in P17G (D148, D151) and renames the uuid default to `uuidv4` (D153). Supersedes drafts 1–21 of this file and the API sections of `orm-research-design.md`. Evidence for the draft-4 changes is in `okmodel-gap-research.md`.
 
 Name: **OKModel** (short **OKM**). Package `okmodel` on npm and repository `omqkhafi/okmodel`, CLI bins `okm` and `okmodel` (same program), error class `OkmError`, error codes `OKM1xxx`, config file `okm.config.ts`, generated folder `.okm/`, metadata table `okm_meta`. The bin names are not npm package names, so a bare `bunx okm` without a local or global install could fetch an unrelated package; the README tells developers to install first (`bun add -d okmodel`, then `bunx okm`, or a global install).
 
@@ -142,7 +142,7 @@ connect({ primary: url, replicas: [r1, r2] }, { schema: appSchema });        // 
 connect(url, { schema: appSchema, tenancy: { registry } });                  // tenant registry, section 9.1 (M5)
 ```
 
-- On connect: the server satisfies `requires` (OKM1802); dialect match (OKM1801, types).
+- On connect: the server is PostgreSQL 15 or newer (OKM1803). `schema({ requires })` can name an older major on purpose, and the server must satisfy that range (OKM1802). Dialect match is OKM1801.
 - There is no user-facing schema or edition version. The package version is the contract: features exist or not by release, and default changes ship with `okm upgrade` codemods. The catalog format version is internal and lives in `okm.lock.json`.
 - Each `connect()` returns a client typed by its own schema, independent of `Register`.
 
@@ -574,6 +574,7 @@ export const tasks = table("tasks", {
 | `relations` | `one`, `many`, `manyThrough`, `morph`, by table name. `morph("commentable", ["tasks", "lists"])` declares a closed list of targets and returns a flat discriminated union (M2) |
 | `computed` | SQL expressions usable like fields |
 | `indexes`, `checks` | database indexes, unique constraints, check constraints |
+| `primaryKey` | column names of one primary key, including a composite key |
 | `presets` | named, typed query refinements; called as `tasks.pending()`. Names may not collide with client methods or the reserved list (`lock`, `watch`, `subscribe`, `stream`, `inspect`, `explain`, `with`, `for`, `as`); collisions fail with OKM1040 and `okm upgrade` renames a preset when a later release claims its name |
 | `policies` | row policies |
 | `reference` | `{ key, rows }`: rows the application requires to exist (roles, statuses). Declarative and idempotent: applied by `migrate apply` and by provisioning as insert-if-missing by key; never updates or deletes; classified `expand` (section 19.6) |
@@ -587,7 +588,7 @@ References are plain table-name strings (a generic table-name argument cycles th
 
 | Group | Builders |
 |---|---|
-| Keys | `t.id()` (uuid + `uuidv7()`), `t.identity()`, `t.uuid()` |
+| Keys | `t.id()` (uuid; default `uuidv7()`, or `{ default: "uuidv4" }` for `gen_random_uuid()` (D153), or `{ default: "none" }` when the caller supplies the id), `t.identity()`, `t.uuid()`, `.primaryKey()` on a column, `primaryKey` on the table |
 | Integers | `t.smallint()`, `t.integer()`, `t.bigint()` |
 | Decimals | `t.numeric(p, s)`, `t.real()`, `t.double()` |
 | Text | `t.text()`, `t.varchar(n)`, `t.char(n)`, `t.citext()` |
@@ -602,7 +603,11 @@ References are plain table-name strings (a generic table-name argument cycles th
 | Arrays | `.array()`, `.array({ dims: 2 })` |
 | Custom | `t.custom({ sqlType, encode, decode, tsType })` |
 
-Modifiers: `.nullable()`, `.default(v)`, `.defaultSql(sql)`, `.unique({ reason, global })`, `.references(table, opts)`, `.picklist([...], { check })`, `.generated(sql, { stored })`, `.guarded()`, `.renamedFrom(name)`, `.sqlName()`, `.comment()`. `.hidden()` and `.validate(rules | schema)` are not in 0.1.
+Modifiers: `.nullable()`, `.default(v)`, `.defaultSql(sql)`, `.primaryKey()`, `.unique({ reason, global })`, `.references(table, opts)`, `.picklist([...], { check })`, `.generated(sql, { stored })`, `.guarded()`, `.renamedFrom(name)`, `.sqlName()`, `.comment()`. `.hidden()` and `.validate(rules | schema)` are not in 0.1.
+
+`t.id()` with `uuidv7()` or `uuidv4`, and `t.identity()`, are omitted from insert and update. `t.id({ default: "none" })`, `.primaryKey()`, and a composite `primaryKey` are required on insert (optional when the column already has a default) and omitted from update. A declared `requires` below Postgres 18 rejects `uuidv7()` at schema build (OKM1812) and the message names `t.id({ default: "uuidv4" })`.
+
+**Client defaults and id generators (0.2, D153, D154).** `.default(x)` takes a literal or a client generator (`uuidv4`, `uuidv7`, `okid(...)`, or a function): the client fills the field on insert when it is omitted, nothing enters the database catalog or its hash, and the column has no database default, so a writer that bypasses okmodel must supply the value. `.defaultSql(sql)` is the database default. `schema({ tables, defaults: { id } })` sets what a bare `t.id()` means; a per-column option wins; `connect({ generators })` replaces a built-in generator for tests. OKID columns are `text` with `COLLATE "C"` so sortable ids order as time. All of this ships in P19.
 
 **Not in this version.** A builder or option in this table throws OKM1061 and names the version that adds it. `.hidden()` and `.sensitive()` are not methods yet. `later` means no 0.x version is assigned yet.
 
@@ -641,7 +646,7 @@ Set in `schema({ codecs })`, override per field: `t.bigint({ as: "number" })`. D
 |---|---|
 | (default) | unknown keys in input are dropped |
 | `.guarded()` | never filled from `insert`/`update` input; set by code with `{ allow: ["field"] }` |
-| automatic guards | primary key, tenant key, trait fields (`createdAt`, `updatedAt`, `archivedAt`, `archiveId`, `version`) |
+| automatic guards | `t.id()` with a database default and `t.identity()` (omitted from insert and update); a column `.primaryKey()`, a composite `primaryKey`, and `t.id({ default: "none" })` (supplied on insert, omitted from update); tenant key and trait fields (`createdAt`, `updatedAt`, `archivedAt`, `archiveId`, `version`) |
 | `.hidden()` | excluded from default selects and includes; returned only when named in `select` |
 | `.sensitive()` | values never appear in logs, error messages, `inspect()` output or fixtures; shown as `[redacted]` even in development |
 
@@ -650,7 +655,7 @@ Set in `schema({ codecs })`, override per field: `t.bigint({ as: "number" })`. D
 | Question | Default | Changed by |
 |---|---|---|
 | Returned by default reads? | yes | `.hidden()` |
-| Filled from external input? | yes | `.guarded()`, automatic guards |
+| Filled from external input? | yes | `.guarded()`, and a primary key on update. `t.id()` with a default and `t.identity()` are also omitted from insert |
 | Filterable from client input? | no | `tasks.filters({ allow })` |
 | Writable by code? | yes | guarded fields need `{ allow }` |
 | Values shown in logs, errors, inspection? | parameters only in development inspection; never in fingerprints | `.sensitive()`: always redacted |
@@ -792,6 +797,21 @@ const today = await scoped.tasks.pending().ownedBy(userId).find({
 - `undefined` in `find` filters means "no filter"; in `update`/`delete`, a `where` that becomes empty throws OKM1102.
 - One logical operation per call (section 5.3). Reads and relation loading: the statement count depends on query shape, never on result cardinality; no lazy loading. Writes may be split by input size or driver limits, within the operation's declared atomicity.
 - To-many `include` requires `limit` or `.all("reason")` (OKM1105); hidden fields and archived rows are excluded from includes.
+
+#### Operators by column type (0.2)
+
+All are tagged helpers from `okmodel/pg`. The planner picks the SQL from the column type, so one name serves several types, and an operator that does not apply to its column is rejected at compile time and at runtime (OKM1124).
+
+| Helper | Column types | SQL |
+|---|---|---|
+| `contains(x)` | text: substring (as in 0.1); array, jsonb, range: containment | `@>` |
+| `containedBy(x)` | array, jsonb, range | `<@` |
+| `overlaps(x)` | array, range | `&&` |
+| `hasKey(k)`, `hasAnyKey(ks)` | jsonb | `jsonb_exists`, `jsonb_exists_any` (function forms, so a `?` never appears in SQL text) |
+| `path(segments, op)` | json, jsonb | `col #>> $1::text[]` compared with `op`; the operand type of `op` picks the cast (number to numeric, boolean to boolean, string to text) |
+| `matches(q, { mode?, config? })` | tsvector | `@@` with `websearch_to_tsquery` (default, never throws on user input), `plainto_tsquery` (`"plain"`) or `phraseto_tsquery` (`"phrase"`) |
+
+Atomic write operators (section 11) are `json.set(path, v)`, `arr.append(v)`, `arr.remove(v)`, exported as namespaces (`export * as json`) so each member tree-shakes. Trigram similarity and citext operators arrive with extensions (M2); text search on a plain `text` column is not supported (it needs an expression index) and fails with a clear error.
 
 ### 10.2 User-driven filtering
 
@@ -1307,6 +1327,7 @@ test("today view runs one query", async () => {
 | RLS with owner or superuser role | connect | OKM1707 |
 | Schema/driver dialect mismatch | types | OKM1801 |
 | Server does not satisfy `requires` | connect | OKM1802 |
+| Server is older than PostgreSQL 15 and `requires` does not name that older major | connect | OKM1803 |
 | Extension builder used but not declared | build | OKM1810 |
 | Declared extension unavailable on the server | plan / `okm doctor` | OKM1811 |
 | Feature not in the declared versions | build | OKM1812 |

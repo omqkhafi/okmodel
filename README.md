@@ -17,6 +17,7 @@ Version 0.1.1. Apache-2.0.
   - [Find](#find)
   - [Errors](#errors)
   - [Close](#close)
+- [Keys](#keys)
 - [Commands](#commands)
 - [Roadmap](#roadmap)
 - [Size](#size)
@@ -199,6 +200,14 @@ if (author.name !== "Lin" || author.id.length === 0) {
 ```ts
 await db.close();
 ```
+
+## Keys
+
+`t.identity()` is a bigint identity primary key. Insert and update omit it. It works on every supported Postgres version. The quickstart uses it.
+
+`t.id()` is a uuid primary key. The default is `uuidv7()`, which needs Postgres 18. `t.id({ default: "uuidv4" })` uses `gen_random_uuid()`, built in from Postgres 13. `t.id({ default: "none" })` takes the id on insert and omits it from update.
+
+`.primaryKey()` on a column is a natural key. Insert supplies it. Update cannot change it. A composite key is the `primaryKey` option on the table, naming the columns in order.
 
 ## Commands
 

@@ -166,7 +166,7 @@ function updateColumns(table: Indexed, value: unknown): readonly ColumnModel[] {
         `Field ${name} is not on ${table.model.name}. Accepted names: ${list(table.names)}.`,
       );
     }
-    if (!column.writable) refuseWrite(table.model.name, column);
+    if (!column.writable || column.guardUpdate) refuseWrite(table.model.name, column);
     columns.push(column);
   }
   return columns;
@@ -204,6 +204,9 @@ function rejectConflictKeys(keys: readonly string[], accepted: readonly string[]
 }
 
 function refuseWrite(table: string, column: ColumnModel): never {
+  if (column.guardUpdate) {
+    fail("OKM1190", `Field ${table}.${column.field} is a primary key. Input cannot change it.`);
+  }
   if (column.guarded) {
     fail("OKM1190", `Field ${table}.${column.field} is guarded. Input cannot set it.`);
   }

@@ -167,7 +167,7 @@ export function supportSentence(): string {
   const majors = englishList(POSTGRES_VERSIONS);
   const floor = POSTGRES_VERSIONS[0] ?? "";
   const newest = POSTGRES_VERSIONS[POSTGRES_VERSIONS.length - 1] ?? "";
-  return `Supported majors are Postgres ${majors}. The floor is ${floor}: Postgres 13 is past end of life, 14 ends in November 2026, and 15 gives us features we can use later. Identity columns need Postgres 10. \`gen_random_uuid()\` is built in from Postgres 13. \`uuidv7()\` needs Postgres 18. A pull request runs the suite on ${floor} and ${newest} and the tarball job on ${newest}. The release and the weekly run cover each supported major. A failure on an older major in this list stays in the run.`;
+  return `Supported majors are Postgres ${majors}. The floor is ${floor}: Postgres 13 is past end of life, 14 ends in November 2026, and 15 gives us features we can use later. \`connect()\` refuses an older server with OKM1803 unless \`schema({ requires })\` names that major. Identity columns need Postgres 10. \`gen_random_uuid()\` is built in from Postgres 13. \`uuidv7()\` needs Postgres 18. A pull request runs the suite on ${floor} and ${newest} and the tarball job on ${newest}. The release and the weekly run cover each supported major. A failure on an older major in this list stays in the run.`;
 }
 
 function englishList(values: readonly string[]): string {

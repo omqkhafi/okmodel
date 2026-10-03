@@ -22,6 +22,8 @@ export type ColumnFlags = {
   readonly guarded: boolean;
   readonly hidden: boolean;
   readonly omitWrite: boolean;
+  /** Absent from update. Insert still follows {@link InsertKind}. */
+  readonly omitUpdate: boolean;
 };
 
 /** Flags for a required column with no default. */
@@ -32,9 +34,10 @@ export type PlainFlags = {
   readonly guarded: false;
   readonly hidden: false;
   readonly omitWrite: false;
+  readonly omitUpdate: false;
 };
 
-/** Flags for {@link id}. Insert and update omit it. */
+/** Flags for {@link id} when the database fills the value. Insert and update omit it. */
 export type IdFlags = {
   readonly nullable: false;
   readonly hasDefault: true;
@@ -42,6 +45,22 @@ export type IdFlags = {
   readonly guarded: true;
   readonly hidden: false;
   readonly omitWrite: true;
+  readonly omitUpdate: true;
+};
+
+/**
+ * Flags for {@link id} with `default: "none"`.
+ *
+ * Insert requires the value. Update omits it.
+ */
+export type IdSuppliedFlags = {
+  readonly nullable: false;
+  readonly hasDefault: false;
+  readonly generated: false;
+  readonly guarded: false;
+  readonly hidden: false;
+  readonly omitWrite: false;
+  readonly omitUpdate: true;
 };
 
 /** Flags for {@link identity}. The database fills the value. */
@@ -52,6 +71,7 @@ export type IdentityFlags = {
   readonly guarded: false;
   readonly hidden: false;
   readonly omitWrite: true;
+  readonly omitUpdate: true;
 };
 
 /**
@@ -71,6 +91,15 @@ export type FlagTrue<TFlags extends ColumnFlags, K extends keyof ColumnFlags> = 
  */
 export type WithGenerated<TFlags extends ColumnFlags> = {
   readonly [P in keyof TFlags]: P extends "generated" | "hasDefault" ? true : TFlags[P];
+};
+
+/**
+ * Omits a column from update and leaves insert unchanged.
+ *
+ * @typeParam TFlags - Current flags
+ */
+export type WithUpdateGuard<TFlags extends ColumnFlags> = {
+  readonly [P in keyof TFlags]: P extends "omitUpdate" ? true : TFlags[P];
 };
 
 /** How a default expression is spelled in the catalog. */
@@ -166,8 +195,9 @@ export type ColumnInsert<TFlags extends ColumnFlags, TValue> =
  * @typeParam TFlags - Column flags
  * @typeParam TValue - Scalar or array value
  */
-export type ColumnUpdate<TFlags extends ColumnFlags, TValue> =
-  InsertKind<TFlags> extends "omit"
+export type ColumnUpdate<TFlags extends ColumnFlags, TValue> = TFlags["omitUpdate"] extends true
+  ? never
+  : InsertKind<TFlags> extends "omit"
     ? never
     : TFlags["nullable"] extends true
       ? TValue | null | undefined
@@ -214,6 +244,7 @@ export type ColumnState<TValue> = {
   readonly guarded: boolean;
   readonly hidden: boolean;
   readonly omitWrite: boolean;
+  readonly omitUpdate: boolean;
   readonly renamedFrom: string | undefined;
   readonly sqlName: string | undefined;
   readonly comment: string | undefined;
@@ -242,6 +273,7 @@ export type OpenColumn<TValue> = {
   readonly guarded: boolean;
   readonly hidden: boolean;
   readonly omitWrite: boolean;
+  readonly omitUpdate?: boolean;
   readonly encode: (value: TValue) => string;
   readonly decode: (wire: string) => TValue;
   readonly sqlForm: SqlForm;
@@ -352,6 +384,21 @@ export class ColumnBuilder<TValue, TFlags extends ColumnFlags> {
       defaultSql: expression,
       defaultValue: undefined,
       generated: undefined,
+    });
+  }
+
+  /**
+   * Makes this column the table's primary key.
+   *
+   * Insert still accepts the value. Update omits it. A composite key is the
+   * `primaryKey` option on `table()`, not a second call.
+   *
+   * @returns The same column, as a primary key
+   */
+  primaryKey(): ColumnBuilder<TValue, WithUpdateGuard<TFlags>> {
+    return rebuild<TValue, WithUpdateGuard<TFlags>>(this.state, {
+      primaryKey: true,
+      omitUpdate: true,
     });
   }
 
@@ -599,6 +646,7 @@ export function openColumn<TValue, TFlags extends ColumnFlags>(
     guarded: input.guarded,
     hidden: input.hidden,
     omitWrite: input.omitWrite,
+    omitUpdate: input.omitUpdate === true,
     renamedFrom: undefined,
     sqlName: undefined,
     comment: undefined,

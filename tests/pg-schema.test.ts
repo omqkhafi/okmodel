@@ -16,14 +16,14 @@ import { emitRowTypes } from "../src/dialects/pg/emit.js";
 import { index, schema, sql, table, t } from "../src/dialects/pg/index.js";
 
 const users = table("users", {
-  id: t.id(),
+  id: t.id({ default: "uuidv4" }),
   email: t.text().unique(),
 });
 
 const tasks = table(
   "tasks",
   {
-    id: t.id(),
+    id: t.id({ default: "uuidv4" }),
     ownerId: t.uuid().references("users"),
     listId: t.uuid().references("lists", { onDelete: "cascade" }),
     title: t.varchar(200),
@@ -41,7 +41,7 @@ const tasks = table(
 );
 
 const lists = table("lists", {
-  id: t.id(),
+  id: t.id({ default: "uuidv4" }),
   name: t.text(),
 });
 
@@ -337,6 +337,82 @@ test("two declarations of one enum must list the same labels", () => {
       }).catalog,
   );
   expect(error.code).toBe("OKM1020");
+});
+
+test("a column primary key and a composite key are catalog constraints", () => {
+  const natural = schema({
+    tables: [table("skus", { code: t.text().primaryKey(), name: t.text() })],
+  });
+  const composite = schema({
+    tables: [
+      table(
+        "members",
+        { userId: t.uuid(), orgId: t.uuid(), role: t.text() },
+        { primaryKey: ["userId", "orgId"] },
+      ),
+    ],
+  });
+  const naturalKey = natural.catalog.objects.find(
+    (object) => object.kind === "constraint" && object.definition.constraintKind === "primaryKey",
+  );
+  const compositeKey = composite.catalog.objects.find(
+    (object) => object.kind === "constraint" && object.definition.constraintKind === "primaryKey",
+  );
+  expect(naturalKey?.kind === "constraint" ? naturalKey.definition.columns : []).toEqual(["code"]);
+  expect(compositeKey?.kind === "constraint" ? compositeKey.definition.columns : []).toEqual([
+    "userId",
+    "orgId",
+  ]);
+  expect(natural.model.skus?.primary).toEqual(["code"]);
+  expect(composite.model.members?.primary).toEqual(["userId", "orgId"]);
+  const code = natural.model.skus?.columns.find((column) => column.field === "code");
+  expect(code?.writable).toBe(true);
+  expect(code?.guardUpdate).toBe(true);
+});
+
+test("uuidv7 below the declared Postgres 18 names the uuidv4 default", () => {
+  const error = capture(() =>
+    schema({
+      requires: { postgres: ">=17" },
+      tables: [table("sessions", { id: t.id() })],
+    }),
+  );
+  expect(error.code).toBe("OKM1812");
+  expect(error.message).toContain("uuidv7()");
+  expect(error.message).toContain('t.id({ default: "uuidv4" })');
+  expect(error.fix.summary).toContain("uuidv4");
+  const allowed = schema({
+    requires: { postgres: ">=18" },
+    tables: [table("sessions", { id: t.id() })],
+  });
+  const column = allowed.catalog.objects.find((object) => object.kind === "column");
+  expect(column?.kind === "column" ? column.definition.defaultExpression : "").toBe("uuidv7()");
+  const uuidv4 = schema({
+    requires: { postgres: ">=15" },
+    tables: [table("sessions", { id: t.id({ default: "uuidv4" }) })],
+  });
+  const uuidv4Column = uuidv4.catalog.objects.find((object) => object.kind === "column");
+  expect(uuidv4Column?.kind === "column" ? uuidv4Column.definition.defaultExpression : "").toBe(
+    "gen_random_uuid()",
+  );
+});
+
+test("a column primary key and a primaryKey option cannot both be set", () => {
+  const error = capture(() =>
+    schema({
+      tables: [
+        table(
+          "members",
+          { userId: t.uuid().primaryKey(), orgId: t.uuid() },
+          {
+            primaryKey: ["userId", "orgId"],
+          },
+        ),
+      ],
+    }),
+  );
+  expect(error.code).toBe("OKM1020");
+  expect(error.message).toContain("One primary key");
 });
 
 function capture(run: () => unknown): OkmError {

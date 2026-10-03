@@ -30,3 +30,5 @@ These builders and options throw OKM1061, or are not methods yet. The version is
 `one()` and `many()` work. A relation value that is not one of those throws OKM1061 and names 0.2 for `manyThrough`.
 
 Installing the head snapshot, snapshot-versus-replay equivalence (OKM1521), and `reference` rows arrive in P53A. In 0.1, `okm migrate apply` replays migration files. See [environments](environments.md).
+
+A postgres.js pool opened with `ssl` still uses the driver's socket and its 30 s idle timer (D152). Measured on Postgres 17 with TLS 1.3, one query, and no `close()`: the process exited in 30.10 s on Bun and 30.07 s on Node 26. A plain pool (no `ssl`) exits on its own. `close()` or `await using` releases a TLS pool without waiting.

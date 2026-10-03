@@ -5,29 +5,50 @@
 import {
   type ColumnBuilder,
   type IdFlags,
+  type IdSuppliedFlags,
   type PlainFlags,
   openColumn,
   required,
 } from "./column.js";
-import { rejected } from "./misuse.js";
+import { definition, rejected } from "./misuse.js";
+
+/** How {@link id} fills the primary key. */
+export type IdDefault = "uuidv7" | "uuidv4" | "none";
 
 /**
- * UUID primary key with default `uuidv7()`.
+ * UUID primary key.
  *
- * Insert and update omit it, and it is guarded.
+ * The default is `uuidv7()` (Postgres 18). `uuidv4` stores `gen_random_uuid()`
+ * (built in from Postgres 13). `none` takes the id on insert. A database
+ * default is omitted from insert and update. `none` is required on insert
+ * and omitted from update.
  *
+ * @param options - Which default to store. Omitted means `uuidv7`
  * @returns An id column
  */
-export function id(): ColumnBuilder<string, IdFlags> {
-  return openColumn({
+export function id(): ColumnBuilder<string, IdFlags>;
+export function id(options: { readonly default: "none" }): ColumnBuilder<string, IdSuppliedFlags>;
+export function id(options: {
+  readonly default: "uuidv7" | "uuidv4";
+}): ColumnBuilder<string, IdFlags>;
+export function id(options?: {
+  readonly default?: IdDefault;
+}): ColumnBuilder<string, IdFlags | IdSuppliedFlags> {
+  const mode = options?.default ?? "uuidv7";
+  const supplied = mode === "none";
+  if (!supplied && mode !== "uuidv7" && mode !== "uuidv4") {
+    definition(`id() default ${String(mode)} must be uuidv7, uuidv4, or none.`);
+  }
+  return openColumn<string, IdFlags | IdSuppliedFlags>({
     baseType: "uuid",
     nullable: false,
-    hasDefault: true,
+    hasDefault: !supplied,
     generated: false,
-    guarded: true,
+    guarded: !supplied,
     hidden: false,
-    omitWrite: true,
-    defaultSql: "uuidv7()",
+    omitWrite: !supplied,
+    omitUpdate: true,
+    ...(supplied ? {} : { defaultSql: mode === "uuidv4" ? "gen_random_uuid()" : "uuidv7()" }),
     primaryKey: true,
     encode: encodeUuid,
     decode: decodeUuid,

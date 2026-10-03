@@ -309,6 +309,13 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     fix: "Upgrade the server, or lower requires to a version the server meets.",
   },
   {
+    code: "OKM1803",
+    title: "Postgres floor",
+    summary:
+      "The connected server is older than PostgreSQL 15, and the schema does not set requires to that older major.",
+    fix: "Upgrade the server to PostgreSQL 15 or newer, or set schema({ requires }) to the older major on purpose.",
+  },
+  {
     code: "OKM1810",
     title: "Extension not declared",
     summary: "An extension builder was used but the extension is not declared on the schema.",
@@ -324,7 +331,7 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     code: "OKM1812",
     title: "Feature version",
     summary: "A feature needs a newer Postgres or extension version than the one declared.",
-    fix: "Raise the declared version, or avoid the feature. Core features are never gated on an extension.",
+    fix: 'Raise the declared version, or avoid the feature. uuidv7() below 18 can use t.id({ default: "uuidv4" }) for gen_random_uuid(). Core features are never gated on an extension.',
   },
   {
     code: "OKM1813",
