@@ -2,7 +2,7 @@
  * Enum and domain columns.
  *
  * The catalog column type is the type name. Compile records a dependency on
- * that type. Creating the type in the database is a later prompt.
+ * the enum, and `schema()` stores that enum as a catalog type.
  */
 
 import {
@@ -47,6 +47,7 @@ export function enumColumn<const TValues extends readonly string[]>(
   return required({
     baseType: name,
     typeDependency: name,
+    enumLabels: [...values],
     typeLabel: values.map((value) => JSON.stringify(value)).join(" | "),
     encode: (value) => {
       if (!allowed.has(value)) {

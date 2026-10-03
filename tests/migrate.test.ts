@@ -4,7 +4,7 @@
  */
 
 import { expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -170,28 +170,17 @@ test("enum removal plans a backfill and a type recreate", () => {
   const after = schema({
     tables: [table("tasks", { id: t.identity(), status: t.enum("status", ["b"]) })],
   });
-  expect(schemaDeclarations(before).enums[0]?.labels).toEqual(["a", "b"]);
-  expect(schemaDeclarations(after).enums[0]?.labels).toEqual(["b"]);
-  const stored = schema({
-    tables: [table("tasks", { id: t.identity(), status: t.text() })],
-  }).catalog;
+  const labels = before.catalog.objects.find((object) => object.kind === "type");
+  expect(labels?.kind === "type" ? labels.definition.labels : []).toEqual(["a", "b"]);
   const missing = capture(() =>
-    planMigration({
-      before: stored,
-      after: stored,
-      enumsBefore: schemaDeclarations(before).enums,
-      enumsAfter: schemaDeclarations(after).enums,
-      name: "enum",
-    }),
+    planMigration({ before: before.catalog, after: after.catalog, name: "enum" }),
   );
   expect(missing.code).toBe("OKM1541");
   expect(missing.fix.summary).toContain("--replace tasks.status.a=");
 
   const plan = planMigration({
-    before: stored,
-    after: stored,
-    enumsBefore: schemaDeclarations(before).enums,
-    enumsAfter: schemaDeclarations(after).enums,
+    before: before.catalog,
+    after: after.catalog,
     replacements: [parseReplace("tasks.status.a=b")],
     name: "enum",
   });
@@ -201,6 +190,12 @@ test("enum removal plans a backfill and a type recreate", () => {
   expect(sqlText).toContain("create type");
   expect(sqlText).toContain("::text::");
   expect(sqlText).toContain("drop type");
+  const expand = plan.steps.findIndex(
+    (step) => step.action === "backfill" && step.class === "expand",
+  );
+  const rename = plan.steps.findIndex((step) => step.sql.includes("rename to"));
+  expect(expand).toBeGreaterThanOrEqual(0);
+  expect(expand).toBeLessThan(rename);
 });
 
 test("stale renames need a previous snapshot that still has the old name", () => {
@@ -253,9 +248,10 @@ test("okm generate writes SQL and okm migrate plan prints the class", async () =
     writeFileSync(
       join(cwd, "schema.ts"),
       [
+        `import { enumColumn } from ${JSON.stringify(join(root, "src/dialects/pg/enum.ts"))};`,
         `import { identity, schema, table, text } from ${JSON.stringify(join(root, "src/dialects/pg/index.ts"))};`,
         "export const app = schema({",
-        '  tables: [table("tasks", { id: identity(), title: text() })],',
+        '  tables: [table("tasks", { id: identity(), title: text(), status: enumColumn("color", ["red", "blue"]) })],',
         "});",
         "",
       ].join("\n"),
@@ -279,10 +275,13 @@ test("okm generate writes SQL and okm migrate plan prints the class", async () =
     await run(["build"], { cwd, stdout: (text) => lines.push(text) });
     const types = readFileSync(join(cwd, ".okm/types.d.ts"), "utf8");
     expect(types).toContain("export type TableName");
+    expect(types).toContain('"red" | "blue"');
     expect(types).toContain("references(");
+    expect(existsSync(join(cwd, ".okm/declarations.json"))).toBe(false);
     expect(types).not.toContain("okmodel/pg/postgresjs");
     const hash = readFileSync(join(cwd, ".okm/catalog.hash"), "utf8").trim();
     const catalogText = readFileSync(join(cwd, ".okm/catalog.json"), "utf8");
+    expect(catalogText).toContain('"kind":"type"');
     expect(serializeCatalog(loadTrustedCatalog(catalogText, hash))).toBe(
       serializeCatalog(parseCatalog(catalogText)),
     );
@@ -300,7 +299,9 @@ test("okm generate writes SQL and okm migrate plan prints the class", async () =
     const sqlPath = lines.join("").trim();
     const sqlText = readFileSync(sqlPath, "utf8");
     expect(sqlPath.endsWith(".sql")).toBe(true);
+    expect(sqlText.toLowerCase()).toContain("create type");
     expect(sqlText.toLowerCase()).toContain("create table");
+    expect(existsSync(sqlPath.replace(/\.sql$/, ".declarations.json"))).toBe(false);
     expect(sqlText).not.toContain("export ");
     expect(sqlText).toContain("-- class:");
 

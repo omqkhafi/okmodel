@@ -3,8 +3,8 @@
  *
  * Every object uses one envelope (kind, identity, owner, definition,
  * dependencies, provenance). Kinds other than table, column, index,
- * constraint, and sequence are named here so a later prompt can fill them
- * in without changing the envelope. Their definitions are not built yet.
+ * constraint, sequence, and type (enum) are named here so a later prompt
+ * can fill them in without changing the envelope.
  */
 
 /** Who may change an object. `ignored` is invisible to diffs. */
@@ -16,7 +16,8 @@ export type Owner = (typeof OWNERS)[number];
 /**
  * Object kinds from spec section 5.7.
  *
- * Built in this layer: table, column, index, constraint, sequence.
+ * Built in this layer: table, column, index, constraint, sequence, and type.
+ * A type object is an enum: ordered labels, and no other form.
  */
 export const OBJECT_KINDS = [
   "table",
@@ -40,7 +41,7 @@ export const OBJECT_KINDS = [
 export type ObjectKind = (typeof OBJECT_KINDS)[number];
 
 /** Kinds that have factories in this layer. */
-export const BUILT_KINDS = ["table", "column", "index", "constraint", "sequence"] as const;
+export const BUILT_KINDS = ["table", "column", "index", "constraint", "sequence", "type"] as const;
 
 /** A kind this layer can construct. */
 export type BuiltKind = (typeof BUILT_KINDS)[number];
@@ -298,6 +299,16 @@ export type ConstraintDefinition = {
   };
 };
 
+/**
+ * Enum definition.
+ *
+ * `labels` is the stored order. That order is part of the catalog hash.
+ * Domains are not represented here.
+ */
+export type TypeDefinition = {
+  readonly labels: readonly string[];
+};
+
 /** Sequence definition. Start and increment are decimal integers. */
 export type SequenceDefinition = {
   readonly dataType: "smallint" | "integer" | "bigint";
@@ -351,6 +362,13 @@ export type SequenceObject = CatalogEnvelope<
   SequenceDefinition
 >;
 
+/** An enum. Identity is `(namespace, name)`. */
+export type TypeObject = CatalogEnvelope<
+  "type",
+  NamespaceIdentity & { readonly kind: "type" },
+  TypeDefinition
+>;
+
 /**
  * One built catalog object.
  *
@@ -363,7 +381,8 @@ export type CatalogObject =
   | ColumnObject
   | IndexObject
   | ConstraintObject
-  | SequenceObject;
+  | SequenceObject
+  | TypeObject;
 
 /** Format version stored in the serialized catalog. */
 export const CATALOG_VERSION = 1;

@@ -219,6 +219,8 @@ export type ColumnState<TValue> = {
   readonly comment: string | undefined;
   readonly extension: string | undefined;
   readonly typeDependency: string | undefined;
+  /** Ordered enum labels. Absent on every column that is not an enum. */
+  readonly enumLabels: readonly string[] | undefined;
   readonly domain: { readonly base: string; readonly check: string } | undefined;
   readonly primaryKey: boolean;
   readonly typeLabel: string | undefined;
@@ -247,6 +249,7 @@ export type OpenColumn<TValue> = {
   readonly identity?: { readonly always: boolean };
   readonly extension?: string;
   readonly typeDependency?: string;
+  readonly enumLabels?: readonly string[];
   readonly domain?: { readonly base: string; readonly check: string };
   readonly primaryKey?: boolean;
   readonly typeLabel?: string;
@@ -601,6 +604,7 @@ export function openColumn<TValue, TFlags extends ColumnFlags>(
     comment: undefined,
     extension: input.extension,
     typeDependency: input.typeDependency,
+    enumLabels: input.enumLabels,
     domain: input.domain,
     primaryKey: input.primaryKey === true,
     typeLabel: input.typeLabel,

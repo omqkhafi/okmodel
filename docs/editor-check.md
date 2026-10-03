@@ -10,4 +10,6 @@ It covers the read surface and the write surface:
 - Hover on a `find` result and an `insert` result shows the row fields (`id`, `email`, and the value types), not a column builder.
 - A missing `select` column and a missing table each produce a diagnostic that names `missing`.
 
-`bun run editor-check --write` replaces the snapshot after a review. The check is part of `bun run check`.
+The same check also opens the text `emitRowTypes` writes (the row-type section of `okm build`'s `.okm/types.d.ts`) for a schema with an enum column. Hover on that row shows the fields and the enum labels, not a column builder. Insert and update completions list the writable columns, and a missing field is a diagnostic.
+
+`bun run editor-check --write` replaces the snapshot after a review. The check is part of `bun run check`. The emitted pass is asserted in the script; it is not part of the snapshot.

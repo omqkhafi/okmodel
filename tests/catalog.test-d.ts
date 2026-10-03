@@ -19,7 +19,7 @@ expectTypeOf<Owner>().toEqualTypeOf<"managed" | "external" | "ignored">();
 expectTypeOf<Catalog["version"]>().toEqualTypeOf<1>();
 
 expectTypeOf<CatalogObject["kind"]>().toEqualTypeOf<
-  "table" | "column" | "index" | "constraint" | "sequence"
+  "table" | "column" | "index" | "constraint" | "sequence" | "type"
 >();
 
 expectTypeOf<ObjectKind>().toEqualTypeOf<

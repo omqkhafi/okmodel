@@ -145,7 +145,8 @@ export function writeQueryProject(
 /**
  * Writes an emitted project from {@link emitRowTypes}.
  *
- * The probe reads the declaration file and does not import the builders.
+ * That function is the row-type text `okm build` writes. The probe reads the
+ * declaration file and does not import the builders.
  *
  * @param dir - Project directory
  * @param fixture - Harness fixture

@@ -21,6 +21,7 @@ import {
   templateNamespace,
 } from "./identity.js";
 import { catalog } from "./build.js";
+import { enumType } from "./enum.js";
 import { column, compareText, constraint, index, sequence, table } from "./object.js";
 import { dependencyOrder } from "./order.js";
 import type {
@@ -38,7 +39,13 @@ import type {
   SequenceObject,
   TableObject,
 } from "./types.js";
-import { CATALOG_VERSION, OWNERS, referentialAction, type ReferentialAction } from "./types.js";
+import {
+  BUILT_KINDS,
+  CATALOG_VERSION,
+  OWNERS,
+  referentialAction,
+  type ReferentialAction,
+} from "./types.js";
 
 export { catalog };
 
@@ -257,6 +264,8 @@ function rewriteRenamed(
       return rewriteConstraint(object, change, dependencies);
     case "sequence":
       return rewriteSequence(object, dependencies);
+    case "type":
+      return rewriteType(object, dependencies);
     default:
       return assertNever(object);
   }
@@ -513,8 +522,9 @@ function rewriteTableName(
       ...(referenced !== undefined ? { references: referenced } : {}),
     });
   }
-  if (object.kind !== "sequence") return assertNever(object);
-  return rewriteSequence(object, dependencies);
+  if (object.kind === "sequence") return rewriteSequence(object, dependencies);
+  if (object.kind === "type") return rewriteType(object, dependencies);
+  return assertNever(object);
 }
 
 function movedParent(
@@ -525,6 +535,20 @@ function movedParent(
     return { namespace: parent.namespace, name: change.to };
   }
   return parent;
+}
+
+function rewriteType(
+  object: CatalogObject & { readonly kind: "type" },
+  dependencies: readonly ObjectIdentity[],
+): CatalogObject {
+  return enumType({
+    namespace: object.identity.namespace,
+    name: object.identity.name,
+    labels: object.definition.labels,
+    owner: object.owner,
+    provenance: object.provenance,
+    dependencies,
+  });
 }
 
 function rewriteSequence(
@@ -650,6 +674,8 @@ function definitionToJson(object: CatalogObject): Json {
         increment: object.definition.increment,
         start: object.definition.start,
       };
+    case "type":
+      return { labels: object.definition.labels };
     default:
       return assertNever(object);
   }
@@ -666,7 +692,7 @@ function parseObject(value: unknown): CatalogObject {
   if (!isBuiltKind(kind)) {
     catalogError(
       "OKM1020",
-      `Kind ${kind} is not built yet. Built kinds are table, column, index, constraint, and sequence.`,
+      `Kind ${kind} is not built yet. Built kinds are ${BUILT_KINDS.join(", ")}.`,
     );
   }
   const identity = parseIdentity(record.identity);
@@ -688,6 +714,8 @@ function parseObject(value: unknown): CatalogObject {
       return parseConstraint(identity, definition, owner, provenance, dependencies);
     case "sequence":
       return parseSequence(identity, definition, owner, provenance, dependencies);
+    case "type":
+      return parseType(identity, definition, owner, provenance, dependencies);
     default:
       return assertNeverKind(kind);
   }
@@ -863,6 +891,27 @@ function parseSequence(
     start: requireString(definition.start, "sequence start"),
     increment: requireString(definition.increment, "sequence increment"),
     cycle: requireBoolean(definition.cycle, "cycle"),
+    owner,
+    provenance,
+    dependencies,
+  });
+}
+
+function parseType(
+  identity: ObjectIdentity,
+  definition: Record<string, unknown>,
+  owner: Owner,
+  provenance: Provenance,
+  dependencies: readonly ObjectIdentity[],
+): CatalogObject {
+  if (identity.kind !== "type") {
+    catalogError("OKM1020", `Type object identity is ${identity.kind}, not a type.`);
+  }
+  rejectUnknown(definition, ["labels"], "type definition");
+  return enumType({
+    namespace: identity.namespace,
+    name: identity.name,
+    labels: requireStrings(definition.labels, "enum labels"),
     owner,
     provenance,
     dependencies,
@@ -1067,13 +1116,7 @@ function parseDependencies(value: unknown): readonly ObjectIdentity[] {
 }
 
 function isBuiltKind(kind: string): kind is CatalogObject["kind"] {
-  return (
-    kind === "table" ||
-    kind === "column" ||
-    kind === "index" ||
-    kind === "constraint" ||
-    kind === "sequence"
-  );
+  return (BUILT_KINDS as readonly string[]).includes(kind);
 }
 
 function isOwner(value: string): value is Owner {

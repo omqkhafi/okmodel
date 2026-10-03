@@ -11,14 +11,16 @@
 
 import { OkmError } from "../../contracts/error.js";
 import { creationOrder, renameColumn, renameTable } from "../../contracts/catalog/document.js";
+import { sameEnumLabels } from "../../contracts/catalog/enum.js";
 import { identityKey, staticNamespace } from "../../contracts/catalog/identity.js";
+import { compareText } from "../../contracts/catalog/object.js";
 import type {
   Catalog,
   CatalogObject,
   ColumnObject,
   ConstraintObject,
 } from "../../contracts/catalog/types.js";
-import type { DeclaredRename, EnumSnapshot } from "../../dialects/pg/declarations.js";
+import type { DeclaredRename } from "../../dialects/pg/declarations.js";
 import {
   alterColumnSql,
   createObjectSql,
@@ -32,12 +34,19 @@ import { assertNoChains, type Replacement } from "./values.js";
 /** Expand, contract, or a step that is neither. */
 export type MigrationClass = "expand" | "contract" | "unclassified";
 
-/** One statement in a plan. `backfill` is data; P16B runs it as written. */
+/**
+ * One statement in a plan.
+ *
+ * `backfill` is data; P16B runs it as written. `transactional: false` marks a
+ * step that cannot share a transaction with a later use (`ALTER TYPE … ADD
+ * VALUE`, spec 19.2).
+ */
 export type PlanStep = {
   readonly sql: string;
   readonly class: MigrationClass;
   readonly action: "ddl" | "backfill";
   readonly lock: string;
+  readonly transactional: boolean;
 };
 
 /** A named plan and the class of its strictest step. */
@@ -53,8 +62,6 @@ export type PlanRequest = {
   readonly after: Catalog;
   readonly renames?: readonly DeclaredRename[];
   readonly replacements?: readonly Replacement[];
-  readonly enumsBefore?: readonly EnumSnapshot[];
-  readonly enumsAfter?: readonly EnumSnapshot[];
   readonly schema?: string;
   /** Concrete schema written into the SQL. Identities stay logical. */
   readonly name?: string;
@@ -74,11 +81,23 @@ type PicklistChange = {
   readonly nullable: boolean;
 };
 
-type EnumChange = {
-  readonly before: EnumSnapshot;
-  readonly after: EnumSnapshot;
-  readonly removed: readonly string[];
+type EnumColumn = {
+  readonly table: string;
+  readonly column: string;
+  readonly nullable: boolean;
+  /** False when the column is new in this plan and holds no previous rows. */
+  readonly existed: boolean;
 };
+
+type EnumEdit =
+  | { readonly kind: "add"; readonly name: string; readonly statements: readonly string[] }
+  | {
+      readonly kind: "replace";
+      readonly name: string;
+      readonly labels: readonly string[];
+      readonly removed: readonly string[];
+      readonly columns: readonly EnumColumn[];
+    };
 
 const ACCESS = "ACCESS EXCLUSIVE";
 const SHARE = "SHARE";
@@ -115,6 +134,7 @@ export function planMigration(request: PlanRequest): MigrationPlan {
   for (const item of afterList) {
     const previous = beforeBy.get(item.key);
     if (previous === undefined || sameDefinition(previous, item.object)) continue;
+    if (previous.kind === "type" && item.object.kind === "type") continue;
     if (
       previous.kind === "column" &&
       item.object.kind === "column" &&
@@ -129,13 +149,14 @@ export function planMigration(request: PlanRequest): MigrationPlan {
 
   const keptNames = pairSameShape(beforeBy, afterBy, dropKeys, createKeys);
   const picklists = picklistChanges(beforeBy, afterBy, request.after);
-  const enums = enumChanges(request.enumsBefore ?? [], request.enumsAfter ?? []);
+  const enums = enumEdits(beforeBy, afterBy, schema);
   requireReplacements(picklists, enums, replacements);
   recreateDependents(beforeList, afterList, alters, dropKeys, createKeys, picklists);
 
   const steps: PlanStep[] = [];
   steps.push(...renameSteps(request.before, renames, schema));
   steps.push(...keptNames.map((item) => renameShapeStep(item, schema)));
+  steps.push(...enumAddSteps(enums));
   steps.push(...expandBackfills(picklists, enums, replacements, schema));
 
   const droppedTables = new Set(
@@ -145,9 +166,19 @@ export function planMigration(request: PlanRequest): MigrationPlan {
       .map((object) => object.identity.name),
   );
   const deferred = new Set(picklists.map((change) => identityKey(change.before.identity)));
+  const typeDrops: CatalogObject[] = [];
   for (const object of [...creationOrder(renamed)].reverse()) {
     const key = identityKey(object.identity);
     if (!dropKeys.has(key) || deferred.has(key) || covered(object, droppedTables)) continue;
+    if (object.kind === "type") {
+      typeDrops.push(object);
+      continue;
+    }
+    const sql = dropObjectSql(object, schema);
+    if (sql === undefined) continue;
+    steps.push(step(sql, "contract", "ddl", ACCESS));
+  }
+  for (const object of typeDrops) {
     const sql = dropObjectSql(object, schema);
     if (sql === undefined) continue;
     steps.push(step(sql, "contract", "ddl", ACCESS));
@@ -167,6 +198,16 @@ export function planMigration(request: PlanRequest): MigrationPlan {
   );
   const emitted = new Set<string>();
   for (const object of creationOrder(request.after)) {
+    if (object.kind !== "type") continue;
+    const key = identityKey(object.identity);
+    if (!createKeys.has(key) || emitted.has(key)) continue;
+    emitted.add(key);
+    const sql = createObjectSql(object, schema);
+    if (sql === undefined) continue;
+    steps.push(step(sql, "expand", "ddl", ACCESS));
+  }
+  for (const object of creationOrder(request.after)) {
+    if (object.kind === "type") continue;
     const key = identityKey(object.identity);
     if (deferred.has(key)) continue;
     const parent = anchoredParent(object);
@@ -209,6 +250,7 @@ export function formatPlan(plan: MigrationPlan): string {
     lines.push(`-- class: ${item.class}`);
     lines.push(`-- action: ${item.action}`);
     lines.push(`-- lock: ${item.lock}`);
+    if (!item.transactional) lines.push("-- transactional: false");
     lines.push(`${item.sql};`);
     lines.push("");
   }
@@ -447,9 +489,20 @@ function dependsOnChanged(object: CatalogObject, columns: ReadonlySet<string>): 
   return object.dependencies.some((edge) => columns.has(identityKey(edge.target)));
 }
 
+function enumAddSteps(enums: readonly EnumEdit[]): PlanStep[] {
+  const steps: PlanStep[] = [];
+  for (const change of enums) {
+    if (change.kind !== "add") continue;
+    for (const sql of change.statements) {
+      steps.push(step(sql, "expand", "ddl", ACCESS, false));
+    }
+  }
+  return steps;
+}
+
 function expandBackfills(
   picklists: readonly PicklistChange[],
-  enums: readonly EnumChange[],
+  enums: readonly EnumEdit[],
   replacements: readonly Replacement[],
   schema: string,
 ): PlanStep[] {
@@ -458,7 +511,7 @@ function expandBackfills(
 
 function contractSwaps(
   picklists: readonly PicklistChange[],
-  enums: readonly EnumChange[],
+  enums: readonly EnumEdit[],
   replacements: readonly Replacement[],
   schema: string,
 ): PlanStep[] {
@@ -494,38 +547,34 @@ function contractSwaps(
     );
   }
   for (const change of enums) {
-    const type = qualify(schema, change.after.typeName);
-    if (change.removed.length === 0) {
-      for (const label of change.after.labels) {
-        if (change.before.labels.includes(label)) continue;
-        steps.push(
-          step(`alter type ${type} add value ${sqlString(label)}`, "expand", "ddl", ACCESS),
-        );
-      }
-      continue;
-    }
-    const old = quoteIdent(`${change.after.typeName}_old`);
-    const labels = change.after.labels.map((label) => sqlString(label)).join(", ");
-    const table = qualify(schema, change.after.table);
-    const column = quoteIdent(change.after.column);
+    if (change.kind !== "replace") continue;
+    const type = qualify(schema, change.name);
+    const old = quoteIdent(`${change.name}_old`);
+    const labels = change.labels.map((label) => sqlString(label)).join(", ");
     steps.push(step(`alter type ${type} rename to ${old}`, "contract", "ddl", ACCESS));
     steps.push(step(`create type ${type} as enum (${labels})`, "contract", "ddl", ACCESS));
+    for (const column of change.columns) {
+      const table = qualify(schema, column.table);
+      const name = quoteIdent(column.column);
+      steps.push(
+        step(
+          `alter table ${table} alter column ${name} type ${type} using ${name}::text::${type}`,
+          "contract",
+          "ddl",
+          ACCESS,
+        ),
+      );
+    }
     steps.push(
-      step(
-        `alter table ${table} alter column ${column} type ${type} using ${column}::text::${type}`,
-        "contract",
-        "ddl",
-        ACCESS,
-      ),
+      step(`drop type ${qualify(schema, `${change.name}_old`)}`, "contract", "ddl", ACCESS),
     );
-    steps.push(step(`drop type ${old}`, "contract", "ddl", ACCESS));
   }
   return steps;
 }
 
 function dataSteps(
   picklists: readonly PicklistChange[],
-  enums: readonly EnumChange[],
+  enums: readonly EnumEdit[],
   replacements: readonly Replacement[],
   schema: string,
   phase: "expand" | "contract",
@@ -548,23 +597,21 @@ function dataSteps(
     }
   }
   for (const change of enums) {
-    if (change.removed.length === 0) continue;
-    for (const value of change.removed) {
-      const replacement = findReplacement(
-        replacements,
-        change.after.table,
-        change.after.column,
-        value,
-      );
-      if (replacement === undefined) continue;
-      steps.push(
-        step(
-          updateSql(schema, change.after.table, change.after.column, value, replacement.to, true),
-          phase,
-          "backfill",
-          ROW,
-        ),
-      );
+    if (change.kind !== "replace" || change.removed.length === 0) continue;
+    for (const column of change.columns) {
+      if (!column.existed) continue;
+      for (const value of change.removed) {
+        const replacement = findReplacement(replacements, column.table, column.column, value);
+        if (replacement === undefined) continue;
+        steps.push(
+          step(
+            updateSql(schema, column.table, column.column, value, replacement.to, true),
+            phase,
+            "backfill",
+            ROW,
+          ),
+        );
+      }
     }
   }
   return steps;
@@ -572,7 +619,7 @@ function dataSteps(
 
 function requireReplacements(
   picklists: readonly PicklistChange[],
-  enums: readonly EnumChange[],
+  enums: readonly EnumEdit[],
   replacements: readonly Replacement[],
 ): void {
   const missing: string[] = [];
@@ -593,13 +640,17 @@ function requireReplacements(
     }
   }
   for (const change of enums) {
-    for (const value of change.removed) {
-      const found = findReplacement(replacements, change.after.table, change.after.column, value);
-      if (found === undefined) {
-        missing.push(`--replace ${change.after.table}.${change.after.column}.${value}=<new>`);
-        continue;
+    if (change.kind !== "replace") continue;
+    for (const column of change.columns) {
+      if (!column.existed) continue;
+      for (const value of change.removed) {
+        const found = findReplacement(replacements, column.table, column.column, value);
+        if (found === undefined) {
+          missing.push(`--replace ${column.table}.${column.column}.${value}=<new>`);
+          continue;
+        }
+        assertReplacement(found, undefined, column.nullable, change.labels);
       }
-      assertReplacement(found, undefined, change.after.nullable, change.after.labels);
     }
   }
   if (missing.length > 0) {
@@ -678,21 +729,123 @@ function picklistChanges(
   return changes;
 }
 
-function enumChanges(
-  before: readonly EnumSnapshot[],
-  after: readonly EnumSnapshot[],
-): EnumChange[] {
-  const changes: EnumChange[] = [];
-  for (const next of after) {
-    const previous = before.find(
-      (item) => item.table === next.table && item.column === next.column,
+function enumEdits(
+  beforeBy: ReadonlyMap<string, CatalogObject>,
+  afterBy: ReadonlyMap<string, CatalogObject>,
+  schema: string,
+): EnumEdit[] {
+  const edits: EnumEdit[] = [];
+  for (const [key, next] of afterBy) {
+    if (next.kind !== "type") continue;
+    const previous = beforeBy.get(key);
+    if (previous === undefined || previous.kind !== "type") continue;
+    if (sameEnumLabels(previous.definition.labels, next.definition.labels)) continue;
+    const removed = previous.definition.labels.filter(
+      (label) => !next.definition.labels.includes(label),
     );
-    if (previous === undefined) continue;
-    const removed = previous.labels.filter((label) => !next.labels.includes(label));
-    if (removed.length === 0 && previous.labels.length === next.labels.length) continue;
-    changes.push({ before: previous, after: next, removed });
+    const columns = enumColumns(previous.identity.name, beforeBy, afterBy);
+    if (
+      removed.length === 0 &&
+      labelSubsequence(previous.definition.labels, next.definition.labels)
+    ) {
+      edits.push({
+        kind: "add",
+        name: next.identity.name,
+        statements: addValueStatements(
+          schema,
+          next.identity.name,
+          previous.definition.labels,
+          next.definition.labels,
+        ),
+      });
+      continue;
+    }
+    edits.push({
+      kind: "replace",
+      name: next.identity.name,
+      labels: next.definition.labels,
+      removed,
+      columns,
+    });
   }
-  return changes;
+  return edits;
+}
+
+function enumColumns(
+  typeName: string,
+  beforeBy: ReadonlyMap<string, CatalogObject>,
+  afterBy: ReadonlyMap<string, CatalogObject>,
+): EnumColumn[] {
+  const columns: EnumColumn[] = [];
+  for (const object of afterBy.values()) {
+    if (object.kind !== "column") continue;
+    if (!usesType(object, typeName)) continue;
+    columns.push({
+      table: object.identity.parent.name,
+      column: object.identity.name,
+      nullable: object.definition.nullable,
+      existed: beforeBy.has(identityKey(object.identity)),
+    });
+  }
+  columns.sort((left, right) => {
+    const table = compareText(left.table, right.table);
+    return table === 0 ? compareText(left.column, right.column) : table;
+  });
+  return columns;
+}
+
+function usesType(object: CatalogObject, typeName: string): boolean {
+  return object.dependencies.some(
+    (edge) => edge.target.kind === "type" && edge.target.name === typeName,
+  );
+}
+
+function labelSubsequence(before: readonly string[], after: readonly string[]): boolean {
+  let index = 0;
+  for (const label of after) {
+    if (before[index] === label) index += 1;
+  }
+  return index === before.length;
+}
+
+function addValueStatements(
+  schema: string,
+  name: string,
+  before: readonly string[],
+  after: readonly string[],
+): string[] {
+  const present = new Set(before);
+  const statements: string[] = [];
+  const type = qualify(schema, name);
+  for (let index = 0; index < after.length; index += 1) {
+    const label = after[index];
+    if (label === undefined || present.has(label)) continue;
+    let beforeNeighbor: string | undefined;
+    for (let cursor = index + 1; cursor < after.length; cursor += 1) {
+      const next = after[cursor];
+      if (next !== undefined && present.has(next)) {
+        beforeNeighbor = next;
+        break;
+      }
+    }
+    let sql = `alter type ${type} add value ${sqlString(label)}`;
+    if (beforeNeighbor !== undefined) {
+      sql += ` before ${sqlString(beforeNeighbor)}`;
+    } else {
+      let afterNeighbor: string | undefined;
+      for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+        const previous = after[cursor];
+        if (previous !== undefined && present.has(previous)) {
+          afterNeighbor = previous;
+          break;
+        }
+      }
+      if (afterNeighbor !== undefined) sql += ` after ${sqlString(afterNeighbor)}`;
+    }
+    statements.push(sql);
+    present.add(label);
+  }
+  return statements;
 }
 
 function parseInList(expression: string): { column: string; values: string[] } | undefined {
@@ -828,8 +981,9 @@ function step(
   classification: MigrationClass,
   action: PlanStep["action"],
   lock: string,
+  transactional = true,
 ): PlanStep {
-  return { sql, class: classification, action, lock };
+  return { sql, class: classification, action, lock, transactional };
 }
 
 function qualify(schema: string, name: string): string {

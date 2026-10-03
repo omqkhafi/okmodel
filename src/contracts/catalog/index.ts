@@ -46,6 +46,8 @@ export {
   type SequenceObject,
   type TableDefinition,
   type TableObject,
+  type TypeDefinition,
+  type TypeObject,
 } from "./types.js";
 
 export {

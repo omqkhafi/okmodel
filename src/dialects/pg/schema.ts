@@ -6,6 +6,7 @@
 
 import { catalogError, throwNamed } from "../../contracts/error.js";
 import { catalog } from "../../contracts/catalog/build.js";
+import { enumType, sameEnumLabels } from "../../contracts/catalog/enum.js";
 import { staticNamespace } from "../../contracts/catalog/identity.js";
 import {
   assertIdentifier,
@@ -13,6 +14,7 @@ import {
   fitIdentifier,
 } from "../../contracts/catalog/identifier.js";
 import {
+  compareText,
   constraint,
   index as catalogIndex,
   sequence,
@@ -202,9 +204,10 @@ export function schema<const TTables extends readonly AnyTable[]>(
   const objects: CatalogObject[] = [];
   const prepared: Prepared[] = [];
   const sqlNames = new Set<string>();
+  const enums = new Map<string, EnumNote>();
 
   for (const item of config.tables) {
-    const built = compileTable(item, namespace, casing, codecs, objects);
+    const built = compileTable(item, namespace, casing, codecs, objects, enums);
     if (sqlNames.has(built.sqlName)) {
       catalogError(
         "OKM1023",
@@ -213,6 +216,18 @@ export function schema<const TTables extends readonly AnyTable[]>(
     }
     sqlNames.add(built.sqlName);
     prepared.push(built);
+  }
+  for (const [name, note] of [...enums.entries()].sort((left, right) =>
+    compareText(left[0], right[0]),
+  )) {
+    objects.push(
+      enumType({
+        namespace,
+        name,
+        labels: note.labels,
+        provenance: note.provenance,
+      }),
+    );
   }
   const byName = new Map<string, Prepared>();
   for (const item of prepared) {
@@ -274,12 +289,38 @@ function acceptTables(tables: readonly AnyTable[]): readonly string[] {
   return names;
 }
 
+type EnumNote = {
+  readonly labels: readonly string[];
+  readonly table: string;
+  readonly provenance: Provenance;
+};
+
+function noteEnum(
+  notes: Map<string, EnumNote>,
+  labels: readonly string[],
+  name: string,
+  table: string,
+  provenance: Provenance,
+): void {
+  const previous = notes.get(name);
+  if (previous !== undefined && !sameEnumLabels(previous.labels, labels)) {
+    catalogError(
+      "OKM1020",
+      `Enum ${name} lists ${previous.labels.join(", ")} on ${previous.table} and ${labels.join(", ")} on ${table}. One enum has one label list.`,
+    );
+  }
+  if (previous === undefined || compareText(table, previous.table) < 0) {
+    notes.set(name, { labels, table, provenance });
+  }
+}
+
 function compileTable(
   item: AnyTable,
   namespace: ReturnType<typeof staticNamespace>,
   casing: "snake" | undefined,
   codecs: SchemaCodecs,
   objects: CatalogObject[],
+  enums: Map<string, EnumNote>,
 ): Prepared {
   const options = item.options as StoredOptions | undefined;
   readTableNames(item.name, options);
@@ -352,6 +393,10 @@ function compileTable(
     handles[field] = { name: prepared.sqlName };
     if (column.state.primaryKey) {
       primary.push(prepared.sqlName);
+    }
+    const labels = column.state.enumLabels;
+    if (labels !== undefined) {
+      noteEnum(enums, labels, column.state.typeDependency ?? prepared.sqlName, sqlName, provenance);
     }
   }
 

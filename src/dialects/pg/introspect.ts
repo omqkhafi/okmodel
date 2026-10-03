@@ -8,6 +8,7 @@
  */
 
 import { catalog } from "../../contracts/catalog/build.js";
+import { enumType } from "../../contracts/catalog/enum.js";
 import { staticNamespace } from "../../contracts/catalog/identity.js";
 import { column, constraint, index, sequence, table } from "../../contracts/catalog/object.js";
 import type {
@@ -54,12 +55,13 @@ export async function introspectSchema(
   const namespace = staticNamespace(logical);
   const provenance: Provenance = { origin: "file", name: PROVENANCE_NAME };
   const params = [concrete];
-  const [tables, columns, constraints, indexes, sequences] = await Promise.all([
+  const [tables, columns, constraints, indexes, sequences, enums] = await Promise.all([
     runner.query(TABLES, params),
     runner.query(COLUMNS, params),
     runner.query(CONSTRAINTS, params),
     runner.query(INDEXES, params),
     runner.query(SEQUENCES, params),
+    runner.query(ENUMS, params),
   ]);
   const objects: CatalogObject[] = [];
   const parents = new Map<string, ObjectRef>();
@@ -102,6 +104,16 @@ export async function introspectSchema(
     sequenceIdentity.set(name, built.identity);
     objects.push(built);
   }
+  const enumLabels = new Map<string, string[]>();
+  for (const row of enums) {
+    const name = text(row, "name");
+    const labels = enumLabels.get(name) ?? [];
+    labels.push(text(row, "label"));
+    enumLabels.set(name, labels);
+  }
+  for (const [name, labels] of enumLabels) {
+    objects.push(enumType({ namespace, name, labels, provenance }));
+  }
   for (const row of columns) {
     const parentName = text(row, "parent");
     const parent = parents.get(parentName) ?? { namespace, name: parentName };
@@ -109,13 +121,17 @@ export async function introspectSchema(
     const generated = text(row, "generated") === "s";
     const expression = text(row, "expression");
     const sequenceName = text(row, "sequence");
+    const dataType = text(row, "type");
     const extra: ObjectIdentity[] = [];
     const owned = sequenceIdentity.get(sequenceName);
     if (owned !== undefined) extra.push(owned);
+    if (enumLabels.has(dataType)) {
+      extra.push({ kind: "type", namespace, name: dataType });
+    }
     const built: ColumnObject = column({
       parent,
       name: text(row, "name"),
-      dataType: text(row, "type"),
+      dataType,
       nullable: !flag(row, "not_null"),
       provenance,
       ...(extra.length > 0 ? { dependencies: extra } : {}),
@@ -225,7 +241,10 @@ const TABLES = `
 
 const COLUMNS = `
   select c.relname as parent, a.attname as name,
-    format_type(a.atttypid, a.atttypmod) as type,
+    case
+      when ty.typtype = 'e' and ty.typnamespace = n.oid then ty.typname
+      else format_type(a.atttypid, a.atttypmod)
+    end as type,
     a.attnotnull as not_null, a.attidentity as identity, a.attgenerated as generated,
     pg_get_expr(ad.adbin, ad.adrelid) as expression,
     (
@@ -239,6 +258,7 @@ const COLUMNS = `
   from pg_class c
   join pg_namespace n on n.oid = c.relnamespace
   join pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
+  join pg_type ty on ty.oid = a.atttypid
   left join pg_attrdef ad on ad.adrelid = a.attrelid and ad.adnum = a.attnum
   where n.nspname = $1
     and c.relkind in ('r', 'p')
@@ -288,6 +308,16 @@ const INDEXES = `
     and not exists (select 1 from pg_constraint con where con.conindid = i.indexrelid)
     and not exists (select 1 from pg_inherits inh where inh.inhrelid = tbl.oid)
     and not exists (select 1 from pg_inherits inh where inh.inhrelid = idx.oid)
+`;
+
+const ENUMS = `
+  select t.typname as name, e.enumlabel as label
+  from pg_type t
+  join pg_namespace n on n.oid = t.typnamespace
+  join pg_enum e on e.enumtypid = t.oid
+  where n.nspname = $1
+    and t.typtype = 'e'
+  order by t.typname, e.enumsortorder
 `;
 
 const SEQUENCES = `

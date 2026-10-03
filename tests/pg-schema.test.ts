@@ -5,7 +5,12 @@
 import { expect, test } from "bun:test";
 
 import { OkmError } from "../src/contracts/error.js";
-import { catalogHash, parseCatalog, serializeCatalog } from "../src/contracts/catalog/document.js";
+import {
+  catalogHash,
+  loadTrustedCatalog,
+  parseCatalog,
+  serializeCatalog,
+} from "../src/contracts/catalog/document.js";
 import { creationOrder } from "../src/contracts/catalog/document.js";
 import { index, schema, sql, table, t, emitRowTypes } from "../src/dialects/pg/index.js";
 
@@ -274,6 +279,62 @@ test("emitRowTypes spells the inferred field modes", () => {
   expect(row).not.toContain("secret");
   expect(text).toContain('readonly status: "draft" | "active" | undefined;');
   expect(text).toContain("readonly notes: string | null | undefined;");
+});
+
+test("an enum column is one catalog type with a column dependency", () => {
+  const app = schema({
+    tables: [
+      table("tasks", {
+        id: t.integer(),
+        status: t.enum("color", ["red", "blue"]),
+        shade: t.enum("color", ["red", "blue"]),
+      }),
+      table("labels", {
+        id: t.integer(),
+        tone: t.enum("color", ["red", "blue"]),
+      }),
+    ],
+  });
+  const types = app.catalog.objects.filter((object) => object.kind === "type");
+  expect(types).toHaveLength(1);
+  const enumObject = types[0];
+  expect(enumObject?.kind === "type" ? enumObject.definition.labels : []).toEqual(["red", "blue"]);
+  expect(enumObject?.owner).toBe("managed");
+  const users = app.catalog.objects.filter(
+    (object) => object.kind === "column" && object.definition.dataType === "color",
+  );
+  expect(users).toHaveLength(3);
+  for (const column of users) {
+    expect(
+      column.dependencies.some(
+        (edge) => edge.target.kind === "type" && edge.target.name === "color",
+      ),
+    ).toBe(true);
+  }
+  const text = serializeCatalog(app.catalog);
+  const hash = catalogHash(app.catalog);
+  expect(catalogHash(schema({ tables: app.tables }).catalog)).toBe(hash);
+  const loaded = loadTrustedCatalog(text, hash);
+  expect(serializeCatalog(loaded)).toBe(text);
+  expect(catalogHash(loaded)).toBe(hash);
+  expect(catalogHash(parseCatalog(text))).toBe(hash);
+  const swapped = schema({
+    tables: [table("tasks", { id: t.integer(), status: t.enum("color", ["blue", "red"]) })],
+  });
+  expect(catalogHash(swapped.catalog)).not.toBe(hash);
+});
+
+test("two declarations of one enum must list the same labels", () => {
+  const error = capture(
+    () =>
+      schema({
+        tables: [
+          table("tasks", { id: t.integer(), status: t.enum("color", ["red", "blue"]) }),
+          table("labels", { id: t.integer(), tone: t.enum("color", ["red", "green"]) }),
+        ],
+      }).catalog,
+  );
+  expect(error.code).toBe("OKM1020");
 });
 
 function capture(run: () => unknown): OkmError {

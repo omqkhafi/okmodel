@@ -6,9 +6,12 @@
  * The server is a dev tool and is not part of a bundle.
  */
 
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { enumColumn } from "../src/dialects/pg/enum.js";
+import { emitRowTypes, id, integer, schema, table, text, uuid } from "../src/dialects/pg/index.js";
 import { exitOnProblems } from "./report.js";
 import { repoRoot } from "./root.js";
 
@@ -45,7 +48,7 @@ export async function editorCheck(root: string, write: boolean): Promise<readonl
   try {
     await session.open();
     const report = await collect(session, file, prepared);
-    const problems = assertSurface(report);
+    const problems = [...assertSurface(report), ...(await emittedSurface(server))];
     const rendered = render(report);
     const snapPath = join(root, SNAPSHOT);
     if (write) {
@@ -141,6 +144,129 @@ async function collect(session: Session, file: string, prepared: Prepared): Prom
   }
   const body = await session.request("semanticDiagnosticsSync", { file });
   return { hovers, completions, diagnostics: diagnosticTexts(body) };
+}
+
+const EMITTED_SURFACE = `
+import type { Users, UsersInsert, UsersUpdate } from "./types.js";
+
+export function read(row: Users): { readonly email: string; readonly status: Users["status"] } {
+  const rows /*@hover rows*/ = { email: row.email, status: row.status };
+  return rows;
+}
+
+export function write(input: UsersInsert): UsersInsert {
+  const created /*@hover created*/ = { email: input.email, status: input.status };
+  return { /*@complete insert*/ email: created.email };
+}
+
+export function edit(): UsersUpdate {
+  return { /*@complete set*/ email: "a@b.c" };
+}
+
+export function bad(row: Users): unknown {
+  return row.missing;
+}
+`;
+
+/**
+ * Hover, completion, and diagnostics on the `.d.ts` text `okm build` writes.
+ *
+ * The file is {@link emitRowTypes} of a schema that includes an enum column.
+ *
+ * @param server - Path to `tsserver.js`
+ * @returns Problem lines. Empty when the emitted rows read like inferred rows
+ */
+async function emittedSurface(server: string): Promise<readonly string[]> {
+  const dir = mkdtempSync(join(tmpdir(), "okm-emitted-"));
+  const users = table("users", {
+    id: id(),
+    email: text(),
+    city: text().nullable(),
+    role: text().guarded(),
+    status: enumColumn("user_status", ["active", "invited"]),
+  });
+  const tasks = table("tasks", {
+    id: id(),
+    ownerId: uuid(),
+    title: text(),
+    position: integer(),
+  });
+  const built = schema({ tables: [users, tasks] });
+  writeFileSync(join(dir, "types.d.ts"), emitRowTypes(built));
+  writeFileSync(
+    join(dir, "tsconfig.json"),
+    `${JSON.stringify({
+      compilerOptions: {
+        strict: true,
+        module: "nodenext",
+        moduleResolution: "nodenext",
+        target: "es2023",
+        noEmit: true,
+        types: [],
+      },
+      files: ["surface.ts"],
+    })}\n`,
+  );
+  let prepared: Prepared;
+  try {
+    prepared = prepare(EMITTED_SURFACE);
+  } catch (error) {
+    rmSync(dir, { recursive: true, force: true });
+    return [`editor-check: emitted fixture: ${messageOf(error)}`];
+  }
+  const file = join(dir, "surface.ts");
+  writeFileSync(file, prepared.source);
+  const session = new Session(server, dir);
+  try {
+    await session.open();
+    const report = await collect(session, file, prepared);
+    return assertEmitted(report);
+  } catch (error) {
+    return [`editor-check: emitted types: ${messageOf(error)}`];
+  } finally {
+    session.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function assertEmitted(report: Report): readonly string[] {
+  const problems: string[] = [];
+  const hover = (name: string): string =>
+    report.hovers.find((item) => item.name === name)?.display ?? "";
+  const names = (name: string): readonly string[] =>
+    report.completions.find((item) => item.name === name)?.names ?? [];
+  const rows = hover("rows");
+  if (!rows.includes("email") || !rows.includes("active") || !rows.includes("invited")) {
+    problems.push("editor-check: emitted hover does not show the row fields or the enum labels");
+  }
+  if (rows.includes("ColumnBuilder")) {
+    problems.push("editor-check: emitted hover shows a column builder");
+  }
+  const created = hover("created");
+  if (
+    !created.includes("email") ||
+    !created.includes("active") ||
+    created.includes("ColumnBuilder")
+  ) {
+    problems.push("editor-check: emitted insert hover does not show the row fields");
+  }
+  const insert = names("insert");
+  if (!insert.includes("email") || !insert.includes("city") || !insert.includes("status")) {
+    problems.push(
+      `editor-check: emitted insert completions are missing a column (${insert.join(" ")})`,
+    );
+  }
+  if (insert.includes("role") || insert.includes("id")) {
+    problems.push("editor-check: emitted insert completions include a column that insert omits");
+  }
+  const set = names("set");
+  if (!set.includes("email") || !set.includes("status")) {
+    problems.push("editor-check: emitted update completions are missing a column");
+  }
+  if (!report.diagnostics.join("\n").includes("missing")) {
+    problems.push("editor-check: emitted diagnostics do not name the missing column");
+  }
+  return problems;
 }
 
 function assertSurface(report: Report): readonly string[] {
