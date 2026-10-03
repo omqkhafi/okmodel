@@ -66,12 +66,14 @@ export const APP_MAX_MIN_BYTES = 82_200;
 export const APP_MAX_GZIP_BYTES = 26_950;
 
 /**
- * Public connect entries, driver left external (D142, D143).
+ * Public connect entries, driver left external (D142, D143, D156).
  *
  * The startup graph excludes chunks loaded on first failure, include, or the
- * mismatch path of the catalog check. Gates are the P17 measurement plus 5
- * percent: postgres.js 37,952 / 13,158, PGlite 36,330 / 12,862. Cold import is
- * printed, including a driver-stubbed sample, and is not gated.
+ * mismatch path of the catalog check. postgres.js and PGlite gates are the P17
+ * measurement plus 5 percent (37,952 / 13,158 and 36,330 / 12,862). node-postgres
+ * and Bun.sql gates are the P19 measurement plus 3 percent (D156): 38,732 / 13,516
+ * and 37,633 / 13,086. Cold import is printed, including a driver-stubbed sample,
+ * and is not gated. Bun.sql has no Node cold import.
  */
 export const CONNECT_ENTRIES = [
   {
@@ -92,12 +94,16 @@ export const CONNECT_ENTRIES = [
     entry: "src/runtime/pg/pg.ts",
     file: "pg.js",
     external: ["pg"],
+    maxMinBytes: 39_894,
+    maxGzipBytes: 13_922,
   },
   {
     entry: "src/runtime/pg/bun.ts",
     file: "bun.js",
     external: ["bun"],
     nodeColdImport: false,
+    maxMinBytes: 38_762,
+    maxGzipBytes: 13_479,
   },
 ] as const;
 

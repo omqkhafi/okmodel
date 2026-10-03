@@ -49,6 +49,7 @@ export function connect<const S extends QuerySchema>(
       catalog: options.catalog,
       catalogDir: options.catalogDir,
       requireMeta: options.requireMeta,
+      generators: options.generators,
     });
   }
   const pool = open({
@@ -69,6 +70,7 @@ export function connect<const S extends QuerySchema>(
     catalog: options.catalog,
     catalogDir: options.catalogDir,
     requireMeta: options.requireMeta,
+    generators: options.generators,
   });
 }
 

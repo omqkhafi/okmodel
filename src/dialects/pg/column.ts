@@ -10,6 +10,7 @@ import {
   referentialAction,
   type ReferentialAction,
 } from "../../contracts/catalog/types.js";
+import { readClientGenerator, type ClientFill } from "../../contracts/generator.js";
 import { readArray, writeArray } from "./array-literal.js";
 import { definition, rejected } from "./misuse.js";
 import { quoteLiteral } from "./quote.js";
@@ -235,6 +236,20 @@ export type ColumnState<TValue> = {
   readonly hasDefault: boolean;
   readonly defaultSql: string | undefined;
   readonly defaultValue: unknown;
+  /**
+   * Client generator. Absent from the catalog and its hash.
+   *
+   * The catalog output labels it `client`. Insert fills the column when the
+   * caller omits it.
+   */
+  readonly clientDefault: ClientFill | undefined;
+  /** Column collation. Omitted from the catalog when unset. */
+  readonly collation: string | undefined;
+  /**
+   * `implicit` is a bare `t.id()`. `schema({ defaults: { id } })` may replace
+   * it. `column` is a choice on that column and wins.
+   */
+  readonly idSource: "implicit" | "column" | undefined;
   readonly identity: { readonly always: boolean } | undefined;
   readonly generated: { readonly stored: boolean; readonly expression: string } | undefined;
   readonly unique:
@@ -278,6 +293,9 @@ export type OpenColumn<TValue> = {
   readonly decode: (wire: string) => TValue;
   readonly sqlForm: SqlForm;
   readonly defaultSql?: string;
+  readonly clientDefault?: ClientFill;
+  readonly collation?: string;
+  readonly idSource?: "implicit" | "column";
   readonly identity?: { readonly always: boolean };
   readonly extension?: string;
   readonly typeDependency?: string;
@@ -342,14 +360,28 @@ export class ColumnBuilder<TValue, TFlags extends ColumnFlags> {
   }
 
   /**
-   * Stores a JavaScript default. The catalog receives its SQL spelling.
+   * Stores a literal database default, or a client generator.
    *
-   * @param value - Default value
+   * A literal is written into the catalog as SQL. A function is a client
+   * generator: insert fills the column when it is omitted, and the catalog
+   * stores no default. Pass `uuidv4`, `uuidv7`, `okid(...)`, or any function.
+   *
+   * @param value - Literal default, or a function that returns one value
    * @returns The same column, with a default
    */
   default(
-    value: TFlags["nullable"] extends true ? TValue | null : TValue,
+    value: (TFlags["nullable"] extends true ? TValue | null : TValue) | (() => TValue),
   ): ColumnBuilder<TValue, FlagTrue<TFlags, "hasDefault">> {
+    const clientDefault = readClientGenerator(value);
+    if (clientDefault !== undefined) {
+      return rebuild<TValue, FlagTrue<TFlags, "hasDefault">>(this.state, {
+        hasDefault: true,
+        defaultSql: undefined,
+        defaultValue: undefined,
+        clientDefault,
+        generated: undefined,
+      });
+    }
     if (value === null && this.state.nullable === false) {
       definition("A null default is only accepted on a nullable column. Call .nullable() first.");
     }
@@ -365,6 +397,7 @@ export class ColumnBuilder<TValue, TFlags extends ColumnFlags> {
       hasDefault: true,
       defaultSql: value === null ? "NULL" : sqlOf(this.state, value as TValue),
       defaultValue: value,
+      clientDefault: undefined,
       generated: undefined,
     });
   }
@@ -383,6 +416,7 @@ export class ColumnBuilder<TValue, TFlags extends ColumnFlags> {
       hasDefault: true,
       defaultSql: expression,
       defaultValue: undefined,
+      clientDefault: undefined,
       generated: undefined,
     });
   }
@@ -482,6 +516,7 @@ export class ColumnBuilder<TValue, TFlags extends ColumnFlags> {
       hasDefault: true,
       defaultSql: undefined,
       defaultValue: undefined,
+      clientDefault: undefined,
     });
   }
 
@@ -639,6 +674,9 @@ export function openColumn<TValue, TFlags extends ColumnFlags>(
     hasDefault: input.hasDefault,
     defaultSql: input.defaultSql,
     defaultValue: undefined,
+    clientDefault: input.clientDefault,
+    collation: input.collation,
+    idSource: input.idSource,
     identity: input.identity,
     generated: undefined,
     unique: undefined,

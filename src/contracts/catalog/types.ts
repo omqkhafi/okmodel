@@ -232,6 +232,13 @@ export type ColumnDefinition = {
   readonly defaultExpression?: string;
   readonly identity?: { readonly always: boolean };
   readonly generated?: { readonly stored: boolean; readonly expression: string };
+  /**
+   * Collation name, such as `C`.
+   *
+   * Absent when the column uses the type's default collation. A client
+   * generator is not stored here.
+   */
+  readonly collation?: string;
 };
 
 /**

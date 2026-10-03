@@ -379,8 +379,8 @@ test("uuidv7 below the declared Postgres 18 names the uuidv4 default", () => {
   );
   expect(error.code).toBe("OKM1812");
   expect(error.message).toContain("uuidv7()");
-  expect(error.message).toContain('t.id({ default: "uuidv4" })');
-  expect(error.fix.summary).toContain("uuidv4");
+  expect(error.message).toContain("defaults.id");
+  expect(error.fix.summary).toContain("defaults.id");
   const allowed = schema({
     requires: { postgres: ">=18" },
     tables: [table("sessions", { id: t.id() })],

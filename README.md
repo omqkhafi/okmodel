@@ -63,6 +63,8 @@ export default defineConfig({
 
 `t.identity()` is the primary key. An insert omits the id, and the row that comes back carries it. Identity ids come back as strings by default. `t.identity({ as: "number" })` returns numbers. Push and reviewed migrations are two ways to do the same job: pick one per database.
 
+Ids can also be generated in the application. Import `uuidv4`, `uuidv7`, or `okid` from `okmodel/ids` and pass one to `.default()`, or set `defaults.id` on `schema()` for every id column that does not choose its own. A column choice wins. A literal stays a database default. A generator is not stored in the catalog, so changing it does not create a migration, and an insert that bypasses okmodel has to supply the value. An OKID column is text with collation C, so a sortable id orders the same everywhere. Sortable ids include the time they were created.
+
 Tested on PostgreSQL 15 to 18.
 
 `schema.ts`:

@@ -59,6 +59,7 @@ export type ColumnInput = CommonInput & {
   readonly dataType: string;
   readonly nullable: boolean;
   readonly defaultExpression?: string;
+  readonly collation?: string;
   readonly identity?: { readonly always: boolean };
   readonly generated?: { readonly stored: boolean; readonly expression: string };
 };
@@ -165,6 +166,12 @@ export function column(input: ColumnInput): ColumnObject {
   if (input.defaultExpression !== undefined) {
     assertStoredText(input.defaultExpression, "column default");
   }
+  if (input.collation !== undefined) {
+    assertStoredText(input.collation, "column collation");
+    if (input.collation.length === 0) {
+      catalogError("OKM1020", `Column ${input.name} has an empty collation.`);
+    }
+  }
   if (input.generated !== undefined) {
     assertStoredText(input.generated.expression, "column generated expression");
   }
@@ -179,6 +186,7 @@ export function column(input: ColumnInput): ColumnObject {
     ...(input.defaultExpression !== undefined
       ? { defaultExpression: input.defaultExpression }
       : {}),
+    ...(input.collation !== undefined ? { collation: input.collation } : {}),
     ...(input.identity !== undefined ? { identity: { always: input.identity.always } } : {}),
     ...(input.generated !== undefined
       ? {

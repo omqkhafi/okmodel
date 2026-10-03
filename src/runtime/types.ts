@@ -479,6 +479,13 @@ export type ConnectOptions<S extends QuerySchema> = {
    * The target name and `NODE_ENV` do not turn it on.
    */
   readonly requireMeta?: boolean;
+  /**
+   * Replaces a built-in client generator by name.
+   *
+   * `uuidv4`, `uuidv7`, and `okid` are the names. A custom function passed to
+   * `.default()` is not replaced. Tests use this for deterministic ids.
+   */
+  readonly generators?: import("../contracts/generator.js").IdGenerators;
   readonly signal?: AbortSignal;
   readonly timeout?: number;
 };

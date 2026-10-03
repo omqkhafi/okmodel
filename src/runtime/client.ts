@@ -6,6 +6,7 @@
  */
 
 import type { DriverPool, ExecuteOptions, WireValue } from "../contracts/driver.js";
+import type { IdGenerators } from "../contracts/generator.js";
 import {
   OkmError,
   safe,
@@ -42,6 +43,7 @@ type Session = {
     | undefined;
   readonly connected: Promise<void>;
   readonly cache: Map<string, Plan>;
+  readonly generators: IdGenerators | undefined;
 };
 
 type Mods = {
@@ -79,6 +81,7 @@ export function createClient<S extends QuerySchema>(
     readonly catalog?: CatalogArtifact | undefined;
     readonly catalogDir?: string | undefined;
     readonly requireMeta?: boolean | undefined;
+    readonly generators?: IdGenerators | undefined;
   },
 ): Connected<S> {
   const connected = checkServer(
@@ -101,6 +104,7 @@ export function createClient<S extends QuerySchema>(
     logger: options.logger,
     connected,
     cache: new Map(),
+    generators: options.generators,
   };
   const tables: Record<string, TableApi<QuerySchema, string>> = {};
   for (const name of Object.keys(schema.model)) {
@@ -229,7 +233,7 @@ function writeHandle(
     },
     sql() {
       return loadWrite().then((mod) =>
-        mod.explainWrite(session.schema, op, table, input, options, mods),
+        mod.explainWrite(session.schema, op, table, input, options, mods, session.generators),
       );
     },
     expect(count: number) {
@@ -254,7 +258,11 @@ async function runWrite(
   const mod = await loadWrite();
   try {
     return await mod.executeWrite(
-      { schema: session.schema, pool: session.pool },
+      {
+        schema: session.schema,
+        pool: session.pool,
+        ...(session.generators !== undefined ? { generators: session.generators } : {}),
+      },
       op,
       table,
       input,

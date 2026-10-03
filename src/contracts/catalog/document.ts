@@ -320,6 +320,7 @@ function rewriteColumn(
     ...(definition.defaultExpression !== undefined
       ? { defaultExpression: rewriteExpr(definition.defaultExpression, change, local) }
       : {}),
+    ...(definition.collation !== undefined ? { collation: definition.collation } : {}),
     ...(definition.identity !== undefined ? { identity: definition.identity } : {}),
     ...(definition.generated !== undefined
       ? {
@@ -449,6 +450,9 @@ function rewriteTableName(
                 local,
               ),
             }
+          : {}),
+        ...(object.definition.collation !== undefined
+          ? { collation: object.definition.collation }
           : {}),
         ...(object.definition.identity !== undefined
           ? { identity: object.definition.identity }
@@ -618,6 +622,7 @@ function definitionToJson(object: CatalogObject): Json {
         ...(definition.defaultExpression !== undefined
           ? { defaultExpression: definition.defaultExpression }
           : {}),
+        ...(definition.collation !== undefined ? { collation: definition.collation } : {}),
         ...(definition.identity !== undefined
           ? { identity: { always: definition.identity.always } }
           : {}),
@@ -755,7 +760,7 @@ function parseColumn(
   }
   rejectUnknown(
     definition,
-    ["dataType", "defaultExpression", "generated", "identity", "nullable"],
+    ["collation", "dataType", "defaultExpression", "generated", "identity", "nullable"],
     "column definition",
   );
   const generated = definition.generated;
@@ -771,6 +776,9 @@ function parseColumn(
     ...(definition.defaultExpression === undefined
       ? {}
       : { defaultExpression: requireString(definition.defaultExpression, "default") }),
+    ...(definition.collation === undefined
+      ? {}
+      : { collation: requireString(definition.collation, "collation") }),
     ...(columnIdentity === undefined ? {} : { identity: parseAlways(columnIdentity) }),
     ...(generated === undefined ? {} : { generated: parseGenerated(generated) }),
   });
