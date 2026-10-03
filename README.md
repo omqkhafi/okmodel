@@ -66,7 +66,7 @@ export default defineConfig({
 
 `t.identity()` is the primary key. An insert omits the id, and the row that comes back carries it. Identity ids come back as strings by default. `t.identity({ as: "number" })` returns numbers. Push and reviewed migrations are two ways to do the same job: pick one per database.
 
-Tested on PostgreSQL 17.
+Tested on PostgreSQL 15 to 18.
 
 `schema.ts`:
 

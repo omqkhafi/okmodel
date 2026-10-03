@@ -1,0 +1,18 @@
+name: Weekly
+
+# Full Postgres matrix, suite and tarball, Monday 06:00 UTC.
+# A pull request runs a shorter list from ci.yml.
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  postgres:
+    name: postgres
+    uses: ./.github/workflows/postgres.yml
+    with:
+      suite_versions: '["15", "16", "17", "18"]'
+      tarball_versions: '["15", "16", "17", "18"]'

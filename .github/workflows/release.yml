@@ -26,6 +26,9 @@ jobs:
     permissions:
       contents: read
     uses: ./.github/workflows/postgres.yml
+    with:
+      suite_versions: '["15", "16", "17", "18"]'
+      tarball_versions: '["15", "16", "17", "18"]'
 
   publish:
     name: publish

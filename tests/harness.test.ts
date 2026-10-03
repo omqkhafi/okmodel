@@ -10,14 +10,14 @@ import {
   postgresVersionFromEnv,
 } from "../packages/harness/src/version.js";
 
-test("postgres versions 13 through 18 are accepted", () => {
-  expect([...POSTGRES_VERSIONS]).toEqual(["13", "14", "15", "16", "17", "18"]);
+test("postgres versions 15 through 18 are accepted", () => {
+  expect([...POSTGRES_VERSIONS]).toEqual(["15", "16", "17", "18"]);
   for (const version of POSTGRES_VERSIONS) {
     expect(assertPostgresVersion(version)).toBe(version);
   }
   expect(postgresVersionFromEnv({})).toBe("17");
-  expect(() => assertPostgresVersion("12")).toThrow(/outside 13/);
-  expect(() => assertPostgresVersion("19")).toThrow(/outside 13/);
+  expect(() => assertPostgresVersion("14")).toThrow(/outside 15/);
+  expect(() => assertPostgresVersion("19")).toThrow(/outside 15/);
 });
 
 test("docker tests fail only when Docker is required", () => {

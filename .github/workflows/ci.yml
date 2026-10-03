@@ -1,8 +1,17 @@
 name: CI
 
+# A push runs on main only. A branch with a pull request runs on pull_request,
+# so the two events do not run the same commit twice. A newer run on the same
+# ref cancels the older one.
 on:
   push:
+    branches:
+      - main
   pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -35,6 +44,9 @@ jobs:
   postgres:
     name: postgres
     uses: ./.github/workflows/postgres.yml
+    with:
+      suite_versions: '["15", "18"]'
+      tarball_versions: '["18"]'
 
   attest:
     name: attest

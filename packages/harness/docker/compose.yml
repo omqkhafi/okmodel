@@ -1,6 +1,6 @@
 # One primary and two hot-standby physical replicas.
 # Ports follow OKM_PRIMARY_PORT, OKM_REPLICA_A_PORT, and OKM_REPLICA_B_PORT.
-# POSTGRES_VERSION selects the image major: 13, 14, 15, 16, 17, or 18.
+# POSTGRES_VERSION selects the image major: 15, 16, 17, or 18.
 
 name: okmodel
 
@@ -11,7 +11,6 @@ services:
       POSTGRES_USER: okm
       POSTGRES_PASSWORD: okm
       POSTGRES_DB: okm
-      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
     command:
       - postgres
       - -c

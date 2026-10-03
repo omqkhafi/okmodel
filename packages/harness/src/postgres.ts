@@ -74,7 +74,7 @@ export type IsolatedDatabase = {
  * Creates an empty database on the primary.
  *
  * `okm` opens its own connection, so a schema on the admin session is not enough.
- * `close` drops the database with `FORCE`, which Postgres 13 and newer accept.
+ * `close` drops the database with `FORCE`, which every supported major accepts.
  *
  * @param base - Admin URL. Defaults to the topology primary
  * @returns The new database URL and a close function

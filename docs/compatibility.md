@@ -2,7 +2,7 @@
 
 Generated from the conformance run (`tests/driver-suite.test.ts` and `tests/error-suite.test.ts`). Do not edit by hand.
 
-Supported majors are Postgres 13, 14, 15, 16, 17, and 18. Identity columns need Postgres 10. `gen_random_uuid()` is built in from Postgres 13, and that version is the floor because the portable UUID default uses it. `uuidv7()` needs Postgres 18. The postgres job runs the suite on each of these majors. A failure on an older major in this list stays in the run.
+Supported majors are Postgres 15, 16, 17, and 18. The floor is 15: Postgres 13 is past end of life, 14 ends in November 2026, and 15 gives us features we can use later. Identity columns need Postgres 10. `gen_random_uuid()` is built in from Postgres 13. `uuidv7()` needs Postgres 18. A pull request runs the suite on 15 and 18 and the tarball job on 18. The release and the weekly run cover each supported major. A failure on an older major in this list stays in the run.
 
 PGlite runs in the check job. The in-process wire server runs in the check job. postgres.js runs in the postgres job (`REQUIRE_DOCKER=1`). A skip means the adapter did not declare the capability that case needs.
 

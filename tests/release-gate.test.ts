@@ -7,7 +7,8 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { POSTGRES_VERSIONS } from "../packages/harness/src/version.js";
-import { renderCompatibility } from "../scripts/compatibility.js";
+import { renderCompatibility, supportSentence } from "../scripts/compatibility.js";
+import { verifyVersions } from "../scripts/verify.js";
 import { changelogReleaseNotes } from "../scripts/github-release.js";
 import { publishedPackageProblem } from "../scripts/npm-smoke.js";
 import {
@@ -56,12 +57,18 @@ test("the postgres suite runs every test file except the named omissions", () =>
 });
 
 test("compatibility names the supported majors", () => {
-  const sentence =
-    "Supported majors are Postgres 13, 14, 15, 16, 17, and 18. Identity columns need Postgres 10. `gen_random_uuid()` is built in from Postgres 13, and that version is the floor because the portable UUID default uses it. `uuidv7()` needs Postgres 18.";
+  const sentence = supportSentence();
+  expect(sentence).toContain("Supported majors are Postgres 15, 16, 17, and 18.");
+  expect(sentence).toContain(
+    "The floor is 15: Postgres 13 is past end of life, 14 ends in November 2026, and 15 gives us features we can use later.",
+  );
+  expect(sentence).toContain(
+    "A pull request runs the suite on 15 and 18 and the tarball job on 18.",
+  );
   const committed = readFileSync(join(root, "docs/compatibility.md"), "utf8");
   expect(committed).toContain(sentence);
   expect(renderCompatibility([])).toContain(sentence);
-  expect([...POSTGRES_VERSIONS]).toEqual(["13", "14", "15", "16", "17", "18"]);
+  expect([...POSTGRES_VERSIONS]).toEqual(["15", "16", "17", "18"]);
 });
 
 test("changelog release notes are the version section", () => {
@@ -71,7 +78,7 @@ test("changelog release notes are the version section", () => {
   );
   expect(notes).toBe("- One\n");
   const shipped = changelogReleaseNotes(readFileSync(join(root, "changelog.md"), "utf8"), "0.1.1");
-  expect(shipped).toContain("postgres job runs every test file");
+  expect(shipped).toContain("Supported Postgres majors are 15, 16, 17, and 18.");
   expect(shipped.startsWith("## v")).toBe(false);
 });
 
@@ -112,7 +119,9 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   expect(postgres).toContain("bun ./scripts/postgres-suite.ts");
   expect(postgres).toContain("bun ./scripts/tarball-smoke.ts");
   expect(postgres).not.toContain("tests/harness.test.ts");
-  expect(matrixVersions(postgres)).toEqual([[...POSTGRES_VERSIONS], [...POSTGRES_VERSIONS]]);
+  expect(postgres).toContain("fromJSON(inputs.suite_versions)");
+  expect(postgres).toContain("fromJSON(inputs.tarball_versions)");
+  expect(matrixVersions(postgres)).toEqual([]);
   const release = readFileSync(join(root, ".github/workflows/release.yml"), "utf8");
   expect(release).toContain("group: release");
   expect(release).toContain("cancel-in-progress: false");
@@ -125,9 +134,34 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   expect(release).toContain('NPM_CONFIG_PROVENANCE: "true"');
   expect(release).toContain("bun ./scripts/npm-smoke.ts");
   expect(release).toContain("bun ./scripts/github-release.ts");
+  expect(jsonVersions(release, "suite_versions")).toEqual([...POSTGRES_VERSIONS]);
+  expect(jsonVersions(release, "tarball_versions")).toEqual([...POSTGRES_VERSIONS]);
   const ci = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
   expect(ci).toContain("uses: ./.github/workflows/postgres.yml");
   expect(ci).not.toContain("tests/harness.test.ts");
+  expect(ci).toMatch(/push:\n {4}branches:\n {6}- main\n/);
+  expect(ci).toContain("pull_request:");
+  expect(ci).toContain("cancel-in-progress: true");
+  expect(ci).toContain("${{ github.workflow }}-${{ github.ref }}");
+  const floor = POSTGRES_VERSIONS[0];
+  const newest = POSTGRES_VERSIONS[POSTGRES_VERSIONS.length - 1];
+  if (floor === undefined || newest === undefined) throw new Error("no postgres versions");
+  expect(jsonVersions(ci, "suite_versions")).toEqual([floor, newest]);
+  expect(jsonVersions(ci, "tarball_versions")).toEqual([newest]);
+  const weekly = readFileSync(join(root, ".github/workflows/weekly.yml"), "utf8");
+  expect(weekly).toContain('cron: "0 6 * * 1"');
+  expect(weekly).toContain("uses: ./.github/workflows/postgres.yml");
+  expect(jsonVersions(weekly, "suite_versions")).toEqual([...POSTGRES_VERSIONS]);
+  expect(jsonVersions(weekly, "tarball_versions")).toEqual([...POSTGRES_VERSIONS]);
+});
+
+test("verify runs one version unless --all", () => {
+  expect(verifyVersions([], {})).toEqual(["17"]);
+  expect(verifyVersions([], { POSTGRES_VERSION: "16" })).toEqual(["16"]);
+  expect(verifyVersions(["--all"], { POSTGRES_VERSION: "16" })).toEqual([...POSTGRES_VERSIONS]);
+  expect(verifyVersions(["--", "--all"], {})).toEqual([...POSTGRES_VERSIONS]);
+  expect(() => verifyVersions(["--nope"], {})).toThrow(/Usage/);
+  expect(() => verifyVersions([], { POSTGRES_VERSION: "14" })).toThrow(/outside 15/);
 });
 
 function unpinnedActions(yaml: string): readonly string[] {
@@ -139,6 +173,17 @@ function unpinnedActions(yaml: string): readonly string[] {
     problems.push(uses);
   }
   return problems;
+}
+
+function jsonVersions(yaml: string, key: string): readonly string[] {
+  const match = new RegExp(`${key}:\\s*'(\\[[^']*\\])'`).exec(yaml);
+  const body = match?.[1];
+  if (body === undefined) throw new Error(`missing ${key}`);
+  const parsed: unknown = JSON.parse(body);
+  if (!Array.isArray(parsed) || parsed.some((item) => typeof item !== "string")) {
+    throw new Error(`${key} is not a string list`);
+  }
+  return parsed;
 }
 
 function matrixVersions(yaml: string): readonly (readonly string[])[] {

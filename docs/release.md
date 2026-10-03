@@ -4,7 +4,7 @@ Nothing in this repository publishes on push. Ali publishes after the release co
 
 The tag is `v` plus the `package.json` version. The changelog section is `## v` plus that version. The Release workflow reads the version from the checked-out commit and accepts only `refs/tags/v` plus that version. Any other ref is refused, and the message names the tag to pass.
 
-Publishing starts after the Postgres matrix and the tarball job pass. The matrix runs every test file on Postgres 13, 14, 15, 16, 17, and 18. The tarball job packs the package, installs it in a fresh directory, and runs the README and the quickstart against each of those versions. PGlite and the in-process wire server stay in `bun run check`. Two releases cannot run at the same time. Third-party actions are pinned by commit SHA.
+Publishing starts after the Postgres matrix and the tarball job pass. Supported majors are 15, 16, 17, and 18. This workflow and a weekly run (Monday 06:00 UTC) cover every supported major, suite and tarball. A pull request runs the suite on 15 and 18 and the tarball job on 18. `bun run verify` runs the suite on this machine for one version, or every supported version with `--all`. CI is the authority for a release. The tarball job packs the package, installs it in a fresh directory, and runs the README and the quickstart. PGlite and the in-process wire server stay in `bun run check`. Two releases cannot run at the same time. Third-party actions are pinned by commit SHA.
 
 ## Tag
 
