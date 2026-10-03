@@ -161,6 +161,10 @@ if (row?.title !== "hello" || row.author?.name !== "Ada") {
 }
 ```
 
+A jsonb filter uses `contains`, and the fragment stays a parameter: `{ meta: contains({ published: true }) }`. `json.set(["published"], true)` writes that path inside `update`. The column builder is `t.json()`; the `json` import is this write namespace.
+
+An array column uses `contains` and `overlaps` the same way. `arr.append("news")` and `arr.remove("news")` add or remove one element inside `update`.
+
 ### Errors
 
 `safe` returns the `OkmError` instead of throwing when the author name is already used.

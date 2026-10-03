@@ -29,7 +29,16 @@ export type OperatorName =
   | "has"
   | "none"
   | "every"
-  | "inc";
+  | "inc"
+  | "containedBy"
+  | "overlaps"
+  | "hasKey"
+  | "hasAnyKey"
+  | "path"
+  | "matches"
+  | "json.set"
+  | "arr.append"
+  | "arr.remove";
 
 /** A tagged operator. `value` is the operand the helper stored. */
 export type Tagged<Name extends OperatorName, V> = {
@@ -48,6 +57,58 @@ export type Between<V> = Tagged<"between", readonly [V, V]>;
 
 /** A literal pattern. `%`, `_`, and `\` in the value are escaped. */
 export type Pattern<Name extends "startsWith" | "contains" | "endsWith"> = Tagged<Name, string>;
+
+/** Array, jsonb, or range containment (`@>` or `<@`). */
+export type Containment<Name extends "contains" | "containedBy", V> = Tagged<Name, V>;
+
+/** Array or range overlap (`&&`). */
+export type Overlaps<V> = Tagged<"overlaps", V>;
+
+/** One jsonb key (`jsonb_exists`). */
+export type HasKey = Tagged<"hasKey", string>;
+
+/** Any of these jsonb keys (`jsonb_exists_any`). */
+export type HasAnyKey = Tagged<"hasAnyKey", readonly string[]>;
+
+/** A comparison applied to a json path (`#>>`). */
+export type PathCompare<V> = Eq<V> | Compare<"lt" | "lte" | "gt" | "gte", V>;
+
+/** Path segments and the comparison applied to the extracted text. */
+export type PathValue<V> = {
+  readonly segments: readonly string[];
+  readonly op: PathCompare<V>;
+};
+
+/** `col #>> segments` compared with `op`. */
+export type Path<V extends string | number | boolean> = Tagged<"path", PathValue<V>>;
+
+/** How `matches` turns query text into a tsquery. */
+export type MatchMode = "websearch" | "plain" | "phrase";
+
+/** Full-text query. `config` is a regconfig name when set. */
+export type MatchValue = {
+  readonly query: string;
+  readonly mode: MatchMode;
+  readonly config: string | undefined;
+};
+
+/** `@@` against a tsvector column. */
+export type Matches = Tagged<"matches", MatchValue>;
+
+/** `jsonb_set` path and the new value. */
+export type JsonSetValue<V> = {
+  readonly path: readonly string[];
+  readonly value: V;
+};
+
+/** Atomic JSON path write (`json.set`). */
+export type JsonSet<V> = Tagged<"json.set", JsonSetValue<V>>;
+
+/** `array_append` of one element. */
+export type ArrAppend<V> = Tagged<"arr.append", V>;
+
+/** `array_remove` of one element. */
+export type ArrRemove<V> = Tagged<"arr.remove", V>;
 
 /** A raw `LIKE` or `ILIKE` pattern. The caller owns the wildcards. */
 export type RawPattern<Name extends "like" | "ilike"> = Tagged<Name, string>;

@@ -40,6 +40,7 @@ const SPEC_CODES = [
   "OKM1121",
   "OKM1122",
   "OKM1123",
+  "OKM1124",
   "OKM1130",
   "OKM1190",
   "OKM1191",

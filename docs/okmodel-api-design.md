@@ -1335,6 +1335,7 @@ test("today view runs one query", async () => {
 | Extension downgrade, move of a non-relocatable extension, or drop with dependents | plan | OKM1814 |
 | Identifier fails the rules (length, NUL, control characters, unquoted reserved word) | runtime | OKM1122 |
 | Hidden field allowlisted in a filter or sort allowlist | build | OKM1123 |
+| Operator does not apply to the column type | types + runtime | OKM1124 |
 | View over tenant tables without the tenant key or `global` | `okm check` | OKM1820 |
 | Incompatible replace needs recreate of dependents (shown, never `CASCADE`) | plan | OKM1821 |
 | `REFRESH CONCURRENTLY` without a unique index | plan | OKM1822 |

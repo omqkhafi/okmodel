@@ -1,11 +1,15 @@
-import { tag, type Pattern } from "../operators.js";
+import { tag, type Tagged } from "../operators.js";
 
 /**
- * Case-sensitive substring. `%`, `_`, and `\` in `value` are escaped.
+ * Substring on text, or containment (`@>`) on an array, jsonb, or range.
  *
- * @param value - Literal substring
+ * On text, `%`, `_`, and `\` in `value` are escaped. On the other types the
+ * value is a parameter cast to the column type.
+ *
+ * @typeParam V - Operand
+ * @param value - Substring or contained value
  * @returns A tagged operator
  */
-export function contains(value: string): Pattern<"contains"> {
+export function contains<const V>(value: V): Tagged<"contains", V> {
   return tag("contains", value);
 }

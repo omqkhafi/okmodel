@@ -22,6 +22,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `t.id()` still defaults to database `uuidv7()`. `t.id({ default: "uuidv4" })` uses `gen_random_uuid()`. `t.id({ default: "none" })` has no default and is required on insert. A column choice wins over `schema({ defaults: { id } })`.
 - `schema({ defaults: { id } })` sets the generator for every bare `t.id()`. `"uuidv4"` and `"uuidv7"` stay database defaults. A function is filled in the application.
 - An OKID id is `text` with collation `C`. Collation is part of the catalog: create, diff, introspect, and plan.
+- `contains`, `containedBy`, `overlaps`, `hasKey`, `hasAnyKey`, `path`, and `matches` filter json, array, range, and tsvector columns. Text `contains` stays a substring. The value, key, or path is a parameter, and a regconfig name is checked before it is bound.
+- `json.set`, `arr.append`, and `arr.remove` are namespace exports used inside `update`. Importing one does not pull the others.
 
 #### adapters
 
@@ -33,6 +35,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `connect()` refuses a Postgres server below 15 with OKM1803. `schema({ requires })` that names an older major keeps the OKM1802 check instead.
 - `okmodel/ids` exports `uuidv4`, `uuidv7`, and `okid`. Pass one to `.default()` or `defaults.id`. A literal passed to `.default()` stays a database default. `.defaultSql()` stays a database expression. The generated value is not in the catalog, so changing a generator does not produce a migration. Insert fills each omitted value once, including each row of a batch, and the returned row carries it.
 - `connect({ generators })` replaces a built-in generator by name.
+- An operator that does not fit its column fails with OKM1124. The message names the column type and the operators that column accepts. Text search on a text column says it needs a tsvector column.
 
 #### tooling
 
@@ -42,6 +45,11 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - The README lists the key options. The quickstart stays on `t.identity()`. Schema says how ids are generated and how to change the default.
 - The roadmap is a public board. Each release is a milestone, and a pull request ends with `Closes #N`.
+- The README shows a jsonb `contains` filter and an array update with `arr.append`.
+
+### 💥 Breaking Changes
+
+- `import { json }` is the write namespace (`json.set`). A json column is `t.json()`.
 
 ### ♻️ Changed
 
@@ -51,6 +59,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - A postgres.js pool opened with TLS still lingers about 30 s after the last query on Node and Bun. A plain pool exits on its own. `close()` or `await using` releases it.
 - A release checks the tag, packs one tarball, tests that file on Postgres, and publishes that same file. The GitHub Release closes the milestone.
 - The npm description is one sentence.
+- App startup is gated at 84,500 minified and 27,500 gzip. postgres.js connect is 40,100 minified, and its gzip gate stays 13,815. `pg` is 40,000 / 13,950 and Bun.sql is 38,900 / 13,500.
 
 ## v0.1.1 — 2026-10-03
 

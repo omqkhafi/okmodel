@@ -127,6 +127,17 @@ const SHAKEN_OPERATORS = [
   "has",
   "none",
   "every",
+  "containedBy",
+  "overlaps",
+  "hasKey",
+  "hasAnyKey",
+  "path",
+  "matches",
+  "json-set",
+  "json-ns",
+  "arr-append",
+  "arr-remove",
+  "arr-ns",
 ] as const;
 
 /**
@@ -157,6 +168,12 @@ export type ExportShake = {
   readonly from: string;
   /** Export name to import. */
   readonly name: string;
+  /**
+   * Expression that must stay live.
+   *
+   * Defaults to {@link ExportShake.name}. A namespace member is `arr.append`.
+   */
+  readonly use?: string;
   /** Path fragment that must remain. */
   readonly keep: string;
   /** Path fragments that must be absent. */
@@ -176,6 +193,27 @@ const EXPORT_SHAKES: readonly ExportShake[] = [
     name: "eq",
     keep: "src/dialects/pg/ops/eq.ts",
     drop: ["src/dialects/pg/ops/lt.ts", "src/dialects/pg/ops/gt.ts", "src/dialects/pg/ops/like.ts"],
+  },
+  {
+    from: "src/dialects/pg/index.ts",
+    name: "json",
+    use: "json.set",
+    keep: "src/dialects/pg/ops/json-set.ts",
+    drop: ["src/dialects/pg/ops/arr-append.ts", "src/dialects/pg/ops/arr-remove.ts"],
+  },
+  {
+    from: "src/dialects/pg/index.ts",
+    name: "arr",
+    use: "arr.append",
+    keep: "src/dialects/pg/ops/arr-append.ts",
+    drop: ["src/dialects/pg/ops/arr-remove.ts", "src/dialects/pg/ops/json-set.ts"],
+  },
+  {
+    from: "src/dialects/pg/index.ts",
+    name: "arr",
+    use: "arr.remove",
+    keep: "src/dialects/pg/ops/arr-remove.ts",
+    drop: ["src/dialects/pg/ops/arr-append.ts", "src/dialects/pg/ops/json-set.ts"],
   },
 ];
 
@@ -732,7 +770,7 @@ export function exportShakeProblems(
     try {
       writeFileSync(
         entry,
-        `import { ${item.name} } from ${JSON.stringify(from)};\nexport const keep = ${item.name};\n`,
+        `import { ${item.name} } from ${JSON.stringify(from)};\nexport const keep = ${item.use ?? item.name};\n`,
       );
       const proc = Bun.spawnSync(
         ["bun", "build", entry, "--target", "node", "--outdir", dir, "--external", "postgres"],
