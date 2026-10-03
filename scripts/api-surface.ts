@@ -48,6 +48,10 @@ export function exportNames(source: string): readonly string[] {
       if (name !== undefined && name.length > 0) names.add(name);
     }
   }
+  for (const match of stripped.matchAll(/export\s+\*\s+as\s+(\w+)/g)) {
+    const name = match[1];
+    if (name !== undefined) names.add(name);
+  }
   for (const match of stripped.matchAll(
     /export\s+(?:declare\s+)?(?:async\s+)?(?:function|class|const|let|var|interface|type|enum)\s+(\w+)/g,
   )) {

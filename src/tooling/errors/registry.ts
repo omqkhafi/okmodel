@@ -178,6 +178,12 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     fix: "Remove the hidden field from the allowlist. Hidden fields stay out of caller filters and sorts.",
   },
   {
+    code: "OKM1124",
+    title: "Operator mismatch",
+    summary: "An operator does not apply to the column type.",
+    fix: "Use an operator the error lists for that column type. Text search needs a tsvector column.",
+  },
+  {
     code: "OKM1130",
     title: "Cursor order",
     summary: "A cursor was reused with a different orderBy than the one that created it.",

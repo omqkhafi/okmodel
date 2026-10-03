@@ -22,6 +22,7 @@ import {
   compileCall,
   decodeResult,
   logicalIntent,
+  readNeedsOperatorSql,
   type IncludeHooks,
   type Plan,
   type ReadCall,
@@ -288,6 +289,7 @@ function start(
     readonly params: readonly (string | null)[];
   }> => {
     if (prepared !== undefined) return prepared;
+    if (readNeedsOperatorSql(session.schema, call)) await loadOperatorSql();
     const hooks = await hooksFor(call);
     const bound = bindCall(session.schema, call, hooks);
     let plan = session.cache.get(bound.key);
@@ -357,7 +359,7 @@ function start(
       if (call.include === undefined && prepared !== undefined) {
         return inspection(prepared.plan, prepared.params, call);
       }
-      if (call.include === undefined) {
+      if (call.include === undefined && !readNeedsOperatorSql(session.schema, call)) {
         const bound = bindNow(session.schema, call);
         prepared = bound;
         return inspection(bound.plan, bound.params, call);
@@ -368,7 +370,7 @@ function start(
       if (call.include === undefined && prepared !== undefined) {
         return { text: prepared.plan.text, params: prepared.params };
       }
-      if (call.include === undefined) {
+      if (call.include === undefined && !readNeedsOperatorSql(session.schema, call)) {
         const { plan, params } = bindNow(session.schema, call);
         prepared = { plan, params };
         return { text: plan.text, params };
@@ -496,6 +498,13 @@ function errorFields(error: OkmError): {
 }
 
 let includeHooks: Promise<IncludeHooks> | undefined;
+
+let operatorSql: Promise<void> | undefined;
+
+function loadOperatorSql(): Promise<void> {
+  operatorSql ??= import("./operator-sql.js").then(() => undefined);
+  return operatorSql;
+}
 
 function hooksFor(call: ReadCall): Promise<IncludeHooks | undefined> {
   if (call.include === undefined) return Promise.resolve(undefined);

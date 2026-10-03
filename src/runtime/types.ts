@@ -9,17 +9,27 @@ import type { SafeResult } from "../contracts/error.js";
 import type { QuerySchema } from "../dialects/pg/model.js";
 import type { Inc } from "../dialects/pg/ops/inc.js";
 import type {
+  ArrAppend,
+  ArrRemove,
   Between,
   Compare,
+  Containment,
   Eq,
+  HasAnyKey,
+  HasKey,
   InList,
+  JsonSet,
+  Matches,
   Not,
   NotIn,
   Or,
+  Overlaps,
+  Path,
   Pattern,
   RawPattern,
   RelationFilter,
 } from "../dialects/pg/operators.js";
+import type { Range } from "../dialects/pg/range.js";
 import type { AppliedRule, ReadOp } from "./plan.js";
 
 /** One row of a table in `S`. */
@@ -43,24 +53,83 @@ type IsObject<V> = V extends object
       : true
   : false;
 
-/** A where operand. Object columns take `eq`, not a bare object. */
-export type WhereValue<V> =
-  | (IsObject<V> extends true ? never : V)
-  | null
-  | Eq<V>
-  | Compare<"lt", V>
-  | Compare<"lte", V>
-  | Compare<"gt", V>
-  | Compare<"gte", V>
-  | Between<V>
+/** Text patterns, including substring `contains`. `matches` is for tsvector, which is also `string`. */
+type TextOps =
   | Pattern<"startsWith">
   | Pattern<"contains">
   | Pattern<"endsWith">
   | RawPattern<"like">
   | RawPattern<"ilike">
-  | InList<V>
-  | NotIn<V>
-  | Not<V | null | Pattern<"startsWith"> | Pattern<"contains"> | Pattern<"endsWith"> | InList<V>>;
+  | Matches;
+
+/** Array, jsonb, or range containment, plus overlap where that operator fits. */
+type StructuredOps<V> = Containment<"contains" | "containedBy", V> | Overlaps<V>;
+
+/** A JSON fragment. Containment matches part of a document, not the whole column type. */
+type JsonFragment =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly JsonFragment[]
+  | { readonly [key: string]: JsonFragment };
+
+/** jsonb and json filters. `hasKey` is rejected at runtime on json. */
+type JsonOps =
+  | Containment<"contains" | "containedBy", JsonFragment>
+  | HasKey
+  | HasAnyKey
+  | Path<string>
+  | Path<number>
+  | Path<boolean>;
+
+/**
+ * A plain object that can be json or jsonb.
+ *
+ * Arrays, ranges, and bytea are not json. Timestamp values are objects too, and
+ * the Temporal declarations are structural, so a timestamp column is rejected
+ * at runtime (OKM1124) rather than here.
+ */
+type IsJsonObject<V> = V extends readonly unknown[]
+  ? false
+  : V extends Range<unknown>
+    ? false
+    : V extends Uint8Array
+      ? false
+      : IsObject<V>;
+
+/** Operators the column value type can accept. `unknown` keeps every family and the runtime decides. */
+type TypedOps<V> = [unknown] extends [V]
+  ? TextOps | StructuredOps<V> | JsonOps
+  :
+      | (V extends string ? TextOps : never)
+      | (V extends readonly unknown[] ? StructuredOps<V> : never)
+      | (V extends Range<unknown> ? StructuredOps<V> : never)
+      | (IsJsonObject<V> extends true ? JsonOps : never);
+
+/** A where operand. Object columns take `eq`, not a bare object. */
+export type WhereValue<V> = V extends unknown
+  ?
+      | (IsObject<V> extends true ? never : V)
+      | null
+      | Eq<V>
+      | Compare<"lt", V>
+      | Compare<"lte", V>
+      | Compare<"gt", V>
+      | Compare<"gte", V>
+      | Between<V>
+      | InList<V>
+      | NotIn<V>
+      | Not<V | null | TextOps | InList<V>>
+      | TypedOps<V>
+  : never;
+
+/** Array and JSON writes the column value type can accept. */
+type WriteOp<V> = [unknown] extends [V]
+  ? JsonSet<unknown> | ArrAppend<unknown> | ArrRemove<unknown>
+  :
+      | (V extends readonly (infer E)[] ? ArrAppend<E> | ArrRemove<E> : never)
+      | (IsJsonObject<V> extends true ? JsonSet<unknown> : never);
 
 /** Field filters. Relation filters are one level, so the type does not cycle. */
 export type FieldWhere<Row> = {
@@ -310,9 +379,12 @@ export type UpdateOf<
   ? U
   : never;
 
-/** `set` values. `undefined` leaves the field unchanged. `inc` adds to it. */
+/** `set` values. `undefined` leaves the field unchanged. `inc` adds to it. `set` and `arr` write json and arrays. */
 export type UpdateSet<S extends QuerySchema, K extends keyof S["~byName"]> = {
-  readonly [F in keyof UpdateOf<S, K>]?: UpdateOf<S, K>[F] | Inc<NonNullable<UpdateOf<S, K>[F]>>;
+  readonly [F in keyof UpdateOf<S, K>]?:
+    | UpdateOf<S, K>[F]
+    | Inc<NonNullable<UpdateOf<S, K>[F]>>
+    | WriteOp<NonNullable<UpdateOf<S, K>[F]>>;
 };
 
 /** Conflict handling on `insert` (spec §11). */

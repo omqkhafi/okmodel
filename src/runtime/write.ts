@@ -10,6 +10,8 @@ import { OkmError, throwNamed } from "../contracts/error.js";
 import type { ClientFill, IdGenerators } from "../contracts/generator.js";
 import type { ColumnModel } from "../dialects/pg/model.js";
 import type { QuerySchema } from "../dialects/pg/model.js";
+import { encodeJson } from "../dialects/pg/json.js";
+import { arrayElementType, assertOperatorFits, textArray } from "../dialects/pg/operator-fit.js";
 import { isOperator, operatorName, operatorValue } from "../dialects/pg/operators.js";
 import {
   decodeRow,
@@ -425,16 +427,28 @@ function emitSet(sql: Sql, table: Indexed, set: Record<string, unknown>, alias: 
 
 function emitValue(sql: Sql, column: ColumnModel, value: unknown, alias: string): void {
   if (isOperator(value)) {
-    if (operatorName(value) !== "inc") {
-      fail("OKM1121", `Field ${column.field} received an operator. set accepts a value or inc.`);
+    const name = operatorName(value);
+    if (name === "inc") {
+      const amount = operatorValue(value);
+      if (typeof amount === "object" && amount !== null) {
+        fail("OKM1121", `inc on ${column.field} needs a value.`);
+      }
+      sql.text(`${alias}.${quote(column.sql)} + `);
+      sql.param(column.encode(amount), column.dataType);
+      return;
     }
-    const amount = operatorValue(value);
-    if (typeof amount === "object" && amount !== null) {
-      fail("OKM1121", `inc on ${column.field} needs a value.`);
+    if (name === "json.set") {
+      emitJsonSet(sql, column, value, alias);
+      return;
     }
-    sql.text(`${alias}.${quote(column.sql)} + `);
-    sql.param(column.encode(amount), column.dataType);
-    return;
+    if (name === "arr.append" || name === "arr.remove") {
+      emitArrayWrite(sql, column, name, value, alias);
+      return;
+    }
+    fail(
+      "OKM1121",
+      `Field ${column.field} received an operator. set accepts a value, inc, set, or arr.`,
+    );
   }
   if (value === null) {
     sql.text(`null::${column.dataType}`);
@@ -444,6 +458,52 @@ function emitValue(sql: Sql, column: ColumnModel, value: unknown, alias: string)
     fail("OKM1121", `Field ${column.field} received an object. Pass a value or inc.`);
   }
   sql.param(column.encode(value), column.dataType);
+}
+
+function emitJsonSet(sql: Sql, column: ColumnModel, value: unknown, alias: string): void {
+  assertOperatorFits(column, "json.set");
+  if (!isOperator(value)) fail("OKM1121", `json.set on ${column.field} needs a path and a value.`);
+  const stored = operatorValue(value);
+  if (!isRecord(stored) || !Array.isArray(stored.path)) {
+    fail("OKM1121", `json.set on ${column.field} needs a path and a value.`);
+  }
+  const path = stored.path;
+  if (path.length === 0 || path.some((item) => typeof item !== "string")) {
+    fail("OKM1121", `json.set on ${column.field} needs a list of segments.`);
+  }
+  const encoded = encodeJson(stored.value);
+  const ref = `${alias}.${quote(column.sql)}`;
+  const target = column.dataType === "json" ? `${ref}::jsonb` : ref;
+  sql.text(`jsonb_set(${target}, `);
+  sql.param(textArray(path, `path on ${column.field}`), "text[]");
+  sql.text(", ");
+  sql.param(encoded, "jsonb");
+  sql.text(")");
+  if (column.dataType === "json") sql.text("::json");
+}
+
+function emitArrayWrite(
+  sql: Sql,
+  column: ColumnModel,
+  name: "arr.append" | "arr.remove",
+  value: unknown,
+  alias: string,
+): void {
+  assertOperatorFits(column, name);
+  const encode = column.elementEncode;
+  if (encode === undefined) {
+    fail(
+      "OKM1124",
+      `Operator ${name} does not apply to ${column.dataType} column ${column.field}. Accepted operators: eq, not, lt, lte, gt, gte, between, inList, notIn, inc.`,
+    );
+  }
+  if (!isOperator(value)) {
+    fail("OKM1121", `${name} on ${column.field} needs an element.`);
+  }
+  const fn = name === "arr.append" ? "array_append" : "array_remove";
+  sql.text(`${fn}(${alias}.${quote(column.sql)}, `);
+  sql.param(encode(operatorValue(value)), arrayElementType(column.dataType, column));
+  sql.text(")");
 }
 
 function emitFilter(

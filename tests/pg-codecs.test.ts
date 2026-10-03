@@ -5,6 +5,7 @@
 import { expect, test } from "bun:test";
 
 import { OkmError } from "../src/contracts/error.js";
+import { json } from "../src/dialects/pg/json.js";
 
 import {
   bigint,
@@ -22,7 +23,6 @@ import {
   int8range,
   integer,
   interval,
-  json,
   jsonb,
   jsonReplacer,
   line,

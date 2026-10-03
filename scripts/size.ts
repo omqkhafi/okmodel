@@ -52,35 +52,36 @@ export const CI_COLD_IMPORT_MS = 25;
 export const APP_ENTRY = "scripts/app-startup.ts";
 
 /**
- * Minified app-fixture ceiling, in bytes (D155).
+ * Minified app-fixture ceiling, in bytes (D157).
  *
- * P17G measured 79,757. Plus 3 percent is 82,200, under the 91,000 allowance (D143).
+ * P19 measured 82,041. Plus 3 percent, rounded down, is 84,500, under the 91,000 allowance (D143).
  */
-export const APP_MAX_MIN_BYTES = 82_200;
+export const APP_MAX_MIN_BYTES = 84_500;
 
 /**
- * Gzipped app-fixture ceiling, in bytes (D155).
+ * Gzipped app-fixture ceiling, in bytes (D157).
  *
- * P17G measured 26,149. Plus 3 percent is 26,950, under the 30,000 allowance (D143).
+ * P19 measured 26,716. Plus 3 percent, rounded down, is 27,500, under the 30,000 allowance (D143).
  */
-export const APP_MAX_GZIP_BYTES = 26_950;
+export const APP_MAX_GZIP_BYTES = 27_500;
 
 /**
  * Public connect entries, driver left external (D142, D143, D156).
  *
  * The startup graph excludes chunks loaded on first failure, include, or the
- * mismatch path of the catalog check. postgres.js and PGlite gates are the P17
- * measurement plus 5 percent (37,952 / 13,158 and 36,330 / 12,862). node-postgres
- * and Bun.sql gates are the P19 measurement plus 3 percent (D156): 38,732 / 13,516
- * and 37,633 / 13,086. Cold import is printed, including a driver-stubbed sample,
- * and is not gated. Bun.sql has no Node cold import.
+ * mismatch path of the catalog check. postgres.js is the P19 measurement plus
+ * 3 percent, rounded down (D157): 40,100 minified, gzip gate 13,815 kept.
+ * PGlite stays at the P17 measurement plus 5 percent (38,146 / 13,505).
+ * node-postgres and Bun.sql are the P19 measurement plus 3 percent, rounded
+ * down (D157): 40,000 / 13,950 and 38,900 / 13,500. Cold import is printed,
+ * including a driver-stubbed sample, and is not gated. Bun.sql has no Node cold import.
  */
 export const CONNECT_ENTRIES = [
   {
     entry: "src/runtime/pg/postgresjs.ts",
     file: "postgresjs.js",
     external: ["postgres"],
-    maxMinBytes: 39_849,
+    maxMinBytes: 40_100,
     maxGzipBytes: 13_815,
   },
   {
@@ -94,16 +95,16 @@ export const CONNECT_ENTRIES = [
     entry: "src/runtime/pg/pg.ts",
     file: "pg.js",
     external: ["pg"],
-    maxMinBytes: 39_894,
-    maxGzipBytes: 13_922,
+    maxMinBytes: 40_000,
+    maxGzipBytes: 13_950,
   },
   {
     entry: "src/runtime/pg/bun.ts",
     file: "bun.js",
     external: ["bun"],
     nodeColdImport: false,
-    maxMinBytes: 38_762,
-    maxGzipBytes: 13_479,
+    maxMinBytes: 38_900,
+    maxGzipBytes: 13_500,
   },
 ] as const;
 
@@ -126,6 +127,17 @@ const SHAKEN_OPERATORS = [
   "has",
   "none",
   "every",
+  "containedBy",
+  "overlaps",
+  "hasKey",
+  "hasAnyKey",
+  "path",
+  "matches",
+  "json-set",
+  "json-ns",
+  "arr-append",
+  "arr-remove",
+  "arr-ns",
 ] as const;
 
 /**
@@ -156,6 +168,12 @@ export type ExportShake = {
   readonly from: string;
   /** Export name to import. */
   readonly name: string;
+  /**
+   * Expression that must stay live.
+   *
+   * Defaults to {@link ExportShake.name}. A namespace member is `arr.append`.
+   */
+  readonly use?: string;
   /** Path fragment that must remain. */
   readonly keep: string;
   /** Path fragments that must be absent. */
@@ -175,6 +193,27 @@ const EXPORT_SHAKES: readonly ExportShake[] = [
     name: "eq",
     keep: "src/dialects/pg/ops/eq.ts",
     drop: ["src/dialects/pg/ops/lt.ts", "src/dialects/pg/ops/gt.ts", "src/dialects/pg/ops/like.ts"],
+  },
+  {
+    from: "src/dialects/pg/index.ts",
+    name: "json",
+    use: "json.set",
+    keep: "src/dialects/pg/ops/json-set.ts",
+    drop: ["src/dialects/pg/ops/arr-append.ts", "src/dialects/pg/ops/arr-remove.ts"],
+  },
+  {
+    from: "src/dialects/pg/index.ts",
+    name: "arr",
+    use: "arr.append",
+    keep: "src/dialects/pg/ops/arr-append.ts",
+    drop: ["src/dialects/pg/ops/arr-remove.ts", "src/dialects/pg/ops/json-set.ts"],
+  },
+  {
+    from: "src/dialects/pg/index.ts",
+    name: "arr",
+    use: "arr.remove",
+    keep: "src/dialects/pg/ops/arr-remove.ts",
+    drop: ["src/dialects/pg/ops/arr-append.ts", "src/dialects/pg/ops/json-set.ts"],
   },
 ];
 
@@ -731,7 +770,7 @@ export function exportShakeProblems(
     try {
       writeFileSync(
         entry,
-        `import { ${item.name} } from ${JSON.stringify(from)};\nexport const keep = ${item.name};\n`,
+        `import { ${item.name} } from ${JSON.stringify(from)};\nexport const keep = ${item.use ?? item.name};\n`,
       );
       const proc = Bun.spawnSync(
         ["bun", "build", entry, "--target", "node", "--outdir", dir, "--external", "postgres"],
