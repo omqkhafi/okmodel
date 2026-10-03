@@ -15,6 +15,8 @@ Byte gates fail in that CI job. Install size is the unminified `dist/` and is pr
 | Connect postgres.js, driver stubbed | | | 2.526 ms | local reference 15 ms, not gated |
 | Connect `okmodel/pg/pglite` startup | 36,330 | 12,861 | 10.794 ms | 38,146 / 13,505. Cold import printed, not gated |
 | Connect PGlite, driver stubbed | | | 2.666 ms | local reference 15 ms, not gated |
+| Connect `okmodel/pg/pg` startup | 38,732 | 13,516 | | 39,894 / 13,922 (measured +3%, D156). Cold import printed, not gated |
+| Connect `okmodel/pg/bun` startup | 37,633 | 13,086 | | 38,762 / 13,479 (measured +3%, D156). Node cold import skipped: Bun.sql runs only on Bun |
 | Install size (`dist/`) | 555,786 bytes unminified | | | printed, not gated |
 
 Adapter entries, driver included, are printed and not gated on cold import: postgres.js 8.563 ms, PGlite 10.090 ms. Their minified bytes that are not already in the runtime entry are gated: postgres.js 12,074 of 15,093, PGlite 9,608 of 12,010.
