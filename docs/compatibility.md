@@ -2,7 +2,7 @@
 
 Generated from the conformance run (`tests/driver-suite.test.ts` and `tests/error-suite.test.ts`). Do not edit by hand.
 
-Supported majors are Postgres 15, 16, 17, and 18. The floor is 15: Postgres 13 is past end of life, 14 ends in November 2026, and 15 gives us features we can use later. Identity columns need Postgres 10. `gen_random_uuid()` is built in from Postgres 13. `uuidv7()` needs Postgres 18. A pull request runs the suite on 15 and 18 and the tarball job on 18. The release and the weekly run cover each supported major. A failure on an older major in this list stays in the run.
+Supported majors are Postgres 15, 16, 17, and 18. The floor is 15: Postgres 13 is past end of life, 14 ends in November 2026, and 15 gives us features we can use later. `connect()` refuses an older server with OKM1803 unless `schema({ requires })` names that major. Identity columns need Postgres 10. `gen_random_uuid()` is built in from Postgres 13. `uuidv7()` needs Postgres 18. A pull request runs the suite on 15 and 18 and the tarball job on 18. The release and the weekly run cover each supported major. A failure on an older major in this list stays in the run.
 
 PGlite runs in the check job. The in-process wire server runs in the check job. postgres.js runs in the postgres job (`REQUIRE_DOCKER=1`). A skip means the adapter did not declare the capability that case needs.
 

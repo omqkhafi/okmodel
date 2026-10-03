@@ -4,7 +4,7 @@
  * Work happens here, not in `table()` and not at import.
  */
 
-import { catalogError, throwNamed } from "../../contracts/error.js";
+import { OkmError, catalogError, throwNamed } from "../../contracts/error.js";
 import { catalog } from "../../contracts/catalog/build.js";
 import { enumType, sameEnumLabels } from "../../contracts/catalog/enum.js";
 import { staticNamespace } from "../../contracts/catalog/identity.js";
@@ -125,6 +125,7 @@ type StoredOptions = {
   readonly renamedFrom?: string;
   readonly comment?: string;
   readonly unique?: Readonly<Record<string, readonly string[]>>;
+  readonly primaryKey?: readonly string[];
   readonly indexes?: (columns: Readonly<Record<string, ColumnHandle>>) => readonly IndexCall[];
   readonly checks?: Readonly<
     Record<string, (columns: Readonly<Record<string, ColumnHandle>>) => SqlText>
@@ -222,7 +223,7 @@ export function schema<const TTables extends readonly AnyTable[]>(
   const enums = new Map<string, EnumNote>();
 
   for (const item of config.tables) {
-    const built = compileTable(item, namespace, casing, codecs, jobs, enums);
+    const built = compileTable(item, namespace, casing, codecs, requires, jobs, enums);
     if (sqlNames.has(built.sqlName)) {
       catalogError(
         "OKM1023",
@@ -338,6 +339,7 @@ function compileTable(
   namespace: ReturnType<typeof staticNamespace>,
   casing: "snake" | undefined,
   codecs: SchemaCodecs,
+  requires: SchemaRequires | undefined,
   jobs: CatalogJob[],
   enums: Map<string, EnumNote>,
 ): Prepared {
@@ -350,7 +352,7 @@ function compileTable(
   stage(jobs, () => catalogTable({ namespace, name: sqlName, provenance }));
 
   const columns: PreparedColumn[] = [];
-  const primary: string[] = [];
+  const columnPrimary: string[] = [];
   const byField = new Map<string, PreparedColumn>();
   const bySql = new Map<string, PreparedColumn>();
   const handles: Record<string, ColumnHandle> = {};
@@ -408,7 +410,13 @@ function compileTable(
     bySql.set(prepared.sqlName, prepared);
     handles[field] = { name: prepared.sqlName };
     if (column.state.primaryKey) {
-      primary.push(prepared.sqlName);
+      if (column.state.nullable) {
+        catalogError("OKM1020", `Primary key ${item.name}.${field} is nullable.`);
+      }
+      columnPrimary.push(prepared.sqlName);
+    }
+    if (column.state.defaultSql === "uuidv7()") {
+      refuseUuidV7(item.name, field, requires);
     }
     const labels = column.state.enumLabels;
     if (labels !== undefined) {
@@ -416,13 +424,21 @@ function compileTable(
     }
   }
 
-  if (primary.length > 1) {
+  const optionPrimary = readPrimaryKey(item.name, options, byField);
+  if (columnPrimary.length > 1) {
     catalogError(
       "OKM1020",
-      `Table ${item.name} has more than one primary key (${primary.join(", ")}). One primary key is accepted.`,
+      `Table ${item.name} has more than one primary key (${columnPrimary.join(", ")}). One primary key is accepted.`,
     );
   }
-  if (primary.length === 1) {
+  if (columnPrimary.length > 0 && optionPrimary.length > 0) {
+    catalogError(
+      "OKM1020",
+      `Table ${item.name} has two primary keys. One primary key is accepted.`,
+    );
+  }
+  const primary = optionPrimary.length > 0 ? optionPrimary : columnPrimary;
+  if (primary.length > 0) {
     stage(jobs, () =>
       constraint({
         parent,
@@ -826,6 +842,11 @@ function tableModel(
   byName: ReadonlyMap<string, Prepared>,
   accepted: readonly string[],
 ): TableModel {
+  const primary: string[] = [];
+  for (const sqlName of item.primary) {
+    const column = item.bySql.get(sqlName);
+    if (column !== undefined) primary.push(column.field);
+  }
   const columns: ColumnModel[] = item.columns.map((column) => ({
     field: column.field,
     sql: column.sqlName,
@@ -835,12 +856,8 @@ function tableModel(
     hidden: column.hidden,
     guarded: column.guarded,
     writable: column.writable,
+    guardUpdate: column.writable && primary.includes(column.field),
   }));
-  const primary: string[] = [];
-  for (const sqlName of item.primary) {
-    const column = item.bySql.get(sqlName);
-    if (column !== undefined) primary.push(column.field);
-  }
   return {
     name: item.tsName,
     sql: item.sqlName,
@@ -917,6 +934,55 @@ function resolveRelations(
     );
   }
   return resolved;
+}
+
+function readPrimaryKey(
+  tableName: string,
+  options: StoredOptions | undefined,
+  byField: ReadonlyMap<string, PreparedColumn>,
+): readonly string[] {
+  const listed = options?.primaryKey;
+  if (listed === undefined) return [];
+  if (!Array.isArray(listed) || listed.length === 0) {
+    definition(`Table ${tableName} primaryKey needs a column.`);
+  }
+  const columns: string[] = [];
+  const seen = new Set<string>();
+  for (const field of listed) {
+    if (typeof field !== "string" || field.length === 0 || seen.has(field)) {
+      definition(`Table ${tableName} primaryKey repeats a column.`);
+    }
+    seen.add(field);
+    const column = byField.get(field);
+    if (column === undefined || column.nullable) {
+      catalogError("OKM1020", `Primary key ${tableName}.${field} is missing or nullable.`);
+    }
+    columns.push(column.sqlName);
+  }
+  return columns;
+}
+
+/**
+ * Rejects `uuidv7()` when the schema declares a Postgres older than 18.
+ *
+ * An undeclared `requires` does not name a version, so the default stays.
+ *
+ * @param tableName - Table that owns the column
+ * @param field - Column field name
+ * @param requires - Declared engine range
+ */
+function refuseUuidV7(
+  tableName: string,
+  field: string,
+  requires: SchemaRequires | undefined,
+): void {
+  const declared = Number(/^>=(\d+)$/.exec(requires?.postgres ?? "")?.[1]);
+  if (!(declared > 0) || declared >= 18) return;
+  throw new OkmError(
+    "OKM1812",
+    `Column ${tableName}.${field} uses uuidv7(). t.id({ default: "random" }).`,
+    { fix: { summary: "Use random." } },
+  );
 }
 
 function readRequires(requires: SchemaRequires | undefined): SchemaRequires | undefined {

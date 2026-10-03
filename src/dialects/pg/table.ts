@@ -60,6 +60,13 @@ export type TableOptions<TColumns> = {
   readonly unique?: {
     readonly [name: string]: readonly (keyof TColumns & string)[];
   };
+  /**
+   * Composite primary key, in column order.
+   *
+   * A single-column key can use this or `.primaryKey()` on the column.
+   * One table has one primary key.
+   */
+  readonly primaryKey?: readonly (keyof TColumns & string)[];
   readonly sqlName?: string;
   readonly renamedFrom?: string;
   readonly comment?: string;
@@ -99,12 +106,13 @@ export type Table<
   TName extends string,
   TColumns,
   TRelations extends Readonly<Record<string, RelationCall>> = Readonly<Record<string, never>>,
+  TKey extends string = never,
 > = {
   readonly "~name": TName;
   readonly "~columns": TColumns;
   readonly "~row": RowFrom<TColumns>;
   readonly "~insert": InsertFrom<TColumns>;
-  readonly "~update": UpdateFrom<TColumns>;
+  readonly "~update": UpdateFrom<TColumns, TKey>;
   readonly "~relations": TRelations;
   readonly name: TName;
   readonly columns: TColumns;
@@ -152,9 +160,13 @@ export type InsertFrom<TColumns> = {
  *
  * @typeParam TColumns - Column builders
  */
-export type UpdateFrom<TColumns> = {
+export type UpdateFrom<TColumns, TKey extends string = never> = {
   readonly [
-    K in keyof TColumns as ColumnUpdateOf<TColumns[K]> extends never ? never : K
+    K in keyof TColumns as K extends TKey
+      ? never
+      : ColumnUpdateOf<TColumns[K]> extends never
+        ? never
+        : K
   ]: ColumnUpdateOf<TColumns[K]>;
 };
 
@@ -162,6 +174,7 @@ const TABLE_KNOWN = new Set([
   "checks",
   "comment",
   "indexes",
+  "primaryKey",
   "relations",
   "renamedFrom",
   "sqlName",
@@ -200,12 +213,16 @@ const TABLE_LATER: Readonly<Record<string, string>> = {
 export function table<
   const TName extends string,
   const TColumns extends Readonly<Record<string, object>>,
->(name: TName, columns: TColumns): Table<TName, TColumns, Readonly<Record<string, never>>>;
+>(name: TName, columns: TColumns): Table<TName, TColumns, Readonly<Record<string, never>>, never>;
 export function table<
   const TName extends string,
   const TColumns extends Readonly<Record<string, object>>,
   const TOptions extends TableOptions<TColumns>,
->(name: TName, columns: TColumns, options: TOptions): Table<TName, TColumns, RelationsOf<TOptions>>;
+>(
+  name: TName,
+  columns: TColumns,
+  options: TOptions,
+): Table<TName, TColumns, RelationsOf<TOptions>, PrimaryOf<TOptions>>;
 export function table<
   const TName extends string,
   const TColumns extends Readonly<Record<string, object>>,
@@ -213,7 +230,7 @@ export function table<
   name: TName,
   columns: TColumns,
   options?: TableOptions<TColumns>,
-): Table<TName, TColumns, Readonly<Record<string, RelationCall>>> {
+): Table<TName, TColumns, Readonly<Record<string, RelationCall>>, string> {
   if (name.length === 0) {
     definition("table() needs a name.");
   }
@@ -223,7 +240,8 @@ export function table<
   return { name, columns, ...(options !== undefined ? { options } : {}) } as unknown as Table<
     TName,
     TColumns,
-    Readonly<Record<string, RelationCall>>
+    Readonly<Record<string, RelationCall>>,
+    string
   >;
 }
 
@@ -240,6 +258,20 @@ type RelationsOf<TOptions> = TOptions extends { readonly relations: infer R }
     ? R
     : Readonly<Record<string, never>>
   : Readonly<Record<string, never>>;
+
+/**
+ * Column names listed in a table's `primaryKey` option.
+ *
+ * Absent when the option is omitted, so a table without it does not change
+ * its update shape.
+ *
+ * @typeParam TOptions - Options argument
+ */
+type PrimaryOf<TOptions> = TOptions extends { readonly primaryKey: infer K }
+  ? K extends readonly (infer F)[]
+    ? Extract<F, string>
+    : never
+  : never;
 
 /**
  * Declares an index from column handles.

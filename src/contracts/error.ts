@@ -57,6 +57,7 @@ export type QueryCode =
   | "OKM1190"
   | "OKM1801"
   | "OKM1802"
+  | "OKM1803"
   | "OKM1843";
 
 /** Kinds from spec §14, in category order. */

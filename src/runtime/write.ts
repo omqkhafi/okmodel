@@ -568,7 +568,7 @@ function writeSet(table: Indexed, value: unknown): Record<string, unknown> {
         `Field ${key} is not on ${table.model.name}. Accepted names: ${table.names.join(", ")}.`,
       );
     }
-    if (!column.writable) refuse(table.model.name, column);
+    if (!column.writable || column.guardUpdate) refuse(table.model.name, column);
     set[key] = value[key];
   }
   return set;
@@ -695,6 +695,9 @@ function callOptions(options: object): ExecuteOptions | undefined {
 }
 
 function refuse(table: string, column: ColumnModel): never {
+  if (column.guardUpdate) {
+    fail("OKM1190", `Field ${table}.${column.field} is a primary key. Input cannot change it.`);
+  }
   if (column.guarded) {
     fail("OKM1190", `Field ${table}.${column.field} is guarded. Input cannot set it.`);
   }

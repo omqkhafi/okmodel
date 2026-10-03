@@ -142,7 +142,7 @@ connect({ primary: url, replicas: [r1, r2] }, { schema: appSchema });        // 
 connect(url, { schema: appSchema, tenancy: { registry } });                  // tenant registry, section 9.1 (M5)
 ```
 
-- On connect: the server satisfies `requires` (OKM1802); dialect match (OKM1801, types).
+- On connect: the server is PostgreSQL 15 or newer (OKM1803). `schema({ requires })` can name an older major on purpose, and the server must satisfy that range (OKM1802). Dialect match is OKM1801.
 - There is no user-facing schema or edition version. The package version is the contract: features exist or not by release, and default changes ship with `okm upgrade` codemods. The catalog format version is internal and lives in `okm.lock.json`.
 - Each `connect()` returns a client typed by its own schema, independent of `Register`.
 
@@ -574,6 +574,7 @@ export const tasks = table("tasks", {
 | `relations` | `one`, `many`, `manyThrough`, `morph`, by table name. `morph("commentable", ["tasks", "lists"])` declares a closed list of targets and returns a flat discriminated union (M2) |
 | `computed` | SQL expressions usable like fields |
 | `indexes`, `checks` | database indexes, unique constraints, check constraints |
+| `primaryKey` | column names of one primary key, including a composite key |
 | `presets` | named, typed query refinements; called as `tasks.pending()`. Names may not collide with client methods or the reserved list (`lock`, `watch`, `subscribe`, `stream`, `inspect`, `explain`, `with`, `for`, `as`); collisions fail with OKM1040 and `okm upgrade` renames a preset when a later release claims its name |
 | `policies` | row policies |
 | `reference` | `{ key, rows }`: rows the application requires to exist (roles, statuses). Declarative and idempotent: applied by `migrate apply` and by provisioning as insert-if-missing by key; never updates or deletes; classified `expand` (section 19.6) |
@@ -587,7 +588,7 @@ References are plain table-name strings (a generic table-name argument cycles th
 
 | Group | Builders |
 |---|---|
-| Keys | `t.id()` (uuid + `uuidv7()`), `t.identity()`, `t.uuid()` |
+| Keys | `t.id()` (uuid; default `uuidv7()`, or `{ default: "random" }` for `gen_random_uuid()`, or `{ default: "none" }` when the caller supplies the id), `t.identity()`, `t.uuid()`, `.primaryKey()` on a column, `primaryKey` on the table |
 | Integers | `t.smallint()`, `t.integer()`, `t.bigint()` |
 | Decimals | `t.numeric(p, s)`, `t.real()`, `t.double()` |
 | Text | `t.text()`, `t.varchar(n)`, `t.char(n)`, `t.citext()` |
@@ -602,7 +603,9 @@ References are plain table-name strings (a generic table-name argument cycles th
 | Arrays | `.array()`, `.array({ dims: 2 })` |
 | Custom | `t.custom({ sqlType, encode, decode, tsType })` |
 
-Modifiers: `.nullable()`, `.default(v)`, `.defaultSql(sql)`, `.unique({ reason, global })`, `.references(table, opts)`, `.picklist([...], { check })`, `.generated(sql, { stored })`, `.guarded()`, `.renamedFrom(name)`, `.sqlName()`, `.comment()`. `.hidden()` and `.validate(rules | schema)` are not in 0.1.
+Modifiers: `.nullable()`, `.default(v)`, `.defaultSql(sql)`, `.primaryKey()`, `.unique({ reason, global })`, `.references(table, opts)`, `.picklist([...], { check })`, `.generated(sql, { stored })`, `.guarded()`, `.renamedFrom(name)`, `.sqlName()`, `.comment()`. `.hidden()` and `.validate(rules | schema)` are not in 0.1.
+
+`t.id()` with `uuidv7()` or `random`, and `t.identity()`, are omitted from insert and update. `t.id({ default: "none" })`, `.primaryKey()`, and a composite `primaryKey` are required on insert (optional when the column already has a default) and omitted from update. A declared `requires` below Postgres 18 rejects `uuidv7()` at schema build (OKM1812) and the message names `t.id({ default: "random" })`.
 
 **Not in this version.** A builder or option in this table throws OKM1061 and names the version that adds it. `.hidden()` and `.sensitive()` are not methods yet. `later` means no 0.x version is assigned yet.
 
@@ -641,7 +644,7 @@ Set in `schema({ codecs })`, override per field: `t.bigint({ as: "number" })`. D
 |---|---|
 | (default) | unknown keys in input are dropped |
 | `.guarded()` | never filled from `insert`/`update` input; set by code with `{ allow: ["field"] }` |
-| automatic guards | primary key, tenant key, trait fields (`createdAt`, `updatedAt`, `archivedAt`, `archiveId`, `version`) |
+| automatic guards | `t.id()` with a database default and `t.identity()` (omitted from insert and update); a column `.primaryKey()`, a composite `primaryKey`, and `t.id({ default: "none" })` (supplied on insert, omitted from update); tenant key and trait fields (`createdAt`, `updatedAt`, `archivedAt`, `archiveId`, `version`) |
 | `.hidden()` | excluded from default selects and includes; returned only when named in `select` |
 | `.sensitive()` | values never appear in logs, error messages, `inspect()` output or fixtures; shown as `[redacted]` even in development |
 
@@ -650,7 +653,7 @@ Set in `schema({ codecs })`, override per field: `t.bigint({ as: "number" })`. D
 | Question | Default | Changed by |
 |---|---|---|
 | Returned by default reads? | yes | `.hidden()` |
-| Filled from external input? | yes | `.guarded()`, automatic guards |
+| Filled from external input? | yes | `.guarded()`, and a primary key on update. `t.id()` with a default and `t.identity()` are also omitted from insert |
 | Filterable from client input? | no | `tasks.filters({ allow })` |
 | Writable by code? | yes | guarded fields need `{ allow }` |
 | Values shown in logs, errors, inspection? | parameters only in development inspection; never in fingerprints | `.sensitive()`: always redacted |
@@ -1307,6 +1310,7 @@ test("today view runs one query", async () => {
 | RLS with owner or superuser role | connect | OKM1707 |
 | Schema/driver dialect mismatch | types | OKM1801 |
 | Server does not satisfy `requires` | connect | OKM1802 |
+| Server is older than PostgreSQL 15 and `requires` does not name that older major | connect | OKM1803 |
 | Extension builder used but not declared | build | OKM1810 |
 | Declared extension unavailable on the server | plan / `okm doctor` | OKM1811 |
 | Feature not in the declared versions | build | OKM1812 |

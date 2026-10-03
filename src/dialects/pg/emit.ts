@@ -68,13 +68,13 @@ function fields(item: AnyTable, kind: "row" | "insert" | "update"): string {
       continue;
     }
     const state = builder.state;
-    const written = insertMode(state);
     if (kind === "row") {
       if (!state.hidden) {
         printed.push(`  readonly ${field}: ${valueType(state, "required")};`);
       }
       continue;
     }
+    const written = kind === "update" ? updateMode(state) : insertMode(state);
     if (written === "omit") {
       continue;
     }
@@ -98,6 +98,11 @@ function insertMode(state: ColumnState<unknown>): "omit" | "optional" | "require
     return "optional";
   }
   return "required";
+}
+
+function updateMode(state: ColumnState<unknown>): "omit" | "optional" {
+  if (state.omitUpdate || insertMode(state) === "omit") return "omit";
+  return "optional";
 }
 
 function valueType(state: ColumnState<unknown>, mode: "required" | "optional"): string {

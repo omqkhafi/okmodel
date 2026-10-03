@@ -14,6 +14,19 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+### ✨ Added
+
+- A column can be a primary key with `.primaryKey()`, and a table can declare a composite primary key with `primaryKey`. A natural key and a caller-supplied id insert, and `find` looks them up.
+- `t.id()` still defaults to `uuidv7()`. `t.id({ default: "random" })` uses `gen_random_uuid()`. `t.id({ default: "none" })` has no default and is required on insert.
+- `connect()` refuses a Postgres server below 15 with OKM1803. `schema({ requires })` that names an older major keeps the OKM1802 check instead.
+- The README lists the key options. The quickstart stays on `t.identity()`.
+
+### ♻️ Changed
+
+- A declared server below 18 that uses `uuidv7()` fails with OKM1812, and the message names `t.id({ default: "random" })`.
+- `t.id()` and `t.identity()` stay omitted from insert and update. A plain primary key is writable on insert and omitted from update. Changing it is OKM1190.
+- A postgres.js pool opened with TLS still lingers about 30 s after the last query on Node and Bun. A plain pool exits on its own. `close()` or `await using` releases it.
+
 ## v0.1.1 — 2026-10-03
 
 ### ✨ Added

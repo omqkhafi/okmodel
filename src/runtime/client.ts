@@ -459,53 +459,8 @@ async function checkServer(
     const { mapPostgresError } = await import("../dialects/pg/errors.js");
     throw mapPostgresError(error, mapOptions(http, false));
   }
-  const version = rows[0]?.[1];
-  if (version === null || version === undefined || !version.startsWith("PostgreSQL")) {
-    throw new OkmError(
-      "OKM1801",
-      "The server is not PostgreSQL. The schema dialect is postgres.",
-      withHttp(http, {
-        fix: { summary: "Open the schema with the Postgres driver that matches it." },
-      }),
-    );
-  }
-  const recorded = rows[0]?.[2];
-  if (recorded === null || recorded === undefined || recorded.length === 0) {
-    if (requireMeta) {
-      throw new OkmError(
-        "OKM1520",
-        "okm_meta has no catalog hash.",
-        withHttp(http, {
-          fix: {
-            summary:
-              "Apply migrations so okm_meta records the catalog, or omit requireMeta to adopt this database.",
-          },
-        }),
-      );
-    }
-  } else {
-    const { assertCompatible } = await import("./drift.js");
-    try {
-      await assertCompatible(pool, schema, recorded, source, options);
-    } catch (error) {
-      if (error instanceof OkmError) throw attachHttp(http, error);
-      throw error;
-    }
-  }
-  const requires = schema.requires?.postgres;
-  if (requires === undefined) return;
-  const major = Math.floor(Number(rows[0]?.[0] ?? "0") / 10_000);
-  const match = /^>=(\d+)$/.exec(requires.trim());
-  const need = match?.[1] === undefined ? undefined : Number(match[1]);
-  if (need === undefined || major < need) {
-    throw new OkmError(
-      "OKM1802",
-      `The server is PostgreSQL ${String(major)}. schema({ requires }) asks for ${requires}.`,
-      withHttp(http, {
-        fix: { summary: "Upgrade the server, or lower requires to a version the server meets." },
-      }),
-    );
-  }
+  const { acceptServer } = await import("./server-check.js");
+  await acceptServer(pool, schema, rows, http, requireMeta, options, source);
 }
 
 async function mapError(session: Session, error: unknown): Promise<OkmError> {
@@ -559,7 +514,17 @@ function inspection(plan: Plan, params: readonly (string | null)[], call: ReadCa
   };
 }
 
-function withHttp(http: ErrorStatuses | undefined, options: OkmErrorOptions): OkmErrorOptions {
+/**
+ * Attaches connect's HTTP statuses to options for one {@link OkmError}.
+ *
+ * @param http - Statuses from `connect({ errors })`
+ * @param options - Error options that do not yet name a status map
+ * @returns Options `toHttp()` can read
+ */
+export function withHttp(
+  http: ErrorStatuses | undefined,
+  options: OkmErrorOptions,
+): OkmErrorOptions {
   return http === undefined ? options : { ...options, http };
 }
 
@@ -570,7 +535,7 @@ function withHttp(http: ErrorStatuses | undefined, options: OkmErrorOptions): Ok
  * @param error - Failure that did not carry those statuses
  * @returns The error `toHttp()` reads
  */
-function attachHttp(http: ErrorStatuses | undefined, error: OkmError): OkmError {
+export function attachHttp(http: ErrorStatuses | undefined, error: OkmError): OkmError {
   if (http === undefined) return error;
   return new OkmError(error.code, error.message, { ...errorFields(error), http });
 }

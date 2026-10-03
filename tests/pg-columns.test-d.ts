@@ -6,6 +6,7 @@ import { expectTypeOf } from "expect-type";
 
 import {
   t,
+  table,
   type ColumnInsertOf,
   type ColumnRowOf,
   type ColumnUpdateOf,
@@ -19,6 +20,47 @@ const key = t.id();
 expectTypeOf<ColumnRowOf<typeof key>>().toEqualTypeOf<string>();
 expectTypeOf<ColumnInsertOf<typeof key>>().toEqualTypeOf<never>();
 expectTypeOf<ColumnUpdateOf<typeof key>>().toEqualTypeOf<never>();
+
+const randomKey = t.id({ default: "random" });
+expectTypeOf<ColumnInsertOf<typeof randomKey>>().toEqualTypeOf<never>();
+expectTypeOf<ColumnUpdateOf<typeof randomKey>>().toEqualTypeOf<never>();
+
+const supplied = t.id({ default: "none" });
+expectTypeOf<ColumnRowOf<typeof supplied>>().toEqualTypeOf<string>();
+expectTypeOf<ColumnInsertOf<typeof supplied>>().toEqualTypeOf<string>();
+expectTypeOf<ColumnUpdateOf<typeof supplied>>().toEqualTypeOf<never>();
+
+const natural = t.text().primaryKey();
+expectTypeOf<ColumnRowOf<typeof natural>>().toEqualTypeOf<string>();
+expectTypeOf<ColumnInsertOf<typeof natural>>().toEqualTypeOf<string>();
+expectTypeOf<ColumnUpdateOf<typeof natural>>().toEqualTypeOf<never>();
+
+const skus = table("skus", { code: t.text().primaryKey(), name: t.text() });
+expectTypeOf<(typeof skus)["~insert"]>().toEqualTypeOf<{
+  readonly code: string;
+  readonly name: string;
+}>();
+expectTypeOf<(typeof skus)["~update"]>().toEqualTypeOf<{
+  readonly name: string | undefined;
+}>();
+expectTypeOf<(typeof skus)["~row"]>().toEqualTypeOf<{
+  readonly code: string;
+  readonly name: string;
+}>();
+
+const members = table(
+  "members",
+  { userId: t.uuid(), orgId: t.uuid(), role: t.text() },
+  { primaryKey: ["userId", "orgId"] },
+);
+expectTypeOf<(typeof members)["~insert"]>().toEqualTypeOf<{
+  readonly userId: string;
+  readonly orgId: string;
+  readonly role: string;
+}>();
+expectTypeOf<(typeof members)["~update"]>().toEqualTypeOf<{
+  readonly role: string | undefined;
+}>();
 
 const serial = t.identity();
 expectTypeOf<ColumnRowOf<typeof serial>>().toEqualTypeOf<string>();

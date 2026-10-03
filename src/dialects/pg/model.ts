@@ -27,6 +27,8 @@ export type ColumnModel = {
   readonly guarded: boolean;
   /** Included in insert and update. Guarded, generated, and omitted columns are not. */
   readonly writable: boolean;
+  /** Refused on update. Insert may still set it. A caller-supplied primary key. */
+  readonly guardUpdate: boolean;
 };
 
 /**

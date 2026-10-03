@@ -128,6 +128,34 @@ postgresTest(
 
 postgresTest(
   gate,
+  "primary key create, add, change, and drop match the catalog hash",
+  async () => {
+    await withPostgresSchema(async (sql, schemaName) => {
+      const ref = `${schemaName}_k`;
+      await sql.unsafe(`create schema ${q(ref)}`);
+      try {
+        await roundTrip(sql, schemaName, ref, "create-natural-key", undefined, skus());
+        await roundTrip(sql, schemaName, ref, "add-key", openItems(), keyedItems());
+        await roundTrip(sql, schemaName, ref, "change-key", keyedItems(), compositeItems());
+        await roundTrip(sql, schemaName, ref, "drop-key", keyedItems(), openItems());
+        await roundTrip(sql, schemaName, ref, "create-random-id", undefined, randomSessions());
+        const version = await sql<
+          { v: string }[]
+        >`select current_setting('server_version_num') as v`;
+        const major = Math.floor(Number(version[0]?.v ?? "0") / 10_000);
+        if (major >= 18) {
+          await roundTrip(sql, schemaName, ref, "create-uuidv7", undefined, uuidSessions());
+        }
+      } finally {
+        await sql.unsafe(`drop schema if exists ${q(ref)} cascade`);
+      }
+    });
+  },
+  90_000,
+);
+
+postgresTest(
+  gate,
   "identity create, add, drop table, and drop identity match the catalog hash",
   async () => {
     await withPostgresSchema(async (sql, schemaName) => {
@@ -154,7 +182,7 @@ postgresTest(
       const other = `${schemaName}_b`;
       await sql.unsafe(`create schema ${q(other)}`);
       try {
-        for (let seed = 1; seed <= 8; seed += 1) {
+        for (let seed = 1; seed <= 12; seed += 1) {
           const authoredA = catalog(baseObjects());
           const authoredB = catalog(mutate(baseObjects(), seed));
           await apply(sql, renderCatalog(authoredA, schemaName));
@@ -194,7 +222,7 @@ postgresTest(
       }
     });
   },
-  60_000,
+  90_000,
 );
 
 postgresTest(
@@ -454,6 +482,46 @@ function booksWithIdentity(): Catalog {
   }).catalog;
 }
 
+function skus(): Catalog {
+  return schema({
+    tables: [defineTable("skus", { code: t.text().primaryKey(), name: t.text() })],
+  }).catalog;
+}
+
+function openItems(): Catalog {
+  return schema({
+    tables: [defineTable("items", { id: t.integer(), region: t.text() })],
+  }).catalog;
+}
+
+function keyedItems(): Catalog {
+  return schema({
+    tables: [defineTable("items", { id: t.integer().primaryKey(), region: t.text() })],
+  }).catalog;
+}
+
+function compositeItems(): Catalog {
+  return schema({
+    tables: [
+      defineTable("items", { id: t.integer(), region: t.text() }, { primaryKey: ["id", "region"] }),
+    ],
+  }).catalog;
+}
+
+function randomSessions(): Catalog {
+  return schema({
+    requires: { postgres: ">=15" },
+    tables: [defineTable("sessions", { id: t.id({ default: "random" }) })],
+  }).catalog;
+}
+
+function uuidSessions(): Catalog {
+  return schema({
+    requires: { postgres: ">=18" },
+    tables: [defineTable("sessions", { id: t.id() })],
+  }).catalog;
+}
+
 function baseObjects(): CatalogObject[] {
   const users = { namespace, name: "users" };
   const tasks = { namespace, name: "tasks" };
@@ -492,6 +560,14 @@ function baseObjects(): CatalogObject[] {
       provenance,
     }),
     index({ parent: tasks, columns: ["title"], nameKey: "title", provenance }),
+    table({ namespace, name: "notes", provenance }),
+    column({
+      parent: { namespace, name: "notes" },
+      name: "body",
+      dataType: "text",
+      nullable: false,
+      provenance,
+    }),
     constraint({
       parent: tasks,
       constraintKind: "check",
@@ -530,6 +606,60 @@ function identityPieces(
 function mutate(objects: CatalogObject[], seed: number): CatalogObject[] {
   const next = objects.map((object) => object);
   const tasks = { namespace, name: "tasks" };
+  if (seed === 9) {
+    return next.map((object) => {
+      if (
+        object.kind === "constraint" &&
+        object.definition.constraintKind === "primaryKey" &&
+        object.identity.parent.name === "tasks"
+      ) {
+        return constraint({
+          parent: tasks,
+          constraintKind: "primaryKey",
+          columns: ["id", "owner_id"],
+          provenance,
+        });
+      }
+      return object;
+    });
+  }
+  if (seed === 10) {
+    return next.filter(
+      (object) =>
+        !(
+          object.kind === "constraint" &&
+          object.definition.constraintKind === "primaryKey" &&
+          object.identity.parent.name === "tasks"
+        ),
+    );
+  }
+  if (seed === 11) {
+    const skusParent = { namespace, name: "skus" };
+    next.push(table({ namespace, name: "skus", provenance }));
+    next.push(
+      column({ parent: skusParent, name: "code", dataType: "text", nullable: false, provenance }),
+    );
+    next.push(
+      constraint({
+        parent: skusParent,
+        constraintKind: "primaryKey",
+        columns: ["code"],
+        provenance,
+      }),
+    );
+    return next;
+  }
+  if (seed === 12) {
+    next.push(
+      constraint({
+        parent: { namespace, name: "notes" },
+        constraintKind: "primaryKey",
+        columns: ["body"],
+        provenance,
+      }),
+    );
+    return next;
+  }
   if (seed === 6) {
     return next.flatMap((object) => {
       if (object.kind === "sequence" && object.identity.name === "users_id_seq") return [];
