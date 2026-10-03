@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { POSTGRES_VERSIONS } from "../packages/harness/src/version.js";
 import { renderCompatibility, supportSentence } from "../scripts/compatibility.js";
 import { verifyVersions } from "../scripts/verify.js";
-import { changelogReleaseNotes } from "../scripts/github-release.js";
+import { changelogReleaseNotes, milestoneTitle } from "../scripts/github-release.js";
 import { publishedPackageProblem } from "../scripts/npm-smoke.js";
 import {
   POSTGRES_EXCLUSIONS,
@@ -82,6 +82,12 @@ test("changelog release notes are the version section", () => {
   expect(shipped.startsWith("## v")).toBe(false);
 });
 
+test("a release milestone drops a trailing .0", () => {
+  expect(milestoneTitle("0.2.0")).toBe("0.2");
+  expect(milestoneTitle("0.1.1")).toBe("0.1.1");
+  expect(milestoneTitle("0.10.0")).toBe("0.10");
+});
+
 test("published package problem names a missing version and missing provenance", () => {
   expect(publishedPackageProblem({ version: "0.1.0" }, "0.1.1")).toContain("0.1.0");
   expect(publishedPackageProblem({ version: "0.1.1" }, "0.1.1")).toContain("provenance");
@@ -121,16 +127,24 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   expect(postgres).not.toContain("tests/harness.test.ts");
   expect(postgres).toContain("fromJSON(inputs.suite_versions)");
   expect(postgres).toContain("fromJSON(inputs.tarball_versions)");
+  expect(postgres).toContain("OKMODEL_TARBALL");
+  expect(postgres).toContain("inputs.tarball_artifact");
   expect(matrixVersions(postgres)).toEqual([]);
   const release = readFileSync(join(root, ".github/workflows/release.yml"), "utf8");
   expect(release).toContain("group: release");
   expect(release).toContain("cancel-in-progress: false");
   expect(release).toContain("uses: ./.github/workflows/postgres.yml");
+  expect(release).toContain("needs: tag");
   expect(release).toContain("needs: gate");
   expect(release).toContain("needs: publish");
   expect(release).toContain("needs: smoke");
-  expect(release).toContain("bun ./scripts/release-ref.ts");
-  expect(release).toContain("npm publish --access public");
+  const releaseRef = release.indexOf("bun ./scripts/release-ref.ts");
+  const gate = release.indexOf("uses: ./.github/workflows/postgres.yml");
+  expect(releaseRef).toBeGreaterThan(-1);
+  expect(releaseRef).toBeLessThan(gate);
+  expect(release.indexOf("bun ./scripts/release-ref.ts", releaseRef + 1)).toBe(-1);
+  expect(release).toContain("tarball_artifact: release-tarball");
+  expect(release).toContain("npm publish packed/okmodel.tgz --access public");
   expect(release).toContain('NPM_CONFIG_PROVENANCE: "true"');
   expect(release).toContain("bun ./scripts/npm-smoke.ts");
   expect(release).toContain("bun ./scripts/github-release.ts");
@@ -138,6 +152,7 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   expect(jsonVersions(release, "tarball_versions")).toEqual([...POSTGRES_VERSIONS]);
   const ci = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
   expect(ci).toContain("uses: ./.github/workflows/postgres.yml");
+  expect(ci).toContain("actions: read");
   expect(ci).not.toContain("tests/harness.test.ts");
   expect(ci).toMatch(/push:\n {4}branches:\n {6}- main\n/);
   expect(ci).toContain("pull_request:");
@@ -151,6 +166,7 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   const weekly = readFileSync(join(root, ".github/workflows/weekly.yml"), "utf8");
   expect(weekly).toContain('cron: "0 6 * * 1"');
   expect(weekly).toContain("uses: ./.github/workflows/postgres.yml");
+  expect(weekly).toContain("actions: read");
   expect(jsonVersions(weekly, "suite_versions")).toEqual([...POSTGRES_VERSIONS]);
   expect(jsonVersions(weekly, "tarball_versions")).toEqual([...POSTGRES_VERSIONS]);
 });

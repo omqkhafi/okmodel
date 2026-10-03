@@ -78,6 +78,11 @@ postgresTest(
  * @returns Absolute path of the tarball
  */
 function sharedTarball(): string {
+  const given = process.env.OKMODEL_TARBALL;
+  if (given !== undefined && given.length > 0) {
+    if (!existsSync(given)) throw new Error(`OKMODEL_TARBALL is missing: ${given}`);
+    return given;
+  }
   if (!existsSync(join(root, "dist", "okm.js"))) {
     throw new Error("dist/okm.js is missing. bun run build writes it.");
   }

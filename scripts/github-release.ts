@@ -2,7 +2,8 @@
  * Creates the GitHub Release for this version from the changelog section.
  *
  * The notes are the body of `## v` plus `package.json` version. The tag is
- * the same string. The workflow runs this after the npm smoke passes.
+ * the same string. The workflow runs this after the npm smoke passes, then
+ * closes the milestone for that version.
  */
 
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -41,6 +42,75 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/**
+ * The milestone a release closes.
+ *
+ * A `.0` patch is the train (`0.2.0` closes `0.2`). Any other version keeps
+ * its full number (`0.1.1` closes `0.1.1`).
+ *
+ * @param version - `package.json` version
+ * @returns Milestone title
+ */
+export function milestoneTitle(version: string): string {
+  return version.endsWith(".0") ? version.slice(0, -2) : version;
+}
+
+interface Milestone {
+  readonly number: number;
+  readonly title: string;
+  readonly state: string;
+}
+
+/**
+ * Closes the milestone for this version. A milestone that is already closed stays closed.
+ *
+ * @param version - `package.json` version
+ */
+function closeMilestone(version: string): void {
+  const title = milestoneTitle(version);
+  const repo = process.env.GITHUB_REPOSITORY ?? "omqkhafi/okmodel";
+  const listed = Bun.spawnSync(["gh", "api", `repos/${repo}/milestones?state=all&per_page=100`], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  if (listed.exitCode !== 0) {
+    throw new Error(
+      `gh api milestones exited ${String(listed.exitCode)}\n${listed.stderr.toString()}`,
+    );
+  }
+  const parsed: unknown = JSON.parse(listed.stdout.toString());
+  if (!Array.isArray(parsed)) throw new Error("milestone list is not an array");
+  const found = parsed.find((item): item is Milestone => {
+    if (typeof item !== "object" || item === null) return false;
+    if (!("number" in item) || !("title" in item) || !("state" in item)) return false;
+    return (
+      typeof item.number === "number" &&
+      typeof item.title === "string" &&
+      typeof item.state === "string" &&
+      item.title === title
+    );
+  });
+  if (found === undefined) throw new Error(`No milestone titled ${title}`);
+  if (found.state === "closed") return;
+  const closed = Bun.spawnSync(
+    [
+      "gh",
+      "api",
+      "--method",
+      "PATCH",
+      `repos/${repo}/milestones/${String(found.number)}`,
+      "-f",
+      "state=closed",
+    ],
+    { stdout: "pipe", stderr: "pipe" },
+  );
+  if (closed.exitCode !== 0) {
+    throw new Error(
+      `gh api close milestone exited ${String(closed.exitCode)}\n${closed.stderr.toString()}`,
+    );
+  }
+}
+
 function readVersion(root: string): string {
   const parsed: unknown = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
   if (typeof parsed !== "object" || parsed === null || !("version" in parsed)) {
@@ -69,6 +139,7 @@ if (import.meta.main) {
     if (code === null || code !== 0) {
       throw new Error(`gh release create ${tag} exited ${String(code)}`);
     }
+    closeMilestone(version);
   } finally {
     rmSync(notesPath, { force: true });
   }

@@ -43,6 +43,9 @@ jobs:
 
   postgres:
     name: postgres
+    permissions:
+      contents: read
+      actions: read
     uses: ./.github/workflows/postgres.yml
     with:
       suite_versions: '["15", "18"]'
