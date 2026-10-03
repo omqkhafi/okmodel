@@ -152,6 +152,7 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   expect(jsonVersions(release, "tarball_versions")).toEqual([...POSTGRES_VERSIONS]);
   const ci = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
   expect(ci).toContain("uses: ./.github/workflows/postgres.yml");
+  expect(ci).toContain("actions: read");
   expect(ci).not.toContain("tests/harness.test.ts");
   expect(ci).toMatch(/push:\n {4}branches:\n {6}- main\n/);
   expect(ci).toContain("pull_request:");
@@ -165,6 +166,7 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   const weekly = readFileSync(join(root, ".github/workflows/weekly.yml"), "utf8");
   expect(weekly).toContain('cron: "0 6 * * 1"');
   expect(weekly).toContain("uses: ./.github/workflows/postgres.yml");
+  expect(weekly).toContain("actions: read");
   expect(jsonVersions(weekly, "suite_versions")).toEqual([...POSTGRES_VERSIONS]);
   expect(jsonVersions(weekly, "tarball_versions")).toEqual([...POSTGRES_VERSIONS]);
 });

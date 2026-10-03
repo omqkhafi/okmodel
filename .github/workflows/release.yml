@@ -65,6 +65,7 @@ jobs:
     needs: tag
     permissions:
       contents: read
+      actions: read
     uses: ./.github/workflows/postgres.yml
     with:
       suite_versions: '["15", "16", "17", "18"]'
