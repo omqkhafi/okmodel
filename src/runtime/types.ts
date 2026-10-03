@@ -417,9 +417,30 @@ export type Connected<S extends QuerySchema> = {
   readonly connected: Promise<void>;
 };
 
+/**
+ * A catalog `okm build` wrote.
+ *
+ * `connect` trusts it through `loadTrustedCatalog` when the database hash differs.
+ */
+export type CatalogArtifact = {
+  readonly text: string;
+  readonly hash: string;
+};
+
 /** `connect` options shared by the Postgres drivers. */
 export type ConnectOptions<S extends QuerySchema> = {
   readonly schema: S;
+  /**
+   * Build artifact. When set, its hash is the code's catalog hash.
+   * The JSON is checked only when the database hash differs.
+   */
+  readonly catalog?: CatalogArtifact;
+  /**
+   * Directory of `catalog.hash` and `catalog.json`.
+   *
+   * When omitted, `connect` reads `.okm` under the process cwd if that hash file exists.
+   */
+  readonly catalogDir?: string;
   readonly logger?: {
     error?(entry: { readonly code: string; readonly summary: string }): void;
   };

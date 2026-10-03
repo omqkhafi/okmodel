@@ -26,7 +26,7 @@ import {
   type ReadCall,
   type ReadOp,
 } from "./plan.js";
-import type { Connected, Inspection, RoutingDecision, TableApi } from "./types.js";
+import type { CatalogArtifact, Connected, Inspection, RoutingDecision, TableApi } from "./types.js";
 
 /** How many plans one client keeps. */
 const PLAN_LIMIT = 64;
@@ -76,9 +76,14 @@ export function createClient<S extends QuerySchema>(
     readonly logger?: Session["logger"] | undefined;
     readonly signal?: AbortSignal | undefined;
     readonly timeout?: number | undefined;
+    readonly catalog?: CatalogArtifact | undefined;
+    readonly catalogDir?: string | undefined;
   },
 ): Connected<S> {
-  const connected = checkServer(pool, schema, options.http, callOptions(options));
+  const connected = checkServer(pool, schema, options.http, callOptions(options), {
+    ...(options.catalog !== undefined ? { catalog: options.catalog } : {}),
+    ...(options.catalogDir !== undefined ? { catalogDir: options.catalogDir } : {}),
+  });
   const session: Session = {
     schema,
     pool,
@@ -408,14 +413,11 @@ async function checkServer(
   schema: QuerySchema,
   http: ErrorStatuses | undefined,
   options: ExecuteOptions | undefined,
+  source: { readonly catalog?: CatalogArtifact; readonly catalogDir?: string },
 ): Promise<void> {
   let rows: readonly (readonly (string | null)[])[];
   try {
-    const result = await pool.execute(
-      "select current_setting('server_version_num'), version()",
-      undefined,
-      options,
-    );
+    const result = await pool.execute(SERVER_CHECK, undefined, options);
     rows = result.rows;
   } catch (error) {
     const { mapPostgresError } = await import("../dialects/pg/errors.js");
@@ -430,6 +432,11 @@ async function checkServer(
         fix: { summary: "Open the schema with the Postgres driver that matches it." },
       }),
     );
+  }
+  const recorded = rows[0]?.[2];
+  if (recorded !== null && recorded !== undefined && recorded.length > 0) {
+    const { assertCompatible } = await import("./drift.js");
+    await assertCompatible(pool, schema, recorded, source, options);
   }
   const requires = schema.requires?.postgres;
   if (requires === undefined) return;
@@ -512,6 +519,15 @@ function callOptions(input: {
     ...(input.timeout !== undefined ? { timeout: input.timeout } : {}),
   };
 }
+
+/**
+ * Version, dialect, and the `okm_meta` hash in one round trip.
+ *
+ * The hash subquery is a string so a database with no `okm_meta` still plans.
+ * A null hash skips the compatibility check.
+ */
+const SERVER_CHECK =
+  "select current_setting('server_version_num'), version(), (select (xpath('//catalog_hash/text()', query_to_xml('select catalog_hash from okm_meta where id = ''head''', true, false, '')))[1]::text where to_regclass('okm_meta') is not null)";
 
 function mapOptions(
   http: ErrorStatuses | undefined,

@@ -39,6 +39,8 @@ export async function connect<const S extends QuerySchema>(
     logger: options.logger,
     signal: options.signal,
     timeout: options.timeout,
+    catalog: options.catalog,
+    catalogDir: options.catalogDir,
   };
   if (isPool(target)) {
     return createClient(options.schema, target, { ...shared, ownsPool: false });

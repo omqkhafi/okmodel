@@ -124,7 +124,7 @@ test("app bundle budget fails above the D138 ceilings", () => {
   const over = appBudgetProblems({
     entry: "scripts/app-startup.ts",
     minBytes: 80_000,
-    gzipBytes: 26_000,
+    gzipBytes: 27_000,
     coldImportMs: 30,
   });
   expect(over.some((problem) => problem.includes("minified"))).toBe(true);

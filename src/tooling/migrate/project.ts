@@ -12,12 +12,13 @@ import { pathToFileURL } from "node:url";
 import { catalog } from "../../contracts/catalog/build.js";
 import { catalogHash, parseCatalog, serializeCatalog } from "../../contracts/catalog/document.js";
 import { OkmError } from "../../contracts/error.js";
-import { schemaDeclarations } from "../../dialects/pg/declarations.js";
+import { schemaDeclarations, type DeclaredRename } from "../../dialects/pg/declarations.js";
 import { emitRowTypes } from "../../dialects/pg/emit.js";
 import type { BuiltSchema } from "../../dialects/pg/schema.js";
 import type { AnyTable } from "../../dialects/pg/table.js";
 import type { Catalog } from "../../contracts/catalog/types.js";
 import { type MigrateConfig } from "./config.js";
+import { assertTargetAlias, listTargets } from "./policy.js";
 import { formatPlan, planMigration, staleRenames, type MigrationPlan } from "./plan.js";
 import { parseReplace } from "./values.js";
 
@@ -89,20 +90,12 @@ export async function planProject(
  * @param cwd - Project directory
  */
 export async function checkProject(cwd: string): Promise<void> {
-  const config = await loadConfig(cwd);
-  const built = await loadSchema(cwd, config.schema);
-  const declarations = schemaDeclarations(built);
-  const previous = readPrevious(join(cwd, config.migrations ?? "migrations"));
-  const stale = staleRenames(previous?.catalog, declarations.renames);
-  if (stale.length > 0) {
-    throw new OkmError("OKM1020", stale.join(" "), {
-      fix: { summary: "Remove renamedFrom once the migration that used it has been applied." },
-    });
-  }
-  if (config.tables !== undefined) {
-    const directory = join(cwd, config.tables);
+  const opened = await openProject(cwd);
+  assertTargetAlias(listTargets(opened.config));
+  if (opened.config.tables !== undefined) {
+    const directory = join(cwd, opened.config.tables);
     const files = existsSync(directory) ? readdirSync(directory) : [];
-    const source = readFileSync(join(cwd, config.schema), "utf8");
+    const source = readFileSync(join(cwd, opened.config.schema), "utf8");
     const missing = unlistedTableFiles(source, files);
     if (missing.length > 0) {
       throw new OkmError("OKM1024", `Table file not in schema: ${missing.join(", ")}.`, {
@@ -133,6 +126,21 @@ export function unlistedTableFiles(
   return missing;
 }
 
+/**
+ * The catalogs `okm push` diffs, after stale renames are refused.
+ *
+ * @param cwd - Project directory
+ * @returns The previous snapshot, the current catalog, and declared renames
+ */
+export async function projectHead(cwd: string): Promise<{
+  readonly previous: Catalog;
+  readonly catalog: Catalog;
+  readonly renames: readonly DeclaredRename[];
+}> {
+  const opened = await openProject(cwd);
+  return { previous: opened.previous, catalog: opened.built.catalog, renames: opened.renames };
+}
+
 async function prepare(
   cwd: string,
   name: string,
@@ -141,6 +149,23 @@ async function prepare(
   readonly config: MigrateConfig;
   readonly built: Built;
   readonly plan: MigrationPlan;
+}> {
+  const opened = await openProject(cwd);
+  const plan = planMigration({
+    before: opened.previous,
+    after: opened.built.catalog,
+    renames: opened.renames,
+    replacements: flags.map((flag) => parseReplace(flag)),
+    name,
+  });
+  return { config: opened.config, built: opened.built, plan };
+}
+
+async function openProject(cwd: string): Promise<{
+  readonly config: MigrateConfig;
+  readonly built: Built;
+  readonly previous: Catalog;
+  readonly renames: readonly DeclaredRename[];
 }> {
   const config = await loadConfig(cwd);
   const built = await loadSchema(cwd, config.schema);
@@ -152,14 +177,12 @@ async function prepare(
       fix: { summary: "Remove renamedFrom once the migration that used it has been applied." },
     });
   }
-  const plan = planMigration({
-    before: previous?.catalog ?? catalog([]),
-    after: built.catalog,
+  return {
+    config,
+    built,
+    previous: previous?.catalog ?? catalog([]),
     renames: declarations.renames,
-    replacements: flags.map((flag) => parseReplace(flag)),
-    name,
-  });
-  return { config, built, plan };
+  };
 }
 
 function writeArtifact(cwd: string, config: MigrateConfig, built: Built): string {

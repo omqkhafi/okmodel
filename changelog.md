@@ -60,6 +60,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Named prepared statements are opt-in (`prepared: "named"`). On a direct connection they were about 40 percent faster at p50 than unnamed. Unnamed stays the default. `prepared: "named"` is not for transaction-mode poolers.
 - `insert`, `update`, and `delete` write rows. Unknown insert keys are dropped. A guarded field is OKM1190. A missing `where` is OKM1102 unless `.all(reason)`. `onConflict` is `"error"`, `"ignore"`, an update of named columns, or `{ on, return: true }`. `on` must name a unique constraint or the primary key (OKM1104). `expect` throws `not_found` when the count differs. Inserts chunk at 2048 parameters and commit together. A connection lost at commit is OKM1401 (`outcome_unknown`).
 - Write planning loads on the first write. Conflict and upsert SQL loads only when `onConflict` is used. A plain insert does not load it. Hover on a row shows the field names and value types.
+- `connect` reads the catalog hash from `okm_meta` in the same dialect query. Matching hashes return immediately. A database with no `okm_meta` skips the check. Ahead by an expand migration is allowed. Ahead by a contract migration, or behind the code, fails with OKM1520. `loadTrustedCatalog` runs only on that mismatch, and only when `.okm/catalog.json` is present.
 
 #### tooling
 
@@ -82,7 +83,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `bun run catalog-bench` times canonical form, SHA-256, and topological order on the 200-table fixture. It prints the sample and does not enforce a ceiling.
 - The replication test waits up to 30 seconds, matching its replay wait, so other Postgres tests can run beside it.
 - The runtime entry must stay within 60 KB minified and 20 KB gzip. A cold import on Node is the median of five fresh processes. CI fails above 25 ms (D134). Locally the script prints the 15 ms reference and records a finding above it.
-- The app fixture gate is the startup graph (static imports only): 76,444 minified bytes and 25,205 gzip (D138, measured 74,218 / 24,471 plus 3 percent, under the 86,688 / 27,800 cap). The total graph, lazy chunks included, is printed and not gated. First-find and first-include latency are printed beside cold import. `okmodel/pg` is 70,500 / 22,000. The public connect entries stay at the measured size plus 5 percent. Standalone adapter ceilings stay at the D135 numbers. The app fixture's cold import is printed and is not the 25 ms CI failure. That failure stays on the runtime entry (D134), because the app runs `schema()` at import.
+- The app fixture gate is the startup graph (static imports only): 79,240 minified bytes and 26,207 gzip (D138 and D141, P16B measured 76,933 / 25,444 plus 3 percent, under the 86,688 / 27,800 cap). The total graph, lazy chunks included, is printed and not gated. First-find and first-include latency are printed beside cold import. `okmodel/pg` stays 70,500 / 22,000 and this step left it at 70,349 / 21,921. The public connect entries are the measured size plus 5 percent (postgres.js 39,369 / 13,671, PGlite 37,691 / 13,348), because the catalog-hash query is on that path. Standalone adapter ceilings stay at the D135 numbers. The app fixture's cold import is printed and is not the 25 ms CI failure. That failure stays on the runtime entry (D134), because the app runs `schema()` at import.
 - `bun run editor-check` compares hover, completions, and diagnostics from the TypeScript 6 language server with a snapshot. It also checks the row types `okm build` emits, including an enum column. TypeScript 7 has no language server, so the server is the dev-only `typescript-editor` package. It is not imported and not bundled. The check is part of `bun run check`.
 - The Postgres CI job also runs the read and write tests.
 - `bun run type-cost` also typechecks a find with filter, select, include, and orderBy on 10, 50, and 200 tables, against the built declarations. Instantiations stay under the D133 inferred-200 ceiling. The composite probe's own types ceiling is 7,100 (D140). The emitted-consumer measurement typechecks the row types `okm build` writes.
@@ -92,6 +93,14 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The error registry lists every spec §21 code (`code`, `title`, `summary`, `fix`) for `okm doctor`. It is not imported by the runtime entry. OKM1111 is listed for a call the driver cannot do.
 - `bun run driver-bench` times `execute` against calling postgres.js directly. It prints the median and does not enforce a ceiling.
 - The Postgres CI job runs the driver conformance suite with `REQUIRE_DOCKER=1`.
+- `okm migrate apply` runs each migration in one transaction where Postgres allows it. `CREATE INDEX CONCURRENTLY`, `ALTER TYPE … ADD VALUE`, and `VACUUM` are their own steps. Every finished step writes a checkpoint in `okm_history`, with the catalog hash. A failure stops at that step and the next apply resumes. There are no down migrations. A data step runs as the statement the plan wrote.
+- One session advisory lock covers the apply. A second apply fails at once with OKM1522. `lock_timeout` and `statement_timeout` are set on every step, and a lock timeout retries with backoff.
+- A known pooler URL is refused unless `--allow-pooler` or `allowPooler` is set.
+- Named `targets`. More than one requires `--target` (OKM1853). Two names for one database must agree on protection (OKM1852).
+- A protected target allows read-only commands and expand. Contract, unclassified, push, backfill, seed, and history repair need `--allow-protected`. Drop and rollback stay refused. `push` is also refused on a target named `production`.
+- `okm migrate status` reports each target's version, catalog hash, state (current, behind by expand, behind by contract, ahead, failed at a step), and whether it is protected.
+- `okm push` applies the current plan as a prototype sync. `okm dev` starts a local PGlite database in `.okm/dev-db` when no target named `dev` is configured.
+- The Postgres CI job also runs the apply tests.
 
 #### docs
 

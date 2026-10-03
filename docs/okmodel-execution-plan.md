@@ -95,7 +95,7 @@ Spike code lives in the private workspace package `packages/spikes`; what proves
 
 | ID | Branch | Delivers |
 |---|---|---|
-| P40 | `p40-extensions` | `extension()` contract, lifecycle through migrations, `citext`, `pg_trgm`, `okm ext` |
+| P40 | `p40-extensions` | `extension()` contract, lifecycle through migrations, `citext`, `pg_trgm`, `okm ext`, domains as a `type` subkind (D141) |
 | P41 | `p41-functions-triggers` | `fn`, `trigger`, dependency ordering, `timestamps` with trigger enforcement |
 | P42 | `p42-views` | views and materialized views, tenancy on views, dependency-aware drop and recreate around column changes (OKM1821, never `CASCADE`) |
 | P43 | `p43-roles-grants` | `roles`, grants, default privileges |
@@ -189,3 +189,5 @@ Problems found in the earlier order and how the table above resolves them:
 - P16 and P16B replace the old single P16 (too large); P17 follows P16B.
 - P16 merged (D140): `defineConfig` from `okmodel/migrate`; composite probe types ceiling 7,100; enum becomes a catalog object in P16A before P16B; `loadTrustedCatalog` is wired into `connect()` in P16B.
 - P17: profile app cold import by module (local 10.1 ms vs 2.1 ms runtime entry, CI 25.2 ms) and fix the largest item; review all public subpath names (including `okmodel/migrate`) before the freeze.
+- P16A merged (D141): enum is a catalog object; domains wait for P40 and raise a clear error until then (P17 lists every unsupported builder in the docs).
+- P16B: must not grow `okmodel/pg` (151 bytes left); app startup gate re-set only inside the D138 cap. P17: decide barrel gate versus per-export tree-shake test.

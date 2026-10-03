@@ -258,6 +258,58 @@ export function formatPlan(plan: MigrationPlan): string {
 }
 
 /**
+ * Reads a plan written by {@link formatPlan}.
+ *
+ * @param text - SQL file text
+ * @returns The plan. The header class is kept when the file has no steps
+ */
+export function parsePlan(text: string): MigrationPlan {
+  const lines = text.split("\n");
+  let name = "migration";
+  let planClass: MigrationClass = "expand";
+  let index = 0;
+  while (index < lines.length && lines[index] !== "") {
+    const line = lines[index] ?? "";
+    if (line.startsWith("-- name: ")) name = line.slice("-- name: ".length);
+    if (line.startsWith("-- class: ")) planClass = readClass(line.slice("-- class: ".length));
+    index += 1;
+  }
+  const steps: PlanStep[] = [];
+  while (index < lines.length) {
+    if ((lines[index] ?? "").trim() === "") {
+      index += 1;
+      continue;
+    }
+    if (lines[index] === "-- no steps") break;
+    let stepClass: MigrationClass = "expand";
+    let action: PlanStep["action"] = "ddl";
+    let lock = "";
+    let transactional = true;
+    const sql: string[] = [];
+    while (index < lines.length && (lines[index] ?? "") !== "") {
+      const line = lines[index] ?? "";
+      index += 1;
+      if (line.startsWith("-- class: ")) stepClass = readClass(line.slice("-- class: ".length));
+      else if (line.startsWith("-- action: "))
+        action = line.endsWith("backfill") ? "backfill" : "ddl";
+      else if (line.startsWith("-- lock: ")) lock = line.slice("-- lock: ".length);
+      else if (line === "-- transactional: false") transactional = false;
+      else if (!line.startsWith("--")) sql.push(line);
+    }
+    const statement = sql.join("\n").replace(/;\s*$/, "");
+    if (statement.length > 0) {
+      steps.push({ sql: statement, class: stepClass, action, lock, transactional });
+    }
+  }
+  return { name, class: steps.length === 0 ? planClass : overall(steps), steps };
+}
+
+function readClass(value: string): MigrationClass {
+  if (value === "contract" || value === "unclassified") return value;
+  return "expand";
+}
+
+/**
  * Renames whose previous name is absent from the last snapshot.
  *
  * No snapshot means nothing is stale: there is no history to disagree with.

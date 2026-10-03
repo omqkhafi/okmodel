@@ -45,6 +45,8 @@ export function connect<const S extends QuerySchema>(
       logger: options.logger,
       signal: options.signal,
       timeout: options.timeout,
+      catalog: options.catalog,
+      catalogDir: options.catalogDir,
     });
   }
   const url = target;
@@ -63,6 +65,8 @@ export function connect<const S extends QuerySchema>(
     logger: options.logger,
     signal: options.signal,
     timeout: options.timeout,
+    catalog: options.catalog,
+    catalogDir: options.catalogDir,
   });
 }
 
