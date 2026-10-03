@@ -52,18 +52,18 @@ export const CI_COLD_IMPORT_MS = 25;
 export const APP_ENTRY = "scripts/app-startup.ts";
 
 /**
- * Minified app-fixture ceiling, in bytes (D143).
+ * Minified app-fixture ceiling, in bytes (D155).
  *
- * P17 startup graph measured 77,524. Plus 3 percent is 79,849, under the 86,688 cap.
+ * P17G measured 79,757. Plus 3 percent is 82,200, under the 91,000 allowance (D143).
  */
-export const APP_MAX_MIN_BYTES = 79_849;
+export const APP_MAX_MIN_BYTES = 82_200;
 
 /**
- * Gzipped app-fixture ceiling, in bytes (D143).
+ * Gzipped app-fixture ceiling, in bytes (D155).
  *
- * P17 startup graph measured 25,641. Plus 3 percent is 26,410, under the 27,800 cap.
+ * P17G measured 26,149. Plus 3 percent is 26,950, under the 30,000 allowance (D143).
  */
-export const APP_MAX_GZIP_BYTES = 26_410;
+export const APP_MAX_GZIP_BYTES = 26_950;
 
 /**
  * Public connect entries, driver left external (D142, D143).
