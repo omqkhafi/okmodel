@@ -2,10 +2,10 @@ name: Release
 
 # Manual. Ali runs this on the tag v<package.json version>. This file does
 # not run on push. scripts/release-ref.ts reads the version after checkout
-# and refuses any other ref.
+# and refuses any other ref. That check runs before the Postgres gate.
 #
-# Publishing waits for the Postgres matrix and the tarball job. Two releases
-# cannot run at the same time.
+# The gate tests one packed tarball. Publish uploads that same file.
+# Two releases cannot run at the same time.
 #
 # Provenance: id-token write lets npm attach a statement that this
 # workflow built the tarball. The package needs a trusted publisher for
@@ -21,22 +21,12 @@ permissions:
   contents: read
 
 jobs:
-  gate:
-    name: postgres
-    permissions:
-      contents: read
-    uses: ./.github/workflows/postgres.yml
-    with:
-      suite_versions: '["15", "16", "17", "18"]'
-      tarball_versions: '["15", "16", "17", "18"]'
-
-  publish:
-    name: publish
-    needs: gate
+  tag:
+    name: tag
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
+      actions: write
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -52,6 +42,55 @@ jobs:
       - name: Install
         run: bun install --frozen-lockfile
 
+      - name: Build
+        run: bun run build
+
+      - name: Pack
+        run: |
+          bun pm pack
+          file="$(find . -maxdepth 1 -name 'okmodel-*.tgz' -print)"
+          test -n "$file"
+          mv "$file" okmodel.tgz
+
+      - name: Upload tarball
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-tarball
+          path: okmodel.tgz
+          if-no-files-found: error
+          retention-days: 1
+
+  gate:
+    name: postgres
+    needs: tag
+    permissions:
+      contents: read
+    uses: ./.github/workflows/postgres.yml
+    with:
+      suite_versions: '["15", "16", "17", "18"]'
+      tarball_versions: '["15", "16", "17", "18"]'
+      tarball_artifact: release-tarball
+
+  publish:
+    name: publish
+    needs: gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
       - name: Check
         run: bun run check
 
@@ -60,8 +99,14 @@ jobs:
         with:
           node-version: 24
 
+      - name: Download tarball
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-tarball
+          path: packed
+
       - name: Publish
-        run: npm publish --access public
+        run: npm publish packed/okmodel.tgz --access public
         env:
           NPM_CONFIG_PROVENANCE: "true"
 
@@ -111,6 +156,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      issues: write
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

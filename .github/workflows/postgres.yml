@@ -15,9 +15,15 @@ on:
         description: JSON list of Postgres majors for the tarball job
         required: true
         type: string
+      tarball_artifact:
+        description: Artifact name of one packed tarball. Empty packs inside the job.
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   suite:
@@ -80,7 +86,15 @@ jobs:
       - name: Install
         run: bun install --frozen-lockfile
 
+      - name: Download tarball
+        if: inputs.tarball_artifact != ''
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ inputs.tarball_artifact }}
+          path: packed
+
       - name: Build
+        if: inputs.tarball_artifact == ''
         run: bun run build
 
       - name: Start Postgres
@@ -93,6 +107,7 @@ jobs:
         env:
           REQUIRE_DOCKER: "1"
           POSTGRES_VERSION: ${{ matrix.version }}
+          OKMODEL_TARBALL: ${{ inputs.tarball_artifact != '' && format('{0}/packed/okmodel.tgz', github.workspace) || '' }}
 
       - name: Stop Postgres
         if: always()

@@ -6,6 +6,8 @@ OKModel is built one prompt at a time. Use Bun only (`bun`, `bunx`). Do not use 
 
 Each prompt in `docs/okmodel-execution-plan.md` gets its own branch (`p01-foundation`, and so on). Open the pull request into `main`. Do not merge it red.
 
+End the pull request body with `Closes #N`, naming the roadmap issue. Merging closes that issue.
+
 ## Checks
 
 Run `bun run check` before opening a pull request. It formats, lints, typechecks, runs the repository checks, builds, tests, and checks the package.
