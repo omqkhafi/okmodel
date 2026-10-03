@@ -1,7 +1,8 @@
 name: Release
 
-# Manual. Ali runs this after the v0.1.0 tag is on the commit whose
-# package.json version is 0.1.0. This file does not run on push.
+# Manual. Ali runs this on the tag v<package.json version>. This file does
+# not run on push. scripts/release-ref.ts reads the version after checkout
+# and refuses any other ref.
 #
 # Provenance: id-token write lets npm attach a statement that this
 # workflow built the tarball. The package needs a trusted publisher for
@@ -18,13 +19,6 @@ jobs:
     name: release
     runs-on: ubuntu-latest
     steps:
-      - name: Require the v0.1.0 tag
-        run: |
-          if [ "$GITHUB_REF" != "refs/tags/v0.1.0" ]; then
-            echo "Refusing to publish from $GITHUB_REF. Run: gh workflow run release.yml --ref v0.1.0"
-            exit 1
-          fi
-
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -32,6 +26,9 @@ jobs:
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.2
+
+      - name: Require the version tag
+        run: bun ./scripts/release-ref.ts
 
       - name: Install
         run: bun install --frozen-lockfile

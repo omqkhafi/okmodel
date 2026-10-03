@@ -276,6 +276,58 @@ async function readSuite(db: Client, taken: () => number): Promise<void> {
   );
 }
 
+test("to-one include decodes a table that has no primary key", async () => {
+  const authors = table("authors", {
+    id: uuid().unique(),
+    name: text(),
+  });
+  const notes = table(
+    "notes",
+    {
+      id: uuid().unique(),
+      title: text(),
+      authorId: uuid().references("authors", { columns: ["id"] }),
+    },
+    { relations: { author: one("authors") } },
+  );
+  const books = schema({ tables: [authors, notes] });
+  const pool = await openPglite();
+  try {
+    await pool.execute(
+      `create table authors (
+        id uuid not null unique,
+        name text not null
+      )`,
+    );
+    await pool.execute(
+      `create table notes (
+        id uuid not null unique,
+        title text not null,
+        "authorId" uuid not null references authors (id)
+      )`,
+    );
+    await pool.execute(
+      `insert into authors (id, name) values ('11111111-1111-4111-8111-111111111111', 'Ada')`,
+    );
+    await pool.execute(
+      `insert into notes (id, title, "authorId") values ('22222222-2222-4222-8222-222222222222', 'hello', '11111111-1111-4111-8111-111111111111')`,
+    );
+    const db = await connectPglite(pool, { schema: books });
+    const found = await db.notes.find({
+      where: { id: "22222222-2222-4222-8222-222222222222" },
+      limit: 5,
+      include: { author: true },
+    });
+    expect(found[0]?.author).toEqual({
+      id: "11111111-1111-4111-8111-111111111111",
+      name: "Ada",
+    });
+    await db.close();
+  } finally {
+    await pool.close();
+  }
+});
+
 test("pglite reads", async () => {
   const pool = counting(await openPglite());
   try {

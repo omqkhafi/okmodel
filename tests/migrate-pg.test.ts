@@ -7,11 +7,11 @@ import { expect } from "bun:test";
 import type { Sql } from "postgres";
 
 import { catalog } from "../src/contracts/catalog/build.js";
-import { serializeCatalog } from "../src/contracts/catalog/document.js";
+import { catalogHash, serializeCatalog } from "../src/contracts/catalog/document.js";
 import { staticNamespace } from "../src/contracts/catalog/identity.js";
 import { enumType } from "../src/contracts/catalog/enum.js";
-import { column, constraint, index, table } from "../src/contracts/catalog/object.js";
-import type { CatalogObject, Provenance } from "../src/contracts/catalog/types.js";
+import { column, constraint, index, sequence, table } from "../src/contracts/catalog/object.js";
+import type { Catalog, CatalogObject, Provenance } from "../src/contracts/catalog/types.js";
 import { renderCatalog } from "../src/dialects/pg/ddl.js";
 import {
   introspectSchema,
@@ -124,6 +124,26 @@ postgresTest(
     });
   },
   30_000,
+);
+
+postgresTest(
+  gate,
+  "identity create, add, drop table, and drop identity match the catalog hash",
+  async () => {
+    await withPostgresSchema(async (sql, schemaName) => {
+      const ref = `${schemaName}_i`;
+      await sql.unsafe(`create schema ${q(ref)}`);
+      try {
+        await roundTrip(sql, schemaName, ref, "create-identity-table", undefined, authors());
+        await roundTrip(sql, schemaName, ref, "add-identity-column", books(), booksWithIdentity());
+        await roundTrip(sql, schemaName, ref, "drop-identity-table", authors(), undefined);
+        await roundTrip(sql, schemaName, ref, "drop-identity", authors(), authorsPlain());
+      } finally {
+        await sql.unsafe(`drop schema if exists ${q(ref)} cascade`);
+      }
+    });
+  },
+  60_000,
 );
 
 postgresTest(
@@ -346,12 +366,100 @@ async function applyReadable(
   }
 }
 
+/**
+ * Applies one planned change and checks the introspected catalog hash.
+ *
+ * The target hash is an introspection of {@link renderCatalog}, which already
+ * folds an identity sequence into the column. The plan has to reach that
+ * same catalog without a second sequence statement.
+ *
+ * @param sql - Connection
+ * @param schemaName - Schema the plan is applied to
+ * @param ref - Schema used only to render the expected catalog
+ * @param name - Plan name, also the failure label
+ * @param before - Catalog to install first. Empty when omitted
+ * @param after - Catalog the plan must reach. Empty when omitted
+ */
+async function roundTrip(
+  sql: Sql,
+  schemaName: string,
+  ref: string,
+  name: string,
+  before: Catalog | undefined,
+  after: Catalog | undefined,
+): Promise<void> {
+  await resetSchema(sql, schemaName);
+  const starting =
+    before === undefined
+      ? await introspectSchema(queryOf(sql), schemaName, "public")
+      : await materialise(sql, schemaName, before);
+  const expected =
+    after === undefined ? await emptyCatalog(sql, ref) : await materialise(sql, ref, after);
+  const plan = planMigration({ before: starting, after: expected, schema: schemaName, name });
+  const text = plan.steps.map((step) => step.sql).join("\n");
+  try {
+    await apply(
+      sql,
+      plan.steps.map((step) => step.sql),
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`${name} failed to apply:\n${text}\n${message}`);
+  }
+  const reached = await introspectSchema(queryOf(sql), schemaName, "public");
+  const reachedHash = catalogHash(reached);
+  const expectedHash = catalogHash(expected);
+  if (reachedHash !== expectedHash) {
+    throw new Error(
+      `${name} catalog hash ${reachedHash} !== ${expectedHash}\n${text}\n${serializeCatalog(reached)}`,
+    );
+  }
+}
+
+async function materialise(sql: Sql, schemaName: string, source: Catalog): Promise<Catalog> {
+  await resetSchema(sql, schemaName);
+  await apply(sql, renderCatalog(source, schemaName));
+  return introspectSchema(queryOf(sql), schemaName, "public");
+}
+
+async function emptyCatalog(sql: Sql, schemaName: string): Promise<Catalog> {
+  await resetSchema(sql, schemaName);
+  return introspectSchema(queryOf(sql), schemaName, "public");
+}
+
+async function resetSchema(sql: Sql, schemaName: string): Promise<void> {
+  await sql.unsafe(`drop schema if exists ${q(schemaName)} cascade`);
+  await sql.unsafe(`create schema ${q(schemaName)}`);
+}
+
+function authors(): Catalog {
+  return schema({
+    tables: [defineTable("authors", { id: t.identity(), name: t.text() })],
+  }).catalog;
+}
+
+function authorsPlain(): Catalog {
+  return schema({
+    tables: [defineTable("authors", { id: t.bigint(), name: t.text() })],
+  }).catalog;
+}
+
+function books(): Catalog {
+  return schema({ tables: [defineTable("books", { title: t.text() })] }).catalog;
+}
+
+function booksWithIdentity(): Catalog {
+  return schema({
+    tables: [defineTable("books", { title: t.text(), id: t.identity() })],
+  }).catalog;
+}
+
 function baseObjects(): CatalogObject[] {
   const users = { namespace, name: "users" };
   const tasks = { namespace, name: "tasks" };
   return [
     table({ namespace, name: "users", provenance }),
-    column({ parent: users, name: "id", dataType: "integer", nullable: false, provenance }),
+    ...identityPieces(users, "id"),
     column({ parent: users, name: "email", dataType: "text", nullable: false, provenance }),
     constraint({ parent: users, constraintKind: "primaryKey", columns: ["id"], provenance }),
     constraint({
@@ -363,7 +471,7 @@ function baseObjects(): CatalogObject[] {
     }),
     table({ namespace, name: "tasks", provenance }),
     column({ parent: tasks, name: "id", dataType: "integer", nullable: false, provenance }),
-    column({ parent: tasks, name: "owner_id", dataType: "integer", nullable: false, provenance }),
+    column({ parent: tasks, name: "owner_id", dataType: "bigint", nullable: false, provenance }),
     column({ parent: tasks, name: "title", dataType: "text", nullable: true, provenance }),
     enumType({ namespace, name: "color", labels: ["red", "blue"], provenance }),
     column({
@@ -395,9 +503,58 @@ function baseObjects(): CatalogObject[] {
   ];
 }
 
+function identityPieces(
+  parent: { readonly namespace: typeof namespace; readonly name: string },
+  name: string,
+): CatalogObject[] {
+  const seq = sequence({
+    namespace,
+    name: `${parent.name}_${name}_seq`,
+    provenance,
+    dependencies: [{ kind: "table", namespace, name: parent.name }],
+  });
+  return [
+    seq,
+    column({
+      parent,
+      name,
+      dataType: "bigint",
+      nullable: false,
+      provenance,
+      identity: { always: true },
+      dependencies: [seq.identity],
+    }),
+  ];
+}
+
 function mutate(objects: CatalogObject[], seed: number): CatalogObject[] {
   const next = objects.map((object) => object);
   const tasks = { namespace, name: "tasks" };
+  if (seed === 6) {
+    return next.flatMap((object) => {
+      if (object.kind === "sequence" && object.identity.name === "users_id_seq") return [];
+      if (
+        object.kind === "column" &&
+        object.identity.parent.name === "users" &&
+        object.identity.name === "id"
+      ) {
+        return [
+          column({
+            parent: { namespace, name: "users" },
+            name: "id",
+            dataType: "bigint",
+            nullable: false,
+            provenance,
+          }),
+        ];
+      }
+      return [object];
+    });
+  }
+  if (seed === 7) {
+    next.push(...identityPieces(tasks, "rank"));
+    return next;
+  }
   if (seed % 5 === 1) {
     next.push(
       column({ parent: tasks, name: "note", dataType: "text", nullable: true, provenance }),
@@ -433,16 +590,9 @@ function mutate(objects: CatalogObject[], seed: number): CatalogObject[] {
       (object) => !(object.kind === "constraint" && object.definition.constraintKind === "check"),
     );
   } else {
+    const labels = { namespace, name: "labels" };
     next.push(table({ namespace, name: "labels", provenance }));
-    next.push(
-      column({
-        parent: { namespace, name: "labels" },
-        name: "id",
-        dataType: "integer",
-        nullable: false,
-        provenance,
-      }),
-    );
+    next.push(...identityPieces(labels, "id"));
     next.push(
       constraint({
         parent: { namespace, name: "labels" },

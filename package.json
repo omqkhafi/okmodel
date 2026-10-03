@@ -1,7 +1,18 @@
 {
   "name": "okmodel",
-  "version": "0.1.0",
-  "description": "Catalog-first TypeScript ORM: typed queries, safe migrations and replica-aware routing. PostgreSQL first, zero runtime dependencies.",
+  "version": "0.1.1",
+  "description": "okmodel is a catalog-first TypeScript ORM, PostgreSQL first. Other SQL databases are the direction. Version 0.1 supports PostgreSQL only. The schema is the single source. Migrations and queries come from it.",
+  "keywords": [
+    "migrations",
+    "orm",
+    "postgres",
+    "postgresql",
+    "typescript"
+  ],
+  "homepage": "https://github.com/omqkhafi/okmodel",
+  "bugs": {
+    "url": "https://github.com/omqkhafi/okmodel/issues"
+  },
   "license": "Apache-2.0",
   "author": "Omq Khafi",
   "repository": {
@@ -60,13 +71,14 @@
     "layers-check": "bun ./scripts/layers-check.ts",
     "core-purity": "bun ./scripts/core-purity.ts",
     "docs:check": "bun ./scripts/docs-check.ts",
+    "readme:check": "bun ./scripts/readme-check.ts",
     "compiler-api": "bun ./scripts/compiler-api.ts",
     "publint": "publint run . --strict --pack bun",
     "attw": "bun ./scripts/attw.ts",
     "size": "bun ./scripts/size.ts",
     "bundle-purity": "bun ./scripts/bundle-purity.ts",
     "test": "bun test",
-    "check": "bun run format:check && bun run lint && bun run typecheck && bun run editor-check && bun run type-cost && bun run layers-check && bun run core-purity && bun run docs:check && bun run compiler-api && bun run bundle-purity && bun run build && bun test && bun run publint && bun run attw && bun run size",
+    "check": "bun run format:check && bun run lint && bun run typecheck && bun run editor-check && bun run type-cost && bun run layers-check && bun run core-purity && bun run docs:check && bun run readme:check && bun run compiler-api && bun run bundle-purity && bun run build && bun test && bun run publint && bun run attw && bun run size",
     "bump": "bun ./scripts/bump-version.ts",
     "release-check": "bun ./scripts/release-check.ts",
     "db:up": "bun ./packages/harness/src/docker-cli.ts up",

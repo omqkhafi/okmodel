@@ -152,6 +152,8 @@ export function planMigration(request: PlanRequest): MigrationPlan {
   const enums = enumEdits(beforeBy, afterBy, schema);
   requireReplacements(picklists, enums, replacements);
   recreateDependents(beforeList, afterList, alters, dropKeys, createKeys, picklists);
+  omitOwnedSequences(createKeys, afterBy, request.after);
+  omitOwnedSequences(dropKeys, beforeBy, renamed);
 
   const steps: PlanStep[] = [];
   steps.push(...renameSteps(request.before, renames, schema));
@@ -188,6 +190,8 @@ export function planMigration(request: PlanRequest): MigrationPlan {
     for (const sql of alterColumnSql(change.before, change.after, schema)) {
       steps.push(step(sql, alterClass(sql), "ddl", ACCESS));
     }
+    const identitySql = identityChangeSql(change.before, change.after, schema);
+    if (identitySql !== undefined) steps.push(step(identitySql, "expand", "ddl", ACCESS));
   }
 
   const createdTables = new Set(
@@ -950,10 +954,47 @@ function columnNullable(source: Catalog, table: string, column: string): boolean
 }
 
 function columnAlterable(before: ColumnObject, after: ColumnObject): boolean {
-  return (
-    stable(before.definition.identity) === stable(after.definition.identity) &&
-    stable(before.definition.generated) === stable(after.definition.generated)
-  );
+  return stable(before.definition.generated) === stable(after.definition.generated);
+}
+
+/**
+ * In-place identity add, drop, or always/by-default change.
+ *
+ * The sequence is created or dropped by this statement. {@link omitOwnedSequences}
+ * keeps the planner from emitting a second sequence statement.
+ *
+ * @param before - Column already applied
+ * @param after - Column the plan must reach
+ * @param schema - Concrete schema name
+ * @returns The statement, or `undefined` when identity is unchanged
+ */
+function identityChangeSql(
+  before: ColumnObject,
+  after: ColumnObject,
+  schema: string,
+): string | undefined {
+  if (stable(before.definition.identity) === stable(after.definition.identity)) return undefined;
+  const table = qualify(schema, after.identity.parent.name);
+  const name = quoteIdent(after.identity.name);
+  const next = after.definition.identity;
+  const previous = before.definition.identity;
+  if (next === undefined) return `alter table ${table} alter column ${name} drop identity`;
+  if (previous === undefined) {
+    const generated = next.always ? "always" : "by default";
+    return `alter table ${table} alter column ${name} add generated ${generated} as identity`;
+  }
+  return `alter table ${table} alter column ${name} set generated ${next.always ? "always" : "by default"}`;
+}
+
+function omitOwnedSequences(
+  keys: Set<string>,
+  by: ReadonlyMap<string, CatalogObject>,
+  source: Catalog,
+): void {
+  for (const key of keys) {
+    const object = by.get(key);
+    if (object?.kind === "sequence" && folded(object, source)) keys.delete(key);
+  }
 }
 
 function sameDefinition(left: CatalogObject, right: CatalogObject): boolean {
@@ -976,8 +1017,16 @@ function folded(object: CatalogObject, source: Catalog): boolean {
   if (object.kind === "column") return true;
   if (object.kind === "constraint" && object.definition.constraintKind === "primaryKey")
     return true;
-  if (object.kind === "sequence" && identitySequence(object, source)) return true;
-  return false;
+  if (object.kind !== "sequence") return false;
+  if (identitySequence(object, source)) return true;
+  // Introspection stores the identity flag and the sequence, but not the
+  // dependency: Postgres records it as an internal dependency. The default
+  // name is still table_column_seq, which is what the column creates.
+  const name = object.identity.name;
+  return source.objects.some((column) => {
+    if (column.kind !== "column" || column.definition.identity === undefined) return false;
+    return name === `${column.identity.parent.name}_${column.identity.name}_seq`;
+  });
 }
 
 function anchoredParent(object: CatalogObject): string | undefined {

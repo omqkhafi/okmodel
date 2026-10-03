@@ -1,44 +1,229 @@
 # OKModel
 
-Catalog-first TypeScript ORM for PostgreSQL. Version 0.1.
+okmodel is a catalog-first TypeScript ORM, PostgreSQL first. Other SQL databases are the direction. Version 0.1 supports PostgreSQL only. The schema is the single source. Migrations and queries come from it.
+
+Version 0.1.1. Apache-2.0.
+
+## Contents
+
+- [Install](#install)
+- [Quickstart](#quickstart)
+  - [Configure](#configure)
+  - [Schema](#schema)
+  - [Push](#push)
+  - [Reviewed migrations](#reviewed-migrations)
+  - [One client](#one-client)
+  - [Insert](#insert)
+  - [Find](#find)
+  - [Errors](#errors)
+  - [Close the script](#close-the-script)
+- [Commands](#commands)
+- [Roadmap](#roadmap)
+- [Size](#size)
+- [Docs](#docs)
 
 ## Install
 
-```sh
-bun add okmodel
-```
-
-postgres.js and PGlite are optional peers. Install the one you connect with.
+Install okmodel and the postgres.js driver.
 
 ```sh
-bun add postgres
-# or
-bun add @electric-sql/pglite
+bun add okmodel postgres
 ```
 
-The repository docs have the [quickstart](docs/quickstart.md), the [production checklist](docs/production.md), and the [known limits](docs/known-limits.md). Those files are not in the npm tarball.
+PGlite is the in-process driver.
+
+```sh
+bun add okmodel @electric-sql/pglite
+```
+
+okmodel has no runtime dependencies. The driver is a peer.
+
+## Quickstart
+
+`DATABASE_URL` is a direct Postgres URL, not a pooler. The client, insert, find, error, and close blocks are one script, `run.ts`.
+
+### Configure
+
+Point the CLI at the schema and at that URL.
+
+`okmodel.config.ts`:
 
 ```ts
-import { schema, table, t } from "okmodel/pg";
 import { defineConfig } from "okmodel/migrate";
 
-export const notes = table("notes", {
-  id: t.uuid(),
-  title: t.text(),
+const url = process.env.DATABASE_URL;
+if (url === undefined || url.length === 0) {
+  throw new Error("DATABASE_URL is not set");
+}
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: url,
+});
+```
+
+### Schema
+
+`t.identity()` is the primary key. An insert omits the id, and the row that comes back carries it. Identity ids come back as strings by default. `t.identity({ as: "number" })` returns numbers. Push and reviewed migrations are two ways to do the same job: pick one per database.
+
+Tested on PostgreSQL 17.
+
+`schema.ts`:
+
+```ts
+import { one, schema, table, t } from "okmodel/pg";
+
+const authors = table("authors", {
+  id: t.identity(),
+  name: t.text().unique(),
 });
 
-export const app = schema({ tables: [notes] });
+const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text(),
+    authorId: t.bigint().references("authors", { columns: ["id"] }),
+  },
+  { relations: { author: one("authors") } },
+);
 
-export default defineConfig({ schema: "./schema.ts" });
+const tables = [authors, notes];
+
+export default schema({ tables });
 ```
+
+### Push
+
+Create the tables with push, which is allowed because this target is not protected.
 
 ```sh
-bunx okm build
-bunx okm generate init
+bunx okm push
 ```
 
-`table` and `index` for a schema come from `okmodel/pg`. Stable, experimental, and internal exports are listed in `tests/fixtures/api-surface.json` in the repository. `okmodel/internal` has no stability promise.
+A protected target refuses push. Production settings are in the [production checklist](https://github.com/omqkhafi/okmodel/blob/main/docs/production.md).
 
-A production target sets `protected: true`. A production `connect` sets `requireMeta: true`. `prepared: "named"` is not for a transaction-mode pooler.
+### Reviewed migrations
 
-Apache-2.0.
+Generate writes a SQL file and `.okm`, and apply runs that file later so you can read the migration first.
+
+```sh
+bunx okm generate init
+bunx okm migrate apply
+```
+
+### One client
+
+This module is cached, so the process has one client.
+
+`db.ts`:
+
+```ts
+import { connect } from "okmodel/pg/postgresjs";
+
+import schema from "./schema.ts";
+
+const url = process.env.DATABASE_URL;
+if (url === undefined || url.length === 0) throw new Error("DATABASE_URL is not set");
+
+export const db = connect(url, { schema });
+```
+
+### Insert
+
+Insert an author, then a note that points at the author's id.
+
+```ts
+import { db } from "./db.ts";
+
+const author = await db.authors.insert({ name: "Ada" });
+const note = await db.notes.insert({
+  title: "hello",
+  authorId: author.id,
+});
+if (author.name !== "Ada" || note.title !== "hello" || author.id.length === 0) {
+  throw new Error("insert did not return the row");
+}
+```
+
+### Find
+
+Load that note and its author by the id the insert returned.
+
+```ts
+const found = await db.notes.find({
+  where: { id: note.id },
+  limit: 5,
+  include: { author: true },
+});
+const row = found[0];
+if (row?.title !== "hello" || row.author?.name !== "Ada") {
+  throw new Error("find did not return the note and its author");
+}
+```
+
+### Errors
+
+`safe` returns the `OkmError` instead of throwing when the author name is already used.
+
+```ts
+import { OkmError, safe } from "okmodel";
+
+const duplicate = await safe(db.authors.insert({ name: "Ada" }));
+if (duplicate.ok || !(duplicate.error instanceof OkmError) || duplicate.error.kind !== "unique") {
+  throw new Error("expected an OkmError of kind unique");
+}
+```
+
+### Close the script
+
+Close the pool here because the script is finished; a server keeps the client. Without it the script exits after about 30 seconds (the idle timeout).
+
+```ts
+await db.close();
+```
+
+## Commands
+
+| Command                   | What it does                                                                                                                 |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `okm build`               | Validates the schema and writes `.okm/` (catalog, hash, emitted row types). `okm generate` writes those files too.           |
+| `okm check`               | Reports a stale `renamedFrom` and a table file the schema does not import.                                                   |
+| `okm generate [name]`     | Writes a SQL migration and `.okm/`. The name defaults to `migration`. Prints `no changes` when the schema matches.           |
+| `okm dev`                 | Uses a target named `dev`, or creates a PGlite database in `.okm/dev-db`. It does not apply migrations or write the catalog. |
+| `okm push`                | Applies the schema directly. Refused when the target is protected.                                                           |
+| `okm migrate plan <name>` | Prints the plan and its class. The name is required.                                                                         |
+| `okm migrate apply`       | Replays migration files on the database.                                                                                     |
+| `okm migrate status`      | Prints version, catalog hash, and state for each target.                                                                     |
+| `okm --version`           | Prints the package version.                                                                                                  |
+
+`okmodel` and `okm` are the same command.
+
+## Roadmap
+
+- [x] 0.1 — Schema, queries, and migrations on PostgreSQL, with postgres.js and PGlite.
+- [ ] 0.2 — Hidden and sensitive fields, validation, traits, tenancy, archive and restore, richer relations, presets, transactions, and operators for JSON, arrays, ranges, and search.
+- [ ] 0.3 — Extensions, domains, functions, triggers, views, roles, and grants.
+- [ ] 0.4 — Safer migration plans, backfill, drift checks, provisioning, reference data, and a testing package.
+- [ ] 0.5 — A primary with replicas, read routing, and a reference app.
+
+`okmodel/internal` has no stability promise. Names on that subpath can change or disappear in any release.
+
+Each limit, with the version that lifts it, is in [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
+
+## Size
+
+Measured on this release.
+
+|                                   | Minified |   Gzip | Cold import |
+| --------------------------------- | -------: | -----: | ----------: |
+| Runtime entry                     |    5,525 |  2,042 |    1.758 ms |
+| App startup (10 tables, one find) |   77,537 | 25,625 |    9.922 ms |
+
+The rest of the measurements are in [size](https://github.com/omqkhafi/okmodel/blob/main/docs/size.md).
+
+## Docs
+
+- [Quickstart](https://github.com/omqkhafi/okmodel/blob/main/docs/quickstart.md)
+- [Production checklist](https://github.com/omqkhafi/okmodel/blob/main/docs/production.md)
+- [Known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md)

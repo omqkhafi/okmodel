@@ -369,9 +369,11 @@ function anchored(
   columns: readonly ColumnModel[],
 ): { readonly presence: ColumnModel | undefined; readonly anchor: number } {
   const pk = table.model.primary[0];
-  const selected = pk === undefined ? -1 : columns.findIndex((column) => column.field === pk);
+  // No primary key: the first projected column is null only when the join misses.
+  if (pk === undefined) return { presence: undefined, anchor: 0 };
+  const selected = columns.findIndex((column) => column.field === pk);
   if (selected >= 0) return { presence: undefined, anchor: selected };
-  return { presence: pk === undefined ? undefined : table.columns.get(pk), anchor: columns.length };
+  return { presence: table.columns.get(pk), anchor: columns.length };
 }
 
 function childIndex(schema: QuerySchema, relation: RelationModel): Indexed {

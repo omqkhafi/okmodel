@@ -23,7 +23,7 @@ import { schemaDeclarations } from "../src/dialects/pg/declarations.js";
 import { schema, sql, table, t } from "../src/dialects/pg/index.js";
 import { repoRoot } from "../scripts/root.js";
 import { run } from "../src/tooling/migrate/commands.js";
-import { planMigration, staleRenames } from "../src/tooling/migrate/plan.js";
+import { planMigration, staleRenames, type MigrationPlan } from "../src/tooling/migrate/plan.js";
 import { unlistedTableFiles } from "../src/tooling/migrate/project.js";
 import { parseReplace } from "../src/tooling/migrate/values.js";
 
@@ -69,6 +69,41 @@ test("rename rewrites expression text and the plan does not recreate the check",
   expect(sqlText.toLowerCase()).not.toContain("cascade");
   expect(sqlText.toLowerCase()).not.toContain("drop constraint");
   expect(plan.class).toBe("contract");
+});
+
+test("an identity sequence is not planned as its own statement", () => {
+  const empty = catalog([]);
+  const created = schema({
+    tables: [table("authors", { id: t.identity(), name: t.text() })],
+  });
+  const createSql = sqlOf(planMigration({ before: empty, after: created.catalog, name: "create" }));
+  expect(createSql).toContain("generated always as identity");
+  expect(createSql).not.toContain("create sequence");
+
+  const books = schema({ tables: [table("books", { title: t.text() })] });
+  const booksId = schema({
+    tables: [table("books", { title: t.text(), id: t.identity() })],
+  });
+  const addSql = sqlOf(
+    planMigration({ before: books.catalog, after: booksId.catalog, name: "add" }),
+  );
+  expect(addSql).toContain("add column");
+  expect(addSql).toContain("generated always as identity");
+  expect(addSql).not.toContain("create sequence");
+
+  const dropTableSql = sqlOf(
+    planMigration({ before: created.catalog, after: empty, name: "drop-table" }),
+  );
+  expect(dropTableSql).toContain("drop table");
+  expect(dropTableSql).not.toContain("drop sequence");
+
+  const plain = schema({ tables: [table("authors", { id: t.bigint(), name: t.text() })] });
+  const dropIdentitySql = sqlOf(
+    planMigration({ before: created.catalog, after: plain.catalog, name: "drop-identity" }),
+  );
+  expect(dropIdentitySql).toContain("drop identity");
+  expect(dropIdentitySql).not.toContain("drop sequence");
+  expect(dropIdentitySql).not.toContain("drop column");
 });
 
 test("an unexplained drop and add is OKM1530 and shows the line to add", () => {
@@ -314,6 +349,13 @@ test("okm generate writes SQL and okm migrate plan prints the class", async () =
     rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+function sqlOf(plan: MigrationPlan): string {
+  return plan.steps
+    .map((step) => step.sql)
+    .join("\n")
+    .toLowerCase();
+}
 
 function capture(fn: () => void): OkmError {
   try {

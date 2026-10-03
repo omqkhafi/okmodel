@@ -14,6 +14,26 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+## v0.1.1 — 2026-10-03
+
+### ✨ Added
+
+- The published README is the newcomer page: install, a default-exported schema, `okm push`, then `okm generate` and `okm migrate apply`, a shared client, insert, find with an include, and `safe` / `OkmError`.
+- `bun run check` fails when `README.md` contains a relative link or an image.
+
+### ♻️ Changed
+
+- The README and the package description say okmodel is catalog-first and PostgreSQL first, that version 0.1 supports PostgreSQL only, and that the schema is the single source for migrations and queries. A table of contents and a 0.1–0.5 roadmap replace the limits table. Size keeps the runtime entry, app startup, and cold import.
+- The quickstart test runs `okm push`, and `okm generate` followed by `okm migrate apply`, against Postgres in the postgres job.
+- The Release workflow publishes only from the tag `v` plus the `package.json` version, and the message names that tag when it refuses.
+- npm metadata now has a description, keywords, a homepage, and a bugs URL.
+- A pull request that cuts one bare version to the next, with the notes under the new `## vX.Y.Z` heading, is accepted with an empty Unreleased section.
+
+### 🐛 Fixed
+
+- `find` with a to-one `include` returned null for the related row when that table had no primary key. The first projected column is the presence check in that case.
+- Identity columns failed in `okm push` and `okm generate` and are fixed.
+
 ## v0.1.0 — 2026-10-03
 
 ### ✨ Added
