@@ -40,7 +40,7 @@ A layer may import layers below it. It must not import a layer above it. Adapter
 - `bun run typecheck` runs `tsc --noEmit`.
 - `bun run lint` uses oxlint with type-aware rules. `bun run format:check` uses oxfmt. `bun run format` rewrites formatting.
 - `bun run layers-check` fails when an import goes upward.
-- `bun run core-purity` fails on a `node:*` import below tooling and on runtime `dependencies`.
+- `bun run core-purity` fails on a `node:*` import below tooling and on runtime `dependencies`. The postgres.js adapter may import `node:net` to unref an idle pool socket.
 - `bun run docs:check` checks relative links, `§` references, and decision numbers.
 - `bun run readme:check` fails when `README.md` contains a relative link or an image.
 - `bun test` covers package exports, the bins, the check fixtures, PGlite, and the schema fixtures. Postgres tests run when the topology is up; they fail instead of skipping when `REQUIRE_DOCKER=1`. PGlite and the in-process wire server stay in that run.

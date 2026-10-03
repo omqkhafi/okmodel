@@ -405,17 +405,34 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   ): Write<WriteCount>;
 };
 
+/**
+ * `[Symbol.asyncDispose]` when `Symbol` defines it.
+ *
+ * The check stays in the built declaration. A consumer `lib` without
+ * `asyncDispose` does not see the method, including with `skipLibCheck` off.
+ */
+type IfAsyncDisposable<S> = S extends { readonly asyncDispose: infer D }
+  ? D extends symbol
+    ? { [K in D]: () => Promise<void> }
+    : object
+  : object;
+
 /** A client typed by its own schema. */
 export type Connected<S extends QuerySchema> = {
   readonly [K in keyof S["~byName"] & string]: TableApi<S, K>;
 } & {
   /** Looks up a table by name. An unknown name is OKM1120. */
   table<K extends keyof S["~byName"] & string>(name: K): TableApi<S, K>;
-  /** Closes the pool when this client opened it. */
+  /**
+   * Closes the pool when this client opened it.
+   *
+   * A second call waits on the same close. A client that adopted a pool
+   * resolves without closing it.
+   */
   close(): Promise<void>;
   /** Resolves when the dialect and `requires` checks have finished. */
   readonly connected: Promise<void>;
-};
+} & IfAsyncDisposable<typeof Symbol>;
 
 /**
  * A catalog `okm build` wrote.

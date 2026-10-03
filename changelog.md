@@ -21,6 +21,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The published README is the newcomer page: install, a default-exported schema, `okm push`, then `okm generate` and `okm migrate apply`, a shared client, insert, find with an include, and `safe` / `OkmError`.
 - `bun run check` fails when `README.md` contains a relative link or an image.
 - `bun run verify` runs the Postgres suite against Docker on this machine. One version by default (`POSTGRES_VERSION`, or 17). `--all` runs every supported major. CI stays the authority for a release.
+- A connected client implements `Symbol.asyncDispose` when the runtime has it, so `await using` closes the pool. `close()` can be called again.
 
 ### ♻️ Changed
 
@@ -43,6 +44,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - `find` with a to-one `include` returned null for the related row when that table had no primary key. The first projected column is the presence check in that case.
 - Identity columns failed in `okm push` and `okm generate` and are fixed.
+- A script that never calls `close()` exits after its last query. A plain postgres.js pool unrefs its sockets and does not start the idle timer. A process that stays up keeps its connections. A pool opened with `ssl` still uses the driver's socket and the 30 second idle timer.
 
 ## v0.1.0 — 2026-10-03
 

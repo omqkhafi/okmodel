@@ -96,7 +96,8 @@ async function runDocs(tarball: string, url: string): Promise<void> {
   const markdown = readFileSync(path, "utf8");
   expect(markdown).toContain("t.identity()");
   expect(markdown).toContain("PostgreSQL 17");
-  expect(markdown).toContain("30 seconds");
+  expect(markdown).toContain("await using");
+  expect(markdown).toContain("db.close()");
   if (UUID_LITERAL.test(markdown)) throw new Error(`${path} hard-codes a UUID`);
   const fences = markdownFences(markdown);
   for (const fence of fences) {
@@ -137,7 +138,7 @@ async function runReadme(tarball: string, pushUrl: string, applyUrl: string): Pr
   const markdown = readFileSync(path, "utf8");
   expect(markdown).toContain('t.identity({ as: "number" })');
   expect(markdown).toContain("PostgreSQL 15 to 18");
-  expect(markdown).toContain("30 seconds");
+  expect(markdown).toContain("await using");
   expect(markdown).toContain("pick one per database");
   if (markdown.includes("db.connected")) {
     throw new Error("README.md awaits db.connected. Every call already waits for it.");
@@ -197,8 +198,10 @@ async function runReadme(tarball: string, pushUrl: string, applyUrl: string): Pr
     expect(checked.trim()).toBe("ok");
     for (const line of push) await command(dir, line.split(/\s+/), { DATABASE_URL: pushUrl });
     await command(dir, ["bun", "run.ts"], { DATABASE_URL: pushUrl });
+    await command(dir, ["bun", "script.ts"], { DATABASE_URL: pushUrl });
     for (const line of migrate) await command(dir, line.split(/\s+/), { DATABASE_URL: applyUrl });
     await command(dir, ["bun", "run.ts"], { DATABASE_URL: applyUrl });
+    await command(dir, ["bun", "script.ts"], { DATABASE_URL: applyUrl });
   });
 }
 

@@ -10,7 +10,7 @@ Stable exports are the application API this release commits to. Experimental exp
 
 `okmodel/pg` is the schema API: column builders, `table`, `schema`, `index`, operators, `one`, and `many`. `domain` is experimental. Catalog compilation, row-type emit, Postgres error mapping, and the operator tag helpers are not exported.
 
-`okmodel/pg/postgresjs` and `okmodel/pg/pglite` export `connect` and the pool opener for that driver.
+`okmodel/pg/postgresjs` and `okmodel/pg/pglite` export `connect` and the pool opener for that driver. The client has `close()`. A second `close()` waits on the same call. When the runtime defines `Symbol.asyncDispose`, the client implements it, and `await using` calls `close()`. A client that adopted an existing pool resolves `close()` without ending that pool.
 
 `okmodel/migrate` exports `defineConfig`, `MigrateConfig`, and `TargetInput`. The CLI imports the planning and apply helpers from the package. Those helpers are not exports.
 

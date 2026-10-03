@@ -16,7 +16,7 @@ Version 0.1.1. Apache-2.0.
   - [Insert](#insert)
   - [Find](#find)
   - [Errors](#errors)
-  - [Close the script](#close-the-script)
+  - [Close](#close)
 - [Commands](#commands)
 - [Roadmap](#roadmap)
 - [Size](#size)
@@ -40,7 +40,7 @@ okmodel has no runtime dependencies. The driver is a peer.
 
 ## Quickstart
 
-`DATABASE_URL` is a direct Postgres URL, not a pooler. The client, insert, find, error, and close blocks are one script, `run.ts`.
+`DATABASE_URL` is a direct Postgres URL, not a pooler. The client, insert, find, and error blocks are one script, `run.ts`. `script.ts` is the `await using` form. The last block calls `db.close()`.
 
 ### Configure
 
@@ -175,9 +175,26 @@ if (duplicate.ok || !(duplicate.error instanceof OkmError) || duplicate.error.ki
 }
 ```
 
-### Close the script
+### Close
 
-Close the pool here because the script is finished; a server keeps the client. Without it the script exits after about 30 seconds (the idle timeout).
+A script exits when its queries finish. It does not need `close()` for that. `await using` closes the pool at the end of the block. `db.close()` is that call on a line you choose. A server keeps the client and its connections. A pool opened with `ssl` still waits out the driver's 30 second idle timer.
+
+`script.ts`:
+
+```ts
+import { connect } from "okmodel/pg/postgresjs";
+
+import schema from "./schema.ts";
+
+const url = process.env.DATABASE_URL;
+if (url === undefined || url.length === 0) throw new Error("DATABASE_URL is not set");
+
+await using db = connect(url, { schema });
+const author = await db.authors.insert({ name: "Lin" });
+if (author.name !== "Lin" || author.id.length === 0) {
+  throw new Error("insert did not return the row");
+}
+```
 
 ```ts
 await db.close();

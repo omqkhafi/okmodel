@@ -106,6 +106,7 @@ export function createClient<S extends QuerySchema>(
   for (const name of Object.keys(schema.model)) {
     tables[name] = tableApi(session, name);
   }
+  let closing: Promise<void> | undefined;
   const client = {
     ...tables,
     table(name: string) {
@@ -124,11 +125,34 @@ export function createClient<S extends QuerySchema>(
       }
     },
     close() {
-      return options.ownsPool ? pool.close() : Promise.resolve();
+      if (!options.ownsPool) return Promise.resolve();
+      closing ??= pool.close();
+      return closing;
     },
     connected,
   };
+  attachAsyncDispose(client, () => client.close());
   return client as unknown as Connected<S>;
+}
+
+/**
+ * Adds `[Symbol.asyncDispose]` when the runtime defines it.
+ *
+ * Older engines have no such symbol. Reading it there is `undefined`, so the
+ * client is left unchanged.
+ *
+ * @param client - The connected client
+ * @param close - Idempotent close for this client
+ */
+function attachAsyncDispose(client: object, close: () => Promise<void>): void {
+  const symbol = (Symbol as { readonly asyncDispose?: symbol }).asyncDispose;
+  if (typeof symbol !== "symbol") return;
+  Object.defineProperty(client, symbol, {
+    configurable: true,
+    enumerable: false,
+    writable: true,
+    value: () => close(),
+  });
 }
 
 function tableApi(session: Session, table: string): TableApi<QuerySchema, string> {

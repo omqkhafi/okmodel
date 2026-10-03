@@ -11,7 +11,8 @@ import { moduleSpecifiers } from "./specifiers.js";
  * Reports `node:*` imports below `tooling`, and runtime `dependencies` in package.json.
  *
  * Bare Node built-in specifiers (`fs`, `path`, …) count as the same dependency.
- * The tooling layer may import Node.
+ * The tooling layer may import Node. The postgres.js adapter may import
+ * `node:net` so a finished script can unref its sockets.
  */
 export function checkCorePurity(options: {
   readonly root: string;
@@ -39,6 +40,7 @@ function nodeImportProblems(root: string): readonly string[] {
     }
     const text = readFileSync(file, "utf8");
     for (const specifier of moduleSpecifiers(text)) {
+      if (nodeImportAllowed(root, file, specifier)) continue;
       if (specifier.startsWith("node:") || NODE_BUILTINS.has(specifier)) {
         problems.push(`${relative(root, file)} imports ${specifier}`);
       }
@@ -78,6 +80,24 @@ function isCoreFile(root: string, file: string): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * postgres.js does not hand back its socket. This file opens one and unrefs it.
+ * The check root is `src/`, so the path has no `src` prefix.
+ */
+const SOCKET_UNREF = join("adapters", "pg", "postgresjs.ts");
+
+/**
+ * The one core import of Node that the socket unref needs.
+ *
+ * @param root - Repository or fixture root
+ * @param file - Source file
+ * @param specifier - Import specifier
+ * @returns Whether this import is the postgres.js socket
+ */
+function nodeImportAllowed(root: string, file: string, specifier: string): boolean {
+  return relative(root, file) === SOCKET_UNREF && specifier === "node:net";
 }
 
 function messageOf(error: unknown): string {

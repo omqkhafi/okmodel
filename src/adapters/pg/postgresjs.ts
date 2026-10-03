@@ -6,6 +6,7 @@
  * and clears session state on release. `postgres` is a peer of this entry.
  */
 
+import net from "node:net";
 import postgres, { type Sql } from "postgres";
 
 import type {
@@ -67,6 +68,176 @@ export type NoticeBuffer = {
   since(start: number): readonly Notice[];
 };
 
+/** Fields the socket factory reads off the parsed postgres.js options. */
+type SocketTarget = {
+  readonly host: readonly string[];
+  readonly port: readonly number[];
+  readonly path?: string | false;
+};
+
+/**
+ * Sockets this pool opened.
+ *
+ * A new socket is referenced, which keeps a finished script alive. The pool
+ * unrefs them while nothing is in flight and refs them again for the next
+ * call. A process that stays up for its own work keeps the connection.
+ */
+class PoolSockets {
+  private readonly held: net.Socket[] = [];
+  private busy = 0;
+  private listeners = 0;
+  private hostCursor = 0;
+
+  /**
+   * Opens one socket and remembers it.
+   *
+   * @param target - Host, port, and optional unix path from postgres.js
+   * @returns The socket postgres.js should use
+   */
+  connect(target: SocketTarget): net.Socket {
+    const path = typeof target.path === "string" ? target.path : undefined;
+    const hosts = target.host;
+    const ports = target.port;
+    const index = hosts.length === 0 ? 0 : this.hostCursor % hosts.length;
+    this.hostCursor += 1;
+    const host = hosts[index] ?? "localhost";
+    const port = ports[index] ?? ports[0] ?? 5432;
+    const socket = path !== undefined ? net.connect(path) : net.connect(port, host);
+    this.held.push(socket);
+    return socket;
+  }
+
+  /**
+   * Refs sockets for one call and unrefs them when it finishes.
+   *
+   * @param run - The call
+   * @returns The call's result
+   */
+  occupy<T>(run: () => Promise<T>): Promise<T> {
+    this.busy += 1;
+    this.wake();
+    return run().finally(() => {
+      this.busy -= 1;
+      this.park();
+    });
+  }
+
+  /**
+   * Keeps sockets referenced until `release` finishes.
+   *
+   * A second `release` does not change the count.
+   *
+   * @param checkout - Reserves the connection
+   * @returns The connection, with release counted once
+   */
+  async hold<T extends { release(): Promise<void> }>(checkout: () => Promise<T>): Promise<T> {
+    this.busy += 1;
+    this.wake();
+    try {
+      const connection = await checkout();
+      let released = false;
+      const release = connection.release.bind(connection);
+      connection.release = () => {
+        if (released) return Promise.resolve();
+        released = true;
+        return release().finally(() => {
+          this.busy -= 1;
+          this.park();
+        });
+      };
+      return connection;
+    } catch (error) {
+      this.busy -= 1;
+      this.park();
+      throw error;
+    }
+  }
+
+  /**
+   * Refs sockets until the iterator finishes.
+   *
+   * @param open - The row stream
+   * @returns That stream
+   */
+  async *stream<T>(open: () => AsyncIterable<T>): AsyncIterable<T> {
+    this.busy += 1;
+    this.wake();
+    try {
+      yield* open();
+    } finally {
+      this.busy -= 1;
+      this.park();
+    }
+  }
+
+  /**
+   * Keeps sockets referenced for as long as the listener is active.
+   *
+   * @param start - Subscribes and returns the stop function
+   * @returns A stop function that can be called again
+   */
+  async listen(start: () => Promise<() => Promise<void>>): Promise<() => Promise<void>> {
+    this.listeners += 1;
+    this.wake();
+    try {
+      const stop = await start();
+      let stopped = false;
+      return async () => {
+        if (stopped) return;
+        stopped = true;
+        try {
+          await stop();
+        } finally {
+          this.listeners -= 1;
+          this.park();
+        }
+      };
+    } catch (error) {
+      this.listeners -= 1;
+      this.park();
+      throw error;
+    }
+  }
+
+  private wake(): void {
+    for (const socket of this.held) socket.ref();
+  }
+
+  private park(): void {
+    if (this.busy > 0 || this.listeners > 0) return;
+    for (const socket of this.held) socket.unref();
+  }
+}
+
+function driverOptions(
+  config: PostgresJsConfig,
+  state: {
+    readonly max: number;
+    readonly named: boolean;
+    readonly plain: boolean;
+    readonly notices: { push(notice: postgres.Notice): void };
+    readonly sockets: PoolSockets;
+  },
+) {
+  return {
+    max: state.max,
+    prepare: state.named,
+    idle_timeout: state.plain ? 0 : 30,
+    ...(state.plain ? { max_lifetime: null } : {}),
+    connect_timeout: 5,
+    types: WIRE_TYPES,
+    ...(state.plain ? { socket: (options: SocketTarget) => state.sockets.connect(options) } : {}),
+    ...(config.ssl !== undefined ? { ssl: config.ssl } : {}),
+    connection: {
+      application_name: "okmodel",
+      ...(config.searchPath !== undefined ? { search_path: config.searchPath } : {}),
+    },
+    onnotice(notice: postgres.Notice) {
+      state.notices.push(notice);
+    },
+  };
+}
+
 /**
  * Opens a postgres.js pool for one endpoint.
  *
@@ -83,21 +254,22 @@ export function open(config: PostgresJsConfig): DriverPool {
   const isClosed = (): boolean => closed;
 
   const named = config.prepared === "named";
-  const sql = postgres(config.url, {
-    max,
-    prepare: named,
-    idle_timeout: 30,
-    connect_timeout: 5,
-    types: WIRE_TYPES,
-    ...(config.ssl !== undefined ? { ssl: config.ssl } : {}),
-    connection: {
-      application_name: "okmodel",
-      ...(config.searchPath !== undefined ? { search_path: config.searchPath } : {}),
-    },
-    onnotice(notice) {
-      notices.push(notice);
-    },
-  });
+  // postgres.js keeps a referenced idle timer and a lifetime timer. Neither
+  // object is reachable, so they cannot be unref'd. A plain pool therefore
+  // starts neither, and unrefs its sockets while idle. `ssl` still uses the
+  // driver's socket, so that pool keeps the 30s idle timer and can exit.
+  const plain = config.ssl === undefined;
+  const sockets = new PoolSockets();
+  const sql = postgres(
+    config.url,
+    driverOptions(config, {
+      max,
+      named,
+      plain,
+      notices,
+      sockets,
+    }),
+  );
 
   const root = new PgSession(
     sql,
@@ -114,28 +286,41 @@ export function open(config: PostgresJsConfig): DriverPool {
   return {
     capabilities: POSTGRESJS_CAPABILITIES,
     execute(text, params, options) {
-      return runCall(closed, options, (watch) => root.query(text, params, watch));
+      return sockets.occupy(() =>
+        runCall(closed, options, (watch) => root.query(text, params, watch)),
+      );
     },
     async batch(statements, options) {
-      const { checkout } = await import("./postgres-extra.js");
-      const connection = await checkout(held);
-      try {
-        return await connection.batch(statements, options);
-      } finally {
-        await connection.release();
-      }
+      return sockets.occupy(async () => {
+        const { checkout } = await import("./postgres-extra.js");
+        const connection = await checkout(held);
+        try {
+          return await connection.batch(statements, options);
+        } finally {
+          await connection.release();
+        }
+      });
     },
-    reserve: () => import("./postgres-extra.js").then((mod) => mod.checkout(held)),
+    reserve() {
+      return sockets.hold(async () => {
+        const mod = await import("./postgres-extra.js");
+        return mod.checkout(held);
+      });
+    },
     describe: (text, params) =>
-      import("./postgres-extra.js").then((mod) => mod.describe(sql, text, params)),
+      sockets.occupy(() =>
+        import("./postgres-extra.js").then((mod) => mod.describe(sql, text, params)),
+      ),
     stream(text, params) {
-      return loadStream(sql, text, params);
+      return sockets.stream(() => loadStream(sql, text, params));
     },
-    async listen(channel, onNotify) {
-      const listening = await sql.listen(channel, onNotify);
-      return async () => {
-        await listening.unlisten();
-      };
+    listen(channel, onNotify) {
+      return sockets.listen(async () => {
+        const listening = await sql.listen(channel, onNotify);
+        return async () => {
+          await listening.unlisten();
+        };
+      });
     },
     cancel() {
       for (const pending of poolInflight) pending.cancel();
