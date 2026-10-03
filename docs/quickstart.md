@@ -45,6 +45,8 @@ bunx okm generate init
 bunx okm migrate apply
 ```
 
+A script exits when its queries finish. It does not need `close()` for that. `await using` closes the pool at the end of the block. `db.close()` is that call on a line you choose. A pool opened with `ssl` still waits out the driver's 30 second idle timer.
+
 `run.ts`:
 
 ```ts
@@ -55,17 +57,20 @@ import { app } from "./schema.ts";
 const url = process.env.DATABASE_URL;
 if (url === undefined || url.length === 0) throw new Error("DATABASE_URL is not set");
 
+{
+  await using db = connect(url, { schema: app });
+  await db.connected;
+  const inserted = await db.notes.insert({ title: "hello" });
+  if (inserted.title !== "hello" || inserted.id.length === 0) {
+    throw new Error("insert did not return the title");
+  }
+  const found = await db.notes.find({ where: { id: inserted.id }, limit: 5 });
+  if (found.length !== 1 || found[0]?.title !== "hello") throw new Error("find did not return the row");
+}
+
 const db = connect(url, { schema: app });
 await db.connected;
-const inserted = await db.notes.insert({ title: "hello" });
-if (inserted.title !== "hello" || inserted.id.length === 0) {
-  throw new Error("insert did not return the title");
-}
-const found = await db.notes.find({ where: { id: inserted.id }, limit: 5 });
-if (found.length !== 1 || found[0]?.title !== "hello") throw new Error("find did not return the row");
 await db.close();
 ```
-
-Close the client when the script is finished. Without `db.close()` the script exits after about 30 seconds (the idle timeout).
 
 Production targets and `requireMeta` are in [production](production.md). What 0.1 does not ship is in [known limits](known-limits.md).
