@@ -17,7 +17,7 @@ git push origin v0.1.0
 
 npm needs a trusted publisher for `okmodel`: repository `omqkhafi/okmodel`, workflow `release.yml`. No token is stored in the repository.
 
-Run the Release workflow on the tag. It checks out that commit, runs `bun run check`, and runs `bun publish --access public` with `NPM_CONFIG_PROVENANCE=true`.
+Run the Release workflow on the tag. It checks out that commit, runs `bun run check`, and runs `npm publish --access public` with `NPM_CONFIG_PROVENANCE=true`. `npm` performs the trusted-publisher login.
 
 ```sh
 gh workflow run release.yml --ref v0.1.0

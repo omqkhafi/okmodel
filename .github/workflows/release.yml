@@ -39,7 +39,12 @@ jobs:
       - name: Check
         run: bun run check
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
       - name: Publish
-        run: bun publish --access public
+        run: npm publish --access public
         env:
           NPM_CONFIG_PROVENANCE: "true"
