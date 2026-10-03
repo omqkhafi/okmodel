@@ -1,8 +1,17 @@
 name: CI
 
+# A push runs on main only. A branch with a pull request runs on pull_request,
+# so the two events do not run the same commit twice. A newer run on the same
+# ref cancels the older one.
 on:
   push:
+    branches:
+      - main
   pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -13,12 +22,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.4.2
 
@@ -34,47 +43,20 @@ jobs:
 
   postgres:
     name: postgres
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.4.2
-
-      - name: Install
-        run: bun install --frozen-lockfile
-
-      - name: Build
-        run: bun run build
-
-      - name: Start Postgres
-        run: bun run db:up
-        env:
-          POSTGRES_VERSION: "17"
-
-      - name: Postgres tests
-        run: bun test tests/harness.test.ts tests/fixtures-schema.test.ts tests/replication.test.ts tests/driver-suite.test.ts tests/error-suite.test.ts tests/compatibility.test.ts tests/pg-read.test.ts tests/pg-write.test.ts tests/apply-pg.test.ts tests/quickstart.test.ts
-        env:
-          REQUIRE_DOCKER: "1"
-          POSTGRES_VERSION: "17"
-
-      - name: Stop Postgres
-        if: always()
-        run: bun run db:down
+    uses: ./.github/workflows/postgres.yml
+    with:
+      suite_versions: '["15", "18"]'
+      tarball_versions: '["18"]'
 
   attest:
     name: attest
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.4.2
 

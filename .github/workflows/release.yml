@@ -4,26 +4,45 @@ name: Release
 # not run on push. scripts/release-ref.ts reads the version after checkout
 # and refuses any other ref.
 #
+# Publishing waits for the Postgres matrix and the tarball job. Two releases
+# cannot run at the same time.
+#
 # Provenance: id-token write lets npm attach a statement that this
 # workflow built the tarball. The package needs a trusted publisher for
 # this repository and this workflow. No npm token is stored here.
 on:
   workflow_dispatch:
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 permissions:
   contents: read
-  id-token: write
 
 jobs:
-  release:
-    name: release
+  gate:
+    name: postgres
+    permissions:
+      contents: read
+    uses: ./.github/workflows/postgres.yml
+    with:
+      suite_versions: '["15", "16", "17", "18"]'
+      tarball_versions: '["15", "16", "17", "18"]'
+
+  publish:
+    name: publish
+    needs: gate
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.4.2
 
@@ -37,7 +56,7 @@ jobs:
         run: bun run check
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
 
@@ -45,3 +64,63 @@ jobs:
         run: npm publish --access public
         env:
           NPM_CONFIG_PROVENANCE: "true"
+
+  smoke:
+    name: smoke
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Start Postgres
+        run: bun run db:up
+        env:
+          POSTGRES_VERSION: "17"
+
+      - name: Smoke
+        run: bun ./scripts/npm-smoke.ts
+        env:
+          POSTGRES_VERSION: "17"
+
+      - name: Stop Postgres
+        if: always()
+        run: bun run db:down
+        env:
+          POSTGRES_VERSION: "17"
+
+  github-release:
+    name: github release
+    needs: smoke
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - name: GitHub Release
+        run: bun ./scripts/github-release.ts
+        env:
+          GH_TOKEN: ${{ github.token }}

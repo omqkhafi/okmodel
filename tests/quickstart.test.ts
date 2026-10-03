@@ -136,7 +136,7 @@ async function runReadme(tarball: string, pushUrl: string, applyUrl: string): Pr
   const path = join(root, "README.md");
   const markdown = readFileSync(path, "utf8");
   expect(markdown).toContain('t.identity({ as: "number" })');
-  expect(markdown).toContain("PostgreSQL 17");
+  expect(markdown).toContain("PostgreSQL 15 to 18");
   expect(markdown).toContain("30 seconds");
   expect(markdown).toContain("pick one per database");
   if (markdown.includes("db.connected")) {

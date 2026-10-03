@@ -1,4 +1,10 @@
-/** Postgres majors the topology can start. */
+/**
+ * Postgres majors the suite runs.
+ *
+ * The floor is 15. Postgres 13 is past end of life, 14 ends in November 2026,
+ * and 15 is where later features can land. `uuidv7()` exists on 18, which
+ * stays in the list.
+ */
 export const POSTGRES_VERSIONS = ["15", "16", "17", "18"] as const;
 
 /** A Postgres major the harness knows how to run. */

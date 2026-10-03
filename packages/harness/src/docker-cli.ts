@@ -24,7 +24,7 @@ async function main(): Promise<void> {
   const version = postgresVersionFromEnv();
   const composeArgs =
     command === "up"
-      ? ["up", "-d", "--wait", "--wait-timeout", "180"]
+      ? ["up", "-d", "--wait", "--wait-timeout", "300"]
       : ["down", "-v", "--remove-orphans"];
   const proc = Bun.spawn(
     ["docker", "compose", "-f", composeFile, "-p", "okmodel", ...composeArgs],

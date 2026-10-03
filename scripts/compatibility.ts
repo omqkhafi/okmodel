@@ -8,6 +8,7 @@ import { registerErrorMappingSuite } from "../packages/harness/src/error-suite.j
 import { registerDriverSuite, type SuiteTest } from "../packages/harness/src/driver-suite.js";
 import { postgresDecision } from "../packages/harness/src/docker-gate.js";
 import { primaryUrl } from "../packages/harness/src/topology.js";
+import { POSTGRES_VERSIONS } from "../packages/harness/src/version.js";
 import type { DriverCapabilities, DriverPool } from "../src/contracts/driver.js";
 import {
   capabilities as pgliteCapabilities,
@@ -44,7 +45,9 @@ export function renderCompatibility(cells: readonly CompatibilityCell[]): string
     "",
     "Generated from the conformance run (`tests/driver-suite.test.ts` and `tests/error-suite.test.ts`). Do not edit by hand.",
     "",
-    "PGlite runs in the check job. postgres.js runs in the postgres job (`REQUIRE_DOCKER=1`). A skip means the adapter did not declare the capability that case needs.",
+    supportSentence(),
+    "",
+    "PGlite runs in the check job. The in-process wire server runs in the check job. postgres.js runs in the postgres job (`REQUIRE_DOCKER=1`). A skip means the adapter did not declare the capability that case needs.",
     "",
     `| ${header.join(" | ")} |`,
     `| ${header.map(() => "---").join(" | ")} |`,
@@ -153,6 +156,24 @@ function strip(prefix: string, name: string): string {
 
 function unique(values: readonly string[]): readonly string[] {
   return [...new Set(values)];
+}
+
+/**
+ * The supported-major paragraph on the compatibility page.
+ *
+ * @returns One sentence block, with no trailing newline
+ */
+export function supportSentence(): string {
+  const majors = englishList(POSTGRES_VERSIONS);
+  const floor = POSTGRES_VERSIONS[0] ?? "";
+  const newest = POSTGRES_VERSIONS[POSTGRES_VERSIONS.length - 1] ?? "";
+  return `Supported majors are Postgres ${majors}. The floor is ${floor}: Postgres 13 is past end of life, 14 ends in November 2026, and 15 gives us features we can use later. Identity columns need Postgres 10. \`gen_random_uuid()\` is built in from Postgres 13. \`uuidv7()\` needs Postgres 18. A pull request runs the suite on ${floor} and ${newest} and the tarball job on ${newest}. The release and the weekly run cover each supported major. A failure on an older major in this list stays in the run.`;
+}
+
+function englishList(values: readonly string[]): string {
+  if (values.length <= 1) return values[0] ?? "";
+  const last = values[values.length - 1] ?? "";
+  return `${values.slice(0, -1).join(", ")}, and ${last}`;
 }
 
 function rank(name: string): number {

@@ -20,14 +20,24 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - The published README is the newcomer page: install, a default-exported schema, `okm push`, then `okm generate` and `okm migrate apply`, a shared client, insert, find with an include, and `safe` / `OkmError`.
 - `bun run check` fails when `README.md` contains a relative link or an image.
+- `bun run verify` runs the Postgres suite against Docker on this machine. One version by default (`POSTGRES_VERSION`, or 17). `--all` runs every supported major. CI stays the authority for a release.
 
 ### ♻️ Changed
 
-- The README and the package description say okmodel is catalog-first and PostgreSQL first, that version 0.1 supports PostgreSQL only, and that the schema is the single source for migrations and queries. A table of contents and a 0.1–0.5 roadmap replace the limits table. Size keeps the runtime entry, app startup, and cold import.
+#### tooling
+
 - The quickstart test runs `okm push`, and `okm generate` followed by `okm migrate apply`, against Postgres in the postgres job.
 - The Release workflow publishes only from the tag `v` plus the `package.json` version, and the message names that tag when it refuses.
+- Supported Postgres majors are 15, 16, 17, and 18. 13 is past end of life, 14 ends in November 2026, and 15 is the floor. A pull request runs the suite on 15 and 18 and the tarball job on 18. The release and a weekly run cover every supported major for both, and the release waits for that matrix and for a fresh install of the packed tarball. A file that cannot run on the topology is named, with the reason, in one list.
+- CI runs on a pull request and on a push to main, so a pushed branch with a pull request runs once. A newer run cancels the older one on the same ref.
+- The topology no longer rewrites passwords for Postgres 13. Replication still uses scram-sha-256, the server default from Postgres 14 on.
+- After publish, a smoke install of that version from npm runs the quickstart against Postgres and fails when the version or its provenance is missing. The GitHub Release notes are the matching changelog section. Third-party actions are pinned by commit SHA, and two releases cannot run at the same time.
 - npm metadata now has a description, keywords, a homepage, and a bugs URL.
 - A pull request that cuts one bare version to the next, with the notes under the new `## vX.Y.Z` heading, is accepted with an empty Unreleased section.
+
+#### docs
+
+- The README and the package description say okmodel is catalog-first and PostgreSQL first, that version 0.1 supports PostgreSQL only, and that the schema is the single source for migrations and queries. A table of contents and a 0.1–0.5 roadmap replace the limits table. Size keeps the runtime entry, app startup, and cold import.
 
 ### 🐛 Fixed
 

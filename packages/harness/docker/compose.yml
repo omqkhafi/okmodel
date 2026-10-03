@@ -11,7 +11,6 @@ services:
       POSTGRES_USER: okm
       POSTGRES_PASSWORD: okm
       POSTGRES_DB: okm
-      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
     command:
       - postgres
       - -c
