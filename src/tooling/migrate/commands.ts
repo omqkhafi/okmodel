@@ -17,6 +17,18 @@ export type CommandIo = {
 };
 
 /**
+ * Text `okm` writes for a failure.
+ *
+ * The message includes a source location when the schema recorded one.
+ *
+ * @param error - Failure from a command
+ * @returns The stderr text, including the trailing newline
+ */
+export function formatFailure(error: OkmError): string {
+  return `${error.code}: ${error.message}\n${error.fix.summary}\n`;
+}
+
+/**
  * Runs one `okm` invocation.
  *
  * `--version` stays in the bin. This function handles `build`, `check`,

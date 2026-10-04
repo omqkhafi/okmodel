@@ -6,6 +6,7 @@
  */
 
 import { throwNamed } from "../../contracts/error.js";
+import { callerLocation, withLocation } from "../../contracts/location.js";
 import { type ColumnInsertOf, type ColumnRowOf, type ColumnUpdateOf } from "./column.js";
 import { definition, unavailable } from "./misuse.js";
 import { type RelationCall } from "./relations.js";
@@ -131,6 +132,8 @@ export type AnyTable = {
   readonly name: string;
   readonly columns: Readonly<Record<string, object>>;
   readonly options?: object;
+  /** `file.ts:line` of the `table()` call. Not part of the catalog hash. */
+  readonly source?: string;
 };
 
 /**
@@ -231,18 +234,19 @@ export function table<
   columns: TColumns,
   options?: TableOptions<TColumns>,
 ): Table<TName, TColumns, Readonly<Record<string, RelationCall>>, string> {
+  const source = callerLocation(1);
   if (name.length === 0) {
-    definition("table() needs a name.");
+    definition(withLocation("table() needs a name.", source));
   }
   if (options !== undefined) {
     rejectLater(options, TABLE_KNOWN, TABLE_LATER, `Table ${name}`);
   }
-  return { name, columns, ...(options !== undefined ? { options } : {}) } as unknown as Table<
-    TName,
-    TColumns,
-    Readonly<Record<string, RelationCall>>,
-    string
-  >;
+  return {
+    name,
+    columns,
+    ...(options !== undefined ? { options } : {}),
+    ...(source !== undefined ? { source } : {}),
+  } as unknown as Table<TName, TColumns, Readonly<Record<string, RelationCall>>, string>;
 }
 
 /**

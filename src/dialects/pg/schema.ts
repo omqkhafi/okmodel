@@ -5,6 +5,7 @@
  */
 
 import { OkmError, catalogError, throwNamed } from "../../contracts/error.js";
+import { withLocation } from "../../contracts/location.js";
 import { catalog } from "../../contracts/catalog/build.js";
 import { enumType, sameEnumLabels } from "../../contracts/catalog/enum.js";
 import { staticNamespace } from "../../contracts/catalog/identity.js";
@@ -302,7 +303,10 @@ function acceptTables(tables: readonly AnyTable[]): readonly string[] {
     if (seen.has(item.name)) {
       catalogError(
         "OKM1023",
-        `Table ${item.name} is declared more than once. Accepted names: ${list([...names].sort())}.`,
+        withLocation(
+          `Table ${item.name} is declared more than once. Accepted names: ${list([...names].sort())}.`,
+          item.source,
+        ),
       );
     }
     seen.add(item.name);
@@ -360,7 +364,10 @@ function compileTable(
   readTableNames(item.name, options);
   const sqlName = options?.sqlName ?? (casing === "snake" ? snakeCase(item.name) : item.name);
   assertIdentifier(sqlName, `table ${item.name}`);
-  const provenance: Provenance = { origin: "file", name: item.name };
+  const provenance: Provenance =
+    item.source === undefined
+      ? { origin: "file", name: item.name }
+      : { origin: "file", name: item.name, source: item.source };
   const parent: ObjectRef = { namespace, name: sqlName };
   stage(jobs, () => catalogTable({ namespace, name: sqlName, provenance }));
 
@@ -886,6 +893,7 @@ function tableModel(
     uniques: item.uniques,
     columns,
     relations: resolveRelations(item, edges, byName, accepted),
+    ...(item.provenance.source !== undefined ? { source: item.provenance.source } : {}),
   };
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "okmodel",
-  "version": "0.2.0-next.6",
+  "version": "0.2.0-next.7",
   "description": "okmodel is a catalog-first TypeScript ORM, PostgreSQL first.",
   "keywords": [
     "migrations",
@@ -69,10 +69,14 @@
     "./ids": {
       "types": "./dist/runtime/ids/index.d.ts",
       "import": "./dist/runtime/ids/index.js"
+    },
+    "./safety": {
+      "types": "./dist/runtime/safety/index.d.ts",
+      "import": "./dist/runtime/safety/index.js"
     }
   },
   "scripts": {
-    "build": "rm -rf dist && bun build ./src/contracts/index.ts ./src/contracts/internal.ts ./src/dialects/pg/index.ts ./src/runtime/pg/postgresjs.ts ./src/runtime/pg/pglite.ts ./src/runtime/pg/pg.ts ./src/runtime/pg/bun.ts ./src/runtime/ids/index.ts ./src/tooling/migrate/index.ts ./src/tooling/cli.ts --outdir ./dist --root ./src --format esm --target node --splitting --chunk-naming=shared/[hash].js --external postgres --external @electric-sql/pglite --external pg --external bun && bunx tsc -p tsconfig.build.json && bun ./scripts/write-bin-wrappers.ts",
+    "build": "rm -rf dist && bun build ./src/contracts/index.ts ./src/contracts/internal.ts ./src/dialects/pg/index.ts ./src/runtime/pg/postgresjs.ts ./src/runtime/pg/pglite.ts ./src/runtime/pg/pg.ts ./src/runtime/pg/bun.ts ./src/runtime/ids/index.ts ./src/runtime/safety/index.ts ./src/tooling/migrate/index.ts ./src/tooling/cli.ts --outdir ./dist --root ./src --format esm --target node --splitting --chunk-naming=shared/[hash].js --external postgres --external @electric-sql/pglite --external pg --external bun && bunx tsc -p tsconfig.build.json && bun ./scripts/write-bin-wrappers.ts",
     "driver-bench": "bun ./scripts/driver-bench.ts",
     "typecheck": "bunx tsc --noEmit -p tsconfig.json",
     "editor-check": "bun ./scripts/editor-check.ts",
