@@ -186,42 +186,66 @@ export function encodeTimeZone(value: TimeWithOffset, precision?: TimePrecision)
 /**
  * Decodes a time with offset.
  *
- * @param wire - Time text plus an offset
- * @returns Time and offset
+ * @param wire - Time text plus an offset, `±HH` as Postgres sends it or `±HH:MM`
+ * @returns Time and offset, the offset as `±HH:MM`
  */
 export function decodeTimeZone(wire: string): TimeWithOffset {
   const match = timeZoneText().exec(wire);
   const time = match?.[1];
-  const offset = match?.[2];
-  if (time === undefined || offset === undefined) {
-    rejected(`timetz ${wire} must be a time of day plus ±HH:MM, for example 00:00:00+00:00.`);
+  const hours = match?.[2];
+  if (time === undefined || hours === undefined) {
+    rejected(`timetz ${wire} must be a time of day plus ±HH or ±HH:MM, for example 00:00:00+00.`);
   }
-  return { time: decodeTime(time), offset };
+  return { time: decodeTime(time), offset: `${hours}:${match?.[3] ?? "00"}` };
 }
 
 /**
  * Encodes a duration as an ISO-8601 duration.
  *
  * @param value - Duration
- * @returns ISO-8601 text Postgres accepts for interval
+ * @returns ISO-8601 text Postgres accepts for interval, with a sign on each field when negative
  */
 export function encodeDuration(value: Temporal.Duration): string {
   requireTemporal();
-  return value.toString();
+  const text = value.toString();
+  // Postgres refuses a leading minus and takes a sign on each field
+  return text.startsWith("-") ? text.slice(1).replace(/\d+(?:\.\d+)?(?=[A-Z])/g, "-$&") : text;
 }
 
 /**
- * Decodes an ISO-8601 duration.
+ * Decodes an interval as Postgres sends it: `1 year 2 mons 3 days 04:05:06.5`,
+ * `01:30:00`, or an ISO-8601 duration. A part may carry a sign. Parts of
+ * different signs (`1 day -01:00:00`) cannot be one `Temporal.Duration`.
  *
- * @param wire - Duration text
+ * @param wire - Interval text
  * @returns A duration
  */
 export function decodeDuration(wire: string): Temporal.Duration {
   requireTemporal();
+  const fields: Record<string, number> = {};
+  const rest = wire.replace(
+    /([+-]?\d+) (year|mon|day)s?|([+-]?)(\d+):(\d{2}):(\d{2})(?:\.(\d{1,6}))?/g,
+    (_part, count?: string, unit?: string, sign?: string, h = "", m = "", s = "", f = "") => {
+      if (count !== undefined && unit !== undefined) {
+        fields[`${unit === "mon" ? "month" : unit}s`] = Number(count);
+        return "";
+      }
+      const micros = Number(f.padEnd(6, "0"));
+      const flip = sign === "-" ? -1 : 1;
+      fields.hours = flip * Number(h);
+      fields.minutes = flip * Number(m);
+      fields.seconds = flip * Number(s);
+      fields.milliseconds = flip * Math.trunc(micros / 1000);
+      fields.microseconds = flip * (micros % 1000);
+      return "";
+    },
+  );
   try {
-    return Temporal.Duration.from(wire);
+    return Temporal.Duration.from(rest.trim() === "" && wire !== "" ? fields : wire);
   } catch {
-    rejected(`interval ${wire} must be an ISO-8601 duration, for example PT1H.`);
+    rejected(
+      `interval ${wire} must be what Postgres sends (for example 01:30:00 or 1 day 02:03:04) or an ISO-8601 duration (PT1H). Parts of different signs are not one Temporal.Duration.`,
+    );
   }
 }
 
@@ -260,7 +284,7 @@ function offsetText(): RegExp {
 }
 
 function timeZoneText(): RegExp {
-  timeZonePattern ??= /^(.+)([+-]\d{2}:\d{2})$/;
+  timeZonePattern ??= /^(.+?)([+-]\d{2})(?::(\d{2}))?$/;
   return timeZonePattern;
 }
 
@@ -351,10 +375,10 @@ declare global {
     };
     readonly Duration: {
       /**
-       * @param item - ISO-8601 duration
+       * @param item - ISO-8601 duration, or numeric fields
        * @returns A duration
        */
-      from(item: string): Temporal.Duration;
+      from(item: string | Readonly<Record<string, number>>): Temporal.Duration;
     };
   };
 }

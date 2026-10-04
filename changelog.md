@@ -119,7 +119,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - A signal or timeout, a watched query, checkout, listen, stream, the server-version query, and the fix text for write and include errors load on first use. Error codes, messages, SQL, and catalog output stay the same. The no-trait startup graph goes from 85,568 / 28,329 to 83,043 / 27,666. The gates stay.
 - P24 takes the no-tenancy app from 83,043 / 27,666 to 85,356 / 28,361. The gates move to measured plus 3 percent (D160): app startup 87,900 / 29,210, postgres.js 40,200 / 14,090, PGlite 37,800 / 13,450, `pg` 40,900 / 14,410, and Bun.sql 39,700 / 13,940. The 91,000 / 30,000 cap stays.
 - P27 takes the no-tenancy app from 87,408 / 29,001 to 88,278 / 29,326. The gates move to measured plus 3 percent (D160), capped at 91,000 / 30,000: app startup 90,900 / 30,000, postgres.js 41,600 / 14,600, PGlite 39,300 / 13,980, `pg` 42,400 / 14,920, Bun.sql 41,200 / 14,470.
-- P28 takes the no-tenancy app from 88,393 / 29,385 to 88,728 / 29,556 (+335 / +171), inside the stop line of +600 / +180. No gate or ceiling moves. `query-200` measures 17,062 / 6,259 (+143 / +40 over P27b) under 17,300 / 7,100.
+- P28 takes the no-tenancy app from 88,393 / 29,385 to 88,723 / 29,553 (+330 / +168), inside the stop line of +600 / +180. No gate or ceiling moves. `query-200` measures 17,062 / 6,259 (+143 / +40 over P27b) under 17,300 / 7,100.
 - A `ReadBuild` receives the call it builds for, so `aggregate` writes the `where` of the call after presets were applied and not the one it was created with. The planner reads `ruleLines` for the archive set and for presets.
 - `sum` and `avg` over a field typed `number` or `string` pass the types, and the result has the type of the field. A `bigint` field typed `bigint` is OKM1124.
 - OKM1130 also covers a cursor that `page()` did not return.
@@ -128,6 +128,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### 🐛 Fixed
 
+- A read of an `interval` or `timetz` column no longer fails with OKM1210. `interval` decodes what Postgres sends (`01:30:00`, `1 year 2 mons 3 days 04:05:06.5`, `-2 days`) and an ISO-8601 duration. `timetz` decodes `01:02:03+03` and `±HH:MM`, and the offset is `±HH:MM`. A negative `Temporal.Duration` is written with a sign on each field because Postgres refuses a leading minus (D179). An interval that mixes signs and a `sql_standard` or `postgres_verbose` `IntervalStyle` stay in the known limits.
 - `insert` and `update` `set` refused every object value with OKM1121, including the Temporal values of the default `timestamptz`, `timestamp`, `date`, `time` and `interval` codecs, json and jsonb values, arrays, bytes, ranges and points. A column now takes the objects its codec declares and OKM1121 stays for any other object, so an operator-looking object never reaches a scalar column. A `Date` is not an input of any default codec and is still refused.
 - A range object without `empty` is OKM1210 before any statement. It was sent to the database as a malformed literal.
 - `eq()`, `lt`, `gt`, `between`, `inList` and `not` on a Temporal, array, range or json column failed with OKM1121 for the same reason.
