@@ -1135,6 +1135,10 @@
       "kind": "stable"
     },
     {
+      "name": "registerTenancy",
+      "kind": "stable"
+    },
+    {
       "name": "registerTimestamps",
       "kind": "stable"
     },
@@ -1148,6 +1152,20 @@
     },
     {
       "name": "verify",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/tenancy": [
+    {
+      "name": "ColumnTenancy",
+      "kind": "stable"
+    },
+    {
+      "name": "columnTenancy",
+      "kind": "stable"
+    },
+    {
+      "name": "global",
       "kind": "stable"
     }
   ],

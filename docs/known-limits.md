@@ -8,7 +8,6 @@ These builders and options throw OKM1061, or are not methods yet. The version is
 | --- | --- | --- |
 | `.validate()` | 0.2 | P26 |
 | `table({ validate, validation, presets })` and `schema({ validation })` | 0.2 | P26, P28 |
-| tenancy on `table()` and `schema()` | 0.2 | P24 |
 | presets | 0.2 | P28 |
 | `manyThrough` | 0.2 | P27 |
 | `t.domain` | 0.3 | P40 |

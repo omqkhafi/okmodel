@@ -17,6 +17,8 @@ import {
   decodeRow,
   emitWhere,
   fail,
+  withTenantScope,
+  type CallScope,
   registerFailFix,
   indexes,
   isRecord,
@@ -112,9 +114,19 @@ export async function executeWrite(
   input: unknown,
   options: object,
   mods: WriteMods,
+  scope?: CallScope,
 ): Promise<unknown> {
   try {
-    const planned = await planWrite(host.schema, host.generators, op, table, input, options, mods);
+    const planned = await planWrite(
+      host.schema,
+      host.generators,
+      op,
+      table,
+      input,
+      options,
+      mods,
+      scope,
+    );
     if (planned.statements.length === 0) return finish([], planned, table);
     const results = await runWrite(host.pool, planned.statements, callOptions(options));
     return finish(results, planned, table);
@@ -143,9 +155,10 @@ export async function explainWrite(
   options: object,
   mods: WriteMods,
   generators?: IdGenerators,
+  scope?: CallScope,
 ): Promise<{ readonly statements: readonly Statement[] }> {
   try {
-    const planned = await planWrite(schema, generators, op, table, input, options, mods);
+    const planned = await planWrite(schema, generators, op, table, input, options, mods, scope);
     return { statements: planned.statements };
   } catch (error) {
     throw scrubWrite(schema, table, input, error);
@@ -160,6 +173,7 @@ async function planWrite(
   input: unknown,
   options: object,
   mods: WriteMods,
+  scope: CallScope | undefined,
 ): Promise<Planned> {
   const table = indexes(schema).get(tableName);
   if (table === undefined) {
@@ -167,9 +181,13 @@ async function planWrite(
   }
   const record = isRecord(options) ? options : {};
   rejectKeys(record, op === "insert" ? INSERT_OPTIONS : FILTER_OPTIONS, op);
-  if (op === "insert") return planInsert(table, input, record, mods, generators);
-  if (op === "update") return planUpdate(schema, table, input, record, mods);
-  return planDelete(schema, table, input, record, mods);
+  if (op === "insert") {
+    return planInsert(table, input, record, mods, generators, scope, schema.tenancy);
+  }
+  if (op === "update") {
+    return withTenantScope(scope, () => planUpdate(schema, table, input, record, mods));
+  }
+  return withTenantScope(scope, () => planDelete(schema, table, input, record, mods));
 }
 
 async function planInsert(
@@ -178,13 +196,16 @@ async function planInsert(
   options: Record<string, unknown>,
   mods: WriteMods,
   generators: IdGenerators | undefined,
+  scope: CallScope | undefined,
+  tenancy: QuerySchema["tenancy"],
 ): Promise<Planned> {
   const allow = allowSet(table, options.allow);
   noteGuarded(table, allow, "insert");
   const many = Array.isArray(input);
-  const rows = (many ? input : [input]).map((row) => insertRow(table, row, allow));
+  const rows = (many ? input : [input]).map((row) => insertRow(table, row, allow, tenancy));
+  tenancy?.stamp(table.model.name, rows, scope);
   fillInsert(table, rows, generators);
-  const columns = writtenColumns(table, rows, allow);
+  const columns = writtenColumns(table, rows, allow, tenancy?.key);
   const returning = selectedColumns(table, options.returning);
   const outputs = outputsOf(returning);
   const clause = returningClause(returning, undefined);
@@ -257,7 +278,7 @@ function planUpdate(
   const outputs = outputsOf(returning);
   const expect = expectOf(options, mods);
   if (Array.isArray(input)) {
-    const rows = input.map((item) => updateItem(table, item, allow));
+    const rows = input.map((item) => updateItem(table, item, allow, schema.tenancy));
     return {
       statements: updateList(schema, table, rows, returning),
       outputs,
@@ -268,7 +289,7 @@ function planUpdate(
     };
   }
   if (!isRecord(input)) fail("OKM1121", "update expects { where, set } or a list of rows.");
-  const set = writeSet(table, input.set, allow);
+  const set = writeSet(table, input.set, allow, schema.tenancy);
   requireFilter(table, input.where, mods, "update");
   if (Object.keys(set).length === 0) fail("OKM1120", "update set is empty.");
   const sql = new Sql();
@@ -642,12 +663,14 @@ function insertRow(
   table: Indexed,
   value: unknown,
   allow: ReadonlySet<string>,
+  tenancy: QuerySchema["tenancy"],
 ): Record<string, unknown> {
   if (!isRecord(value)) fail("OKM1121", "insert expects an object or a list of objects.");
   const row: Record<string, unknown> = {};
   for (const key of Object.keys(value)) {
     const column = table.columns.get(key);
     if (column === undefined) continue;
+    tenancy?.guard(table.model.name, key, "insert");
     if (!writable(table, column, allow)) refuse(table, column);
     if (value[key] !== undefined) row[key] = value[key];
   }
@@ -701,6 +724,7 @@ function writtenColumns(
   table: Indexed,
   rows: readonly Record<string, unknown>[],
   allow: ReadonlySet<string>,
+  tenantKey: string | undefined,
 ): ColumnModel[] {
   const present = new Set<string>();
   for (const row of rows) {
@@ -710,7 +734,7 @@ function writtenColumns(
   for (const column of table.model.columns) {
     if (
       present.has(column.field) &&
-      (writable(table, column, allow) || column.fill !== undefined)
+      (writable(table, column, allow) || column.fill !== undefined || column.field === tenantKey)
     ) {
       columns.push(column);
     }
@@ -722,6 +746,7 @@ function writeSet(
   table: Indexed,
   value: unknown,
   allow: ReadonlySet<string>,
+  tenancy: QuerySchema["tenancy"],
 ): Record<string, unknown> {
   if (!isRecord(value)) fail("OKM1121", "set must be an object of fields.");
   const set: Record<string, unknown> = {};
@@ -729,6 +754,7 @@ function writeSet(
     if (value[key] === undefined) continue;
     const column = table.columns.get(key);
     if (column === undefined) continue;
+    tenancy?.guard(table.model.name, key, "update");
     if (column.guardUpdate || !writable(table, column, allow)) refuse(table, column);
     set[key] = value[key];
   }
@@ -739,9 +765,10 @@ function updateItem(
   table: Indexed,
   value: unknown,
   allow: ReadonlySet<string>,
+  tenancy: QuerySchema["tenancy"],
 ): { readonly where: unknown; readonly set: Record<string, unknown> } {
   if (!isRecord(value)) fail("OKM1121", "update expects { where, set } or a list of rows.");
-  const set = writeSet(table, value.set, allow);
+  const set = writeSet(table, value.set, allow, tenancy);
   if (value.where !== undefined) return { where: value.where, set };
   if (value.id !== undefined) return { where: { id: value.id }, set };
   fail("OKM1102", `update on ${table.model.name} needs id or where for each row.`);

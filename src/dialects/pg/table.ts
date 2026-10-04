@@ -87,7 +87,14 @@ export type TableOptions<TColumns> = {
    * The value is the reason. An empty reason is rejected when the schema is built.
    */
   readonly omitDefaults?: string;
-  readonly tenancy?: unknown;
+  /**
+   * Opts this table out of schema tenancy.
+   *
+   * `global("reason")` is the opt-out. `{ via }` arrives later.
+   */
+  readonly tenancy?:
+    | { readonly kind: "global"; readonly reason: string }
+    | { readonly via: string };
   readonly computed?: unknown;
   readonly presets?: unknown;
   readonly policies?: unknown;
@@ -217,6 +224,7 @@ const TABLE_KNOWN = new Set([
   "relations",
   "renamedFrom",
   "sqlName",
+  "tenancy",
   "traits",
   "unique",
 ]);
@@ -231,7 +239,6 @@ const TABLE_LATER: Readonly<Record<string, string>> = {
   policies: "later",
   presets: "0.2",
   reference: "0.4",
-  tenancy: "0.2",
   validate: "0.2",
   validation: "0.2",
 };
@@ -326,10 +333,17 @@ type DeclaredTable<TName extends string, TColumns, TOptions> = Table<
   PrimaryOf<TOptions>
 > &
   TraitShapes<TColumns, TOptions> &
-  OmitFlag<TOptions>;
+  OmitFlag<TOptions> &
+  GlobalFlag<TOptions>;
 
 type OmitFlag<TOptions> = TOptions extends { readonly omitDefaults: string }
   ? { readonly "~omitDefaults": true }
+  : unknown;
+
+type GlobalFlag<TOptions> = TOptions extends {
+  readonly tenancy: { readonly kind: "global"; readonly reason: infer TReason };
+}
+  ? { readonly "~global": TReason }
   : unknown;
 
 type TraitShapes<TColumns, TOptions> = TOptions extends { readonly traits: infer TTraits }

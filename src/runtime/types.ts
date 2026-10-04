@@ -523,12 +523,68 @@ type IfAsyncDisposable<S> = S extends { readonly asyncDispose: infer D }
     : object
   : object;
 
-/** A client typed by its own schema. */
-export type Connected<S extends QuerySchema> = {
+/** Tenant key, when the schema set column tenancy. */
+type TenantKeyOf<S> = S extends { readonly tenancy: { readonly key: infer K extends string } }
+  ? K
+  : never;
+
+/** Tables that stay off the root client because they carry the tenant key. */
+type ScopedName<S extends QuerySchema> =
+  TenantKeyOf<S> extends never
+    ? never
+    : {
+        readonly [K in keyof S["~byName"] & string]: S["~byName"][K] extends {
+          readonly "~global": string;
+        }
+          ? never
+          : K;
+      }[keyof S["~byName"] & string];
+
+/** Tables on the root client. Global tables stay. Tenant tables need `for()`. */
+type RootName<S extends QuerySchema> = Exclude<keyof S["~byName"] & string, ScopedName<S>>;
+
+/** A client whose tables are already inside one tenant or an unscoped reason. */
+type ScopedClient<S extends QuerySchema> = {
   readonly [K in keyof S["~byName"] & string]: TableApi<S, K>;
 } & {
   /** Looks up a table by name. An unknown name is OKM1120. */
   table<K extends keyof S["~byName"] & string>(name: K): TableApi<S, K>;
+  /** Closes the pool when this client opened it. */
+  close(): Promise<void>;
+  /** Resolves when the dialect and `requires` checks have finished. */
+  readonly connected: Promise<void>;
+} & IfAsyncDisposable<typeof Symbol>;
+
+/** `for` and `unscoped` on a schema that set tenancy. */
+type ScopeMethods<S extends QuerySchema> =
+  TenantKeyOf<S> extends never
+    ? object
+    : {
+        /**
+         * Opens a client bound to one tenant.
+         *
+         * The value is the scope. Insert fills it. Reads and writes filter on it.
+         * Input cannot set it.
+         *
+         * @param input - The tenant key and its value
+         */
+        for(input: { readonly [K in TenantKeyOf<S>]: string }): ScopedClient<S>;
+        /**
+         * Opens a client with no tenant predicate.
+         *
+         * The reason is stored and shown by `inspect()`. Insert still needs `for()`.
+         *
+         * @param reason - Why this client leaves the tenant scope
+         */
+        unscoped(reason: string): ScopedClient<S>;
+      };
+
+/** A client typed by its own schema. */
+export type Connected<S extends QuerySchema> = {
+  readonly [K in RootName<S>]: TableApi<S, K>;
+} & {
+  /** Looks up a table by name. A tenant table on the root client is OKM1701. */
+  table<K extends RootName<S>>(name: K): TableApi<S, K>;
   /**
    * Closes the pool when this client opened it.
    *
@@ -538,7 +594,8 @@ export type Connected<S extends QuerySchema> = {
   close(): Promise<void>;
   /** Resolves when the dialect and `requires` checks have finished. */
   readonly connected: Promise<void>;
-} & IfAsyncDisposable<typeof Symbol>;
+} & ScopeMethods<S> &
+  IfAsyncDisposable<typeof Symbol>;
 
 /**
  * A catalog `okm build` wrote.

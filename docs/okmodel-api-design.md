@@ -94,6 +94,7 @@ With more than one target every command that touches a database needs `--target 
 
 ```ts
 import { schema } from "okmodel/pg";
+import { columnTenancy } from "okmodel/tenancy";
 import { timestamps } from "okmodel/traits";
 import { citext } from "okmodel/pg/citext";
 import { pgTrgm } from "okmodel/pg/pg_trgm";
@@ -108,7 +109,7 @@ export const appSchema = schema({
   casing: "snake",
   codecs: { bigint: "string", numeric: "string", timestamps: "temporal" },
   traits: [timestamps()],
-  tenancy: { key: "tenantId", type: "uuid", strategy: "column" },
+  tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
   validation: false,
   extensions: [citext(), pgTrgm(), vector({ version: ">=0.7" })],
   functions: [touchUpdatedAt],
@@ -615,7 +616,7 @@ Modifiers: `.nullable()`, `.default(v)`, `.defaultSql(sql)`, `.primaryKey()`, `.
 |---|---|
 | `t.domain()` | 0.3 |
 | `schema({ extensions, functions, triggers, views })` | 0.3 |
-| `schema({ tenancy, validation })` and `table({ tenancy, validate, validation })` | 0.2 |
+| `schema({ validation })` and `table({ validate, validation })` | 0.2 |
 | `table({ presets })` | 0.2 |
 | `table({ reference })` | 0.4 |
 | `manyThrough` | 0.2 |
@@ -712,7 +713,20 @@ Project traits: `trait(name, { fields, presets, methods, requires })`, the same 
 
 ### 9.1 Concepts and strategies
 
-Ownership is a field and a preset (`ownedBy`). Tenancy is the isolation boundary, defined once in `schema({ tenancy })`.
+Ownership is a field and a preset (`ownedBy`). Tenancy is the isolation boundary, defined once by an object from `okmodel/tenancy`:
+
+```ts
+import { columnTenancy, global } from "okmodel/tenancy";
+
+export const appSchema = schema({
+  tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
+  tables: [tasks, countries],
+});
+
+const countries = table("countries", { id: id(), name: text() }, { tenancy: global("shared reference data") });
+```
+
+`columnTenancy()` carries the column, the widened uniques, the composite foreign keys, the scope predicate, and `for()` / `unscoped()`. A schema that does not pass it does not load that code. `schemaPerTenant` and `databasePerTenant` are separate objects in the same subpath later.
 
 | Strategy | Isolation |
 |---|---|
@@ -729,7 +743,7 @@ Ownership is a field and a preset (`ownedBy`). Tenancy is the isolation boundary
 - Every table is isolated by default; exceptions: `tenancy: { via }` or `tenancy: global("reason")`.
 - The `column` strategy adds the key to inheriting tables.
 - `.unique()` on a tenant table becomes `UNIQUE (tenant_key, …)`; `.unique({ global: "reason" })` opts out.
-- Every tenant table has `UNIQUE (id, tenant_key)`; FKs between tenant tables are composite, so no row can reference another tenant's row, even through raw SQL.
+- Every tenant table's primary key is the declared key plus the tenant key, and the table also has `UNIQUE` on those columns, so two tenants can share an id. FKs between tenant tables are composite, so no row can reference another tenant's row, even through raw SQL.
 - Lint OKM1706: an index on a tenant table that does not lead with the tenant key.
 - Changing the tenant key in `update` is refused (OKM1704); a global table referencing a tenant table is flagged (OKM1705).
 - Adding tenancy to an existing project requires a backfill migration before the key becomes `NOT NULL`.

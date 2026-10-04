@@ -40,6 +40,7 @@ import { definition, unavailable } from "./misuse.js";
 import { isRelationCall } from "./relations.js";
 import { decodeText, encodeText } from "./text.js";
 import type { FieldsOfList, Trait, TraitModel } from "./trait.js";
+import { type ColumnTenancy, type TenantFields, readTenancy } from "./tenancy.js";
 import {
   type AnyTable,
   type ColumnHandle,
@@ -98,7 +99,12 @@ export type SchemaInput<TTables extends readonly AnyTable[]> = {
    * are added as well.
    */
   readonly traits?: readonly Trait[];
-  readonly tenancy?: unknown;
+  /**
+   * Column tenancy.
+   *
+   * Every table gains the key unless it passes `global("reason")`.
+   */
+  readonly tenancy?: ColumnTenancy;
   readonly validation?: unknown;
   readonly extensions?: unknown;
   readonly functions?: unknown;
@@ -130,9 +136,44 @@ export type BuiltSchema<TTables extends readonly AnyTable[]> = {
    * Omitted otherwise, so a schema that uses no traits does not carry the key.
    */
   readonly traits?: readonly Trait[];
+  /**
+   * Column tenancy, when the call passed it.
+   *
+   * Omitted otherwise, so a schema with no tenancy does not carry the key.
+   */
+  readonly tenancy?: ColumnTenancy;
   /** Query model. Built once, beside the catalog document. */
   readonly model: { readonly [T in TTables[number] as T["~name"]]: TableModel };
 };
+
+/**
+ * A schema whose tenant tables carry the tenant key on the row.
+ *
+ * A table marked `~global` keeps its own type. No tenancy leaves the schema
+ * type unchanged.
+ *
+ * @typeParam S - Schema type before tenancy
+ * @typeParam TTables - Tables in declaration order
+ * @typeParam TTenancy - Column tenancy, or `undefined`
+ */
+export type TenancySchema<
+  S,
+  TTables extends readonly AnyTable[],
+  TTenancy,
+> = TTenancy extends ColumnTenancy
+  ? Omit<S, "~byName"> & {
+      readonly tenancy: TTenancy;
+      readonly "~byName": {
+        readonly [T in TTables[number] as T["~name"]]: T extends { readonly "~global": string }
+          ? T
+          : T & {
+              readonly "~row": RowFrom<TenantFields<TTenancy["key"]>>;
+              readonly "~insert": InsertFrom<TenantFields<TTenancy["key"]>>;
+              readonly "~update": UpdateFrom<TenantFields<TTenancy["key"]>>;
+            };
+      };
+    }
+  : S;
 
 /**
  * A schema whose default traits are part of every table's row type.
@@ -168,6 +209,7 @@ const SCHEMA_KNOWN = new Set([
   "defaults",
   "requires",
   "tables",
+  "tenancy",
   "traits",
   "types",
 ]);
@@ -176,7 +218,6 @@ const SCHEMA_KNOWN = new Set([
 const SCHEMA_LATER: Readonly<Record<string, string>> = {
   extensions: "0.3",
   functions: "0.3",
-  tenancy: "0.2",
   triggers: "0.3",
   validation: "0.2",
   views: "0.3",
@@ -240,9 +281,11 @@ function stage(jobs: CatalogJob[], build: () => CatalogObject): void {
 type FkEdge = {
   readonly fromTable: string;
   readonly fromField: string;
-  readonly fromSql: string;
   readonly toTable: string;
-  readonly toSql: string;
+  /** Local SQL names, one column or a composite key. */
+  readonly local: readonly string[];
+  /** Referenced SQL names, in the same order. */
+  readonly remote: readonly string[];
 };
 
 type Prepared = {
@@ -278,20 +321,29 @@ type Prepared = {
 export function schema<
   const TTables extends readonly AnyTable[],
   const TTraits extends readonly { readonly fields: Readonly<Record<string, object>> }[],
+  const TTenancy extends ColumnTenancy | undefined = undefined,
 >(
-  config: Omit<SchemaInput<TTables>, "traits"> & { readonly traits: TTraits },
-): SchemaWithTraits<TTables, TTraits>;
-export function schema<const TTables extends readonly AnyTable[]>(
-  config: SchemaInput<TTables>,
-): BuiltSchema<TTables>;
+  config: Omit<SchemaInput<TTables>, "traits" | "tenancy"> & {
+    readonly traits: TTraits;
+    readonly tenancy?: TTenancy;
+  },
+): TenancySchema<SchemaWithTraits<TTables, TTraits>, TTables, TTenancy>;
+export function schema<
+  const TTables extends readonly AnyTable[],
+  const TTenancy extends ColumnTenancy | undefined = undefined,
+>(
+  config: Omit<SchemaInput<TTables>, "tenancy"> & { readonly tenancy?: TTenancy },
+): TenancySchema<BuiltSchema<TTables>, TTables, TTenancy>;
 export function schema<const TTables extends readonly AnyTable[]>(
   config: SchemaInput<TTables>,
 ): BuiltSchema<TTables> {
   rejectLater(config, SCHEMA_KNOWN, SCHEMA_LATER, "schema()");
   const schemaTraits = openSchemaTraits(config.traits);
+  const tenancy = readTenancy(config.tenancy);
   if (!Array.isArray(config.tables)) {
     definition("schema() needs a tables array.");
   }
+  const tables = tenancy === undefined ? bareTables(config.tables) : tenancy.rewrite(config.tables);
   const types = readTypes(config.types);
   const casing = readCasing(config.casing);
   const codecs = readCodecs(config.codecs);
@@ -304,7 +356,7 @@ export function schema<const TTables extends readonly AnyTable[]>(
   const sqlNames = new Set<string>();
   const enums = new Map<string, EnumNote>();
 
-  for (const item of config.tables) {
+  for (const item of tables) {
     const built = compileTable(
       item,
       namespace,
@@ -369,6 +421,7 @@ export function schema<const TTables extends readonly AnyTable[]>(
     tables: config.tables,
     model,
     ...(schemaTraits !== undefined && schemaTraits.length > 0 ? { traits: schemaTraits } : {}),
+    ...(tenancy !== undefined ? { tenancy } : {}),
   } as unknown as BuiltSchema<TTables>;
 }
 
@@ -438,6 +491,16 @@ function noteEnum(
  * @param value - The option the caller passed
  * @returns The list, or `undefined`
  */
+function bareTables(tables: readonly AnyTable[]): readonly AnyTable[] {
+  for (const item of tables) {
+    const mark = (item.options as { readonly tenancy?: unknown } | undefined)?.tenancy;
+    if (mark !== undefined) {
+      definition(`Table ${item.name} sets tenancy, and the schema does not.`);
+    }
+  }
+  return tables;
+}
+
 function openSchemaTraits(value: unknown): readonly Trait[] | undefined {
   if (value === undefined) return undefined;
   if (!Array.isArray(value)) definition("schema() traits must be a list of traits.");
@@ -521,8 +584,8 @@ function compileTable(
   const byField = new Map<string, PreparedColumn>();
   const bySql = new Map<string, PreparedColumn>();
   const handles: Record<string, ColumnHandle> = {};
-
-  const sourceColumns = applied === undefined ? item.columns : applied.columns;
+  const sourceColumns: Readonly<Record<string, object>> =
+    applied === undefined ? item.columns : applied.columns;
   for (const [field, builder] of Object.entries(sourceColumns)) {
     if (!(builder instanceof ColumnBuilder)) {
       definition(`Column ${item.name}.${field} must be a column builder.`);
@@ -838,39 +901,48 @@ function compileForeignKeys(
         `Table ${reference.table} is not in the schema. Accepted names: ${list(accepted)}.`,
       );
     }
+    const localColumns = localKey(item, column, reference);
     const targetColumns = resolveTarget(item, column, target, reference);
-    if (reference.onDelete === "set null" || reference.onUpdate === "set null") {
-      if (!column.nullable) {
-        definition(
-          `Foreign key ${item.tsName}.${column.field} uses set null. ${item.tsName}.${column.field} must be nullable.`,
-        );
-      }
-    }
-    const localType = column.dataType;
-    const remote = targetColumns[0];
-    if (remote === undefined || targetColumns.length !== 1) {
-      const names = [...target.byField.keys()].sort();
+    if (localColumns.length !== targetColumns.length) {
       catalogError(
         "OKM1021",
-        `Foreign key ${item.tsName}.${column.field} on ${target.tsName} is ambiguous. Accepted columns: ${list(names)}.`,
+        `Foreign key ${item.tsName}.${column.field} on ${target.tsName} has ${localColumns.length} local columns and ${targetColumns.length} target columns.`,
       );
     }
-    if (localType !== remote.dataType) {
-      catalogError(
-        "OKM1022",
-        `Foreign key ${item.tsName}.${column.field} is ${localType} and ${target.tsName}.${remote.field} is ${remote.dataType}. Accepted type: ${remote.dataType}.`,
-      );
+    if (reference.onDelete === "set null" || reference.onUpdate === "set null") {
+      for (const local of localColumns) {
+        if (!local.nullable) {
+          definition(
+            `Foreign key ${item.tsName}.${column.field} uses set null. ${item.tsName}.${local.field} must be nullable.`,
+          );
+        }
+      }
+    }
+    const localNames: string[] = [];
+    const remoteNames: string[] = [];
+    for (let index = 0; index < localColumns.length; index += 1) {
+      const local = localColumns[index];
+      const remote = targetColumns[index];
+      if (local === undefined || remote === undefined) continue;
+      if (local.dataType !== remote.dataType) {
+        catalogError(
+          "OKM1022",
+          `Foreign key ${item.tsName}.${local.field} is ${local.dataType} and ${target.tsName}.${remote.field} is ${remote.dataType}. Accepted type: ${remote.dataType}.`,
+        );
+      }
+      localNames.push(local.sqlName);
+      remoteNames.push(remote.sqlName);
     }
     stage(jobs, () =>
       constraint({
         parent: item.parent,
         constraintKind: "foreignKey",
-        columns: [column.sqlName],
+        columns: localNames,
         nameKey: column.sqlName,
         provenance: item.provenance,
         references: {
           parent: target.parent,
-          columns: [remote.sqlName],
+          columns: remoteNames,
           ...(reference.onDelete !== undefined ? { onDelete: reference.onDelete } : {}),
           ...(reference.onUpdate !== undefined ? { onUpdate: reference.onUpdate } : {}),
         },
@@ -879,11 +951,35 @@ function compileForeignKeys(
     edges.push({
       fromTable: item.tsName,
       fromField: column.field,
-      fromSql: column.sqlName,
       toTable: target.tsName,
-      toSql: remote.sqlName,
+      local: localNames,
+      remote: remoteNames,
     });
   }
+}
+
+function localKey(
+  item: Prepared,
+  column: PreparedColumn,
+  reference: ReferenceModifier,
+): readonly PreparedColumn[] {
+  const along = reference.along;
+  if (along === undefined || along.length === 0) return [column];
+  const accepted = [...item.byField.keys()].sort();
+  const columns: PreparedColumn[] = [column];
+  for (const name of along) {
+    const extra = item.byField.get(name) ?? item.bySql.get(name);
+    if (extra === undefined) {
+      throwNamed(
+        "OKM1021",
+        name,
+        accepted,
+        `Foreign key ${item.tsName}.${column.field} includes ${name}, which is not a column. Accepted columns: ${list(accepted)}.`,
+      );
+    }
+    columns.push(extra);
+  }
+  return columns;
 }
 
 function resolveTarget(
@@ -908,7 +1004,7 @@ function resolveTarget(
       }
       found.push(match);
     }
-    if (found.length !== 1) {
+    if (found.length !== 1 && reference.along === undefined) {
       catalogError(
         "OKM1021",
         `Foreign key ${item.tsName}.${column.field} on ${target.tsName} is ambiguous. Accepted columns: ${list(accepted)}.`,
@@ -1124,8 +1220,8 @@ function resolveRelations(
     }
     resolved.push(
       call.kind === "one"
-        ? { name, kind: "one", table: call.table, local: [edge.fromSql], remote: [edge.toSql] }
-        : { name, kind: "many", table: call.table, local: [edge.toSql], remote: [edge.fromSql] },
+        ? { name, kind: "one", table: call.table, local: edge.local, remote: edge.remote }
+        : { name, kind: "many", table: call.table, local: edge.remote, remote: edge.local },
     );
   }
   return resolved;

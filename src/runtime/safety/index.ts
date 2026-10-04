@@ -152,6 +152,35 @@ export function registerFieldExposure(): () => void {
  *
  * @returns Removes this registration
  */
+/**
+ * Registers the column-tenancy rule.
+ *
+ * A contribution that sets the tenant key from input is OKM1190. `{ allow }`
+ * does not permit it. The planner throws the same code even when this rule
+ * is not registered. The package does not register the rule on import.
+ *
+ * @returns Removes this registration
+ */
+export function registerTenancy(): () => void {
+  return registerRule({
+    name: "tenancy",
+    contribution: "tenancy",
+    check(input) {
+      const violations: SafetyViolation[] = [];
+      for (const item of input.contributions) {
+        if (item.rule !== "tenancy" || !item.contribution.includes("set by input")) continue;
+        violations.push({
+          rule: item.rule,
+          contribution: item.contribution,
+          ...(item.source !== undefined ? { source: item.source } : {}),
+          detail: "The tenant key comes from the scope. Input cannot set it.",
+        });
+      }
+      return violations;
+    },
+  });
+}
+
 export function registerTimestamps(): () => void {
   return registerRule({
     name: "timestamps",
