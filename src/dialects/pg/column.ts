@@ -116,7 +116,14 @@ export type ReferenceModifier = {
   readonly table: string;
   readonly onDelete?: ReferentialAction;
   readonly onUpdate?: ReferentialAction;
+  /** Target columns. Several columns make a composite foreign key. */
   readonly columns?: readonly string[];
+  /**
+   * Other local columns in the foreign key, after this column.
+   *
+   * Set when the key is composite. Absent on a single-column reference.
+   */
+  readonly along?: readonly string[];
 };
 
 /**
@@ -439,17 +446,29 @@ export class ColumnBuilder<TValue, TFlags extends ColumnFlags> {
   }
 
   /**
-   * Records a unique constraint. Tenancy later reads `global`.
+   * Records a unique constraint.
+   *
+   * On a tenant table the key is included, unless `global` names a reason.
+   * `global: "reason"` and `{ global: true, reason }` are the same opt-out.
    *
    * @param options - Exemption reason, and whether the unique ignores the tenant key
    * @returns The same column
    */
   unique(options?: {
     readonly reason?: string;
-    readonly global?: boolean;
+    readonly global?: boolean | string;
   }): ColumnBuilder<TValue, TFlags> {
+    const marker = options?.global;
+    if (typeof marker === "string" && marker.trim().length === 0) {
+      definition("unique() global needs a reason.");
+    }
+    const named = typeof marker === "string" ? marker.trim() : undefined;
+    const globalFlag: boolean | undefined = typeof marker === "string" ? true : marker;
     return rebuild<TValue, TFlags>(this.state, {
-      unique: { reason: options?.reason, global: options?.global },
+      unique: {
+        reason: named ?? options?.reason,
+        global: globalFlag,
+      },
     });
   }
 
@@ -792,6 +811,31 @@ function readReferenceColumns(
     copy.push(name);
   }
   return copy;
+}
+
+/**
+ * Returns a column with a cleared unique flag or a replaced reference.
+ *
+ * `okmodel/tenancy` uses this while rewriting tables. `schema()` then compiles
+ * the result with the ordinary unique and foreign-key paths.
+ *
+ * @param column - Column to copy
+ * @param patch - Unique or primary flag to drop, or the reference to store
+ * @returns A new column builder
+ */
+export function retarget<TValue, TFlags extends ColumnFlags>(
+  column: ColumnBuilder<TValue, TFlags>,
+  patch: {
+    readonly dropUnique?: boolean;
+    readonly dropPrimary?: boolean;
+    readonly references?: ReferenceModifier;
+  },
+): ColumnBuilder<TValue, TFlags> {
+  return rebuild(column.state, {
+    ...(patch.dropUnique === true ? { unique: undefined } : {}),
+    ...(patch.dropPrimary === true ? { primaryKey: false } : {}),
+    ...(patch.references !== undefined ? { references: patch.references } : {}),
+  });
 }
 
 function rebuild<TValue, TFlags extends ColumnFlags>(

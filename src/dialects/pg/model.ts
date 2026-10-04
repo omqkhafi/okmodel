@@ -113,4 +113,6 @@ export type QuerySchema = {
   readonly "~byName": { readonly [name: string]: { readonly "~row": unknown } };
   readonly model: Readonly<Record<string, TableModel>>;
   readonly requires?: { readonly postgres?: string } | undefined;
+  /** Column tenancy, when the schema set it. The methods live on that object. */
+  readonly tenancy?: import("./tenancy.js").ColumnTenancy;
 };

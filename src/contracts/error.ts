@@ -56,6 +56,8 @@ export type QueryCode =
   | "OKM1121"
   | "OKM1124"
   | "OKM1190"
+  | "OKM1701"
+  | "OKM1704"
   | "OKM1801"
   | "OKM1802"
   | "OKM1803"

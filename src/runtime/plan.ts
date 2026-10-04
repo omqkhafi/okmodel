@@ -27,6 +27,13 @@ export type ReadOp = "find" | "one" | "count" | "exists";
 /** Routing constraint chosen before execute. */
 export type RouteConstraint = "auto" | "primary" | "replica";
 
+/**
+ * Tenant scope for one call.
+ *
+ * The value is a parameter. The cache key records `tenant` or `unscoped`, not the value.
+ */
+export type CallScope = { readonly value: string } | { readonly unscoped: string };
+
 /** One read call. `all` is the `.all(reason)` escape for an unbounded read. */
 export type ReadCall = {
   readonly op: ReadOp;
@@ -37,7 +44,34 @@ export type ReadCall = {
   readonly limit?: unknown;
   readonly include?: unknown;
   readonly all?: string;
+  /** Set by `for()` or `unscoped()`. Absent on a schema with no tenancy. */
+  readonly scope?: CallScope;
+  /** Inspect lines from the tenancy object. Absent when the schema has no tenancy. */
+  readonly tenancyRules?: readonly AppliedRule[];
 };
+
+/** Scope `emitWhere` reads. Writes set it around the statement they build. */
+let activeScope: CallScope | undefined;
+
+/**
+ * Runs `fn` with a tenant scope visible to {@link emitWhere}.
+ *
+ * Restores the previous scope, including when `fn` throws. Sync callers
+ * finish the statement before the first await.
+ *
+ * @param scope - Tenant value or an unscoped reason. `undefined` clears it
+ * @param fn - Statement builder
+ * @returns Whatever `fn` returns
+ */
+export function withTenantScope<T>(scope: CallScope | undefined, fn: () => T): T {
+  const previous = activeScope;
+  activeScope = scope;
+  try {
+    return fn();
+  } finally {
+    activeScope = previous;
+  }
+}
 
 /** Where a decoded value sits. */
 export type ScalarOut = {
@@ -250,9 +284,12 @@ function emitLazy(
 export function verifyRead(schema: QuerySchema, call: ReadCall): void {
   if (!safetyInstalled()) return;
   const source = schema.model[call.table]?.source;
-  const hatches: readonly SafetyHatch[] | undefined =
-    call.all === undefined ? undefined : [{ name: "all", reason: call.all }];
-  runSafety(appliedRules(call, source), hatches);
+  const hatches: SafetyHatch[] = [];
+  if (call.all !== undefined) hatches.push({ name: "all", reason: call.all });
+  if (call.scope !== undefined && "unscoped" in call.scope) {
+    hatches.push({ name: "unscoped", reason: call.scope.unscoped });
+  }
+  runSafety(appliedRules(call, source), hatches.length === 0 ? undefined : hatches);
 }
 
 /**
@@ -410,10 +447,29 @@ export function appliedRules(call: ReadCall, source?: string): readonly AppliedR
       provenance: "caller",
     });
   }
+  if (call.tenancyRules !== undefined) {
+    for (const rule of call.tenancyRules) rules.push(rule);
+  }
   return rules;
 }
 
 function emit(
+  schema: QuerySchema,
+  call: ReadCall,
+  sink: Sink,
+  outputs: Built | undefined,
+  hooks?: IncludeHooks,
+): void {
+  const previous = activeScope;
+  activeScope = call.scope;
+  try {
+    emitRead(schema, call, sink, outputs, hooks);
+  } finally {
+    activeScope = previous;
+  }
+}
+
+function emitRead(
   schema: QuerySchema,
   call: ReadCall,
   sink: Sink,
@@ -510,9 +566,20 @@ export function emitWhere(
   depth: number,
   appended = false,
 ): void {
+  const held =
+    schema.tenancy?.predicate({
+      table: table.model.name,
+      fieldSql: (field) => table.columns.get(field)?.sql,
+      encode: table.columns.get(schema.tenancy?.key ?? "")?.encode,
+      alias,
+      appended,
+      scope: activeScope,
+      sink,
+    }) === true;
+  const started = appended || held;
   if (where === undefined) return;
   if (isOperator(where) && operatorName(where) === "or") {
-    sink.text(appended ? " and " : " where ");
+    sink.text(started ? " and " : " where ");
     emitOr(schema, table, operatorValue(where), sink, alias, depth);
     return;
   }
@@ -521,7 +588,7 @@ export function emitWhere(
   }
   const keys = Object.keys(where);
   if (keys.length === 0) return;
-  sink.text(appended ? " and " : " where ");
+  sink.text(started ? " and " : " where ");
   emitAnd(schema, table, where, sink, alias, depth);
 }
 
@@ -562,6 +629,7 @@ function emitPredicate(
     emitRelationFilter(schema, relation, value, sink, alias, depth);
     return;
   }
+  schema.tenancy?.guard(table.model.name, key, "where");
   const column = table.columns.get(key);
   if (column === undefined) {
     throwNamed(
@@ -807,6 +875,7 @@ function emitRelationFilter(
   emitJoin(sink, alias, childAlias, relation);
   const inner = operatorValue(value);
   if (name === "every") {
+    emitWhere(schema, child, undefined, sink, childAlias, depth + 1, true);
     sink.text(" and not (");
     emitAnd(schema, child, inner ?? {}, sink, childAlias, depth + 1);
     sink.text(")");

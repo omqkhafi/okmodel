@@ -37,13 +37,13 @@ export function emitRowTypes(source: BuiltSchema<readonly AnyTable[]>): string {
     inserts.push(`  readonly ${key}: ${name}Insert;`);
     updates.push(`  readonly ${key}: ${name}Update;`);
     lines.push(`export interface ${name} {`);
-    lines.push(fields(item, "row", source.traits));
+    lines.push(fields(item, "row", source));
     lines.push("}", "");
     lines.push(`export interface ${name}Insert {`);
-    lines.push(fields(item, "insert", source.traits));
+    lines.push(fields(item, "insert", source));
     lines.push("}", "");
     lines.push(`export interface ${name}Update {`);
-    lines.push(fields(item, "update", source.traits));
+    lines.push(fields(item, "update", source));
     lines.push("}", "");
   }
   lines.push("export interface Rows {");
@@ -65,15 +65,26 @@ function propertyName(name: string): string {
 function fields(
   item: AnyTable,
   kind: "row" | "insert" | "update",
-  schemaTraits: readonly Trait[] | undefined,
+  source: BuiltSchema<readonly AnyTable[]>,
 ): string {
   const printed: string[] = [];
   const options = item.options as
-    | { readonly traits?: readonly Trait[]; readonly omitDefaults?: string }
+    | {
+        readonly traits?: readonly Trait[];
+        readonly omitDefaults?: string;
+        readonly tenancy?: { readonly kind?: unknown };
+      }
     | undefined;
   const entries = Object.entries(item.columns);
-  for (const pair of contributedFields(schemaTraits, options)) {
+  for (const pair of contributedFields(source.traits, options)) {
     if (!Object.hasOwn(item.columns, pair[0])) entries.push([pair[0], pair[1]]);
+  }
+  if (
+    source.tenancy !== undefined &&
+    options?.tenancy?.kind !== "global" &&
+    !Object.hasOwn(item.columns, source.tenancy.key)
+  ) {
+    entries.push([source.tenancy.key, source.tenancy.column()]);
   }
   for (const [field, builder] of entries) {
     if (!(builder instanceof ColumnBuilder)) {

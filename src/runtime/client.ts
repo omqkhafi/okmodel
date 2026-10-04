@@ -27,6 +27,7 @@ import {
   type IncludeHooks,
   type Plan,
   type ReadCall,
+  type CallScope,
   type ReadOp,
 } from "./plan.js";
 import type { CatalogArtifact, Connected, Inspection, RoutingDecision, TableApi } from "./types.js";
@@ -46,6 +47,10 @@ type Session = {
   readonly connected: Promise<void>;
   readonly cache: Map<string, Plan>;
   readonly generators: IdGenerators | undefined;
+  /** Tenant value or an unscoped reason. Absent on the root client. */
+  readonly scope?: CallScope;
+  /** Shared close. `for()` and `unscoped()` reuse the same promise. */
+  readonly closing: { current: Promise<void> | undefined };
 };
 
 type Mods = {
@@ -107,37 +112,58 @@ export function createClient<S extends QuerySchema>(
     connected,
     cache: new Map(),
     generators: options.generators,
+    closing: { current: undefined },
   };
+  return openClient(session);
+}
+
+function openClient<S extends QuerySchema>(session: Session): Connected<S> {
+  const view = session.schema.tenancy?.client({
+    names: Object.keys(session.schema.model),
+    scoped: session.scope !== undefined,
+    open: (scope) => openClient({ ...session, scope }),
+  });
   const tables: Record<string, TableApi<QuerySchema, string>> = {};
-  for (const name of Object.keys(schema.model)) {
+  for (const name of view?.names ?? Object.keys(session.schema.model)) {
     tables[name] = tableApi(session, name);
   }
-  let closing: Promise<void> | undefined;
-  const client = {
+  const close = (): Promise<void> => {
+    if (!session.ownsPool) return Promise.resolve();
+    session.closing.current ??= session.pool.close();
+    return session.closing.current;
+  };
+  const client: Record<string, unknown> = {
     ...tables,
     table(name: string) {
       const found = tables[name];
       if (found !== undefined) return found;
       try {
+        if (
+          session.schema.model[name] !== undefined &&
+          session.schema.tenancy !== undefined &&
+          session.scope === undefined
+        ) {
+          session.schema.tenancy.missing(name);
+        }
         throwNamed(
           "OKM1120",
           name,
-          Object.keys(tables),
-          `Table ${name} is not in the schema. Accepted names: ${Object.keys(tables).join(", ")}.`,
+          Object.keys(session.schema.model),
+          `Table ${name} is not in the schema. Accepted names: ${Object.keys(session.schema.model).join(", ")}.`,
         );
       } catch (error) {
         if (error instanceof OkmError) throw attachHttp(session.http, error);
         throw error;
       }
     },
-    close() {
-      if (!options.ownsPool) return Promise.resolve();
-      closing ??= pool.close();
-      return closing;
-    },
-    connected,
+    close,
+    connected: session.connected,
   };
-  attachAsyncDispose(client, () => client.close());
+  if (view?.for !== undefined && view.unscoped !== undefined) {
+    client.for = (input: unknown) => view.for?.(input);
+    client.unscoped = (reason: string) => view.unscoped?.(reason);
+  }
+  attachAsyncDispose(client, close);
   return client as unknown as Connected<S>;
 }
 
@@ -252,7 +278,16 @@ function writeHandle(
   return queryHandle(() => runWrite(session, op, table, input, options, mods), {
     sql() {
       return loadWrite().then((mod) =>
-        mod.explainWrite(session.schema, op, table, input, options, mods, session.generators),
+        mod.explainWrite(
+          session.schema,
+          op,
+          table,
+          input,
+          options,
+          mods,
+          session.generators,
+          session.scope,
+        ),
       );
     },
     expect(count: number) {
@@ -286,6 +321,7 @@ async function runWrite(
       input,
       options,
       mods,
+      session.scope,
     );
   } catch (error) {
     throw logged(session, await mapError(session, error));
@@ -299,7 +335,8 @@ function start(
   options: object,
   mods: Mods,
 ): Promise<unknown> & Record<string, unknown> {
-  const call = readCall(op, table, options, mods.all);
+  const model = session.schema.model[table];
+  const call = readCall(op, table, options, mods.all, session.scope, model, session.schema);
   let prepared: { readonly plan: Plan; readonly params: readonly (string | null)[] } | undefined;
   const prepare = async (): Promise<{
     readonly plan: Plan;
@@ -399,7 +436,15 @@ function streamLazy(
   })();
 }
 
-function readCall(op: ReadOp, table: string, options: object, all: string | undefined): ReadCall {
+function readCall(
+  op: ReadOp,
+  table: string,
+  options: object,
+  all: string | undefined,
+  scope: CallScope | undefined,
+  model: QuerySchema["model"][string] | undefined,
+  schema: QuerySchema,
+): ReadCall {
   const record = options as Record<string, unknown>;
   const accepted = readOptionNames(op);
   for (const key of Object.keys(record)) {
@@ -421,6 +466,10 @@ function readCall(op: ReadOp, table: string, options: object, all: string | unde
     ...(record.limit !== undefined ? { limit: record.limit } : {}),
     ...(record.include !== undefined ? { include: record.include } : {}),
     ...(all !== undefined ? { all } : {}),
+    ...(scope !== undefined ? { scope } : {}),
+    ...(schema.tenancy !== undefined && model !== undefined
+      ? { tenancyRules: schema.tenancy.rules(table, model.source, scope) }
+      : {}),
   };
 }
 

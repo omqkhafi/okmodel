@@ -18,7 +18,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### dialects
 
-- A column can be a primary key with `.primaryKey()`, and a table can declare a composite primary key with `primaryKey`. A natural key and a caller-supplied id insert, and `find` looks them up.
+- `schema({ tenancy: columnTenancy({ key: "tenantId", type: "uuid" }) })` rewrites tenant tables once before compile. Each gains a guarded uuid key, a primary key of `(id, tenant key)`, and `UNIQUE` on those columns. `.unique()` becomes `UNIQUE (tenant key, column)` unless `.unique({ global: "reason" })`. Foreign keys between tenant tables include the tenant key. `global("reason")` opts a table out.
+- A reference can list several target columns. `along` names the other local columns, so a composite foreign key is an ordinary constraint. Relations join on every column of the key.
 - `t.id()` still defaults to database `uuidv7()`. `t.id({ default: "uuidv4" })` uses `gen_random_uuid()`. `t.id({ default: "none" })` has no default and is required on insert. A column choice wins over `schema({ defaults: { id } })`.
 - `schema({ defaults: { id } })` sets the generator for every bare `t.id()`. `"uuidv4"` and `"uuidv7"` stay database defaults. A function is filled in the application.
 - An OKID id is `text` with collation `C`. Collation is part of the catalog: create, diff, introspect, and plan.
@@ -35,6 +36,9 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### runtime
 
+- `okmodel/tenancy` exports `columnTenancy` and `global`. `for({ tenantId })` puts the tenant predicate on every read, write, include, and `has` / `none` / `every` filter. `unscoped("reason")` omits the predicate and `inspect()` shows the reason. Insert still needs `for()`. The root client omits tenant tables. Calling one is OKM1701. Input cannot set the key, including `{ allow }` (OKM1190). Naming it in a filter or an update is OKM1704.
+- An index on a tenant table that does not lead with the tenant key is OKM1706. A global table that references a tenant table is OKM1705. `set null` and `set default` are refused when the foreign key includes the tenant key.
+- `registerTenancy()` records the tenancy check. A tenant key set by input is OKM1190. The package does not register the rule on import. An application that does not import `okmodel/tenancy` does not load that code.
 - `connect()` refuses a Postgres server below 15 with OKM1803. `schema({ requires })` that names an older major keeps the OKM1802 check instead.
 - `okmodel/ids` exports `uuidv4`, `uuidv7`, and `okid`. Pass one to `.default()` or `defaults.id`. A literal passed to `.default()` stays a database default. `.defaultSql()` stays a database expression. The generated value is not in the catalog, so changing a generator does not produce a migration. Insert fills each omitted value once, including each row of a batch, and the returned row carries it.
 - `connect({ generators })` replaces a built-in generator by name.
@@ -56,6 +60,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The roadmap is a public board. Each release is a milestone, and a pull request ends with `Closes #N`.
 - The README shows a jsonb `contains` filter and an array update with `arr.append`.
 - The size page records the no-trait startup graph at 83,043 minified bytes and 27,666 gzip. The gates stay. An application that uses `timestamps()` measures 85,744 / 28,503, and that figure is not a gate.
+- Spec section 9 uses `columnTenancy` and `global("reason")`. The size page records the no-tenancy app at 85,356 / 28,361. The gates are that measurement plus 3 percent (D160). Column tenancy measures 91,802 / 30,411 and is not a gate. The 91,000 / 30,000 cap stays.
 
 ### 💥 Breaking Changes
 
@@ -74,6 +79,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Synchronous `filters()` takes the app startup graph to 84,907 / 28,017, past the gzip gate. The gates move to measured plus 3 percent (D160): app startup 87,454 / 28,857, postgres.js 41,519 / 14,352, PGlite 38,620 / 13,613, `pg` 41,677 / 14,543, and Bun.sql 40,545 / 14,096. The 91,000 / 30,000 cap stays.
 - `filters()` returns the parser directly. The promise is on `parse()`, which is what a request handler awaits.
 - A signal or timeout, a watched query, checkout, listen, stream, the server-version query, and the fix text for write and include errors load on first use. Error codes, messages, SQL, and catalog output stay the same. The no-trait startup graph goes from 85,568 / 28,329 to 83,043 / 27,666. The gates stay.
+- P24 takes the no-tenancy app from 83,043 / 27,666 to 85,356 / 28,361. The gates move to measured plus 3 percent (D160): app startup 87,900 / 29,210, postgres.js 40,200 / 14,090, PGlite 37,800 / 13,450, `pg` 40,900 / 14,410, and Bun.sql 39,700 / 13,940. The 91,000 / 30,000 cap stays.
 
 ## v0.1.1 — 2026-10-03
 

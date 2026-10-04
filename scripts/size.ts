@@ -54,55 +54,55 @@ export const APP_ENTRY = "scripts/app-startup.ts";
 /**
  * Minified app-fixture ceiling, in bytes (D160).
  *
- * Synchronous `filters()` measured 84,907. Plus 3 percent, rounded down, is 87,454, under the 91,000 allowance (D143).
+ * P24 measured 85,356. Plus 3 percent, rounded down, is 87,900, under the 91,000 allowance (D143).
  */
-export const APP_MAX_MIN_BYTES = 87_454;
+export const APP_MAX_MIN_BYTES = 87_900;
 
 /**
  * Gzipped app-fixture ceiling, in bytes (D160).
  *
- * Synchronous `filters()` measured 28,017. Plus 3 percent, rounded down, is 28,857, under the 30,000 allowance (D143).
+ * P24 measured 28,361. Plus 3 percent, rounded down, is 29,210, under the 30,000 allowance (D143).
  */
-export const APP_MAX_GZIP_BYTES = 28_857;
+export const APP_MAX_GZIP_BYTES = 29_210;
 
 /**
  * Public connect entries, driver left external (D142, D143, D156).
  *
  * The startup graph excludes chunks loaded on first failure, include, or the
- * mismatch path of the catalog check. Each ceiling is the measurement after
- * synchronous `filters()` plus 3 percent, rounded down (D160). Cold import is
- * printed, including a driver-stubbed sample, and is not gated. Bun.sql has no
- * Node cold import.
+ * mismatch path of the catalog check. Each ceiling is the P24 measurement
+ * plus 3 percent, rounded down (D160). Cold import is printed,
+ * including a driver-stubbed sample, and is not gated. Bun.sql has no Node
+ * cold import.
  */
 export const CONNECT_ENTRIES = [
   {
     entry: "src/runtime/pg/postgresjs.ts",
     file: "postgresjs.js",
     external: ["postgres"],
-    maxMinBytes: 41_519,
-    maxGzipBytes: 14_352,
+    maxMinBytes: 40_200,
+    maxGzipBytes: 14_090,
   },
   {
     entry: "src/runtime/pg/pglite.ts",
     file: "pglite.js",
     external: ["@electric-sql/pglite"],
-    maxMinBytes: 38_620,
-    maxGzipBytes: 13_613,
+    maxMinBytes: 37_800,
+    maxGzipBytes: 13_450,
   },
   {
     entry: "src/runtime/pg/pg.ts",
     file: "pg.js",
     external: ["pg"],
-    maxMinBytes: 41_677,
-    maxGzipBytes: 14_543,
+    maxMinBytes: 40_900,
+    maxGzipBytes: 14_410,
   },
   {
     entry: "src/runtime/pg/bun.ts",
     file: "bun.js",
     external: ["bun"],
     nodeColdImport: false,
-    maxMinBytes: 40_545,
-    maxGzipBytes: 14_096,
+    maxMinBytes: 39_700,
+    maxGzipBytes: 13_940,
   },
 ] as const;
 
@@ -600,6 +600,9 @@ export function shakenOperatorProblems(root: string): readonly string[] {
     for (const name of startup) startupText += readFileSync(join(dir, name), "utf8");
     if (startupText.includes("src/runtime/traits/") || text.includes("src/runtime/traits/")) {
       problems.push("size: app fixture kept okmodel/traits");
+    }
+    if (startupText.includes("src/runtime/tenancy/") || text.includes("src/runtime/tenancy/")) {
+      problems.push("size: app fixture kept okmodel/tenancy");
     }
     if (startupText.includes(" = now()")) {
       problems.push("size: app fixture kept trait clock code");
