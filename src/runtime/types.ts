@@ -11,26 +11,14 @@ import type { Inc } from "../dialects/pg/ops/inc.js";
 import type {
   ArrAppend,
   ArrRemove,
-  Between,
-  Compare,
-  Containment,
-  Eq,
-  HasAnyKey,
-  HasKey,
-  InList,
   JsonSet,
-  Matches,
-  Not,
-  NotIn,
   Or,
-  Overlaps,
-  Path,
-  Pattern,
-  RawPattern,
   RelationFilter,
 } from "../dialects/pg/operators.js";
-import type { Range } from "../dialects/pg/range.js";
+import type { FieldWhere, IsJsonObject } from "../dialects/pg/where.js";
 import type { AppliedRule, ReadOp } from "./plan.js";
+
+export type { FieldWhere, WhereValue } from "../dialects/pg/where.js";
 
 /** One row of a table in `S`. */
 export type RowOf<S extends QuerySchema, K extends keyof S["~byName"]> = S["~byName"][K] extends {
@@ -45,96 +33,12 @@ export type RelationsOf<
   K extends keyof S["~byName"],
 > = S["~byName"][K] extends { readonly "~relations": infer R } ? R : Record<string, never>;
 
-type IsObject<V> = V extends object
-  ? V extends readonly unknown[]
-    ? false
-    : null extends V
-      ? false
-      : true
-  : false;
-
-/** Text patterns, including substring `contains`. `matches` is for tsvector, which is also `string`. */
-type TextOps =
-  | Pattern<"startsWith">
-  | Pattern<"contains">
-  | Pattern<"endsWith">
-  | RawPattern<"like">
-  | RawPattern<"ilike">
-  | Matches;
-
-/** Array, jsonb, or range containment, plus overlap where that operator fits. */
-type StructuredOps<V> = Containment<"contains" | "containedBy", V> | Overlaps<V>;
-
-/** A JSON fragment. Containment matches part of a document, not the whole column type. */
-type JsonFragment =
-  | string
-  | number
-  | boolean
-  | null
-  | readonly JsonFragment[]
-  | { readonly [key: string]: JsonFragment };
-
-/** jsonb and json filters. `hasKey` is rejected at runtime on json. */
-type JsonOps =
-  | Containment<"contains" | "containedBy", JsonFragment>
-  | HasKey
-  | HasAnyKey
-  | Path<string>
-  | Path<number>
-  | Path<boolean>;
-
-/**
- * A plain object that can be json or jsonb.
- *
- * Arrays, ranges, and bytea are not json. Timestamp values are objects too, and
- * the Temporal declarations are structural, so a timestamp column is rejected
- * at runtime (OKM1124) rather than here.
- */
-type IsJsonObject<V> = V extends readonly unknown[]
-  ? false
-  : V extends Range<unknown>
-    ? false
-    : V extends Uint8Array
-      ? false
-      : IsObject<V>;
-
-/** Operators the column value type can accept. `unknown` keeps every family and the runtime decides. */
-type TypedOps<V> = [unknown] extends [V]
-  ? TextOps | StructuredOps<V> | JsonOps
-  :
-      | (V extends string ? TextOps : never)
-      | (V extends readonly unknown[] ? StructuredOps<V> : never)
-      | (V extends Range<unknown> ? StructuredOps<V> : never)
-      | (IsJsonObject<V> extends true ? JsonOps : never);
-
-/** A where operand. Object columns take `eq`, not a bare object. */
-export type WhereValue<V> = V extends unknown
-  ?
-      | (IsObject<V> extends true ? never : V)
-      | null
-      | Eq<V>
-      | Compare<"lt", V>
-      | Compare<"lte", V>
-      | Compare<"gt", V>
-      | Compare<"gte", V>
-      | Between<V>
-      | InList<V>
-      | NotIn<V>
-      | Not<V | null | TextOps | InList<V>>
-      | TypedOps<V>
-  : never;
-
 /** Array and JSON writes the column value type can accept. */
 type WriteOp<V> = [unknown] extends [V]
   ? JsonSet<unknown> | ArrAppend<unknown> | ArrRemove<unknown>
   :
       | (V extends readonly (infer E)[] ? ArrAppend<E> | ArrRemove<E> : never)
       | (IsJsonObject<V> extends true ? JsonSet<unknown> : never);
-
-/** Field filters. Relation filters are one level, so the type does not cycle. */
-export type FieldWhere<Row> = {
-  readonly [K in keyof Row]?: WhereValue<Row[K]> | undefined;
-};
 
 /** `has`, `none`, and `every` against the related row. */
 export type RelFilter<S extends QuerySchema, Rel> = Rel extends {
@@ -651,7 +555,28 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
     options?: WriteOptions<S, K>,
   ): Write<WriteCount>;
 } & (S["~byName"][K] extends { readonly "~archive": true } ? ArchiveOps<S, K> : unknown) &
+  PresetApi<S, K> &
   TableExtras<S, K>;
+
+/**
+ * One method per preset the table or its traits declare.
+ *
+ * Each takes the preset's own arguments and returns the table handle with the
+ * preset applied, so calls chain: `tasks.pending().ownedBy(userId).find({})`.
+ * A table without presets adds nothing.
+ */
+type PresetApi<
+  S extends QuerySchema,
+  K extends keyof S["~byName"] & string,
+> = S["~byName"][K] extends { readonly "~presets": infer P }
+  ? {
+      readonly [N in keyof P & string]: P[N] extends (...all: infer All) => unknown
+        ? All extends readonly [unknown, ...infer A]
+          ? (...args: A) => TableApi<S, K>
+          : never
+        : never;
+    }
+  : unknown;
 
 /**
  * `[Symbol.asyncDispose]` when `Symbol` defines it.

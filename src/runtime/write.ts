@@ -8,7 +8,7 @@
 import type { DriverPool, ExecuteOptions, ExecuteResult, Statement } from "../contracts/driver.js";
 import { OkmError, type ValidationIssue } from "../contracts/error.js";
 import type { ClientFill, IdGenerators } from "../contracts/generator.js";
-import type { ColumnModel } from "../dialects/pg/model.js";
+import type { ColumnModel, PresetUse } from "../dialects/pg/model.js";
 import type { QuerySchema } from "../dialects/pg/model.js";
 import type { AnyTable } from "../dialects/pg/table.js";
 import { encodeJson } from "../dialects/pg/json.js";
@@ -40,6 +40,7 @@ import {
   type SafetyContribution,
   type SafetyHatch,
 } from "./safety-hook.js";
+import { stack } from "./preset-stack.js";
 import { fieldSealed, sealingTrait, touchFields } from "./trait-read.js";
 import { runWrite } from "./tx.js";
 import { writeWouldValidate } from "./validate/places.js";
@@ -74,7 +75,11 @@ export type WriteOp = "insert" | "update" | "delete";
 export type WriteMods = {
   readonly all?: string;
   readonly expect?: number;
-  readonly archive?: ArchiveView;
+  readonly archive?: ArchiveView | undefined;
+  /** Presets chained on the handle. `planWrite` resolves them into `presets`. */
+  readonly uses?: PresetUse | undefined;
+  /** Filters the chained presets added. Joined after each `where` with AND. */
+  readonly presets?: readonly unknown[];
 };
 
 /** Pool and schema for one client. The client maps driver errors. */
@@ -235,6 +240,10 @@ async function planWrite(
   if (table === undefined) {
     fail("OKM1120", `Table ${tableName} is not in the schema.`);
   }
+  if (mods.uses !== undefined && op !== "insert") {
+    const { resolve } = await import("./presets.js");
+    mods = { ...mods, presets: resolve(schema, tableName, mods.uses).wheres };
+  }
   const record = isRecord(options) ? options : {};
   rejectKeys(record, op === "insert" ? INSERT_OPTIONS : FILTER_OPTIONS, op);
   if (op === "insert") {
@@ -340,7 +349,10 @@ function planUpdate(
   const outputs = outputsOf(returning);
   const expect = expectOf(options, mods);
   if (Array.isArray(input)) {
-    const rows = input.map((item) => updateItem(table, item, allow, schema.tenancy));
+    const rows = input.map((item) => {
+      const row = updateItem(table, item, allow, schema.tenancy);
+      return { ...row, where: stack(row.where, mods.presets) };
+    });
     return {
       statements: updateList(schema, table, rows, returning),
       outputs,
@@ -359,7 +371,7 @@ function planUpdate(
   sql.text(quote(table.model.sql));
   sql.text(" as t set ");
   emitSet(sql, table, set, "t");
-  emitFilter(schema, table, input.where, sql, "t");
+  emitFilter(schema, table, stack(input.where, mods.presets), sql, "t");
   sql.text(returningClause(returning, "t"));
   return {
     statements: [sql.statement()],
@@ -386,7 +398,7 @@ function planDelete(
   sql.text("delete from ");
   sql.text(quote(table.model.sql));
   sql.text(" as t");
-  emitFilter(schema, table, input.where, sql, "t");
+  emitFilter(schema, table, stack(input.where, mods.presets), sql, "t");
   sql.text(returningClause(returning, "t"));
   return {
     statements: [sql.statement()],

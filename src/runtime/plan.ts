@@ -43,6 +43,7 @@ export type ReadBuild = (
   table: Indexed,
   sink: Sink,
   outputs: Built | undefined,
+  call: ReadCall,
 ) => void;
 
 /** One read call. `all` is the `.all(reason)` escape for an unbounded read. */
@@ -65,8 +66,8 @@ export type ReadCall = {
   readonly tenancyRules?: readonly AppliedRule[];
   /** `withArchived` or `onlyArchived`. Absent means the active set. */
   readonly archive?: ArchiveView;
-  /** Inspect lines for an archivable table. Absent when the table is not. */
-  readonly archiveRules?: readonly AppliedRule[];
+  /** Inspect lines for the archive set and for presets. Absent when neither applies. */
+  readonly ruleLines?: readonly AppliedRule[];
 };
 
 /** How an archivable read or write chooses rows. Absent means the active set. */
@@ -343,7 +344,7 @@ const TEXT_OPERATORS = ",startsWith,endsWith,contains,like,ilike,";
 function needsOperatorSql(table: Indexed, value: unknown, key?: string): boolean {
   if (isOperator(value)) {
     const name = operatorName(value);
-    if (name === "or") {
+    if (name === "or" || name === "and") {
       const branches = operatorValue(value);
       return Array.isArray(branches) && branches.some((branch) => needsOperatorSql(table, branch));
     }
@@ -564,8 +565,8 @@ export function appliedRules(call: ReadCall, source?: string): readonly AppliedR
   if (call.tenancyRules !== undefined) {
     for (const rule of call.tenancyRules) rules.push(rule);
   }
-  if (call.archiveRules !== undefined) {
-    for (const rule of call.archiveRules) rules.push(rule);
+  if (call.ruleLines !== undefined) {
+    for (const rule of call.ruleLines) rules.push(rule);
   }
   return rules;
 }
@@ -606,7 +607,7 @@ function emitRead(
     );
   }
   if (call.build !== undefined) {
-    call.build(schema, table, sink, outputs);
+    call.build(schema, table, sink, outputs, call);
     return;
   }
   rejectOptions(call);
@@ -721,19 +722,20 @@ export function emitWhere(
     sink.text(")");
     started = true;
   }
-  if (where === undefined) return;
-  if (isOperator(where) && operatorName(where) === "or") {
+  // `and` is how presets stack on the caller's filter. Only the presets module makes one.
+  for (const part of isOperator(where) && operatorName(where) === "and"
+    ? (operatorValue(where) as readonly unknown[])
+    : [where]) {
+    if (part === undefined) continue;
+    const joined = isOperator(part);
+    if (!joined && !isRecord(part)) fail("OKM1121", WHERE_FIELDS);
+    if (!joined && Object.keys(part).length === 0) continue;
     sink.text(started ? " and " : " where ");
-    emitOr(schema, table, operatorValue(where), sink, alias, depth);
-    return;
+    started = true;
+    if (joined && operatorName(part) === "or")
+      emitOr(schema, table, operatorValue(part), sink, alias, depth);
+    else emitAnd(schema, table, part, sink, alias, depth);
   }
-  if (!isRecord(where)) {
-    fail("OKM1121", WHERE_FIELDS);
-  }
-  const keys = Object.keys(where);
-  if (keys.length === 0) return;
-  sink.text(started ? " and " : " where ");
-  emitAnd(schema, table, where, sink, alias, depth);
 }
 
 const WHERE_FIELDS = "where must be an object of fields. Wrap an object value with eq.";

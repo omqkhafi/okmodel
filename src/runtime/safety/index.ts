@@ -240,6 +240,40 @@ export function registerArchive(): () => void {
   });
 }
 
+/**
+ * Registers the presets rule.
+ *
+ * A preset only adds predicates. A contribution that says a preset `removed`
+ * or `replaced` one (the caller's, the tenant's, or the active set) is
+ * OKM1190. The builder has no such method, so the planner never records the
+ * words; the rule keeps the contract checkable if a later builder grows one.
+ * The package does not register the rule on import.
+ *
+ * @returns Removes this registration
+ */
+export function registerPresets(): () => void {
+  return registerRule({
+    name: "presets",
+    contribution: "preset",
+    check(input) {
+      const violations: SafetyViolation[] = [];
+      for (const item of input.contributions) {
+        if (item.rule !== "preset") continue;
+        if (!item.contribution.includes(" removed ") && !item.contribution.includes(" replaced ")) {
+          continue;
+        }
+        violations.push({
+          rule: item.rule,
+          contribution: item.contribution,
+          ...(item.source !== undefined ? { source: item.source } : {}),
+          detail: "A preset adds predicates. It cannot remove or replace one.",
+        });
+      }
+      return violations;
+    },
+  });
+}
+
 function leaked(rule: string, contribution: string): boolean {
   if (rule === "hidden") return contribution.includes(" shown");
   if (rule === "sensitive") return contribution.includes(" revealed");

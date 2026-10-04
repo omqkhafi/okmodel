@@ -9,8 +9,9 @@ import { OkmError } from "../../contracts/error.js";
 import { rewriteArchivable } from "../../dialects/pg/archive-bind.js";
 import { uuid } from "../../dialects/pg/keys.js";
 import { definition, unavailable } from "../../dialects/pg/misuse.js";
+import { checkPresetNames, duplicatePreset, type PresetMap } from "../../dialects/pg/preset.js";
 import { timestamptz } from "../../dialects/pg/time.js";
-import type { AnyTable } from "../../dialects/pg/table.js";
+import type { AnyTable, RowFrom } from "../../dialects/pg/table.js";
 import { installArchiveContributions } from "../archive-rules.js";
 import { attachArchive } from "../archive-handle.js";
 import {
@@ -25,18 +26,28 @@ export type { Trait };
 /**
  * Options `trait()` accepts.
  *
- * `presets`, `methods`, and `requires` are named here and rejected until the
- * prompt that implements them.
+ * `methods` and `requires` are named here and rejected until the prompt that
+ * implements them.
  *
  * @typeParam TFields - Columns the trait adds
+ * @typeParam TPresets - Presets the trait adds to each table it applies to
  */
-export type TraitDefinition<TFields extends Readonly<Record<string, object>>> = {
+export type TraitDefinition<
+  TFields extends Readonly<Record<string, object>>,
+  TPresets extends PresetMap<RowFrom<TFields>> = PresetMap<RowFrom<TFields>>,
+> = {
   readonly fields: TFields;
   /** Columns set to `now()` on update. Each one is sealed. */
   readonly touch?: readonly (keyof TFields & string)[];
   /** Columns input cannot set, including `{ allow }`. */
   readonly sealed?: readonly (keyof TFields & string)[];
-  readonly presets?: unknown;
+  /**
+   * Named query refinements added to every table the trait applies to.
+   *
+   * They see the trait's columns, not the table's. A name a table or another
+   * trait also defines is OKM1040, and so is a reserved name.
+   */
+  readonly presets?: TPresets & PresetMap<RowFrom<TFields>>;
   readonly methods?: unknown;
   readonly requires?: unknown;
 };
@@ -52,19 +63,20 @@ export type TraitDefinition<TFields extends Readonly<Record<string, object>>> = 
  * @param definition - Fields and, when needed, which ones the write path seals
  * @returns The trait
  */
-export function trait<const TFields extends Readonly<Record<string, object>>>(
+export function trait<
+  const TFields extends Readonly<Record<string, object>>,
+  const TPresets extends PresetMap<RowFrom<TFields>> = Record<never, never>,
+>(
   name: string,
-  input: TraitDefinition<TFields>,
+  input: TraitDefinition<TFields, TPresets>,
 ): {
   readonly name: string;
   readonly fields: TFields;
   readonly touch?: readonly (keyof TFields & string)[];
   readonly sealed?: readonly (keyof TFields & string)[];
   apply(model: TraitModel, ctx: TraitContext): void;
-} {
-  if (input.presets !== undefined) {
-    unavailable("Trait option presets is not available yet. It arrives in 0.2.");
-  }
+} & ([keyof TPresets] extends [never] ? unknown : { readonly presets: TPresets }) {
+  if (input.presets !== undefined) checkPresetNames(Object.keys(input.presets), `trait ${name}`);
   if (input.methods !== undefined) {
     unavailable("Trait option methods is not available yet. It arrives in 0.2.");
   }
@@ -89,10 +101,35 @@ export function trait<const TFields extends Readonly<Record<string, object>>>(
       ? { touch: checked.touch as readonly (keyof TFields & string)[] }
       : {}),
     ...(sealed !== undefined ? { sealed: sealed as readonly (keyof TFields & string)[] } : {}),
+    ...(input.presets !== undefined ? { presets: input.presets } : {}),
     apply(model, ctx) {
       addFields(name, checked.fields, model, ctx);
+      if (input.presets !== undefined) addPresets(name, input.presets, model, ctx);
     },
-  };
+  } as ReturnType<typeof trait<TFields, TPresets>>;
+}
+
+function addPresets(
+  name: string,
+  presets: Readonly<Record<string, unknown>>,
+  model: TraitModel,
+  ctx: TraitContext,
+): void {
+  const merged: Record<string, unknown> = (model.presets = { ...model.presets });
+  const from = (model.presetFrom ??= {});
+  for (const key of Object.keys(presets)) {
+    if (Object.hasOwn(merged, key)) {
+      const first = from[key];
+      duplicatePreset(
+        key,
+        ctx.table,
+        first === undefined ? `table ${ctx.table}` : `trait ${first}`,
+        `trait ${name}`,
+      );
+    }
+    merged[key] = presets[key];
+    from[key] = name;
+  }
 }
 
 /**

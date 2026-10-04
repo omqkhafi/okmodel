@@ -6,7 +6,6 @@ These builders and options throw OKM1061, or are not methods yet. The version is
 
 | Item | Version | Prompt |
 | --- | --- | --- |
-| presets | 0.2 | P28 |
 | `t.domain` | 0.3 | P40 |
 | extensions | 0.3 | P40 |
 | functions | 0.3 | P41 |

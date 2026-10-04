@@ -26,6 +26,7 @@ export type OperatorName =
   | "notIn"
   | "not"
   | "or"
+  | "and"
   | "has"
   | "none"
   | "every"

@@ -15,7 +15,7 @@ import {
   type OkmErrorOptions,
 } from "../contracts/error.js";
 import type { MapPostgresErrorOptions } from "../dialects/pg/errors.js";
-import type { QuerySchema } from "../dialects/pg/model.js";
+import type { PresetUse, QuerySchema } from "../dialects/pg/model.js";
 import {
   appliedRules,
   archiveRules,
@@ -63,6 +63,8 @@ export type Mods = {
   readonly required?: boolean;
   readonly signal?: AbortSignal;
   readonly timeout?: number;
+  /** Presets chained on the handle. The presets module resolves them on first use. */
+  readonly uses?: PresetUse | undefined;
 };
 
 const SINGLE_ENDPOINT: RoutingDecision = {
@@ -197,26 +199,28 @@ function tableApi(
   session: Session,
   table: string,
   view?: ArchiveView,
+  uses?: PresetUse,
 ): TableApi<QuerySchema, string> {
-  const mods: WriteMods = view === undefined ? {} : { archive: view };
+  const base: Mods = { uses };
+  const mods: WriteMods = { archive: view, uses };
   const api: Record<string, unknown> = {
     find(options: object = {}) {
-      return start(session, "find", table, options, {}, view);
+      return start(session, "find", table, options, base, view);
     },
     one(options: object = {}) {
-      return start(session, "one", table, options, {}, view);
+      return start(session, "one", table, options, base, view);
     },
     count(options: object = {}) {
-      return start(session, "count", table, options, {}, view);
+      return start(session, "count", table, options, base, view);
     },
     exists(options: object = {}) {
-      return start(session, "exists", table, options, {}, view);
+      return start(session, "exists", table, options, base, view);
     },
     page(options: object) {
-      return lazyRead(session, () => import("./page.js"), table, options, {}, view);
+      return lazyRead(session, () => import("./page.js"), table, options, base, view);
     },
     aggregate(options: object = {}) {
-      return lazyRead(session, () => import("./aggregate.js"), table, options, {}, view);
+      return lazyRead(session, () => import("./aggregate.js"), table, options, base, view);
     },
     insert(data: unknown, options: object = {}) {
       return writeHandle(session, "insert", table, data, options, mods);
@@ -234,10 +238,16 @@ function tableApi(
       hook(api, {
         table,
         ...(view !== undefined ? { view } : {}),
-        reopen: (next) => tableApi(session, table, next) as unknown as Record<string, unknown>,
+        uses,
+        reopen: (next) =>
+          tableApi(session, table, next, uses) as unknown as Record<string, unknown>,
         session,
       });
     }
+  }
+  // A preset records the call. The presets module runs it when the handle is used.
+  for (const name in session.schema.model[table]?.presets as object) {
+    api[name] = (...args: unknown[]) => tableApi(session, table, view, [uses, name, args]);
   }
   return api as unknown as TableApi<QuerySchema, string>;
 }
@@ -246,7 +256,8 @@ type WriteOp = "insert" | "update" | "delete";
 type WriteMods = {
   readonly all?: string;
   readonly expect?: number;
-  readonly archive?: ArchiveView;
+  readonly archive?: ArchiveView | undefined;
+  readonly uses?: PresetUse | undefined;
 };
 
 let writers: Promise<typeof import("./write.js")> | undefined;
@@ -481,8 +492,12 @@ export function readHandle(
   extra?: (prepare: () => Promise<Prepared>) => Record<string, unknown>,
 ): Promise<unknown> & Record<string, unknown> {
   let prepared: Prepared | undefined;
+  const origin = call;
   const prepare = async (): Promise<Prepared> => {
     if (prepared !== undefined) return prepared;
+    if (mods.uses !== undefined) {
+      call = (await import("./presets.js")).refine(session.schema, origin, mods.uses);
+    }
     if (readNeedsOperatorSql(session.schema, call)) await loadOperatorSql();
     const hooks = await hooksFor(call);
     const bound = bindCall(session.schema, call, hooks);
@@ -498,6 +513,11 @@ export function readHandle(
     prepared = { plan, params: bound.params };
     return prepared;
   };
+  // True when the statement can be planned now: no include, no preset, no operator SQL to load.
+  const sync = (): boolean =>
+    call.include === undefined &&
+    mods.uses === undefined &&
+    !readNeedsOperatorSql(session.schema, call);
   const run = async (): Promise<unknown> => {
     await session.connected;
     const { plan, params } = await prepare();
@@ -522,7 +542,7 @@ export function readHandle(
       if (call.include === undefined && prepared !== undefined) {
         return finish(session, inspection(prepared.plan, prepared.params, call, source), call);
       }
-      if (call.include === undefined && !readNeedsOperatorSql(session.schema, call)) {
+      if (sync()) {
         const bound = bindNow(session.schema, call);
         prepared = bound;
         return finish(session, inspection(bound.plan, bound.params, call, source), call);
@@ -535,7 +555,7 @@ export function readHandle(
       if (call.include === undefined && prepared !== undefined) {
         return { text: prepared.plan.text, params: prepared.params };
       }
-      if (call.include === undefined && !readNeedsOperatorSql(session.schema, call)) {
+      if (sync()) {
         const { plan, params } = bindNow(session.schema, call);
         prepared = { plan, params };
         return { text: plan.text, params };
@@ -560,11 +580,11 @@ function streamLazy(
 function archiveRecord(
   model: QuerySchema["model"][string] | undefined,
   view: ArchiveView | undefined,
-): { readonly archiveRules: readonly AppliedRule[] } | undefined {
+): { readonly ruleLines: readonly AppliedRule[] } | undefined {
   if (model?.archive === undefined) return undefined;
   const rules = archiveRules(model, view);
   if (rules === undefined) return undefined;
-  return { archiveRules: rules };
+  return { ruleLines: rules };
 }
 
 /**

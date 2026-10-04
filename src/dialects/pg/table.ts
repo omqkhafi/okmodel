@@ -11,7 +11,8 @@ import { type ColumnInsertOf, type ColumnRowOf, type ColumnUpdateOf } from "./co
 import { openFilters } from "./filters.js";
 import { definition, unavailable } from "./misuse.js";
 import { type RelationCall } from "./relations.js";
-import { type FieldsOfList, type HasArchive, type Trait } from "./trait.js";
+import type { PresetMap } from "./preset.js";
+import { type FieldsOfList, type HasArchive, type PresetsOfList, type Trait } from "./trait.js";
 
 /**
  * A column as seen by `indexes` and `checks`.
@@ -102,7 +103,14 @@ export type TableOptions<TColumns> = {
     | { readonly kind: "global"; readonly reason: string }
     | { readonly via: string };
   readonly computed?: unknown;
-  readonly presets?: unknown;
+  /**
+   * Named, typed refinements called as `tasks.pending()`.
+   *
+   * A preset gets a builder and its own arguments and returns the builder.
+   * The builder only adds predicates. A name that is a client method or is
+   * reserved is OKM1040.
+   */
+  readonly presets?: PresetMap<RowFrom<TColumns>>;
   readonly policies?: unknown;
   readonly reference?: unknown;
   /** `one` and `many`. Other relation kinds stay reserved. */
@@ -227,6 +235,7 @@ const TABLE_KNOWN = new Set([
   "comment",
   "indexes",
   "omitDefaults",
+  "presets",
   "primaryKey",
   "relations",
   "renamedFrom",
@@ -246,7 +255,6 @@ const TABLE_KNOWN = new Set([
 const TABLE_LATER: Readonly<Record<string, string>> = {
   computed: "later",
   policies: "later",
-  presets: "0.2",
   reference: "0.4",
 };
 
@@ -342,12 +350,19 @@ type DeclaredTable<TName extends string, TColumns, TOptions> = Table<
 > &
   TraitShapes<TColumns, TOptions> &
   ArchiveFlag<TOptions> &
+  PresetFlag<TOptions> &
   OmitFlag<TOptions> &
   GlobalFlag<TOptions>;
 
 type ArchiveFlag<TOptions> = TOptions extends { readonly traits: infer TTraits }
   ? HasArchive<TTraits>
   : unknown;
+
+/** `{ "~presets" }` from the table's own `presets` and its traits' presets, when there are any. */
+type PresetFlag<TOptions> = (TOptions extends { readonly presets: infer TPresets }
+  ? { readonly "~presets": TPresets }
+  : unknown) &
+  (TOptions extends { readonly traits: infer TTraits } ? PresetsOfList<TTraits> : unknown);
 
 type OmitFlag<TOptions> = TOptions extends { readonly omitDefaults: string }
   ? { readonly "~omitDefaults": true }

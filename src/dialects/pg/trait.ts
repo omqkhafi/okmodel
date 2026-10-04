@@ -31,6 +31,15 @@ export type ArchiveRequest = {
 export type TraitModel = {
   columns: Record<string, object>;
   archive?: ArchiveRequest;
+  /**
+   * Presets collected so far: the table's own first, then each trait's.
+   *
+   * Starts as the table's own object. A trait copies it before adding, so the
+   * author's object is never changed.
+   */
+  presets?: Readonly<Record<string, unknown>> | undefined;
+  /** Trait that added each preset. A name missing here is the table's own. */
+  presetFrom?: Record<string, string>;
 };
 
 /**
@@ -53,6 +62,8 @@ export type Trait = {
   readonly fields: Readonly<Record<string, object>>;
   readonly touch?: readonly string[];
   readonly sealed?: readonly string[];
+  /** Presets the trait adds to every table it applies to. */
+  readonly presets?: Readonly<Record<string, unknown>>;
   /**
    * Adds this trait's columns to one table.
    *
@@ -95,6 +106,24 @@ export type HasArchive<TTraits> = [
   ? unknown
   : { readonly "~archive": true };
 
+/** The `presets` maps of a trait list, as a union. Empty when no trait has any. */
+type TraitPresetUnion<TTraits> = TTraits extends readonly (infer TItem)[]
+  ? TItem extends { readonly presets: infer TPresets }
+    ? TPresets
+    : never
+  : never;
+
+/**
+ * `{ "~presets": ... }` when a trait list adds presets, joined into one map.
+ *
+ * Nothing is added otherwise, so a table without trait presets keeps its type.
+ *
+ * @typeParam TTraits - Trait list
+ */
+export type PresetsOfList<TTraits> = [TraitPresetUnion<TTraits>] extends [never]
+  ? unknown
+  : { readonly "~presets": UnionToIntersection<TraitPresetUnion<TTraits>> };
+
 type UnionToIntersection<TUnion> = (
   TUnion extends unknown ? (argument: TUnion) => void : never
 ) extends (argument: infer TIntersection) => void
@@ -109,13 +138,13 @@ type CheckedTrait = {
   readonly sealed?: readonly string[];
 };
 
-const TRAIT_KEYS = new Set(["fields", "name", "sealed", "touch"]);
+const TRAIT_KEYS = new Set(["fields", "name", "presets", "sealed", "touch"]);
 
 /**
  * Checks one trait object.
  *
- * `presets`, `methods`, and `requires` are part of the type and rejected
- * until the prompt that implements them.
+ * `methods` and `requires` are part of the type and rejected until the
+ * prompt that implements them.
  *
  * @param value - One entry of a traits list
  * @param where - `schema()` or the table name, for the error
@@ -124,12 +153,12 @@ const TRAIT_KEYS = new Set(["fields", "name", "sealed", "touch"]);
 export function checkTrait(value: unknown, where: string): CheckedTrait {
   if (!isRecord(value)) definition(`${where} traits must be a list of traits.`);
   for (const key of Object.keys(value)) {
-    if (key === "presets" || key === "methods" || key === "requires") {
+    if (key === "methods" || key === "requires") {
       unavailable(`Trait option ${key} is not available yet. It arrives in 0.2.`);
     }
     if (!TRAIT_KEYS.has(key)) {
       definition(
-        `${where} trait option ${key} is not supported. Accepted options: fields, name, sealed, touch.`,
+        `${where} trait option ${key} is not supported. Accepted options: fields, name, presets, sealed, touch.`,
       );
     }
   }

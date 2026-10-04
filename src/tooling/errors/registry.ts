@@ -92,8 +92,9 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
   {
     code: "OKM1040",
     title: "Preset name collision",
-    summary: "A preset uses a name reserved for a client method.",
-    fix: "Rename the preset. okm upgrade renames a preset when a later release claims its name.",
+    summary:
+      "A preset uses the name of a client method or a reserved name, or a table and its traits (or two traits) define the same preset.",
+    fix: "Rename the preset. The error names both sources when two define it. okm upgrade renames a preset when a later release claims its name.",
   },
   {
     code: "OKM1051",

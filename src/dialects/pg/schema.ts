@@ -45,7 +45,7 @@ import {
 import { definition, unavailable } from "./misuse.js";
 import { isRelationCall, type ManyThroughRelation, type RelationEdge } from "./relations.js";
 import { decodeText, encodeText } from "./text.js";
-import type { FieldsOfList, HasArchive, Trait, TraitModel } from "./trait.js";
+import type { FieldsOfList, HasArchive, PresetsOfList, Trait, TraitModel } from "./trait.js";
 import { type ColumnTenancy, type TenantFields, readTenancy } from "./tenancy.js";
 import {
   type AnyTable,
@@ -193,7 +193,7 @@ export type TenancySchema<
 export type SchemaWithTraits<
   TTables extends readonly AnyTable[],
   TTraits extends readonly { readonly fields: Readonly<Record<string, object>> }[],
-> = keyof FieldsOfList<TTraits> extends never
+> = [keyof FieldsOfList<TTraits> | keyof PresetsOfList<TTraits>] extends [never]
   ? BuiltSchema<TTables>
   : Omit<BuiltSchema<TTables>, "~byName"> & {
       readonly "~byName": {
@@ -213,7 +213,8 @@ type ApplySchemaTraits<TTable, TFields, TTraits> = TTable extends {
       readonly "~row": RowFrom<TFields>;
       readonly "~insert": InsertFrom<TFields>;
       readonly "~update": UpdateFrom<TFields>;
-    } & HasArchive<TTraits>;
+    } & HasArchive<TTraits> &
+      PresetsOfList<TTraits>;
 
 const SCHEMA_KNOWN = new Set([
   "casing",
@@ -243,6 +244,7 @@ type StoredOptions = {
   readonly sqlName?: string;
   readonly renamedFrom?: string;
   readonly comment?: string;
+  readonly presets?: Readonly<Record<string, unknown>>;
   readonly unique?: Readonly<Record<string, readonly string[]>>;
   readonly primaryKey?: readonly string[];
   readonly indexes?: (columns: Readonly<Record<string, ColumnHandle>>) => readonly IndexCall[];
@@ -313,6 +315,8 @@ type Prepared = {
   readonly traits?: readonly Trait[];
   /** Set by `archivable()`. Absent on every other table. */
   readonly archive?: ArchiveModel;
+  /** Own and trait presets, merged. Absent when the table has none. */
+  readonly presets?: Readonly<Record<string, unknown>> | undefined;
 };
 
 /**
@@ -662,11 +666,18 @@ function openTableTraits(
   table: string,
   columns: Readonly<Record<string, object>>,
   schemaTraits: readonly Trait[] | undefined,
-  options: { readonly traits?: unknown; readonly omitDefaults?: unknown } | undefined,
+  options:
+    | {
+        readonly traits?: unknown;
+        readonly omitDefaults?: unknown;
+        readonly presets?: Readonly<Record<string, unknown>>;
+      }
+    | undefined,
 ):
   | {
       readonly columns: Record<string, object>;
       readonly traits: readonly Trait[];
+      readonly presets?: Readonly<Record<string, unknown>> | undefined;
     }
   | undefined {
   let shared = schemaTraits;
@@ -690,9 +701,9 @@ function openTableTraits(
         ? local
         : [...shared, ...local];
   if (traits === undefined) return undefined;
-  const model: TraitModel = { columns: { ...columns } };
+  const model: TraitModel = { columns: { ...columns }, presets: options?.presets };
   for (const trait of traits) trait.apply(model, { table });
-  return { columns: model.columns, traits };
+  return { ...model, traits };
 }
 
 function compileTable(
@@ -711,7 +722,13 @@ function compileTable(
     item.name,
     item.columns,
     schemaTraits,
-    item.options as { readonly traits?: unknown; readonly omitDefaults?: unknown } | undefined,
+    item.options as
+      | {
+          readonly traits?: unknown;
+          readonly omitDefaults?: unknown;
+          readonly presets?: Readonly<Record<string, unknown>>;
+        }
+      | undefined,
   );
   readTableNames(item.name, options);
   const sqlName = options?.sqlName ?? (casing === "snake" ? snakeCase(item.name) : item.name);
@@ -867,6 +884,7 @@ function compileTable(
     bySql,
     relationOptions: relationInput(item.name, options),
     ...(applied !== undefined ? { traits: applied.traits } : {}),
+    presets: applied?.presets ?? options?.presets,
     ...archiveModel(item),
   };
 }
@@ -1330,6 +1348,7 @@ function tableModel(
     ...(item.traits !== undefined ? { traits: item.traits } : {}),
     ...(item.provenance.source !== undefined ? { source: item.provenance.source } : {}),
     ...(item.archive !== undefined ? { archive: item.archive } : {}),
+    ...(item.presets !== undefined ? { presets: item.presets } : {}),
   };
 }
 
