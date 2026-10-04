@@ -282,6 +282,15 @@ function emitNestedAggregate(
   sink.text(") limited) ordered)");
 }
 
+/** Includes never return a hidden column, even when `select` names it. */
+function omitHidden(columns: readonly ColumnModel[]): readonly ColumnModel[] {
+  for (const column of columns) {
+    if (!column.hidden) continue;
+    return columns.filter((item) => !item.hidden);
+  }
+  return columns;
+}
+
 function readIncludes(
   schema: QuerySchema,
   table: Indexed,
@@ -323,7 +332,7 @@ function parseInclude(
       );
     }
     const child = childIndex(schema, relation);
-    const columns = selectedColumns(child, undefined);
+    const columns = omitHidden(selectedColumns(child, undefined));
     return {
       name,
       relation,
@@ -349,7 +358,7 @@ function parseInclude(
     );
   }
   const child = childIndex(schema, relation);
-  const columns = selectedColumns(child, value.select);
+  const columns = omitHidden(selectedColumns(child, value.select));
   const nestedValue = value.include;
   const nested = nestedValue === undefined ? [] : readIncludes(schema, child, nestedValue, reason);
   return {

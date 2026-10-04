@@ -22,6 +22,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `t.id()` still defaults to database `uuidv7()`. `t.id({ default: "uuidv4" })` uses `gen_random_uuid()`. `t.id({ default: "none" })` has no default and is required on insert. A column choice wins over `schema({ defaults: { id } })`.
 - `schema({ defaults: { id } })` sets the generator for every bare `t.id()`. `"uuidv4"` and `"uuidv7"` stay database defaults. A function is filled in the application.
 - An OKID id is `text` with collation `C`. Collation is part of the catalog: create, diff, introspect, and plan.
+- `.hidden()` stays out of default selects and includes, and is returned only when a root `select` names it. `.sensitive()` redacts the value in logs, errors, and `inspect()`.
+- `filters()` loads on first use and refuses a hidden field in `allow`, `sort`, or `relations` with OKM1123. `parse` accepts an allowlisted equality and a named sort.
 - `contains`, `containedBy`, `overlaps`, `hasKey`, `hasAnyKey`, `path`, and `matches` filter json, array, range, and tsvector columns. Text `contains` stays a substring. The value, key, or path is a parameter, and a regconfig name is checked before it is bound.
 - `json.set`, `arr.append`, and `arr.remove` are namespace exports used inside `update`. Importing one does not pull the others.
 
@@ -38,6 +40,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - An operator that does not fit its column fails with OKM1124. The message names the column type and the operators that column accepts. Text search on a text column says it needs a tsvector column.
 - A table records the file and line where it was defined. `inspect()` shows that location on the catalog rules, a schema error includes it, and `okm` prints it. The catalog hash does not.
 - `okmodel/safety` is the registry later checks plug into. `registerRule` adds a rule, `verify` throws OKM1190 with every violation in stable order, and `safety.property` fails when rule order changes the verdict.
+- `registerFieldExposure()` records the hidden, sensitive, and guarded checks. A hidden field shown, a sensitive value revealed, or a guarded field set without `{ allow }` is OKM1190.
+- Unknown keys are dropped on insert and update. A guarded field is OKM1190 unless `{ allow }` names it. `allow` does not unlock a primary key on update.
 
 #### tooling
 

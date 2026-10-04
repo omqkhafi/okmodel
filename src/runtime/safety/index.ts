@@ -102,6 +102,67 @@ const rules: SafetyRule[] = [];
  * @param rule - The check. A missing `source` is the caller's file and line
  * @returns Removes this registration
  */
+/**
+ * Registers the field-exposure rule.
+ *
+ * A contribution that shows a hidden field, reveals a sensitive value, or
+ * sets a guarded field without `{ allow }` is OKM1190. The package does not
+ * register it on import (`sideEffects` is false). Call this once.
+ *
+ * The contribution text is the whole subject the rule can see. P21's input
+ * has no schema and no query, so the planner phrases the verdict
+ * (`excluded`, `redacted`, `absent`, `allowed`) and a leak is the words
+ * `shown`, `revealed`, or `set`.
+ *
+ * @returns Removes this registration
+ */
+export function registerFieldExposure(): () => void {
+  return registerRule({
+    name: "exposure",
+    contribution: "field-exposure",
+    check(input) {
+      const allowed = new Set<string>();
+      if (input.hatches !== undefined) {
+        for (const hatch of input.hatches) {
+          if (hatch.name === "allow" && hatch.reason.trim().length > 0) allowed.add(hatch.reason);
+        }
+      }
+      const violations: SafetyViolation[] = [];
+      for (const item of input.contributions) {
+        if (!leaked(item.rule, item.contribution)) continue;
+        if (item.rule === "guarded" && permitted(item.contribution, allowed)) continue;
+        violations.push({
+          rule: item.rule,
+          contribution: item.contribution,
+          ...(item.source !== undefined ? { source: item.source } : {}),
+          detail: exposureDetail(item.rule),
+        });
+      }
+      return violations;
+    },
+  });
+}
+
+function leaked(rule: string, contribution: string): boolean {
+  if (rule === "hidden") return contribution.includes(" shown");
+  if (rule === "sensitive") return contribution.includes(" revealed");
+  if (rule === "guarded") return contribution.includes(" set");
+  return false;
+}
+
+function permitted(contribution: string, allowed: ReadonlySet<string>): boolean {
+  for (const reason of allowed) {
+    if (contribution.includes(`${reason} set`)) return true;
+  }
+  return false;
+}
+
+function exposureDetail(rule: string): string {
+  if (rule === "hidden") return "A hidden field was returned.";
+  if (rule === "sensitive") return "A sensitive value was shown.";
+  return "A guarded field was set from input.";
+}
+
 export function registerRule(rule: SafetyRule): () => void {
   const source = rule.source ?? callerLocation(1);
   const stored: SafetyRule =

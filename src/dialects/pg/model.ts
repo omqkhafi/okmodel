@@ -23,9 +23,15 @@ export type ColumnModel = {
    * call a codec it does not need.
    */
   readonly decode: ((wire: string) => unknown) | undefined;
-  /** Excluded from a default select. Named selects still return it. */
+  /** Excluded from a default select. Named selects still return it. Includes never return it. */
   readonly hidden: boolean;
-  /** Refused when present in insert or update input. */
+  /**
+   * Redacted in logs, errors, and `inspect()`.
+   *
+   * A selected read still returns the value.
+   */
+  readonly sensitive: boolean;
+  /** Refused when present in insert or update input, unless `{ allow }` names it. */
   readonly guarded: boolean;
   /** Included in insert and update. Guarded, generated, and omitted columns are not. */
   readonly writable: boolean;
@@ -78,6 +84,12 @@ export type TableModel = {
   readonly uniques: readonly (readonly string[])[];
   readonly columns: readonly ColumnModel[];
   readonly relations: readonly RelationModel[];
+  /**
+   * A column is hidden or sensitive.
+   *
+   * Absent when none are, so a normal table does not carry the flag.
+   */
+  readonly conceal?: true;
   /**
    * `file.ts:line` where the table was defined.
    *

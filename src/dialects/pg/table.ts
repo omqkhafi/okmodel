@@ -118,6 +118,28 @@ export type Table<
   readonly name: TName;
   readonly columns: TColumns;
   readonly options?: TableOptions<TColumns>;
+  /**
+   * Allowlisted client filters. The checker loads on the first call.
+   *
+   * A hidden field in `allow`, `sort`, or `relations` rejects with OKM1123.
+   *
+   * @param spec - Fields, operators, and sorts the caller may send
+   * @returns A parser for one request object
+   */
+  filters(spec: FilterSpec): Promise<{ parse(query: unknown): ParsedFilters }>;
+};
+
+/** What {@link Table.filters} accepts. */
+export type FilterSpec = {
+  readonly allow?: Readonly<Record<string, readonly string[]>>;
+  readonly sort?: readonly string[];
+  readonly relations?: Readonly<Record<string, readonly string[]>>;
+};
+
+/** `where` and `orderBy` a caller can spread into `find`. */
+export type ParsedFilters = {
+  readonly where: Readonly<Record<string, unknown>>;
+  readonly orderBy?: Readonly<Record<string, "asc" | "desc">>;
 };
 
 /**
@@ -241,9 +263,15 @@ export function table<
   if (options !== undefined) {
     rejectLater(options, TABLE_KNOWN, TABLE_LATER, `Table ${name}`);
   }
+  remember(name, columns);
   return {
     name,
     columns,
+    filters(spec: FilterSpec) {
+      return import("./filters.js").then((mod) =>
+        mod.openFilters(name, options?.relations, spec, hiddenFields),
+      );
+    },
     ...(options !== undefined ? { options } : {}),
     ...(source !== undefined ? { source } : {}),
   } as unknown as Table<TName, TColumns, Readonly<Record<string, RelationCall>>, string>;
@@ -425,4 +453,13 @@ function sqlValue(value: SqlValue | undefined): string {
     return value.name;
   }
   definition("sql accepts a column, a string, a number, a boolean, or null.");
+}
+
+const hiddenFields = new Set<string>();
+
+function remember(name: string, columns: Readonly<Record<string, object>>): void {
+  for (const field of Object.keys(columns)) {
+    const column = columns[field] as { readonly state?: { readonly hidden?: boolean } } | undefined;
+    if (column?.state?.hidden === true) hiddenFields.add(`${name}.${field}`);
+  }
 }

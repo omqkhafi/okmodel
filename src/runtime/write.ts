@@ -6,7 +6,7 @@
  */
 
 import type { DriverPool, ExecuteOptions, ExecuteResult, Statement } from "../contracts/driver.js";
-import { OkmError, throwNamed } from "../contracts/error.js";
+import { OkmError } from "../contracts/error.js";
 import type { ClientFill, IdGenerators } from "../contracts/generator.js";
 import type { ColumnModel } from "../dialects/pg/model.js";
 import type { QuerySchema } from "../dialects/pg/model.js";
@@ -27,10 +27,33 @@ import {
   type Outputs,
   type Sink,
 } from "./plan.js";
+import {
+  runSafety,
+  safetyInstalled,
+  type SafetyContribution,
+  type SafetyHatch,
+} from "./safety-hook.js";
 import { runWrite } from "./tx.js";
 
 /** Statements in one insert stay under this many parameters. The protocol limit is 65535. */
 export const WRITE_PARAM_BUDGET = 2048;
+
+const REDACTED = "[redacted]";
+
+function encodeColumn(column: ColumnModel, value: unknown): string {
+  if (!column.hidden && !column.sensitive) return column.encode(value);
+  try {
+    return column.encode(value);
+  } catch (error) {
+    if (error instanceof OkmError) {
+      throw new OkmError(error.code, `Field ${column.field} was rejected.`, {
+        kind: error.kind,
+        fix: error.fix,
+      });
+    }
+    throw error;
+  }
+}
 
 /** A write the caller asked for. */
 export type WriteOp = "insert" | "update" | "delete";
@@ -62,8 +85,9 @@ type Planned = {
   readonly keyFields: readonly string[] | undefined;
 };
 
-const INSERT_OPTIONS = ["expect", "onConflict", "returning", "signal", "timeout"] as const;
-const FILTER_OPTIONS = ["expect", "returning", "signal", "timeout"] as const;
+const INSERT_OPTIONS = ["allow", "expect", "onConflict", "returning", "signal", "timeout"] as const;
+const FILTER_OPTIONS = ["allow", "expect", "returning", "signal", "timeout"] as const;
+const NO_ALLOW: ReadonlySet<string> = new Set();
 
 /**
  * Runs a write and decodes it.
@@ -84,10 +108,14 @@ export async function executeWrite(
   options: object,
   mods: WriteMods,
 ): Promise<unknown> {
-  const planned = await planWrite(host.schema, host.generators, op, table, input, options, mods);
-  if (planned.statements.length === 0) return finish([], planned, table);
-  const results = await runWrite(host.pool, planned.statements, callOptions(options));
-  return finish(results, planned, table);
+  try {
+    const planned = await planWrite(host.schema, host.generators, op, table, input, options, mods);
+    if (planned.statements.length === 0) return finish([], planned, table);
+    const results = await runWrite(host.pool, planned.statements, callOptions(options));
+    return finish(results, planned, table);
+  } catch (error) {
+    throw scrubWrite(host.schema, table, input, error);
+  }
 }
 
 /**
@@ -111,8 +139,12 @@ export async function explainWrite(
   mods: WriteMods,
   generators?: IdGenerators,
 ): Promise<{ readonly statements: readonly Statement[] }> {
-  const planned = await planWrite(schema, generators, op, table, input, options, mods);
-  return { statements: planned.statements };
+  try {
+    const planned = await planWrite(schema, generators, op, table, input, options, mods);
+    return { statements: planned.statements };
+  } catch (error) {
+    throw scrubWrite(schema, table, input, error);
+  }
 }
 
 async function planWrite(
@@ -142,10 +174,12 @@ async function planInsert(
   mods: WriteMods,
   generators: IdGenerators | undefined,
 ): Promise<Planned> {
+  const allow = allowSet(table, options.allow);
+  noteGuarded(table, allow);
   const many = Array.isArray(input);
-  const rows = (many ? input : [input]).map((row) => insertRow(table, row));
+  const rows = (many ? input : [input]).map((row) => insertRow(table, row, allow));
   fillInsert(table, rows, generators);
-  const columns = writtenColumns(table, rows);
+  const columns = writtenColumns(table, rows, allow);
   const returning = selectedColumns(table, options.returning);
   const outputs = outputsOf(returning);
   const clause = returningClause(returning, undefined);
@@ -166,7 +200,7 @@ async function planInsert(
     options.onConflict === undefined || options.onConflict === "error"
       ? undefined
       : await import("./conflict.js");
-  const conflict = conflictMod?.readConflict(table, options.onConflict);
+  const conflict = conflictMod?.readConflict(table, options.onConflict, allow);
   const chunks = chunkRows(rows.map((row) => cellsFor(table, columns, row)));
   const statements: Statement[] = [];
   const keys: (string | null)[][] = [];
@@ -212,11 +246,13 @@ function planUpdate(
   options: Record<string, unknown>,
   mods: WriteMods,
 ): Planned {
+  const allow = allowSet(table, options.allow);
+  noteGuarded(table, allow);
   const returning = returningOption(table, options.returning);
   const outputs = outputsOf(returning);
   const expect = expectOf(options, mods);
   if (Array.isArray(input)) {
-    const rows = input.map((item) => updateItem(table, item));
+    const rows = input.map((item) => updateItem(table, item, allow));
     return {
       statements: updateList(schema, table, rows, returning),
       outputs,
@@ -227,7 +263,7 @@ function planUpdate(
     };
   }
   if (!isRecord(input)) fail("OKM1121", "update expects { where, set } or a list of rows.");
-  const set = writeSet(table, input.set);
+  const set = writeSet(table, input.set, allow);
   requireFilter(table, input.where, mods, "update");
   if (Object.keys(set).length === 0) fail("OKM1120", "update set is empty.");
   const sql = new Sql();
@@ -434,7 +470,7 @@ function emitValue(sql: Sql, column: ColumnModel, value: unknown, alias: string)
         fail("OKM1121", `inc on ${column.field} needs a value.`);
       }
       sql.text(`${alias}.${quote(column.sql)} + `);
-      sql.param(column.encode(amount), column.dataType);
+      sql.param(encodeColumn(column, amount), column.dataType);
       return;
     }
     if (name === "json.set") {
@@ -457,7 +493,7 @@ function emitValue(sql: Sql, column: ColumnModel, value: unknown, alias: string)
   if (typeof value === "object") {
     fail("OKM1121", `Field ${column.field} received an object. Pass a value or inc.`);
   }
-  sql.param(column.encode(value), column.dataType);
+  sql.param(encodeColumn(column, value), column.dataType);
 }
 
 function emitJsonSet(sql: Sql, column: ColumnModel, value: unknown, alias: string): void {
@@ -581,13 +617,17 @@ class Sql {
   }
 }
 
-function insertRow(table: Indexed, value: unknown): Record<string, unknown> {
+function insertRow(
+  table: Indexed,
+  value: unknown,
+  allow: ReadonlySet<string>,
+): Record<string, unknown> {
   if (!isRecord(value)) fail("OKM1121", "insert expects an object or a list of objects.");
   const row: Record<string, unknown> = {};
   for (const key of Object.keys(value)) {
     const column = table.columns.get(key);
     if (column === undefined) continue;
-    if (!column.writable) refuse(table.model.name, column);
+    if (!writable(column, allow)) refuse(table.model.name, column);
     if (value[key] !== undefined) row[key] = value[key];
   }
   return row;
@@ -605,7 +645,7 @@ function cellsFor(
     if (typeof value === "object") {
       fail("OKM1121", `Field ${table.model.name}.${column.field} received an object.`);
     }
-    return { kind: "value", wire: column.encode(value), dataType: column.dataType };
+    return { kind: "value", wire: encodeColumn(column, value), dataType: column.dataType };
   });
 }
 
@@ -636,35 +676,36 @@ function nextFill(fill: ClientFill, generators: IdGenerators | undefined): unkno
   return fill.call();
 }
 
-function writtenColumns(table: Indexed, rows: readonly Record<string, unknown>[]): ColumnModel[] {
+function writtenColumns(
+  table: Indexed,
+  rows: readonly Record<string, unknown>[],
+  allow: ReadonlySet<string>,
+): ColumnModel[] {
   const present = new Set<string>();
   for (const row of rows) {
     for (const key of Object.keys(row)) present.add(key);
   }
   const columns: ColumnModel[] = [];
   for (const column of table.model.columns) {
-    if (present.has(column.field) && (column.writable || column.fill !== undefined)) {
+    if (present.has(column.field) && (writable(column, allow) || column.fill !== undefined)) {
       columns.push(column);
     }
   }
   return columns;
 }
 
-function writeSet(table: Indexed, value: unknown): Record<string, unknown> {
+function writeSet(
+  table: Indexed,
+  value: unknown,
+  allow: ReadonlySet<string>,
+): Record<string, unknown> {
   if (!isRecord(value)) fail("OKM1121", "set must be an object of fields.");
   const set: Record<string, unknown> = {};
   for (const key of Object.keys(value)) {
     if (value[key] === undefined) continue;
     const column = table.columns.get(key);
-    if (column === undefined) {
-      throwNamed(
-        "OKM1120",
-        key,
-        table.names,
-        `Field ${key} is not on ${table.model.name}. Accepted names: ${table.names.join(", ")}.`,
-      );
-    }
-    if (!column.writable || column.guardUpdate) refuse(table.model.name, column);
+    if (column === undefined) continue;
+    if (column.guardUpdate || !writable(column, allow)) refuse(table.model.name, column);
     set[key] = value[key];
   }
   return set;
@@ -673,9 +714,10 @@ function writeSet(table: Indexed, value: unknown): Record<string, unknown> {
 function updateItem(
   table: Indexed,
   value: unknown,
+  allow: ReadonlySet<string>,
 ): { readonly where: unknown; readonly set: Record<string, unknown> } {
   if (!isRecord(value)) fail("OKM1121", "update expects { where, set } or a list of rows.");
-  const set = writeSet(table, value.set);
+  const set = writeSet(table, value.set, allow);
   if (value.where !== undefined) return { where: value.where, set };
   if (value.id !== undefined) return { where: { id: value.id }, set };
   fail("OKM1102", `update on ${table.model.name} needs id or where for each row.`);
@@ -722,7 +764,7 @@ function keyWire(columns: readonly ColumnModel[], row: Record<string, unknown>):
     const value = row[column.field];
     if (value === undefined || value === null) return null;
     if (typeof value === "object") return null;
-    return column.encode(value);
+    return encodeColumn(column, value);
   });
 }
 
@@ -798,4 +840,96 @@ function refuse(table: string, column: ColumnModel): never {
     fail("OKM1190", `Field ${table}.${column.field} is guarded. Input cannot set it.`);
   }
   fail("OKM1120", `Field ${table}.${column.field} cannot be written.`);
+}
+
+function writable(column: ColumnModel, allow: ReadonlySet<string>): boolean {
+  if (column.writable) return true;
+  return column.guarded && allow.has(column.field);
+}
+
+function allowSet(table: Indexed, value: unknown): ReadonlySet<string> {
+  if (value === undefined) return NO_ALLOW;
+  if (!Array.isArray(value)) fail("OKM1120", "allow must be a list of field names.");
+  const set = new Set<string>();
+  for (const name of value) {
+    if (typeof name !== "string" || !table.columns.has(name)) {
+      fail("OKM1120", "allow must name fields on the table.");
+    }
+    set.add(name);
+  }
+  return set;
+}
+
+function noteGuarded(table: Indexed, allow: ReadonlySet<string>): void {
+  if (!safetyInstalled()) return;
+  const contributions: SafetyContribution[] = [];
+  const hatches: SafetyHatch[] = [];
+  for (const column of table.model.columns) {
+    if (!column.guarded) continue;
+    const name = `${table.model.name}.${column.field}`;
+    if (allow.has(column.field)) {
+      contributions.push({
+        rule: "guarded",
+        contribution: `guarded ${name} allowed`,
+        provenance: "allow",
+      });
+      hatches.push({ name: "allow", reason: name });
+    } else {
+      contributions.push({
+        rule: "guarded",
+        contribution: `guarded ${name} absent`,
+        provenance: "planner",
+      });
+    }
+  }
+  if (contributions.length === 0) return;
+  runSafety(contributions, hatches.length === 0 ? undefined : hatches);
+}
+
+function scrubWrite(
+  schema: QuerySchema,
+  tableName: string,
+  input: unknown,
+  error: unknown,
+): unknown {
+  if (!(error instanceof OkmError)) return error;
+  const table = indexes(schema).get(tableName);
+  if (table === undefined || table.model.conceal !== true) return error;
+  const secrets: string[] = [];
+  const names = new Set<string>();
+  for (const column of table.model.columns) {
+    if (column.hidden || column.sensitive) names.add(column.field);
+  }
+  collectSecrets(input, names, secrets);
+  if (secrets.length === 0) return error;
+  let message = error.message;
+  for (const secret of secrets) {
+    if (secret.length < 4 || !message.includes(secret)) continue;
+    message = message.replaceAll(secret, REDACTED);
+  }
+  if (message === error.message) return error;
+  return new OkmError(error.code, message, {
+    kind: error.kind,
+    ...(error.table !== undefined ? { table: error.table } : {}),
+    ...(error.columns.length > 0 ? { columns: error.columns } : {}),
+    fix: error.fix,
+  });
+}
+
+function collectSecrets(
+  value: unknown,
+  names: ReadonlySet<string>,
+  found: string[],
+  key?: string,
+): void {
+  if (typeof value === "string") {
+    if (key !== undefined && names.has(key)) found.push(value);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectSecrets(item, names, found);
+    return;
+  }
+  if (!isRecord(value)) return;
+  for (const child of Object.keys(value)) collectSecrets(value[child], names, found, child);
 }

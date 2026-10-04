@@ -6,8 +6,6 @@ These builders and options throw OKM1061, or are not methods yet. The version is
 
 | Item | Version | Prompt |
 | --- | --- | --- |
-| `.hidden()` | 0.2 | P22 |
-| `.sensitive()` | 0.2 | P22 |
 | `.validate()` | 0.2 | P26 |
 | `table({ validate, validation, presets, omitDefaults })` and `schema({ validation })` | 0.2 | P26, P28, P23 |
 | tenancy on `table()` and `schema()` | 0.2 | P24 |
@@ -25,7 +23,7 @@ These builders and options throw OKM1061, or are not methods yet. The version is
 | `computed` | later | no 0.x prompt |
 | `policies` | later | no 0.x prompt |
 
-`.hidden()` already records the flag, and emitted row types omit that field. Excluding it from default selects is the 0.2 behaviour (P22). `.sensitive()` and `.validate()` are not methods.
+`.validate()` is not a method yet. `.hidden()` stays out of default selects and includes. `.sensitive()` redacts values in logs, errors, and `inspect()`.
 
 `one()` and `many()` work. A relation value that is not one of those throws OKM1061 and names 0.2 for `manyThrough`.
 
