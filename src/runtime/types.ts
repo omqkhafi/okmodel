@@ -5,7 +5,8 @@
  * A plain object is not a where value when the column type is an object.
  */
 
-import type { SafeResult } from "../contracts/error.js";
+import type { SafeResult, ValidationIssue } from "../contracts/error.js";
+import type { InputMark } from "../contracts/rows.js";
 import type { QuerySchema } from "../dialects/pg/model.js";
 import type { Inc } from "../dialects/pg/ops/inc.js";
 import type {
@@ -369,6 +370,30 @@ export type InsertOf<
   ? I
   : never;
 
+type ValidationOn<S extends QuerySchema, _K extends keyof S["~byName"]> = S extends {
+  readonly "~validation": true;
+}
+  ? true
+  : false;
+
+/** Insert shape, or {@link InputMark} when this table's validation is on. */
+type ValidatedInsert<S extends QuerySchema, K extends keyof S["~byName"]> =
+  ValidationOn<S, K> extends true ? InsertOf<S, K> & InputMark : InsertOf<S, K>;
+
+/**
+ * One insert body, with optional columns left optional.
+ *
+ * When validation is on, the type includes {@link InputMark}. Guarded fields
+ * and the tenant key are already absent.
+ *
+ * @typeParam S - Connected schema
+ * @typeParam K - Table name
+ */
+export type InsertBody<S extends QuerySchema, K extends keyof S["~byName"]> = RequiredInsert<
+  ValidatedInsert<S, K>
+> &
+  OptionalInsert<ValidatedInsert<S, K>>;
+
 /** Update shape of one table. */
 export type UpdateOf<
   S extends QuerySchema,
@@ -406,6 +431,8 @@ export type InsertOptions<S extends QuerySchema, K extends keyof S["~byName"]> =
   readonly expect?: number;
   readonly signal?: AbortSignal;
   readonly timeout?: number;
+  /** `false` skips validation for this call. Codecs still run. */
+  readonly validate?: boolean;
 };
 
 /** Options for `update` and `delete`. */
@@ -416,6 +443,8 @@ export type WriteOptions<S extends QuerySchema, K extends keyof S["~byName"]> = 
   readonly expect?: number;
   readonly signal?: AbortSignal;
   readonly timeout?: number;
+  /** `false` skips validation for this call. `delete` ignores it. */
+  readonly validate?: boolean;
 };
 
 /** `{ count }` from an update or delete without `returning`. */
@@ -544,6 +573,60 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
     options?: WriteOptions<S, K>,
   ): Write<WriteCount>;
 } & (S["~byName"][K] extends { readonly "~archive": true } ? ArchiveOps<S, K> : unknown);
+
+type ValidateBody<S extends QuerySchema, K extends keyof S["~byName"]> =
+  | InsertBody<S, K>
+  | readonly ValidatedInsert<S, K>[];
+
+/**
+ * Methods the validation hook adds to `insert` and `update`.
+ *
+ * They are not part of {@link TableApi}. A per-table conditional there does
+ * not fit the query instantiation ceiling.
+ */
+export type ValidateOps<S extends QuerySchema, K extends keyof S["~byName"] & string> =
+  ValidationOn<S, K> extends true
+    ? {
+        readonly insert: {
+          /**
+           * Checks one row or a list and returns it frozen.
+           *
+           * A later insert of that value skips these rules.
+           */
+          validate<const T extends ValidateBody<S, K>>(body: T): Promise<T>;
+          /** The same checks. Issues come back instead of OKM1200. */
+          check(body: unknown): Promise<readonly ValidationIssue[]>;
+          /** Validates only these fields. */
+          pick<const F extends readonly (keyof InsertOf<S, K> & string)[]>(
+            ...fields: F
+          ): {
+            validate(body: unknown): Promise<Pick<InsertOf<S, K>, F[number]> & InputMark>;
+            check(body: unknown): Promise<readonly ValidationIssue[]>;
+          };
+          /** Validates every field except these. */
+          omit<const F extends readonly (keyof InsertOf<S, K> & string)[]>(
+            ...fields: F
+          ): {
+            validate(body: unknown): Promise<Omit<InsertOf<S, K>, F[number]> & InputMark>;
+            check(body: unknown): Promise<readonly ValidationIssue[]>;
+          };
+          /** Standard Schema. Issues are returned. Other errors still throw. */
+          readonly "~standard": {
+            readonly version: 1;
+            readonly vendor: "okmodel";
+            validate(
+              value: unknown,
+            ): Promise<
+              { readonly value: unknown } | { readonly issues: readonly ValidationIssue[] }
+            >;
+          };
+        };
+        readonly update: {
+          /** Checks a patch. A `{ set }` body checks `set`. */
+          validate<const T extends UpdateOf<S, K> & InputMark>(body: T): Promise<T>;
+        };
+      }
+    : unknown;
 
 /**
  * `[Symbol.asyncDispose]` when `Symbol` defines it.

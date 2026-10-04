@@ -204,6 +204,13 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     fix: "Run the read in REPEATABLE READ or SERIALIZABLE, or shape it so it is one statement.",
   },
   {
+    code: "OKM1200",
+    title: "Validation failed",
+    summary:
+      "A write or a standalone check failed a validation rule. issues lists each path and message key.",
+    fix: "Fix the fields named in issues. Each issue message is a key, not display text.",
+  },
+  {
     code: "OKM1210",
     title: "Codec rejected a value",
     summary:

@@ -224,6 +224,7 @@ const SCHEMA_KNOWN = new Set([
   "tenancy",
   "traits",
   "types",
+  "validation",
 ]);
 
 /** Later schema options, and the version that adds each one. */
@@ -231,7 +232,6 @@ const SCHEMA_LATER: Readonly<Record<string, string>> = {
   extensions: "0.3",
   functions: "0.3",
   triggers: "0.3",
-  validation: "0.2",
   views: "0.3",
 };
 
@@ -336,18 +336,30 @@ export function schema<
   const TTables extends readonly AnyTable[],
   const TTraits extends readonly { readonly fields: Readonly<Record<string, object>> }[],
   const TTenancy extends ColumnTenancy | undefined = undefined,
+  const TValidation = undefined,
 >(
-  config: Omit<SchemaInput<TTables>, "traits" | "tenancy"> & {
+  config: Omit<SchemaInput<TTables>, "traits" | "tenancy" | "validation"> & {
     readonly traits: TTraits;
     readonly tenancy?: TTenancy;
+    readonly validation?: TValidation;
   },
-): TenancySchema<SchemaWithTraits<TTables, TTraits>, TTables, TTenancy>;
+): [TValidation] extends [true]
+  ? TenancySchema<SchemaWithTraits<TTables, TTraits>, TTables, TTenancy> & {
+      readonly "~validation": true;
+    }
+  : TenancySchema<SchemaWithTraits<TTables, TTraits>, TTables, TTenancy>;
 export function schema<
   const TTables extends readonly AnyTable[],
   const TTenancy extends ColumnTenancy | undefined = undefined,
+  const TValidation = undefined,
 >(
-  config: Omit<SchemaInput<TTables>, "tenancy"> & { readonly tenancy?: TTenancy },
-): TenancySchema<BuiltSchema<TTables>, TTables, TTenancy>;
+  config: Omit<SchemaInput<TTables>, "tenancy" | "validation"> & {
+    readonly tenancy?: TTenancy;
+    readonly validation?: TValidation;
+  },
+): [TValidation] extends [true]
+  ? TenancySchema<BuiltSchema<TTables>, TTables, TTenancy> & { readonly "~validation": true }
+  : TenancySchema<BuiltSchema<TTables>, TTables, TTenancy>;
 export function schema<const TTables extends readonly AnyTable[]>(
   config: SchemaInput<TTables>,
 ): BuiltSchema<TTables> {
@@ -438,6 +450,7 @@ export function schema<const TTables extends readonly AnyTable[]>(
     ...(schemaTraits !== undefined && schemaTraits.length > 0 ? { traits: schemaTraits } : {}),
     ...(tenancy !== undefined ? { tenancy } : {}),
     ...(hooks !== undefined ? { hooks } : {}),
+    ...(config.validation !== undefined ? { validation: config.validation } : {}),
   } as unknown as BuiltSchema<TTables>;
 }
 
@@ -560,6 +573,20 @@ function rewritePass(
   return next;
 }
 
+const registeredHooks: SchemaHook[] = [];
+
+/**
+ * Registers a hook from an opt-in module.
+ *
+ * Core does not import that module. A featureless app never calls this, so
+ * the module that loads the validation engine stays out of its graph.
+ *
+ * @param hook - Called for the client and for each table
+ */
+export function addSchemaHook(hook: SchemaHook): void {
+  registeredHooks.push(hook);
+}
+
 /**
  * Collects client and table hooks from tenancy and traits.
  *
@@ -593,6 +620,7 @@ function collectHooks(
       if (typeof trait === "object" && trait !== null) add(trait);
     }
   }
+  for (const hook of registeredHooks) found.push(hook);
   return found.length === 0 ? undefined : found;
 }
 

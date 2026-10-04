@@ -22,6 +22,7 @@ import {
   writeProductionEmittedProject,
   writeProductionInferredProject,
   writeQueryProject,
+  writeValidateProject,
   type LibraryTarget,
 } from "./type-projects.js";
 import { repoRoot } from "./root.js";
@@ -150,6 +151,8 @@ export type TypeBudgetReport = TypeBudgetCore & {
   readonly columns: ColumnTypeCost;
   /** Read queries on 10, 50, and 200 tables. Gated by the D133 inferred-200 ceilings. */
   readonly queries: readonly TypeBudgetRow[];
+  /** `Input` and `insert.validate` on one table. Printed, not gated. */
+  readonly validate: TypeBudgetRow;
 };
 
 /**
@@ -192,6 +195,9 @@ export function measureTypeBudgets(): TypeBudgetReport {
     );
     const sourceRows = measureFixtureRows(join(root, "source"));
     const source = budgetReport(sourceRows);
+    const validate = measureProject(join(root, "consumer"), "validate-input", 1, (dir) => {
+      writeValidateProject(dir, { declarations });
+    });
     return {
       ...budgetReport(rows),
       source: {
@@ -201,6 +207,7 @@ export function measureTypeBudgets(): TypeBudgetReport {
       },
       columns,
       queries,
+      validate,
     };
   } finally {
     rmSync(root, { recursive: true, force: true });

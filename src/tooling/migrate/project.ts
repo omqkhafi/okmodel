@@ -12,6 +12,7 @@ import { pathToFileURL } from "node:url";
 import { catalog } from "../../contracts/catalog/build.js";
 import { catalogHash, parseCatalog, serializeCatalog } from "../../contracts/catalog/document.js";
 import { OkmError } from "../../contracts/error.js";
+import { assertValidation } from "../../runtime/validate/places.js";
 import { schemaDeclarations, type DeclaredRename } from "../../dialects/pg/declarations.js";
 import { emitRowTypes } from "../../dialects/pg/emit.js";
 import type { BuiltSchema } from "../../dialects/pg/schema.js";
@@ -91,6 +92,7 @@ export async function planProject(
  */
 export async function checkProject(cwd: string): Promise<void> {
   const opened = await openProject(cwd);
+  assertValidation(opened.built);
   assertTargetAlias(listTargets(opened.config));
   if (opened.config.tables !== undefined) {
     const directory = join(cwd, opened.config.tables);

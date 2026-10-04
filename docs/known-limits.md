@@ -6,8 +6,6 @@ These builders and options throw OKM1061, or are not methods yet. The version is
 
 | Item | Version | Prompt |
 | --- | --- | --- |
-| `.validate()` | 0.2 | P26 |
-| `table({ validate, validation, presets })` and `schema({ validation })` | 0.2 | P26, P28 |
 | presets | 0.2 | P28 |
 | `manyThrough` | 0.2 | P27 |
 | `t.domain` | 0.3 | P40 |
@@ -21,7 +19,7 @@ These builders and options throw OKM1061, or are not methods yet. The version is
 | `computed` | later | no 0.x prompt |
 | `policies` | later | no 0.x prompt |
 
-`.validate()` is not a method yet. `.hidden()` stays out of default selects and includes. `.sensitive()` redacts values in logs, errors, and `inspect()`.
+`.hidden()` stays out of default selects and includes. `.sensitive()` redacts values in logs, errors, and `inspect()`.
 
 `one()` and `many()` work. A relation value that is not one of those throws OKM1061 and names 0.2 for `manyThrough`.
 

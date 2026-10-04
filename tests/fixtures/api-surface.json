@@ -109,6 +109,10 @@
       "kind": "stable"
     },
     {
+      "name": "Input",
+      "kind": "stable"
+    },
+    {
       "name": "Insert",
       "kind": "stable"
     },
@@ -162,6 +166,10 @@
     },
     {
       "name": "Update",
+      "kind": "stable"
+    },
+    {
+      "name": "ValidationIssue",
       "kind": "stable"
     },
     {
@@ -1200,6 +1208,16 @@
     },
     {
       "name": "trait",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/validate": [
+    {
+      "name": "Rule",
+      "kind": "stable"
+    },
+    {
+      "name": "v",
       "kind": "stable"
     }
   ]

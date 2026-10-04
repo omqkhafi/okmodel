@@ -54,6 +54,9 @@ export const APP_ENTRY = "scripts/app-startup.ts";
 /** The same app with `archivable()` on one table. Reported, not gated (D167). */
 export const ARCHIVABLE_ENTRY = "scripts/app-archivable.ts";
 
+/** The same app with validation on. Reported, not gated. */
+export const VALIDATE_ENTRY = "scripts/app-validate.ts";
+
 /**
  * Minified app-fixture ceiling, in bytes (D160).
  *
@@ -613,6 +616,9 @@ export function shakenOperatorProblems(root: string): readonly string[] {
     if (startupText.includes("src/runtime/archive.ts")) {
       problems.push("size: app fixture kept archive execution on the startup graph");
     }
+    if (text.includes("integer_range")) {
+      problems.push("size: app fixture kept the validation engine in the total graph");
+    }
     for (const name of SHAKEN_OPERATORS) {
       if (text.includes(`src/dialects/pg/ops/${name}.ts`)) {
         problems.push(`size: app fixture kept okmodel/pg operator ${name}`);
@@ -926,6 +932,15 @@ if (import.meta.main) {
     );
     console.log(`${formatEntry(archivable, ci)} (archivable app, reported, not gated)`);
     console.log(formatTotal(archivable));
+    const validating = measureStartup(
+      root,
+      VALIDATE_ENTRY,
+      "app-validate.js",
+      ["postgres"],
+      "postgres",
+    );
+    console.log(`${formatEntry(validating, ci)} (validating app, reported, not gated)`);
+    console.log(formatTotal(validating));
     printStubbed(app, ci);
     problems.push(...appBudgetProblems(app));
     printColdImportFinding(app, ci);

@@ -16,6 +16,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### ✨ Added
 
+#### contracts
+
+- `Input` is the row a validated insert accepts. `OkmError` carries `issues` (`path` and a message key) when validation fails.
+
 #### dialects
 
 - `schema({ tenancy: columnTenancy({ key: "tenantId", type: "uuid" }) })` rewrites tenant tables once before compile. Each gains a guarded uuid key, a primary key of `(id, tenant key)`, and `UNIQUE` on those columns. `.unique()` becomes `UNIQUE (tenant key, column)` unless `.unique({ global: "reason" })`. Foreign keys between tenant tables include the tenant key. `global("reason")` opts a table out.
@@ -29,6 +33,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `archivable()` turns a table's unique constraints into partial unique indexes (`WHERE archived_at IS NULL`). The primary key stays a full constraint. A tenant unique keeps the tenant key and the same predicate.
 - `contains`, `containedBy`, `overlaps`, `hasKey`, `hasAnyKey`, `path`, and `matches` filter json, array, range, and tsvector columns. Text `contains` stays a substring. The value, key, or path is a parameter, and a regconfig name is checked before it is bound.
 - `json.set`, `arr.append`, and `arr.remove` are namespace exports used inside `update`. Importing one does not pull the others.
+- `.validate()` stores rules on a column. A table `validate` section stores rules by field, and `$row` stores cross-field rules. `schema({ validation })` and `table({ validation })` store the switch. `schema()` does not pack or run them.
+- `schema({ validation: true })` marks that schema's insert body as `Input`. A boolean that is not the literal `true`, an object form, and a table-level `validation` switch do not change the type. The validate methods are added by importing `okmodel/validate` and are not part of the table type.
 
 #### adapters
 
@@ -53,10 +59,13 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okmodel/traits` exports `archivable()`. It adds `archivedAt` and `archiveId`. `archive()` returns `{ count, archiveId }` and hides the matching rows, including named children, in one statement. `restore()` returns `{ count }`, clears both columns, and brings back only rows that share that `archiveId`.
 - Reads, updates, and deletes see the active set. `withArchived()` and `onlyArchived()` change that view. `delete()` stays permanent. Purge is `onlyArchived().delete(...)`. A dynamic call on a table that is not archivable throws OKM1052. `strategy: "table"` throws OKM1061.
 - `registerArchive()` records the archive rules. An application that does not call `archivable()` does not load the archive statement.
+- `okmodel/validate` exports `v`. Importing it adds `insert.validate`, `insert.check`, `pick`, `omit`, `update.validate`, and the Standard Schema surface. The engine loads on the first validated call. An application that does not import it does not load that code.
+- A validated write runs transforms, then derived checks (length, required, integer range, precision, picklist, uuid, json), then the caller's rules. A failure is OKM1200. A value returned by `validate()` is frozen and is not checked again. `{ validate: false }` skips that call.
 
 #### tooling
 
 - `engines.node` is `>=22`. The checks that can run do so on Node, Bun, and Deno, and the runtime entry is imported as an edge bundle. A runtime that cannot run a check prints the reason.
+- `okm check` reports OKM1030 when a field has rules on the column and in the table `validate` section, or when `validation.style` disagrees with where the rules sit.
 
 #### docs
 
@@ -66,6 +75,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The size page records the no-trait startup graph at 83,043 minified bytes and 27,666 gzip. The gates stay. An application that uses `timestamps()` measures 85,744 / 28,503, and that figure is not a gate.
 - Spec section 9 uses `columnTenancy` and `global("reason")`. The size page records the no-tenancy app at 85,356 / 28,361. The gates are that measurement plus 3 percent (D160). Column tenancy measures 91,802 / 30,411 and is not a gate. The 91,000 / 30,000 cap stays.
 - D170 accepts the featureless app at 87,148 / 28,938. The gates, the cap, and the 7,100 type probe stay. An application that uses `archivable()` measures 95,725 / 31,604 at startup and is not a gate. A unique a trait adds after the tenancy rewrite is still not widened.
+- Validation is opt-in. OKM1030 is reported by `okm check`, not while `schema()` compiles. D172 records why the first build was rejected and where the engine lives.
 
 ### 💥 Breaking Changes
 

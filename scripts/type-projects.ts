@@ -143,6 +143,47 @@ export function writeQueryProject(
 }
 
 /**
+ * Writes a project that names `InsertBody` and `insert.validate`.
+ *
+ * Measured and printed. Not a ceiling. The 200-table query probe stays on its gate.
+ *
+ * @param dir - Project directory
+ * @param target - Declarations a consumer would read, or the library source
+ */
+export function writeValidateProject(dir: string, target?: LibraryTarget): void {
+  mkdirSync(dir, { recursive: true });
+  const pg = libraryFile(dir, target, "dialects/pg/index");
+  const contracts = libraryFile(dir, target, "contracts/index");
+  const runtime = libraryFile(dir, target, "runtime/types");
+  writeFileSync(
+    join(dir, "probe.ts"),
+    [
+      `import type { Input } from "${contracts}";`,
+      `import { schema, table, t } from "${pg}";`,
+      `import type { Connected, InsertBody } from "${runtime}";`,
+      "",
+      'const tasks = table("tasks", {',
+      "  id: t.uuid(),",
+      "  title: t.varchar(20),",
+      "  secret: t.text().guarded(),",
+      "}, { validation: true });",
+      "",
+      "export const app = schema({ tables: [tasks], validation: true });",
+      "",
+      'export type Body = InsertBody<typeof app, "tasks">;',
+      'export type Mark = Input<"tasks", typeof app>;',
+      "",
+      "export function check(db: Connected<typeof app>, body: Body) {",
+      "  const insert = db.tasks.insert as unknown as { validate(body: Body): Promise<Body> };",
+      "  return insert.validate(body);",
+      "}",
+      "",
+    ].join("\n"),
+  );
+  writeConfig(dir, ["probe.ts"]);
+}
+
+/**
  * Writes an emitted project from {@link emitRowTypes}.
  *
  * That function is the row-type text `okm build` writes. The probe reads the

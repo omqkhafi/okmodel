@@ -604,7 +604,7 @@ References are plain table-name strings (a generic table-name argument cycles th
 | Arrays | `.array()`, `.array({ dims: 2 })` |
 | Custom | `t.custom({ sqlType, encode, decode, tsType })` |
 
-Modifiers: `.nullable()`, `.default(v)`, `.defaultSql(sql)`, `.primaryKey()`, `.unique({ reason, global })`, `.references(table, opts)`, `.picklist([...], { check })`, `.generated(sql, { stored })`, `.guarded()`, `.hidden()`, `.sensitive()`, `.renamedFrom(name)`, `.sqlName()`, `.comment()`. `.validate(rules | schema)` is not in this version.
+Modifiers: `.nullable()`, `.default(v)`, `.defaultSql(sql)`, `.primaryKey()`, `.unique({ reason, global })`, `.references(table, opts)`, `.picklist([...], { check })`, `.generated(sql, { stored })`, `.guarded()`, `.hidden()`, `.sensitive()`, `.renamedFrom(name)`, `.sqlName()`, `.comment()`, `.validate(rules | schema)`.
 
 `t.id()` with `uuidv7()` or `uuidv4`, and `t.identity()`, are omitted from insert and update. `t.id({ default: "none" })`, `.primaryKey()`, and a composite `primaryKey` are required on insert (optional when the column already has a default) and omitted from update. A declared `requires` below Postgres 18 rejects `uuidv7()` at schema build (OKM1812) and the message names `defaults.id`.
 
@@ -616,7 +616,6 @@ Modifiers: `.nullable()`, `.default(v)`, `.defaultSql(sql)`, `.primaryKey()`, `.
 |---|---|
 | `t.domain()` | 0.3 |
 | `schema({ extensions, functions, triggers, views })` | 0.3 |
-| `schema({ validation })` and `table({ validate, validation })` | 0.2 |
 | `table({ presets })` | 0.2 |
 | `table({ reference })` | 0.4 |
 | `manyThrough` | 0.2 |
@@ -679,10 +678,11 @@ Row types are emitted by default into `.okm/types.d.ts` by `okm build` and `okm 
 - **Inline:** `.validate([...])` or `.validate(standardSchema)`.
 - **Section:** `validate: { field: [...], $row: [...] }`; cross-field rules only here.
 - **One place per field** (OKM1030). Style can be enforced with `validation: { style }`.
-- **Rules** run in order, transforms included; `v.onInsert()`, `v.onUpdate()`; messages are keys.
-- **Derived rules** from the type: length, required, integer range, precision, picklist, uuid format, JSON shape.
-- **Standalone:** `tasks.insert.validate(body)`, `tasks.insert.check(body)`, `tasks.update.validate(body)`, `.pick(...)`, `.omit(...)`; `tasks.insert` is a Standard Schema; JSON Schema export.
-- **At write time:** `schema({ validation: false })` → table `validation: true` → call `{ validate: false }`. Shorthand boolean; object form `{ enabled, onRead, style }`. The effective setting drives the input type (`Input` when enabled, `Insert` when disabled). Values from `validate()` are branded and frozen and skip re-validation.
+- **Rules** run in order. Transforms in a list run before the checks in that list. `v.onInsert()` and `v.onUpdate()` limit a rule, or the rules that follow them. Messages are keys.
+- **Derived rules** from the type, when validation is enabled: length (`too_long`), required (`required`), integer range (`integer_range`), precision (`precision`), picklist (`picklist`), uuid format (`uuid`), JSON shape (`json`).
+- **Standalone:** `tasks.insert.validate(body)`, `tasks.insert.check(body)`, `tasks.update.validate(body)` (a `{ set }` body checks `set`), `.pick(...)`, `.omit(...)`. `tasks.insert` is a Standard Schema. JSON Schema export is not in this version.
+- **At write time:** `schema({ validation: false })` → table `validation: true` → call `{ validate: false }`. Shorthand boolean; object form `{ enabled, onRead, style }`. The effective setting drives the input type (`Input` when enabled, `Insert` when disabled). Values from `validate()` are branded and frozen and skip re-validation. `onRead` is stored and is not applied on read in this version. Importing `okmodel/validate` registers the methods and is what loads the engine. A schema that stores `validation` without that import does not run rules.
+- A failed check throws OKM1200, category `input`, with `issues` of `{ path, message }` in column order, then `$row`. Hidden and sensitive values are not copied into the issue or the message.
 
 ## 8. Traits
 
@@ -1309,7 +1309,8 @@ test("today view runs one query", async () => {
 | Invalid column definition: length, precision, scale, array rank, interval qualifier, empty or duplicate picklist or enum values | schema | OKM1060 |
 | A table or schema option that exists in the types but is not available in this version (reserved slot) | schema | OKM1061 |
 | A codec rejects a value (not numeric text, not a valid temporal value, wrong shape) | runtime | OKM1210 |
-| Validation in two places | types + `okm check` | OKM1030 |
+| Validation failed. `issues` lists each path and message key | runtime | OKM1200 |
+| Validation in two places | `okm check` | OKM1030 |
 | Preset name collides with a client method | types | OKM1040 |
 | Trait field conflict | schema | OKM1012 |
 | `find` without `limit` | types | OKM1101 |
