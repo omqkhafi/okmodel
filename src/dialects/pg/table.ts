@@ -11,7 +11,7 @@ import { type ColumnInsertOf, type ColumnRowOf, type ColumnUpdateOf } from "./co
 import { openFilters } from "./filters.js";
 import { definition, unavailable } from "./misuse.js";
 import { type RelationCall } from "./relations.js";
-import { type FieldsOfList, type Trait } from "./trait.js";
+import { type FieldsOfList, type HasArchive, type Trait } from "./trait.js";
 
 /**
  * A column as seen by `indexes` and `checks`.
@@ -28,6 +28,12 @@ export type ColumnHandle = {
 export type IndexCall = {
   readonly columns: readonly string[];
   readonly isUnique: boolean;
+  /**
+   * Partial-index predicate, stored as the catalog wrote it.
+   *
+   * Absent on an ordinary index.
+   */
+  readonly predicate?: string;
   /**
    * Marks the index unique.
    *
@@ -333,8 +339,13 @@ type DeclaredTable<TName extends string, TColumns, TOptions> = Table<
   PrimaryOf<TOptions>
 > &
   TraitShapes<TColumns, TOptions> &
+  ArchiveFlag<TOptions> &
   OmitFlag<TOptions> &
   GlobalFlag<TOptions>;
+
+type ArchiveFlag<TOptions> = TOptions extends { readonly traits: infer TTraits }
+  ? HasArchive<TTraits>
+  : unknown;
 
 type OmitFlag<TOptions> = TOptions extends { readonly omitDefaults: string }
   ? { readonly "~omitDefaults": true }
@@ -480,12 +491,13 @@ export function rejectLater(
   }
 }
 
-function indexCall(columns: readonly string[], isUnique: boolean): IndexCall {
+function indexCall(columns: readonly string[], isUnique: boolean, predicate?: string): IndexCall {
   return {
     columns,
     isUnique,
+    ...(predicate !== undefined ? { predicate } : {}),
     unique() {
-      return indexCall(columns, true);
+      return indexCall(columns, true, predicate);
     },
   };
 }

@@ -6,8 +6,13 @@
  */
 
 import { OkmError } from "../../contracts/error.js";
+import { rewriteArchivable } from "../../dialects/pg/archive-bind.js";
+import { uuid } from "../../dialects/pg/keys.js";
 import { definition, unavailable } from "../../dialects/pg/misuse.js";
 import { timestamptz } from "../../dialects/pg/time.js";
+import type { AnyTable } from "../../dialects/pg/table.js";
+import { installArchiveContributions } from "../archive-rules.js";
+import { attachArchive } from "../archive-handle.js";
 import {
   checkTrait,
   type Trait,
@@ -135,6 +140,97 @@ export function timestamps(options?: TimestampsOptions) {
 
 function stamped() {
   return timestamptz().defaultSql("now()").guarded();
+}
+
+/**
+ * Options for {@link archivable}.
+ *
+ * `strategy: "column"` keeps archived rows in the same table. `strategy: "table"`
+ * is deferred. `cascade` names the child tables archived and restored with the row.
+ */
+export type ArchivableOptions = {
+  /** `"table"` is reserved and throws OKM1061. */
+  readonly strategy?: "column" | "table";
+  readonly cascade?: readonly string[];
+};
+
+/**
+ * Adds `archivedAt` and `archiveId`, and enables `archive()` and `restore()`.
+ *
+ * Reads, updates, and deletes target the active set. `withArchived()` and
+ * `onlyArchived()` widen or switch it. Uniques on the table become partial.
+ * `cascade` names children that share the call's `archiveId`.
+ *
+ * @param options - Column strategy and the child tables to cascade
+ * @returns The archivable trait
+ */
+export function archivable(options?: ArchivableOptions) {
+  installArchiveContributions();
+  const cascade = readCascade(options);
+  const base = trait("archivable", {
+    fields: {
+      archivedAt: timestamptz().nullable().guarded(),
+      archiveId: uuid().nullable().guarded(),
+    },
+    sealed: ["archivedAt", "archiveId"],
+  });
+  const self = {
+    ...base,
+    "~archive": true as const,
+    apply(model: TraitModel, ctx: TraitContext) {
+      base.apply(model, ctx);
+      model.archive = { at: "archivedAt", id: "archiveId", cascade };
+    },
+    /**
+     * Turns uniques into partial indexes and checks cascade.
+     *
+     * Runs in the schema rewrite, after tenancy widens uniques.
+     *
+     * @param tables - Tables after the tenancy rewrite
+     * @param casing - Schema casing
+     * @param schemaTraits - Traits from `schema()`, when any were passed
+     * @returns The rewritten tables
+     */
+    rewrite(
+      tables: readonly AnyTable[],
+      casing: "snake" | undefined,
+      schemaTraits: readonly object[] | undefined,
+    ) {
+      return rewriteArchivable(self, tables, casing, schemaTraits, cascade);
+    },
+    hook: attachArchive,
+  };
+  return self;
+}
+
+function readCascade(options: ArchivableOptions | undefined): readonly string[] {
+  if (options === undefined) return [];
+  for (const key of Object.keys(options)) {
+    if (key !== "strategy" && key !== "cascade") {
+      definition(
+        `archivable() option ${key} is not supported. Accepted options: strategy, cascade.`,
+      );
+    }
+  }
+  if (options.strategy === "table") {
+    unavailable(
+      'archivable({ strategy: "table" }) is not available yet. It arrives once archived snapshots can follow migrations.',
+    );
+  }
+  if (options.strategy !== undefined && options.strategy !== "column") {
+    definition(`archivable() strategy ${String(options.strategy)} must be column.`);
+  }
+  const cascade = options.cascade;
+  if (cascade === undefined) return [];
+  if (!Array.isArray(cascade)) definition("archivable() cascade must be a list of table names.");
+  const names: string[] = [];
+  for (const name of cascade) {
+    if (typeof name !== "string" || name.length === 0) {
+      definition("archivable() cascade must name tables.");
+    }
+    names.push(name);
+  }
+  return names;
 }
 
 /**

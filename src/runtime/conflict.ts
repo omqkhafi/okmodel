@@ -101,7 +101,7 @@ export function finishInsert(
       }
     }
     return {
-      text: `${head} on conflict (${target}) do update set ${assignments.join(", ")}${returning}`,
+      text: `${head} on conflict (${target})${conflictWhere(table, plan.columns)} do update set ${assignments.join(", ")}${returning}`,
       params: [...params],
     };
   }
@@ -141,8 +141,25 @@ function firstOrCreate(
   const match = keys
     .map((column) => `ins.${quote(column.field)} = t.${quote(column.sql)}`)
     .join(" and ");
-  const text = `with ins(${names}) as (${head} on conflict (${keyList}) do nothing${returning}) select ${names} from ins union all select ${fromTable} from ${quote(table.model.sql)} t where ${left} in (${tuples.join(", ")}) and not exists (select 1 from ins where ${match})`;
+  const text = `with ins(${names}) as (${head} on conflict (${keyList})${conflictWhere(table, keys)} do nothing${returning}) select ${names} from ins union all select ${fromTable} from ${quote(table.model.sql)} t where ${left} in (${tuples.join(", ")}) and not exists (select 1 from ins where ${match})`;
   return { text, params: next };
+}
+
+function conflictWhere(table: Indexed, columns: readonly ColumnModel[]): string {
+  const archive = table.model.archive;
+  if (archive === undefined || samePrimary(table, columns)) return "";
+  return ` where ${quote(archive.at)} is null`;
+}
+
+function samePrimary(table: Indexed, columns: readonly ColumnModel[]): boolean {
+  const primary = table.model.primary;
+  if (columns.length !== primary.length) return false;
+  for (const field of primary) {
+    let found = false;
+    for (const column of columns) if (column.field === field) found = true;
+    if (!found) return false;
+  }
+  return true;
 }
 
 function uniqueColumns(table: Indexed, on: unknown): readonly ColumnModel[] {

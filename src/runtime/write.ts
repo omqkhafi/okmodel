@@ -14,10 +14,12 @@ import { encodeJson } from "../dialects/pg/json.js";
 import { arrayElementType, assertOperatorFits, textArray } from "../dialects/pg/operator-fit.js";
 import { isOperator, operatorName, operatorValue } from "../dialects/pg/operators.js";
 import {
+  archiveRules,
   decodeRow,
   emitWhere,
   fail,
-  withTenantScope,
+  withRowFilters,
+  type ArchiveView,
   type CallScope,
   registerFailFix,
   indexes,
@@ -69,6 +71,7 @@ export type WriteOp = "insert" | "update" | "delete";
 export type WriteMods = {
   readonly all?: string;
   readonly expect?: number;
+  readonly archive?: ArchiveView;
 };
 
 /** Pool and schema for one client. The client maps driver errors. */
@@ -185,9 +188,15 @@ async function planWrite(
     return planInsert(table, input, record, mods, generators, scope, schema.tenancy);
   }
   if (op === "update") {
-    return withTenantScope(scope, () => planUpdate(schema, table, input, record, mods));
+    return withRowFilters(scope, mods.archive, () => {
+      noteArchive(table, mods.archive);
+      return planUpdate(schema, table, input, record, mods);
+    });
   }
-  return withTenantScope(scope, () => planDelete(schema, table, input, record, mods));
+  return withRowFilters(scope, mods.archive, () => {
+    noteArchive(table, mods.archive);
+    return planDelete(schema, table, input, record, mods);
+  });
 }
 
 async function planInsert(
@@ -919,6 +928,13 @@ function allowSet(table: Indexed, value: unknown): ReadonlySet<string> {
     set.add(name);
   }
   return set;
+}
+
+function noteArchive(table: Indexed, view: ArchiveView | undefined): void {
+  if (!safetyInstalled()) return;
+  const rules = archiveRules(table.model, view);
+  if (rules === undefined) return;
+  runSafety(rules, undefined);
 }
 
 function noteGuarded(table: Indexed, allow: ReadonlySet<string>, op: "insert" | "update"): void {

@@ -201,6 +201,45 @@ export function registerTimestamps(): () => void {
   });
 }
 
+/**
+ * Registers the archive rule.
+ *
+ * A contribution that drops the active set, or skips a named cascade, is
+ * OKM1190. The planner records `active set`, `with archived`, `only archived`,
+ * and `cascade <table>`. The package does not register the rule on import.
+ *
+ * @returns Removes this registration
+ */
+export function registerArchive(): () => void {
+  return registerRule({
+    name: "archive",
+    contribution: "archive",
+    check(input) {
+      const violations: SafetyViolation[] = [];
+      for (const item of input.contributions) {
+        if (item.rule !== "archive") continue;
+        if (item.contribution.includes("active set dropped")) {
+          violations.push({
+            rule: item.rule,
+            contribution: item.contribution,
+            ...(item.source !== undefined ? { source: item.source } : {}),
+            detail: "Reads, updates, and deletes target the active set.",
+          });
+        }
+        if (item.contribution.includes("cascade skipped")) {
+          violations.push({
+            rule: item.rule,
+            contribution: item.contribution,
+            ...(item.source !== undefined ? { source: item.source } : {}),
+            detail: "Cascade archives and restores the named children with the row.",
+          });
+        }
+      }
+      return violations;
+    },
+  });
+}
+
 function leaked(rule: string, contribution: string): boolean {
   if (rule === "hidden") return contribution.includes(" shown");
   if (rule === "sensitive") return contribution.includes(" revealed");

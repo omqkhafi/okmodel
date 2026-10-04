@@ -1127,6 +1127,10 @@
       "kind": "stable"
     },
     {
+      "name": "registerArchive",
+      "kind": "stable"
+    },
+    {
       "name": "registerFieldExposure",
       "kind": "stable"
     },
@@ -1171,6 +1175,10 @@
   ],
   "okmodel/traits": [
     {
+      "name": "ArchivableOptions",
+      "kind": "stable"
+    },
+    {
       "name": "TimestampsOptions",
       "kind": "stable"
     },
@@ -1180,6 +1188,10 @@
     },
     {
       "name": "TraitDefinition",
+      "kind": "stable"
+    },
+    {
+      "name": "archivable",
       "kind": "stable"
     },
     {

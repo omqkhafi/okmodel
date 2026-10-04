@@ -18,12 +18,15 @@ import type { MapPostgresErrorOptions } from "../dialects/pg/errors.js";
 import type { QuerySchema } from "../dialects/pg/model.js";
 import {
   appliedRules,
+  archiveRules,
   bindCall,
   compileCall,
   decodeResult,
   logicalIntent,
   readNeedsOperatorSql,
   readOptionNames,
+  type AppliedRule,
+  type ArchiveView,
   type IncludeHooks,
   type Plan,
   type ReadCall,
@@ -118,15 +121,9 @@ export function createClient<S extends QuerySchema>(
 }
 
 function openClient<S extends QuerySchema>(session: Session): Connected<S> {
-  const view = session.schema.tenancy?.client({
-    names: Object.keys(session.schema.model),
-    scoped: session.scope !== undefined,
-    open: (scope) => openClient({ ...session, scope }),
-  });
+  const names = Object.keys(session.schema.model);
   const tables: Record<string, TableApi<QuerySchema, string>> = {};
-  for (const name of view?.names ?? Object.keys(session.schema.model)) {
-    tables[name] = tableApi(session, name);
-  }
+  for (const name of names) tables[name] = tableApi(session, name);
   const close = (): Promise<void> => {
     if (!session.ownsPool) return Promise.resolve();
     session.closing.current ??= session.pool.close();
@@ -148,8 +145,8 @@ function openClient<S extends QuerySchema>(session: Session): Connected<S> {
         throwNamed(
           "OKM1120",
           name,
-          Object.keys(session.schema.model),
-          `Table ${name} is not in the schema. Accepted names: ${Object.keys(session.schema.model).join(", ")}.`,
+          names,
+          `Table ${name} is not in the schema. Accepted names: ${names.join(", ")}.`,
         );
       } catch (error) {
         if (error instanceof OkmError) throw attachHttp(session.http, error);
@@ -159,9 +156,16 @@ function openClient<S extends QuerySchema>(session: Session): Connected<S> {
     close,
     connected: session.connected,
   };
-  if (view?.for !== undefined && view.unscoped !== undefined) {
-    client.for = (input: unknown) => view.for?.(input);
-    client.unscoped = (reason: string) => view.unscoped?.(reason);
+  const hooks = session.schema.hooks;
+  if (hooks !== undefined) {
+    for (const hook of hooks) {
+      hook(client, {
+        names,
+        tables,
+        scoped: session.scope !== undefined,
+        open: (scope) => openClient({ ...session, scope }),
+      });
+    }
   }
   attachAsyncDispose(client, close);
   return client as unknown as Connected<S>;
@@ -187,34 +191,55 @@ function attachAsyncDispose(client: object, close: () => Promise<void>): void {
   });
 }
 
-function tableApi(session: Session, table: string): TableApi<QuerySchema, string> {
-  return {
+function tableApi(
+  session: Session,
+  table: string,
+  view?: ArchiveView,
+): TableApi<QuerySchema, string> {
+  const mods: WriteMods = view === undefined ? {} : { archive: view };
+  const api: Record<string, unknown> = {
     find(options: object = {}) {
-      return start(session, "find", table, options, {});
+      return start(session, "find", table, options, {}, view);
     },
     one(options: object = {}) {
-      return start(session, "one", table, options, {});
+      return start(session, "one", table, options, {}, view);
     },
     count(options: object = {}) {
-      return start(session, "count", table, options, {});
+      return start(session, "count", table, options, {}, view);
     },
     exists(options: object = {}) {
-      return start(session, "exists", table, options, {});
+      return start(session, "exists", table, options, {}, view);
     },
     insert(data: unknown, options: object = {}) {
-      return writeHandle(session, "insert", table, data, options, {});
+      return writeHandle(session, "insert", table, data, options, mods);
     },
     update(target: unknown, options: object = {}) {
-      return writeHandle(session, "update", table, target, options, {});
+      return writeHandle(session, "update", table, target, options, mods);
     },
     delete(target: unknown, options: object = {}) {
-      return writeHandle(session, "delete", table, target, options, {});
+      return writeHandle(session, "delete", table, target, options, mods);
     },
-  } as unknown as TableApi<QuerySchema, string>;
+  };
+  const hooks = session.schema.hooks;
+  if (hooks !== undefined) {
+    for (const hook of hooks) {
+      hook(api, {
+        table,
+        ...(view !== undefined ? { view } : {}),
+        reopen: (next) => tableApi(session, table, next) as unknown as Record<string, unknown>,
+        session,
+      });
+    }
+  }
+  return api as unknown as TableApi<QuerySchema, string>;
 }
 
 type WriteOp = "insert" | "update" | "delete";
-type WriteMods = { readonly all?: string; readonly expect?: number };
+type WriteMods = {
+  readonly all?: string;
+  readonly expect?: number;
+  readonly archive?: ArchiveView;
+};
 
 let writers: Promise<typeof import("./write.js")> | undefined;
 
@@ -230,7 +255,7 @@ function loadWrite(): Promise<typeof import("./write.js")> {
  * @param extra - Methods that stay on the handle beside `then`
  * @returns The handle
  */
-function queryHandle<T extends object>(
+export function queryHandle<T extends object>(
   run: () => Promise<unknown>,
   extra: T,
 ): Promise<unknown> & T {
@@ -334,9 +359,10 @@ function start(
   table: string,
   options: object,
   mods: Mods,
+  view?: ArchiveView,
 ): Promise<unknown> & Record<string, unknown> {
   const model = session.schema.model[table];
-  const call = readCall(op, table, options, mods.all, session.scope, model, session.schema);
+  const call = readCall(op, table, options, mods.all, session.scope, model, session.schema, view);
   let prepared: { readonly plan: Plan; readonly params: readonly (string | null)[] } | undefined;
   const prepare = async (): Promise<{
     readonly plan: Plan;
@@ -414,10 +440,10 @@ function start(
       return prepare().then(({ plan, params }) => ({ text: plan.text, params }));
     },
     all(reason: string) {
-      return start(session, op, table, options, { ...mods, all: reason });
+      return start(session, op, table, options, { ...mods, all: reason }, view);
     },
     required() {
-      return start(session, op, table, options, { ...mods, required: true });
+      return start(session, op, table, options, { ...mods, required: true }, view);
     },
     stream() {
       return streamLazy(session, call, prepare);
@@ -436,6 +462,16 @@ function streamLazy(
   })();
 }
 
+function archiveRecord(
+  model: QuerySchema["model"][string] | undefined,
+  view: ArchiveView | undefined,
+): { readonly archiveRules: readonly AppliedRule[] } | undefined {
+  if (model?.archive === undefined) return undefined;
+  const rules = archiveRules(model, view);
+  if (rules === undefined) return undefined;
+  return { archiveRules: rules };
+}
+
 function readCall(
   op: ReadOp,
   table: string,
@@ -444,6 +480,7 @@ function readCall(
   scope: CallScope | undefined,
   model: QuerySchema["model"][string] | undefined,
   schema: QuerySchema,
+  view?: ArchiveView,
 ): ReadCall {
   const record = options as Record<string, unknown>;
   const accepted = readOptionNames(op);
@@ -470,6 +507,8 @@ function readCall(
     ...(schema.tenancy !== undefined && model !== undefined
       ? { tenancyRules: schema.tenancy.rules(table, model.source, scope) }
       : {}),
+    ...(view !== undefined ? { archive: view } : {}),
+    ...archiveRecord(model, view),
   };
 }
 
@@ -610,6 +649,19 @@ function mapOptions(
     ...(http !== undefined ? { http } : {}),
     ...(includeValues ? { includeValues: true } : {}),
   };
+}
+
+/**
+ * Maps a driver or query error and records it on the session logger.
+ *
+ * The archive hook uses this so a failed statement stays an `OkmError`.
+ *
+ * @param session - Pool, statuses, and logger
+ * @param error - Rejection from the driver or the statement chunk
+ * @returns Never. The mapped error is thrown
+ */
+export async function settleCall(session: Session, error: unknown): Promise<never> {
+  throw logged(session, await mapError(session, error));
 }
 
 function logged(session: Session, error: OkmError): OkmError {

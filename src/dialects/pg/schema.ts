@@ -35,11 +35,17 @@ import {
 } from "../../contracts/generator.js";
 import { compileColumn, type CompilableColumn } from "./compile.js";
 import { ColumnBuilder, formatType, type ColumnState, type ReferenceModifier } from "./column.js";
-import { type ColumnModel, type RelationModel, type TableModel } from "./model.js";
+import {
+  type ArchiveModel,
+  type ColumnModel,
+  type RelationModel,
+  type SchemaHook,
+  type TableModel,
+} from "./model.js";
 import { definition, unavailable } from "./misuse.js";
 import { isRelationCall } from "./relations.js";
 import { decodeText, encodeText } from "./text.js";
-import type { FieldsOfList, Trait, TraitModel } from "./trait.js";
+import type { FieldsOfList, HasArchive, Trait, TraitModel } from "./trait.js";
 import { type ColumnTenancy, type TenantFields, readTenancy } from "./tenancy.js";
 import {
   type AnyTable,
@@ -191,17 +197,23 @@ export type SchemaWithTraits<
   ? BuiltSchema<TTables>
   : Omit<BuiltSchema<TTables>, "~byName"> & {
       readonly "~byName": {
-        readonly [T in TTables[number] as T["~name"]]: ApplySchemaTraits<T, FieldsOfList<TTraits>>;
+        readonly [T in TTables[number] as T["~name"]]: ApplySchemaTraits<
+          T,
+          FieldsOfList<TTraits>,
+          TTraits
+        >;
       };
     };
 
-type ApplySchemaTraits<TTable, TFields> = TTable extends { readonly "~omitDefaults": true }
+type ApplySchemaTraits<TTable, TFields, TTraits> = TTable extends {
+  readonly "~omitDefaults": true;
+}
   ? TTable
   : TTable & {
       readonly "~row": RowFrom<TFields>;
       readonly "~insert": InsertFrom<TFields>;
       readonly "~update": UpdateFrom<TFields>;
-    };
+    } & HasArchive<TTraits>;
 
 const SCHEMA_KNOWN = new Set([
   "casing",
@@ -306,6 +318,8 @@ type Prepared = {
    * these objects, so that code stays out of startup.
    */
   readonly traits?: readonly Trait[];
+  /** Set by `archivable()`. Absent on every other table. */
+  readonly archive?: ArchiveModel;
 };
 
 /**
@@ -343,9 +357,10 @@ export function schema<const TTables extends readonly AnyTable[]>(
   if (!Array.isArray(config.tables)) {
     definition("schema() needs a tables array.");
   }
-  const tables = tenancy === undefined ? bareTables(config.tables) : tenancy.rewrite(config.tables);
-  const types = readTypes(config.types);
   const casing = readCasing(config.casing);
+  const tables = rewritePass(config.tables, tenancy, schemaTraits, casing);
+  const hooks = collectHooks(tenancy, schemaTraits, config.tables);
+  const types = readTypes(config.types);
   const codecs = readCodecs(config.codecs);
   const requires = readRequires(config.requires);
   const idDefault = readIdDefault(config.defaults);
@@ -422,6 +437,7 @@ export function schema<const TTables extends readonly AnyTable[]>(
     model,
     ...(schemaTraits !== undefined && schemaTraits.length > 0 ? { traits: schemaTraits } : {}),
     ...(tenancy !== undefined ? { tenancy } : {}),
+    ...(hooks !== undefined ? { hooks } : {}),
   } as unknown as BuiltSchema<TTables>;
 }
 
@@ -491,6 +507,106 @@ function noteEnum(
  * @param value - The option the caller passed
  * @returns The list, or `undefined`
  */
+/**
+ * Runs tenancy's rewrite, then any trait rewrite, once.
+ *
+ * Tenancy widens uniques first. A trait such as `archivable()` then rewrites
+ * those uniques. A schema with neither leaves the tables unchanged.
+ *
+ * @param tables - Tables passed to `schema()`
+ * @param tenancy - Column tenancy, when set
+ * @param schemaTraits - Schema traits, when any were passed
+ * @param casing - Schema casing
+ * @returns Tables ready to compile
+ */
+function rewritePass(
+  tables: readonly AnyTable[],
+  tenancy: ColumnTenancy | undefined,
+  schemaTraits: readonly Trait[] | undefined,
+  casing: "snake" | undefined,
+): readonly AnyTable[] {
+  let next = tenancy === undefined ? bareTables(tables) : tenancy.rewrite(tables);
+  const seen = new Set<object>();
+  const pending: object[] = [];
+  const add = (value: object): void => {
+    if (seen.has(value)) return;
+    if (typeof (value as { readonly rewrite?: unknown }).rewrite !== "function") return;
+    seen.add(value);
+    pending.push(value);
+  };
+  if (schemaTraits !== undefined) {
+    for (const trait of schemaTraits) add(trait);
+  }
+  for (const item of tables) {
+    const own = (item.options as { readonly traits?: unknown } | undefined)?.traits;
+    if (!Array.isArray(own)) continue;
+    for (const trait of own) {
+      if (typeof trait === "object" && trait !== null) add(trait);
+    }
+  }
+  for (const trait of pending) {
+    const rewrite = (
+      trait as {
+        rewrite: (
+          this: object,
+          tables: readonly AnyTable[],
+          casing: "snake" | undefined,
+          schemaTraits: readonly Trait[] | undefined,
+        ) => readonly AnyTable[];
+      }
+    ).rewrite;
+    next = rewrite.call(trait, next, casing, schemaTraits);
+  }
+  return next;
+}
+
+/**
+ * Collects client and table hooks from tenancy and traits.
+ *
+ * @param tenancy - Column tenancy, when set
+ * @param schemaTraits - Schema traits, when any were passed
+ * @param tables - Tables passed to `schema()`
+ * @returns The hooks, or `undefined` when nothing opted in
+ */
+function collectHooks(
+  tenancy: ColumnTenancy | undefined,
+  schemaTraits: readonly Trait[] | undefined,
+  tables: readonly AnyTable[],
+): readonly SchemaHook[] | undefined {
+  const found: SchemaHook[] = [];
+  const seen = new Set<object>();
+  const add = (value: object): void => {
+    if (seen.has(value)) return;
+    const hook = (value as { readonly hook?: unknown }).hook;
+    if (typeof hook !== "function") return;
+    seen.add(value);
+    found.push((hook as SchemaHook).bind(value));
+  };
+  if (tenancy !== undefined) add(tenancy);
+  if (schemaTraits !== undefined) {
+    for (const trait of schemaTraits) add(trait);
+  }
+  for (const item of tables) {
+    const own = (item.options as { readonly traits?: unknown } | undefined)?.traits;
+    if (!Array.isArray(own)) continue;
+    for (const trait of own) {
+      if (typeof trait === "object" && trait !== null) add(trait);
+    }
+  }
+  return found.length === 0 ? undefined : found;
+}
+
+/**
+ * Reads the archive model a trait rewrite stored on the table.
+ *
+ * @param item - Table after the rewrite pass
+ * @returns The model, omitted when the table is not archivable
+ */
+function archiveModel(item: AnyTable): { readonly archive: ArchiveModel } | undefined {
+  const archive = (item as { readonly archiveModel?: ArchiveModel }).archiveModel;
+  return archive === undefined ? undefined : { archive };
+}
+
 function bareTables(tables: readonly AnyTable[]): readonly AnyTable[] {
   for (const item of tables) {
     const mark = (item.options as { readonly tenancy?: unknown } | undefined)?.tenancy;
@@ -524,7 +640,12 @@ function openTableTraits(
   columns: Readonly<Record<string, object>>,
   schemaTraits: readonly Trait[] | undefined,
   options: { readonly traits?: unknown; readonly omitDefaults?: unknown } | undefined,
-): { readonly columns: Record<string, object>; readonly traits: readonly Trait[] } | undefined {
+):
+  | {
+      readonly columns: Record<string, object>;
+      readonly traits: readonly Trait[];
+    }
+  | undefined {
   let shared = schemaTraits;
   const omit = options?.omitDefaults;
   if (omit !== undefined) {
@@ -625,7 +746,11 @@ function compileTable(
       });
     } else {
       jobs.push((objects) => {
-        pushCompiled(objects, column, { parent, name: columnSql, provenance: columnProvenance });
+        pushCompiled(objects, column, {
+          parent,
+          name: columnSql,
+          provenance: columnProvenance,
+        });
       });
     }
     const decode = column.state.decode;
@@ -713,11 +838,12 @@ function compileTable(
     provenance,
     columns,
     primary,
-    uniques: uniqueTargets(primary, columns, bySql, options),
+    uniques: uniqueTargets(primary, columns, bySql, options, handles),
     byField,
     bySql,
     relationOptions: relationInput(item.name, options),
     ...(applied !== undefined ? { traits: applied.traits } : {}),
+    ...archiveModel(item),
   };
 }
 
@@ -726,6 +852,7 @@ function uniqueTargets(
   columns: readonly PreparedColumn[],
   bySql: ReadonlyMap<string, PreparedColumn>,
   options: StoredOptions | undefined,
+  handles: Readonly<Record<string, ColumnHandle>>,
 ): readonly (readonly string[])[] {
   const uniques: string[][] = [];
   if (primary.length > 0) {
@@ -742,6 +869,26 @@ function uniqueTargets(
   const named = options?.unique;
   if (named !== undefined) {
     for (const fields of Object.values(named)) uniques.push([...fields]);
+  }
+  const build = options?.indexes;
+  if (build !== undefined) {
+    const calls = build(handles);
+    if (Array.isArray(calls)) {
+      for (const call of calls) {
+        if (call.isUnique !== true || call.predicate === undefined) continue;
+        const fields: string[] = [];
+        let whole = true;
+        for (const sqlName of call.columns) {
+          const column = bySql.get(sqlName);
+          if (column === undefined) {
+            whole = false;
+            break;
+          }
+          fields.push(column.field);
+        }
+        if (whole && fields.length > 0) uniques.push(fields);
+      }
+    }
   }
   return uniques;
 }
@@ -837,6 +984,7 @@ function compileIndexes(
         columns: built.columns,
         unique: built.isUnique === true,
         nameKey: built.columns.join("_"),
+        ...(built.predicate !== undefined ? { predicate: built.predicate } : {}),
         provenance,
       }),
     );
@@ -1156,6 +1304,7 @@ function tableModel(
     ...(conceal ? { conceal: true as const } : {}),
     ...(item.traits !== undefined ? { traits: item.traits } : {}),
     ...(item.provenance.source !== undefined ? { source: item.provenance.source } : {}),
+    ...(item.archive !== undefined ? { archive: item.archive } : {}),
   };
 }
 

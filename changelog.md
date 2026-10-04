@@ -26,6 +26,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `.hidden()` stays out of default selects and includes, and is returned only when a root `select` names it. `.sensitive()` redacts the value in logs, errors, and `inspect()`.
 - `filters()` is synchronous and throws OKM1123 when `allow`, `sort`, or `relations` names a hidden field. `parse()` loads the parser on first use.
 - `schema({ traits })` applies those traits to every table. A table opts out with `omitDefaults` and a reason. A field the table already declares is OKM1012.
+- `archivable()` turns a table's unique constraints into partial unique indexes (`WHERE archived_at IS NULL`). The primary key stays a full constraint. A tenant unique keeps the tenant key and the same predicate.
 - `contains`, `containedBy`, `overlaps`, `hasKey`, `hasAnyKey`, `path`, and `matches` filter json, array, range, and tsvector columns. Text `contains` stays a substring. The value, key, or path is a parameter, and a regconfig name is checked before it is bound.
 - `json.set`, `arr.append`, and `arr.remove` are namespace exports used inside `update`. Importing one does not pull the others.
 
@@ -49,6 +50,9 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `registerTimestamps()` records the timestamps check. A timestamp set by input is OKM1190. `{ allow }` does not clear it.
 - `registerFieldExposure()` records the hidden, sensitive, and guarded checks. A hidden field shown, a sensitive value revealed, or a guarded field set without `{ allow }` is OKM1190.
 - Unknown keys are dropped on insert and update. A guarded field is OKM1190 unless `{ allow }` names it. `allow` does not unlock a primary key on update.
+- `okmodel/traits` exports `archivable()`. It adds `archivedAt` and `archiveId`. `archive()` returns `{ count, archiveId }` and hides the matching rows, including named children, in one statement. `restore()` returns `{ count }`, clears both columns, and brings back only rows that share that `archiveId`.
+- Reads, updates, and deletes see the active set. `withArchived()` and `onlyArchived()` change that view. `delete()` stays permanent. Purge is `onlyArchived().delete(...)`. A dynamic call on a table that is not archivable throws OKM1052. `strategy: "table"` throws OKM1061.
+- `registerArchive()` records the archive rules. An application that does not call `archivable()` does not load the archive statement.
 
 #### tooling
 
@@ -61,6 +65,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The README shows a jsonb `contains` filter and an array update with `arr.append`.
 - The size page records the no-trait startup graph at 83,043 minified bytes and 27,666 gzip. The gates stay. An application that uses `timestamps()` measures 85,744 / 28,503, and that figure is not a gate.
 - Spec section 9 uses `columnTenancy` and `global("reason")`. The size page records the no-tenancy app at 85,356 / 28,361. The gates are that measurement plus 3 percent (D160). Column tenancy measures 91,802 / 30,411 and is not a gate. The 91,000 / 30,000 cap stays.
+- D170 accepts the featureless app at 87,148 / 28,938. The gates, the cap, and the 7,100 type probe stay. An application that uses `archivable()` measures 95,725 / 31,604 at startup and is not a gate. A unique a trait adds after the tenancy rewrite is still not widened.
 
 ### 💥 Breaking Changes
 

@@ -48,10 +48,20 @@ export type ReadCall = {
   readonly scope?: CallScope;
   /** Inspect lines from the tenancy object. Absent when the schema has no tenancy. */
   readonly tenancyRules?: readonly AppliedRule[];
+  /** `withArchived` or `onlyArchived`. Absent means the active set. */
+  readonly archive?: ArchiveView;
+  /** Inspect lines for an archivable table. Absent when the table is not. */
+  readonly archiveRules?: readonly AppliedRule[];
 };
+
+/** How an archivable read or write chooses rows. Absent means the active set. */
+export type ArchiveView = "with" | "only";
 
 /** Scope `emitWhere` reads. Writes set it around the statement they build. */
 let activeScope: CallScope | undefined;
+
+/** Archive visibility `emitWhere` reads. Absent means the active set. */
+let activeView: ArchiveView | undefined;
 
 /**
  * Runs `fn` with a tenant scope visible to {@link emitWhere}.
@@ -71,6 +81,68 @@ export function withTenantScope<T>(scope: CallScope | undefined, fn: () => T): T
   } finally {
     activeScope = previous;
   }
+}
+
+/**
+ * Runs `fn` with a tenant scope and an archive visibility visible to {@link emitWhere}.
+ *
+ * Restores both, including when `fn` throws. Sync callers finish the statement
+ * before the first await.
+ *
+ * @param scope - Tenant value or an unscoped reason
+ * @param view - `with` or `only`. `undefined` is the active set
+ * @param fn - Statement builder
+ * @returns Whatever `fn` returns
+ */
+export function withRowFilters<T>(
+  scope: CallScope | undefined,
+  view: ArchiveView | undefined,
+  fn: () => T,
+): T {
+  const previousScope = activeScope;
+  const previousView = activeView;
+  activeScope = scope;
+  activeView = view;
+  try {
+    return fn();
+  } finally {
+    activeScope = previousScope;
+    activeView = previousView;
+  }
+}
+
+type ArchiveInspect = (
+  model: TableModel | undefined,
+  view: ArchiveView | undefined,
+) => readonly AppliedRule[] | undefined;
+
+let archiveInspect: ArchiveInspect | undefined;
+
+/**
+ * Installs the phrase recorder `archivable()` owns.
+ *
+ * A featureless schema never calls this, so the phrases stay out of startup.
+ *
+ * @param fn - Builds the lines for one table
+ */
+export function installArchiveInspect(fn: ArchiveInspect): void {
+  archiveInspect = fn;
+}
+
+/**
+ * Inspect lines for one archivable table.
+ *
+ * Absent when the trait was not installed, or the table is not archivable.
+ *
+ * @param model - Table model
+ * @param view - `with` or `only`. `undefined` is the active set
+ * @returns The lines, or `undefined`
+ */
+export function archiveRules(
+  model: TableModel | undefined,
+  view: ArchiveView | undefined,
+): readonly AppliedRule[] | undefined {
+  return archiveInspect?.(model, view);
 }
 
 /** Where a decoded value sits. */
@@ -450,6 +522,9 @@ export function appliedRules(call: ReadCall, source?: string): readonly AppliedR
   if (call.tenancyRules !== undefined) {
     for (const rule of call.tenancyRules) rules.push(rule);
   }
+  if (call.archiveRules !== undefined) {
+    for (const rule of call.archiveRules) rules.push(rule);
+  }
   return rules;
 }
 
@@ -460,12 +535,15 @@ function emit(
   outputs: Built | undefined,
   hooks?: IncludeHooks,
 ): void {
-  const previous = activeScope;
+  const previousScope = activeScope;
+  const previousView = activeView;
   activeScope = call.scope;
+  activeView = call.archive;
   try {
     emitRead(schema, call, sink, outputs, hooks);
   } finally {
-    activeScope = previous;
+    activeScope = previousScope;
+    activeView = previousView;
   }
 }
 
@@ -557,6 +635,18 @@ export function emitJoin(sink: Sink, parent: string, child: string, relation: Re
   }
 }
 
+function holdArchive(table: Indexed, sink: Sink, alias: string, appended: boolean): boolean {
+  const archive = table.model.archive;
+  if (archive === undefined || activeView === "with") return false;
+  sink.text(appended ? " and " : " where ");
+  sink.text(alias);
+  sink.text(".");
+  sink.text(quote(archive.at));
+  sink.text(activeView === "only" ? " is not null" : " is null");
+  sink.mark(activeView === "only" ? "archived|" : "active|");
+  return true;
+}
+
 export function emitWhere(
   schema: QuerySchema,
   table: Indexed,
@@ -576,7 +666,8 @@ export function emitWhere(
       scope: activeScope,
       sink,
     }) === true;
-  const started = appended || held;
+  const archived = holdArchive(table, sink, alias, appended || held);
+  const started = appended || held || archived;
   if (where === undefined) return;
   if (isOperator(where) && operatorName(where) === "or") {
     sink.text(started ? " and " : " where ");

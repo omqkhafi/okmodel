@@ -467,6 +467,40 @@ export type UpdateTarget<S extends QuerySchema, K extends keyof S["~byName"]> =
       readonly set: UpdateSet<S, K>;
     }[];
 
+/** `{ count, archiveId }` from one `archive()` call. */
+export type ArchiveCount = {
+  readonly count: number;
+  readonly archiveId: string;
+};
+
+/** `archive`, `restore`, and the visibility modifiers. Present only on archivable tables. */
+type ArchiveOps<S extends QuerySchema, K extends keyof S["~byName"] & string> = {
+  /**
+   * Archives the active rows that match.
+   *
+   * One new `archiveId` is shared by the row and its cascaded children.
+   * `expect` matches {@link TableApi.update}.
+   */
+  archive(
+    target: { readonly where?: WhereOf<S, K> },
+    options?: WriteOptions<S, K>,
+  ): Write<ArchiveCount>;
+  /**
+   * Restores archived rows.
+   *
+   * `where` restores those rows and the children that carry their `archiveId`.
+   * `archiveId` restores that whole operation. An archived parent fails.
+   */
+  restore(
+    target: { readonly where?: WhereOf<S, K> } | { readonly archiveId: string },
+    options?: WriteOptions<S, K>,
+  ): Write<WriteCount>;
+  /** Reads, updates, and deletes include archived rows. */
+  withArchived(): TableApi<S, K>;
+  /** Reads, updates, and deletes target only archived rows. */
+  onlyArchived(): TableApi<S, K>;
+};
+
 /** Methods on one table. */
 export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & string> = {
   find<const O extends FindOptions<S, K> & { readonly limit: number }>(
@@ -509,7 +543,7 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
     target: { readonly where?: WhereOf<S, K> },
     options?: WriteOptions<S, K>,
   ): Write<WriteCount>;
-};
+} & (S["~byName"][K] extends { readonly "~archive": true } ? ArchiveOps<S, K> : unknown);
 
 /**
  * `[Symbol.asyncDispose]` when `Symbol` defines it.
