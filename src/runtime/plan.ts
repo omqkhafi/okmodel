@@ -22,7 +22,7 @@ import {
 } from "../dialects/pg/model.js";
 
 /** A read the caller asked for. */
-export type ReadOp = "find" | "one" | "count" | "exists";
+export type ReadOp = "find" | "one" | "count" | "exists" | "aggregate";
 
 /** Routing constraint chosen before execute. */
 export type RouteConstraint = "auto" | "primary" | "replica";
@@ -34,6 +34,17 @@ export type RouteConstraint = "auto" | "primary" | "replica";
  */
 export type CallScope = { readonly value: string } | { readonly unscoped: string };
 
+/** Writes one more `where` condition after the tenant and active-set predicates. */
+export type Keyset = (sink: Sink, alias: string) => void;
+
+/** Writes the whole statement of a read the planner does not know. */
+export type ReadBuild = (
+  schema: QuerySchema,
+  table: Indexed,
+  sink: Sink,
+  outputs: Built | undefined,
+) => void;
+
 /** One read call. `all` is the `.all(reason)` escape for an unbounded read. */
 export type ReadCall = {
   readonly op: ReadOp;
@@ -44,6 +55,10 @@ export type ReadCall = {
   readonly limit?: unknown;
   readonly include?: unknown;
   readonly all?: string;
+  /** The `after` cursor of a `page`. The condition joins the others with `and`. */
+  readonly after?: Keyset;
+  /** Set by `aggregate`. It writes the statement and the safety predicates stay in `emitWhere`. */
+  readonly build?: ReadBuild;
   /** Set by `for()` or `unscoped()`. Absent on a schema with no tenancy. */
   readonly scope?: CallScope;
   /** Inspect lines from the tenancy object. Absent when the schema has no tenancy. */
@@ -293,6 +308,33 @@ export function readNeedsOperatorSql(schema: QuerySchema, call: ReadCall): boole
   if (operatorEmit !== undefined) return false;
   const table = indexes(schema).get(call.table);
   return table !== undefined && needsOperatorSql(table, call.where);
+}
+
+/**
+ * Writes `<table> <alias> where <link to parent>` for a to-many relation.
+ *
+ * A `manyThrough` relation reads the join table and joins the related table.
+ * The caller adds the related table's own predicates after it.
+ */
+export function emitRelationFrom(
+  schema: QuerySchema,
+  relation: RelationModel,
+  child: Indexed,
+  sink: Sink,
+  parent: string,
+  alias: string,
+  depth: number,
+): void {
+  if (relation.through !== undefined) {
+    const planner = { join: emitJoin, where: emitWhere, indexes, quote };
+    relation.through.emit(planner, schema, relation, child, sink, parent, alias, depth);
+    return;
+  }
+  sink.text(quote(child.model.sql));
+  sink.text(" ");
+  sink.text(alias);
+  sink.text(" where ");
+  emitJoin(sink, parent, alias, relation);
 }
 
 const SYNC_OPERATORS = ",lt,lte,gt,gte,between,inList,notIn,";
@@ -563,6 +605,10 @@ function emitRead(
       `Table ${call.table} is not in the schema. Accepted names: ${list([...indexes(schema).keys()])}.`,
     );
   }
+  if (call.build !== undefined) {
+    call.build(schema, table, sink, outputs);
+    return;
+  }
   rejectOptions(call);
   const selected = selectedColumns(table, call.select);
   sink.mark(`${call.op}|${call.table}|`);
@@ -614,7 +660,7 @@ function emitRead(
     if (include === undefined) continue;
     hooks?.join(schema, include, sink, "t", `i${String(index)}`, 0);
   }
-  emitWhere(schema, table, call.where, sink, "t", 0);
+  emitWhere(schema, table, call.where, sink, "t", 0, false, call.after);
   emitOrder(table, call.orderBy, sink, "t");
   emitLimit(call, sink);
 }
@@ -655,6 +701,7 @@ export function emitWhere(
   alias: string,
   depth: number,
   appended = false,
+  extra?: Keyset,
 ): void {
   const held =
     schema.tenancy?.predicate({
@@ -667,7 +714,13 @@ export function emitWhere(
       sink,
     }) === true;
   const archived = holdArchive(table, sink, alias, appended || held);
-  const started = appended || held || archived;
+  let started = appended || held || archived;
+  if (extra !== undefined) {
+    sink.text(started ? " and (" : " where (");
+    extra(sink, alias);
+    sink.text(")");
+    started = true;
+  }
   if (where === undefined) return;
   if (isOperator(where) && operatorName(where) === "or") {
     sink.text(started ? " and " : " where ");
@@ -959,11 +1012,7 @@ function emitRelationFilter(
   sink.mark(`rel:${relation.name}:${name}`);
   if (name === "none" || name === "every") sink.text("not ");
   sink.text("exists (select 1 from ");
-  sink.text(quote(child.model.sql));
-  sink.text(" ");
-  sink.text(childAlias);
-  sink.text(" where ");
-  emitJoin(sink, alias, childAlias, relation);
+  emitRelationFrom(schema, relation, child, sink, alias, childAlias, depth);
   const inner = operatorValue(value);
   if (name === "every") {
     emitWhere(schema, child, undefined, sink, childAlias, depth + 1, true);
@@ -1097,7 +1146,7 @@ export function selectedColumns(table: Indexed, select: unknown): readonly Colum
   return columns;
 }
 
-function parseOrder(
+export function parseOrder(
   field: string,
   value: unknown,
 ): { readonly dir: "asc" | "desc"; readonly nulls: "first" | "last" } {
@@ -1220,7 +1269,9 @@ export function indexes(schema: QuerySchema): ReadonlyMap<string, Indexed> {
     }
     names.sort();
     const relations = new Map<string, RelationModel>();
-    for (const relation of model.relations) relations.set(relation.name, relation);
+    for (const relation of model.relations) {
+      relations.set(relation.name, relation);
+    }
     built.set(model.name, { model, columns, relations, names });
   }
   indexesOf.set(schema, built);

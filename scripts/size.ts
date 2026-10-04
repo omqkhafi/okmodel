@@ -57,26 +57,31 @@ export const ARCHIVABLE_ENTRY = "scripts/app-archivable.ts";
 /** The same app with validation on. Reported, not gated. */
 export const VALIDATE_ENTRY = "scripts/app-validate.ts";
 
+/** The same app using `manyThrough`, `page` and `aggregate`. Reported, not gated (D176). */
+export const RELATIONS_ENTRY = "scripts/app-relations.ts";
+
 /**
  * Minified app-fixture ceiling, in bytes (D160).
  *
- * P24 measured 85,356. Plus 3 percent, rounded down, is 87,900, under the 91,000 allowance (D143).
+ * P27 measured 88,278. Plus 3 percent, rounded down, is 90,900, under the 91,000 allowance (D143).
+ * Was 87,900 (P24).
  */
-export const APP_MAX_MIN_BYTES = 87_900;
+export const APP_MAX_MIN_BYTES = 90_900;
 
 /**
  * Gzipped app-fixture ceiling, in bytes (D160).
  *
- * P24 measured 28,361. Plus 3 percent, rounded down, is 29,210, under the 30,000 allowance (D143).
+ * P27 measured 29,326. Plus 3 percent is 30,206, so the 30,000 allowance (D143) is the gate.
+ * Was 29,210 (P24).
  */
-export const APP_MAX_GZIP_BYTES = 29_210;
+export const APP_MAX_GZIP_BYTES = 30_000;
 
 /**
  * Public connect entries, driver left external (D142, D143, D156).
  *
  * The startup graph excludes chunks loaded on first failure, include, or the
- * mismatch path of the catalog check. Each ceiling is the P24 measurement
- * plus 3 percent, rounded down (D160). Cold import is printed,
+ * mismatch path of the catalog check. Each ceiling is the measurement
+ * plus 3 percent, rounded down (D160). Moved in P27. Cold import is printed,
  * including a driver-stubbed sample, and is not gated. Bun.sql has no Node
  * cold import.
  */
@@ -85,30 +90,30 @@ export const CONNECT_ENTRIES = [
     entry: "src/runtime/pg/postgresjs.ts",
     file: "postgresjs.js",
     external: ["postgres"],
-    maxMinBytes: 40_200,
-    maxGzipBytes: 14_090,
+    maxMinBytes: 41_600,
+    maxGzipBytes: 14_600,
   },
   {
     entry: "src/runtime/pg/pglite.ts",
     file: "pglite.js",
     external: ["@electric-sql/pglite"],
-    maxMinBytes: 37_800,
-    maxGzipBytes: 13_450,
+    maxMinBytes: 39_300,
+    maxGzipBytes: 13_980,
   },
   {
     entry: "src/runtime/pg/pg.ts",
     file: "pg.js",
     external: ["pg"],
-    maxMinBytes: 40_900,
-    maxGzipBytes: 14_410,
+    maxMinBytes: 42_400,
+    maxGzipBytes: 14_920,
   },
   {
     entry: "src/runtime/pg/bun.ts",
     file: "bun.js",
     external: ["bun"],
     nodeColdImport: false,
-    maxMinBytes: 39_700,
-    maxGzipBytes: 13_940,
+    maxMinBytes: 41_200,
+    maxGzipBytes: 14_470,
   },
 ] as const;
 
@@ -941,6 +946,15 @@ if (import.meta.main) {
     );
     console.log(`${formatEntry(validating, ci)} (validating app, reported, not gated)`);
     console.log(formatTotal(validating));
+    const relating = measureStartup(
+      root,
+      RELATIONS_ENTRY,
+      "app-relations.js",
+      ["postgres"],
+      "postgres",
+    );
+    console.log(`${formatEntry(relating, ci)} (relations app, reported, not gated)`);
+    console.log(formatTotal(relating));
     printStubbed(app, ci);
     problems.push(...appBudgetProblems(app));
     printColdImportFinding(app, ci);

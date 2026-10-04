@@ -64,6 +64,30 @@ test("type ceilings fail when a fixture is over the D133 limits", () => {
   expect(problems.some((problem) => problem.includes("tagged operators"))).toBe(true);
 });
 
+test("the feature-using query probes have their own ceilings (D176)", () => {
+  const rows: TypeBudgetRow[] = [
+    row("inferred-50", 50, 1, 1),
+    row("inferred-200", 200, 1, 1),
+    row("inferred-500", 500, 1, 1),
+    row("emitted-200", 200, 0, 1),
+    row("equality-200", 200, 1, 1),
+    row("tagged-200", 200, 1, 1),
+  ];
+  const base = budgetReport(rows);
+  const within = {
+    ...base,
+    queryValidate: row("query-200-validate", 200, 25_631, 6_604),
+    queryFeatures: [row("query-200+page+aggregate+through", 200, 24_792, 6_931)],
+  };
+  expect(ceilingProblems(within)).toEqual([]);
+  const over = {
+    ...base,
+    queryValidate: row("query-200-validate", 200, 25_632, 6_605),
+    queryFeatures: [row("query-200+page+aggregate+through", 200, 24_793, 6_932)],
+  };
+  expect(ceilingProblems(over)).toHaveLength(4);
+});
+
 test("column type ceilings fail when the sample is over the limit", () => {
   const over: ColumnTypeCost = {
     project: "tests/fixtures/type-cost-columns",

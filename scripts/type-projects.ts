@@ -67,6 +67,15 @@ export function writeProductionInferredProject(
 }
 
 /**
+ * Query features the 200-table probe can exercise on top of `find`, `insert`, `update`, and `delete`.
+ *
+ * The gated probe uses none. Each feature is measured on its own row and printed.
+ */
+export type ProbeFeature = "page" | "aggregate" | "through";
+
+const PROBE_FEATURES: readonly ProbeFeature[] = [];
+
+/**
  * Writes a read-path project: filter, select, include, and orderBy.
  *
  * The fixture tables stay. Two related tables carry the query so include has
@@ -80,11 +89,19 @@ export function writeQueryProject(
   dir: string,
   fixture: SchemaFixture,
   target?: LibraryTarget,
+  options: { readonly validate?: boolean; readonly features?: readonly ProbeFeature[] } = {},
 ): void {
   mkdirSync(dir, { recursive: true });
   const pg = libraryFile(dir, target, "dialects/pg/index");
   const runtime = libraryFile(dir, target, "runtime/types");
-  const lines: string[] = [`import { many, one, schema, table, t } from "${pg}";`, ""];
+  const validate = options.validate === true;
+  const features = options.features ?? PROBE_FEATURES;
+  const through = features.includes("through");
+  const lines: string[] = [
+    ...(validate ? [`import "${libraryFile(dir, target, "runtime/validate/index")}";`] : []),
+    `import { many, ${through ? "manyThrough, " : ""}one, schema, table, t } from "${pg}";`,
+    "",
+  ];
   lines.push(
     'export const owner = table("owner", { id: t.id(), email: t.text() }, { relations: { notes: many("note") } });',
     "",
@@ -92,10 +109,23 @@ export function writeQueryProject(
     "  id: t.id(),",
     '  ownerId: t.uuid().references("owner"),',
     "  body: t.text(),",
-    '}, { relations: { owner: one("owner") } });',
+    `}, { relations: { owner: one("owner")${through ? ', tags: manyThrough("tag", { through: "noteTag" })' : ""} } });`,
     "",
   );
   const names = ["owner", "note"];
+  if (through) {
+    lines.push(
+      'export const tag = table("tag", { id: t.id(), label: t.text() });',
+      "",
+      'export const noteTag = table("noteTag", {',
+      "  id: t.id(),",
+      '  noteId: t.uuid().references("note"),',
+      '  tagId: t.uuid().references("tag"),',
+      "});",
+      "",
+    );
+    names.push("tag", "noteTag");
+  }
   for (const item of fixture.tables) {
     names.push(item.name);
     lines.push(`export const ${item.name} = table("${item.name}", {`);
@@ -106,12 +136,13 @@ export function writeQueryProject(
   }
   lines.push("export const appSchema = schema({");
   lines.push(`  tables: [${names.join(", ")}],`);
+  if (validate) lines.push("  validation: true,");
   lines.push("});", "");
   writeFileSync(join(dir, "tables.ts"), `${lines.join("\n")}\n`);
   writeFileSync(
     join(dir, "probe.ts"),
     [
-      'import { eq } from "' + pg + '";',
+      "import { eq" + (through ? ", has" : "") + ' } from "' + pg + '";',
       'import type { Connected } from "' + runtime + '";',
       'import { appSchema } from "./tables.js";',
       "",
@@ -137,13 +168,45 @@ export function writeQueryProject(
       '  return db.note.delete({ where: { body: "b" } });',
       "}",
       "",
+      ...(features.includes("page")
+        ? [
+            "export function paged(db: Connected<typeof appSchema>) {",
+            '  return db.note.page({ select: ["id", "body"] as const, orderBy: { body: "asc" }, limit: 2 });',
+            "}",
+            "",
+          ]
+        : []),
+      ...(features.includes("aggregate")
+        ? [
+            "export function grouped(db: Connected<typeof appSchema>) {",
+            '  return db.note.aggregate({ groupBy: ["ownerId"] as const, count: true, min: ["body"] as const, limit: 5 });',
+            "}",
+            "",
+          ]
+        : []),
+      ...(through
+        ? [
+            "export function tagged(db: Connected<typeof appSchema>) {",
+            '  return db.note.find({ where: { tags: has({ label: eq("a") }) }, include: { tags: { limit: 3 } }, limit: 2 });',
+            "}",
+            "",
+          ]
+        : []),
+      ...(validate
+        ? [
+            "export function checked(db: Connected<typeof appSchema>) {",
+            '  return db.note.insert.validate({ ownerId: "00000000-0000-4000-8000-000000000001", body: "a" });',
+            "}",
+            "",
+          ]
+        : []),
     ].join("\n"),
   );
   writeConfig(dir, ["probe.ts", "tables.ts"]);
 }
 
 /**
- * Writes a project that names `InsertBody` and `insert.validate`.
+ * Writes a project that imports `okmodel/validate` and calls the typed surface.
  *
  * Measured and printed. Not a ceiling. The 200-table query probe stays on its gate.
  *
@@ -155,12 +218,16 @@ export function writeValidateProject(dir: string, target?: LibraryTarget): void 
   const pg = libraryFile(dir, target, "dialects/pg/index");
   const contracts = libraryFile(dir, target, "contracts/index");
   const runtime = libraryFile(dir, target, "runtime/types");
+  const validate = libraryFile(dir, target, "runtime/validate/index");
+  const surface = libraryFile(dir, target, "runtime/validate/surface");
   writeFileSync(
     join(dir, "probe.ts"),
     [
+      `import "${validate}";`,
       `import type { Input } from "${contracts}";`,
       `import { schema, table, t } from "${pg}";`,
-      `import type { Connected, InsertBody } from "${runtime}";`,
+      `import type { Connected } from "${runtime}";`,
+      `import type { InputBody } from "${surface}";`,
       "",
       'const tasks = table("tasks", {',
       "  id: t.uuid(),",
@@ -170,12 +237,15 @@ export function writeValidateProject(dir: string, target?: LibraryTarget): void 
       "",
       "export const app = schema({ tables: [tasks], validation: true });",
       "",
-      'export type Body = InsertBody<typeof app, "tasks">;',
+      'export type Body = InputBody<typeof app, "tasks">;',
       'export type Mark = Input<"tasks", typeof app>;',
       "",
       "export function check(db: Connected<typeof app>, body: Body) {",
-      "  const insert = db.tasks.insert as unknown as { validate(body: Body): Promise<Body> };",
-      "  return insert.validate(body);",
+      "  return db.tasks.insert.validate(body);",
+      "}",
+      "",
+      "export function patch(db: Connected<typeof app>) {",
+      '  return db.tasks.update.validate({ title: "a" });',
       "}",
       "",
     ].join("\n"),

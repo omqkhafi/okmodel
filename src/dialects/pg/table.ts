@@ -133,6 +133,7 @@ export type Table<
   TColumns,
   TRelations extends Readonly<Record<string, RelationCall>> = Readonly<Record<string, never>>,
   TKey extends string = never,
+  TOptions = object,
 > = {
   readonly "~name": TName;
   readonly "~columns": TColumns;
@@ -142,7 +143,7 @@ export type Table<
   readonly "~relations": TRelations;
   readonly name: TName;
   readonly columns: TColumns;
-  readonly options?: TableOptions<TColumns>;
+  readonly options?: TOptions;
   /**
    * Allowlisted client filters.
    *
@@ -336,7 +337,8 @@ type DeclaredTable<TName extends string, TColumns, TOptions> = Table<
   TName,
   TColumns,
   RelationsOf<TOptions>,
-  PrimaryOf<TOptions>
+  PrimaryOf<TOptions>,
+  NoInfer<TOptions>
 > &
   TraitShapes<TColumns, TOptions> &
   ArchiveFlag<TOptions> &
