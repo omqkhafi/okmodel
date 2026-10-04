@@ -247,8 +247,8 @@ Measured on this release.
 
 |                                   | Minified |   Gzip | Cold import |
 | --------------------------------- | -------: | -----: | ----------: |
-| Runtime entry                     |    5,525 |  2,042 |    1.758 ms |
-| App startup (10 tables, one find) |   77,537 | 25,625 |    9.922 ms |
+| Runtime entry                     |    5,190 |  1,996 |    1.832 ms |
+| App startup (10 tables, one find) |   83,043 | 27,666 |   11.154 ms |
 
 The rest of the measurements are in [size](https://github.com/omqkhafi/okmodel/blob/main/docs/size.md).
 

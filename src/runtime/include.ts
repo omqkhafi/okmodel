@@ -10,6 +10,7 @@ import {
   emitPrimaryOrder,
   emitWhere,
   fail,
+  registerFailFix,
   indexes,
   isRecord,
   jsonExpr,
@@ -30,6 +31,8 @@ import {
   type ParsedInclude,
   type Sink,
 } from "./plan.js";
+
+registerFailFix("OKM1105", "Pass limit on the include, or call .all(reason).");
 
 const INCLUDE_OPTIONS = ["all", "include", "limit", "orderBy", "select", "where"] as const;
 

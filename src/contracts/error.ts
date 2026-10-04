@@ -547,31 +547,7 @@ function kindFromCode(code: string): ErrorKind {
 }
 
 function isErrorKind(code: string): code is ErrorKind {
-  switch (code) {
-    case "invalid":
-    case "not_null":
-    case "check":
-    case "foreign_key":
-    case "unique":
-    case "exclusion":
-    case "conflict":
-    case "not_found":
-    case "not_unique":
-    case "forbidden":
-    case "serialization":
-    case "deadlock":
-    case "lock_timeout":
-    case "timeout":
-    case "cancelled":
-    case "unavailable":
-    case "schema_drift":
-    case "driver":
-    case "read_only":
-    case "outcome_unknown":
-      return true;
-    default:
-      return false;
-  }
+  return Object.hasOwn(CATEGORY_OF, code);
 }
 
 function defaultRetryable(kind: ErrorKind): boolean {

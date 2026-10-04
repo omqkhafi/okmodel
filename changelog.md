@@ -55,7 +55,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The README lists the key options. The quickstart stays on `t.identity()`. Schema says how ids are generated and how to change the default.
 - The roadmap is a public board. Each release is a milestone, and a pull request ends with `Closes #N`.
 - The README shows a jsonb `contains` filter and an array update with `arr.append`.
-- The size page records the no-trait startup graph at 85,568 minified bytes and 28,329 gzip. The gates stay. An application that uses `timestamps()` measures 88,273 / 29,144, and that figure is not a gate.
+- The size page records the no-trait startup graph at 83,043 minified bytes and 27,666 gzip. The gates stay. An application that uses `timestamps()` measures 85,744 / 28,503, and that figure is not a gate.
 
 ### 💥 Breaking Changes
 
@@ -73,6 +73,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - App startup is gated at 85,100 minified and 28,000 gzip (D158). postgres.js connect is 40,800 / 14,100, `pg` is 41,000 / 14,250, and Bun.sql is 39,800 / 13,800. PGlite stays 38,146 / 13,505.
 - Synchronous `filters()` takes the app startup graph to 84,907 / 28,017, past the gzip gate. The gates move to measured plus 3 percent (D160): app startup 87,454 / 28,857, postgres.js 41,519 / 14,352, PGlite 38,620 / 13,613, `pg` 41,677 / 14,543, and Bun.sql 40,545 / 14,096. The 91,000 / 30,000 cap stays.
 - `filters()` returns the parser directly. The promise is on `parse()`, which is what a request handler awaits.
+- A signal or timeout, a watched query, checkout, listen, stream, the server-version query, and the fix text for write and include errors load on first use. Error codes, messages, SQL, and catalog output stay the same. The no-trait startup graph goes from 85,568 / 28,329 to 83,043 / 27,666. The gates stay.
 
 ## v0.1.1 — 2026-10-03
 

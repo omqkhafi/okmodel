@@ -7,7 +7,7 @@
 
 import { throwNamed } from "../contracts/error.js";
 import type { ColumnModel } from "../dialects/pg/model.js";
-import { isRecord, fail, list, projectExpr, quote, type Indexed } from "./plan.js";
+import { isRecord, fail, list, projectExpr, quote, registerFailFix, type Indexed } from "./plan.js";
 import { fieldSealed, touchFields } from "./trait-read.js";
 
 /** How a conflict should be written. `"error"` never reaches here. */
@@ -16,6 +16,9 @@ export type ConflictPlan = {
   readonly columns: readonly ColumnModel[];
   readonly update: readonly ColumnModel[];
 };
+
+registerFailFix("OKM1104", "Set on to the columns of a unique constraint or the primary key.");
+registerFailFix("OKM1190", "Remove the guarded field. Input cannot set it.");
 
 const NO_ALLOW: ReadonlySet<string> = new Set();
 
