@@ -12,7 +12,8 @@ import { pathToFileURL } from "node:url";
 import { catalog } from "../../contracts/catalog/build.js";
 import { catalogHash, parseCatalog, serializeCatalog } from "../../contracts/catalog/document.js";
 import { OkmError } from "../../contracts/error.js";
-import { assertValidation } from "../../runtime/validate/places.js";
+import { errorDoc } from "../errors/registry.js";
+import { assertValidation, writeWouldValidate } from "../../runtime/validate/places.js";
 import { schemaDeclarations, type DeclaredRename } from "../../dialects/pg/declarations.js";
 import { emitRowTypes } from "../../dialects/pg/emit.js";
 import type { BuiltSchema } from "../../dialects/pg/schema.js";
@@ -93,6 +94,11 @@ export async function planProject(
 export async function checkProject(cwd: string): Promise<void> {
   const opened = await openProject(cwd);
   assertValidation(opened.built);
+  if (schemaRequestsValidation(opened.built) && !projectImportsValidate(cwd)) {
+    const doc = errorDoc("OKM1201");
+    if (doc === undefined) throw new Error("OKM1201 missing from the error registry.");
+    throw new OkmError(doc.code, doc.summary, { fix: { summary: doc.fix } });
+  }
   assertTargetAlias(listTargets(opened.config));
   if (opened.config.tables !== undefined) {
     const directory = join(cwd, opened.config.tables);
@@ -290,4 +296,66 @@ function isConfig(value: unknown): value is MigrateConfig {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+const SKIP_SCAN = new Set(["node_modules", "dist", "coverage"]);
+
+/**
+ * Reports whether any table would validate on write.
+ *
+ * @param built - The loaded schema
+ * @returns Whether OKM1201 applies when `okmodel/validate` was never imported
+ */
+function schemaRequestsValidation(built: Built): boolean {
+  const flag = (built as { readonly validation?: unknown }).validation;
+  for (const item of built.tables) {
+    if (writeWouldValidate(flag, item, {})) return true;
+  }
+  return false;
+}
+
+/**
+ * Reports whether the project imports `okmodel/validate` at runtime.
+ *
+ * A type-only import does not register the hook, so it does not count.
+ *
+ * @param cwd - Project directory
+ * @returns Whether a runtime import is present
+ */
+function projectImportsValidate(cwd: string): boolean {
+  return directoryImportsValidate(cwd);
+}
+
+function directoryImportsValidate(dir: string): boolean {
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return false;
+  }
+  for (const entry of entries) {
+    if (entry.name.startsWith(".") || SKIP_SCAN.has(entry.name)) continue;
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (directoryImportsValidate(path)) return true;
+      continue;
+    }
+    if (!/\.(?:ts|tsx|mts|cts)$/.test(entry.name)) continue;
+    if (runtimeImportsValidate(readFileSync(path, "utf8"))) return true;
+  }
+  return false;
+}
+
+function runtimeImportsValidate(source: string): boolean {
+  const text = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+  const pattern = /["']okmodel\/validate(?:\.js)?["']/g;
+  for (const match of text.matchAll(pattern)) {
+    const index = match.index ?? 0;
+    const lead = text.slice(Math.max(0, index - 240), index);
+    const start = Math.max(lead.lastIndexOf("\n"), lead.lastIndexOf(";"));
+    const head = lead.slice(start + 1);
+    if (/\bimport\s+type\b/.test(head) || /\bexport\s+type\b/.test(head)) continue;
+    if (/\bimport\b/.test(head) || /\bexport\b/.test(head)) return true;
+  }
+  return false;
 }

@@ -52,6 +52,30 @@ export function validationGate(schemaFlag: unknown, table: AnyTable): Validation
   return buildGate(schemaFlag, table);
 }
 
+/**
+ * Reports whether a write on this table would run validation.
+ *
+ * True when the effective setting is on, or the table stores a `validate`
+ * section or an inline `.validate(...)`. A call that passes `{ validate: false }`
+ * would not. This does not run the rules and does not report OKM1030.
+ *
+ * @param schemaFlag - The schema `validation` option, stored as given
+ * @param table - The table, with its column rules and `validate` section
+ * @param options - Write options. `{ validate: false }` skips the call
+ * @returns Whether the write would validate
+ */
+export function writeWouldValidate(schemaFlag: unknown, table: AnyTable, options: object): boolean {
+  if ((options as { readonly validate?: unknown }).validate === false) return false;
+  const setting = tableSetting(readSetting(schemaFlag, "schema()"), table.options);
+  if (setting.enabled) return true;
+  const section = table.options as { readonly validate?: unknown } | undefined;
+  if (section?.validate !== undefined) return true;
+  for (const builder of Object.values(table.columns)) {
+    if (builder instanceof ColumnBuilder && builder.state.validate !== undefined) return true;
+  }
+  return false;
+}
+
 function buildGate(schemaFlag: unknown, table: AnyTable): ValidationModel | undefined {
   const setting = tableSetting(readSetting(schemaFlag, "schema()"), table.options);
   const section = readSection(table.name, table.options);

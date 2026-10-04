@@ -1,3 +1,8 @@
+import {
+  VALIDATION_NOT_IMPORTED,
+  VALIDATION_NOT_IMPORTED_FIX,
+} from "../../runtime/validate/closed.js";
+
 /**
  * Doctor text for every OKM code in spec §21.
  *
@@ -209,6 +214,12 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     summary:
       "A write or a standalone check failed a validation rule. issues lists each path and message key.",
     fix: "Fix the fields named in issues. Each issue message is a key, not display text.",
+  },
+  {
+    code: "OKM1201",
+    title: "Validation not imported",
+    summary: VALIDATION_NOT_IMPORTED,
+    fix: VALIDATION_NOT_IMPORTED_FIX,
   },
   {
     code: "OKM1210",
