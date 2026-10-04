@@ -356,15 +356,16 @@ function start(
       );
     },
     inspect(): Inspection | Promise<Inspection> {
+      const source = session.schema.model[table]?.source;
       if (call.include === undefined && prepared !== undefined) {
-        return inspection(prepared.plan, prepared.params, call);
+        return inspection(prepared.plan, prepared.params, call, source);
       }
       if (call.include === undefined && !readNeedsOperatorSql(session.schema, call)) {
         const bound = bindNow(session.schema, call);
         prepared = bound;
-        return inspection(bound.plan, bound.params, call);
+        return inspection(bound.plan, bound.params, call, source);
       }
-      return prepare().then(({ plan, params }) => inspection(plan, params, call));
+      return prepare().then(({ plan, params }) => inspection(plan, params, call, source));
     },
     sql() {
       if (call.include === undefined && prepared !== undefined) {
@@ -521,10 +522,15 @@ function bindNow(
   return { plan, params: bound.params };
 }
 
-function inspection(plan: Plan, params: readonly (string | null)[], call: ReadCall): Inspection {
+function inspection(
+  plan: Plan,
+  params: readonly (string | null)[],
+  call: ReadCall,
+  source?: string,
+): Inspection {
   return {
     intent: logicalIntent(call),
-    rules: appliedRules(call),
+    rules: appliedRules(call, source),
     plan: { strategy: "postgres:single-statement", statements: 1, fingerprint: plan.fingerprint },
     sql: { text: plan.text, params },
     routing: SINGLE_ENDPOINT,

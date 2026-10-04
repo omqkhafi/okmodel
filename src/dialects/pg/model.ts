@@ -78,6 +78,12 @@ export type TableModel = {
   readonly uniques: readonly (readonly string[])[];
   readonly columns: readonly ColumnModel[];
   readonly relations: readonly RelationModel[];
+  /**
+   * `file.ts:line` where the table was defined.
+   *
+   * Absent on a catalog loaded from a build artifact. Not part of the hash.
+   */
+  readonly source?: string;
 };
 
 /** Schema fields the read path and `connect()` read. */

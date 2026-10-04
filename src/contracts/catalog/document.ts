@@ -601,6 +601,7 @@ function objectToJson(object: CatalogObject): Json {
     identity: identityToJson(object.identity),
     kind: object.kind,
     owner: object.owner,
+    // `source` stays off the document. A line number is not part of the hash.
     provenance: { name: object.provenance.name, origin: object.provenance.origin },
   };
 }

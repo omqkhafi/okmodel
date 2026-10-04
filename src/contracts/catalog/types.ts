@@ -192,11 +192,17 @@ export type ObjectIdentity =
   | RoleIdentity
   | ExtensionIdentity;
 
-/** Where an object came from. */
-export type Provenance =
-  | { readonly origin: "file"; readonly name: string }
-  | { readonly origin: "trait"; readonly name: string }
-  | { readonly origin: "extension"; readonly name: string };
+/**
+ * Where an object, a query, or a rule came from.
+ *
+ * `source` is the authoring location (`schema.ts:12`). It is recorded when
+ * the object is defined and is not part of the catalog hash.
+ */
+export type Provenance = {
+  readonly origin: "file" | "trait" | "extension";
+  readonly name: string;
+  readonly source?: string;
+};
 
 /**
  * An edge to another object.

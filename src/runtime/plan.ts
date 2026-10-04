@@ -6,6 +6,7 @@
  */
 
 import { OkmError, throwNamed, type QueryCode } from "../contracts/error.js";
+import { runSafety, safetyInstalled, type SafetyHatch } from "./safety-hook.js";
 import { assertIdentifier } from "../contracts/catalog/identifier.js";
 import {
   isOperator,
@@ -110,6 +111,8 @@ export type AppliedRule = {
   readonly rule: string;
   readonly contribution: string;
   readonly provenance: string;
+  /** `file.ts:line` where the rule or the table was defined. */
+  readonly source?: string;
 };
 
 export type Indexed = {
@@ -224,14 +227,20 @@ function emitLazy(
 }
 
 /**
- * Rules the read path enforces before planning.
+ * Runs registered safety rules before planning.
  *
- * P21 adds the rest of the final safety verification here.
+ * Nothing runs until `okmodel/safety` has registered a rule. The startup
+ * graph pays for the check, not for the registry.
  *
- * @param rules - Rules already checked for this call
+ * @param schema - Connected schema
+ * @param call - The read
  */
-export function verifyRead(rules: readonly AppliedRule[]): void {
-  void rules;
+export function verifyRead(schema: QuerySchema, call: ReadCall): void {
+  if (!safetyInstalled()) return;
+  const source = schema.model[call.table]?.source;
+  const hatches: readonly SafetyHatch[] | undefined =
+    call.all === undefined ? undefined : [{ name: "all", reason: call.all }];
+  runSafety(appliedRules(call, source), hatches);
 }
 
 /**
@@ -242,6 +251,7 @@ export function verifyRead(rules: readonly AppliedRule[]): void {
  * @returns The cache key and the wire parameters
  */
 export function bindCall(schema: QuerySchema, call: ReadCall, hooks?: IncludeHooks): Bound {
+  verifyRead(schema, call);
   const params: (string | null)[] = [];
   const marks: string[] = [];
   const sink: Sink = {
@@ -254,7 +264,6 @@ export function bindCall(schema: QuerySchema, call: ReadCall, hooks?: IncludeHoo
     },
   };
   emit(schema, call, sink, undefined, hooks);
-  verifyRead(BASE_RULES);
   return { key: marks.join(""), params };
 }
 
@@ -364,11 +373,21 @@ export function logicalIntent(call: ReadCall): {
 /**
  * Rules for inspection, including the caller filter when one was passed.
  *
+ * Catalog rules carry `source` when the table recorded one.
+ *
  * @param call - The read
+ * @param source - `file.ts:line` of the table, when `table()` recorded it
  * @returns Provenance-tagged rules
  */
-export function appliedRules(call: ReadCall): readonly AppliedRule[] {
-  const rules: AppliedRule[] = [...BASE_RULES];
+export function appliedRules(call: ReadCall, source?: string): readonly AppliedRule[] {
+  const rules: AppliedRule[] = [];
+  for (const rule of BASE_RULES) {
+    if (source !== undefined && rule.contribution === "catalog") {
+      rules.push({ ...rule, source });
+    } else {
+      rules.push(rule);
+    }
+  }
   if (call.where !== undefined) {
     rules.push({ rule: "filter", contribution: "caller", provenance: "caller" });
   }

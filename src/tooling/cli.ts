@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { OkmError } from "../contracts/error.js";
-import { run } from "./migrate/commands.js";
+import { formatFailure, run } from "./migrate/commands.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const packageJsonPath = join(here, "..", "..", "package.json");
@@ -15,7 +15,7 @@ if (process.argv.includes("--version")) {
     await run(process.argv.slice(2));
   } catch (error) {
     if (error instanceof OkmError) {
-      process.stderr.write(`${error.code}: ${error.message}\n${error.fix.summary}\n`);
+      process.stderr.write(formatFailure(error));
       process.exitCode = 1;
     } else {
       throw error;

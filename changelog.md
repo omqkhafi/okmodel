@@ -36,6 +36,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okmodel/ids` exports `uuidv4`, `uuidv7`, and `okid`. Pass one to `.default()` or `defaults.id`. A literal passed to `.default()` stays a database default. `.defaultSql()` stays a database expression. The generated value is not in the catalog, so changing a generator does not produce a migration. Insert fills each omitted value once, including each row of a batch, and the returned row carries it.
 - `connect({ generators })` replaces a built-in generator by name.
 - An operator that does not fit its column fails with OKM1124. The message names the column type and the operators that column accepts. Text search on a text column says it needs a tsvector column.
+- A table records the file and line where it was defined. `inspect()` shows that location on the catalog rules, a schema error includes it, and `okm` prints it. The catalog hash does not.
+- `okmodel/safety` is the registry later checks plug into. `registerRule` adds a rule, `verify` throws OKM1190 with every violation in stable order, and `safety.property` fails when rule order changes the verdict.
 
 #### tooling
 
@@ -60,7 +62,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - A postgres.js pool opened with TLS still lingers about 30 s after the last query on Node and Bun. A plain pool exits on its own. `close()` or `await using` releases it.
 - A release checks the tag, packs one tarball, tests that file on Postgres, and publishes that same file. The GitHub Release closes the milestone.
 - The npm description is one sentence.
-- App startup is gated at 84,500 minified and 27,500 gzip. postgres.js connect is 40,100 minified, and its gzip gate stays 13,815. `pg` is 40,000 / 13,950 and Bun.sql is 38,900 / 13,500.
+- App startup is gated at 85,100 minified and 28,000 gzip (D158). postgres.js connect is 40,800 / 14,100, `pg` is 41,000 / 14,250, and Bun.sql is 39,800 / 13,800. PGlite stays 38,146 / 13,505.
 
 ## v0.1.1 — 2026-10-03
 

@@ -1100,5 +1100,47 @@
       "name": "defineConfig",
       "kind": "stable"
     }
+  ],
+  "okmodel/safety": [
+    {
+      "name": "SafetyContribution",
+      "kind": "stable"
+    },
+    {
+      "name": "SafetyError",
+      "kind": "stable"
+    },
+    {
+      "name": "SafetyHatch",
+      "kind": "stable"
+    },
+    {
+      "name": "SafetyInput",
+      "kind": "stable"
+    },
+    {
+      "name": "SafetyRule",
+      "kind": "stable"
+    },
+    {
+      "name": "SafetyViolation",
+      "kind": "stable"
+    },
+    {
+      "name": "registerRule",
+      "kind": "stable"
+    },
+    {
+      "name": "review",
+      "kind": "stable"
+    },
+    {
+      "name": "safetyProperty",
+      "kind": "stable"
+    },
+    {
+      "name": "verify",
+      "kind": "stable"
+    }
   ]
 }
