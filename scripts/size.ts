@@ -51,6 +51,9 @@ export const CI_COLD_IMPORT_MS = 25;
 /** Tree-shaken 10-table app. D133. */
 export const APP_ENTRY = "scripts/app-startup.ts";
 
+/** The same app with `archivable()` on one table. Reported, not gated (D167). */
+export const ARCHIVABLE_ENTRY = "scripts/app-archivable.ts";
+
 /**
  * Minified app-fixture ceiling, in bytes (D160).
  *
@@ -607,6 +610,9 @@ export function shakenOperatorProblems(root: string): readonly string[] {
     if (startupText.includes(" = now()")) {
       problems.push("size: app fixture kept trait clock code");
     }
+    if (startupText.includes("src/runtime/archive.ts")) {
+      problems.push("size: app fixture kept archive execution on the startup graph");
+    }
     for (const name of SHAKEN_OPERATORS) {
       if (text.includes(`src/dialects/pg/ops/${name}.ts`)) {
         problems.push(`size: app fixture kept okmodel/pg operator ${name}`);
@@ -911,6 +917,15 @@ if (import.meta.main) {
     const app = measureStartup(root, APP_ENTRY, "app-startup.js", ["postgres"], "postgres");
     console.log(formatEntry(app, ci));
     console.log(formatTotal(app));
+    const archivable = measureStartup(
+      root,
+      ARCHIVABLE_ENTRY,
+      "app-archivable.js",
+      ["postgres"],
+      "postgres",
+    );
+    console.log(`${formatEntry(archivable, ci)} (archivable app, reported, not gated)`);
+    console.log(formatTotal(archivable));
     printStubbed(app, ci);
     problems.push(...appBudgetProblems(app));
     printColdImportFinding(app, ci);

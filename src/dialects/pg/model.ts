@@ -70,6 +70,41 @@ export type RelationModel = {
   readonly remote: readonly string[];
 };
 
+/**
+ * One foreign key the archive path follows.
+ *
+ * `local` and `remote` are SQL names, in the same order. `at` and `id` are
+ * the other table's archive columns.
+ */
+export type ArchiveLink = {
+  readonly table: string;
+  readonly sql: string;
+  readonly at: string;
+  readonly id: string;
+  readonly local: readonly string[];
+  readonly remote: readonly string[];
+};
+
+/**
+ * Archive columns and the children and parents resolved at schema time.
+ *
+ * Absent when the table is not archivable, so a normal table does not carry it.
+ */
+export type ArchiveModel = {
+  /** SQL name of `archivedAt`. */
+  readonly at: string;
+  /** SQL name of `archiveId`. */
+  readonly id: string;
+  /** Field name of `archivedAt`. */
+  readonly atField: string;
+  /** Field name of `archiveId`. */
+  readonly idField: string;
+  /** Children archived and restored with this row. */
+  readonly cascade: readonly ArchiveLink[];
+  /** Archivable tables this row references. Restore refuses an archived one. */
+  readonly parents: readonly ArchiveLink[];
+};
+
 /** One table, keyed by its TypeScript name on the schema. */
 export type TableModel = {
   readonly name: string;
@@ -106,6 +141,36 @@ export type TableModel = {
    * Absent on a catalog loaded from a build artifact. Not part of the hash.
    */
   readonly source?: string;
+  /**
+   * Archive columns, cascade, and parent links.
+   *
+   * Absent when the table is not archivable.
+   */
+  readonly archive?: ArchiveModel;
+};
+
+/**
+ * One opt-in feature attaching methods to the client or a table handle.
+ *
+ * Tenancy supplies `for()` and `unscoped()`. Archivable supplies `archive()`,
+ * `restore()`, `withArchived()`, and `onlyArchived()`. Core only calls the list.
+ */
+export type SchemaHook = (target: Record<string, unknown>, ctx: SchemaHookCtx) => void;
+
+/**
+ * What the client passes to a {@link SchemaHook}.
+ *
+ * A client-level call sets `tables`. A table-level call sets `table`.
+ */
+export type SchemaHookCtx = {
+  readonly names?: readonly string[];
+  readonly tables?: Record<string, unknown>;
+  readonly scoped?: boolean;
+  readonly open?: (scope: { readonly value: string } | { readonly unscoped: string }) => unknown;
+  readonly table?: string;
+  readonly view?: "with" | "only";
+  readonly reopen?: (view?: "with" | "only") => Record<string, unknown>;
+  readonly session?: object;
 };
 
 /** Schema fields the read path and `connect()` read. */
@@ -115,4 +180,10 @@ export type QuerySchema = {
   readonly requires?: { readonly postgres?: string } | undefined;
   /** Column tenancy, when the schema set it. The methods live on that object. */
   readonly tenancy?: import("./tenancy.js").ColumnTenancy;
+  /**
+   * Opt-in methods for the client and table handles.
+   *
+   * Absent when the schema uses none, so a featureless app does not carry the key.
+   */
+  readonly hooks?: readonly SchemaHook[];
 };

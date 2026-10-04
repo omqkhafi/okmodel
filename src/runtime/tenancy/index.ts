@@ -77,7 +77,7 @@ export function columnTenancy<const Key extends string>(input: {
   const tenants = new Set<string>();
   const globals = new Map<string, string>();
   const exemptions = new Map<string, { name: string; reason: string }[]>();
-  return {
+  const api: ColumnTenancy & { readonly key: Key } = {
     key,
     type: "uuid",
     strategy: "column",
@@ -107,6 +107,26 @@ export function columnTenancy<const Key extends string>(input: {
     rules(table, source, scope) {
       return tenancyRules(table, source, scope, tenants, globals, exemptions);
     },
+    hook(target, ctx) {
+      if (
+        ctx.tables === undefined ||
+        ctx.names === undefined ||
+        ctx.open === undefined ||
+        ctx.scoped === undefined
+      ) {
+        return;
+      }
+      const view = api.client({ names: ctx.names, scoped: ctx.scoped, open: ctx.open });
+      if (!ctx.scoped) {
+        for (const name of ctx.names) {
+          if (view.names.includes(name)) continue;
+          delete ctx.tables[name];
+          delete target[name];
+        }
+      }
+      if (view.for !== undefined) target.for = view.for;
+      if (view.unscoped !== undefined) target.unscoped = view.unscoped;
+    },
     missing(table): never {
       throw new OkmError(
         "OKM1701",
@@ -114,6 +134,7 @@ export function columnTenancy<const Key extends string>(input: {
       );
     },
   };
+  return api;
 }
 
 function rewriteTables(

@@ -7,6 +7,7 @@
  */
 
 import type { ColumnBuilder, FlagTrue, PlainFlags } from "./column.js";
+import type { SchemaHookCtx } from "./model.js";
 import { definition } from "./misuse.js";
 import type { AnyTable } from "./table.js";
 
@@ -79,6 +80,15 @@ export type ColumnTenancy = {
     source: string | undefined,
     scope: TenantCall | undefined,
   ): readonly TenancyRule[];
+  /**
+   * Attaches `for()` and `unscoped()` on the root client.
+   *
+   * The same hook archivable uses for its table methods.
+   *
+   * @param target - The client object
+   * @param ctx - Names, scope, and the table map
+   */
+  hook(target: Record<string, unknown>, ctx: SchemaHookCtx): void;
   missing(table: string): never;
 };
 

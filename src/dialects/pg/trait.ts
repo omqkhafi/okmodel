@@ -9,13 +9,28 @@
 import { definition, unavailable } from "./misuse.js";
 
 /**
+ * Columns an archivable trait asks `schema()` to keep.
+ *
+ * `at` and `id` are field names. `cascade` names child tables archived and
+ * restored with the row. The trait's rewrite makes uniques partial and checks
+ * the cascade. Absent means the table is not archivable.
+ */
+export type ArchiveRequest = {
+  readonly at: string;
+  readonly id: string;
+  readonly cascade: readonly string[];
+};
+
+/**
  * Columns `schema()` passes to {@link Trait.apply}.
  *
  * `columns` starts as the table's own fields. `apply` adds the trait's fields
- * or throws OKM1012 when a name is already there.
+ * or throws OKM1012 when a name is already there. `archive` is set by
+ * `archivable()` and read once, after every trait has applied.
  */
 export type TraitModel = {
   columns: Record<string, object>;
+  archive?: ArchiveRequest;
 };
 
 /**
@@ -62,6 +77,23 @@ export type FieldsOfList<TTraits> = TTraits extends readonly []
         TItem extends { readonly fields: infer TFields } ? TFields : Record<never, never>
       >
     : Record<never, never>;
+
+/**
+ * `{ "~archive": true }` when a trait list includes `archivable()`.
+ *
+ * An empty match contributes `unknown`, so a table without the trait does
+ * not gain the key.
+ *
+ * @typeParam TTraits - Trait list, or a single trait object
+ */
+export type HasArchive<TTraits> = [
+  Extract<
+    TTraits extends readonly (infer TItem)[] ? TItem : TTraits,
+    { readonly "~archive": true }
+  >,
+] extends [never]
+  ? unknown
+  : { readonly "~archive": true };
 
 type UnionToIntersection<TUnion> = (
   TUnion extends unknown ? (argument: TUnion) => void : never
