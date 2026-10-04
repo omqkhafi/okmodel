@@ -29,6 +29,7 @@ import {
   quote,
   rejectKeys,
   selectedColumns,
+  takeObject,
   type Indexed,
   type Outputs,
   type Sink,
@@ -288,7 +289,7 @@ async function planInsert(
       ? undefined
       : await import("./conflict.js");
   const conflict = conflictMod?.readConflict(table, options.onConflict, allow);
-  const chunks = chunkRows(rows.map((row) => cellsFor(table, columns, row)));
+  const chunks = chunkRows(rows.map((row) => cellsFor(columns, row)));
   const statements: Statement[] = [];
   const keys: (string | null)[][] = [];
   let offset = 0;
@@ -593,9 +594,7 @@ function emitValue(sql: Sql, column: ColumnModel, value: unknown, alias: string)
     sql.text(`null::${column.dataType}`);
     return;
   }
-  if (typeof value === "object") {
-    fail("OKM1121", `Field ${column.field} received an object. Pass a value or inc.`);
-  }
+  if (typeof value === "object") takeObject(column, value);
   sql.param(encodeColumn(column, value), column.dataType);
 }
 
@@ -738,18 +737,12 @@ function insertRow(
   return row;
 }
 
-function cellsFor(
-  table: Indexed,
-  columns: readonly ColumnModel[],
-  row: Record<string, unknown>,
-): Cell[] {
+function cellsFor(columns: readonly ColumnModel[], row: Record<string, unknown>): Cell[] {
   return columns.map((column) => {
     if (!Object.hasOwn(row, column.field)) return { kind: "default" };
     const value = row[column.field];
     if (value === null) return { kind: "null", dataType: column.dataType };
-    if (typeof value === "object") {
-      fail("OKM1121", `Field ${table.model.name}.${column.field} received an object.`);
-    }
+    if (typeof value === "object") takeObject(column, value);
     return { kind: "value", wire: encodeColumn(column, value), dataType: column.dataType };
   });
 }
@@ -875,7 +868,6 @@ function keyWire(columns: readonly ColumnModel[], row: Record<string, unknown>):
   return columns.map((column) => {
     const value = row[column.field];
     if (value === undefined || value === null) return null;
-    if (typeof value === "object") return null;
     return encodeColumn(column, value);
   });
 }

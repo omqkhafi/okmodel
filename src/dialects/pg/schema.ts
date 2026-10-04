@@ -273,6 +273,7 @@ type PreparedColumn = {
   readonly clientDefault: "client" | undefined;
   readonly fill: ClientFill | undefined;
   readonly elementEncode: ((value: unknown) => string) | undefined;
+  readonly accepts: readonly string[] | undefined;
 };
 
 /** Fills catalog objects on the first `.catalog` read. `schema()` itself does not. */
@@ -798,6 +799,7 @@ function compileTable(
           ? (column.state.elementEncode as (value: unknown) => string)
           : undefined,
       fill: column.state.clientDefault,
+      accepts: column.state.accepts,
     };
     columns.push(prepared);
     byField.set(field, prepared);
@@ -1314,6 +1316,7 @@ function tableModel(
       guardUpdate: column.writable && primary.includes(column.field),
       ...(column.fill !== undefined ? { fill: column.fill, clientDefault: "client" as const } : {}),
       ...(column.elementEncode !== undefined ? { elementEncode: column.elementEncode } : {}),
+      accepts: column.accepts,
     };
   });
   return {

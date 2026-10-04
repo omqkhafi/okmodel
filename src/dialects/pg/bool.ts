@@ -29,6 +29,7 @@ export function bytea(): ColumnBuilder<Uint8Array, PlainFlags> {
     baseType: "bytea",
     encode: encodeBytea,
     decode: decodeBytea,
+    accepts: ["Uint8Array"],
     sqlForm: "quote",
   });
 }

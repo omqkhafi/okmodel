@@ -286,6 +286,11 @@ export type ColumnState<TValue> = {
   readonly decode: (wire: string) => TValue;
   readonly elementEncode: (value: unknown) => string;
   readonly elementDecode: (wire: string) => unknown;
+  /**
+   * Object kinds the codec takes as input, named by `Object.prototype.toString`
+   * (`"Array"`, `"Temporal.Instant"`). Absent when the codec takes only scalars.
+   */
+  readonly accepts: readonly string[] | undefined;
 };
 
 /** Fields a scalar builder sets. Flags are passed beside the codec. */
@@ -300,6 +305,7 @@ export type OpenColumn<TValue> = {
   readonly omitUpdate?: boolean;
   readonly encode: (value: TValue) => string;
   readonly decode: (wire: string) => TValue;
+  readonly accepts?: readonly string[];
   readonly sqlForm: SqlForm;
   readonly defaultSql?: string;
   readonly clientDefault?: ClientFill;
@@ -675,6 +681,7 @@ export class ColumnBuilder<TValue, TFlags extends ColumnFlags> {
     const raw = this.state.sqlForm === "raw";
     return rebuild<ArrayOf<TValue, D>, TFlags>(this.state as ColumnState<ArrayOf<TValue, D>>, {
       dims,
+      accepts: ["Array"],
       encode: (value) => writeArray(value, dims, elementEncode, raw),
       decode: (wire) => readArray(wire, dims, elementDecode) as ArrayOf<TValue, D>,
     });
@@ -754,6 +761,7 @@ export function openColumn<TValue, TFlags extends ColumnFlags>(
     decode: input.decode,
     elementEncode,
     elementDecode,
+    accepts: input.accepts,
   });
 }
 

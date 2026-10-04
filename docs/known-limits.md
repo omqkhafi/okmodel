@@ -22,6 +22,8 @@ These builders and options throw OKM1061, or are not methods yet. The version is
 
 `one()`, `many()` and `manyThrough()` work. A relation value that is not one of those throws OKM1061.
 
+`interval` and `timetz` columns are written correctly and cannot be read back yet (found in P27b). Postgres sends `01:30:00` and `01:02:03+03`, and the decoders take only an ISO-8601 duration and a `±HH:MM` offset, so a read that selects such a column fails with OKM1210. Select the other columns, or cast in raw SQL, until a later step fixes the read.
+
 `iStartsWith`, `iContains` and `iEndsWith` are not in 0.2 (D176). Use `ilike()` with an escaped pattern. `aggregate()` has no `having` and no `bucket` (M2). `sum` and `avg` over a `text` column pass the types and fail when the call runs (OKM1124), because the row types cannot tell a `numeric` string from a `text` string.
 
 Installing the head snapshot, snapshot-versus-replay equivalence (OKM1521), and `reference` rows arrive in P53A. In 0.1, `okm migrate apply` replays migration files. See [environments](environments.md).

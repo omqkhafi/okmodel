@@ -629,9 +629,14 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
     data: RequiredInsert<InsertOf<S, K>> & OptionalInsert<InsertOf<S, K>>,
     options?: InsertOptions<S, K>,
   ): Write<Show<RowOf<S, K>>>;
-  /** Inserts a list in one transaction. Unknown keys are dropped. */
+  /**
+   * Inserts a list in one transaction. Unknown keys are dropped.
+   *
+   * Rows may carry different keys. An omitted key or an explicit `undefined` takes the
+   * database default for that row; `null` stays NULL.
+   */
   insert(
-    data: readonly InsertOf<S, K>[],
+    data: readonly (RequiredInsert<InsertOf<S, K>> & OptionalInsert<InsertOf<S, K>>)[],
     options?: InsertOptions<S, K>,
   ): Write<readonly Show<RowOf<S, K>>[]>;
   /** Updates matching rows, or a per-row list in one statement. `where` is required. */

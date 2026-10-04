@@ -85,6 +85,7 @@ function rangeColumn<T>(
     baseType,
     encode: (value) => writeRange(value, encodeBound, quote),
     decode: (wire) => readRange(wire, decodeBound, quote),
+    accepts: ["Object"],
     sqlForm: "cast",
   });
 }
@@ -92,6 +93,9 @@ function rangeColumn<T>(
 function writeRange<T>(value: Range<T>, encodeBound: (value: T) => string, quote: boolean): string {
   if (value.empty) {
     return "empty";
+  }
+  if (value.empty !== false) {
+    rejected("range needs empty: true, or empty: false with lower and upper.");
   }
   const lower = value.lower === null ? "" : boundText(encodeBound(value.lower), quote);
   const upper = value.upper === null ? "" : boundText(encodeBound(value.upper), quote);

@@ -602,7 +602,7 @@ References are plain table-name strings (a generic table-name argument cycles th
 | Search / trees | `t.tsvector()`, `t.ltree()` |
 | Enums / domains | `t.enum("name", [...])`. `t.domain("name", base, check)` throws OKM1061 until 0.3 |
 | Arrays | `.array()`, `.array({ dims: 2 })` |
-| Custom | `t.custom({ sqlType, encode, decode, tsType })` |
+| Custom | `t.custom({ sqlType, encode, decode, tsType, accepts? })`. `accepts` names the object kinds the codec takes (`"Object"`, `"Array"`, `"Temporal.Instant"`); without it every object is rejected (OKM1121) |
 
 Modifiers: `.nullable()`, `.default(v)`, `.defaultSql(sql)`, `.primaryKey()`, `.unique({ reason, global })`, `.references(table, opts)`, `.picklist([...], { check })`, `.generated(sql, { stored })`, `.guarded()`, `.hidden()`, `.sensitive()`, `.renamedFrom(name)`, `.sqlName()`, `.comment()`, `.validate(rules | schema)`.
 
@@ -775,10 +775,9 @@ db.countries.find({ limit: 300 });                  // global tables on the root
 | `count(opts)`, `exists(opts)` | `number`, `boolean` | |
 | `aggregate(opts)` | grouped rows | `where`, `groupBy`, `count: true`, and `sum`, `avg`, `min`, `max` as field lists; a result row has the group fields, `count`, and one object per function (`row.sum.amount`); `groupBy` needs `limit` or `.all(reason)` (OKM1101); `orderBy` takes `groupBy` fields; no `having`, no `bucket` (M2); hidden fields are refused; the tenant and active-set predicates apply as on any read |
 
+Aggregates decode with the source column's codec. `count` is a number. `min` and `max` follow the column. `sum` and `avg` keep the value type of the column: a `numeric` column gives the exact decimal string (the default codec) or a number when the column is `as: "number"`, an `integer` or `double` column gives a number, and a column whose value is neither a string nor a number (`bigint` as `bigint`) is refused with OKM1124. `sum` and `avg` over a `text` column pass the types and fail at runtime with OKM1124.
 
 Query modifiers apply to any read: `.stream()` (async iteration over a server-side cursor, driver capability), `.required()`, `.safe()`, `.inspect()`, `.sql()`, `.explain()`.
-
-Aggregates decode with the source column's codec. `count` is a number. `min` and `max` follow the column. `sum` and `avg` keep the value type of the column: a `numeric` column gives the exact decimal string (the default codec) or a number when the column is `as: "number"`, an `integer` or `double` column gives a number, and a column whose value is neither a string nor a number (`bigint` as `bigint`) is refused with OKM1124. `sum` and `avg` over a `text` column pass the types and fail at runtime with OKM1124.
 
 ```ts
 const task = await scoped.tasks.one({ where: { id } }).required();
@@ -808,7 +807,7 @@ const today = await scoped.tasks.pending().ownedBy(userId).find({
 ```
 
 - A plain value means equality; `null` means `IS NULL`.
-- Operators and relation filters are tagged values created by helpers. JSON cannot create them, so request data can never add an operator or traverse a relation. A plain object where a value is expected is rejected at runtime (OKM1121, its fix names `eq`); `eq(value)` is the equality form for object (json, jsonb) values. An identifier that fails the rules (length, NUL, control characters, unquoted reserved word) is rejected at runtime (OKM1122). Allowlisting a hidden field in a filter or sort allowlist fails at build (OKM1123). A preset's `where` appends (AND) and the preset builder exposes only additive methods, never replacement (D125, D126).
+- Operators and relation filters are tagged values created by helpers. JSON cannot create them, so request data can never add an operator or traverse a relation. An object is accepted only where the column's codec takes one: Temporal objects for the date and time types, any JSON object or array for json and jsonb, arrays for array columns, `Uint8Array` for bytea, the range, point, line and timetz shapes, and what a `t.custom({ accepts })` codec names. Any other object, including a `Date`, is rejected at runtime (OKM1121) before a statement is sent, on `insert`, `update` `set`, and every `where` operand. In a `where`, a bare object is rejected for every column (its fix names `eq`); `eq(value)` is the equality form for object values (json, jsonb, Temporal, arrays, ranges), and the comparison operators take the codec's objects as their operands. An identifier that fails the rules (length, NUL, control characters, unquoted reserved word) is rejected at runtime (OKM1122). Allowlisting a hidden field in a filter or sort allowlist fails at build (OKM1123). A preset's `where` appends (AND) and the preset builder exposes only additive methods, never replacement (D125, D126).
 - Field names in `where`, `select`, `orderBy` and `include` are checked against the catalog at runtime (OKM1120).
 - `undefined` in `find` filters means "no filter"; in `update`/`delete`, a `where` that becomes empty throws OKM1102.
 - One logical operation per call (section 5.3). Reads and relation loading: the statement count depends on query shape, never on result cardinality; no lazy loading. Writes may be split by input size or driver limits, within the operation's declared atomicity.
@@ -884,7 +883,7 @@ Specified before M1 and tested on every driver through the conformance suite:
 | `like()`, `ilike()` | raw patterns, explicit |
 | `null` in `where` | `IS NULL`; `not(null)` → `IS NOT NULL` |
 | `update` `set` | `undefined` leaves the field unchanged; `null` sets NULL |
-| omitted field on `insert` | the database default applies |
+| omitted field on `insert` | the database default applies. Rows in one list may carry different keys: an omitted key or an explicit `undefined` is `DEFAULT` for that row in the same statement, and `null` stays NULL |
 | `returning` | rows as stored, after defaults, generated columns and triggers |
 | `update` / `delete` result | `{ count }`; `expect: n` throws `not_found` when the count differs |
 | `delete` | permanent; active set by default on `archivable` tables; children follow database FK actions |

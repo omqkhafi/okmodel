@@ -35,6 +35,15 @@ async function shapes(url: string): Promise<void> {
   const rows = await db.users.insert([{ email: "b@b.c", name: null }]);
   expectTypeOf(rows).toMatchTypeOf<readonly { readonly email: string }[]>();
 
+  // Rows in one list may omit different optional keys, or pass `undefined`.
+  void db.users.insert([
+    { email: "a@b.c" },
+    { email: "b@b.c", name: "Bo" },
+    { email: "c@b.c", name: undefined },
+  ]);
+  // @ts-expect-error a required key is still needed on every row
+  void db.users.insert([{ email: "a@b.c" }, { name: "Bo" }]);
+
   const updated = await db.tasks.update({ where: { title: "ship" }, set: { position: inc(1) } });
   expectTypeOf(updated).toEqualTypeOf<{ readonly count: number }>();
 

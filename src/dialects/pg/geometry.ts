@@ -29,6 +29,7 @@ export function point(): ColumnBuilder<Point, PlainFlags> {
     baseType: "point",
     encode: encodePoint,
     decode: decodePoint,
+    accepts: ["Object"],
     sqlForm: "quote",
   });
 }
@@ -43,6 +44,7 @@ export function line(): ColumnBuilder<Line, PlainFlags> {
     baseType: "line",
     encode: encodeLine,
     decode: decodeLine,
+    accepts: ["Object"],
     sqlForm: "quote",
   });
 }
