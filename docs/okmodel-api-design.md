@@ -681,7 +681,7 @@ Row types are emitted by default into `.okm/types.d.ts` by `okm build` and `okm 
 - **Rules** run in order. Transforms in a list run before the checks in that list. `v.onInsert()` and `v.onUpdate()` limit a rule, or the rules that follow them. Messages are keys.
 - **Derived rules** from the type, when validation is enabled: length (`too_long`), required (`required`), integer range (`integer_range`), precision (`precision`), picklist (`picklist`), uuid format (`uuid`), JSON shape (`json`).
 - **Standalone:** `tasks.insert.validate(body)`, `tasks.insert.check(body)`, `tasks.update.validate(body)` (a `{ set }` body checks `set`), `.pick(...)`, `.omit(...)`. `tasks.insert` is a Standard Schema. JSON Schema export is not in this version.
-- **At write time:** `schema({ validation: false })` → table `validation: true` → call `{ validate: false }`. Shorthand boolean; object form `{ enabled, onRead, style }`. The effective setting drives the input type (`Input` when enabled, `Insert` when disabled). Values from `validate()` are branded and frozen and skip re-validation. `onRead` is stored and is not applied on read in this version. Importing `okmodel/validate` registers the methods and is what loads the engine. A schema that stores `validation` without that import does not run rules.
+- **At write time:** `schema({ validation: false })` → table `validation: true` → call `{ validate: false }`. Shorthand boolean; object form `{ enabled, onRead, style }`. The effective setting drives the input type (`Input` when enabled, `Insert` when disabled). Values from `validate()` are branded and frozen and skip re-validation. `onRead` is stored and is not applied on read in this version. Importing `okmodel/validate` registers the methods and is what loads the engine (D174: a write that would validate, with `okmodel/validate` not imported, throws OKM1201 before any statement is sent, and `okm check` reports it; validation never runs unvalidated).
 - A failed check throws OKM1200, category `input`, with `issues` of `{ path, message }` in column order, then `$row`. Hidden and sensitive values are not copied into the issue or the message.
 
 ## 8. Traits
@@ -689,7 +689,7 @@ Row types are emitted by default into `.okm/types.d.ts` by `okm build` and `okm 
 | Trait | Adds | Behavior |
 |---|---|---|
 | `timestamps()` | `createdAt`, `updatedAt` | set in all lanes; `{ enforce: "trigger" }` adds a DB trigger |
-| `archivable(opts?)` | `archivedAt`, `archiveId` (column strategy) | enables `archive()` and `restore()`; reads target the active set by default, `withArchived()` / `onlyArchived()` widen it; uniques become partial (`WHERE archived_at IS NULL`; generated-column form on MySQL); `cascade: [...]` names the children archived and restored with the row |
+| `archivable(opts?)` | `archivedAt`, `archiveId` (column strategy) | enables `archive()` and `restore()`; reads target the active set by default, `withArchived()` / `onlyArchived()` widen it; uniques become partial unique indexes (`WHERE archived_at IS NULL`; the primary key stays a full constraint; generated-column form on MySQL); `cascade: [...]` names the children archived and restored with the row |
 | `versioned()` | `version` | optimistic locking; stale write → category `conflict` |
 | `sortable(groupBy?)` | `position` | `move(id, { before \| after })` |
 | `auditable()` | history table | before/after snapshots |
@@ -699,8 +699,8 @@ Row types are emitted by default into `.okm/types.d.ts` by `okm build` and `okm 
 #### Archive contract
 
 - **Strategies.** `archivable({ strategy: "column" })` (default, M1) keeps archived rows in the same table with `archivedAt` and `archiveId`, so migrations apply to them automatically. `strategy: "table"` (moving rows to a shared archive table) is deferred: archived snapshots would keep the table's old shape and break restore after migrations; it ships only once snapshots can follow migrations, with the same public contract.
-- **`archiveId` is provenance.** Every `archive()` call creates a new `archiveId` shared by every row it archives, including cascaded children. `archive()` returns `{ count, archiveId }`. `restore()` clears `archivedAt` and `archiveId`. Archive → restore → archive produces two different ids; `archiveId` never identifies a record.
-- **Cascade.** Children listed in `cascade` are archived in the same operation with the same `archiveId`. `restore` of a row brings back only the rows that carry its `archiveId`; a child archived earlier on its own stays archived. `restore({ archiveId })` restores a whole operation.
+- **`archiveId` is provenance.** Every `archive()` call creates a new `archiveId` shared by every row it archives, including cascaded children. `archive()` returns `{ count, archiveId }`. `restore()` clears `archivedAt` and `archiveId` and returns `{ count }`. Archive → restore → archive produces two different ids; `archiveId` never identifies a record.
+- **Cascade.** Children listed in `cascade` are archived in the same operation with the same `archiveId`. `cascade` names direct children only (tables with a foreign key to this one); a child's own `cascade` list is not followed (D171). `archive()`'s `count` is the targeted table's rows only. `restore` of a row brings back only the rows that carry its `archiveId`; a child archived earlier on its own stays archived. `restore({ archiveId })` restores a whole operation.
 - **Unique conflicts.** A restore that would violate a unique now held by an active row fails with the mapped `unique` error naming the key.
 - **Parents first.** Restoring a row whose referenced parent is still archived fails (category `input`, naming the parent); restore the parent's operation instead. Same rule for every strategy.
 - **Foreign-key contract.** With the column strategy archived rows stay in place, so database FK actions never fire on `archive`. With the table strategy (when it ships), every FK pointing at an archivable table whose delete action is not `RESTRICT`/`NO ACTION` (`CASCADE`, `SET NULL`, `SET DEFAULT`) must be listed in `cascade`, otherwise schema validation fails naming the child table, the FK and its action (OKM1051).
@@ -1310,6 +1310,7 @@ test("today view runs one query", async () => {
 | A table or schema option that exists in the types but is not available in this version (reserved slot) | schema | OKM1061 |
 | A codec rejects a value (not numeric text, not a valid temporal value, wrong shape) | runtime | OKM1210 |
 | Validation failed. `issues` lists each path and message key | runtime | OKM1200 |
+| Validation is enabled but `okmodel/validate` was not imported | runtime (first write) and `okm check` | OKM1201 |
 | Validation in two places | `okm check` | OKM1030 |
 | Preset name collides with a client method | types | OKM1040 |
 | Trait field conflict | schema | OKM1012 |

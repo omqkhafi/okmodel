@@ -10,6 +10,7 @@ import { OkmError, type ValidationIssue } from "../contracts/error.js";
 import type { ClientFill, IdGenerators } from "../contracts/generator.js";
 import type { ColumnModel } from "../dialects/pg/model.js";
 import type { QuerySchema } from "../dialects/pg/model.js";
+import type { AnyTable } from "../dialects/pg/table.js";
 import { encodeJson } from "../dialects/pg/json.js";
 import { arrayElementType, assertOperatorFits, textArray } from "../dialects/pg/operator-fit.js";
 import { isOperator, operatorName, operatorValue } from "../dialects/pg/operators.js";
@@ -40,6 +41,7 @@ import {
 } from "./safety-hook.js";
 import { fieldSealed, sealingTrait, touchFields } from "./trait-read.js";
 import { runWrite } from "./tx.js";
+import { writeWouldValidate } from "./validate/places.js";
 
 registerFailFix("OKM1102", "Pass where, or call .all(reason) to match every row.");
 registerFailFix("OKM1190", "Remove the guarded field. Input cannot set it.");
@@ -94,6 +96,47 @@ type Planned = {
   readonly keys: readonly (readonly (string | null)[])[] | undefined;
   readonly keyFields: readonly string[] | undefined;
 };
+
+type StoredSchema = QuerySchema & {
+  readonly tables?: readonly AnyTable[];
+  readonly validation?: unknown;
+};
+
+/**
+ * Throws OKM1201 before any statement when this write would validate and the
+ * validate module did not register.
+ *
+ * The message module loads only on that throw. A registered hook, a delete,
+ * and `{ validate: false }` return without it.
+ *
+ * @param schema - Connected schema
+ * @param op - Insert, update, or delete
+ * @param tableName - Table name
+ * @param options - Write options
+ */
+async function requireValidationImport(
+  schema: QuerySchema,
+  op: WriteOp,
+  tableName: string,
+  options: object,
+): Promise<void> {
+  if (op === "delete" || validationRegistered(schema)) return;
+  const stored = schema as StoredSchema;
+  const source = stored.tables?.find((item) => item.name === tableName);
+  if (source === undefined || !writeWouldValidate(stored.validation, source, options)) return;
+  const { refuseMissingValidation } = await import("./validate/closed.js");
+  refuseMissingValidation();
+}
+
+/** The validate hook sets `~v` when `okmodel/validate` is imported before `schema()`. */
+function validationRegistered(schema: QuerySchema): boolean {
+  const hooks = schema.hooks;
+  if (hooks === undefined) return false;
+  for (const hook of hooks) {
+    if ((hook as { readonly "~v"?: number })["~v"] === 1) return true;
+  }
+  return false;
+}
 
 const INSERT_OPTIONS = [
   "allow",
@@ -186,6 +229,7 @@ async function planWrite(
   mods: WriteMods,
   scope: CallScope | undefined,
 ): Promise<Planned> {
+  await requireValidationImport(schema, op, tableName, options);
   const table = indexes(schema).get(tableName);
   if (table === undefined) {
     fail("OKM1120", `Table ${tableName} is not in the schema.`);

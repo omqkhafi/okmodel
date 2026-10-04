@@ -26,6 +26,9 @@ type Handle = Promise<unknown> & {
 
 type Write = (data: unknown, options?: object) => Handle;
 
+/** Registration mark the write chunk reads. Absent when this module never loaded. */
+const VALIDATION_HOOK = 1;
+
 /**
  * Adds `insert.validate`, `check`, `pick`, `omit`, and the Standard Schema
  * surface when this table's validation is on.
@@ -37,6 +40,7 @@ type Write = (data: unknown, options?: object) => Handle;
  * @param ctx - Table name and the session
  */
 export function attachValidation(target: Record<string, unknown>, ctx: SchemaHookCtx): void {
+  if ((attachValidation as { readonly "~v"?: number })["~v"] !== VALIDATION_HOOK) return;
   const name = ctx.table;
   const session = ctx.session as { readonly schema?: Built } | undefined;
   const schema = session?.schema;
@@ -169,6 +173,8 @@ function chain(start: Deliver): Handle {
     },
   }) as Handle;
 }
+
+(attachValidation as { "~v"?: number })["~v"] = VALIDATION_HOOK;
 
 function skipped(options: object): boolean {
   return (options as { readonly validate?: unknown }).validate === false;

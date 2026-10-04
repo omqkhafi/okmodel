@@ -262,6 +262,69 @@ postgresTest(
   20_000,
 );
 
+postgresTest(
+  gate,
+  "a failed check inside a transaction rolls back and sends nothing",
+  async () => {
+    const notes = table(
+      "notes",
+      { id: uuid().primaryKey(), title: varchar(4) },
+      { validation: true },
+    );
+    const notesApp = schema({ tables: [notes], validation: true });
+    await withPostgresSchema(async (sql, schemaName) => {
+      for (const statement of renderCatalog(notesApp.catalog, schemaName)) {
+        await sql.unsafe(statement);
+      }
+      await sql.unsafe("create table held (id text primary key)");
+      await sql.unsafe("create sequence proof_seq");
+      await sql.unsafe(
+        "create function proof_bump() returns trigger language plpgsql as $$ begin perform nextval('proof_seq'); return new; end $$",
+      );
+      await sql.unsafe(
+        "create trigger proof_bi before insert on notes for each row execute function proof_bump()",
+      );
+      const db = connect(primaryUrl(), { schema: notesApp, searchPath: schemaName, max: 1 });
+      try {
+        await db.connected;
+        await sql.unsafe("begin");
+        let failed: OkmError | undefined;
+        try {
+          await sql.unsafe("insert into held (id) values ('open')");
+          await db.notes.insert({
+            id: "88888888-8888-4888-8888-888888888888",
+            title: "too-long",
+          });
+        } catch (error) {
+          if (error instanceof OkmError) failed = error;
+          else {
+            await sql.unsafe("rollback");
+            throw error;
+          }
+        }
+        await sql.unsafe("rollback");
+        expect(failed?.code).toBe("OKM1200");
+        expect(failed?.category).toBe("input");
+        const held = await sql<{ readonly count: number }[]>`
+          select count(*)::int as count from held
+        `;
+        expect(held[0]?.count).toBe(0);
+        const rows = await sql<{ readonly count: number }[]>`
+          select count(*)::int as count from notes
+        `;
+        expect(rows[0]?.count).toBe(0);
+        const called = await sql<{ readonly is_called: boolean }[]>`
+          select is_called from proof_seq
+        `;
+        expect(called[0]?.is_called).toBe(false);
+      } finally {
+        await db.close();
+      }
+    });
+  },
+  20_000,
+);
+
 test("OKM1200 is an input error whose message is keys", () => {
   const error = new OkmError("OKM1200", "Validation failed.", {
     issues: [{ path: ["title"], message: "title_required" }],

@@ -12,6 +12,7 @@ import { OkmError, safe } from "../src/contracts/index.js";
 import { nearestName, throwNamed } from "../src/contracts/internal.js";
 import { mapPostgresError } from "../src/dialects/pg/errors.js";
 import { id, schema, table, text } from "../src/dialects/pg/index.js";
+import { refuseMissingValidation } from "../src/runtime/validate/closed.js";
 import { ERROR_DOCS, errorDoc } from "../src/tooling/errors/registry.js";
 
 const SPEC_CODES = [
@@ -45,6 +46,7 @@ const SPEC_CODES = [
   "OKM1190",
   "OKM1191",
   "OKM1200",
+  "OKM1201",
   "OKM1210",
   "OKM1401",
   "OKM1510",
@@ -294,6 +296,24 @@ test("the error registry lists every spec 21 code and stays off the runtime entr
   expect(entry.includes("tooling/errors")).toBe(false);
   expect(errorSource.includes("ERROR_DOCS")).toBe(false);
   expect(errorSource.includes("idempotency key")).toBe(true);
+});
+
+test("OKM1201 uses the registry sentence", () => {
+  const doc = errorDoc("OKM1201");
+  let failed: OkmError | undefined;
+  try {
+    refuseMissingValidation();
+  } catch (error) {
+    if (error instanceof OkmError) failed = error;
+    else throw error;
+  }
+  if (failed === undefined || doc === undefined) throw new Error("OKM1201 was not thrown");
+  expect(failed.code).toBe("OKM1201");
+  expect(failed.kind).toBe("invalid");
+  expect(failed.category).toBe("input");
+  expect(failed.message).toBe(doc.summary);
+  expect(failed.fix.summary).toBe(doc.fix);
+  expect(failed.message).toBe("Validation is enabled but `okmodel/validate` was not imported.");
 });
 
 test("registered table columns narrow OkmError.is", () => {

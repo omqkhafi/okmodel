@@ -61,11 +61,13 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `registerArchive()` records the archive rules. An application that does not call `archivable()` does not load the archive statement.
 - `okmodel/validate` exports `v`. Importing it adds `insert.validate`, `insert.check`, `pick`, `omit`, `update.validate`, and the Standard Schema surface. The engine loads on the first validated call. An application that does not import it does not load that code.
 - A validated write runs transforms, then derived checks (length, required, integer range, precision, picklist, uuid, json), then the caller's rules. A failure is OKM1200. A value returned by `validate()` is frozen and is not checked again. `{ validate: false }` skips that call.
+- A write that would validate throws OKM1201 before any statement, and before a transaction is opened, when `okmodel/validate` was not imported. The category is `input`. A schema that does not enable validation still writes. A failed engine import still rejects the call.
 
 #### tooling
 
 - `engines.node` is `>=22`. The checks that can run do so on Node, Bun, and Deno, and the runtime entry is imported as an edge bundle. A runtime that cannot run a check prints the reason.
 - `okm check` reports OKM1030 when a field has rules on the column and in the table `validate` section, or when `validation.style` disagrees with where the rules sit.
+- `okm check` reports OKM1201 when the schema would validate and the project never imports `okmodel/validate`.
 
 #### docs
 
@@ -76,6 +78,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Spec section 9 uses `columnTenancy` and `global("reason")`. The size page records the no-tenancy app at 85,356 / 28,361. The gates are that measurement plus 3 percent (D160). Column tenancy measures 91,802 / 30,411 and is not a gate. The 91,000 / 30,000 cap stays.
 - D170 accepts the featureless app at 87,148 / 28,938. The gates, the cap, and the 7,100 type probe stay. An application that uses `archivable()` measures 95,725 / 31,604 at startup and is not a gate. A unique a trait adds after the tenancy rewrite is still not widened.
 - Validation is opt-in. OKM1030 is reported by `okm check`, not while `schema()` compiles. D172 records why the first build was rejected and where the engine lives.
+- D174 moves the missing-import check to the first write. The typed surface stays runtime-only until P27.
 
 ### 💥 Breaking Changes
 
