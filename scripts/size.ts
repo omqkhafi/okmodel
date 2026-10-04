@@ -52,28 +52,28 @@ export const CI_COLD_IMPORT_MS = 25;
 export const APP_ENTRY = "scripts/app-startup.ts";
 
 /**
- * Minified app-fixture ceiling, in bytes (D157).
+ * Minified app-fixture ceiling, in bytes (D158).
  *
- * P19 measured 82,041. Plus 3 percent, rounded down, is 84,500, under the 91,000 allowance (D143).
+ * P20 measured 82,679. Plus 3 percent, rounded down, is 85,100, under the 91,000 allowance (D143).
  */
-export const APP_MAX_MIN_BYTES = 84_500;
+export const APP_MAX_MIN_BYTES = 85_100;
 
 /**
- * Gzipped app-fixture ceiling, in bytes (D157).
+ * Gzipped app-fixture ceiling, in bytes (D158).
  *
- * P19 measured 26,716. Plus 3 percent, rounded down, is 27,500, under the 30,000 allowance (D143).
+ * P20 measured 27,196. Plus 3 percent, rounded down, is 28,000, under the 30,000 allowance (D143).
  */
-export const APP_MAX_GZIP_BYTES = 27_500;
+export const APP_MAX_GZIP_BYTES = 28_000;
 
 /**
  * Public connect entries, driver left external (D142, D143, D156).
  *
  * The startup graph excludes chunks loaded on first failure, include, or the
- * mismatch path of the catalog check. postgres.js is the P19 measurement plus
- * 3 percent, rounded down (D157): 40,100 minified, gzip gate 13,815 kept.
+ * mismatch path of the catalog check. postgres.js is the P20 measurement plus
+ * 3 percent, rounded down (D158): 40,800 / 14,100.
  * PGlite stays at the P17 measurement plus 5 percent (38,146 / 13,505).
- * node-postgres and Bun.sql are the P19 measurement plus 3 percent, rounded
- * down (D157): 40,000 / 13,950 and 38,900 / 13,500. Cold import is printed,
+ * node-postgres and Bun.sql are the P20 measurement plus 3 percent, rounded
+ * down (D158): 41,000 / 14,250 and 39,800 / 13,800. Cold import is printed,
  * including a driver-stubbed sample, and is not gated. Bun.sql has no Node cold import.
  */
 export const CONNECT_ENTRIES = [
@@ -81,8 +81,8 @@ export const CONNECT_ENTRIES = [
     entry: "src/runtime/pg/postgresjs.ts",
     file: "postgresjs.js",
     external: ["postgres"],
-    maxMinBytes: 40_100,
-    maxGzipBytes: 13_815,
+    maxMinBytes: 40_800,
+    maxGzipBytes: 14_100,
   },
   {
     entry: "src/runtime/pg/pglite.ts",
@@ -95,16 +95,16 @@ export const CONNECT_ENTRIES = [
     entry: "src/runtime/pg/pg.ts",
     file: "pg.js",
     external: ["pg"],
-    maxMinBytes: 40_000,
-    maxGzipBytes: 13_950,
+    maxMinBytes: 41_000,
+    maxGzipBytes: 14_250,
   },
   {
     entry: "src/runtime/pg/bun.ts",
     file: "bun.js",
     external: ["bun"],
     nodeColdImport: false,
-    maxMinBytes: 38_900,
-    maxGzipBytes: 13_500,
+    maxMinBytes: 39_800,
+    maxGzipBytes: 13_800,
   },
 ] as const;
 
