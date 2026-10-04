@@ -143,6 +143,35 @@ export function registerFieldExposure(): () => void {
   });
 }
 
+/**
+ * Registers the timestamps rule.
+ *
+ * A contribution that sets `createdAt` or `updatedAt` from input is OKM1190.
+ * `{ allow }` does not permit it. The planner records `set by timestamps`
+ * or `kept`. The package does not register the rule on import.
+ *
+ * @returns Removes this registration
+ */
+export function registerTimestamps(): () => void {
+  return registerRule({
+    name: "timestamps",
+    contribution: "timestamps",
+    check(input) {
+      const violations: SafetyViolation[] = [];
+      for (const item of input.contributions) {
+        if (item.rule !== "timestamps" || !item.contribution.includes("set by input")) continue;
+        violations.push({
+          rule: item.rule,
+          contribution: item.contribution,
+          ...(item.source !== undefined ? { source: item.source } : {}),
+          detail: "A timestamp is set by the trait. Input cannot set it.",
+        });
+      }
+      return violations;
+    },
+  });
+}
+
 function leaked(rule: string, contribution: string): boolean {
   if (rule === "hidden") return contribution.includes(" shown");
   if (rule === "sensitive") return contribution.includes(" revealed");

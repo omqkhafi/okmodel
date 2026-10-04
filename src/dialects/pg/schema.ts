@@ -39,11 +39,15 @@ import { type ColumnModel, type RelationModel, type TableModel } from "./model.j
 import { definition, unavailable } from "./misuse.js";
 import { isRelationCall } from "./relations.js";
 import { decodeText, encodeText } from "./text.js";
+import type { FieldsOfList, Trait, TraitModel } from "./trait.js";
 import {
   type AnyTable,
   type ColumnHandle,
   type IndexCall,
+  type InsertFrom,
+  type RowFrom,
   type SqlText,
+  type UpdateFrom,
   emittedTypeName,
   rejectLater,
   snakeCase,
@@ -87,7 +91,13 @@ export type SchemaInput<TTables extends readonly AnyTable[]> = {
   readonly defaults?: {
     readonly id?: "uuidv7" | "uuidv4" | ClientGenerator<string>;
   };
-  readonly traits?: unknown;
+  /**
+   * Traits applied to every table.
+   *
+   * A table opts out with `omitDefaults` and a reason. A table's own `traits`
+   * are added as well.
+   */
+  readonly traits?: readonly Trait[];
   readonly tenancy?: unknown;
   readonly validation?: unknown;
   readonly extensions?: unknown;
@@ -114,18 +124,59 @@ export type BuiltSchema<TTables extends readonly AnyTable[]> = {
   readonly codecs: SchemaCodecs;
   readonly requires: SchemaRequires | undefined;
   readonly tables: TTables;
+  /**
+   * Schema traits, when the call passed a non-empty list.
+   *
+   * Omitted otherwise, so a schema that uses no traits does not carry the key.
+   */
+  readonly traits?: readonly Trait[];
   /** Query model. Built once, beside the catalog document. */
   readonly model: { readonly [T in TTables[number] as T["~name"]]: TableModel };
 };
 
-const SCHEMA_KNOWN = new Set(["casing", "codecs", "defaults", "requires", "tables", "types"]);
+/**
+ * A schema whose default traits are part of every table's row type.
+ *
+ * A table with `omitDefaults` keeps its own type. An empty trait list does not
+ * change the schema type.
+ *
+ * @typeParam TTables - Tables in declaration order
+ * @typeParam TTraits - Schema default traits
+ */
+export type SchemaWithTraits<
+  TTables extends readonly AnyTable[],
+  TTraits extends readonly { readonly fields: Readonly<Record<string, object>> }[],
+> = keyof FieldsOfList<TTraits> extends never
+  ? BuiltSchema<TTables>
+  : Omit<BuiltSchema<TTables>, "~byName"> & {
+      readonly "~byName": {
+        readonly [T in TTables[number] as T["~name"]]: ApplySchemaTraits<T, FieldsOfList<TTraits>>;
+      };
+    };
+
+type ApplySchemaTraits<TTable, TFields> = TTable extends { readonly "~omitDefaults": true }
+  ? TTable
+  : TTable & {
+      readonly "~row": RowFrom<TFields>;
+      readonly "~insert": InsertFrom<TFields>;
+      readonly "~update": UpdateFrom<TFields>;
+    };
+
+const SCHEMA_KNOWN = new Set([
+  "casing",
+  "codecs",
+  "defaults",
+  "requires",
+  "tables",
+  "traits",
+  "types",
+]);
 
 /** Later schema options, and the version that adds each one. */
 const SCHEMA_LATER: Readonly<Record<string, string>> = {
   extensions: "0.3",
   functions: "0.3",
   tenancy: "0.2",
-  traits: "0.2",
   triggers: "0.3",
   validation: "0.2",
   views: "0.3",
@@ -205,6 +256,13 @@ type Prepared = {
   readonly byField: ReadonlyMap<string, PreparedColumn>;
   readonly bySql: ReadonlyMap<string, PreparedColumn>;
   readonly relationOptions: unknown;
+  /**
+   * Traits that apply to this table.
+   *
+   * Absent when it has none. The write path reads `touch` and `sealed` from
+   * these objects, so that code stays out of startup.
+   */
+  readonly traits?: readonly Trait[];
 };
 
 /**
@@ -217,10 +275,20 @@ type Prepared = {
  * @param config - Tables, casing, codecs, and the row-type mode
  * @returns The schema and its catalog
  */
+export function schema<
+  const TTables extends readonly AnyTable[],
+  const TTraits extends readonly { readonly fields: Readonly<Record<string, object>> }[],
+>(
+  config: Omit<SchemaInput<TTables>, "traits"> & { readonly traits: TTraits },
+): SchemaWithTraits<TTables, TTraits>;
+export function schema<const TTables extends readonly AnyTable[]>(
+  config: SchemaInput<TTables>,
+): BuiltSchema<TTables>;
 export function schema<const TTables extends readonly AnyTable[]>(
   config: SchemaInput<TTables>,
 ): BuiltSchema<TTables> {
   rejectLater(config, SCHEMA_KNOWN, SCHEMA_LATER, "schema()");
+  const schemaTraits = openSchemaTraits(config.traits);
   if (!Array.isArray(config.tables)) {
     definition("schema() needs a tables array.");
   }
@@ -237,7 +305,17 @@ export function schema<const TTables extends readonly AnyTable[]>(
   const enums = new Map<string, EnumNote>();
 
   for (const item of config.tables) {
-    const built = compileTable(item, namespace, casing, codecs, requires, idDefault, jobs, enums);
+    const built = compileTable(
+      item,
+      namespace,
+      casing,
+      codecs,
+      requires,
+      idDefault,
+      jobs,
+      enums,
+      schemaTraits,
+    );
     if (sqlNames.has(built.sqlName)) {
       catalogError(
         "OKM1023",
@@ -290,6 +368,7 @@ export function schema<const TTables extends readonly AnyTable[]>(
     requires,
     tables: config.tables,
     model,
+    ...(schemaTraits !== undefined && schemaTraits.length > 0 ? { traits: schemaTraits } : {}),
   } as unknown as BuiltSchema<TTables>;
 }
 
@@ -351,6 +430,64 @@ function noteEnum(
   }
 }
 
+/**
+ * Reads `schema({ traits })`.
+ *
+ * An omitted or empty list stays `undefined`, so the table loop does nothing.
+ *
+ * @param value - The option the caller passed
+ * @returns The list, or `undefined`
+ */
+function openSchemaTraits(value: unknown): readonly Trait[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) definition("schema() traits must be a list of traits.");
+  return value.length === 0 ? undefined : (value as readonly Trait[]);
+}
+
+/**
+ * Collects the traits for one table and lets each add its columns.
+ *
+ * Schema defaults come first. `omitDefaults` drops them and keeps traits
+ * declared on the table. No list means the table's own columns, unchanged.
+ *
+ * @param table - Table name, for errors
+ * @param columns - Columns the table declared
+ * @param schemaTraits - Traits from `schema()`
+ * @param options - This table's options
+ * @returns The merged columns and the traits that applied, or `undefined`
+ */
+function openTableTraits(
+  table: string,
+  columns: Readonly<Record<string, object>>,
+  schemaTraits: readonly Trait[] | undefined,
+  options: { readonly traits?: unknown; readonly omitDefaults?: unknown } | undefined,
+): { readonly columns: Record<string, object>; readonly traits: readonly Trait[] } | undefined {
+  let shared = schemaTraits;
+  const omit = options?.omitDefaults;
+  if (omit !== undefined) {
+    if (typeof omit !== "string" || omit.trim().length === 0) {
+      definition(`Table ${table} omitDefaults needs a reason.`);
+    }
+    shared = undefined;
+  }
+  const own = options?.traits;
+  if (own !== undefined && !Array.isArray(own)) {
+    definition(`Table ${table} traits must be a list of traits.`);
+  }
+  const local = Array.isArray(own) && own.length > 0 ? (own as readonly Trait[]) : undefined;
+  if ((shared === undefined || shared.length === 0) && local === undefined) return undefined;
+  const traits =
+    local === undefined
+      ? shared
+      : shared === undefined || shared.length === 0
+        ? local
+        : [...shared, ...local];
+  if (traits === undefined) return undefined;
+  const model: TraitModel = { columns: { ...columns } };
+  for (const trait of traits) trait.apply(model, { table });
+  return { columns: model.columns, traits };
+}
+
 function compileTable(
   item: AnyTable,
   namespace: ReturnType<typeof staticNamespace>,
@@ -360,8 +497,15 @@ function compileTable(
   idDefault: SchemaIdDefault | undefined,
   jobs: CatalogJob[],
   enums: Map<string, EnumNote>,
+  schemaTraits: readonly Trait[] | undefined,
 ): Prepared {
   const options = item.options as StoredOptions | undefined;
+  const applied = openTableTraits(
+    item.name,
+    item.columns,
+    schemaTraits,
+    item.options as { readonly traits?: unknown; readonly omitDefaults?: unknown } | undefined,
+  );
   readTableNames(item.name, options);
   const sqlName = options?.sqlName ?? (casing === "snake" ? snakeCase(item.name) : item.name);
   assertIdentifier(sqlName, `table ${item.name}`);
@@ -378,13 +522,25 @@ function compileTable(
   const bySql = new Map<string, PreparedColumn>();
   const handles: Record<string, ColumnHandle> = {};
 
-  for (const [field, builder] of Object.entries(item.columns)) {
+  const sourceColumns = applied === undefined ? item.columns : applied.columns;
+  for (const [field, builder] of Object.entries(sourceColumns)) {
     if (!(builder instanceof ColumnBuilder)) {
       definition(`Column ${item.name}.${field} must be a column builder.`);
     }
     const column = applySchemaId(builder as unknown as ColumnView, idDefault);
     const columnSql = column.state.sqlName ?? (casing === "snake" ? snakeCase(field) : field);
     assertCodec(item.name, field, column, codecs);
+    const mark =
+      applied !== undefined ? (builder as { readonly trait?: unknown }).trait : undefined;
+    const traitName = typeof mark === "string" ? mark : undefined;
+    const columnProvenance: Provenance =
+      traitName === undefined
+        ? provenance
+        : {
+            origin: "trait",
+            name: traitName,
+            ...(provenance.source !== undefined ? { source: provenance.source } : {}),
+          };
     const identity = column.state.identity;
     if (identity !== undefined) {
       const seqName = fitIdentifier(`${sqlName}_${columnSql}_seq`);
@@ -400,13 +556,13 @@ function compileTable(
         pushCompiled(objects, column, {
           parent,
           name: columnSql,
-          provenance,
+          provenance: columnProvenance,
           dependencies: [seq.identity],
         });
       });
     } else {
       jobs.push((objects) => {
-        pushCompiled(objects, column, { parent, name: columnSql, provenance });
+        pushCompiled(objects, column, { parent, name: columnSql, provenance: columnProvenance });
       });
     }
     const decode = column.state.decode;
@@ -498,6 +654,7 @@ function compileTable(
     byField,
     bySql,
     relationOptions: relationInput(item.name, options),
+    ...(applied !== undefined ? { traits: applied.traits } : {}),
   };
 }
 
@@ -901,6 +1058,7 @@ function tableModel(
     columns,
     relations: resolveRelations(item, edges, byName, accepted),
     ...(conceal ? { conceal: true as const } : {}),
+    ...(item.traits !== undefined ? { traits: item.traits } : {}),
     ...(item.provenance.source !== undefined ? { source: item.provenance.source } : {}),
   };
 }

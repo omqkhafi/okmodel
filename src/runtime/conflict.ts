@@ -8,6 +8,7 @@
 import { throwNamed } from "../contracts/error.js";
 import type { ColumnModel } from "../dialects/pg/model.js";
 import { isRecord, fail, list, projectExpr, quote, type Indexed } from "./plan.js";
+import { fieldSealed, touchFields } from "./trait-read.js";
 
 /** How a conflict should be written. `"error"` never reaches here. */
 export type ConflictPlan = {
@@ -86,11 +87,18 @@ export function finishInsert(
   }
   const target = plan.columns.map((column) => quote(column.sql)).join(", ");
   if (plan.kind === "update") {
-    const set = plan.update
-      .map((column) => `${quote(column.sql)} = excluded.${quote(column.sql)}`)
-      .join(", ");
+    const assignments = plan.update.map(
+      (column) => `${quote(column.sql)} = excluded.${quote(column.sql)}`,
+    );
+    const touch = touchFields(table.model);
+    if (touch !== undefined) {
+      for (const field of touch) {
+        const column = table.columns.get(field);
+        if (column !== undefined) assignments.push(`${quote(column.sql)} = now()`);
+      }
+    }
     return {
-      text: `${head} on conflict (${target}) do update set ${set}${returning}`,
+      text: `${head} on conflict (${target}) do update set ${assignments.join(", ")}${returning}`,
       params: [...params],
     };
   }
@@ -177,8 +185,12 @@ function updateColumns(
         `Field ${name} is not on ${table.model.name}. Accepted names: ${list(table.names)}.`,
       );
     }
-    if (column.guardUpdate || (!column.writable && !(column.guarded && allow.has(name)))) {
-      refuseWrite(table.model.name, column);
+    if (
+      fieldSealed(table.model, name) ||
+      column.guardUpdate ||
+      (!column.writable && !(column.guarded && allow.has(name)))
+    ) {
+      refuseWrite(table, column);
     }
     columns.push(column);
   }
@@ -216,12 +228,21 @@ function rejectConflictKeys(keys: readonly string[], accepted: readonly string[]
   }
 }
 
-function refuseWrite(table: string, column: ColumnModel): never {
+function refuseWrite(table: Indexed, column: ColumnModel): never {
+  if (fieldSealed(table.model, column.field)) {
+    fail(
+      "OKM1190",
+      `Field ${table.model.name}.${column.field} is set by a trait. Input cannot set it.`,
+    );
+  }
   if (column.guardUpdate) {
-    fail("OKM1190", `Field ${table}.${column.field} is a primary key. Input cannot change it.`);
+    fail(
+      "OKM1190",
+      `Field ${table.model.name}.${column.field} is a primary key. Input cannot change it.`,
+    );
   }
   if (column.guarded) {
-    fail("OKM1190", `Field ${table}.${column.field} is guarded. Input cannot set it.`);
+    fail("OKM1190", `Field ${table.model.name}.${column.field} is guarded. Input cannot set it.`);
   }
-  fail("OKM1120", `Field ${table}.${column.field} cannot be written.`);
+  fail("OKM1120", `Field ${table.model.name}.${column.field} cannot be written.`);
 }

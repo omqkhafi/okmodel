@@ -11,6 +11,7 @@ import { type ColumnInsertOf, type ColumnRowOf, type ColumnUpdateOf } from "./co
 import { openFilters } from "./filters.js";
 import { definition, unavailable } from "./misuse.js";
 import { type RelationCall } from "./relations.js";
+import { type FieldsOfList, type Trait } from "./trait.js";
 
 /**
  * A column as seen by `indexes` and `checks`.
@@ -74,8 +75,18 @@ export type TableOptions<TColumns> = {
   readonly comment?: string;
   readonly validate?: unknown;
   readonly validation?: unknown;
-  readonly traits?: unknown;
-  readonly omitDefaults?: unknown;
+  /**
+   * Traits added to this table.
+   *
+   * Schema default traits are added as well, unless `omitDefaults` is set.
+   */
+  readonly traits?: readonly Trait[];
+  /**
+   * Skip schema default traits.
+   *
+   * The value is the reason. An empty reason is rejected when the schema is built.
+   */
+  readonly omitDefaults?: string;
   readonly tenancy?: unknown;
   readonly computed?: unknown;
   readonly presets?: unknown;
@@ -201,10 +212,12 @@ const TABLE_KNOWN = new Set([
   "checks",
   "comment",
   "indexes",
+  "omitDefaults",
   "primaryKey",
   "relations",
   "renamedFrom",
   "sqlName",
+  "traits",
   "unique",
 ]);
 
@@ -215,12 +228,10 @@ const TABLE_KNOWN = new Set([
  */
 const TABLE_LATER: Readonly<Record<string, string>> = {
   computed: "later",
-  omitDefaults: "0.2",
   policies: "later",
   presets: "0.2",
   reference: "0.4",
   tenancy: "0.2",
-  traits: "0.2",
   validate: "0.2",
   validation: "0.2",
 };
@@ -245,11 +256,7 @@ export function table<
   const TName extends string,
   const TColumns extends Readonly<Record<string, object>>,
   const TOptions extends TableOptions<TColumns>,
->(
-  name: TName,
-  columns: TColumns,
-  options: TOptions,
-): Table<TName, TColumns, RelationsOf<TOptions>, PrimaryOf<TOptions>>;
+>(name: TName, columns: TColumns, options: TOptions): DeclaredTable<TName, TColumns, TOptions>;
 export function table<
   const TName extends string,
   const TColumns extends Readonly<Record<string, object>>,
@@ -304,6 +311,39 @@ type PrimaryOf<TOptions> = TOptions extends { readonly primaryKey: infer K }
     ? Extract<F, string>
     : never
   : never;
+
+/**
+ * Table type callers see, including trait fields and an opt-out of schema traits.
+ *
+ * @typeParam TName - Table name
+ * @typeParam TColumns - Column builders
+ * @typeParam TOptions - Options argument
+ */
+type DeclaredTable<TName extends string, TColumns, TOptions> = Table<
+  TName,
+  TColumns,
+  RelationsOf<TOptions>,
+  PrimaryOf<TOptions>
+> &
+  TraitShapes<TColumns, TOptions> &
+  OmitFlag<TOptions>;
+
+type OmitFlag<TOptions> = TOptions extends { readonly omitDefaults: string }
+  ? { readonly "~omitDefaults": true }
+  : unknown;
+
+type TraitShapes<TColumns, TOptions> = TOptions extends { readonly traits: infer TTraits }
+  ? TTraits extends readonly { readonly fields: Readonly<Record<string, object>> }[]
+    ? keyof FieldsOfList<TTraits> extends never
+      ? unknown
+      : {
+          readonly "~row": RowFrom<TColumns> & RowFrom<FieldsOfList<TTraits>>;
+          readonly "~insert": InsertFrom<TColumns> & InsertFrom<FieldsOfList<TTraits>>;
+          readonly "~update": UpdateFrom<TColumns, PrimaryOf<TOptions>> &
+            UpdateFrom<FieldsOfList<TTraits>>;
+        }
+    : unknown
+  : unknown;
 
 /**
  * Declares an index from column handles.

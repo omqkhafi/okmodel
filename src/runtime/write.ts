@@ -33,6 +33,7 @@ import {
   type SafetyContribution,
   type SafetyHatch,
 } from "./safety-hook.js";
+import { fieldSealed, sealingTrait, touchFields } from "./trait-read.js";
 import { runWrite } from "./tx.js";
 
 /** Statements in one insert stay under this many parameters. The protocol limit is 65535. */
@@ -175,7 +176,7 @@ async function planInsert(
   generators: IdGenerators | undefined,
 ): Promise<Planned> {
   const allow = allowSet(table, options.allow);
-  noteGuarded(table, allow);
+  noteGuarded(table, allow, "insert");
   const many = Array.isArray(input);
   const rows = (many ? input : [input]).map((row) => insertRow(table, row, allow));
   fillInsert(table, rows, generators);
@@ -247,7 +248,7 @@ function planUpdate(
   mods: WriteMods,
 ): Planned {
   const allow = allowSet(table, options.allow);
-  noteGuarded(table, allow);
+  noteGuarded(table, allow, "update");
   const returning = returningOption(table, options.returning);
   const outputs = outputsOf(returning);
   const expect = expectOf(options, mods);
@@ -434,6 +435,7 @@ function updateSlice(
     sql.text(quote(column.sql));
     sql.text(" end");
   }
+  emitTouch(sql, table, fields.length > 0);
   sql.text(" where ");
   for (let index = 0; index < rows.length; index += 1) {
     const row = rows[index];
@@ -449,16 +451,31 @@ function updateSlice(
 
 function emitSet(sql: Sql, table: Indexed, set: Record<string, unknown>, alias: string): void {
   const keys = Object.keys(set);
-  for (let index = 0; index < keys.length; index += 1) {
-    const key = keys[index];
-    if (key === undefined) continue;
+  let wrote = false;
+  for (const key of keys) {
     const column = table.columns.get(key);
     if (column === undefined) continue;
-    if (index > 0) sql.text(", ");
+    if (wrote) sql.text(", ");
+    wrote = true;
     sql.text(quote(column.sql));
     sql.text(" = ");
     emitValue(sql, column, set[key], alias);
   }
+  wrote = emitTouch(sql, table, wrote);
+}
+
+function emitTouch(sql: Sql, table: Indexed, wrote: boolean): boolean {
+  const touch = touchFields(table.model);
+  if (touch === undefined) return wrote;
+  for (const field of touch) {
+    const column = table.columns.get(field);
+    if (column === undefined) continue;
+    if (wrote) sql.text(", ");
+    wrote = true;
+    sql.text(quote(column.sql));
+    sql.text(" = now()");
+  }
+  return wrote;
 }
 
 function emitValue(sql: Sql, column: ColumnModel, value: unknown, alias: string): void {
@@ -627,7 +644,7 @@ function insertRow(
   for (const key of Object.keys(value)) {
     const column = table.columns.get(key);
     if (column === undefined) continue;
-    if (!writable(column, allow)) refuse(table.model.name, column);
+    if (!writable(table, column, allow)) refuse(table, column);
     if (value[key] !== undefined) row[key] = value[key];
   }
   return row;
@@ -687,7 +704,10 @@ function writtenColumns(
   }
   const columns: ColumnModel[] = [];
   for (const column of table.model.columns) {
-    if (present.has(column.field) && (writable(column, allow) || column.fill !== undefined)) {
+    if (
+      present.has(column.field) &&
+      (writable(table, column, allow) || column.fill !== undefined)
+    ) {
       columns.push(column);
     }
   }
@@ -705,7 +725,7 @@ function writeSet(
     if (value[key] === undefined) continue;
     const column = table.columns.get(key);
     if (column === undefined) continue;
-    if (column.guardUpdate || !writable(column, allow)) refuse(table.model.name, column);
+    if (column.guardUpdate || !writable(table, column, allow)) refuse(table, column);
     set[key] = value[key];
   }
   return set;
@@ -832,17 +852,27 @@ function callOptions(options: object): ExecuteOptions | undefined {
   };
 }
 
-function refuse(table: string, column: ColumnModel): never {
+function refuse(table: Indexed, column: ColumnModel): never {
+  if (fieldSealed(table.model, column.field)) {
+    fail(
+      "OKM1190",
+      `Field ${table.model.name}.${column.field} is set by a trait. Input cannot set it.`,
+    );
+  }
   if (column.guardUpdate) {
-    fail("OKM1190", `Field ${table}.${column.field} is a primary key. Input cannot change it.`);
+    fail(
+      "OKM1190",
+      `Field ${table.model.name}.${column.field} is a primary key. Input cannot change it.`,
+    );
   }
   if (column.guarded) {
-    fail("OKM1190", `Field ${table}.${column.field} is guarded. Input cannot set it.`);
+    fail("OKM1190", `Field ${table.model.name}.${column.field} is guarded. Input cannot set it.`);
   }
-  fail("OKM1120", `Field ${table}.${column.field} cannot be written.`);
+  fail("OKM1120", `Field ${table.model.name}.${column.field} cannot be written.`);
 }
 
-function writable(column: ColumnModel, allow: ReadonlySet<string>): boolean {
+function writable(table: Indexed, column: ColumnModel, allow: ReadonlySet<string>): boolean {
+  if (fieldSealed(table.model, column.field)) return false;
   if (column.writable) return true;
   return column.guarded && allow.has(column.field);
 }
@@ -860,11 +890,26 @@ function allowSet(table: Indexed, value: unknown): ReadonlySet<string> {
   return set;
 }
 
-function noteGuarded(table: Indexed, allow: ReadonlySet<string>): void {
+function noteGuarded(table: Indexed, allow: ReadonlySet<string>, op: "insert" | "update"): void {
   if (!safetyInstalled()) return;
   const contributions: SafetyContribution[] = [];
   const hatches: SafetyHatch[] = [];
+  const touch = touchFields(table.model);
+  const source = table.model.source;
   for (const column of table.model.columns) {
+    const traitName = sealingTrait(table.model, column.field);
+    if (traitName !== undefined) {
+      const sets = op === "insert" || touch?.includes(column.field) === true;
+      contributions.push({
+        rule: traitName,
+        contribution: sets
+          ? `${traitName} ${table.model.name}.${column.field} set by ${traitName}`
+          : `${traitName} ${table.model.name}.${column.field} kept`,
+        provenance: "planner",
+        ...(source !== undefined ? { source } : {}),
+      });
+      continue;
+    }
     if (!column.guarded) continue;
     const name = `${table.model.name}.${column.field}`;
     if (allow.has(column.field)) {

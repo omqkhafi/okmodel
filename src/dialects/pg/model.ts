@@ -85,6 +85,16 @@ export type TableModel = {
   readonly columns: readonly ColumnModel[];
   readonly relations: readonly RelationModel[];
   /**
+   * Traits that apply to this table.
+   *
+   * Absent when it has none. Writes read `touch` and `sealed` from here.
+   */
+  readonly traits?: readonly {
+    readonly name: string;
+    readonly touch?: readonly string[];
+    readonly sealed?: readonly string[];
+  }[];
+  /**
    * A column is hidden or sensitive.
    *
    * Absent when none are, so a normal table does not carry the flag.
