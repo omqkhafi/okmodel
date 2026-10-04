@@ -137,6 +137,92 @@ const BASE_RULES: readonly AppliedRule[] = [
 
 const indexesOf = new WeakMap<object, ReadonlyMap<string, Indexed>>();
 
+/** 0.2 operator SQL. Absent until that module has been imported. */
+type OperatorEmit = (
+  column: ColumnModel,
+  ref: string,
+  name: OperatorName,
+  value: unknown,
+  sink: Sink,
+) => void;
+
+let operatorEmit: OperatorEmit | undefined;
+
+/**
+ * Installs the 0.2 operator compiler.
+ *
+ * Called when `operator-sql` loads. A second install replaces the first.
+ *
+ * @param emit - Compiler for containment, keys, paths, and matches
+ */
+export function installOperatorSql(emit: OperatorEmit): void {
+  operatorEmit = emit;
+}
+
+/**
+ * Reports whether planning this read has to load the 0.2 operator module first.
+ *
+ * Equality, comparisons, and text patterns plan without it.
+ *
+ * @param schema - Connected schema
+ * @param call - The read
+ * @returns `true` when {@link installOperatorSql} has not run and the read needs it
+ */
+export function readNeedsOperatorSql(schema: QuerySchema, call: ReadCall): boolean {
+  if (operatorEmit !== undefined) return false;
+  const table = indexes(schema).get(call.table);
+  return table !== undefined && needsOperatorSql(table, call.where);
+}
+
+const SYNC_OPERATORS = ",lt,lte,gt,gte,between,inList,notIn,";
+const TEXT_OPERATORS = ",startsWith,endsWith,contains,like,ilike,";
+
+function needsOperatorSql(table: Indexed, value: unknown, key?: string): boolean {
+  if (isOperator(value)) {
+    const name = operatorName(value);
+    if (name === "or") {
+      const branches = operatorValue(value);
+      return Array.isArray(branches) && branches.some((branch) => needsOperatorSql(table, branch));
+    }
+    if (name === "not" || name === "eq") return needsOperatorSql(table, operatorValue(value), key);
+    if (TEXT_OPERATORS.includes(`,${name},`)) {
+      const column = key === undefined ? undefined : table.columns.get(key);
+      return column !== undefined && !isTextColumn(column.dataType);
+    }
+    return !SYNC_OPERATORS.includes(`,${name},`);
+  }
+  if (Array.isArray(value)) return value.some((item) => needsOperatorSql(table, item, key));
+  if (!isRecord(value)) return false;
+  for (const field of Object.keys(value)) {
+    if (needsOperatorSql(table, value[field], field)) return true;
+  }
+  return false;
+}
+
+function isTextColumn(dataType: string): boolean {
+  return (
+    dataType === "text" ||
+    dataType === "citext" ||
+    dataType.startsWith("varchar(") ||
+    dataType.startsWith("char(") ||
+    dataType.startsWith("character")
+  );
+}
+
+function emitLazy(
+  column: ColumnModel,
+  ref: string,
+  name: OperatorName,
+  value: unknown,
+  sink: Sink,
+): void {
+  const emit = operatorEmit;
+  if (emit === undefined) {
+    fail("OKM1121", `Operator ${name} on ${column.field} is not loaded.`);
+  }
+  emit(column, ref, name, value, sink);
+}
+
 /**
  * Rules the read path enforces before planning.
  *
@@ -548,29 +634,25 @@ function emitOperator(
     emitIn(column, ref, name, value, sink);
     return;
   }
-  if (name === "startsWith" || name === "contains" || name === "endsWith") {
+  if (TEXT_OPERATORS.includes(`,${name},`) && isTextColumn(column.dataType)) {
     if (typeof value !== "string") {
       fail("OKM1121", `${name} on ${column.field} needs a string.`);
     }
     sink.text(ref);
+    if (name === "like" || name === "ilike") {
+      sink.text(name === "like" ? " like " : " ilike ");
+      sink.param(value);
+      return;
+    }
     sink.text(" like ");
+    if (name !== "startsWith" && name !== "endsWith" && name !== "contains") {
+      fail("OKM1121", `${name} on ${column.field} needs a string.`);
+    }
     sink.param(literalPattern(value, name));
     sink.text(" escape E'\\\\'");
     return;
   }
-  if (name === "like" || name === "ilike") {
-    if (typeof value !== "string") {
-      fail("OKM1121", `${name} on ${column.field} needs a string.`);
-    }
-    sink.text(ref);
-    sink.text(name === "like" ? " like " : " ilike ");
-    sink.param(value);
-    return;
-  }
-  fail(
-    "OKM1121",
-    `${name} is not a value operator on ${column.field}. Use has, none, or every on a relation.`,
-  );
+  emitLazy(column, ref, name, value, sink);
 }
 
 function emitNot(

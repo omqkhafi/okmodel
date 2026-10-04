@@ -166,6 +166,7 @@ type PreparedColumn = {
   /** Catalog-output label. Set when insert fills the column. Not hashed. */
   readonly clientDefault: "client" | undefined;
   readonly fill: ClientFill | undefined;
+  readonly elementEncode: ((value: unknown) => string) | undefined;
 };
 
 /** Fills catalog objects on the first `.catalog` read. `schema()` itself does not. */
@@ -417,6 +418,10 @@ function compileTable(
         column.state.generated === undefined,
       unique: column.state.unique !== undefined,
       clientDefault: column.state.clientDefault === undefined ? undefined : "client",
+      elementEncode:
+        column.state.dims > 0
+          ? (column.state.elementEncode as (value: unknown) => string)
+          : undefined,
       fill: column.state.clientDefault,
     };
     columns.push(prepared);
@@ -872,6 +877,7 @@ function tableModel(
     writable: column.writable,
     guardUpdate: column.writable && primary.includes(column.field),
     ...(column.fill !== undefined ? { fill: column.fill, clientDefault: "client" as const } : {}),
+    ...(column.elementEncode !== undefined ? { elementEncode: column.elementEncode } : {}),
   }));
   return {
     name: item.tsName,

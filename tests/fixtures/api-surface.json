@@ -639,6 +639,10 @@
       "kind": "stable"
     },
     {
+      "name": "arr",
+      "kind": "stable"
+    },
+    {
       "name": "between",
       "kind": "stable"
     },
@@ -664,6 +668,10 @@
     },
     {
       "name": "citext",
+      "kind": "stable"
+    },
+    {
+      "name": "containedBy",
       "kind": "stable"
     },
     {
@@ -716,6 +724,14 @@
     },
     {
       "name": "has",
+      "kind": "stable"
+    },
+    {
+      "name": "hasAnyKey",
+      "kind": "stable"
+    },
+    {
+      "name": "hasKey",
       "kind": "stable"
     },
     {
@@ -807,6 +823,10 @@
       "kind": "stable"
     },
     {
+      "name": "matches",
+      "kind": "stable"
+    },
+    {
       "name": "none",
       "kind": "stable"
     },
@@ -832,6 +852,14 @@
     },
     {
       "name": "or",
+      "kind": "stable"
+    },
+    {
+      "name": "overlaps",
+      "kind": "stable"
+    },
+    {
+      "name": "path",
       "kind": "stable"
     },
     {

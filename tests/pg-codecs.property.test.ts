@@ -8,13 +8,13 @@ import * as fc from "fast-check";
 import {
   bigint,
   integer,
-  json,
   numeric,
   text,
   timestamptz,
   int4range,
   daterange,
 } from "../src/dialects/pg/index.js";
+import { json } from "../src/dialects/pg/json.js";
 
 test("bigint strings round-trip", () => {
   fc.assert(

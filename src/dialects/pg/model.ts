@@ -40,6 +40,12 @@ export type ColumnModel = {
   readonly clientDefault?: "client";
   /** Called once per inserted row when the field is omitted. */
   readonly fill?: ClientFill;
+  /**
+   * Encodes one array element.
+   *
+   * Present on array columns. `arr.append` and `arr.remove` use it.
+   */
+  readonly elementEncode?: (value: unknown) => string;
 };
 
 /**

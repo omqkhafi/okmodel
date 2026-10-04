@@ -10,7 +10,7 @@
  * file are not the barrel.
  */
 
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, resolve, sep } from "node:path";
 
@@ -111,6 +111,77 @@ export function checkBundlePurity(root: string): readonly string[] {
   problems.push(...bundleRuntimeEntries(root));
   problems.push(...bundleAdapterEntries(root));
   problems.push(...bundleHarnessProbe(root));
+  problems.push(...operatorShakeProblems(root));
+  return problems;
+}
+
+/**
+ * One namespace member must not pull the other atomic write operators.
+ *
+ * `set` is `json.set`. `arr.append` and `arr.remove` are separate modules.
+ */
+const OPERATOR_SHAKES = [
+  {
+    name: "json",
+    use: "json.set",
+    keep: "src/dialects/pg/ops/json-set.ts",
+    drop: ["src/dialects/pg/ops/arr-append.ts", "src/dialects/pg/ops/arr-remove.ts"],
+  },
+  {
+    name: "arr",
+    use: "arr.append",
+    keep: "src/dialects/pg/ops/arr-append.ts",
+    drop: ["src/dialects/pg/ops/arr-remove.ts", "src/dialects/pg/ops/json-set.ts"],
+  },
+  {
+    name: "arr",
+    use: "arr.remove",
+    keep: "src/dialects/pg/ops/arr-remove.ts",
+    drop: ["src/dialects/pg/ops/arr-append.ts", "src/dialects/pg/ops/json-set.ts"],
+  },
+] as const;
+
+/**
+ * Reports a write operator that pulls another write operator into the bundle.
+ *
+ * @param root - Repository root
+ * @returns Problem lines. Empty when each operator shakes
+ */
+export function operatorShakeProblems(root: string): readonly string[] {
+  const problems: string[] = [];
+  const from = join(root, "src/dialects/pg/index.ts");
+  for (const item of OPERATOR_SHAKES) {
+    const dir = mkdtempSync(join(tmpdir(), "okm-operator-"));
+    const entry = join(dir, "entry.ts");
+    try {
+      writeFileSync(
+        entry,
+        `import { ${item.name} } from ${JSON.stringify(from)};\nexport const keep = ${item.use};\n`,
+      );
+      const proc = Bun.spawnSync(["bun", "build", entry, "--target", "node", "--outdir", dir], {
+        cwd: root,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      if (proc.exitCode !== 0) {
+        problems.push(`bundle-purity: operator shake exited ${String(proc.exitCode)}`);
+        continue;
+      }
+      let text = "";
+      for (const name of readdirSync(dir)) {
+        if (!name.endsWith(".js")) continue;
+        text += readFileSync(join(dir, name), "utf8");
+      }
+      if (!text.includes(item.keep)) {
+        problems.push(`bundle-purity: operator shake dropped ${item.keep}`);
+      }
+      for (const banned of item.drop) {
+        if (text.includes(banned)) problems.push(`bundle-purity: operator shake kept ${banned}`);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
   return problems;
 }
 
