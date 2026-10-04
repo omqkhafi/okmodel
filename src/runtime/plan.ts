@@ -132,6 +132,18 @@ const FIND_OPTIONS = ["include", "limit", "orderBy", "select", "where"] as const
 const ONE_OPTIONS = ["include", "orderBy", "select", "where"] as const;
 const FILTER_OPTIONS = ["where"] as const;
 
+/**
+ * Option names `find`, `one`, `count`, and `exists` accept.
+ *
+ * @param op - The read
+ * @returns Names in a stable order
+ */
+export function readOptionNames(op: ReadOp): readonly string[] {
+  if (op === "find") return FIND_OPTIONS;
+  if (op === "one") return ONE_OPTIONS;
+  return FILTER_OPTIONS;
+}
+
 const BASE_RULES: readonly AppliedRule[] = [
   { rule: "parameterised", contribution: "planner", provenance: "planner" },
   { rule: "allowlisted", contribution: "catalog", provenance: "catalog" },
@@ -947,16 +959,13 @@ function parseOrder(
 }
 
 function rejectOptions(call: ReadCall): void {
-  const record = call as unknown as Record<string, unknown>;
-  const accepted =
-    call.op === "find" ? FIND_OPTIONS : call.op === "one" ? ONE_OPTIONS : FILTER_OPTIONS;
+  const accepted = readOptionNames(call.op);
   const present: Record<string, unknown> = {};
   if (call.where !== undefined) present.where = call.where;
   if (call.select !== undefined) present.select = call.select;
   if (call.orderBy !== undefined) present.orderBy = call.orderBy;
   if (call.limit !== undefined) present.limit = call.limit;
   if (call.include !== undefined) present.include = call.include;
-  void record;
   rejectKeys(present, accepted, call.op);
 }
 
@@ -1086,22 +1095,33 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value) && !isOperator(value);
 }
 
+const FAIL_FIX: Partial<Record<QueryCode, string>> = {
+  OKM1121: "Use eq for an object value, or has, none, or every for a relation.",
+  OKM1101: "Pass limit, or call .all(reason).",
+};
+
+/**
+ * Records the fix text for a code thrown from a chunk that loads on first use.
+ *
+ * A read does not carry the write, conflict, or include sentences. The module
+ * that throws the code registers the same sentence before it can throw.
+ *
+ * @param code - Spec code
+ * @param summary - Fix sentence `fail` attaches
+ */
+export function registerFailFix(code: QueryCode, summary: string): void {
+  FAIL_FIX[code] = summary;
+}
+
+/**
+ * Throws an {@link OkmError} for a query the planner rejects.
+ *
+ * @param code - Spec code
+ * @param message - What failed
+ */
 export function fail(code: QueryCode, message: string): never {
-  const fix =
-    code === "OKM1121"
-      ? { summary: "Use eq for an object value, or has, none, or every for a relation." }
-      : code === "OKM1101"
-        ? { summary: "Pass limit, or call .all(reason)." }
-        : code === "OKM1102"
-          ? { summary: "Pass where, or call .all(reason) to match every row." }
-          : code === "OKM1104"
-            ? { summary: "Set on to the columns of a unique constraint or the primary key." }
-            : code === "OKM1105"
-              ? { summary: "Pass limit on the include, or call .all(reason)." }
-              : code === "OKM1190"
-                ? { summary: "Remove the guarded field. Input cannot set it." }
-                : undefined;
-  throw new OkmError(code, message, fix === undefined ? undefined : { fix });
+  const summary = FAIL_FIX[code];
+  throw new OkmError(code, message, summary === undefined ? undefined : { fix: { summary } });
 }
 
 function plain(value: unknown): unknown {

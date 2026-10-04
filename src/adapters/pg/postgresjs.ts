@@ -18,7 +18,7 @@ import type {
   WireValue,
 } from "../../contracts/driver.js";
 import { POSTGRESJS_CAPABILITIES } from "../capabilities.js";
-import { driverErrors, mapFailure, rejectClosed } from "../failure.js";
+import { mapFailure, rejectClosed } from "../failure.js";
 import type { BatchSession } from "./batch.js";
 import { nextTransactionDepth, runCall, type Watch } from "./call.js";
 import { EMPTY_NOTICES, resultFrom } from "./result.js";
@@ -123,80 +123,39 @@ class PoolSockets {
   }
 
   /**
-   * Keeps sockets referenced until `release` finishes.
+   * Refcount for one execute, checkout, or stream.
    *
-   * A second `release` does not change the count.
-   *
-   * @param checkout - Reserves the connection
-   * @returns The connection, with release counted once
+   * @returns Enter and leave for that call
    */
-  async hold<T extends { release(): Promise<void> }>(checkout: () => Promise<T>): Promise<T> {
-    this.busy += 1;
-    this.wake();
-    try {
-      const connection = await checkout();
-      let released = false;
-      const release = connection.release.bind(connection);
-      connection.release = () => {
-        if (released) return Promise.resolve();
-        released = true;
-        return release().finally(() => {
-          this.busy -= 1;
-          this.park();
-        });
-      };
-      return connection;
-    } catch (error) {
-      this.busy -= 1;
-      this.park();
-      throw error;
-    }
+  busyGate(): { enter(): void; leave(): void } {
+    return {
+      enter: () => {
+        this.busy += 1;
+        this.wake();
+      },
+      leave: () => {
+        this.busy -= 1;
+        this.park();
+      },
+    };
   }
 
   /**
-   * Refs sockets until the iterator finishes.
+   * Refcount for one `LISTEN`.
    *
-   * @param open - The row stream
-   * @returns That stream
+   * @returns Enter and leave for that listener
    */
-  async *stream<T>(open: () => AsyncIterable<T>): AsyncIterable<T> {
-    this.busy += 1;
-    this.wake();
-    try {
-      yield* open();
-    } finally {
-      this.busy -= 1;
-      this.park();
-    }
-  }
-
-  /**
-   * Keeps sockets referenced for as long as the listener is active.
-   *
-   * @param start - Subscribes and returns the stop function
-   * @returns A stop function that can be called again
-   */
-  async listen(start: () => Promise<() => Promise<void>>): Promise<() => Promise<void>> {
-    this.listeners += 1;
-    this.wake();
-    try {
-      const stop = await start();
-      let stopped = false;
-      return async () => {
-        if (stopped) return;
-        stopped = true;
-        try {
-          await stop();
-        } finally {
-          this.listeners -= 1;
-          this.park();
-        }
-      };
-    } catch (error) {
-      this.listeners -= 1;
-      this.park();
-      throw error;
-    }
+  listenerGate(): { enter(): void; leave(): void } {
+    return {
+      enter: () => {
+        this.listeners += 1;
+        this.wake();
+      },
+      leave: () => {
+        this.listeners -= 1;
+        this.park();
+      },
+    };
   }
 
   private wake(): void {
@@ -302,25 +261,47 @@ export function open(config: PostgresJsConfig): DriverPool {
       });
     },
     reserve() {
-      return sockets.hold(async () => {
-        const mod = await import("./postgres-extra.js");
-        return mod.checkout(held);
-      });
+      const gate = sockets.busyGate();
+      gate.enter();
+      return import("./postgres-extra.js").then(
+        (mod) => mod.holdCheckout(gate, () => mod.checkout(held)),
+        (error: unknown) => {
+          gate.leave();
+          throw error;
+        },
+      );
     },
     describe: (text, params) =>
       sockets.occupy(() =>
         import("./postgres-extra.js").then((mod) => mod.describe(sql, text, params)),
       ),
     stream(text, params) {
-      return sockets.stream(() => loadStream(sql, text, params));
+      const gate = sockets.busyGate();
+      return (async function* () {
+        gate.enter();
+        try {
+          yield* loadStream(sql, text, params);
+        } finally {
+          gate.leave();
+        }
+      })();
     },
     listen(channel, onNotify) {
-      return sockets.listen(async () => {
-        const listening = await sql.listen(channel, onNotify);
-        return async () => {
-          await listening.unlisten();
-        };
-      });
+      const gate = sockets.listenerGate();
+      gate.enter();
+      return import("./postgres-extra.js").then(
+        (mod) =>
+          mod.holdListener(gate, async () => {
+            const listening = await sql.listen(channel, onNotify);
+            return async () => {
+              await listening.unlisten();
+            };
+          }),
+        (error: unknown) => {
+          gate.leave();
+          throw error;
+        },
+      );
     },
     cancel() {
       for (const pending of poolInflight) pending.cancel();
@@ -399,7 +380,38 @@ export class PgSession implements BatchSession {
         },
       );
     }
-    return this.watched(pending, watch, start, text);
+    this.local.add(pending);
+    this.shared?.add(pending);
+    const onAbort = (): void => {
+      pending.cancel();
+    };
+    if (watch.signal.aborted) onAbort();
+    else watch.signal.addEventListener("abort", onAbort, { once: true });
+    return import("./postgres-extra.js").then(
+      (mod) =>
+        mod.watchQuery(pending, watch, onAbort, {
+          start,
+          text,
+          notices: this.notices,
+          leave: () => {
+            this.leave();
+          },
+          note: (sqlText) => {
+            this.note(sqlText);
+          },
+          untrack: (item) => {
+            this.local.delete(item);
+            this.shared?.delete(item);
+          },
+        }),
+      (error: unknown) => {
+        this.leave();
+        this.local.delete(pending);
+        this.shared?.delete(pending);
+        watch.signal.removeEventListener("abort", onAbort);
+        throw error;
+      },
+    );
   }
 
   /** @inheritdoc */
@@ -439,49 +451,6 @@ export class PgSession implements BatchSession {
     if (this.scope === "pool") this.counters.busy = Math.max(0, this.counters.busy - 1);
     else this.counters.reservedBusy = Math.max(0, this.counters.reservedBusy - 1);
   }
-
-  private track(pending: Canceller): void {
-    this.local.add(pending);
-    this.shared?.add(pending);
-  }
-
-  private untrack(pending: Canceller): void {
-    this.local.delete(pending);
-    this.shared?.delete(pending);
-  }
-
-  private watched(
-    pending: Pending,
-    watch: Watch,
-    start: number,
-    text: string,
-  ): Promise<ExecuteResult> {
-    this.track(pending);
-    const onAbort = (): void => {
-      pending.cancel();
-    };
-    if (watch.signal.aborted) onAbort();
-    else watch.signal.addEventListener("abort", onAbort, { once: true });
-    return pending.then(
-      (result) => {
-        this.finishWatched(pending, watch, onAbort);
-        const why = watch.reason();
-        if (why === "timeout" || why === "cancelled") return classify(why, watch);
-        this.note(text);
-        return resultFrom(result, this.notices.since(start));
-      },
-      (error: unknown) => {
-        this.finishWatched(pending, watch, onAbort);
-        return classify(error, watch);
-      },
-    );
-  }
-
-  private finishWatched(pending: Canceller, watch: Watch, onAbort: () => void): void {
-    this.leave();
-    this.untrack(pending);
-    watch.signal.removeEventListener("abort", onAbort);
-  }
 }
 
 async function* loadStream(
@@ -506,19 +475,6 @@ function send(
 function asParams(params: readonly WireValue[] | undefined): string[] {
   if (params === undefined) return [];
   return params as unknown as string[];
-}
-
-async function classify(error: unknown, watch: Watch): Promise<never> {
-  const errors = await driverErrors();
-  if (error instanceof errors.DriverError) return Promise.reject(error);
-  const why = typeof error === "string" ? error : watch.reason();
-  if (why === "timeout")
-    return Promise.reject(errors.timedOut(typeof error === "string" ? undefined : error));
-  const code = errors.errorField(error, "code");
-  if (why === "cancelled" || code === "57014") {
-    return Promise.reject(errors.cancelled(typeof error === "string" ? undefined : error));
-  }
-  return Promise.reject(errors.mapDriverError(error));
 }
 
 function statsOf(counters: Counters, size: number): DriverStats {

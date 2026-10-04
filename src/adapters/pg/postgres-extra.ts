@@ -6,11 +6,16 @@
 
 import type { Sql } from "postgres";
 
-import type { DescribeResult, DriverConnection, WireValue } from "../../contracts/driver.js";
+import type {
+  DescribeResult,
+  DriverConnection,
+  ExecuteResult,
+  WireValue,
+} from "../../contracts/driver.js";
 import { driverErrors, mapFailure, rejectClosed } from "../failure.js";
 import { runCall, type Watch } from "./call.js";
 import { PgSession, type Canceller, type Counters, type NoticeBuffer } from "./postgresjs.js";
-import { rowsFrom } from "./result.js";
+import { resultFrom, rowsFrom } from "./result.js";
 
 const RESET_ALL = "RESET ALL";
 const UNLOCK = "SELECT pg_advisory_unlock_all()";
@@ -171,4 +176,137 @@ async function resetConnection(sql: Sql, depth: number): Promise<void> {
 function asParams(params: readonly WireValue[] | undefined): string[] {
   if (params === undefined) return [];
   return params as unknown as string[];
+}
+
+/** Refcount a checkout or a listener borrows from the pool. */
+type Gate = {
+  enter(): void;
+  leave(): void;
+};
+
+/**
+ * Keeps sockets referenced until `release` finishes.
+ *
+ * The caller has already entered `gate`. A second `release` does not change
+ * the count. Checkout failure leaves the gate.
+ *
+ * @param gate - Refcount already entered for this checkout
+ * @param checkout - Reserves the connection
+ * @returns The connection, with release counted once
+ */
+export async function holdCheckout<T extends { release(): Promise<void> }>(
+  gate: Gate,
+  checkout: () => Promise<T>,
+): Promise<T> {
+  try {
+    const connection = await checkout();
+    let released = false;
+    const release = connection.release.bind(connection);
+    connection.release = () => {
+      if (released) return Promise.resolve();
+      released = true;
+      return release().finally(() => {
+        gate.leave();
+      });
+    };
+    return connection;
+  } catch (error) {
+    gate.leave();
+    throw error;
+  }
+}
+
+/**
+ * Keeps sockets referenced for as long as the listener is active.
+ *
+ * The caller has already entered `gate`.
+ *
+ * @param gate - Listener refcount already entered
+ * @param start - Subscribes and returns the stop function
+ * @returns A stop function that can be called again
+ */
+export async function holdListener(
+  gate: Gate,
+  start: () => Promise<() => Promise<void>>,
+): Promise<() => Promise<void>> {
+  try {
+    const stop = await start();
+    let stopped = false;
+    return async () => {
+      if (stopped) return;
+      stopped = true;
+      try {
+        await stop();
+      } finally {
+        gate.leave();
+      }
+    };
+  } catch (error) {
+    gate.leave();
+    throw error;
+  }
+}
+
+/**
+ * Finishes a query that can be aborted by a signal or a timeout.
+ *
+ * The caller has already tracked `pending` and attached `onAbort`.
+ *
+ * @param pending - The in-flight statement
+ * @param watch - Abort signal and the reason it fired
+ * @param onAbort - Listener the caller attached
+ * @param ctx - Notice slice and the session counters the plain path also uses
+ * @returns The wire result, or a rejected driver error
+ */
+export function watchQuery(
+  pending: Canceller & Promise<unknown>,
+  watch: Watch,
+  onAbort: () => void,
+  ctx: {
+    readonly start: number;
+    readonly text: string;
+    readonly notices: NoticeBuffer;
+    leave(): void;
+    note(text: string): void;
+    untrack(pending: Canceller): void;
+  },
+): Promise<ExecuteResult> {
+  return pending.then(
+    (result) => {
+      finishWatch(pending, watch, onAbort, ctx);
+      const why = watch.reason();
+      if (why === "timeout" || why === "cancelled") return classify(why, watch);
+      ctx.note(ctx.text);
+      return resultFrom(result, ctx.notices.since(ctx.start));
+    },
+    (error: unknown) => {
+      finishWatch(pending, watch, onAbort, ctx);
+      return classify(error, watch);
+    },
+  );
+}
+
+function finishWatch(
+  pending: Canceller,
+  watch: Watch,
+  onAbort: () => void,
+  ctx: { leave(): void; untrack(pending: Canceller): void },
+): void {
+  ctx.leave();
+  ctx.untrack(pending);
+  watch.signal.removeEventListener("abort", onAbort);
+}
+
+async function classify(error: unknown, watch: Watch): Promise<never> {
+  const errors = await driverErrors();
+  if (error instanceof errors.DriverError) return Promise.reject(error);
+  const why = typeof error === "string" ? error : watch.reason();
+  if (why === "timeout") {
+    return Promise.reject(errors.timedOut(typeof error === "string" ? undefined : error));
+  }
+  const code = errors.errorField(error, "code");
+  if (why === "cancelled" || code === "57014") {
+    return Promise.reject(errors.cancelled(typeof error === "string" ? undefined : error));
+  }
+  return Promise.reject(errors.mapDriverError(error));
 }

@@ -23,6 +23,7 @@ import {
   decodeResult,
   logicalIntent,
   readNeedsOperatorSql,
+  readOptionNames,
   type IncludeHooks,
   type Plan,
   type ReadCall,
@@ -196,23 +197,26 @@ function loadWrite(): Promise<typeof import("./write.js")> {
   return writers;
 }
 
-function writeHandle(
-  session: Session,
-  op: WriteOp,
-  table: string,
-  input: unknown,
-  options: object,
-  mods: WriteMods,
-): Promise<unknown> & Record<string, unknown> {
+/**
+ * A query handle that starts its work once, the first time it is awaited.
+ *
+ * @param run - The work. Called at most once
+ * @param extra - Methods that stay on the handle beside `then`
+ * @returns The handle
+ */
+function queryHandle<T extends object>(
+  run: () => Promise<unknown>,
+  extra: T,
+): Promise<unknown> & T {
   let pending: Promise<unknown> | undefined;
-  const run = (): Promise<unknown> => {
-    pending ??= runWrite(session, op, table, input, options, mods);
+  const once = (): Promise<unknown> => {
+    pending ??= run();
     return pending;
   };
   const self = {
     // oxlint-disable-next-line unicorn/no-thenable
     then(onFulfilled?: (value: unknown) => unknown, onRejected?: (error: unknown) => unknown) {
-      return run().then(onFulfilled, onRejected);
+      return once().then(onFulfilled, onRejected);
     },
     catch(onRejected?: (error: unknown) => unknown) {
       return self.then(undefined, onRejected);
@@ -230,8 +234,22 @@ function writeHandle(
       );
     },
     safe() {
-      return safe(run());
+      return safe(once());
     },
+    ...extra,
+  };
+  return self as unknown as Promise<unknown> & T;
+}
+
+function writeHandle(
+  session: Session,
+  op: WriteOp,
+  table: string,
+  input: unknown,
+  options: object,
+  mods: WriteMods,
+): Promise<unknown> & Record<string, unknown> {
+  return queryHandle(() => runWrite(session, op, table, input, options, mods), {
     sql() {
       return loadWrite().then((mod) =>
         mod.explainWrite(session.schema, op, table, input, options, mods, session.generators),
@@ -243,8 +261,7 @@ function writeHandle(
     all(reason: string) {
       return writeHandle(session, op, table, input, options, { ...mods, all: reason });
     },
-  };
-  return self as unknown as Promise<unknown> & Record<string, unknown>;
+  }) as unknown as Promise<unknown> & Record<string, unknown>;
 }
 
 async function runWrite(
@@ -332,32 +349,8 @@ function start(
       throw logged(session, scrubCall(mapped, session.schema, call));
     }
   };
-  let pending: Promise<unknown> | undefined;
-  const once = (): Promise<unknown> => {
-    pending ??= run();
-    return pending;
-  };
-  const self = {
+  return queryHandle(run, {
     // A query is awaitable and also has inspect/sql/safe. It stays lazy until awaited.
-    // oxlint-disable-next-line unicorn/no-thenable
-    then(onFulfilled?: (value: unknown) => unknown, onRejected?: (error: unknown) => unknown) {
-      return once().then(onFulfilled, onRejected);
-    },
-    catch(onRejected?: (error: unknown) => unknown) {
-      return this.then(undefined, onRejected);
-    },
-    finally(fn: () => void) {
-      return this.then(
-        (value) => {
-          fn();
-          return value;
-        },
-        (error: unknown) => {
-          fn();
-          throw error;
-        },
-      );
-    },
     inspect(): Inspection | Promise<Inspection> {
       const source = session.schema.model[table]?.source;
       if (call.include === undefined && prepared !== undefined) {
@@ -383,9 +376,6 @@ function start(
       }
       return prepare().then(({ plan, params }) => ({ text: plan.text, params }));
     },
-    safe() {
-      return safe(once());
-    },
     all(reason: string) {
       return start(session, op, table, options, { ...mods, all: reason });
     },
@@ -393,50 +383,25 @@ function start(
       return start(session, op, table, options, { ...mods, required: true });
     },
     stream() {
-      return streamRows(session, call, prepare);
+      return streamLazy(session, call, prepare);
     },
-  };
-  return self as unknown as Promise<unknown> & Record<string, unknown>;
+  }) as unknown as Promise<unknown> & Record<string, unknown>;
 }
 
-async function* streamRows(
+function streamLazy(
   session: Session,
   call: ReadCall,
   prepare: () => Promise<{ readonly plan: Plan; readonly params: readonly (string | null)[] }>,
 ): AsyncIterable<unknown> {
-  await session.connected;
-  if (session.pool.capabilities.stream !== true || session.pool.stream === undefined) {
-    throw logged(
-      session,
-      new OkmError(
-        "OKM1111",
-        "stream needs a driver with stream: true. This driver does not have it.",
-        withHttp(session.http, {
-          fix: { summary: "Use a driver that sets stream, or read with find." },
-        }),
-      ),
-    );
-  }
-  const { plan, params } = await prepare();
-  const decode =
-    plan.outputs.includes.length === 0
-      ? decodeResult
-      : (await import("./include.js")).decodeIncluded;
-  for await (const chunk of session.pool.stream(plan.text, params as readonly WireValue[])) {
-    const decoded = decode(plan, chunk, call.table);
-    if (!Array.isArray(decoded)) continue;
-    for (const row of decoded) yield row;
-  }
+  return (async function* () {
+    const { streamRows } = await import("./read-stream.js");
+    yield* streamRows(session, call, prepare, (error) => logged(session, error));
+  })();
 }
 
 function readCall(op: ReadOp, table: string, options: object, all: string | undefined): ReadCall {
   const record = options as Record<string, unknown>;
-  const accepted =
-    op === "find"
-      ? ["include", "limit", "orderBy", "select", "where"]
-      : op === "one"
-        ? ["include", "orderBy", "select", "where"]
-        : ["where"];
+  const accepted = readOptionNames(op);
   for (const key of Object.keys(record)) {
     if (!accepted.includes(key)) {
       throwNamed(
@@ -467,16 +432,16 @@ async function checkServer(
   options: ExecuteOptions | undefined,
   source: { readonly catalog?: CatalogArtifact; readonly catalogDir?: string },
 ): Promise<void> {
+  const server = await import("./server-check.js");
   let rows: readonly (readonly (string | null)[])[];
   try {
-    const result = await pool.execute(SERVER_CHECK, undefined, options);
+    const result = await pool.execute(server.versionQuery, undefined, options);
     rows = result.rows;
   } catch (error) {
     const { mapPostgresError } = await import("../dialects/pg/errors.js");
     throw mapPostgresError(error, mapOptions(http, false));
   }
-  const { acceptServer } = await import("./server-check.js");
-  await acceptServer(pool, schema, rows, http, requireMeta, options, source);
+  await server.acceptServer(pool, schema, rows, http, requireMeta, options, source);
 }
 
 async function mapError(session: Session, error: unknown): Promise<OkmError> {
@@ -587,15 +552,6 @@ function callOptions(input: {
     ...(input.timeout !== undefined ? { timeout: input.timeout } : {}),
   };
 }
-
-/**
- * Version, dialect, and the `okm_meta` hash in one round trip.
- *
- * The hash subquery is a string so a database with no `okm_meta` still plans.
- * A null hash skips the compatibility check.
- */
-const SERVER_CHECK =
-  "select current_setting('server_version_num'), version(), (select (xpath('//catalog_hash/text()', query_to_xml('select catalog_hash from okm_meta where id = ''head''', true, false, '')))[1]::text where to_regclass('okm_meta') is not null)";
 
 function mapOptions(
   http: ErrorStatuses | undefined,

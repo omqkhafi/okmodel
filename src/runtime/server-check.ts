@@ -11,6 +11,15 @@ import { attachHttp, withHttp } from "./client.js";
 import type { CatalogArtifact } from "./types.js";
 
 /**
+ * Version, dialect, and the `okm_meta` hash in one round trip.
+ *
+ * The hash subquery is a string so a database with no `okm_meta` still plans.
+ * A null hash skips the compatibility check.
+ */
+export const versionQuery =
+  "select current_setting('server_version_num'), version(), (select (xpath('//catalog_hash/text()', query_to_xml('select catalog_hash from okm_meta where id = ''head''', true, false, '')))[1]::text where to_regclass('okm_meta') is not null)";
+
+/**
  * Accepts the `server_version_num` row, or throws OKM1801, OKM1520, OKM1802, or OKM1803.
  *
  * A declared `requires` is the minimum, including a major below 15 when the
