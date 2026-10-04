@@ -94,6 +94,25 @@ export type Update<N extends TableName<S>, S extends AnySchema | undefined = und
 >;
 
 /**
+ * Insert shape used when validation is on.
+ *
+ * The fields match {@link Insert}. The optional mark makes the two types
+ * distinct, so a checked call can require this shape only while validation
+ * is enabled. Guarded fields and the tenant key are already absent.
+ *
+ * @typeParam N - Table name
+ * @typeParam S - Explicit schema. Omit it to use {@link Register}
+ */
+export type Input<N extends TableName<S>, S extends AnySchema | undefined = undefined> = Insert<
+  N,
+  S
+> &
+  InputMark;
+
+/** Optional mark that distinguishes {@link Input} from {@link Insert}. */
+export type InputMark = { readonly "~input"?: true };
+
+/**
  * One phantom on the table named `N`.
  *
  * The index can include `undefined` under `noUncheckedIndexedAccess`.

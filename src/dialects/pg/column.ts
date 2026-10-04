@@ -2,7 +2,7 @@
  * Column builder shared by every Postgres type.
  *
  * Modifiers allocate a new builder when called. Importing this module does
- * not build a codec table. `.validate()` stays a slot for P26.
+ * not build a codec table. `.validate()` stores rules and does not run them.
  */
 
 import {
@@ -136,7 +136,7 @@ export type ReferenceOptions = {
 };
 
 /**
- * Validation rules, stored when a later prompt adds `.validate()`.
+ * Validation rules stored on the column. Nothing here interprets them.
  */
 export type ValidateModifier = {
   readonly rules: readonly unknown[];
@@ -571,6 +571,23 @@ export class ColumnBuilder<TValue, TFlags extends ColumnFlags> {
    */
   sensitive(): ColumnBuilder<TValue, TFlags> {
     return rebuild<TValue, TFlags>(this.state, { sensitive: true });
+  }
+
+  /**
+   * Stores validation rules or one Standard Schema.
+   *
+   * The rules are stored. They run only when validation is enabled and the
+   * engine has loaded. A field listed here and in the table `validate`
+   * section is OKM1030, reported by `okm check`.
+   *
+   * @param rules - Rule list, or one Standard Schema
+   * @returns The same column, with the rules stored
+   */
+  validate(
+    rules: readonly unknown[] | { readonly "~standard": unknown },
+  ): ColumnBuilder<TValue, TFlags> {
+    const list = Array.isArray(rules) ? rules : [rules];
+    return rebuild<TValue, TFlags>(this.state, { validate: { rules: list } });
   }
 
   /**

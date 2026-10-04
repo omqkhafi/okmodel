@@ -28,11 +28,13 @@ export {
   type HttpErrorBody,
   type OkmErrorOptions,
   type SafeResult,
+  type ValidationIssue,
 } from "./error.js";
 
 export type {
   AnySchema,
   AnyTableShape,
+  Input,
   Insert,
   Register,
   Row,

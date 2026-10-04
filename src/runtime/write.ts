@@ -6,7 +6,7 @@
  */
 
 import type { DriverPool, ExecuteOptions, ExecuteResult, Statement } from "../contracts/driver.js";
-import { OkmError } from "../contracts/error.js";
+import { OkmError, type ValidationIssue } from "../contracts/error.js";
 import type { ClientFill, IdGenerators } from "../contracts/generator.js";
 import type { ColumnModel } from "../dialects/pg/model.js";
 import type { QuerySchema } from "../dialects/pg/model.js";
@@ -95,8 +95,16 @@ type Planned = {
   readonly keyFields: readonly string[] | undefined;
 };
 
-const INSERT_OPTIONS = ["allow", "expect", "onConflict", "returning", "signal", "timeout"] as const;
-const FILTER_OPTIONS = ["allow", "expect", "returning", "signal", "timeout"] as const;
+const INSERT_OPTIONS = [
+  "allow",
+  "expect",
+  "onConflict",
+  "returning",
+  "signal",
+  "timeout",
+  "validate",
+] as const;
+const FILTER_OPTIONS = ["allow", "expect", "returning", "signal", "timeout", "validate"] as const;
 const NO_ALLOW: ReadonlySet<string> = new Set();
 
 /**
@@ -999,13 +1007,32 @@ function scrubWrite(
     if (secret.length < 4 || !message.includes(secret)) continue;
     message = message.replaceAll(secret, REDACTED);
   }
-  if (message === error.message) return error;
+  const issues = error.issues === undefined ? undefined : redactIssues(error.issues, secrets);
+  if (message === error.message && issues === undefined) return error;
   return new OkmError(error.code, message, {
     kind: error.kind,
     ...(error.table !== undefined ? { table: error.table } : {}),
     ...(error.columns.length > 0 ? { columns: error.columns } : {}),
+    ...(error.issues !== undefined ? { issues: issues ?? error.issues } : {}),
     fix: error.fix,
   });
+}
+
+function redactIssues(
+  issues: readonly ValidationIssue[],
+  secrets: readonly string[],
+): readonly ValidationIssue[] | undefined {
+  let changed = false;
+  const next = issues.map((issue) => {
+    let message = issue.message;
+    for (const secret of secrets) {
+      if (secret.length < 4 || !message.includes(secret)) continue;
+      message = message.replaceAll(secret, REDACTED);
+      changed = true;
+    }
+    return message === issue.message ? issue : { path: issue.path, message };
+  });
+  return changed ? next : undefined;
 }
 
 function collectSecrets(

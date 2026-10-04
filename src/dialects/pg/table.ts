@@ -233,6 +233,8 @@ const TABLE_KNOWN = new Set([
   "tenancy",
   "traits",
   "unique",
+  "validate",
+  "validation",
 ]);
 
 /**
@@ -245,8 +247,6 @@ const TABLE_LATER: Readonly<Record<string, string>> = {
   policies: "later",
   presets: "0.2",
   reference: "0.4",
-  validate: "0.2",
-  validation: "0.2",
 };
 
 /**

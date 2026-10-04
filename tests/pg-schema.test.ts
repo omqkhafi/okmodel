@@ -233,12 +233,12 @@ test("later options are OKM1061 and name the version that adds them", () => {
   const error = capture(() =>
     schema({
       tables: [table("tasks", { id: t.id() })],
-      validation: false,
+      extensions: [],
     }),
   );
   expect(error.code).toBe("OKM1061");
   expect(error.message).toContain("not available yet");
-  expect(error.message).toContain("0.2");
+  expect(error.message).toContain("0.3");
   const tableError = capture(() =>
     schema({ tables: [table("tasks", { id: t.id() }, { relations: { owner: true } })] }),
   );

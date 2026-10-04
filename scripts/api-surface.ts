@@ -15,6 +15,7 @@ export const API_ENTRIES = [
   { subpath: "okmodel/safety", file: "src/runtime/safety/index.ts" },
   { subpath: "okmodel/traits", file: "src/runtime/traits/index.ts" },
   { subpath: "okmodel/tenancy", file: "src/runtime/tenancy/index.ts" },
+  { subpath: "okmodel/validate", file: "src/runtime/validate/index.ts" },
   { subpath: "okmodel/pg", file: "src/dialects/pg/index.ts" },
   { subpath: "okmodel/pg/postgresjs", file: "src/runtime/pg/postgresjs.ts" },
   { subpath: "okmodel/pg/pglite", file: "src/runtime/pg/pglite.ts" },

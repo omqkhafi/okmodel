@@ -147,6 +147,33 @@ export type TableModel = {
    * Absent when the table is not archivable.
    */
   readonly archive?: ArchiveModel;
+  /**
+   * Validation for this table.
+   *
+   * Absent until the engine fills it on the first validated call. `schema()`
+   * does not pack it, so a featureless table never carries it.
+   */
+  readonly validation?: ValidationModel;
+};
+
+/**
+ * Rules and derived checks for one table.
+ *
+ * Field rules and picklists are stored here. Column codecs stay on {@link ColumnModel}.
+ */
+export type ValidationModel = {
+  /** Run the same checks on read results. Stored for a later step. */
+  readonly onRead: boolean;
+  /** Cross-field rules from `validate.$row`, in source order. */
+  readonly row: readonly unknown[];
+  /** Per-field rules. Absent fields have none. */
+  readonly fields: Readonly<Record<string, readonly unknown[]>>;
+  /** Insert must include these fields. */
+  readonly required: readonly string[];
+  /** `null` is rejected. Includes columns that have a default. */
+  readonly notNull: readonly string[];
+  /** Picklist values, keyed by field. Absent fields have no list. */
+  readonly pick: Readonly<Record<string, readonly string[]>>;
 };
 
 /**

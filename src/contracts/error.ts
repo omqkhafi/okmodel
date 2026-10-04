@@ -115,6 +115,17 @@ export type ErrorFix = {
   readonly suggestion?: string;
 };
 
+/**
+ * One failed validation check.
+ *
+ * `message` is a key, never prose and never a row value. `path` walks the
+ * value: a field name, or a row index then a field name.
+ */
+export type ValidationIssue = {
+  readonly path: readonly (string | number)[];
+  readonly message: string;
+};
+
 /** Column name to constraint reason. Row values are not included. */
 export type ErrorFields = Readonly<Record<string, string>>;
 
@@ -148,6 +159,8 @@ export type ErrorLog = {
   readonly batchIndex: number | null;
   readonly fix: ErrorFix;
   readonly fields: ErrorFields;
+  /** Validation checks, when the failure is OKM1200. */
+  readonly issues?: readonly ValidationIssue[];
   readonly table?: string;
   readonly columns?: readonly string[];
   readonly constraint?: string;
@@ -174,6 +187,8 @@ export type OkmErrorOptions = {
    */
   readonly includeValues?: boolean;
   readonly values?: Readonly<Record<string, string>>;
+  /** Checks from a failed validation. Omitted on every other error. */
+  readonly issues?: readonly ValidationIssue[];
   /**
    * Category overrides from `connect({ errors })`.
    *
@@ -275,6 +290,8 @@ export class OkmError extends Error {
   readonly #values: Readonly<Record<string, string>> | undefined;
   /** Status overrides from `connect()`. Not logged. */
   readonly #http: ErrorStatuses | undefined;
+  /** Validation checks. Absent when this error is not a failed check. */
+  readonly issues?: readonly ValidationIssue[];
 
   /**
    * Same text as `message`.
@@ -309,6 +326,7 @@ export class OkmError extends Error {
     this.fieldReason = options?.fieldReason ?? kind;
     this.#values = options?.includeValues === true ? options.values : undefined;
     this.#http = options?.http;
+    if (options?.issues !== undefined) this.issues = options.issues;
   }
 
   /**
@@ -424,6 +442,7 @@ export class OkmError extends Error {
       ...(this.columns.length > 0 ? { columns: this.columns } : {}),
       ...(this.constraint !== undefined ? { constraint: this.constraint } : {}),
       ...(this.sqlstate !== undefined ? { sqlstate: this.sqlstate } : {}),
+      ...(this.issues !== undefined ? { issues: this.issues } : {}),
     };
   }
 
