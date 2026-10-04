@@ -8,6 +8,7 @@
 import { ColumnBuilder, type ColumnState } from "./column.js";
 import { type BuiltSchema } from "./schema.js";
 import { type AnyTable, emittedTypeName } from "./table.js";
+import { contributedFields, type Trait } from "./trait.js";
 
 /**
  * Emits row, insert, and update interfaces for every table.
@@ -36,13 +37,13 @@ export function emitRowTypes(source: BuiltSchema<readonly AnyTable[]>): string {
     inserts.push(`  readonly ${key}: ${name}Insert;`);
     updates.push(`  readonly ${key}: ${name}Update;`);
     lines.push(`export interface ${name} {`);
-    lines.push(fields(item, "row"));
+    lines.push(fields(item, "row", source.traits));
     lines.push("}", "");
     lines.push(`export interface ${name}Insert {`);
-    lines.push(fields(item, "insert"));
+    lines.push(fields(item, "insert", source.traits));
     lines.push("}", "");
     lines.push(`export interface ${name}Update {`);
-    lines.push(fields(item, "update"));
+    lines.push(fields(item, "update", source.traits));
     lines.push("}", "");
   }
   lines.push("export interface Rows {");
@@ -61,9 +62,20 @@ function propertyName(name: string): string {
   return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) ? name : JSON.stringify(name);
 }
 
-function fields(item: AnyTable, kind: "row" | "insert" | "update"): string {
+function fields(
+  item: AnyTable,
+  kind: "row" | "insert" | "update",
+  schemaTraits: readonly Trait[] | undefined,
+): string {
   const printed: string[] = [];
-  for (const [field, builder] of Object.entries(item.columns)) {
+  const options = item.options as
+    | { readonly traits?: readonly Trait[]; readonly omitDefaults?: string }
+    | undefined;
+  const entries = Object.entries(item.columns);
+  for (const pair of contributedFields(schemaTraits, options)) {
+    if (!Object.hasOwn(item.columns, pair[0])) entries.push([pair[0], pair[1]]);
+  }
+  for (const [field, builder] of entries) {
     if (!(builder instanceof ColumnBuilder)) {
       continue;
     }

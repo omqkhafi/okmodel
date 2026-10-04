@@ -556,7 +556,8 @@ function walkStartup(dir: string, file: string, seen: Set<string>, lazy: Set<str
 }
 
 /**
- * Fails when the app fixture's startup graph contains an operator it does not import.
+ * Fails when the app fixture's startup graph contains an operator it does not import,
+ * or the timestamps trait and its clock.
  *
  * @param root - Repository root
  * @returns Problem lines. Empty when only `eq` is present
@@ -590,6 +591,18 @@ export function shakenOperatorProblems(root: string): readonly string[] {
     const problems: string[] = [];
     if (!text.includes("src/dialects/pg/ops/eq.ts")) {
       problems.push("size: app fixture dropped eq, which it imports");
+    }
+    const startup = new Set<string>();
+    const lazy = new Set<string>();
+    walkStartup(dir, "app-startup.js", startup, lazy);
+    for (const name of lazy) startup.delete(name);
+    let startupText = "";
+    for (const name of startup) startupText += readFileSync(join(dir, name), "utf8");
+    if (startupText.includes("src/runtime/traits/") || text.includes("src/runtime/traits/")) {
+      problems.push("size: app fixture kept okmodel/traits");
+    }
+    if (startupText.includes(" = now()")) {
+      problems.push("size: app fixture kept trait clock code");
     }
     for (const name of SHAKEN_OPERATORS) {
       if (text.includes(`src/dialects/pg/ops/${name}.ts`)) {

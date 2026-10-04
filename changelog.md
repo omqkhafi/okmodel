@@ -24,6 +24,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - An OKID id is `text` with collation `C`. Collation is part of the catalog: create, diff, introspect, and plan.
 - `.hidden()` stays out of default selects and includes, and is returned only when a root `select` names it. `.sensitive()` redacts the value in logs, errors, and `inspect()`.
 - `filters()` is synchronous and throws OKM1123 when `allow`, `sort`, or `relations` names a hidden field. `parse()` loads the parser on first use.
+- `schema({ traits })` applies those traits to every table. A table opts out with `omitDefaults` and a reason. A field the table already declares is OKM1012.
 - `contains`, `containedBy`, `overlaps`, `hasKey`, `hasAnyKey`, `path`, and `matches` filter json, array, range, and tsvector columns. Text `contains` stays a substring. The value, key, or path is a parameter, and a regconfig name is checked before it is bound.
 - `json.set`, `arr.append`, and `arr.remove` are namespace exports used inside `update`. Importing one does not pull the others.
 
@@ -40,6 +41,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - An operator that does not fit its column fails with OKM1124. The message names the column type and the operators that column accepts. Text search on a text column says it needs a tsvector column.
 - A table records the file and line where it was defined. `inspect()` shows that location on the catalog rules, a schema error includes it, and `okm` prints it. The catalog hash does not.
 - `okmodel/safety` is the registry later checks plug into. `registerRule` adds a rule, `verify` throws OKM1190 with every violation in stable order, and `safety.property` fails when rule order changes the verdict.
+- `okmodel/traits` exports `timestamps()` and `trait()`. `timestamps()` adds `createdAt` and `updatedAt`. Insert leaves both to `now()`. Update sets `updatedAt` to `now()` and leaves `createdAt`. Input cannot set either, including `{ allow }`. An application that imports no trait does not load that code.
+- `registerTimestamps()` records the timestamps check. A timestamp set by input is OKM1190. `{ allow }` does not clear it.
 - `registerFieldExposure()` records the hidden, sensitive, and guarded checks. A hidden field shown, a sensitive value revealed, or a guarded field set without `{ allow }` is OKM1190.
 - Unknown keys are dropped on insert and update. A guarded field is OKM1190 unless `{ allow }` names it. `allow` does not unlock a primary key on update.
 
@@ -52,6 +55,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The README lists the key options. The quickstart stays on `t.identity()`. Schema says how ids are generated and how to change the default.
 - The roadmap is a public board. Each release is a milestone, and a pull request ends with `Closes #N`.
 - The README shows a jsonb `contains` filter and an array update with `arr.append`.
+- The size page records the no-trait startup graph at 85,568 minified bytes and 28,329 gzip. The gates stay. An application that uses `timestamps()` measures 88,273 / 29,144, and that figure is not a gate.
 
 ### 💥 Breaking Changes
 

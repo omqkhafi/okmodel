@@ -1135,6 +1135,10 @@
       "kind": "stable"
     },
     {
+      "name": "registerTimestamps",
+      "kind": "stable"
+    },
+    {
       "name": "review",
       "kind": "stable"
     },
@@ -1144,6 +1148,28 @@
     },
     {
       "name": "verify",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/traits": [
+    {
+      "name": "TimestampsOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "Trait",
+      "kind": "stable"
+    },
+    {
+      "name": "TraitDefinition",
+      "kind": "stable"
+    },
+    {
+      "name": "timestamps",
+      "kind": "stable"
+    },
+    {
+      "name": "trait",
       "kind": "stable"
     }
   ]

@@ -615,8 +615,8 @@ Modifiers: `.nullable()`, `.default(v)`, `.defaultSql(sql)`, `.primaryKey()`, `.
 |---|---|
 | `t.domain()` | 0.3 |
 | `schema({ extensions, functions, triggers, views })` | 0.3 |
-| `schema({ tenancy, traits, validation })` and the same options on `table()` | 0.2 |
-| `table({ omitDefaults, presets, validate, validation })` | 0.2 |
+| `schema({ tenancy, validation })` and `table({ tenancy, validate, validation })` | 0.2 |
+| `table({ presets })` | 0.2 |
 | `table({ reference })` | 0.4 |
 | `manyThrough` | 0.2 |
 | `morph`, `table({ computed, policies })` | later |
