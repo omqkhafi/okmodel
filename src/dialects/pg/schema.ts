@@ -43,7 +43,7 @@ import {
   type TableModel,
 } from "./model.js";
 import { definition, unavailable } from "./misuse.js";
-import { isRelationCall } from "./relations.js";
+import { isRelationCall, type ManyThroughRelation, type RelationEdge } from "./relations.js";
 import { decodeText, encodeText } from "./text.js";
 import type { FieldsOfList, HasArchive, Trait, TraitModel } from "./trait.js";
 import { type ColumnTenancy, type TenantFields, readTenancy } from "./tenancy.js";
@@ -290,15 +290,7 @@ function stage(jobs: CatalogJob[], build: () => CatalogObject): void {
   });
 }
 
-type FkEdge = {
-  readonly fromTable: string;
-  readonly fromField: string;
-  readonly toTable: string;
-  /** Local SQL names, one column or a composite key. */
-  readonly local: readonly string[];
-  /** Referenced SQL names, in the same order. */
-  readonly remote: readonly string[];
-};
+type FkEdge = RelationEdge;
 
 type Prepared = {
   readonly tsName: string;
@@ -343,11 +335,11 @@ export function schema<
     readonly tenancy?: TTenancy;
     readonly validation?: TValidation;
   },
-): [TValidation] extends [true]
-  ? TenancySchema<SchemaWithTraits<TTables, TTraits>, TTables, TTenancy> & {
-      readonly "~validation": true;
-    }
-  : TenancySchema<SchemaWithTraits<TTables, TTraits>, TTables, TTenancy>;
+): [TValidation] extends [undefined]
+  ? TenancySchema<SchemaWithTraits<TTables, TTraits>, TTables, TTenancy>
+  : TenancySchema<SchemaWithTraits<TTables, TTraits>, TTables, TTenancy> & {
+      readonly "~validation": TValidation;
+    };
 export function schema<
   const TTables extends readonly AnyTable[],
   const TTenancy extends ColumnTenancy | undefined = undefined,
@@ -357,9 +349,11 @@ export function schema<
     readonly tenancy?: TTenancy;
     readonly validation?: TValidation;
   },
-): [TValidation] extends [true]
-  ? TenancySchema<BuiltSchema<TTables>, TTables, TTenancy> & { readonly "~validation": true }
-  : TenancySchema<BuiltSchema<TTables>, TTables, TTenancy>;
+): [TValidation] extends [undefined]
+  ? TenancySchema<BuiltSchema<TTables>, TTables, TTenancy>
+  : TenancySchema<BuiltSchema<TTables>, TTables, TTenancy> & {
+      readonly "~validation": TValidation;
+    };
 export function schema<const TTables extends readonly AnyTable[]>(
   config: SchemaInput<TTables>,
 ): BuiltSchema<TTables> {
@@ -1354,8 +1348,13 @@ function resolveRelations(
     const call = record[name];
     if (!isRelationCall(call)) {
       unavailable(
-        `Table ${item.tsName} relation ${name} is not available yet. one() and many() are accepted. manyThrough arrives in 0.2. morph arrives later.`,
+        `Table ${item.tsName} relation ${name} is not available yet. one(), many(), and manyThrough() are accepted. morph arrives later.`,
       );
+    }
+    const own = (call as Partial<ManyThroughRelation>).resolve;
+    if (own !== undefined) {
+      resolved.push(own({ owner: item.tsName, name, edges, tables: accepted }));
+      continue;
     }
     if (!byName.has(call.table)) {
       throwNamed(

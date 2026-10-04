@@ -191,8 +191,9 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
   {
     code: "OKM1130",
     title: "Cursor order",
-    summary: "A cursor was reused with a different orderBy than the one that created it.",
-    fix: "Request the next page with the same orderBy. The cursor encodes that order.",
+    summary:
+      "A cursor was reused with a different orderBy than the one that created it, or is not a cursor page() returned.",
+    fix: "Request the next page with the same orderBy and the exact next value the previous page returned. The cursor encodes that order.",
   },
   {
     code: "OKM1190",

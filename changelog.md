@@ -35,6 +35,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `json.set`, `arr.append`, and `arr.remove` are namespace exports used inside `update`. Importing one does not pull the others.
 - `.validate()` stores rules on a column. A table `validate` section stores rules by field, and `$row` stores cross-field rules. `schema({ validation })` and `table({ validation })` store the switch. `schema()` does not pack or run them.
 - `schema({ validation: true })` marks that schema's insert body as `Input`. A boolean that is not the literal `true`, an object form, and a table-level `validation` switch do not change the type. The validate methods are added by importing `okmodel/validate` and are not part of the table type.
+- Importing `okmodel/validate` types `insert.validate`, `insert.check`, `pick`, `omit`, `update.validate`, and the Standard Schema members on a table that validates, by module augmentation. A program that does not import it does not see those types and pays nothing for them. The `Input` mark follows the schema's `validation` option or the table's own, in the boolean and object forms.
+- `manyThrough("labels", { through: "taskLabels" })` declares a to-many relation through a join table. Name `from` and `to` when the join table has more than one foreign key to a side. It works in `include`, in `has` / `none` / `every`, and in filters. The join rows and the targets carry the tenant and active-set predicates, so a row in another tenant or archived never shows. The relation carries its own resolver and emitter, so a schema without one does not ship them.
 
 #### adapters
 
@@ -62,12 +64,17 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okmodel/validate` exports `v`. Importing it adds `insert.validate`, `insert.check`, `pick`, `omit`, `update.validate`, and the Standard Schema surface. The engine loads on the first validated call. An application that does not import it does not load that code.
 - A validated write runs transforms, then derived checks (length, required, integer range, precision, picklist, uuid, json), then the caller's rules. A failure is OKM1200. A value returned by `validate()` is frozen and is not checked again. `{ validate: false }` skips that call.
 - A write that would validate throws OKM1201 before any statement, and before a transaction is opened, when `okmodel/validate` was not imported. The category is `input`. A schema that does not enable validation still writes. A failed engine import still rejects the call.
+- `page({ orderBy, limit, after })` returns `{ items, next }`. It is a keyset on `orderBy` with the primary key appended, and it is stable while rows are inserted. The cursor holds the order and the values as the database wrote them, so a timestamp keeps its microseconds. A cursor used with another `orderBy`, or one `page()` did not return, is OKM1130. The tenant and active-set predicates apply to every page. The planner loads on the first `page()`.
+- `aggregate({ where, groupBy, count, sum, avg, min, max, orderBy, limit })` returns grouped rows with the tenant and active-set predicates of any read. `groupBy` needs `limit` or `.all(reason)`. `orderBy` takes `groupBy` fields. There is no `having` and no `bucket`. A hidden field is refused. The planner loads on the first `aggregate()`.
+- Aggregates decode with the source column's codec. `count` is a number, `min` and `max` follow the column, and `sum` and `avg` keep the value type of the column: an exact decimal string for `numeric` by default, a number for `numeric` with `as: "number"` and for integer and float columns. A column whose value is neither a string nor a number is OKM1124.
+- `.required()` on `one()` and a `one()` without `orderBy` that matches more than one row (`not_unique`) have real-Postgres tests, with `inList([])`, `notIn([])`, `has` / `none` / `every`, null ordering, and literal escaping.
 
 #### tooling
 
 - `engines.node` is `>=22`. The checks that can run do so on Node, Bun, and Deno, and the runtime entry is imported as an edge bundle. A runtime that cannot run a check prints the reason.
 - `okm check` reports OKM1030 when a field has rules on the column and in the table `validate` section, or when `validation.style` disagrees with where the rules sit.
 - `okm check` reports OKM1201 when the schema would validate and the project never imports `okmodel/validate`.
+- The 200-table query probe has gated rows for a project with `okmodel/validate` imported and for one that uses `page`, `aggregate`, and `manyThrough`, each at its measured value plus 3 percent (D176). `scripts/app-relations.ts` is a reported app that uses those features.
 
 #### docs
 
@@ -78,7 +85,9 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Spec section 9 uses `columnTenancy` and `global("reason")`. The size page records the no-tenancy app at 85,356 / 28,361. The gates are that measurement plus 3 percent (D160). Column tenancy measures 91,802 / 30,411 and is not a gate. The 91,000 / 30,000 cap stays.
 - D170 accepts the featureless app at 87,148 / 28,938. The gates, the cap, and the 7,100 type probe stay. An application that uses `archivable()` measures 95,725 / 31,604 at startup and is not a gate. A unique a trait adds after the tenancy rewrite is still not widened.
 - Validation is opt-in. OKM1030 is reported by `okm check`, not while `schema()` compiles. D172 records why the first build was rejected and where the engine lives.
-- D174 moves the missing-import check to the first write. The typed surface stays runtime-only until P27.
+- D174 moves the missing-import check to the first write. The typed surface arrives in P27 as a module augmentation in `okmodel/validate`.
+- Spec sections 6.2, 10 and 12 describe `manyThrough`, `page`, `aggregate`, and the decode rule. `iStartsWith`, `iContains`, and `iEndsWith` are not in 0.2 (D176); use `ilike()` with an escaped pattern.
+- D176 records the first P27 build (+1,425 / +431 over the stop line), the one redesign in which the relation carries its own emitter, and the probe policy.
 
 ### 💥 Breaking Changes
 
@@ -98,6 +107,9 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `filters()` returns the parser directly. The promise is on `parse()`, which is what a request handler awaits.
 - A signal or timeout, a watched query, checkout, listen, stream, the server-version query, and the fix text for write and include errors load on first use. Error codes, messages, SQL, and catalog output stay the same. The no-trait startup graph goes from 85,568 / 28,329 to 83,043 / 27,666. The gates stay.
 - P24 takes the no-tenancy app from 83,043 / 27,666 to 85,356 / 28,361. The gates move to measured plus 3 percent (D160): app startup 87,900 / 29,210, postgres.js 40,200 / 14,090, PGlite 37,800 / 13,450, `pg` 40,900 / 14,410, and Bun.sql 39,700 / 13,940. The 91,000 / 30,000 cap stays.
+- P27 takes the no-tenancy app from 87,408 / 29,001 to 88,278 / 29,326. The gates move to measured plus 3 percent (D160), capped at 91,000 / 30,000: app startup 90,900 / 30,000, postgres.js 41,600 / 14,600, PGlite 39,300 / 13,980, `pg` 42,400 / 14,920, Bun.sql 41,200 / 14,470.
+- `sum` and `avg` over a field typed `number` or `string` pass the types, and the result has the type of the field. A `bigint` field typed `bigint` is OKM1124.
+- OKM1130 also covers a cursor that `page()` did not return.
 
 ## v0.1.1 — 2026-10-03
 

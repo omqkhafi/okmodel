@@ -572,7 +572,7 @@ export const tasks = table("tasks", {
 | `validation` | table override of the schema default |
 | `traits`, `omitDefaults` | behavior bundles; opting out of schema traits with a reason |
 | `tenancy` | `{ via: "relation.path" }` or `global("reason")` |
-| `relations` | `one`, `many`, `manyThrough`, `morph`, by table name. `morph("commentable", ["tasks", "lists"])` declares a closed list of targets and returns a flat discriminated union (M2) |
+| `relations` | `one`, `many`, `manyThrough`, `morph`, by table name. `manyThrough("labels", { through: "taskLabels" })` is a to-many relation through a declared join table with one foreign key to each side; name `from` and `to` (join-table fields) when a table has more than one. It works in `include`, in `has` / `none` / `every` and in filters, and the join rows and the targets carry the same tenancy and active-set predicates as any relation. `morph("commentable", ["tasks", "lists"])` declares a closed list of targets and returns a flat discriminated union (M2) |
 | `computed` | SQL expressions usable like fields |
 | `indexes`, `checks` | database indexes, unique constraints, check constraints |
 | `primaryKey` | column names of one primary key, including a composite key |
@@ -618,7 +618,6 @@ Modifiers: `.nullable()`, `.default(v)`, `.defaultSql(sql)`, `.primaryKey()`, `.
 | `schema({ extensions, functions, triggers, views })` | 0.3 |
 | `table({ presets })` | 0.2 |
 | `table({ reference })` | 0.4 |
-| `manyThrough` | 0.2 |
 | `morph`, `table({ computed, policies })` | later |
 
 - Fields are `NOT NULL` unless `.nullable()`.
@@ -771,12 +770,15 @@ db.countries.find({ limit: 300 });                  // global tables on the root
 | Method | Returns | Rule |
 |---|---|---|
 | `find(opts)` | `Row[]` | `limit` or `.all("reason")` (OKM1101) |
-| `page(opts)` | `{ items, next }` | keyset; primary key appended to `orderBy` |
+| `page(opts)` | `{ items, next }` | `limit` is required; `after` takes the previous `next` (`null` on the last page); keyset on `orderBy` with the primary key appended; the cursor is opaque and encodes its order, so a different `orderBy` is OKM1130 |
 | `one(opts)` | `Row \| null` | more than one match → `not_unique`, unless `orderBy` is given (then the first row); `.required()` turns `null` into `not_found` |
 | `count(opts)`, `exists(opts)` | `number`, `boolean` | |
-| `aggregate(opts)` | grouped rows | |
+| `aggregate(opts)` | grouped rows | `where`, `groupBy`, `count: true`, and `sum`, `avg`, `min`, `max` as field lists; a result row has the group fields, `count`, and one object per function (`row.sum.amount`); `groupBy` needs `limit` or `.all(reason)` (OKM1101); `orderBy` takes `groupBy` fields; no `having`, no `bucket` (M2); hidden fields are refused; the tenant and active-set predicates apply as on any read |
+
 
 Query modifiers apply to any read: `.stream()` (async iteration over a server-side cursor, driver capability), `.required()`, `.safe()`, `.inspect()`, `.sql()`, `.explain()`.
+
+Aggregates decode with the source column's codec. `count` is a number. `min` and `max` follow the column. `sum` and `avg` keep the value type of the column: a `numeric` column gives the exact decimal string (the default codec) or a number when the column is `as: "number"`, an `integer` or `double` column gives a number, and a column whose value is neither a string nor a number (`bigint` as `bigint`) is refused with OKM1124. `sum` and `avg` over a `text` column pass the types and fail at runtime with OKM1124.
 
 ```ts
 const task = await scoped.tasks.one({ where: { id } }).required();
@@ -878,7 +880,7 @@ Specified before M1 and tested on every driver through the conformance suite:
 | `inList([])` | matches nothing (compiled to `false`), never a SQL error; `notIn([])` matches everything |
 | `has()` / `none()` / `every()` | `every()` is true when there are no related rows; `none()` is true when there are none |
 | null ordering | `asc` → nulls last, `desc` → nulls first unless `nulls` is set; identical on every dialect (emulated where needed) |
-| `startsWith`, `contains`, `endsWith` | literal: `%`, `_` and `\` in the value are escaped; case-sensitive; `iStartsWith` etc. for case-insensitive |
+| `startsWith`, `contains`, `endsWith` | literal: `%`, `_` and `\` in the value are escaped; case-sensitive; `iStartsWith`, `iContains`, `iEndsWith` for case-insensitive are not in 0.2 (D176); use `ilike()` with an escaped pattern |
 | `like()`, `ilike()` | raw patterns, explicit |
 | `null` in `where` | `IS NULL`; `not(null)` → `IS NOT NULL` |
 | `update` `set` | `undefined` leaves the field unchanged; `null` sets NULL |

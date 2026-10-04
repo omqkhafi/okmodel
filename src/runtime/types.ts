@@ -5,8 +5,7 @@
  * A plain object is not a where value when the column type is an object.
  */
 
-import type { SafeResult, ValidationIssue } from "../contracts/error.js";
-import type { InputMark } from "../contracts/rows.js";
+import type { SafeResult } from "../contracts/error.js";
 import type { QuerySchema } from "../dialects/pg/model.js";
 import type { Inc } from "../dialects/pg/ops/inc.js";
 import type {
@@ -254,7 +253,7 @@ export type FindOptions<S extends QuerySchema, K extends keyof S["~byName"]> = R
 };
 
 /** A query handle. Await it, or inspect it before it runs. */
-export type Read<T> = Promise<T> & {
+export type Query<T> = Promise<T> & {
   /** Logical intent, rules, plan, SQL, parameters, and the routing decision. */
   inspect(): Inspection | Promise<Inspection>;
   /** Statement text and parameters. */
@@ -263,6 +262,10 @@ export type Read<T> = Promise<T> & {
     | Promise<{ readonly text: string; readonly params: readonly (string | null)[] }>;
   /** `{ ok, value }` or `{ ok, error }`. */
   safe(): Promise<SafeResult<T>>;
+};
+
+/** The handle `find`, `one`, `count`, and `exists` return. */
+export type Read<T> = Query<T> & {
   /** Allows `find` or a to-many include without `limit`. */
   all(reason: string): Read<T>;
   /** Turns a null `one()` into `not_found`. */
@@ -270,6 +273,65 @@ export type Read<T> = Promise<T> & {
   /** Streams rows when the driver has `stream`. Otherwise OKM1111. */
   stream(): AsyncIterable<T extends readonly (infer R)[] ? R : T>;
 };
+
+/** One page: the rows, and the cursor for the next page. `next` is `null` on the last page. */
+export type Page<Row> = {
+  readonly items: readonly Row[];
+  readonly next: string | null;
+};
+
+/** `page` options. `after` is the `next` of the page before. */
+export type PageOptions<S extends QuerySchema, K extends keyof S["~byName"]> = ReadOptions<S, K> & {
+  /** Rows in the page. At least 1. */
+  readonly limit: number;
+  /** The `next` of the previous page, made for the same `orderBy`. */
+  readonly after?: string | null;
+};
+
+/**
+ * Fields `sum` and `avg` take: those typed `number` or `string`.
+ *
+ * A `numeric` column is a string by default. The types cannot tell it from a
+ * `text` column, so `sum` over `text` is refused when the call runs (OKM1124).
+ */
+type NumericKeys<Row> = {
+  readonly [F in keyof Row]-?: [NonNullable<Row[F]>] extends [number | string] ? F : never;
+}[keyof Row] &
+  string;
+
+/** `aggregate` options. A hidden field is refused at runtime. */
+export type AggregateOptions<S extends QuerySchema, K extends keyof S["~byName"]> = {
+  readonly where?: WhereOf<S, K>;
+  /** One result row per distinct combination. Needs `limit`, or `.all(reason)`. */
+  readonly groupBy?: readonly (keyof RowOf<S, K> & string)[];
+  /** Adds `count`, the number of rows in the group. */
+  readonly count?: true;
+  readonly sum?: readonly NumericKeys<RowOf<S, K>>[];
+  readonly avg?: readonly NumericKeys<RowOf<S, K>>[];
+  readonly min?: readonly (keyof RowOf<S, K> & string)[];
+  readonly max?: readonly (keyof RowOf<S, K> & string)[];
+  /** Orders the groups. Only `groupBy` fields. Without it, groups come in `groupBy` order. */
+  readonly orderBy?: OrderBy<RowOf<S, K>>;
+  readonly limit?: number;
+};
+
+/** A group: its fields, and the aggregates the call named. */
+export type AggregateRow<Row, O> = Show<
+  (O extends { readonly groupBy: readonly (infer G)[] } ? Pick<Row, G & keyof Row> : unknown) &
+    (O extends { readonly count: true } ? { readonly count: number } : unknown) &
+    (O extends { readonly sum: readonly (infer F)[] }
+      ? { readonly sum: { readonly [P in F & keyof Row]: NonNullable<Row[P]> | null } }
+      : unknown) &
+    (O extends { readonly avg: readonly (infer F)[] }
+      ? { readonly avg: { readonly [P in F & keyof Row]: NonNullable<Row[P]> | null } }
+      : unknown) &
+    (O extends { readonly min: readonly (infer F)[] }
+      ? { readonly min: { readonly [P in F & keyof Row]: NonNullable<Row[P]> | null } }
+      : unknown) &
+    (O extends { readonly max: readonly (infer F)[] }
+      ? { readonly max: { readonly [P in F & keyof Row]: NonNullable<Row[P]> | null } }
+      : unknown)
+>;
 
 /** What {@link Read.inspect} returns. */
 export type Inspection = {
@@ -347,7 +409,7 @@ export type Router = {
  *
  * @typeParam T - Insert shape
  */
-type RequiredInsert<T> = {
+export type RequiredInsert<T> = {
   readonly [K in keyof T as undefined extends T[K] ? never : K]: T[K];
 };
 
@@ -356,7 +418,7 @@ type RequiredInsert<T> = {
  *
  * @typeParam T - Insert shape
  */
-type OptionalInsert<T> = {
+export type OptionalInsert<T> = {
   readonly [K in keyof T as undefined extends T[K] ? K : never]?: T[K];
 };
 
@@ -369,30 +431,6 @@ export type InsertOf<
 }
   ? I
   : never;
-
-type ValidationOn<S extends QuerySchema, _K extends keyof S["~byName"]> = S extends {
-  readonly "~validation": true;
-}
-  ? true
-  : false;
-
-/** Insert shape, or {@link InputMark} when this table's validation is on. */
-type ValidatedInsert<S extends QuerySchema, K extends keyof S["~byName"]> =
-  ValidationOn<S, K> extends true ? InsertOf<S, K> & InputMark : InsertOf<S, K>;
-
-/**
- * One insert body, with optional columns left optional.
- *
- * When validation is on, the type includes {@link InputMark}. Guarded fields
- * and the tenant key are already absent.
- *
- * @typeParam S - Connected schema
- * @typeParam K - Table name
- */
-export type InsertBody<S extends QuerySchema, K extends keyof S["~byName"]> = RequiredInsert<
-  ValidatedInsert<S, K>
-> &
-  OptionalInsert<ValidatedInsert<S, K>>;
 
 /** Update shape of one table. */
 export type UpdateOf<
@@ -530,6 +568,20 @@ type ArchiveOps<S extends QuerySchema, K extends keyof S["~byName"] & string> = 
   onlyArchived(): TableApi<S, K>;
 };
 
+/**
+ * Methods an opt-in feature adds to a table handle.
+ *
+ * The interface is empty here, so an application that imports no feature
+ * pays one empty instantiation per table. A feature's entry point merges its
+ * members in with a module augmentation, and its types appear only when that
+ * entry point is part of the program.
+ *
+ * @typeParam S - Connected schema
+ * @typeParam K - Table name
+ */
+// oxlint-disable-next-line typescript/no-empty-object-type, no-unused-vars
+export interface TableExtras<S extends QuerySchema, K extends keyof S["~byName"] & string> {}
+
 /** Methods on one table. */
 export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & string> = {
   find<const O extends FindOptions<S, K> & { readonly limit: number }>(
@@ -539,6 +591,27 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
     options: O,
   ): { all(reason: string): Read<readonly ResultRow<S, K, O>[]> };
   one<const O extends ReadOptions<S, K>>(options?: O): Read<ResultRow<S, K, O> | null>;
+  /**
+   * One page of rows and the cursor for the next.
+   *
+   * Keyset on `orderBy` plus the primary key, so a page is stable while rows
+   * are inserted. Pass `next` back as `after` with the same `orderBy`.
+   */
+  page<const O extends PageOptions<S, K>>(options: O): Query<Page<ResultRow<S, K, O>>>;
+  /**
+   * Counts, sums, averages, and finds extremes, per group.
+   *
+   * The tenant and active-set rules apply as in `find`.
+   */
+  aggregate<
+    const O extends AggregateOptions<S, K> &
+      ({ readonly limit: number } | { readonly groupBy?: undefined }),
+  >(
+    options: O,
+  ): Query<readonly AggregateRow<RowOf<S, K>, O>[]>;
+  aggregate<const O extends AggregateOptions<S, K>>(
+    options: O,
+  ): { all(reason: string): Query<readonly AggregateRow<RowOf<S, K>, O>[]> };
   count(options?: { readonly where?: WhereOf<S, K> }): Read<number>;
   exists(options?: { readonly where?: WhereOf<S, K> }): Read<boolean>;
   /**
@@ -572,61 +645,8 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
     target: { readonly where?: WhereOf<S, K> },
     options?: WriteOptions<S, K>,
   ): Write<WriteCount>;
-} & (S["~byName"][K] extends { readonly "~archive": true } ? ArchiveOps<S, K> : unknown);
-
-type ValidateBody<S extends QuerySchema, K extends keyof S["~byName"]> =
-  | InsertBody<S, K>
-  | readonly ValidatedInsert<S, K>[];
-
-/**
- * Methods the validation hook adds to `insert` and `update`.
- *
- * They are not part of {@link TableApi}. A per-table conditional there does
- * not fit the query instantiation ceiling.
- */
-export type ValidateOps<S extends QuerySchema, K extends keyof S["~byName"] & string> =
-  ValidationOn<S, K> extends true
-    ? {
-        readonly insert: {
-          /**
-           * Checks one row or a list and returns it frozen.
-           *
-           * A later insert of that value skips these rules.
-           */
-          validate<const T extends ValidateBody<S, K>>(body: T): Promise<T>;
-          /** The same checks. Issues come back instead of OKM1200. */
-          check(body: unknown): Promise<readonly ValidationIssue[]>;
-          /** Validates only these fields. */
-          pick<const F extends readonly (keyof InsertOf<S, K> & string)[]>(
-            ...fields: F
-          ): {
-            validate(body: unknown): Promise<Pick<InsertOf<S, K>, F[number]> & InputMark>;
-            check(body: unknown): Promise<readonly ValidationIssue[]>;
-          };
-          /** Validates every field except these. */
-          omit<const F extends readonly (keyof InsertOf<S, K> & string)[]>(
-            ...fields: F
-          ): {
-            validate(body: unknown): Promise<Omit<InsertOf<S, K>, F[number]> & InputMark>;
-            check(body: unknown): Promise<readonly ValidationIssue[]>;
-          };
-          /** Standard Schema. Issues are returned. Other errors still throw. */
-          readonly "~standard": {
-            readonly version: 1;
-            readonly vendor: "okmodel";
-            validate(
-              value: unknown,
-            ): Promise<
-              { readonly value: unknown } | { readonly issues: readonly ValidationIssue[] }
-            >;
-          };
-        };
-        readonly update: {
-          /** Checks a patch. A `{ set }` body checks `set`. */
-          validate<const T extends UpdateOf<S, K> & InputMark>(body: T): Promise<T>;
-        };
-      }
-    : unknown;
+} & (S["~byName"][K] extends { readonly "~archive": true } ? ArchiveOps<S, K> : unknown) &
+  TableExtras<S, K>;
 
 /**
  * `[Symbol.asyncDispose]` when `Symbol` defines it.

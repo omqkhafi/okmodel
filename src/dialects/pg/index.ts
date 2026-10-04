@@ -87,4 +87,12 @@ export { or } from "./ops/or.js";
 export { overlaps } from "./ops/overlaps.js";
 export { path } from "./ops/path.js";
 export { startsWith } from "./ops/startsWith.js";
-export { many, one, type ManyRelation, type OneRelation, type RelationCall } from "./relations.js";
+export {
+  many,
+  manyThrough,
+  one,
+  type ManyRelation,
+  type ManyThroughRelation,
+  type OneRelation,
+  type RelationCall,
+} from "./relations.js";

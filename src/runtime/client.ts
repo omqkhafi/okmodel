@@ -38,7 +38,8 @@ import type { CatalogArtifact, Connected, Inspection, RoutingDecision, TableApi 
 /** How many plans one client keeps. */
 const PLAN_LIMIT = 64;
 
-type Session = {
+/** A client's connection state. The lazy read modules take it. */
+export type Session = {
   readonly schema: QuerySchema;
   readonly pool: DriverPool;
   readonly ownsPool: boolean;
@@ -56,7 +57,8 @@ type Session = {
   readonly closing: { current: Promise<void> | undefined };
 };
 
-type Mods = {
+/** Per-call modifiers of a read. */
+export type Mods = {
   readonly all?: string;
   readonly required?: boolean;
   readonly signal?: AbortSignal;
@@ -209,6 +211,12 @@ function tableApi(
     },
     exists(options: object = {}) {
       return start(session, "exists", table, options, {}, view);
+    },
+    page(options: object) {
+      return lazyRead(session, () => import("./page.js"), table, options, {}, view);
+    },
+    aggregate(options: object = {}) {
+      return lazyRead(session, () => import("./aggregate.js"), table, options, {}, view);
     },
     insert(data: unknown, options: object = {}) {
       return writeHandle(session, "insert", table, data, options, mods);
@@ -363,11 +371,117 @@ function start(
 ): Promise<unknown> & Record<string, unknown> {
   const model = session.schema.model[table];
   const call = readCall(op, table, options, mods.all, session.scope, model, session.schema, view);
-  let prepared: { readonly plan: Plan; readonly params: readonly (string | null)[] } | undefined;
-  const prepare = async (): Promise<{
-    readonly plan: Plan;
-    readonly params: readonly (string | null)[];
-  }> => {
+  return readHandle(
+    session,
+    table,
+    call,
+    mods,
+    async (plan, rows) => {
+      const value = await decodeRows(plan, rows, table);
+      if (mods.required === true && value === null) {
+        throw new OkmError(
+          "not_found",
+          `one() on ${table} matched no row.`,
+          withHttp(session.http, { kind: "not_found", table }),
+        );
+      }
+      return value;
+    },
+    (prepare) => ({
+      all(reason: string) {
+        return start(session, op, table, options, { ...mods, all: reason }, view);
+      },
+      required() {
+        return start(session, op, table, options, { ...mods, required: true }, view);
+      },
+      stream() {
+        return streamLazy(session, call, prepare);
+      },
+    }),
+  );
+}
+
+/** What a lazy read module exports: the handle for one call. */
+type LazyRead = {
+  readonly build: (
+    session: Session,
+    table: string,
+    options: object,
+    mods: Mods,
+    view: ArchiveView | undefined,
+  ) => Promise<unknown> & Record<string, unknown>;
+};
+
+/**
+ * `page` and `aggregate` plan in their own chunks.
+ *
+ * The chunk loads on the first await, `sql()`, or `inspect()`. A failed import
+ * fails the call. The tenant and active-set predicates live in the planner, so
+ * a call that cannot load never runs without them.
+ */
+function lazyRead(
+  session: Session,
+  load: () => Promise<LazyRead>,
+  table: string,
+  options: object,
+  mods: Mods,
+  view: ArchiveView | undefined,
+): Promise<unknown> & Record<string, unknown> {
+  // The handle is a thenable, so it travels inside an object to stay a handle.
+  const read = () => load().then((mod) => ({ it: mod.build(session, table, options, mods, view) }));
+  return queryHandle(() => read().then((box) => box.it), {
+    inspect: () => read().then((box) => (box.it.inspect as () => unknown)()),
+    sql: () => read().then((box) => (box.it.sql as () => unknown)()),
+    all: (reason: string) =>
+      lazyRead(session, load, table, options, { ...mods, all: reason }, view),
+  }) as unknown as Promise<unknown> & Record<string, unknown>;
+}
+
+/** A bound plan and its wire parameters. */
+type Prepared = { readonly plan: Plan; readonly params: readonly (string | null)[] };
+
+/** Rows as the driver returns them. */
+type Rows = readonly (readonly (string | null)[])[];
+
+/**
+ * Decodes the rows of a prepared read, with includes when the plan has them.
+ *
+ * @param plan - Compiled plan
+ * @param rows - Wire rows
+ * @param table - Table name, for `not_unique`
+ * @returns Rows, one row or null, a count, or a boolean
+ */
+export async function decodeRows(plan: Plan, rows: Rows, table: string): Promise<unknown> {
+  return plan.outputs.includes.length === 0
+    ? decodeResult(plan, rows, table)
+    : (await import("./include.js")).decodeIncluded(plan, rows, table);
+}
+
+/**
+ * A lazy read handle for one planned call.
+ *
+ * `find`, `one`, `count`, and `exists` use it, and so do the lazy `page` and
+ * `aggregate` modules. It plans once, caches the plan per client, maps the
+ * error, and offers `inspect` and `sql`.
+ *
+ * @param session - Client session
+ * @param table - Table name
+ * @param call - The read
+ * @param mods - Signal and timeout
+ * @param decode - Turns the wire rows into the result
+ * @param extra - Methods that belong to this read, given the memoised prepare
+ * @returns The handle
+ */
+export function readHandle(
+  session: Session,
+  table: string,
+  call: ReadCall,
+  mods: Mods,
+  decode: (plan: Plan, rows: Rows) => unknown,
+  extra?: (prepare: () => Promise<Prepared>) => Record<string, unknown>,
+): Promise<unknown> & Record<string, unknown> {
+  let prepared: Prepared | undefined;
+  const prepare = async (): Promise<Prepared> => {
     if (prepared !== undefined) return prepared;
     if (readNeedsOperatorSql(session.schema, call)) await loadOperatorSql();
     const hooks = await hooksFor(call);
@@ -393,18 +507,7 @@ function start(
         params as readonly WireValue[],
         callOptions(mods),
       );
-      const value =
-        plan.outputs.includes.length === 0
-          ? decodeResult(plan, result.rows, table)
-          : (await import("./include.js")).decodeIncluded(plan, result.rows, table);
-      if (mods.required === true && value === null) {
-        throw new OkmError(
-          "not_found",
-          `one() on ${table} matched no row.`,
-          withHttp(session.http, { kind: "not_found", table }),
-        );
-      }
-      return value;
+      return await decode(plan, result.rows);
     } catch (error) {
       const mapped = await mapError(session, error);
       if (session.schema.model[table]?.conceal !== true) throw logged(session, mapped);
@@ -439,22 +542,14 @@ function start(
       }
       return prepare().then(({ plan, params }) => ({ text: plan.text, params }));
     },
-    all(reason: string) {
-      return start(session, op, table, options, { ...mods, all: reason }, view);
-    },
-    required() {
-      return start(session, op, table, options, { ...mods, required: true }, view);
-    },
-    stream() {
-      return streamLazy(session, call, prepare);
-    },
+    ...extra?.(prepare),
   }) as unknown as Promise<unknown> & Record<string, unknown>;
 }
 
 function streamLazy(
   session: Session,
   call: ReadCall,
-  prepare: () => Promise<{ readonly plan: Plan; readonly params: readonly (string | null)[] }>,
+  prepare: () => Promise<Prepared>,
 ): AsyncIterable<unknown> {
   return (async function* () {
     const { streamRows } = await import("./read-stream.js");
@@ -472,7 +567,20 @@ function archiveRecord(
   return { archiveRules: rules };
 }
 
-function readCall(
+/**
+ * Builds the logical read from caller options.
+ *
+ * @param op - Read kind
+ * @param table - Table name
+ * @param options - `where`, `select`, `orderBy`, `limit`, `include`
+ * @param all - Reason given to `.all`
+ * @param scope - Tenant scope, when the client has one
+ * @param model - Table model
+ * @param schema - Connected schema
+ * @param view - Archive visibility
+ * @returns The call the planner binds
+ */
+export function readCall(
   op: ReadOp,
   table: string,
   options: object,

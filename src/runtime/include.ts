@@ -6,6 +6,7 @@ import { throwNamed } from "../contracts/error.js";
 import type { ColumnModel, QuerySchema, RelationModel } from "../dialects/pg/model.js";
 import {
   emitJoin,
+  emitRelationFrom,
   emitOrder,
   emitPrimaryOrder,
   emitWhere,
@@ -167,11 +168,7 @@ function emitIncludeJoin(
       emitNestedAggregate(schema, nested, sink, childAlias, depth + 1);
     }
     sink.text(") as item from ");
-    sink.text(quote(child.model.sql));
-    sink.text(" ");
-    sink.text(childAlias);
-    sink.text(" where ");
-    emitJoin(sink, parentAlias, childAlias, include.relation);
+    emitRelationFrom(schema, include.relation, child, sink, parentAlias, childAlias, depth + 1);
     emitWhere(schema, child, include.where, sink, childAlias, depth + 1, true);
     emitOrder(child, include.orderBy, sink, childAlias);
     if (include.orderBy === undefined && child.model.primary.length > 0) {
@@ -267,11 +264,7 @@ function emitNestedAggregate(
   }
   if (include.columns.length === 0) sink.text("1");
   sink.text(") as item from ");
-  sink.text(quote(child.model.sql));
-  sink.text(" ");
-  sink.text(childAlias);
-  sink.text(" where ");
-  emitJoin(sink, alias, childAlias, include.relation);
+  emitRelationFrom(schema, include.relation, child, sink, alias, childAlias, depth);
   emitWhere(schema, child, include.where, sink, childAlias, depth, true);
   emitOrder(child, include.orderBy, sink, childAlias);
   if (include.orderBy === undefined && child.model.primary.length > 0) {

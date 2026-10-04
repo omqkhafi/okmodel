@@ -96,6 +96,12 @@ export const TYPE_CEILINGS = {
   emittedConsumerTypes: 700,
   /** Query composite probe on 200 tables (D140). Separate from the inferred-schema baseline. */
   queryCompositeTypes: 7_100,
+  /** The query probe with `okmodel/validate` imported (D176): measured 24,885 / 6,412 plus 3 percent, rounded down. */
+  queryValidateInstantiations: 25_631,
+  queryValidateTypes: 6_604,
+  /** The query probe with `page`, `aggregate` and `manyThrough` in use (D176): measured 24,070 / 6,730 plus 3 percent, rounded down. */
+  queryFeaturesInstantiations: 24_792,
+  queryFeaturesTypes: 6_931,
   taggedOperatorSurcharge: 800,
   columnInstantiations: 720,
   columnTypes: 1_100,
@@ -153,6 +159,14 @@ export type TypeBudgetReport = TypeBudgetCore & {
   readonly queries: readonly TypeBudgetRow[];
   /** `Input` and `insert.validate` on one table. Printed, not gated. */
   readonly validate: TypeBudgetRow;
+  /** The 200-table query probe with `okmodel/validate` imported and enabled. Gated apart (D176). */
+  readonly queryValidate: TypeBudgetRow;
+  /**
+   * The 200-table query probe plus one call each of `page`, then `aggregate`, then a
+   * `manyThrough` include and filter, added in that order. The last row is gated apart
+   * (D176); the others show what each feature costs.
+   */
+  readonly queryFeatures: readonly TypeBudgetRow[];
 };
 
 /**
@@ -198,6 +212,33 @@ export function measureTypeBudgets(): TypeBudgetReport {
     const validate = measureProject(join(root, "consumer"), "validate-input", 1, (dir) => {
       writeValidateProject(dir, { declarations });
     });
+    const queryValidate = measureProject(
+      join(root, "consumer"),
+      "query-200-validate",
+      200,
+      (dir) => {
+        writeQueryProject(
+          dir,
+          generateFixture({ seed: 1, tables: 200 }),
+          { declarations },
+          {
+            validate: true,
+          },
+        );
+      },
+    );
+    const queryFeatures = (
+      [["page"], ["page", "aggregate"], ["page", "aggregate", "through"]] as const
+    ).map((features) =>
+      measureProject(join(root, "consumer"), `query-200+${features.join("+")}`, 200, (dir) => {
+        writeQueryProject(
+          dir,
+          generateFixture({ seed: 1, tables: 200 }),
+          { declarations },
+          { features },
+        );
+      }),
+    );
     return {
       ...budgetReport(rows),
       source: {
@@ -208,6 +249,8 @@ export function measureTypeBudgets(): TypeBudgetReport {
       columns,
       queries,
       validate,
+      queryValidate,
+      queryFeatures,
     };
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -275,7 +318,11 @@ export function budgetReport(rows: readonly TypeBudgetRow[]): TypeBudgetCore {
  * @returns Problem lines. Empty when every ceiling holds
  */
 export function ceilingProblems(
-  report: TypeBudgetCore & { readonly queries?: readonly TypeBudgetRow[] },
+  report: TypeBudgetCore & {
+    readonly queries?: readonly TypeBudgetRow[];
+    readonly queryValidate?: TypeBudgetRow;
+    readonly queryFeatures?: readonly TypeBudgetRow[];
+  },
   taggedSurcharge: number = report.taggedOperatorSurcharge,
 ): readonly string[] {
   const problems: string[] = [];
@@ -319,6 +366,27 @@ export function ceilingProblems(
     problems.push(
       `type-cost: query 200 tables used ${String(query200.types)} types, above ${String(TYPE_CEILINGS.queryCompositeTypes)}`,
     );
+  }
+  const features = report.queryFeatures?.at(-1);
+  const probes = [
+    [
+      report.queryValidate,
+      TYPE_CEILINGS.queryValidateInstantiations,
+      TYPE_CEILINGS.queryValidateTypes,
+    ],
+    [features, TYPE_CEILINGS.queryFeaturesInstantiations, TYPE_CEILINGS.queryFeaturesTypes],
+  ] as const;
+  for (const [row, instantiations, types] of probes) {
+    if (row !== undefined && row.instantiations > instantiations) {
+      problems.push(
+        `type-cost: ${row.label} used ${String(row.instantiations)} instantiations, above ${String(instantiations)}`,
+      );
+    }
+    if (row !== undefined && row.types > types) {
+      problems.push(
+        `type-cost: ${row.label} used ${String(row.types)} types, above ${String(types)}`,
+      );
+    }
   }
   if (taggedSurcharge > TYPE_CEILINGS.taggedOperatorSurcharge) {
     problems.push(

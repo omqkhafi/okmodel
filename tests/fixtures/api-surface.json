@@ -567,6 +567,10 @@
       "kind": "stable"
     },
     {
+      "name": "ManyThroughRelation",
+      "kind": "stable"
+    },
+    {
       "name": "NumericAs",
       "kind": "stable"
     },
@@ -828,6 +832,10 @@
     },
     {
       "name": "many",
+      "kind": "stable"
+    },
+    {
+      "name": "manyThrough",
       "kind": "stable"
     },
     {

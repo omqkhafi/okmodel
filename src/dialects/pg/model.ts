@@ -68,7 +68,83 @@ export type RelationModel = {
   readonly local: readonly string[];
   /** SQL names on the related table. */
   readonly remote: readonly string[];
+  /**
+   * Set on a `manyThrough` relation.
+   *
+   * `local` and `remote` then join the join table to this table: `remote` names
+   * columns of the join table. The pairs below join the join table to `table`.
+   */
+  readonly through?: {
+    /** Join table, by its TypeScript name. */
+    readonly table: string;
+    /** SQL names on the join table. */
+    readonly local: readonly string[];
+    /** SQL names on the related table. */
+    readonly remote: readonly string[];
+    /**
+     * Writes the join-table source and its link to the parent.
+     *
+     * The relation carries its own emitter, so a schema without `manyThrough`
+     * does not ship it. The planner passes its helpers in.
+     */
+    readonly emit: ThroughEmit;
+  };
 };
+
+/** Where a planner writes SQL text and statement marks. */
+export type RelationSink = {
+  text(value: string): void;
+  param(encoded: string): void;
+  mark(token: string): void;
+};
+
+/** A table with its columns and relations indexed by name, as the planner holds it. */
+export type PlannedTable = {
+  readonly model: TableModel;
+  readonly columns: ReadonlyMap<string, ColumnModel>;
+  readonly relations: ReadonlyMap<string, RelationModel>;
+  readonly names: readonly string[];
+};
+
+/** The planner helpers a relation emitter calls. */
+export type RelationPlanner = {
+  /** Writes `child.remote = parent.local` for each key column. */
+  readonly join: (
+    sink: RelationSink,
+    parent: string,
+    child: string,
+    relation: RelationModel,
+  ) => void;
+  /** Writes `where` predicates, including tenancy and active-set ones, for a table. */
+  readonly where: (
+    schema: QuerySchema,
+    table: PlannedTable,
+    where: unknown,
+    sink: RelationSink,
+    alias: string,
+    depth: number,
+    appended: boolean,
+  ) => void;
+  /** Indexes a schema's tables by TypeScript name. */
+  readonly indexes: (schema: QuerySchema) => ReadonlyMap<string, PlannedTable>;
+  /** Quotes an identifier. */
+  readonly quote: (name: string) => string;
+};
+
+/**
+ * Writes `<join> <alias> join <table> ... where <link to parent>` for a
+ * `manyThrough` relation. The caller adds the related table's own predicates.
+ */
+export type ThroughEmit = (
+  planner: RelationPlanner,
+  schema: QuerySchema,
+  relation: RelationModel,
+  child: PlannedTable,
+  sink: RelationSink,
+  parent: string,
+  alias: string,
+  depth: number,
+) => void;
 
 /**
  * One foreign key the archive path follows.

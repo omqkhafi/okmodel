@@ -7,7 +7,6 @@ These builders and options throw OKM1061, or are not methods yet. The version is
 | Item | Version | Prompt |
 | --- | --- | --- |
 | presets | 0.2 | P28 |
-| `manyThrough` | 0.2 | P27 |
 | `t.domain` | 0.3 | P40 |
 | extensions | 0.3 | P40 |
 | functions | 0.3 | P41 |
@@ -21,7 +20,9 @@ These builders and options throw OKM1061, or are not methods yet. The version is
 
 `.hidden()` stays out of default selects and includes. `.sensitive()` redacts values in logs, errors, and `inspect()`.
 
-`one()` and `many()` work. A relation value that is not one of those throws OKM1061 and names 0.2 for `manyThrough`.
+`one()`, `many()` and `manyThrough()` work. A relation value that is not one of those throws OKM1061.
+
+`iStartsWith`, `iContains` and `iEndsWith` are not in 0.2 (D176). Use `ilike()` with an escaped pattern. `aggregate()` has no `having` and no `bucket` (M2). `sum` and `avg` over a `text` column pass the types and fail when the call runs (OKM1124), because the row types cannot tell a `numeric` string from a `text` string.
 
 Installing the head snapshot, snapshot-versus-replay equivalence (OKM1521), and `reference` rows arrive in P53A. In 0.1, `okm migrate apply` replays migration files. See [environments](environments.md).
 
