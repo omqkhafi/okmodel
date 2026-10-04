@@ -33,6 +33,7 @@ export function json<T = unknown>(): ColumnBuilder<T, PlainFlags> {
     baseType: "json",
     encode: encodeJson,
     decode: decodeJson as (wire: string) => T,
+    accepts: ["Array", "Object"],
     sqlForm: "json",
   });
 }
@@ -48,6 +49,7 @@ export function jsonb<T = unknown>(): ColumnBuilder<T, PlainFlags> {
     baseType: "jsonb",
     encode: encodeJson,
     decode: decodeJson as (wire: string) => T,
+    accepts: ["Array", "Object"],
     sqlForm: "jsonb",
   });
 }

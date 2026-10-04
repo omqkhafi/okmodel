@@ -37,6 +37,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `schema({ validation: true })` marks that schema's insert body as `Input`. A boolean that is not the literal `true`, an object form, and a table-level `validation` switch do not change the type. The validate methods are added by importing `okmodel/validate` and are not part of the table type.
 - Importing `okmodel/validate` types `insert.validate`, `insert.check`, `pick`, `omit`, `update.validate`, and the Standard Schema members on a table that validates, by module augmentation. A program that does not import it does not see those types and pays nothing for them. The `Input` mark follows the schema's `validation` option or the table's own, in the boolean and object forms.
 - `manyThrough("labels", { through: "taskLabels" })` declares a to-many relation through a join table. Name `from` and `to` when the join table has more than one foreign key to a side. It works in `include`, in `has` / `none` / `every`, and in filters. The join rows and the targets carry the tenant and active-set predicates, so a row in another tenant or archived never shows. The relation carries its own resolver and emitter, so a schema without one does not ship them.
+- `t.custom({ ..., accepts: ["Object"] })` names the object kinds a custom codec takes. Without it every object is refused for that column (OKM1121).
 
 #### adapters
 
@@ -110,6 +111,15 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - P27 takes the no-tenancy app from 87,408 / 29,001 to 88,278 / 29,326. The gates move to measured plus 3 percent (D160), capped at 91,000 / 30,000: app startup 90,900 / 30,000, postgres.js 41,600 / 14,600, PGlite 39,300 / 13,980, `pg` 42,400 / 14,920, Bun.sql 41,200 / 14,470.
 - `sum` and `avg` over a field typed `number` or `string` pass the types, and the result has the type of the field. A `bigint` field typed `bigint` is OKM1124.
 - OKM1130 also covers a cursor that `page()` did not return.
+- P27b takes the no-tenancy app from 88,278 / 29,325 to 88,393 / 29,385 (+115 / +60). No gate or ceiling moves. The gated 200-table probes do not move; `query-200-validate` is 24,888 (+3).
+- In a `where`, a bare object is OKM1121 for every column and `eq(value)` is the equality form for any object value (Temporal, arrays, ranges, json). The comparison operators and `not` take the codec's objects as operands.
+
+### 🐛 Fixed
+
+- `insert` and `update` `set` refused every object value with OKM1121, including the Temporal values of the default `timestamptz`, `timestamp`, `date`, `time` and `interval` codecs, json and jsonb values, arrays, bytes, ranges and points. A column now takes the objects its codec declares and OKM1121 stays for any other object, so an operator-looking object never reaches a scalar column. A `Date` is not an input of any default codec and is still refused.
+- A range object without `empty` is OKM1210 before any statement. It was sent to the database as a malformed literal.
+- `eq()`, `lt`, `gt`, `between`, `inList` and `not` on a Temporal, array, range or json column failed with OKM1121 for the same reason.
+- `insert([...])` typed every key as required on each row, though the runtime already filled an omitted key with `DEFAULT` per row. Rows in one list may now omit different optional keys or pass `undefined`; `null` stays NULL.
 
 ## v0.1.1 — 2026-10-03
 

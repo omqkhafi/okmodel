@@ -19,6 +19,12 @@ export function custom<TValue>(spec: {
   readonly sqlType: string;
   readonly encode: (value: TValue) => string;
   readonly decode: (wire: string) => TValue;
+  /**
+   * Object kinds the codec takes, as `Object.prototype.toString` names them: `"Object"`
+   * for a plain object, `"Array"`, `"Temporal.Instant"`. Omit it when `TValue` is a
+   * scalar: every object is then rejected (OKM1121).
+   */
+  readonly accepts?: readonly string[];
   readonly extension?: string;
   readonly sqlForm?: SqlForm;
 }): ColumnBuilder<TValue, PlainFlags> {
@@ -29,6 +35,7 @@ export function custom<TValue>(spec: {
     baseType: spec.sqlType,
     encode: spec.encode,
     decode: spec.decode,
+    ...(spec.accepts !== undefined ? { accepts: spec.accepts } : {}),
     sqlForm: spec.sqlForm ?? "quote",
     ...(spec.extension !== undefined ? { extension: spec.extension } : {}),
   });

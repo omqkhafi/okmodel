@@ -34,6 +34,7 @@ export function timestamptz(precision?: number): ColumnBuilder<Temporal.Instant,
     baseType: timed("timestamptz", digits),
     encode: (value) => encodeInstant(value, digits),
     decode: decodeInstant,
+    accepts: ["Temporal.Instant"],
     sqlForm: "quote",
   });
 }
@@ -50,6 +51,7 @@ export function timestamp(precision?: number): ColumnBuilder<Temporal.PlainDateT
     baseType: timed("timestamp", digits),
     encode: (value) => encodeDateTime(value, digits),
     decode: decodeDateTime,
+    accepts: ["Temporal.PlainDateTime"],
     sqlForm: "quote",
   });
 }
@@ -64,6 +66,7 @@ export function date(): ColumnBuilder<Temporal.PlainDate, PlainFlags> {
     baseType: "date",
     encode: encodeDate,
     decode: decodeDate,
+    accepts: ["Temporal.PlainDate"],
     sqlForm: "quote",
   });
 }
@@ -80,6 +83,7 @@ export function time(precision?: number): ColumnBuilder<Temporal.PlainTime, Plai
     baseType: timed("time", digits),
     encode: (value) => encodeTime(value, digits),
     decode: decodeTime,
+    accepts: ["Temporal.PlainTime"],
     sqlForm: "quote",
   });
 }
@@ -96,6 +100,7 @@ export function timetz(precision?: number): ColumnBuilder<TimeWithOffset, PlainF
     baseType: timed("timetz", digits),
     encode: (value) => encodeTimeZone(value, digits),
     decode: decodeTimeZone,
+    accepts: ["Object"],
     sqlForm: "quote",
   });
 }
@@ -112,6 +117,7 @@ export function interval(fields?: string): ColumnBuilder<Temporal.Duration, Plai
     baseType: qualifier === undefined ? "interval" : `interval ${qualifier}`,
     encode: encodeDuration,
     decode: decodeDuration,
+    accepts: ["Temporal.Duration"],
     sqlForm: "quote",
   });
 }

@@ -728,13 +728,15 @@ export function emitWhere(
     return;
   }
   if (!isRecord(where)) {
-    fail("OKM1121", "where must be an object of fields. Wrap an object value with eq.");
+    fail("OKM1121", WHERE_FIELDS);
   }
   const keys = Object.keys(where);
   if (keys.length === 0) return;
   sink.text(started ? " and " : " where ");
   emitAnd(schema, table, where, sink, alias, depth);
 }
+
+const WHERE_FIELDS = "where must be an object of fields. Wrap an object value with eq.";
 
 function emitAnd(
   schema: QuerySchema,
@@ -745,7 +747,7 @@ function emitAnd(
   depth: number,
 ): void {
   if (!isRecord(where)) {
-    fail("OKM1121", "where must be an object of fields. Wrap an object value with eq.");
+    fail("OKM1121", WHERE_FIELDS);
   }
   const keys = Object.keys(where);
   let wrote = false;
@@ -795,6 +797,7 @@ function emitOperand(
   sink: Sink,
   alias: string,
   depth: number,
+  wrapped = false,
 ): void {
   const ref = `${alias}.${quote(column.sql)}`;
   if (isOperator(value)) {
@@ -817,12 +820,7 @@ function emitOperand(
     sink.text(" is null");
     return;
   }
-  if (typeof value === "object") {
-    fail(
-      "OKM1121",
-      `Field ${column.field} received an object. Wrap it with eq. eq is the equality form for json and jsonb.`,
-    );
-  }
+  if (typeof value === "object") takeObject(column, value, !wrapped);
   sink.mark(":eq");
   sink.text(ref);
   sink.text(" = ");
@@ -853,7 +851,7 @@ function emitOperator(
     return;
   }
   if (name === "eq") {
-    emitOperand(schema, table, column, value, sink, alias, depth);
+    emitOperand(schema, table, column, value, sink, alias, depth, true);
     return;
   }
   if (name === "lt" || name === "lte" || name === "gt" || name === "gte") {
@@ -922,7 +920,7 @@ function emitNot(
     }
   }
   sink.text("not (");
-  emitOperand(schema, table, column, value, sink, alias, depth);
+  emitOperand(schema, table, column, value, sink, alias, depth, true);
   sink.text(")");
 }
 
@@ -1202,10 +1200,28 @@ export function readLimit(value: unknown): number {
 }
 
 function requireValue(column: ColumnModel, value: unknown): unknown {
-  if (value === undefined || value === null || typeof value === "object") {
-    fail("OKM1121", `Field ${column.field} needs a value. Wrap an object with eq.`);
+  if (value === undefined || value === null) {
+    fail("OKM1121", `Field ${column.field} needs a value.`);
   }
+  if (typeof value === "object") takeObject(column, value);
   return value;
+}
+
+/**
+ * Lets an object through only when the column's codec takes it (OKM1121).
+ *
+ * A column whose codec takes only scalars has no `accepts`, so every object is
+ * refused for it. A bare object in a `where` is refused for every column; the
+ * operators and `eq` are the explicit forms (D125).
+ *
+ * @param column - Target column
+ * @param value - The object
+ * @param bare - Whether the object sits in a `where` without `eq`
+ */
+export function takeObject(column: ColumnModel, value: object, bare = false): void {
+  if (bare || !column.accepts?.includes({}.toString.call(value).slice(8, -1))) {
+    fail("OKM1121", `Field ${column.field} rejects that object.`);
+  }
 }
 
 export function projectExpr(sql: string, dataType: string): string {

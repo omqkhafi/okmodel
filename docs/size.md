@@ -7,7 +7,7 @@ Byte gates fail in that CI job. Install size is the unminified `dist/` and is pr
 | Graph | Minified | Gzip | Cold import | Gate |
 | --- | ---: | ---: | ---: | --- |
 | Runtime entry `okmodel` | 5,288 | 2,026 | 1.770 ms | 6,100 / 2,250 bytes, CI cold import 25 ms |
-| App startup (10 tables, one find) | 88,278 | 29,325 | 10.578 ms | 90,900 / 30,000 bytes (D160, P27). Cold import is printed, not gated |
+| App startup (10 tables, one find) | 88,393 | 29,385 | 10.533 ms | 90,900 / 30,000 bytes (D160, P27; P27b adds 115 / 60, D178). Cold import is printed, not gated |
 | App startup, `postgres` stubbed | | | 5.529 ms | local reference 15 ms, not gated |
 | App total graph, lazy chunks included | 150,603 | 49,562 | | printed, not gated |
 | `okmodel/pg` barrel | 73,154 | 23,119 | 3.458 ms | printed, not gated |

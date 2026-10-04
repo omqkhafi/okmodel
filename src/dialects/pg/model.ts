@@ -52,6 +52,13 @@ export type ColumnModel = {
    * Present on array columns. `arr.append` and `arr.remove` use it.
    */
   readonly elementEncode?: (value: unknown) => string;
+  /**
+   * Object kinds the codec takes as input, named by `Object.prototype.toString`.
+   *
+   * Absent when the codec takes only scalars; the planner then rejects every
+   * object for the column (OKM1121).
+   */
+  readonly accepts?: readonly string[] | undefined;
 };
 
 /**
