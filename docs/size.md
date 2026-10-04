@@ -6,25 +6,25 @@ Byte gates fail in that CI job. Install size is the unminified `dist/` and is pr
 
 | Graph | Minified | Gzip | Cold import | Gate |
 | --- | ---: | ---: | ---: | --- |
-| Runtime entry `okmodel` | 5,525 | 2,042 | 1.770 ms | 6,100 / 2,250 bytes, CI cold import 25 ms |
-| App startup (10 tables, one find) | 84,907 | 28,017 | 10.261 ms | 87,454 / 28,857 bytes (D160). Cold import is printed, not gated |
-| App startup, `postgres` stubbed | | | 5.191 ms | local reference 15 ms, not gated |
-| App total graph, lazy chunks included | 132,804 | 42,925 | | printed, not gated |
-| `okmodel/pg` barrel | 68,500 | 21,534 | 3.224 ms | printed, not gated |
-| Connect `okmodel/pg/postgresjs` startup | 40,310 | 13,934 | 8.969 ms | 41,519 / 14,352 (D160). Cold import printed, not gated |
-| Connect postgres.js, driver stubbed | | | 2.735 ms | local reference 15 ms, not gated |
-| Connect `okmodel/pg/pglite` startup | 37,496 | 13,217 | 10.807 ms | 38,620 / 13,613 (D160). Cold import printed, not gated |
-| Connect PGlite, driver stubbed | | | 2.814 ms | local reference 15 ms, not gated |
-| Connect `okmodel/pg/pg` startup | 40,464 | 14,120 | 11.502 ms | 41,677 / 14,543 (D160). Cold import printed, not gated |
-| Connect `okmodel/pg/pg`, driver stubbed | | | 2.837 ms | local reference 15 ms, not gated |
+| Runtime entry `okmodel` | 5,525 | 2,042 | 1.744 ms | 6,100 / 2,250 bytes, CI cold import 25 ms |
+| App startup (10 tables, one find) | 84,907 | 28,017 | 10.066 ms | 87,454 / 28,857 bytes (D160). Cold import is printed, not gated |
+| App startup, `postgres` stubbed | | | 5.284 ms | local reference 15 ms, not gated |
+| App total graph, lazy chunks included | 132,815 | 42,862 | | printed, not gated |
+| `okmodel/pg` barrel | 68,504 | 21,536 | 3.370 ms | printed, not gated |
+| Connect `okmodel/pg/postgresjs` startup | 40,310 | 13,934 | 8.720 ms | 41,519 / 14,352 (D160). Cold import printed, not gated |
+| Connect postgres.js, driver stubbed | | | 2.697 ms | local reference 15 ms, not gated |
+| Connect `okmodel/pg/pglite` startup | 37,496 | 13,217 | 11.449 ms | 38,620 / 13,613 (D160). Cold import printed, not gated |
+| Connect PGlite, driver stubbed | | | 2.957 ms | local reference 15 ms, not gated |
+| Connect `okmodel/pg/pg` startup | 40,464 | 14,120 | 11.629 ms | 41,677 / 14,543 (D160). Cold import printed, not gated |
+| Connect `okmodel/pg/pg`, driver stubbed | | | 3.081 ms | local reference 15 ms, not gated |
 | Connect `okmodel/pg/bun` startup | 39,365 | 13,686 | | 40,545 / 14,096 (D160). Node cold import skipped: Bun.sql runs only on Bun |
-| Connect Bun.sql, driver stubbed | | | 2.775 ms | local reference 15 ms, not gated |
-| Install size (`dist/`) | 688,210 bytes unminified | | | printed, not gated |
+| Connect Bun.sql, driver stubbed | | | 2.820 ms | local reference 15 ms, not gated |
+| Install size (`dist/`) | 689,068 bytes unminified | | | printed, not gated |
 
-Adapter entries, driver included, are printed and not gated on cold import: postgres.js 7.705 ms, PGlite 9.589 ms. Their minified bytes that are not already in the runtime entry are gated: postgres.js 13,620 of 15,093, PGlite 9,753 of 12,010.
+Adapter entries, driver included, are printed and not gated on cold import: postgres.js 8.061 ms, PGlite 10.609 ms. Their minified bytes that are not already in the runtime entry are gated: postgres.js 13,620 of 15,093, PGlite 9,753 of 12,010.
 
 Moving `sha256`, `throwNamed`, `nearestName`, `catalogError`, and the catalog builders to `okmodel/internal` changed the runtime entry from 24,426 / 8,584 to 5,525 / 2,042. The runtime-entry gate is that measurement plus 10 percent (6,100 / 2,250). Taking `compileColumn`, `emitRowTypes`, `mapPostgresError`, and the operator tag helpers off `okmodel/pg` changed that barrel from 70,059 / 21,873 to 62,063 / 19,409. The app startup graph stayed 77,537 / 25,625. Connect startup graphs stayed 37,952 / 13,158 and 36,330 / 12,862. The internal entry is not on the application import path.
 
 The app startup graph is 2.9% under its minified ceiling and 2.9% under its gzip ceiling. Each connect entry is 2.9% under its minified and gzip ceilings. Those gates moved to the measurement plus 3 percent, rounded down (D160).
 
-First find on the local sample was 0.448 ms. First include was 0.970 ms. Those are one run of `scripts/query-latency.ts`, printed by the size script, and they are not a gate.
+First find on the local sample was 0.459 ms. First include was 1.045 ms. Those are one run of `scripts/query-latency.ts`, printed by the size script, and they are not a gate.

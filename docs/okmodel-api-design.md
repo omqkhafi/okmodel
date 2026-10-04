@@ -818,17 +818,17 @@ Atomic write operators (section 11) are `json.set(path, v)`, `arr.append(v)`, `a
 For list endpoints that accept filters from the client:
 
 ```ts
-const taskFilters = await tasks.filters({
+const taskFilters = tasks.filters({
   allow: { status: ["eq", "in"], dueAt: ["lt", "gt"], title: ["startsWith"] },
   sort: ["dueAt", "createdAt"],
   relations: { list: ["name"] },   // explicit: this relation and only these fields
 });
 
-const q = taskFilters.parse(request.query);   // only allowlisted fields and operators; OkmError "input" otherwise
+const q = await taskFilters.parse(request.query);   // only allowlisted fields and operators; OkmError "input" otherwise
 await scoped.tasks.find({ ...q, limit: 50 });
 ```
 
-Relations are filterable only when listed with the exact fields allowed (`relations: { list: ["name"] }`), which serves admin panels without opening arbitrary traversal. Hidden fields can never be allowlisted.
+Relations are filterable only when listed with the exact fields allowed (`relations: { list: ["name"] }`), which serves admin panels without opening arbitrary traversal. Hidden fields can never be allowlisted: `filters()` throws OKM1123 when it is called (at module load, not per request). `filters()` is synchronous and cheap; `parse()` is asynchronous because the parser loads on first use (D161).
 
 ## 11. Writing
 

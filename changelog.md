@@ -23,7 +23,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `schema({ defaults: { id } })` sets the generator for every bare `t.id()`. `"uuidv4"` and `"uuidv7"` stay database defaults. A function is filled in the application.
 - An OKID id is `text` with collation `C`. Collation is part of the catalog: create, diff, introspect, and plan.
 - `.hidden()` stays out of default selects and includes, and is returned only when a root `select` names it. `.sensitive()` redacts the value in logs, errors, and `inspect()`.
-- `filters()` loads on first use and refuses a hidden field in `allow`, `sort`, or `relations` with OKM1123. `parse` accepts an allowlisted equality and a named sort.
+- `filters()` is synchronous and throws OKM1123 when `allow`, `sort`, or `relations` names a hidden field. `parse()` loads the parser on first use.
 - `contains`, `containedBy`, `overlaps`, `hasKey`, `hasAnyKey`, `path`, and `matches` filter json, array, range, and tsvector columns. Text `contains` stays a substring. The value, key, or path is a parameter, and a regconfig name is checked before it is bound.
 - `json.set`, `arr.append`, and `arr.remove` are namespace exports used inside `update`. Importing one does not pull the others.
 
@@ -68,6 +68,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The npm description is one sentence.
 - App startup is gated at 85,100 minified and 28,000 gzip (D158). postgres.js connect is 40,800 / 14,100, `pg` is 41,000 / 14,250, and Bun.sql is 39,800 / 13,800. PGlite stays 38,146 / 13,505.
 - Synchronous `filters()` takes the app startup graph to 84,907 / 28,017, past the gzip gate. The gates move to measured plus 3 percent (D160): app startup 87,454 / 28,857, postgres.js 41,519 / 14,352, PGlite 38,620 / 13,613, `pg` 41,677 / 14,543, and Bun.sql 40,545 / 14,096. The 91,000 / 30,000 cap stays.
+- `filters()` returns the parser directly. The promise is on `parse()`, which is what a request handler awaits.
 
 ## v0.1.1 — 2026-10-03
 

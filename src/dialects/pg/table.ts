@@ -8,6 +8,7 @@
 import { throwNamed } from "../../contracts/error.js";
 import { callerLocation, withLocation } from "../../contracts/location.js";
 import { type ColumnInsertOf, type ColumnRowOf, type ColumnUpdateOf } from "./column.js";
+import { openFilters } from "./filters.js";
 import { definition, unavailable } from "./misuse.js";
 import { type RelationCall } from "./relations.js";
 
@@ -119,14 +120,15 @@ export type Table<
   readonly columns: TColumns;
   readonly options?: TableOptions<TColumns>;
   /**
-   * Allowlisted client filters. The checker loads on the first call.
+   * Allowlisted client filters.
    *
-   * A hidden field in `allow`, `sort`, or `relations` rejects with OKM1123.
+   * A hidden field in `allow`, `sort`, or `relations` throws OKM1123 here.
+   * `parse` loads the parser on first use.
    *
    * @param spec - Fields, operators, and sorts the caller may send
    * @returns A parser for one request object
    */
-  filters(spec: FilterSpec): Promise<{ parse(query: unknown): ParsedFilters }>;
+  filters(spec: FilterSpec): { parse(query: unknown): Promise<ParsedFilters> };
 };
 
 /** What {@link Table.filters} accepts. */
@@ -268,9 +270,7 @@ export function table<
     name,
     columns,
     filters(spec: FilterSpec) {
-      return import("./filters.js").then((mod) =>
-        mod.openFilters(name, options?.relations, spec, hiddenFields),
-      );
+      return openFilters(name, options?.relations, spec, hiddenFields);
     },
     ...(options !== undefined ? { options } : {}),
     ...(source !== undefined ? { source } : {}),

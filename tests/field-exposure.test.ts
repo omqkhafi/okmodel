@@ -39,13 +39,6 @@ const sessions = table(
 
 const app = schema({ casing: "snake", tables: [users, sessions] });
 
-function rejection(pending: Promise<unknown>): Promise<unknown> {
-  return pending.then(
-    () => undefined,
-    (error: unknown) => error,
-  );
-}
-
 async function expectCode(pending: PromiseLike<unknown>, code: string): Promise<void> {
   try {
     await pending;
@@ -162,23 +155,20 @@ test("reads omit hidden fields, writes strip input, and inspect redacts", async 
     await db.users.update({ where: { id: USER }, set: { role: "owner" } }, { allow: ["role"] });
     expect((await db.users.one({ where: { id: USER } }))?.role).toBe("owner");
 
-    expect(await rejection(users.filters({ allow: { passwordHash: ["eq"] } }))).toMatchObject({
-      code: "OKM1123",
-    });
-    expect(await rejection(users.filters({ sort: ["passwordHash"] }))).toMatchObject({
-      code: "OKM1123",
-    });
-    expect(
-      await rejection(sessions.filters({ relations: { user: ["passwordHash"] } })),
-    ).toMatchObject({ code: "OKM1123" });
-    const refused = await users.filters({ allow: { passwordHash: ["eq"] } }).then(
-      () => undefined,
-      (error: unknown) => error,
-    );
-    expect(refused).toBeInstanceOf(OkmError);
-    if (refused instanceof OkmError) expect(refused.message.includes(SECRET)).toBe(false);
+    expect(() => users.filters({ allow: { passwordHash: ["eq"] } })).toThrow(OkmError);
+    expect(() => users.filters({ sort: ["passwordHash"] })).toThrow(OkmError);
+    expect(() => sessions.filters({ relations: { user: ["passwordHash"] } })).toThrow(OkmError);
+    try {
+      users.filters({ allow: { passwordHash: ["eq"] } });
+    } catch (error) {
+      expect(error).toBeInstanceOf(OkmError);
+      if (error instanceof OkmError) {
+        expect(error.code).toBe("OKM1123");
+        expect(error.message.includes(SECRET)).toBe(false);
+      }
+    }
 
-    const parsed = (await users.filters({ allow: { email: ["eq"] }, sort: ["email"] })).parse({
+    const parsed = await users.filters({ allow: { email: ["eq"] }, sort: ["email"] }).parse({
       email: "a@b.c",
       sort: "email",
     });
