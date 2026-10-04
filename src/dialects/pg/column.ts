@@ -258,6 +258,8 @@ export type ColumnState<TValue> = {
   readonly picklist: { readonly values: readonly string[]; readonly check: boolean } | undefined;
   readonly guarded: boolean;
   readonly hidden: boolean;
+  /** Redacted in logs, errors, and `inspect()`. Not part of the catalog hash. */
+  readonly sensitive: boolean;
   readonly omitWrite: boolean;
   readonly omitUpdate: boolean;
   readonly renamedFrom: string | undefined;
@@ -532,10 +534,24 @@ export class ColumnBuilder<TValue, TFlags extends ColumnFlags> {
   /**
    * Excludes the column from the default row.
    *
+   * A named `select` still returns it. Includes never do.
+   *
    * @returns The same column, hidden
    */
   hidden(): ColumnBuilder<TValue, FlagTrue<TFlags, "hidden">> {
     return rebuild<TValue, FlagTrue<TFlags, "hidden">>(this.state, { hidden: true });
+  }
+
+  /**
+   * Redacts the value in logs, errors, and `inspect()`.
+   *
+   * The stored value is unchanged. A read that selects the column still
+   * returns it. The catalog hash does not include this flag.
+   *
+   * @returns The same column, sensitive
+   */
+  sensitive(): ColumnBuilder<TValue, TFlags> {
+    return rebuild<TValue, TFlags>(this.state, { sensitive: true });
   }
 
   /**
@@ -683,6 +699,7 @@ export function openColumn<TValue, TFlags extends ColumnFlags>(
     picklist: undefined,
     guarded: input.guarded,
     hidden: input.hidden,
+    sensitive: false,
     omitWrite: input.omitWrite,
     omitUpdate: input.omitUpdate === true,
     renamedFrom: undefined,

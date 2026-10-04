@@ -326,7 +326,10 @@ function start(
       }
       return value;
     } catch (error) {
-      throw logged(session, await mapError(session, error));
+      const mapped = await mapError(session, error);
+      if (session.schema.model[table]?.conceal !== true) throw logged(session, mapped);
+      const { scrubCall } = await import("./exposure.js");
+      throw logged(session, scrubCall(mapped, session.schema, call));
     }
   };
   let pending: Promise<unknown> | undefined;
@@ -358,14 +361,16 @@ function start(
     inspect(): Inspection | Promise<Inspection> {
       const source = session.schema.model[table]?.source;
       if (call.include === undefined && prepared !== undefined) {
-        return inspection(prepared.plan, prepared.params, call, source);
+        return finish(session, inspection(prepared.plan, prepared.params, call, source), call);
       }
       if (call.include === undefined && !readNeedsOperatorSql(session.schema, call)) {
         const bound = bindNow(session.schema, call);
         prepared = bound;
-        return inspection(bound.plan, bound.params, call, source);
+        return finish(session, inspection(bound.plan, bound.params, call, source), call);
       }
-      return prepare().then(({ plan, params }) => inspection(plan, params, call, source));
+      return prepare().then(({ plan, params }) =>
+        finish(session, inspection(plan, params, call, source), call),
+      );
     },
     sql() {
       if (call.include === undefined && prepared !== undefined) {
@@ -520,6 +525,15 @@ function bindNow(
   const bound = bindCall(schema, call);
   const plan = compileCall(schema, call, bound.key);
   return { plan, params: bound.params };
+}
+
+function finish(
+  session: Session,
+  view: Inspection,
+  call: ReadCall,
+): Inspection | Promise<Inspection> {
+  if (session.schema.model[call.table]?.conceal !== true) return view;
+  return import("./exposure.js").then((mod) => mod.redactView(session.schema, view, call));
 }
 
 function inspection(

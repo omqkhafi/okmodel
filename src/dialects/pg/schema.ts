@@ -161,6 +161,7 @@ type PreparedColumn = {
   readonly encode: (value: unknown) => string;
   readonly decode: ((wire: string) => unknown) | undefined;
   readonly hidden: boolean;
+  readonly sensitive: boolean;
   readonly guarded: boolean;
   readonly writable: boolean;
   readonly unique: boolean;
@@ -418,6 +419,7 @@ function compileTable(
       encode: column.state.encode as (value: unknown) => string,
       decode: decode === decodeText ? undefined : (decode as (wire: string) => unknown),
       hidden: column.state.hidden,
+      sensitive: column.state.sensitive,
       guarded: column.state.guarded,
       writable:
         column.state.guarded !== true &&
@@ -873,19 +875,24 @@ function tableModel(
     const column = item.bySql.get(sqlName);
     if (column !== undefined) primary.push(column.field);
   }
-  const columns: ColumnModel[] = item.columns.map((column) => ({
-    field: column.field,
-    sql: column.sqlName,
-    dataType: column.dataType,
-    encode: column.encode,
-    decode: column.decode,
-    hidden: column.hidden,
-    guarded: column.guarded,
-    writable: column.writable,
-    guardUpdate: column.writable && primary.includes(column.field),
-    ...(column.fill !== undefined ? { fill: column.fill, clientDefault: "client" as const } : {}),
-    ...(column.elementEncode !== undefined ? { elementEncode: column.elementEncode } : {}),
-  }));
+  let conceal = false;
+  const columns: ColumnModel[] = item.columns.map((column) => {
+    if (column.hidden || column.sensitive) conceal = true;
+    return {
+      field: column.field,
+      sql: column.sqlName,
+      dataType: column.dataType,
+      encode: column.encode,
+      decode: column.decode,
+      hidden: column.hidden,
+      sensitive: column.sensitive,
+      guarded: column.guarded,
+      writable: column.writable,
+      guardUpdate: column.writable && primary.includes(column.field),
+      ...(column.fill !== undefined ? { fill: column.fill, clientDefault: "client" as const } : {}),
+      ...(column.elementEncode !== undefined ? { elementEncode: column.elementEncode } : {}),
+    };
+  });
   return {
     name: item.tsName,
     sql: item.sqlName,
@@ -893,6 +900,7 @@ function tableModel(
     uniques: item.uniques,
     columns,
     relations: resolveRelations(item, edges, byName, accepted),
+    ...(conceal ? { conceal: true as const } : {}),
     ...(item.provenance.source !== undefined ? { source: item.provenance.source } : {}),
   };
 }

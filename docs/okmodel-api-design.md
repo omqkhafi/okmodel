@@ -603,20 +603,20 @@ References are plain table-name strings (a generic table-name argument cycles th
 | Arrays | `.array()`, `.array({ dims: 2 })` |
 | Custom | `t.custom({ sqlType, encode, decode, tsType })` |
 
-Modifiers: `.nullable()`, `.default(v)`, `.defaultSql(sql)`, `.primaryKey()`, `.unique({ reason, global })`, `.references(table, opts)`, `.picklist([...], { check })`, `.generated(sql, { stored })`, `.guarded()`, `.renamedFrom(name)`, `.sqlName()`, `.comment()`. `.hidden()` and `.validate(rules | schema)` are not in 0.1.
+Modifiers: `.nullable()`, `.default(v)`, `.defaultSql(sql)`, `.primaryKey()`, `.unique({ reason, global })`, `.references(table, opts)`, `.picklist([...], { check })`, `.generated(sql, { stored })`, `.guarded()`, `.hidden()`, `.sensitive()`, `.renamedFrom(name)`, `.sqlName()`, `.comment()`. `.validate(rules | schema)` is not in this version.
 
 `t.id()` with `uuidv7()` or `uuidv4`, and `t.identity()`, are omitted from insert and update. `t.id({ default: "none" })`, `.primaryKey()`, and a composite `primaryKey` are required on insert (optional when the column already has a default) and omitted from update. A declared `requires` below Postgres 18 rejects `uuidv7()` at schema build (OKM1812) and the message names `defaults.id`.
 
 **Client defaults and id generators (0.2, D153, D154).** `.default(x)` takes a literal or a client generator (`uuidv4`, `uuidv7`, `okid(...)`, or a function): the client fills the field on insert when it is omitted, nothing enters the database catalog or its hash, and the column has no database default, so a writer that bypasses okmodel must supply the value. `.defaultSql(sql)` is the database default. `schema({ tables, defaults: { id } })` sets what a bare `t.id()` means; a per-column option wins; `connect({ generators })` replaces a built-in generator for tests. OKID columns are `text` with `COLLATE "C"` so sortable ids order as time. Builder shape (shipped in P19): `t.id({ default: uuidv4 | uuidv7 | okid({ prefix, sortable, length }) })` fills the id in the application; the strings `"uuidv4"`, `"uuidv7"` and `"none"` stay database defaults (`"none"` is column-only, so the insert type requires that id); `okid` and the other generators come from `okmodel/ids`. A literal passed to `.default()` is a database default, a function is a client generator.
 
-**Not in this version.** A builder or option in this table throws OKM1061 and names the version that adds it. `.hidden()` and `.sensitive()` are not methods yet. `later` means no 0.x version is assigned yet.
+**Not in this version.** A builder or option in this table throws OKM1061 and names the version that adds it. `later` means no 0.x version is assigned yet.
 
 | Builder or option | Version |
 |---|---|
 | `t.domain()` | 0.3 |
 | `schema({ extensions, functions, triggers, views })` | 0.3 |
 | `schema({ tenancy, traits, validation })` and the same options on `table()` | 0.2 |
-| `table({ omitDefaults, presets, validate, validation })`, `.hidden()`, `.sensitive()` | 0.2 |
+| `table({ omitDefaults, presets, validate, validation })` | 0.2 |
 | `table({ reference })` | 0.4 |
 | `manyThrough` | 0.2 |
 | `morph`, `table({ computed, policies })` | later |
@@ -824,11 +824,11 @@ const taskFilters = tasks.filters({
   relations: { list: ["name"] },   // explicit: this relation and only these fields
 });
 
-const q = taskFilters.parse(request.query);   // only allowlisted fields and operators; OkmError "input" otherwise
+const q = await taskFilters.parse(request.query);   // only allowlisted fields and operators; OkmError "input" otherwise
 await scoped.tasks.find({ ...q, limit: 50 });
 ```
 
-Relations are filterable only when listed with the exact fields allowed (`relations: { list: ["name"] }`), which serves admin panels without opening arbitrary traversal. Hidden fields can never be allowlisted.
+Relations are filterable only when listed with the exact fields allowed (`relations: { list: ["name"] }`), which serves admin panels without opening arbitrary traversal. Hidden fields can never be allowlisted: `filters()` throws OKM1123 when it is called (at module load, not per request). `filters()` is synchronous and cheap; `parse()` is asynchronous because the parser loads on first use (D161).
 
 ## 11. Writing
 

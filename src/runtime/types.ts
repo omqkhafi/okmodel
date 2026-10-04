@@ -401,6 +401,8 @@ export type OnConflict<S extends QuerySchema, K extends keyof S["~byName"]> =
 export type InsertOptions<S extends QuerySchema, K extends keyof S["~byName"]> = {
   readonly onConflict?: OnConflict<S, K>;
   readonly returning?: readonly (keyof RowOf<S, K> & string)[];
+  /** Guarded fields this call may set. */
+  readonly allow?: readonly (keyof RowOf<S, K> & string)[];
   readonly expect?: number;
   readonly signal?: AbortSignal;
   readonly timeout?: number;
@@ -409,6 +411,8 @@ export type InsertOptions<S extends QuerySchema, K extends keyof S["~byName"]> =
 /** Options for `update` and `delete`. */
 export type WriteOptions<S extends QuerySchema, K extends keyof S["~byName"]> = {
   readonly returning?: readonly (keyof RowOf<S, K> & string)[];
+  /** Guarded fields this call may set. `delete` ignores it. */
+  readonly allow?: readonly (keyof RowOf<S, K> & string)[];
   readonly expect?: number;
   readonly signal?: AbortSignal;
   readonly timeout?: number;
@@ -434,6 +438,26 @@ export type Write<T> = Promise<T> & {
   all(reason: string): Write<T>;
 };
 
+/** `set` plus guarded fields named in `{ allow }`. */
+type AllowedSet<
+  S extends QuerySchema,
+  K extends keyof S["~byName"],
+  Allow extends readonly (keyof RowOf<S, K> & string)[],
+> = UpdateSet<S, K> & Partial<Pick<RowOf<S, K>, Allow[number]>>;
+
+/** One update, or a per-row list, when `{ allow }` opens guarded fields. */
+type AllowedUpdate<
+  S extends QuerySchema,
+  K extends keyof S["~byName"],
+  Allow extends readonly (keyof RowOf<S, K> & string)[],
+> =
+  | { readonly where?: WhereOf<S, K>; readonly set: AllowedSet<S, K, Allow> }
+  | readonly {
+      readonly id?: unknown;
+      readonly where?: WhereOf<S, K>;
+      readonly set: AllowedSet<S, K, Allow>;
+    }[];
+
 /** One update, or a per-row list in one statement. */
 export type UpdateTarget<S extends QuerySchema, K extends keyof S["~byName"]> =
   | { readonly where?: WhereOf<S, K>; readonly set: UpdateSet<S, K> }
@@ -455,10 +479,16 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   count(options?: { readonly where?: WhereOf<S, K> }): Read<number>;
   exists(options?: { readonly where?: WhereOf<S, K> }): Read<boolean>;
   /**
-   * Inserts one row. Unknown keys are dropped.
+   * Inserts one row. Unknown keys are dropped. `{ allow }` may set guarded fields.
    *
    * Optional columns are optional keys, so completion lists the ones not yet written.
    */
+  insert<const Allow extends readonly (keyof RowOf<S, K> & string)[]>(
+    data: RequiredInsert<InsertOf<S, K>> &
+      OptionalInsert<InsertOf<S, K>> &
+      Partial<Pick<RowOf<S, K>, Allow[number]>>,
+    options: InsertOptions<S, K> & { readonly allow: Allow },
+  ): Write<Show<RowOf<S, K>>>;
   insert(
     data: RequiredInsert<InsertOf<S, K>> & OptionalInsert<InsertOf<S, K>>,
     options?: InsertOptions<S, K>,
@@ -469,6 +499,10 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
     options?: InsertOptions<S, K>,
   ): Write<readonly Show<RowOf<S, K>>[]>;
   /** Updates matching rows, or a per-row list in one statement. `where` is required. */
+  update<const Allow extends readonly (keyof RowOf<S, K> & string)[]>(
+    target: AllowedUpdate<S, K, Allow>,
+    options: WriteOptions<S, K> & { readonly allow: Allow },
+  ): Write<WriteCount>;
   update(target: UpdateTarget<S, K>, options?: WriteOptions<S, K>): Write<WriteCount>;
   /** Deletes matching rows. `where` is required. */
   delete(

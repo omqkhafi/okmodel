@@ -16,14 +16,21 @@ export type ConflictPlan = {
   readonly update: readonly ColumnModel[];
 };
 
+const NO_ALLOW: ReadonlySet<string> = new Set();
+
 /**
  * Reads `onConflict` and checks `on` against unique constraints (OKM1104).
  *
  * @param table - Target table
  * @param value - The option the caller passed
+ * @param allow - Guarded fields this write may set
  * @returns The plan, or `undefined` for the default `"error"`
  */
-export function readConflict(table: Indexed, value: unknown): ConflictPlan | undefined {
+export function readConflict(
+  table: Indexed,
+  value: unknown,
+  allow: ReadonlySet<string> = NO_ALLOW,
+): ConflictPlan | undefined {
   if (value === undefined || value === "error") return undefined;
   if (value === "ignore") return { kind: "ignore", columns: [], update: [] };
   if (!isRecord(value)) {
@@ -47,7 +54,7 @@ export function readConflict(table: Indexed, value: unknown): ConflictPlan | und
     return {
       kind: "update",
       columns: uniqueColumns(table, value.on),
-      update: updateColumns(table, update),
+      update: updateColumns(table, update, allow),
     };
   }
   fail("OKM1120", 'onConflict must be "error", "ignore", { on, update }, or { on, return: true }.');
@@ -150,7 +157,11 @@ function uniqueColumns(table: Indexed, on: unknown): readonly ColumnModel[] {
   );
 }
 
-function updateColumns(table: Indexed, value: unknown): readonly ColumnModel[] {
+function updateColumns(
+  table: Indexed,
+  value: unknown,
+  allow: ReadonlySet<string>,
+): readonly ColumnModel[] {
   if (!Array.isArray(value) || value.length === 0) {
     fail("OKM1120", "onConflict update must name at least one column.");
   }
@@ -166,7 +177,9 @@ function updateColumns(table: Indexed, value: unknown): readonly ColumnModel[] {
         `Field ${name} is not on ${table.model.name}. Accepted names: ${list(table.names)}.`,
       );
     }
-    if (!column.writable || column.guardUpdate) refuseWrite(table.model.name, column);
+    if (column.guardUpdate || (!column.writable && !(column.guarded && allow.has(name)))) {
+      refuseWrite(table.model.name, column);
+    }
     columns.push(column);
   }
   return columns;
