@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 
 import {
   duplicatedModuleProblems,
@@ -13,7 +14,11 @@ import { checkDocs } from "../scripts/docs-check.js";
 import { checkReadme } from "../scripts/readme-check.js";
 import { releaseRefProblem } from "../scripts/release-ref.js";
 import { checkLayers } from "../scripts/layers-check.js";
-import { checkReleaseDirs, checkReleaseSnapshots } from "../scripts/release-check.js";
+import {
+  checkReleaseDirs,
+  checkReleaseSnapshots,
+  releaseExemption,
+} from "../scripts/release-check.js";
 import { repoRoot } from "../scripts/root.js";
 import {
   appBudgetProblems,
@@ -303,6 +308,120 @@ test("release check accepts a bare version cut with notes under the new heading"
       "# Changelog\n\n## Unreleased\n\n## v0.1.1 — 2026-10-03\n\n- Note.\n\n## v0.1.0 — 2026-10-03\n\n- First.\n",
   };
   expect(checkReleaseSnapshots(base, head)).toEqual([]);
+});
+
+test("release exemption covers a change that is only under .github/", () => {
+  expect(releaseExemption([".github/workflows/ci.yml"])).toBe(
+    "only .github/ changed: no version bump or changelog needed",
+  );
+  expect(releaseExemption([".github/workflows/ci.yml", ".github/pull_request_template.md"])).toBe(
+    "only .github/ changed: no version bump or changelog needed",
+  );
+});
+
+test("release exemption never covers an empty change or a file outside .github/", () => {
+  expect(releaseExemption([])).toBeUndefined();
+  expect(releaseExemption([".github/workflows/ci.yml", "src/contracts/index.ts"])).toBeUndefined();
+  expect(releaseExemption([".githubx/ci.yml"])).toBeUndefined();
+  expect(releaseExemption(["docs/.github/ci.yml"])).toBeUndefined();
+});
+
+/** A throwaway git repository that holds the release-check script and a base commit. */
+function releaseRepo(): { readonly dir: string; readonly base: string } {
+  const dir = mkdtempSync(join(tmpdir(), "okm-release-check-"));
+  for (const file of ["release-check.ts", "report.ts", "root.ts"]) {
+    mkdirSync(join(dir, "scripts"), { recursive: true });
+    copyFileSync(join(root, "scripts", file), join(dir, "scripts", file));
+  }
+  git(dir, "init", "-q", "-b", "main");
+  writeRepoFile(dir, "package.json", `${JSON.stringify({ name: "x", version: "0.2.0" })}\n`);
+  writeRepoFile(
+    dir,
+    "changelog.md",
+    "# Changelog\n\n## Unreleased\n\n## v0.2.0 — 2026-10-05\n\n- First.\n",
+  );
+  git(dir, "add", ".");
+  git(dir, "commit", "-q", "-m", "base");
+  return { dir, base: git(dir, "rev-parse", "HEAD").trim() };
+}
+
+function git(dir: string, ...args: readonly string[]): string {
+  const proc = Bun.spawnSync(
+    ["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", ...args],
+    { cwd: dir },
+  );
+  if (proc.exitCode !== 0) throw new Error(`git ${args.join(" ")}: ${proc.stderr.toString()}`);
+  return proc.stdout.toString();
+}
+
+function writeRepoFile(dir: string, path: string, text: string): void {
+  mkdirSync(dirname(join(dir, path)), { recursive: true });
+  writeFileSync(join(dir, path), text);
+}
+
+function runReleaseCheck(dir: string, base: string) {
+  const proc = Bun.spawnSync(["bun", "scripts/release-check.ts", "--base", base], { cwd: dir });
+  return { code: proc.exitCode, out: proc.stdout.toString(), err: proc.stderr.toString() };
+}
+
+function withReleaseRepo(run: (dir: string, base: string) => void): void {
+  const { dir, base } = releaseRepo();
+  try {
+    run(dir, base);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("release-check passes a pull request that changes only .github/", () => {
+  withReleaseRepo((dir, base) => {
+    writeRepoFile(dir, ".github/workflows/ci.yml", "name: CI\n");
+    git(dir, "add", ".");
+    git(dir, "commit", "-q", "-m", "workflow");
+    const result = runReleaseCheck(dir, base);
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("only .github/ changed: no version bump or changelog needed");
+  });
+});
+
+test("release-check still wants the bump and the changelog line when src/ changes too", () => {
+  withReleaseRepo((dir, base) => {
+    writeRepoFile(dir, ".github/workflows/ci.yml", "name: CI\n");
+    writeRepoFile(dir, "src/index.ts", "export {};\n");
+    git(dir, "add", ".");
+    git(dir, "commit", "-q", "-m", "workflow and source");
+    const result = runReleaseCheck(dir, base);
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("package.json version 0.2.0 equals the base branch");
+    expect(result.err).toContain("changelog.md has no new lines under ## Unreleased");
+    expect(result.out).not.toContain("only .github/ changed");
+  });
+});
+
+test("release-check passes a mixed pull request that has the bump and the changelog line", () => {
+  withReleaseRepo((dir, base) => {
+    writeRepoFile(dir, ".github/workflows/ci.yml", "name: CI\n");
+    writeRepoFile(dir, "src/index.ts", "export {};\n");
+    writeRepoFile(dir, "package.json", `${JSON.stringify({ name: "x", version: "0.2.1" })}\n`);
+    writeRepoFile(
+      dir,
+      "changelog.md",
+      "# Changelog\n\n## Unreleased\n\n- A note.\n\n## v0.2.0 — 2026-10-05\n\n- First.\n",
+    );
+    git(dir, "add", ".");
+    git(dir, "commit", "-q", "-m", "mixed");
+    expect(runReleaseCheck(dir, base).code).toBe(0);
+  });
+});
+
+test("release-check treats an empty diff as it always did", () => {
+  withReleaseRepo((dir, base) => {
+    const result = runReleaseCheck(dir, base);
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("package.json version 0.2.0 equals the base branch");
+    expect(result.err).toContain("changelog.md has no new lines under ## Unreleased");
+    expect(result.out).not.toContain("only .github/ changed");
+  });
 });
 
 test("readme check fails on a relative link and on an image", () => {
