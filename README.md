@@ -883,7 +883,7 @@ okm doctor OKM1811
 
 ### Linter
 
-A migration plan is checked before it runs. Dropping a table, renaming a column, or adding a unique constraint on a table that already exists is an error. A non-concurrent index on an existing table is a warning. `okm generate` prints the finding and still writes the file. `okm migrate plan` and `okm check` exit non-zero on an error. `okm migrate apply` refuses with OKM1510 before any statement. The linter reads the plan and the catalogs. It does not connect. See [the linter](https://github.com/omqkhafi/okmodel/blob/main/docs/linter.md).
+A migration plan is checked before it runs. Dropping a table, renaming a column, or adding a unique constraint on a table that already exists is an error. On an existing table the planner writes the safe form: a concurrent index, a check or foreign key as `NOT VALID` then `VALIDATE`, and `SET NOT NULL` through a validated check. The same statements written by hand, without that form, are errors. A type change that rewrites the table stays a warning. `okm generate` prints the finding and still writes the file. `okm migrate plan` and `okm check` exit non-zero on an error. `okm migrate apply` refuses with OKM1510 before any statement. The linter reads the plan and the catalogs. It does not connect. See [the linter](https://github.com/omqkhafi/okmodel/blob/main/docs/linter.md).
 
 ```text
 error OKM1511 step 1: drops a table -- fix: Stop reading the table in an expand migration, then drop it in a later contract. Or allow OKM1511 with a reason.

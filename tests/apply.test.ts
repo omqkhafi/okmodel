@@ -145,6 +145,32 @@ test("a non-transactional step splits the units around it", () => {
   expect(resumed[0]?.steps[0]?.index).toBe(2);
 });
 
+test("concurrent index create and drop run outside the transaction, and validate stays in it", () => {
+  const migration: StoredMigration = {
+    id: "0003_safe",
+    catalogHash: "hash",
+    steps: [
+      step(
+        'alter table "public"."tasks" add constraint "tasks_title_check" check (true) not valid',
+      ),
+      step('create index concurrently "tasks_title_idx" on "public"."tasks" ("title")', false),
+      step('alter table "public"."tasks" validate constraint "tasks_title_check"'),
+      step('drop index concurrently "public"."tasks_title_idx"', false),
+      step('alter table "public"."tasks" alter column "title" set not null'),
+    ],
+  };
+  const units = applyUnits(migration, new Set());
+  expect(units.map((unit) => unit.transactional)).toEqual([true, false, true, false, true]);
+  const marked = applyUnits(
+    {
+      ...migration,
+      steps: [step('drop index concurrently "public"."tasks_title_idx"', true)],
+    },
+    new Set(),
+  );
+  expect(marked[0]?.transactional).toBe(false);
+});
+
 test("plan text round-trips", () => {
   const plan = {
     name: "add",

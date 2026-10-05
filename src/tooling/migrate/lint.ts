@@ -38,7 +38,17 @@ export function lintPlan(plan: MigrationPlan, before: Catalog, after: Catalog): 
   const existingTables = tableNames(before);
   const findings: Finding[] = [];
   plan.steps.forEach((step, index) => {
-    findings.push(...lintStep(step, index + 1, before, after, existingTables));
+    findings.push(
+      ...lintStep(
+        step,
+        index + 1,
+        before,
+        after,
+        existingTables,
+        plan.steps.slice(0, index),
+        plan.steps.slice(index + 1),
+      ),
+    );
   });
   return findings;
 }
@@ -140,6 +150,8 @@ function lintStep(
   before: Catalog,
   after: Catalog,
   existingTables: ReadonlySet<string>,
+  earlier: readonly PlanStep[],
+  later: readonly PlanStep[],
 ): readonly Finding[] {
   const hits: {
     readonly code: string;
@@ -147,7 +159,7 @@ function lintStep(
     readonly reason: string;
   }[] = [];
   for (const rule of STEP_RULES) {
-    for (const reason of rule.check({ step, before, after, existingTables })) {
+    for (const reason of rule.check({ step, before, after, existingTables, earlier, later })) {
       hits.push({ code: rule.code, severity: rule.severity, reason });
     }
   }

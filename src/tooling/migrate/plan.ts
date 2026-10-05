@@ -45,6 +45,12 @@ import { privilegeSql } from "../../dialects/pg/role/sql.js";
 import { classOf, isStepKind, type MigrationClass, type StepKind } from "./classify.js";
 import { extensionAlterSteps } from "./extensions.js";
 import { omitManagedObjects } from "./managed.js";
+import {
+  concurrentDropIndexSql,
+  notNullSteps,
+  stepsForExistingTable,
+  type SafeStep,
+} from "./safe.js";
 import { canonicalTypeName } from "./type-name.js";
 import { assertNoChains, type Replacement } from "./values.js";
 
@@ -264,6 +270,10 @@ export function planMigration(input: PlanRequest): MigrationPlan {
     const sql = dropObjectSql(object, schema);
     const kind = dropKind(object);
     if (sql === undefined || kind === undefined) return;
+    if (object.kind === "index" && hasTable(renamed, object.identity.parent.name)) {
+      steps.push(step(concurrentDropIndexSql(sql), "drop-index", "ddl", SHARE_UPDATE, false));
+      return;
+    }
     steps.push(step(sql, kind, "ddl", ACCESS));
   };
   // Triggers drop before functions even when the table drop would remove them.
@@ -308,6 +318,13 @@ export function planMigration(input: PlanRequest): MigrationPlan {
       const sql = statements[index];
       const kind = kinds[index];
       if (sql === undefined || kind === undefined) continue;
+      if (kind === "set-not-null") {
+        pushSafe(
+          steps,
+          notNullSteps(change.after, schema, "set-not-null", [renamed, request.after]),
+        );
+        continue;
+      }
       steps.push(step(sql, kind, "ddl", ACCESS));
     }
     const identitySql = identityChangeSql(change.before, change.after, schema);
@@ -374,6 +391,13 @@ export function planMigration(input: PlanRequest): MigrationPlan {
     const sql = createObjectSql(object, schema);
     const kind = createKind(object, tableIsNew);
     if (sql === undefined || kind === undefined) continue;
+    if (!tableIsNew && parent !== undefined && hasTable(renamed, parent)) {
+      const safe = stepsForExistingTable(object, schema, [renamed, request.after]);
+      if (safe !== undefined) {
+        pushSafe(steps, safe);
+        continue;
+      }
+    }
     steps.push(step(sql, kind, "ddl", object.kind === "index" ? SHARE : ACCESS));
   }
   for (const change of replaces) {
@@ -1592,6 +1616,12 @@ function step(
   transactional = true,
 ): PlanStep {
   return { sql, kind, class: classOf(kind), action, lock, transactional };
+}
+
+function pushSafe(steps: PlanStep[], safe: readonly SafeStep[]): void {
+  for (const item of safe) {
+    steps.push(step(item.sql, item.kind, item.action, item.lock, item.transactional));
+  }
 }
 
 function pushDrop(steps: PlanStep[], object: CatalogObject, schema: string): void {

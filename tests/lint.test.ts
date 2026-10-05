@@ -198,9 +198,29 @@ test("unique, check, and foreign key rules see existing rows only", () => {
     { id: t.identity(), title: t.text() },
     { indexes: (columns) => [index(columns.title)] },
   );
-  expect(codes(diff(tasks(), plainIndex))).toContain("OKM1534");
+  expect(codes(diff(tasks(), plainIndex))).not.toContain("OKM1534");
   expect(codes(diff(tasks(), plainIndex))).not.toContain("OKM1529");
   expect(codes(fromEmpty(plainIndex))).not.toContain("OKM1534");
+  const blocking = lintPlan(
+    {
+      name: "hand-index",
+      class: "expand",
+      steps: [
+        {
+          sql: 'create index "tasks_title_idx" on "public"."tasks" ("title")',
+          class: "expand",
+          kind: "create-index",
+          action: "ddl",
+          lock: "SHARE",
+          transactional: true,
+        },
+      ],
+    },
+    schema({ tables: [tasks()] }).catalog,
+    schema({ tables: [plainIndex] }).catalog,
+  );
+  expect(blocking.map((item) => item.code)).toContain("OKM1534");
+  expect(blocking.find((item) => item.code === "OKM1534")?.severity).toBe("error");
   const concurrent = {
     name: "index",
     class: "expand" as const,
@@ -224,8 +244,28 @@ test("unique, check, and foreign key rules see existing rows only", () => {
   const open = table("tasks", { id: t.identity(), title: t.text() });
   const checkCodes = codes(diff(open, checked));
   expect(checkCodes).toContain("OKM1531");
-  expect(checkCodes).toContain("OKM1535");
+  expect(checkCodes).not.toContain("OKM1535");
   expect(codes(fromEmpty(checked))).not.toContain("OKM1531");
+  const bareCheck = lintPlan(
+    {
+      name: "hand-check",
+      class: "expand",
+      steps: [
+        {
+          sql: `alter table "public"."tasks" add constraint "tasks_title_check" check ((title IN ('a', 'b')))`,
+          class: "expand",
+          kind: "add-constraint",
+          action: "ddl",
+          lock: "ACCESS EXCLUSIVE",
+          transactional: true,
+        },
+      ],
+    },
+    schema({ tables: [open] }).catalog,
+    schema({ tables: [checked] }).catalog,
+  );
+  expect(bareCheck.map((item) => item.code)).toContain("OKM1535");
+  expect(bareCheck.find((item) => item.code === "OKM1535")?.severity).toBe("error");
 
   const wider = table("tasks", {
     id: t.identity(),
@@ -238,7 +278,8 @@ test("unique, check, and foreign key rules see existing rows only", () => {
   const widened = diff(narrower, wider);
   const validate = widened.plan.steps.find((step) => step.sql.includes("validate constraint"));
   expect(validate).toBeDefined();
-  expect(codesOf(widened, validate?.sql ?? "")).toContain("OKM1531");
+  expect(codes(widened)).toEqual([]);
+  expect(codesOf(widened, validate?.sql ?? "")).not.toContain("OKM1531");
   expect(codesOf(widened, validate?.sql ?? "")).not.toContain("OKM1535");
 
   const users = table("users", { id: t.identity(), name: t.text() });
@@ -251,19 +292,65 @@ test("unique, check, and foreign key rules see existing rows only", () => {
     plans(schema({ tables: [users, tasks()] }), schema({ tables: [users, owned] })),
   );
   expect(linked).toContain("OKM1532");
-  expect(linked).toContain("OKM1536");
+  expect(linked).not.toContain("OKM1536");
   expect(codes(fromEmpty(schema({ tables: [users, owned] })))).not.toContain("OKM1532");
+  const bareKey = lintPlan(
+    {
+      name: "hand-fk",
+      class: "expand",
+      steps: [
+        {
+          sql: 'alter table "public"."tasks" add constraint "tasks_owner_id_fkey" foreign key ("owner_id") references "public"."users" ("id")',
+          class: "expand",
+          kind: "add-constraint",
+          action: "ddl",
+          lock: "ACCESS EXCLUSIVE",
+          transactional: true,
+        },
+      ],
+    },
+    schema({ tables: [users, tasks()] }).catalog,
+    schema({ tables: [users, owned] }).catalog,
+  );
+  expect(bareKey.map((item) => item.code)).toContain("OKM1536");
+  expect(bareKey.find((item) => item.code === "OKM1536")?.severity).toBe("error");
 });
 
-test("locking warnings cover set not null and a rewriting type change", () => {
+test("locking errors cover an unsafe set not null, and a rewriting type change stays a warning", () => {
   const loose = table("tasks", { id: t.identity(), title: t.text().nullable() });
   const tight = table("tasks", { id: t.identity(), title: t.text() });
   const set = codes(diff(loose, tight));
-  expect(set).toContain("OKM1537");
+  expect(set).not.toContain("OKM1537");
+  expect(set).toContain("OKM1531");
   expect(set).not.toContain("OKM1525");
+  const bare = lintPlan(
+    {
+      name: "hand-null",
+      class: "contract",
+      steps: [
+        {
+          sql: 'alter table "public"."tasks" alter column "title" set not null',
+          class: "contract",
+          kind: "set-not-null",
+          action: "ddl",
+          lock: "ACCESS EXCLUSIVE",
+          transactional: true,
+        },
+      ],
+    },
+    schema({ tables: [loose] }).catalog,
+    schema({ tables: [tight] }).catalog,
+  );
+  expect(bare.map((item) => item.code)).toEqual(["OKM1537"]);
+  expect(bare[0]?.severity).toBe("error");
 
   const rewritten = codes(diff(tasks(), table("tasks", { id: t.identity(), title: t.integer() })));
   expect(rewritten).toContain("OKM1538");
+  expect(
+    diff(tasks(), table("tasks", { id: t.identity(), title: t.integer() })).findings.find(
+      (item) => item.code === "OKM1538",
+    )?.severity,
+  ).toBe("warning");
   const shrunk = codes(
     diff(
       table("tasks", { id: t.identity(), title: t.varchar(30) }),

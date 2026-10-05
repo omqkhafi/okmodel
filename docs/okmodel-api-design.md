@@ -1163,8 +1163,8 @@ connect(url, { schema: appSchema, hookm: [tracing(onSpan)] });
 - **Renames are declared** (`.renamedFrom()`, `renamedFrom` table option). The planner never prompts; an ambiguous drop-and-add fails with OKM1530 and shows the line to add; stale declarations are reported by `okm check`.
 - **Expand/contract classification:** every step is `expand` (additive, old code keeps working), `contract` (removes or changes), or `unclassified` (raw SQL only). The plan header is the strictest class, and each step prints its class and lock. Classification is advisory, backed by the linter and the previous-catalog check; it is not a proof of application behavior. A protected target treats `unclassified` as contract.
 - **The plan shows locks:** each step lists the lock it takes and, with a connected database, an estimate from `pg_class` statistics ("ACCESS EXCLUSIVE on tasks, about 4.2M rows; safe rewrite applied"). Row estimates are P51. P50 prints the lock and does not estimate rows.
-- **Safe rewrites are P50b (D192).** The planner does not emit them yet: concurrent index create and drop outside a transaction; constraints as `NOT VALID` + `VALIDATE`; `SET NOT NULL` via a validated check constraint; volatile defaults split from column creation; unique constraints built from concurrent unique indexes. Until that form is what the planner emits, the locking rules below are warnings.
-- **Linter** (OKM1510–1549). It reads the plan and the catalogs. It does not connect, and it does not see how many rows are stored. An existing table is one present in the catalog before the plan. Destructive, backward-incompatible, and data-dependent findings are errors. Locking findings and type preferences (`timestamptz`, `text`, identity generated always, `jsonb`) are warnings. Type preferences run on `okm check` only. `okm generate` writes the file and prints findings. `okm migrate plan` and `okm check` print findings and exit non-zero on an error. `okm migrate apply` re-lints the files it is about to run and refuses an unresolved error with OKM1510 before any statement. A warning prints and the command still succeeds. OKM1706 and OKM1823 are thrown when the schema is built; they are not migration-linter rules yet (P50b). Data statements in migration files other than `backfill()` steps are flagged (OKM1542): required rows belong in `reference`, which provisioning can reproduce (section 19.6). OKM1542 is not fired by this linter (P53A).
+- **Safe rewrites (D193).** On a table that already exists in the before-catalog, the planner emits the safe form. A new table keeps the plain statements. An index is `CREATE INDEX CONCURRENTLY` or `CREATE UNIQUE INDEX CONCURRENTLY`, and a drop is `DROP INDEX CONCURRENTLY`, outside a transaction (lock `SHARE UPDATE EXCLUSIVE`). A check or foreign key is `ADD CONSTRAINT … NOT VALID`, then `VALIDATE CONSTRAINT` in its own step (lock `SHARE UPDATE EXCLUSIVE`). Postgres documents that validating a foreign key also takes `ROW SHARE` on the referenced table; adding the foreign key, even `NOT VALID`, takes `SHARE ROW EXCLUSIVE` on that table. `SET NOT NULL` adds `CHECK (col IS NOT NULL) NOT VALID` under a generated name, validates it, sets not null (Postgres skips the scan because the floor is 15), then drops the check. A volatile default (`gen_random_uuid()`, `uuidv7()`, or a function the catalog marks volatile) adds the column nullable without the default, sets the default, fills existing rows with one `UPDATE` (batching and resume inside that statement are P52), then the `SET NOT NULL` sequence when the column is required. A stable or constant default stays a plain `ADD COLUMN`. A unique constraint or primary key builds the unique index concurrently, then `ADD CONSTRAINT … UNIQUE USING INDEX` or `PRIMARY KEY USING INDEX`. Steps that take a brief `ACCESS EXCLUSIVE` (the `NOT VALID` add, `SET NOT NULL`, `ADD CONSTRAINT … USING INDEX`) run under `lock_timeout` and retry. A failed concurrent index leaves an invalid index; resume drops it after `pg_index.indisvalid` and rebuilds, and does not repeat a finished step. A type change that rewrites the table is not rewritten.
+- **Linter** (OKM1510–1549). It reads the plan and the catalogs. It does not connect, and it does not see how many rows are stored. An existing table is one present in the catalog before the plan. Destructive, backward-incompatible, and data-dependent findings are errors. OKM1534, OKM1535, OKM1536, and OKM1537 are errors, and they fire only when the statement is not the safe form above. OKM1538 (a type change that rewrites the table) stays a warning: there is no safe form in this version, and OKM1524 already requires a reason. A `VALIDATE` that follows a `widen-check` does not fire OKM1531. Data-dependent errors fire on the step that validates or builds. Type preferences (`timestamptz`, `text`, identity generated always, `jsonb`) are warnings on `okm check` only. `okm generate` writes the file and prints findings. `okm migrate plan` and `okm check` print findings and exit non-zero on an error. `okm migrate apply` re-lints the files it is about to run and refuses an unresolved error with OKM1510 before any statement. A warning prints and the command still succeeds. OKM1706 and OKM1823 are thrown when the schema or `fn()` is built. They are not linter rules. Data statements in migration files other than `backfill()` steps are flagged (OKM1542): required rows belong in `reference`, which provisioning can reproduce (section 19.6). OKM1542 is not fired by this linter (P53A).
 
 An override is a comment on the line directly above the statement, in the same plan-file form as `-- lock:` and `-- transactional:`:
 
@@ -1197,11 +1197,11 @@ The reason is the text after the colon. An override with a missing or empty reas
 | OKM1531 | data-dependent | error | New check that validates existing rows |
 | OKM1532 | data-dependent | error | New foreign key that validates existing rows |
 | OKM1533 | data-dependent | error | Narrowing type change |
-| OKM1534 | locking | warning | Non-concurrent index create on an existing table |
-| OKM1535 | locking | warning | Add check without `NOT VALID` |
-| OKM1536 | locking | warning | Add foreign key without `NOT VALID` |
-| OKM1537 | locking | warning | `SET NOT NULL` on an existing column |
-| OKM1538 | locking | warning | Type change that rewrites the table |
+| OKM1534 | locking | error | Non-concurrent index create on an existing table |
+| OKM1535 | locking | error | Add check without `NOT VALID` |
+| OKM1536 | locking | error | Add foreign key without `NOT VALID` |
+| OKM1537 | locking | error | `SET NOT NULL` that is not preceded by a validated `CHECK (col IS NOT NULL)` |
+| OKM1538 | locking | warning | Type change that rewrites the table. No safe form in this version |
 | OKM1539 | type-preference | warning | `timestamp` without time zone |
 | OKM1540 | type-preference | warning | `varchar(n)` where `text` would do |
 | OKM1543 | type-preference | warning | `serial` or a `nextval` default |
@@ -1415,10 +1415,10 @@ test("today view runs one query", async () => {
 | New check that validates existing rows | lint | OKM1531 |
 | New foreign key that validates existing rows | lint | OKM1532 |
 | Narrowing type change | lint | OKM1533 |
-| Non-concurrent index create on an existing table | lint (warning) | OKM1534 |
-| Add check without `NOT VALID` | lint (warning) | OKM1535 |
-| Add foreign key without `NOT VALID` | lint (warning) | OKM1536 |
-| `SET NOT NULL` on an existing column | lint (warning) | OKM1537 |
+| Non-concurrent index create on an existing table | lint (error) | OKM1534 |
+| Add check without `NOT VALID` | lint (error) | OKM1535 |
+| Add foreign key without `NOT VALID` | lint (error) | OKM1536 |
+| `SET NOT NULL` on an existing column, without the validated check | lint (error) | OKM1537 |
 | Type change that rewrites the table | lint (warning) | OKM1538 |
 | `timestamp` without time zone | lint (warning) | OKM1539 |
 | `varchar(n)` where `text` would do | lint (warning) | OKM1540 |
@@ -1433,7 +1433,7 @@ test("today view runs one query", async () => {
 | Unverifiable raw SQL on tenant table | runtime | OKM1702 (not thrown in 0.2: no path takes raw SQL) |
 | Changing the tenant key | types + runtime | OKM1704 |
 | Global table referencing tenant table | `okm check` | OKM1705 |
-| Tenant index not led by the key | lint | OKM1706 |
+| Tenant index not led by the key | schema, when the schema is built. Not a linter rule | OKM1706 |
 | RLS with owner or superuser role | connect | OKM1707 |
 | Schema/driver dialect mismatch | types | OKM1801 |
 | Server does not satisfy `requires` | connect | OKM1802 |
@@ -1449,7 +1449,7 @@ test("today view runs one query", async () => {
 | View over tenant tables without the tenant key or `global` | `okm check` | OKM1820 |
 | Incompatible replace needs recreate of dependents (shown, never `CASCADE`) | plan | OKM1821 |
 | `REFRESH CONCURRENTLY` without a unique index | plan | OKM1822 |
-| `SECURITY DEFINER` function without `search_path` | lint | OKM1823 |
+| `SECURITY DEFINER` function without `search_path` | `fn()`, when the function is built. Not a linter rule | OKM1823 |
 | plpgsql function without `dependsOn` | build | OKM1824 |
 | Application role lacks privileges on a managed object | `okm doctor` | OKM1825 |
 | Row lock on `find` outside a transaction | types + runtime | OKM1830 |

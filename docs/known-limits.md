@@ -89,10 +89,11 @@ Bun.sql keeps `idleTimeout` at 0, which is Bun's default (no idle timer). A fini
 
 ## Migrations
 
-- **Safe rewrites are not generated yet** (D192, P50b). The planner does not emit a concurrent index create or drop outside a transaction, `NOT VALID` plus `VALIDATE`, `SET NOT NULL` through a validated check, a volatile default split from column creation, or a unique constraint built from a concurrent unique index. The locking findings for those shapes are warnings. They become errors when the planner emits the safe form.
+- **A volatile default is one `UPDATE`** (D193). The planner adds the column nullable, sets the default, then fills existing rows in a single statement. Batching and resume inside that fill are P52. A stable or constant default stays a plain `ADD COLUMN`.
 - **The plan does not estimate rows** (P51). Each step prints its class and the lock it takes. There is no `pg_class` row count.
 - **The linter does not connect, and it is not data-aware.** It reads the plan and the catalogs. An existing table is one present in the catalog before the plan. It cannot see how many rows are stored.
-- **OKM1706 and OKM1823 are not migration-linter rules yet** (P50b). A tenant index that does not lead with the tenant key is OKM1706 when the schema is built. `security: "definer"` without `searchPath` is OKM1823 on `fn()`.
+- **A type change that rewrites the table is not rewritten** (D193). OKM1538 stays a warning. There is no safe form in this version. A column swap is expand and contract work for a later step. OKM1524 already requires a reason for the type change.
+- **OKM1706 and OKM1823 are not linter rules.** A tenant index that does not lead with the tenant key is OKM1706 when the schema is built. `security: "definer"` without `searchPath` is OKM1823 on `fn()`. Both fail at declaration time, which is stronger than a lint, and the linter does not copy them.
 - **OKM1542 is not fired by this linter.** A data statement outside `backfill()` arrives with reference data in P53A.
 
 ## What works
