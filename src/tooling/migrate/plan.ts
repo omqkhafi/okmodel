@@ -42,13 +42,13 @@ import {
 } from "../../dialects/pg/ddl.js";
 import { quoteLiteral } from "../../dialects/pg/quote.js";
 import { privilegeSql } from "../../dialects/pg/role/sql.js";
+import { classOf, isStepKind, type MigrationClass, type StepKind } from "./classify.js";
 import { extensionAlterSteps } from "./extensions.js";
 import { omitManagedObjects } from "./managed.js";
 import { canonicalTypeName } from "./type-name.js";
 import { assertNoChains, type Replacement } from "./values.js";
 
-/** Expand, contract, or a step that is neither. */
-export type MigrationClass = "expand" | "contract" | "unclassified";
+export type { MigrationClass, StepKind };
 
 /**
  * One statement in a plan.
@@ -60,6 +60,13 @@ export type MigrationClass = "expand" | "contract" | "unclassified";
 export type PlanStep = {
   readonly sql: string;
   readonly class: MigrationClass;
+  /**
+   * Planner operation. Absent on a step built by hand.
+   *
+   * The class comes from this kind. A statement with no kind and no class
+   * comment is `raw-sql`.
+   */
+  readonly kind?: StepKind;
   readonly action: "ddl" | "backfill";
   readonly lock: string;
   readonly transactional: boolean;
@@ -76,6 +83,19 @@ export type PlanStep = {
    * The statement is expand. The flag says the body or the settings changed.
    */
   readonly behavior?: "change";
+  /**
+   * `-- okm-allow` lines directly above the statement.
+   *
+   * A reason silences that code only. An empty reason, or a code the
+   * statement did not trigger, is OKM1510 and silences nothing.
+   */
+  readonly allows?: readonly StepAllow[];
+};
+
+/** One `-- okm-allow CODE: reason` line above a statement. */
+export type StepAllow = {
+  readonly code: string;
+  readonly reason: string;
 };
 
 /** A named plan and the class of its strictest step. */
@@ -222,7 +242,7 @@ export function planMigration(input: PlanRequest): MigrationPlan {
   const privileges = privilegeSql(renamed.objects, request.after.objects, schema);
   const steps: PlanStep[] = [];
   steps.push(...renameSteps(request.before, renames, schema));
-  for (const sql of privileges.revoke) steps.push(step(sql, "contract", "ddl", ACCESS));
+  for (const item of privileges.revoke) steps.push(step(item.sql, item.kind, "ddl", ACCESS));
   steps.push(...keptNames.map((item) => renameShapeStep(item, schema)));
   steps.push(...enumAddSteps(enums));
   steps.push(...domainCheckSteps(beforeBy, afterBy, schema));
@@ -242,8 +262,9 @@ export function planMigration(input: PlanRequest): MigrationPlan {
     const key = identityKey(object.identity);
     if (!dropKeys.has(key) || deferred.has(key) || covered(object, droppedTables)) return;
     const sql = dropObjectSql(object, schema);
-    if (sql === undefined) return;
-    steps.push(step(sql, "contract", "ddl", ACCESS));
+    const kind = dropKind(object);
+    if (sql === undefined || kind === undefined) return;
+    steps.push(step(sql, kind, "ddl", ACCESS));
   };
   // Triggers drop before functions even when the table drop would remove them.
   // View indexes, then views, drop before the tables they read. Never CASCADE.
@@ -275,28 +296,25 @@ export function planMigration(input: PlanRequest): MigrationPlan {
     }
     emitDrop(object);
   }
-  for (const object of typeDrops) {
-    const sql = dropObjectSql(object, schema);
-    if (sql === undefined) continue;
-    steps.push(step(sql, "contract", "ddl", ACCESS));
-  }
-  for (const object of extensionDrops) {
-    const sql = dropObjectSql(object, schema);
-    if (sql === undefined) continue;
-    steps.push(step(sql, "contract", "ddl", ACCESS));
-  }
+  for (const object of typeDrops) pushDrop(steps, object, schema);
+  for (const object of extensionDrops) pushDrop(steps, object, schema);
   steps.push(...extensionAlterSteps(beforeBy, afterBy, dropKeys));
 
   for (const change of alters) {
-    for (const sql of alterColumnSql(
-      alignedColumnType(change.before, change.after),
-      change.after,
-      schema,
-    )) {
-      steps.push(step(sql, alterClass(sql), "ddl", ACCESS));
+    const aligned = alignedColumnType(change.before, change.after);
+    const statements = alterColumnSql(aligned, change.after, schema);
+    const kinds = columnAlterKinds(aligned, change.after);
+    for (let index = 0; index < statements.length; index += 1) {
+      const sql = statements[index];
+      const kind = kinds[index];
+      if (sql === undefined || kind === undefined) continue;
+      steps.push(step(sql, kind, "ddl", ACCESS));
     }
     const identitySql = identityChangeSql(change.before, change.after, schema);
-    if (identitySql !== undefined) steps.push(step(identitySql, "expand", "ddl", ACCESS));
+    const identity = identityKind(change.before, change.after);
+    if (identitySql !== undefined && identity !== undefined) {
+      steps.push(step(identitySql, identity, "ddl", ACCESS));
+    }
   }
 
   const createdTables = new Set(
@@ -306,15 +324,16 @@ export function planMigration(input: PlanRequest): MigrationPlan {
       .map((object) => object.identity.name),
   );
   const emitted = new Set<string>();
-  for (const sql of privileges.prepare) steps.push(step(sql, "expand", "ddl", ACCESS));
+  for (const item of privileges.prepare) steps.push(step(item.sql, item.kind, "ddl", ACCESS));
   for (const object of creationOrder(request.after)) {
     if (object.kind !== "extension") continue;
     const key = identityKey(object.identity);
     if (!createKeys.has(key) || emitted.has(key)) continue;
     emitted.add(key);
     const sql = createObjectSql(object, schema);
-    if (sql === undefined) continue;
-    steps.push(step(sql, "expand", "ddl", ACCESS));
+    const kind = createKind(object, false);
+    if (sql === undefined || kind === undefined) continue;
+    steps.push(step(sql, kind, "ddl", ACCESS));
   }
   for (const object of creationOrder(request.after)) {
     if (object.kind !== "type") continue;
@@ -322,8 +341,9 @@ export function planMigration(input: PlanRequest): MigrationPlan {
     if (!createKeys.has(key) || emitted.has(key)) continue;
     emitted.add(key);
     const sql = createObjectSql(object, schema);
-    if (sql === undefined) continue;
-    steps.push(step(sql, "expand", "ddl", ACCESS));
+    const kind = createKind(object, false);
+    if (sql === undefined || kind === undefined) continue;
+    steps.push(step(sql, kind, "ddl", ACCESS));
   }
   for (const object of creationOrder(request.after)) {
     if (
@@ -346,12 +366,15 @@ export function planMigration(input: PlanRequest): MigrationPlan {
     if (!wanted || emitted.has(key)) continue;
     emitted.add(key);
     if (object.kind === "table") {
-      steps.push(step(createTableSql(object, request.after, schema), "expand", "ddl", ACCESS));
+      steps.push(
+        step(createTableSql(object, request.after, schema), "create-table", "ddl", ACCESS),
+      );
       continue;
     }
     const sql = createObjectSql(object, schema);
-    if (sql === undefined) continue;
-    steps.push(step(sql, "expand", "ddl", object.kind === "index" ? SHARE : ACCESS));
+    const kind = createKind(object, tableIsNew);
+    if (sql === undefined || kind === undefined) continue;
+    steps.push(step(sql, kind, "ddl", object.kind === "index" ? SHARE : ACCESS));
   }
   for (const change of replaces) {
     if (sameDefinition(change.before, change.after)) continue;
@@ -361,9 +384,11 @@ export function planMigration(input: PlanRequest): MigrationPlan {
       change.kind === "function"
         ? functionSql(change.after, schema, true)
         : viewSql(change.after, schema, true);
+    const kind = change.kind === "function" ? "replace-function" : "replace-view";
     steps.push({
       sql,
-      class: "expand",
+      kind,
+      class: classOf(kind),
       action: "ddl",
       lock: ACCESS,
       transactional: true,
@@ -377,8 +402,9 @@ export function planMigration(input: PlanRequest): MigrationPlan {
       if (!createKeys.has(key) || emitted.has(key)) continue;
       emitted.add(key);
       const sql = createObjectSql(object, schema);
-      if (sql === undefined) continue;
-      steps.push(step(sql, "expand", "ddl", ACCESS));
+      const created = createKind(object, false);
+      if (sql === undefined || created === undefined) continue;
+      steps.push(step(sql, created, "ddl", ACCESS));
     }
   }
   for (const object of creationOrder(request.after)) {
@@ -387,8 +413,9 @@ export function planMigration(input: PlanRequest): MigrationPlan {
     if (!createKeys.has(key) || emitted.has(key)) continue;
     emitted.add(key);
     const sql = createObjectSql(object, schema);
-    if (sql === undefined) continue;
-    steps.push(step(sql, "expand", "ddl", SHARE));
+    const kind = createKind(object, false);
+    if (sql === undefined || kind === undefined) continue;
+    steps.push(step(sql, kind, "ddl", SHARE));
   }
   for (const object of creationOrder(request.after)) {
     if (object.kind !== "materializedView") continue;
@@ -396,11 +423,16 @@ export function planMigration(input: PlanRequest): MigrationPlan {
     if (!createKeys.has(key)) continue;
     assertConcurrentRefresh(object, request.after);
     steps.push(
-      step(refreshMaterializedViewSql(object, schema, false), "expand", "backfill", ACCESS),
+      step(
+        refreshMaterializedViewSql(object, schema, false),
+        "refresh-matview",
+        "backfill",
+        ACCESS,
+      ),
     );
   }
 
-  for (const sql of privileges.grant) steps.push(step(sql, "expand", "ddl", ACCESS));
+  for (const item of privileges.grant) steps.push(step(item.sql, item.kind, "ddl", ACCESS));
   steps.push(...contractSwaps(picklists, enums, replacements, schema));
   return {
     name: request.name ?? "migration",
@@ -410,7 +442,8 @@ export function planMigration(input: PlanRequest): MigrationPlan {
 }
 
 /**
- * Prints a plan. The text is SQL plus class comments, never TypeScript.
+ * Prints a plan. The header is the strictest class. Each step prints its
+ * class and lock. The text is SQL plus those comments, never TypeScript.
  *
  * @param plan - Plan from {@link planMigration}
  * @returns The text `okm generate` writes and `okm migrate plan` prints
@@ -424,11 +457,15 @@ export function formatPlan(plan: MigrationPlan): string {
   }
   for (const item of plan.steps) {
     lines.push(`-- class: ${item.class}`);
+    if (item.kind !== undefined) lines.push(`-- kind: ${item.kind}`);
     lines.push(`-- action: ${item.action}`);
     lines.push(`-- lock: ${item.lock}`);
     if (!item.transactional) lines.push("-- transactional: false");
     if (item.path !== undefined) lines.push(`-- path: ${item.path}`);
     if (item.behavior === "change") lines.push("-- behavior: change");
+    for (const allow of item.allows ?? []) {
+      lines.push(`-- okm-allow ${allow.code}: ${allow.reason}`);
+    }
     lines.push(`${item.sql};`);
     lines.push("");
   }
@@ -460,38 +497,59 @@ export function parsePlan(text: string): MigrationPlan {
     }
     if (lines[index] === "-- no steps") break;
     let stepClass: MigrationClass = "expand";
+    let sawClass = false;
+    let stepKind: StepKind | undefined;
     let action: PlanStep["action"] = "ddl";
     let lock = "";
     let transactional = true;
     let path: PlanStep["path"];
     let behavior: PlanStep["behavior"];
+    const allows: StepAllow[] = [];
     const sql: string[] = [];
     while (index < lines.length && (lines[index] ?? "") !== "") {
       const line = lines[index] ?? "";
       index += 1;
-      if (line.startsWith("-- class: ")) stepClass = readClass(line.slice("-- class: ".length));
-      else if (line.startsWith("-- action: "))
+      if (line.startsWith("-- class: ")) {
+        stepClass = readClass(line.slice("-- class: ".length));
+        sawClass = true;
+      } else if (line.startsWith("-- kind: ")) {
+        const kind = line.slice("-- kind: ".length);
+        if (isStepKind(kind)) stepKind = kind;
+      } else if (line.startsWith("-- action: "))
         action = line.endsWith("backfill") ? "backfill" : "ddl";
       else if (line.startsWith("-- lock: ")) lock = line.slice("-- lock: ".length);
       else if (line === "-- transactional: false") transactional = false;
       else if (line === "-- path: unverified") path = "unverified";
       else if (line === "-- behavior: change") behavior = "change";
+      else if (line.startsWith("-- okm-allow")) allows.push(readAllow(line));
       else if (!line.startsWith("--")) sql.push(line);
     }
     const statement = sql.join("\n").replace(/;\s*$/, "");
     if (statement.length > 0) {
+      const kind = sawClass ? stepKind : "raw-sql";
+      const classification = sawClass ? stepClass : "unclassified";
       steps.push({
         sql: statement,
-        class: stepClass,
+        class: classification,
+        ...(kind !== undefined ? { kind } : {}),
         action,
         lock,
         transactional,
         ...(path !== undefined ? { path } : {}),
         ...(behavior !== undefined ? { behavior } : {}),
+        ...(allows.length > 0 ? { allows } : {}),
       });
     }
   }
   return { name, class: steps.length === 0 ? planClass : overall(steps), steps };
+}
+
+const ALLOW = /^-- okm-allow\s+(OKM\d+)\s*(?::\s*(.*))?$/;
+
+function readAllow(line: string): StepAllow {
+  const match = ALLOW.exec(line);
+  if (match === null) return { code: "", reason: "" };
+  return { code: match[1] ?? "", reason: (match[2] ?? "").trim() };
 }
 
 function readClass(value: string): MigrationClass {
@@ -562,7 +620,7 @@ function renameSteps(
     steps.push(
       step(
         `alter table ${qualify(schema, rename.from)} rename to ${quoteIdent(rename.to)}`,
-        "contract",
+        "rename-table",
         "ddl",
         ACCESS,
       ),
@@ -575,7 +633,7 @@ function renameSteps(
     steps.push(
       step(
         `alter table ${qualify(schema, rename.table)} rename column ${quoteIdent(rename.from)} to ${quoteIdent(rename.to)}`,
-        "contract",
+        "rename-column",
         "ddl",
         ACCESS,
       ),
@@ -643,17 +701,19 @@ function renameShapeStep(
   if (pair.from.kind === "index" && pair.to.kind === "index") {
     return step(
       `alter index ${qualify(schema, pair.from.identity.name)} rename to ${quoteIdent(pair.to.identity.name)}`,
-      "contract",
+      "rename-index",
       "ddl",
       ACCESS,
     );
   }
   if (pair.from.kind !== "constraint" || pair.to.kind !== "constraint") {
-    return step("select 1", "unclassified", "ddl", ACCESS);
+    throw new OkmError("invalid", "A same-shape rename is an index or a constraint.", {
+      fix: { summary: "The planner only renames an index or a constraint in place." },
+    });
   }
   return step(
     `alter table ${qualify(schema, pair.from.identity.parent.name)} rename constraint ${quoteIdent(pair.from.identity.name)} to ${quoteIdent(pair.to.identity.name)}`,
-    "contract",
+    "rename-constraint",
     "ddl",
     ACCESS,
   );
@@ -882,7 +942,7 @@ function enumAddSteps(enums: readonly EnumEdit[]): PlanStep[] {
   for (const change of enums) {
     if (change.kind !== "add") continue;
     for (const sql of change.statements) {
-      steps.push(step(sql, "expand", "ddl", ACCESS, false));
+      steps.push(step(sql, "add-enum-value", "ddl", ACCESS, false));
     }
   }
   return steps;
@@ -908,53 +968,40 @@ function contractSwaps(
   for (const change of picklists) {
     const table = qualify(schema, change.after.identity.parent.name);
     const name = quoteIdent(change.after.identity.name);
-    steps.push(
-      step(
-        `alter table ${table} drop constraint ${name}`,
-        change.removed.length > 0 ? "contract" : "expand",
-        "ddl",
-        ACCESS,
-      ),
-    );
+    const kind = change.removed.length > 0 ? "narrow-check" : "widen-check";
+    steps.push(step(`alter table ${table} drop constraint ${name}`, kind, "ddl", ACCESS));
     const expression = change.after.definition.expression ?? "true";
     steps.push(
       step(
         `alter table ${table} add constraint ${name} check (${expression}) not valid`,
-        change.removed.length > 0 ? "contract" : "expand",
+        kind,
         "ddl",
         ACCESS,
       ),
     );
-    steps.push(
-      step(
-        `alter table ${table} validate constraint ${name}`,
-        change.removed.length > 0 ? "contract" : "expand",
-        "ddl",
-        SHARE_UPDATE,
-      ),
-    );
+    steps.push(step(`alter table ${table} validate constraint ${name}`, kind, "ddl", SHARE_UPDATE));
   }
   for (const change of enums) {
     if (change.kind !== "replace") continue;
     const type = qualify(schema, change.name);
     const old = quoteIdent(`${change.name}_old`);
     const labels = change.labels.map((label) => quoteLiteral(label)).join(", ");
-    steps.push(step(`alter type ${type} rename to ${old}`, "contract", "ddl", ACCESS));
-    steps.push(step(`create type ${type} as enum (${labels})`, "contract", "ddl", ACCESS));
+    steps.push(step(`alter type ${type} rename to ${old}`, "rename-enum", "ddl", ACCESS));
+    steps.push(step(`create type ${type} as enum (${labels})`, "recreate-enum", "ddl", ACCESS));
     for (const column of change.columns) {
       const table = qualify(schema, column.table);
       const name = quoteIdent(column.column);
       steps.push(
         step(
           `alter table ${table} alter column ${name} type ${type} using ${name}::text::${type}`,
-          "contract",
+          "set-enum-column",
           "ddl",
           ACCESS,
         ),
       );
     }
     steps.push(
-      step(`drop type ${qualify(schema, `${change.name}_old`)}`, "contract", "ddl", ACCESS),
+      step(`drop type ${qualify(schema, `${change.name}_old`)}`, "drop-enum", "ddl", ACCESS),
     );
   }
   return steps;
@@ -977,7 +1024,7 @@ function dataSteps(
       steps.push(
         step(
           updateSql(schema, table, change.column, value, replacement.to),
-          phase,
+          phase === "expand" ? "backfill-expand" : "backfill-contract",
           "backfill",
           ROW,
         ),
@@ -994,7 +1041,7 @@ function dataSteps(
         steps.push(
           step(
             updateSql(schema, column.table, column.column, value, replacement.to, true),
-            phase,
+            phase === "expand" ? "backfill-expand" : "backfill-contract",
             "backfill",
             ROW,
           ),
@@ -1153,19 +1200,26 @@ function domainCheckSteps(
     steps.push(
       step(
         `alter domain ${type} add constraint ${upcoming} check (${expression}) not valid`,
-        "expand",
+        "add-domain-check",
         "ddl",
         ACCESS,
       ),
     );
     steps.push(
-      step(`alter domain ${type} validate constraint ${upcoming}`, "expand", "ddl", ACCESS),
+      step(
+        `alter domain ${type} validate constraint ${upcoming}`,
+        "validate-domain-check",
+        "ddl",
+        ACCESS,
+      ),
     );
-    steps.push(step(`alter domain ${type} drop constraint ${current}`, "contract", "ddl", ACCESS));
+    steps.push(
+      step(`alter domain ${type} drop constraint ${current}`, "drop-domain-check", "ddl", ACCESS),
+    );
     steps.push(
       step(
         `alter domain ${type} rename constraint ${upcoming} to ${current}`,
-        "expand",
+        "rename-domain-check",
         "ddl",
         ACCESS,
       ),
@@ -1494,11 +1548,6 @@ function anchoredParent(object: CatalogObject): string | undefined {
   return undefined;
 }
 
-function alterClass(sql: string): MigrationClass {
-  if (sql.includes("set data type") || sql.includes("set not null")) return "contract";
-  return "expand";
-}
-
 function overall(steps: readonly PlanStep[]): MigrationClass {
   if (steps.some((item) => item.class === "contract")) return "contract";
   if (steps.some((item) => item.class === "unclassified")) return "unclassified";
@@ -1537,12 +1586,113 @@ function index(source: Catalog): Indexed[] {
 
 function step(
   sql: string,
-  classification: MigrationClass,
+  kind: StepKind,
   action: PlanStep["action"],
   lock: string,
   transactional = true,
 ): PlanStep {
-  return { sql, class: classification, action, lock, transactional };
+  return { sql, kind, class: classOf(kind), action, lock, transactional };
+}
+
+function pushDrop(steps: PlanStep[], object: CatalogObject, schema: string): void {
+  const sql = dropObjectSql(object, schema);
+  const kind = dropKind(object);
+  if (sql === undefined || kind === undefined) return;
+  steps.push(step(sql, kind, "ddl", ACCESS));
+}
+
+function createKind(object: CatalogObject, tableIsNew: boolean): StepKind | undefined {
+  switch (object.kind) {
+    case "table":
+      return "create-table";
+    case "column":
+      return requiredColumn(object) && !tableIsNew ? "add-column-required" : "add-column";
+    case "index":
+      return "create-index";
+    case "constraint":
+      return "add-constraint";
+    case "sequence":
+      return "create-sequence";
+    case "type":
+      return isDomain(object.definition) ? "create-domain" : "create-enum";
+    case "extension":
+      return "create-extension";
+    case "function":
+      return "create-function";
+    case "trigger":
+      return "create-trigger";
+    case "view":
+      return "create-view";
+    case "materializedView":
+      return "create-matview";
+    default:
+      return undefined;
+  }
+}
+
+function dropKind(object: CatalogObject): StepKind | undefined {
+  switch (object.kind) {
+    case "table":
+      return "drop-table";
+    case "column":
+      return "drop-column";
+    case "index":
+      return "drop-index";
+    case "constraint":
+      return "drop-constraint";
+    case "sequence":
+      return "drop-sequence";
+    case "type":
+      return isDomain(object.definition) ? "drop-domain" : "drop-enum";
+    case "extension":
+      return "drop-extension";
+    case "function":
+      return "drop-function";
+    case "trigger":
+      return "drop-trigger";
+    case "view":
+      return "drop-view";
+    case "materializedView":
+      return "drop-matview";
+    default:
+      return undefined;
+  }
+}
+
+function requiredColumn(column: ColumnObject): boolean {
+  const definition = column.definition;
+  return (
+    !definition.nullable &&
+    definition.defaultExpression === undefined &&
+    definition.identity === undefined &&
+    definition.generated === undefined
+  );
+}
+
+function columnAlterKinds(before: ColumnObject, after: ColumnObject): readonly StepKind[] {
+  const kinds: StepKind[] = [];
+  if (
+    before.definition.dataType !== after.definition.dataType ||
+    before.definition.collation !== after.definition.collation
+  ) {
+    kinds.push("set-column-type");
+  }
+  if (before.definition.nullable !== after.definition.nullable) {
+    kinds.push(after.definition.nullable ? "drop-not-null" : "set-not-null");
+  }
+  if (before.definition.defaultExpression !== after.definition.defaultExpression) {
+    kinds.push(after.definition.defaultExpression === undefined ? "drop-default" : "set-default");
+  }
+  return kinds;
+}
+
+function identityKind(before: ColumnObject, after: ColumnObject): StepKind | undefined {
+  if (stable(before.definition.identity) === stable(after.definition.identity)) return undefined;
+  const next = after.definition.identity;
+  const previous = before.definition.identity;
+  if (next === undefined) return "drop-identity";
+  if (previous === undefined) return "add-identity";
+  return next.always ? "set-identity-always" : "set-identity-by-default";
 }
 
 function stable(value: unknown): string {

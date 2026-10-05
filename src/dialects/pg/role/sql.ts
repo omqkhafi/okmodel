@@ -19,11 +19,23 @@ import { qualify, quoteIdent } from "../ddl.js";
 /** Statements the planner inserts around the rest of the catalog. */
 export type PrivilegeSql = {
   /** Revokes, run while the objects still exist. */
-  readonly revoke: readonly string[];
+  readonly revoke: readonly PrivilegeStatement[];
   /** Role creates, role alters, and default privileges. Before new tables. */
-  readonly prepare: readonly string[];
+  readonly prepare: readonly PrivilegeStatement[];
   /** Grants on objects that exist, or that this plan creates first. */
-  readonly grant: readonly string[];
+  readonly grant: readonly PrivilegeStatement[];
+};
+
+/** One privilege statement and the planner kind it is. */
+export type PrivilegeStatement = {
+  readonly sql: string;
+  readonly kind:
+    | "revoke"
+    | "revoke-default"
+    | "create-role"
+    | "alter-role"
+    | "grant-default"
+    | "grant";
 };
 
 const PRIVILEGE = /^(select|insert|update|delete|execute|usage)$/;
@@ -48,21 +60,25 @@ export function privilegeSql(
 ): PrivilegeSql {
   const beforeBy = index(before);
   const afterBy = index(after);
-  const revoke: string[] = [];
-  const roles: string[] = [];
-  const defaults: string[] = [];
-  const grant: string[] = [];
+  const revoke: PrivilegeStatement[] = [];
+  const roles: PrivilegeStatement[] = [];
+  const defaults: PrivilegeStatement[] = [];
+  const grant: PrivilegeStatement[] = [];
   for (const [key, object] of beforeBy) {
     if (afterBy.has(key)) continue;
-    if (object.kind === "grant") revoke.push(grantStatement(object, schema, true));
-    if (object.kind === "defaultPrivilege") revoke.push(defaultStatement(object, true));
+    if (object.kind === "grant") {
+      revoke.push({ sql: grantStatement(object, schema, true), kind: "revoke" });
+    }
+    if (object.kind === "defaultPrivilege") {
+      revoke.push({ sql: defaultStatement(object, true), kind: "revoke-default" });
+    }
   }
   for (const [key, object] of afterBy) {
     const previous = beforeBy.get(key);
     if (object.kind === "role") {
       if (object.owner !== "managed") continue;
       if (previous === undefined) {
-        roles.push(createRoleSql(object));
+        roles.push({ sql: createRoleSql(object), kind: "create-role" });
         continue;
       }
       if (previous.kind !== "role" || previous.owner !== "managed") continue;
@@ -70,13 +86,16 @@ export function privilegeSql(
         previous.definition.login !== object.definition.login ||
         previous.definition.inherit !== object.definition.inherit
       ) {
-        roles.push(alterRoleSql(object));
+        roles.push({ sql: alterRoleSql(object), kind: "alter-role" });
       }
       continue;
     }
     if (previous !== undefined) continue;
-    if (object.kind === "defaultPrivilege") defaults.push(defaultStatement(object, false));
-    if (object.kind === "grant") grant.push(grantStatement(object, schema, false));
+    if (object.kind === "defaultPrivilege") {
+      defaults.push({ sql: defaultStatement(object, false), kind: "grant-default" });
+    }
+    if (object.kind === "grant")
+      grant.push({ sql: grantStatement(object, schema, false), kind: "grant" });
   }
   return { revoke, prepare: [...roles, ...defaults], grant };
 }

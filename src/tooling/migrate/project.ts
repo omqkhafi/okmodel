@@ -23,6 +23,7 @@ import type { Catalog } from "../../contracts/catalog/types.js";
 import { type MigrateConfig } from "./config.js";
 import { assertTargetAlias, listTargets, selectTarget, type InvokeFlags } from "./policy.js";
 import { formatPlan, planMigration, staleRenames, type MigrationPlan } from "./plan.js";
+import { hasError, lintCatalog, lintPlan, lintRefusal, type Finding } from "./lint.js";
 import { parseReplace } from "./values.js";
 
 type Built = BuiltSchema<readonly AnyTable[]>;
@@ -51,13 +52,13 @@ export async function buildProject(cwd: string): Promise<string> {
  * @param cwd - Project directory
  * @param name - Migration name
  * @param flags - `--replace` values
- * @returns The SQL path, or `undefined` when nothing changed
+ * @returns The SQL path and lint findings, or `undefined` when nothing changed
  */
 export async function generateProject(
   cwd: string,
   name: string,
   flags: readonly string[],
-): Promise<string | undefined> {
+): Promise<{ readonly path: string; readonly findings: readonly Finding[] } | undefined> {
   const prepared = await prepare(cwd, name, flags);
   writeArtifact(cwd, prepared.config, prepared.built);
   if (prepared.plan.steps.length === 0) return undefined;
@@ -67,7 +68,7 @@ export async function generateProject(
   const sqlPath = join(directory, `${base}.sql`);
   writeFileSync(sqlPath, formatPlan(prepared.plan));
   writeFileSync(join(directory, `${base}.catalog.json`), serializeCatalog(prepared.built.catalog));
-  return sqlPath;
+  return { path: sqlPath, findings: lintPrepared(prepared) };
 }
 
 /**
@@ -76,15 +77,15 @@ export async function generateProject(
  * @param cwd - Project directory
  * @param name - Plan name
  * @param flags - `--replace` values
- * @returns The plan
+ * @returns The plan and its lint findings
  */
 export async function planProject(
   cwd: string,
   name: string,
   flags: readonly string[],
-): Promise<MigrationPlan> {
+): Promise<{ readonly plan: MigrationPlan; readonly findings: readonly Finding[] }> {
   const prepared = await prepare(cwd, name, flags);
-  return prepared.plan;
+  return { plan: prepared.plan, findings: lintPrepared(prepared) };
 }
 
 /**
@@ -94,10 +95,14 @@ export async function planProject(
  * that already has `okm_meta` is compared with the schema. A difference is
  * OKM1520. Several targets and no `--target` skip that comparison.
  *
+ * Lint findings are computed from the plan and the catalog before any
+ * connection. An error finding is OKM1510. Warnings are returned.
+ *
  * @param cwd - Project directory
  * @param flags - `--target`, when the caller passed one
+ * @returns Warning findings. Errors throw
  */
-export async function checkProject(cwd: string, flags?: InvokeFlags): Promise<void> {
+export async function checkProject(cwd: string, flags?: InvokeFlags): Promise<readonly Finding[]> {
   const opened = await openProject(cwd);
   assertValidation(opened.built);
   if (schemaRequestsValidation(opened.built) && !projectImportsValidate(cwd)) {
@@ -118,12 +123,15 @@ export async function checkProject(cwd: string, flags?: InvokeFlags): Promise<vo
       });
     }
   }
+  const findings = lintOpened(opened);
+  if (hasError(findings)) throw lintRefusal(findings);
   const named = flags?.target;
-  if (targets.length === 0) return;
-  if (targets.length > 1 && named === undefined) return;
+  if (targets.length === 0) return findings;
+  if (targets.length > 1 && named === undefined) return findings;
   const target = selectTarget(opened.config, named);
   const { assertAuthorDrift } = await import("./drift.js");
   await assertAuthorDrift(target.url, opened.built.catalog, opened.config.roles);
+  return findings;
 }
 
 /**
@@ -170,6 +178,8 @@ async function prepare(
   readonly config: MigrateConfig;
   readonly built: Built;
   readonly plan: MigrationPlan;
+  readonly before: Catalog;
+  readonly after: Catalog;
 }> {
   const opened = await openProject(cwd);
   const plan = planMigration({
@@ -179,7 +189,38 @@ async function prepare(
     replacements: flags.map((flag) => parseReplace(flag)),
     name,
   });
-  return { config: opened.config, built: opened.built, plan };
+  return {
+    config: opened.config,
+    built: opened.built,
+    plan,
+    before: opened.previous,
+    after: opened.built.catalog,
+  };
+}
+
+function lintPrepared(prepared: {
+  readonly plan: MigrationPlan;
+  readonly before: Catalog;
+  readonly after: Catalog;
+}): readonly Finding[] {
+  return lintPlan(prepared.plan, prepared.before, prepared.after);
+}
+
+function lintOpened(opened: {
+  readonly built: Built;
+  readonly previous: Catalog;
+  readonly renames: readonly DeclaredRename[];
+}): readonly Finding[] {
+  const plan = planMigration({
+    before: opened.previous,
+    after: opened.built.catalog,
+    renames: opened.renames,
+    name: "check",
+  });
+  return [
+    ...lintPlan(plan, opened.previous, opened.built.catalog),
+    ...lintCatalog(opened.built.catalog),
+  ];
 }
 
 /**

@@ -14,6 +14,17 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+### ✨ Added
+
+- The migration linter flags a drop, a rename, a column type change, a required column with no default, a dropped default, a shorter length, and a new unique, check, or foreign key on an existing table as errors.
+- A non-concurrent index, a check or foreign key without `NOT VALID`, `SET NOT NULL`, and a type change that rewrites the table are warnings. `timestamp` without time zone, `varchar(n)`, `serial`, `json`, and an identity that is not generated always are warnings on `okm check`.
+- `okm generate` prints findings and still writes the file. `okm migrate plan` and `okm check` exit non-zero on an error finding. `okm migrate apply` lints migrations that are still pending on the target and refuses with OKM1510 before any DDL or data statement.
+- An override is `-- okm-allow OKM15xx: reason` on the line above the statement. An empty reason, or a code the statement did not trigger, is OKM1510 and does not silence another code.
+
+### ♻️ Changed
+
+- Drop default, a `NOT NULL` column with no default on an existing table, drop identity, `SET GENERATED ALWAYS`, and `ALTER ROLE` are classified contract. `okm migrate plan` prints each step's class and lock.
+
 ### 🐛 Fixed
 
 - `bun run db:up` binds three free host ports when 55432, 55433, or 55434 is already taken, and records them for the next CI step. Release smoke no longer stops when the runner is already using 55432.

@@ -54,6 +54,7 @@ Version 0.3.0. Apache-2.0.
   - [Views](#views)
   - [Roles and grants](#roles-and-grants)
   - [okm ext and okm doctor](#okm-ext-and-okm-doctor)
+  - [Linter](#linter)
 - [Commands](#commands)
 - [Roadmap](#roadmap)
 - [Size](#size)
@@ -880,22 +881,35 @@ okm doctor
 okm doctor OKM1811
 ```
 
+### Linter
+
+A migration plan is checked before it runs. Dropping a table, renaming a column, or adding a unique constraint on a table that already exists is an error. A non-concurrent index on an existing table is a warning. `okm generate` prints the finding and still writes the file. `okm migrate plan` and `okm check` exit non-zero on an error. `okm migrate apply` refuses with OKM1510 before any statement. The linter reads the plan and the catalogs. It does not connect. See [the linter](https://github.com/omqkhafi/okmodel/blob/main/docs/linter.md).
+
+```text
+error OKM1511 step 1: drops a table -- fix: Stop reading the table in an expand migration, then drop it in a later contract. Or allow OKM1511 with a reason.
+```
+
+```sql
+-- okm-allow OKM1511: the table is empty and nothing reads it
+drop table "public"."notes";
+```
+
 ## Commands
 
-| Command                   | What it does                                                                                                                 |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `okm build`               | Validates the schema and writes `.okm/` (catalog, hash, emitted row types). `okm generate` writes those files too.           |
-| `okm check`               | Reports a stale `renamedFrom` and a table file the schema does not import.                                                   |
-| `okm generate [name]`     | Writes a SQL migration and `.okm/`. The name defaults to `migration`. Prints `no changes` when the schema matches.           |
-| `okm dev`                 | Uses a target named `dev`, or creates a PGlite database in `.okm/dev-db`. It does not apply migrations or write the catalog. |
-| `okm push`                | Applies the schema directly. Refused when the target is protected.                                                           |
-| `okm migrate plan <name>` | Prints the plan and its class. The name is required.                                                                         |
-| `okm migrate apply`       | Replays migration files on the database.                                                                                     |
-| `okm migrate status`      | Prints version, catalog hash, and state for each target.                                                                     |
-| `okm ext list`            | Prints the extensions the connected server can install and the version that is installed.                                    |
-| `okm ext check`           | Compares those versions with the schema. A missing extension is OKM1811. A pin the server does not meet is OKM1812.          |
-| `okm doctor [code]`       | Lists the triggers on each table. A code argument prints that code.                                                          |
-| `okm --version`           | Prints the package version.                                                                                                  |
+| Command                   | What it does                                                                                                                                                                                                                                                                   |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `okm build`               | Validates the schema and writes `.okm/` (catalog, hash, emitted row types). `okm generate` writes those files too.                                                                                                                                                             |
+| `okm check`               | Reports a stale `renamedFrom`, a table file the schema does not import, and lint findings. After a push, it compares the connected database with the schema and refuses with OKM1520 when they differ. A database that has never been pushed has no `okm_meta` and is skipped. |
+| `okm generate [name]`     | Writes a SQL migration and `.okm/`. Prints lint findings and still writes the file. The name defaults to `migration`. Prints `no changes` when the schema matches.                                                                                                             |
+| `okm dev`                 | Uses a target named `dev`, or creates a PGlite database in `.okm/dev-db`. It does not apply migrations or write the catalog.                                                                                                                                                   |
+| `okm push`                | Applies the schema directly. Refused when the target is protected.                                                                                                                                                                                                             |
+| `okm migrate plan <name>` | Prints the plan and lint findings. The header is the strictest class. Each step prints its class and lock. An error finding exits non-zero. The name is required.                                                                                                              |
+| `okm migrate apply`       | Replays migration files on the database. An unresolved lint error is OKM1510 before any statement.                                                                                                                                                                             |
+| `okm migrate status`      | Prints version, catalog hash, and state for each target.                                                                                                                                                                                                                       |
+| `okm ext list`            | Prints the extensions the connected server can install and the version that is installed.                                                                                                                                                                                      |
+| `okm ext check`           | Compares those versions with the schema. A missing extension is OKM1811. A pin the server does not meet is OKM1812.                                                                                                                                                            |
+| `okm doctor [code]`       | Lists the triggers on each table. A code argument prints that code.                                                                                                                                                                                                            |
+| `okm --version`           | Prints the package version.                                                                                                                                                                                                                                                    |
 
 `okmodel` and `okm` are the same command.
 
@@ -931,6 +945,7 @@ The rest of the measurements are in [size](https://github.com/omqkhafi/okmodel/b
 
 - [Quickstart](https://github.com/omqkhafi/okmodel/blob/main/docs/quickstart.md)
 - [Production checklist](https://github.com/omqkhafi/okmodel/blob/main/docs/production.md)
+- [Linter](https://github.com/omqkhafi/okmodel/blob/main/docs/linter.md)
 - [Known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md)
 - [Changelog](https://github.com/omqkhafi/okmodel/blob/main/changelog.md)
 - [Design spec](https://github.com/omqkhafi/okmodel/blob/main/docs/okmodel-api-design.md)

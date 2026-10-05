@@ -11,6 +11,7 @@ import { join } from "node:path";
 
 import { open } from "../../adapters/pg/postgresjs.js";
 import { catalogHash } from "../../contracts/catalog/document.js";
+import { hasError, lintMigrationDirectory, lintRefusal } from "./lint.js";
 import type { DriverConnection } from "../../contracts/driver.js";
 import { OkmError } from "../../contracts/error.js";
 import { quoteIdent } from "../../dialects/pg/ddl.js";
@@ -74,6 +75,13 @@ export type ApplyRequest = {
    * on this schema before `SET ROLE`. The default is `public`.
    */
   readonly schema?: string;
+  /**
+   * Migrations directory to lint before any DDL.
+   *
+   * Only a migration with a step missing from `okm_history` is checked.
+   * `push` omits this: its steps are not files.
+   */
+  readonly lintDirectory?: string;
 };
 
 /** Migrations that ran at least one step in this invocation. */
@@ -186,6 +194,9 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
     await lockTarget(connection, request.target);
     locked = true;
     request.onLocked?.();
+    if (request.lintDirectory !== undefined) {
+      await refusePendingLint(connection, request.lintDirectory, request.migrations);
+    }
     const session: { setRole?: string } = {};
     await prepareMigrationRole(connection, request, session);
     await assertExtensionsAvailable(connection, request.migrations);
@@ -222,6 +233,9 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
 /**
  * Applies the migrations in the project to the selected target.
  *
+ * Pending migrations are linted after `okm_history` is read and before any
+ * DDL. A migration the target already applied is left as it ran.
+ *
  * @param cwd - Project directory
  * @param flags - `--target`, protection, pooler, and timeouts
  * @returns Text for stdout, including the target name
@@ -229,7 +243,8 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
 export async function applyProject(cwd: string, flags: InvokeFlags): Promise<string> {
   const config = await loadConfig(cwd);
   const target = selectTarget(config, flags.target);
-  const migrations = loadMigrations(joinMigrations(cwd, config.migrations));
+  const directory = joinMigrations(cwd, config.migrations);
+  const migrations = loadMigrations(directory);
   if (migrations.length === 0) return `target ${target.name}\nnothing to apply\n`;
   const report = await applyTarget({
     url: target.url,
@@ -249,6 +264,7 @@ export async function applyProject(cwd: string, flags: InvokeFlags): Promise<str
         : {}),
     migrations,
     ...(config.roles !== undefined ? { migrationRole: config.roles.migration } : {}),
+    lintDirectory: directory,
   });
   return formatReport(report);
 }
@@ -346,6 +362,52 @@ async function lockTarget(connection: DriverConnection, target: string): Promise
 
 function lockKey(target: string): string {
   return `okm:${target}`;
+}
+
+/**
+ * Refuses when a migration that still has a step to run has an error finding.
+ *
+ * `okm_history` is read first. When that table does not exist, every
+ * migration is pending. The throw happens before any DDL or data statement.
+ *
+ * @param connection - Reserved connection, after the advisory lock
+ * @param directory - Migrations directory, walked from the first file
+ * @param migrations - Files apply loaded, in apply order
+ */
+async function refusePendingLint(
+  connection: DriverConnection,
+  directory: string,
+  migrations: readonly StoredMigration[],
+): Promise<void> {
+  const pending = await pendingMigrationIds(connection, migrations);
+  const findings = lintMigrationDirectory(directory, pending);
+  if (hasError(findings)) throw lintRefusal(findings);
+}
+
+/**
+ * Migration ids with at least one step absent from `okm_history`.
+ *
+ * @param connection - Reserved connection
+ * @param migrations - Files in apply order
+ * @returns Every id when `okm_history` does not exist yet
+ */
+async function pendingMigrationIds(
+  connection: DriverConnection,
+  migrations: readonly StoredMigration[],
+): Promise<ReadonlySet<string>> {
+  const present = await connection.execute("select to_regclass('okm_history') is not null");
+  if (!wireTrue(present.rows[0]?.[0])) return new Set(migrations.map((migration) => migration.id));
+  const done = await readDone(connection);
+  const pending = new Set<string>();
+  for (const migration of migrations) {
+    for (let index = 0; index < migration.steps.length; index += 1) {
+      if (!done.has(`${migration.id}:${String(index)}`)) {
+        pending.add(migration.id);
+        break;
+      }
+    }
+  }
+  return pending;
 }
 
 async function readDone(connection: DriverConnection): Promise<Set<string>> {

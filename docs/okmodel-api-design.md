@@ -1161,10 +1161,54 @@ connect(url, { schema: appSchema, hookm: [tracing(onSpan)] });
 
 - Diff from DDL snapshots to SQL; graph history with commutativity checks.
 - **Renames are declared** (`.renamedFrom()`, `renamedFrom` table option). The planner never prompts; an ambiguous drop-and-add fails with OKM1530 and shows the line to add; stale declarations are reported by `okm check`.
-- **Expand/contract classification:** every migration is tagged `expand` (additive, old code keeps working) or `contract` (removes or changes). Classification is advisory, backed by the linter and the previous-catalog check; it is not a proof of application behavior.
-- **The plan shows locks:** each step lists the lock it takes and, with a connected database, an estimate from `pg_class` statistics ("ACCESS EXCLUSIVE on tasks, about 4.2M rows; safe rewrite applied").
-- **Safe rewrites generated automatically:** concurrent index create/drop outside transactions; constraints as `NOT VALID` + `VALIDATE`; `SET NOT NULL` via a validated check constraint; volatile defaults split from column creation; unique constraints built from concurrent unique indexes.
-- **Linter** (OKM1510–1549), seeded from Squawk, strong_migrations and Atlas categories: backward-incompatible, destructive, data-dependent, locking, type preferences (`timestamptz`, `text`, identity, `jsonb`). Overrides need a written reason. Data statements in migration files other than `backfill()` steps are flagged (OKM1542): required rows belong in `reference`, which provisioning can reproduce (section 19.6).
+- **Expand/contract classification:** every step is `expand` (additive, old code keeps working), `contract` (removes or changes), or `unclassified` (raw SQL only). The plan header is the strictest class, and each step prints its class and lock. Classification is advisory, backed by the linter and the previous-catalog check; it is not a proof of application behavior. A protected target treats `unclassified` as contract.
+- **The plan shows locks:** each step lists the lock it takes and, with a connected database, an estimate from `pg_class` statistics ("ACCESS EXCLUSIVE on tasks, about 4.2M rows; safe rewrite applied"). Row estimates are P51. P50 prints the lock and does not estimate rows.
+- **Safe rewrites are P50b (D192).** The planner does not emit them yet: concurrent index create and drop outside a transaction; constraints as `NOT VALID` + `VALIDATE`; `SET NOT NULL` via a validated check constraint; volatile defaults split from column creation; unique constraints built from concurrent unique indexes. Until that form is what the planner emits, the locking rules below are warnings.
+- **Linter** (OKM1510–1549). It reads the plan and the catalogs. It does not connect, and it does not see how many rows are stored. An existing table is one present in the catalog before the plan. Destructive, backward-incompatible, and data-dependent findings are errors. Locking findings and type preferences (`timestamptz`, `text`, identity generated always, `jsonb`) are warnings. Type preferences run on `okm check` only. `okm generate` writes the file and prints findings. `okm migrate plan` and `okm check` print findings and exit non-zero on an error. `okm migrate apply` re-lints the files it is about to run and refuses an unresolved error with OKM1510 before any statement. A warning prints and the command still succeeds. OKM1706 and OKM1823 are thrown when the schema is built; they are not migration-linter rules yet (P50b). Data statements in migration files other than `backfill()` steps are flagged (OKM1542): required rows belong in `reference`, which provisioning can reproduce (section 19.6). OKM1542 is not fired by this linter (P53A).
+
+An override is a comment on the line directly above the statement, in the same plan-file form as `-- lock:` and `-- transactional:`:
+
+```text
+-- okm-allow OKM1511: the table is empty and nothing reads it
+drop table "public"."notes";
+```
+
+The reason is the text after the colon. An override with a missing or empty reason, or with a code the statement did not trigger, is OKM1510. An override silences only the code it names.
+
+| Code | Category | Severity | What it flags |
+|---|---|---|---|
+| OKM1510 | refusal | error | Unresolved lint error, or an override with an empty reason or a code the statement did not trigger |
+| OKM1511 | destructive | error | Drop table |
+| OKM1512 | destructive | error | Drop column |
+| OKM1513 | destructive | error | Drop enum |
+| OKM1514 | destructive | error | Drop domain |
+| OKM1515 | destructive | error | Drop function |
+| OKM1516 | destructive | error | Drop view |
+| OKM1517 | destructive | error | Drop extension (a dependent still in the catalog is OKM1814 before this finding) |
+| OKM1518 | destructive | error | Drop materialized view |
+| OKM1519 | backward-incompatible | error | Rename column |
+| OKM1523 | backward-incompatible | error | Rename table |
+| OKM1524 | backward-incompatible | error | Column type change |
+| OKM1525 | backward-incompatible | error | New NOT NULL column with no default on an existing table |
+| OKM1526 | backward-incompatible | error | Remove a default |
+| OKM1527 | backward-incompatible | error | Shrink a character length |
+| OKM1528 | data-dependent | error | New unique or primary-key constraint on an existing table |
+| OKM1529 | data-dependent | error | New unique index on an existing table |
+| OKM1531 | data-dependent | error | New check that validates existing rows |
+| OKM1532 | data-dependent | error | New foreign key that validates existing rows |
+| OKM1533 | data-dependent | error | Narrowing type change |
+| OKM1534 | locking | warning | Non-concurrent index create on an existing table |
+| OKM1535 | locking | warning | Add check without `NOT VALID` |
+| OKM1536 | locking | warning | Add foreign key without `NOT VALID` |
+| OKM1537 | locking | warning | `SET NOT NULL` on an existing column |
+| OKM1538 | locking | warning | Type change that rewrites the table |
+| OKM1539 | type-preference | warning | `timestamp` without time zone |
+| OKM1540 | type-preference | warning | `varchar(n)` where `text` would do |
+| OKM1543 | type-preference | warning | `serial` or a `nextval` default |
+| OKM1544 | type-preference | warning | `json` where `jsonb` is available |
+| OKM1545 | type-preference | warning | Identity that is not generated always |
+
+Codes already used in this range, and not new linter rules, are OKM1520 (drift), OKM1521 (snapshot), OKM1522 (apply lock), OKM1530 (ambiguous rename), OKM1541 (picklist removal), and OKM1542 (data statement).
 
 ### 19.2 Applying
 
@@ -1347,13 +1391,42 @@ test("today view runs one query", async () => {
 | Cursor used with a different order | runtime | OKM1130 |
 | Composition breaks a core invariant (final safety verification) | runtime | OKM1190 |
 | Multi-statement read requested inside `READ COMMITTED` with no single-statement plan | runtime | OKM1191 (not thrown in 0.2: every read is one statement) |
-| Unsafe migration without reason | CI | OKM1510 |
+| Unsafe migration, or an override with an empty reason or a code the statement did not trigger | lint / apply | OKM1510 |
+| Drop table | lint | OKM1511 |
+| Drop column | lint | OKM1512 |
+| Drop enum | lint | OKM1513 |
+| Drop domain | lint | OKM1514 |
+| Drop function | lint | OKM1515 |
+| Drop view | lint | OKM1516 |
+| Drop extension | lint | OKM1517 |
+| Drop materialized view | lint | OKM1518 |
+| Rename column | lint | OKM1519 |
 | Drift beyond expand compatibility | startup | OKM1520 |
-| Another apply holds the target's lock | CLI / engine | OKM1522 |
 | Snapshot provisioning differs from replayed history | `okm migrate check` | OKM1521 |
+| Another apply holds the target's lock | CLI / engine | OKM1522 |
+| Rename table | lint | OKM1523 |
+| Column type change | lint | OKM1524 |
+| New NOT NULL column with no default on an existing table | lint | OKM1525 |
+| Remove a default | lint | OKM1526 |
+| Shrink a character length | lint | OKM1527 |
+| New unique or primary-key constraint on an existing table | lint | OKM1528 |
+| New unique index on an existing table | lint | OKM1529 |
 | Ambiguous rename | plan | OKM1530 |
+| New check that validates existing rows | lint | OKM1531 |
+| New foreign key that validates existing rows | lint | OKM1532 |
+| Narrowing type change | lint | OKM1533 |
+| Non-concurrent index create on an existing table | lint (warning) | OKM1534 |
+| Add check without `NOT VALID` | lint (warning) | OKM1535 |
+| Add foreign key without `NOT VALID` | lint (warning) | OKM1536 |
+| `SET NOT NULL` on an existing column | lint (warning) | OKM1537 |
+| Type change that rewrites the table | lint (warning) | OKM1538 |
+| `timestamp` without time zone | lint (warning) | OKM1539 |
+| `varchar(n)` where `text` would do | lint (warning) | OKM1540 |
 | Picklist value removal with data | plan | OKM1541 |
 | Data statement in a migration outside `backfill()` | lint | OKM1542 |
+| `serial` or a `nextval` default | lint (warning) | OKM1543 |
+| `json` where `jsonb` is available | lint (warning) | OKM1544 |
+| Identity that is not generated always | lint (warning) | OKM1545 |
 | Stale typed-SQL signature | CI | OKM1601 |
 | Commit or batch outcome unknown (result never received) | runtime | OKM1401 |
 | Tenant table without context | types | OKM1701 |
