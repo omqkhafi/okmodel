@@ -18,10 +18,12 @@ import type { CatalogObject, ExtensionObject } from "../../contracts/catalog/typ
 import type { DriverConnection } from "../../contracts/driver.js";
 import { quoteIdent } from "../../dialects/pg/ddl.js";
 import { quoteLiteral } from "../../dialects/pg/quote.js";
+import { classOf, type StepKind } from "./classify.js";
 
 /** One extension alter. The planner stores it as a plan step. */
 export type ExtensionStep = {
   readonly sql: string;
+  readonly kind: StepKind;
   readonly class: "expand" | "contract";
   readonly action: "ddl";
   readonly lock: string;
@@ -184,13 +186,12 @@ function alterExtension(before: ExtensionObject, after: ExtensionObject): Extens
         },
       );
     }
-    steps.push({
-      sql: `alter extension ${name} set schema ${quoteIdent(after.definition.schema)}`,
-      class: "contract",
-      action: "ddl",
-      lock: "ACCESS EXCLUSIVE",
-      transactional: true,
-    });
+    steps.push(
+      extensionStep(
+        `alter extension ${name} set schema ${quoteIdent(after.definition.schema)}`,
+        "move-extension",
+      ),
+    );
   }
   const previous = before.definition.version;
   const next = after.definition.version;
@@ -206,15 +207,34 @@ function alterExtension(before: ExtensionObject, after: ExtensionObject): Extens
       },
     );
   }
-  steps.push({
-    sql: `alter extension ${name} update to ${quoteLiteral(next)}`,
-    class: "expand",
+  steps.push(
+    extensionStep(`alter extension ${name} update to ${quoteLiteral(next)}`, "update-extension", {
+      path: "unverified",
+    }),
+  );
+  return steps;
+}
+
+function extensionStep(
+  sql: string,
+  kind: "move-extension" | "update-extension",
+  extra?: { readonly path: "unverified" },
+): ExtensionStep {
+  const classification = classOf(kind);
+  if (classification === "unclassified") {
+    throw new OkmError("invalid", `Extension step ${kind} has no class.`, {
+      fix: { summary: "Classify the extension step as expand or contract." },
+    });
+  }
+  return {
+    sql,
+    kind,
+    class: classification,
     action: "ddl",
     lock: "ACCESS EXCLUSIVE",
     transactional: true,
-    path: "unverified",
-  });
-  return steps;
+    ...(extra?.path !== undefined ? { path: extra.path } : {}),
+  };
 }
 
 async function availableExtensions(

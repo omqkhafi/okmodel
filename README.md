@@ -882,20 +882,20 @@ okm doctor OKM1811
 
 ## Commands
 
-| Command                   | What it does                                                                                                                 |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `okm build`               | Validates the schema and writes `.okm/` (catalog, hash, emitted row types). `okm generate` writes those files too.           |
-| `okm check`               | Reports a stale `renamedFrom` and a table file the schema does not import.                                                   |
-| `okm generate [name]`     | Writes a SQL migration and `.okm/`. The name defaults to `migration`. Prints `no changes` when the schema matches.           |
-| `okm dev`                 | Uses a target named `dev`, or creates a PGlite database in `.okm/dev-db`. It does not apply migrations or write the catalog. |
-| `okm push`                | Applies the schema directly. Refused when the target is protected.                                                           |
-| `okm migrate plan <name>` | Prints the plan and its class. The name is required.                                                                         |
-| `okm migrate apply`       | Replays migration files on the database.                                                                                     |
-| `okm migrate status`      | Prints version, catalog hash, and state for each target.                                                                     |
-| `okm ext list`            | Prints the extensions the connected server can install and the version that is installed.                                    |
-| `okm ext check`           | Compares those versions with the schema. A missing extension is OKM1811. A pin the server does not meet is OKM1812.          |
-| `okm doctor [code]`       | Lists the triggers on each table. A code argument prints that code.                                                          |
-| `okm --version`           | Prints the package version.                                                                                                  |
+| Command                   | What it does                                                                                                                                                                                                                                                                   |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `okm build`               | Validates the schema and writes `.okm/` (catalog, hash, emitted row types). `okm generate` writes those files too.                                                                                                                                                             |
+| `okm check`               | Reports a stale `renamedFrom`, a table file the schema does not import, and lint findings. After a push, it compares the connected database with the schema and refuses with OKM1520 when they differ. A database that has never been pushed has no `okm_meta` and is skipped. |
+| `okm generate [name]`     | Writes a SQL migration and `.okm/`. The name defaults to `migration`. Prints `no changes` when the schema matches.                                                                                                                                                             |
+| `okm dev`                 | Uses a target named `dev`, or creates a PGlite database in `.okm/dev-db`. It does not apply migrations or write the catalog.                                                                                                                                                   |
+| `okm push`                | Applies the schema directly. Refused when the target is protected.                                                                                                                                                                                                             |
+| `okm migrate plan <name>` | Prints the plan. The header is the strictest class. Each step prints its class and lock. The name is required.                                                                                                                                                                 |
+| `okm migrate apply`       | Replays migration files on the database.                                                                                                                                                                                                                                       |
+| `okm migrate status`      | Prints version, catalog hash, and state for each target.                                                                                                                                                                                                                       |
+| `okm ext list`            | Prints the extensions the connected server can install and the version that is installed.                                                                                                                                                                                      |
+| `okm ext check`           | Compares those versions with the schema. A missing extension is OKM1811. A pin the server does not meet is OKM1812.                                                                                                                                                            |
+| `okm doctor [code]`       | Lists the triggers on each table. A code argument prints that code.                                                                                                                                                                                                            |
+| `okm --version`           | Prints the package version.                                                                                                                                                                                                                                                    |
 
 `okmodel` and `okm` are the same command.
 

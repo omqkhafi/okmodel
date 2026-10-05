@@ -10,6 +10,7 @@
  * in `GITHUB_ENV` so the next step connects to the same topology.
  */
 
+import { type EventEmitter } from "node:events";
 import { appendFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { join } from "node:path";
@@ -126,7 +127,9 @@ function portIsFree(port: number): Promise<boolean> {
   return new Promise((resolve) => {
     const server = createServer();
     server.unref();
-    server.once("error", () => resolve(false));
+    // @types/node 26 types net.Server as implementing EventEmitter without
+    // merging the methods, so the checker does not see once.
+    (server as unknown as EventEmitter).once("error", () => resolve(false));
     server.listen({ port, host: "0.0.0.0", exclusive: true }, () => {
       server.close(() => resolve(true));
     });
@@ -144,7 +147,7 @@ function reserveEphemeralPort(): Promise<Reservation> {
   return new Promise((resolve, reject) => {
     const server = createServer();
     server.unref();
-    server.once("error", reject);
+    (server as unknown as EventEmitter).once("error", reject);
     server.listen({ port: 0, host: "0.0.0.0", exclusive: true }, () => {
       const address = server.address();
       if (address === null || typeof address === "string") {
