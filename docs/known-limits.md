@@ -10,7 +10,7 @@ An option or builder that is not in 0.2 throws OKM1061 and names the prompt or v
 
 | Item | Version | Prompt |
 | --- | --- | --- |
-| `t.domain` | 0.3 | P40 |
+| `t.domain` | 0.3 | P40b |
 | functions | 0.3 | P41 |
 | triggers | 0.3 | P41 |
 | views | 0.3 | P42 |
@@ -26,6 +26,7 @@ Also not in 0.2:
 
 - **`rls` tenancy is not built.** Column tenancy is the only strategy. Inside `tx()` the tenant is the column predicate on every statement (D181).
 - **Three registered codes are not thrown in 0.2** (D183). OKM1110 (a feature needs a newer engine than `requires`): the one engine-dependent feature, `uuidv7()`, fails as OKM1812 when the schema is built with `requires` below 18, and `okm migrate apply` raises it before any statement when the server is older than 18 (D184). OKM1191 (no snapshot plan inside READ COMMITTED): every read is one statement, so a plan always exists. OKM1702 (unverifiable raw SQL on a tenant table): no public call takes raw SQL; typed raw SQL is M2.
+- **`okm ext test` and `okm ext scaffold` are not built.** `okm ext list` prints the extensions the connected server can install and the version that is installed. `okm ext check` compares those versions with the schema. The conformance suite and the scaffold are later.
 - **JSON Schema export is absent.** `insert` and `update` are Standard Schemas; they do not emit JSON Schema.
 - **`onRead` is stored and not applied.** `validation: { onRead: true }` is accepted and read values are not validated.
 - **`iStartsWith`, `iContains` and `iEndsWith` are not in 0.2** (D176). Use `ilike()` with an escaped pattern.

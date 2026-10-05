@@ -313,20 +313,22 @@ TimescaleDB, ParadeDB and pg_partman add catalog objects rather than types and a
 | Change | SQL | Class |
 |---|---|---|
 | add | `CREATE EXTENSION ... VERSION ... SCHEMA ...` | expand |
-| raise `version` | `ALTER EXTENSION ... UPDATE TO ...`; the path is checked in `pg_extension_update_paths` at planning time when a server is attached; an offline plan marks the step `path-unverified` and apply preflight checks it before any step | expand |
+| raise `version` | `ALTER EXTENSION ... UPDATE TO ...`; an offline plan marks the step `path-unverified`, and apply checks `pg_extension_update_paths` before any statement | expand |
 | move schema | `ALTER EXTENSION ... SET SCHEMA` (relocatable only; a non-relocatable extension is refused at planning, OKM1814) | contract |
 | remove | `DROP EXTENSION`, never `CASCADE`; refused by the linter while a column or index depends on it | contract |
 | lower `version` | not supported by Postgres | refused (OKM1814) |
 
 Objects that belong to an extension (found through `pg_depend` deptype `e`) are excluded from introspection: never loaded, never diffed. The extension version is unpinned by default: the installed version is recorded for information and drift ignores it unless the declaration pins one (D118). `CREATE EXTENSION` runs from the migration role only; the application never installs anything. `okm migrate plan` stays offline: an upgrade step is marked `path-unverified`. `okm migrate apply` checks `pg_available_extensions` and, for an upgrade, `pg_extension_update_paths`, before any statement (OKM1811, OKM1814). Object names are schema-qualified; nothing depends on `search_path`.
 
+`pgTrgm.gin(column)` and `pgTrgm.gist(column)` store `using gin ("column" gin_trgm_ops)` and `using gist ("column" gist_trgm_ops)` on the catalog index. The plan emits that tail. Introspection reads the same tail back, so a second plan does not drift.
+
 **Runtime settings** (`hnsw.ef_search`, `pg_trgm.similarity_threshold`) are per operation, not per connection: `vector.cosine(col, q, { efSearch: 100 })` wraps the statement in a short transaction with `SET LOCAL`, which stays correct behind poolers in transaction mode.
 
-**Safety.** An extension adds types, operators, functions and index methods only. It cannot alter queries or read data; its SQL is tagged, so injection rules apply; final safety verification runs after every contribution. A definition used twice fails at build (OKM1813). `okm ext test` runs a reduced conformance suite; npm and project definitions must pass it to be called compatible.
+**Safety.** An extension adds types, operators, functions and index methods only. It cannot alter queries or read data; its SQL is tagged, so injection rules apply; final safety verification runs after every contribution. A definition used twice fails at build (OKM1813). `okm ext list` and `okm ext check` talk to the connected server. `okm ext test` and `okm ext scaffold` are not in this version.
 
 **Own definitions.** A developer writes `extension("acme_geo", { requires, provides: { types, operators, indexMethods, functions, triggers, views } })`. Functions, triggers and views are first-class catalog objects (section 5.7), owned by the extension as `external`. Forward-only SQL bundles do not exist; `okm migrate new --sql` is the explicit escape hatch.
 
-**Extension without a definition.** `okm ext scaffold <name>` reads the connected server's catalog (`pg_depend`, `pg_type`, `pg_proc`, `pg_operator`, `pg_settings`) and prints a starting definition that the developer owns and edits. It is an authoring aid, not part of the normal flow (M2).
+**Extension without a definition.** `okm ext scaffold <name>` is not in this version. When it arrives it reads the connected server's catalog (`pg_depend`, `pg_type`, `pg_proc`, `pg_operator`, `pg_settings`) and prints a starting definition that the developer owns and edits.
 
 ### 4.2 Layers and the driver contract
 
@@ -1197,7 +1199,7 @@ The startup check is a compatibility check: the database may be ahead of the cod
 | `okm generate` | produce migration SQL from the schema, including extension lifecycle; no TS is generated |
 | `okm push` | prototype sync; blocked on a `protected` target (section 19.7). A target named `production` is not blocked unless that entry sets `protected` |
 | `okm pull` | introspect an existing database into table files and a schema (M2) |
-| `okm ext list\|check\|test\|scaffold` | list supported and installed extensions against the connected server; check versions; conformance test; scaffold a definition (M2) |
+| `okm ext list\|check` | list the extensions the connected server can install and the version that is installed; check those versions against the schema. `okm ext test` and `okm ext scaffold` are not in this version |
 | `okm seed <file>` | seeds with factories |
 | `okm import drizzle <path>` | convert a Drizzle schema (M2) |
 | `okm doctor [code]` | explain a code or diagnose the project |

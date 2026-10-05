@@ -16,6 +16,7 @@ import { pgTrgm } from "../src/dialects/pg/ext/pg-trgm.js";
 import { open as openPglite } from "../src/adapters/pg/pglite.js";
 import { connect } from "../src/runtime/pg/pglite.js";
 import { catalogsEqual } from "../src/tooling/migrate/equal.js";
+import { run } from "../src/tooling/migrate/commands.js";
 import { formatPlan, planMigration } from "../src/tooling/migrate/plan.js";
 
 const provenance = { origin: "extension" as const, name: "citext" };
@@ -149,7 +150,7 @@ test("an unpinned declaration matches an installed version", () => {
   expect(catalogsEqual(pinned, other)).toBe(false);
 });
 
-test("similar plans as a schema-qualified operator and gin stays off the catalog index", async () => {
+test("similar plans as a schema-qualified operator and gin is the catalog index", async () => {
   const trigram = pgTrgm();
   expect(trigram.gin("title").expression).toBe('using gin ("title" gin_trgm_ops)');
   const app = schema({
@@ -163,7 +164,13 @@ test("similar plans as a schema-qualified operator and gin stays off the catalog
     extensions: [trigram],
   });
   const index = app.catalog.objects.find((object) => object.kind === "index");
-  expect(index?.kind === "index" ? index.definition.expression : undefined).toBeUndefined();
+  expect(index?.kind === "index" ? index.definition.expression : undefined).toBe(
+    'using gin ("title" gin_trgm_ops)',
+  );
+  const plan = planMigration({ before: catalog([]), after: app.catalog, name: "gin" });
+  expect(plan.steps.map((step) => step.sql).join("\n")).toContain(
+    'using gin ("title" gin_trgm_ops)',
+  );
   const pool = await openPglite();
   try {
     const db = await connect(pool, { schema: app });
@@ -177,6 +184,20 @@ test("similar plans as a schema-qualified operator and gin stays off the catalog
     await pool.close();
   }
 });
+
+test("okm ext test and scaffold are not available", async () => {
+  expect((await rejection(() => run(["ext", "test"]))).message).toContain("not available yet");
+  expect((await rejection(() => run(["ext", "scaffold"]))).message).toContain("not available yet");
+});
+
+async function rejection(operation: () => Promise<unknown>): Promise<Error> {
+  try {
+    await operation();
+  } catch (error) {
+    if (error instanceof Error) return error;
+  }
+  throw new Error("expected a rejection");
+}
 
 function capture(run: () => unknown): unknown {
   try {

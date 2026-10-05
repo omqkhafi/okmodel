@@ -39,7 +39,7 @@ export type IndexCall = {
    * Raw index tail an extension may set on the call.
    *
    * A `using …` tail is the extension's index method. The core factory does
-   * not read it, and `compileIndexes` does not copy it onto the catalog index.
+   * not read it. `compileIndexes` copies the field onto the catalog index.
    */
   readonly expression?: string;
   /**

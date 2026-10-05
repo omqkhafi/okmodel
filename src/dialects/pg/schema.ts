@@ -1049,6 +1049,7 @@ function compileIndexes(
         unique: built.isUnique === true,
         nameKey: built.columns.join("_"),
         ...(built.predicate !== undefined ? { predicate: built.predicate } : {}),
+        ...(built.expression !== undefined ? { expression: built.expression } : {}),
         provenance,
       }),
     );

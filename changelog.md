@@ -19,6 +19,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `extension()` from `okmodel/ext` declares an extension. `schema({ extensions })` stores those objects and, when the catalog is built, asks each one for its record. `citext()` (`okmodel/pg/citext`) and `pgTrgm()` (`okmodel/pg/pg_trgm`) are the built-ins. `pgTrgm.similar` and `pgTrgm.wordSimilar` are where filters.
 - A second declaration of the same extension is OKM1813. A `citext` or `ltree` column whose extension is missing from a non-empty list is OKM1810. Omitting the list leaves the existing dependency check (OKM1020).
 - Migrations create an extension before the tables that use it, upgrade with `ALTER EXTENSION … UPDATE` (the step is `path-unverified` until apply checks `pg_extension_update_paths`), move a relocatable extension with `SET SCHEMA`, and drop with `DROP EXTENSION` and no `CASCADE`. A downgrade or a non-relocatable move is OKM1814. Apply checks `pg_available_extensions` before any statement (OKM1811). An unpinned declaration matches whatever version is installed.
+- `pgTrgm.gin()` and `pgTrgm.gist()` store a `using gin` or `using gist` index with `gin_trgm_ops` or `gist_trgm_ops`. The plan creates that index, and introspection of it matches the declaration.
+- `okm ext list` prints the extensions the connected server can install and the version that is installed. `okm ext check` compares those versions with the schema. A missing extension is OKM1811. A pin the server does not meet is OKM1812. `okm ext test` and `okm ext scaffold` are not in this version.
 
 ### ♻️ Changed
 

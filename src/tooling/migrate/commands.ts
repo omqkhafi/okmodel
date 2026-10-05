@@ -32,7 +32,8 @@ export function formatFailure(error: OkmError): string {
  * Runs one `okm` invocation.
  *
  * `--version` stays in the bin. This function handles `build`, `check`,
- * `generate`, `dev`, `push`, and `migrate plan`, `apply`, and `status`.
+ * `generate`, `dev`, `push`, `ext list`, `ext check`, and `migrate plan`,
+ * `apply`, and `status`.
  *
  * @param argv - Arguments after the program name
  * @param io - Working directory and stdout. Defaults to the process
@@ -87,6 +88,22 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
       stdout(await statusProject(cwd, invoke(parsed)));
       return;
     }
+  }
+  if (command === "ext") {
+    const sub = rest[0];
+    if (sub === "test" || sub === "scaffold") {
+      throw new OkmError("invalid", `okm ext ${sub} is not available yet.`, {
+        fix: { summary: "okm ext list and okm ext check are the commands in this version." },
+      });
+    }
+    if (sub === "list" || sub === "check") {
+      const { extProject } = await import("./ext.js");
+      stdout(await extProject(cwd, sub, invoke(splitFlags(rest.slice(1)))));
+      return;
+    }
+    throw new OkmError("invalid", `Unknown command ext ${sub ?? ""}.`, {
+      fix: { summary: "Use okm ext list or okm ext check." },
+    });
   }
   throw new OkmError("invalid", `Unknown command ${command ?? ""}.`);
 }

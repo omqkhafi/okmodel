@@ -169,7 +169,15 @@ async function prepare(
   return { config: opened.config, built: opened.built, plan };
 }
 
-async function openProject(cwd: string): Promise<{
+/**
+ * Loads the config, the schema, and the previous catalog snapshot.
+ *
+ * A `renamedFrom` that the previous catalog does not contain is OKM1020.
+ *
+ * @param cwd - Project directory
+ * @returns The loaded project
+ */
+export async function openProject(cwd: string): Promise<{
   readonly config: MigrateConfig;
   readonly built: Built;
   readonly previous: Catalog;
