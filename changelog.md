@@ -14,6 +14,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+## v0.3.0 — 2026-10-05
+
+0.3.0 adds extensions, domains, functions and triggers, views, and roles and grants, and checks that each one round-trips.
+
 ### ✨ Added
 
 #### dialects
@@ -35,6 +39,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - `okm ext list` prints the extensions the connected server can install and the version that is installed. `okm ext check` compares those versions with the schema. A missing extension is OKM1811. A pin the server does not meet is OKM1812. `okm ext test` and `okm ext scaffold` are not in this version.
 - `okm doctor` lists the triggers on each table. `okm doctor OKMxxxx` prints that code. When `roles` is set, doctor also checks that an external role exists, that a managed role can be created (`CREATEROLE`), and that the application role can reach each managed object (OKM1825).
+- The 0.3 gate pushes an extension, a domain, a function, a trigger from `timestamps({ enforce: "trigger" })`, a view, a materialized view, and roles onto an empty database, checks for no drift, alters each one, and removes it without `CASCADE`. An extension the server cannot install is OKM1811 before any statement.
 - Apply runs migrations as the migration role. When that role exists and is not `current_user`, the runner issues one `SET ROLE` before any statement and records it on the run report. The statement is not a plan step. `CREATEROLE` is checked before any statement when the plan creates or alters a role. `CREATE ROLE` has no `IF NOT EXISTS`; a role that already exists is skipped.
 
 #### docs
@@ -42,10 +47,19 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Known limits: a typed call such as `fn.slugify(col)` is not in this version, `inspect()` does not list triggers, a plpgsql body is `prosrc`, and a `BEGIN ATOMIC` body is the server reprint.
 - Known limits: a view is SQL plus a declared column list, and `db.views.<name>.find(...)` is read-only. The query builder form (`view(name, (q) => q.from(...))`) is not in this version (D190). Column dependencies come from `pg_depend`. The stored query is the server reprint. `refresh: "concurrently"` is not stored by Postgres, and the plan's first populate is a plain `REFRESH`. `security_invoker` is not set.
 - Known limits for roles and grants: fine-grained grants are M2, a role is never dropped, OKM1825 is doctor only, and a function grant is `name(argTypes)`. The non-owner RLS check moved to M2.
+- Known limits name this version. Typed `fn` calls, builder-defined views, `okm ext test`, `okm ext scaffold`, column-level grants, and row-level security stay unbuilt. A domain check or a `BEGIN ATOMIC` body that differs from the Postgres reprint only by parentheses or casts is still a plan change. `okm check` does not warn. Write the text Postgres prints.
+- The README names PostgreSQL 15 to 18, lists what 0.2 and 0.3 ship, and adds `okm ext list`, `okm ext check`, and `okm doctor` to the command table. The size rows are the `bun run size` output. The version line is 0.3.0 and the 0.3 roadmap item is done.
 
 ### ♻️ Changed
 
 - Startup gzip replaces lazy chunk ids with a fixed id of the same length before compressing, so a chunk whose only change is its content hash does not move the number.
+
+### 🐛 Fixed
+
+- `okm check` reprints each view and materialized view with `pg_get_viewdef` on the connected server before it compares. A query Postgres 15 prints differently from Postgres 18 is not drift after push. A query that reprints to something else still is.
+- `okm_meta` and `okm_history` stay out of the author diff. Plan, push, check, and doctor neither create nor drop them, in either direction.
+- A primary key's name key is `pkey` in the schema and in introspection. `CREATE TABLE` writes that constraint's name, so a name other than `{table}_pkey` round-trips. After push, `okm check` reports no drift for a plain key, a composite key, and a named key. When `okm_meta` already exists, `okm check` compares the database with the schema and reports OKM1520 if they differ.
+- A plan treats a schema type spelling and the Postgres `format_type` spelling as the same type (D191). `timestamptz` matches `timestamp with time zone`, and the same for `timestamp`, `time`, `timetz`, `varchar(n)`, `char(n)`, and the integer, boolean, float, and `decimal`/`numeric` aliases. Length, precision, scale, and array ranks stay. An unknown name is compared as written. `varchar(20)` to `varchar(30)`, and `timestamp` to `timestamptz`, still alter. After push, `timestamps({ enforce: "trigger" })` plans to no steps.
 
 ## v0.2.1 — 2026-10-05
 

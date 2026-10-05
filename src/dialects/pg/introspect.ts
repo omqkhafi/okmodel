@@ -228,7 +228,7 @@ export async function introspectSchema(
         parent,
         constraintKind: kind,
         name: text(row, "name"),
-        nameKey: columns.length > 0 ? columns.join("_") : "check",
+        nameKey: kind === "primaryKey" ? "pkey" : columns.length > 0 ? columns.join("_") : "check",
         columns,
         provenance,
         deferrable: flag(row, "deferrable"),

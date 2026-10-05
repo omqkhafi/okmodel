@@ -376,7 +376,7 @@ export function createTableSql(tableObject: TableObject, source: Catalog, schema
   const lines = columns.map((column) => columnSql(column));
   if (primary !== undefined) {
     const cols = primary.definition.columns.map((name) => quoteIdent(name)).join(", ");
-    lines.push(`primary key (${cols})`);
+    lines.push(`constraint ${quoteIdent(primary.identity.name)} primary key (${cols})`);
   }
   const partition = tableObject.definition.partition;
   const tail =
@@ -482,6 +482,13 @@ function deferClause(definition: ConstraintObject["definition"]): string {
   return ` deferrable initially ${definition.initially}`;
 }
 
-function qualify(schema: string, name: string): string {
+/**
+ * Quotes a schema-qualified name.
+ *
+ * @param schema - Concrete schema name
+ * @param name - Object name
+ * @returns `"schema"."name"`
+ */
+export function qualify(schema: string, name: string): string {
   return `${quoteIdent(schema)}.${quoteIdent(name)}`;
 }

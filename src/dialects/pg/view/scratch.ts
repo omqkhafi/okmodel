@@ -22,7 +22,7 @@ import type {
 } from "../../../contracts/catalog/types.js";
 import { quoteIdent } from "../ddl.js";
 import type { CatalogQuery } from "../introspect.js";
-import { PUBLIC, VIEW_DEPENDENCIES, viewDependencyEdges } from "./depend.js";
+import { cellText, PUBLIC, VIEW_DEPENDENCIES, viewDependencyEdges } from "./depend.js";
 
 const SCRATCH = "okm_view_seal";
 
@@ -70,7 +70,7 @@ export async function sealViews(runner: CatalogQuery, source: Catalog): Promise<
     const shapes = await runner.query(VIEW_SHAPE, [SCRATCH]);
     const deps = await runner.query(VIEW_DEPENDENCIES, [SCRATCH]);
     const edges = viewDependencyEdges(deps, PUBLIC, source.objects);
-    const byName = new Map(shapes.map((row) => [text(row.name), row]));
+    const byName = new Map(shapes.map((row) => [cellText(row.name), row]));
     const next = source.objects.map((object) => {
       if (object.kind !== "view" && object.kind !== "materializedView") return object;
       const row = byName.get(object.identity.name);
@@ -83,8 +83,8 @@ export async function sealViews(runner: CatalogQuery, source: Catalog): Promise<
           },
         );
       }
-      const columns = readColumns(object, text(row.columns));
-      const query = normaliseViewQuery(text(row.query));
+      const columns = readColumns(object, cellText(row.columns));
+      const query = normaliseViewQuery(cellText(row.query));
       const dependencies = edges.get(object.identity.name) ?? [];
       if (object.kind === "view") {
         return viewObject({
@@ -205,13 +205,13 @@ async function dropScratch(runner: CatalogQuery): Promise<void> {
   `,
     [SCRATCH],
   );
-  const views = rows.filter((row) => text(row.kind) === "v" || text(row.kind) === "m");
+  const views = rows.filter((row) => cellText(row.kind) === "v" || cellText(row.kind) === "m");
   for (let pass = 0; pass < Math.max(views.length, 1); pass += 1) {
     for (const row of views) {
-      const kind = text(row.kind) === "m" ? "materialized view" : "view";
+      const kind = cellText(row.kind) === "m" ? "materialized view" : "view";
       try {
         await runner.query(
-          `drop ${kind} if exists ${quoteIdent(SCRATCH)}.${quoteIdent(text(row.name))}`,
+          `drop ${kind} if exists ${quoteIdent(SCRATCH)}.${quoteIdent(cellText(row.name))}`,
         );
       } catch {
         // A later view in this list may still be using it. The next pass retries.
@@ -219,16 +219,10 @@ async function dropScratch(runner: CatalogQuery): Promise<void> {
     }
   }
   for (const row of rows) {
-    if (text(row.kind) !== "r") continue;
-    await runner.query(`drop table if exists ${quoteIdent(SCRATCH)}.${quoteIdent(text(row.name))}`);
+    if (cellText(row.kind) !== "r") continue;
+    await runner.query(
+      `drop table if exists ${quoteIdent(SCRATCH)}.${quoteIdent(cellText(row.name))}`,
+    );
   }
   await runner.query(`drop schema if exists ${quoteIdent(SCRATCH)}`);
-}
-
-function text(value: unknown): string {
-  if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
-    return String(value);
-  }
-  return "";
 }

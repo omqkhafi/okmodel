@@ -1,12 +1,12 @@
 # Known limits
 
-What `0.2.1` does not do, or does differently from what you might expect. Each item says what happens, so none of them is a surprise at runtime. A limit that has a version is listed in the release train in [`okmodel-execution-plan.md`](okmodel-execution-plan.md). `later` means the plan has not assigned a 0.x release.
+What this version does not do, or does differently from what you might expect. Each item says what happens, so none of them is a surprise at runtime. A limit that has a version is listed in the release train in [`okmodel-execution-plan.md`](okmodel-execution-plan.md). `later` means the plan has not assigned a 0.x release.
 
 `okmodel/internal` has no stability promise. Names on that subpath can change or disappear in any release. Its exports are marked `@internal`.
 
 ## Not built yet
 
-An option or builder that is not in 0.2 throws OKM1061 and names the prompt or version that adds it, or it is not a method yet. These are the ones the plan has assigned.
+An option or builder that is not in this version throws OKM1061 and names the prompt or version that adds it, or it is not a method yet. These are the ones the plan has assigned.
 
 | Item | Version | Prompt |
 | --- | --- | --- |
@@ -16,16 +16,16 @@ An option or builder that is not in 0.2 throws OKM1061 and names the prompt or v
 | `computed` | later | no 0.x prompt |
 | `policies` | later | no 0.x prompt |
 
-Installing the head snapshot, snapshot-versus-replay equivalence (OKM1521), and `reference` rows arrive in P53A. In 0.1 and 0.2, `okm migrate apply` replays migration files. See [environments](environments.md).
+Installing the head snapshot, snapshot-versus-replay equivalence (OKM1521), and `reference` rows arrive in P53A. Until then, `okm migrate apply` replays migration files. See [environments](environments.md).
 
-Also not in 0.2:
+Also not in this version:
 
-- **`rls` tenancy is not built.** Column tenancy is the only strategy. Inside `tx()` the tenant is the column predicate on every statement (D181).
-- **Three registered codes are not thrown in 0.2** (D183). OKM1110 (a feature needs a newer engine than `requires`): the one engine-dependent feature, `uuidv7()`, fails as OKM1812 when the schema is built with `requires` below 18, and `okm migrate apply` raises it before any statement when the server is older than 18 (D184). OKM1191 (no snapshot plan inside READ COMMITTED): every read is one statement, so a plan always exists. OKM1702 (unverifiable raw SQL on a tenant table): no public call takes raw SQL; typed raw SQL is M2.
+- **Row-level security is M2.** `rls` tenancy is not built. Column tenancy is the only strategy. Inside `tx()` the tenant is the column predicate on every statement (D181).
+- **Three registered codes are not thrown in this version** (D183). OKM1110 (a feature needs a newer engine than `requires`): the one engine-dependent feature, `uuidv7()`, fails as OKM1812 when the schema is built with `requires` below 18, and `okm migrate apply` raises it before any statement when the server is older than 18 (D184). OKM1191 (no snapshot plan inside READ COMMITTED): every read is one statement, so a plan always exists. OKM1702 (unverifiable raw SQL on a tenant table): no public call takes raw SQL; typed raw SQL is M2.
 - **`okm ext test` and `okm ext scaffold` are not built.** `okm ext list` prints the extensions the connected server can install and the version that is installed. `okm ext check` compares those versions with the schema. The conformance suite and the scaffold are later.
 - **JSON Schema export is absent.** `insert` and `update` are Standard Schemas; they do not emit JSON Schema.
 - **`onRead` is stored and not applied.** `validation: { onRead: true }` is accepted and read values are not validated.
-- **`iStartsWith`, `iContains` and `iEndsWith` are not in 0.2** (D176). Use `ilike()` with an escaped pattern.
+- **`iStartsWith`, `iContains` and `iEndsWith` are not in this version** (D176). Use `ilike()` with an escaped pattern.
 - **`aggregate()` has no `having` and no `bucket`** (M2).
 - **Batch-mode drivers have no adapter yet.** Neon HTTP and Cloudflare D1 are covered by the driver contract (`batch` is required on every driver) and there is no adapter in this repository for either.
 
@@ -33,7 +33,7 @@ Also not in 0.2:
 
 - **A view is SQL plus a declared column list.** `view()` and `materializedView()` live on `okmodel/view`. `db.views.<name>.find(...)` is read-only. A view that reads a tenant table and does not expose the tenant key is OKM1820 unless declared `global("reason")`. The query builder form (`view(name, (q) => q.from(...))`) is not in this version (D190).
 - **Column dependencies come from `pg_depend`.** Scratch verification (`sealViews`) creates the view and reads those edges. A plan from two author catalogs does not see them until that read.
-- **The stored query becomes the server reprint.** `pg_get_viewdef` replaces the author text. Two introspections match. A plan from the live catalog back to the author text replaces the view when the reprint differs.
+- **`okm check` reprints a view on the connected server before it compares.** `pg_get_viewdef` replaces the author text, so a spelling that server prints differently is not drift after push. A query that reprints to something else still is. Two introspections of the same view match. A plan between two author catalogs still compares the text that was written.
 - **`refresh: "concurrently"` is not stored by Postgres.** Introspection leaves it unset. Equality ignores it, so a later plan does not recreate the materialized view only because the mode was declared. `REFRESH ... CONCURRENTLY` still needs a unique index (OKM1822). The plan's first populate is a plain `REFRESH`, because Postgres rejects `CONCURRENTLY` until the view has rows.
 - **`security_invoker` is not set.** It belongs to the `rls` strategy, which is later.
 
@@ -42,12 +42,12 @@ Also not in 0.2:
 - **A typed call (`fn.slugify(col)` in a predicate, projection, or order) is not in this version.** `fn()` and `trigger()` are catalog objects. The planner does not compile a call fragment.
 - **`inspect()` does not list triggers.** `okm doctor` lists the triggers on each table. A code argument prints that code.
 - **A plpgsql body is the source text.** Introspection reads `prosrc`. A round trip has no steps when the declared body is that text.
-- **`LANGUAGE sql` with `BEGIN ATOMIC` stores the server reprint.** `prosrc` is empty, so the body is the `BEGIN ATOMIC` block from `pg_get_functiondef`. Dependencies are the `pg_depend` edges. Two introspections of the same function match. A plan from the live catalog back to the author text replaces the function when the reprint differs from the text that was declared.
+- **`LANGUAGE sql` with `BEGIN ATOMIC` stores the server reprint.** `prosrc` is empty, so the body is the `BEGIN ATOMIC` block from `pg_get_functiondef`. Dependencies are the `pg_depend` edges. Two introspections of the same function match. A plan from the live catalog back to the author text replaces the function when the reprint differs from the text that was declared. There is no warning. Write the body as that reprint.
 - **A trigger `WHEN` is stored as written.** Introspection reads `pg_get_expr`. A predicate Postgres reprints differently is planned as a trigger change. A round trip has no steps when the stored text is already that printed form.
 
 ## Roles and grants
 
-- **Fine-grained grants are M2.** `roles: { migration, app }` grants the application role a fixed set: `SELECT`, `INSERT`, `UPDATE`, and `DELETE` on tables and views; `SELECT` on materialized views; `EXECUTE` on functions; `USAGE` and `SELECT` on sequences. Default privileges use that set, `FOR ROLE` the migration role, in each static schema. Privileges outside the set are not diffed.
+- **Fine-grained grants, including column-level grants, are M2.** `roles: { migration, app }` grants the application role a fixed set: `SELECT`, `INSERT`, `UPDATE`, and `DELETE` on tables and views; `SELECT` on materialized views; `EXECUTE` on functions; `USAGE` and `SELECT` on sequences. Default privileges use that set, `FOR ROLE` the migration role, in each static schema. Privileges outside the set are not diffed.
 - **A role is never dropped.** A plan creates a managed role when `pg_roles` does not have it (`CREATE ROLE` has no `IF NOT EXISTS`) and alters `LOGIN` and `INHERIT` in place. A password, `GRANT OPTION`, and any other attribute are not stored. A name in `roles` is external unless it is also listed in `managed`.
 - **OKM1825 is `okm doctor` only.** `connect()` does not check the application role. Putting that check on `connect()` measured +2,690 minified bytes and +917 gzip on `okmodel/pg/postgresjs` (the same minified increase on the other connect entries) and +2,699 / +941 on the featureless app, which is past the budget. `okm_meta` is not a catalog object; when that table exists, `connect()` reads it, so the application role needs `SELECT` on it.
 - **A function grant is `name(argTypes)`.** Argument types are joined without spaces. Introspection strips spaces from `pg_get_function_identity_arguments`.
@@ -57,7 +57,7 @@ Also not in 0.2:
 
 - **The base type of a domain cannot change.** A plan that replaces `t.domain("pos", t.integer(), …)` with `t.domain("pos", t.text(), …)` fails with OKM1020 and names both types. The base stays as it was created. Add a new domain when the column needs another type.
 - **An enum cannot be the base of a domain.** `t.domain("shade", t.enum("color", ["red"]), …)` is OKM1060. Use a scalar column type.
-- **A domain check is stored as written.** Introspection reads the check Postgres prints (`pg_get_constraintdef`, with the leading `CHECK` removed). A check that Postgres reprints differently is planned as a check change. A round trip has no steps when the stored check is already that printed text, for example `((VALUE > 0))`.
+- **A domain check is stored as written.** Introspection reads the check Postgres prints (`pg_get_constraintdef`, with the leading `CHECK` removed). A difference that is only parentheses or casts is still a check change. `okm check` does not warn. Write the check the way Postgres prints it, for example `((VALUE > 0))`.
 
 ## Safety and tenancy
 

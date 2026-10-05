@@ -14,7 +14,7 @@ import type {
   GrantObjectRef,
   RoleObject,
 } from "../../../contracts/catalog/types.js";
-import { quoteIdent } from "../ddl.js";
+import { qualify, quoteIdent } from "../ddl.js";
 
 /** Statements the planner inserts around the rest of the catalog. */
 export type PrivilegeSql = {
@@ -179,8 +179,4 @@ function assertPrivilege(privilege: string): void {
       },
     });
   }
-}
-
-function qualify(schema: string, name: string): string {
-  return `${quoteIdent(schema)}.${quoteIdent(name)}`;
 }

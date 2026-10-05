@@ -48,7 +48,7 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
     return;
   }
   if (command === "check") {
-    await checkProject(cwd);
+    await checkProject(cwd, invoke(splitFlags(rest)));
     stdout("ok\n");
     return;
   }

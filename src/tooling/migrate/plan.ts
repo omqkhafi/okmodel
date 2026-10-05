@@ -35,12 +35,16 @@ import {
   functionSql,
   identitySequence,
   ownedByView,
+  qualify,
   quoteIdent,
   refreshMaterializedViewSql,
   viewSql,
 } from "../../dialects/pg/ddl.js";
+import { quoteLiteral } from "../../dialects/pg/quote.js";
 import { privilegeSql } from "../../dialects/pg/role/sql.js";
 import { extensionAlterSteps } from "./extensions.js";
+import { omitManagedObjects } from "./managed.js";
+import { canonicalTypeName } from "./type-name.js";
 import { assertNoChains, type Replacement } from "./values.js";
 
 /** Expand, contract, or a step that is neither. */
@@ -135,7 +139,12 @@ const ROW = "ROW EXCLUSIVE";
  * @param request - Catalogs, declared renames, and `--replace` flags
  * @returns Steps in apply order, with one class for the plan
  */
-export function planMigration(request: PlanRequest): MigrationPlan {
+export function planMigration(input: PlanRequest): MigrationPlan {
+  const request: PlanRequest = {
+    ...input,
+    before: omitManagedObjects(input.before),
+    after: omitManagedObjects(input.after),
+  };
   const schema = request.schema ?? "public";
   const renames = request.renames ?? [];
   const replacements = request.replacements ?? [];
@@ -171,7 +180,8 @@ export function planMigration(request: PlanRequest): MigrationPlan {
     if (
       previous.kind === "function" &&
       item.object.kind === "function" &&
-      previous.definition.returns === item.object.definition.returns
+      canonicalTypeName(previous.definition.returns) ===
+        canonicalTypeName(item.object.definition.returns)
     ) {
       replaces.push({ kind: "function", before: previous, after: item.object });
       continue;
@@ -278,7 +288,11 @@ export function planMigration(request: PlanRequest): MigrationPlan {
   steps.push(...extensionAlterSteps(beforeBy, afterBy, dropKeys));
 
   for (const change of alters) {
-    for (const sql of alterColumnSql(change.before, change.after, schema)) {
+    for (const sql of alterColumnSql(
+      alignedColumnType(change.before, change.after),
+      change.after,
+      schema,
+    )) {
       steps.push(step(sql, alterClass(sql), "ddl", ACCESS));
     }
     const identitySql = identityChangeSql(change.before, change.after, schema);
@@ -711,7 +725,11 @@ function recreateDependents(
 ): void {
   const changed = new Set(
     alters
-      .filter((item) => item.before.definition.dataType !== item.after.definition.dataType)
+      .filter(
+        (item) =>
+          canonicalTypeName(item.before.definition.dataType) !==
+          canonicalTypeName(item.after.definition.dataType),
+      )
       .map((item) => identityKey(item.after.identity)),
   );
   if (changed.size === 0) return;
@@ -833,7 +851,12 @@ function columnsAppended(before: readonly ViewColumn[], after: readonly ViewColu
     const left = before[index];
     const right = after[index];
     if (left === undefined || right === undefined) return false;
-    if (left.name !== right.name || left.dataType !== right.dataType) return false;
+    if (
+      left.name !== right.name ||
+      canonicalTypeName(left.dataType) !== canonicalTypeName(right.dataType)
+    ) {
+      return false;
+    }
   }
   return true;
 }
@@ -915,7 +938,7 @@ function contractSwaps(
     if (change.kind !== "replace") continue;
     const type = qualify(schema, change.name);
     const old = quoteIdent(`${change.name}_old`);
-    const labels = change.labels.map((label) => sqlString(label)).join(", ");
+    const labels = change.labels.map((label) => quoteLiteral(label)).join(", ");
     steps.push(step(`alter type ${type} rename to ${old}`, "contract", "ddl", ACCESS));
     steps.push(step(`create type ${type} as enum (${labels})`, "contract", "ddl", ACCESS));
     for (const column of change.columns) {
@@ -1244,9 +1267,9 @@ function addValueStatements(
         break;
       }
     }
-    let sql = `alter type ${type} add value ${sqlString(label)}`;
+    let sql = `alter type ${type} add value ${quoteLiteral(label)}`;
     if (beforeNeighbor !== undefined) {
-      sql += ` before ${sqlString(beforeNeighbor)}`;
+      sql += ` before ${quoteLiteral(beforeNeighbor)}`;
     } else {
       let afterNeighbor: string | undefined;
       for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
@@ -1256,7 +1279,7 @@ function addValueStatements(
           break;
         }
       }
-      if (afterNeighbor !== undefined) sql += ` after ${sqlString(afterNeighbor)}`;
+      if (afterNeighbor !== undefined) sql += ` after ${quoteLiteral(afterNeighbor)}`;
     }
     statements.push(sql);
     present.add(label);
@@ -1360,11 +1383,80 @@ function omitOwnedSequences(
 function sameDefinition(left: CatalogObject, right: CatalogObject): boolean {
   if (left.kind === "materializedView" && right.kind === "materializedView") {
     return (
-      stable(left.definition.columns) === stable(right.definition.columns) &&
+      stable(canonicalColumns(left.definition.columns)) ===
+        stable(canonicalColumns(right.definition.columns)) &&
       left.definition.query === right.definition.query
     );
   }
-  return stable(left.definition) === stable(right.definition);
+  return stable(forComparison(left)) === stable(forComparison(right));
+}
+
+/**
+ * Definition compared by type spelling.
+ *
+ * `dataType`, function returns and arguments, trigger argument types, view
+ * columns, and a domain base go through {@link canonicalTypeName}. Everything
+ * else is compared as stored. A materialized view's `refresh` is not here:
+ * Postgres does not store it, so {@link sameDefinition} ignores it.
+ *
+ * @param object - One side of the diff
+ * @returns The definition, with type names in the long spelling
+ */
+function forComparison(object: CatalogObject): unknown {
+  switch (object.kind) {
+    case "column":
+    case "sequence":
+      return { ...object.definition, dataType: canonicalTypeName(object.definition.dataType) };
+    case "view":
+      return { ...object.definition, columns: canonicalColumns(object.definition.columns) };
+    case "function":
+      return {
+        ...object.definition,
+        returns: canonicalTypeName(object.definition.returns),
+        arguments: object.definition.arguments.map((argument) => ({
+          ...argument,
+          type: canonicalTypeName(argument.type),
+        })),
+      };
+    case "trigger":
+      return {
+        ...object.definition,
+        calls: {
+          ...object.definition.calls,
+          argTypes: object.definition.calls.argTypes.map((typeName) => canonicalTypeName(typeName)),
+        },
+      };
+    case "type":
+      if (!isDomain(object.definition)) return object.definition;
+      return { ...object.definition, base: canonicalTypeName(object.definition.base) };
+    default:
+      return object.definition;
+  }
+}
+
+function canonicalColumns(columns: readonly ViewColumn[]): ViewColumn[] {
+  return columns.map((column) => ({ ...column, dataType: canonicalTypeName(column.dataType) }));
+}
+
+/**
+ * Makes an alias spelling look like the target spelling before `ALTER`.
+ *
+ * A nullability change must not also emit `SET DATA TYPE` when the two
+ * spellings are one type. A real type change keeps both spellings, so the
+ * statement uses the schema's type name.
+ *
+ * @param before - Column already applied
+ * @param after - Column the plan must reach
+ * @returns `before`, or a copy whose `dataType` matches `after`
+ */
+function alignedColumnType(before: ColumnObject, after: ColumnObject): ColumnObject {
+  if (
+    canonicalTypeName(before.definition.dataType) !== canonicalTypeName(after.definition.dataType)
+  ) {
+    return before;
+  }
+  if (before.definition.dataType === after.definition.dataType) return before;
+  return { ...before, definition: { ...before.definition, dataType: after.definition.dataType } };
 }
 
 function covered(object: CatalogObject, tables: ReadonlySet<string>): boolean {
@@ -1421,9 +1513,9 @@ function updateSql(
   to: string | null,
   cast = false,
 ): string {
-  const value = to === null ? "null" : sqlString(to);
+  const value = to === null ? "null" : quoteLiteral(to);
   const compare = cast ? `${quoteIdent(column)}::text` : quoteIdent(column);
-  return `update ${qualify(schema, table)} set ${quoteIdent(column)} = ${value} where ${compare} = ${sqlString(from)}`;
+  return `update ${qualify(schema, table)} set ${quoteIdent(column)} = ${value} where ${compare} = ${quoteLiteral(from)}`;
 }
 
 function hasTable(source: Catalog, name: string): boolean {
@@ -1451,14 +1543,6 @@ function step(
   transactional = true,
 ): PlanStep {
   return { sql, class: classification, action, lock, transactional };
-}
-
-function qualify(schema: string, name: string): string {
-  return `${quoteIdent(schema)}.${quoteIdent(name)}`;
-}
-
-function sqlString(value: string): string {
-  return `'${value.replaceAll("'", "''")}'`;
 }
 
 function stable(value: unknown): string {

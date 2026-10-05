@@ -21,7 +21,7 @@ import type { BuiltSchema } from "../../dialects/pg/schema.js";
 import type { AnyTable } from "../../dialects/pg/table.js";
 import type { Catalog } from "../../contracts/catalog/types.js";
 import { type MigrateConfig } from "./config.js";
-import { assertTargetAlias, listTargets } from "./policy.js";
+import { assertTargetAlias, listTargets, selectTarget, type InvokeFlags } from "./policy.js";
 import { formatPlan, planMigration, staleRenames, type MigrationPlan } from "./plan.js";
 import { parseReplace } from "./values.js";
 
@@ -90,9 +90,14 @@ export async function planProject(
 /**
  * Validates the schema, then reports stale renames and unlisted table files.
  *
+ * When exactly one target is configured, or `--target` names one, a database
+ * that already has `okm_meta` is compared with the schema. A difference is
+ * OKM1520. Several targets and no `--target` skip that comparison.
+ *
  * @param cwd - Project directory
+ * @param flags - `--target`, when the caller passed one
  */
-export async function checkProject(cwd: string): Promise<void> {
+export async function checkProject(cwd: string, flags?: InvokeFlags): Promise<void> {
   const opened = await openProject(cwd);
   assertValidation(opened.built);
   if (schemaRequestsValidation(opened.built) && !projectImportsValidate(cwd)) {
@@ -100,7 +105,8 @@ export async function checkProject(cwd: string): Promise<void> {
     if (doc === undefined) throw new Error("OKM1201 missing from the error registry.");
     throw new OkmError(doc.code, doc.summary, { fix: { summary: doc.fix } });
   }
-  assertTargetAlias(listTargets(opened.config));
+  const targets = listTargets(opened.config);
+  assertTargetAlias(targets);
   if (opened.config.tables !== undefined) {
     const directory = join(cwd, opened.config.tables);
     const files = existsSync(directory) ? readdirSync(directory) : [];
@@ -112,6 +118,12 @@ export async function checkProject(cwd: string): Promise<void> {
       });
     }
   }
+  const named = flags?.target;
+  if (targets.length === 0) return;
+  if (targets.length > 1 && named === undefined) return;
+  const target = selectTarget(opened.config, named);
+  const { assertAuthorDrift } = await import("./drift.js");
+  await assertAuthorDrift(target.url, opened.built.catalog, opened.config.roles);
 }
 
 /**
