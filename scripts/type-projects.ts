@@ -89,7 +89,12 @@ export function writeQueryProject(
   dir: string,
   fixture: SchemaFixture,
   target?: LibraryTarget,
-  options: { readonly validate?: boolean; readonly features?: readonly ProbeFeature[] } = {},
+  options: {
+    readonly validate?: boolean;
+    readonly features?: readonly ProbeFeature[];
+    /** When set, the schema declares this many `extension()` objects. */
+    readonly extensions?: number;
+  } = {},
 ): void {
   mkdirSync(dir, { recursive: true });
   const pg = libraryFile(dir, target, "dialects/pg/index");
@@ -98,9 +103,12 @@ export function writeQueryProject(
   const features = options.features ?? PROBE_FEATURES;
   const through = features.includes("through");
   const presets = features.includes("presets");
+  const extensionCount = options.extensions ?? 0;
+  const ext = libraryFile(dir, target, "dialects/pg/ext/index");
   const lines: string[] = [
     ...(validate ? [`import "${libraryFile(dir, target, "runtime/validate/index")}";`] : []),
     `import { ${presets ? "inList, " : ""}many, ${through ? "manyThrough, " : ""}one, schema, table, t } from "${pg}";`,
+    ...(extensionCount > 0 ? [`import { extension } from "${ext}";`] : []),
     "",
   ];
   lines.push(
@@ -141,6 +149,13 @@ export function writeQueryProject(
   }
   lines.push("export const appSchema = schema({");
   lines.push(`  tables: [${names.join(", ")}],`);
+  if (extensionCount > 0) {
+    const declared = Array.from(
+      { length: extensionCount },
+      (_, index) => `extension("ext_${String(index)}")`,
+    );
+    lines.push(`  extensions: [${declared.join(", ")}],`);
+  }
   if (validate) lines.push("  validation: true,");
   lines.push("});", "");
   writeFileSync(join(dir, "tables.ts"), `${lines.join("\n")}\n`);

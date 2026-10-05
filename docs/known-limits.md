@@ -11,7 +11,6 @@ An option or builder that is not in 0.2 throws OKM1061 and names the prompt or v
 | Item | Version | Prompt |
 | --- | --- | --- |
 | `t.domain` | 0.3 | P40 |
-| extensions | 0.3 | P40 |
 | functions | 0.3 | P41 |
 | triggers | 0.3 | P41 |
 | views | 0.3 | P42 |

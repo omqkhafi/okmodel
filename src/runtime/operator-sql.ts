@@ -21,7 +21,7 @@ import {
   operatorValue,
   type OperatorName,
 } from "../dialects/pg/operators.js";
-import { fail, installOperatorSql, isRecord, type Sink } from "./plan.js";
+import { fail, installOperatorSql, isRecord, quote, type Sink } from "./plan.js";
 
 /**
  * Compiles one 0.2 operator, or rejects a text operator on the wrong column.
@@ -53,6 +53,10 @@ function emitStructured(
   }
   if (name === "matches") {
     emitMatches(column, ref, value, sink);
+    return;
+  }
+  if (name === "similar" || name === "wordSimilar") {
+    emitTrigram(column, ref, name, value, sink);
     return;
   }
   assertOperatorFits(column, name);
@@ -190,6 +194,26 @@ function emitMatches(column: ColumnModel, ref: string, value: unknown, sink: Sin
   }
   sink.param(value.query);
   sink.text(")");
+}
+
+function emitTrigram(
+  column: ColumnModel,
+  ref: string,
+  name: "similar" | "wordSimilar",
+  value: unknown,
+  sink: Sink,
+): void {
+  if (!isRecord(value) || typeof value.query !== "string" || typeof value.schema !== "string") {
+    fail("OKM1121", `${name} on ${column.field} needs query text.`);
+  }
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(value.schema)) {
+    fail("OKM1121", `${name} on ${column.field} needs an extension schema name.`);
+  }
+  sink.text(ref);
+  sink.text(" operator(");
+  sink.text(quote(value.schema));
+  sink.text(name === "similar" ? ".%) " : ".<%) ");
+  sink.param(value.query);
 }
 
 installOperatorSql(emitStructured);

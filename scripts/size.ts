@@ -455,6 +455,33 @@ export function measureEntry(
   }
 }
 
+const CHUNK_FILE = /^(.+)-([a-z0-9]{8})\.js$/;
+
+/**
+ * Replaces content-hash chunk ids with a fixed id of the same length.
+ *
+ * Minified size counts the real files. Gzip uses this copy, so a lazy chunk
+ * whose only change is its id does not move the number.
+ *
+ * @param dir - Build output that holds the chunk files
+ * @param bytes - Startup or total graph, concatenated
+ * @returns The same bytes with chunk ids normalised
+ */
+function normaliseChunkIds(dir: string, bytes: Buffer): Buffer {
+  const pairs: { readonly from: string; readonly to: string }[] = [];
+  for (const name of readdirSync(dir)) {
+    const match = CHUNK_FILE.exec(name);
+    const stem = match?.[1];
+    const hash = match?.[2];
+    if (stem === undefined || hash === undefined) continue;
+    pairs.push({ from: name, to: `${stem}-${"0".repeat(hash.length)}.js` });
+  }
+  pairs.sort((left, right) => right.from.length - left.from.length);
+  let text = bytes.toString("utf8");
+  for (const pair of pairs) text = text.replaceAll(pair.from, pair.to);
+  return Buffer.from(text);
+}
+
 const staticImport = /from\s*"(\.\/[^"]+)"/g;
 const dynamicImport = /import\s*\(\s*"(\.\/[^"]+)"\s*\)/g;
 const sideEffectImport = /import\s*"(\.\/[^"]+)"/g;
@@ -531,10 +558,11 @@ export function measureStartup(
     return {
       entry,
       minBytes,
-      gzipBytes: gzipSync(Buffer.concat(parts), { level: 9 }).byteLength,
+      gzipBytes: gzipSync(normaliseChunkIds(dir, Buffer.concat(parts)), { level: 9 }).byteLength,
       coldImportMs,
       totalMinBytes,
-      totalGzipBytes: gzipSync(Buffer.concat(totalParts), { level: 9 }).byteLength,
+      totalGzipBytes: gzipSync(normaliseChunkIds(dir, Buffer.concat(totalParts)), { level: 9 })
+        .byteLength,
       ...(stubbedColdImportMs !== undefined ? { stubbedColdImportMs } : {}),
     };
   } finally {

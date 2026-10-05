@@ -1236,5 +1236,39 @@
       "name": "v",
       "kind": "stable"
     }
+  ],
+  "okmodel/ext": [
+    {
+      "name": "Extension",
+      "kind": "stable"
+    },
+    {
+      "name": "ExtensionOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "extension",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/pg/citext": [
+    {
+      "name": "citext",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/pg/pg_trgm": [
+    {
+      "name": "PgTrgm",
+      "kind": "stable"
+    },
+    {
+      "name": "TrigramQuery",
+      "kind": "stable"
+    },
+    {
+      "name": "pgTrgm",
+      "kind": "stable"
+    }
   ]
 }

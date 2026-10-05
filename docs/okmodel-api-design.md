@@ -285,8 +285,10 @@ Adapters by milestone: M1 `okmodel/pg/postgresjs`, `okmodel/pg/pglite` · M2 `ok
 
 ```ts
 extensions: [pgTrgm(), vector({ version: ">=0.7" })],
-find({ where: { name: pgTrgm.similar(q) }, orderBy: pgTrgm.similarity("name", q) })
+find({ where: { name: pgTrgm.similar(q) }, limit: 20 })
 ```
+
+`pgTrgm.similar` and `pgTrgm.wordSimilar` are where-operators. Ordering by `similarity()` is not planned in this version: that branch would sit on the connect graph.
 
 **Flow.** Declare in `schema()`; TS works at once; `okm generate` (`okm migrate plan`) produces the SQL; `okm push` (development only) or `okm migrate` applies it. `generate` produces SQL only.
 
@@ -316,7 +318,7 @@ TimescaleDB, ParadeDB and pg_partman add catalog objects rather than types and a
 | remove | `DROP EXTENSION`, never `CASCADE`; refused by the linter while a column or index depends on it | contract |
 | lower `version` | not supported by Postgres | refused (OKM1814) |
 
-Objects that belong to an extension (found through `pg_depend` deptype `e`) are excluded from introspection: never loaded, never diffed. Objects declared in `provides` stay `external`. The extension version is unpinned by default: the installed version is recorded for information and drift ignores it unless the declaration pins one (D118). `CREATE EXTENSION` runs from the migration role only; the application never installs anything. `okm migrate plan` and `okm doctor` compare the declaration with `pg_available_extensions` on the connected server, so an unavailable extension fails at planning, not at deploy. Object names are schema-qualified; nothing depends on `search_path`.
+Objects that belong to an extension (found through `pg_depend` deptype `e`) are excluded from introspection: never loaded, never diffed. The extension version is unpinned by default: the installed version is recorded for information and drift ignores it unless the declaration pins one (D118). `CREATE EXTENSION` runs from the migration role only; the application never installs anything. `okm migrate plan` stays offline: an upgrade step is marked `path-unverified`. `okm migrate apply` checks `pg_available_extensions` and, for an upgrade, `pg_extension_update_paths`, before any statement (OKM1811, OKM1814). Object names are schema-qualified; nothing depends on `search_path`.
 
 **Runtime settings** (`hnsw.ef_search`, `pg_trgm.similarity_threshold`) are per operation, not per connection: `vector.cosine(col, q, { efSearch: 100 })` wraps the statement in a short transaction with `SET LOCAL`, which stays correct behind poolers in transaction mode.
 
@@ -627,13 +629,13 @@ Modifiers: `.nullable()`, `.default(v)`, `.defaultSql(sql)`, `.primaryKey()`, `.
 | Builder or option | Version |
 |---|---|
 | `t.domain()` | 0.3 |
-| `schema({ extensions, functions, triggers, views })` | 0.3 |
+| `schema({ functions, triggers, views })` | 0.3 |
 | `table({ presets })` | 0.2 |
 | `table({ reference })` | 0.4 |
 | `morph`, `table({ computed, policies })` | later |
 
 - Fields are `NOT NULL` unless `.nullable()`.
-- Extensions required by a type (`citext`, `ltree`) are added to migrations automatically.
+- A type that names an extension (`citext`, `ltree`) is not installed unless that extension is in `schema({ extensions })`. A list that omits it fails when the catalog is built (OKM1810). Omitting the list leaves the dependency check (OKM1020).
 - `serial` types exist only for imports.
 
 ### 6.5 Picklists
@@ -838,7 +840,7 @@ All are tagged helpers from `okmodel/pg`. The planner picks the SQL from the col
 | `path(segments, op)` | json, jsonb | `col #>> $1::text[]` compared with `op`; the operand type of `op` picks the cast (number to numeric, boolean to boolean, string to text) |
 | `matches(q, { mode?, config? })` | tsvector | `@@` with `websearch_to_tsquery` (default, never throws on user input), `plainto_tsquery` (`"plain"`) or `phraseto_tsquery` (`"phrase"`) |
 
-Atomic write operators (section 11) are `json.set(path, v)`, `arr.append(v)`, `arr.remove(v)`, exported as namespaces (`export * as json`) so each member tree-shakes. Trigram similarity and citext operators arrive with extensions (M2); text search on a plain `text` column is not supported (it needs an expression index) and fails with a clear error.
+Atomic write operators (section 11) are `json.set(path, v)`, `arr.append(v)`, `arr.remove(v)`, exported as namespaces (`export * as json`) so each member tree-shakes. Trigram where-operators ship on `okmodel/pg/pg_trgm` (`similar`, `wordSimilar`). Citext comparison is ordinary equality on a `citext` column once `citext()` from `okmodel/pg/citext` is declared. Text search on a plain `text` column is not supported (it needs an expression index) and fails with a clear error.
 
 ### 10.2 User-driven filtering
 

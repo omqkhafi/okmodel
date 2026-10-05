@@ -10,7 +10,9 @@
 import { catalog } from "../../contracts/catalog/build.js";
 import { enumType } from "../../contracts/catalog/enum.js";
 import { staticNamespace } from "../../contracts/catalog/identity.js";
+import { extensionObject } from "../../contracts/catalog/extension.js";
 import { column, constraint, index, sequence, table } from "../../contracts/catalog/object.js";
+import { quoteIdent } from "./ddl.js";
 import type {
   Catalog,
   CatalogObject,
@@ -55,13 +57,14 @@ export async function introspectSchema(
   const namespace = staticNamespace(logical);
   const provenance: Provenance = { origin: "file", name: PROVENANCE_NAME };
   const params = [concrete];
-  const [tables, columns, constraints, indexes, sequences, enums] = await Promise.all([
+  const [tables, columns, constraints, indexes, sequences, enums, extensions] = await Promise.all([
     runner.query(TABLES, params),
     runner.query(COLUMNS, params),
     runner.query(CONSTRAINTS, params),
     runner.query(INDEXES, params),
     runner.query(SEQUENCES, params),
     runner.query(ENUMS, params),
+    runner.query(EXTENSIONS, params),
   ]);
   const objects: CatalogObject[] = [];
   const parents = new Map<string, ObjectRef>();
@@ -124,6 +127,8 @@ export async function introspectSchema(
     const sequenceName = text(row, "sequence");
     const dataType = text(row, "type");
     const extra: ObjectIdentity[] = [];
+    const extensionName = text(row, "extension");
+    if (extensionName.length > 0) extra.push({ kind: "extension", name: extensionName });
     const owned = sequenceIdentity.get(sequenceName);
     if (owned !== undefined) extra.push(owned);
     if (enumLabels.has(dataType)) {
@@ -185,8 +190,8 @@ export async function introspectSchema(
     const parentName = text(row, "parent");
     const parent = parents.get(parentName) ?? { namespace, name: parentName };
     const columns = list(text(row, "columns"));
-    const expression = text(row, "expression");
     const predicate = text(row, "predicate");
+    const expression = indexExpression(row, columns);
     objects.push(
       index({
         parent,
@@ -200,7 +205,37 @@ export async function introspectSchema(
       }),
     );
   }
+  for (const row of extensions) {
+    const name = text(row, "name");
+    const version = text(row, "version");
+    objects.push(
+      extensionObject({
+        name,
+        schema: text(row, "schema"),
+        relocatable: flag(row, "relocatable"),
+        ...(version.length > 0 ? { version } : {}),
+        provenance: { origin: "extension", name },
+      }),
+    );
+  }
   return catalog(objects);
+}
+
+function indexExpression(
+  row: Readonly<Record<string, unknown>>,
+  columns: readonly string[],
+): string {
+  const method = text(row, "am");
+  const stored = text(row, "expression");
+  if (method.length === 0 || method === "btree") return stored;
+  const opclasses = list(text(row, "opc"));
+  const body = columns
+    .map((name, index) => {
+      const opclass = opclasses[index];
+      return opclass === undefined ? quoteIdent(name) : `${quoteIdent(name)} ${opclass}`;
+    })
+    .join(", ");
+  return `using ${method} (${body.length > 0 ? body : stored})`;
 }
 
 /**
@@ -239,6 +274,7 @@ const TABLES = `
   where n.nspname = $1
     and c.relkind in ('r', 'p')
     and ${CHILD}
+    and ${member("c.oid", "pg_class")}
 `;
 
 const COLUMNS = `
@@ -253,6 +289,13 @@ const COLUMNS = `
       else coalesce((select col.collname from pg_collation col where col.oid = a.attcollation), '')
     end as collation,
     pg_get_expr(ad.adbin, ad.adrelid) as expression,
+    (
+      select ext.extname
+      from pg_depend member
+      join pg_extension ext on ext.oid = member.refobjid
+      where member.objid = ty.oid and member.deptype = 'e' and member.classid = 'pg_type'::regclass
+      limit 1
+    ) as extension,
     (
       select owned.relname
       from pg_depend d
@@ -269,6 +312,7 @@ const COLUMNS = `
   where n.nspname = $1
     and c.relkind in ('r', 'p')
     and ${CHILD}
+    and ${member("c.oid", "pg_class")}
 `;
 
 const CONSTRAINTS = `
@@ -304,16 +348,24 @@ const INDEXES = `
       where cols.attnum > 0
     ) as columns,
     pg_get_expr(i.indexprs, i.indrelid) as expression,
-    pg_get_expr(i.indpred, i.indrelid) as predicate
+    pg_get_expr(i.indpred, i.indrelid) as predicate,
+    am.amname as am,
+    (
+      select coalesce(string_agg(opc.opcname, ',' order by cols.ord), '')
+      from unnest(i.indclass) with ordinality as cols(opcoid, ord)
+      join pg_opclass opc on opc.oid = cols.opcoid
+    ) as opc
   from pg_index i
   join pg_class idx on idx.oid = i.indexrelid
   join pg_class tbl on tbl.oid = i.indrelid
   join pg_namespace n on n.oid = tbl.relnamespace
+  join pg_am am on am.oid = idx.relam
   where n.nspname = $1
     and not i.indisprimary
     and not exists (select 1 from pg_constraint con where con.conindid = i.indexrelid)
     and not exists (select 1 from pg_inherits inh where inh.inhrelid = tbl.oid)
     and not exists (select 1 from pg_inherits inh where inh.inhrelid = idx.oid)
+    and ${member("idx.oid", "pg_class")}
 `;
 
 const ENUMS = `
@@ -323,8 +375,24 @@ const ENUMS = `
   join pg_enum e on e.enumtypid = t.oid
   where n.nspname = $1
     and t.typtype = 'e'
+    and ${member("t.oid", "pg_type")}
   order by t.typname, e.enumsortorder
 `;
+
+const EXTENSIONS = `
+  select e.extname as name, n.nspname as schema, e.extrelocatable as relocatable,
+    e.extversion as version
+  from pg_extension e
+  join pg_namespace n on n.oid = e.extnamespace
+  where n.nspname = $1
+`;
+
+function member(oid: string, classid: string): string {
+  return `not exists (
+    select 1 from pg_depend member
+    where member.objid = ${oid} and member.deptype = 'e' and member.classid = '${classid}'::regclass
+  )`;
+}
 
 const SEQUENCES = `
   select c.relname as name, format_type(s.seqtypid, null) as type,
@@ -340,6 +408,7 @@ const SEQUENCES = `
   join pg_class c on c.oid = s.seqrelid
   join pg_namespace n on n.oid = c.relnamespace
   where n.nspname = $1
+    and ${member("c.oid", "pg_class")}
 `;
 
 function partitionMethod(value: string): "range" | "list" | "hash" | undefined {

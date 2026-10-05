@@ -29,6 +29,7 @@ import {
   identitySequence,
   quoteIdent,
 } from "../../dialects/pg/ddl.js";
+import { extensionAlterSteps } from "./extensions.js";
 import { assertNoChains, type Replacement } from "./values.js";
 
 /** Expand, contract, or a step that is neither. */
@@ -47,6 +48,13 @@ export type PlanStep = {
   readonly action: "ddl" | "backfill";
   readonly lock: string;
   readonly transactional: boolean;
+  /**
+   * Set on an extension upgrade the planner could not check.
+   *
+   * Apply reads `pg_extension_update_paths` before any statement and refuses
+   * a missing path. Offline `okm migrate plan` leaves this unverified.
+   */
+  readonly path?: "unverified";
 };
 
 /** A named plan and the class of its strictest step. */
@@ -134,6 +142,7 @@ export function planMigration(request: PlanRequest): MigrationPlan {
   for (const item of afterList) {
     const previous = beforeBy.get(item.key);
     if (previous === undefined || sameDefinition(previous, item.object)) continue;
+    if (previous.kind === "extension" && item.object.kind === "extension") continue;
     if (previous.kind === "type" && item.object.kind === "type") continue;
     if (
       previous.kind === "column" &&
@@ -169,11 +178,16 @@ export function planMigration(request: PlanRequest): MigrationPlan {
   );
   const deferred = new Set(picklists.map((change) => identityKey(change.before.identity)));
   const typeDrops: CatalogObject[] = [];
+  const extensionDrops: CatalogObject[] = [];
   for (const object of [...creationOrder(renamed)].reverse()) {
     const key = identityKey(object.identity);
     if (!dropKeys.has(key) || deferred.has(key) || covered(object, droppedTables)) continue;
     if (object.kind === "type") {
       typeDrops.push(object);
+      continue;
+    }
+    if (object.kind === "extension") {
+      extensionDrops.push(object);
       continue;
     }
     const sql = dropObjectSql(object, schema);
@@ -185,6 +199,12 @@ export function planMigration(request: PlanRequest): MigrationPlan {
     if (sql === undefined) continue;
     steps.push(step(sql, "contract", "ddl", ACCESS));
   }
+  for (const object of extensionDrops) {
+    const sql = dropObjectSql(object, schema);
+    if (sql === undefined) continue;
+    steps.push(step(sql, "contract", "ddl", ACCESS));
+  }
+  steps.push(...extensionAlterSteps(beforeBy, afterBy, dropKeys));
 
   for (const change of alters) {
     for (const sql of alterColumnSql(change.before, change.after, schema)) {
@@ -202,6 +222,15 @@ export function planMigration(request: PlanRequest): MigrationPlan {
   );
   const emitted = new Set<string>();
   for (const object of creationOrder(request.after)) {
+    if (object.kind !== "extension") continue;
+    const key = identityKey(object.identity);
+    if (!createKeys.has(key) || emitted.has(key)) continue;
+    emitted.add(key);
+    const sql = createObjectSql(object, schema);
+    if (sql === undefined) continue;
+    steps.push(step(sql, "expand", "ddl", ACCESS));
+  }
+  for (const object of creationOrder(request.after)) {
     if (object.kind !== "type") continue;
     const key = identityKey(object.identity);
     if (!createKeys.has(key) || emitted.has(key)) continue;
@@ -211,7 +240,7 @@ export function planMigration(request: PlanRequest): MigrationPlan {
     steps.push(step(sql, "expand", "ddl", ACCESS));
   }
   for (const object of creationOrder(request.after)) {
-    if (object.kind === "type") continue;
+    if (object.kind === "type" || object.kind === "extension") continue;
     const key = identityKey(object.identity);
     if (deferred.has(key)) continue;
     const parent = anchoredParent(object);
@@ -255,6 +284,7 @@ export function formatPlan(plan: MigrationPlan): string {
     lines.push(`-- action: ${item.action}`);
     lines.push(`-- lock: ${item.lock}`);
     if (!item.transactional) lines.push("-- transactional: false");
+    if (item.path !== undefined) lines.push(`-- path: ${item.path}`);
     lines.push(`${item.sql};`);
     lines.push("");
   }
@@ -289,6 +319,7 @@ export function parsePlan(text: string): MigrationPlan {
     let action: PlanStep["action"] = "ddl";
     let lock = "";
     let transactional = true;
+    let path: PlanStep["path"];
     const sql: string[] = [];
     while (index < lines.length && (lines[index] ?? "") !== "") {
       const line = lines[index] ?? "";
@@ -298,11 +329,19 @@ export function parsePlan(text: string): MigrationPlan {
         action = line.endsWith("backfill") ? "backfill" : "ddl";
       else if (line.startsWith("-- lock: ")) lock = line.slice("-- lock: ".length);
       else if (line === "-- transactional: false") transactional = false;
+      else if (line === "-- path: unverified") path = "unverified";
       else if (!line.startsWith("--")) sql.push(line);
     }
     const statement = sql.join("\n").replace(/;\s*$/, "");
     if (statement.length > 0) {
-      steps.push({ sql: statement, class: stepClass, action, lock, transactional });
+      steps.push({
+        sql: statement,
+        class: stepClass,
+        action,
+        lock,
+        transactional,
+        ...(path !== undefined ? { path } : {}),
+      });
     }
   }
   return { name, class: steps.length === 0 ? planClass : overall(steps), steps };

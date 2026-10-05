@@ -22,6 +22,7 @@ import {
 } from "./identity.js";
 import { catalog } from "./build.js";
 import { enumType } from "./enum.js";
+import { extensionObject } from "./extension.js";
 import { column, compareText, constraint, index, sequence, table } from "./object.js";
 import { dependencyOrder } from "./order.js";
 import type {
@@ -36,6 +37,7 @@ import type {
   ObjectRef,
   Owner,
   Provenance,
+  ExtensionObject,
   SequenceObject,
   TableObject,
 } from "./types.js";
@@ -266,6 +268,8 @@ function rewriteRenamed(
       return rewriteSequence(object, dependencies);
     case "type":
       return rewriteType(object, dependencies);
+    case "extension":
+      return object;
     default:
       return assertNever(object);
   }
@@ -528,6 +532,7 @@ function rewriteTableName(
   }
   if (object.kind === "sequence") return rewriteSequence(object, dependencies);
   if (object.kind === "type") return rewriteType(object, dependencies);
+  if (object.kind === "extension") return object;
   return assertNever(object);
 }
 
@@ -682,6 +687,14 @@ function definitionToJson(object: CatalogObject): Json {
       };
     case "type":
       return { labels: object.definition.labels };
+    case "extension": {
+      const definition = object.definition;
+      return {
+        relocatable: definition.relocatable,
+        schema: definition.schema,
+        ...(definition.version !== undefined ? { version: definition.version } : {}),
+      };
+    }
     default:
       return assertNever(object);
   }
@@ -722,6 +735,8 @@ function parseObject(value: unknown): CatalogObject {
       return parseSequence(identity, definition, owner, provenance, dependencies);
     case "type":
       return parseType(identity, definition, owner, provenance, dependencies);
+    case "extension":
+      return parseExtension(identity, definition, owner, provenance, dependencies);
     default:
       return assertNeverKind(kind);
   }
@@ -927,6 +942,30 @@ function parseType(
   });
 }
 
+function parseExtension(
+  identity: ObjectIdentity,
+  definition: Record<string, unknown>,
+  owner: Owner,
+  provenance: Provenance,
+  dependencies: readonly ObjectIdentity[],
+): ExtensionObject {
+  if (identity.kind !== "extension") {
+    catalogError("OKM1020", `Extension object identity is ${identity.kind}, not an extension.`);
+  }
+  rejectUnknown(definition, ["relocatable", "schema", "version"], "extension definition");
+  return extensionObject({
+    name: identity.name,
+    schema: requireString(definition.schema, "extension schema"),
+    relocatable: requireBoolean(definition.relocatable, "relocatable"),
+    ...(definition.version !== undefined
+      ? { version: requireString(definition.version, "extension version") }
+      : {}),
+    owner,
+    provenance,
+    dependencies,
+  });
+}
+
 function parseIdentity(value: unknown): ObjectIdentity {
   const record = requireRecord(value, "identity");
   const kind = requireString(record.kind, "identity kind");
@@ -1125,7 +1164,7 @@ function parseDependencies(value: unknown): readonly ObjectIdentity[] {
 }
 
 function isBuiltKind(kind: string): kind is CatalogObject["kind"] {
-  return (BUILT_KINDS as readonly string[]).includes(kind);
+  return kind === "extension" || (BUILT_KINDS as readonly string[]).includes(kind);
 }
 
 function isOwner(value: string): value is Owner {

@@ -220,6 +220,7 @@ const SCHEMA_KNOWN = new Set([
   "casing",
   "codecs",
   "defaults",
+  "extensions",
   "requires",
   "tables",
   "tenancy",
@@ -230,7 +231,6 @@ const SCHEMA_KNOWN = new Set([
 
 /** Later schema options, and the version that adds each one. */
 const SCHEMA_LATER: Readonly<Record<string, string>> = {
-  extensions: "0.3",
   functions: "0.3",
   triggers: "0.3",
   views: "0.3",
@@ -436,6 +436,7 @@ export function schema<const TTables extends readonly AnyTable[]>(
             }),
           );
         }
+        contributeExtensions(config.extensions, objects);
         document = catalog(objects);
       }
       return document;
@@ -642,6 +643,27 @@ function bareTables(tables: readonly AnyTable[]): readonly AnyTable[] {
     }
   }
   return tables;
+}
+
+/**
+ * Asks each `schema({ extensions })` value for its catalog objects.
+ *
+ * The value carries the logic. Core does not read an extension record.
+ * An omitted option does nothing.
+ *
+ * @param value - The option the caller passed
+ * @param objects - Objects the schema is collecting
+ */
+function contributeExtensions(value: unknown, objects: CatalogObject[]): void {
+  if (!Array.isArray(value)) return;
+  for (const item of value) {
+    const produced = (item as { contribute(peers: unknown, built: unknown): unknown }).contribute(
+      value,
+      objects,
+    );
+    if (Array.isArray(produced))
+      for (const object of produced) objects.push(object as CatalogObject);
+  }
 }
 
 function openSchemaTraits(value: unknown): readonly Trait[] | undefined {

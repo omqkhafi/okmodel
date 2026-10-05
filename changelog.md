@@ -14,6 +14,16 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+### ✨ Added
+
+- `extension()` from `okmodel/ext` declares an extension. `schema({ extensions })` stores those objects and, when the catalog is built, asks each one for its record. `citext()` (`okmodel/pg/citext`) and `pgTrgm()` (`okmodel/pg/pg_trgm`) are the built-ins. `pgTrgm.similar` and `pgTrgm.wordSimilar` are where filters.
+- A second declaration of the same extension is OKM1813. A `citext` or `ltree` column whose extension is missing from a non-empty list is OKM1810. Omitting the list leaves the existing dependency check (OKM1020).
+- Migrations create an extension before the tables that use it, upgrade with `ALTER EXTENSION … UPDATE` (the step is `path-unverified` until apply checks `pg_extension_update_paths`), move a relocatable extension with `SET SCHEMA`, and drop with `DROP EXTENSION` and no `CASCADE`. A downgrade or a non-relocatable move is OKM1814. Apply checks `pg_available_extensions` before any statement (OKM1811). An unpinned declaration matches whatever version is installed.
+
+### ♻️ Changed
+
+- Startup gzip replaces lazy chunk ids with a fixed id of the same length before compressing, so a chunk whose only change is its content hash does not move the number.
+
 ## v0.2.1 — 2026-10-05
 
 0.2.0 was tagged but never published to npm, so 0.2.1 is the first public release and includes everything listed under 0.2.0.
