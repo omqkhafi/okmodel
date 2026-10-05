@@ -22,7 +22,7 @@ type Op = { readonly "~plan"?: () => Promise<PreparedWrite> };
  * Runs write handles as one atomic unit.
  *
  * @param session - Client session
- * @param ops - Write handles: `insert`, `update`, `delete`, `archive`, `restore`
+ * @param ops - Write handles: `insert`, `update`, `delete`, `archive`. A `restore`, or a write with `expect`, is OKM1121 (D183)
  * @param options - `signal` and `timeout` for the whole batch
  * @param replica - Set by `.replica()`. A batch needs the primary (OKM1840)
  * @returns One result per operation, in order
@@ -53,10 +53,19 @@ export async function batch(
       if (plan === undefined) {
         fail(
           "OKM1121",
-          "batch takes write operations: insert, update, delete, archive, and restore. Pass them without awaiting.",
+          "batch takes write operations: insert, update, delete, and archive. Pass them without awaiting.",
         );
       }
-      prepared.push(await plan());
+      const item = await plan();
+      if (item.checked !== undefined) {
+        fail(
+          "OKM1121",
+          item.checked === "restore"
+            ? "batch does not take restore: it is refused while its parent is archived, and a batch cannot report that after it commits. Use tx()."
+            : "batch does not take a write with expect: the count is checked after the statement ran, and a batch cannot report that after it commits. Use tx().",
+        );
+      }
+      prepared.push(item);
     }
     return await run(session, prepared, record);
   } catch (error) {

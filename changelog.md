@@ -14,6 +14,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+## v0.2.0 — 2026-10-05
+
 ### ✨ Added
 
 #### contracts
@@ -97,6 +99,9 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The 200-table query probe has gated rows for a project with `okmodel/validate` imported and for one that uses `page`, `aggregate`, and `manyThrough`, each at its measured value plus 3 percent (D176). `scripts/app-relations.ts` is a reported app that uses those features.
 - `startCutProxy` in `@okmodel/harness` cuts the next COMMIT on a TCP connection, and `registerTxSuite` runs one conformance suite of 38 cases on postgres.js, PGlite, node-postgres, and Bun.sql: serializable conflict and retry, a real deadlock, `skip` and `nowait`, timeout and abort kills, a cut commit and a cut batch, pool reuse with no leaked state, and savepoints. A driver that cannot do a case shows it as a skip with the reason.
 - The 200-table query probe has two more gated rows, `query-200+presets` (19,180 / 7,128, ceilings 19,755 / 7,341) and `query-200+tx` (24,283 / 6,948, ceilings 25,011 / 7,156), each at the measured size plus 3 percent (D176).
+- The 0.2 gate runs four property tests on real Postgres with a fixed seed (`OKM_PROPERTY_SEED`, default 20261005) that is printed on failure: `isolation.property` (random compositions of tenancy, traits, presets, relations, `include`, `aggregate`, `page`, writes, `archive`, `restore`, `batch` and `tx` with savepoints and retry, over two tenants with colliding keys, a one-connection pool and a concurrent run), `safety.property` (every safety rule registered together), `statements.shape` (the statement count depends on the shape of the call and never on 0, 1, 10 or 1,000 rows), and `archive.correctness` (archive, restore, cascade, partial uniques and `archiveId` against a model, inside `tx`, savepoints and `batch`). Each is shown to fail when a predicate is dropped on the wire.
+- `scripts/app-full.ts` is a reported app with tenancy, `archivable()`, `timestamps()`, validation, relations, presets, `tx` and `batch` together. The size script prints it beside the plain app. It is not a gate.
+- `batch-refusals.test.ts` runs every write kind in a batch, shows a blocked restore and a wrong `expect` refused with nothing written, and shows both still work in `tx()`. `snapshot-reads.test.ts` shows every read shape is one statement inside `tx({ isolation: "read committed" })` and that a reader never sees half of a committed write. `raw-sql-paths.test.ts` fails when the client or a table gains a method that could take SQL text, or when the runtime layer starts to read the `sql` template. `codes-not-reached.test.ts` records that OKM1110, OKM1191 and OKM1702 are registered and not thrown in 0.2.
 
 #### docs
 
@@ -112,6 +117,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Spec section 6.2.1 describes presets: order of predicates, which calls they reach, names, inspection, and the OKM1040 and OKM1121 cases. D180 records the P28 size and the choices made. Presets are out of the known limits.
 - D176 records the first P27 build (+1,425 / +431 over the stop line), the one redesign in which the relation carries its own emitter, and the probe policy.
 - Spec section 15 gives `timeout` in milliseconds and says a nested `tx()` takes no options. D181 records the P29 numbers and the choices.
+- 0.2.0 "Safety" adds tagged operators, final safety verification, field exposure (`.hidden()`, `.guarded()`, `.sensitive()`), column tenancy, the `timestamps()` and `archivable()` traits with cascade to direct children, validation, `one`, `many` and `manyThrough` relations with `include`, `page` and `aggregate`, presets, `tx` with savepoints and retry, `batch`, row locks, advisory locks, and per-call `{ signal, timeout }`. Its limits are in `docs/known-limits.md`: a unique added by a trait after the tenancy rewrite is not widened; archive cascades to direct children only; `sum` and `avg` over a `text` column, and over a `bigint` read as `bigint`, are OKM1124; `iStartsWith`, `iContains` and `iEndsWith` are not in 0.2; a mixed-sign `interval`, a non-default `IntervalStyle` and a seconds offset on `timetz` are OKM1210 on read; `onRead` is stored and not applied; there is no JSON Schema export; `rls` tenancy is not built; on PGlite and Bun.sql a `tx` timeout or signal cannot kill a statement waiting on a lock; Bun.sql has no notices; batch-mode drivers (Neon, D1) have no adapter; `idleInTransaction` is a client-side timer; a table named `tx` or `batch` is shadowed; and an option or builder that is not in 0.2 throws OKM1061 and names its version. `restore` and any write with `expect` are not allowed in `batch` (OKM1121); use `tx()`.
+- The known-limits page is rewritten in groups and says what happens for each limit. The size page and the README carry the feature-full app (113,705 / 37,506 at startup) and what the entry-chunk size pass could save (at most 31,173 / 11,081 on the plain app, not built).
 
 ### 💥 Breaking Changes
 
@@ -140,8 +147,11 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - In a `where`, a bare object is OKM1121 for every column and `eq(value)` is the equality form for any object value (Temporal, arrays, ranges, json). The comparison operators and `not` take the codec's objects as operands.
 - P29 takes the no-tenancy app from 88,723 / 29,553 to 88,938 / 29,778 (+215 / +225), inside the stop line of +1,400 / +400. No gate or existing ceiling moves. `query-200` is 17,078 / 6,271 (was 17,062 / 6,259).
 - A table named `tx` or `batch` is shadowed by the client method.
+- `withTenantScope` is removed from `src/runtime/plan.ts`. Nothing called it since `withRowFilters` took its place. No behaviour changes.
 
 ### 🐛 Fixed
+
+- `batch` refuses a `restore` and any write that carries `expect` with OKM1121, before any statement is sent, on every driver. Both are checked against the result of their statement, and a batch used to report that after it had committed, leaving its other writes in place (D183). The error names `tx()`.
 
 - A read of an `interval` or `timetz` column no longer fails with OKM1210. `interval` decodes what Postgres sends (`01:30:00`, `1 year 2 mons 3 days 04:05:06.5`, `-2 days`) and an ISO-8601 duration. `timetz` decodes `01:02:03+03` and `±HH:MM`, and the offset is `±HH:MM`. A negative `Temporal.Duration` is written with a sign on each field because Postgres refuses a leading minus (D179). An interval that mixes signs and a `sql_standard` or `postgres_verbose` `IntervalStyle` stay in the known limits.
 - `insert` and `update` `set` refused every object value with OKM1121, including the Temporal values of the default `timestamptz`, `timestamp`, `date`, `time` and `interval` codecs, json and jsonb values, arrays, bytes, ranges and points. A column now takes the objects its codec declares and OKM1121 stays for any other object, so an operator-looking object never reaches a scalar column. A `Date` is not an input of any default codec and is still refused.
