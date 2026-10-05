@@ -304,7 +304,7 @@ find({ where: { name: pgTrgm.similar(q) }, orderBy: pgTrgm.similarity("name", q)
 
 TimescaleDB, ParadeDB and pg_partman add catalog objects rather than types and are evaluated after 1.0.
 
-**Version awareness.** Definitions read `requires.postgres` and the declared extension version. A feature the declared versions lack (`halfvec` below pgvector 0.7, `uuidv7()` below Postgres 18) fails at schema build (OKM1812). Core features are never gated behind an extension.
+**Version awareness.** Definitions read `requires.postgres` and the declared extension version. A feature the declared versions lack (`halfvec` below pgvector 0.7, `uuidv7()` below Postgres 18) fails at schema build (OKM1812). When `requires` is not declared, `okm migrate apply` and `okm push` check the connected server before the first statement: a migration that sets a `default uuidv7()` on a server below 18 without a `uuidv7()` function stops with OKM1812 and nothing is created (D185). Nothing is checked in `connect()`. Core features are never gated behind an extension.
 
 **Lifecycle through migrations.**
 
@@ -618,7 +618,7 @@ References are plain table-name strings (a generic table-name argument cycles th
 
 Modifiers: `.nullable()`, `.default(v)`, `.defaultSql(sql)`, `.primaryKey()`, `.unique({ reason, global })`, `.references(table, opts)`, `.picklist([...], { check })`, `.generated(sql, { stored })`, `.guarded()`, `.hidden()`, `.sensitive()`, `.renamedFrom(name)`, `.sqlName()`, `.comment()`, `.validate(rules | schema)`.
 
-`t.id()` with `uuidv7()` or `uuidv4`, and `t.identity()`, are omitted from insert and update. `t.id({ default: "none" })`, `.primaryKey()`, and a composite `primaryKey` are required on insert (optional when the column already has a default) and omitted from update. A declared `requires` below Postgres 18 rejects `uuidv7()` at schema build (OKM1812) and the message names `defaults.id`.
+`t.id()` with `uuidv7()` or `uuidv4`, and `t.identity()`, are omitted from insert and update. `t.id({ default: "none" })`, `.primaryKey()`, and a composite `primaryKey` are required on insert (optional when the column already has a default) and omitted from update. A declared `requires` below Postgres 18 rejects `uuidv7()` at schema build (OKM1812) and the message names `defaults.id`; with no `requires`, apply refuses it on a server below 18 (D185), and its fix names `t.id({ default: "uuidv4" })` and `schema({ requires })`.
 
 **Client defaults and id generators (0.2, D153, D154).** `.default(x)` takes a literal or a client generator (`uuidv4`, `uuidv7`, `okid(...)`, or a function): the client fills the field on insert when it is omitted, nothing enters the database catalog or its hash, and the column has no database default, so a writer that bypasses okmodel must supply the value. `.defaultSql(sql)` is the database default. `schema({ tables, defaults: { id } })` sets what a bare `t.id()` means; a per-column option wins; `connect({ generators })` replaces a built-in generator for tests. OKID columns are `text` with `COLLATE "C"` so sortable ids order as time. Builder shape (shipped in P19): `t.id({ default: uuidv4 | uuidv7 | okid({ prefix, sortable, length }) })` fills the id in the application; the strings `"uuidv4"`, `"uuidv7"` and `"none"` stay database defaults (`"none"` is column-only, so the insert type requires that id); `okid` and the other generators come from `okmodel/ids`. A literal passed to `.default()` is a database default, a function is a client generator.
 
