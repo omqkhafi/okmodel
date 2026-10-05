@@ -42,6 +42,13 @@ export async function acceptServer(
   options: ExecuteOptions | undefined,
   source: { readonly catalog?: CatalogArtifact; readonly catalogDir?: string },
 ): Promise<void> {
+  // A preset named like a client method would hide that method. Fail before the first query.
+  for (const name in schema.model) {
+    if (schema.model[name]?.presets !== undefined) {
+      (await import("./presets.js")).checkSchema(schema);
+      break;
+    }
+  }
   const version = rows[0]?.[1];
   if (version === null || version === undefined || !version.startsWith("PostgreSQL")) {
     throw new OkmError(

@@ -231,6 +231,13 @@ export type TableModel = {
    */
   readonly archive?: ArchiveModel;
   /**
+   * The table's presets by name: its own and its traits', merged.
+   *
+   * Absent when it has none, so a normal table does not carry the key. The
+   * values are the author's functions; the preset module runs them.
+   */
+  readonly presets?: Readonly<Record<string, unknown>>;
+  /**
    * Validation for this table.
    *
    * Absent until the engine fills it on the first validated call. `schema()`
@@ -279,9 +286,22 @@ export type SchemaHookCtx = {
   readonly open?: (scope: { readonly value: string } | { readonly unscoped: string }) => unknown;
   readonly table?: string;
   readonly view?: "with" | "only";
+  /** The last preset chained on this handle. Absent when none is. */
+  readonly uses?: PresetUse | undefined;
   readonly reopen?: (view?: "with" | "only") => Record<string, unknown>;
   readonly session?: object;
 };
+
+/**
+ * One preset call on a table handle: the call before it, its name, and its arguments.
+ *
+ * A chain is a linked list, newest first, so adding a call allocates one tuple.
+ */
+export type PresetUse = readonly [
+  before: PresetUse | undefined,
+  name: string,
+  args: readonly unknown[],
+];
 
 /** Schema fields the read path and `connect()` read. */
 export type QuerySchema = {

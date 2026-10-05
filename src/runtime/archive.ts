@@ -23,6 +23,7 @@ import {
   type CallScope,
   type Indexed,
 } from "./plan.js";
+import { stack } from "./preset-stack.js";
 import { runSafety, safetyInstalled } from "./safety-hook.js";
 
 registerFailFix("OKM1102", "Pass where, or call .all(reason) to match every row.");
@@ -32,6 +33,8 @@ type LifecycleOp = "archive" | "restore";
 type Mods = {
   readonly all?: string;
   readonly expect?: number;
+  /** Filters the chained presets added. The archive handle resolves them. */
+  readonly presets?: readonly unknown[];
 };
 
 type Host = {
@@ -128,7 +131,8 @@ function planArchive(
   const record = isRecord(options) ? options : {};
   rejectKeys(record, OPTIONS, op);
   const expect = expectOf(record.expect ?? mods.expect);
-  const target = readTarget(op, table, input, mods);
+  const read = readTarget(op, table, input, mods);
+  const target = { ...read, where: stack(read.where, mods.presets) };
   const view: ArchiveView | undefined = op === "restore" ? "only" : undefined;
   noteArchive(table, view);
   const statement = withRowFilters(scope, view, () =>

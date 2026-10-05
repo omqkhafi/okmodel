@@ -31,7 +31,6 @@ import {
   type Indexed,
   type Plan,
   type ReadBuild,
-  type ReadCall,
   type Sink,
 } from "./plan.js";
 
@@ -130,7 +129,7 @@ function plan(
     session.schema,
     view,
   );
-  const call = { ...base, op: "aggregate" as const, build: statement(spec, base) };
+  const call = { ...base, op: "aggregate" as const, build: statement(spec) };
   return readHandle(session, table, call, mods, (compiled, rows) => decode(compiled, rows));
 }
 
@@ -203,8 +202,8 @@ function columns(table: Indexed, value: unknown, option: string): readonly Colum
 }
 
 /** Writes `select ... from ... where ... group by ... order by ... limit`. */
-function statement(spec: Spec, call: ReadCall): ReadBuild {
-  return (schema, table, sink, outputs) => {
+function statement(spec: Spec): ReadBuild {
+  return (schema, table, sink, outputs, call) => {
     sink.mark(
       `aggregate|${table.model.name}|g:${spec.groups.map((column) => column.field).join(",")}|c:${String(spec.count)}|${spec.calls
         .map((item) => `${item.tag}:${item.column.field}`)

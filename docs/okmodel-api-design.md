@@ -576,10 +576,22 @@ export const tasks = table("tasks", {
 | `computed` | SQL expressions usable like fields |
 | `indexes`, `checks` | database indexes, unique constraints, check constraints |
 | `primaryKey` | column names of one primary key, including a composite key |
-| `presets` | named, typed query refinements; called as `tasks.pending()`. Names may not collide with client methods or the reserved list (`lock`, `watch`, `subscribe`, `stream`, `inspect`, `explain`, `with`, `for`, `as`); collisions fail with OKM1040 and `okm upgrade` renames a preset when a later release claims its name |
+| `presets` | named, typed query refinements; called as `tasks.pending()`. Names may not collide with client methods or the reserved list (`lock`, `watch`, `subscribe`, `stream`, `inspect`, `explain`, `with`, `for`, `as`); collisions fail with OKM1040 and `okm upgrade` renames a preset when a later release claims its name. Semantics in 6.2.1 |
 | `policies` | row policies |
 | `reference` | `{ key, rows }`: rows the application requires to exist (roles, statuses). Declarative and idempotent: applied by `migrate apply` and by provisioning as insert-if-missing by key; never updates or deletes; classified `expand` (section 19.6) |
 | `renamedFrom`, `sqlName`, `comment` | table rename declaration, naming, docs |
+
+#### 6.2.1 Presets
+
+A preset is `(q, ...args) => q`. The builder `q` has one method, `where`, which adds a predicate; there is no method that removes or replaces one, and the tenant predicate and the active set are not in the builder at all (D125, D126, D180). A table's `presets` and the `presets` of each of its traits (`trait(name, { fields, presets })`) form one set. A trait's presets see the trait's columns; a table's see the table's declared columns.
+
+- **Calling.** `tasks.ownedBy(userId)` returns the table handle with the preset applied, so calls chain: `tasks.pending().ownedBy(userId).find({ limit: 20 })`. Chaining allocates a small list and runs nothing. The preset functions run, in call order, when the statement is planned.
+- **Where it applies.** `find`, `one`, `count`, `exists`, `aggregate` and `page` read through the chain. `update`, `delete`, `archive` and `restore` act only on rows the chain selects, including each item of a list `update`. `insert` ignores the chain.
+- **Order.** The planner writes the tenant predicate, then the active set, then the caller's `where`, then each preset's predicates in call order, all joined with AND. A preset cannot see or change what was written before it. A caller's `where` and a preset on the same field both hold.
+- **Writes still need a filter.** A preset does not count as the `where` that `update` and `delete` require (OKM1102): pass a `where` or `.all(reason)`. `archive` and `restore` follow the same rule.
+- **Names.** A name that is a client method or on the reserved list is a type error in `table()` and `trait()`, and OKM1040 at runtime: in `trait()` when the trait is built, for a table at `connect()` before the first query. A name defined by a table and a trait, or by two traits, is OKM1040 from `schema()`, and its fix names both sources (`table tasks`, `trait flagged`).
+- **Contract.** A preset must return the builder it was given; anything else is OKM1121 when the call is planned.
+- **Inspection.** `inspect()` lists one `preset` line per call: the name, the fields it filters (never values), the source (`table tasks` or `trait flagged`) and the location where the table was defined. The values are parameters in `sql()`.
 
 ### 6.3 References by name
 
@@ -1313,7 +1325,9 @@ test("today view runs one query", async () => {
 | Validation failed. `issues` lists each path and message key | runtime | OKM1200 |
 | Validation is enabled but `okmodel/validate` was not imported | runtime (first write) and `okm check` | OKM1201 |
 | Validation in two places | `okm check` | OKM1030 |
-| Preset name collides with a client method | types | OKM1040 |
+| Preset name collides with a client method or the reserved list | types, `trait()`, and `connect()` | OKM1040 |
+| A preset name defined by a table and a trait, or by two traits | schema | OKM1040 |
+| A preset does not return its builder | runtime | OKM1121 |
 | Trait field conflict | schema | OKM1012 |
 | `find` without `limit` | types | OKM1101 |
 | Unfiltered `update`/`delete` | types + runtime | OKM1102 |

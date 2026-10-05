@@ -25,6 +25,7 @@ export {
   type TableOptions,
 } from "./table.js";
 
+export type { PresetQuery } from "./preset.js";
 export { custom } from "./custom.js";
 export { ColumnBuilder } from "./column.js";
 export type {

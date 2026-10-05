@@ -591,6 +591,10 @@
       "kind": "stable"
     },
     {
+      "name": "PresetQuery",
+      "kind": "stable"
+    },
+    {
       "name": "Range",
       "kind": "stable"
     },
@@ -1148,6 +1152,10 @@
     },
     {
       "name": "registerFieldExposure",
+      "kind": "stable"
+    },
+    {
+      "name": "registerPresets",
       "kind": "stable"
     },
     {

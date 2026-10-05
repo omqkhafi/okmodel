@@ -84,7 +84,7 @@ test("omitDefaults needs a reason and a declared field conflicts", () => {
   expect(clash.message).toContain("timestamps");
 });
 
-test("a table trait is enough, and trigger enforcement is 0.3", () => {
+test("a table trait is enough, and trigger enforcement and methods are not yet", () => {
   const local = schema({
     casing: "snake",
     tables: [
@@ -102,9 +102,10 @@ test("a table trait is enough, and trigger enforcement is 0.3", () => {
   const trigger = capture(() => timestamps({ enforce: "trigger" }));
   expect(trigger.code).toBe("OKM1061");
   expect(trigger.message).toContain("0.3");
-  const presets = capture(() => trait("labeled", { fields: { label: t.text() }, presets: {} }));
-  expect(presets.code).toBe("OKM1061");
-  expect(presets.message).toContain("presets");
+  const methods = capture(() => trait("labeled", { fields: { label: t.text() }, methods: {} }));
+  expect(methods.code).toBe("OKM1061");
+  expect(methods.message).toContain("methods");
+  expect(() => trait("labeled", { fields: { label: t.text() }, presets: {} })).not.toThrow();
 });
 
 test("insert leaves the clock to the default and update sets updatedAt to now()", async () => {

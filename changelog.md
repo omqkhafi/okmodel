@@ -39,6 +39,9 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `manyThrough("labels", { through: "taskLabels" })` declares a to-many relation through a join table. Name `from` and `to` when the join table has more than one foreign key to a side. It works in `include`, in `has` / `none` / `every`, and in filters. The join rows and the targets carry the tenant and active-set predicates, so a row in another tenant or archived never shows. The relation carries its own resolver and emitter, so a schema without one does not ship them.
 - `t.custom({ ..., accepts: ["Object"] })` names the object kinds a custom codec takes. Without it every object is refused for that column (OKM1121).
 
+- `table({ presets })` and `trait(name, { fields, presets })` declare named, typed query refinements. A preset is `(q, ...args) => q`, its arguments are typed, and the builder has one method, `where`, which adds a predicate. No method removes or replaces one. A reserved or client-method name is a type error. `PresetQuery` is exported for presets written apart from the table.
+- A trait's presets are merged into each table's set through the trait object. A schema-level trait's presets reach every table that keeps the defaults. A name defined by a table and a trait, or by two traits, is OKM1040, and its fix names both sources.
+
 #### adapters
 
 - `okmodel/pg/pg` connects with node-postgres, and `okmodel/pg/bun` connects with Bun.sql. Both are optional peers. The default stays postgres.js. Bun.sql loads only on Bun.
@@ -70,6 +73,12 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Aggregates decode with the source column's codec. `count` is a number, `min` and `max` follow the column, and `sum` and `avg` keep the value type of the column: an exact decimal string for `numeric` by default, a number for `numeric` with `as: "number"` and for integer and float columns. A column whose value is neither a string nor a number is OKM1124.
 - `.required()` on `one()` and a `one()` without `orderBy` that matches more than one row (`not_unique`) have real-Postgres tests, with `inList([])`, `notIn([])`, `has` / `none` / `every`, null ordering, and literal escaping.
 
+- `tasks.pending().ownedBy(userId).find({ limit: 20 })`: a preset is a method on the table handle that returns the handle, so calls chain. They apply to `find`, `one`, `count`, `exists`, `aggregate` and `page`, and narrow the rows `update`, `delete`, `archive` and `restore` act on, including each item of a list `update`. `insert` ignores them. The planner writes the tenant predicate, the active set, the caller's `where`, then each preset's predicates, joined with AND, so a preset cannot remove the tenant predicate or reach an archived row.
+- A write through a preset still needs a `where` or `.all(reason)`. A preset does not stand in for one (OKM1102).
+- `inspect()` lists one `preset` line per call with the preset name, the fields it filters, who defined it (`table tasks` or `trait flagged`) and the source location. Values stay parameters in `sql()`.
+- A preset name that is a client method or reserved fails with OKM1040 in `trait()` when the trait is built and in `connect()` before the first query. A preset that does not return its builder is OKM1121 when the call is planned.
+- `registerPresets()` in `okmodel/safety` registers the rule that a preset adds predicates and never removes or replaces one. A property test composes random chains over a tenant table and checks the statement text and the rows on every read and write.
+
 #### tooling
 
 - `engines.node` is `>=22`. The checks that can run do so on Node, Bun, and Deno, and the runtime entry is imported as an edge bundle. A runtime that cannot run a check prints the reason.
@@ -88,6 +97,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Validation is opt-in. OKM1030 is reported by `okm check`, not while `schema()` compiles. D172 records why the first build was rejected and where the engine lives.
 - D174 moves the missing-import check to the first write. The typed surface arrives in P27 as a module augmentation in `okmodel/validate`.
 - Spec sections 6.2, 10 and 12 describe `manyThrough`, `page`, `aggregate`, and the decode rule. `iStartsWith`, `iContains`, and `iEndsWith` are not in 0.2 (D176); use `ilike()` with an escaped pattern.
+- Spec section 6.2.1 describes presets: order of predicates, which calls they reach, names, inspection, and the OKM1040 and OKM1121 cases. D180 records the P28 size and the choices made. Presets are out of the known limits.
 - D176 records the first P27 build (+1,425 / +431 over the stop line), the one redesign in which the relation carries its own emitter, and the probe policy.
 
 ### 💥 Breaking Changes
@@ -109,6 +119,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - A signal or timeout, a watched query, checkout, listen, stream, the server-version query, and the fix text for write and include errors load on first use. Error codes, messages, SQL, and catalog output stay the same. The no-trait startup graph goes from 85,568 / 28,329 to 83,043 / 27,666. The gates stay.
 - P24 takes the no-tenancy app from 83,043 / 27,666 to 85,356 / 28,361. The gates move to measured plus 3 percent (D160): app startup 87,900 / 29,210, postgres.js 40,200 / 14,090, PGlite 37,800 / 13,450, `pg` 40,900 / 14,410, and Bun.sql 39,700 / 13,940. The 91,000 / 30,000 cap stays.
 - P27 takes the no-tenancy app from 87,408 / 29,001 to 88,278 / 29,326. The gates move to measured plus 3 percent (D160), capped at 91,000 / 30,000: app startup 90,900 / 30,000, postgres.js 41,600 / 14,600, PGlite 39,300 / 13,980, `pg` 42,400 / 14,920, Bun.sql 41,200 / 14,470.
+- P28 takes the no-tenancy app from 88,393 / 29,385 to 88,723 / 29,553 (+330 / +168), inside the stop line of +600 / +180. No gate or ceiling moves. `query-200` measures 17,062 / 6,259 (+143 / +40 over P27b) under 17,300 / 7,100.
+- A `ReadBuild` receives the call it builds for, so `aggregate` writes the `where` of the call after presets were applied and not the one it was created with. The planner reads `ruleLines` for the archive set and for presets.
 - `sum` and `avg` over a field typed `number` or `string` pass the types, and the result has the type of the field. A `bigint` field typed `bigint` is OKM1124.
 - OKM1130 also covers a cursor that `page()` did not return.
 - P27b takes the no-tenancy app from 88,278 / 29,325 to 88,393 / 29,385 (+115 / +60). No gate or ceiling moves. The gated 200-table probes do not move; `query-200-validate` is 24,888 (+3).
@@ -116,6 +128,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### 🐛 Fixed
 
+- A read of an `interval` or `timetz` column no longer fails with OKM1210. `interval` decodes what Postgres sends (`01:30:00`, `1 year 2 mons 3 days 04:05:06.5`, `-2 days`) and an ISO-8601 duration. `timetz` decodes `01:02:03+03` and `±HH:MM`, and the offset is `±HH:MM`. A negative `Temporal.Duration` is written with a sign on each field because Postgres refuses a leading minus (D179). An interval that mixes signs and a `sql_standard` or `postgres_verbose` `IntervalStyle` stay in the known limits.
 - `insert` and `update` `set` refused every object value with OKM1121, including the Temporal values of the default `timestamptz`, `timestamp`, `date`, `time` and `interval` codecs, json and jsonb values, arrays, bytes, ranges and points. A column now takes the objects its codec declares and OKM1121 stays for any other object, so an operator-looking object never reaches a scalar column. A `Date` is not an input of any default codec and is still refused.
 - A range object without `empty` is OKM1210 before any statement. It was sent to the database as a malformed literal.
 - `eq()`, `lt`, `gt`, `between`, `inList` and `not` on a Temporal, array, range or json column failed with OKM1121 for the same reason.

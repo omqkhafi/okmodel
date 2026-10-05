@@ -7,7 +7,7 @@
 
 import type { DriverPool } from "../contracts/driver.js";
 import { OkmError, type ErrorStatuses } from "../contracts/error.js";
-import type { QuerySchema, SchemaHookCtx } from "../dialects/pg/model.js";
+import type { PresetUse, QuerySchema, SchemaHookCtx } from "../dialects/pg/model.js";
 import { attachHttp, queryHandle, settleCall } from "./client.js";
 import type { CallScope } from "./plan.js";
 
@@ -26,6 +26,10 @@ type Op = "archive" | "restore";
 type Mods = {
   readonly all?: string;
   readonly expect?: number;
+  /** Presets chained on the handle. They narrow the rows archived or restored. */
+  readonly uses?: PresetUse | undefined;
+  /** Filters the presets added. Set by `settle` just before the statement is planned. */
+  readonly presets?: readonly unknown[];
 };
 
 /**
@@ -44,10 +48,11 @@ export function attachArchive(target: Record<string, unknown>, ctx: SchemaHookCt
   const session = ctx.session;
   if (table === undefined || reopen === undefined || session === undefined) return;
   const host = session as Host;
+  const mods: Mods = { uses: ctx.uses };
   target.archive = (input: unknown, options: object = {}) =>
-    lifecycle(host, "archive", table, input, options, {});
+    lifecycle(host, "archive", table, input, options, mods);
   target.restore = (input: unknown, options: object = {}) =>
-    lifecycle(host, "restore", table, input, options, {});
+    lifecycle(host, "restore", table, input, options, mods);
   target.withArchived = () => {
     refuse(host, table);
     return reopen("with");
@@ -69,8 +74,8 @@ function lifecycle(
   refuse(host, table);
   return queryHandle(() => run(host, op, table, input, options, mods), {
     sql() {
-      return loadArchive().then((mod) =>
-        mod.explainArchive(host.schema, op, table, input, options, mods, host.scope),
+      return Promise.all([loadArchive(), settle(host, table, mods)]).then(([mod, planned]) =>
+        mod.explainArchive(host.schema, op, table, input, options, planned, host.scope),
       );
     },
     expect(count: number) {
@@ -99,6 +104,13 @@ function loadArchive(): Promise<typeof import("./archive.js")> {
   return archiveMod;
 }
 
+/** Runs the chained presets, when there are any, so the statement can hold their filters. */
+async function settle(host: Host, table: string, mods: Mods): Promise<Mods> {
+  if (mods.uses === undefined) return mods;
+  const { resolve } = await import("./presets.js");
+  return { ...mods, presets: resolve(host.schema, table, mods.uses).wheres };
+}
+
 async function run(
   host: Host,
   op: Op,
@@ -116,7 +128,7 @@ async function run(
       table,
       input,
       options,
-      mods,
+      await settle(host, table, mods),
       host.scope,
     );
   } catch (error) {
