@@ -10,6 +10,7 @@ import { rewriteArchivable } from "../../dialects/pg/archive-bind.js";
 import { uuid } from "../../dialects/pg/keys.js";
 import { definition, unavailable } from "../../dialects/pg/misuse.js";
 import { checkPresetNames, duplicatePreset, type PresetMap } from "../../dialects/pg/preset.js";
+import { timestampRecords } from "../../dialects/pg/fn/touch.js";
 import { timestamptz } from "../../dialects/pg/time.js";
 import type { AnyTable, RowFrom } from "../../dialects/pg/table.js";
 import { installArchiveContributions } from "../archive-rules.js";
@@ -75,6 +76,7 @@ export function trait<
   readonly touch?: readonly (keyof TFields & string)[];
   readonly sealed?: readonly (keyof TFields & string)[];
   apply(model: TraitModel, ctx: TraitContext): void;
+  contribute(peers: unknown, built: unknown): readonly unknown[];
 } & ([keyof TPresets] extends [never] ? unknown : { readonly presets: TPresets }) {
   if (input.presets !== undefined) checkPresetNames(Object.keys(input.presets), `trait ${name}`);
   if (input.methods !== undefined) {
@@ -106,6 +108,9 @@ export function trait<
       addFields(name, checked.fields, model, ctx);
       if (input.presets !== undefined) addPresets(name, input.presets, model, ctx);
     },
+    contribute() {
+      return [];
+    },
   } as ReturnType<typeof trait<TFields, TPresets>>;
 }
 
@@ -135,7 +140,7 @@ function addPresets(
 /**
  * Options for {@link timestamps}.
  *
- * `enforce: "trigger"` is the database trigger. It arrives in 0.3.
+ * `enforce: "trigger"` adds a before-update trigger and its function.
  */
 export type TimestampsOptions = {
   readonly enforce?: "trigger";
@@ -147,8 +152,10 @@ export type TimestampsOptions = {
  * Both are `timestamptz not null default now()`, and input cannot set either
  * of them. Insert leaves them to the default, so one statement stamps both
  * with the same time. Update sets `updatedAt` to `now()` and leaves `createdAt`.
+ * `{ enforce: "trigger" }` also writes `updatedAt` in the database, including
+ * for writers that bypass the client.
  *
- * @param options - Pass `{ enforce: "trigger" }` only when the trigger ships
+ * @param options - Pass `{ enforce: "trigger" }` for the database trigger
  * @returns The timestamps trait
  */
 export function timestamps(options?: TimestampsOptions) {
@@ -158,14 +165,11 @@ export function timestamps(options?: TimestampsOptions) {
         definition(`timestamps() option ${key} is not supported. Accepted options: enforce.`);
       }
     }
-    if (options.enforce === "trigger") {
-      unavailable(`timestamps({ enforce: "trigger" }) is not available yet. It arrives in 0.3.`);
-    }
-    if (options.enforce !== undefined) {
+    if (options.enforce !== undefined && options.enforce !== "trigger") {
       definition(`timestamps() enforce ${String(options.enforce)} must be trigger.`);
     }
   }
-  return trait("timestamps", {
+  const base = trait("timestamps", {
     fields: {
       createdAt: stamped(),
       updatedAt: stamped(),
@@ -173,6 +177,20 @@ export function timestamps(options?: TimestampsOptions) {
     touch: ["updatedAt"],
     sealed: ["createdAt", "updatedAt"],
   });
+  if (options?.enforce !== "trigger") return base;
+  return {
+    ...base,
+    /**
+     * Adds the touch function and one trigger per table.
+     *
+     * @param _peers - Unused. The columns are already in `built`
+     * @param built - Objects staged before traits contribute
+     * @returns The function and trigger records
+     */
+    contribute(_peers: unknown, built: unknown) {
+      return timestampRecords(built);
+    },
+  };
 }
 
 function stamped() {

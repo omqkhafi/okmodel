@@ -32,7 +32,7 @@ export function formatFailure(error: OkmError): string {
  * Runs one `okm` invocation.
  *
  * `--version` stays in the bin. This function handles `build`, `check`,
- * `generate`, `dev`, `push`, `ext list`, `ext check`, and `migrate plan`,
+ * `generate`, `dev`, `push`, `ext list`, `ext check`, `doctor`, and `migrate plan`,
  * `apply`, and `status`.
  *
  * @param argv - Arguments after the program name
@@ -88,6 +88,11 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
       stdout(await statusProject(cwd, invoke(parsed)));
       return;
     }
+  }
+  if (command === "doctor") {
+    const { doctorProject } = await import("./doctor.js");
+    stdout(await doctorProject(cwd, rest[0]));
+    return;
   }
   if (command === "ext") {
     const sub = rest[0];

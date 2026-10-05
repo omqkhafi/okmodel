@@ -10,8 +10,6 @@ An option or builder that is not in 0.2 throws OKM1061 and names the prompt or v
 
 | Item | Version | Prompt |
 | --- | --- | --- |
-| functions | 0.3 | P41 |
-| triggers | 0.3 | P41 |
 | views | 0.3 | P42 |
 | `reference` | 0.4 | P53A |
 | `okmodel/testing` | 0.4 | P54 |
@@ -31,6 +29,14 @@ Also not in 0.2:
 - **`iStartsWith`, `iContains` and `iEndsWith` are not in 0.2** (D176). Use `ilike()` with an escaped pattern.
 - **`aggregate()` has no `having` and no `bucket`** (M2).
 - **Batch-mode drivers have no adapter yet.** Neon HTTP and Cloudflare D1 are covered by the driver contract (`batch` is required on every driver) and there is no adapter in this repository for either.
+
+## Functions and triggers
+
+- **A typed call (`fn.slugify(col)` in a predicate, projection, or order) is not in this version.** `fn()` and `trigger()` are catalog objects. The planner does not compile a call fragment.
+- **`inspect()` does not list triggers.** `okm doctor` lists the triggers on each table. A code argument prints that code.
+- **A plpgsql body is the source text.** Introspection reads `prosrc`. A round trip has no steps when the declared body is that text.
+- **`LANGUAGE sql` with `BEGIN ATOMIC` stores the server reprint.** `prosrc` is empty, so the body is the `BEGIN ATOMIC` block from `pg_get_functiondef`. Dependencies are the `pg_depend` edges. Two introspections of the same function match. A plan from the live catalog back to the author text replaces the function when the reprint differs from the text that was declared.
+- **A trigger `WHEN` is stored as written.** Introspection reads `pg_get_expr`. A predicate Postgres reprints differently is planned as a trigger change. A round trip has no steps when the stored text is already that printed form.
 
 ## Domains
 

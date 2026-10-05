@@ -179,6 +179,8 @@ export type TypeBudgetReport = TypeBudgetCore & {
   readonly queryTx: TypeBudgetRow;
   /** The 200-table query probe plus a `batch` of an insert, an update and a delete. Printed, not gated. */
   readonly queryBatch: TypeBudgetRow;
+  /** The 200-table query probe plus one function and one trigger. Printed, not gated. */
+  readonly queryRoutines: TypeBudgetRow;
 };
 
 /**
@@ -276,6 +278,19 @@ export function measureTypeBudgets(): TypeBudgetReport {
     );
     if (queryPresets === undefined || queryTx === undefined || queryBatch === undefined)
       throw new Error("probe rows missing");
+    const queryRoutines = measureProject(
+      join(root, "consumer"),
+      "query-200+routines",
+      200,
+      (dir) => {
+        writeQueryProject(
+          dir,
+          generateFixture({ seed: 1, tables: 200 }),
+          { declarations },
+          { routines: true },
+        );
+      },
+    );
     return {
       ...budgetReport(rows),
       source: {
@@ -291,6 +306,7 @@ export function measureTypeBudgets(): TypeBudgetReport {
       queryPresets,
       queryTx,
       queryBatch,
+      queryRoutines,
     };
   } finally {
     rmSync(root, { recursive: true, force: true });
