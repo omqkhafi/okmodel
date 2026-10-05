@@ -245,10 +245,13 @@ Each limit, with the version that lifts it, is in [known limits](https://github.
 
 Measured on this release.
 
-|                                   | Minified |   Gzip | Cold import |
-| --------------------------------- | -------: | -----: | ----------: |
-| Runtime entry                     |    5,190 |  1,996 |    1.832 ms |
-| App startup (10 tables, one find) |   83,043 | 27,666 |   11.154 ms |
+|                                              | Minified |   Gzip | Cold import |
+| -------------------------------------------- | -------: | -----: | ----------: |
+| Runtime entry                                |    5,288 |  2,026 |    1.991 ms |
+| App startup (10 tables, one find)            |   88,938 | 29,778 |   10.380 ms |
+| App startup, every 0.2 feature in use (full) |  113,705 | 37,506 |   12.068 ms |
+
+The full app has column tenancy, `archivable()`, `timestamps()`, validation rules, `one`, `many` and `manyThrough` relations, presets, and calls `include`, `page`, `aggregate`, `tx` and `batch`. A feature costs bytes only in an app that uses it: the full app is 24,767 minified and 7,728 gzip bytes above the plain one. The runtime entry and the plain app are gated. The full app is printed, not gated.
 
 The rest of the measurements are in [size](https://github.com/omqkhafi/okmodel/blob/main/docs/size.md).
 

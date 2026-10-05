@@ -996,7 +996,7 @@ await scoped.batch([
 
 **Batch contract.** `batch(ops)` runs the operations as one atomic unit on the primary.
 
-- All commit or none does; results come back in the order given. Operations are independent: none consumes another's result (use `tx()` for that).
+- `batch` takes writes only (`insert`, `update`, `delete`, `archive`, `restore`); a read in the list is OKM1121 (D181). All commit or none does; results come back in the order given. Operations are independent: none consumes another's result (use `tx()` for that).
 - The guarantee is part of the Driver contract, not a capability: `DriverPool.batch` is a required member and an adapter that cannot provide exactly this guarantee is not an OKModel driver (`okm driver test` fails). Interactive drivers implement it as `BEGIN … COMMIT` on a reserved connection; batch-mode drivers use their native atomic call (Neon HTTP transaction, D1 `batch`). `tx()` is the only difference between the two, and it is gated by the `transactions` flag.
 - A failing statement rolls the whole batch back; the error is the mapped database error and carries `batchIndex`, a `number`, or `null` when the failure happens at commit (a deferred constraint); the whole batch is then rolled back.
 - Isolation is the database default. The contract promises atomicity and statement order, nothing more; conformance assumes nothing more. Non-transactional effects (sequence values) are not rolled back, as documented for `tx()`.

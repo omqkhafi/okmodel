@@ -61,6 +61,12 @@ export const VALIDATE_ENTRY = "scripts/app-validate.ts";
 export const RELATIONS_ENTRY = "scripts/app-relations.ts";
 
 /**
+ * The same app with every 0.2 feature in use: tenancy, archivable, validation,
+ * relations, presets, `tx` and `batch`. Reported, not gated (P30).
+ */
+export const FULL_ENTRY = "scripts/app-full.ts";
+
+/**
  * Minified app-fixture ceiling, in bytes (D160).
  *
  * P27 measured 88,278. Plus 3 percent, rounded down, is 90,900, under the 91,000 allowance (D143).
@@ -955,6 +961,9 @@ if (import.meta.main) {
     );
     console.log(`${formatEntry(relating, ci)} (relations app, reported, not gated)`);
     console.log(formatTotal(relating));
+    const full = measureStartup(root, FULL_ENTRY, "app-full.js", ["postgres"], "postgres");
+    console.log(`${formatEntry(full, ci)} (feature-full app, reported, not gated)`);
+    console.log(formatTotal(full));
     printStubbed(app, ci);
     problems.push(...appBudgetProblems(app));
     printColdImportFinding(app, ci);

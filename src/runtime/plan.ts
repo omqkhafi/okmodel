@@ -85,26 +85,6 @@ let activeScope: CallScope | undefined;
 let activeView: ArchiveView | undefined;
 
 /**
- * Runs `fn` with a tenant scope visible to {@link emitWhere}.
- *
- * Restores the previous scope, including when `fn` throws. Sync callers
- * finish the statement before the first await.
- *
- * @param scope - Tenant value or an unscoped reason. `undefined` clears it
- * @param fn - Statement builder
- * @returns Whatever `fn` returns
- */
-export function withTenantScope<T>(scope: CallScope | undefined, fn: () => T): T {
-  const previous = activeScope;
-  activeScope = scope;
-  try {
-    return fn();
-  } finally {
-    activeScope = previous;
-  }
-}
-
-/**
  * Runs `fn` with a tenant scope and an archive visibility visible to {@link emitWhere}.
  *
  * Restores both, including when `fn` throws. Sync callers finish the statement
