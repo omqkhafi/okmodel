@@ -47,6 +47,11 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - Startup gzip replaces lazy chunk ids with a fixed id of the same length before compressing, so a chunk whose only change is its content hash does not move the number.
 
+### 🐛 Fixed
+
+- `okm_meta` and `okm_history` stay out of the author diff. Plan, push, check, and doctor neither create nor drop them, in either direction.
+- A primary key's name key is `pkey` in the schema and in introspection. `CREATE TABLE` writes that constraint's name, so a name other than `{table}_pkey` round-trips. After push, `okm check` reports no drift for a plain key, a composite key, and a named key. When `okm_meta` already exists, `okm check` compares the database with the schema and reports OKM1520 if they differ.
+
 ## v0.2.1 — 2026-10-05
 
 0.2.0 was tagged but never published to npm, so 0.2.1 is the first public release and includes everything listed under 0.2.0.

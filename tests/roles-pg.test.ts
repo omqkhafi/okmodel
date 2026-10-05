@@ -74,9 +74,8 @@ postgresTest(
       expect(planMigration({ before: live, after: second, name: "again" }).steps).toEqual([]);
       const privilegeDrift = planMigration({ before: live, after: declared, name: "declared" })
         .steps.map((step) => step.sql)
-        .filter((statement) => /role|grant|revoke|default privileges/i.test(statement))
-        .filter(
-          (statement) => !statement.includes("okm_meta") && !statement.includes("okm_history"),
+        .filter((statement) =>
+          /role|grant|revoke|default privileges|okm_meta|okm_history/i.test(statement),
         );
       expect(privilegeDrift).toEqual([]);
 

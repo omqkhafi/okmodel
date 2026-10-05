@@ -12,6 +12,7 @@ import { OkmError } from "../../contracts/error.js";
 import type { CatalogObject } from "../../contracts/catalog/types.js";
 import { assertRoleHealth } from "../../dialects/pg/role/check.js";
 import { errorDoc } from "../errors/registry.js";
+import { omitManagedObjects } from "./managed.js";
 import { selectTarget, type InvokeFlags } from "./policy.js";
 import { openProject } from "./project.js";
 
@@ -37,16 +38,17 @@ export async function doctorProject(
     return `${doc.code}: ${doc.title}\n${doc.summary}\n${doc.fix}\n`;
   }
   const opened = await openProject(cwd);
+  const objects = omitManagedObjects(opened.built.catalog).objects;
   if (opened.config.roles !== undefined) {
     const target = selectTarget(opened.config, flags?.target);
     const pool = open({ url: target.url, max: 1 });
     try {
-      await assertRoleHealth(pool, opened.config.roles, opened.built.catalog.objects);
+      await assertRoleHealth(pool, opened.config.roles, objects);
     } finally {
       await pool.close();
     }
   }
-  return formatTriggers(opened.built.catalog.objects);
+  return formatTriggers(objects);
 }
 
 /**

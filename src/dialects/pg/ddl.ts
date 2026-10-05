@@ -376,7 +376,7 @@ export function createTableSql(tableObject: TableObject, source: Catalog, schema
   const lines = columns.map((column) => columnSql(column));
   if (primary !== undefined) {
     const cols = primary.definition.columns.map((name) => quoteIdent(name)).join(", ");
-    lines.push(`primary key (${cols})`);
+    lines.push(`constraint ${quoteIdent(primary.identity.name)} primary key (${cols})`);
   }
   const partition = tableObject.definition.partition;
   const tail =

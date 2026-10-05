@@ -41,6 +41,7 @@ import {
 } from "../../dialects/pg/ddl.js";
 import { privilegeSql } from "../../dialects/pg/role/sql.js";
 import { extensionAlterSteps } from "./extensions.js";
+import { omitManagedObjects } from "./managed.js";
 import { assertNoChains, type Replacement } from "./values.js";
 
 /** Expand, contract, or a step that is neither. */
@@ -135,7 +136,12 @@ const ROW = "ROW EXCLUSIVE";
  * @param request - Catalogs, declared renames, and `--replace` flags
  * @returns Steps in apply order, with one class for the plan
  */
-export function planMigration(request: PlanRequest): MigrationPlan {
+export function planMigration(input: PlanRequest): MigrationPlan {
+  const request: PlanRequest = {
+    ...input,
+    before: omitManagedObjects(input.before),
+    after: omitManagedObjects(input.after),
+  };
   const schema = request.schema ?? "public";
   const renames = request.renames ?? [];
   const replacements = request.replacements ?? [];
