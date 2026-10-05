@@ -2,7 +2,7 @@
 
 0.1 classifies every export as **stable**, **experimental**, or **internal**. The list CI checks is [`tests/fixtures/api-surface.json`](../tests/fixtures/api-surface.json). An export that is not in that file fails the test.
 
-Stable exports are the application API this release commits to. Experimental exports exist and may change their behaviour when the feature arrives (`domain` throws OKM1061 until 0.3). Internal exports are for dialect authors and the sibling entries. They are not the application API.
+Stable exports are the application API this release commits to. Experimental exports exist and may change their behaviour when the feature arrives (`domain` is a catalog type and may still change). Internal exports are for dialect authors and the sibling entries. They are not the application API.
 
 `okmodel` exports `OkmError`, `safe`, the row types (`Row`, `Insert`, `Update`, `Register`), and the driver types. Catalog builders are not on this entry. `table` and `index` for a schema are `okmodel/pg`.
 

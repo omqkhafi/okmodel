@@ -17,7 +17,7 @@ export type Owner = (typeof OWNERS)[number];
  * Object kinds from spec section 5.7.
  *
  * Built in this layer: table, column, index, constraint, sequence, and type.
- * A type object is an enum: ordered labels, and no other form.
+ * A type object is an enum (ordered labels) or a domain (base type and check).
  */
 export const OBJECT_KINDS = [
   "table",
@@ -330,11 +330,24 @@ export type ConstraintDefinition = {
  * Enum definition.
  *
  * `labels` is the stored order. That order is part of the catalog hash.
- * Domains are not represented here.
  */
-export type TypeDefinition = {
+export type EnumDefinition = {
   readonly labels: readonly string[];
 };
+
+/**
+ * Domain definition.
+ *
+ * `base` is the Postgres type the domain is created over. `check` is the
+ * domain check, stored as written. A later base type is refused (OKM1020).
+ */
+export type DomainDefinition = {
+  readonly base: string;
+  readonly check: string;
+};
+
+/** A catalog type: an enum or a domain. */
+export type TypeDefinition = EnumDefinition | DomainDefinition;
 
 /** Sequence definition. Start and increment are decimal integers. */
 export type SequenceDefinition = {

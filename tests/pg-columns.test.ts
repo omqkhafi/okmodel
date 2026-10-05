@@ -125,17 +125,12 @@ test("every builder compiles to a stable catalog column", () => {
   }
 });
 
-test("t.domain fails until 0.3", () => {
-  expect(() => domain("email", text(), "VALUE LIKE '%@%'")).toThrow(OkmError);
-  try {
-    domain("email", text(), "VALUE LIKE '%@%'");
-  } catch (error) {
-    expect(error).toBeInstanceOf(OkmError);
-    if (error instanceof OkmError) {
-      expect(error.code).toBe("OKM1061");
-      expect(error.message).toContain("0.3");
-    }
-  }
+test("t.domain compiles to the domain name and keeps the base codec", () => {
+  const column = domain("email", text(), "((VALUE ~~ '%@%'::text))");
+  const compiled = compileColumn(column, input);
+  expect(compiled.column.definition.dataType).toBe("email");
+  expect(column.state.encode("a@b.c")).toBe(text().state.encode("a@b.c"));
+  expect(column.state.decode("a@b.c")).toBe(text().state.decode("a@b.c"));
 });
 
 test("modifiers compile into defaults, checks, flags, and names", () => {

@@ -8,7 +8,7 @@
  */
 
 import { catalog } from "../../contracts/catalog/build.js";
-import { enumType } from "../../contracts/catalog/enum.js";
+import { domainType, enumType } from "../../contracts/catalog/enum.js";
 import { staticNamespace } from "../../contracts/catalog/identity.js";
 import { extensionObject } from "../../contracts/catalog/extension.js";
 import { column, constraint, index, sequence, table } from "../../contracts/catalog/object.js";
@@ -57,15 +57,17 @@ export async function introspectSchema(
   const namespace = staticNamespace(logical);
   const provenance: Provenance = { origin: "file", name: PROVENANCE_NAME };
   const params = [concrete];
-  const [tables, columns, constraints, indexes, sequences, enums, extensions] = await Promise.all([
-    runner.query(TABLES, params),
-    runner.query(COLUMNS, params),
-    runner.query(CONSTRAINTS, params),
-    runner.query(INDEXES, params),
-    runner.query(SEQUENCES, params),
-    runner.query(ENUMS, params),
-    runner.query(EXTENSIONS, params),
-  ]);
+  const [tables, columns, constraints, indexes, sequences, enums, domains, extensions] =
+    await Promise.all([
+      runner.query(TABLES, params),
+      runner.query(COLUMNS, params),
+      runner.query(CONSTRAINTS, params),
+      runner.query(INDEXES, params),
+      runner.query(SEQUENCES, params),
+      runner.query(ENUMS, params),
+      runner.query(DOMAINS, params),
+      runner.query(EXTENSIONS, params),
+    ]);
   const objects: CatalogObject[] = [];
   const parents = new Map<string, ObjectRef>();
   for (const row of tables) {
@@ -117,6 +119,21 @@ export async function introspectSchema(
   for (const [name, labels] of enumLabels) {
     objects.push(enumType({ namespace, name, labels, provenance }));
   }
+  const domainNames = new Set<string>();
+  const domainChecks = new Map<string, { base: string; checks: string[] }>();
+  for (const row of domains) {
+    const name = text(row, "name");
+    const found = domainChecks.get(name) ?? { base: text(row, "base"), checks: [] };
+    const expression = checkExpression(text(row, "definition"));
+    if (expression.length > 0) found.checks.push(expression);
+    domainChecks.set(name, found);
+  }
+  for (const [name, domain] of domainChecks) {
+    const check = domain.checks.join(" and ");
+    if (check.length === 0) continue;
+    domainNames.add(name);
+    objects.push(domainType({ namespace, name, base: domain.base, check, provenance }));
+  }
   for (const row of columns) {
     const parentName = text(row, "parent");
     const parent = parents.get(parentName) ?? { namespace, name: parentName };
@@ -131,7 +148,7 @@ export async function introspectSchema(
     if (extensionName.length > 0) extra.push({ kind: "extension", name: extensionName });
     const owned = sequenceIdentity.get(sequenceName);
     if (owned !== undefined) extra.push(owned);
-    if (enumLabels.has(dataType)) {
+    if (enumLabels.has(dataType) || domainNames.has(dataType)) {
       extra.push({ kind: "type", namespace, name: dataType });
     }
     const built: ColumnObject = column({
@@ -366,6 +383,19 @@ const INDEXES = `
     and not exists (select 1 from pg_inherits inh where inh.inhrelid = tbl.oid)
     and not exists (select 1 from pg_inherits inh where inh.inhrelid = idx.oid)
     and ${member("idx.oid", "pg_class")}
+`;
+
+const DOMAINS = `
+  select t.typname as name,
+    format_type(t.typbasetype, t.typtypmod) as base,
+    coalesce(pg_get_constraintdef(c.oid), '') as definition
+  from pg_type t
+  join pg_namespace n on n.oid = t.typnamespace
+  left join pg_constraint c on c.contypid = t.oid
+  where n.nspname = $1
+    and t.typtype = 'd'
+    and ${member("t.oid", "pg_type")}
+  order by t.typname, c.conname
 `;
 
 const ENUMS = `

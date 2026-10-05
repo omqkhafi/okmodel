@@ -206,7 +206,9 @@ test("enum removal plans a backfill and a type recreate", () => {
     tables: [table("tasks", { id: t.identity(), status: t.enum("status", ["b"]) })],
   });
   const labels = before.catalog.objects.find((object) => object.kind === "type");
-  expect(labels?.kind === "type" ? labels.definition.labels : []).toEqual(["a", "b"]);
+  expect(
+    labels?.kind === "type" && "labels" in labels.definition ? labels.definition.labels : [],
+  ).toEqual(["a", "b"]);
   const missing = capture(() =>
     planMigration({ before: before.catalog, after: after.catalog, name: "enum" }),
   );
