@@ -144,7 +144,7 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   expect(releaseRef).toBeLessThan(gate);
   expect(release.indexOf("bun ./scripts/release-ref.ts", releaseRef + 1)).toBe(-1);
   expect(release).toContain("tarball_artifact: release-tarball");
-  expect(release).toContain("npm publish packed/okmodel.tgz --access public");
+  expect(release).toContain("npm publish ./packed/okmodel.tgz --access public");
   expect(release).toContain('NPM_CONFIG_PROVENANCE: "true"');
   expect(release).toContain("bun ./scripts/npm-smoke.ts");
   expect(release).toContain("bun ./scripts/github-release.ts");
@@ -169,6 +169,43 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   expect(weekly).toContain("actions: read");
   expect(jsonVersions(weekly, "suite_versions")).toEqual([...POSTGRES_VERSIONS]);
   expect(jsonVersions(weekly, "tarball_versions")).toEqual([...POSTGRES_VERSIONS]);
+});
+
+/**
+ * The first argument of every `npm publish <target>` in a workflow that is not a flag.
+ *
+ * npm reads a target such as `packed/okmodel.tgz` as the git shorthand `user/repo` and tries
+ * to clone `github.com/packed/okmodel.tgz`. Only a target that starts with `./` or `/` is a file.
+ *
+ * @param yaml - Workflow text
+ * @returns Targets that are neither an explicit relative path nor an absolute path
+ */
+function bareNpmPublishTargets(yaml: string): readonly string[] {
+  const bare: string[] = [];
+  for (const match of yaml.matchAll(/\bnpm publish\s+([^\s]+)/g)) {
+    const target = match[1] ?? "";
+    if (target.startsWith("-") || target.startsWith("./") || target.startsWith("/")) continue;
+    bare.push(target);
+  }
+  return bare;
+}
+
+test("npm publish is given the tarball by explicit path, never a bare name", () => {
+  for (const name of readdirSync(join(root, ".github/workflows")).filter((file) =>
+    file.endsWith(".yml"),
+  )) {
+    const yaml = readFileSync(join(root, ".github/workflows", name), "utf8");
+    expect(bareNpmPublishTargets(yaml), name).toEqual([]);
+  }
+  // The guard itself: the form that failed release run 37264007346 is caught.
+  expect(bareNpmPublishTargets("run: npm publish packed/okmodel.tgz --access public")).toEqual([
+    "packed/okmodel.tgz",
+  ]);
+  expect(bareNpmPublishTargets("run: npm publish ./packed/okmodel.tgz --access public")).toEqual(
+    [],
+  );
+  expect(bareNpmPublishTargets("run: npm publish /tmp/okmodel.tgz")).toEqual([]);
+  expect(bareNpmPublishTargets("run: npm publish --access public")).toEqual([]);
 });
 
 test("every job that runs bun run check sets up Node and Deno the way ci.yml does", () => {

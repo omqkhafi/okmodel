@@ -14,6 +14,19 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+## v0.2.1 — 2026-10-05
+
+0.2.0 was tagged but never published to npm, so 0.2.1 is the first public release and includes everything listed under 0.2.0.
+
+### ♻️ Changed
+
+- `bun run type-cost` prints a `query-200+batch` row (a `batch` of an insert, an update and a delete). It has no ceiling. The types of `batch` are unchanged: refusing `restore` and `expect` at compile time was measured and not built, and the known limits say why (D184).
+
+### 🐛 Fixed
+
+- The release workflow now publishes the tarball by explicit path (`npm publish ./packed/okmodel.tgz`). A bare `packed/okmodel.tgz` was read by npm as a `user/repo` git shorthand, and the publish step tried to clone `github.com/packed/okmodel.tgz`. A test now fails when any `npm publish` argument in a workflow does not start with `./` or `/`.
+- `t.id()` on Postgres 15 to 17 with `schema({ requires })` not declared no longer fails with the raw `function uuidv7() does not exist`. `okm migrate apply` and `okm push` raise OKM1812 before they send any statement, so nothing is created, not even `okm_meta`. The message names the column, the migration and the server version, and the fix names both options: Postgres 18 with `schema({ requires })`, or `t.id({ default: "uuidv4" })`. A server that already has a `uuidv7()` function is not refused. Nothing changed in `connect()` or the runtime entry.
+
 ## v0.2.0 — 2026-10-05
 
 ### ✨ Added

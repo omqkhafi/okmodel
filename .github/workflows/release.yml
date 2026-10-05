@@ -122,7 +122,7 @@ jobs:
           path: packed
 
       - name: Publish
-        run: npm publish packed/okmodel.tgz --access public
+        run: npm publish ./packed/okmodel.tgz --access public
         env:
           NPM_CONFIG_PROVENANCE: "true"
 

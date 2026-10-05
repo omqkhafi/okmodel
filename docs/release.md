@@ -20,7 +20,7 @@ git push origin "v${version}"
 
 npm needs a trusted publisher for `okmodel`: repository `omqkhafi/okmodel`, workflow `release.yml`. No token is stored in the repository.
 
-Run the Release workflow on that tag. It refuses the run unless the tag is `v` plus the `package.json` version. It packs one tarball, runs the Postgres matrix against that file, runs `bun run check`, and publishes that same file with `npm publish --access public` and `NPM_CONFIG_PROVENANCE=true`. `npm` performs the trusted-publisher login.
+Run the Release workflow on that tag. It refuses the run unless the tag is `v` plus the `package.json` version. It packs one tarball, runs the Postgres matrix against that file, runs `bun run check`, and publishes that same file with `npm publish ./packed/okmodel.tgz --access public` and `NPM_CONFIG_PROVENANCE=true`. `npm` performs the trusted-publisher login.
 
 After publish, a smoke job installs `okmodel` at that version from npm in a fresh directory and runs the README quickstart against Postgres 17. It fails when the version or its provenance attestation is missing. The registry check retries at most 6 times, 10 seconds apart.
 
