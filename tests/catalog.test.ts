@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 
+import type { CatalogObject } from "../src/contracts/catalog/types.js";
 import { OkmError } from "../src/contracts/index.js";
 import {
   KIND_OPERATIONS,
@@ -66,7 +67,7 @@ test("ownership is stored for managed, external, and ignored", () => {
   expect(ignored.owner).toBe("ignored");
   const built = catalog([ignored, external, managed]);
   const owners = Object.fromEntries(
-    built.objects.map((object) => [object.identity.name, object.owner]),
+    built.objects.map((object) => [objectName(object), object.owner]),
   );
   expect(owners).toEqual({ scratch: "ignored", tasks: "managed", users: "external" });
 });
@@ -84,7 +85,7 @@ test("a partitioned table does not gain copied keys", () => {
     constraint({ parent: events, constraintKind: "primaryKey", columns: ["id"], provenance }),
   ]);
   expect(built.objects).toHaveLength(3);
-  expect(built.objects.some((object) => object.identity.name.includes("low"))).toBe(false);
+  expect(built.objects.some((object) => objectName(object).includes("low"))).toBe(false);
 });
 
 test("snapshots keep the namespace template", () => {
@@ -184,16 +185,16 @@ test("renaming a field keeps constraint and index names", () => {
   const check = renamed.objects.find(
     (object) => object.kind === "constraint" && object.definition.constraintKind === "check",
   );
-  expect(unique?.identity.name).toBe("tasks_email_key");
+  expect(unique === undefined ? "" : objectName(unique)).toBe("tasks_email_key");
   expect(unique?.kind === "constraint" ? unique.definition.columns : []).toEqual(["contact"]);
   expect(unique?.kind === "constraint" ? unique.definition.nameKey : "").toBe("email");
-  expect(fk?.identity.name).toBe("tasks_user_fkey");
+  expect(fk === undefined ? "" : objectName(fk)).toBe("tasks_user_fkey");
   expect(fk?.kind === "constraint" ? fk.definition.columns : []).toEqual(["contact"]);
-  expect(secondary?.identity.name).toBe("tasks_email_idx");
+  expect(secondary === undefined ? "" : objectName(secondary)).toBe("tasks_email_idx");
   expect(secondary?.kind === "index" ? secondary.definition.columns : []).toEqual(["contact"]);
   expect(secondary?.kind === "index" ? secondary.definition.nameKey : "").toBe("email");
-  expect(check?.identity.name).toBe("tasks_positionPositive_check");
-  expect(pk?.identity.name).toBe("tasks_pkey");
+  expect(check === undefined ? "" : objectName(check)).toBe("tasks_positionPositive_check");
+  expect(pk === undefined ? "" : objectName(pk)).toBe("tasks_pkey");
   expect(deterministicName({ parent: "tasks", purpose: "unique", nameKey: "contact" })).not.toBe(
     "tasks_email_key",
   );
@@ -217,7 +218,7 @@ test("a primary key name ignores the column name", () => {
   ]);
   const renamed = renameColumn(built, { parent: tasks, from: "id", to: "taskId" });
   const pk = renamed.objects.find((object) => object.kind === "constraint");
-  expect(pk?.identity.name).toBe("tasks_pkey");
+  expect(pk === undefined ? "" : objectName(pk)).toBe("tasks_pkey");
   expect(pk?.kind === "constraint" ? pk.definition.columns : []).toEqual(["taskId"]);
 });
 
@@ -226,7 +227,7 @@ test("create order is dependencies first, then identity key", () => {
     table({ namespace: ns, name: "b", provenance }),
     table({ namespace: ns, name: "a", provenance }),
   ]);
-  expect(creationOrder(tied).map((object) => object.identity.name)).toEqual(["a", "b"]);
+  expect(creationOrder(tied).map((object) => objectName(object))).toEqual(["a", "b"]);
 
   const tasks = parent("tasks");
   const built = catalog([
@@ -695,3 +696,13 @@ test("a built catalog round-trips to the same bytes", () => {
   expect(serializeCatalog(parseCatalog(serializeCatalog(built)))).toBe(serializeCatalog(built));
   expect(catalogHash(parseCatalog(serializeCatalog(built)))).toBe(catalogHash(built));
 });
+
+function objectName(object: CatalogObject): string {
+  switch (object.kind) {
+    case "grant":
+    case "defaultPrivilege":
+      return "";
+    default:
+      return object.identity.name;
+  }
+}

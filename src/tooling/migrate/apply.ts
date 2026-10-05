@@ -14,6 +14,8 @@ import { catalogHash } from "../../contracts/catalog/document.js";
 import type { DriverConnection } from "../../contracts/driver.js";
 import { OkmError } from "../../contracts/error.js";
 import { quoteIdent } from "../../dialects/pg/ddl.js";
+import { assertCreateRole, currentUser, roleExists } from "../../dialects/pg/role/check.js";
+import { changesRole, createdRoleName } from "../../dialects/pg/role/sql.js";
 import { assertExtensionsAvailable } from "./extensions.js";
 import { assertUuidV7Available } from "./engine.js";
 import { loadConfig, projectHead } from "./project.js";
@@ -58,12 +60,28 @@ export type ApplyRequest = {
   readonly migrations: readonly StoredMigration[];
   /** Runs after the advisory lock is held and before the first step. */
   readonly onLocked?: () => void;
+  /**
+   * Role that runs the migration.
+   *
+   * When it already exists and is not `current_user`, the runner issues one
+   * `SET ROLE` before any statement. That statement is not a plan step.
+   */
+  readonly migrationRole?: string;
+  /**
+   * Schema the migration role may create in.
+   *
+   * When this run creates that role, the runner grants `USAGE` and `CREATE`
+   * on this schema before `SET ROLE`. The default is `public`.
+   */
+  readonly schema?: string;
 };
 
 /** Migrations that ran at least one step in this invocation. */
 export type ApplyReport = {
   readonly target: string;
   readonly applied: readonly string[];
+  /** Set when the runner issued `SET ROLE` at session start. */
+  readonly setRole?: string;
 };
 
 const DEFAULT_LOCK_MS = 5_000;
@@ -168,6 +186,8 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
     await lockTarget(connection, request.target);
     locked = true;
     request.onLocked?.();
+    const session: { setRole?: string } = {};
+    await prepareMigrationRole(connection, request, session);
     await assertExtensionsAvailable(connection, request.migrations);
     await assertUuidV7Available(connection, request.migrations);
     await connection.execute(META);
@@ -179,12 +199,16 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
       if (units.length === 0) continue;
       for (const unit of units) {
         assertUnitPolicy(request, unit);
-        await runUnit(connection, unit, request);
+        await runUnit(connection, unit, request, session);
         for (const item of unit.steps) done.add(`${unit.migrationId}:${String(item.index)}`);
       }
       applied.push(migration.id);
     }
-    return { target: request.target, applied };
+    return {
+      target: request.target,
+      applied,
+      ...(session.setRole !== undefined ? { setRole: session.setRole } : {}),
+    };
   } finally {
     if (locked)
       await connection.execute("select pg_advisory_unlock(hashtext($1))", [
@@ -224,6 +248,7 @@ export async function applyProject(cwd: string, flags: InvokeFlags): Promise<str
         ? { statementTimeoutMs: config.timeouts.statement }
         : {}),
     migrations,
+    ...(config.roles !== undefined ? { migrationRole: config.roles.migration } : {}),
   });
   return formatReport(report);
 }
@@ -263,13 +288,15 @@ export async function pushProject(cwd: string, flags: InvokeFlags): Promise<stri
         steps: plan.steps,
       },
     ],
+    ...(config.roles !== undefined ? { migrationRole: config.roles.migration } : {}),
   });
   return formatReport(report);
 }
 
 function formatReport(report: ApplyReport): string {
-  if (report.applied.length === 0) return `target ${report.target}\nnothing to apply\n`;
-  return `target ${report.target}\n${report.applied.map((id) => `applied ${id}`).join("\n")}\n`;
+  const role = report.setRole !== undefined ? `set role ${report.setRole}\n` : "";
+  if (report.applied.length === 0) return `target ${report.target}\n${role}nothing to apply\n`;
+  return `target ${report.target}\n${role}${report.applied.map((id) => `applied ${id}`).join("\n")}\n`;
 }
 
 function joinMigrations(cwd: string, migrations: string | undefined): string {
@@ -332,10 +359,50 @@ async function readDone(connection: DriverConnection): Promise<Set<string>> {
   return done;
 }
 
+async function prepareMigrationRole(
+  connection: DriverConnection,
+  request: ApplyRequest,
+  session: { setRole?: string },
+): Promise<void> {
+  const role = request.migrationRole;
+  const changes = request.migrations.some((migration) =>
+    migration.steps.some((step) => changesRole(step.sql)),
+  );
+  if (role === undefined) {
+    if (changes) await assertCreateRole(connection, await currentUser(connection));
+    return;
+  }
+  const current = await currentUser(connection);
+  const exists = await roleExists(connection, role);
+  if (changes) await assertCreateRole(connection, exists && current !== role ? role : current);
+  if (exists && current !== role) await assumeRole(connection, role, session);
+}
+
+async function grantSchema(
+  connection: DriverConnection,
+  schema: string,
+  role: string,
+): Promise<void> {
+  await connection.execute(
+    `grant usage, create on schema ${quoteIdent(schema)} to ${quoteIdent(role)}`,
+  );
+}
+
+async function assumeRole(
+  connection: DriverConnection,
+  role: string,
+  session: { setRole?: string },
+): Promise<void> {
+  if (session.setRole === role) return;
+  await connection.execute(`set role ${quoteIdent(role)}`);
+  session.setRole = role;
+}
+
 async function runUnit(
   connection: DriverConnection,
   unit: ApplyUnit,
   request: ApplyRequest,
+  session: { setRole?: string },
 ): Promise<void> {
   const retries = request.retries ?? DEFAULT_RETRIES;
   for (let attempt = 0; attempt <= retries; attempt += 1) {
@@ -349,7 +416,18 @@ async function runUnit(
       for (const item of unit.steps) {
         current = item.index;
         await rebuildInvalidIndex(connection, item.step.sql);
-        await connection.execute(item.step.sql);
+        const created = createdRoleName(item.step.sql);
+        const existed = created !== undefined && (await roleExists(connection, created));
+        if (created === undefined || !existed) await connection.execute(item.step.sql);
+        if (created !== undefined && created === request.migrationRole) {
+          if (!existed) {
+            await grantSchema(connection, request.schema ?? "public", created);
+            await connection.execute(
+              `grant select, insert, update on okm_meta, okm_history to ${quoteIdent(created)}`,
+            );
+          }
+          await assumeRole(connection, created, session);
+        }
         if (!unit.transactional) {
           await connection.execute("begin");
           began = true;

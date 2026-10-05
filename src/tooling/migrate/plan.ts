@@ -22,6 +22,7 @@ import type {
   ConstraintObject,
   FunctionObject,
   MaterializedViewObject,
+  TableObject,
   ViewColumn,
   ViewObject,
 } from "../../contracts/catalog/types.js";
@@ -38,6 +39,7 @@ import {
   refreshMaterializedViewSql,
   viewSql,
 } from "../../dialects/pg/ddl.js";
+import { privilegeSql } from "../../dialects/pg/role/sql.js";
 import { extensionAlterSteps } from "./extensions.js";
 import { assertNoChains, type Replacement } from "./values.js";
 
@@ -153,7 +155,10 @@ export function planMigration(request: PlanRequest): MigrationPlan {
   )[] = [];
   const alters: { readonly before: ColumnObject; readonly after: ColumnObject }[] = [];
   for (const item of beforeList) {
-    if (!afterBy.has(item.key)) dropKeys.add(item.key);
+    if (!afterBy.has(item.key)) {
+      if (item.object.kind === "role") continue;
+      dropKeys.add(item.key);
+    }
   }
   for (const item of afterList) {
     if (!beforeBy.has(item.key)) createKeys.add(item.key);
@@ -162,6 +167,7 @@ export function planMigration(request: PlanRequest): MigrationPlan {
     const previous = beforeBy.get(item.key);
     if (previous === undefined || sameDefinition(previous, item.object)) continue;
     if (previous.kind === "extension" && item.object.kind === "extension") continue;
+    if (previous.kind === "role" && item.object.kind === "role") continue;
     if (
       previous.kind === "function" &&
       item.object.kind === "function" &&
@@ -203,8 +209,10 @@ export function planMigration(request: PlanRequest): MigrationPlan {
   omitOwnedSequences(createKeys, afterBy, request.after);
   omitOwnedSequences(dropKeys, beforeBy, renamed);
 
+  const privileges = privilegeSql(renamed.objects, request.after.objects, schema);
   const steps: PlanStep[] = [];
   steps.push(...renameSteps(request.before, renames, schema));
+  for (const sql of privileges.revoke) steps.push(step(sql, "contract", "ddl", ACCESS));
   steps.push(...keptNames.map((item) => renameShapeStep(item, schema)));
   steps.push(...enumAddSteps(enums));
   steps.push(...domainCheckSteps(beforeBy, afterBy, schema));
@@ -213,7 +221,7 @@ export function planMigration(request: PlanRequest): MigrationPlan {
   const droppedTables = new Set(
     [...dropKeys]
       .map((key) => beforeBy.get(key))
-      .filter((object): object is CatalogObject => object?.kind === "table")
+      .filter((object): object is TableObject => object?.kind === "table")
       .map((object) => object.identity.name),
   );
   const deferred = new Set(picklists.map((change) => identityKey(change.before.identity)));
@@ -280,10 +288,11 @@ export function planMigration(request: PlanRequest): MigrationPlan {
   const createdTables = new Set(
     [...createKeys]
       .map((key) => afterBy.get(key))
-      .filter((object): object is CatalogObject => object?.kind === "table")
+      .filter((object): object is TableObject => object?.kind === "table")
       .map((object) => object.identity.name),
   );
   const emitted = new Set<string>();
+  for (const sql of privileges.prepare) steps.push(step(sql, "expand", "ddl", ACCESS));
   for (const object of creationOrder(request.after)) {
     if (object.kind !== "extension") continue;
     const key = identityKey(object.identity);
@@ -377,6 +386,7 @@ export function planMigration(request: PlanRequest): MigrationPlan {
     );
   }
 
+  for (const sql of privileges.grant) steps.push(step(sql, "expand", "ddl", ACCESS));
   steps.push(...contractSwaps(picklists, enums, replacements, schema));
   return {
     name: request.name ?? "migration",
@@ -589,7 +599,7 @@ function pairSameShape(
     used.add(rightKey);
     dropKeys.delete(identityKey(left.identity));
     createKeys.delete(rightKey);
-    if (left.identity.name !== right.identity.name) pairs.push({ from: left, to: right });
+    if (anchoredName(left) !== anchoredName(right)) pairs.push({ from: left, to: right });
   }
   return pairs;
 }
@@ -646,7 +656,9 @@ function assertUnambiguous(
     const group = groupOf(object);
     if (group === undefined) continue;
     const list = dropped.get(group) ?? [];
-    list.push(object.identity.name);
+    const name = anchoredName(object);
+    if (name === undefined) continue;
+    list.push(name);
     dropped.set(group, list);
   }
   for (const [key, object] of afterBy) {
@@ -654,7 +666,9 @@ function assertUnambiguous(
     const group = groupOf(object);
     if (group === undefined) continue;
     const list = added.get(group) ?? [];
-    list.push(object.identity.name);
+    const name = anchoredName(object);
+    if (name === undefined) continue;
+    list.push(name);
     added.set(group, list);
   }
   for (const [group, names] of added) {
@@ -668,6 +682,16 @@ function assertUnambiguous(
     throw new OkmError("OKM1530", `Drop ${from} and add ${to} could be a rename. ${line}`, {
       fix: { summary: line },
     });
+  }
+}
+
+function anchoredName(object: CatalogObject): string | undefined {
+  switch (object.kind) {
+    case "grant":
+    case "defaultPrivilege":
+      return undefined;
+    default:
+      return object.identity.name;
   }
 }
 

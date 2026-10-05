@@ -2,12 +2,17 @@
  * `okm doctor`.
  *
  * A code prints the registry entry. With no code, the project is loaded and
- * each table's triggers are listed. The command does not connect.
+ * each table's triggers are listed. When `roles` is set, the command also
+ * connects and checks that those roles exist, that a managed role can be
+ * created, and that the application role can reach each managed object.
  */
 
+import { open } from "../../adapters/pg/postgresjs.js";
 import { OkmError } from "../../contracts/error.js";
 import type { CatalogObject } from "../../contracts/catalog/types.js";
+import { assertRoleHealth } from "../../dialects/pg/role/check.js";
 import { errorDoc } from "../errors/registry.js";
+import { selectTarget, type InvokeFlags } from "./policy.js";
 import { openProject } from "./project.js";
 
 /**
@@ -17,7 +22,11 @@ import { openProject } from "./project.js";
  * @param code - Spec code, when the caller passed one
  * @returns Text for stdout, including the trailing newline
  */
-export async function doctorProject(cwd: string, code: string | undefined): Promise<string> {
+export async function doctorProject(
+  cwd: string,
+  code: string | undefined,
+  flags?: InvokeFlags,
+): Promise<string> {
   if (code !== undefined) {
     const doc = errorDoc(code);
     if (doc === undefined) {
@@ -28,6 +37,15 @@ export async function doctorProject(cwd: string, code: string | undefined): Prom
     return `${doc.code}: ${doc.title}\n${doc.summary}\n${doc.fix}\n`;
   }
   const opened = await openProject(cwd);
+  if (opened.config.roles !== undefined) {
+    const target = selectTarget(opened.config, flags?.target);
+    const pool = open({ url: target.url, max: 1 });
+    try {
+      await assertRoleHealth(pool, opened.config.roles, opened.built.catalog.objects);
+    } finally {
+      await pool.close();
+    }
+  }
   return formatTriggers(opened.built.catalog.objects);
 }
 

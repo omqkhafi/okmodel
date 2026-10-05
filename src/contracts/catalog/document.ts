@@ -23,6 +23,7 @@ import {
 import { catalog } from "./build.js";
 import { domainType, enumType, isDomain } from "./enum.js";
 import { extensionObject } from "./extension.js";
+import { defaultPrivilegeObject, grantObject, roleObject } from "./privilege.js";
 import { functionObject, triggerObject } from "./routine.js";
 import { materializedViewIndex, materializedViewObject, viewObject } from "./view.js";
 import { column, compareText, constraint, index, sequence, table } from "./object.js";
@@ -303,6 +304,10 @@ function rewriteRenamed(
       );
       return rewriteView(object, dependencies, rewriteExpr(object.definition.query, change, local));
     }
+    case "role":
+    case "grant":
+    case "defaultPrivilege":
+      return retargeted(object, dependencies);
     case "trigger": {
       const local = sameRef(object.identity.parent, change.parent);
       return triggerObject({
@@ -692,6 +697,9 @@ function rewriteTableName(
       rewriteExpr(object.definition.query, { from: change.from, to: change.to }, local),
     );
   }
+  if (object.kind === "role" || object.kind === "grant" || object.kind === "defaultPrivilege") {
+    return retargeted(object, dependencies);
+  }
   if (object.kind === "trigger") {
     const parent = movedParent(object.identity.parent, change);
     const local = parent.name !== object.identity.parent.name;
@@ -934,6 +942,11 @@ function definitionToJson(object: CatalogObject): Json {
         query: object.definition.query,
         ...(object.definition.refresh !== undefined ? { refresh: object.definition.refresh } : {}),
       };
+    case "role":
+      return { inherit: object.definition.inherit, login: object.definition.login };
+    case "grant":
+    case "defaultPrivilege":
+      return {};
     default:
       return assertNever(object);
   }
@@ -983,6 +996,12 @@ function parseObject(value: unknown): CatalogObject {
     case "view":
     case "materializedView":
       return parseView(kind, identity, definition, owner, provenance, dependencies);
+    case "role":
+      return parseRole(identity, definition, owner, provenance, dependencies);
+    case "grant":
+      return parseGrant(identity, definition, owner, provenance, dependencies);
+    case "defaultPrivilege":
+      return parseDefaultPrivilege(identity, definition, owner, provenance, dependencies);
     default:
       return assertNeverKind(kind);
   }
@@ -1486,21 +1505,99 @@ function parseRef(value: unknown): ObjectRef {
 }
 
 function parseGrantObject(value: unknown): {
-  readonly kind: "table" | "sequence" | "namespace";
+  readonly kind: "table" | "view" | "materializedView" | "sequence" | "function" | "namespace";
   readonly namespace: Namespace;
   readonly name: string;
 } {
   const record = requireRecord(value, "grant object");
   rejectUnknown(record, ["kind", "name", "namespace"], "grant object");
   const kind = requireString(record.kind, "grant object kind");
-  if (kind !== "table" && kind !== "sequence" && kind !== "namespace") {
-    catalogError("OKM1020", `Grant object kind ${kind} must be table, sequence, or namespace.`);
+  if (
+    kind !== "table" &&
+    kind !== "view" &&
+    kind !== "materializedView" &&
+    kind !== "sequence" &&
+    kind !== "function" &&
+    kind !== "namespace"
+  ) {
+    catalogError(
+      "OKM1020",
+      `Grant object kind ${kind} must be table, view, materializedView, sequence, function, or namespace.`,
+    );
   }
   return {
     kind,
     name: requireString(record.name, "grant object name"),
     namespace: parseNamespace(record.namespace),
   };
+}
+
+function parseRole(
+  identity: ObjectIdentity,
+  definition: Record<string, unknown>,
+  owner: Owner,
+  provenance: Provenance,
+  dependencies: readonly ObjectIdentity[],
+): CatalogObject {
+  if (identity.kind !== "role") {
+    catalogError("OKM1020", `Role object identity is ${identity.kind}, not a role.`);
+  }
+  rejectUnknown(definition, ["inherit", "login"], "role definition");
+  return roleObject({
+    name: identity.name,
+    login: requireBoolean(definition.login, "login"),
+    inherit: requireBoolean(definition.inherit, "inherit"),
+    owner,
+    provenance,
+    dependencies,
+  });
+}
+
+function parseGrant(
+  identity: ObjectIdentity,
+  definition: Record<string, unknown>,
+  owner: Owner,
+  provenance: Provenance,
+  dependencies: readonly ObjectIdentity[],
+): CatalogObject {
+  if (identity.kind !== "grant") {
+    catalogError("OKM1020", `Grant object identity is ${identity.kind}, not a grant.`);
+  }
+  rejectUnknown(definition, [], "grant definition");
+  return grantObject({
+    role: identity.role,
+    object: identity.object,
+    privilege: identity.privilege,
+    owner,
+    provenance,
+    dependencies,
+  });
+}
+
+function parseDefaultPrivilege(
+  identity: ObjectIdentity,
+  definition: Record<string, unknown>,
+  owner: Owner,
+  provenance: Provenance,
+  dependencies: readonly ObjectIdentity[],
+): CatalogObject {
+  if (identity.kind !== "defaultPrivilege") {
+    catalogError(
+      "OKM1020",
+      `Default privilege object identity is ${identity.kind}, not a default privilege.`,
+    );
+  }
+  rejectUnknown(definition, [], "default privilege definition");
+  return defaultPrivilegeObject({
+    forRole: identity.forRole,
+    namespace: identity.namespace,
+    objectKind: identity.objectKind,
+    grantee: identity.grantee,
+    privilege: identity.privilege,
+    owner,
+    provenance,
+    dependencies,
+  });
 }
 
 function parsePartition(value: unknown): {
@@ -1601,6 +1698,9 @@ function isBuiltKind(kind: string): kind is CatalogObject["kind"] {
     kind === "trigger" ||
     kind === "view" ||
     kind === "materializedView" ||
+    kind === "role" ||
+    kind === "grant" ||
+    kind === "defaultPrivilege" ||
     (BUILT_KINDS as readonly string[]).includes(kind)
   );
 }

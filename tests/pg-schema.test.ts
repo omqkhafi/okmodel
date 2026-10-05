@@ -4,6 +4,7 @@
 
 import { expect, test } from "bun:test";
 
+import type { CatalogObject } from "../src/contracts/catalog/types.js";
 import { OkmError } from "../src/contracts/error.js";
 import {
   catalogHash,
@@ -71,7 +72,7 @@ test("schema compiles a hashable catalog", () => {
 test("names, dependencies, and referential actions are stored", () => {
   const document = built().catalog;
   const names = document.objects.map((object) =>
-    object.kind === "table" ? object.identity.name : `${object.kind}:${object.identity.name}`,
+    object.kind === "table" ? objectName(object) : `${object.kind}:${objectName(object)}`,
   );
   expect(names).toContain("tasks");
   expect(names).toContain("users");
@@ -91,7 +92,7 @@ test("names, dependencies, and referential actions are stored", () => {
       object.identity.parent.name === "tasks" &&
       object.definition.constraintKind === "primaryKey",
   );
-  expect(pk?.identity.name).toBe("tasks_pkey");
+  expect(pk === undefined ? "" : objectName(pk)).toBe("tasks_pkey");
   const check = document.objects.find(
     (object) =>
       object.kind === "constraint" &&
@@ -409,6 +410,16 @@ test("a column primary key and a primaryKey option cannot both be set", () => {
   expect(error.code).toBe("OKM1020");
   expect(error.message).toContain("One primary key");
 });
+
+function objectName(object: CatalogObject): string {
+  switch (object.kind) {
+    case "grant":
+    case "defaultPrivilege":
+      return "";
+    default:
+      return object.identity.name;
+  }
+}
 
 function capture(run: () => unknown): OkmError {
   try {
