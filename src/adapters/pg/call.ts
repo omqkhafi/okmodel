@@ -35,8 +35,8 @@ export function needsWatch(options: ExecuteOptions | undefined): boolean {
 /**
  * Next transaction depth after one statement.
  *
- * Only a whole command matches, so `ROLLBACK TO SAVEPOINT` stays inside the
- * transaction. Kept here so a read does not load the batch runner.
+ * `BEGIN` may carry modes (`begin isolation level serializable`). `ROLLBACK TO
+ * SAVEPOINT` stays inside the transaction. Kept here so a read does not load the batch runner.
  *
  * @param depth - Depth before the statement
  * @param text - Statement text
@@ -44,9 +44,7 @@ export function needsWatch(options: ExecuteOptions | undefined): boolean {
  */
 export function nextTransactionDepth(depth: number, text: string): number {
   const command = text.trim().replace(/;\s*$/, "").trim().toLowerCase();
-  if (command === "begin" || command === "begin work" || command === "begin transaction") {
-    return depth + 1;
-  }
+  if (/^(?:begin|start transaction)(?:\s|$)/.test(command)) return depth + 1;
   if (command === "commit" || command === "commit work" || command === "end") {
     return Math.max(0, depth - 1);
   }

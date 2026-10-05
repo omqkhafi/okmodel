@@ -5,7 +5,7 @@
  * predicate stays in the planner, so a failed import does not show archived rows.
  */
 
-import type { DriverPool, ExecuteOptions, ExecuteResult } from "../contracts/driver.js";
+import type { ExecuteOptions, ExecuteResult } from "../contracts/driver.js";
 import { OkmError } from "../contracts/error.js";
 import type { ArchiveLink, QuerySchema } from "../dialects/pg/model.js";
 import { isOperator } from "../dialects/pg/operators.js";
@@ -25,6 +25,8 @@ import {
 } from "./plan.js";
 import { stack } from "./preset-stack.js";
 import { runSafety, safetyInstalled } from "./safety-hook.js";
+import { runWrite, type RunHost } from "./tx.js";
+import type { PreparedWrite } from "./write.js";
 
 registerFailFix("OKM1102", "Pass where, or call .all(reason) to match every row.");
 
@@ -37,9 +39,8 @@ type Mods = {
   readonly presets?: readonly unknown[];
 };
 
-type Host = {
+type Host = RunHost & {
   readonly schema: QuerySchema;
-  readonly pool: DriverPool;
 };
 
 const OPTIONS = ["allow", "expect", "returning", "signal", "timeout"] as const;
@@ -68,9 +69,40 @@ export async function executeArchive(
   mods: Mods,
   scope: CallScope | undefined,
 ): Promise<{ readonly count: number; readonly archiveId?: string }> {
-  const planned = planArchive(host.schema, op, table, input, options, mods, scope);
-  const result = await host.pool.execute(planned.text, planned.params, planned.call);
-  return finish(op, table, result, planned);
+  const prepared = prepareArchive(host.schema, op, table, input, options, mods, scope);
+  const results = await runWrite(host, prepared.statements, prepared.options);
+  return prepared.finish(results) as { readonly count: number; readonly archiveId?: string };
+}
+
+/**
+ * Plans archive or restore and returns its statement and the function that decodes the result.
+ *
+ * `batch` runs the statement with those of other operations.
+ *
+ * @param schema - Connected schema
+ * @param op - `archive` or `restore`
+ * @param table - Table name
+ * @param input - `{ where }` or `{ archiveId }`
+ * @param options - `expect`, signal, and timeout
+ * @param mods - `.all` and `.expect`
+ * @param scope - Tenant value, when the schema has tenancy
+ * @returns The statement, the call options, and `finish`
+ */
+export function prepareArchive(
+  schema: QuerySchema,
+  op: LifecycleOp,
+  table: string,
+  input: unknown,
+  options: object,
+  mods: Mods,
+  scope: CallScope | undefined,
+): PreparedWrite {
+  const planned = planArchive(schema, op, table, input, options, mods, scope);
+  return {
+    statements: [{ text: planned.text, params: planned.params }],
+    options: planned.call,
+    finish: (results) => finish(op, table, results[0] as ExecuteResult, planned),
+  };
 }
 
 /**

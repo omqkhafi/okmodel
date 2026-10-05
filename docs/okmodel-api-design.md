@@ -591,7 +591,7 @@ A preset is `(q, ...args) => q`. The builder `q` has one method, `where`, which 
 - **Writes still need a filter.** A preset does not count as the `where` that `update` and `delete` require (OKM1102): pass a `where` or `.all(reason)`. `archive` and `restore` follow the same rule.
 - **Names.** A name that is a client method or on the reserved list is a type error in `table()` and `trait()`, and OKM1040 at runtime: in `trait()` when the trait is built, for a table at `connect()` before the first query. A name defined by a table and a trait, or by two traits, is OKM1040 from `schema()`, and its fix names both sources (`table tasks`, `trait flagged`).
 - **Contract.** A preset must return the builder it was given; anything else is OKM1121 when the call is planned.
-- **Inspection.** `inspect()` lists one `preset` line per call: the name, the fields it filters (never values), the source (`table tasks` or `trait flagged`) and the location where the table was defined. The values are parameters in `sql()`.
+- **Inspection.** `inspect()` lists one `preset` line per call: the name, the fields it filters (never values), the source (`table tasks` or `trait flagged`) and the location where the table was defined. The values are parameters in `sql()`. On a preset read `sql()` and `inspect()` are asynchronous, because the preset code loads when the statement is planned.
 
 ### 6.3 References by name
 
@@ -973,7 +973,7 @@ Code ranges: OKM1000 schema · 1100 queries and capabilities · 1200 validation 
 ## 15. Transactions and batches
 
 ```ts
-await scoped.tx({ isolation: "serializable", retry: 3, timeout: "5s" }, async (t) => {
+await scoped.tx({ isolation: "serializable", retry: 3, timeout: 5_000 }, async (t) => {
   const list = await t.lists.insert({ name: "Inbox" });
   await t.tasks.insert({ listId: list.id, title: "Welcome" });
   t.afterCommit(() => sendWelcomeEmail(list.id));
@@ -985,6 +985,7 @@ await scoped.batch([
 ]);
 ```
 
+- Every `timeout` is a number of milliseconds, in `tx()` options, in a call, and in `connect({ timeouts })` (D181). The `tx()` timeout covers the whole transaction, retries included. A nested `tx()` takes no options (OKM1121): isolation, retry, timeout and signal belong to the outermost one.
 - Row locks on reads: `find({ lock: "update" | "share", wait: "nowait" | "skip" })` inside `tx()` only (OKM1830 outside one). `t.advisoryLock(key)` takes a transaction-level advisory lock.
 - `connect({ timeouts })` keys: `acquire` (waiting for a connection), `statement`, `transaction`, `idleInTransaction`. Cancelling a call inside `tx()` fails the transaction and rolls it back; cancelling after completion has no effect. Server notices reach `hookm.onNotice`.
 - Every timeout (statement, transaction, batch) is kind `timeout`; `cancelled` arises only from the caller's `signal` and is never retried (D124).

@@ -71,7 +71,7 @@ export function writeProductionInferredProject(
  *
  * The gated probe uses none. Each feature is measured on its own row and printed.
  */
-export type ProbeFeature = "page" | "aggregate" | "through";
+export type ProbeFeature = "page" | "aggregate" | "through" | "presets" | "tx";
 
 const PROBE_FEATURES: readonly ProbeFeature[] = [];
 
@@ -97,9 +97,10 @@ export function writeQueryProject(
   const validate = options.validate === true;
   const features = options.features ?? PROBE_FEATURES;
   const through = features.includes("through");
+  const presets = features.includes("presets");
   const lines: string[] = [
     ...(validate ? [`import "${libraryFile(dir, target, "runtime/validate/index")}";`] : []),
-    `import { many, ${through ? "manyThrough, " : ""}one, schema, table, t } from "${pg}";`,
+    `import { ${presets ? "inList, " : ""}many, ${through ? "manyThrough, " : ""}one, schema, table, t } from "${pg}";`,
     "",
   ];
   lines.push(
@@ -109,7 +110,11 @@ export function writeQueryProject(
     "  id: t.id(),",
     '  ownerId: t.uuid().references("owner"),',
     "  body: t.text(),",
-    `}, { relations: { owner: one("owner")${through ? ', tags: manyThrough("tag", { through: "noteTag" })' : ""} } });`,
+    `}, { relations: { owner: one("owner")${through ? ', tags: manyThrough("tag", { through: "noteTag" })' : ""} }${
+      presets
+        ? ", presets: { ownedBy: (q, owner: string) => q.where({ ownerId: owner }), bodyIn: (q, ...bodies: readonly string[]) => q.where({ body: inList(bodies) }) }"
+        : ""
+    } });`,
     "",
   );
   const names = ["owner", "note"];
@@ -188,6 +193,27 @@ export function writeQueryProject(
         ? [
             "export function tagged(db: Connected<typeof appSchema>) {",
             '  return db.note.find({ where: { tags: has({ label: eq("a") }) }, include: { tags: { limit: 3 } }, limit: 2 });',
+            "}",
+            "",
+          ]
+        : []),
+      ...(presets
+        ? [
+            "export function preset(db: Connected<typeof appSchema>) {",
+            '  return db.note.ownedBy("00000000-0000-4000-8000-000000000001").bodyIn("a", "b").find({ select: ["id", "body"] as const, limit: 2 });',
+            "}",
+            "",
+          ]
+        : []),
+      ...(features.includes("tx")
+        ? [
+            "export function inTx(db: Connected<typeof appSchema>) {",
+            '  return db.tx({ isolation: "serializable", retry: 2 }, async (t) => {',
+            '    const rows = await t.note.find({ where: { body: eq("a") }, select: ["id", "body"] as const, limit: 2, lock: "update", wait: "skip" });',
+            '    await t.note.update({ where: { body: "a" }, set: { body: "b" } });',
+            "    t.afterCommit(() => undefined);",
+            "    return rows;",
+            "  });",
             "}",
             "",
           ]

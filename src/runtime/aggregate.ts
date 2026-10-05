@@ -34,7 +34,19 @@ import {
   type Sink,
 } from "./plan.js";
 
-const OPTIONS = ["where", "groupBy", "count", "sum", "avg", "min", "max", "orderBy", "limit"];
+const OPTIONS = [
+  "where",
+  "groupBy",
+  "count",
+  "sum",
+  "avg",
+  "min",
+  "max",
+  "orderBy",
+  "limit",
+  "signal",
+  "timeout",
+];
 
 /** Column types `sum` and `avg` take. */
 const NUMERIC = /^(smallint|integer|bigint|real|double precision|numeric|decimal)\b/;
@@ -122,7 +134,13 @@ function plan(
   const base = readCall(
     "find",
     table,
-    { where: record.where, orderBy, limit: record.limit },
+    {
+      where: record.where,
+      orderBy,
+      limit: record.limit,
+      signal: record.signal,
+      timeout: record.timeout,
+    },
     mods.all,
     session.scope,
     session.schema.model[table],

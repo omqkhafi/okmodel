@@ -78,14 +78,18 @@ test("the feature-using query probes have their own ceilings (D176)", () => {
     ...base,
     queryValidate: row("query-200-validate", 200, 25_631, 6_604),
     queryFeatures: [row("query-200+page+aggregate+through", 200, 24_792, 6_931)],
+    queryPresets: row("query-200+presets", 200, 19_755, 7_341),
+    queryTx: row("query-200+tx", 200, 25_011, 7_156),
   };
   expect(ceilingProblems(within)).toEqual([]);
   const over = {
     ...base,
     queryValidate: row("query-200-validate", 200, 25_632, 6_605),
     queryFeatures: [row("query-200+page+aggregate+through", 200, 24_793, 6_932)],
+    queryPresets: row("query-200+presets", 200, 19_756, 7_342),
+    queryTx: row("query-200+tx", 200, 25_012, 7_157),
   };
-  expect(ceilingProblems(over)).toHaveLength(4);
+  expect(ceilingProblems(over)).toHaveLength(8);
 });
 
 test("column type ceilings fail when the sample is over the limit", () => {

@@ -6,7 +6,7 @@
  * (D124). A timeout stays kind `timeout`. An abort stays kind `cancelled`.
  */
 
-import { isConnectionFailure } from "../../contracts/connection.js";
+import { isConnectionLost } from "../../contracts/connection.js";
 import type { ExecuteResult, Statement, WireValue } from "../../contracts/driver.js";
 import { DriverError, mapDriverError, outcomeUnknown } from "../error.js";
 import type { Watch } from "./call.js";
@@ -64,12 +64,13 @@ async function transaction(
     try {
       await control(session, "COMMIT", watch);
     } catch (error) {
-      if (isConnectionFailure(error)) throw outcomeUnknown(error);
+      if (isConnectionLost(error)) throw outcomeUnknown(error);
       throw stamp(error, null);
     }
     return results;
   } catch (error) {
-    await rollback(session);
+    // A connection that went away has no transaction to roll back, and a write to it can crash the driver.
+    if (!isConnectionLost(error)) await rollback(session);
     throw error;
   }
 }
@@ -87,7 +88,7 @@ async function savepoint(
     await control(session, `RELEASE SAVEPOINT ${name}`, watch);
     return results;
   } catch (error) {
-    await rollback(session, `ROLLBACK TO SAVEPOINT ${name}`);
+    if (!isConnectionLost(error)) await rollback(session, `ROLLBACK TO SAVEPOINT ${name}`);
     throw error;
   }
 }

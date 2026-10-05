@@ -10,10 +10,14 @@ import { OkmError, type ErrorStatuses } from "../contracts/error.js";
 import type { PresetUse, QuerySchema, SchemaHookCtx } from "../dialects/pg/model.js";
 import { attachHttp, queryHandle, settleCall } from "./client.js";
 import type { CallScope } from "./plan.js";
+import type { Hookm, Timeouts } from "./types.js";
 
 type Host = {
   readonly schema: QuerySchema;
   readonly pool: DriverPool;
+  readonly timeouts?: Timeouts | undefined;
+  readonly hookm?: readonly Hookm[] | undefined;
+  readonly tx?: object | undefined;
   readonly scope?: CallScope;
   readonly http?: ErrorStatuses;
   readonly includeValues: boolean;
@@ -73,6 +77,16 @@ function lifecycle(
 ): Promise<unknown> & Record<string, unknown> {
   refuse(host, table);
   return queryHandle(() => run(host, op, table, input, options, mods), {
+    // `batch` plans each operation and runs the statements of all of them as one unit.
+    "~plan": async () => {
+      await host.connected;
+      const [mod, planned] = await Promise.all([loadArchive(), settle(host, table, mods)]);
+      try {
+        return mod.prepareArchive(host.schema, op, table, input, options, planned, host.scope);
+      } catch (error) {
+        return settleCall(host as unknown as Parameters<typeof settleCall>[0], error);
+      }
+    },
     sql() {
       return Promise.all([loadArchive(), settle(host, table, mods)]).then(([mod, planned]) =>
         mod.explainArchive(host.schema, op, table, input, options, planned, host.scope),
@@ -123,7 +137,7 @@ async function run(
   const mod = await loadArchive();
   try {
     return await mod.executeArchive(
-      { schema: host.schema, pool: host.pool },
+      host,
       op,
       table,
       input,

@@ -102,6 +102,12 @@ export const TYPE_CEILINGS = {
   /** The query probe with `page`, `aggregate` and `manyThrough` in use (D176): measured 24,070 / 6,730 plus 3 percent, rounded down. */
   queryFeaturesInstantiations: 24_792,
   queryFeaturesTypes: 6_931,
+  /** The query probe with a chain of two presets with arguments, then `find` (D176): measured 19,180 / 7,128 plus 3 percent, rounded down. */
+  queryPresetsInstantiations: 19_755,
+  queryPresetsTypes: 7_341,
+  /** The query probe with a `tx` callback: a locked `find`, an `update`, and `afterCommit` (D176): measured 24,283 / 6,948 plus 3 percent, rounded down. */
+  queryTxInstantiations: 25_011,
+  queryTxTypes: 7_156,
   taggedOperatorSurcharge: 800,
   columnInstantiations: 720,
   columnTypes: 1_100,
@@ -167,6 +173,10 @@ export type TypeBudgetReport = TypeBudgetCore & {
    * (D176); the others show what each feature costs.
    */
   readonly queryFeatures: readonly TypeBudgetRow[];
+  /** The 200-table query probe plus a chain of two presets with arguments and a `find`. Gated apart (D176). */
+  readonly queryPresets: TypeBudgetRow;
+  /** The 200-table query probe plus a `tx` callback with a locked `find`, an `update`, and `afterCommit`. Gated apart (D176). */
+  readonly queryTx: TypeBudgetRow;
 };
 
 /**
@@ -239,6 +249,17 @@ export function measureTypeBudgets(): TypeBudgetReport {
         );
       }),
     );
+    const [queryPresets, queryTx] = (["presets", "tx"] as const).map((feature) =>
+      measureProject(join(root, "consumer"), `query-200+${feature}`, 200, (dir) => {
+        writeQueryProject(
+          dir,
+          generateFixture({ seed: 1, tables: 200 }),
+          { declarations },
+          { features: [feature] },
+        );
+      }),
+    );
+    if (queryPresets === undefined || queryTx === undefined) throw new Error("probe rows missing");
     return {
       ...budgetReport(rows),
       source: {
@@ -251,6 +272,8 @@ export function measureTypeBudgets(): TypeBudgetReport {
       validate,
       queryValidate,
       queryFeatures,
+      queryPresets,
+      queryTx,
     };
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -322,6 +345,8 @@ export function ceilingProblems(
     readonly queries?: readonly TypeBudgetRow[];
     readonly queryValidate?: TypeBudgetRow;
     readonly queryFeatures?: readonly TypeBudgetRow[];
+    readonly queryPresets?: TypeBudgetRow;
+    readonly queryTx?: TypeBudgetRow;
   },
   taggedSurcharge: number = report.taggedOperatorSurcharge,
 ): readonly string[] {
@@ -375,6 +400,12 @@ export function ceilingProblems(
       TYPE_CEILINGS.queryValidateTypes,
     ],
     [features, TYPE_CEILINGS.queryFeaturesInstantiations, TYPE_CEILINGS.queryFeaturesTypes],
+    [
+      report.queryPresets,
+      TYPE_CEILINGS.queryPresetsInstantiations,
+      TYPE_CEILINGS.queryPresetsTypes,
+    ],
+    [report.queryTx, TYPE_CEILINGS.queryTxInstantiations, TYPE_CEILINGS.queryTxTypes],
   ] as const;
   for (const [row, instantiations, types] of probes) {
     if (row !== undefined && row.instantiations > instantiations) {

@@ -37,36 +37,26 @@ export function connect<const S extends QuerySchema>(
   target: PostgresTarget,
   options: PostgresConnectOptions<S>,
 ): Connected<S> {
-  if (isPool(target)) {
-    return createClient(options.schema, target, {
-      ownsPool: false,
-      http: options.errors?.http,
-      includeValues: options.errors?.includeValues,
-      logger: options.logger,
-      signal: options.signal,
-      timeout: options.timeout,
-      catalog: options.catalog,
-      catalogDir: options.catalogDir,
-      requireMeta: options.requireMeta,
-      generators: options.generators,
-    });
-  }
-  const url = target;
-  const pool = open({
-    url,
-    ...(options.max !== undefined ? { max: options.max } : {}),
-    ...(options.timeouts !== undefined ? { timeouts: options.timeouts } : {}),
-    ...(options.prepared !== undefined ? { prepared: options.prepared } : {}),
-    ...(options.searchPath !== undefined ? { searchPath: options.searchPath } : {}),
-    ...(options.ssl !== undefined ? { ssl: options.ssl } : {}),
-  });
+  const owned = !isPool(target);
+  const pool = isPool(target)
+    ? target
+    : open({
+        url: target,
+        ...(options.max !== undefined ? { max: options.max } : {}),
+        ...(options.timeouts !== undefined ? { timeouts: options.timeouts } : {}),
+        ...(options.prepared !== undefined ? { prepared: options.prepared } : {}),
+        ...(options.searchPath !== undefined ? { searchPath: options.searchPath } : {}),
+        ...(options.ssl !== undefined ? { ssl: options.ssl } : {}),
+      });
   return createClient(options.schema, pool, {
-    ownsPool: true,
+    ownsPool: owned,
     http: options.errors?.http,
     includeValues: options.errors?.includeValues,
     logger: options.logger,
     signal: options.signal,
     timeout: options.timeout,
+    timeouts: options.timeouts,
+    hookm: options.hookm,
     catalog: options.catalog,
     catalogDir: options.catalogDir,
     requireMeta: options.requireMeta,

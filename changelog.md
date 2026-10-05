@@ -46,6 +46,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - `okmodel/pg/pg` connects with node-postgres, and `okmodel/pg/bun` connects with Bun.sql. Both are optional peers. The default stays postgres.js. Bun.sql loads only on Bun.
 - node-postgres cancels an in-flight statement and returns notices. Bun.sql does not abort an in-flight statement and does not surface RAISE NOTICE. Neither describes a statement without running it. A plain pool of either exits after the last query.
+- A postgres.js, node-postgres, or Bun.sql connection reserved for `tx()` that is lost is dropped and never written to again. A COMMIT cut by a lost connection is `outcome_unknown` (OKM1401), and no ROLLBACK follows it.
 
 #### runtime
 
@@ -78,6 +79,15 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `inspect()` lists one `preset` line per call with the preset name, the fields it filters, who defined it (`table tasks` or `trait flagged`) and the source location. Values stay parameters in `sql()`.
 - A preset name that is a client method or reserved fails with OKM1040 in `trait()` when the trait is built and in `connect()` before the first query. A preset that does not return its builder is OKM1121 when the call is planned.
 - `registerPresets()` in `okmodel/safety` registers the rule that a preset adds predicates and never removes or replaces one. A property test composes random chains over a tenant table and checks the statement text and the rows on every read and write.
+- `db.tx(fn)` and `db.tx({ isolation, retry, timeout, signal }, fn)` run `fn` in a transaction on one reserved connection. The callback gets a client `t` with the same tables, presets, tenancy, and archive handling. The call commits when `fn` resolves and rolls back when it throws. It exists on drivers with `transactions: "interactive"`; on any other it is OKM1111. `timeout` is milliseconds and covers the whole transaction, retries included.
+- A nested `tx()` is a savepoint on the same connection. It refuses options (OKM1121). If the callback swallows a statement error, the transaction fails with that error instead of committing: Postgres would turn the COMMIT into a silent ROLLBACK.
+- `retry` runs the callback again, in a fresh transaction, after a serialization failure or a deadlock. `outcome_unknown` and `cancelled` are never retried. The `timeout` is one deadline for all attempts.
+- `db.batch([...])` runs writes as one atomic unit on every driver, with results in order. A failure carries `batchIndex`, or `null` at commit. Inside `tx()` it is a savepoint, so the transaction survives a failure. `.replica()` is OKM1840 and a read in the list is OKM1121.
+- `t.afterCommit(fn)` runs after the outermost commit, in order, and never on rollback. An error in one goes to `hookm.onError` and never changes the result.
+- `find({ lock: "update" | "share", wait: "nowait" | "skip" })` inside `tx()` appends `FOR UPDATE` or `FOR SHARE`, with `NOWAIT` or `SKIP LOCKED`. Outside `tx()` it is OKM1830. `t.advisoryLock(key)` takes a transaction-level advisory lock; a string is hashed.
+- Every read and write takes `{ signal, timeout }`. An abort cancels the statement where the driver can and fails as `cancelled`; a timeout fails as `timeout`. Cancelling inside `tx()` rolls it back. `connect({ timeouts })` sets `acquire`, `statement`, `transaction`, and `idleInTransaction` in milliseconds.
+- `connect({ hookm })` takes observers. `onNotice` hears server notices, `onTransaction` hears `start`, `commit`, and `rollback` (savepoints at depth 1 and up), and `onError` hears errors with no caller. An error a hook throws is dropped.
+- `tx`, `batch`, and locks load on first use. A program that calls none of them pays 215 bytes minified and 225 gzip at startup.
 
 #### tooling
 
@@ -85,6 +95,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okm check` reports OKM1030 when a field has rules on the column and in the table `validate` section, or when `validation.style` disagrees with where the rules sit.
 - `okm check` reports OKM1201 when the schema would validate and the project never imports `okmodel/validate`.
 - The 200-table query probe has gated rows for a project with `okmodel/validate` imported and for one that uses `page`, `aggregate`, and `manyThrough`, each at its measured value plus 3 percent (D176). `scripts/app-relations.ts` is a reported app that uses those features.
+- `startCutProxy` in `@okmodel/harness` cuts the next COMMIT on a TCP connection, and `registerTxSuite` runs one conformance suite of 38 cases on postgres.js, PGlite, node-postgres, and Bun.sql: serializable conflict and retry, a real deadlock, `skip` and `nowait`, timeout and abort kills, a cut commit and a cut batch, pool reuse with no leaked state, and savepoints. A driver that cannot do a case shows it as a skip with the reason.
+- The 200-table query probe has two more gated rows, `query-200+presets` (19,180 / 7,128, ceilings 19,755 / 7,341) and `query-200+tx` (24,283 / 6,948, ceilings 25,011 / 7,156), each at the measured size plus 3 percent (D176).
 
 #### docs
 
@@ -99,6 +111,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Spec sections 6.2, 10 and 12 describe `manyThrough`, `page`, `aggregate`, and the decode rule. `iStartsWith`, `iContains`, and `iEndsWith` are not in 0.2 (D176); use `ilike()` with an escaped pattern.
 - Spec section 6.2.1 describes presets: order of predicates, which calls they reach, names, inspection, and the OKM1040 and OKM1121 cases. D180 records the P28 size and the choices made. Presets are out of the known limits.
 - D176 records the first P27 build (+1,425 / +431 over the stop line), the one redesign in which the relation carries its own emitter, and the probe policy.
+- Spec section 15 gives `timeout` in milliseconds and says a nested `tx()` takes no options. D181 records the P29 numbers and the choices.
 
 ### 💥 Breaking Changes
 
@@ -125,6 +138,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - OKM1130 also covers a cursor that `page()` did not return.
 - P27b takes the no-tenancy app from 88,278 / 29,325 to 88,393 / 29,385 (+115 / +60). No gate or ceiling moves. The gated 200-table probes do not move; `query-200-validate` is 24,888 (+3).
 - In a `where`, a bare object is OKM1121 for every column and `eq(value)` is the equality form for any object value (Temporal, arrays, ranges, json). The comparison operators and `not` take the codec's objects as operands.
+- P29 takes the no-tenancy app from 88,723 / 29,553 to 88,938 / 29,778 (+215 / +225), inside the stop line of +1,400 / +400. No gate or existing ceiling moves. `query-200` is 17,078 / 6,271 (was 17,062 / 6,259).
+- A table named `tx` or `batch` is shadowed by the client method.
 
 ### 🐛 Fixed
 
@@ -133,6 +148,9 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - A range object without `empty` is OKM1210 before any statement. It was sent to the database as a malformed literal.
 - `eq()`, `lt`, `gt`, `between`, `inList` and `not` on a Temporal, array, range or json column failed with OKM1121 for the same reason.
 - `insert([...])` typed every key as required on each row, though the runtime already filled an omitted key with `DEFAULT` per row. Rows in one list may now omit different optional keys or pass `undefined`; `null` stays NULL.
+- postgres.js crashed with an uncaught `socket.write` when a reserved connection was used after its socket closed, and put a closed connection back in its pool on `release()`.
+- node-postgres raised an unhandled `error` event when a checked-out client lost its socket, and returned that client to the pool.
+- Bun.sql parked a reserved connection that had been lost.
 
 ## v0.1.1 — 2026-10-03
 

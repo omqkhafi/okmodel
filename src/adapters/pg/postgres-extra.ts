@@ -12,6 +12,7 @@ import type {
   ExecuteResult,
   WireValue,
 } from "../../contracts/driver.js";
+import { isConnectionLost } from "../../contracts/connection.js";
 import { driverErrors, mapFailure, rejectClosed } from "../failure.js";
 import { runCall, type Watch } from "./call.js";
 import { PgSession, type Canceller, type Counters, type NoticeBuffer } from "./postgresjs.js";
@@ -53,14 +54,26 @@ export async function checkout(pool: HeldPool): Promise<DriverConnection> {
     pool.named,
   );
   let released = false;
+  // A reserved postgres.js connection that lost its socket crashes on the next write. Once a
+  // statement fails because the connection is gone, nothing more is sent to it.
+  let lost = false;
+  const guard = <T>(run: () => Promise<T>): Promise<T> =>
+    lost
+      ? rejectClosed("The connection was lost.")
+      : run().catch((error: unknown) => {
+          if (isConnectionLost(error)) lost = true;
+          throw error;
+        });
   return {
     execute: (text, params, options) =>
-      runCall(pool.isClosed(), options, (watch) => session.query(text, params, watch)),
+      guard(() => runCall(pool.isClosed(), options, (watch) => session.query(text, params, watch))),
     batch: (statements, options) =>
-      runCall(pool.isClosed(), options, async (watch: Watch | undefined) => {
-        const { runAtomicBatch } = await import("./batch.js");
-        return runAtomicBatch(session, statements, watch);
-      }),
+      guard(() =>
+        runCall(pool.isClosed(), options, async (watch: Watch | undefined) => {
+          const { runAtomicBatch } = await import("./batch.js");
+          return runAtomicBatch(session, statements, watch);
+        }),
+      ),
     cancel() {
       session.cancel();
     },
@@ -68,10 +81,12 @@ export async function checkout(pool: HeldPool): Promise<DriverConnection> {
       if (released) return;
       released = true;
       try {
-        await resetConnection(reserved, session.depth());
+        if (!lost) await resetConnection(reserved, session.depth());
       } finally {
         pool.counters.reserved = Math.max(0, pool.counters.reserved - 1);
-        reserved.release();
+        // A closed connection is already back in the driver's closed list. Releasing it would put it
+        // in the open list, and the next statement would write to a socket that is gone.
+        if (!lost) reserved.release();
       }
     },
   };

@@ -60,6 +60,11 @@ export type ReadCall = {
   readonly after?: Keyset;
   /** Set by `aggregate`. It writes the statement and the safety predicates stay in `emitWhere`. */
   readonly build?: ReadBuild;
+  /** Writes the end of the statement, after `limit`. A row lock sets it. */
+  readonly tail?: (sink: Sink) => void;
+  /** The caller's `signal` and `timeout`. They never enter the plan or its key. */
+  readonly signal?: AbortSignal;
+  readonly timeout?: number;
   /** Set by `for()` or `unscoped()`. Absent on a schema with no tenancy. */
   readonly scope?: CallScope;
   /** Inspect lines from the tenancy object. Absent when the schema has no tenancy. */
@@ -250,9 +255,17 @@ export type Sink = {
   mark(token: string): void;
 };
 
-const FIND_OPTIONS = ["include", "limit", "orderBy", "select", "where"] as const;
-const ONE_OPTIONS = ["include", "orderBy", "select", "where"] as const;
-const FILTER_OPTIONS = ["where"] as const;
+const FIND_OPTIONS = [
+  "include",
+  "limit",
+  "orderBy",
+  "select",
+  "signal",
+  "timeout",
+  "where",
+] as const;
+const ONE_OPTIONS = ["include", "orderBy", "select", "signal", "timeout", "where"] as const;
+const FILTER_OPTIONS = ["signal", "timeout", "where"] as const;
 
 /**
  * Option names `find`, `one`, `count`, and `exists` accept.
@@ -664,6 +677,7 @@ function emitRead(
   emitWhere(schema, table, call.where, sink, "t", 0, false, call.after);
   emitOrder(table, call.orderBy, sink, "t");
   emitLimit(call, sink);
+  call.tail?.(sink);
 }
 
 export function emitJoin(sink: Sink, parent: string, child: string, relation: RelationModel): void {

@@ -21,7 +21,7 @@ import type {
 } from "../../contracts/driver.js";
 import { BUNSQL_CAPABILITIES } from "../capabilities.js";
 import { driverErrors, mapFailure, rejectClosed } from "../failure.js";
-import { runCall, type Watch } from "./call.js";
+import { runCall } from "./call.js";
 import { cursorStream, noticeBuffer, WireSession, type WireQuery } from "./session.js";
 
 export {
@@ -58,8 +58,18 @@ export type BunSqlConfig = DriverPoolConfig & {
   readonly ssl?: BunSqlTls;
 };
 
+/** What a checkout needs from the pool that opened it. */
+export type HeldPool = {
+  readonly sql: SQL;
+  readonly parked: ReservedSQL[];
+  readonly acquireMs: number | undefined;
+  readonly counters: Counters;
+  readonly notices: ReturnType<typeof noticeBuffer>;
+  readonly isClosed: () => boolean;
+};
+
 /** Pool occupancy. */
-type Counters = {
+export type Counters = {
   reserved: number;
   busy: number;
   reservedBusy: number;
@@ -113,6 +123,10 @@ export function open(config: BunSqlConfig): DriverPool {
     },
   );
 
+  const held: HeldPool = { sql, parked, acquireMs, counters, notices, isClosed };
+  const checkout = (): Promise<DriverConnection> =>
+    closed ? rejectClosed() : import("./bunsql-extra.js").then((mod) => mod.checkout(held));
+
   return {
     capabilities: BUNSQL_CAPABILITIES,
     execute(text, params, options) {
@@ -143,44 +157,6 @@ export function open(config: BunSqlConfig): DriverPool {
       await sql.close();
     },
   };
-
-  async function checkout(): Promise<DriverConnection> {
-    if (closed) return rejectClosed();
-    const reserved = parked.pop() ?? (await reserve(sql, acquireMs, counters));
-    counters.reserved += 1;
-    const session = new WireSession(
-      (text, params) => send(reserved, text, params),
-      notices,
-      isClosed,
-      false,
-      () => {
-        counters.reservedBusy += 1;
-      },
-      () => {
-        counters.reservedBusy = Math.max(0, counters.reservedBusy - 1);
-      },
-    );
-    let released = false;
-    return {
-      execute: (text, params, options) =>
-        runCall(closed, options, (watch) => session.query(text, params, watch)),
-      batch: (statements, options) =>
-        runCall(closed, options, async (watch: Watch | undefined) => {
-          const { runAtomicBatch } = await import("./batch.js");
-          return runAtomicBatch(session, statements, watch);
-        }),
-      async release() {
-        if (released) return;
-        released = true;
-        try {
-          await reset(session, reserved);
-        } finally {
-          counters.reserved = Math.max(0, counters.reserved - 1);
-          await park(parked, reserved);
-        }
-      },
-    };
-  }
 
   function stream(
     text: string,
@@ -213,12 +189,12 @@ export function open(config: BunSqlConfig): DriverPool {
   }
 }
 
-function send(sql: SQL, text: string, params: readonly WireValue[] | undefined): WireQuery {
+export function send(sql: SQL, text: string, params: readonly WireValue[] | undefined): WireQuery {
   if (params === undefined || params.length === 0) return sql.unsafe(text).raw();
   return sql.unsafe(text, [...params]).raw();
 }
 
-async function reserve(
+export async function reserve(
   sql: SQL,
   acquireMs: number | undefined,
   counters: Counters,
@@ -238,7 +214,7 @@ async function reserve(
   }
 }
 
-async function park(parked: ReservedSQL[], reserved: ReservedSQL): Promise<void> {
+export async function park(parked: ReservedSQL[], reserved: ReservedSQL): Promise<void> {
   parked.push(reserved);
   while (parked.length > 1) {
     const extra = parked.shift();
@@ -259,19 +235,6 @@ function releaseReserved(reserved: ReservedSQL): Promise<void> {
 function isAbort(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   return error.name === "AbortError" || error.name === "TimeoutError";
-}
-
-async function reset(session: WireSession, sql: SQL): Promise<void> {
-  const run = (text: string): Promise<unknown> => sql.unsafe(text);
-  if (session.depth() > 0) await run("ROLLBACK").catch(() => undefined);
-  try {
-    await run("RESET ALL");
-    await run("SELECT pg_advisory_unlock_all()");
-  } catch {
-    await run("ROLLBACK").catch(() => undefined);
-    await run("RESET ALL");
-    await run("SELECT pg_advisory_unlock_all()");
-  }
 }
 
 function statsOf(counters: Counters, size: number): DriverStats {

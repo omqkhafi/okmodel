@@ -33,26 +33,26 @@ export async function connect<const S extends QuerySchema>(
   target: PgliteTarget,
   options: PgliteConnectOptions<S>,
 ): Promise<Connected<S>> {
-  const shared = {
+  const pool = isPool(target)
+    ? target
+    : await open({
+        ...(target !== undefined ? { dataDir: target } : {}),
+        ...(options.timeouts !== undefined ? { timeouts: options.timeouts } : {}),
+      });
+  return createClient(options.schema, pool, {
+    ownsPool: !isPool(target),
     http: options.errors?.http,
     includeValues: options.errors?.includeValues,
     logger: options.logger,
     signal: options.signal,
     requireMeta: options.requireMeta,
     timeout: options.timeout,
+    timeouts: options.timeouts,
+    hookm: options.hookm,
     catalog: options.catalog,
     catalogDir: options.catalogDir,
     generators: options.generators,
-  };
-  if (isPool(target)) {
-    return createClient(options.schema, target, { ...shared, ownsPool: false });
-  }
-  const dataDir = target;
-  const pool = await open({
-    ...(dataDir !== undefined ? { dataDir } : {}),
-    ...(options.timeouts !== undefined ? { timeouts: options.timeouts } : {}),
   });
-  return createClient(options.schema, pool, { ...shared, ownsPool: true });
 }
 
 function isPool(target: PgliteTarget): target is DriverPool {
