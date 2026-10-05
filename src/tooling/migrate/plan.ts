@@ -35,10 +35,12 @@ import {
   functionSql,
   identitySequence,
   ownedByView,
+  qualify,
   quoteIdent,
   refreshMaterializedViewSql,
   viewSql,
 } from "../../dialects/pg/ddl.js";
+import { quoteLiteral } from "../../dialects/pg/quote.js";
 import { privilegeSql } from "../../dialects/pg/role/sql.js";
 import { extensionAlterSteps } from "./extensions.js";
 import { omitManagedObjects } from "./managed.js";
@@ -936,7 +938,7 @@ function contractSwaps(
     if (change.kind !== "replace") continue;
     const type = qualify(schema, change.name);
     const old = quoteIdent(`${change.name}_old`);
-    const labels = change.labels.map((label) => sqlString(label)).join(", ");
+    const labels = change.labels.map((label) => quoteLiteral(label)).join(", ");
     steps.push(step(`alter type ${type} rename to ${old}`, "contract", "ddl", ACCESS));
     steps.push(step(`create type ${type} as enum (${labels})`, "contract", "ddl", ACCESS));
     for (const column of change.columns) {
@@ -1265,9 +1267,9 @@ function addValueStatements(
         break;
       }
     }
-    let sql = `alter type ${type} add value ${sqlString(label)}`;
+    let sql = `alter type ${type} add value ${quoteLiteral(label)}`;
     if (beforeNeighbor !== undefined) {
-      sql += ` before ${sqlString(beforeNeighbor)}`;
+      sql += ` before ${quoteLiteral(beforeNeighbor)}`;
     } else {
       let afterNeighbor: string | undefined;
       for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
@@ -1277,7 +1279,7 @@ function addValueStatements(
           break;
         }
       }
-      if (afterNeighbor !== undefined) sql += ` after ${sqlString(afterNeighbor)}`;
+      if (afterNeighbor !== undefined) sql += ` after ${quoteLiteral(afterNeighbor)}`;
     }
     statements.push(sql);
     present.add(label);
@@ -1511,9 +1513,9 @@ function updateSql(
   to: string | null,
   cast = false,
 ): string {
-  const value = to === null ? "null" : sqlString(to);
+  const value = to === null ? "null" : quoteLiteral(to);
   const compare = cast ? `${quoteIdent(column)}::text` : quoteIdent(column);
-  return `update ${qualify(schema, table)} set ${quoteIdent(column)} = ${value} where ${compare} = ${sqlString(from)}`;
+  return `update ${qualify(schema, table)} set ${quoteIdent(column)} = ${value} where ${compare} = ${quoteLiteral(from)}`;
 }
 
 function hasTable(source: Catalog, name: string): boolean {
@@ -1541,14 +1543,6 @@ function step(
   transactional = true,
 ): PlanStep {
   return { sql, class: classification, action, lock, transactional };
-}
-
-function qualify(schema: string, name: string): string {
-  return `${quoteIdent(schema)}.${quoteIdent(name)}`;
-}
-
-function sqlString(value: string): string {
-  return `'${value.replaceAll("'", "''")}'`;
 }
 
 function stable(value: unknown): string {

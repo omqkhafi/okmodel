@@ -43,6 +43,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Known limits: a typed call such as `fn.slugify(col)` is not in this version, `inspect()` does not list triggers, a plpgsql body is `prosrc`, and a `BEGIN ATOMIC` body is the server reprint.
 - Known limits: a view is SQL plus a declared column list, and `db.views.<name>.find(...)` is read-only. The query builder form (`view(name, (q) => q.from(...))`) is not in this version (D190). Column dependencies come from `pg_depend`. The stored query is the server reprint. `refresh: "concurrently"` is not stored by Postgres, and the plan's first populate is a plain `REFRESH`. `security_invoker` is not set.
 - Known limits for roles and grants: fine-grained grants are M2, a role is never dropped, OKM1825 is doctor only, and a function grant is `name(argTypes)`. The non-owner RLS check moved to M2.
+- Known limits name this version. Typed `fn` calls, builder-defined views, `okm ext test`, `okm ext scaffold`, column-level grants, and row-level security stay unbuilt. A domain check or a `BEGIN ATOMIC` body that differs from the Postgres reprint only by parentheses or casts is still a plan change. `okm check` does not warn. Write the text Postgres prints.
 
 ### ♻️ Changed
 

@@ -73,4 +73,4 @@ await db.connected;
 await db.close();
 ```
 
-Production targets and `requireMeta` are in [production](production.md). What 0.1 does not ship is in [known limits](known-limits.md).
+Production targets and `requireMeta` are in [production](production.md). What this version does not ship is in [known limits](known-limits.md).

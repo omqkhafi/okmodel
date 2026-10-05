@@ -482,6 +482,13 @@ function deferClause(definition: ConstraintObject["definition"]): string {
   return ` deferrable initially ${definition.initially}`;
 }
 
-function qualify(schema: string, name: string): string {
+/**
+ * Quotes a schema-qualified name.
+ *
+ * @param schema - Concrete schema name
+ * @param name - Object name
+ * @returns `"schema"."name"`
+ */
+export function qualify(schema: string, name: string): string {
   return `${quoteIdent(schema)}.${quoteIdent(name)}`;
 }

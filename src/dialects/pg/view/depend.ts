@@ -9,6 +9,20 @@ import { identityKey, staticNamespace } from "../../../contracts/catalog/identit
 import type { CatalogObject, Namespace, ObjectIdentity } from "../../../contracts/catalog/types.js";
 
 /**
+ * Reads a query cell as text.
+ *
+ * @param value - A driver cell
+ * @returns The string, or empty when the cell is not a scalar
+ */
+export function cellText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return String(value);
+  }
+  return "";
+}
+
+/**
  * `pg_depend` rows for views and materialized views in one schema.
  *
  * `$1` is the concrete schema name. `refobjsubid > 0` keeps column edges.
@@ -48,9 +62,9 @@ export function viewDependencyEdges(
   const keys = new Set(objects.map((object) => identityKey(object.identity)));
   const byView = new Map<string, ObjectIdentity[]>();
   for (const row of rows) {
-    const view = text(row.view);
-    const table = text(row.table);
-    const column = text(row.column);
+    const view = cellText(row.view);
+    const table = cellText(row.table);
+    const column = cellText(row.column);
     if (view.length === 0 || table.length === 0 || column.length === 0) continue;
     const columnEdge: ObjectIdentity = {
       kind: "column",
@@ -84,14 +98,6 @@ function objectEdge(
     return object.identity;
   }
   return undefined;
-}
-
-function text(value: unknown): string {
-  if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
-    return String(value);
-  }
-  return "";
 }
 
 /** Logical public namespace. Tests and the default schema use it. */
