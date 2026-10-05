@@ -85,14 +85,20 @@ const decision = await loadPostgresGate();
 requirePostgresWhenAsked(decision);
 
 for (const tables of FIXTURE_SIZES) {
-  postgresTest(decision, `fixture DDL for ${tables} tables applies on Postgres`, async () => {
-    const ddl = renderFixtureDdl(generateFixture({ seed: 1, tables, tenancy: "column" }));
-    await withPostgresSchema(async (sql) => {
-      await sql.unsafe(ddl);
-      const rows = await sql<
-        { n: number }[]
-      >`select count(*)::int as n from information_schema.tables where table_schema = current_schema() and table_type = 'BASE TABLE'`;
-      expect(rows[0]?.n).toBe(tables);
-    });
-  });
+  // 200 tables applied in about 2s on Postgres 15. 500 crossed Bun's 5s default.
+  postgresTest(
+    decision,
+    `fixture DDL for ${tables} tables applies on Postgres`,
+    async () => {
+      const ddl = renderFixtureDdl(generateFixture({ seed: 1, tables, tenancy: "column" }));
+      await withPostgresSchema(async (sql) => {
+        await sql.unsafe(ddl);
+        const rows = await sql<
+          { n: number }[]
+        >`select count(*)::int as n from information_schema.tables where table_schema = current_schema() and table_type = 'BASE TABLE'`;
+        expect(rows[0]?.n).toBe(tables);
+      });
+    },
+    tables === 500 ? 30_000 : 5_000,
+  );
 }
