@@ -30,6 +30,9 @@ expectTypeOf<CatalogObject["kind"]>().toEqualTypeOf<
   | "trigger"
   | "view"
   | "materializedView"
+  | "role"
+  | "grant"
+  | "defaultPrivilege"
 >();
 
 expectTypeOf<ObjectKind>().toEqualTypeOf<
@@ -56,7 +59,9 @@ expectTypeOf<GrantIdentity>().toMatchTypeOf<{
   readonly privilege: string;
 }>();
 
-expectTypeOf<GrantIdentity["object"]["kind"]>().toEqualTypeOf<"table" | "sequence" | "namespace">();
+expectTypeOf<GrantIdentity["object"]["kind"]>().toEqualTypeOf<
+  "table" | "view" | "materializedView" | "sequence" | "function" | "namespace"
+>();
 
 expectTypeOf<DefaultPrivilegeIdentity>().toMatchTypeOf<{
   readonly forRole: string;

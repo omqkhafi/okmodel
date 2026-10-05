@@ -16,6 +16,7 @@ import { errorDoc } from "../errors/registry.js";
 import { assertValidation, writeWouldValidate } from "../../runtime/validate/places.js";
 import { schemaDeclarations, type DeclaredRename } from "../../dialects/pg/declarations.js";
 import { emitRowTypes } from "../../dialects/pg/emit.js";
+import { attachRoles } from "../../dialects/pg/role/index.js";
 import type { BuiltSchema } from "../../dialects/pg/schema.js";
 import type { AnyTable } from "../../dialects/pg/table.js";
 import type { Catalog } from "../../contracts/catalog/types.js";
@@ -39,7 +40,7 @@ type Previous = {
 export async function buildProject(cwd: string): Promise<string> {
   const config = await loadConfig(cwd);
   const built = await loadSchema(cwd, config.schema);
-  return writeArtifact(cwd, config, built);
+  return writeArtifact(cwd, config, withRoles(built, config));
 }
 
 /**
@@ -184,7 +185,7 @@ export async function openProject(cwd: string): Promise<{
   readonly renames: readonly DeclaredRename[];
 }> {
   const config = await loadConfig(cwd);
-  const built = await loadSchema(cwd, config.schema);
+  const built = withRoles(await loadSchema(cwd, config.schema), config);
   const declarations = schemaDeclarations(built);
   const previous = readPrevious(join(cwd, config.migrations ?? "migrations"));
   const stale = staleRenames(previous?.catalog, declarations.renames);
@@ -199,6 +200,11 @@ export async function openProject(cwd: string): Promise<{
     previous: previous?.catalog ?? catalog([]),
     renames: declarations.renames,
   };
+}
+
+function withRoles(built: Built, config: MigrateConfig): Built {
+  if (config.roles === undefined) return built;
+  return { ...built, catalog: attachRoles(built.catalog, config.roles) };
 }
 
 function writeArtifact(cwd: string, config: MigrateConfig, built: Built): string {

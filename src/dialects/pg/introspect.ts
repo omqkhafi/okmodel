@@ -12,6 +12,11 @@ import { domainType, enumType } from "../../contracts/catalog/enum.js";
 import { staticNamespace } from "../../contracts/catalog/identity.js";
 import { extensionObject } from "../../contracts/catalog/extension.js";
 import { column, constraint, index, sequence, table } from "../../contracts/catalog/object.js";
+import {
+  defaultPrivilegeObject,
+  grantObject,
+  roleObject,
+} from "../../contracts/catalog/privilege.js";
 import { functionObject, triggerObject } from "../../contracts/catalog/routine.js";
 import {
   materializedViewIndex,
@@ -34,6 +39,16 @@ import type {
   TriggerTiming,
 } from "../../contracts/catalog/types.js";
 import { referentialAction } from "../../contracts/catalog/types.js";
+
+/** Which cluster roles the catalog owns. */
+export type IntrospectOptions = {
+  /**
+   * Role names this catalog creates and alters.
+   *
+   * When omitted, roles, grants, and default privileges are not read.
+   */
+  readonly managedRoles?: readonly string[];
+};
 
 /** A connection that can run one query. Parameters are `$1`, `$2`, … */
 export type CatalogQuery = {
@@ -64,6 +79,7 @@ export async function introspectSchema(
   runner: CatalogQuery,
   concrete: string,
   logical = "public",
+  options?: IntrospectOptions,
 ): Promise<Catalog> {
   const namespace = staticNamespace(logical);
   const provenance: Provenance = { origin: "file", name: PROVENANCE_NAME };
@@ -387,7 +403,171 @@ export async function introspectSchema(
             dependencies,
           });
   }
+  if (options?.managedRoles !== undefined) {
+    objects.push(
+      ...(await readPrivileges(
+        runner,
+        concrete,
+        namespace,
+        provenance,
+        objects,
+        options.managedRoles,
+      )),
+    );
+  }
   return catalog(objects);
+}
+
+const EMITTED = new Set(["SELECT", "INSERT", "UPDATE", "DELETE", "EXECUTE", "USAGE"]);
+
+const ROLES = `select rolname, rolcanlogin, rolinherit from pg_roles where rolname !~ '^pg_'`;
+
+const RELATION_GRANTS = `select c.relname as name,
+  case c.relkind when 'v' then 'view' when 'm' then 'materializedView' when 'S' then 'sequence' else 'table' end as kind,
+  r.rolname as role, a.privilege_type as privilege
+  from pg_class c
+  join pg_namespace n on n.oid = c.relnamespace
+  cross join lateral aclexplode(c.relacl) as a
+  join pg_roles r on r.oid = a.grantee
+  where n.nspname = $1
+    and c.relkind in ('r', 'p', 'v', 'm', 'S')
+    and c.relacl is not null
+    and a.grantee <> 0
+    and a.grantee <> c.relowner
+    and not exists (select 1 from pg_inherits i where i.inhrelid = c.oid)
+    and not exists (
+      select 1 from pg_depend d
+      where d.classid = 'pg_class'::regclass and d.objid = c.oid and d.deptype = 'e'
+    )`;
+
+const FUNCTION_GRANTS = `select p.proname as name,
+  replace(pg_get_function_identity_arguments(p.oid), ' ', '') as args,
+  r.rolname as role, a.privilege_type as privilege
+  from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  cross join lateral aclexplode(p.proacl) as a
+  join pg_roles r on r.oid = a.grantee
+  where n.nspname = $1
+    and p.proacl is not null
+    and a.grantee <> 0
+    and a.grantee <> p.proowner
+    and not exists (
+      select 1 from pg_depend d
+      where d.classid = 'pg_proc'::regclass and d.objid = p.oid and d.deptype = 'e'
+    )`;
+
+const DEFAULT_PRIVILEGES = `select owner_role.rolname as for_role, grantee.rolname as grantee,
+  case d.defaclobjtype when 'S' then 'sequence' when 'f' then 'function' else 'table' end as object_kind,
+  a.privilege_type as privilege
+  from pg_default_acl d
+  join pg_namespace n on n.oid = d.defaclnamespace
+  join pg_roles owner_role on owner_role.oid = d.defaclrole
+  cross join lateral aclexplode(d.defaclacl) as a
+  join pg_roles grantee on grantee.oid = a.grantee
+  where n.nspname = $1
+    and d.defaclobjtype in ('r', 'S', 'f')
+    and a.grantee <> 0`;
+
+async function readPrivileges(
+  runner: CatalogQuery,
+  concrete: string,
+  namespace: ReturnType<typeof staticNamespace>,
+  provenance: Provenance,
+  built: readonly CatalogObject[],
+  managedRoles: readonly string[],
+): Promise<CatalogObject[]> {
+  const managed = new Set(managedRoles);
+  const [roles, relations, functions, defaults] = await Promise.all([
+    runner.query(ROLES, []),
+    runner.query(RELATION_GRANTS, [concrete]),
+    runner.query(FUNCTION_GRANTS, [concrete]),
+    runner.query(DEFAULT_PRIVILEGES, [concrete]),
+  ]);
+  const objects: CatalogObject[] = [];
+  for (const row of roles) {
+    const name = text(row, "rolname");
+    objects.push(
+      roleObject({
+        name,
+        login: flag(row, "rolcanlogin"),
+        inherit: flag(row, "rolinherit"),
+        owner: managed.has(name) ? "managed" : "external",
+        provenance,
+      }),
+    );
+  }
+  for (const row of relations) {
+    const kind = grantKind(text(row, "kind"));
+    const name = text(row, "name");
+    const privilege = text(row, "privilege").toUpperCase();
+    const target = built.find((object) => privilegeTarget(object) === `${kind}:${name}`);
+    if (!EMITTED.has(privilege) || target === undefined) continue;
+    objects.push(
+      grantObject({
+        role: text(row, "role"),
+        object: { kind, namespace, name },
+        privilege,
+        provenance,
+        dependencies: [{ kind: "role", name: text(row, "role") }, target.identity],
+      }),
+    );
+  }
+  for (const row of functions) {
+    const privilege = text(row, "privilege").toUpperCase();
+    const name = `${text(row, "name")}(${text(row, "args")})`;
+    const target = built.find((object) => privilegeTarget(object) === `function:${name}`);
+    if (!EMITTED.has(privilege) || target === undefined) continue;
+    objects.push(
+      grantObject({
+        role: text(row, "role"),
+        object: { kind: "function", namespace, name },
+        privilege,
+        provenance,
+        dependencies: [{ kind: "role", name: text(row, "role") }, target.identity],
+      }),
+    );
+  }
+  for (const row of defaults) {
+    const privilege = text(row, "privilege").toUpperCase();
+    if (!EMITTED.has(privilege)) continue;
+    const forRole = text(row, "for_role");
+    const grantee = text(row, "grantee");
+    objects.push(
+      defaultPrivilegeObject({
+        forRole,
+        namespace,
+        objectKind: text(row, "object_kind"),
+        grantee,
+        privilege,
+        provenance,
+        dependencies: [
+          { kind: "role", name: forRole },
+          { kind: "role", name: grantee },
+        ],
+      }),
+    );
+  }
+  return objects;
+}
+
+function privilegeTarget(object: CatalogObject): string {
+  if (
+    object.kind === "table" ||
+    object.kind === "view" ||
+    object.kind === "materializedView" ||
+    object.kind === "sequence"
+  ) {
+    return `${object.kind}:${object.identity.name}`;
+  }
+  if (object.kind === "function") {
+    return `function:${object.identity.name}(${object.identity.argTypes.join(",")})`;
+  }
+  return "";
+}
+
+function grantKind(kind: string): "table" | "view" | "materializedView" | "sequence" {
+  if (kind === "view" || kind === "materializedView" || kind === "sequence") return kind;
+  return "table";
 }
 
 function printedColumns(value: string): { name: string; dataType: string }[] {

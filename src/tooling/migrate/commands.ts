@@ -90,8 +90,9 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
     }
   }
   if (command === "doctor") {
+    const parsed = splitFlags(rest);
     const { doctorProject } = await import("./doctor.js");
-    stdout(await doctorProject(cwd, rest[0]));
+    stdout(await doctorProject(cwd, parsed.name, invoke(parsed)));
     return;
   }
   if (command === "ext") {

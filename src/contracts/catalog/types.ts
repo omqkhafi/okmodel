@@ -148,9 +148,15 @@ export type GrantIdentity = {
   readonly privilege: string;
 };
 
-/** What a grant attaches to. `namespace` is the schema itself. */
+/**
+ * What a grant attaches to.
+ *
+ * `namespace` is the schema itself. A function's `name` is `name(argTypes)`
+ * so overloads stay distinct without a second field. The key is not a stored
+ * identifier (D119).
+ */
 export type GrantObjectRef = {
-  readonly kind: "table" | "sequence" | "namespace";
+  readonly kind: "table" | "view" | "materializedView" | "sequence" | "function" | "namespace";
   readonly namespace: Namespace;
   readonly name: string;
 };
@@ -535,10 +541,44 @@ export type MaterializedViewObject = CatalogEnvelope<
 >;
 
 /**
- * One built catalog object.
+ * Role definition.
  *
- * Roles, grants, and default privileges use {@link CatalogEnvelope} when
- * they are built. They are not part of this union yet.
+ * Only `login` and `inherit` are altered in place. A password is not stored.
+ */
+export type RoleDefinition = {
+  readonly login: boolean;
+  readonly inherit: boolean;
+};
+
+/**
+ * Grant definition.
+ *
+ * The privilege is the identity. `GRANT OPTION` is not in this version.
+ */
+export type GrantDefinition = Record<string, never>;
+
+/**
+ * Default-privilege definition.
+ *
+ * The key is the identity. The statement is `ALTER DEFAULT PRIVILEGES`.
+ */
+export type DefaultPrivilegeDefinition = Record<string, never>;
+
+/** A role. Identity is the name. Roles are never dropped (D119). */
+export type RoleObject = CatalogEnvelope<"role", RoleIdentity, RoleDefinition>;
+
+/** A grant. Identity is `(role, object, privilege)`. */
+export type GrantObject = CatalogEnvelope<"grant", GrantIdentity, GrantDefinition>;
+
+/** A default privilege. Identity is `(forRole, namespace, objectKind, grantee, privilege)`. */
+export type DefaultPrivilegeObject = CatalogEnvelope<
+  "defaultPrivilege",
+  DefaultPrivilegeIdentity,
+  DefaultPrivilegeDefinition
+>;
+
+/**
+ * One built catalog object.
  */
 export type CatalogObject =
   | TableObject
@@ -551,7 +591,10 @@ export type CatalogObject =
   | FunctionObject
   | TriggerObject
   | ViewObject
-  | MaterializedViewObject;
+  | MaterializedViewObject
+  | RoleObject
+  | GrantObject
+  | DefaultPrivilegeObject;
 
 /** Format version stored in the serialized catalog. */
 export const CATALOG_VERSION = 1;

@@ -45,6 +45,14 @@ Also not in 0.2:
 - **`LANGUAGE sql` with `BEGIN ATOMIC` stores the server reprint.** `prosrc` is empty, so the body is the `BEGIN ATOMIC` block from `pg_get_functiondef`. Dependencies are the `pg_depend` edges. Two introspections of the same function match. A plan from the live catalog back to the author text replaces the function when the reprint differs from the text that was declared.
 - **A trigger `WHEN` is stored as written.** Introspection reads `pg_get_expr`. A predicate Postgres reprints differently is planned as a trigger change. A round trip has no steps when the stored text is already that printed form.
 
+## Roles and grants
+
+- **Fine-grained grants are M2.** `roles: { migration, app }` grants the application role a fixed set: `SELECT`, `INSERT`, `UPDATE`, and `DELETE` on tables and views; `SELECT` on materialized views; `EXECUTE` on functions; `USAGE` and `SELECT` on sequences. Default privileges use that set, `FOR ROLE` the migration role, in each static schema. Privileges outside the set are not diffed.
+- **A role is never dropped.** A plan creates a managed role when `pg_roles` does not have it (`CREATE ROLE` has no `IF NOT EXISTS`) and alters `LOGIN` and `INHERIT` in place. A password, `GRANT OPTION`, and any other attribute are not stored. A name in `roles` is external unless it is also listed in `managed`.
+- **OKM1825 is `okm doctor` only.** `connect()` does not check the application role. Putting that check on `connect()` measured +2,690 minified bytes and +917 gzip on `okmodel/pg/postgresjs` (the same minified increase on the other connect entries) and +2,699 / +941 on the featureless app, which is past the budget. `okm_meta` is not a catalog object; when that table exists, `connect()` reads it, so the application role needs `SELECT` on it.
+- **A function grant is `name(argTypes)`.** Argument types are joined without spaces. Introspection strips spaces from `pg_get_function_identity_arguments`.
+- **Creating the migration role grants it the schema, then `SET ROLE`.** Those statements are runner actions, not plan steps. The role is `NOSUPERUSER NOCREATEDB NOCREATEROLE`. The schema grant is `USAGE` and `CREATE` on the schema the migration targets (`public` unless apply was given another). The same run grants that role `SELECT`, `INSERT`, and `UPDATE` on `okm_meta` and `okm_history` when this run created them as another role.
+
 ## Domains
 
 - **The base type of a domain cannot change.** A plan that replaces `t.domain("pos", t.integer(), …)` with `t.domain("pos", t.text(), …)` fails with OKM1020 and names both types. The base stays as it was created. Add a new domain when the column needs another type.

@@ -13,6 +13,8 @@ export type TargetInput =
       readonly protected?: boolean;
     };
 
+import type { RolesInput } from "../../dialects/pg/role/index.js";
+
 /** Paths and targets `okm` reads. */
 export type MigrateConfig = {
   /** Module that exports the built schema. */
@@ -39,6 +41,13 @@ export type MigrateConfig = {
     readonly lock?: number;
     readonly statement?: number;
   };
+  /**
+   * Migration role and application role.
+   *
+   * A name is external unless it is also listed in `managed`. The plan creates
+   * a managed role and never drops one.
+   */
+  readonly roles?: RolesInput;
 };
 
 /**
