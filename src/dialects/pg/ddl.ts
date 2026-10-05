@@ -5,6 +5,8 @@
  * has one spelling.
  */
 
+import { isDomain } from "../../contracts/catalog/enum.js";
+import { fitIdentifier } from "../../contracts/catalog/identifier.js";
 import { identityKey } from "../../contracts/catalog/identity.js";
 import { creationOrder } from "../../contracts/catalog/document.js";
 import type {
@@ -112,7 +114,7 @@ export function createObjectSql(object: CatalogObject, schema: string): string |
     case "sequence":
       return createSequenceSql(object, schema);
     case "type":
-      return createEnumSql(object, schema);
+      return createTypeSql(object, schema);
     case "extension":
       return createExtensionSql(object);
     case "table":
@@ -228,7 +230,12 @@ function collateSql(collation: string | undefined): string {
   return ` collate ${quoteIdent(collation)}`;
 }
 
-function createEnumSql(object: TypeObject, schema: string): string {
+function createTypeSql(object: TypeObject, schema: string): string {
+  if (isDomain(object.definition)) {
+    const name = object.identity.name;
+    const constraint = quoteIdent(fitIdentifier(`${name}_check`));
+    return `create domain ${qualify(schema, name)} as ${object.definition.base} constraint ${constraint} check (${object.definition.check})`;
+  }
   const labels = object.definition.labels.map((label) => quoteLiteral(label)).join(", ");
   return `create type ${qualify(schema, object.identity.name)} as enum (${labels})`;
 }

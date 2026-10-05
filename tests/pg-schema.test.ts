@@ -300,7 +300,11 @@ test("an enum column is one catalog type with a column dependency", () => {
   const types = app.catalog.objects.filter((object) => object.kind === "type");
   expect(types).toHaveLength(1);
   const enumObject = types[0];
-  expect(enumObject?.kind === "type" ? enumObject.definition.labels : []).toEqual(["red", "blue"]);
+  expect(
+    enumObject?.kind === "type" && "labels" in enumObject.definition
+      ? enumObject.definition.labels
+      : [],
+  ).toEqual(["red", "blue"]);
   expect(enumObject?.owner).toBe("managed");
   const users = app.catalog.objects.filter(
     (object) => object.kind === "column" && object.definition.dataType === "color",

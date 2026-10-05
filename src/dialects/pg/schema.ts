@@ -980,6 +980,7 @@ function pushCompiled(
   objects.push(compiled.column);
   if (compiled.check !== undefined) objects.push(compiled.check);
   if (compiled.unique !== undefined) objects.push(compiled.unique);
+  column.state.domain?.emit?.(input.parent.namespace, input.provenance, objects);
 }
 
 function compileUniques(

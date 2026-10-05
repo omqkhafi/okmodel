@@ -616,7 +616,7 @@ References are plain table-name strings (a generic table-name argument cycles th
 | Network | `t.inet()`, `t.cidr()`, `t.macaddr()`, `t.macaddr8()` |
 | Geometry | `t.point()`, `t.line()` (PostGIS via an extension package) |
 | Search / trees | `t.tsvector()`, `t.ltree()` |
-| Enums / domains | `t.enum("name", [...])`. `t.domain("name", base, check)` throws OKM1061 until 0.3 |
+| Enums / domains | `t.enum("name", [...])`. `t.domain("name", base, check)` is a catalog type. The column's TypeScript type and codec are the base column's. Adding or changing the check plans `ALTER DOMAIN … ADD CONSTRAINT … NOT VALID`, then `VALIDATE CONSTRAINT`, then drops the previous check. Those statements never use `CASCADE`. Changing the base type is OKM1020 |
 | Arrays | `.array()`, `.array({ dims: 2 })` |
 | Custom | `t.custom({ sqlType, encode, decode, tsType, accepts? })`. `accepts` names the object kinds the codec takes (`"Object"`, `"Array"`, `"Temporal.Instant"`); without it every object is rejected (OKM1121) |
 
@@ -630,7 +630,6 @@ Modifiers: `.nullable()`, `.default(v)`, `.defaultSql(sql)`, `.primaryKey()`, `.
 
 | Builder or option | Version |
 |---|---|
-| `t.domain()` | 0.3 |
 | `schema({ functions, triggers, views })` | 0.3 |
 | `table({ presets })` | 0.2 |
 | `table({ reference })` | 0.4 |

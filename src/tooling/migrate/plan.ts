@@ -11,7 +11,8 @@
 
 import { OkmError } from "../../contracts/error.js";
 import { creationOrder, renameColumn, renameTable } from "../../contracts/catalog/document.js";
-import { sameEnumLabels } from "../../contracts/catalog/enum.js";
+import { isDomain, sameEnumLabels } from "../../contracts/catalog/enum.js";
+import { fitIdentifier } from "../../contracts/catalog/identifier.js";
 import { identityKey, staticNamespace } from "../../contracts/catalog/identity.js";
 import { compareText } from "../../contracts/catalog/object.js";
 import type {
@@ -143,7 +144,10 @@ export function planMigration(request: PlanRequest): MigrationPlan {
     const previous = beforeBy.get(item.key);
     if (previous === undefined || sameDefinition(previous, item.object)) continue;
     if (previous.kind === "extension" && item.object.kind === "extension") continue;
-    if (previous.kind === "type" && item.object.kind === "type") continue;
+    if (previous.kind === "type" && item.object.kind === "type") {
+      refuseDomainBaseChange(previous, item.object);
+      continue;
+    }
     if (
       previous.kind === "column" &&
       item.object.kind === "column" &&
@@ -168,6 +172,7 @@ export function planMigration(request: PlanRequest): MigrationPlan {
   steps.push(...renameSteps(request.before, renames, schema));
   steps.push(...keptNames.map((item) => renameShapeStep(item, schema)));
   steps.push(...enumAddSteps(enums));
+  steps.push(...domainCheckSteps(beforeBy, afterBy, schema));
   steps.push(...expandBackfills(picklists, enums, replacements, schema));
 
   const droppedTables = new Set(
@@ -824,6 +829,63 @@ function picklistChanges(
   return changes;
 }
 
+function refuseDomainBaseChange(before: CatalogObject, after: CatalogObject): void {
+  if (before.kind !== "type" || after.kind !== "type") return;
+  if (!isDomain(before.definition) || !isDomain(after.definition)) return;
+  if (before.definition.base === after.definition.base) return;
+  throw new OkmError(
+    "OKM1020",
+    `Domain ${after.identity.name} cannot change its base type from ${before.definition.base} to ${after.definition.base}. The base type of a domain stays as it was created.`,
+    {
+      fix: {
+        summary: "Keep the base type. Add a new domain when the column needs another type.",
+      },
+    },
+  );
+}
+
+function domainCheckSteps(
+  beforeBy: ReadonlyMap<string, CatalogObject>,
+  afterBy: ReadonlyMap<string, CatalogObject>,
+  schema: string,
+): PlanStep[] {
+  const steps: PlanStep[] = [];
+  for (const [key, next] of afterBy) {
+    if (next.kind !== "type" || !isDomain(next.definition)) continue;
+    const previous = beforeBy.get(key);
+    if (previous === undefined || previous.kind !== "type" || !isDomain(previous.definition)) {
+      continue;
+    }
+    if (previous.definition.check === next.definition.check) continue;
+    const name = next.identity.name;
+    const type = qualify(schema, name);
+    const current = quoteIdent(fitIdentifier(`${name}_check`));
+    const upcoming = quoteIdent(fitIdentifier(`${name}_check_next`));
+    const expression = next.definition.check;
+    steps.push(
+      step(
+        `alter domain ${type} add constraint ${upcoming} check (${expression}) not valid`,
+        "expand",
+        "ddl",
+        ACCESS,
+      ),
+    );
+    steps.push(
+      step(`alter domain ${type} validate constraint ${upcoming}`, "expand", "ddl", ACCESS),
+    );
+    steps.push(step(`alter domain ${type} drop constraint ${current}`, "contract", "ddl", ACCESS));
+    steps.push(
+      step(
+        `alter domain ${type} rename constraint ${upcoming} to ${current}`,
+        "expand",
+        "ddl",
+        ACCESS,
+      ),
+    );
+  }
+  return steps;
+}
+
 function enumEdits(
   beforeBy: ReadonlyMap<string, CatalogObject>,
   afterBy: ReadonlyMap<string, CatalogObject>,
@@ -831,34 +893,28 @@ function enumEdits(
 ): EnumEdit[] {
   const edits: EnumEdit[] = [];
   for (const [key, next] of afterBy) {
-    if (next.kind !== "type") continue;
+    if (next.kind !== "type" || isDomain(next.definition)) continue;
     const previous = beforeBy.get(key);
-    if (previous === undefined || previous.kind !== "type") continue;
-    if (sameEnumLabels(previous.definition.labels, next.definition.labels)) continue;
-    const removed = previous.definition.labels.filter(
-      (label) => !next.definition.labels.includes(label),
-    );
+    if (previous === undefined || previous.kind !== "type" || isDomain(previous.definition)) {
+      continue;
+    }
+    const beforeLabels = previous.definition.labels;
+    const afterLabels = next.definition.labels;
+    if (sameEnumLabels(beforeLabels, afterLabels)) continue;
+    const removed = beforeLabels.filter((label) => !afterLabels.includes(label));
     const columns = enumColumns(previous.identity.name, beforeBy, afterBy);
-    if (
-      removed.length === 0 &&
-      labelSubsequence(previous.definition.labels, next.definition.labels)
-    ) {
+    if (removed.length === 0 && labelSubsequence(beforeLabels, afterLabels)) {
       edits.push({
         kind: "add",
         name: next.identity.name,
-        statements: addValueStatements(
-          schema,
-          next.identity.name,
-          previous.definition.labels,
-          next.definition.labels,
-        ),
+        statements: addValueStatements(schema, next.identity.name, beforeLabels, afterLabels),
       });
       continue;
     }
     edits.push({
       kind: "replace",
       name: next.identity.name,
-      labels: next.definition.labels,
+      labels: afterLabels,
       removed,
       columns,
     });

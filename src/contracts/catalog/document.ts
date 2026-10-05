@@ -21,7 +21,7 @@ import {
   templateNamespace,
 } from "./identity.js";
 import { catalog } from "./build.js";
-import { enumType } from "./enum.js";
+import { domainType, enumType, isDomain } from "./enum.js";
 import { extensionObject } from "./extension.js";
 import { column, compareText, constraint, index, sequence, table } from "./object.js";
 import { dependencyOrder } from "./order.js";
@@ -550,6 +550,17 @@ function rewriteType(
   object: CatalogObject & { readonly kind: "type" },
   dependencies: readonly ObjectIdentity[],
 ): CatalogObject {
+  if (isDomain(object.definition)) {
+    return domainType({
+      namespace: object.identity.namespace,
+      name: object.identity.name,
+      base: object.definition.base,
+      check: object.definition.check,
+      owner: object.owner,
+      provenance: object.provenance,
+      dependencies,
+    });
+  }
   return enumType({
     namespace: object.identity.namespace,
     name: object.identity.name,
@@ -686,7 +697,9 @@ function definitionToJson(object: CatalogObject): Json {
         start: object.definition.start,
       };
     case "type":
-      return { labels: object.definition.labels };
+      return isDomain(object.definition)
+        ? { base: object.definition.base, check: object.definition.check }
+        : { labels: object.definition.labels };
     case "extension": {
       const definition = object.definition;
       return {
@@ -930,6 +943,18 @@ function parseType(
 ): CatalogObject {
   if (identity.kind !== "type") {
     catalogError("OKM1020", `Type object identity is ${identity.kind}, not a type.`);
+  }
+  if ("base" in definition || "check" in definition) {
+    rejectUnknown(definition, ["base", "check"], "type definition");
+    return domainType({
+      namespace: identity.namespace,
+      name: identity.name,
+      base: requireString(definition.base, "domain base"),
+      check: requireString(definition.check, "domain check"),
+      owner,
+      provenance,
+      dependencies,
+    });
   }
   rejectUnknown(definition, ["labels"], "type definition");
   return enumType({

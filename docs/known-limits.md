@@ -10,7 +10,6 @@ An option or builder that is not in 0.2 throws OKM1061 and names the prompt or v
 
 | Item | Version | Prompt |
 | --- | --- | --- |
-| `t.domain` | 0.3 | P40b |
 | functions | 0.3 | P41 |
 | triggers | 0.3 | P41 |
 | views | 0.3 | P42 |
@@ -32,6 +31,12 @@ Also not in 0.2:
 - **`iStartsWith`, `iContains` and `iEndsWith` are not in 0.2** (D176). Use `ilike()` with an escaped pattern.
 - **`aggregate()` has no `having` and no `bucket`** (M2).
 - **Batch-mode drivers have no adapter yet.** Neon HTTP and Cloudflare D1 are covered by the driver contract (`batch` is required on every driver) and there is no adapter in this repository for either.
+
+## Domains
+
+- **The base type of a domain cannot change.** A plan that replaces `t.domain("pos", t.integer(), …)` with `t.domain("pos", t.text(), …)` fails with OKM1020 and names both types. The base stays as it was created. Add a new domain when the column needs another type.
+- **An enum cannot be the base of a domain.** `t.domain("shade", t.enum("color", ["red"]), …)` is OKM1060. Use a scalar column type.
+- **A domain check is stored as written.** Introspection reads the check Postgres prints (`pg_get_constraintdef`, with the leading `CHECK` removed). A check that Postgres reprints differently is planned as a check change. A round trip has no steps when the stored check is already that printed text, for example `((VALUE > 0))`.
 
 ## Safety and tenancy
 

@@ -147,6 +147,8 @@ const color = t.enum("color", ["red", "blue"]);
 expectTypeOf<ColumnRowOf<typeof color>>().toEqualTypeOf<"red" | "blue">();
 const email = t.domain("email", t.text(), "VALUE LIKE '%@%'");
 expectTypeOf<ColumnRowOf<typeof email>>().toEqualTypeOf<string>();
+const note = t.domain("note", t.text().nullable(), "true");
+expectTypeOf<ColumnRowOf<typeof note>>().toEqualTypeOf<string | null>();
 
 const tags = t.text().array();
 expectTypeOf<ColumnRowOf<typeof tags>>().toEqualTypeOf<readonly string[]>();

@@ -8,6 +8,9 @@
 import {
   REFERENTIAL_ACTIONS,
   referentialAction,
+  type CatalogObject,
+  type Namespace,
+  type Provenance,
   type ReferentialAction,
 } from "../../contracts/catalog/types.js";
 import { readClientGenerator, type ClientFill } from "../../contracts/generator.js";
@@ -276,7 +279,17 @@ export type ColumnState<TValue> = {
   readonly typeDependency: string | undefined;
   /** Ordered enum labels. Absent on every column that is not an enum. */
   readonly enumLabels: readonly string[] | undefined;
-  readonly domain: { readonly base: string; readonly check: string } | undefined;
+  readonly domain:
+    | {
+        readonly base: string;
+        readonly check: string;
+        readonly emit?: (
+          namespace: Namespace,
+          provenance: Provenance,
+          objects: CatalogObject[],
+        ) => void;
+      }
+    | undefined;
   readonly primaryKey: boolean;
   readonly typeLabel: string | undefined;
   readonly references: ReferenceModifier | undefined;
@@ -315,7 +328,15 @@ export type OpenColumn<TValue> = {
   readonly extension?: string;
   readonly typeDependency?: string;
   readonly enumLabels?: readonly string[];
-  readonly domain?: { readonly base: string; readonly check: string };
+  readonly domain?: {
+    readonly base: string;
+    readonly check: string;
+    readonly emit?: (
+      namespace: Namespace,
+      provenance: Provenance,
+      objects: CatalogObject[],
+    ) => void;
+  };
   readonly primaryKey?: boolean;
   readonly typeLabel?: string;
 };
