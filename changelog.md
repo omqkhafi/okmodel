@@ -35,6 +35,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - `okm ext list` prints the extensions the connected server can install and the version that is installed. `okm ext check` compares those versions with the schema. A missing extension is OKM1811. A pin the server does not meet is OKM1812. `okm ext test` and `okm ext scaffold` are not in this version.
 - `okm doctor` lists the triggers on each table. `okm doctor OKMxxxx` prints that code. When `roles` is set, doctor also checks that an external role exists, that a managed role can be created (`CREATEROLE`), and that the application role can reach each managed object (OKM1825).
+- The 0.3 gate pushes an extension, a domain, a function, a trigger from `timestamps({ enforce: "trigger" })`, a view, a materialized view, and roles onto an empty database, checks for no drift, alters each one, and removes it without `CASCADE`. An extension the server cannot install is OKM1811 before any statement.
 - Apply runs migrations as the migration role. When that role exists and is not `current_user`, the runner issues one `SET ROLE` before any statement and records it on the run report. The statement is not a plan step. `CREATEROLE` is checked before any statement when the plan creates or alters a role. `CREATE ROLE` has no `IF NOT EXISTS`; a role that already exists is skipped.
 
 #### docs
