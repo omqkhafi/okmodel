@@ -24,6 +24,7 @@ import { catalog } from "./build.js";
 import { domainType, enumType, isDomain } from "./enum.js";
 import { extensionObject } from "./extension.js";
 import { functionObject, triggerObject } from "./routine.js";
+import { materializedViewIndex, materializedViewObject, viewObject } from "./view.js";
 import { column, compareText, constraint, index, sequence, table } from "./object.js";
 import { dependencyOrder } from "./order.js";
 import type {
@@ -33,6 +34,7 @@ import type {
   ConstraintObject,
   DependencyEdge,
   IndexObject,
+  MaterializedViewObject,
   Namespace,
   ObjectIdentity,
   ObjectRef,
@@ -41,6 +43,7 @@ import type {
   ExtensionObject,
   SequenceObject,
   TableObject,
+  ViewObject,
 } from "./types.js";
 import {
   BUILT_KINDS,
@@ -293,6 +296,13 @@ function rewriteRenamed(
         ...(object.definition.atomic === true ? { atomic: true } : {}),
       });
     }
+    case "view":
+    case "materializedView": {
+      const local = object.dependencies.some(
+        (edge) => edge.target.kind === "column" && sameRef(edge.target.parent, change.parent),
+      );
+      return rewriteView(object, dependencies, rewriteExpr(object.definition.query, change, local));
+    }
     case "trigger": {
       const local = sameRef(object.identity.parent, change.parent);
       return triggerObject({
@@ -395,23 +405,57 @@ function rewriteIndex(
 ): IndexObject {
   const local = sameRef(object.identity.parent, change.parent);
   const definition = object.definition;
-  return index({
-    parent: object.identity.parent,
-    name: object.identity.name,
-    nameKey: definition.nameKey,
+  return indexAgain(object, object.identity.parent, dependencies, {
     columns: local
       ? renameList(definition.columns, change.from, change.to)
       : [...definition.columns],
-    unique: definition.unique,
-    owner: object.owner,
-    provenance: object.provenance,
-    dependencies,
     ...(definition.predicate !== undefined
       ? { predicate: rewriteExpr(definition.predicate, change, local) }
       : {}),
     ...(definition.expression !== undefined
       ? { expression: rewriteExpr(definition.expression, change, local) }
       : {}),
+  });
+}
+
+function indexAgain(
+  object: IndexObject,
+  parent: ObjectRef,
+  dependencies: readonly ObjectIdentity[],
+  patch: {
+    readonly columns: readonly string[];
+    readonly predicate?: string;
+    readonly expression?: string;
+  },
+): IndexObject {
+  const onView = dependencies.some(
+    (edge) => edge.kind === "view" || edge.kind === "materializedView",
+  );
+  if (onView) {
+    return materializedViewIndex({
+      parent,
+      name: object.identity.name,
+      nameKey: object.definition.nameKey,
+      columns: patch.columns,
+      unique: object.definition.unique,
+      owner: object.owner,
+      provenance: object.provenance,
+      dependencies,
+      ...(patch.predicate !== undefined ? { predicate: patch.predicate } : {}),
+      ...(patch.expression !== undefined ? { expression: patch.expression } : {}),
+    });
+  }
+  return index({
+    parent,
+    name: object.identity.name,
+    nameKey: object.definition.nameKey,
+    columns: patch.columns,
+    unique: object.definition.unique,
+    owner: object.owner,
+    provenance: object.provenance,
+    dependencies,
+    ...(patch.predicate !== undefined ? { predicate: patch.predicate } : {}),
+    ...(patch.expression !== undefined ? { expression: patch.expression } : {}),
   });
 }
 
@@ -451,6 +495,29 @@ function rewriteConstraint(
       : {}),
     ...(referenced !== undefined ? { references: referenced } : {}),
   });
+}
+
+function rewriteView(
+  object: ViewObject | MaterializedViewObject,
+  dependencies: readonly ObjectIdentity[],
+  query: string,
+): CatalogObject {
+  const input = {
+    namespace: object.identity.namespace,
+    name: object.identity.name,
+    columns: object.definition.columns,
+    query,
+    owner: object.owner,
+    provenance: object.provenance,
+    dependencies,
+  };
+  if (object.kind === "materializedView") {
+    return materializedViewObject({
+      ...input,
+      ...(object.definition.refresh !== undefined ? { refresh: object.definition.refresh } : {}),
+    });
+  }
+  return viewObject(input);
 }
 
 function rewriteExpr(
@@ -518,15 +585,8 @@ function rewriteTableName(
       });
     }
     if (object.kind === "index") {
-      return index({
-        parent,
-        name: object.identity.name,
-        nameKey: object.definition.nameKey,
+      return indexAgain(object, parent, dependencies, {
         columns: [...object.definition.columns],
-        unique: object.definition.unique,
-        owner: object.owner,
-        provenance: object.provenance,
-        dependencies,
         ...(object.definition.predicate !== undefined
           ? {
               predicate: rewriteExpr(
@@ -610,6 +670,27 @@ function rewriteTableName(
         : {}),
       ...(object.definition.atomic === true ? { atomic: true } : {}),
     });
+  }
+  if (object.kind === "view" || object.kind === "materializedView") {
+    const local = object.dependencies.some((edge) => {
+      if (edge.target.kind === "table") {
+        return (
+          edge.target.name === change.from && sameNamespace(edge.target.namespace, change.namespace)
+        );
+      }
+      if (edge.target.kind === "column") {
+        return (
+          edge.target.parent.name === change.from &&
+          sameNamespace(edge.target.parent.namespace, change.namespace)
+        );
+      }
+      return false;
+    });
+    return rewriteView(
+      object,
+      dependencies,
+      rewriteExpr(object.definition.query, { from: change.from, to: change.to }, local),
+    );
   }
   if (object.kind === "trigger") {
     const parent = movedParent(object.identity.parent, change);
@@ -836,6 +917,23 @@ function definitionToJson(object: CatalogObject): Json {
         ...(definition.when !== undefined ? { when: definition.when } : {}),
       };
     }
+    case "view":
+      return {
+        columns: object.definition.columns.map((column) => ({
+          dataType: column.dataType,
+          name: column.name,
+        })),
+        query: object.definition.query,
+      };
+    case "materializedView":
+      return {
+        columns: object.definition.columns.map((column) => ({
+          dataType: column.dataType,
+          name: column.name,
+        })),
+        query: object.definition.query,
+        ...(object.definition.refresh !== undefined ? { refresh: object.definition.refresh } : {}),
+      };
     default:
       return assertNever(object);
   }
@@ -882,6 +980,9 @@ function parseObject(value: unknown): CatalogObject {
       return parseFunction(identity, definition, owner, provenance, dependencies);
     case "trigger":
       return parseTrigger(identity, definition, owner, provenance, dependencies);
+    case "view":
+    case "materializedView":
+      return parseView(kind, identity, definition, owner, provenance, dependencies);
     default:
       return assertNeverKind(kind);
   }
@@ -1216,6 +1317,55 @@ function parseTrigger(
   });
 }
 
+function parseView(
+  kind: "view" | "materializedView",
+  identity: ObjectIdentity,
+  definition: Record<string, unknown>,
+  owner: Owner,
+  provenance: Provenance,
+  dependencies: readonly ObjectIdentity[],
+): CatalogObject {
+  if (identity.kind !== kind) {
+    catalogError("OKM1020", `View object identity is ${identity.kind}, not a ${kind}.`);
+  }
+  const fields = kind === "view" ? ["columns", "query"] : ["columns", "query", "refresh"];
+  rejectUnknown(definition, fields, "view definition");
+  const columns = parseViewColumns(definition.columns);
+  const query = requireString(definition.query, "view query");
+  const refresh = definition.refresh;
+  if (refresh !== undefined && refresh !== "concurrently") {
+    catalogError("OKM1020", `Materialized view ${identity.name} refresh is not supported.`);
+  }
+  const input = {
+    namespace: identity.namespace,
+    name: identity.name,
+    columns,
+    query,
+    owner,
+    provenance,
+    dependencies,
+  };
+  if (kind === "materializedView") {
+    return materializedViewObject({
+      ...input,
+      ...(refresh === "concurrently" ? { refresh: "concurrently" as const } : {}),
+    });
+  }
+  return viewObject(input);
+}
+
+function parseViewColumns(value: unknown): { readonly name: string; readonly dataType: string }[] {
+  if (!Array.isArray(value)) catalogError("OKM1020", "View columns must be a list.");
+  return value.map((item) => {
+    const record = requireRecord(item, "view column");
+    rejectUnknown(record, ["dataType", "name"], "view column");
+    return {
+      name: requireString(record.name, "view column"),
+      dataType: requireString(record.dataType, "view column type"),
+    };
+  });
+}
+
 function parseEvent(value: string): "insert" | "update" | "delete" | "truncate" {
   if (value !== "insert" && value !== "update" && value !== "delete" && value !== "truncate") {
     catalogError("OKM1020", `Trigger event ${value} is not supported.`);
@@ -1449,6 +1599,8 @@ function isBuiltKind(kind: string): kind is CatalogObject["kind"] {
     kind === "extension" ||
     kind === "function" ||
     kind === "trigger" ||
+    kind === "view" ||
+    kind === "materializedView" ||
     (BUILT_KINDS as readonly string[]).includes(kind)
   );
 }

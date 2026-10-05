@@ -16,10 +16,12 @@ import type {
   ConstraintObject,
   FunctionObject,
   IndexObject,
+  MaterializedViewObject,
   SequenceObject,
   TableObject,
   TriggerObject,
   TypeObject,
+  ViewObject,
 } from "../../contracts/catalog/types.js";
 import { quoteLiteral } from "./quote.js";
 
@@ -53,7 +55,16 @@ export function renderCatalog(source: Catalog, schema: string): readonly string[
     if (sql !== undefined) statements.push(sql);
   }
   for (const object of ordered) {
-    if (object.kind === "type" || object.kind === "function" || object.kind === "trigger") continue;
+    if (
+      object.kind === "type" ||
+      object.kind === "function" ||
+      object.kind === "trigger" ||
+      object.kind === "view" ||
+      object.kind === "materializedView" ||
+      ownedByView(object)
+    ) {
+      continue;
+    }
     if (object.owner === "ignored") continue;
     const key = identityKey(object.identity);
     if (object.kind === "table") {
@@ -71,7 +82,34 @@ export function renderCatalog(source: Catalog, schema: string): readonly string[
       if (sql !== undefined) statements.push(sql);
     }
   }
+  for (const kind of ["view", "materializedView"] as const) {
+    for (const object of ordered) {
+      if (object.kind !== kind || object.owner === "ignored") continue;
+      const sql = createObjectSql(object, schema);
+      if (sql !== undefined) statements.push(sql);
+    }
+  }
+  for (const object of ordered) {
+    if (!ownedByView(object) || object.owner === "ignored") continue;
+    const sql = createObjectSql(object, schema);
+    if (sql !== undefined) statements.push(sql);
+  }
   return statements;
+}
+
+/**
+ * Reports whether an index belongs to a view or a materialized view.
+ *
+ * Those indexes are created after the view, not with the tables.
+ *
+ * @param object - Catalog object
+ * @returns `true` when an index edge points at a view
+ */
+export function ownedByView(object: CatalogObject): boolean {
+  if (object.kind !== "index") return false;
+  return object.dependencies.some(
+    (edge) => edge.target.kind === "view" || edge.target.kind === "materializedView",
+  );
 }
 
 /**
@@ -105,6 +143,10 @@ export function dropObjectSql(object: CatalogObject, schema: string): string | u
       return `drop function ${qualify(schema, object.identity.name)}(${object.identity.argTypes.join(", ")})`;
     case "trigger":
       return `drop trigger ${quoteIdent(object.identity.name)} on ${qualify(schema, object.identity.parent.name)}`;
+    case "view":
+      return `drop view ${qualify(schema, object.identity.name)}`;
+    case "materializedView":
+      return `drop materialized view ${qualify(schema, object.identity.name)}`;
     default:
       return undefined;
   }
@@ -135,6 +177,10 @@ export function createObjectSql(object: CatalogObject, schema: string): string |
       return functionSql(object, schema, false);
     case "trigger":
       return triggerSql(object, schema);
+    case "view":
+      return viewSql(object, schema, false);
+    case "materializedView":
+      return materializedViewSql(object, schema);
     case "table":
       return undefined;
     default:
@@ -165,6 +211,57 @@ export function functionSql(object: FunctionObject, schema: string, replace: boo
   const tail = `returns ${definition.returns} language ${definition.language} ${definition.volatility}${security}${path}`;
   if (definition.atomic) return `${head} ${tail} ${definition.body}`;
   return `${head} ${tail} as ${dollarQuote(definition.body)}`;
+}
+
+/**
+ * `CREATE` or `CREATE OR REPLACE` for one view.
+ *
+ * Appending columns is replace. The query is the stored text.
+ *
+ * @param object - View to render
+ * @param schema - Concrete schema name
+ * @param replace - `CREATE OR REPLACE` when true
+ * @returns The statement
+ */
+export function viewSql(object: ViewObject, schema: string, replace: boolean): string {
+  const verb = replace ? "create or replace view" : "create view";
+  return `${verb} ${qualify(schema, object.identity.name)} as ${object.definition.query}`;
+}
+
+/**
+ * `CREATE MATERIALIZED VIEW ... WITH NO DATA`.
+ *
+ * Populate is a separate planned step. This statement does not read the table.
+ *
+ * @param object - Materialized view to render
+ * @param schema - Concrete schema name
+ * @returns The statement
+ */
+export function materializedViewSql(object: MaterializedViewObject, schema: string): string {
+  return `create materialized view ${qualify(schema, object.identity.name)} as ${object.definition.query} with no data`;
+}
+
+/**
+ * `REFRESH MATERIALIZED VIEW`.
+ *
+ * A view created `WITH NO DATA` is empty, and Postgres rejects `CONCURRENTLY`
+ * until it has been populated once. The plan's populate step passes
+ * `populated: false`. A later refresh uses `CONCURRENTLY` when the declaration
+ * asked for it.
+ *
+ * @param object - Materialized view to refresh
+ * @param schema - Concrete schema name
+ * @param populated - `true` when the view already holds rows
+ * @returns The statement
+ */
+export function refreshMaterializedViewSql(
+  object: MaterializedViewObject,
+  schema: string,
+  populated = false,
+): string {
+  const concurrently =
+    populated && object.definition.refresh === "concurrently" ? " concurrently" : "";
+  return `refresh materialized view${concurrently} ${qualify(schema, object.identity.name)}`;
 }
 
 function triggerSql(object: TriggerObject, schema: string): string {

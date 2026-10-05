@@ -1304,5 +1304,39 @@
       "name": "pgTrgm",
       "kind": "stable"
     }
+  ],
+  "okmodel/view": [
+    {
+      "name": "MaterializedViewDeclaration",
+      "kind": "stable"
+    },
+    {
+      "name": "MaterializedViewIndexInput",
+      "kind": "stable"
+    },
+    {
+      "name": "MaterializedViewOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "ViewColumnInput",
+      "kind": "stable"
+    },
+    {
+      "name": "ViewDeclaration",
+      "kind": "stable"
+    },
+    {
+      "name": "ViewOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "materializedView",
+      "kind": "stable"
+    },
+    {
+      "name": "view",
+      "kind": "stable"
+    }
   ]
 }

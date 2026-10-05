@@ -13,6 +13,13 @@ import { staticNamespace } from "../../contracts/catalog/identity.js";
 import { extensionObject } from "../../contracts/catalog/extension.js";
 import { column, constraint, index, sequence, table } from "../../contracts/catalog/object.js";
 import { functionObject, triggerObject } from "../../contracts/catalog/routine.js";
+import {
+  materializedViewIndex,
+  materializedViewObject,
+  normaliseViewQuery,
+  viewObject,
+} from "../../contracts/catalog/view.js";
+import { VIEW_DEPENDENCIES, viewDependencyEdges } from "./view/depend.js";
 import { quoteIdent } from "./ddl.js";
 import type {
   Catalog,
@@ -73,6 +80,8 @@ export async function introspectSchema(
     functions,
     triggers,
     functionDeps,
+    views,
+    viewDeps,
   ] = await Promise.all([
     runner.query(TABLES, params),
     runner.query(COLUMNS, params),
@@ -85,6 +94,8 @@ export async function introspectSchema(
     runner.query(FUNCTIONS, params),
     runner.query(TRIGGERS, params),
     runner.query(FUNCTION_DEPS, params),
+    runner.query(VIEWS, params),
+    runner.query(VIEW_DEPENDENCIES, params),
   ]);
   const objects: CatalogObject[] = [];
   const parents = new Map<string, ObjectRef>();
@@ -221,9 +232,29 @@ export async function introspectSchema(
       }),
     );
   }
+  const matviewNames = new Set(
+    views.filter((row) => text(row, "kind") === "m").map((row) => text(row, "name")),
+  );
   for (const row of indexes) {
     const parentName = text(row, "parent");
     const parent = parents.get(parentName) ?? { namespace, name: parentName };
+    if (matviewNames.has(parentName)) {
+      const columns = list(text(row, "columns"));
+      const predicate = text(row, "predicate");
+      const expression = indexExpression(row, columns);
+      objects.push(
+        materializedViewIndex({
+          parent,
+          name: text(row, "name"),
+          columns,
+          unique: flag(row, "is_unique"),
+          provenance,
+          ...(expression.length > 0 ? { expression } : {}),
+          ...(predicate.length > 0 ? { predicate } : {}),
+        }),
+      );
+      continue;
+    }
     const columns = list(text(row, "columns"));
     const predicate = text(row, "predicate");
     const expression = indexExpression(row, columns);
@@ -319,7 +350,55 @@ export async function introspectSchema(
       }),
     );
   }
+  for (const row of views) {
+    const kind = text(row, "kind") === "m" ? "materializedView" : "view";
+    const columns = printedColumns(text(row, "columns"));
+    const query = normaliseViewQuery(text(row, "query"));
+    const name = text(row, "name");
+    if (kind === "materializedView") {
+      objects.push(materializedViewObject({ namespace, name, columns, query, provenance }));
+    } else {
+      objects.push(viewObject({ namespace, name, columns, query, provenance }));
+    }
+  }
+  const viewEdges = viewDependencyEdges(viewDeps, namespace, objects);
+  for (let index = 0; index < objects.length; index += 1) {
+    const object = objects[index];
+    if (object === undefined) continue;
+    if (object.kind !== "view" && object.kind !== "materializedView") continue;
+    const dependencies = viewEdges.get(object.identity.name);
+    if (dependencies === undefined || dependencies.length === 0) continue;
+    objects[index] =
+      object.kind === "view"
+        ? viewObject({
+            namespace,
+            name: object.identity.name,
+            columns: object.definition.columns,
+            query: object.definition.query,
+            provenance,
+            dependencies,
+          })
+        : materializedViewObject({
+            namespace,
+            name: object.identity.name,
+            columns: object.definition.columns,
+            query: object.definition.query,
+            provenance,
+            dependencies,
+          });
+  }
   return catalog(objects);
+}
+
+function printedColumns(value: string): { name: string; dataType: string }[] {
+  if (value.length === 0) return [];
+  return value.split("\n").map((line) => {
+    const splitAt = line.indexOf("|");
+    return {
+      name: splitAt < 0 ? line : line.slice(0, splitAt),
+      dataType: splitAt < 0 ? "text" : line.slice(splitAt + 1),
+    };
+  });
 }
 
 function argumentList(names: unknown, types: readonly string[]): { name: string; type: string }[] {
@@ -589,6 +668,24 @@ const TRIGGERS = `
   where n.nspname = $1
     and not t.tgisinternal
     and ${CHILD}
+`;
+
+const VIEWS = `
+  select c.relname as name, c.relkind as kind, pg_get_viewdef(c.oid, true) as query,
+    (
+      select coalesce(string_agg(
+        a.attname || '|' || format_type(a.atttypid, a.atttypmod),
+        E'\\n' order by a.attnum
+      ), '')
+      from pg_attribute a
+      where a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
+    ) as columns
+  from pg_class c
+  join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = $1
+    and c.relkind in ('v', 'm')
+    and ${CHILD}
+    and ${member("c.oid", "pg_class")}
 `;
 
 const FUNCTION_DEPS = `

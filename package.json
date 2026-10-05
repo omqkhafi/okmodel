@@ -1,6 +1,6 @@
 {
   "name": "okmodel",
-  "version": "0.3.0-next.3",
+  "version": "0.3.0-next.4",
   "description": "okmodel is a catalog-first TypeScript ORM, PostgreSQL first.",
   "keywords": [
     "migrations",
@@ -94,6 +94,10 @@
       "types": "./dist/dialects/pg/fn/index.d.ts",
       "import": "./dist/dialects/pg/fn/index.js"
     },
+    "./view": {
+      "types": "./dist/dialects/pg/view/index.d.ts",
+      "import": "./dist/dialects/pg/view/index.js"
+    },
     "./pg/citext": {
       "types": "./dist/dialects/pg/ext/citext.d.ts",
       "import": "./dist/dialects/pg/ext/citext.js"
@@ -104,7 +108,7 @@
     }
   },
   "scripts": {
-    "build": "rm -rf dist && bun build ./src/contracts/index.ts ./src/contracts/internal.ts ./src/dialects/pg/index.ts ./src/runtime/pg/postgresjs.ts ./src/runtime/pg/pglite.ts ./src/runtime/pg/pg.ts ./src/runtime/pg/bun.ts ./src/runtime/ids/index.ts ./src/runtime/safety/index.ts ./src/runtime/traits/index.ts ./src/runtime/tenancy/index.ts ./src/runtime/validate/index.ts ./src/dialects/pg/ext/index.ts ./src/dialects/pg/fn/index.ts ./src/dialects/pg/ext/citext.ts ./src/dialects/pg/ext/pg-trgm.ts ./src/tooling/migrate/index.ts ./src/tooling/cli.ts --outdir ./dist --root ./src --format esm --target node --splitting --chunk-naming=shared/[hash].js --external postgres --external @electric-sql/pglite --external pg --external bun && bunx tsc -p tsconfig.build.json && bun ./scripts/write-bin-wrappers.ts",
+    "build": "rm -rf dist && bun build ./src/contracts/index.ts ./src/contracts/internal.ts ./src/dialects/pg/index.ts ./src/runtime/pg/postgresjs.ts ./src/runtime/pg/pglite.ts ./src/runtime/pg/pg.ts ./src/runtime/pg/bun.ts ./src/runtime/ids/index.ts ./src/runtime/safety/index.ts ./src/runtime/traits/index.ts ./src/runtime/tenancy/index.ts ./src/runtime/validate/index.ts ./src/dialects/pg/ext/index.ts ./src/dialects/pg/fn/index.ts ./src/dialects/pg/view/index.ts ./src/dialects/pg/ext/citext.ts ./src/dialects/pg/ext/pg-trgm.ts ./src/tooling/migrate/index.ts ./src/tooling/cli.ts --outdir ./dist --root ./src --format esm --target node --splitting --chunk-naming=shared/[hash].js --external postgres --external @electric-sql/pglite --external pg --external bun && bunx tsc -p tsconfig.build.json && bun ./scripts/write-bin-wrappers.ts",
     "driver-bench": "bun ./scripts/driver-bench.ts",
     "typecheck": "bunx tsc --noEmit -p tsconfig.json",
     "editor-check": "bun ./scripts/editor-check.ts",

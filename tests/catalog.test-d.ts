@@ -28,6 +28,8 @@ expectTypeOf<CatalogObject["kind"]>().toEqualTypeOf<
   | "extension"
   | "function"
   | "trigger"
+  | "view"
+  | "materializedView"
 >();
 
 expectTypeOf<ObjectKind>().toEqualTypeOf<

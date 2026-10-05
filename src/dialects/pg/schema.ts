@@ -229,12 +229,11 @@ const SCHEMA_KNOWN = new Set([
   "triggers",
   "types",
   "validation",
+  "views",
 ]);
 
 /** Later schema options, and the version that adds each one. */
-const SCHEMA_LATER: Readonly<Record<string, string>> = {
-  views: "0.3",
-};
+const SCHEMA_LATER: Readonly<Record<string, string>> = {};
 
 const BIGINT_CODECS = new Set(["string", "number", "bigint"]);
 const NUMERIC_CODECS = new Set(["string", "number"]);
@@ -370,7 +369,7 @@ export function schema<const TTables extends readonly AnyTable[]>(
   }
   const casing = readCasing(config.casing);
   const tables = rewritePass(config.tables, tenancy, schemaTraits, casing);
-  const hooks = collectHooks(tenancy, schemaTraits, config.tables);
+  const hooks = collectHooks(tenancy, schemaTraits, config.tables, config.views);
   const types = readTypes(config.types);
   const codecs = readCodecs(config.codecs);
   const requires = readRequires(config.requires);
@@ -415,6 +414,7 @@ export function schema<const TTables extends readonly AnyTable[]>(
   for (const item of prepared) {
     model[item.tsName] = tableModel(item, edges, byName, accepted);
   }
+  bindViews(config.views, model, tenancy, tables, casing);
 
   // Catalog objects, enum types, and the cycle check run on first read.
   // Import pays for the query model only (D138).
@@ -446,6 +446,7 @@ export function schema<const TTables extends readonly AnyTable[]>(
           );
         }
         contributeListed(config.triggers, objects);
+        contributeListed(config.views, objects);
         document = catalog(objects);
       }
       return document;
@@ -608,6 +609,7 @@ function collectHooks(
   tenancy: ColumnTenancy | undefined,
   schemaTraits: readonly Trait[] | undefined,
   tables: readonly AnyTable[],
+  views: unknown,
 ): readonly SchemaHook[] | undefined {
   const found: SchemaHook[] = [];
   const seen = new Set<object>();
@@ -618,6 +620,11 @@ function collectHooks(
     seen.add(value);
     found.push((hook as SchemaHook).bind(value));
   };
+  if (Array.isArray(views)) {
+    for (const item of views) {
+      if (typeof item === "object" && item !== null) add(item);
+    }
+  }
   if (tenancy !== undefined) add(tenancy);
   if (schemaTraits !== undefined) {
     for (const trait of schemaTraits) add(trait);
@@ -632,6 +639,43 @@ function collectHooks(
   for (const hook of registeredHooks) found.push(hook);
   return found.length === 0 ? undefined : found;
 }
+
+/**
+ * Asks each view to publish a read model.
+ *
+ * The function that does it lives on the view object, so this file does not
+ * import `okmodel/view`.
+ *
+ * @param views - `schema({ views })`
+ * @param model - Query model, mutated with one entry per view
+ * @param tenancy - Column tenancy, when the schema set it
+ * @param tables - Tables after the tenancy rewrite
+ * @param casing - Schema casing
+ */
+function bindViews(
+  views: unknown,
+  model: { [name: string]: TableModel },
+  tenancy: ColumnTenancy | undefined,
+  tables: readonly AnyTable[],
+  casing: "snake" | undefined,
+): void {
+  if (!Array.isArray(views)) return;
+  const scoped = new Set<string>();
+  for (const item of views) {
+    if (typeof item !== "object" || item === null) continue;
+    const install = (item as { readonly install?: ViewBind }).install;
+    install?.call(item, model, tenancy, tables, casing, scoped);
+  }
+}
+
+/** The `install` method a view declaration may carry. */
+type ViewBind = (
+  model: { [name: string]: TableModel },
+  tenancy: ColumnTenancy | undefined,
+  tables: readonly AnyTable[],
+  casing: "snake" | undefined,
+  scoped: Set<string>,
+) => void;
 
 /**
  * Reads the archive model a trait rewrite stored on the table.

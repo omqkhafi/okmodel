@@ -493,7 +493,7 @@ Raw SQL is not a database object. A declared view, function, trigger or grant is
 
 Every node carries: owner (`managed` / `external` / `ignored`), a canonical definition: the normalised structure, never authoring text (view, materialized view and function bodies are judged by a scratch reprint); its hash drives diff and drift (D117), dependency edges at object or **column** granularity, and provenance (which trait, extension or file contributed it). Each kind declares its operations: create, replace (when compatible), alter, drop, and recreate-with-dependents.
 
-**Views.** Defined with the OKModel query builder, so column types and dependencies are inferred like `find`; alternatively SQL with declared columns, verified against a scratch database where dependencies are read from `pg_depend`. Views are read-only in the client: `db.views.activeTasks.find(...)`.
+**Views.** SQL with declared columns, verified against a scratch database where dependencies are read from `pg_depend`. Views are read-only in the client: `db.views.activeTasks.find(...)`. The query builder form (`view(name, (q) => q.from(...))`) is not in this version (D190).
 
 **Materialized views.** `materializedView()` is a separate kind: no `CREATE OR REPLACE`, so a change is drop, create and populate. They own indexes and a `refresh` declaration; `REFRESH ... CONCURRENTLY` needs a unique index (OKM1822). `WITH NO DATA` avoids a long lock at creation; populate is a planned data step shown in the plan. Scheduling refreshes is left to `pg_cron` or the application.
 
@@ -512,7 +512,7 @@ Every node carries: owner (`managed` / `external` / `ignored`), a canonical defi
 | replace, incompatible; change to a column a view depends on | drop dependents in reverse order, alter, recreate (planned by OKModel, never `CASCADE`) | contract |
 | drop | reverse dependency order; refused while a dependent remains | contract |
 
-**Tenancy.** A view over tenant tables inherits the classification. If it exposes the tenant key, the tenant predicate is applied to it; otherwise `okm check` fails (OKM1820) unless declared `global("reason")`. Views default to `security_invoker` under the `rls` strategy (Postgres 15 and later).
+**Tenancy.** A view over tenant tables inherits the classification. If it exposes the tenant key, the tenant predicate is applied to it; otherwise `okm check` fails (OKM1820) unless declared `global("reason")`. `security_invoker` belongs to the `rls` strategy and is not set in this version.
 
 ```ts
 export const touchUpdatedAt = fn("touch_updated_at", {
@@ -520,9 +520,11 @@ export const touchUpdatedAt = fn("touch_updated_at", {
   body: sql`begin new."updatedAt" = now(); return new; end`, dependsOn: [tasks],
 });
 export const tasksTouch = trigger("tasks_touch", { on: tasks, timing: "before", events: ["update"], level: "row", calls: touchUpdatedAt });
-export const activeTasks = view("active_tasks", (q) => q.from(tasks).where({ archivedAt: null }));
+export const activeTasks = view("active_tasks", {
+  columns: [{ name: "id", type: "uuid" }, { name: "title", type: "text" }],
+  query: "select id, title from tasks where archived_at is null",
+});
 ```
-(The exact builder shape is finalized in M0.)
 
 ## 6. Tables
 
@@ -630,7 +632,6 @@ Modifiers: `.nullable()`, `.default(v)`, `.defaultSql(sql)`, `.primaryKey()`, `.
 
 | Builder or option | Version |
 |---|---|
-| `schema({ views })` | 0.3 |
 | `table({ presets })` | 0.2 |
 | `table({ reference })` | 0.4 |
 | `morph`, `table({ computed, policies })` | later |
