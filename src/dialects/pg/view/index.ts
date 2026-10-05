@@ -15,7 +15,9 @@ import {
   viewObject,
 } from "../../../contracts/catalog/view.js";
 import type { CatalogObject, Provenance } from "../../../contracts/catalog/types.js";
+import type { SchemaHook } from "../model.js";
 import type { SqlText } from "../table.js";
+import { viewClient, type ViewInstall } from "./client.js";
 
 /** One declared output column. `type` is the Postgres type name. */
 export type ViewColumnInput = {
@@ -29,6 +31,13 @@ export type ViewOptions = {
   readonly query: SqlText | string;
   /** Schema. The default is `public`. */
   readonly schema?: string;
+  /**
+   * Opts the view out of tenancy.
+   *
+   * A view that reads a tenant table and does not expose the tenant key is
+   * OKM1820 unless this is `global("reason")`.
+   */
+  readonly tenancy?: unknown;
 };
 
 /**
@@ -48,6 +57,10 @@ export type ViewDeclaration = {
    * @returns The view record
    */
   contribute(peers: unknown, built: unknown): readonly CatalogObject[];
+  /** Publishes the read model. `schema()` calls it. */
+  install: ViewInstall;
+  /** Moves the read handle under `db.views`. */
+  hook: SchemaHook;
 };
 
 /** One index owned by a materialized view. */
@@ -86,6 +99,10 @@ export type MaterializedViewDeclaration = {
    * @returns The materialized view and its indexes
    */
   contribute(peers: unknown, built: unknown): readonly CatalogObject[];
+  /** Publishes the read model. `schema()` calls it. */
+  install: ViewInstall;
+  /** Moves the read handle under `db.views`. */
+  hook: SchemaHook;
 };
 
 /**
@@ -102,9 +119,12 @@ export function view(name: string, options: ViewOptions): ViewDeclaration {
   const schema = options.schema ?? "public";
   const columns = options.columns.map((column) => ({ name: column.name, dataType: column.type }));
   const query = bodyText(options.query);
+  const bound = viewClient(name, options.columns, query, options.tenancy);
   return {
     name,
     schema,
+    install: bound.install,
+    hook: bound.hook,
     contribute(peers, built) {
       assertPeers(peers);
       assertNoTable(built, name);
@@ -139,6 +159,7 @@ export function materializedView(
   const schema = options.schema ?? "public";
   const columns = options.columns.map((column) => ({ name: column.name, dataType: column.type }));
   const query = bodyText(options.query);
+  const bound = viewClient(name, options.columns, query, options.tenancy);
   const indexes = options.indexes ?? [];
   if (options.refresh === "concurrently" && !indexes.some((index) => index.unique === true)) {
     throw new OkmError(
@@ -162,6 +183,8 @@ export function materializedView(
   return {
     name,
     schema,
+    install: bound.install,
+    hook: bound.hook,
     contribute(peers, built) {
       assertPeers(peers);
       assertNoTable(built, name);

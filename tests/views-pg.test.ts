@@ -17,7 +17,12 @@ import { materializedView, view } from "../src/dialects/pg/view/index.js";
 import { sealViews } from "../src/dialects/pg/view/scratch.js";
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
 import { createIsolatedDatabase, openPostgres } from "../packages/harness/src/postgres.js";
+import { connect } from "../src/runtime/pg/postgresjs.js";
+import { columnTenancy, global } from "../src/runtime/tenancy/index.js";
 import { planMigration } from "../src/tooling/migrate/plan.js";
+
+const TENANT_A = "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c8d";
+const TENANT_B = "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c8e";
 
 const gate = await loadPostgresGate();
 
@@ -193,6 +198,70 @@ postgresTest(
   30_000,
 );
 
+postgresTest(
+  gate,
+  "a view that exposes the tenant key is filtered, and a global view is not",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const sql = openPostgres(database.url);
+    try {
+      const tasks = table("tasks", { id: t.text().primaryKey(), title: t.text() });
+      const app = schema({
+        casing: "snake",
+        tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
+        tables: [tasks],
+        views: [
+          view("active_tasks", {
+            columns: [
+              { name: "tenant_id", type: "uuid" },
+              { name: "title", type: "text" },
+            ],
+            query: "select tenant_id, title from tasks",
+          }),
+          view("shared_titles", {
+            columns: [{ name: "title", type: "text" }],
+            query: "select title from tasks",
+            tenancy: global("shared titles"),
+          }),
+        ],
+      });
+      const sealed = await sealViews(queryOf(sql), app.catalog);
+      await apply(sql, catalog([]), sealed);
+      const db = connect(database.url, { schema: app, max: 1 });
+      try {
+        await db.connected;
+        const a = db.for({ tenantId: TENANT_A });
+        const b = db.for({ tenantId: TENANT_B });
+        await a.tasks.insert({ id: "1", title: "a" });
+        await b.tasks.insert({ id: "1", title: "b" });
+        const scoped = a as typeof a & {
+          readonly views: {
+            readonly activeTasks: ViewFind;
+            readonly sharedTitles: ViewFind;
+          };
+        };
+        const read = scoped.views.activeTasks.find({ limit: 5 });
+        const described = read.sql();
+        if (described instanceof Promise) throw new Error("find planned asynchronously");
+        expect(described.text).toContain('"tenant_id" = ');
+        expect(described.params[0]).toBe(TENANT_A);
+        expect((await read).map((row) => row.title)).toEqual(["a"]);
+        const shared = scoped.views.sharedTitles.find({ limit: 5 });
+        const sharedSql = shared.sql();
+        if (sharedSql instanceof Promise) throw new Error("find planned asynchronously");
+        expect(sharedSql.text.includes("tenant_id")).toBe(false);
+        expect((await shared).map((row) => row.title).sort()).toEqual(["a", "b"]);
+      } finally {
+        await db.close();
+      }
+    } finally {
+      await sql.end({ timeout: 5 });
+      await database.close();
+    }
+  },
+  30_000,
+);
+
 async function apply(sql: Sql, before: Catalog, after: Catalog): Promise<void> {
   const plan = planMigration({ before, after, name: "apply" });
   for (const step of plan.steps) await sql.unsafe(step.sql);
@@ -208,6 +277,14 @@ async function using(body: (sql: Sql) => Promise<void>): Promise<void> {
     await database.close();
   }
 }
+
+type ViewFind = {
+  find(options: { readonly limit: number }): Promise<readonly { readonly title: string }[]> & {
+    sql():
+      | { readonly text: string; readonly params: readonly (string | null)[] }
+      | Promise<{ readonly text: string; readonly params: readonly (string | null)[] }>;
+  };
+};
 
 function viewSteps(before: Catalog, after: Catalog): string[] {
   return planMigration({ before, after, name: "views" })

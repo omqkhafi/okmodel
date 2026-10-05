@@ -89,6 +89,15 @@ export type ColumnTenancy = {
    * @param ctx - Names, scope, and the table map
    */
   hook(target: Record<string, unknown>, ctx: SchemaHookCtx): void;
+  /**
+   * Treats a view that exposes the tenant key as tenant-scoped.
+   *
+   * The predicate then applies to reads of that view. A view that does not
+   * expose the key is refused earlier (OKM1820) unless it is `global`.
+   *
+   * @param name - Client name of the view
+   */
+  scopeView(name: string): void;
   missing(table: string): never;
 };
 

@@ -6,6 +6,9 @@
  */
 
 import { expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { catalog } from "../src/contracts/catalog/build.js";
 import type { Catalog } from "../src/contracts/catalog/types.js";
@@ -13,6 +16,9 @@ import { viewObject } from "../src/contracts/catalog/view.js";
 import { OkmError } from "../src/contracts/error.js";
 import { schema, table, t } from "../src/dialects/pg/index.js";
 import { materializedView, view } from "../src/dialects/pg/view/index.js";
+import { columnTenancy, global } from "../src/runtime/tenancy/index.js";
+import { repoRoot } from "../scripts/root.js";
+import { checkProject } from "../src/tooling/migrate/project.js";
 import { planMigration } from "../src/tooling/migrate/plan.js";
 
 const tasks = table("tasks", { id: t.text().primaryKey(), title: t.text() });
@@ -195,6 +201,109 @@ test("concurrent refresh without a unique index is OKM1822", () => {
     }),
   );
   expect(error.code).toBe("OKM1822");
+});
+
+test("a view over a tenant table is OKM1820 unless it exposes the key or is global", () => {
+  const tenant = columnTenancy({ key: "tenantId", type: "uuid" });
+  const hidden = () =>
+    schema({
+      casing: "snake",
+      tenancy: tenant,
+      tables: [tasks],
+      views: [
+        view("titles", {
+          columns: [{ name: "title", type: "text" }],
+          query: "select title from tasks",
+        }),
+      ],
+    });
+  expect(capture(hidden).code).toBe("OKM1820");
+
+  const opened = schema({
+    casing: "snake",
+    tenancy: tenant,
+    tables: [tasks],
+    views: [
+      view("titles", {
+        columns: [
+          { name: "tenant_id", type: "uuid" },
+          { name: "title", type: "text" },
+        ],
+        query: "select tenant_id, title from tasks",
+      }),
+    ],
+  });
+  expect(Object.hasOwn(opened.model, "titles")).toBe(true);
+
+  const shared = schema({
+    casing: "snake",
+    tenancy: tenant,
+    tables: [tasks],
+    views: [
+      view("titles", {
+        columns: [{ name: "title", type: "text" }],
+        query: "select title from tasks",
+        tenancy: global("shared titles"),
+      }),
+    ],
+  });
+  expect(Object.hasOwn(shared.model, "titles")).toBe(true);
+
+  const countries = table(
+    "countries",
+    { id: t.text().primaryKey() },
+    { tenancy: global("shared") },
+  );
+  const reference = schema({
+    casing: "snake",
+    tenancy: tenant,
+    tables: [countries],
+    views: [
+      view("country_ids", {
+        columns: [{ name: "id", type: "text" }],
+        query: "select id from countries",
+      }),
+    ],
+  });
+  expect(Object.hasOwn(reference.model, "countryIds")).toBe(true);
+});
+
+test("okm check fails with OKM1820 for a view that hides the tenant key", async () => {
+  const root = repoRoot();
+  const cwd = mkdtempSync(join(tmpdir(), "okm-view-"));
+  const header = [
+    `import { schema, table, t } from ${JSON.stringify(join(root, "src/dialects/pg/index.ts"))};`,
+    `import { view } from ${JSON.stringify(join(root, "src/dialects/pg/view/index.ts"))};`,
+    `import { columnTenancy } from ${JSON.stringify(join(root, "src/runtime/tenancy/index.ts"))};`,
+  ].join("\n");
+  writeFileSync(
+    join(cwd, "schema.ts"),
+    `${header}
+const tasks = table("tasks", { id: t.text().primaryKey(), title: t.text() });
+export const app = schema({
+  casing: "snake",
+  tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
+  tables: [tasks],
+  views: [view("titles", { columns: [{ name: "title", type: "text" }], query: "select title from tasks" })],
+});
+`,
+  );
+  writeFileSync(
+    join(cwd, "okmodel.config.ts"),
+    `import { defineConfig } from ${JSON.stringify(join(root, "src/tooling/migrate/index.ts"))};
+export default defineConfig({ schema: "./schema.ts" });
+`,
+  );
+  let failed: OkmError | undefined;
+  try {
+    await checkProject(cwd);
+  } catch (error) {
+    if (error instanceof OkmError) failed = error;
+    else throw error;
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+  expect(failed?.code).toBe("OKM1820");
 });
 
 function dependOnTitle(source: Catalog): Catalog {

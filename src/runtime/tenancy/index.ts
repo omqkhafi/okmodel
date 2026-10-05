@@ -107,6 +107,9 @@ export function columnTenancy<const Key extends string>(input: {
     rules(table, source, scope) {
       return tenancyRules(table, source, scope, tenants, globals, exemptions);
     },
+    scopeView(name: string) {
+      tenants.add(name);
+    },
     hook(target, ctx) {
       if (
         ctx.tables === undefined ||
