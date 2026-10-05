@@ -8,6 +8,10 @@
  * Before that tag exists, notes added under the release heading are allowed
  * and the version stays.
  *
+ * A pull request whose changed files are all under `.github/` is exempt from
+ * both rules (see {@link releaseExemption}). Any file outside `.github/`
+ * brings both rules back.
+ *
  * Usage:
  *   bun ./scripts/release-check.ts --base <git-rev>
  */
@@ -66,6 +70,22 @@ export function checkReleaseSnapshots(
     problems.push("changelog.md has no new lines under ## Unreleased");
   }
   return problems;
+}
+
+/**
+ * The reason a change needs no version bump and no changelog line, or undefined.
+ *
+ * A pull request whose changed files are all under `.github/` (workflows,
+ * templates) changes no shipped code. An empty list is not exempt: it is
+ * checked as before.
+ *
+ * @param changedFiles - Repository-relative paths the pull request changes
+ * @returns The line to print when exempt, otherwise undefined
+ */
+export function releaseExemption(changedFiles: readonly string[]): string | undefined {
+  if (changedFiles.length === 0) return undefined;
+  if (!changedFiles.every((file) => file.startsWith(".github/"))) return undefined;
+  return "only .github/ changed: no version bump or changelog needed";
 }
 
 /**
@@ -214,6 +234,29 @@ function gitShow(rev: string, path: string): string {
   return proc.stdout.toString();
 }
 
+/**
+ * Paths the head changes since it forked from `rev`, renames listed on both sides.
+ *
+ * @param rev - Base git revision
+ * @returns Repository-relative paths
+ */
+function changedFiles(rev: string): readonly string[] {
+  const proc = Bun.spawnSync(
+    ["git", "diff", "--name-only", "--no-renames", "-z", `${rev}...HEAD`],
+    {
+      cwd: repoRoot(),
+    },
+  );
+  if (proc.exitCode !== 0) {
+    const detail = proc.stderr.toString().trim();
+    throw new Error(`git diff ${rev}...HEAD failed${detail === "" ? "" : `: ${detail}`}`);
+  }
+  return proc.stdout
+    .toString()
+    .split("\0")
+    .filter((file) => file !== "");
+}
+
 if (import.meta.main) {
   try {
     const { values } = parseArgs({
@@ -224,6 +267,11 @@ if (import.meta.main) {
     if (baseRev === undefined || baseRev === "") {
       console.error("[release-check] Usage: bun ./scripts/release-check.ts --base <git-rev>");
       process.exit(2);
+    }
+    const exempt = releaseExemption(changedFiles(baseRev));
+    if (exempt !== undefined) {
+      console.log(`[release-check] ${exempt}`);
+      process.exit(0);
     }
     const root = repoRoot();
     const head = readReleaseSnapshot(root);
