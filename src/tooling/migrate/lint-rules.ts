@@ -31,6 +31,10 @@ export type StepInput = {
   readonly before: Catalog;
   readonly after: Catalog;
   readonly existingTables: ReadonlySet<string>;
+  /** Steps before this one. A safe `SET NOT NULL` is recognised from them. */
+  readonly earlier: readonly PlanStep[];
+  /** Steps after this one. A unique index built for a constraint is recognised from them. */
+  readonly later: readonly PlanStep[];
 };
 
 /** One step rule. `check` returns a reason for each hit, or nothing. */
@@ -67,7 +71,8 @@ const FLOAT_WIDTH: Readonly<Record<string, number>> = {
 /**
  * Step rules, lowest free code in each category.
  *
- * Locking rules are warnings until the planner emits the safe form.
+ * OKM1534 to OKM1537 are errors when the statement is not the safe form.
+ * OKM1538 stays a warning: a rewriting type change has no safe form here.
  */
 export const STEP_RULES: readonly StepRule[] = [
   rule("OKM1511", "destructive", "error", "Dropping a table destroys its rows.", (input) =>
@@ -178,7 +183,7 @@ export const STEP_RULES: readonly StepRule[] = [
     "data-dependent",
     "error",
     "A new unique or primary key on an existing table fails when rows collide.",
-    (input) => hit(uniqueConstraint(input), "adds a unique constraint"),
+    (input) => hit(uniqueConstraint(input), "builds a unique or primary key"),
   ),
   rule(
     "OKM1529",
@@ -211,38 +216,30 @@ export const STEP_RULES: readonly StepRule[] = [
   rule(
     "OKM1534",
     "locking",
-    "warning",
+    "error",
     "Creating an index on an existing table without CONCURRENTLY locks writes.",
     (input) => hit(blockingIndex(input), "creates an index without CONCURRENTLY"),
   ),
   rule(
     "OKM1535",
     "locking",
-    "warning",
+    "error",
     "Adding a check without NOT VALID locks the table while it scans.",
     (input) => hit(checkWithoutNotValid(input), "adds a check without NOT VALID"),
   ),
   rule(
     "OKM1536",
     "locking",
-    "warning",
+    "error",
     "Adding a foreign key without NOT VALID locks the table while it scans.",
     (input) => hit(foreignKeyWithoutNotValid(input), "adds a foreign key without NOT VALID"),
   ),
   rule(
     "OKM1537",
     "locking",
-    "warning",
+    "error",
     "SET NOT NULL locks the table while it scans for nulls.",
-    (input) =>
-      hit(
-        matches(
-          input.step,
-          "set-not-null",
-          /^alter table\s+\S+\s+alter column\s+\S+\s+set not null\b/,
-        ),
-        "sets NOT NULL",
-      ),
+    (input) => hit(unsafeSetNotNull(input), "sets NOT NULL"),
   ),
   rule(
     "OKM1538",
@@ -373,16 +370,71 @@ function requiredColumn(input: StepInput): boolean {
 function uniqueConstraint(input: StepInput): boolean {
   if (!tableExists(input)) return false;
   const text = normalized(input.step.sql);
-  if (!/^alter table\s+\S+\s+add constraint\b/.test(text) && input.step.kind !== "add-constraint") {
-    return false;
+  if (/\busing index\b/.test(text)) return false;
+  if (/^alter table\s+\S+\s+add constraint\b/.test(text) && /\b(unique|primary key)\b/.test(text)) {
+    return true;
   }
-  return /\b(unique|primary key)\b/.test(text);
+  if (!/^create unique index\b/.test(text)) return false;
+  const name = createdIndexName(text);
+  if (name === undefined) return false;
+  return input.later.some((step) => usesIndex(normalized(step.sql), name));
 }
 
 function uniqueIndex(input: StepInput): boolean {
   const text = normalized(input.step.sql);
   if (!/^create unique index\b/.test(text)) return false;
-  return tableExists(input);
+  if (!tableExists(input)) return false;
+  const name = createdIndexName(text);
+  if (name !== undefined && input.later.some((step) => usesIndex(normalized(step.sql), name))) {
+    return false;
+  }
+  return true;
+}
+
+function createdIndexName(text: string): string | undefined {
+  const match = /^create unique index (?:concurrently )?(?:"([^"]+)"|([a-z_][\w$]*))/.exec(text);
+  return match?.[1] ?? match?.[2];
+}
+
+function usesIndex(text: string, name: string): boolean {
+  return text.includes(`using index "${name}"`) || text.includes(`using index ${name}`);
+}
+
+function unsafeSetNotNull(input: StepInput): boolean {
+  const text = normalized(input.step.sql);
+  const match = /^alter table\s+(\S+)\s+alter column\s+(\S+)\s+set not null\b/.exec(text);
+  if (match === null && input.step.kind !== "set-not-null") return false;
+  if (!tableExists(input)) return false;
+  const table = match?.[1];
+  const column = match?.[2];
+  if (
+    table !== undefined &&
+    column !== undefined &&
+    validatedNotNullCheck(input.earlier, table, column)
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function validatedNotNullCheck(
+  earlier: readonly PlanStep[],
+  table: string,
+  column: string,
+): boolean {
+  const needle = `check (${column} is not null) not valid`;
+  for (const step of earlier) {
+    const text = normalized(step.sql);
+    if (!text.startsWith(`alter table ${table} `) || !text.includes(needle)) continue;
+    const added = /^alter table\s+\S+\s+add constraint\s+(\S+)\s+check\b/.exec(text);
+    const name = added?.[1];
+    if (name === undefined) continue;
+    const validated = earlier.some((item) =>
+      normalized(item.sql).startsWith(`alter table ${table} validate constraint ${name}`),
+    );
+    if (validated) return true;
+  }
+  return false;
 }
 
 function blockingIndex(input: StepInput): boolean {
@@ -401,8 +453,22 @@ function foreignKeyWithoutNotValid(input: StepInput): boolean {
 }
 
 function validatingCheck(input: StepInput): boolean {
+  if (widenValidate(input)) return false;
   if (validates(input, "check")) return true;
   return checkWithoutNotValid(input);
+}
+
+function widenValidate(input: StepInput): boolean {
+  const text = normalized(input.step.sql);
+  if (!/^alter table\s+\S+\s+validate constraint\b/.test(text)) return false;
+  if (input.step.kind === "widen-check") return true;
+  const name = /^alter table\s+\S+\s+validate constraint\s+(\S+)/.exec(text)?.[1];
+  if (name === undefined) return false;
+  return input.earlier.some((step) => {
+    if (step.kind !== "widen-check") return false;
+    const prior = normalized(step.sql);
+    return prior.includes(`add constraint ${name} `);
+  });
 }
 
 function validatingForeignKey(input: StepInput): boolean {
@@ -551,7 +617,7 @@ function statementTable(step: PlanStep): string | undefined {
   const text = normalized(step.sql);
   const altered = /^(?:alter|drop) table\s+(\S+)/.exec(text);
   if (altered?.[1] !== undefined) return lastName(altered[1]);
-  const index = /^create(?: unique)? index\s+\S+\s+on\s+(\S+)/.exec(text);
+  const index = /^create(?: unique)? index(?: concurrently)?\s+\S+\s+on\s+(\S+)/.exec(text);
   return lastName(index?.[1]);
 }
 

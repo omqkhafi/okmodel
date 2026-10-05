@@ -168,8 +168,9 @@ export function applyUnits(
  * Applies pending migrations on one target.
  *
  * The connection is reserved for the whole run so the advisory lock stays
- * session-scoped. Lock timeout retries that step. Any other failure stops
- * at that step.
+ * session-scoped. Lock timeout retries that step, including `NOT VALID`,
+ * `VALIDATE CONSTRAINT`, `SET NOT NULL`, `ADD CONSTRAINT … USING INDEX`, and
+ * a concurrent index create or drop. Any other failure stops at that step.
  *
  * @param request - Target, flags, and the migrations to consider
  * @returns The target and the migration ids that ran
@@ -562,6 +563,7 @@ function outsideTransaction(sql: string): boolean {
   if (text.startsWith("vacuum")) return true;
   if (/^alter\s+type\b/.test(text) && /\badd\s+value\b/.test(text)) return true;
   if (/^create\s+(?:unique\s+)?index\s+concurrently\b/.test(text)) return true;
+  if (/^drop\s+index\s+concurrently\b/.test(text)) return true;
   return false;
 }
 

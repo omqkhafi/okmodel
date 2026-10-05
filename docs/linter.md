@@ -32,7 +32,20 @@ An override silences only the code it names. A missing or empty reason, or a cod
 
 ## Severity
 
-Destructive, backward-incompatible, and data-dependent rules are errors. Locking rules are warnings until the planner emits the safe form (P50b, D192). Type preferences are warnings, and they run on the schema in `okm check`, not on a migration file.
+Destructive, backward-incompatible, and data-dependent rules are errors. OKM1534, OKM1535, OKM1536, and OKM1537 are errors too, and they fire only when the statement is not the safe form (D193). OKM1538 stays a warning: a type change that rewrites the table has no safe form in this version, and OKM1524 already requires a reason. Type preferences are warnings, and they run on the schema in `okm check`, not on a migration file.
+
+## Safe form
+
+On a table that already exists, the planner writes the form these rules accept. A new table keeps the plain statements. The linter recognises the form from the SQL, not from a planner flag, so a hand-edited file is judged the same way.
+
+- An index is `CREATE INDEX CONCURRENTLY` or `DROP INDEX CONCURRENTLY`.
+- A check or foreign key is `ADD CONSTRAINT … NOT VALID`, then `VALIDATE CONSTRAINT` in its own step.
+- `SET NOT NULL` follows a validated `CHECK (column IS NOT NULL)` that was added `NOT VALID`.
+- A unique constraint or primary key is `CREATE UNIQUE INDEX CONCURRENTLY`, then `ADD CONSTRAINT … USING INDEX`.
+
+A `VALIDATE` that follows a `widen-check` (a picklist that gained a value) does not fire OKM1531. Narrowing a check still does. The temporary not-null check does too: nulls in the column fail that validate. OKM1528 fires on the concurrent unique index that a later `USING INDEX` consumes, and on a plain `ADD CONSTRAINT UNIQUE` or `PRIMARY KEY` that is not `USING INDEX`. It does not fire on the `USING INDEX` step, which does not scan. OKM1529 fires on a unique index that no later step consumes.
+
+OKM1706 and OKM1823 are not rules in this table. A tenant index that does not lead with the tenant key fails when the schema is built. `security: "definer"` without `searchPath` fails on `fn()`. Both are declaration-time checks.
 
 ## Codes
 
@@ -58,11 +71,11 @@ Destructive, backward-incompatible, and data-dependent rules are errors. Locking
 | OKM1531 | data-dependent | error | New check that validates existing rows |
 | OKM1532 | data-dependent | error | New foreign key that validates existing rows |
 | OKM1533 | data-dependent | error | Narrowing type change |
-| OKM1534 | locking | warning | Non-concurrent index create on an existing table |
-| OKM1535 | locking | warning | Add check without `NOT VALID` |
-| OKM1536 | locking | warning | Add foreign key without `NOT VALID` |
-| OKM1537 | locking | warning | `SET NOT NULL` on an existing column |
-| OKM1538 | locking | warning | Type change that rewrites the table |
+| OKM1534 | locking | error | Non-concurrent index create on an existing table |
+| OKM1535 | locking | error | Add check without `NOT VALID` |
+| OKM1536 | locking | error | Add foreign key without `NOT VALID` |
+| OKM1537 | locking | error | `SET NOT NULL` that is not preceded by a validated `CHECK (col IS NOT NULL)` |
+| OKM1538 | locking | warning | Type change that rewrites the table. No safe form in this version |
 | OKM1539 | type-preference | warning | `timestamp` without time zone |
 | OKM1540 | type-preference | warning | `varchar(n)` where `text` would do |
 | OKM1543 | type-preference | warning | `serial` or a `nextval` default |

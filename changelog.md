@@ -17,13 +17,15 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 ### ✨ Added
 
 - The migration linter flags a drop, a rename, a column type change, a required column with no default, a dropped default, a shorter length, and a new unique, check, or foreign key on an existing table as errors.
-- A non-concurrent index, a check or foreign key without `NOT VALID`, `SET NOT NULL`, and a type change that rewrites the table are warnings. `timestamp` without time zone, `varchar(n)`, `serial`, `json`, and an identity that is not generated always are warnings on `okm check`.
+- On an existing table the planner emits the safe form: a concurrent index create and drop, a check or foreign key as `NOT VALID` then `VALIDATE`, `SET NOT NULL` through a validated check, a volatile default split into one `UPDATE`, and a unique or primary key from a concurrent unique index (D193). A new table keeps the plain statements.
+- A failed concurrent index leaves an invalid index. Resume drops it and rebuilds, and does not repeat a finished step.
 - `okm generate` prints findings and still writes the file. `okm migrate plan` and `okm check` exit non-zero on an error finding. `okm migrate apply` lints migrations that are still pending on the target and refuses with OKM1510 before any DDL or data statement.
 - An override is `-- okm-allow OKM15xx: reason` on the line above the statement. An empty reason, or a code the statement did not trigger, is OKM1510 and does not silence another code.
 
 ### ♻️ Changed
 
 - Drop default, a `NOT NULL` column with no default on an existing table, drop identity, `SET GENERATED ALWAYS`, and `ALTER ROLE` are classified contract. `okm migrate plan` prints each step's class and lock.
+- OKM1534, OKM1535, OKM1536, and OKM1537 are errors, and they fire only when the statement is not the safe form. A type change that rewrites the table (OKM1538) stays a warning. `timestamp` without time zone, `varchar(n)`, `serial`, `json`, and an identity that is not generated always stay warnings on `okm check`.
 
 ### 🐛 Fixed
 
