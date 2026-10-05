@@ -491,11 +491,54 @@ export type TriggerObject = CatalogEnvelope<
   TriggerDefinition
 >;
 
+/** One output column of a view or materialized view. */
+export type ViewColumn = {
+  readonly name: string;
+  readonly dataType: string;
+};
+
+/**
+ * View definition.
+ *
+ * `query` is the server reprint when one has been read (`pg_get_viewdef`),
+ * and the author's SQL until then. Column dependencies are separate edges.
+ */
+export type ViewDefinition = {
+  readonly columns: readonly ViewColumn[];
+  readonly query: string;
+};
+
+/**
+ * Materialized view definition.
+ *
+ * There is no replace. `refresh` is the populate mode. Postgres does not
+ * store it; introspection leaves it unset.
+ */
+export type MaterializedViewDefinition = {
+  readonly columns: readonly ViewColumn[];
+  readonly query: string;
+  readonly refresh?: "concurrently";
+};
+
+/** A view. Identity is `(namespace, name)`. */
+export type ViewObject = CatalogEnvelope<
+  "view",
+  NamespaceIdentity & { readonly kind: "view" },
+  ViewDefinition
+>;
+
+/** A materialized view. Identity is `(namespace, name)`. */
+export type MaterializedViewObject = CatalogEnvelope<
+  "materializedView",
+  NamespaceIdentity & { readonly kind: "materializedView" },
+  MaterializedViewDefinition
+>;
+
 /**
  * One built catalog object.
  *
- * Views, roles, grants, and default privileges use {@link CatalogEnvelope}
- * when they are built. They are not part of this union yet.
+ * Roles, grants, and default privileges use {@link CatalogEnvelope} when
+ * they are built. They are not part of this union yet.
  */
 export type CatalogObject =
   | TableObject
@@ -506,7 +549,9 @@ export type CatalogObject =
   | TypeObject
   | ExtensionObject
   | FunctionObject
-  | TriggerObject;
+  | TriggerObject
+  | ViewObject
+  | MaterializedViewObject;
 
 /** Format version stored in the serialized catalog. */
 export const CATALOG_VERSION = 1;

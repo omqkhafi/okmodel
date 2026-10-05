@@ -26,6 +26,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `fn()` and `trigger()` from `okmodel/fn` declare functions and triggers. `schema({ functions, triggers })` stores them. A function's identity is schema, name, and argument types, so overloads are distinct. A trigger's identity is table and name. plpgsql without `dependsOn` is OKM1824. `security: "definer"` without `searchPath` is OKM1823.
 - A plan creates types and tables, then functions, then triggers. The same signature is `CREATE OR REPLACE` and the step is marked `behavior: change`. A return-type change drops dependents and recreates them, and never uses `CASCADE`. A drop goes in reverse and is refused while a dependent remains (OKM1821). Triggers are dropped before their functions.
 - `timestamps({ enforce: "trigger" })` adds a before-update trigger and its function, with timestamps provenance. `LANGUAGE sql` that starts with `BEGIN ATOMIC` takes its dependencies from `pg_depend`.
+- `view()` and `materializedView()` from `okmodel/view` declare views. `schema({ views })` stores them. A view is SQL with declared columns. Appending columns is `CREATE OR REPLACE` and the step is marked `behavior: change`. An incompatible replace, or a change to a column the view reads, drops the dependents and recreates them, and never uses `CASCADE`. A drop goes in reverse and is refused while a dependent remains (OKM1821).
+- A materialized view has no `CREATE OR REPLACE`. Creation is `WITH NO DATA`, and populate is a planned data step. `refresh: "concurrently"` needs a unique index (OKM1822). Scratch verification reads column dependencies from `pg_depend` and stores the server reprint of the query.
 
 #### tooling
 
@@ -35,6 +37,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 #### docs
 
 - Known limits: a typed call such as `fn.slugify(col)` is not in this version, `inspect()` does not list triggers, a plpgsql body is `prosrc`, and a `BEGIN ATOMIC` body is the server reprint.
+- Known limits: a view is SQL plus a declared column list. The query builder form is not in this version. Column dependencies come from `pg_depend`. The stored query is the server reprint. `refresh: "concurrently"` is not stored by Postgres, and the plan's first populate is a plain `REFRESH`.
 
 ### ♻️ Changed
 

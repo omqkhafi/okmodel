@@ -21,6 +21,9 @@ import type {
   ColumnObject,
   ConstraintObject,
   FunctionObject,
+  MaterializedViewObject,
+  ViewColumn,
+  ViewObject,
 } from "../../contracts/catalog/types.js";
 import type { DeclaredRename } from "../../dialects/pg/declarations.js";
 import {
@@ -30,7 +33,10 @@ import {
   dropObjectSql,
   functionSql,
   identitySequence,
+  ownedByView,
   quoteIdent,
+  refreshMaterializedViewSql,
+  viewSql,
 } from "../../dialects/pg/ddl.js";
 import { extensionAlterSteps } from "./extensions.js";
 import { assertNoChains, type Replacement } from "./values.js";
@@ -141,7 +147,10 @@ export function planMigration(request: PlanRequest): MigrationPlan {
 
   const dropKeys = new Set<string>();
   const createKeys = new Set<string>();
-  const replaces: { readonly before: FunctionObject; readonly after: FunctionObject }[] = [];
+  const replaces: (
+    | { readonly kind: "function"; readonly before: FunctionObject; readonly after: FunctionObject }
+    | { readonly kind: "view"; readonly before: ViewObject; readonly after: ViewObject }
+  )[] = [];
   const alters: { readonly before: ColumnObject; readonly after: ColumnObject }[] = [];
   for (const item of beforeList) {
     if (!afterBy.has(item.key)) dropKeys.add(item.key);
@@ -158,8 +167,14 @@ export function planMigration(request: PlanRequest): MigrationPlan {
       item.object.kind === "function" &&
       previous.definition.returns === item.object.definition.returns
     ) {
-      replaces.push({ before: previous, after: item.object });
+      replaces.push({ kind: "function", before: previous, after: item.object });
       continue;
+    }
+    if (previous.kind === "view" && item.object.kind === "view") {
+      if (columnsAppended(previous.definition.columns, item.object.definition.columns)) {
+        replaces.push({ kind: "view", before: previous, after: item.object });
+        continue;
+      }
     }
     if (previous.kind === "type" && item.object.kind === "type") {
       refuseDomainBaseChange(previous, item.object);
@@ -183,6 +198,7 @@ export function planMigration(request: PlanRequest): MigrationPlan {
   requireReplacements(picklists, enums, replacements);
   recreateDependents(beforeList, afterList, alters, dropKeys, createKeys, picklists);
   recreateRoutineDependents(afterList, dropKeys, createKeys);
+  recreateViewDependents(afterList, dropKeys, createKeys);
   refuseRoutineDrops(beforeBy, afterBy, dropKeys);
   omitOwnedSequences(createKeys, afterBy, request.after);
   omitOwnedSequences(dropKeys, beforeBy, renamed);
@@ -212,10 +228,23 @@ export function planMigration(request: PlanRequest): MigrationPlan {
     steps.push(step(sql, "contract", "ddl", ACCESS));
   };
   // Triggers drop before functions even when the table drop would remove them.
+  // View indexes, then views, drop before the tables they read. Never CASCADE.
   for (const object of reverse) if (object.kind === "trigger") emitDrop(object);
   for (const object of reverse) if (object.kind === "function") emitDrop(object);
+  for (const object of reverse) if (ownedByView(object)) emitDrop(object);
   for (const object of reverse) {
-    if (object.kind === "trigger" || object.kind === "function") continue;
+    if (object.kind === "view" || object.kind === "materializedView") emitDrop(object);
+  }
+  for (const object of reverse) {
+    if (
+      object.kind === "trigger" ||
+      object.kind === "function" ||
+      object.kind === "view" ||
+      object.kind === "materializedView" ||
+      ownedByView(object)
+    ) {
+      continue;
+    }
     const key = identityKey(object.identity);
     if (!dropKeys.has(key) || deferred.has(key) || covered(object, droppedTables)) continue;
     if (object.kind === "type") {
@@ -278,7 +307,10 @@ export function planMigration(request: PlanRequest): MigrationPlan {
       object.kind === "type" ||
       object.kind === "extension" ||
       object.kind === "function" ||
-      object.kind === "trigger"
+      object.kind === "trigger" ||
+      object.kind === "view" ||
+      object.kind === "materializedView" ||
+      ownedByView(object)
     ) {
       continue;
     }
@@ -300,8 +332,14 @@ export function planMigration(request: PlanRequest): MigrationPlan {
   }
   for (const change of replaces) {
     if (sameDefinition(change.before, change.after)) continue;
+    const key = identityKey(change.after.identity);
+    if (dropKeys.has(key) && createKeys.has(key)) continue;
+    const sql =
+      change.kind === "function"
+        ? functionSql(change.after, schema, true)
+        : viewSql(change.after, schema, true);
     steps.push({
-      sql: functionSql(change.after, schema, true),
+      sql,
       class: "expand",
       action: "ddl",
       lock: ACCESS,
@@ -309,7 +347,7 @@ export function planMigration(request: PlanRequest): MigrationPlan {
       behavior: "change",
     });
   }
-  for (const kind of ["function", "trigger"] as const) {
+  for (const kind of ["function", "trigger", "view", "materializedView"] as const) {
     for (const object of creationOrder(request.after)) {
       if (object.kind !== kind) continue;
       const key = identityKey(object.identity);
@@ -319,6 +357,24 @@ export function planMigration(request: PlanRequest): MigrationPlan {
       if (sql === undefined) continue;
       steps.push(step(sql, "expand", "ddl", ACCESS));
     }
+  }
+  for (const object of creationOrder(request.after)) {
+    if (!ownedByView(object)) continue;
+    const key = identityKey(object.identity);
+    if (!createKeys.has(key) || emitted.has(key)) continue;
+    emitted.add(key);
+    const sql = createObjectSql(object, schema);
+    if (sql === undefined) continue;
+    steps.push(step(sql, "expand", "ddl", SHARE));
+  }
+  for (const object of creationOrder(request.after)) {
+    if (object.kind !== "materializedView") continue;
+    const key = identityKey(object.identity);
+    if (!createKeys.has(key)) continue;
+    assertConcurrentRefresh(object, request.after);
+    steps.push(
+      step(refreshMaterializedViewSql(object, schema, false), "expand", "backfill", ACCESS),
+    );
   }
 
   steps.push(...contractSwaps(picklists, enums, replacements, schema));
@@ -680,14 +736,28 @@ function refuseRoutineDrops(
   for (const after of afterBy.values()) {
     const key = identityKey(after.identity);
     if (dropKeys.has(key)) continue;
-    if (after.kind !== "trigger" && after.kind !== "function") continue;
+    if (
+      after.kind !== "trigger" &&
+      after.kind !== "function" &&
+      after.kind !== "view" &&
+      after.kind !== "materializedView"
+    ) {
+      continue;
+    }
     for (const edge of after.dependencies) {
       const targetKey = identityKey(edge.target);
       if (!dropKeys.has(targetKey)) continue;
       const target = beforeBy.get(targetKey);
       if (target === undefined) continue;
-      if (target.kind !== "function" && target.kind !== "table" && target.kind !== "column")
+      if (
+        target.kind !== "function" &&
+        target.kind !== "table" &&
+        target.kind !== "column" &&
+        target.kind !== "view" &&
+        target.kind !== "materializedView"
+      ) {
         continue;
+      }
       throw new OkmError(
         "OKM1821",
         `${identityLabel(after.identity)} depends on ${identityLabel(target.identity)}, which this plan drops. CASCADE is never used.`,
@@ -698,8 +768,66 @@ function refuseRoutineDrops(
 }
 
 function dependsOnChanged(object: CatalogObject, columns: ReadonlySet<string>): boolean {
-  if (object.kind !== "index" && object.kind !== "constraint") return false;
+  if (
+    object.kind !== "index" &&
+    object.kind !== "constraint" &&
+    object.kind !== "view" &&
+    object.kind !== "materializedView"
+  ) {
+    return false;
+  }
   return object.dependencies.some((edge) => columns.has(identityKey(edge.target)));
+}
+
+function recreateViewDependents(
+  afterList: readonly Indexed[],
+  dropKeys: Set<string>,
+  createKeys: Set<string>,
+): void {
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const item of afterList) {
+      if (dropKeys.has(item.key) && createKeys.has(item.key)) continue;
+      const kind = item.object.kind;
+      if (kind !== "view" && kind !== "materializedView" && kind !== "index") continue;
+      const hit = item.object.dependencies.some((edge) => {
+        const key = identityKey(edge.target);
+        return dropKeys.has(key) && createKeys.has(key);
+      });
+      if (!hit) continue;
+      dropKeys.add(item.key);
+      createKeys.add(item.key);
+      changed = true;
+    }
+  }
+}
+
+function columnsAppended(before: readonly ViewColumn[], after: readonly ViewColumn[]): boolean {
+  if (after.length < before.length) return false;
+  for (let index = 0; index < before.length; index += 1) {
+    const left = before[index];
+    const right = after[index];
+    if (left === undefined || right === undefined) return false;
+    if (left.name !== right.name || left.dataType !== right.dataType) return false;
+  }
+  return true;
+}
+
+function assertConcurrentRefresh(object: MaterializedViewObject, source: Catalog): void {
+  if (object.definition.refresh !== "concurrently") return;
+  const unique = source.objects.some(
+    (item) =>
+      item.kind === "index" &&
+      item.definition.unique &&
+      item.identity.parent.name === object.identity.name,
+  );
+  if (unique) return;
+  throw new OkmError(
+    "OKM1822",
+    `Materialized view ${object.identity.name} refreshes concurrently and has no unique index.`,
+    { fix: { summary: "Add a unique index, or refresh without CONCURRENTLY." } },
+  );
 }
 
 function enumAddSteps(enums: readonly EnumEdit[]): PlanStep[] {
@@ -1206,6 +1334,12 @@ function omitOwnedSequences(
 }
 
 function sameDefinition(left: CatalogObject, right: CatalogObject): boolean {
+  if (left.kind === "materializedView" && right.kind === "materializedView") {
+    return (
+      stable(left.definition.columns) === stable(right.definition.columns) &&
+      left.definition.query === right.definition.query
+    );
+  }
   return stable(left.definition) === stable(right.definition);
 }
 

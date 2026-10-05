@@ -630,7 +630,6 @@ Modifiers: `.nullable()`, `.default(v)`, `.defaultSql(sql)`, `.primaryKey()`, `.
 
 | Builder or option | Version |
 |---|---|
-| `schema({ views })` | 0.3 |
 | `table({ presets })` | 0.2 |
 | `table({ reference })` | 0.4 |
 | `morph`, `table({ computed, policies })` | later |

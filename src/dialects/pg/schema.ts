@@ -229,12 +229,11 @@ const SCHEMA_KNOWN = new Set([
   "triggers",
   "types",
   "validation",
+  "views",
 ]);
 
 /** Later schema options, and the version that adds each one. */
-const SCHEMA_LATER: Readonly<Record<string, string>> = {
-  views: "0.3",
-};
+const SCHEMA_LATER: Readonly<Record<string, string>> = {};
 
 const BIGINT_CODECS = new Set(["string", "number", "bigint"]);
 const NUMERIC_CODECS = new Set(["string", "number"]);
@@ -446,6 +445,7 @@ export function schema<const TTables extends readonly AnyTable[]>(
           );
         }
         contributeListed(config.triggers, objects);
+        contributeListed(config.views, objects);
         document = catalog(objects);
       }
       return document;

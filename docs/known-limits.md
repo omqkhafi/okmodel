@@ -10,7 +10,6 @@ An option or builder that is not in 0.2 throws OKM1061 and names the prompt or v
 
 | Item | Version | Prompt |
 | --- | --- | --- |
-| views | 0.3 | P42 |
 | `reference` | 0.4 | P53A |
 | `okmodel/testing` | 0.4 | P54 |
 | `morph` | later | M2 |
@@ -29,6 +28,14 @@ Also not in 0.2:
 - **`iStartsWith`, `iContains` and `iEndsWith` are not in 0.2** (D176). Use `ilike()` with an escaped pattern.
 - **`aggregate()` has no `having` and no `bucket`** (M2).
 - **Batch-mode drivers have no adapter yet.** Neon HTTP and Cloudflare D1 are covered by the driver contract (`batch` is required on every driver) and there is no adapter in this repository for either.
+
+## Views
+
+- **A view is SQL plus a declared column list.** `view()` and `materializedView()` live on `okmodel/view`. The query builder form is not in this version.
+- **Column dependencies come from `pg_depend`.** Scratch verification (`sealViews`) creates the view and reads those edges. A plan from two author catalogs does not see them until that read.
+- **The stored query becomes the server reprint.** `pg_get_viewdef` replaces the author text. Two introspections match. A plan from the live catalog back to the author text replaces the view when the reprint differs.
+- **`refresh: "concurrently"` is not stored by Postgres.** Introspection leaves it unset. Equality ignores it, so a later plan does not recreate the materialized view only because the mode was declared. `REFRESH ... CONCURRENTLY` still needs a unique index (OKM1822). The plan's first populate is a plain `REFRESH`, because Postgres rejects `CONCURRENTLY` until the view has rows.
+- **`security_invoker` is not set.** It belongs to the `rls` strategy, which is later.
 
 ## Functions and triggers
 
