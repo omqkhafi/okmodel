@@ -71,7 +71,7 @@ export function writeProductionInferredProject(
  *
  * The gated probe uses none. Each feature is measured on its own row and printed.
  */
-export type ProbeFeature = "page" | "aggregate" | "through" | "presets" | "tx";
+export type ProbeFeature = "page" | "aggregate" | "through" | "presets" | "tx" | "batch";
 
 const PROBE_FEATURES: readonly ProbeFeature[] = [];
 
@@ -214,6 +214,18 @@ export function writeQueryProject(
             "    t.afterCommit(() => undefined);",
             "    return rows;",
             "  });",
+            "}",
+            "",
+          ]
+        : []),
+      ...(features.includes("batch")
+        ? [
+            "export function inBatch(db: Connected<typeof appSchema>) {",
+            "  return db.batch([",
+            '    db.note.insert({ ownerId: "00000000-0000-4000-8000-000000000001", body: "a" }),',
+            '    db.note.update({ where: { body: "a" }, set: { body: "b" } }),',
+            '    db.note.delete({ where: { body: "b" } }),',
+            "  ]);",
             "}",
             "",
           ]

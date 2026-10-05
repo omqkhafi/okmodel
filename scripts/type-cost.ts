@@ -177,6 +177,8 @@ export type TypeBudgetReport = TypeBudgetCore & {
   readonly queryPresets: TypeBudgetRow;
   /** The 200-table query probe plus a `tx` callback with a locked `find`, an `update`, and `afterCommit`. Gated apart (D176). */
   readonly queryTx: TypeBudgetRow;
+  /** The 200-table query probe plus a `batch` of an insert, an update and a delete. Printed, not gated. */
+  readonly queryBatch: TypeBudgetRow;
 };
 
 /**
@@ -249,17 +251,19 @@ export function measureTypeBudgets(): TypeBudgetReport {
         );
       }),
     );
-    const [queryPresets, queryTx] = (["presets", "tx"] as const).map((feature) =>
-      measureProject(join(root, "consumer"), `query-200+${feature}`, 200, (dir) => {
-        writeQueryProject(
-          dir,
-          generateFixture({ seed: 1, tables: 200 }),
-          { declarations },
-          { features: [feature] },
-        );
-      }),
+    const [queryPresets, queryTx, queryBatch] = (["presets", "tx", "batch"] as const).map(
+      (feature) =>
+        measureProject(join(root, "consumer"), `query-200+${feature}`, 200, (dir) => {
+          writeQueryProject(
+            dir,
+            generateFixture({ seed: 1, tables: 200 }),
+            { declarations },
+            { features: [feature] },
+          );
+        }),
     );
-    if (queryPresets === undefined || queryTx === undefined) throw new Error("probe rows missing");
+    if (queryPresets === undefined || queryTx === undefined || queryBatch === undefined)
+      throw new Error("probe rows missing");
     return {
       ...budgetReport(rows),
       source: {
@@ -274,6 +278,7 @@ export function measureTypeBudgets(): TypeBudgetReport {
       queryFeatures,
       queryPresets,
       queryTx,
+      queryBatch,
     };
   } finally {
     rmSync(root, { recursive: true, force: true });

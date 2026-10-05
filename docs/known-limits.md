@@ -1,6 +1,6 @@
 # Known limits
 
-What `0.2.0` does not do, or does differently from what you might expect. Each item says what happens, so none of them is a surprise at runtime. A limit that has a version is listed in the release train in [`okmodel-execution-plan.md`](okmodel-execution-plan.md). `later` means the plan has not assigned a 0.x release.
+What `0.2.1` does not do, or does differently from what you might expect. Each item says what happens, so none of them is a surprise at runtime. A limit that has a version is listed in the release train in [`okmodel-execution-plan.md`](okmodel-execution-plan.md). `later` means the plan has not assigned a 0.x release.
 
 `okmodel/internal` has no stability promise. Names on that subpath can change or disappear in any release. Its exports are marked `@internal`.
 
@@ -26,7 +26,7 @@ Installing the head snapshot, snapshot-versus-replay equivalence (OKM1521), and 
 Also not in 0.2:
 
 - **`rls` tenancy is not built.** Column tenancy is the only strategy. Inside `tx()` the tenant is the column predicate on every statement (D181).
-- **Three registered codes are not thrown in 0.2** (D183). OKM1110 (a feature needs a newer engine than `requires`): the one engine-dependent feature, `uuidv7()`, fails as OKM1812 when the schema is built. OKM1191 (no snapshot plan inside READ COMMITTED): every read is one statement, so a plan always exists. OKM1702 (unverifiable raw SQL on a tenant table): no public call takes raw SQL; typed raw SQL is M2.
+- **Three registered codes are not thrown in 0.2** (D183). OKM1110 (a feature needs a newer engine than `requires`): the one engine-dependent feature, `uuidv7()`, fails as OKM1812 when the schema is built with `requires` below 18, and `okm migrate apply` raises it before any statement when the server is older than 18 (D184). OKM1191 (no snapshot plan inside READ COMMITTED): every read is one statement, so a plan always exists. OKM1702 (unverifiable raw SQL on a tenant table): no public call takes raw SQL; typed raw SQL is M2.
 - **JSON Schema export is absent.** `insert` and `update` are Standard Schemas; they do not emit JSON Schema.
 - **`onRead` is stored and not applied.** `validation: { onRead: true }` is accepted and read values are not validated.
 - **`iStartsWith`, `iContains` and `iEndsWith` are not in 0.2** (D176). Use `ilike()` with an escaped pattern.
@@ -51,6 +51,7 @@ Also not in 0.2:
 - **On PGlite and Bun.sql a `tx` timeout or signal cannot kill a statement waiting on a lock.** The callback is released and the rollback queues behind the waiting statement. PGlite has one connection and no `cancel`; Bun.sql has no `cancel` on Bun 1.4 (D181).
 - **Bun.sql has no notices.** It does not surface `RAISE NOTICE`, so `hookm.onNotice` never fires on `okmodel/pg/bun`.
 - **`restore` and any write with `expect` are not allowed in `batch`** (D183). Both are checked against the result of their statement, and a batch cannot report that after it commits. A batch that holds either is refused with OKM1121 before any statement is sent, with the error naming `tx()`. Use `tx()` for them. A statement the database refuses (a unique, a foreign key, a check) still rolls the whole batch back.
+- **The types still accept `restore` and `expect` inside `batch`; only the runtime refuses them** (D184). Narrowing the types so the compiler refuses both was measured in 0.2.1 and not built: refusing the `{ expect }` option takes a second overload on every write method, which moved the `query-200-validate` probe from 25,047 to 27,366 instantiations against a ceiling of 25,631. A `restore` or a `.expect()` call on its own costs +2 / +1 on every probe; the option form is the part that does not fit.
 
 ## Drivers
 
