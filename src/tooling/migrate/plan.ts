@@ -83,6 +83,19 @@ export type PlanStep = {
    * The statement is expand. The flag says the body or the settings changed.
    */
   readonly behavior?: "change";
+  /**
+   * `-- okm-allow` lines directly above the statement.
+   *
+   * A reason silences that code only. An empty reason, or a code the
+   * statement did not trigger, is OKM1510 and silences nothing.
+   */
+  readonly allows?: readonly StepAllow[];
+};
+
+/** One `-- okm-allow CODE: reason` line above a statement. */
+export type StepAllow = {
+  readonly code: string;
+  readonly reason: string;
 };
 
 /** A named plan and the class of its strictest step. */
@@ -450,6 +463,9 @@ export function formatPlan(plan: MigrationPlan): string {
     if (!item.transactional) lines.push("-- transactional: false");
     if (item.path !== undefined) lines.push(`-- path: ${item.path}`);
     if (item.behavior === "change") lines.push("-- behavior: change");
+    for (const allow of item.allows ?? []) {
+      lines.push(`-- okm-allow ${allow.code}: ${allow.reason}`);
+    }
     lines.push(`${item.sql};`);
     lines.push("");
   }
@@ -488,6 +504,7 @@ export function parsePlan(text: string): MigrationPlan {
     let transactional = true;
     let path: PlanStep["path"];
     let behavior: PlanStep["behavior"];
+    const allows: StepAllow[] = [];
     const sql: string[] = [];
     while (index < lines.length && (lines[index] ?? "") !== "") {
       const line = lines[index] ?? "";
@@ -504,6 +521,7 @@ export function parsePlan(text: string): MigrationPlan {
       else if (line === "-- transactional: false") transactional = false;
       else if (line === "-- path: unverified") path = "unverified";
       else if (line === "-- behavior: change") behavior = "change";
+      else if (line.startsWith("-- okm-allow")) allows.push(readAllow(line));
       else if (!line.startsWith("--")) sql.push(line);
     }
     const statement = sql.join("\n").replace(/;\s*$/, "");
@@ -519,10 +537,19 @@ export function parsePlan(text: string): MigrationPlan {
         transactional,
         ...(path !== undefined ? { path } : {}),
         ...(behavior !== undefined ? { behavior } : {}),
+        ...(allows.length > 0 ? { allows } : {}),
       });
     }
   }
   return { name, class: steps.length === 0 ? planClass : overall(steps), steps };
+}
+
+const ALLOW = /^-- okm-allow\s+(OKM\d+)\s*(?::\s*(.*))?$/;
+
+function readAllow(line: string): StepAllow {
+  const match = ALLOW.exec(line);
+  if (match === null) return { code: "", reason: "" };
+  return { code: match[1] ?? "", reason: (match[2] ?? "").trim() };
 }
 
 function readClass(value: string): MigrationClass {

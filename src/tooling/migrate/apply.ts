@@ -11,6 +11,7 @@ import { join } from "node:path";
 
 import { open } from "../../adapters/pg/postgresjs.js";
 import { catalogHash } from "../../contracts/catalog/document.js";
+import { hasError, lintMigrationDirectory, lintRefusal } from "./lint.js";
 import type { DriverConnection } from "../../contracts/driver.js";
 import { OkmError } from "../../contracts/error.js";
 import { quoteIdent } from "../../dialects/pg/ddl.js";
@@ -229,7 +230,10 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
 export async function applyProject(cwd: string, flags: InvokeFlags): Promise<string> {
   const config = await loadConfig(cwd);
   const target = selectTarget(config, flags.target);
-  const migrations = loadMigrations(joinMigrations(cwd, config.migrations));
+  const directory = joinMigrations(cwd, config.migrations);
+  const migrations = loadMigrations(directory);
+  const findings = lintMigrationDirectory(directory);
+  if (hasError(findings)) throw lintRefusal(findings);
   if (migrations.length === 0) return `target ${target.name}\nnothing to apply\n`;
   const report = await applyTarget({
     url: target.url,

@@ -240,8 +240,64 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
   {
     code: "OKM1510",
     title: "Unsafe migration",
-    summary: "A migration is not expand-safe and has no reason.",
-    fix: "Split the change into expand and contract, or pass a reason that CI can record.",
+    summary:
+      "A migration has an unresolved lint error, or an override with an empty reason or a code the statement did not trigger.",
+    fix: "Put `-- okm-allow OKM15xx: reason` on the line above the statement. The code must be one that statement triggered, and the reason must not be empty.",
+  },
+  {
+    code: "OKM1511",
+    title: "Drop table",
+    summary: "A statement drops a table. The rows and anything that reads them are gone.",
+    fix: "Stop reading the table in an expand migration, then drop it in a later contract. Or allow OKM1511 with a reason.",
+  },
+  {
+    code: "OKM1512",
+    title: "Drop column",
+    summary: "A statement drops a column. Stored values and the code that reads them are gone.",
+    fix: "Stop reading the column in an expand migration, then drop it in a later contract. Or allow OKM1512 with a reason.",
+  },
+  {
+    code: "OKM1513",
+    title: "Drop enum",
+    summary: "A statement drops an enum that columns or code may still depend on.",
+    fix: "Move every column off the enum first. Or allow OKM1513 with a reason.",
+  },
+  {
+    code: "OKM1514",
+    title: "Drop domain",
+    summary: "A statement drops a domain that columns or code may still depend on.",
+    fix: "Move every column off the domain first. Or allow OKM1514 with a reason.",
+  },
+  {
+    code: "OKM1515",
+    title: "Drop function",
+    summary: "A statement drops a function that queries or triggers may still call.",
+    fix: "Remove the callers in an expand migration, then drop the function. Or allow OKM1515 with a reason.",
+  },
+  {
+    code: "OKM1516",
+    title: "Drop view",
+    summary: "A statement drops a view that queries may still read.",
+    fix: "Stop reading the view in an expand migration, then drop it. Or allow OKM1516 with a reason.",
+  },
+  {
+    code: "OKM1517",
+    title: "Drop extension",
+    summary:
+      "A statement drops an extension. A dependent still in the catalog is refused before this finding.",
+    fix: "Confirm nothing outside the catalog uses the extension. Or allow OKM1517 with a reason.",
+  },
+  {
+    code: "OKM1518",
+    title: "Drop materialized view",
+    summary: "A statement drops a materialized view and the rows it stores.",
+    fix: "Stop reading the view in an expand migration, then drop it. Or allow OKM1518 with a reason.",
+  },
+  {
+    code: "OKM1519",
+    title: "Rename column",
+    summary: "A statement renames a column. Existing queries still use the old name.",
+    fix: "Add the new column, backfill, and switch readers before dropping the old name. Or allow OKM1519 with a reason.",
   },
   {
     code: "OKM1520",
@@ -262,10 +318,118 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     fix: "Wait for that apply to finish. Do not start a second apply against the same target.",
   },
   {
+    code: "OKM1523",
+    title: "Rename table",
+    summary: "A statement renames a table. Existing queries still use the old name.",
+    fix: "Create the new table, backfill, and switch readers before dropping the old name. Or allow OKM1523 with a reason.",
+  },
+  {
+    code: "OKM1524",
+    title: "Column type change",
+    summary:
+      "A statement changes a column type. Existing readers and writers may not accept the new type.",
+    fix: "Add a new column, backfill, and switch readers before dropping the old one. Or allow OKM1524 with a reason.",
+  },
+  {
+    code: "OKM1525",
+    title: "Required column",
+    summary: "A statement adds a NOT NULL column with no default to a table that already has rows.",
+    fix: "Add the column nullable, backfill, then set it NOT NULL. Or allow OKM1525 with a reason.",
+  },
+  {
+    code: "OKM1526",
+    title: "Drop default",
+    summary: "A statement removes a column default. Writers that omitted the column will fail.",
+    fix: "Update writers to send the column, then drop the default. Or allow OKM1526 with a reason.",
+  },
+  {
+    code: "OKM1527",
+    title: "Shrink length",
+    summary:
+      "A statement shortens a character length. Values longer than the new limit no longer fit.",
+    fix: "Shorten the stored values first, or keep the old length. Or allow OKM1527 with a reason.",
+  },
+  {
+    code: "OKM1528",
+    title: "Unique constraint",
+    summary:
+      "A statement adds a unique or primary-key constraint on a table that already has rows.",
+    fix: "Deduplicate the rows first. Or allow OKM1528 with a reason.",
+  },
+  {
+    code: "OKM1529",
+    title: "Unique index",
+    summary: "A statement creates a unique index on a table that already has rows.",
+    fix: "Deduplicate the rows first. Or allow OKM1529 with a reason.",
+  },
+  {
     code: "OKM1530",
     title: "Ambiguous rename",
     summary: "A rename could match more than one object.",
     fix: "Declare the rename explicitly so the plan has one pairing.",
+  },
+  {
+    code: "OKM1531",
+    title: "Validating check",
+    summary: "A statement adds or validates a check against rows already stored.",
+    fix: "Add the check NOT VALID, repair the rows, then validate it. Or allow OKM1531 with a reason.",
+  },
+  {
+    code: "OKM1532",
+    title: "Validating foreign key",
+    summary: "A statement adds or validates a foreign key against rows already stored.",
+    fix: "Add the foreign key NOT VALID, repair the rows, then validate it. Or allow OKM1532 with a reason.",
+  },
+  {
+    code: "OKM1533",
+    title: "Narrowing type",
+    summary:
+      "A statement narrows a numeric or integer type. Values outside the new range no longer fit.",
+    fix: "Rewrite the values into the new range first. Or allow OKM1533 with a reason.",
+  },
+  {
+    code: "OKM1534",
+    title: "Index locks",
+    summary: "A statement creates an index on an existing table without CONCURRENTLY.",
+    fix: "Create the index concurrently outside the transaction. This warning becomes an error when the planner emits that form.",
+  },
+  {
+    code: "OKM1535",
+    title: "Check without NOT VALID",
+    summary: "A statement adds a check on an existing table without NOT VALID.",
+    fix: "Add the check NOT VALID, then validate it in a later step. This warning becomes an error when the planner emits that form.",
+  },
+  {
+    code: "OKM1536",
+    title: "Foreign key without NOT VALID",
+    summary: "A statement adds a foreign key on an existing table without NOT VALID.",
+    fix: "Add the foreign key NOT VALID, then validate it in a later step. This warning becomes an error when the planner emits that form.",
+  },
+  {
+    code: "OKM1537",
+    title: "Set not null",
+    summary: "A statement sets NOT NULL on a column that already exists.",
+    fix: "Add a validated check that the column is not null, then set NOT NULL. This warning becomes an error when the planner emits that form.",
+  },
+  {
+    code: "OKM1538",
+    title: "Type rewrite",
+    summary: "A statement changes a column type in a way that rewrites the table.",
+    fix: "Add a new column and backfill it instead of rewriting in place. This warning becomes an error when the planner emits that form.",
+  },
+  {
+    code: "OKM1539",
+    title: "Timestamp without time zone",
+    summary:
+      "A column is timestamp without time zone. The instant depends on the session time zone.",
+    fix: "Use timestamptz.",
+  },
+  {
+    code: "OKM1540",
+    title: "varchar length",
+    summary:
+      "A column is varchar(n). text stores the same values without a length limit in the type.",
+    fix: "Use text, and check the length in the application when one is required.",
   },
   {
     code: "OKM1541",
@@ -278,6 +442,24 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     title: "Data statement",
     summary: "A migration contains a data statement outside backfill().",
     fix: "Move the statement into backfill(). Data changes are batched and resumable there.",
+  },
+  {
+    code: "OKM1543",
+    title: "serial column",
+    summary: "A column uses serial or a nextval default. Identity is the form this repo generates.",
+    fix: "Use an identity column generated always.",
+  },
+  {
+    code: "OKM1544",
+    title: "json column",
+    summary: "A column is json. jsonb is available and stores the same documents in binary.",
+    fix: "Use jsonb.",
+  },
+  {
+    code: "OKM1545",
+    title: "Identity not always",
+    summary: "An identity column is generated by default. The repo default is generated always.",
+    fix: "Declare the identity as generated always.",
   },
   {
     code: "OKM1601",

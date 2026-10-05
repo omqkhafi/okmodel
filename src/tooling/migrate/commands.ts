@@ -6,6 +6,7 @@
  */
 
 import { OkmError } from "../../contracts/error.js";
+import { formatFindings, hasError, lintRefusal } from "./lint.js";
 import { formatPlan } from "./plan.js";
 import type { InvokeFlags } from "./policy.js";
 import { buildProject, checkProject, generateProject, planProject } from "./project.js";
@@ -48,14 +49,17 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
     return;
   }
   if (command === "check") {
-    await checkProject(cwd, invoke(splitFlags(rest)));
+    const findings = await checkProject(cwd, invoke(splitFlags(rest)));
+    const warnings = formatFindings(findings);
+    if (warnings.length > 0) stdout(warnings);
     stdout("ok\n");
     return;
   }
   if (command === "generate") {
     const parsed = splitFlags(rest);
-    const path = await generateProject(cwd, parsed.name ?? "migration", parsed.flags);
-    stdout(path === undefined ? "no changes\n" : `${path}\n`);
+    const written = await generateProject(cwd, parsed.name ?? "migration", parsed.flags);
+    stdout(written === undefined ? "no changes\n" : `${written.path}\n`);
+    if (written !== undefined) stdout(formatFindings(written.findings));
     return;
   }
   if (command === "dev") {
@@ -75,7 +79,10 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
       if (parsed.name === undefined) {
         throw new OkmError("invalid", "okm migrate plan needs a name.");
       }
-      stdout(formatPlan(await planProject(cwd, parsed.name, parsed.flags)));
+      const planned = await planProject(cwd, parsed.name, parsed.flags);
+      stdout(formatPlan(planned.plan));
+      stdout(formatFindings(planned.findings));
+      if (hasError(planned.findings)) throw lintRefusal(planned.findings);
       return;
     }
     if (sub === "apply") {
