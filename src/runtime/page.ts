@@ -36,7 +36,16 @@ registerFailFix(
   "Request the next page with the same orderBy and the exact next value the previous page returned. The cursor encodes that order.",
 );
 
-const OPTIONS = ["where", "select", "orderBy", "limit", "include", "after"] as const;
+const OPTIONS = [
+  "where",
+  "select",
+  "orderBy",
+  "limit",
+  "include",
+  "after",
+  "signal",
+  "timeout",
+] as const;
 
 type Key = {
   readonly column: ColumnModel;
@@ -100,7 +109,15 @@ function plan(
     ...readCall(
       "find",
       table,
-      { where: record.where, select, orderBy, limit: size + 1, include: record.include },
+      {
+        where: record.where,
+        select,
+        orderBy,
+        limit: size + 1,
+        include: record.include,
+        signal: record.signal,
+        timeout: record.timeout,
+      },
       undefined,
       session.scope,
       session.schema.model[table],

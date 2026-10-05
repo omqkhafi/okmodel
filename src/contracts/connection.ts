@@ -74,6 +74,28 @@ export function isConnectionFailure(error: unknown): boolean {
   );
 }
 
+/**
+ * Reports whether the connection is gone after `error`, or the outcome of a
+ * statement on it is unknown (`outcome_unknown`).
+ *
+ * It reads what {@link isConnectionFailure} reads, plus the messages node-postgres
+ * ("Connection terminated unexpectedly") and Bun.sql (`ERR_POSTGRES_CONNECTION_CLOSED`)
+ * give, and the error's `cause`. Nothing more should be sent to such a connection:
+ * not a rollback, not a reset. Loaded with the code that reserves a connection.
+ *
+ * @param error - Caught value
+ * @returns `true` when the session cannot be used again
+ */
+export function isConnectionLost(error: unknown): boolean {
+  if (isConnectionFailure(error)) return true;
+  if (typeof error !== "object" || error === null) return false;
+  if (Reflect.get(error, "kind") === "outcome_unknown") return true;
+  if (readCode(error, "code") === "ERR_POSTGRES_CONNECTION_CLOSED") return true;
+  if (error instanceof Error && error.message.includes("Connection terminated")) return true;
+  const cause: unknown = Reflect.get(error, "cause");
+  return cause !== undefined && cause !== error && isConnectionLost(cause);
+}
+
 function readCode(error: unknown, key: string): string | undefined {
   if (typeof error !== "object" || error === null || !(key in error)) return undefined;
   const value: unknown = Reflect.get(error, key);

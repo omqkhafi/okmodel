@@ -198,10 +198,24 @@ export type DriverPoolConfig = {
   /** Connections in the pool. PGlite is always one. */
   readonly max?: number;
   /**
-   * Wait for a connection up to `acquire` milliseconds, then fail with
-   * OKM1846. Omitted means wait without that deadline.
+   * Ceilings in milliseconds. An adapter reads `acquire`: it waits for a
+   * connection up to that long, then fails with OKM1846. Omitted means wait
+   * without a deadline. The other keys belong to the runtime.
    */
-  readonly timeouts?: {
-    readonly acquire?: number;
-  };
+  readonly timeouts?: DriverTimeouts;
+};
+
+/**
+ * Ceilings from `connect({ timeouts })`, in milliseconds (spec §15).
+ *
+ * `acquire` bounds the wait for a connection (OKM1846). `statement` is the
+ * default `timeout` of a call that sets none. `transaction` bounds a whole
+ * `tx()`. `idleInTransaction` bounds the time a `tx()` waits between
+ * statements. Every one but `acquire` fails as kind `timeout`.
+ */
+export type DriverTimeouts = {
+  readonly acquire?: number;
+  readonly statement?: number;
+  readonly transaction?: number;
+  readonly idleInTransaction?: number;
 };

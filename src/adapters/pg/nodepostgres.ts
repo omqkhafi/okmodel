@@ -20,7 +20,7 @@ import type {
 } from "../../contracts/driver.js";
 import { NODE_POSTGRES_CAPABILITIES } from "../capabilities.js";
 import { driverErrors, mapFailure, rejectClosed } from "../failure.js";
-import { runCall, type Watch } from "./call.js";
+import { runCall } from "./call.js";
 import { cursorStream, noticeBuffer, quoteIdent, WireSession, type WireQuery } from "./session.js";
 
 export {
@@ -47,8 +47,18 @@ export type NodePostgresConfig = DriverPoolConfig & {
   readonly ssl?: boolean | "require" | "allow" | "prefer" | "verify-full" | object;
 };
 
+/** What a checkout needs from the pool that opened it. */
+export type HeldPool = {
+  readonly pool: InstanceType<typeof pg.Pool>;
+  readonly acquireMs: number | undefined;
+  readonly counters: Counters;
+  readonly notices: ReturnType<typeof noticeBuffer>;
+  readonly named: boolean;
+  readonly isClosed: () => boolean;
+};
+
 /** Pool occupancy. */
-type Counters = {
+export type Counters = {
   reserved: number;
   busy: number;
   reservedBusy: number;
@@ -56,8 +66,6 @@ type Counters = {
 };
 
 const CANCEL_CODE = 80877102;
-const RESET_ALL = "RESET ALL";
-const UNLOCK = "SELECT pg_advisory_unlock_all()";
 
 const identity = (value: string): string => value;
 
@@ -115,6 +123,10 @@ export function open(config: NodePostgresConfig): DriverPool {
     inflight,
   );
 
+  const held: HeldPool = { pool, acquireMs, counters, notices, named, isClosed };
+  const checkout = (): Promise<DriverConnection> =>
+    closed ? rejectClosed() : import("./nodepostgres-extra.js").then((mod) => mod.checkout(held));
+
   return {
     capabilities: NODE_POSTGRES_CAPABILITIES,
     execute(text, params, options) {
@@ -163,49 +175,6 @@ export function open(config: NodePostgresConfig): DriverPool {
       await pool.end();
     },
   };
-
-  async function checkout(): Promise<DriverConnection> {
-    if (closed) return rejectClosed();
-    const client = await connectClient(pool, acquireMs, counters);
-    counters.reserved += 1;
-    const local = new Set<WireQuery>();
-    const session = new WireSession(
-      (text, params) => send(client, text, params, named, client),
-      notices,
-      isClosed,
-      true,
-      () => {
-        counters.reservedBusy += 1;
-      },
-      () => {
-        counters.reservedBusy = Math.max(0, counters.reservedBusy - 1);
-      },
-      local,
-    );
-    let released = false;
-    return {
-      execute: (text, params, options) =>
-        runCall(closed, options, (watch) => session.query(text, params, watch)),
-      batch: (statements, options) =>
-        runCall(closed, options, async (watch: Watch | undefined) => {
-          const { runAtomicBatch } = await import("./batch.js");
-          return runAtomicBatch(session, statements, watch);
-        }),
-      cancel() {
-        session.cancel();
-      },
-      async release() {
-        if (released) return;
-        released = true;
-        try {
-          await reset(session, client);
-        } finally {
-          counters.reserved = Math.max(0, counters.reserved - 1);
-          client.release();
-        }
-      },
-    };
-  }
 
   function stream(
     text: string,
@@ -259,7 +228,7 @@ export function open(config: NodePostgresConfig): DriverPool {
   }
 }
 
-function send(
+export function send(
   runner: { query(config: QueryConfig): Promise<QueryResult> },
   text: string,
   params: readonly WireValue[] | undefined,
@@ -318,7 +287,7 @@ function cancelBackend(client: PoolClient): void {
   });
 }
 
-function connectClient(
+export function connectClient(
   pool: InstanceType<typeof pg.Pool>,
   acquireMs: number | undefined,
   counters: Counters,
@@ -354,19 +323,6 @@ function connectClient(
       },
     );
   });
-}
-
-async function reset(session: WireSession, client: PoolClient): Promise<void> {
-  const run = (text: string): Promise<unknown> => client.query(text);
-  if (session.depth() > 0) await run("ROLLBACK").catch(() => undefined);
-  try {
-    await run(RESET_ALL);
-    await run(UNLOCK);
-  } catch {
-    await run("ROLLBACK").catch(() => undefined);
-    await run(RESET_ALL);
-    await run(UNLOCK);
-  }
 }
 
 function statsOf(counters: Counters, size: number): DriverStats {

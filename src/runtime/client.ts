@@ -33,7 +33,15 @@ import {
   type CallScope,
   type ReadOp,
 } from "./plan.js";
-import type { CatalogArtifact, Connected, Inspection, RoutingDecision, TableApi } from "./types.js";
+import type {
+  CatalogArtifact,
+  Connected,
+  Hookm,
+  Inspection,
+  RoutingDecision,
+  TableApi,
+  Timeouts,
+} from "./types.js";
 
 /** How many plans one client keeps. */
 const PLAN_LIMIT = 64;
@@ -51,6 +59,12 @@ export type Session = {
   readonly connected: Promise<void>;
   readonly cache: Map<string, Plan>;
   readonly generators: IdGenerators | undefined;
+  /** Ceilings from `connect({ timeouts })`. */
+  readonly timeouts: Timeouts | undefined;
+  /** Observers from `connect({ hookm })`. */
+  readonly hookm: readonly Hookm[] | undefined;
+  /** Set on the client a transaction hands out. `extras` are the methods only that client has. */
+  readonly tx?: { readonly extras: object; readonly depth: number };
   /** Tenant value or an unscoped reason. Absent on the root client. */
   readonly scope?: CallScope;
   /** Shared close. `for()` and `unscoped()` reuse the same promise. */
@@ -61,8 +75,6 @@ export type Session = {
 export type Mods = {
   readonly all?: string;
   readonly required?: boolean;
-  readonly signal?: AbortSignal;
-  readonly timeout?: number;
   /** Presets chained on the handle. The presets module resolves them on first use. */
   readonly uses?: PresetUse | undefined;
 };
@@ -92,6 +104,8 @@ export function createClient<S extends QuerySchema>(
     readonly logger?: Session["logger"] | undefined;
     readonly signal?: AbortSignal | undefined;
     readonly timeout?: number | undefined;
+    readonly timeouts?: Timeouts | undefined;
+    readonly hookm?: readonly Hookm[] | undefined;
     readonly catalog?: CatalogArtifact | undefined;
     readonly catalogDir?: string | undefined;
     readonly requireMeta?: boolean | undefined;
@@ -119,12 +133,14 @@ export function createClient<S extends QuerySchema>(
     connected,
     cache: new Map(),
     generators: options.generators,
+    timeouts: options.timeouts,
+    hookm: options.hookm,
     closing: { current: undefined },
   };
   return openClient(session);
 }
 
-function openClient<S extends QuerySchema>(session: Session): Connected<S> {
+export function openClient<S extends QuerySchema>(session: Session): Connected<S> {
   const names = Object.keys(session.schema.model);
   const tables: Record<string, TableApi<QuerySchema, string>> = {};
   for (const name of names) tables[name] = tableApi(session, name);
@@ -159,6 +175,9 @@ function openClient<S extends QuerySchema>(session: Session): Connected<S> {
     },
     close,
     connected: session.connected,
+    tx: (...args: unknown[]) => import("./transaction.js").then((mod) => mod.tx(session, args)),
+    batch: (ops: unknown, options?: object) => batchHandle(session, ops, options),
+    ...session.tx?.extras,
   };
   const hooks = session.schema.hooks;
   if (hooks !== undefined) {
@@ -205,6 +224,9 @@ function tableApi(
   const mods: WriteMods = { archive: view, uses };
   const api: Record<string, unknown> = {
     find(options: object = {}) {
+      if ("lock" in options) {
+        return lazyRead(session, () => import("./lock.js"), table, options, base, view);
+      }
       return start(session, "find", table, options, base, view);
     },
     one(options: object = {}) {
@@ -250,6 +272,21 @@ function tableApi(
     api[name] = (...args: unknown[]) => tableApi(session, table, view, [uses, name, args]);
   }
   return api as unknown as TableApi<QuerySchema, string>;
+}
+
+/** `batch` loads its module when it is awaited. `.replica()` is refused there (OKM1840). */
+function batchHandle(
+  session: Session,
+  ops: unknown,
+  options: object | undefined,
+  replica?: true,
+): Promise<unknown> & Record<string, unknown> {
+  return queryHandle(
+    () => import("./batch.js").then((mod) => mod.batch(session, ops, options, replica)),
+    {
+      replica: () => batchHandle(session, ops, options, true),
+    },
+  ) as unknown as Promise<unknown> & Record<string, unknown>;
 }
 
 type WriteOp = "insert" | "update" | "delete";
@@ -320,6 +357,8 @@ function writeHandle(
   mods: WriteMods,
 ): Promise<unknown> & Record<string, unknown> {
   return queryHandle(() => runWrite(session, op, table, input, options, mods), {
+    // `batch` plans each operation and runs the statements of all of them as one unit.
+    "~plan": () => runWrite(session, op, table, input, options, mods, true),
     sql() {
       return loadWrite().then((mod) =>
         mod.explainWrite(
@@ -350,23 +389,12 @@ async function runWrite(
   input: unknown,
   options: object,
   mods: WriteMods,
+  plan?: true,
 ): Promise<unknown> {
   await session.connected;
   const mod = await loadWrite();
   try {
-    return await mod.executeWrite(
-      {
-        schema: session.schema,
-        pool: session.pool,
-        ...(session.generators !== undefined ? { generators: session.generators } : {}),
-      },
-      op,
-      table,
-      input,
-      options,
-      mods,
-      session.scope,
-    );
+    return await mod.executeWrite(session, op, table, input, options, mods, session.scope, plan);
   } catch (error) {
     throw logged(session, await mapError(session, error));
   }
@@ -525,8 +553,11 @@ export function readHandle(
       const result = await session.pool.execute(
         plan.text,
         params as readonly WireValue[],
-        callOptions(mods),
+        callOptions(call, session.timeouts?.statement),
       );
+      if (session.hookm && result.notices.length) {
+        void import("./hookm.js").then((mod) => mod.notices(session.hookm, result.notices));
+      }
       return await decode(plan, result.rows);
     } catch (error) {
       const mapped = await mapError(session, error);
@@ -630,6 +661,7 @@ export function readCall(
     ...(record.orderBy !== undefined ? { orderBy: record.orderBy } : {}),
     ...(record.limit !== undefined ? { limit: record.limit } : {}),
     ...(record.include !== undefined ? { include: record.include } : {}),
+    ...callOptions(record),
     ...(all !== undefined ? { all } : {}),
     ...(scope !== undefined ? { scope } : {}),
     ...(schema.tenancy !== undefined && model !== undefined
@@ -758,14 +790,18 @@ export function attachHttp(http: ErrorStatuses | undefined, error: OkmError): Ok
   return new OkmError(error.code, error.message, { ...errorFields(error), http });
 }
 
-function callOptions(input: {
-  readonly signal?: AbortSignal | undefined;
-  readonly timeout?: number | undefined;
-}): ExecuteOptions | undefined {
-  if (input.signal === undefined && input.timeout === undefined) return undefined;
+function callOptions(
+  input: {
+    readonly signal?: AbortSignal | undefined;
+    readonly timeout?: number | undefined;
+  },
+  statement?: number,
+): ExecuteOptions | undefined {
+  const timeout = input.timeout ?? statement;
+  if (input.signal === undefined && timeout === undefined) return undefined;
   return {
     ...(input.signal !== undefined ? { signal: input.signal } : {}),
-    ...(input.timeout !== undefined ? { timeout: input.timeout } : {}),
+    ...(timeout !== undefined ? { timeout } : {}),
   };
 }
 

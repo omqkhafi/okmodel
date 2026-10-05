@@ -5,6 +5,7 @@
  * A plain object is not a where value when the column type is an object.
  */
 
+import type { DriverTimeouts, Notice } from "../contracts/driver.js";
 import type { SafeResult } from "../contracts/error.js";
 import type { QuerySchema } from "../dialects/pg/model.js";
 import type { Inc } from "../dialects/pg/ops/inc.js";
@@ -143,12 +144,31 @@ export type ResultRow<S extends QuerySchema, K extends keyof S["~byName"], O> = 
     IncludeRows<S, K, O extends { readonly include: infer Inc } ? Inc : undefined>
 >;
 
+/** Per-call cancellation and deadline (spec §15). */
+export type CallOptions = {
+  /** Aborts the call. The statement is cancelled where the driver can, and the call fails as `cancelled`. */
+  readonly signal?: AbortSignal;
+  /** Milliseconds. The call fails as `timeout` when it runs longer. */
+  readonly timeout?: number;
+};
+
 /** Options shared by reads. */
-export type ReadOptions<S extends QuerySchema, K extends keyof S["~byName"]> = {
+export type ReadOptions<S extends QuerySchema, K extends keyof S["~byName"]> = CallOptions & {
   readonly where?: WhereOf<S, K>;
   readonly select?: readonly (keyof RowOf<S, K> & string)[];
   readonly orderBy?: OrderBy<RowOf<S, K>>;
   readonly include?: IncludeOf<S, K>;
+};
+
+/**
+ * Row locks on `find`. They exist inside `tx()` only (OKM1830 outside one).
+ *
+ * `wait` says what happens when a row is locked by another transaction: `nowait`
+ * fails at once (kind `lock_timeout`) and `skip` leaves that row out.
+ */
+export type LockOptions = {
+  readonly lock?: "update" | "share";
+  readonly wait?: "nowait" | "skip";
 };
 
 /** `find` options. `limit` is required unless the caller uses `.all(reason)`. */
@@ -204,7 +224,7 @@ type NumericKeys<Row> = {
   string;
 
 /** `aggregate` options. A hidden field is refused at runtime. */
-export type AggregateOptions<S extends QuerySchema, K extends keyof S["~byName"]> = {
+export type AggregateOptions<S extends QuerySchema, K extends keyof S["~byName"]> = CallOptions & {
   readonly where?: WhereOf<S, K>;
   /** One result row per distinct combination. Needs `limit`, or `.all(reason)`. */
   readonly groupBy?: readonly (keyof RowOf<S, K> & string)[];
@@ -445,7 +465,7 @@ export type ArchiveCount = {
 };
 
 /** `archive`, `restore`, and the visibility modifiers. Present only on archivable tables. */
-type ArchiveOps<S extends QuerySchema, K extends keyof S["~byName"] & string> = {
+type ArchiveOps<S extends QuerySchema, K extends keyof S["~byName"] & string, L> = {
   /**
    * Archives the active rows that match.
    *
@@ -467,9 +487,9 @@ type ArchiveOps<S extends QuerySchema, K extends keyof S["~byName"] & string> = 
     options?: WriteOptions<S, K>,
   ): Write<WriteCount>;
   /** Reads, updates, and deletes include archived rows. */
-  withArchived(): TableApi<S, K>;
+  withArchived(): TableApi<S, K, L>;
   /** Reads, updates, and deletes target only archived rows. */
-  onlyArchived(): TableApi<S, K>;
+  onlyArchived(): TableApi<S, K, L>;
 };
 
 /**
@@ -487,11 +507,11 @@ type ArchiveOps<S extends QuerySchema, K extends keyof S["~byName"] & string> = 
 export interface TableExtras<S extends QuerySchema, K extends keyof S["~byName"] & string> {}
 
 /** Methods on one table. */
-export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & string> = {
-  find<const O extends FindOptions<S, K> & { readonly limit: number }>(
+export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & string, L = unknown> = {
+  find<const O extends FindOptions<S, K> & L & { readonly limit: number }>(
     options: O,
   ): Read<readonly ResultRow<S, K, O>[]>;
-  find<const O extends FindOptions<S, K>>(
+  find<const O extends FindOptions<S, K> & L>(
     options: O,
   ): { all(reason: string): Read<readonly ResultRow<S, K, O>[]> };
   one<const O extends ReadOptions<S, K>>(options?: O): Read<ResultRow<S, K, O> | null>;
@@ -516,8 +536,8 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   aggregate<const O extends AggregateOptions<S, K>>(
     options: O,
   ): { all(reason: string): Query<readonly AggregateRow<RowOf<S, K>, O>[]> };
-  count(options?: { readonly where?: WhereOf<S, K> }): Read<number>;
-  exists(options?: { readonly where?: WhereOf<S, K> }): Read<boolean>;
+  count(options?: CallOptions & { readonly where?: WhereOf<S, K> }): Read<number>;
+  exists(options?: CallOptions & { readonly where?: WhereOf<S, K> }): Read<boolean>;
   /**
    * Inserts one row. Unknown keys are dropped. `{ allow }` may set guarded fields.
    *
@@ -554,8 +574,8 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
     target: { readonly where?: WhereOf<S, K> },
     options?: WriteOptions<S, K>,
   ): Write<WriteCount>;
-} & (S["~byName"][K] extends { readonly "~archive": true } ? ArchiveOps<S, K> : unknown) &
-  PresetApi<S, K> &
+} & (S["~byName"][K] extends { readonly "~archive": true } ? ArchiveOps<S, K, L> : unknown) &
+  PresetApi<S, K, L> &
   TableExtras<S, K>;
 
 /**
@@ -568,11 +588,12 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
 type PresetApi<
   S extends QuerySchema,
   K extends keyof S["~byName"] & string,
+  L,
 > = S["~byName"][K] extends { readonly "~presets": infer P }
   ? {
       readonly [N in keyof P & string]: P[N] extends (...all: infer All) => unknown
         ? All extends readonly [unknown, ...infer A]
-          ? (...args: A) => TableApi<S, K>
+          ? (...args: A) => TableApi<S, K, L>
           : never
         : never;
     }
@@ -610,6 +631,93 @@ type ScopedName<S extends QuerySchema> =
 /** Tables on the root client. Global tables stay. Tenant tables need `for()`. */
 type RootName<S extends QuerySchema> = Exclude<keyof S["~byName"] & string, ScopedName<S>>;
 
+/** Options of `tx()` (spec §15). */
+export type TxOptions = {
+  /** Isolation level. The database default when omitted. Only the outermost `tx()` takes it. */
+  readonly isolation?: "read committed" | "repeatable read" | "serializable";
+  /**
+   * How many times to run the callback again after a serialization failure or a
+   * deadlock. Each run is a fresh transaction. Other errors, `cancelled` and
+   * `outcome_unknown` are never retried. Only the outermost `tx()` takes it.
+   */
+  readonly retry?: number;
+  /** Milliseconds for the whole transaction, retries included. The call fails as `timeout`. */
+  readonly timeout?: number;
+  /** Aborts the transaction and rolls it back. The call fails as `cancelled`. */
+  readonly signal?: AbortSignal;
+};
+
+/** What the callback of a batch gets back: one result per operation, in order. */
+type BatchResults<Ops extends readonly unknown[]> = {
+  -readonly [I in keyof Ops]: Awaited<Ops[I]>;
+};
+
+/**
+ * Tables of a client: the root client leaves tenant tables out. A flag, not a name list,
+ * because a name list as a type argument costs one instantiation per table on every
+ * use of the client (D176).
+ */
+type TxNames<S extends QuerySchema, Root extends boolean> = Root extends true
+  ? RootName<S>
+  : keyof S["~byName"] & string;
+
+/**
+ * `tx` and `batch`, on the root client, a scoped client, and the client a transaction hands out.
+ *
+ * @typeParam S - Connected schema
+ * @typeParam Root - True on the root client, whose tenant tables need `for()` first
+ */
+type TxApi<S extends QuerySchema, Root extends boolean> = {
+  /**
+   * Runs `fn` in a transaction on one reserved connection of the primary.
+   *
+   * The callback gets a client with the same tables, presets, tenancy and archive
+   * handling. It commits when `fn` resolves and rolls back when it throws. Inside a
+   * transaction this is a savepoint on the same connection.
+   */
+  tx<T>(fn: (t: TxClient<S, Root>) => Promise<T>): Promise<T>;
+  tx<T>(options: TxOptions, fn: (t: TxClient<S, Root>) => Promise<T>): Promise<T>;
+  /**
+   * Runs writes as one atomic unit on the primary. Results come back in order.
+   *
+   * A failure rolls everything back and the error carries `batchIndex`. Inside a
+   * transaction it runs on a savepoint, so the transaction survives a failure.
+   */
+  batch<const Ops extends readonly Write<unknown>[]>(
+    ops: Ops,
+    options?: CallOptions,
+  ): Promise<BatchResults<Ops>>;
+};
+
+/**
+ * The client the callback of `tx()` gets.
+ *
+ * Its tables take row locks on `find`. It has no `close` and no `for()`: scope the
+ * client before calling `tx()`.
+ *
+ * @typeParam S - Connected schema
+ * @typeParam Root - True on the root client, whose tenant tables need `for()` first
+ */
+export type TxClient<S extends QuerySchema, Root extends boolean = false> = {
+  readonly [K in TxNames<S, Root>]: TableApi<S, K, LockOptions>;
+} & {
+  /** Looks up a table by name. An unknown name is OKM1120. */
+  table<K extends TxNames<S, Root>>(name: K): TableApi<S, K, LockOptions>;
+  /**
+   * Runs `fn` after the outermost transaction commits.
+   *
+   * It never runs on rollback. Callbacks run in order. An error in one is reported to
+   * `hookm.onError` and never changes the commit result.
+   */
+  afterCommit(fn: () => void | Promise<void>): void;
+  /**
+   * Takes a transaction-level advisory lock. It is released at commit or rollback.
+   *
+   * A string is hashed; a number or bigint is the key itself.
+   */
+  advisoryLock(key: string | number | bigint, options?: CallOptions): Promise<void>;
+} & TxApi<S, Root>;
+
 /** A client whose tables are already inside one tenant or an unscoped reason. */
 type ScopedClient<S extends QuerySchema> = {
   readonly [K in keyof S["~byName"] & string]: TableApi<S, K>;
@@ -620,7 +728,8 @@ type ScopedClient<S extends QuerySchema> = {
   close(): Promise<void>;
   /** Resolves when the dialect and `requires` checks have finished. */
   readonly connected: Promise<void>;
-} & IfAsyncDisposable<typeof Symbol>;
+} & TxApi<S, false> &
+  IfAsyncDisposable<typeof Symbol>;
 
 /** `for` and `unscoped` on a schema that set tenancy. */
 type ScopeMethods<S extends QuerySchema> =
@@ -661,7 +770,8 @@ export type Connected<S extends QuerySchema> = {
   close(): Promise<void>;
   /** Resolves when the dialect and `requires` checks have finished. */
   readonly connected: Promise<void>;
-} & ScopeMethods<S> &
+} & TxApi<S, true> &
+  ScopeMethods<S> &
   IfAsyncDisposable<typeof Symbol>;
 
 /**
@@ -718,4 +828,31 @@ export type ConnectOptions<S extends QuerySchema> = {
   readonly generators?: import("../contracts/generator.js").IdGenerators;
   readonly signal?: AbortSignal;
   readonly timeout?: number;
+  /** Ceilings in milliseconds. See {@link Timeouts}. */
+  readonly timeouts?: Timeouts;
+  /** Observers of notices, transactions and errors. They cannot change a query (spec §18). */
+  readonly hookm?: readonly Hookm[];
+};
+
+/** Ceilings from `connect({ timeouts })`, in milliseconds. Each key is optional. */
+export type Timeouts = DriverTimeouts;
+
+/** What `hookm.onTransaction` hears. `depth` is 0 for the transaction and 1 and up for savepoints. */
+export type TransactionEvent = {
+  readonly phase: "start" | "commit" | "rollback";
+  readonly depth: number;
+};
+
+/**
+ * A read-only observer (spec §18).
+ *
+ * Events only. An error a hook throws is dropped and never reaches the call.
+ */
+export type Hookm = {
+  /** A server notice, such as `RAISE NOTICE`. */
+  onNotice?(notice: Notice): void;
+  /** A transaction or batch starts, commits, or rolls back. */
+  onTransaction?(event: TransactionEvent): void;
+  /** An error the runtime could not give to a caller, such as one from an `afterCommit` callback. */
+  onError?(error: unknown): void;
 };

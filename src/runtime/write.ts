@@ -5,7 +5,7 @@
  * `"error"`. Chunked writes go through the internal transaction runner.
  */
 
-import type { DriverPool, ExecuteOptions, ExecuteResult, Statement } from "../contracts/driver.js";
+import type { ExecuteOptions, ExecuteResult, Statement } from "../contracts/driver.js";
 import { OkmError, type ValidationIssue } from "../contracts/error.js";
 import type { ClientFill, IdGenerators } from "../contracts/generator.js";
 import type { ColumnModel, PresetUse } from "../dialects/pg/model.js";
@@ -42,7 +42,7 @@ import {
 } from "./safety-hook.js";
 import { stack } from "./preset-stack.js";
 import { fieldSealed, sealingTrait, touchFields } from "./trait-read.js";
-import { runWrite } from "./tx.js";
+import { runWrite, type RunHost } from "./tx.js";
 import { writeWouldValidate } from "./validate/places.js";
 
 registerFailFix("OKM1102", "Pass where, or call .all(reason) to match every row.");
@@ -83,10 +83,21 @@ export type WriteMods = {
 };
 
 /** Pool and schema for one client. The client maps driver errors. */
-export type WriteHost = {
+export type WriteHost = RunHost & {
   readonly schema: QuerySchema;
-  readonly pool: DriverPool;
-  readonly generators?: IdGenerators;
+  readonly generators?: IdGenerators | undefined;
+};
+
+/**
+ * A planned write: its statements, and what turns their results into the value.
+ *
+ * `batch` flattens the statements of many operations into one atomic unit and
+ * gives each operation back its own slice of the results.
+ */
+export type PreparedWrite = {
+  readonly statements: readonly Statement[];
+  readonly options: ExecuteOptions | undefined;
+  finish(results: readonly ExecuteResult[]): unknown;
 };
 
 type Cell =
@@ -165,6 +176,8 @@ const NO_ALLOW: ReadonlySet<string> = new Set();
  * @param input - Rows, or the update or delete target
  * @param options - Returning, conflict, expect, signal, timeout
  * @param mods - `.all` and `.expect`
+ * @param scope - Tenant scope of the client
+ * @param plan - Return the {@link PreparedWrite} without running it, for `batch`
  * @returns Rows, one row, or `{ count }`
  */
 export async function executeWrite(
@@ -175,7 +188,36 @@ export async function executeWrite(
   options: object,
   mods: WriteMods,
   scope?: CallScope,
+  plan?: true,
 ): Promise<unknown> {
+  const prepared = await prepareWrite(host, op, table, input, options, mods, scope);
+  if (plan !== undefined) return prepared;
+  if (prepared.statements.length === 0) return prepared.finish([]);
+  const results = await runWrite(host, prepared.statements, prepared.options);
+  return prepared.finish(results);
+}
+
+/**
+ * Plans a write and returns its statements and the function that decodes the results.
+ *
+ * @param host - Client schema and pool
+ * @param op - Insert, update, or delete
+ * @param table - Table name
+ * @param input - Rows, or the update or delete target
+ * @param options - Returning, conflict, expect, signal, timeout
+ * @param mods - `.all` and `.expect`
+ * @param scope - Tenant scope of the client
+ * @returns The statements in order, the call options, and `finish`
+ */
+async function prepareWrite(
+  host: WriteHost,
+  op: WriteOp,
+  table: string,
+  input: unknown,
+  options: object,
+  mods: WriteMods,
+  scope?: CallScope,
+): Promise<PreparedWrite> {
   try {
     const planned = await planWrite(
       host.schema,
@@ -187,9 +229,11 @@ export async function executeWrite(
       mods,
       scope,
     );
-    if (planned.statements.length === 0) return finish([], planned, table);
-    const results = await runWrite(host.pool, planned.statements, callOptions(options));
-    return finish(results, planned, table);
+    return {
+      statements: planned.statements,
+      options: callOptions(options),
+      finish: (results) => finish(results, planned, table),
+    };
   } catch (error) {
     throw scrubWrite(host.schema, table, input, error);
   }
