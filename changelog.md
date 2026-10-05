@@ -51,6 +51,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - `okm_meta` and `okm_history` stay out of the author diff. Plan, push, check, and doctor neither create nor drop them, in either direction.
 - A primary key's name key is `pkey` in the schema and in introspection. `CREATE TABLE` writes that constraint's name, so a name other than `{table}_pkey` round-trips. After push, `okm check` reports no drift for a plain key, a composite key, and a named key. When `okm_meta` already exists, `okm check` compares the database with the schema and reports OKM1520 if they differ.
+- A plan treats a schema type spelling and the Postgres `format_type` spelling as the same type (D191). `timestamptz` matches `timestamp with time zone`, and the same for `timestamp`, `time`, `timetz`, `varchar(n)`, `char(n)`, and the integer, boolean, float, and `decimal`/`numeric` aliases. Length, precision, scale, and array ranks stay. An unknown name is compared as written. `varchar(20)` to `varchar(30)`, and `timestamp` to `timestamptz`, still alter. After push, `timestamps({ enforce: "trigger" })` plans to no steps.
 
 ## v0.2.1 — 2026-10-05
 
