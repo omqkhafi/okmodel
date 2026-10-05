@@ -171,6 +171,53 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   expect(jsonVersions(weekly, "tarball_versions")).toEqual([...POSTGRES_VERSIONS]);
 });
 
+test("every job that runs bun run check sets up Node and Deno the way ci.yml does", () => {
+  const ci = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
+  const release = readFileSync(join(root, ".github/workflows/release.yml"), "utf8");
+  expect(checkSetupProblems(ci, ci)).toEqual([]);
+  expect(checkSetupProblems(release, ci)).toEqual([]);
+  expect(checkJobs(release).map(([name]) => name)).toContain("publish");
+});
+
+test("the setup guard names a check job without Deno, without Node, or with Deno after Check", () => {
+  const ci = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
+  const noDeno = [
+    "jobs:",
+    "  publish:",
+    "    steps:",
+    "      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0",
+    "        with:",
+    "          node-version: 22",
+    "      - run: bun run check",
+  ].join("\n");
+  expect(checkSetupProblems(noDeno, ci)).toEqual([
+    "publish: runs bun run check without the Deno install and PATH steps ci.yml has before it",
+  ]);
+  const noNode = [
+    "jobs:",
+    "  publish:",
+    "    steps:",
+    ...denoSteps(ci).map((run) => `      - run: ${JSON.stringify(run)}`),
+    "      - run: bun run check",
+  ].join("\n");
+  expect(checkSetupProblems(noNode, ci)).toEqual([
+    "publish: runs bun run check without setup-node 22 before it, as ci.yml has",
+  ]);
+  const late = [
+    "jobs:",
+    "  publish:",
+    "    steps:",
+    "      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0",
+    "        with:",
+    "          node-version: 22",
+    "      - run: bun run check",
+    ...denoSteps(ci).map((run) => `      - run: ${JSON.stringify(run)}`),
+  ].join("\n");
+  expect(checkSetupProblems(late, ci)).toHaveLength(1);
+  const otherVersion = ci.replace("sh -s v2.9.7", "sh -s v2.0.0");
+  expect(checkSetupProblems(ci, otherVersion)).toHaveLength(1);
+});
+
 test("verify runs one version unless --all", () => {
   expect(verifyVersions([], {})).toEqual(["17"]);
   expect(verifyVersions([], { POSTGRES_VERSION: "16" })).toEqual(["16"]);
@@ -214,4 +261,87 @@ function matrixVersions(yaml: string): readonly (readonly string[])[] {
     );
   }
   return lists;
+}
+
+interface WorkflowStep {
+  readonly uses?: string;
+  readonly run?: string;
+  readonly with?: Record<string, unknown>;
+}
+
+/** The `[job name, steps]` pairs of a workflow file that run `bun run check`. */
+function checkJobs(yaml: string): readonly (readonly [string, readonly WorkflowStep[]])[] {
+  const parsed: unknown = Bun.YAML.parse(yaml);
+  const jobs = isRecord(parsed) && isRecord(parsed.jobs) ? parsed.jobs : {};
+  const found: [string, readonly WorkflowStep[]][] = [];
+  for (const [name, job] of Object.entries(jobs)) {
+    if (!isRecord(job) || !Array.isArray(job.steps)) continue;
+    const steps = job.steps.filter(isRecord) as WorkflowStep[];
+    if (steps.some((step) => step.run?.trim() === "bun run check")) found.push([name, steps]);
+  }
+  return found;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Step positions of `bun run check` and the steps before it. */
+function stepsBeforeCheck(steps: readonly WorkflowStep[]): readonly WorkflowStep[] {
+  return steps.slice(
+    0,
+    steps.findIndex((step) => step.run?.trim() === "bun run check"),
+  );
+}
+
+/** The `run` lines that install Deno or put it on PATH, in order. */
+function denoRuns(steps: readonly WorkflowStep[]): readonly string[] {
+  return steps
+    .map((step) => step.run?.trim() ?? "")
+    .filter((run) => run.includes("deno.land/install.sh") || run.includes(".deno/bin"));
+}
+
+/** The Deno steps of the first job in `ci.yml` that runs `bun run check`. */
+function denoSteps(ci: string): readonly string[] {
+  const first = checkJobs(ci)[0];
+  if (first === undefined) throw new Error("ci.yml has no job that runs bun run check");
+  return denoRuns(stepsBeforeCheck(first[1]));
+}
+
+/** The `node-version` of the last setup-node step before `bun run check`. */
+function nodeBeforeCheck(steps: readonly WorkflowStep[]): string | undefined {
+  const setups = stepsBeforeCheck(steps).filter((step) =>
+    step.uses?.includes("actions/setup-node@"),
+  );
+  const version = setups[setups.length - 1]?.with?.["node-version"];
+  return typeof version === "string" || typeof version === "number" ? String(version) : undefined;
+}
+
+/**
+ * Problems for jobs in `workflow` that run `bun run check` without the Deno
+ * install and PATH steps, or the Node version, that `reference` (ci.yml) has.
+ */
+function checkSetupProblems(workflow: string, reference: string): readonly string[] {
+  const expectedDeno = denoSteps(reference);
+  const first = checkJobs(reference)[0];
+  const expectedNode = first === undefined ? undefined : nodeBeforeCheck(first[1]);
+  if (expectedDeno.length !== 2 || !/sh -s v\d+\.\d+\.\d+$/.test(expectedDeno[0] ?? "")) {
+    return ["ci.yml does not install a pinned Deno and put it on PATH before Check"];
+  }
+  if (expectedNode === undefined) return ["ci.yml has no setup-node before Check"];
+  const problems: string[] = [];
+  for (const [name, steps] of checkJobs(workflow)) {
+    const before = stepsBeforeCheck(steps);
+    if (JSON.stringify(denoRuns(before)) !== JSON.stringify(expectedDeno)) {
+      problems.push(
+        `${name}: runs bun run check without the Deno install and PATH steps ci.yml has before it`,
+      );
+    }
+    if (nodeBeforeCheck(steps) !== expectedNode) {
+      problems.push(
+        `${name}: runs bun run check without setup-node ${expectedNode} before it, as ci.yml has`,
+      );
+    }
+  }
+  return problems;
 }
