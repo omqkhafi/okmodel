@@ -14,6 +14,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+### 🐛 Fixed
+
+- `bun run db:up` binds three free host ports when 55432, 55433, or 55434 is already taken, and records them for the next CI step. Release smoke no longer stops when the runner is already using 55432.
+
 ## v0.3.0 — 2026-10-05
 
 0.3.0 adds extensions, domains, functions and triggers, views, and roles and grants, and checks that each one round-trips.

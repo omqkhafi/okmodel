@@ -1,5 +1,10 @@
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { expect, test } from "bun:test";
 
+import { chooseTopologyPorts, publishTopologyPorts } from "../packages/harness/src/docker-cli.js";
 import { decideDocker } from "../packages/harness/src/docker-gate.js";
 import { withPglite, withPgliteSchema } from "../packages/harness/src/pglite.js";
 import { createIsolatedDatabase, openPostgres } from "../packages/harness/src/postgres.js";
@@ -18,6 +23,51 @@ test("postgres versions 15 through 18 are accepted", () => {
   expect(postgresVersionFromEnv({})).toBe("17");
   expect(() => assertPostgresVersion("14")).toThrow(/outside 15/);
   expect(() => assertPostgresVersion("19")).toThrow(/outside 15/);
+});
+
+test("topology keeps 55432 when those ports are free", async () => {
+  const ports = await chooseTopologyPorts(
+    {},
+    async () => true,
+    async () => {
+      throw new Error("a free default port should not be replaced");
+    },
+  );
+  expect(ports).toEqual({ primary: "55432", replicaA: "55433", replicaB: "55434" });
+});
+
+test("topology moves off a host port that is already taken", async () => {
+  let next = 56000;
+  const ports = await chooseTopologyPorts(
+    {},
+    async () => false,
+    async () => ({ port: next++, close: async () => {} }),
+  );
+  expect(ports).toEqual({ primary: "56000", replicaA: "56001", replicaB: "56002" });
+});
+
+test("an explicit host port is kept", async () => {
+  const ports = await chooseTopologyPorts(
+    { OKM_PRIMARY_PORT: "56010" },
+    async () => false,
+    async () => {
+      throw new Error("an explicit port should not be replaced");
+    },
+  );
+  expect(ports).toEqual({ primary: "56010", replicaA: "55433", replicaB: "55434" });
+});
+
+test("topology ports are recorded for the next CI step", () => {
+  const dir = mkdtempSync(join(tmpdir(), "okm-ports-"));
+  const file = join(dir, "env");
+  publishTopologyPorts(
+    { primary: "56000", replicaA: "56001", replicaB: "56002" },
+    { GITHUB_ENV: file },
+  );
+  expect(readFileSync(file, "utf8")).toBe(
+    "OKM_PRIMARY_PORT=56000\nOKM_REPLICA_A_PORT=56001\nOKM_REPLICA_B_PORT=56002\n",
+  );
+  publishTopologyPorts({ primary: "1", replicaA: "2", replicaB: "3" }, {});
 });
 
 test("docker tests fail only when Docker is required", () => {
