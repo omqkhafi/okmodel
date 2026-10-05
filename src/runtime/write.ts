@@ -97,6 +97,8 @@ export type WriteHost = RunHost & {
 export type PreparedWrite = {
   readonly statements: readonly Statement[];
   readonly options: ExecuteOptions | undefined;
+  /** Set when `finish` can refuse a statement that already ran. `batch` refuses such a write (D183). */
+  readonly checked?: "restore" | "expect";
   finish(results: readonly ExecuteResult[]): unknown;
 };
 
@@ -232,6 +234,7 @@ async function prepareWrite(
     return {
       statements: planned.statements,
       options: callOptions(options),
+      ...(planned.expect !== undefined ? { checked: "expect" as const } : {}),
       finish: (results) => finish(results, planned, table),
     };
   } catch (error) {

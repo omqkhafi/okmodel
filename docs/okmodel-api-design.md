@@ -260,7 +260,7 @@ import { table, t } from "okmodel/sql";   // common subset
 | Layer | Declared by | Checked by |
 |---|---|---|
 | Dialect | import path | types |
-| Engine version | `schema({ requires: { postgres: ">=17" } })` — the minimum gates features in types | types (OKM1110) + connect (OKM1802) |
+| Engine version | `schema({ requires: { postgres: ">=17" } })` — the minimum gates features in types | types (OKM1110) + connect (OKM1802). In 0.2 nothing is gated in types: the one engine-dependent feature, `uuidv7()` below 18, fails when the schema is built (OKM1812), and OKM1110 is not thrown yet (D183) |
 | Driver | execution capabilities only: `transactions: "interactive" \| "batch"`, `stream`, `listen`, `cancel`, `prepared: "named" \| "unnamed" \| "none"`, `describe`. Atomic `batch` is not a flag: every driver provides it (section 15) | types (every flag gates the API: `.stream()`, `tx()`, cancellation and `listen` are absent from the client type when the driver lacks them; a dynamic call fails with an OKM error at runtime) |
 
 Dialect and driver are different axes: SQL capabilities (`lateral`, `returning`, `SKIP LOCKED`, generated columns) belong to the dialect and engine version; every driver on one dialect sends the same SQL. Neon over HTTP is `transactions: "batch"` on the same Postgres dialect. Reading WAL positions (`pg_current_wal_insert_lsn()`, `pg_last_wal_replay_lsn()`) is plain SQL, so it is a dialect and engine capability (`replication.position`), not a driver flag.
@@ -404,7 +404,7 @@ Guarantees are invariants, not a list of methods. A guarantee without a named CI
 |---|---|---|
 | Tenant isolation | every statement on a tenant table carries the tenant predicate; verified by the final safety pass | `isolation.property` |
 | Bounded statements | reads and relation loading: the statement count is determined by query shape, never by result cardinality; no lazy loading. Writes may be split by input size or driver limits (chunked inserts), always inside one transaction | `statements.shape` |
-| Snapshot reads | a multi-statement read runs in one snapshot. Outside a transaction: a read-only `REPEATABLE READ` transaction. Inside `REPEATABLE READ` or `SERIALIZABLE`: that transaction. Inside `READ COMMITTED`: the planner falls back to a single statement, or the call fails (OKM1191) if none exists | `snapshot.consistency` |
+| Snapshot reads | a multi-statement read runs in one snapshot. Outside a transaction: a read-only `REPEATABLE READ` transaction. Inside `REPEATABLE READ` or `SERIALIZABLE`: that transaction. Inside `READ COMMITTED`: the planner falls back to a single statement, or the call fails (OKM1191) if none exists. In 0.2 every read is one statement (includes, relations, `page` and `aggregate` are lateral joins and subqueries), so the single-statement plan always exists and OKM1191 is not thrown (D183) | `snapshot.consistency` |
 | Declared atomicity | each operation and mode states its atomicity and race behavior (table below) | `atomicity.table` |
 | Deterministic semantics | the small-API semantics table holds on every driver | `semantics.conformance` |
 | Final safety verification | no composition can remove a core invariant except through a named escape hatch with a reason | `safety.property` |
@@ -996,7 +996,7 @@ await scoped.batch([
 
 **Batch contract.** `batch(ops)` runs the operations as one atomic unit on the primary.
 
-- `batch` takes writes only (`insert`, `update`, `delete`, `archive`, `restore`); a read in the list is OKM1121 (D181). All commit or none does; results come back in the order given. Operations are independent: none consumes another's result (use `tx()` for that).
+- `batch` takes writes only (`insert`, `update`, `delete`, `archive`, `restore`); a read in the list is OKM1121 (D181), and so is a `restore` and any write that carries `expect` (D183): their checks need the result of the statement, so use `tx()` for them. All commit or none does; results come back in the order given. Operations are independent: none consumes another's result (use `tx()` for that).
 - The guarantee is part of the Driver contract, not a capability: `DriverPool.batch` is a required member and an adapter that cannot provide exactly this guarantee is not an OKModel driver (`okm driver test` fails). Interactive drivers implement it as `BEGIN … COMMIT` on a reserved connection; batch-mode drivers use their native atomic call (Neon HTTP transaction, D1 `batch`). `tx()` is the only difference between the two, and it is gated by the `transactions` flag.
 - A failing statement rolls the whole batch back; the error is the mapped database error and carries `batchIndex`, a `number`, or `null` when the failure happens at commit (a deferred constraint); the whole batch is then rolled back.
 - Isolation is the database default. The contract promises atomicity and statement order, nothing more; conformance assumes nothing more. Non-transactional effects (sequence values) are not rolled back, as documented for `tx()`.
@@ -1091,7 +1091,7 @@ const overdue = await scoped.sql`
 ```
 
 - Types recorded in `okm.lock.json` by `okm build` via driver `describe`; stale entries fail CI (OKM1601).
-- Tenancy and deletion-trait filters apply when tables are recognised; unverifiable statements on tenant tables fail closed (OKM1702) unless `.trusted("reason")`.
+- Tenancy and deletion-trait filters apply when tables are recognised; unverifiable statements on tenant tables fail closed (OKM1702) unless `.trusted("reason")`. In 0.2 no public runtime path takes raw SQL, so OKM1702 is not thrown; typed raw SQL is M2 (D183).
 - `sql.raw(text, "reason")` requires a reason.
 
 ## 17. Generics
@@ -1336,12 +1336,13 @@ test("today view runs one query", async () => {
 | `archive`/`restore` on a non-archivable table (dynamic call) | runtime | OKM1052 |
 | `upsert` target not unique | types | OKM1104 |
 | To-many include without `limit` | types | OKM1105 |
-| Feature needs a newer engine than `requires` allows | types | OKM1110 |
+| Feature needs a newer engine than `requires` allows | types | OKM1110 (not thrown in 0.2; `uuidv7()` is OKM1812) |
+| A dynamic call the driver's capabilities do not allow | runtime | OKM1111 |
 | Unknown field name at runtime | runtime | OKM1120 |
 | Object where a value is expected | runtime | OKM1121 |
 | Cursor used with a different order | runtime | OKM1130 |
 | Composition breaks a core invariant (final safety verification) | runtime | OKM1190 |
-| Multi-statement read requested inside `READ COMMITTED` with no single-statement plan | runtime | OKM1191 |
+| Multi-statement read requested inside `READ COMMITTED` with no single-statement plan | runtime | OKM1191 (not thrown in 0.2: every read is one statement) |
 | Unsafe migration without reason | CI | OKM1510 |
 | Drift beyond expand compatibility | startup | OKM1520 |
 | Another apply holds the target's lock | CLI / engine | OKM1522 |
@@ -1352,7 +1353,7 @@ test("today view runs one query", async () => {
 | Stale typed-SQL signature | CI | OKM1601 |
 | Commit or batch outcome unknown (result never received) | runtime | OKM1401 |
 | Tenant table without context | types | OKM1701 |
-| Unverifiable raw SQL on tenant table | runtime | OKM1702 |
+| Unverifiable raw SQL on tenant table | runtime | OKM1702 (not thrown in 0.2: no path takes raw SQL) |
 | Changing the tenant key | types + runtime | OKM1704 |
 | Global table referencing tenant table | `okm check` | OKM1705 |
 | Tenant index not led by the key | lint | OKM1706 |

@@ -101,6 +101,11 @@ export function prepareArchive(
   return {
     statements: [{ text: planned.text, params: planned.params }],
     options: planned.call,
+    ...(op === "restore"
+      ? { checked: "restore" as const }
+      : planned.expect !== undefined
+        ? { checked: "expect" as const }
+        : {}),
     finish: (results) => finish(op, table, results[0] as ExecuteResult, planned),
   };
 }

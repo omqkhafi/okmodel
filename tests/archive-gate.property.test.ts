@@ -298,23 +298,6 @@ const byId = (state: State): State => ({
 });
 
 /**
- * True when a restore in the list would be refused because its parent is archived.
- *
- * FINDING P30-1: `batch` checks that result after the unit has committed, so the
- * other writes in the batch stay while the caller sees OKM1xxx `invalid`. The
- * property runs such a list in a `tx` instead and the report states the finding.
- */
-function blocksRestore(state: State, ops: readonly AOp[]): boolean {
-  const trial = clone(state);
-  return ops
-    .filter((op) => op.k !== "restoreGroup")
-    .some((op, index) => {
-      const outcome = model(trial, op, `@${String(index)}`);
-      return op.k === "restore" && "error" in outcome && outcome.error === "invalid";
-    });
-}
-
-/**
  * Runs one step against the database and the model. Returns the model state after it.
  *
  * The database is the authority on an `archiveId`: the model takes it from the result.
@@ -324,7 +307,7 @@ async function runStep(env: GateEnv, step: AStep, models: State[]): Promise<void
   const client = env.db.for({ tenantId: tenant }) as unknown as Client;
   const draft = clone(models[step.who]!);
   const label = JSON.stringify(step);
-  const wrap = step.wrap === "batch" && blocksRestore(draft, step.ops) ? "txCommit" : step.wrap;
+  const wrap = step.wrap;
 
   const one = async (target: Client, op: AOp, within: State): Promise<Called> => {
     const got = await call(op, () => start(target, op));
@@ -366,7 +349,21 @@ async function runStep(env: GateEnv, step: AStep, models: State[]): Promise<void
       break;
     }
     case "batch": {
-      const writes = step.ops.filter((op) => op.k !== "restoreGroup");
+      // A batch takes no restore (D183): the call is refused with nothing sent, and the
+      // rest of the list runs without it. `restoreGroup` is a read and a restore, not a builder.
+      const writes = step.ops.filter((op) => op.k !== "restore" && op.k !== "restoreGroup");
+      for (const op of step.ops.filter((candidate) => candidate.k === "restore")) {
+        env.rec.log.length = 0;
+        const refused = await callBatch([op], () =>
+          (client as unknown as { batch(ops: unknown[]): PromiseLike<unknown> }).batch([
+            start(client, op),
+          ]),
+        );
+        expect("error" in refused && refused.error.code, label).toBe("OKM1121");
+        expect(env.rec.log, label).toEqual([]);
+        hit("a restore refused by batch");
+      }
+      if (writes.length === 0) break;
       const placeholder = writes.map((_, index) => `@${String(index)}`);
       const inner = clone(draft);
       const wants = writes.map((op, index) => model(inner, op, placeholder[index]!));
@@ -608,6 +605,7 @@ postgresTest(
         "wrapped in txCommit",
         "wrapped in txRollback",
         "wrapped in batch",
+        "a restore refused by batch",
         "wrapped in savepointKeep",
         "wrapped in savepointDrop",
       ];

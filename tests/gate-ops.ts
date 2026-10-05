@@ -559,7 +559,11 @@ const leaf = fc.oneof(writeOp, readOp);
 /** A batch of one to three writes. */
 export const batchOp: fc.Arbitrary<BatchOp> = fc.record({
   t: fc.constant("batch" as const),
-  ops: fc.array(writeOp, { minLength: 1, maxLength: 3 }),
+  // A batch takes no restore (D183). `batch-refusals.test.ts` covers the refusal.
+  ops: fc.array(
+    writeOp.filter((op) => op.t !== "restore" && op.t !== "restoreGroup"),
+    { minLength: 1, maxLength: 3 },
+  ),
 });
 
 /** A transaction with an optional nested savepoint. */
