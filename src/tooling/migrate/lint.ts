@@ -65,13 +65,19 @@ export function lintCatalog(source: Catalog): readonly Finding[] {
 /**
  * Lints each SQL file against the previous file's catalog.
  *
- * The first file is linted against an empty catalog. The sibling
- * `.catalog.json` is the catalog after that file.
+ * The walk starts at the first file, against an empty catalog, so a later
+ * file sees the catalog the file before it left. The sibling `.catalog.json`
+ * is the catalog after that file. When `pending` is passed, only those
+ * migration ids contribute findings. The earlier files are still read.
  *
  * @param directory - Migrations directory. Missing means there are none
+ * @param pending - Migration ids still to run. Omit to lint every file
  * @returns Findings, each place prefixed with the migration id
  */
-export function lintMigrationDirectory(directory: string): readonly Finding[] {
+export function lintMigrationDirectory(
+  directory: string,
+  pending?: ReadonlySet<string>,
+): readonly Finding[] {
   if (!existsSync(directory)) return [];
   const names = readdirSync(directory)
     .filter((file) => file.endsWith(".sql"))
@@ -82,8 +88,10 @@ export function lintMigrationDirectory(directory: string): readonly Finding[] {
     const id = file.slice(0, -".sql".length);
     const plan = parsePlan(readFileSync(join(directory, file), "utf8"));
     const after = parseCatalog(readFileSync(join(directory, `${id}.catalog.json`), "utf8"));
-    for (const item of lintPlan(plan, before, after)) {
-      findings.push({ ...item, place: `${id} ${item.place}` });
+    if (pending === undefined || pending.has(id)) {
+      for (const item of lintPlan(plan, before, after)) {
+        findings.push({ ...item, place: `${id} ${item.place}` });
+      }
     }
     before = after;
   }

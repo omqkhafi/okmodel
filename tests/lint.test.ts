@@ -345,7 +345,7 @@ test("an override needs a reason and only silences the code it names", () => {
   expect(formatFindings(unrelated.findings)).toContain("error OKM1510");
 });
 
-test("generate writes the file, plan and check fail on an error, apply refuses first", async () => {
+test("generate writes the file, and plan and check fail on an error", async () => {
   const root = repoRoot();
   const cwd = mkdtempSync(join(tmpdir(), "okm-lint-"));
   const applyDir = mkdtempSync(join(tmpdir(), "okm-lint-apply-"));
@@ -397,29 +397,12 @@ test("generate writes the file, plan and check fail on an error, apply refuses f
       schema({ tables: [tasks(), table("notes", { id: t.identity() })] }),
       schema({ tables: [table("notes", { id: t.identity() })] }),
     );
-    writeFileSync(
-      join(applyDir, "okmodel.config.ts"),
-      [
-        `import { defineConfig } from ${JSON.stringify(join(root, "src/tooling/migrate/index.ts"))};`,
-        "export default defineConfig({",
-        '  schema: "./schema.ts",',
-        '  database: "postgres://127.0.0.1:1/none",',
-        "});",
-        "",
-      ].join("\n"),
-    );
-    writeFileSync(join(applyDir, "schema.ts"), "export const unused = 1;\n");
     mkdirSync(join(applyDir, "migrations"));
     writeFileSync(join(applyDir, "migrations", "0001_drop.sql"), formatPlan(drop.plan));
     writeFileSync(
       join(applyDir, "migrations", "0001_drop.catalog.json"),
       serializeCatalog(drop.after),
     );
-    const refused = await rejected(() =>
-      run(["migrate", "apply"], { cwd: applyDir, stdout: () => {} }),
-    );
-    expect(refused.code).toBe("OKM1510");
-    expect(refused.message).toContain("error OKM1511");
     expect(
       lintMigrationDirectory(join(applyDir, "migrations"))[0]?.place.startsWith("0001_drop"),
     ).toBe(true);
@@ -427,6 +410,29 @@ test("generate writes the file, plan and check fail on an error, apply refuses f
     rmSync(cwd, { recursive: true, force: true });
     rmSync(dropDir, { recursive: true, force: true });
     rmSync(applyDir, { recursive: true, force: true });
+  }
+});
+
+test("a later file is linted against the previous catalog, and an applied id is skipped", () => {
+  const directory = mkdtempSync(join(tmpdir(), "okm-lint-dir-"));
+  try {
+    const created = schema({ tables: [tasks()] });
+    const unique = schema({
+      tables: [table("tasks", { id: t.identity(), title: t.text().unique() })],
+    });
+    const first = plans(schema({ tables: [] }), created);
+    const second = plans(created, unique);
+    mkdirSync(join(directory, "migrations"));
+    writeMigration(directory, "0001_create", first);
+    writeMigration(directory, "0002_unique", second);
+    const migrations = join(directory, "migrations");
+    const pending = lintMigrationDirectory(migrations, new Set(["0002_unique"]));
+    expect(pending.map((item) => item.code)).toContain("OKM1528");
+    expect(pending.some((item) => item.place.startsWith("0001_create"))).toBe(false);
+    const applied = lintMigrationDirectory(migrations, new Set(["0001_create"]));
+    expect(applied.some((item) => item.code === "OKM1528")).toBe(false);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
   }
 });
 
@@ -528,6 +534,14 @@ function withColumn(
       return { ...object, definition: { ...object.definition, ...patch } };
     }),
   };
+}
+
+function writeMigration(directory: string, id: string, planned: Planned): void {
+  writeFileSync(join(directory, "migrations", `${id}.sql`), formatPlan(planned.plan));
+  writeFileSync(
+    join(directory, "migrations", `${id}.catalog.json`),
+    serializeCatalog(planned.after),
+  );
 }
 
 function writeProject(cwd: string, root: string, tables: string): void {

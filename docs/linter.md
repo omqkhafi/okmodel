@@ -15,7 +15,7 @@ error OKM1511 step 1: drops a table -- fix: Stop reading the table in an expand 
 | `okm generate` | Writes the migration file and prints findings. It does not refuse. |
 | `okm migrate plan` | Prints the plan, then the findings. An error finding exits non-zero. |
 | `okm check` | Prints findings. An error finding is OKM1510. Type preferences run here. |
-| `okm migrate apply` | Lints the files it is about to run, including a file you edited by hand, and refuses an unresolved error with OKM1510 before any statement. |
+| `okm migrate apply` | Lints migrations that still have a step missing from `okm_history` on the selected target, including a file you edited by hand. A migration that target already applied is left as it ran. Reading `okm_history` comes first; when the table does not exist, every migration is pending. An unresolved error is OKM1510 before any DDL or data statement. |
 
 A database that has never been pushed has no `okm_meta`. `okm check` skips the drift comparison for that database and still prints lint findings.
 
