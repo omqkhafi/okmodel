@@ -2,8 +2,10 @@
  * Live drift for `okm check`.
  *
  * A database that has never been pushed has no `okm_meta` and is left alone.
- * After push, the introspected catalog is planned back to the schema. Any
- * statement is OKM1520. `okm_meta` and `okm_history` are omitted by the planner.
+ * After push, the introspected catalog is planned back to the schema. Each
+ * view is reprinted on this server first, so a `pg_get_viewdef` spelling is
+ * not drift. Any remaining statement is OKM1520. `okm_meta` and `okm_history`
+ * are omitted by the planner.
  */
 
 import postgres, { type Sql } from "postgres";
@@ -11,6 +13,7 @@ import postgres, { type Sql } from "postgres";
 import { OkmError } from "../../contracts/error.js";
 import type { Catalog } from "../../contracts/catalog/types.js";
 import { introspectSchema, type CatalogQuery } from "../../dialects/pg/introspect.js";
+import { sealViews } from "../../dialects/pg/view/scratch.js";
 import type { RolesInput } from "../../dialects/pg/role/index.js";
 import { planMigration } from "./plan.js";
 
@@ -37,14 +40,16 @@ export async function assertAuthorDrift(
       select to_regclass('public.okm_meta')::text as reg
     `;
     if (present[0]?.reg == null) return;
+    const runner = queryOf(sql);
     const managed = managedRoleNames(roles);
+    const authorOnServer = await sealViews(runner, author);
     const live = await introspectSchema(
-      queryOf(sql),
+      runner,
       "public",
       "public",
       managed === undefined ? undefined : { managedRoles: managed },
     );
-    const plan = planMigration({ before: live, after: author, name: "check" });
+    const plan = planMigration({ before: live, after: authorOnServer, name: "check" });
     if (plan.steps.length === 0) return;
     throw new OkmError(
       "OKM1520",

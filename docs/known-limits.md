@@ -33,7 +33,7 @@ Also not in this version:
 
 - **A view is SQL plus a declared column list.** `view()` and `materializedView()` live on `okmodel/view`. `db.views.<name>.find(...)` is read-only. A view that reads a tenant table and does not expose the tenant key is OKM1820 unless declared `global("reason")`. The query builder form (`view(name, (q) => q.from(...))`) is not in this version (D190).
 - **Column dependencies come from `pg_depend`.** Scratch verification (`sealViews`) creates the view and reads those edges. A plan from two author catalogs does not see them until that read.
-- **The stored query becomes the server reprint.** `pg_get_viewdef` replaces the author text. Two introspections match. A plan from the live catalog back to the author text replaces the view when the reprint differs.
+- **`okm check` reprints a view on the connected server before it compares.** `pg_get_viewdef` replaces the author text, so a spelling that server prints differently is not drift after push. A query that reprints to something else still is. Two introspections of the same view match. A plan between two author catalogs still compares the text that was written.
 - **`refresh: "concurrently"` is not stored by Postgres.** Introspection leaves it unset. Equality ignores it, so a later plan does not recreate the materialized view only because the mode was declared. `REFRESH ... CONCURRENTLY` still needs a unique index (OKM1822). The plan's first populate is a plain `REFRESH`, because Postgres rejects `CONCURRENTLY` until the view has rows.
 - **`security_invoker` is not set.** It belongs to the `rls` strategy, which is later.
 

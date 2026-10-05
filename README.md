@@ -817,7 +817,7 @@ export const app = schema({
 
 ### Views
 
-A view is a saved query. You give it the SQL and the columns that query returns. `db.views.active.find({ limit: 20 })` reads `active`. That handle has no insert or update. There is no query-builder form yet, and the SQL you store has to match the text Postgres prints back. A materialized view that refreshes while people are reading it needs a unique index, or the declaration is OKM1822. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
+A view is a saved query. You give it the SQL and the columns that query returns. `db.views.active.find({ limit: 20 })` reads `active`. That handle has no insert or update. There is no query-builder form yet. `okm check` reprints the query on the connected server before it compares, so a difference that is only how that server prints the query is not drift. A materialized view that refreshes while people are reading it needs a unique index, or the declaration is OKM1822. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
 
 `views.ts`:
 
