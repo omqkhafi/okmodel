@@ -5,6 +5,7 @@
  * document is the comparison. Authoring text is not compared to a reprint.
  */
 
+import { alignExtensionVersions } from "../../contracts/catalog/extension.js";
 import { serializeCatalog } from "../../contracts/catalog/document.js";
 import type { Catalog } from "../../contracts/catalog/types.js";
 
@@ -16,5 +17,15 @@ import type { Catalog } from "../../contracts/catalog/types.js";
  * @returns `true` when the canonical documents match
  */
 export function catalogsEqual(left: Catalog, right: Catalog): boolean {
-  return serializeCatalog(left) === serializeCatalog(right);
+  if (!hasExtension(left) && !hasExtension(right)) {
+    return serializeCatalog(left) === serializeCatalog(right);
+  }
+  return (
+    serializeCatalog(alignExtensionVersions(left, right)) ===
+    serializeCatalog(alignExtensionVersions(right, left))
+  );
+}
+
+function hasExtension(catalog: Catalog): boolean {
+  return catalog.objects.some((object) => object.kind === "extension");
 }

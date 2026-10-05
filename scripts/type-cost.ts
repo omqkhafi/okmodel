@@ -219,6 +219,18 @@ export function measureTypeBudgets(): TypeBudgetReport {
         writeQueryProject(dir, generateFixture({ seed: 1, tables }), { declarations });
       }),
     );
+    queries.push(
+      measureProject(join(root, "consumer"), "query-200+extensions", 200, (dir) => {
+        writeQueryProject(
+          dir,
+          generateFixture({ seed: 1, tables: 200 }),
+          { declarations },
+          {
+            extensions: 12,
+          },
+        );
+      }),
+    );
     const sourceRows = measureFixtureRows(join(root, "source"));
     const source = budgetReport(sourceRows);
     const validate = measureProject(join(root, "consumer"), "validate-input", 1, (dir) => {
@@ -387,15 +399,19 @@ export function ceilingProblems(
     }
   }
   const query200 = report.queries?.find((entry) => entry.label === "query-200");
-  if (query200 !== undefined && query200.instantiations > TYPE_CEILINGS.inferred200Instantiations) {
-    problems.push(
-      `type-cost: query 200 tables used ${String(query200.instantiations)} instantiations, above ${String(TYPE_CEILINGS.inferred200Instantiations)}`,
-    );
-  }
-  if (query200 !== undefined && query200.types > TYPE_CEILINGS.queryCompositeTypes) {
-    problems.push(
-      `type-cost: query 200 tables used ${String(query200.types)} types, above ${String(TYPE_CEILINGS.queryCompositeTypes)}`,
-    );
+  const queryExtensions = report.queries?.find((entry) => entry.label === "query-200+extensions");
+  for (const row of [query200, queryExtensions]) {
+    if (row === undefined) continue;
+    if (row.instantiations > TYPE_CEILINGS.inferred200Instantiations) {
+      problems.push(
+        `type-cost: ${row.label} used ${String(row.instantiations)} instantiations, above ${String(TYPE_CEILINGS.inferred200Instantiations)}`,
+      );
+    }
+    if (row.types > TYPE_CEILINGS.queryCompositeTypes) {
+      problems.push(
+        `type-cost: ${row.label} used ${String(row.types)} types, above ${String(TYPE_CEILINGS.queryCompositeTypes)}`,
+      );
+    }
   }
   const features = report.queryFeatures?.at(-1);
   const probes = [

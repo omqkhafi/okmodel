@@ -14,6 +14,7 @@ import { catalogHash } from "../../contracts/catalog/document.js";
 import type { DriverConnection } from "../../contracts/driver.js";
 import { OkmError } from "../../contracts/error.js";
 import { quoteIdent } from "../../dialects/pg/ddl.js";
+import { assertExtensionsAvailable } from "./extensions.js";
 import { assertUuidV7Available } from "./engine.js";
 import { loadConfig, projectHead } from "./project.js";
 import { planMigration, type PlanStep } from "./plan.js";
@@ -167,6 +168,7 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
     await lockTarget(connection, request.target);
     locked = true;
     request.onLocked?.();
+    await assertExtensionsAvailable(connection, request.migrations);
     await assertUuidV7Available(connection, request.migrations);
     await connection.execute(META);
     await connection.execute(HISTORY);

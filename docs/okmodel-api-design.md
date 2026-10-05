@@ -285,8 +285,10 @@ Adapters by milestone: M1 `okmodel/pg/postgresjs`, `okmodel/pg/pglite` · M2 `ok
 
 ```ts
 extensions: [pgTrgm(), vector({ version: ">=0.7" })],
-find({ where: { name: pgTrgm.similar(q) }, orderBy: pgTrgm.similarity("name", q) })
+find({ where: { name: pgTrgm.similar(q) }, limit: 20 })
 ```
+
+`pgTrgm.similar` and `pgTrgm.wordSimilar` are where-operators. Ordering by `similarity()` is not planned in this version: that branch would sit on the connect graph.
 
 **Flow.** Declare in `schema()`; TS works at once; `okm generate` (`okm migrate plan`) produces the SQL; `okm push` (development only) or `okm migrate` applies it. `generate` produces SQL only.
 
@@ -304,27 +306,29 @@ find({ where: { name: pgTrgm.similar(q) }, orderBy: pgTrgm.similarity("name", q)
 
 TimescaleDB, ParadeDB and pg_partman add catalog objects rather than types and are evaluated after 1.0.
 
-**Version awareness.** Definitions read `requires.postgres` and the declared extension version. A feature the declared versions lack (`halfvec` below pgvector 0.7, `uuidv7()` below Postgres 18) fails at schema build (OKM1812). Core features are never gated behind an extension.
+**Version awareness.** Definitions read `requires.postgres` and the declared extension version. A feature the declared versions lack (`halfvec` below pgvector 0.7, `uuidv7()` below Postgres 18) fails at schema build (OKM1812). When `requires` is not declared, `okm migrate apply` and `okm push` check the connected server before the first statement: a migration that sets a `default uuidv7()` on a server below 18 without a `uuidv7()` function stops with OKM1812 and nothing is created (D185). Nothing is checked in `connect()`. Core features are never gated behind an extension.
 
 **Lifecycle through migrations.**
 
 | Change | SQL | Class |
 |---|---|---|
 | add | `CREATE EXTENSION ... VERSION ... SCHEMA ...` | expand |
-| raise `version` | `ALTER EXTENSION ... UPDATE TO ...`; the path is checked in `pg_extension_update_paths` at planning time when a server is attached; an offline plan marks the step `path-unverified` and apply preflight checks it before any step | expand |
+| raise `version` | `ALTER EXTENSION ... UPDATE TO ...`; an offline plan marks the step `path-unverified`, and apply checks `pg_extension_update_paths` before any statement | expand |
 | move schema | `ALTER EXTENSION ... SET SCHEMA` (relocatable only; a non-relocatable extension is refused at planning, OKM1814) | contract |
 | remove | `DROP EXTENSION`, never `CASCADE`; refused by the linter while a column or index depends on it | contract |
 | lower `version` | not supported by Postgres | refused (OKM1814) |
 
-Objects that belong to an extension (found through `pg_depend` deptype `e`) are excluded from introspection: never loaded, never diffed. Objects declared in `provides` stay `external`. The extension version is unpinned by default: the installed version is recorded for information and drift ignores it unless the declaration pins one (D118). `CREATE EXTENSION` runs from the migration role only; the application never installs anything. `okm migrate plan` and `okm doctor` compare the declaration with `pg_available_extensions` on the connected server, so an unavailable extension fails at planning, not at deploy. Object names are schema-qualified; nothing depends on `search_path`.
+Objects that belong to an extension (found through `pg_depend` deptype `e`) are excluded from introspection: never loaded, never diffed. The extension version is unpinned by default: the installed version is recorded for information and drift ignores it unless the declaration pins one (D118). `CREATE EXTENSION` runs from the migration role only; the application never installs anything. `okm migrate plan` stays offline: an upgrade step is marked `path-unverified`. `okm migrate apply` checks `pg_available_extensions` and, for an upgrade, `pg_extension_update_paths`, before any statement (OKM1811, OKM1814). Object names are schema-qualified; nothing depends on `search_path`.
+
+`pgTrgm.gin(column)` and `pgTrgm.gist(column)` store `using gin ("column" gin_trgm_ops)` and `using gist ("column" gist_trgm_ops)` on the catalog index. The plan emits that tail. Introspection reads the same tail back, so a second plan does not drift.
 
 **Runtime settings** (`hnsw.ef_search`, `pg_trgm.similarity_threshold`) are per operation, not per connection: `vector.cosine(col, q, { efSearch: 100 })` wraps the statement in a short transaction with `SET LOCAL`, which stays correct behind poolers in transaction mode.
 
-**Safety.** An extension adds types, operators, functions and index methods only. It cannot alter queries or read data; its SQL is tagged, so injection rules apply; final safety verification runs after every contribution. A definition used twice fails at build (OKM1813). `okm ext test` runs a reduced conformance suite; npm and project definitions must pass it to be called compatible.
+**Safety.** An extension adds types, operators, functions and index methods only. It cannot alter queries or read data; its SQL is tagged, so injection rules apply; final safety verification runs after every contribution. A definition used twice fails at build (OKM1813). `okm ext list` and `okm ext check` talk to the connected server. `okm ext test` and `okm ext scaffold` are not in this version.
 
 **Own definitions.** A developer writes `extension("acme_geo", { requires, provides: { types, operators, indexMethods, functions, triggers, views } })`. Functions, triggers and views are first-class catalog objects (section 5.7), owned by the extension as `external`. Forward-only SQL bundles do not exist; `okm migrate new --sql` is the explicit escape hatch.
 
-**Extension without a definition.** `okm ext scaffold <name>` reads the connected server's catalog (`pg_depend`, `pg_type`, `pg_proc`, `pg_operator`, `pg_settings`) and prints a starting definition that the developer owns and edits. It is an authoring aid, not part of the normal flow (M2).
+**Extension without a definition.** `okm ext scaffold <name>` is not in this version. When it arrives it reads the connected server's catalog (`pg_depend`, `pg_type`, `pg_proc`, `pg_operator`, `pg_settings`) and prints a starting definition that the developer owns and edits.
 
 ### 4.2 Layers and the driver contract
 
@@ -618,7 +622,7 @@ References are plain table-name strings (a generic table-name argument cycles th
 
 Modifiers: `.nullable()`, `.default(v)`, `.defaultSql(sql)`, `.primaryKey()`, `.unique({ reason, global })`, `.references(table, opts)`, `.picklist([...], { check })`, `.generated(sql, { stored })`, `.guarded()`, `.hidden()`, `.sensitive()`, `.renamedFrom(name)`, `.sqlName()`, `.comment()`, `.validate(rules | schema)`.
 
-`t.id()` with `uuidv7()` or `uuidv4`, and `t.identity()`, are omitted from insert and update. `t.id({ default: "none" })`, `.primaryKey()`, and a composite `primaryKey` are required on insert (optional when the column already has a default) and omitted from update. A declared `requires` below Postgres 18 rejects `uuidv7()` at schema build (OKM1812) and the message names `defaults.id`.
+`t.id()` with `uuidv7()` or `uuidv4`, and `t.identity()`, are omitted from insert and update. `t.id({ default: "none" })`, `.primaryKey()`, and a composite `primaryKey` are required on insert (optional when the column already has a default) and omitted from update. A declared `requires` below Postgres 18 rejects `uuidv7()` at schema build (OKM1812) and the message names `defaults.id`; with no `requires`, apply refuses it on a server below 18 (D185), and its fix names `t.id({ default: "uuidv4" })` and `schema({ requires })`.
 
 **Client defaults and id generators (0.2, D153, D154).** `.default(x)` takes a literal or a client generator (`uuidv4`, `uuidv7`, `okid(...)`, or a function): the client fills the field on insert when it is omitted, nothing enters the database catalog or its hash, and the column has no database default, so a writer that bypasses okmodel must supply the value. `.defaultSql(sql)` is the database default. `schema({ tables, defaults: { id } })` sets what a bare `t.id()` means; a per-column option wins; `connect({ generators })` replaces a built-in generator for tests. OKID columns are `text` with `COLLATE "C"` so sortable ids order as time. Builder shape (shipped in P19): `t.id({ default: uuidv4 | uuidv7 | okid({ prefix, sortable, length }) })` fills the id in the application; the strings `"uuidv4"`, `"uuidv7"` and `"none"` stay database defaults (`"none"` is column-only, so the insert type requires that id); `okid` and the other generators come from `okmodel/ids`. A literal passed to `.default()` is a database default, a function is a client generator.
 
@@ -627,13 +631,13 @@ Modifiers: `.nullable()`, `.default(v)`, `.defaultSql(sql)`, `.primaryKey()`, `.
 | Builder or option | Version |
 |---|---|
 | `t.domain()` | 0.3 |
-| `schema({ extensions, functions, triggers, views })` | 0.3 |
+| `schema({ functions, triggers, views })` | 0.3 |
 | `table({ presets })` | 0.2 |
 | `table({ reference })` | 0.4 |
 | `morph`, `table({ computed, policies })` | later |
 
 - Fields are `NOT NULL` unless `.nullable()`.
-- Extensions required by a type (`citext`, `ltree`) are added to migrations automatically.
+- A type that names an extension (`citext`, `ltree`) is not installed unless that extension is in `schema({ extensions })`. A list that omits it fails when the catalog is built (OKM1810). Omitting the list leaves the dependency check (OKM1020).
 - `serial` types exist only for imports.
 
 ### 6.5 Picklists
@@ -838,7 +842,7 @@ All are tagged helpers from `okmodel/pg`. The planner picks the SQL from the col
 | `path(segments, op)` | json, jsonb | `col #>> $1::text[]` compared with `op`; the operand type of `op` picks the cast (number to numeric, boolean to boolean, string to text) |
 | `matches(q, { mode?, config? })` | tsvector | `@@` with `websearch_to_tsquery` (default, never throws on user input), `plainto_tsquery` (`"plain"`) or `phraseto_tsquery` (`"phrase"`) |
 
-Atomic write operators (section 11) are `json.set(path, v)`, `arr.append(v)`, `arr.remove(v)`, exported as namespaces (`export * as json`) so each member tree-shakes. Trigram similarity and citext operators arrive with extensions (M2); text search on a plain `text` column is not supported (it needs an expression index) and fails with a clear error.
+Atomic write operators (section 11) are `json.set(path, v)`, `arr.append(v)`, `arr.remove(v)`, exported as namespaces (`export * as json`) so each member tree-shakes. Trigram where-operators ship on `okmodel/pg/pg_trgm` (`similar`, `wordSimilar`). Citext comparison is ordinary equality on a `citext` column once `citext()` from `okmodel/pg/citext` is declared. Text search on a plain `text` column is not supported (it needs an expression index) and fails with a clear error.
 
 ### 10.2 User-driven filtering
 
@@ -1195,7 +1199,7 @@ The startup check is a compatibility check: the database may be ahead of the cod
 | `okm generate` | produce migration SQL from the schema, including extension lifecycle; no TS is generated |
 | `okm push` | prototype sync; blocked on a `protected` target (section 19.7). A target named `production` is not blocked unless that entry sets `protected` |
 | `okm pull` | introspect an existing database into table files and a schema (M2) |
-| `okm ext list\|check\|test\|scaffold` | list supported and installed extensions against the connected server; check versions; conformance test; scaffold a definition (M2) |
+| `okm ext list\|check` | list the extensions the connected server can install and the version that is installed; check those versions against the schema. `okm ext test` and `okm ext scaffold` are not in this version |
 | `okm seed <file>` | seeds with factories |
 | `okm import drizzle <path>` | convert a Drizzle schema (M2) |
 | `okm doctor [code]` | explain a code or diagnose the project |

@@ -182,6 +182,20 @@ export type ExtensionIdentity = {
   readonly name: string;
 };
 
+/**
+ * Canonical extension record.
+ *
+ * `version` is an exact pin (`1.6`) or a floor (`>=0.7`). Absent means
+ * unpinned: the installed version is information and drift ignores it.
+ */
+export type ExtensionDefinition = {
+  /** Schema the extension is installed in. */
+  readonly schema: string;
+  /** Whether `ALTER EXTENSION … SET SCHEMA` is allowed. */
+  readonly relocatable: boolean;
+  readonly version?: string;
+};
+
 /** Stable identity. The variant depends on the kind. */
 export type ObjectIdentity =
   | NamespaceIdentity
@@ -383,11 +397,18 @@ export type TypeObject = CatalogEnvelope<
 >;
 
 /**
+ * An extension.
+ *
+ * The record is identity, schema, relocatable, and version. Core stores it
+ * and does not interpret it. The extension object produces it.
+ */
+export type ExtensionObject = CatalogEnvelope<"extension", ExtensionIdentity, ExtensionDefinition>;
+
+/**
  * One built catalog object.
  *
- * Views, functions, triggers, extensions, roles, grants, and default
- * privileges use {@link CatalogEnvelope} when they are built. They are not
- * part of this union yet.
+ * Views, functions, triggers, roles, grants, and default privileges use
+ * {@link CatalogEnvelope} when they are built. They are not part of this union yet.
  */
 export type CatalogObject =
   | TableObject
@@ -395,7 +416,8 @@ export type CatalogObject =
   | IndexObject
   | ConstraintObject
   | SequenceObject
-  | TypeObject;
+  | TypeObject
+  | ExtensionObject;
 
 /** Format version stored in the serialized catalog. */
 export const CATALOG_VERSION = 1;

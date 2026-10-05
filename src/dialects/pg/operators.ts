@@ -37,6 +37,8 @@ export type OperatorName =
   | "hasAnyKey"
   | "path"
   | "matches"
+  | "similar"
+  | "wordSimilar"
   | "json.set"
   | "arr.append"
   | "arr.remove";
@@ -95,6 +97,15 @@ export type MatchValue = {
 
 /** `@@` against a tsvector column. */
 export type Matches = Tagged<"matches", MatchValue>;
+
+/** Text stored on a `pg_trgm` operator. `schema` is the extension's install schema. */
+export type TrigramQuery = {
+  readonly query: string;
+  readonly schema: string;
+};
+
+/** `pg_trgm` `%` or `<%`. */
+export type Trigram<Name extends "similar" | "wordSimilar"> = Tagged<Name, TrigramQuery>;
 
 /** `jsonb_set` path and the new value. */
 export type JsonSetValue<V> = {

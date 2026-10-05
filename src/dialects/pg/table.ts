@@ -36,6 +36,13 @@ export type IndexCall = {
    */
   readonly predicate?: string;
   /**
+   * Raw index tail an extension may set on the call.
+   *
+   * A `using …` tail is the extension's index method. The core factory does
+   * not read it. `compileIndexes` copies the field onto the catalog index.
+   */
+  readonly expression?: string;
+  /**
    * Marks the index unique.
    *
    * @returns The same columns, unique

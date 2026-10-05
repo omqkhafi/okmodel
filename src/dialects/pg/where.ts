@@ -15,6 +15,7 @@ import type {
   HasKey,
   InList,
   Matches,
+  Trigram,
   Not,
   NotIn,
   Overlaps,
@@ -39,7 +40,9 @@ type TextOps =
   | Pattern<"endsWith">
   | RawPattern<"like">
   | RawPattern<"ilike">
-  | Matches;
+  | Matches
+  | Trigram<"similar">
+  | Trigram<"wordSimilar">;
 
 /** Array, jsonb, or range containment, plus overlap where that operator fits. */
 type StructuredOps<V> = Containment<"contains" | "containedBy", V> | Overlaps<V>;

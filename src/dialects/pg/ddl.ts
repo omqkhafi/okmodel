@@ -87,6 +87,8 @@ export function dropObjectSql(object: CatalogObject, schema: string): string | u
       return `drop sequence ${qualify(schema, object.identity.name)}`;
     case "type":
       return `drop type ${qualify(schema, object.identity.name)}`;
+    case "extension":
+      return `drop extension ${quoteIdent(object.identity.name)}`;
     default:
       return undefined;
   }
@@ -111,6 +113,8 @@ export function createObjectSql(object: CatalogObject, schema: string): string |
       return createSequenceSql(object, schema);
     case "type":
       return createEnumSql(object, schema);
+    case "extension":
+      return createExtensionSql(object);
     case "table":
       return undefined;
     default:
@@ -246,13 +250,28 @@ function columnSql(column: ColumnObject): string {
 
 function createIndexSql(object: IndexObject, schema: string): string {
   const unique = object.definition.unique ? "unique " : "";
-  const target =
-    object.definition.expression !== undefined
-      ? `(${object.definition.expression})`
-      : object.definition.columns.map((name) => quoteIdent(name)).join(", ");
   const where =
     object.definition.predicate === undefined ? "" : ` where ${object.definition.predicate}`;
-  return `create ${unique}index ${quoteIdent(object.identity.name)} on ${qualify(schema, object.identity.parent.name)} (${target})${where}`;
+  const expression = object.definition.expression;
+  const name = quoteIdent(object.identity.name);
+  const on = qualify(schema, object.identity.parent.name);
+  if (expression !== undefined && expression.startsWith("using ")) {
+    return `create ${unique}index ${name} on ${on} ${expression}${where}`;
+  }
+  const target =
+    expression !== undefined
+      ? `(${expression})`
+      : object.definition.columns.map((column) => quoteIdent(column)).join(", ");
+  return `create ${unique}index ${name} on ${on} (${target})${where}`;
+}
+
+function createExtensionSql(object: CatalogObject & { readonly kind: "extension" }): string {
+  const version = object.definition.version;
+  const pinned =
+    version !== undefined && /^\d+(?:\.\d+)*$/.test(version)
+      ? ` version ${quoteLiteral(version)}`
+      : "";
+  return `create extension ${quoteIdent(object.identity.name)} schema ${quoteIdent(object.definition.schema)}${pinned}`;
 }
 
 function createSequenceSql(object: SequenceObject, schema: string): string {
