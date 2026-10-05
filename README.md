@@ -7,7 +7,6 @@ Version 0.3.0. Apache-2.0.
 ## Contents
 
 - [Install](#install)
-- [What is in the box](#what-is-in-the-box)
 - [Quickstart](#quickstart)
   - [Configure](#configure)
   - [Schema](#schema)
@@ -17,8 +16,28 @@ Version 0.3.0. Apache-2.0.
   - [Insert](#insert)
   - [Find](#find)
   - [Errors](#errors)
-  - [Close](#close)
 - [Keys](#keys)
+- [What is in the box](#what-is-in-the-box)
+  - [Columns](#columns)
+  - [Reads](#reads)
+  - [Writes](#writes)
+  - [Hidden and sensitive fields](#hidden-and-sensitive-fields)
+  - [Relations](#relations)
+  - [Operators](#operators)
+  - [Page and aggregate](#page-and-aggregate)
+  - [Request filters](#request-filters)
+  - [Presets](#presets)
+  - [Validation](#validation)
+  - [Transactions](#transactions)
+  - [Batch and locks](#batch-and-locks)
+  - [Traits and archive](#traits-and-archive)
+  - [Tenancy](#tenancy)
+  - [Extensions](#extensions)
+  - [Domains](#domains)
+  - [Functions and triggers](#functions-and-triggers)
+  - [Views](#views)
+  - [Roles and grants](#roles-and-grants)
+  - [okm ext and okm doctor](#okm-ext-and-okm-doctor)
 - [Commands](#commands)
 - [Roadmap](#roadmap)
 - [Size](#size)
@@ -35,24 +54,6 @@ bun add okmodel @electric-sql/pglite
 ```
 
 Bun.sql needs no extra package: `import { connect } from "okmodel/pg/bun"`. okmodel has no runtime dependencies. Each installed driver is an optional peer.
-
-## What is in the box
-
-- [Column tenancy](https://github.com/omqkhafi/okmodel/blob/main/docs/okmodel-api-design.md#9-tenancy) isolates a table by a tenant column.
-- [Traits](https://github.com/omqkhafi/okmodel/blob/main/docs/okmodel-api-design.md#8-traits) add `timestamps()` and `archivable()`.
-- [Archive and restore](https://github.com/omqkhafi/okmodel/blob/main/docs/okmodel-api-design.md#archive-contract) hide a row and bring it back, including its direct children.
-- [Validation](https://github.com/omqkhafi/okmodel/blob/main/docs/okmodel-api-design.md#7-validation) checks a write before any statement is sent.
-- [Presets](https://github.com/omqkhafi/okmodel/blob/main/docs/okmodel-api-design.md#621-presets) are named filters on a table.
-- [Transactions](https://github.com/omqkhafi/okmodel/blob/main/docs/okmodel-api-design.md#15-transactions-and-batches) are `tx()` and `batch()`.
-- [Relations](https://github.com/omqkhafi/okmodel/blob/main/docs/okmodel-api-design.md#62-options) are `one`, `many`, and `manyThrough`, loaded with `include`.
-- [Operators](https://github.com/omqkhafi/okmodel/blob/main/docs/okmodel-api-design.md#101-filters-with-tagged-operators) filter JSON, arrays, ranges, and search.
-- [Extensions](https://github.com/omqkhafi/okmodel/blob/main/docs/okmodel-api-design.md#41-extensions-postgres) declare `citext` and `pg_trgm`, including gin and gist indexes.
-- [Domains](https://github.com/omqkhafi/okmodel/blob/main/docs/okmodel-api-design.md#64-column-types-postgres) are a catalog type with a check.
-- [Functions and triggers](https://github.com/omqkhafi/okmodel/blob/main/docs/okmodel-api-design.md#57-database-objects) are catalog objects. `timestamps({ enforce: "trigger" })` adds the touch trigger.
-- [Views and materialized views](https://github.com/omqkhafi/okmodel/blob/main/docs/okmodel-api-design.md#57-database-objects) are SQL plus a declared column list. `db.views.<name>.find(...)` reads them.
-- [Roles and grants](https://github.com/omqkhafi/okmodel/blob/main/docs/okmodel-api-design.md#57-database-objects) grant the application role a fixed set and run migrations as the migration role.
-- [`okm ext list` and `okm ext check`](https://github.com/omqkhafi/okmodel/blob/main/docs/okmodel-api-design.md#194-cli) compare the schema with the extensions on the server.
-- [`okm doctor`](https://github.com/omqkhafi/okmodel/blob/main/docs/okmodel-api-design.md#194-cli) lists the triggers on each table, and `okm doctor OKMxxxx` prints that code.
 
 ## Quickstart
 
@@ -147,6 +148,25 @@ if (url === undefined || url.length === 0) throw new Error("DATABASE_URL is not 
 export const db = connect(url, { schema });
 ```
 
+A script can use `await using`, which closes the pool at the end of the block. `db.close()` is that call on a line you choose. A server keeps the client. A pool opened with `ssl` still waits out the driver's 30 second idle timer.
+
+`script.ts`:
+
+```ts
+import { connect } from "okmodel/pg/postgresjs";
+
+import schema from "./schema.ts";
+
+const url = process.env.DATABASE_URL;
+if (url === undefined || url.length === 0) throw new Error("DATABASE_URL is not set");
+
+await using db = connect(url, { schema });
+const author = await db.authors.insert({ name: "Lin" });
+if (author.name !== "Lin" || author.id.length === 0) {
+  throw new Error("insert did not return the row");
+}
+```
+
 ### Insert
 
 Insert an author, then a note that points at the author's id.
@@ -195,30 +215,6 @@ const duplicate = await safe(db.authors.insert({ name: "Ada" }));
 if (duplicate.ok || !(duplicate.error instanceof OkmError) || duplicate.error.kind !== "unique") {
   throw new Error("expected an OkmError of kind unique");
 }
-```
-
-### Close
-
-A script exits when its queries finish. It does not need `close()` for that. `await using` closes the pool at the end of the block. `db.close()` is that call on a line you choose. A server keeps the client and its connections. A pool opened with `ssl` still waits out the driver's 30 second idle timer.
-
-`script.ts`:
-
-```ts
-import { connect } from "okmodel/pg/postgresjs";
-
-import schema from "./schema.ts";
-
-const url = process.env.DATABASE_URL;
-if (url === undefined || url.length === 0) throw new Error("DATABASE_URL is not set");
-
-await using db = connect(url, { schema });
-const author = await db.authors.insert({ name: "Lin" });
-if (author.name !== "Lin" || author.id.length === 0) {
-  throw new Error("insert did not return the row");
-}
-```
-
-```ts
 await db.close();
 ```
 
@@ -229,6 +225,290 @@ await db.close();
 `t.id()` is a uuid primary key. The default is `uuidv7()`, which needs Postgres 18; on an older server `okm migrate apply` stops with OKM1812 before it runs any statement. `t.id({ default: "uuidv4" })` uses `gen_random_uuid()`, built in from Postgres 13. `t.id({ default: "none" })` takes the id on insert and omits it from update.
 
 `.primaryKey()` on a column is a natural key. Insert supplies it. Update cannot change it. A composite key is the `primaryKey` option on the table, naming the columns in order.
+
+## What is in the box
+
+The quickstart is the path above. These are the other pieces, from the 0.1 reads and writes through the 0.3 catalog.
+
+### Columns
+
+`t.enum(name, labels)` is a catalog type. Columns that share the name share the label list. `.picklist()` narrows a string column and adds a CHECK. A value outside the list is OKM1210. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
+
+`columns.ts`:
+
+```ts
+import { schema, table, t } from "okmodel/pg";
+
+const tasks = table("tasks", {
+  id: t.identity(),
+  status: t.varchar(20).picklist(["draft", "active", "done"]),
+  color: t.enum("color", ["red", "blue"]),
+});
+export const app = schema({ tables: [tasks] });
+```
+
+### Reads
+
+`find` is in the quickstart and needs a `limit` (OKM1101). `one` returns one row. `count` and `exists` answer without the row. A to-many `include` needs its own limit (OKM1105).
+
+`reads.ts`:
+
+```ts
+import { schema, table, t } from "okmodel/pg";
+import { connect } from "okmodel/pg/postgresjs";
+
+const notes = table("notes", { id: t.identity(), title: t.text() });
+const app = schema({ tables: [notes] });
+
+export async function load(url: string, id: string): Promise<void> {
+  await using db = connect(url, { schema: app });
+  await db.notes.one({ where: { id } });
+  await db.notes.count();
+  await db.notes.exists({ where: { title: "hello" } });
+}
+```
+
+### Writes
+
+`update` and `delete` need a `where`, or `.all(reason)` (OKM1102). `onConflict` is `"error"`, `"ignore"`, or an update of named columns. `expect` throws when the count differs. A lost connection at commit is OKM1401.
+
+`writes.ts`:
+
+```ts
+import { schema, table, t } from "okmodel/pg";
+import { connect } from "okmodel/pg/postgresjs";
+
+const notes = table("notes", { id: t.identity(), title: t.text().unique() });
+const app = schema({ tables: [notes] });
+
+export async function save(url: string, id: string): Promise<void> {
+  await using db = connect(url, { schema: app });
+  await db.notes.insert({ title: "hello" }, { onConflict: { on: "title", update: ["title"] } });
+  await db.notes.update({ where: { id }, set: { title: "next" } });
+  await db.notes.delete({ where: { id } });
+}
+```
+
+### Hidden and sensitive fields
+
+`.hidden()` stays out of default selects and includes. `.guarded()` is omitted from insert and update, and setting it is OKM1190. `.sensitive()` redacts the value in logs, errors, and `inspect()`. A named `select` still returns a hidden column, and the stored value is unchanged.
+
+`fields.ts`:
+
+```ts
+import { schema, table, t } from "okmodel/pg";
+
+const users = table("users", {
+  id: t.identity(),
+  email: t.text(),
+  role: t.text().guarded(),
+  passwordHash: t.text().hidden().sensitive(),
+});
+export const app = schema({ tables: [users] });
+```
+
+### Relations
+
+`one`, `many`, and `manyThrough` name another table. `find({ include })` loads them. A join is `manyThrough("labels", { through: "taskLabels" })`. Sample: [relations.ts](https://github.com/omqkhafi/okmodel/blob/main/docs/readme-examples.md#relations).
+
+### Operators
+
+A filter value is a plain value or a tagged helper such as `eq`, `ilike`, `contains`, or `overlaps`. `inc` adds to a numeric column inside `update`. The helper is a parameter, so JSON cannot forge one. `iStartsWith`, `iContains`, and `iEndsWith` are not in this version. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md). Sample: [operators.ts](https://github.com/omqkhafi/okmodel/blob/main/docs/readme-examples.md#operators).
+
+### Page and aggregate
+
+`page({ orderBy, limit, after })` returns `{ items, next }`. The cursor is a keyset on `orderBy` plus the primary key. A cursor from another `orderBy` is OKM1130. `aggregate` returns grouped rows. `groupBy` needs a `limit` or `.all(reason)`. There is no `having`.
+
+`page.ts`:
+
+```ts
+import { schema, table, t } from "okmodel/pg";
+import { connect } from "okmodel/pg/postgresjs";
+
+const notes = table("notes", { id: t.identity(), title: t.text() });
+const app = schema({ tables: [notes] });
+
+export async function report(url: string): Promise<void> {
+  await using db = connect(url, { schema: app });
+  const page = await db.notes.page({ orderBy: { title: "asc" }, limit: 20 });
+  await db.notes.aggregate({ count: true, groupBy: ["title"], limit: 10 });
+  void page.next;
+}
+```
+
+### Request filters
+
+`table.filters({ allow, sort })` is the allowlist for a request. `parse` turns that input into `where` and `orderBy`. A hidden field in `allow`, `sort`, or `relations` is OKM1123.
+
+`filters.ts`:
+
+```ts
+import { schema, table, t } from "okmodel/pg";
+
+const users = table("users", { id: t.identity(), email: t.text() });
+export const app = schema({ tables: [users] });
+export const userFilters = users.filters({ allow: { email: ["eq"] }, sort: ["email"] });
+```
+
+### Presets
+
+A preset is a named filter on the table. `db.tasks.pending().find({ limit: 20 })` applies it after the tenant predicate and the active set, and it cannot remove either.
+
+`presets.ts`:
+
+```ts
+import { schema, table, t } from "okmodel/pg";
+
+const tasks = table(
+  "tasks",
+  { id: t.identity(), title: t.text(), status: t.text() },
+  {
+    presets: { pending: (q) => q.where({ status: "pending" }) },
+  },
+);
+export const app = schema({ tables: [tasks] });
+```
+
+### Validation
+
+`.validate()` stores rules on a column. They run on insert and update when the schema sets `validation: true` and the file imports `okmodel/validate`. A failed check is OKM1200. `onRead` is stored and is not applied. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
+
+`validation.ts`:
+
+```ts
+import { schema, table, t } from "okmodel/pg";
+import { v } from "okmodel/validate";
+
+const tasks = table("tasks", {
+  id: t.identity(),
+  title: t.varchar(8).validate([v.trim(), v.min(1, "title_required")]),
+});
+export const app = schema({ tables: [tasks], validation: true });
+```
+
+### Transactions
+
+`tx()` runs the callback in one transaction. A nested `tx()` is a savepoint. `retry` runs the callback again after a serialization failure or a deadlock. Sample: [transactions.ts](https://github.com/omqkhafi/okmodel/blob/main/docs/readme-examples.md#transactions).
+
+### Batch and locks
+
+`batch` runs writes as one unit. It refuses `restore` and any write that carries `expect` (OKM1121) before it sends a statement. Inside `tx()`, `find({ lock })` adds `FOR UPDATE` or `FOR SHARE`, and `advisoryLock` holds a transaction lock. Outside `tx()`, a row lock is OKM1830. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
+
+`batch.ts`:
+
+```ts
+import { schema, table, t } from "okmodel/pg";
+import { connect } from "okmodel/pg/postgresjs";
+
+const notes = table("notes", { id: t.identity(), title: t.text() });
+const app = schema({ tables: [notes] });
+
+export async function run(url: string, id: string): Promise<void> {
+  await using db = connect(url, { schema: app });
+  await db.batch([
+    db.notes.update({ where: { id }, set: { title: "next" } }),
+    db.notes.delete({ where: { title: "old" } }),
+  ]);
+  await db.tx(async (tx) => {
+    await tx.notes.find({ where: { id }, limit: 1, lock: "update", wait: "skip" });
+    await tx.advisoryLock("notes");
+  });
+}
+```
+
+### Traits and archive
+
+`timestamps()` adds `createdAt` and `updatedAt`. `archivable()` hides a row from ordinary reads. `archive()` returns `{ count, archiveId }`, and `restore()` brings back rows that share that id. `withArchived()` and `onlyArchived()` change that view. Cascade names direct children only. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md). Sample: [traits.ts](https://github.com/omqkhafi/okmodel/blob/main/docs/readme-examples.md#traits-and-archive).
+
+### Tenancy
+
+Column tenancy adds a tenant column and keeps each statement inside one tenant. `db.for({ tenantId }).notes.find({ limit: 20 })` reads that tenant. `global("reason")` opts a table out. Row-level security is not in 0.3. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
+
+`tenancy.ts`:
+
+```ts
+import { schema, table, t } from "okmodel/pg";
+import { columnTenancy, global } from "okmodel/tenancy";
+
+const notes = table("notes", { id: t.identity(), title: t.text() });
+const countries = table("countries", { id: t.identity() }, { tenancy: global("shared") });
+export const app = schema({
+  tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
+  tables: [notes, countries],
+});
+```
+
+### Extensions
+
+`citext()` and `pgTrgm()` declare extensions. The plan creates them before the tables that use them. `pgTrgm().gin()` and `.gist()` store a trigram index. `okm ext check` compares the declaration with the server. A missing extension is OKM1811 before any statement.
+
+`extensions.ts`:
+
+```ts
+import { schema, table, t } from "okmodel/pg";
+import { citext as citextExtension } from "okmodel/pg/citext";
+import { pgTrgm } from "okmodel/pg/pg_trgm";
+
+const trigram = pgTrgm();
+const people = table(
+  "people",
+  { email: t.citext(), title: t.text() },
+  { indexes: (column) => [trigram.gin(column.title.name)] },
+);
+export const app = schema({ extensions: [citextExtension(), trigram], tables: [people] });
+```
+
+### Domains
+
+`t.domain(name, base, check)` is a column type. The TypeScript type is the base column's. Changing the base is OKM1020. Write the check the way Postgres prints it. A difference of parentheses is still a check change. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
+
+`domains.ts`:
+
+```ts
+import { schema, table, t } from "okmodel/pg";
+
+export const app = schema({
+  tables: [table("people", { n: t.domain("pos", t.integer(), "((VALUE > 0))") })],
+});
+```
+
+### Functions and triggers
+
+`fn()` declares a function. `trigger("tasks_touch", { on: tasks, timing: "before", events: ["update"], level: "row", calls })` declares a trigger. plpgsql without `dependsOn` is OKM1824, and `security: "definer"` without `searchPath` is OKM1823. A typed call such as `fn.slugify(col)` is not in this version. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md). Sample: [functions.ts](https://github.com/omqkhafi/okmodel/blob/main/docs/readme-examples.md#functions-and-triggers).
+
+### Views
+
+A view is SQL plus a declared column list. `db.views.active.find({ limit: 20 })` reads it, and writes are not on that handle. The query builder form is not in this version, and the stored query is the server reprint. `materializedView` with `refresh: "concurrently"` needs a unique index (OKM1822). See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md). Sample: [views.ts](https://github.com/omqkhafi/okmodel/blob/main/docs/readme-examples.md#views).
+
+### Roles and grants
+
+`roles` grants the application role `SELECT`, `INSERT`, `UPDATE`, and `DELETE` on tables and views, `SELECT` on materialized views, `EXECUTE` on functions, and `USAGE` plus `SELECT` on sequences. Apply runs as the migration role and issues one `SET ROLE` when that role is not the current user. The app role is external unless it is listed in `managed`. Column-level grants and row-level security are not in 0.3. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
+
+`roles.ts`:
+
+```ts
+import { defineConfig } from "okmodel/migrate";
+
+const url = process.env.DATABASE_URL;
+if (url === undefined || url.length === 0) throw new Error("DATABASE_URL is not set");
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: url,
+  roles: { migration: "okm_migrate", app: "okm_app", managed: [{ name: "okm_migrate" }] },
+});
+```
+
+### okm ext and okm doctor
+
+`okm ext list` prints the extensions the connected server can install and the version that is installed. `okm ext check` compares those versions with the schema. `okm doctor` lists the triggers on each table. `okm doctor OKM1811` prints that code. `okm ext test` and `okm ext scaffold` are not in this version. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
+
+```text
+okm ext list
+okm ext check
+okm doctor
+okm doctor OKM1811
+```
 
 ## Commands
 
@@ -282,3 +562,5 @@ The rest of the measurements are in [size](https://github.com/omqkhafi/okmodel/b
 - [Quickstart](https://github.com/omqkhafi/okmodel/blob/main/docs/quickstart.md)
 - [Production checklist](https://github.com/omqkhafi/okmodel/blob/main/docs/production.md)
 - [Known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md)
+- [Changelog](https://github.com/omqkhafi/okmodel/blob/main/changelog.md)
+- [Design spec](https://github.com/omqkhafi/okmodel/blob/main/docs/okmodel-api-design.md)
