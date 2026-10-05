@@ -499,7 +499,7 @@ Every node carries: owner (`managed` / `external` / `ignored`), a canonical defi
 
 **Functions.** `fn()` declares arguments, return type, language, `volatility` and `dependsOn`. Calls are typed SQL fragments (`fn.slugify(col)`) usable in predicates, projections, ordering and computed fields; extension functions use the same kind. Postgres does not track dependencies inside plpgsql bodies, so plpgsql functions require `dependsOn` (OKM1824); `LANGUAGE sql` with `BEGIN ATOMIC` is inferred. `SECURITY DEFINER` requires an explicit `search_path` (OKM1823).
 
-**Triggers.** `trigger(name, { on, timing, events, level, when, calls })` in the schema's `triggers` list. Dependencies: the table (and `UPDATE OF` columns) and the function. Traits contribute triggers and functions with provenance (`timestamps({ enforce: "trigger" })`, `auditable()`), and `inspect()` and `okm doctor` list the triggers that affect a table.
+**Triggers.** `trigger(name, { on, timing, events, level, when, calls })` in the schema's `triggers` list. Dependencies: the table (and `UPDATE OF` columns) and the function. Traits contribute triggers and functions with provenance (`timestamps({ enforce: "trigger" })`, `auditable()`), and `okm doctor` lists the triggers that affect a table.
 
 **Grants.** With `roles: { migration, app }` the catalog emits `GRANT` and `ALTER DEFAULT PRIVILEGES FOR ROLE <migration role>` for the application role on every managed object, so a new table is reachable without manual steps; fine-grained grants come in M2. Migrations run as the migration role: a login role, or the runner issues `SET ROLE` once at session start, recorded in the run report and never inside a plan. Roles are cluster objects: a role named in `roles` must exist and is `external` by default (checked by `okm doctor`); a declared managed role is created if missing (existence read from `pg_roles`, no `IF NOT EXISTS`), altered in place and never dropped by a plan. `CREATEROLE` is checked in doctor and apply preflight (D119).
 
@@ -630,7 +630,7 @@ Modifiers: `.nullable()`, `.default(v)`, `.defaultSql(sql)`, `.primaryKey()`, `.
 
 | Builder or option | Version |
 |---|---|
-| `schema({ functions, triggers, views })` | 0.3 |
+| `schema({ views })` | 0.3 |
 | `table({ presets })` | 0.2 |
 | `table({ reference })` | 0.4 |
 | `morph`, `table({ computed, policies })` | later |

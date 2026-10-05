@@ -84,7 +84,7 @@ test("omitDefaults needs a reason and a declared field conflicts", () => {
   expect(clash.message).toContain("timestamps");
 });
 
-test("a table trait is enough, and trigger enforcement and methods are not yet", () => {
+test("a table trait is enough, trigger enforcement is a catalog object, and methods are not yet", () => {
   const local = schema({
     casing: "snake",
     tables: [
@@ -99,9 +99,19 @@ test("a table trait is enough, and trigger enforcement and methods are not yet",
   });
   expect(columnOf(custom.catalog, "label")?.definition.defaultExpression).toBe("'x'");
 
-  const trigger = capture(() => timestamps({ enforce: "trigger" }));
-  expect(trigger.code).toBe("OKM1061");
-  expect(trigger.message).toContain("0.3");
+  const enforced = schema({
+    tables: [
+      table(
+        "notes",
+        { id: t.text().primaryKey() },
+        { traits: [timestamps({ enforce: "trigger" })] },
+      ),
+    ],
+  });
+  const touch = enforced.catalog.objects.find((object) => object.kind === "function");
+  const fired = enforced.catalog.objects.find((object) => object.kind === "trigger");
+  expect(touch?.provenance).toEqual({ origin: "trait", name: "timestamps" });
+  expect(fired?.provenance).toEqual({ origin: "trait", name: "timestamps" });
   const methods = capture(() => trait("labeled", { fields: { label: t.text() }, methods: {} }));
   expect(methods.code).toBe("OKM1061");
   expect(methods.message).toContain("methods");

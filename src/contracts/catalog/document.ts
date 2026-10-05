@@ -23,6 +23,7 @@ import {
 import { catalog } from "./build.js";
 import { domainType, enumType, isDomain } from "./enum.js";
 import { extensionObject } from "./extension.js";
+import { functionObject, triggerObject } from "./routine.js";
 import { column, compareText, constraint, index, sequence, table } from "./object.js";
 import { dependencyOrder } from "./order.js";
 import type {
@@ -269,10 +270,60 @@ function rewriteRenamed(
     case "type":
       return rewriteType(object, dependencies);
     case "extension":
-      return object;
+      return retargeted(object, dependencies);
+    case "function": {
+      const local = object.dependencies.some(
+        (edge) => edge.target.kind === "column" && sameRef(edge.target.parent, change.parent),
+      );
+      return functionObject({
+        namespace: object.identity.namespace,
+        name: object.identity.name,
+        arguments: object.definition.arguments,
+        returns: object.definition.returns,
+        language: object.definition.language,
+        volatility: object.definition.volatility,
+        security: object.definition.security,
+        body: rewriteExpr(object.definition.body, change, local),
+        owner: object.owner,
+        provenance: object.provenance,
+        dependencies,
+        ...(object.definition.searchPath !== undefined
+          ? { searchPath: object.definition.searchPath }
+          : {}),
+        ...(object.definition.atomic === true ? { atomic: true } : {}),
+      });
+    }
+    case "trigger": {
+      const local = sameRef(object.identity.parent, change.parent);
+      return triggerObject({
+        parent: object.identity.parent,
+        name: object.identity.name,
+        timing: object.definition.timing,
+        events: object.definition.events,
+        level: object.definition.level,
+        calls: object.definition.calls,
+        owner: object.owner,
+        provenance: object.provenance,
+        dependencies,
+        ...(object.definition.updateOf !== undefined
+          ? {
+              updateOf: local
+                ? renameList(object.definition.updateOf, change.from, change.to)
+                : object.definition.updateOf,
+            }
+          : {}),
+        ...(object.definition.when !== undefined
+          ? { when: rewriteExpr(object.definition.when, change, local) }
+          : {}),
+      });
+    }
     default:
       return assertNever(object);
   }
+}
+
+function retargeted(object: CatalogObject, dependencies: readonly ObjectIdentity[]): CatalogObject {
+  return { ...object, dependencies: dependencies.map((target) => ({ target })) };
 }
 
 function rewriteTable(
@@ -532,7 +583,53 @@ function rewriteTableName(
   }
   if (object.kind === "sequence") return rewriteSequence(object, dependencies);
   if (object.kind === "type") return rewriteType(object, dependencies);
-  if (object.kind === "extension") return object;
+  if (object.kind === "extension") {
+    return { ...object, dependencies: dependencies.map((target) => ({ target })) };
+  }
+  if (object.kind === "function") {
+    const local = object.dependencies.some(
+      (edge) =>
+        edge.target.kind === "table" &&
+        edge.target.name === change.from &&
+        sameNamespace(edge.target.namespace, change.namespace),
+    );
+    return functionObject({
+      namespace: object.identity.namespace,
+      name: object.identity.name,
+      arguments: object.definition.arguments,
+      returns: object.definition.returns,
+      language: object.definition.language,
+      volatility: object.definition.volatility,
+      security: object.definition.security,
+      body: rewriteExpr(object.definition.body, { from: change.from, to: change.to }, local),
+      owner: object.owner,
+      provenance: object.provenance,
+      dependencies,
+      ...(object.definition.searchPath !== undefined
+        ? { searchPath: object.definition.searchPath }
+        : {}),
+      ...(object.definition.atomic === true ? { atomic: true } : {}),
+    });
+  }
+  if (object.kind === "trigger") {
+    const parent = movedParent(object.identity.parent, change);
+    const local = parent.name !== object.identity.parent.name;
+    return triggerObject({
+      parent,
+      name: object.identity.name,
+      timing: object.definition.timing,
+      events: object.definition.events,
+      level: object.definition.level,
+      calls: object.definition.calls,
+      owner: object.owner,
+      provenance: object.provenance,
+      dependencies,
+      ...(object.definition.updateOf !== undefined ? { updateOf: object.definition.updateOf } : {}),
+      ...(object.definition.when !== undefined
+        ? { when: rewriteExpr(object.definition.when, { from: change.from, to: change.to }, local) }
+        : {}),
+    });
+  }
   return assertNever(object);
 }
 
@@ -708,6 +805,37 @@ function definitionToJson(object: CatalogObject): Json {
         ...(definition.version !== undefined ? { version: definition.version } : {}),
       };
     }
+    case "function": {
+      const definition = object.definition;
+      return {
+        arguments: definition.arguments.map((argument) => ({
+          name: argument.name,
+          type: argument.type,
+        })),
+        body: definition.body,
+        language: definition.language,
+        returns: definition.returns,
+        security: definition.security,
+        volatility: definition.volatility,
+        ...(definition.atomic === true ? { atomic: true } : {}),
+        ...(definition.searchPath !== undefined ? { searchPath: definition.searchPath } : {}),
+      };
+    }
+    case "trigger": {
+      const definition = object.definition;
+      return {
+        calls: {
+          argTypes: [...definition.calls.argTypes],
+          name: definition.calls.name,
+          namespace: namespaceToJson(definition.calls.namespace),
+        },
+        events: [...definition.events],
+        level: definition.level,
+        timing: definition.timing,
+        ...(definition.updateOf !== undefined ? { updateOf: [...definition.updateOf] } : {}),
+        ...(definition.when !== undefined ? { when: definition.when } : {}),
+      };
+    }
     default:
       return assertNever(object);
   }
@@ -750,6 +878,10 @@ function parseObject(value: unknown): CatalogObject {
       return parseType(identity, definition, owner, provenance, dependencies);
     case "extension":
       return parseExtension(identity, definition, owner, provenance, dependencies);
+    case "function":
+      return parseFunction(identity, definition, owner, provenance, dependencies);
+    case "trigger":
+      return parseTrigger(identity, definition, owner, provenance, dependencies);
     default:
       return assertNeverKind(kind);
   }
@@ -965,6 +1097,130 @@ function parseType(
     provenance,
     dependencies,
   });
+}
+
+function parseFunction(
+  identity: ObjectIdentity,
+  definition: Record<string, unknown>,
+  owner: Owner,
+  provenance: Provenance,
+  dependencies: readonly ObjectIdentity[],
+): CatalogObject {
+  if (identity.kind !== "function") {
+    catalogError("OKM1020", `Function object identity is ${identity.kind}, not a function.`);
+  }
+  rejectUnknown(
+    definition,
+    ["arguments", "atomic", "body", "language", "returns", "searchPath", "security", "volatility"],
+    "function definition",
+  );
+  const language = requireString(definition.language, "function language");
+  if (language !== "sql" && language !== "plpgsql") {
+    catalogError("OKM1020", `Function ${identity.name} language must be sql or plpgsql.`);
+  }
+  const volatility = parseVolatility(definition.volatility);
+  const security = parseSecurity(definition.security);
+  return functionObject({
+    namespace: identity.namespace,
+    name: identity.name,
+    arguments: parseArguments(definition.arguments),
+    returns: requireString(definition.returns, "function returns"),
+    language,
+    body: requireString(definition.body, "function body"),
+    owner,
+    provenance,
+    dependencies,
+    ...(volatility !== undefined ? { volatility } : {}),
+    ...(security !== undefined ? { security } : {}),
+    ...(definition.atomic === true ? { atomic: true } : {}),
+    ...(definition.searchPath !== undefined
+      ? { searchPath: requireString(definition.searchPath, "search path") }
+      : {}),
+  });
+}
+
+function parseArguments(value: unknown): { readonly name: string; readonly type: string }[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) catalogError("OKM1020", "Function arguments must be an array.");
+  return value.map((item) => {
+    const record = requireRecord(item, "function argument");
+    rejectUnknown(record, ["name", "type"], "function argument");
+    return {
+      name: requireString(record.name, "argument name"),
+      type: requireString(record.type, "argument type"),
+    };
+  });
+}
+
+function parseVolatility(value: unknown): "volatile" | "stable" | "immutable" | undefined {
+  if (value === undefined) return undefined;
+  const text = requireString(value, "volatility");
+  if (text !== "volatile" && text !== "stable" && text !== "immutable") {
+    catalogError("OKM1020", `Volatility ${text} is not supported.`);
+  }
+  return text;
+}
+
+function parseSecurity(value: unknown): "invoker" | "definer" | undefined {
+  if (value === undefined) return undefined;
+  const text = requireString(value, "security");
+  if (text !== "invoker" && text !== "definer") {
+    catalogError("OKM1020", `Security ${text} is not supported.`);
+  }
+  return text;
+}
+
+function parseTrigger(
+  identity: ObjectIdentity,
+  definition: Record<string, unknown>,
+  owner: Owner,
+  provenance: Provenance,
+  dependencies: readonly ObjectIdentity[],
+): CatalogObject {
+  if (identity.kind !== "trigger") {
+    catalogError("OKM1020", `Trigger object identity is ${identity.kind}, not a trigger.`);
+  }
+  rejectUnknown(
+    definition,
+    ["calls", "events", "level", "timing", "updateOf", "when"],
+    "trigger definition",
+  );
+  const timing = requireString(definition.timing, "trigger timing");
+  if (timing !== "before" && timing !== "after" && timing !== "instead") {
+    catalogError("OKM1020", `Trigger timing ${timing} is not supported.`);
+  }
+  const level = requireString(definition.level, "trigger level");
+  if (level !== "row" && level !== "statement") {
+    catalogError("OKM1020", `Trigger level ${level} is not supported.`);
+  }
+  const calls = requireRecord(definition.calls, "trigger call");
+  rejectUnknown(calls, ["argTypes", "name", "namespace"], "trigger call");
+  return triggerObject({
+    parent: identity.parent,
+    name: identity.name,
+    timing,
+    events: requireStrings(definition.events, "trigger events").map(parseEvent),
+    level,
+    calls: {
+      namespace: parseNamespace(calls.namespace),
+      name: requireString(calls.name, "trigger function"),
+      argTypes: requireStrings(calls.argTypes, "trigger argument types"),
+    },
+    owner,
+    provenance,
+    dependencies,
+    ...(definition.updateOf !== undefined
+      ? { updateOf: requireStrings(definition.updateOf, "update of") }
+      : {}),
+    ...(definition.when !== undefined ? { when: requireString(definition.when, "when") } : {}),
+  });
+}
+
+function parseEvent(value: string): "insert" | "update" | "delete" | "truncate" {
+  if (value !== "insert" && value !== "update" && value !== "delete" && value !== "truncate") {
+    catalogError("OKM1020", `Trigger event ${value} is not supported.`);
+  }
+  return value;
 }
 
 function parseExtension(
@@ -1189,7 +1445,12 @@ function parseDependencies(value: unknown): readonly ObjectIdentity[] {
 }
 
 function isBuiltKind(kind: string): kind is CatalogObject["kind"] {
-  return kind === "extension" || (BUILT_KINDS as readonly string[]).includes(kind);
+  return (
+    kind === "extension" ||
+    kind === "function" ||
+    kind === "trigger" ||
+    (BUILT_KINDS as readonly string[]).includes(kind)
+  );
 }
 
 function isOwner(value: string): value is Owner {

@@ -417,11 +417,85 @@ export type TypeObject = CatalogEnvelope<
  */
 export type ExtensionObject = CatalogEnvelope<"extension", ExtensionIdentity, ExtensionDefinition>;
 
+/** One function language. */
+export type FunctionLanguage = "sql" | "plpgsql";
+
+/** One volatility. */
+export type FunctionVolatility = "volatile" | "stable" | "immutable";
+
+/** `SECURITY INVOKER` or `SECURITY DEFINER`. */
+export type FunctionSecurity = "invoker" | "definer";
+
+/** One argument. The name is not part of the identity. */
+export type FunctionArgument = {
+  readonly name: string;
+  readonly type: string;
+};
+
+/**
+ * Function definition.
+ *
+ * The body of a plpgsql or plain SQL function is the source Postgres stores
+ * (`prosrc`). A `LANGUAGE sql` body that starts with `BEGIN ATOMIC` is marked
+ * `atomic`: Postgres reprints that body and leaves `prosrc` empty.
+ */
+export type FunctionDefinition = {
+  readonly arguments: readonly FunctionArgument[];
+  readonly returns: string;
+  readonly language: FunctionLanguage;
+  readonly volatility: FunctionVolatility;
+  readonly security: FunctionSecurity;
+  readonly body: string;
+  readonly searchPath?: string;
+  readonly atomic?: true;
+};
+
+/** One trigger timing. */
+export type TriggerTiming = "before" | "after" | "instead";
+
+/** One trigger event. Stored order is insert, update, delete, truncate. */
+export type TriggerEvent = "insert" | "update" | "delete" | "truncate";
+
+/** One trigger level. */
+export type TriggerLevel = "row" | "statement";
+
+/** The function a trigger calls. Argument types keep an overload distinct. */
+export type TriggerCall = {
+  readonly namespace: Namespace;
+  readonly name: string;
+  readonly argTypes: readonly string[];
+};
+
+/**
+ * Trigger definition.
+ *
+ * `updateOf` lists SQL column names for `UPDATE OF`. `when` is the predicate
+ * text. The table and the function are dependency edges.
+ */
+export type TriggerDefinition = {
+  readonly timing: TriggerTiming;
+  readonly events: readonly TriggerEvent[];
+  readonly level: TriggerLevel;
+  readonly calls: TriggerCall;
+  readonly updateOf?: readonly string[];
+  readonly when?: string;
+};
+
+/** A function. Identity is `(schema, name, argTypes[])`. */
+export type FunctionObject = CatalogEnvelope<"function", FunctionIdentity, FunctionDefinition>;
+
+/** A trigger. Identity is `(table, name)`. */
+export type TriggerObject = CatalogEnvelope<
+  "trigger",
+  AnchoredIdentity & { readonly kind: "trigger" },
+  TriggerDefinition
+>;
+
 /**
  * One built catalog object.
  *
- * Views, functions, triggers, roles, grants, and default privileges use
- * {@link CatalogEnvelope} when they are built. They are not part of this union yet.
+ * Views, roles, grants, and default privileges use {@link CatalogEnvelope}
+ * when they are built. They are not part of this union yet.
  */
 export type CatalogObject =
   | TableObject
@@ -430,7 +504,9 @@ export type CatalogObject =
   | ConstraintObject
   | SequenceObject
   | TypeObject
-  | ExtensionObject;
+  | ExtensionObject
+  | FunctionObject
+  | TriggerObject;
 
 /** Format version stored in the serialized catalog. */
 export const CATALOG_VERSION = 1;

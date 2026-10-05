@@ -14,9 +14,11 @@ import type {
   CatalogObject,
   ColumnObject,
   ConstraintObject,
+  FunctionObject,
   IndexObject,
   SequenceObject,
   TableObject,
+  TriggerObject,
   TypeObject,
 } from "../../contracts/catalog/types.js";
 import { quoteLiteral } from "./quote.js";
@@ -51,7 +53,8 @@ export function renderCatalog(source: Catalog, schema: string): readonly string[
     if (sql !== undefined) statements.push(sql);
   }
   for (const object of ordered) {
-    if (object.kind === "type" || object.owner === "ignored") continue;
+    if (object.kind === "type" || object.kind === "function" || object.kind === "trigger") continue;
+    if (object.owner === "ignored") continue;
     const key = identityKey(object.identity);
     if (object.kind === "table") {
       statements.push(createTableSql(object, source, schema));
@@ -60,6 +63,13 @@ export function renderCatalog(source: Catalog, schema: string): readonly string[
     if (folded.has(key)) continue;
     const sql = createObjectSql(object, schema);
     if (sql !== undefined) statements.push(sql);
+  }
+  for (const kind of ["function", "trigger"] as const) {
+    for (const object of ordered) {
+      if (object.kind !== kind || object.owner === "ignored") continue;
+      const sql = createObjectSql(object, schema);
+      if (sql !== undefined) statements.push(sql);
+    }
   }
   return statements;
 }
@@ -91,6 +101,10 @@ export function dropObjectSql(object: CatalogObject, schema: string): string | u
       return `drop type ${qualify(schema, object.identity.name)}`;
     case "extension":
       return `drop extension ${quoteIdent(object.identity.name)}`;
+    case "function":
+      return `drop function ${qualify(schema, object.identity.name)}(${object.identity.argTypes.join(", ")})`;
+    case "trigger":
+      return `drop trigger ${quoteIdent(object.identity.name)} on ${qualify(schema, object.identity.parent.name)}`;
     default:
       return undefined;
   }
@@ -117,11 +131,61 @@ export function createObjectSql(object: CatalogObject, schema: string): string |
       return createTypeSql(object, schema);
     case "extension":
       return createExtensionSql(object);
+    case "function":
+      return functionSql(object, schema, false);
+    case "trigger":
+      return triggerSql(object, schema);
     case "table":
       return undefined;
     default:
       return undefined;
   }
+}
+
+/**
+ * `CREATE` or `CREATE OR REPLACE` for one function.
+ *
+ * A compatible signature change uses replace. The body is the stored source,
+ * or the `BEGIN ATOMIC` block when the function is atomic.
+ *
+ * @param object - Function to render
+ * @param schema - Concrete schema name
+ * @param replace - `CREATE OR REPLACE` when true
+ * @returns The statement
+ */
+export function functionSql(object: FunctionObject, schema: string, replace: boolean): string {
+  const definition = object.definition;
+  const args = definition.arguments
+    .map((argument) => `${quoteIdent(argument.name)} ${argument.type}`)
+    .join(", ");
+  const head = `${replace ? "create or replace" : "create"} function ${qualify(schema, object.identity.name)}(${args})`;
+  const security = ` security ${definition.security}`;
+  const path =
+    definition.searchPath === undefined ? "" : ` set search_path to ${definition.searchPath}`;
+  const tail = `returns ${definition.returns} language ${definition.language} ${definition.volatility}${security}${path}`;
+  if (definition.atomic) return `${head} ${tail} ${definition.body}`;
+  return `${head} ${tail} as ${dollarQuote(definition.body)}`;
+}
+
+function triggerSql(object: TriggerObject, schema: string): string {
+  const definition = object.definition;
+  const timing = definition.timing === "instead" ? "instead of" : definition.timing;
+  const events = definition.events
+    .map((event) => {
+      if (event !== "update" || definition.updateOf === undefined) return event;
+      return `update of ${definition.updateOf.map((column) => quoteIdent(column)).join(", ")}`;
+    })
+    .join(" or ");
+  const when = definition.when === undefined ? "" : ` when (${definition.when})`;
+  const args = definition.calls.argTypes.join(", ");
+  const fn = `${qualify(schema, definition.calls.name)}(${args})`;
+  return `create trigger ${quoteIdent(object.identity.name)} ${timing} ${events} on ${qualify(schema, object.identity.parent.name)} for each ${definition.level}${when} execute function ${fn}`;
+}
+
+function dollarQuote(body: string): string {
+  let tag = "okm";
+  while (body.includes(`$${tag}$`)) tag = `${tag}_`;
+  return `$${tag}$${body}$${tag}$`;
 }
 
 /**

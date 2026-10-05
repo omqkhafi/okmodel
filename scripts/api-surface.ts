@@ -17,6 +17,7 @@ export const API_ENTRIES = [
   { subpath: "okmodel/tenancy", file: "src/runtime/tenancy/index.ts" },
   { subpath: "okmodel/validate", file: "src/runtime/validate/index.ts" },
   { subpath: "okmodel/ext", file: "src/dialects/pg/ext/index.ts" },
+  { subpath: "okmodel/fn", file: "src/dialects/pg/fn/index.ts" },
   { subpath: "okmodel/pg/citext", file: "src/dialects/pg/ext/citext.ts" },
   { subpath: "okmodel/pg/pg_trgm", file: "src/dialects/pg/ext/pg-trgm.ts" },
   { subpath: "okmodel/pg", file: "src/dialects/pg/index.ts" },

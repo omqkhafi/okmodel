@@ -13,13 +13,14 @@ import { OkmError } from "../../contracts/error.js";
 import { creationOrder, renameColumn, renameTable } from "../../contracts/catalog/document.js";
 import { isDomain, sameEnumLabels } from "../../contracts/catalog/enum.js";
 import { fitIdentifier } from "../../contracts/catalog/identifier.js";
-import { identityKey, staticNamespace } from "../../contracts/catalog/identity.js";
+import { identityKey, identityLabel, staticNamespace } from "../../contracts/catalog/identity.js";
 import { compareText } from "../../contracts/catalog/object.js";
 import type {
   Catalog,
   CatalogObject,
   ColumnObject,
   ConstraintObject,
+  FunctionObject,
 } from "../../contracts/catalog/types.js";
 import type { DeclaredRename } from "../../dialects/pg/declarations.js";
 import {
@@ -27,6 +28,7 @@ import {
   createObjectSql,
   createTableSql,
   dropObjectSql,
+  functionSql,
   identitySequence,
   quoteIdent,
 } from "../../dialects/pg/ddl.js";
@@ -56,6 +58,12 @@ export type PlanStep = {
    * a missing path. Offline `okm migrate plan` leaves this unverified.
    */
   readonly path?: "unverified";
+  /**
+   * Set on `CREATE OR REPLACE` of a function whose signature did not change.
+   *
+   * The statement is expand. The flag says the body or the settings changed.
+   */
+  readonly behavior?: "change";
 };
 
 /** A named plan and the class of its strictest step. */
@@ -133,6 +141,7 @@ export function planMigration(request: PlanRequest): MigrationPlan {
 
   const dropKeys = new Set<string>();
   const createKeys = new Set<string>();
+  const replaces: { readonly before: FunctionObject; readonly after: FunctionObject }[] = [];
   const alters: { readonly before: ColumnObject; readonly after: ColumnObject }[] = [];
   for (const item of beforeList) {
     if (!afterBy.has(item.key)) dropKeys.add(item.key);
@@ -144,6 +153,14 @@ export function planMigration(request: PlanRequest): MigrationPlan {
     const previous = beforeBy.get(item.key);
     if (previous === undefined || sameDefinition(previous, item.object)) continue;
     if (previous.kind === "extension" && item.object.kind === "extension") continue;
+    if (
+      previous.kind === "function" &&
+      item.object.kind === "function" &&
+      previous.definition.returns === item.object.definition.returns
+    ) {
+      replaces.push({ before: previous, after: item.object });
+      continue;
+    }
     if (previous.kind === "type" && item.object.kind === "type") {
       refuseDomainBaseChange(previous, item.object);
       continue;
@@ -165,6 +182,8 @@ export function planMigration(request: PlanRequest): MigrationPlan {
   const enums = enumEdits(beforeBy, afterBy, schema);
   requireReplacements(picklists, enums, replacements);
   recreateDependents(beforeList, afterList, alters, dropKeys, createKeys, picklists);
+  recreateRoutineDependents(afterList, dropKeys, createKeys);
+  refuseRoutineDrops(beforeBy, afterBy, dropKeys);
   omitOwnedSequences(createKeys, afterBy, request.after);
   omitOwnedSequences(dropKeys, beforeBy, renamed);
 
@@ -184,7 +203,19 @@ export function planMigration(request: PlanRequest): MigrationPlan {
   const deferred = new Set(picklists.map((change) => identityKey(change.before.identity)));
   const typeDrops: CatalogObject[] = [];
   const extensionDrops: CatalogObject[] = [];
-  for (const object of [...creationOrder(renamed)].reverse()) {
+  const reverse = [...creationOrder(renamed)].reverse();
+  const emitDrop = (object: CatalogObject): void => {
+    const key = identityKey(object.identity);
+    if (!dropKeys.has(key) || deferred.has(key) || covered(object, droppedTables)) return;
+    const sql = dropObjectSql(object, schema);
+    if (sql === undefined) return;
+    steps.push(step(sql, "contract", "ddl", ACCESS));
+  };
+  // Triggers drop before functions even when the table drop would remove them.
+  for (const object of reverse) if (object.kind === "trigger") emitDrop(object);
+  for (const object of reverse) if (object.kind === "function") emitDrop(object);
+  for (const object of reverse) {
+    if (object.kind === "trigger" || object.kind === "function") continue;
     const key = identityKey(object.identity);
     if (!dropKeys.has(key) || deferred.has(key) || covered(object, droppedTables)) continue;
     if (object.kind === "type") {
@@ -195,9 +226,7 @@ export function planMigration(request: PlanRequest): MigrationPlan {
       extensionDrops.push(object);
       continue;
     }
-    const sql = dropObjectSql(object, schema);
-    if (sql === undefined) continue;
-    steps.push(step(sql, "contract", "ddl", ACCESS));
+    emitDrop(object);
   }
   for (const object of typeDrops) {
     const sql = dropObjectSql(object, schema);
@@ -245,7 +274,14 @@ export function planMigration(request: PlanRequest): MigrationPlan {
     steps.push(step(sql, "expand", "ddl", ACCESS));
   }
   for (const object of creationOrder(request.after)) {
-    if (object.kind === "type" || object.kind === "extension") continue;
+    if (
+      object.kind === "type" ||
+      object.kind === "extension" ||
+      object.kind === "function" ||
+      object.kind === "trigger"
+    ) {
+      continue;
+    }
     const key = identityKey(object.identity);
     if (deferred.has(key)) continue;
     const parent = anchoredParent(object);
@@ -261,6 +297,28 @@ export function planMigration(request: PlanRequest): MigrationPlan {
     const sql = createObjectSql(object, schema);
     if (sql === undefined) continue;
     steps.push(step(sql, "expand", "ddl", object.kind === "index" ? SHARE : ACCESS));
+  }
+  for (const change of replaces) {
+    if (sameDefinition(change.before, change.after)) continue;
+    steps.push({
+      sql: functionSql(change.after, schema, true),
+      class: "expand",
+      action: "ddl",
+      lock: ACCESS,
+      transactional: true,
+      behavior: "change",
+    });
+  }
+  for (const kind of ["function", "trigger"] as const) {
+    for (const object of creationOrder(request.after)) {
+      if (object.kind !== kind) continue;
+      const key = identityKey(object.identity);
+      if (!createKeys.has(key) || emitted.has(key)) continue;
+      emitted.add(key);
+      const sql = createObjectSql(object, schema);
+      if (sql === undefined) continue;
+      steps.push(step(sql, "expand", "ddl", ACCESS));
+    }
   }
 
   steps.push(...contractSwaps(picklists, enums, replacements, schema));
@@ -290,6 +348,7 @@ export function formatPlan(plan: MigrationPlan): string {
     lines.push(`-- lock: ${item.lock}`);
     if (!item.transactional) lines.push("-- transactional: false");
     if (item.path !== undefined) lines.push(`-- path: ${item.path}`);
+    if (item.behavior === "change") lines.push("-- behavior: change");
     lines.push(`${item.sql};`);
     lines.push("");
   }
@@ -325,6 +384,7 @@ export function parsePlan(text: string): MigrationPlan {
     let lock = "";
     let transactional = true;
     let path: PlanStep["path"];
+    let behavior: PlanStep["behavior"];
     const sql: string[] = [];
     while (index < lines.length && (lines[index] ?? "") !== "") {
       const line = lines[index] ?? "";
@@ -335,6 +395,7 @@ export function parsePlan(text: string): MigrationPlan {
       else if (line.startsWith("-- lock: ")) lock = line.slice("-- lock: ".length);
       else if (line === "-- transactional: false") transactional = false;
       else if (line === "-- path: unverified") path = "unverified";
+      else if (line === "-- behavior: change") behavior = "change";
       else if (!line.startsWith("--")) sql.push(line);
     }
     const statement = sql.join("\n").replace(/;\s*$/, "");
@@ -346,6 +407,7 @@ export function parsePlan(text: string): MigrationPlan {
         lock,
         transactional,
         ...(path !== undefined ? { path } : {}),
+        ...(behavior !== undefined ? { behavior } : {}),
       });
     }
   }
@@ -581,6 +643,57 @@ function recreateDependents(
     if (!dependsOnChanged(item.object, changed)) continue;
     dropKeys.add(key);
     createKeys.add(key);
+  }
+}
+
+function recreateRoutineDependents(
+  afterList: readonly Indexed[],
+  dropKeys: Set<string>,
+  createKeys: Set<string>,
+): void {
+  const recreated = new Set<string>();
+  for (const item of afterList) {
+    if (!dropKeys.has(item.key) || !createKeys.has(item.key)) continue;
+    if (
+      item.object.kind === "function" ||
+      item.object.kind === "column" ||
+      item.object.kind === "table"
+    ) {
+      recreated.add(item.key);
+    }
+  }
+  if (recreated.size === 0) return;
+  for (const item of afterList) {
+    if (item.object.kind !== "trigger" && item.object.kind !== "function") continue;
+    const hit = item.object.dependencies.some((edge) => recreated.has(identityKey(edge.target)));
+    if (!hit) continue;
+    dropKeys.add(item.key);
+    createKeys.add(item.key);
+  }
+}
+
+function refuseRoutineDrops(
+  beforeBy: ReadonlyMap<string, CatalogObject>,
+  afterBy: ReadonlyMap<string, CatalogObject>,
+  dropKeys: ReadonlySet<string>,
+): void {
+  for (const after of afterBy.values()) {
+    const key = identityKey(after.identity);
+    if (dropKeys.has(key)) continue;
+    if (after.kind !== "trigger" && after.kind !== "function") continue;
+    for (const edge of after.dependencies) {
+      const targetKey = identityKey(edge.target);
+      if (!dropKeys.has(targetKey)) continue;
+      const target = beforeBy.get(targetKey);
+      if (target === undefined) continue;
+      if (target.kind !== "function" && target.kind !== "table" && target.kind !== "column")
+        continue;
+      throw new OkmError(
+        "OKM1821",
+        `${identityLabel(after.identity)} depends on ${identityLabel(target.identity)}, which this plan drops. CASCADE is never used.`,
+        { fix: { summary: "Review the dependents the plan lists and recreate them explicitly." } },
+      );
+    }
   }
 }
 

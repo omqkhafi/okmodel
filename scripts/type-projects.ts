@@ -94,6 +94,8 @@ export function writeQueryProject(
     readonly features?: readonly ProbeFeature[];
     /** When set, the schema declares this many `extension()` objects. */
     readonly extensions?: number;
+    /** When set, the schema declares one function and one trigger. Printed, not gated. */
+    readonly routines?: boolean;
   } = {},
 ): void {
   mkdirSync(dir, { recursive: true });
@@ -104,11 +106,14 @@ export function writeQueryProject(
   const through = features.includes("through");
   const presets = features.includes("presets");
   const extensionCount = options.extensions ?? 0;
+  const routines = options.routines === true;
   const ext = libraryFile(dir, target, "dialects/pg/ext/index");
+  const fnEntry = libraryFile(dir, target, "dialects/pg/fn/index");
   const lines: string[] = [
     ...(validate ? [`import "${libraryFile(dir, target, "runtime/validate/index")}";`] : []),
     `import { ${presets ? "inList, " : ""}many, ${through ? "manyThrough, " : ""}one, schema, table, t } from "${pg}";`,
     ...(extensionCount > 0 ? [`import { extension } from "${ext}";`] : []),
+    ...(routines ? [`import { fn, trigger } from "${fnEntry}";`] : []),
     "",
   ];
   lines.push(
@@ -147,6 +152,14 @@ export function writeQueryProject(
     }
     lines.push("});", "");
   }
+  if (routines) {
+    lines.push(
+      'const countNotes = fn("count_notes", { returns: "bigint", language: "sql", body: "begin atomic select count(*) from note; end" });',
+      'const touchNote = fn("touch_note", { returns: "trigger", language: "plpgsql", body: "begin return new; end", dependsOn: [note] });',
+      'const noteTouch = trigger("note_touch", { on: note, timing: "before", events: ["update"], level: "row", calls: touchNote });',
+      "",
+    );
+  }
   lines.push("export const appSchema = schema({");
   lines.push(`  tables: [${names.join(", ")}],`);
   if (extensionCount > 0) {
@@ -155,6 +168,9 @@ export function writeQueryProject(
       (_, index) => `extension("ext_${String(index)}")`,
     );
     lines.push(`  extensions: [${declared.join(", ")}],`);
+  }
+  if (routines) {
+    lines.push("  functions: [countNotes, touchNote],", "  triggers: [noteTouch],");
   }
   if (validate) lines.push("  validation: true,");
   lines.push("});", "");

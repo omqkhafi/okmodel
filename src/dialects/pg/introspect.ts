@@ -12,15 +12,19 @@ import { domainType, enumType } from "../../contracts/catalog/enum.js";
 import { staticNamespace } from "../../contracts/catalog/identity.js";
 import { extensionObject } from "../../contracts/catalog/extension.js";
 import { column, constraint, index, sequence, table } from "../../contracts/catalog/object.js";
+import { functionObject, triggerObject } from "../../contracts/catalog/routine.js";
 import { quoteIdent } from "./ddl.js";
 import type {
   Catalog,
   CatalogObject,
   ColumnObject,
+  FunctionVolatility,
   ObjectIdentity,
   ObjectRef,
   Provenance,
   ReferentialAction,
+  TriggerEvent,
+  TriggerTiming,
 } from "../../contracts/catalog/types.js";
 import { referentialAction } from "../../contracts/catalog/types.js";
 
@@ -57,17 +61,31 @@ export async function introspectSchema(
   const namespace = staticNamespace(logical);
   const provenance: Provenance = { origin: "file", name: PROVENANCE_NAME };
   const params = [concrete];
-  const [tables, columns, constraints, indexes, sequences, enums, domains, extensions] =
-    await Promise.all([
-      runner.query(TABLES, params),
-      runner.query(COLUMNS, params),
-      runner.query(CONSTRAINTS, params),
-      runner.query(INDEXES, params),
-      runner.query(SEQUENCES, params),
-      runner.query(ENUMS, params),
-      runner.query(DOMAINS, params),
-      runner.query(EXTENSIONS, params),
-    ]);
+  const [
+    tables,
+    columns,
+    constraints,
+    indexes,
+    sequences,
+    enums,
+    domains,
+    extensions,
+    functions,
+    triggers,
+    functionDeps,
+  ] = await Promise.all([
+    runner.query(TABLES, params),
+    runner.query(COLUMNS, params),
+    runner.query(CONSTRAINTS, params),
+    runner.query(INDEXES, params),
+    runner.query(SEQUENCES, params),
+    runner.query(ENUMS, params),
+    runner.query(DOMAINS, params),
+    runner.query(EXTENSIONS, params),
+    runner.query(FUNCTIONS, params),
+    runner.query(TRIGGERS, params),
+    runner.query(FUNCTION_DEPS, params),
+  ]);
   const objects: CatalogObject[] = [];
   const parents = new Map<string, ObjectRef>();
   for (const row of tables) {
@@ -235,7 +253,123 @@ export async function introspectSchema(
       }),
     );
   }
+  const atomicEdges = new Map<string, ObjectIdentity[]>();
+  for (const row of functionDeps) {
+    const key = `${text(row, "name")}(${text(row, "arg_types")})`;
+    const edges = atomicEdges.get(key) ?? [];
+    const tableName = text(row, "table");
+    const columnName = text(row, "column");
+    if (columnName.length > 0) {
+      edges.push({
+        kind: "column",
+        parent: { namespace, name: tableName },
+        name: columnName,
+      });
+    } else if (tableName.length > 0) {
+      edges.push({ kind: "table", namespace, name: tableName });
+    }
+    atomicEdges.set(key, edges);
+  }
+  for (const row of functions) {
+    const name = text(row, "name");
+    const language = text(row, "language") === "sql" ? "sql" : "plpgsql";
+    const argTypes = splitTypes(text(row, "arg_types"));
+    const source = text(row, "body");
+    const atomic = language === "sql" && source.length === 0;
+    const body = atomic ? atomicBody(text(row, "definition")) : source;
+    const searchPath = searchPathOf(text(row, "config"));
+    const key = `${name}(${text(row, "arg_types")})`;
+    objects.push(
+      functionObject({
+        namespace,
+        name,
+        arguments: argumentList(row.arg_names, argTypes),
+        returns: text(row, "returns"),
+        language,
+        volatility: volatilityOf(text(row, "volatility")),
+        security: flag(row, "security") ? "definer" : "invoker",
+        body,
+        ...(searchPath !== undefined ? { searchPath } : {}),
+        ...(atomic ? { atomic: true } : {}),
+        provenance,
+        ...(atomic ? { dependencies: atomicEdges.get(key) ?? [] } : {}),
+      }),
+    );
+  }
+  for (const row of triggers) {
+    const bits = Number(text(row, "tgtype"));
+    const updateOf = list(text(row, "update_of"));
+    const when = text(row, "predicate");
+    const argTypes = splitTypes(text(row, "arg_types"));
+    objects.push(
+      triggerObject({
+        parent: { namespace, name: text(row, "parent") },
+        name: text(row, "name"),
+        timing: triggerTiming(bits),
+        events: triggerEvents(bits),
+        level: (bits & 1) === 1 ? "row" : "statement",
+        calls: {
+          namespace: staticNamespace(text(row, "function_schema")),
+          name: text(row, "function"),
+          argTypes,
+        },
+        ...(updateOf.length > 0 ? { updateOf } : {}),
+        ...(when.length > 0 ? { when } : {}),
+        provenance,
+      }),
+    );
+  }
   return catalog(objects);
+}
+
+function argumentList(names: unknown, types: readonly string[]): { name: string; type: string }[] {
+  const stored = Array.isArray(names)
+    ? names.map((item) => String(item))
+    : typeof names === "string" && names.startsWith("{")
+      ? names
+          .slice(1, -1)
+          .split(",")
+          .filter((item) => item.length > 0)
+      : [];
+  return types.map((type, index) => ({ name: stored[index] || `arg${String(index + 1)}`, type }));
+}
+
+function splitTypes(value: string): string[] {
+  return value.length === 0 ? [] : value.split("|");
+}
+
+function volatilityOf(value: string): FunctionVolatility {
+  if (value === "s") return "stable";
+  if (value === "i") return "immutable";
+  return "volatile";
+}
+
+function searchPathOf(config: string): string | undefined {
+  const match = /search_path=([^,}]+)/.exec(config);
+  const found = match?.[1]?.replaceAll('"', "");
+  return found === undefined || found.length === 0 ? undefined : found;
+}
+
+function atomicBody(definition: string): string {
+  const start = definition.indexOf("BEGIN ATOMIC");
+  if (start < 0) return definition.trim();
+  const end = definition.lastIndexOf("END");
+  return definition.slice(start, end < start ? undefined : end + 3).trim();
+}
+
+function triggerTiming(bits: number): TriggerTiming {
+  if ((bits & 64) !== 0) return "instead";
+  if ((bits & 2) !== 0) return "before";
+  return "after";
+}
+
+function triggerEvents(bits: number): TriggerEvent[] {
+  const events: TriggerEvent[] = [];
+  if ((bits & 4) !== 0) events.push("insert");
+  if ((bits & 16) !== 0) events.push("update");
+  if ((bits & 8) !== 0) events.push("delete");
+  if ((bits & 32) !== 0) events.push("truncate");
+  return events;
 }
 
 function indexExpression(
@@ -415,6 +549,65 @@ const EXTENSIONS = `
   from pg_extension e
   join pg_namespace n on n.oid = e.extnamespace
   where n.nspname = $1
+`;
+
+const FUNCTIONS = `
+  select p.proname as name, l.lanname as language, p.provolatile as volatility,
+    p.prosecdef as security, coalesce(p.proconfig::text, '') as config, p.prosrc as body,
+    pg_get_function_result(p.oid) as returns, p.proargnames as arg_names,
+    (
+      select coalesce(string_agg(format_type(t.oid, null), '|' order by t.ord), '')
+      from unnest(p.proargtypes) with ordinality as t(oid, ord)
+    ) as arg_types,
+    pg_get_functiondef(p.oid) as definition
+  from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  join pg_language l on l.oid = p.prolang
+  where n.nspname = $1
+    and p.prokind = 'f'
+    and ${member("p.oid", "pg_proc")}
+`;
+
+const TRIGGERS = `
+  select t.tgname as name, c.relname as parent, t.tgtype::text as tgtype,
+    p.proname as function, fns.nspname as function_schema,
+    (
+      select coalesce(string_agg(format_type(x.oid, null), '|' order by x.ord), '')
+      from unnest(p.proargtypes) with ordinality as x(oid, ord)
+    ) as arg_types,
+    coalesce(pg_get_expr(t.tgqual, t.tgrelid), '') as predicate,
+    (
+      select coalesce(string_agg(a.attname, ',' order by cols.ord), '')
+      from unnest(t.tgattr) with ordinality as cols(attnum, ord)
+      join pg_attribute a on a.attrelid = t.tgrelid and a.attnum = cols.attnum
+    ) as update_of
+  from pg_trigger t
+  join pg_class c on c.oid = t.tgrelid
+  join pg_namespace n on n.oid = c.relnamespace
+  join pg_proc p on p.oid = t.tgfoid
+  join pg_namespace fns on fns.oid = p.pronamespace
+  where n.nspname = $1
+    and not t.tgisinternal
+    and ${CHILD}
+`;
+
+const FUNCTION_DEPS = `
+  select p.proname as name,
+    (
+      select coalesce(string_agg(format_type(t.oid, null), '|' order by t.ord), '')
+      from unnest(p.proargtypes) with ordinality as t(oid, ord)
+    ) as arg_types,
+    c.relname as table, coalesce(a.attname, '') as column
+  from pg_depend d
+  join pg_proc p on p.oid = d.objid and d.classid = 'pg_proc'::regclass
+  join pg_namespace n on n.oid = p.pronamespace
+  join pg_class c on c.oid = d.refobjid and d.refclassid = 'pg_class'::regclass
+  left join pg_attribute a on a.attrelid = c.oid and a.attnum = d.refobjsubid and d.refobjsubid > 0
+  where n.nspname = $1
+    and d.deptype = 'n'
+    and c.relkind in ('r', 'p')
+    and p.prokind = 'f'
+    and p.prosrc = ''
 `;
 
 function member(oid: string, classid: string): string {

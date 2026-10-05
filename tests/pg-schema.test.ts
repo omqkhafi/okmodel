@@ -233,7 +233,7 @@ test("later options are OKM1061 and name the version that adds them", () => {
   const error = capture(() =>
     schema({
       tables: [table("tasks", { id: t.id() })],
-      functions: [],
+      views: [],
     }),
   );
   expect(error.code).toBe("OKM1061");

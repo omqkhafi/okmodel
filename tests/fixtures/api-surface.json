@@ -1237,6 +1237,40 @@
       "kind": "stable"
     }
   ],
+  "okmodel/fn": [
+    {
+      "name": "DependsOn",
+      "kind": "stable"
+    },
+    {
+      "name": "FunctionArgumentInput",
+      "kind": "stable"
+    },
+    {
+      "name": "FunctionOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "Routine",
+      "kind": "stable"
+    },
+    {
+      "name": "TriggerDeclaration",
+      "kind": "stable"
+    },
+    {
+      "name": "TriggerOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "fn",
+      "kind": "stable"
+    },
+    {
+      "name": "trigger",
+      "kind": "stable"
+    }
+  ],
   "okmodel/ext": [
     {
       "name": "Extension",

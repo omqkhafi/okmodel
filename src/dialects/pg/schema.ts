@@ -221,18 +221,18 @@ const SCHEMA_KNOWN = new Set([
   "codecs",
   "defaults",
   "extensions",
+  "functions",
   "requires",
   "tables",
   "tenancy",
   "traits",
+  "triggers",
   "types",
   "validation",
 ]);
 
 /** Later schema options, and the version that adds each one. */
 const SCHEMA_LATER: Readonly<Record<string, string>> = {
-  functions: "0.3",
-  triggers: "0.3",
   views: "0.3",
 };
 
@@ -436,7 +436,16 @@ export function schema<const TTables extends readonly AnyTable[]>(
             }),
           );
         }
-        contributeExtensions(config.extensions, objects);
+        contributeListed(config.extensions, objects);
+        contributeListed(config.functions, objects);
+        contributeListed(schemaTraits, objects);
+        for (const item of config.tables) {
+          contributeListed(
+            (item.options as { readonly traits?: unknown } | undefined)?.traits,
+            objects,
+          );
+        }
+        contributeListed(config.triggers, objects);
         document = catalog(objects);
       }
       return document;
@@ -646,15 +655,15 @@ function bareTables(tables: readonly AnyTable[]): readonly AnyTable[] {
 }
 
 /**
- * Asks each `schema({ extensions })` value for its catalog objects.
+ * Asks each value that carries `contribute` for its catalog objects.
  *
- * The value carries the logic. Core does not read an extension record.
- * An omitted option does nothing.
+ * Extensions, functions, triggers, and traits use the same call. An omitted
+ * option, or a trait with no catalog records, does nothing.
  *
- * @param value - The option the caller passed
+ * @param value - The option or trait list the caller passed
  * @param objects - Objects the schema is collecting
  */
-function contributeExtensions(value: unknown, objects: CatalogObject[]): void {
+function contributeListed(value: unknown, objects: CatalogObject[]): void {
   if (!Array.isArray(value)) return;
   for (const item of value) {
     const produced = (item as { contribute(peers: unknown, built: unknown): unknown }).contribute(
