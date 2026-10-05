@@ -1,12 +1,13 @@
 # OKModel
 
-okmodel is a catalog-first TypeScript ORM, PostgreSQL first. Other SQL databases are the direction. Version 0.1 supports PostgreSQL only. The schema is the single source. Migrations and queries come from it.
+okmodel is a catalog-first TypeScript ORM, PostgreSQL first. Other SQL databases are the direction. CI runs PostgreSQL 15 to 18. The schema is the single source. Migrations and queries come from it.
 
-Version 0.1.1. Apache-2.0.
+Version 0.3.0-next.10. Apache-2.0.
 
 ## Contents
 
 - [Install](#install)
+- [What is in the box](#what-is-in-the-box)
 - [Quickstart](#quickstart)
   - [Configure](#configure)
   - [Schema](#schema)
@@ -34,6 +35,24 @@ bun add okmodel @electric-sql/pglite
 ```
 
 Bun.sql needs no extra package: `import { connect } from "okmodel/pg/bun"`. okmodel has no runtime dependencies. Each installed driver is an optional peer.
+
+## What is in the box
+
+- [Column tenancy](https://github.com/omqkhafi/okmodel/blob/main/docs/okmodel-api-design.md#9-tenancy) isolates a table by a tenant column.
+- [Traits](https://github.com/omqkhafi/okmodel/blob/main/docs/okmodel-api-design.md#8-traits) add `timestamps()` and `archivable()`.
+- [Archive and restore](https://github.com/omqkhafi/okmodel/blob/main/docs/okmodel-api-design.md#archive-contract) hide a row and bring it back, including its direct children.
+- [Validation](https://github.com/omqkhafi/okmodel/blob/main/docs/okmodel-api-design.md#7-validation) checks a write before any statement is sent.
+- [Presets](https://github.com/omqkhafi/okmodel/blob/main/docs/okmodel-api-design.md#621-presets) are named filters on a table.
+- [Transactions](https://github.com/omqkhafi/okmodel/blob/main/docs/okmodel-api-design.md#15-transactions-and-batches) are `tx()` and `batch()`.
+- [Relations](https://github.com/omqkhafi/okmodel/blob/main/docs/okmodel-api-design.md#62-options) are `one`, `many`, and `manyThrough`, loaded with `include`.
+- [Operators](https://github.com/omqkhafi/okmodel/blob/main/docs/okmodel-api-design.md#101-filters-with-tagged-operators) filter JSON, arrays, ranges, and search.
+- [Extensions](https://github.com/omqkhafi/okmodel/blob/main/docs/okmodel-api-design.md#41-extensions-postgres) declare `citext` and `pg_trgm`, including gin and gist indexes.
+- [Domains](https://github.com/omqkhafi/okmodel/blob/main/docs/okmodel-api-design.md#64-column-types-postgres) are a catalog type with a check.
+- [Functions and triggers](https://github.com/omqkhafi/okmodel/blob/main/docs/okmodel-api-design.md#57-database-objects) are catalog objects. `timestamps({ enforce: "trigger" })` adds the touch trigger.
+- [Views and materialized views](https://github.com/omqkhafi/okmodel/blob/main/docs/okmodel-api-design.md#57-database-objects) are SQL plus a declared column list. `db.views.<name>.find(...)` reads them.
+- [Roles and grants](https://github.com/omqkhafi/okmodel/blob/main/docs/okmodel-api-design.md#57-database-objects) grant the application role a fixed set and run migrations as the migration role.
+- [`okm ext list` and `okm ext check`](https://github.com/omqkhafi/okmodel/blob/main/docs/okmodel-api-design.md#194-cli) compare the schema with the extensions on the server.
+- [`okm doctor`](https://github.com/omqkhafi/okmodel/blob/main/docs/okmodel-api-design.md#194-cli) lists the triggers on each table, and `okm doctor OKMxxxx` prints that code.
 
 ## Quickstart
 
@@ -223,6 +242,9 @@ await db.close();
 | `okm migrate plan <name>` | Prints the plan and its class. The name is required.                                                                         |
 | `okm migrate apply`       | Replays migration files on the database.                                                                                     |
 | `okm migrate status`      | Prints version, catalog hash, and state for each target.                                                                     |
+| `okm ext list`            | Prints the extensions the connected server can install and the version that is installed.                                    |
+| `okm ext check`           | Compares those versions with the schema. A missing extension is OKM1811. A pin the server does not meet is OKM1812.          |
+| `okm doctor [code]`       | Lists the triggers on each table. A code argument prints that code.                                                          |
 | `okm --version`           | Prints the package version.                                                                                                  |
 
 `okmodel` and `okm` are the same command.
@@ -232,7 +254,7 @@ await db.close();
 Status is on the [board](https://github.com/users/omqkhafi/projects/1). Each release is a milestone.
 
 - [x] [0.1](https://github.com/omqkhafi/okmodel/milestone/1) — Schema, queries, and migrations on PostgreSQL, with postgres.js and PGlite.
-- [ ] [0.2](https://github.com/omqkhafi/okmodel/milestone/2) — Hidden and sensitive fields, validation, traits, tenancy, archive and restore, richer relations, presets, transactions, and operators for JSON, arrays, ranges, and search.
+- [x] [0.2](https://github.com/omqkhafi/okmodel/milestone/2) — Hidden and sensitive fields, validation, traits, tenancy, archive and restore, richer relations, presets, transactions, and operators for JSON, arrays, ranges, and search.
 - [ ] [0.3](https://github.com/omqkhafi/okmodel/milestone/3) — Extensions, domains, functions, triggers, views, roles, and grants.
 - [ ] [0.4](https://github.com/omqkhafi/okmodel/milestone/4) — Safer migration plans, backfill, drift checks, provisioning, reference data, and a testing package.
 - [ ] [0.5](https://github.com/omqkhafi/okmodel/milestone/5) — A primary with replicas, read routing, and a reference app.
@@ -247,11 +269,11 @@ Measured on this release.
 
 |                                              | Minified |   Gzip | Cold import |
 | -------------------------------------------- | -------: | -----: | ----------: |
-| Runtime entry                                |    5,288 |  2,026 |    1.991 ms |
-| App startup (10 tables, one find)            |   88,938 | 29,778 |   10.380 ms |
-| App startup, every 0.2 feature in use (full) |  113,705 | 37,506 |   12.068 ms |
+| Runtime entry                                |    5,288 |  2,026 |    1.794 ms |
+| App startup (10 tables, one find)            |   89,465 | 29,723 |   10.554 ms |
+| App startup, every 0.2 feature in use (full) |  119,940 | 39,123 |   12.663 ms |
 
-The full app has column tenancy, `archivable()`, `timestamps()`, validation rules, `one`, `many` and `manyThrough` relations, presets, and calls `include`, `page`, `aggregate`, `tx` and `batch`. A feature costs bytes only in an app that uses it: the full app is 24,767 minified and 7,728 gzip bytes above the plain one. The runtime entry and the plain app are gated. The full app is printed, not gated.
+The full app has column tenancy, `archivable()`, `timestamps()`, validation rules, `one`, `many` and `manyThrough` relations, presets, and calls `include`, `page`, `aggregate`, `tx` and `batch`. A feature costs bytes only in an app that uses it: the full app is 30,475 minified and 9,400 gzip bytes above the plain one. The runtime entry and the plain app are gated. The full app is printed, not gated.
 
 The rest of the measurements are in [size](https://github.com/omqkhafi/okmodel/blob/main/docs/size.md).
 
