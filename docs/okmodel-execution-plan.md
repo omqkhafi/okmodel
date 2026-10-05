@@ -113,7 +113,8 @@ Spike code lives in the private workspace package `packages/spikes`; what proves
 
 | ID | Branch | Delivers |
 |---|---|---|
-| P50 | `p50-classification-linter` | expand/contract classification, linter core, safe rewrites |
+| P50 | `p50-classification-linter` | expand/contract classification and the linter core (D192) |
+| P50b | `p50b-safe-rewrites` | safe rewrites: concurrent index create and drop outside a transaction, `NOT VALID` plus `VALIDATE`, `SET NOT NULL` through a validated check, a volatile default split, a unique constraint from a concurrent unique index (D192) |
 | P51 | `p51-locks-recreate-verify` | lock display with row estimates; recreate verified across every object kind |
 | P52 | `p52-backfill-runner` | `backfill()`, `TargetRunner` (one target) |
 | P53 | `p53-drift-verify` | catalog hash fast path, previous-catalog check, migration verification, serialised catalog |
@@ -146,7 +147,7 @@ Problems found in the earlier order and how the table above resolves them:
 - **Transactions before P29:** chunked inserts, `sync` and archive cascades need an atomic multi-statement write long before the public `tx`; P15 ships an internal runner and P29 exposes the public API.
 - **`connect()` had no owner:** P15 builds the L3 runtime with the single-endpoint Router, Endpoint and Pool.
 - **Final safety verifier before its rules exist:** P21 builds the framework; each later prompt registers its rules (process rule 7); P30 tests the composition.
-- **Classification needed by the protected policy:** P16 classifies steps by operation kind; P50 adds linting and P53 the previous-catalog check.
+- **Classification needed by the protected policy:** P16 classifies steps by operation kind; P50 adds the linter core, P50b the safe rewrites (D192), and P53 the previous-catalog check.
 - **Ownership needed by every object kind:** it is in the P10 contract.
 - **Recreate needed by views:** dependency-aware recreate moved from P51 to P42; P51 keeps lock display and cross-kind verification.
 - **`protected.policy` enumeration needs seed:** `okm seed` arrives in P54, so the full enumeration test sits in P55.
