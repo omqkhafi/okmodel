@@ -129,8 +129,8 @@ Open after 0.4, not built in this train: typed function calls and builder views 
 
 | ID | Branch | Delivers |
 |---|---|---|
-| P60 | `p60-topology-runtime` | `connect({ primary, replicas })` in the lazy topology chunk: per-endpoint pools, health and position probes, `ReplicaState`. Routing is P61. After this step the connect entries get no more bytes (D201) |
-| P61 | `p61-read-routing` | automatic read routing, `.primary()`, `.replica()`, fallback policy, OKM1840/1843/1844, routing in `inspect()`. Conservative until P63: a session that has written reads from the primary (the position-unknown path) and the first healthy replica is picked |
+| P60 | `p60-topology-runtime` | `connect({ primary, replicas })` in the lazy topology chunk: per-endpoint pools, health and position probes, `ReplicaState`. Routing is P61. After this step the connect entries get no more bytes (D201), except the `route` key in P61 (D202) |
+| P61 | `p61-read-routing` | automatic read routing, `route` on a read, `db.using("primary" \| "replica")`, `onRoute`, fallback policy, OKM1840/1843/1844. Conservative until P63: a session that has written reads from the primary (the position-unknown path) and the first healthy replica is picked. Routing reasons in `inspect()` move to the M2 dev inspector |
 | P62 | `p62-selection` | candidate filtering (health, consistency and lag, capacity) and the four strategies plus custom `select` |
 | P63 | `p63-consistency-position` | commit position after commit, session and root watermarks, position-unknown handling, capability gate, `maxLag` |
 | P64 | `p64-topology-conformance` | streaming-replication CI containers, topology conformance and property tests (`routing.*`, `pool.separation`, `tx.affinity`, `consistency.position`) |
@@ -139,7 +139,7 @@ Open after 0.4, not built in this train: typed function calls and builder views 
 
 ### Later phases (prompts written when reached)
 
-M2 Depth (tenancy `path`/`composite`/`rls`, `filters()`, SQL builder lane, typed raw SQL, full linter, `okm pull`, `versioned`/`sortable`, extension packs, several catalogs, dev inspector, `explain()`, `okmodel/otel`, GitHub Action, adapters), M3 SQLite, M4 MySQL, M5 Hardening (schema-per-tenant and database-per-tenant with `tenancy.registry`, target resolution, tenant provisioning and rollout control (`--class`, `--canary`, `--concurrency`, `--max-failures`, contract gating, second pass), studio, live docs), then the 1.0 gate.
+M2 Depth (tenancy `path`/`composite`/`rls`, `filters()`, SQL builder lane, typed raw SQL, full linter, `okm pull`, `versioned`/`sortable`, extension packs, several catalogs, dev inspector including routing reasons on `inspect()`, `explain()`, `okmodel/otel`, GitHub Action, adapters), M3 SQLite, M4 MySQL, M5 Hardening (schema-per-tenant and database-per-tenant with `tenancy.registry`, target resolution, tenant provisioning and rollout control (`--class`, `--canary`, `--concurrency`, `--max-failures`, contract gating, second pass), studio, live docs), then the 1.0 gate.
 
 ## Dependency notes (audit of draft 16)
 

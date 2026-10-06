@@ -44,6 +44,7 @@ const OPTIONS = [
   "max",
   "orderBy",
   "limit",
+  "route",
   "signal",
   "timeout",
 ];
@@ -140,6 +141,7 @@ function plan(
       limit: record.limit,
       signal: record.signal,
       timeout: record.timeout,
+      route: record.route,
     },
     mods.all,
     session.scope,

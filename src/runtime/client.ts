@@ -794,14 +794,17 @@ function callOptions(
   input: {
     readonly signal?: AbortSignal | undefined;
     readonly timeout?: number | undefined;
+    readonly route?: "primary" | "replica" | undefined;
   },
   statement?: number,
 ): ExecuteOptions | undefined {
   const timeout = input.timeout ?? statement;
-  if (input.signal === undefined && timeout === undefined) return undefined;
+  const route = input.route;
+  if (input.signal === undefined && timeout === undefined && route === undefined) return undefined;
   return {
     ...(input.signal !== undefined ? { signal: input.signal } : {}),
     ...(timeout !== undefined ? { timeout } : {}),
+    ...(route !== undefined ? { route } : {}),
   };
 }
 

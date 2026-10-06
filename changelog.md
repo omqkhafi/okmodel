@@ -16,7 +16,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### ✨ Added
 
-- `connect({ primary, replicas })` opens one pool per endpoint and probes each replica. A string or a pool is unchanged and does not load that code. Until read routing, every operation uses the primary. `routing.select`, `consistency`, `fallback`, and `maxLag` throw OKM1061 (D201).
+- `connect({ primary, replicas })` opens one pool per endpoint and probes each replica. A string or a pool is unchanged and does not load that code. `routing.select`, `consistency`, and `maxLag` throw OKM1061 (D201).
+- Reads on a topology use the first healthy replica. A write on that connect, including one through `reserve()` and `for()`, keeps later reads on the primary until P63. `route: "primary"` or `"replica"` forces a read. `db.using("primary" | "replica")` returns a client with no `close` and no `using`. `onRoute` reports the choice, and a throw from it is ignored. `routing.fallback` is `"primary"` or `"error"`. A required replica that is not eligible is OKM1843. An automatic read with `fallback: "error"` and no eligible replica is OKM1844. A write, transaction, or locking read on a replica scope is OKM1840. A string or pool client serves either `route` from its one endpoint and has no `using`. `inspect()` stays `single-endpoint`. Routing reasons in `inspect()` are the M2 dev inspector (D202).
 - A migrate target that carries `primary`, `replicas`, `weight`, or `pool` is OKM1845. The command does not resolve that URL.
 
 ## v0.4.0 — 2026-10-06

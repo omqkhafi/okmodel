@@ -2,12 +2,17 @@
  * Primary and replica endpoints (spec §15.1).
  *
  * Loaded only when `connect` is given a topology object. The string and pool
- * paths do not import this module. Until read routing, every operation uses
- * the primary pool. Probes, capability, and pool construction stay here so
- * later routing prompts do not add bytes to `connect`.
+ * paths do not import this module. Reads use the first healthy replica.
+ * A session that has written keeps reading the primary until P63.
  */
 
-import type { DriverPool, DriverTimeouts } from "../contracts/driver.js";
+import { isConnectionFailure } from "../contracts/connection.js";
+import type {
+  DriverConnection,
+  DriverPool,
+  DriverTimeouts,
+  ExecuteOptions,
+} from "../contracts/driver.js";
 import { OkmError } from "../contracts/error.js";
 import type { QuerySchema } from "../dialects/pg/model.js";
 import { createClient } from "./client.js";
@@ -32,9 +37,44 @@ const PING_SQL = "select 1";
 const LATER_ROUTING = {
   select: "P62",
   consistency: "P63",
-  fallback: "P61",
   maxLag: "P63",
 } as const;
+
+/** `"primary"` or `"replica"`. `using` and `route` accept only these. */
+export type RouteName = "primary" | "replica";
+
+/**
+ * One routing choice.
+ *
+ * `onRoute` receives this. `inspect()` does not, until the dev inspector (M2).
+ */
+export type RouteEvent = {
+  /** What the statement was classified as. */
+  readonly op: "read" | "write" | "tx" | "lock";
+  /** Endpoint name. The primary is `"primary"`. */
+  readonly endpoint: string;
+  /**
+   * `primary-required`, `constraint:primary`, `constraint:replica`,
+   * `auto:<name>`, or `fallback:<no-replicas | unhealthy | position-unknown>`.
+   */
+  readonly reason: string;
+};
+
+/**
+ * A topology client.
+ *
+ * `using` returns a client that forces one route. That client has no `close`
+ * and no `using`. Only the root closes the pools.
+ */
+export type RoutedClient<S extends QuerySchema> = Connected<S> & {
+  /**
+   * Forces later operations onto the primary or a replica.
+   *
+   * @param route - `"primary"` or `"replica"`
+   * @returns A client with no `close` and no `using`
+   */
+  using(route: RouteName): Omit<Connected<S>, "close">;
+};
 
 /**
  * Replay position for one replica.
@@ -69,16 +109,22 @@ export type TopologyOptions = {
   /**
    * Background probe interval. `"1s"` when omitted.
    *
-   * `select`, `consistency`, `fallback`, and `maxLag` are refused until the
-   * prompts that implement them.
+   * `select` is P62. `consistency` and `maxLag` are P63. `fallback` is
+   * `"primary"` (the default) or `"error"`.
    */
   readonly routing?: {
     readonly probe?: string | number;
     readonly select?: unknown;
     readonly consistency?: unknown;
-    readonly fallback?: unknown;
+    readonly fallback?: "primary" | "error";
     readonly maxLag?: unknown;
   };
+  /**
+   * Called after an endpoint is chosen.
+   *
+   * A throw is swallowed. The operation still runs.
+   */
+  readonly onRoute?: (event: RouteEvent) => void;
   /** Test seam for replay positions. Omitted, the probe reads `pg_last_wal_replay_lsn()`. */
   readonly replicaState?: ReplicaState;
 };
@@ -135,6 +181,10 @@ type Endpoint = {
 type Handle = {
   closed: boolean;
   probeMs: number;
+  /** Set after a successful write on this connect, including through `reserve()`. */
+  wrote: boolean;
+  fallback: "primary" | "error";
+  onRoute: ((event: RouteEvent) => void) | undefined;
   replicaState: ReplicaState | undefined;
   endpoints: Endpoint[];
   closing: Promise<void> | undefined;
@@ -145,8 +195,8 @@ const handles = new WeakMap<object, Handle>();
 /**
  * Opens one pool per endpoint, detects `replication.position`, and starts replica probes.
  *
- * The returned client's queries use the primary. `close()` stops the probes and
- * closes every pool this call opened.
+ * Reads use the first healthy replica. `close()` stops the probes and closes
+ * every pool this call opened, including clients from `using`.
  *
  * @param target - `{ primary, replicas }`
  * @param options - Schema, pool default, probe interval, and the optional seam
@@ -163,7 +213,10 @@ export async function connectTopology<S extends QuerySchema>(
       readonly ssl?: unknown;
     },
   open: EndpointOpen,
-): Promise<Connected<S>> {
+): Promise<RoutedClient<S>> {
+  if (Object.prototype.hasOwnProperty.call(options.schema.model, "using")) {
+    throw new OkmError("OKM1120", 'Table "using" collides with client.using(). Rename the table.');
+  }
   refuseRouting(options.routing);
   const primaryUrl = readPrimary(target);
   const replicas = readReplicas(target);
@@ -205,6 +258,9 @@ export async function connectTopology<S extends QuerySchema>(
     const handle: Handle = {
       closed: false,
       probeMs,
+      wrote: false,
+      fallback: readFallback(options.routing?.fallback),
+      onRoute: options.onRoute,
       replicaState: options.replicaState,
       endpoints: opened,
       closing: undefined,
@@ -219,26 +275,25 @@ export async function connectTopology<S extends QuerySchema>(
     if (primary === undefined) {
       throw new OkmError("OKM1120", "A topology needs one primary URL.");
     }
-    const client = createClient(
-      options.schema,
-      gatePrimary(primary.pool, () => closeHandle(handle)),
-      {
-        ownsPool: true,
-        http: options.errors?.http,
-        includeValues: options.errors?.includeValues,
-        logger: options.logger,
-        signal: options.signal,
-        timeout: options.timeout,
-        timeouts: options.timeouts,
-        hookm: options.hookm,
-        catalog: options.catalog,
-        catalogDir: options.catalogDir,
-        requireMeta: options.requireMeta,
-        generators: options.generators,
-      },
-    );
-    handles.set(client, handle);
-    return client;
+    const shared = {
+      http: options.errors?.http,
+      includeValues: options.errors?.includeValues,
+      logger: options.logger,
+      signal: options.signal,
+      timeout: options.timeout,
+      timeouts: options.timeouts,
+      hookm: options.hookm,
+      catalog: options.catalog,
+      catalogDir: options.catalogDir,
+      requireMeta: options.requireMeta,
+      generators: options.generators,
+    };
+    const router = routePool(handle);
+    const client = createClient(options.schema, router, { ownsPool: true, ...shared });
+    const routed = client as RoutedClient<S>;
+    routed.using = (route) => derive(options.schema, handle, router, shared, route);
+    handles.set(routed, handle);
+    return routed;
   } catch (error) {
     for (const endpoint of opened) {
       if (endpoint.timer !== undefined) clearTimeout(endpoint.timer);
@@ -278,18 +333,18 @@ export function readTopology(client: object): TopologyView | undefined {
 function refuseRouting(routing: TopologyOptions["routing"]): void {
   if (routing === undefined) return;
   if (typeof routing !== "object" || routing === null || Array.isArray(routing)) {
-    throw new OkmError("OKM1120", "routing must be an object. Accepted key: probe.");
+    throw new OkmError("OKM1120", "routing must be an object. Accepted keys: probe, fallback.");
   }
   for (const key of Object.keys(routing)) {
-    if (key === "probe") continue;
+    if (key === "probe" || key === "fallback") continue;
     const later = LATER_ROUTING[key as keyof typeof LATER_ROUTING];
     if (later !== undefined) {
-      throw new OkmError(
-        "OKM1061",
-        `routing.${key} is not in this version. ${later} adds it. Until then every operation uses the primary.`,
-      );
+      throw new OkmError("OKM1061", `routing.${key} is not in this version. ${later} adds it.`);
     }
-    throw new OkmError("OKM1120", `routing.${key} is not a routing option. Accepted key: probe.`);
+    throw new OkmError(
+      "OKM1120",
+      `routing.${key} is not a routing option. Accepted keys: probe, fallback.`,
+    );
   }
 }
 
@@ -573,24 +628,376 @@ async function shutdown(handle: Handle): Promise<void> {
   await Promise.all(handle.endpoints.map((endpoint) => endpoint.pool.close()));
 }
 
-function gatePrimary(primary: DriverPool, close: () => Promise<void>): DriverPool {
+type Choice = {
+  endpoint: Endpoint;
+  op: RouteEvent["op"];
+  reason: string;
+};
+
+type ClientOpts = Parameters<typeof createClient>[2];
+
+/**
+ * Routes one statement. The session is this handle: one per `connect`, shared
+ * by `for()` and by a connection from `reserve()`.
+ *
+ * @param handle - Pools, the wrote flag, and `onRoute`
+ * @returns The pool `createClient` holds
+ */
+function routePool(handle: Handle): DriverPool {
+  const primary = handle.endpoints[0];
+  if (primary === undefined) {
+    throw new OkmError("OKM1120", "A topology needs one primary URL.");
+  }
   const pool: DriverPool = {
-    capabilities: primary.capabilities,
-    execute: (text, params, options) => primary.execute(text, params, options),
-    batch: (statements, options) => primary.batch(statements, options),
-    stats: () => primary.stats(),
-    close,
+    capabilities: primary.pool.capabilities,
+    execute: async (text, params, options) => {
+      if (handle.closed) closed();
+      const choice = choose(handle, text, options?.route);
+      const result = await attempt(handle, choice, (endpoint) =>
+        endpoint.pool.execute(text, params, strip(options)),
+      );
+      if (choice.op === "write") handle.wrote = true;
+      return result;
+    },
+    batch: async (statements, options) => {
+      if (handle.closed) closed();
+      if (options?.route === "replica") replicaRefused();
+      const reason = options?.route === "primary" ? "constraint:primary" : "primary-required";
+      tell(handle, { op: "write", endpoint: primary.name, reason });
+      const result = await primary.pool.batch(statements, strip(options));
+      handle.wrote = true;
+      return result;
+    },
+    stats: () => primary.pool.stats(),
+    close: () => closeHandle(handle),
   };
-  if (primary.reserve !== undefined) pool.reserve = () => primary.reserve!();
-  if (primary.describe !== undefined) {
-    pool.describe = (text, params) => primary.describe!(text, params);
+  if (primary.pool.reserve !== undefined) {
+    pool.reserve = async () => {
+      if (handle.closed) closed();
+      tell(handle, { op: "tx", endpoint: primary.name, reason: "primary-required" });
+      return wrap(handle, await primary.pool.reserve!());
+    };
   }
-  if (primary.stream !== undefined) pool.stream = (text, params) => primary.stream!(text, params);
-  if (primary.listen !== undefined) {
-    pool.listen = (channel, onNotify) => primary.listen!(channel, onNotify);
+  if (primary.pool.describe !== undefined) {
+    pool.describe = (text, params) => {
+      const choice = choose(handle, text, undefined);
+      tell(handle, { op: choice.op, endpoint: choice.endpoint.name, reason: choice.reason });
+      if (choice.endpoint.pool.describe !== undefined) {
+        return choice.endpoint.pool.describe(text, params);
+      }
+      return primary.pool.describe!(text, params);
+    };
   }
-  if (primary.cancel !== undefined) pool.cancel = () => primary.cancel!();
+  if (primary.pool.stream !== undefined) {
+    pool.stream = (text, params) => {
+      const choice = choose(handle, text, undefined);
+      tell(handle, { op: choice.op, endpoint: choice.endpoint.name, reason: choice.reason });
+      if (choice.endpoint.pool.stream !== undefined) {
+        return choice.endpoint.pool.stream(text, params);
+      }
+      return primary.pool.stream!(text, params);
+    };
+  }
+  if (primary.pool.listen !== undefined) {
+    pool.listen = (channel, onNotify) => {
+      tell(handle, { op: "read", endpoint: primary.name, reason: "primary-required" });
+      return primary.pool.listen!(channel, onNotify);
+    };
+  }
+  if (primary.pool.cancel !== undefined) {
+    pool.cancel = () => {
+      for (const endpoint of handle.endpoints) endpoint.pool.cancel?.();
+    };
+  }
   return pool;
+}
+
+/**
+ * A client that forces one route. It does not own the pools.
+ *
+ * @param schema - The same schema as the root
+ * @param handle - The root session. Scoped clients share it
+ * @param router - The shared router
+ * @param shared - Logger, timeouts, and catalog options
+ * @param route - `"primary"` or `"replica"`. Anything else is OKM1120
+ * @returns A client with no `close` and no `using`
+ */
+function derive<S extends QuerySchema>(
+  schema: S,
+  handle: Handle,
+  router: DriverPool,
+  shared: Omit<ClientOpts, "ownsPool">,
+  route: unknown,
+): Omit<Connected<S>, "close"> {
+  const name = readRoute(route);
+  const client = createClient(schema, force(handle, router, name), { ...shared, ownsPool: false });
+  delete (client as { close?: unknown }).close;
+  return client;
+}
+
+/**
+ * Injects `route` into every statement. `reserve` on a replica scope is OKM1840.
+ *
+ * @param handle - Used when a call has no options slot, such as `stream`
+ * @param router - The shared router
+ * @param route - The forced route
+ * @returns A pool that does not close the endpoints
+ */
+function force(handle: Handle, router: DriverPool, route: RouteName): DriverPool {
+  const pool: DriverPool & { forcedRoute: RouteName } = {
+    forcedRoute: route,
+    capabilities: router.capabilities,
+    execute: (text, params, options) => router.execute(text, params, { ...options, route }),
+    batch: (statements, options) => router.batch(statements, { ...options, route }),
+    stats: () => router.stats(),
+    close: () => Promise.resolve(),
+  };
+  if (router.reserve !== undefined) {
+    pool.reserve = () => {
+      if (route === "replica") replicaRefused();
+      return router.reserve!();
+    };
+  }
+  if (router.describe !== undefined) {
+    pool.describe = (text, params) => {
+      const choice = choose(handle, text, route);
+      tell(handle, { op: choice.op, endpoint: choice.endpoint.name, reason: choice.reason });
+      if (choice.endpoint.pool.describe !== undefined) {
+        return choice.endpoint.pool.describe(text, params);
+      }
+      return router.describe!(text, params);
+    };
+  }
+  if (router.stream !== undefined) {
+    pool.stream = (text, params) => {
+      const choice = choose(handle, text, route);
+      tell(handle, { op: choice.op, endpoint: choice.endpoint.name, reason: choice.reason });
+      if (choice.endpoint.pool.stream !== undefined) {
+        return choice.endpoint.pool.stream(text, params);
+      }
+      return router.stream!(text, params);
+    };
+  }
+  if (router.listen !== undefined) {
+    pool.listen = (channel, onNotify) => {
+      if (route === "replica") replicaRefused();
+      return router.listen!(channel, onNotify);
+    };
+  }
+  if (router.cancel !== undefined) pool.cancel = () => router.cancel!();
+  return pool;
+}
+
+/** Classifies a statement from its text. A `with` stays on the primary. */
+function classOf(text: string): RouteEvent["op"] {
+  const head = text.trimStart().toLowerCase().replace(/\s+/g, " ");
+  if (/^(begin|start transaction|commit|rollback|savepoint|release|set|reset)\b/.test(head)) {
+    return "tx";
+  }
+  if (head.includes("pg_advisory")) return "lock";
+  if (/\sfor (no key update|key share|update|share)\b/.test(head)) return "lock";
+  if (
+    /^(insert|update|delete|with|create|alter|drop|truncate|grant|revoke|comment|vacuum|analyze|reindex|copy)\b/.test(
+      head,
+    )
+  ) {
+    return "write";
+  }
+  return "read";
+}
+
+/**
+ * Picks an endpoint.
+ *
+ * @param handle - Session flag and replica health
+ * @param text - Statement text
+ * @param route - Caller hint. Absent means classify
+ * @returns The endpoint, the class, and the reason
+ */
+function choose(handle: Handle, text: string, route: string | undefined): Choice {
+  if (route !== undefined && route !== "primary" && route !== "replica") {
+    throw new OkmError("OKM1120", 'route must be "primary" or "replica".');
+  }
+  const op = classOf(text);
+  const primary = handle.endpoints[0];
+  if (primary === undefined) throw new OkmError("OKM1120", "A topology needs one primary URL.");
+  // The dialect check is not a user read. It always uses the primary.
+  if (text.trimStart().toLowerCase().startsWith("select current_setting")) {
+    return { endpoint: primary, op: "read", reason: "primary-required" };
+  }
+  if (route === "replica" && op !== "read") replicaRefused();
+  if (op !== "read") {
+    return {
+      endpoint: primary,
+      op,
+      reason: route === "primary" ? "constraint:primary" : "primary-required",
+    };
+  }
+  if (route === "primary") return { endpoint: primary, op, reason: "constraint:primary" };
+  if (route !== "replica" && handle.wrote) {
+    if (handle.fallback === "error") fallbackRefused("position-unknown");
+    return { endpoint: primary, op, reason: "fallback:position-unknown" };
+  }
+  const replica = firstReplica(handle);
+  if (replica !== undefined) {
+    return {
+      endpoint: replica,
+      op,
+      reason: route === "replica" ? "constraint:replica" : `auto:${replica.name}`,
+    };
+  }
+  if (route === "replica") noReplica();
+  const why = handle.endpoints.some((endpoint) => endpoint.role === "replica")
+    ? "unhealthy"
+    : "no-replicas";
+  if (handle.fallback === "error") fallbackRefused(why);
+  return { endpoint: primary, op, reason: `fallback:${why}` };
+}
+
+/**
+ * Runs a read once, then once more on another eligible replica after a
+ * connection failure. A replica constraint does not continue to the primary.
+ *
+ * @param handle - Notified of the choice
+ * @param choice - Endpoint and reason
+ * @param run - The pool call
+ * @returns The statement result
+ */
+async function attempt(
+  handle: Handle,
+  choice: Choice,
+  run: (endpoint: Endpoint) => Promise<Awaited<ReturnType<DriverPool["execute"]>>>,
+): Promise<Awaited<ReturnType<DriverPool["execute"]>>> {
+  tell(handle, { op: choice.op, endpoint: choice.endpoint.name, reason: choice.reason });
+  try {
+    return await run(choice.endpoint);
+  } catch (error) {
+    if (choice.op !== "read" || !isConnectionFailure(error)) throw error;
+    const next = retryOf(handle, choice);
+    if (next === undefined) throw error;
+    tell(handle, { op: "read", endpoint: next.endpoint.name, reason: next.reason });
+    return run(next.endpoint);
+  }
+}
+
+/** The other replica, or the primary when an automatic read may fall back. */
+function retryOf(handle: Handle, choice: Choice): Choice | undefined {
+  if (choice.endpoint.role === "replica") noteFailure(choice.endpoint);
+  const replica = firstReplica(handle, choice.endpoint);
+  if (replica !== undefined) {
+    return {
+      endpoint: replica,
+      op: "read",
+      reason: choice.reason.startsWith("constraint:")
+        ? "constraint:replica"
+        : `auto:${replica.name}`,
+    };
+  }
+  if (choice.reason.startsWith("constraint:")) return undefined;
+  if (handle.fallback === "error") fallbackRefused("unhealthy");
+  const primary = handle.endpoints[0];
+  if (primary === undefined) return undefined;
+  return { endpoint: primary, op: "read", reason: "fallback:unhealthy" };
+}
+
+/** The first replica whose circuit is closed, skipping `except`. */
+function firstReplica(handle: Handle, except?: Endpoint): Endpoint | undefined {
+  for (const endpoint of handle.endpoints) {
+    if (endpoint === except) continue;
+    if (endpoint.role === "replica" && endpoint.circuit === "closed") return endpoint;
+  }
+  return undefined;
+}
+
+/** Counts a connection failure toward the circuit. */
+function noteFailure(endpoint: Endpoint): void {
+  endpoint.failures += 1;
+  if (endpoint.failures >= CIRCUIT_AT) endpoint.circuit = "open";
+}
+
+/** Drops `route` before a driver sees the options. */
+function strip(options: ExecuteOptions | undefined): ExecuteOptions | undefined {
+  if (options === undefined || options.route === undefined) return options;
+  const { route: _route, ...rest } = options;
+  if (rest.signal === undefined && rest.timeout === undefined) return undefined;
+  return rest;
+}
+
+/** Sets the wrote flag when the reserved connection runs a write. */
+function wrap(handle: Handle, conn: DriverConnection): DriverConnection {
+  return {
+    execute: async (text, params, options) => {
+      if (options?.route === "replica") replicaRefused();
+      const result = await conn.execute(text, params, strip(options));
+      if (classOf(text) === "write") handle.wrote = true;
+      return result;
+    },
+    batch: async (statements, options) => {
+      if (options?.route === "replica") replicaRefused();
+      const result = await conn.batch(statements, strip(options));
+      handle.wrote = true;
+      return result;
+    },
+    release: () => conn.release(),
+    ...(conn.cancel !== undefined ? { cancel: () => conn.cancel!() } : {}),
+  };
+}
+
+/** Calls `onRoute`. A throw is ignored. */
+function tell(handle: Handle, event: RouteEvent): void {
+  if (handle.onRoute === undefined) return;
+  try {
+    handle.onRoute(event);
+  } catch {
+    // The listener must not change the operation.
+  }
+}
+
+/** `"primary"` or `"replica"`. */
+function readRoute(route: unknown): RouteName {
+  if (route === "primary" || route === "replica") return route;
+  throw new OkmError("OKM1120", 'using takes "primary" or "replica".');
+}
+
+/** `routing.fallback`. Omitted means the primary absorbs an automatic read. */
+function readFallback(value: unknown): "primary" | "error" {
+  if (value === undefined || value === "primary") return "primary";
+  if (value === "error") return "error";
+  throw new OkmError("OKM1120", 'routing.fallback must be "primary" or "error".');
+}
+
+/** The root `close()` has already shut the pools. */
+function closed(): never {
+  throw new OkmError("OKM1120", "The client is closed.");
+}
+
+/** OKM1840. A replica cannot run this operation. */
+function replicaRefused(): never {
+  throw new OkmError("OKM1840", "This operation needs the primary.", {
+    fix: {
+      summary:
+        "Run the operation on the primary. Writes, batch, locks, and tx() never go to a replica.",
+    },
+  });
+}
+
+/** OKM1843. `route: "replica"` does not read the primary. */
+function noReplica(): never {
+  throw new OkmError("OKM1843", "No replica is eligible. This call does not read the primary.", {
+    fix: {
+      summary: "Configure a replica or drop the route. This call does not read the primary.",
+    },
+  });
+}
+
+/** OKM1844. An automatic read will not use the primary. */
+function fallbackRefused(why: string): never {
+  throw new OkmError("OKM1844", `No replica is eligible (${why}) and fallback is error.`, {
+    fix: {
+      summary:
+        "Restore a replica, or set fallback to primary if the primary should absorb the read.",
+    },
+  });
 }
 
 function truth(value: string | null | undefined): boolean {

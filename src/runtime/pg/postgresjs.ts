@@ -10,7 +10,7 @@ import type { DriverPool } from "../../contracts/driver.js";
 import type { QuerySchema } from "../../dialects/pg/model.js";
 import { open, type PostgresJsConfig } from "../../adapters/pg/postgresjs.js";
 import { createClient } from "../client.js";
-import type { TopologyInput, TopologyOptions } from "../topology.js";
+import type { RoutedClient, TopologyInput, TopologyOptions } from "../topology.js";
 import type { ConnectOptions, Connected } from "../types.js";
 
 export { open, type PostgresJsConfig } from "../../adapters/pg/postgresjs.js";
@@ -28,8 +28,8 @@ export type PostgresConnectOptions<S extends QuerySchema> = ConnectOptions<S> &
 /**
  * Connects one Postgres endpoint, or a primary and its replicas, and returns a client for `schema`.
  *
- * A string or a pool is unchanged. A topology loads on demand and the promise
- * resolves to the client. Until read routing, every operation uses the primary.
+ * A string or a pool is one endpoint. A topology loads on demand and the promise
+ * resolves to the client. Reads use the first healthy replica.
  *
  * Named prepared statements are off unless `prepared` is `"named"`.
  * `prepared: "named"` is not for transaction-mode poolers.
@@ -42,7 +42,7 @@ export type PostgresConnectOptions<S extends QuerySchema> = ConnectOptions<S> &
 export function connect<const S extends QuerySchema>(
   target: TopologyInput,
   options: PostgresConnectOptions<S>,
-): Promise<Connected<S>>;
+): Promise<RoutedClient<S>>;
 export function connect<const S extends QuerySchema>(
   target: PostgresTarget,
   options: PostgresConnectOptions<S>,
@@ -50,7 +50,7 @@ export function connect<const S extends QuerySchema>(
 export function connect<const S extends QuerySchema>(
   target: PostgresTarget | TopologyInput,
   options: PostgresConnectOptions<S>,
-): Connected<S> | Promise<Connected<S>> {
+): Connected<S> | Promise<RoutedClient<S>> {
   if (typeof target === "object" && !isPool(target)) {
     return import("../topology.js").then((mod) => mod.default(target, options, open as never));
   }

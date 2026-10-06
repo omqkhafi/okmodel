@@ -150,6 +150,12 @@ export type CallOptions = {
   readonly signal?: AbortSignal;
   /** Milliseconds. The call fails as `timeout` when it runs longer. */
   readonly timeout?: number;
+  /**
+   * Forces this read onto the primary or a replica.
+   *
+   * Absent, a topology client chooses. A single endpoint serves either value.
+   */
+  readonly route?: "primary" | "replica";
 };
 
 /** Options shared by reads. */

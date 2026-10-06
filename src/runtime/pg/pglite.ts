@@ -10,7 +10,7 @@ import type { DriverPool } from "../../contracts/driver.js";
 import type { QuerySchema } from "../../dialects/pg/model.js";
 import { open, type PgliteConfig } from "../../adapters/pg/pglite.js";
 import { createClient } from "../client.js";
-import type { TopologyInput, TopologyOptions } from "../topology.js";
+import type { RoutedClient, TopologyInput, TopologyOptions } from "../topology.js";
 import type { ConnectOptions, Connected } from "../types.js";
 
 export { open, type PgliteConfig } from "../../adapters/pg/pglite.js";
@@ -28,9 +28,9 @@ export type PgliteConnectOptions<S extends QuerySchema> = ConnectOptions<S> &
 /**
  * Connects one PGlite endpoint, or a primary and its replicas, and returns a client for `schema`.
  *
- * A string, a pool, or an omitted target is unchanged. A topology loads on
- * demand. Until read routing, every operation uses the primary. A replica
- * `url` is that endpoint's data directory.
+ * A string, a pool, or an omitted target is one endpoint. A topology loads on
+ * demand. Reads use the first healthy replica. A replica `url` is that
+ * endpoint's data directory.
  *
  * @typeParam S - Schema
  * @param target - Data directory, existing pool, omitted for memory, or `{ primary, replicas }`
@@ -40,7 +40,7 @@ export type PgliteConnectOptions<S extends QuerySchema> = ConnectOptions<S> &
 export function connect<const S extends QuerySchema>(
   target: TopologyInput,
   options: PgliteConnectOptions<S>,
-): Promise<Connected<S>>;
+): Promise<RoutedClient<S>>;
 export function connect<const S extends QuerySchema>(
   target: PgliteTarget,
   options: PgliteConnectOptions<S>,
@@ -48,7 +48,7 @@ export function connect<const S extends QuerySchema>(
 export async function connect<const S extends QuerySchema>(
   target: PgliteTarget | TopologyInput,
   options: PgliteConnectOptions<S>,
-): Promise<Connected<S>> {
+): Promise<Connected<S> | RoutedClient<S>> {
   if (typeof target === "object" && !isPool(target)) {
     return import("../topology.js").then((mod) => mod.default(target, options, open as never));
   }
