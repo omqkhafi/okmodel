@@ -193,6 +193,128 @@ postgresTest(
 
 postgresTest(
   gate,
+  "a provision that stops part-way is OKM1851 until the schema is dropped",
+  async () => {
+    await withProject(async ({ cwd, url }) => {
+      writeSchema(
+        cwd,
+        `table("roles", {
+          code: t.text().primaryKey(),
+          label: t.text(),
+        }, {
+          checks: { labelOk: (columns) => sql\`\${columns.label} <> 'bad'\` },
+          reference: { key: "code", rows: [{ code: "admin", label: "bad" }] },
+        })`,
+      );
+      await cli(cwd, ["generate", "init"]);
+      let install: unknown;
+      try {
+        await capture(["migrate", "apply"], cwd);
+      } catch (error) {
+        install = error;
+      }
+      expect(install).toBeInstanceOf(Error);
+      expect(install instanceof OkmError && install.code === "OKM1851").toBe(false);
+      expect(await column(url, "select count(*)::text from okm_history")).toEqual(["0"]);
+      expect(await column(url, "select count(*)::text from okm_meta")).toEqual(["0"]);
+      expect(
+        await column(
+          url,
+          "select case when to_regclass('public.roles') is not null then 'yes' else 'no' end",
+        ),
+      ).toEqual(["yes"]);
+      const again = await rejected(["migrate", "apply"], cwd);
+      expect(again.code).toBe("OKM1851");
+      expect(again.message).toContain("roles");
+      expect(again.message).toContain(
+        "a previous provision stopped part-way; drop the schema or database and run again",
+      );
+      let programmatic: unknown;
+      try {
+        await provision("default", cwd);
+      } catch (error) {
+        programmatic = error;
+      }
+      expect(programmatic).toBeInstanceOf(OkmError);
+      if (!(programmatic instanceof OkmError)) throw programmatic;
+      expect(programmatic.code).toBe("OKM1851");
+      expect(programmatic.message).toContain("roles");
+      expect(programmatic.message).toContain(
+        "a previous provision stopped part-way; drop the schema or database and run again",
+      );
+      expect(await column(url, "select count(*)::text from okm_history")).toEqual(["0"]);
+      writeSchema(
+        cwd,
+        `table("roles", {
+          code: t.text().primaryKey(),
+          label: t.text(),
+        }, {
+          checks: { labelOk: (columns) => sql\`\${columns.label} <> 'bad'\` },
+          reference: { key: "code", rows: [{ code: "admin", label: "Admin" }] },
+        })`,
+      );
+      await seed(url, "drop schema public cascade");
+      await seed(url, "create schema public");
+      await seed(url, "grant all on schema public to public");
+      const applied = await cli(cwd, ["migrate", "apply"]);
+      expect(applied).toContain("applied provisioned@0001_init");
+      expect(await column(url, "select code from roles")).toEqual(["admin"]);
+    });
+  },
+  60_000,
+);
+
+postgresTest(
+  gate,
+  "managed tables with no history and no other objects still provision",
+  async () => {
+    await withProject(async ({ cwd, url }) => {
+      writeSchema(cwd, `table("items", { id: t.integer().primaryKey() })`);
+      await cli(cwd, ["generate", "init"]);
+      await seed(
+        url,
+        `create table okm_meta (
+          id text primary key,
+          catalog_hash text not null,
+          migration_id text not null
+        )`,
+      );
+      await seed(
+        url,
+        `create table okm_history (
+          migration_id text not null,
+          step_index integer not null,
+          class text not null,
+          catalog_hash text not null,
+          applied_at timestamptz not null default now(),
+          primary key (migration_id, step_index)
+        )`,
+      );
+      await seed(
+        url,
+        `create table okm_backfill (
+          migration_id text not null,
+          step_index integer not null,
+          last_key text,
+          rows_touched bigint not null default 0,
+          batches integer not null default 0,
+          state text not null,
+          updated_at timestamptz not null default now(),
+          primary key (migration_id, step_index)
+        )`,
+      );
+      const applied = await capture(["migrate", "apply"], cwd);
+      expect(applied).toContain("applied provisioned@0001_init");
+      expect(await column(url, "select migration_id from okm_history")).toEqual([
+        "provisioned@0001_init",
+      ]);
+    });
+  },
+  60_000,
+);
+
+postgresTest(
+  gate,
   "check --provision refuses a protected target before it writes",
   async () => {
     await withProject(async ({ cwd }) => {
@@ -272,7 +394,7 @@ function writeSchema(cwd: string, tables: string): void {
   writeFileSync(
     join(cwd, "schema.ts"),
     [
-      `import { schema, t, table } from ${pg};`,
+      `import { schema, sql, t, table } from ${pg};`,
       "export const app = schema({",
       `  tables: [${tables}],`,
       "});",

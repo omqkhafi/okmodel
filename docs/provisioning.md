@@ -8,6 +8,8 @@ A target that already has one of those history tables is tracked. Apply continue
 
 A target that is not empty and has no history is OKM1851. The fix is to provision an empty schema or an empty database.
 
+If the install stops after it has created objects and before it writes the history row, those objects stay. The next apply does not replay over them and does not delete them. It is OKM1851, names the object, and says to drop the schema or database and run again. Managed tables with no history row and no other objects are still empty, and apply provisions them.
+
 Provision on an empty protected target is allowed without `--allow-protected`. A protected target that is not empty is still OKM1851.
 
 ## What the snapshot stores

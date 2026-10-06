@@ -253,6 +253,7 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
       if (state.kind === "empty") {
         return await provisionEmpty(connection, request, session);
       }
+      if (state.kind === "interrupted") throw interruptedProvision(request.target, state.object);
       if (state.kind === "occupied" || request.snapshot.only === true) {
         throw notEmpty(request.target, state.kind === "occupied" ? state.object : "okm_meta");
       }
@@ -614,7 +615,8 @@ function concreteSchema(request: ApplyRequest): string {
 type TargetShape =
   | { readonly kind: "empty" }
   | { readonly kind: "tracked" }
-  | { readonly kind: "occupied"; readonly object: string };
+  | { readonly kind: "occupied"; readonly object: string }
+  | { readonly kind: "interrupted"; readonly object: string };
 
 async function targetState(connection: DriverConnection): Promise<TargetShape> {
   const meta = await connection.execute(
@@ -622,10 +624,37 @@ async function targetState(connection: DriverConnection): Promise<TargetShape> {
          or to_regclass('okm_history') is not null
          or to_regclass('okm_backfill') is not null`,
   );
-  if (wireTrue(meta.rows[0]?.[0])) return { kind: "tracked" };
+  if (wireTrue(meta.rows[0]?.[0])) {
+    const historyRows = await tableRows(connection, "okm_history");
+    const metaRows = await tableRows(connection, "okm_meta");
+    if (historyRows === 0 && metaRows === 0) {
+      const object = await namespaceObject(connection);
+      if (object === undefined) return { kind: "empty" };
+      return { kind: "interrupted", object };
+    }
+    return { kind: "tracked" };
+  }
+  const object = await namespaceObject(connection);
+  if (object === undefined) return { kind: "empty" };
+  return { kind: "occupied", object };
+}
+
+async function tableRows(
+  connection: DriverConnection,
+  name: "okm_history" | "okm_meta",
+): Promise<number> {
+  const present = await connection.execute(`select to_regclass('${name}') is not null`);
+  if (!wireTrue(present.rows[0]?.[0])) return 0;
+  const counted = await connection.execute(`select count(*)::text from ${name}`);
+  const text = counted.rows[0]?.[0];
+  if (text === null || text === undefined) return 0;
+  return Number(text);
+}
+
+async function namespaceObject(connection: DriverConnection): Promise<string | undefined> {
   const current = await connection.execute("select current_schema()");
   const schema = current.rows[0]?.[0];
-  if (schema === null || schema === undefined) return { kind: "empty" };
+  if (schema === null || schema === undefined) return undefined;
   const found = await connection.execute(
     `select name from (
        select c.relname as name from pg_class c
@@ -645,8 +674,21 @@ async function targetState(connection: DriverConnection): Promise<TargetShape> {
     [schema],
   );
   const object = found.rows[0]?.[0];
-  if (object === null || object === undefined) return { kind: "empty" };
-  return { kind: "occupied", object };
+  if (object === null || object === undefined) return undefined;
+  return object;
+}
+
+function interruptedProvision(target: string, object: string): OkmError {
+  return new OkmError(
+    "OKM1851",
+    `Target ${target} is not empty (${object}): a previous provision stopped part-way; drop the schema or database and run again`,
+    {
+      kind: "forbidden",
+      fix: {
+        summary: "Drop the schema or database and run again. A partial provision is not repaired.",
+      },
+    },
+  );
 }
 
 function notEmpty(target: string, object: string): OkmError {
