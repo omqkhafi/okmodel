@@ -27,6 +27,7 @@ Also not in this version:
 - **`iStartsWith`, `iContains` and `iEndsWith` are not in this version** (D176). Use `ilike()` with an escaped pattern.
 - **`aggregate()` has no `having` and no `bucket`** (M2).
 - **Batch-mode drivers have no adapter yet.** Neon HTTP and Cloudflare D1 are covered by the driver contract (`batch` is required on every driver) and there is no adapter in this repository for either.
+- **Read routing is not in this version** (D201). `connect({ primary, replicas })` opens one pool per endpoint and probes each replica. Every operation uses the primary. `routing.select`, `consistency`, `fallback`, and `maxLag` throw OKM1061. `.primary()` and `.replica()` are not methods. `inspect()` reports `single-endpoint`. See [topology](topology.md).
 
 ## Views
 
@@ -101,6 +102,7 @@ Bun.sql keeps `idleTimeout` at 0, which is Bun's default (no idle timer). A fini
 - **OKM1542 flags a data statement outside `backfill()`.** `insert`, `update`, `delete`, `merge`, `truncate`, and a `with` that writes, are errors. A backfill `update` is not. Reference rows are not migration steps, so they are not flagged. See [provisioning](provisioning.md).
 - **`okm migrate check` does not check tenant targets.** Tenant targets and schema-per-tenant checking are M5. The command checks the selected target's history in one scratch schema.
 - **The previous-catalog check is schema-level only.** It requires every table, column, constraint, and type from catalog N−1 to remain in N, with the same type, and it refuses a tighter nullability that has no default unless the migration's recomputed class is `contract`. It does not prove application behaviour.
+- **A migrate target cannot be a replica** (D201). `database` or `targets` that carries `primary`, `replicas`, `weight`, or `pool` is OKM1845. The command does not resolve that URL. A string URL is still the primary.
 
 ## What works
 

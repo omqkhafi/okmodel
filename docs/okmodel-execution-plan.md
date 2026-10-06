@@ -129,7 +129,7 @@ Open after 0.4, not built in this train: typed function calls and builder views 
 
 | ID | Branch | Delivers |
 |---|---|---|
-| P60 | `p60-topology-runtime` | `connect({ primary, replicas })`, topology and endpoint construction, per-endpoint pools, health and position probes, `ReplicaState` seam |
+| P60 | `p60-topology-runtime` | `connect({ primary, replicas })` in the lazy topology chunk: per-endpoint pools, health and position probes, `ReplicaState`. Routing is P61. After this step the connect entries get no more bytes (D201) |
 | P61 | `p61-read-routing` | automatic read routing, `.primary()`, `.replica()`, fallback policy, OKM1840/1843/1844, routing in `inspect()`. Conservative until P63: a session that has written reads from the primary (the position-unknown path) and the first healthy replica is picked |
 | P62 | `p62-selection` | candidate filtering (health, consistency and lag, capacity) and the four strategies plus custom `select` |
 | P63 | `p63-consistency-position` | commit position after commit, session and root watermarks, position-unknown handling, capability gate, `maxLag` |

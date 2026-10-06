@@ -218,6 +218,18 @@ export function selectTarget(config: MigrateConfig, name: string | undefined): T
 }
 
 function resolveTarget(name: string, input: TargetInput): TargetRecord {
+  if (typeof input !== "string" && isReplicaTarget(input)) {
+    throw new OkmError(
+      "OKM1845",
+      `Target ${name} is a replica. Migrations run on the primary only.`,
+      {
+        fix: {
+          summary:
+            "Set database or targets to the primary URL. A replica is not a migration target.",
+        },
+      },
+    );
+  }
   const url = typeof input === "string" ? input : input.url;
   const protectedTarget = typeof input === "string" ? false : input.protected === true;
   if (url === undefined || url.length === 0) {
@@ -234,6 +246,10 @@ function resolveTarget(name: string, input: TargetInput): TargetRecord {
     port: endpoint.port,
     database: endpoint.database,
   };
+}
+
+function isReplicaTarget(input: object): boolean {
+  return "primary" in input || "replicas" in input || "weight" in input || "pool" in input;
 }
 
 function endpointOf(url: string): { host: string; port: string; database: string } {
