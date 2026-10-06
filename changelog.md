@@ -14,6 +14,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+## v0.4.0 — 2026-10-06
+
 ### ✨ Added
 
 #### runtime
@@ -56,6 +58,9 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### 🐛 Fixed
 
+#### tooling
+
+- `okm check` treats a column default and the cast Postgres stores for that column's type as the same value. `'x'` matches `'x'::text` on a text column. A different value still plans `SET DEFAULT`. The catalog keeps the text that was written.
 - A provision that stops after creating objects and before writing `provisioned@` is OKM1851 on the next apply. The message names the object and says to drop the schema or database and run again. Apply does not replay over that target and does not delete it. Managed tables with no history row and no other objects are still empty.
 - A table `renamedFrom` plans `ALTER TABLE … RENAME TO`, then renames a primary key, unique or check constraint, foreign key, index, or identity sequence when the name is the default `{table}_…`. A custom name stays. An add and a drop with no declaration is still OKM1530 (D194).
 - Two serializable transactions in the conformance suite no longer write at the same time. One commits first, so the other is the only victim and the retry count stays one.

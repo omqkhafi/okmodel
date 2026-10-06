@@ -1565,6 +1565,31 @@ function omitOwnedSequences(
   }
 }
 
+/**
+ * Default text compared without a no-op cast to the column type.
+ *
+ * Postgres reprints `'x'` on a text column as `'x'::text`. The cast is not a
+ * change. A cast to a different type stays, and so does a different value.
+ *
+ * @param expression - Stored or introspected default. Absent when the column has none
+ * @param dataType - Column type, in either spelling
+ * @returns The expression to compare, or an empty object when there is no default
+ */
+function canonicalDefault(
+  expression: string | undefined,
+  dataType: string,
+): { readonly defaultExpression?: string } {
+  if (expression === undefined) return {};
+  const match = /^(.*)::([A-Za-z_][\w$ ]*)$/.exec(expression.trim());
+  const body = match?.[1]?.trim();
+  const cast = match?.[2];
+  if (body === undefined || body.length === 0 || cast === undefined)
+    return { defaultExpression: expression };
+  if (canonicalTypeName(cast) !== canonicalTypeName(dataType))
+    return { defaultExpression: expression };
+  return { defaultExpression: body };
+}
+
 function sameDefinition(left: CatalogObject, right: CatalogObject): boolean {
   if (left.kind === "materializedView" && right.kind === "materializedView") {
     return (
@@ -1580,8 +1605,11 @@ function sameDefinition(left: CatalogObject, right: CatalogObject): boolean {
  * Definition compared by type spelling.
  *
  * `dataType`, function returns and arguments, trigger argument types, view
- * columns, and a domain base go through {@link canonicalTypeName}. Everything
- * else is compared as stored. A materialized view's `refresh` is not here:
+ * columns, and a domain base go through {@link canonicalTypeName}. A column
+ * default drops a trailing cast to that column's type, so `'x'` and the
+ * `'x'::text` Postgres reprints compare equal. The catalog stores the text
+ * that was written. Everything else is compared as stored. A materialized
+ * view's `refresh` is not here:
  * Postgres does not store it, so {@link sameDefinition} ignores it.
  *
  * @param object - One side of the diff
@@ -1590,6 +1618,11 @@ function sameDefinition(left: CatalogObject, right: CatalogObject): boolean {
 function forComparison(object: CatalogObject): unknown {
   switch (object.kind) {
     case "column":
+      return {
+        ...object.definition,
+        dataType: canonicalTypeName(object.definition.dataType),
+        ...canonicalDefault(object.definition.defaultExpression, object.definition.dataType),
+      };
     case "sequence":
       return { ...object.definition, dataType: canonicalTypeName(object.definition.dataType) };
     case "view":

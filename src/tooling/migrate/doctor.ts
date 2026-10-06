@@ -13,11 +13,14 @@ import type { CatalogObject } from "../../contracts/catalog/types.js";
 import { assertRoleHealth } from "../../dialects/pg/role/check.js";
 import { errorDoc } from "../errors/registry.js";
 import { omitManagedObjects } from "./managed.js";
-import { selectTarget, type InvokeFlags } from "./policy.js";
+import { assertTargetPolicy, selectTarget, type InvokeFlags } from "./policy.js";
 import { openProject } from "./project.js";
 
 /**
  * Explains one code, or lists the triggers on each table.
+ *
+ * A role check connects as the read-only `check` class. A protected target
+ * is allowed. The command does not change the database.
  *
  * @param cwd - Project directory
  * @param code - Spec code, when the caller passed one
@@ -41,6 +44,7 @@ export async function doctorProject(
   const objects = omitManagedObjects(opened.built.catalog).objects;
   if (opened.config.roles !== undefined) {
     const target = selectTarget(opened.config, flags?.target);
+    assertTargetPolicy(target, "check", flags?.allowProtected ?? false);
     const pool = open({ url: target.url, max: 1 });
     try {
       await assertRoleHealth(pool, opened.config.roles, objects);

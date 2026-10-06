@@ -8,7 +8,7 @@
  */
 
 import { afterAll, expect, test } from "bun:test";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
@@ -50,11 +50,13 @@ if (process.env.REQUIRE_DOCKER !== "1") {
     }
     const push = await listenPostgres();
     const apply = await listenPostgres();
+    const reference = await listenPostgres();
     try {
-      await runReadme(tarball, push.url, apply.url);
+      await runReadme(tarball, push.url, apply.url, reference.url, false);
     } finally {
       await push.close();
       await apply.close();
+      await reference.close();
     }
   }, 360_000);
 }
@@ -66,7 +68,7 @@ postgresTest(
     const tarball = sharedTarball();
     await withIsolatedDatabases(async (urls) => {
       await runDocs(tarball, urls.docs);
-      await runReadme(tarball, urls.push, urls.apply);
+      await runReadme(tarball, urls.push, urls.apply, urls.reference, true);
     });
   },
   360_000,
@@ -165,8 +167,17 @@ async function runDocs(tarball: string, url: string): Promise<void> {
  * @param tarball - Packed package
  * @param pushUrl - Empty database for `okm push`
  * @param applyUrl - Empty database for `okm migrate apply`
+ * @param referenceUrl - Empty database for the reference-table example
+ * @param replay - Run `okm migrate check` after the backfill. The in-process
+ * server does not replay history into a scratch schema the way Postgres does.
  */
-async function runReadme(tarball: string, pushUrl: string, applyUrl: string): Promise<void> {
+async function runReadme(
+  tarball: string,
+  pushUrl: string,
+  applyUrl: string,
+  referenceUrl: string,
+  replay: boolean,
+): Promise<void> {
   const path = join(root, "README.md");
   const markdown = readFileSync(path, "utf8");
   expect(markdown).toContain('t.identity({ as: "number" })');
@@ -190,6 +201,7 @@ async function runReadme(tarball: string, pushUrl: string, applyUrl: string): Pr
   const installs: string[] = [];
   const push: string[] = [];
   const migrate: string[] = [];
+  const seed: string[] = [];
   for (const line of commands) {
     if (line.startsWith("bun add ")) {
       installs.push(line);
@@ -216,6 +228,10 @@ async function runReadme(tarball: string, pushUrl: string, applyUrl: string): Pr
       migrate.push(line);
       continue;
     }
+    if (line.startsWith("bunx okm seed ")) {
+      seed.push(line);
+      continue;
+    }
     throw new Error(`README.md has a shell command the test does not run: ${line}`);
   }
   if (installs.length === 0) throw new Error("README.md has no install command");
@@ -226,16 +242,87 @@ async function runReadme(tarball: string, pushUrl: string, applyUrl: string): Pr
   if (!migrate.some((line) => line.startsWith("bunx okm migrate apply"))) {
     throw new Error("README.md does not run okm migrate apply");
   }
+  if (seed.length !== 1) throw new Error("README.md must run okm seed once");
+  const backfill = fences.find(
+    (fence) => fence.lang === "sql" && fence.code.includes("-- backfill"),
+  );
+  if (backfill === undefined) throw new Error("README.md has no backfill step");
+  const recipe = fences.find(
+    (fence) => fence.lang === "yaml" && fence.code.includes("bunx okm migrate check"),
+  );
+  if (recipe === undefined) throw new Error("README.md has no migrate check recipe");
+  const reference = files.get("reference.ts");
+  const config = files.get("okmodel.config.ts");
+  const factory = files.get("factory.ts");
+  if (reference === undefined || config === undefined || factory === undefined) {
+    throw new Error("README.md is missing reference.ts, okmodel.config.ts, or factory.ts");
+  }
   await withProject(tarball, files, installs, async (dir) => {
     const checked = await command(dir, ["bunx", "okm", "check"], { DATABASE_URL: pushUrl });
     expect(checked.trim()).toBe("ok");
+    await command(dir, ["bun", "factory.ts"]);
     for (const line of push) await command(dir, line.split(/\s+/), { DATABASE_URL: pushUrl });
     await command(dir, ["bun", "run.ts"], { DATABASE_URL: pushUrl });
     await command(dir, ["bun", "script.ts"], { DATABASE_URL: pushUrl });
     for (const line of migrate) await command(dir, line.split(/\s+/), { DATABASE_URL: applyUrl });
     await command(dir, ["bun", "run.ts"], { DATABASE_URL: applyUrl });
     await command(dir, ["bun", "script.ts"], { DATABASE_URL: applyUrl });
+    for (const line of seed) await command(dir, line.split(/\s+/), { DATABASE_URL: applyUrl });
+    placeBackfill(dir, backfill.code);
+    await command(dir, ["bunx", "okm", "migrate", "apply"], { DATABASE_URL: applyUrl });
+    if (replay) {
+      const history = await command(dir, ["bunx", "okm", "migrate", "check"], {
+        DATABASE_URL: applyUrl,
+      });
+      expect(history.trim()).toBe("ok 2 migrations");
+    }
   });
+  const postgresInstall = installs.filter((line) => line.includes("postgres"));
+  await withProject(
+    tarball,
+    new Map([
+      ["schema.ts", reference],
+      ["okmodel.config.ts", config],
+    ]),
+    postgresInstall,
+    async (dir) => {
+      await command(dir, ["bunx", "okm", "generate", "init"], { DATABASE_URL: referenceUrl });
+      const applied = await command(dir, ["bunx", "okm", "migrate", "apply"], {
+        DATABASE_URL: referenceUrl,
+      });
+      expect(applied).toContain("provisioned@");
+      const sql = openPostgres(referenceUrl);
+      try {
+        const rows = await sql<{ label: string }[]>`
+          select label from roles where code = 'admin'
+        `;
+        expect(rows[0]?.label).toBe("Admin");
+      } finally {
+        await sql.end({ timeout: 5 });
+      }
+    },
+  );
+}
+
+/**
+ * Writes the README backfill step as the next migration.
+ *
+ * The catalog is copied from the file generate already wrote. The step does
+ * not change the catalog.
+ *
+ * @param dir - Project directory
+ * @param sql - The README SQL fence
+ */
+function placeBackfill(dir: string, sql: string): void {
+  const directory = join(dir, "migrations");
+  const catalogs = readdirSync(directory)
+    .filter((file) => file.endsWith(".catalog.json"))
+    .sort();
+  const last = catalogs.at(-1);
+  if (last === undefined) throw new Error("README apply produced no catalog");
+  const body = sql.endsWith("\n") ? sql : `${sql}\n`;
+  writeFileSync(join(directory, "0002_fill.sql"), body);
+  writeFileSync(join(directory, "0002_fill.catalog.json"), readFileSync(join(directory, last)));
 }
 
 /**
@@ -369,6 +456,7 @@ async function withIsolatedDatabases(
     readonly docs: string;
     readonly push: string;
     readonly apply: string;
+    readonly reference: string;
   }) => Promise<void>,
 ): Promise<void> {
   const admin = openPostgres();
@@ -377,6 +465,7 @@ async function withIsolatedDatabases(
     docs: `okm_qs_${id}_d`,
     push: `okm_qs_${id}_p`,
     apply: `okm_qs_${id}_a`,
+    reference: `okm_qs_${id}_r`,
   } as const;
   const created: string[] = [];
   try {
@@ -393,6 +482,7 @@ async function withIsolatedDatabases(
       docs: urlFor(names.docs),
       push: urlFor(names.push),
       apply: urlFor(names.apply),
+      reference: urlFor(names.reference),
     });
   } finally {
     for (const name of created.reverse()) {
