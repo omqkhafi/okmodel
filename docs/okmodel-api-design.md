@@ -1159,7 +1159,7 @@ connect(url, { schema: appSchema, hookm: [tracing(onSpan)] });
 
 ### 19.1 Planning
 
-- Diff from DDL snapshots to SQL; graph history with commutativity checks.
+- Diff from DDL snapshots to SQL. `okm migrate check` replays the history into a scratch schema and plans each result back to that migration's stored catalog (section 19.3). Two files generated from the same parent fail there. There is no separate commutativity algorithm.
 - **Renames are declared** (`.renamedFrom()`, `renamedFrom` table option). The planner never prompts; an ambiguous drop-and-add fails with OKM1530 and shows the line to add; stale declarations are reported by `okm check`.
 - **Expand/contract classification:** every step is `expand` (additive, old code keeps working), `contract` (removes or changes), or `unclassified` (raw SQL only). The plan header is the strictest class, and each step prints its class and lock. Classification is advisory, backed by the linter and the previous-catalog check; it is not a proof of application behavior. A protected target treats `unclassified` as contract.
 - **The plan shows locks:** each step lists the lock it takes and, with a reachable selected target, an estimate from `pg_class.reltuples` ("ACCESS EXCLUSIVE on tasks, about 4.2M rows; safe rewrite applied"). A backfill step with a row estimate also prints the batch count ("about 25K rows, about 25 batches"). The estimate is never a `count(*)`. `reltuples` of `-1` prints that the table was not analyzed. A table missing on the target prints `new table`. No selected target, or a target that cannot be reached, prints the lock alone and does not error. Estimates are not lint input and are not stored in the migration file (D194).
@@ -1210,7 +1210,7 @@ The reason is the text after the colon. An override with a missing or empty reas
 
 A backfill step stays one `UPDATE` in the file. The header is `-- backfill table=<table> key=<col[,col]> batch=<n>`, in the same comment style as `-- lock:`. `$1` is the exclusive lower bound and `$2` is the inclusive upper bound; null opens that side. The statement is idempotent (`where` the old value, or `where` the column is null). A table with no primary key is OKM1546 at plan time (D195).
 
-Codes already used in this range, and not new linter rules, are OKM1520 (drift), OKM1521 (snapshot), OKM1522 (apply lock), OKM1530 (ambiguous rename), OKM1541 (picklist removal), OKM1542 (data statement), and OKM1546 (backfill without a primary key).
+Codes already used in this range, and not new linter rules, are OKM1520 (drift), OKM1521 (snapshot, reserved for P53A), OKM1522 (apply lock), OKM1530 (ambiguous rename), OKM1541 (picklist removal), OKM1542 (data statement), OKM1546 (backfill without a primary key), OKM1547 (replayed history differs, including a fork), OKM1548 (previous catalog not satisfied by an expand migration), and OKM1549 (stale head).
 
 ### 19.2 Applying
 
@@ -1225,11 +1225,23 @@ Codes already used in this range, and not new linter rules, are OKM1520 (drift),
 
 **Comparison pipeline:** introspect, then the dialect's `normalize`, then compare. Expressions that the database rewrites (defaults, checks, generated columns, view and function bodies) are not compared as text: the declared definition is applied to a scratch database and read back, and both sides go through the database before comparing.
 
-The catalog hash is computed over the normalised structure (D117). Fast path: each migration stores the catalog hash in `okm_meta`; `connect()` compares it with the code's catalog hash in one cheap query and runs the detailed check only when they differ. `okm build` also emits a serialised catalog (`.okm/catalog.json`) that production bundles can load instead of rebuilding the catalog at start (cold start).
+The catalog hash is computed over the normalised structure (D117). The fast path in `connect()`, and loading the serialised catalog (`.okm/catalog.json`) in production, are P53b. They are not part of `okm migrate check`.
 
-The startup check is a compatibility check: the database may be ahead of the code by `expand` migrations; ahead by a `contract` migration, or behind, fails with OKM1520. A database with no recorded catalog hash skips the check, so an existing database can adopt OKModel. `connect({ requireMeta: true })` makes that missing hash OKM1520. The option is explicit: the target name and `NODE_ENV` do not turn it on. A production connection sets `requireMeta`.
+`okm migrate check` is the CI command for a migration history (D196). It does not prompt and it does not depend on colour. Exit zero prints `ok N migrations`. Any failure exits non-zero. One failure prints its code, message, and fix. Several failures print one greppable line per failure, each prefixed with its code.
 
-`okm migrate check` also verifies that the previous release's catalog (stored with each migration) is satisfied by the new schema. This establishes schema-level compatibility with the previous release's OKModel catalog (columns, types, nullability and constraints the old catalog relies on); it does not prove application behavior. Any violation must be classified `contract`.
+The command creates a scratch schema on the selected target, named `okm_check_` plus a random suffix, applies every migration in order through the same path as `okm migrate apply`, and drops that schema when it returns, including after a failure. After each migration it introspects the scratch schema and plans back to that migration's stored catalog. A remaining step is OKM1547. The message names the migration and prints the steps. Two migrations generated from the same parent are that failure: `migration X was generated from a different parent than Y`. There is no separate commutativity check.
+
+For migration N, catalog N−1 is the previous release. Every table, column, constraint, and type in N−1 must still exist in N with the same type, and nullability must not be tightened without a default. A gap is OKM1548 unless the migration's recomputed class is `contract`. The class is recomputed from the SQL steps' kinds. A step with no kind is classified by planning N−1 to N again. A hand-edited `-- class:` line is not trusted: changing it to `expand` fails this check even when the kinds are contract. The check is schema-level. It does not prove application behaviour.
+
+The last migration's catalog must equal the current schema. A difference is OKM1549, and the fix is to run `okm generate`.
+
+The history is linted with the same linter as apply. An error fails. An override with a reason is respected. `defineConfig({ lintFrom: "<migration id>" })` is the adoption baseline: files before that id are not linted by this command, and the id itself is linted. Apply still lints only migrations that are pending on the target.
+
+The scratch schema is a write, so a protected target is refused (OKM1850). The message says to point the command at a throwaway Postgres. `--allow-protected` does not lift it.
+
+OKM1521 stays reserved for snapshot provisioning versus replayed history (P53A). This command does not use it.
+
+The startup compatibility check, when P53b ships it, allows the database to be ahead of the code by `expand` migrations; ahead by a `contract` migration, or behind, fails with OKM1520. A database with no recorded catalog hash skips the check, so an existing database can adopt OKModel. `connect({ requireMeta: true })` makes that missing hash OKM1520. The option is explicit: the target name and `NODE_ENV` do not turn it on. A production connection sets `requireMeta`.
 
 ### 19.4 CLI
 
@@ -1241,7 +1253,7 @@ The startup check is a compatibility check: the database may be ahead of the cod
 | `okm migrate plan <name>` | plan, classify, lint |
 | `okm migrate apply` | apply with timeouts, retries, checkpoints and resume; on an empty target it provisions from the current snapshot (section 19.6). Flags: `--target <name>` (required when several targets exist), `--allow-protected`; with many targets also `--class shared\|tenant`, `--canary <n>`, `--concurrency <n>`, `--max-failures <n>` (section 19.5) |
 | `okm migrate status` | per target: version, catalog hash, state (current, behind by `expand`, behind by `contract`, ahead, failed at step), with a separate `protected` column |
-| `okm migrate check` | CI: commutativity, lint, stale lockfile, snapshot ↔ replayed history equivalence (OKM1521) |
+| `okm migrate check` | CI: replay the history into a scratch schema (OKM1547), previous catalog (OKM1548), stale head (OKM1549), and lint. Exit zero prints `ok N migrations`. A protected target is refused. No prompts |
 | `okm generate` | produce migration SQL from the schema, including extension lifecycle; no TS is generated |
 | `okm push` | prototype sync; blocked on a `protected` target (section 19.7). A target named `production` is not blocked unless that entry sets `protected` |
 | `okm pull` | introspect an existing database into table files and a schema (M2) |
@@ -1284,7 +1296,7 @@ A new Target is created from the current provisionable snapshot, not by replayin
 - Every migration stores the full DDL snapshot of the catalog after it; the latest is the provisionable snapshot of head.
 - **`okm migrate apply` on an empty target** (no `okm_meta`, nothing in its namespace) installs the head snapshot and the `reference` rows, records the head catalog hash and a `provisioned@<migration id>` entry in the target's history, and runs no expand, backfill or contract step. A target that is not empty and has no history is refused (OKM1851).
 - The programmatic entry `provision(target)` from `okmodel/migrate` (L4) serves signup flows; it obeys the same rules and uses the registry's `migration` role. Under schema-per-tenant OKModel creates the schema; under database-per-tenant the registry's `create(id)` creates the empty database first.
-- **The snapshot is valid from empty by construction and by test.** `okm migrate check` applies the whole history to one empty database and provisions from the snapshot on another, introspects both through the normalisation pipeline, and requires them to be equal to each other and to the catalog (OKM1521).
+- **Snapshot versus replayed history is P53A (OKM1521).** That check applies the history on one empty database and provisions from the snapshot on another. `okm migrate check` replays history into a scratch schema and plans each result back to that migration's catalog (OKM1547). It does not provision.
 - **Reference data.** Rows the application needs to exist are declared with the table option `reference` (section 6.2): insert-if-missing by key, applied by provisioning and by every `migrate apply`, never updating or deleting, classified `expand`. Data steps that transform existing rows are `backfill()`; they are not replayed on an empty target because it has no rows.
 
 ### 19.7 Protected targets
@@ -1293,7 +1305,8 @@ A new Target is created from the current provisionable snapshot, not by replayin
 
 | Operation class | On a protected target |
 |---|---|
-| read-only: `plan`, `status`, `check`, drift, `verify`, `pull`, `catalog export`, `inspect` | allowed |
+| read-only: `plan`, `status`, `okm check`, `okm ext check`, drift, `verify`, `pull`, `catalog export`, `inspect` | allowed |
+| `okm migrate check` | refused. The command writes a scratch schema. Point it at a throwaway Postgres. `--allow-protected` does not apply |
 | `expand` migration (including extension add and upgrade) | allowed |
 | `reference` rows | allowed (additive) |
 | `provision` | allowed only on an empty target |
@@ -1319,7 +1332,7 @@ In 0.1, `okm migrate apply` replays migration files. Installing the head snapsho
 - **Aliasing guard.** `okm check` and `okm doctor` compare the resolved hosts and database names of all targets and fail when targets that resolve to the same host, port and database differ in protection (OKM1852); two unprotected targets may share a database.
 - **Preview environments.** One ephemeral database or schema per pull request, created by infrastructure (Neon branching, `CREATE DATABASE`, a container; the OKModel CI recipe uses Docker Compose). Steps: create the empty database, `okm migrate apply --target preview` (installs the head snapshot and `reference` rows without replaying history, section 19.6), optionally `okm seed`, deploy the application with the preview URL. Deleting it when the pull request closes is the infrastructure's job: OKModel never drops a database.
 - **Migration rehearsal.** To test pending migrations against realistic data, clone or branch the production database, register the clone as a target, and run `okm migrate apply --target rehearsal`. The report gives per-step duration, the locks taken, retries and failures, on the real history and data shape rather than on an empty snapshot. It is a recipe over existing commands, not a separate command.
-- **Reproducibility.** A preview built from the head snapshot and a rehearsal built by applying history must reach the same catalog; `okm migrate check` already proves that equivalence (OKM1521).
+- **Reproducibility.** A preview built from the head snapshot and a rehearsal built by applying history must reach the same catalog. That comparison is P53A (OKM1521). `okm migrate check` proves that each migration's SQL replays to its stored catalog.
 - The official GitHub Action (M2) posts the plan, classification and locks on the pull request and can drive the preview recipe.
 
 ## 20. Testing
@@ -1404,7 +1417,7 @@ test("today view runs one query", async () => {
 | Drop materialized view | lint | OKM1518 |
 | Rename column | lint | OKM1519 |
 | Drift beyond expand compatibility | startup | OKM1520 |
-| Snapshot provisioning differs from replayed history | `okm migrate check` | OKM1521 |
+| Snapshot provisioning differs from replayed history | P53A | OKM1521 |
 | Another apply holds the target's lock | CLI / engine | OKM1522 |
 | Rename table | lint | OKM1523 |
 | Column type change | lint | OKM1524 |
@@ -1430,6 +1443,9 @@ test("today view runs one query", async () => {
 | `json` where `jsonb` is available | lint (warning) | OKM1544 |
 | Identity that is not generated always | lint (warning) | OKM1545 |
 | Backfill of a table with no primary key | plan | OKM1546 |
+| Replayed migration differs from its stored catalog, or was generated from a different parent | `okm migrate check` | OKM1547 |
+| Previous catalog is not satisfied by an expand migration | `okm migrate check` | OKM1548 |
+| Last migration catalog does not match the schema | `okm migrate check` | OKM1549 |
 | Stale typed-SQL signature | CI | OKM1601 |
 | Commit or batch outcome unknown (result never received) | runtime | OKM1401 |
 | Tenant table without context | types | OKM1701 |

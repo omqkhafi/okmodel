@@ -16,6 +16,7 @@ error OKM1511 step 1: drops a table -- fix: Stop reading the table in an expand 
 | `okm migrate plan` | Prints the plan, then the findings. An error finding exits non-zero. |
 | `okm check` | Prints findings. An error finding is OKM1510. Type preferences run here. |
 | `okm migrate apply` | Lints migrations that still have a step missing from `okm_history` on the selected target, including a file you edited by hand. A migration that target already applied is left as it ran. Reading `okm_history` comes first; when the table does not exist, every migration is pending. An unresolved error is OKM1510 before any DDL or data statement. |
+| `okm migrate check` | Lints the whole history. An error is OKM1510. `defineConfig({ lintFrom })` skips files before that migration id. Apply does not read `lintFrom`. |
 
 A database that has never been pushed has no `okm_meta`. `okm check` skips the drift comparison for that database and still prints lint findings.
 
@@ -100,4 +101,4 @@ OKM1706 and OKM1823 are not rules in this table. A tenant index that does not le
 | OKM1544 | type-preference | warning | `json` where `jsonb` is available |
 | OKM1545 | type-preference | warning | Identity that is not generated always |
 
-OKM1520, OKM1521, OKM1522, OKM1530, OKM1541, and OKM1542 are already other guards in this range. They are listed in §21. What this linter does not do yet is in [known limits](known-limits.md#migrations).
+OKM1520, OKM1521, OKM1522, OKM1530, OKM1541, OKM1542, OKM1546, OKM1547, OKM1548, and OKM1549 are already other guards in this range. They are listed in §21. What this linter does not do yet is in [known limits](known-limits.md#migrations).

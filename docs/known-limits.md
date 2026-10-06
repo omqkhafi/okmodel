@@ -100,6 +100,9 @@ Bun.sql keeps `idleTimeout` at 0, which is Bun's default (no idle timer). A fini
 - **A type change that rewrites the table is not rewritten** (D193). OKM1538 stays a warning. There is no safe form in this version. A column swap is expand and contract work for a later step. OKM1524 already requires a reason for the type change.
 - **OKM1706 and OKM1823 are not linter rules.** A tenant index that does not lead with the tenant key is OKM1706 when the schema is built. `security: "definer"` without `searchPath` is OKM1823 on `fn()`. Both fail at declaration time, which is stronger than a lint, and the linter does not copy them.
 - **OKM1542 is not fired by this linter.** A data statement outside `backfill()` arrives with reference data in P53A.
+- **`okm migrate check` does not check tenant targets.** Tenant targets and schema-per-tenant checking are M5. The command checks the selected target's history in one scratch schema.
+- **The previous-catalog check is schema-level only.** It requires every table, column, constraint, and type from catalog N−1 to remain in N, with the same type, and it refuses a tighter nullability that has no default unless the migration's recomputed class is `contract`. It does not prove application behaviour.
+- **Startup compatibility and the serialised catalog are P53b.** `connect()` does not yet compare the database with the code's catalog, and production does not load `.okm/catalog.json`. `okm migrate status` does not yet report the startup states.
 
 ## What works
 
