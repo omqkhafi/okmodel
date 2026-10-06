@@ -25,6 +25,39 @@ const gate = await loadPostgresGate();
 
 postgresTest(
   gate,
+  "provision then okm check plans nothing for a reprinted string default",
+  // The timestamp literal uses the space spelling Postgres stores. The ISO `T`
+  // form reprints as a space, which is a different expression and still plans.
+  async () => {
+    const database = await createIsolatedDatabase();
+    const cwd = defaultsProject(repoRoot(), database.url);
+    const sql = openPostgres(database.url);
+    try {
+      await run(["generate", "init"], { cwd, stdout: () => undefined });
+      const applied: string[] = [];
+      await run(["migrate", "apply"], { cwd, stdout: (text) => applied.push(text) });
+      expect(applied.join("")).toContain("provisioned@");
+      const head = await projectHead(cwd);
+      const live = await introspectSchema(queryOf(sql), "public", "public");
+      expect(planMigration({ before: live, after: head.catalog, name: "check" }).steps).toEqual([]);
+      expect(planMigration({ before: head.catalog, after: live, name: "forward" }).steps).toEqual(
+        [],
+      );
+      const checked: string[] = [];
+      await run(["check"], { cwd, stdout: (text) => checked.push(text) });
+      expect(checked.join("")).not.toContain("OKM1520");
+      expect(checked.join("").trimEnd().endsWith("ok")).toBe(true);
+    } finally {
+      await sql.end({ timeout: 5 });
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  60_000,
+);
+
+postgresTest(
+  gate,
   "push then okm check reports no drift for a plain, composite, and named primary key",
   async () => {
     const database = await createIsolatedDatabase();
@@ -104,6 +137,43 @@ function project(root: string, url: string): string {
       "    }),",
       "  ]),",
       "};",
+      "",
+    ].join("\n"),
+  );
+  writeFileSync(
+    join(cwd, "okmodel.config.ts"),
+    [
+      `import { defineConfig } from ${migrate};`,
+      "export default defineConfig({",
+      '  schema: "./schema.ts",',
+      `  database: ${JSON.stringify(url)},`,
+      "});",
+      "",
+    ].join("\n"),
+  );
+  return cwd;
+}
+
+function defaultsProject(root: string, url: string): string {
+  const cwd = mkdtempSync(join(tmpdir(), "okm-default-"));
+  const pg = JSON.stringify(join(root, "src/dialects/pg/index.ts"));
+  const migrate = JSON.stringify(join(root, "src/tooling/migrate/index.ts"));
+  writeFileSync(
+    join(cwd, "schema.ts"),
+    [
+      `import { schema, table, t } from ${pg};`,
+      "export default schema({",
+      "  tables: [",
+      '    table("notes", {',
+      "      id: t.integer().primaryKey(),",
+      '      title: t.text().default("x"),',
+      '      label: t.varchar(10).default("x"),',
+      '      code: t.char(3).default("x"),',
+      '      amount: t.numeric(10, 2).default("1.50"),',
+      "      at: t.timestamp(3).defaultSql(\"'2020-01-02 03:04:05.006'\"),",
+      "    }),",
+      "  ],",
+      "});",
       "",
     ].join("\n"),
   );

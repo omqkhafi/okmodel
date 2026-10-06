@@ -114,8 +114,9 @@ export async function planProject(
 /**
  * Validates the schema, then reports stale renames and unlisted table files.
  *
- * When exactly one target is configured, or `--target` names one, a database
- * that already has `okm_meta` is compared with the schema. A difference is
+ * When exactly one target is configured, or `--target` names one, the
+ * read-only `check` and `drift` classes are allowed and a database that
+ * already has `okm_meta` is compared with the schema. A difference is
  * OKM1520. Several targets and no `--target` skip that comparison.
  *
  * Lint findings are computed from the plan and the catalog before any
@@ -152,6 +153,8 @@ export async function checkProject(cwd: string, flags?: InvokeFlags): Promise<re
   if (targets.length === 0) return findings;
   if (targets.length > 1 && named === undefined) return findings;
   const target = selectTarget(opened.config, named);
+  assertTargetPolicy(target, "check", flags?.allowProtected ?? false);
+  assertTargetPolicy(target, "drift", flags?.allowProtected ?? false);
   const { assertAuthorDrift } = await import("./drift.js");
   await assertAuthorDrift(target.url, opened.built.catalog, opened.config.roles);
   return findings;

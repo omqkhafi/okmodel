@@ -1565,6 +1565,81 @@ function omitOwnedSequences(
   }
 }
 
+/**
+ * One trailing `::type` on a default expression.
+ *
+ * The type may be several words (`timestamp without time zone`,
+ * `character varying`) and may carry a parenthetical modifier.
+ */
+const TRAILING_CAST =
+  /^(.*)::((?:timestamp|time)(?:\(\d+\))? (?:with|without) time zone|character varying(?:\(\d+\))?|[A-Za-z_][\w$]*(?:\([^)]*\))?)$/;
+
+/**
+ * Default text compared without a no-op cast to the column's own base type.
+ *
+ * Postgres 15.19 and 18.6 reprint `'x'` on text as `'x'::text`, on
+ * `varchar(10)` as `'x'::character varying` (no length), and on `char(3)` as
+ * `'x'::bpchar`. `timestamp(3)`, `timestamptz(3)`, and `time(3)` keep the
+ * precision on the column and drop it from the cast. `numeric(10,2)` reprints
+ * the literal with no cast, so `1.50` stays `1.50`. One trailing cast is
+ * removed only when that base type is the column's. A cast to a different
+ * type stays, and so does a different value.
+ *
+ * @param expression - Stored or introspected default. Absent when the column has none
+ * @param dataType - Column type, in either spelling
+ * @returns The expression to compare, or an empty object when there is no default
+ */
+function canonicalDefault(
+  expression: string | undefined,
+  dataType: string,
+): { readonly defaultExpression?: string } {
+  if (expression === undefined) return {};
+  const match = TRAILING_CAST.exec(expression.trim());
+  const body = match?.[1]?.trim();
+  const cast = match?.[2];
+  if (body === undefined || body.length === 0 || cast === undefined)
+    return { defaultExpression: expression };
+  if (!defaultCastMatches(cast, dataType)) return { defaultExpression: expression };
+  return { defaultExpression: body };
+}
+
+/**
+ * Whether a default cast is the column type, ignoring length and precision
+ * Postgres omits when it reprints the default.
+ *
+ * @param cast - Type text after the trailing `::`
+ * @param dataType - Column type
+ * @returns True when the cast is that column's own base type
+ */
+function defaultCastMatches(cast: string, dataType: string): boolean {
+  if (canonicalTypeName(cast) === canonicalTypeName(dataType)) return true;
+  const castBase = reprintedDefaultBase(cast);
+  const columnBase = reprintedDefaultBase(dataType);
+  return castBase !== undefined && castBase === columnBase;
+}
+
+/**
+ * Base spelling of a type whose default cast drops length or precision.
+ *
+ * `character varying(10)` and `character varying` are one base. `bpchar` and
+ * `character(3)` are one base. `timestamp(3) without time zone` and
+ * `timestamp without time zone` are one base. `numeric` is not here: Postgres
+ * reprints that default as a literal, with no cast.
+ *
+ * @param typeName - A cast or a column type
+ * @returns The base, or absent when this family keeps its modifiers
+ */
+function reprintedDefaultBase(typeName: string): string | undefined {
+  const raw = typeName.trim();
+  if (/^(?:bpchar|character|char)(?:\(\d+\))?$/.test(raw)) return "character";
+  const canonical = canonicalTypeName(raw);
+  if (/^character varying(?:\(\d+\))?$/.test(canonical)) return "character varying";
+  if (/^character(?:\(\d+\))?$/.test(canonical)) return "character";
+  const time = /^(timestamp|time)(?:\(\d+\))? (with time zone|without time zone)$/.exec(canonical);
+  if (time !== null) return `${time[1] ?? ""} ${time[2] ?? ""}`;
+  return undefined;
+}
+
 function sameDefinition(left: CatalogObject, right: CatalogObject): boolean {
   if (left.kind === "materializedView" && right.kind === "materializedView") {
     return (
@@ -1580,8 +1655,12 @@ function sameDefinition(left: CatalogObject, right: CatalogObject): boolean {
  * Definition compared by type spelling.
  *
  * `dataType`, function returns and arguments, trigger argument types, view
- * columns, and a domain base go through {@link canonicalTypeName}. Everything
- * else is compared as stored. A materialized view's `refresh` is not here:
+ * columns, and a domain base go through {@link canonicalTypeName}. A column
+ * default drops one trailing cast to that column's base type, so `'x'` matches
+ * `'x'::text`, `'x'::character varying` on `varchar(n)`, and `'x'::bpchar` on
+ * `char(n)`. The catalog stores the text
+ * that was written. Everything else is compared as stored. A materialized
+ * view's `refresh` is not here:
  * Postgres does not store it, so {@link sameDefinition} ignores it.
  *
  * @param object - One side of the diff
@@ -1590,6 +1669,11 @@ function sameDefinition(left: CatalogObject, right: CatalogObject): boolean {
 function forComparison(object: CatalogObject): unknown {
   switch (object.kind) {
     case "column":
+      return {
+        ...object.definition,
+        dataType: canonicalTypeName(object.definition.dataType),
+        ...canonicalDefault(object.definition.defaultExpression, object.definition.dataType),
+      };
     case "sequence":
       return { ...object.definition, dataType: canonicalTypeName(object.definition.dataType) };
     case "view":

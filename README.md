@@ -2,7 +2,7 @@
 
 okmodel is a catalog-first TypeScript ORM, PostgreSQL first. Other SQL databases are the direction. CI runs PostgreSQL 15 to 18. The schema is the single source. Migrations and queries come from it.
 
-Version 0.3.0. Apache-2.0.
+Version 0.4.0. Apache-2.0.
 
 ## Contents
 
@@ -55,7 +55,13 @@ Version 0.3.0. Apache-2.0.
   - [Roles and grants](#roles-and-grants)
   - [okm ext and okm doctor](#okm-ext-and-okm-doctor)
   - [Linter](#linter)
+  - [Reference data](#reference-data)
+  - [Backfill](#backfill)
+  - [Testing](#testing)
+  - [Startup](#startup)
+  - [Protected targets](#protected-targets)
 - [Commands](#commands)
+- [Check a history in CI](#check-a-history-in-ci)
 - [Roadmap](#roadmap)
 - [Size](#size)
 - [Docs](#docs)
@@ -144,14 +150,14 @@ A protected target refuses push. Production settings are in the [production chec
 
 ### Reviewed migrations
 
-Generate writes a SQL file and `.okm`, and apply runs that file later so you can read the migration first.
+Generate writes a SQL file and `.okm`. On an empty database, apply installs that schema and any reference rows. A database that already has history runs the new file, so you can read it first.
 
 ```sh
 bunx okm generate init
 bunx okm migrate apply
 ```
 
-A backfill step in that file updates rows in batches and can resume after a failure. The statement stays one idempotent `UPDATE`, with `-- backfill` naming the table, the primary key, and the batch size. `okm migrate status` lists a backfill that has not finished. See [backfill](https://github.com/omqkhafi/okmodel/blob/main/docs/backfill.md).
+Each step is `expand`, `contract`, or unclassified SQL. Expand is additive. Contract removes or tightens something. On an existing table the planner writes the safe form: a concurrent index, a check or foreign key as `NOT VALID` then `VALIDATE`, and `SET NOT NULL` through a validated check. A backfill step updates rows in batches and resumes after a failure. See [Backfill](#backfill).
 
 ### One client
 
@@ -896,23 +902,120 @@ error OKM1511 step 1: drops a table -- fix: Stop reading the table in an expand 
 drop table "public"."notes";
 ```
 
+### Reference data
+
+Rows the application needs are declared on the table. Apply on an empty database inserts a missing key. It does not update or delete. The rows are not part of the catalog hash, so a new key does not need a DDL migration.
+
+`reference.ts`:
+
+```ts
+import { schema, table, t } from "okmodel/pg";
+
+const roles = table(
+  "roles",
+  { code: t.text().primaryKey(), label: t.text() },
+  {
+    reference: {
+      key: "code",
+      rows: [{ code: "admin", label: "Admin" }],
+    },
+  },
+);
+
+export default schema({ tables: [roles] });
+```
+
+### Backfill
+
+A backfill is one idempotent `UPDATE` in the migration file. `$1` is the exclusive lower bound and `$2` is the inclusive upper bound. Null opens that side. Apply commits one batch at a time and resumes from `okm_backfill`. There is no `okm backfill` command. A protected target refuses the step unless that invocation passes `--allow-protected`.
+
+```sql
+-- name: fill
+-- class: expand
+
+-- class: expand
+-- action: backfill
+-- lock: ROW EXCLUSIVE
+-- transactional: false
+-- backfill table="public"."notes" key="id" batch=10
+update "public"."notes" set "title" = 'noted' where "title" = 'hello' and ("id" > $1 or $1 is null) and ("id" <= $2 or $2 is null);
+```
+
+### Testing
+
+`okmodel/testing` opens a real pool. `factories` insert rows, `expectQueries` counts statements, and `isolation()` checks that tenant A cannot see tenant B. `okm seed <file>` calls the file's default export with that harness. The target must already be migrated. A protected target is refused unless `--allow-protected`.
+
+`factory.ts`:
+
+```ts
+import { schema, table, t } from "okmodel/pg";
+import { open } from "okmodel/pg/pglite";
+import { testing } from "okmodel/testing";
+
+const notes = table("notes", { id: t.identity(), title: t.text() });
+const app = schema({ tables: [notes] });
+const harness = await testing(app, { driver: open() });
+const factories = harness.factories({
+  notes: (x) => ({ title: x.words(2) }),
+});
+await harness.expectQueries(1, () => factories.notes.create());
+const rows = await harness.db.notes.find({ limit: 5 });
+if (rows.length !== 1) throw new Error("expected one note");
+await harness.close();
+```
+
+`seed.ts`:
+
+```ts
+export default async function seed(t: {
+  factories(definitions: {
+    authors(x: { words(count: number): string }): { name: string };
+    notes(x: { words(count: number): string; ref(table: string): unknown }): {
+      title: string;
+      authorId: unknown;
+    };
+  }): {
+    notes: { create(): Promise<unknown> };
+  };
+}): Promise<void> {
+  const factories = t.factories({
+    authors: (x) => ({ name: x.words(2) }),
+    notes: (x) => ({ title: x.words(2), authorId: x.ref("authors") }),
+  });
+  await factories.notes.create();
+}
+```
+
+```sh
+bunx okm seed seed.ts
+```
+
+### Startup
+
+`connect()` compares the app with `okm_history`. A database that is ahead by expand migrations still opens. Ahead by a contract migration, or behind the app, is OKM1520 and names the migration. `okm migrate status` prints the same states, plus `failed at step N (resume with okm migrate apply)`.
+
+### Protected targets
+
+`protected: true` is a flag on the target, not on the name and not on `NODE_ENV`. Plan, status, check, ext check, and drift stay allowed. Expand and reference rows stay allowed. An empty protected database can be provisioned. Contract, unclassified SQL, push, backfill, and seed are OKM1850 unless that invocation passes `--allow-protected`. `okm migrate check` writes a scratch schema, so it stays refused, and the flag does not apply. Point it at a throwaway Postgres. Protection does not affect `connect()`.
+
 ## Commands
 
-| Command                   | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `okm build`               | Validates the schema and writes `.okm/` (catalog, hash, emitted row types). `okm generate` writes those files too.                                                                                                                                                                                                                                                                                                                                                                         |
-| `okm check`               | Reports a stale `renamedFrom`, a table file the schema does not import, and lint findings. After a push, it compares the connected database with the schema and refuses with OKM1520 when they differ. A database that has never been pushed has no `okm_meta` and is skipped.                                                                                                                                                                                                             |
-| `okm generate [name]`     | Writes a SQL migration and `.okm/`. Prints lint findings and still writes the file. The name defaults to `migration`. Prints `no changes` when the schema matches.                                                                                                                                                                                                                                                                                                                         |
-| `okm dev`                 | Uses a target named `dev`, or creates a PGlite database in `.okm/dev-db`. It does not apply migrations or write the catalog.                                                                                                                                                                                                                                                                                                                                                               |
-| `okm push`                | Applies the schema directly. Refused when the target is protected.                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `okm migrate plan <name>` | Prints the plan and lint findings. The header is the strictest class. Each step prints its class and lock. When a selected target is reachable, the lock line adds a `pg_class.reltuples` estimate (`about 4.2M rows`, `rows unknown (table not analyzed)`, or `new table`) and labels a safe rewrite. An unreachable target prints the lock alone. An error finding exits non-zero. The name is required. See [the linter](https://github.com/omqkhafi/okmodel/blob/main/docs/linter.md). |
-| `okm migrate apply`       | Replays migration files on the database. An unresolved lint error is OKM1510 before any statement. A backfill step commits one batch at a time and resumes from `okm_backfill`. See [backfill](https://github.com/omqkhafi/okmodel/blob/main/docs/backfill.md).                                                                                                                                                                                                                            |
-| `okm migrate check`       | Replays the history into a scratch schema, then checks the previous catalog, the head, and the linter. Exit zero prints `ok N migrations`. A protected target is refused: point it at a throwaway Postgres. See [Check a history in CI](#check-a-history-in-ci).                                                                                                                                                                                                                           |
-| `okm migrate status`      | Prints version, catalog hash, and state for each target: current, behind by expand, behind by contract, ahead by expand, ahead by contract, or failed at step N (resume with `okm migrate apply`). An unfinished backfill is listed under that table: migration, step, rows so far, last key, and state.                                                                                                                                                                                   |
-| `okm ext list`            | Prints the extensions the connected server can install and the version that is installed.                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `okm ext check`           | Compares those versions with the schema. A missing extension is OKM1811. A pin the server does not meet is OKM1812.                                                                                                                                                                                                                                                                                                                                                                        |
-| `okm doctor [code]`       | Lists the triggers on each table. A code argument prints that code.                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `okm --version`           | Prints the package version.                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Command                   | What it does                                                                                                                                                                                             |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `okm build`               | Validates the schema and writes `.okm/`. Does not connect.                                                                                                                                               |
+| `okm check`               | Lints the schema and, after `okm_meta` exists, compares the database. Drift is OKM1520. Allowed on a protected target.                                                                                   |
+| `okm generate [name]`     | Writes a SQL migration and `.okm/`. Prints lint findings and still writes the file. Offline.                                                                                                             |
+| `okm dev`                 | Opens a PGlite database in `.okm/dev-db`, or a target named `dev`. It does not apply migrations.                                                                                                         |
+| `okm push`                | Applies the schema directly. OKM1850 on a protected target unless `--allow-protected`.                                                                                                                   |
+| `okm migrate plan <name>` | Prints each step's class and lock, plus a row estimate when the target answers. Read-only on a protected target. An error finding exits non-zero.                                                        |
+| `okm migrate apply`       | Installs the head snapshot on an empty database, or runs pending files. Expand is allowed on a protected target. Contract, unclassified SQL, and backfill need `--allow-protected`.                      |
+| `okm migrate check`       | Replays the history in a scratch schema and checks the previous catalog, the head, and the linter. Prints `ok N migrations`. Refused on a protected target, and `--allow-protected` does not apply.      |
+| `okm migrate status`      | Prints version, catalog hash, and state. Read-only on a protected target. An unfinished backfill is listed under the table.                                                                              |
+| `okm seed <file>`         | Runs the file's default export against the migrated target. OKM1850 on a protected target unless `--allow-protected`.                                                                                    |
+| `okm ext list`            | Prints extensions the server can install. Read-only on a protected target.                                                                                                                               |
+| `okm ext check`           | Compares installed extensions with the schema. OKM1811 if one is missing, OKM1812 if the pin is not met. Read-only on a protected target. `okm ext test` and `okm ext scaffold` are not in this version. |
+| `okm doctor [code]`       | Lists triggers, or explains one error code. A role check is read-only on a protected target.                                                                                                             |
+| `okm --version`           | Prints the package version.                                                                                                                                                                              |
 
 `okmodel` and `okm` are the same command.
 
@@ -922,7 +1025,36 @@ drop table "public"."notes";
 
 Point it at a throwaway Postgres. A protected target is refused, and `--allow-protected` does not apply. `defineConfig({ lintFrom: "<migration id>" })` skips lint for files before that id, which is how a project adopts the linter without failing on old migrations. Apply still lints pending migrations only.
 
-The previous-catalog check is schema-level. It does not prove application behaviour. Tenant targets are not checked. The recipe is in [migrate check](https://github.com/omqkhafi/okmodel/blob/main/docs/migrate-check.md).
+The previous-catalog check is schema-level. It does not prove application behaviour. Tenant targets are not checked.
+
+```yaml
+name: migrate
+on: [push, pull_request]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bunx okm migrate check
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+```
+
+The config reads `DATABASE_URL`, and that target is not protected.
 
 ## Roadmap
 
@@ -931,7 +1063,7 @@ Status is on the [board](https://github.com/users/omqkhafi/projects/1). Each rel
 - [x] [0.1](https://github.com/omqkhafi/okmodel/milestone/1) — Schema, queries, and migrations on PostgreSQL, with postgres.js and PGlite.
 - [x] [0.2](https://github.com/omqkhafi/okmodel/milestone/2) — Hidden and sensitive fields, validation, traits, tenancy, archive and restore, richer relations, presets, transactions, and operators for JSON, arrays, ranges, and search.
 - [x] [0.3](https://github.com/omqkhafi/okmodel/milestone/3) — Extensions, domains, functions, triggers, views, roles, and grants.
-- [ ] [0.4](https://github.com/omqkhafi/okmodel/milestone/4) — Safer migration plans, backfill, drift checks, provisioning, reference data, and a testing package.
+- [x] [0.4](https://github.com/omqkhafi/okmodel/milestone/4) — Safer migration plans, backfill, drift checks, provisioning, reference data, and a testing package.
 - [ ] [0.5](https://github.com/omqkhafi/okmodel/milestone/5) — A primary with replicas, read routing, and a reference app.
 
 `okmodel/internal` has no stability promise. Names on that subpath can change or disappear in any release.
@@ -944,11 +1076,11 @@ Measured on this release.
 
 |                                              | Minified |   Gzip | Cold import |
 | -------------------------------------------- | -------: | -----: | ----------: |
-| Runtime entry                                |    5,288 |  2,026 |    1.794 ms |
-| App startup (10 tables, one find)            |   89,465 | 29,723 |   10.554 ms |
-| App startup, every 0.2 feature in use (full) |  119,940 | 39,123 |   12.663 ms |
+| Runtime entry                                |    5,288 |  2,026 |    2.563 ms |
+| App startup (10 tables, one find)            |   89,461 | 29,720 |   13.379 ms |
+| App startup, every 0.2 feature in use (full) |  119,936 | 39,121 |   13.745 ms |
 
-The full app has column tenancy, `archivable()`, `timestamps()`, validation rules, `one`, `many` and `manyThrough` relations, presets, and calls `include`, `page`, `aggregate`, `tx` and `batch`. A feature costs bytes only in an app that uses it: the full app is 30,475 minified and 9,400 gzip bytes above the plain one. The runtime entry and the plain app are gated. The full app is printed, not gated.
+The full app has column tenancy, `archivable()`, `timestamps()`, validation rules, `one`, `many` and `manyThrough` relations, presets, and calls `include`, `page`, `aggregate`, `tx` and `batch`. A feature costs bytes only in an app that uses it: the full app is 30,475 minified and 9,401 gzip bytes above the plain one. The runtime entry and the plain app are gated. The full app is printed, not gated.
 
 The rest of the measurements are in [size](https://github.com/omqkhafi/okmodel/blob/main/docs/size.md).
 
@@ -957,6 +1089,8 @@ The rest of the measurements are in [size](https://github.com/omqkhafi/okmodel/b
 - [Quickstart](https://github.com/omqkhafi/okmodel/blob/main/docs/quickstart.md)
 - [Production checklist](https://github.com/omqkhafi/okmodel/blob/main/docs/production.md)
 - [Linter](https://github.com/omqkhafi/okmodel/blob/main/docs/linter.md)
+- [Backfill](https://github.com/omqkhafi/okmodel/blob/main/docs/backfill.md)
+- [Provisioning](https://github.com/omqkhafi/okmodel/blob/main/docs/provisioning.md)
+- [Testing](https://github.com/omqkhafi/okmodel/blob/main/docs/testing.md)
 - [Known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md)
 - [Changelog](https://github.com/omqkhafi/okmodel/blob/main/changelog.md)
-- [Design spec](https://github.com/omqkhafi/okmodel/blob/main/docs/okmodel-api-design.md)
