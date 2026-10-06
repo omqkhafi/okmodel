@@ -20,6 +20,7 @@ import { attachRoles } from "../../dialects/pg/role/index.js";
 import type { BuiltSchema } from "../../dialects/pg/schema.js";
 import type { AnyTable } from "../../dialects/pg/table.js";
 import type { Catalog } from "../../contracts/catalog/types.js";
+import { batchSizeField } from "./backfill.js";
 import { type MigrateConfig } from "./config.js";
 import { annotateLock, readRowEstimates, type RowEstimate } from "./estimate.js";
 import {
@@ -210,6 +211,7 @@ async function prepare(
     renames: opened.renames,
     replacements: flags.map((flag) => parseReplace(flag)),
     name,
+    ...batchSizeField(opened.config.backfill?.batchSize),
   });
   return {
     config: opened.config,
@@ -267,12 +269,14 @@ function lintOpened(opened: {
   readonly built: Built;
   readonly previous: Catalog;
   readonly renames: readonly DeclaredRename[];
+  readonly config: { readonly backfill?: { readonly batchSize?: number } };
 }): readonly Finding[] {
   const plan = planMigration({
     before: opened.previous,
     after: opened.built.catalog,
     renames: opened.renames,
     name: "check",
+    ...batchSizeField(opened.config.backfill?.batchSize),
   });
   return [
     ...lintPlan(plan, opened.previous, opened.built.catalog),

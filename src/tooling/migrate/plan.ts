@@ -6,7 +6,8 @@
  * OKM1530. The planner never prompts.
  *
  * Picklist and enum removals are expand `UPDATE`s plus a contract swap
- * (D131). Those data steps are plain statements here. Batching them is P52.
+ * (D131). Each data step is a backfill: one idempotent `UPDATE` per batch,
+ * with `-- backfill` naming the primary key (D195).
  */
 
 import { OkmError } from "../../contracts/error.js";
@@ -42,6 +43,14 @@ import {
 } from "../../dialects/pg/ddl.js";
 import { quoteLiteral } from "../../dialects/pg/quote.js";
 import { privilegeSql } from "../../dialects/pg/role/sql.js";
+import {
+  formatBackfillHeader,
+  keyRangePredicate,
+  parseBackfillHeader,
+  primaryKeyColumns,
+  resolveBatchSize,
+  type BackfillSpec,
+} from "./backfill.js";
 import { classOf, isStepKind, type MigrationClass, type StepKind } from "./classify.js";
 import { extensionAlterSteps } from "./extensions.js";
 import { omitManagedObjects } from "./managed.js";
@@ -59,9 +68,10 @@ export type { MigrationClass, StepKind };
 /**
  * One statement in a plan.
  *
- * `backfill` is data; P16B runs it as written. `transactional: false` marks a
- * step that cannot share a transaction with a later use (`ALTER TYPE … ADD
- * VALUE`, spec 19.2).
+ * `backfill` is data. A step with {@link PlanStep.backfill} is one idempotent
+ * `UPDATE` per batch, outside the migration transaction. `transactional: false`
+ * also marks a step that cannot share a transaction (`ALTER TYPE … ADD VALUE`,
+ * a concurrent index).
  */
 export type PlanStep = {
   readonly sql: string;
@@ -89,6 +99,13 @@ export type PlanStep = {
    */
   readonly safeRewrite?: true;
   readonly transactional: boolean;
+  /**
+   * Set when the statement is a batched backfill.
+   *
+   * The header is `table`, `key`, and `batch`. The statement receives `$1`
+   * and `$2`. Absent on a data step written without that header.
+   */
+  readonly backfill?: BackfillSpec;
   /**
    * Set on an extension upgrade the planner could not check.
    *
@@ -133,6 +150,13 @@ export type PlanRequest = {
   readonly schema?: string;
   /** Concrete schema written into the SQL. Identities stay logical. */
   readonly name?: string;
+  /**
+   * Rows per backfill batch written into the step header.
+   *
+   * Omitted uses the built-in default of 1000. A later apply reads `batch=`
+   * from the file, which overrides `defineConfig({ backfill })`.
+   */
+  readonly batchSize?: number;
 };
 
 type Indexed = {
@@ -185,6 +209,7 @@ export function planMigration(input: PlanRequest): MigrationPlan {
     after: omitManagedObjects(input.after),
   };
   const schema = request.schema ?? "public";
+  const batchSize = resolveBatchSize(request.batchSize);
   const renames = request.renames ?? [];
   const replacements = request.replacements ?? [];
   assertNoChains(replacements);
@@ -269,7 +294,9 @@ export function planMigration(input: PlanRequest): MigrationPlan {
   steps.push(...keptNames.map((item) => renameShapeStep(item, schema)));
   steps.push(...enumAddSteps(enums));
   steps.push(...domainCheckSteps(beforeBy, afterBy, schema));
-  steps.push(...expandBackfills(picklists, enums, replacements, schema));
+  steps.push(
+    ...expandBackfills(picklists, enums, replacements, schema, [renamed, request.after], batchSize),
+  );
 
   const droppedTables = new Set(
     [...dropKeys]
@@ -414,7 +441,7 @@ export function planMigration(input: PlanRequest): MigrationPlan {
     const kind = createKind(object, tableIsNew);
     if (sql === undefined || kind === undefined) continue;
     if (!tableIsNew && parent !== undefined && hasTable(renamed, parent)) {
-      const safe = stepsForExistingTable(object, schema, [renamed, request.after]);
+      const safe = stepsForExistingTable(object, schema, [renamed, request.after], batchSize);
       if (safe !== undefined) {
         pushSafe(steps, safe);
         continue;
@@ -479,7 +506,9 @@ export function planMigration(input: PlanRequest): MigrationPlan {
   }
 
   for (const item of privileges.grant) steps.push(step(item.sql, item.kind, "ddl", ACCESS));
-  steps.push(...contractSwaps(picklists, enums, replacements, schema));
+  steps.push(
+    ...contractSwaps(picklists, enums, replacements, schema, [renamed, request.after], batchSize),
+  );
   return {
     name: request.name ?? "migration",
     class: overall(steps),
@@ -511,6 +540,7 @@ export function formatPlan(plan: MigrationPlan, lockText?: (step: PlanStep) => s
     if (item.kind !== undefined) lines.push(`-- kind: ${item.kind}`);
     lines.push(`-- action: ${item.action}`);
     lines.push(`-- lock: ${lockText === undefined ? item.lock : lockText(item)}`);
+    if (item.backfill !== undefined) lines.push(formatBackfillHeader(item.backfill));
     if (!item.transactional) lines.push("-- transactional: false");
     if (item.path !== undefined) lines.push(`-- path: ${item.path}`);
     if (item.behavior === "change") lines.push("-- behavior: change");
@@ -553,6 +583,7 @@ export function parsePlan(text: string): MigrationPlan {
     let action: PlanStep["action"] = "ddl";
     let lock = "";
     let transactional = true;
+    let backfill: BackfillSpec | undefined;
     let path: PlanStep["path"];
     let behavior: PlanStep["behavior"];
     const allows: StepAllow[] = [];
@@ -569,6 +600,7 @@ export function parsePlan(text: string): MigrationPlan {
       } else if (line.startsWith("-- action: "))
         action = line.endsWith("backfill") ? "backfill" : "ddl";
       else if (line.startsWith("-- lock: ")) lock = line.slice("-- lock: ".length);
+      else if (line.startsWith("-- backfill ")) backfill = parseBackfillHeader(line);
       else if (line === "-- transactional: false") transactional = false;
       else if (line === "-- path: unverified") path = "unverified";
       else if (line === "-- behavior: change") behavior = "change";
@@ -586,6 +618,7 @@ export function parsePlan(text: string): MigrationPlan {
         action,
         lock,
         transactional,
+        ...(backfill !== undefined ? { backfill } : {}),
         ...(path !== undefined ? { path } : {}),
         ...(behavior !== undefined ? { behavior } : {}),
         ...(allows.length > 0 ? { allows } : {}),
@@ -1033,8 +1066,10 @@ function expandBackfills(
   enums: readonly EnumEdit[],
   replacements: readonly Replacement[],
   schema: string,
+  catalogs: readonly Catalog[],
+  batchSize: number,
 ): PlanStep[] {
-  return dataSteps(picklists, enums, replacements, schema, "expand");
+  return dataSteps(picklists, enums, replacements, schema, catalogs, batchSize, "expand");
 }
 
 function contractSwaps(
@@ -1042,9 +1077,11 @@ function contractSwaps(
   enums: readonly EnumEdit[],
   replacements: readonly Replacement[],
   schema: string,
+  catalogs: readonly Catalog[],
+  batchSize: number,
 ): PlanStep[] {
   const steps: PlanStep[] = [];
-  steps.push(...dataSteps(picklists, enums, replacements, schema, "contract"));
+  steps.push(...dataSteps(picklists, enums, replacements, schema, catalogs, batchSize, "contract"));
   for (const change of picklists) {
     const table = qualify(schema, change.after.identity.parent.name);
     const name = quoteIdent(change.after.identity.name);
@@ -1092,9 +1129,12 @@ function dataSteps(
   enums: readonly EnumEdit[],
   replacements: readonly Replacement[],
   schema: string,
+  catalogs: readonly Catalog[],
+  batchSize: number,
   phase: "expand" | "contract",
 ): PlanStep[] {
   const steps: PlanStep[] = [];
+  const kind = phase === "expand" ? "backfill-expand" : "backfill-contract";
   for (const change of picklists) {
     if (change.removed.length === 0) continue;
     const table = change.after.identity.parent.name;
@@ -1102,11 +1142,9 @@ function dataSteps(
       const replacement = findReplacement(replacements, table, change.column, value);
       if (replacement === undefined) continue;
       steps.push(
-        step(
-          updateSql(schema, table, change.column, value, replacement.to),
-          phase === "expand" ? "backfill-expand" : "backfill-contract",
-          "backfill",
-          ROW,
+        backfillStep(
+          updateSql(schema, table, change.column, value, replacement.to, catalogs, batchSize),
+          kind,
         ),
       );
     }
@@ -1119,11 +1157,18 @@ function dataSteps(
         const replacement = findReplacement(replacements, column.table, column.column, value);
         if (replacement === undefined) continue;
         steps.push(
-          step(
-            updateSql(schema, column.table, column.column, value, replacement.to, true),
-            phase === "expand" ? "backfill-expand" : "backfill-contract",
-            "backfill",
-            ROW,
+          backfillStep(
+            updateSql(
+              schema,
+              column.table,
+              column.column,
+              value,
+              replacement.to,
+              catalogs,
+              batchSize,
+              true,
+            ),
+            kind,
           ),
         );
       }
@@ -1640,11 +1685,34 @@ function updateSql(
   column: string,
   from: string,
   to: string | null,
+  catalogs: readonly Catalog[],
+  batchSize: number,
   cast = false,
-): string {
+): { readonly sql: string; readonly backfill: BackfillSpec } {
+  const key = primaryKeyColumns(catalogs, table);
+  const qualified = qualify(schema, table);
   const value = to === null ? "null" : quoteLiteral(to);
   const compare = cast ? `${quoteIdent(column)}::text` : quoteIdent(column);
-  return `update ${qualify(schema, table)} set ${quoteIdent(column)} = ${value} where ${compare} = ${quoteLiteral(from)}`;
+  const where = `${compare} = ${quoteLiteral(from)}`;
+  const backfill: BackfillSpec = {
+    table: qualified,
+    key: key.map((item) => item.quoted),
+    batch: batchSize,
+  };
+  return {
+    sql: `update ${qualified} set ${quoteIdent(column)} = ${value} where ${where} and ${keyRangePredicate(key)}`,
+    backfill,
+  };
+}
+
+function backfillStep(
+  planned: { readonly sql: string; readonly backfill: BackfillSpec },
+  kind: StepKind,
+): PlanStep {
+  return {
+    ...step(planned.sql, kind, "backfill", ROW, false),
+    backfill: planned.backfill,
+  };
 }
 
 function hasTable(source: Catalog, name: string): boolean {
@@ -1689,6 +1757,7 @@ function pushSafe(steps: PlanStep[], safe: readonly SafeStep[]): void {
     steps.push({
       ...step(item.sql, item.kind, item.action, item.lock, item.transactional),
       safeRewrite: true,
+      ...(item.backfill !== undefined ? { backfill: item.backfill } : {}),
     });
   }
 }

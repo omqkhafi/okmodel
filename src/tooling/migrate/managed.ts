@@ -1,5 +1,5 @@
 /**
- * Tables OKModel owns: `okm_meta` and `okm_history`.
+ * Tables OKModel owns: `okm_meta`, `okm_history`, and `okm_backfill`.
  *
  * Apply creates them. They are not part of the author schema. Plan, push,
  * check, and doctor omit them on both sides, so a diff neither drops them
@@ -8,7 +8,7 @@
 
 import type { Catalog, CatalogObject } from "../../contracts/catalog/types.js";
 
-const MANAGED_TABLES: ReadonlySet<string> = new Set(["okm_meta", "okm_history"]);
+const MANAGED_TABLES: ReadonlySet<string> = new Set(["okm_meta", "okm_history", "okm_backfill"]);
 
 /**
  * Removes the migration history tables and the objects that belong to them.
@@ -62,7 +62,9 @@ function managedSequence(name: string): boolean {
   return (
     name === "okm_meta" ||
     name === "okm_history" ||
+    name === "okm_backfill" ||
     name.startsWith("okm_meta_") ||
-    name.startsWith("okm_history_")
+    name.startsWith("okm_history_") ||
+    name.startsWith("okm_backfill_")
   );
 }

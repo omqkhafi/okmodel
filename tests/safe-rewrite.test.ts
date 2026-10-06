@@ -133,7 +133,7 @@ test("a volatile default on an existing table is split, and a stable default is 
   expect(sqlOf(split.steps)).toEqual([
     'alter table "public"."tasks" add column "token" uuid',
     'alter table "public"."tasks" alter column "token" set default gen_random_uuid()',
-    'update "public"."tasks" set "token" = gen_random_uuid() where "token" is null',
+    'update "public"."tasks" set "token" = gen_random_uuid() where "token" is null and ($1::text is null or "id" > $1::bigint) and ($2::text is null or "id" <= $2::bigint)',
     'alter table "public"."tasks" add constraint "tasks_token_notnull" check ("token" is not null) not valid',
     'alter table "public"."tasks" validate constraint "tasks_token_notnull"',
     'alter table "public"."tasks" alter column "token" set not null',
@@ -160,7 +160,7 @@ test("a volatile default on an existing table is split, and a stable default is 
   expect(sqlOf(optional.steps)).toEqual([
     'alter table "public"."tasks" add column "token" uuid',
     'alter table "public"."tasks" alter column "token" set default uuidv7()',
-    'update "public"."tasks" set "token" = uuidv7() where "token" is null',
+    'update "public"."tasks" set "token" = uuidv7() where "token" is null and ($1::text is null or "id" > $1::bigint) and ($2::text is null or "id" <= $2::bigint)',
   ]);
 
   const stamped = table("tasks", {

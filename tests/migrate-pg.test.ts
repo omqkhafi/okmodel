@@ -285,7 +285,7 @@ postgresTest(
           await sql.unsafe(`select status::text from ${q(schemaName)}.tasks`);
           sawContract = true;
         }
-        await sql.unsafe(step.sql);
+        await runPlanStatement(sql, step.sql);
         await sql.unsafe(`select status::text from ${q(schemaName)}.tasks`);
       }
       expect(sawContract).toBe(true);
@@ -303,7 +303,7 @@ postgresTest(
       const shared = schema({
         tables: [
           defineTable("tasks", {
-            id: t.integer(),
+            id: t.integer().primaryKey(),
             status: t.enum("color", ["red", "blue", "green"]),
             shade: t.enum("color", ["red", "blue", "green"]),
           }),
@@ -312,7 +312,7 @@ postgresTest(
       const narrowed = schema({
         tables: [
           defineTable("tasks", {
-            id: t.integer(),
+            id: t.integer().primaryKey(),
             status: t.enum("color", ["red"]),
             shade: t.enum("color", ["red"]),
           }),
@@ -368,7 +368,9 @@ postgresTest(
 
 function colored(labels: readonly string[]) {
   return schema({
-    tables: [defineTable("tasks", { id: t.integer(), status: t.enum("color", labels) })],
+    tables: [
+      defineTable("tasks", { id: t.integer().primaryKey(), status: t.enum("color", labels) }),
+    ],
   });
 }
 
@@ -389,7 +391,7 @@ async function applyReadable(
   statements: readonly string[],
 ): Promise<void> {
   for (const statement of statements) {
-    await sql.unsafe(statement);
+    await runPlanStatement(sql, statement);
     await sql.unsafe(`select * from ${q(schemaName)}.tasks`);
   }
 }
@@ -750,8 +752,19 @@ function queryOf(sql: Sql): CatalogQuery {
 
 async function apply(sql: Sql, statements: readonly string[]): Promise<void> {
   for (const statement of statements) {
-    await sql.unsafe(statement);
+    await runPlanStatement(sql, statement);
   }
+}
+
+/**
+ * Runs one planned statement.
+ *
+ * A backfill `UPDATE` takes `$1` and `$2`. Null bounds are the whole key
+ * range, which is the single pass these round trips apply by hand.
+ */
+async function runPlanStatement(sql: Sql, statement: string): Promise<void> {
+  if (statement.includes("$1")) await sql.unsafe(statement, [null, null]);
+  else await sql.unsafe(statement);
 }
 
 function q(name: string): string {

@@ -3,8 +3,10 @@
  *
  * A run holds a session advisory lock. Transactional steps of one migration
  * share a transaction. Steps Postgres cannot run there (`CREATE INDEX
- * CONCURRENTLY`, `ADD VALUE`, `VACUUM`) are their own steps. Each finished
- * step is a history row. A later apply skips those rows.
+ * CONCURRENTLY`, `ADD VALUE`, `VACUUM`) and backfill steps are their own
+ * units. {@link runTarget} runs those units. Each finished step is a history
+ * row. A later apply skips those rows. A backfill records each committed
+ * batch in `okm_backfill` and resumes from that boundary.
  */
 
 import { join } from "node:path";
@@ -14,9 +16,10 @@ import { catalogHash } from "../../contracts/catalog/document.js";
 import { hasError, lintMigrationDirectory, lintRefusal } from "./lint.js";
 import type { DriverConnection } from "../../contracts/driver.js";
 import { OkmError } from "../../contracts/error.js";
-import { quoteIdent } from "../../dialects/pg/ddl.js";
 import { assertCreateRole, currentUser, roleExists } from "../../dialects/pg/role/check.js";
-import { changesRole, createdRoleName } from "../../dialects/pg/role/sql.js";
+import { changesRole } from "../../dialects/pg/role/sql.js";
+import { batchSizeField } from "./backfill.js";
+import { assumeRole, runTarget, type BackfillBatch } from "./runner.js";
 import { assertExtensionsAvailable } from "./extensions.js";
 import { assertUuidV7Available } from "./engine.js";
 import { loadConfig, projectHead } from "./project.js";
@@ -28,7 +31,6 @@ import {
   assertTargetPolicy,
   selectTarget,
   type InvokeFlags,
-  type PolicyOperation,
 } from "./policy.js";
 
 /** One step with its index in the migration file. */
@@ -75,6 +77,14 @@ export type ApplyRequest = {
    * on this schema before `SET ROLE`. The default is `public`.
    */
   readonly schema?: string;
+  /** Milliseconds to wait after each committed backfill batch. */
+  readonly backfillPauseMs?: number;
+  /** `statement_timeout` for one backfill batch. Falls back to {@link ApplyRequest.statementTimeoutMs}. */
+  readonly backfillStatementTimeoutMs?: number;
+  /** One line after each committed backfill batch. */
+  readonly onProgress?: (line: string) => void;
+  /** Runs after each committed backfill batch, before the pause. */
+  readonly afterBatch?: (batch: BackfillBatch) => void | Promise<void>;
   /**
    * Migrations directory to lint before any DDL.
    *
@@ -95,7 +105,6 @@ export type ApplyReport = {
 const DEFAULT_LOCK_MS = 5_000;
 const DEFAULT_STATEMENT_MS = 30_000;
 const DEFAULT_RETRIES = 3;
-const BACKOFF_MS = 50;
 
 const META = `create table if not exists okm_meta (
   id text primary key,
@@ -109,6 +118,17 @@ const HISTORY = `create table if not exists okm_history (
   class text not null,
   catalog_hash text not null,
   applied_at timestamptz not null default now(),
+  primary key (migration_id, step_index)
+)`;
+
+const BACKFILL = `create table if not exists okm_backfill (
+  migration_id text not null,
+  step_index integer not null,
+  last_key text,
+  rows_touched bigint not null default 0,
+  batches integer not null default 0,
+  state text not null,
+  updated_at timestamptz not null default now(),
   primary key (migration_id, step_index)
 )`;
 
@@ -147,7 +167,11 @@ export function applyUnits(
     batch = [];
   };
   for (const item of pending) {
-    if (item.step.transactional && !outsideTransaction(item.step.sql)) {
+    if (
+      item.step.backfill === undefined &&
+      item.step.transactional &&
+      !outsideTransaction(item.step.sql)
+    ) {
       batch.push(item);
       continue;
     }
@@ -204,23 +228,29 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
     await assertUuidV7Available(connection, request.migrations);
     await connection.execute(META);
     await connection.execute(HISTORY);
+    await connection.execute(BACKFILL);
     const done = await readDone(connection);
-    const applied: string[] = [];
-    for (const migration of request.migrations) {
-      const units = applyUnits(migration, done);
-      if (units.length === 0) continue;
-      for (const unit of units) {
-        assertUnitPolicy(request, unit);
-        await runUnit(connection, unit, request, session);
-        for (const item of unit.steps) done.add(`${unit.migrationId}:${String(item.index)}`);
-      }
-      applied.push(migration.id);
-    }
-    return {
-      target: request.target,
-      applied,
-      ...(session.setRole !== undefined ? { setRole: session.setRole } : {}),
-    };
+    const units = request.migrations.flatMap((migration) => applyUnits(migration, done));
+    return await runTarget(
+      connection,
+      {
+        policy: request,
+        units,
+        retries: request.retries ?? DEFAULT_RETRIES,
+        lockTimeoutMs: request.lockTimeoutMs ?? DEFAULT_LOCK_MS,
+        statementTimeoutMs: request.statementTimeoutMs ?? DEFAULT_STATEMENT_MS,
+        backfillStatementTimeoutMs:
+          request.backfillStatementTimeoutMs ?? request.statementTimeoutMs ?? DEFAULT_STATEMENT_MS,
+        ...(request.backfillPauseMs !== undefined
+          ? { backfillPauseMs: request.backfillPauseMs }
+          : {}),
+        ...(request.migrationRole !== undefined ? { migrationRole: request.migrationRole } : {}),
+        ...(request.schema !== undefined ? { schema: request.schema } : {}),
+        ...(request.onProgress !== undefined ? { onProgress: request.onProgress } : {}),
+        ...(request.afterBatch !== undefined ? { afterBatch: request.afterBatch } : {}),
+      },
+      session,
+    );
   } finally {
     if (locked)
       await connection.execute("select pg_advisory_unlock(hashtext($1))", [
@@ -239,14 +269,20 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
  *
  * @param cwd - Project directory
  * @param flags - `--target`, protection, pooler, and timeouts
+ * @param write - Receives each backfill progress line, including the newline
  * @returns Text for stdout, including the target name
  */
-export async function applyProject(cwd: string, flags: InvokeFlags): Promise<string> {
+export async function applyProject(
+  cwd: string,
+  flags: InvokeFlags,
+  write?: (text: string) => void,
+): Promise<string> {
   const config = await loadConfig(cwd);
   const target = selectTarget(config, flags.target);
   const directory = joinMigrations(cwd, config.migrations);
   const migrations = loadMigrations(directory);
   if (migrations.length === 0) return `target ${target.name}\nnothing to apply\n`;
+  const progress: string[] = [];
   const report = await applyTarget({
     url: target.url,
     target: target.name,
@@ -263,11 +299,18 @@ export async function applyProject(cwd: string, flags: InvokeFlags): Promise<str
       : config.timeouts?.statement !== undefined
         ? { statementTimeoutMs: config.timeouts.statement }
         : {}),
+    ...backfillTiming(config.backfill),
     migrations,
     ...(config.roles !== undefined ? { migrationRole: config.roles.migration } : {}),
     lintDirectory: directory,
+    onProgress: (line) => {
+      if (write !== undefined) write(`${line}\n`);
+      else progress.push(line);
+    },
   });
-  return formatReport(report);
+  const summary = formatReport(report);
+  if (write !== undefined || progress.length === 0) return summary;
+  return `${progress.join("\n")}\n${summary}`;
 }
 
 /**
@@ -290,6 +333,7 @@ export async function pushProject(cwd: string, flags: InvokeFlags): Promise<stri
     after: head.catalog,
     renames: head.renames,
     name: "push",
+    ...batchSizeField(config.backfill?.batchSize),
   });
   if (plan.steps.length === 0) return `target ${target.name}\nno changes\n`;
   const report = await applyTarget({
@@ -298,6 +342,7 @@ export async function pushProject(cwd: string, flags: InvokeFlags): Promise<stri
     protected: target.protected,
     allowProtected: flags.allowProtected,
     allowPooler: flags.allowPooler || config.allowPooler === true,
+    ...backfillTiming(config.backfill),
     migrations: [
       {
         id: "push",
@@ -310,6 +355,25 @@ export async function pushProject(cwd: string, flags: InvokeFlags): Promise<stri
   return formatReport(report);
 }
 
+function backfillTiming(
+  backfill:
+    | {
+        readonly pauseMs?: number;
+        readonly statementTimeoutMs?: number;
+      }
+    | undefined,
+): {
+  readonly backfillPauseMs?: number;
+  readonly backfillStatementTimeoutMs?: number;
+} {
+  return {
+    ...(backfill?.pauseMs !== undefined ? { backfillPauseMs: backfill.pauseMs } : {}),
+    ...(backfill?.statementTimeoutMs !== undefined
+      ? { backfillStatementTimeoutMs: backfill.statementTimeoutMs }
+      : {}),
+  };
+}
+
 function formatReport(report: ApplyReport): string {
   const role = report.setRole !== undefined ? `set role ${report.setRole}\n` : "";
   if (report.applied.length === 0) return `target ${report.target}\n${role}nothing to apply\n`;
@@ -318,23 +382,6 @@ function formatReport(report: ApplyReport): string {
 
 function joinMigrations(cwd: string, migrations: string | undefined): string {
   return join(cwd, migrations ?? "migrations");
-}
-
-function assertUnitPolicy(request: ApplyRequest, unit: ApplyUnit): void {
-  let operation: PolicyOperation = "expand";
-  for (const item of unit.steps) {
-    if (item.step.action === "backfill") {
-      operation = "backfill";
-      break;
-    }
-    if (item.step.class === "contract" || item.step.class === "unclassified")
-      operation = item.step.class;
-  }
-  assertTargetPolicy(
-    { name: request.target, protected: request.protected },
-    operation,
-    request.allowProtected === true,
-  );
 }
 
 async function setTimeouts(connection: DriverConnection, request: ApplyRequest): Promise<void> {
@@ -441,123 +488,6 @@ async function prepareMigrationRole(
   if (exists && current !== role) await assumeRole(connection, role, session);
 }
 
-async function grantSchema(
-  connection: DriverConnection,
-  schema: string,
-  role: string,
-): Promise<void> {
-  await connection.execute(
-    `grant usage, create on schema ${quoteIdent(schema)} to ${quoteIdent(role)}`,
-  );
-}
-
-async function assumeRole(
-  connection: DriverConnection,
-  role: string,
-  session: { setRole?: string },
-): Promise<void> {
-  if (session.setRole === role) return;
-  await connection.execute(`set role ${quoteIdent(role)}`);
-  session.setRole = role;
-}
-
-async function runUnit(
-  connection: DriverConnection,
-  unit: ApplyUnit,
-  request: ApplyRequest,
-  session: { setRole?: string },
-): Promise<void> {
-  const retries = request.retries ?? DEFAULT_RETRIES;
-  for (let attempt = 0; attempt <= retries; attempt += 1) {
-    let began = false;
-    let current = unit.steps[0]?.index ?? 0;
-    try {
-      if (unit.transactional) {
-        await connection.execute("begin");
-        began = true;
-      }
-      for (const item of unit.steps) {
-        current = item.index;
-        await rebuildInvalidIndex(connection, item.step.sql);
-        const created = createdRoleName(item.step.sql);
-        const existed = created !== undefined && (await roleExists(connection, created));
-        if (created === undefined || !existed) await connection.execute(item.step.sql);
-        if (created !== undefined && created === request.migrationRole) {
-          if (!existed) {
-            await grantSchema(connection, request.schema ?? "public", created);
-            await connection.execute(
-              `grant select, insert, update on okm_meta, okm_history to ${quoteIdent(created)}`,
-            );
-          }
-          await assumeRole(connection, created, session);
-        }
-        if (!unit.transactional) {
-          await connection.execute("begin");
-          began = true;
-          await writeStep(connection, unit, item);
-          if (unit.finishes) await writeMeta(connection, unit);
-          await connection.execute("commit");
-          began = false;
-        }
-      }
-      if (unit.transactional) {
-        for (const item of unit.steps) await writeStep(connection, unit, item);
-        if (unit.finishes) await writeMeta(connection, unit);
-        await connection.execute("commit");
-        began = false;
-      }
-      return;
-    } catch (error) {
-      if (began) await connection.execute("rollback").catch(() => undefined);
-      if (!isLockTimeout(error) || attempt === retries) throw failStep(unit, current, error);
-      await delay(BACKOFF_MS * 2 ** attempt);
-    }
-  }
-}
-
-async function writeStep(
-  connection: DriverConnection,
-  unit: ApplyUnit,
-  item: IndexedStep,
-): Promise<void> {
-  await connection.execute(
-    "insert into okm_history (migration_id, step_index, class, catalog_hash) values ($1, $2, $3, $4)",
-    [unit.migrationId, String(item.index), item.step.class, unit.catalogHash],
-  );
-}
-
-async function writeMeta(connection: DriverConnection, unit: ApplyUnit): Promise<void> {
-  await connection.execute(
-    `insert into okm_meta (id, catalog_hash, migration_id) values ('head', $1, $2)
-     on conflict (id) do update set catalog_hash = excluded.catalog_hash, migration_id = excluded.migration_id`,
-    [unit.catalogHash, unit.migrationId],
-  );
-}
-
-async function rebuildInvalidIndex(connection: DriverConnection, sql: string): Promise<void> {
-  const name = concurrentIndexName(sql);
-  if (name === undefined) return;
-  const found = await connection.execute(
-    `select i.indisvalid
-     from pg_class c
-     join pg_namespace n on n.oid = c.relnamespace
-     join pg_index i on i.indexrelid = c.oid
-     where c.relname = $1 and n.nspname = current_schema()`,
-    [name],
-  );
-  const valid = found.rows[0]?.[0];
-  if (valid === undefined || wireTrue(valid)) return;
-  await connection.execute(`drop index concurrently if exists ${quoteIdent(name)}`);
-}
-
-function concurrentIndexName(sql: string): string | undefined {
-  const match =
-    /^create\s+(?:unique\s+)?index\s+concurrently\s+(?:if\s+not\s+exists\s+)?(?:"([^"]+)"|([A-Za-z_][\w$]*))/i.exec(
-      sql.trim(),
-    );
-  return match?.[1] ?? match?.[2];
-}
-
 function outsideTransaction(sql: string): boolean {
   const text = sql.trim().toLowerCase();
   if (text.startsWith("vacuum")) return true;
@@ -567,32 +497,6 @@ function outsideTransaction(sql: string): boolean {
   return false;
 }
 
-function failStep(unit: ApplyUnit, index: number, error: unknown): OkmError {
-  if (error instanceof OkmError) return error;
-  const message = error instanceof Error ? error.message : "The step failed.";
-  return new OkmError(
-    "invalid",
-    `Migration ${unit.migrationId} failed at step ${String(index)}: ${message}`,
-    {
-      cause: error,
-      fix: { summary: "Fix the step and run apply again. Finished steps are not repeated." },
-    },
-  );
-}
-
-function isLockTimeout(error: unknown): boolean {
-  if (typeof error !== "object" || error === null) return false;
-  if ("sqlstate" in error && error.sqlstate === "55P03") return true;
-  const message = error instanceof Error ? error.message : "";
-  return message.includes("lock timeout");
-}
-
 function wireTrue(value: string | null | undefined): boolean {
   return value === "t" || value === "true";
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
 }

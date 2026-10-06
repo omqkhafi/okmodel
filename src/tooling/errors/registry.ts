@@ -462,6 +462,12 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     fix: "Declare the identity as generated always.",
   },
   {
+    code: "OKM1546",
+    title: "Backfill key",
+    summary: "A backfill step targets a table that has no primary key.",
+    fix: "Add a primary key. A backfill walks that key and does not scan the table.",
+  },
+  {
     code: "OKM1601",
     title: "Stale typed SQL",
     summary: "A typed SQL signature no longer matches the database.",

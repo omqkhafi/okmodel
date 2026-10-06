@@ -27,6 +27,7 @@ A database that has never been pushed has no `okm_meta`. `okm check` skips the d
 -- lock: ACCESS EXCLUSIVE on tasks, about 4.2M rows
 -- lock: ACCESS EXCLUSIVE on tasks, rows unknown (table not analyzed)
 -- lock: ACCESS EXCLUSIVE on notes, new table
+-- lock: ROW EXCLUSIVE on tasks, about 25K rows, about 25 batches
 -- lock: SHARE UPDATE EXCLUSIVE on tasks, about 12 rows; safe rewrite applied
 ```
 

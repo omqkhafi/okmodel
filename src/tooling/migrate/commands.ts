@@ -86,7 +86,7 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
     }
     if (sub === "apply") {
       const { applyProject } = await import("./apply.js");
-      stdout(await applyProject(cwd, invoke(parsed)));
+      stdout(await applyProject(cwd, invoke(parsed), stdout));
       return;
     }
     if (sub === "status") {

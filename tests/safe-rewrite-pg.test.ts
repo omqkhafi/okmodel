@@ -165,7 +165,7 @@ postgresTest(
       const done = schema({ tables: [users(), filled] });
       const fillPlan = await applyPlan(schemaName, "0007_fill", withUnique.catalog, done.catalog);
       expect(fillPlan[2]).toBe(
-        `update ${q(schemaName)}."tasks" set "token" = gen_random_uuid() where "token" is null`,
+        `update ${q(schemaName)}."tasks" set "token" = gen_random_uuid() where "token" is null and ($1::text is null or "id" > $1::integer) and ($2::text is null or "id" <= $2::integer)`,
       );
       const tokens = await sql<{ token: string }[]>`select token::text as token from tasks`;
       expect(tokens).toHaveLength(2);

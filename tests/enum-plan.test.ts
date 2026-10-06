@@ -81,7 +81,7 @@ test("several columns and several removed labels share one replacement and one t
   const before = schema({
     tables: [
       table("tasks", {
-        id: t.integer(),
+        id: t.integer().primaryKey(),
         status: t.enum("color", ["red", "blue", "green"]),
         shade: t.enum("color", ["red", "blue", "green"]),
       }),
@@ -90,7 +90,7 @@ test("several columns and several removed labels share one replacement and one t
   const after = schema({
     tables: [
       table("tasks", {
-        id: t.integer(),
+        id: t.integer().primaryKey(),
         status: t.enum("color", ["red"]),
         shade: t.enum("color", ["red"]),
       }),
@@ -143,7 +143,7 @@ function colored(labels: readonly string[]) {
   return schema({
     tables: [
       table("tasks", {
-        id: t.integer(),
+        id: t.integer().primaryKey(),
         status: t.enum("color", labels),
       }),
     ],
