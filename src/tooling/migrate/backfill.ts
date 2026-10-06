@@ -218,6 +218,40 @@ function keyOn(source: Catalog, table: string): readonly BackfillColumn[] | unde
   return columns;
 }
 
+/**
+ * Keyset query that returns the last key of the next batch.
+ *
+ * `$1` is the previous boundary, null for the first batch. `$2` is
+ * `batch - 1`. No row means this batch is the last one.
+ *
+ * @param table - Quoted schema-qualified table
+ * @param columns - Primary key, with cast types
+ * @returns One statement
+ */
+export function boundaryQuery(table: string, columns: readonly BackfillColumn[]): string {
+  for (const column of columns) checkedCast(column.dataType);
+  const order = columns.map((column) => column.quoted).join(", ");
+  const first = columns[0];
+  const projected =
+    columns.length === 1 && first !== undefined
+      ? `${first.quoted}::text`
+      : `jsonb_build_array(${columns.map((column) => `${column.quoted}::text`).join(", ")})::text`;
+  const lower = `($1::text is null or ${compareKey(columns, "$1", ">")})`;
+  // Alias the text so `order by` uses the key columns, not the text output.
+  return `select ${projected} as okm_key from ${table} where ${lower} order by ${order} offset $2::bigint limit 1`;
+}
+
+/**
+ * Cast spelling safe to interpolate after `::`.
+ *
+ * @param dataType - Catalog or `format_type` spelling
+ * @returns The same spelling
+ */
+export function checkedCast(dataType: string): string {
+  assertCastType(dataType);
+  return dataType;
+}
+
 function compareKey(
   columns: readonly BackfillColumn[],
   param: "$1" | "$2",

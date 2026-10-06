@@ -10,6 +10,7 @@ import { expect, test } from "bun:test";
 
 import { OkmError } from "../src/contracts/error.js";
 import { schema, table, t } from "../src/dialects/pg/index.js";
+import { boundaryQuery } from "../src/tooling/migrate/backfill.js";
 import { annotateLock } from "../src/tooling/migrate/estimate.js";
 import { formatPlan, parsePlan, planMigration } from "../src/tooling/migrate/plan.js";
 import { parseReplace } from "../src/tooling/migrate/values.js";
@@ -78,6 +79,21 @@ test("a plan with estimates prints rows and batches, and the file does not", () 
   expect(printed).toContain("-- lock: ROW EXCLUSIVE on tasks, about 25K rows, about 25 batches");
   expect(printed).toContain('-- backfill table="public"."tasks" key="id" batch=1000');
   expect(formatPlan(plan)).not.toContain("about");
+});
+
+test("a boundary query reads one key and does not count the table", () => {
+  expect(boundaryQuery('"public"."tasks"', [{ quoted: '"id"', dataType: "bigint" }])).toBe(
+    'select "id"::text as okm_key from "public"."tasks" where ($1::text is null or "id" > $1::bigint) order by "id" offset $2::bigint limit 1',
+  );
+  const composite = boundaryQuery('"public"."tasks"', [
+    { quoted: '"org"', dataType: "text" },
+    { quoted: '"id"', dataType: "integer" },
+  ]);
+  expect(composite).toContain('jsonb_build_array("org"::text, "id"::text)::text');
+  expect(composite).toContain(
+    '("org", "id") > ((($1::jsonb)->>0)::text, (($1::jsonb)->>1)::integer)',
+  );
+  expect(composite).not.toContain("count(");
 });
 
 test("a composite primary key is a row comparison", () => {

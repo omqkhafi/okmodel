@@ -4,8 +4,8 @@
  * A database that has never been pushed has no `okm_meta` and is left alone.
  * After push, the introspected catalog is planned back to the schema. Each
  * view is reprinted on this server first, so a `pg_get_viewdef` spelling is
- * not drift. Any remaining statement is OKM1520. `okm_meta` and `okm_history`
- * are omitted by the planner.
+ * not drift. Any remaining statement is OKM1520. `okm_meta`, `okm_history`,
+ * and `okm_backfill` are omitted by the planner.
  */
 
 import postgres, { type Sql } from "postgres";
