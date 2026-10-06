@@ -328,7 +328,7 @@ postgresTest(
         searchPath: schemaName,
         migrations: [expand],
       });
-      expect(ahead.state).toBe("ahead");
+      expect(ahead.state).toBe("ahead by expand");
       await sql.unsafe(`delete from okm_history where migration_id = '0009_future'`);
       await sql.unsafe(`delete from okm_meta`);
       const partial = migration("0003_two", "hash-two", [
@@ -344,7 +344,7 @@ postgresTest(
         searchPath: schemaName,
         migrations: [expand, partial],
       });
-      expect(failed.state).toBe("failed at step 1");
+      expect(failed.state).toBe("failed at step 1 (resume with okm migrate apply)");
     });
   },
   20_000,

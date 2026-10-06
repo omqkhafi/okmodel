@@ -6,7 +6,9 @@ import { expect, test } from "bun:test";
 
 import { OkmError } from "../src/contracts/error.js";
 import { applyUnits } from "../src/tooling/migrate/apply.js";
-import { driftVerdict } from "../src/runtime/drift-detail.js";
+import type { DriverPool } from "../src/contracts/driver.js";
+import { loadOnce } from "../src/runtime/catalog-cache.js";
+import { assertDrift, driftVerdict } from "../src/runtime/drift-detail.js";
 import { describeStatus } from "../src/tooling/migrate/status.js";
 import { formatPlan, parsePlan, type PlanStep } from "../src/tooling/migrate/plan.js";
 import {
@@ -201,24 +203,96 @@ test("status states from history", () => {
       hash: "z",
       version: "0009_future",
     }).state,
-  ).toBe("ahead");
+  ).toBe("ahead by expand");
+  expect(
+    describeStatus([expand], [{ migrationId: "0009_future", stepIndex: 0, class: "contract" }], {
+      hash: "z",
+      version: "0009_future",
+    }).state,
+  ).toBe("ahead by contract");
   expect(
     describeStatus(
       [migration("0003_two", "c", [step("select 1"), step("select 2")])],
       [{ migrationId: "0003_two", stepIndex: 0, class: "expand" }],
       undefined,
     ).state,
-  ).toBe("failed at step 1");
+  ).toBe("failed at step 1 (resume with okm migrate apply)");
 });
 
 test("ahead by expand is compatible and contract or behind is not", () => {
   const older = { id: "0001", catalogHash: "code", expand: true };
   const newer = { id: "0002", catalogHash: "db", expand: true };
-  expect(driftVerdict("code", "db", [older, newer])).toBe("ok");
-  expect(driftVerdict("code", "db", [older, { ...newer, expand: false }])).toBe("contract");
-  expect(driftVerdict("missing", "db", [older, newer])).toBe("behind");
-  expect(driftVerdict("db", "code", [older, newer])).toBe("behind");
+  expect(driftVerdict("code", "db", [older, newer])).toEqual({ state: "ok" });
+  expect(driftVerdict("code", "db", [older, { ...newer, expand: false }])).toEqual({
+    state: "ahead by contract",
+    migrationId: "0002",
+  });
+  expect(driftVerdict("missing", "db", [older, newer])).toEqual({
+    state: "behind",
+    migrationId: "0002",
+  });
+  expect(driftVerdict("db", "code", [older, newer])).toEqual({
+    state: "behind by expand",
+    migrationId: "0002",
+  });
+  expect(driftVerdict("db", "code", [older, { ...newer, expand: false }])).toEqual({
+    state: "behind by contract",
+    migrationId: "0002",
+  });
 });
+
+test("a stored unclassified class is ahead by contract", async () => {
+  const pool = {
+    capabilities: {
+      transactions: "interactive",
+      stream: false,
+      listen: false,
+      cancel: false,
+      prepared: "unnamed",
+      describe: false,
+    },
+    execute: () =>
+      Promise.resolve({
+        rows: [
+          ["0001_old", "expand", "code"],
+          ["0002_raw", "unclassified", "db"],
+        ],
+        count: 2,
+        notices: [],
+      }),
+    batch: () => Promise.resolve([]),
+    stats: () => ({ size: 1, idle: 1, inflight: 0, waiting: 0 }),
+    close: () => Promise.resolve(),
+  } as DriverPool;
+  const error = await catchError(() => assertDrift(pool, "code", "db", undefined));
+  expect(error).toBeInstanceOf(OkmError);
+  if (!(error instanceof OkmError)) return;
+  expect(error.code).toBe("OKM1520");
+  expect(error.message).toContain("ahead by contract migration 0002_raw");
+  expect(error.fix.summary).toBe("Apply 0002_raw, or change the deploy order.");
+});
+
+test("concurrent catalog loads parse once", async () => {
+  let reads = 0;
+  const key = `once-${String(Date.now())}`;
+  const load = (): Promise<void> => {
+    reads += 1;
+    return new Promise((resolve) => {
+      setTimeout(resolve, 20);
+    });
+  };
+  await Promise.all([loadOnce(key, load), loadOnce(key, load)]);
+  expect(reads).toBe(1);
+});
+
+async function catchError(run: () => Promise<unknown>): Promise<unknown> {
+  try {
+    await run();
+  } catch (error) {
+    return error;
+  }
+  throw new Error("expected a failure");
+}
 
 function step(
   sql: string,

@@ -796,6 +796,8 @@ export type ConnectOptions<S extends QuerySchema> = {
    * Directory of `catalog.hash` and `catalog.json`.
    *
    * When omitted, `connect` reads `.okm` under the process cwd if that hash file exists.
+   * The hash file is the fast path. A mismatch then reads `catalog.json` once
+   * per process and does not rebuild the catalog from the schema.
    */
   readonly catalogDir?: string;
   readonly logger?: {
