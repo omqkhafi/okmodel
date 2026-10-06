@@ -17,6 +17,7 @@ import { OkmError } from "../../contracts/error.js";
 import { quoteIdent } from "../../dialects/pg/ddl.js";
 import { assertCreateRole, currentUser, roleExists } from "../../dialects/pg/role/check.js";
 import { changesRole, createdRoleName } from "../../dialects/pg/role/sql.js";
+import { batchSizeField } from "./backfill.js";
 import { assertExtensionsAvailable } from "./extensions.js";
 import { assertUuidV7Available } from "./engine.js";
 import { loadConfig, projectHead } from "./project.js";
@@ -290,6 +291,7 @@ export async function pushProject(cwd: string, flags: InvokeFlags): Promise<stri
     after: head.catalog,
     renames: head.renames,
     name: "push",
+    ...batchSizeField(config.backfill?.batchSize),
   });
   if (plan.steps.length === 0) return `target ${target.name}\nno changes\n`;
   const report = await applyTarget({
@@ -481,7 +483,12 @@ async function runUnit(
         await rebuildInvalidIndex(connection, item.step.sql);
         const created = createdRoleName(item.step.sql);
         const existed = created !== undefined && (await roleExists(connection, created));
-        if (created === undefined || !existed) await connection.execute(item.step.sql);
+        if (created === undefined || !existed) {
+          await connection.execute(
+            item.step.sql,
+            item.step.backfill === undefined ? undefined : [null, null],
+          );
+        }
         if (created !== undefined && created === request.migrationRole) {
           if (!existed) {
             await grantSchema(connection, request.schema ?? "public", created);

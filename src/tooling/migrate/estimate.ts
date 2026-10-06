@@ -7,6 +7,7 @@
  */
 
 import { open } from "../../adapters/pg/postgresjs.js";
+import { aboutBatchCount } from "./backfill.js";
 import type { PlanStep } from "./plan.js";
 
 /**
@@ -92,12 +93,16 @@ export async function readRowEstimates(
  */
 export function annotateLock(step: PlanStep, estimates: ReadonlyMap<string, RowEstimate>): string {
   const pieces = lockPieces(step);
-  const text = pieces
-    .map((piece) => {
-      if (piece.table === undefined) return piece.mode;
-      return `${piece.mode} on ${piece.table}, ${estimatePhrase(estimates.get(piece.table))}`;
-    })
-    .join("; ");
+  const text = withBatches(
+    step,
+    pieces
+      .map((piece) => {
+        if (piece.table === undefined) return piece.mode;
+        return `${piece.mode} on ${piece.table}, ${estimatePhrase(estimates.get(piece.table))}`;
+      })
+      .join("; "),
+    estimates,
+  );
   if (step.safeRewrite === true) return `${text}; safe rewrite applied`;
   if (exclusiveOverLarge(pieces, estimates)) {
     return `${text}; note: more than ${String(LARGE_TABLE_ROWS)} estimated rows`;
@@ -127,6 +132,19 @@ export function aboutRows(count: number): string {
     return `about ${text}${suffix} rows`;
   }
   return `about ${String(rounded)} rows`;
+}
+
+function withBatches(
+  step: PlanStep,
+  text: string,
+  estimates: ReadonlyMap<string, RowEstimate>,
+): string {
+  const batch = step.backfill?.batch;
+  if (batch === undefined) return text;
+  const name = step.tables?.[0];
+  const estimate = name === undefined ? undefined : estimates.get(name);
+  if (estimate === undefined || estimate.kind !== "rows") return text;
+  return `${text}, about ${String(aboutBatchCount(estimate.reltuples, batch))} batches`;
 }
 
 function classify(raw: string | null): RowEstimate {

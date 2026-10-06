@@ -42,6 +42,19 @@ export type MigrateConfig = {
     readonly statement?: number;
   };
   /**
+   * Batched backfill (D195).
+   *
+   * `batchSize` is what a new plan writes as `batch=`. A step header overrides
+   * it at apply time. `pauseMs` waits between committed batches. `statementTimeoutMs`
+   * is `statement_timeout` for each batch. Omitted fields use the built-in
+   * defaults: 1000 rows, no pause, and 30 seconds.
+   */
+  readonly backfill?: {
+    readonly batchSize?: number;
+    readonly pauseMs?: number;
+    readonly statementTimeoutMs?: number;
+  };
+  /**
    * Migration role and application role.
    *
    * A name is external unless it is also listed in `managed`. The plan creates

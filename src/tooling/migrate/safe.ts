@@ -7,8 +7,8 @@
  * split from column creation, and a unique or primary key built from a
  * concurrent unique index.
  *
- * The volatile-default fill is one `UPDATE`. Batching and resume inside that
- * statement are P52.
+ * The volatile-default fill is a backfill: one idempotent `UPDATE` per batch,
+ * limited to rows where the new column is still null (D195).
  */
 
 import { fitIdentifier } from "../../contracts/catalog/identifier.js";
@@ -20,6 +20,7 @@ import type {
   IndexObject,
 } from "../../contracts/catalog/types.js";
 import { createObjectSql, qualify, quoteIdent } from "../../dialects/pg/ddl.js";
+import { keyRangePredicate, primaryKeyColumns, type BackfillSpec } from "./backfill.js";
 import type { StepKind } from "./classify.js";
 
 /** One statement the planner emits instead of the plain form. */
@@ -29,6 +30,8 @@ export type SafeStep = {
   readonly action: "ddl" | "backfill";
   readonly lock: string;
   readonly transactional: boolean;
+  /** Set on the volatile-default fill. The statement is one batch. */
+  readonly backfill?: BackfillSpec;
 };
 
 const ACCESS = "ACCESS EXCLUSIVE";
@@ -83,17 +86,19 @@ const STABLE_BUILTIN: ReadonlySet<string> = new Set([
  * @param object - Object the plan is creating
  * @param schema - Concrete schema name
  * @param catalogs - Before and after catalogs, for volatility and name clashes
+ * @param batchSize - Rows per batch written on a volatile-default fill
  * @returns The replacement steps, or `undefined` to keep the plain statement
  */
 export function stepsForExistingTable(
   object: CatalogObject,
   schema: string,
   catalogs: readonly Catalog[],
+  batchSize: number,
 ): readonly SafeStep[] | undefined {
   if (object.kind === "index") return [concurrentIndexStep(object, schema)];
   if (object.kind === "constraint") return constraintSteps(object, schema);
   if (object.kind === "column" && volatileDefault(object.definition.defaultExpression, catalogs)) {
-    return volatileColumnSteps(object, schema, catalogs);
+    return volatileColumnSteps(object, schema, catalogs, batchSize);
   }
   return undefined;
 }
@@ -285,14 +290,22 @@ function volatileColumnSteps(
   column: ColumnObject,
   schema: string,
   catalogs: readonly Catalog[],
+  batchSize: number,
 ): readonly SafeStep[] {
-  const table = qualify(schema, column.identity.parent.name);
+  const tableName = column.identity.parent.name;
+  const table = qualify(schema, tableName);
   const name = quoteIdent(column.identity.name);
   const collate =
     column.definition.collation === undefined
       ? ""
       : ` collate ${quoteIdent(column.definition.collation)}`;
   const expression = column.definition.defaultExpression ?? "";
+  const key = primaryKeyColumns(catalogs, tableName);
+  const backfill: BackfillSpec = {
+    table,
+    key: key.map((item) => item.quoted),
+    batch: batchSize,
+  };
   const steps: SafeStep[] = [
     {
       sql: `alter table ${table} add column ${name} ${column.definition.dataType}${collate}`,
@@ -309,11 +322,12 @@ function volatileColumnSteps(
       transactional: true,
     },
     {
-      sql: `update ${table} set ${name} = ${expression} where ${name} is null`,
+      sql: `update ${table} set ${name} = ${expression} where ${name} is null and ${keyRangePredicate(key)}`,
       kind: "backfill-expand",
       action: "backfill",
       lock: ROW,
-      transactional: true,
+      transactional: false,
+      backfill,
     },
   ];
   if (!column.definition.nullable) {
