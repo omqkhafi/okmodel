@@ -62,9 +62,11 @@ export type ReadCall = {
   readonly build?: ReadBuild;
   /** Writes the end of the statement, after `limit`. A row lock sets it. */
   readonly tail?: (sink: Sink) => void;
-  /** The caller's `signal` and `timeout`. They never enter the plan or its key. */
+  /** The caller's `signal`, `timeout`, and `route`. They never enter the plan or its key. */
   readonly signal?: AbortSignal;
   readonly timeout?: number;
+  /** `"primary"` or `"replica"`. Absent means the router classifies the statement. */
+  readonly route?: "primary" | "replica";
   /** Set by `for()` or `unscoped()`. Absent on a schema with no tenancy. */
   readonly scope?: CallScope;
   /** Inspect lines from the tenancy object. Absent when the schema has no tenancy. */
@@ -240,12 +242,21 @@ const FIND_OPTIONS = [
   "limit",
   "orderBy",
   "select",
+  "route",
   "signal",
   "timeout",
   "where",
 ] as const;
-const ONE_OPTIONS = ["include", "orderBy", "select", "signal", "timeout", "where"] as const;
-const FILTER_OPTIONS = ["signal", "timeout", "where"] as const;
+const ONE_OPTIONS = [
+  "include",
+  "orderBy",
+  "route",
+  "select",
+  "signal",
+  "timeout",
+  "where",
+] as const;
+const FILTER_OPTIONS = ["route", "signal", "timeout", "where"] as const;
 
 /**
  * Option names `find`, `one`, `count`, and `exists` accept.

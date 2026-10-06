@@ -52,6 +52,15 @@ function plan(
   view: ArchiveView | undefined,
 ): Promise<unknown> & Record<string, unknown> {
   const { lock, wait, ...rest } = options as Record<string, unknown>;
+  const forced = (session.pool as { forcedRoute?: string }).forcedRoute;
+  if (rest.route === "replica" || forced === "replica") {
+    throw new OkmError("OKM1840", "A locking read needs the primary.", {
+      fix: {
+        summary:
+          "Run the operation on the primary. Writes, batch, locks, and tx() never go to a replica.",
+      },
+    });
+  }
   if (session.tx === undefined) {
     throw new OkmError("OKM1830", "A row lock needs a transaction. find was called outside tx().", {
       fix: { summary: "Move the find into tx(): the lock lasts until the transaction ends." },

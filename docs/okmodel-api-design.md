@@ -213,7 +213,7 @@ Five different questions, five different places:
 | **Pool** | The connections of one endpoint, opened through the adapter |
 | **Connection** | One connection in a pool; a transaction reserves one for its whole life |
 | **Tenant registry** | Resolves a tenant id to a Target and a Target to its connection configuration (a URL or a topology); it is not a connection |
-| **Session** | A context client (`db.for(...)`) or the root client, with the write position used for read-your-writes |
+| **Session** | The topology handle for one `connect()`. `for()`, `unscoped()`, and a connection from `reserve()` share it. Until P63 a successful write sets a flag and later reads use the primary |
 
 ```text
 Tenant ─ registry ─► Target ─ resolver ─► Topology ─► Endpoint ─► Pool ─► Connection
@@ -228,7 +228,7 @@ export const db = await connect({ primary: url, replicas: [r1, r2] }, { schema: 
 export const db = connect(url, { schema: appSchema, tenancy: { registry } });   // M5
 ```
 
-Until read routing (P61), every operation on a topology uses the primary. `routing` keys other than `probe` throw OKM1061.
+A topology routes reads. `routing.probe` and `routing.fallback` are accepted. `routing.select` (P62), `consistency`, and `maxLag` (P63) throw OKM1061.
 
 **Invariants.** Each has a named CI test; a rule without one is design intent.
 
@@ -402,7 +402,7 @@ A logical operation is what the caller means; a method is how it is spelled. One
 | Relationship operations | `sync` |
 | Execution primitives | `tx`, `batch` |
 | Query modifiers | `.inspect()`, `.sql()`, `.explain()`, `.safe()`, `.stream()`, `.required()` |
-| Routing constraints | `.primary()` and `.replica()` on reads; routing is otherwise automatic (section 15.1) |
+| Routing constraints | `route` on a read, and `db.using("primary" \| "replica")`; routing is otherwise automatic (section 15.1) |
 
 Guarantees are invariants, not a list of methods. A guarantee without a named CI test is design intent, not a guarantee:
 
@@ -414,7 +414,7 @@ Guarantees are invariants, not a list of methods. A guarantee without a named CI
 | Declared atomicity | each operation and mode states its atomicity and race behavior (table below) | `atomicity.table` |
 | Deterministic semantics | the small-API semantics table holds on every driver | `semantics.conformance` |
 | Final safety verification | no composition can remove a core invariant except through a named escape hatch with a reason | `safety.property` |
-| Routing | operations that require the primary never reach a replica; `.replica()` never silently reads the primary; one operation, one endpoint | `routing.property`, `routing.strict`, `routing.once` |
+| Routing | operations that require the primary never reach a replica; `route: "replica"` never silently reads the primary; one operation, one endpoint | `routing.property`, `routing.strict`, `routing.once` |
 | Session read-your-writes | a read after a committed write in the same session never sees older data, or falls back to the primary | `consistency.position` |
 | Batch atomicity | the same all-or-nothing contract on every driver | `batch.atomic` |
 
@@ -1016,14 +1016,26 @@ A Target has a topology: exactly one primary endpoint and any number of replica 
 
 ```ts
 export const db = await connect(
-  { primary: url, replicas: [{ url: r1, weight: 2 }, r2] },
-  { schema: appSchema, routing: { probe: "1s" } },
+  { primary: url, replicas: [{ url: r1, weight: 2, name: "east" }, r2] },
+  {
+    schema: appSchema,
+    routing: { probe: "1s", fallback: "primary" },
+    onRoute(event) {
+      // { op: "read", endpoint: "east", reason: "auto:east" }
+    },
+  },
 );
 
-await db.tasks.find({ limit: 50 }); // the primary, until P61
+await db.tasks.find({ limit: 50 }); // first healthy replica
+await db.tasks.find({ limit: 50, route: "primary" });
+await db.tasks.find({ limit: 50, route: "replica" });
+const replica = db.using("replica"); // no close(), no using()
+await replica.tasks.find({ limit: 50 });
 ```
 
-This version opens the pools and probes replicas. It does not route. `select`, `consistency`, `fallback`, and `maxLag` throw OKM1061 until P62, P63, and P61. `.primary()` and `.replica()` are not methods yet. `inspect()` stays `single-endpoint`. The table and the rules below are the design those prompts implement. A migrate target that carries `primary`, `replicas`, `weight`, or `pool` is OKM1845 and is not resolved.
+Reads use the first replica whose circuit is closed, in config order. A successful write on that connect, including one through `reserve()` and through `for()`, sets a flag, and later reads use the primary until P63 replaces the flag with commit positions. `routing.fallback` is `"primary"` (the default) or `"error"`. `routing.select` is P62. `consistency` and `maxLag` are P63. Those three throw OKM1061. `inspect()` stays `single-endpoint`. Routing reasons are delivered to `onRoute`. Showing them from `inspect()` is the M2 dev inspector. A migrate target that carries `primary`, `replicas`, `weight`, or `pool` is OKM1845 and is not resolved.
+
+A string or a pool is one endpoint. It serves `route: "primary"` and `route: "replica"` from that endpoint. It has no `using`. A write's options do not take `route`. `using("replica")` injects the route, and the router raises OKM1840 for a write, a batch, a transaction, or a locking read. Inside `tx()`, `route: "replica"` is OKM1840 because the transaction already holds the primary connection. The dialect check (`select current_setting(...)`) always uses the primary. A statement whose text starts with `with` is treated as a write. `schema()` rejects a table named `using` as a reserved word (OKM1122). A model that still carries that name is OKM1120 at connect.
 
 | `routing` key | Default | Meaning |
 |---|---|---|
@@ -1037,23 +1049,23 @@ A replica entry is a URL or `{ url, weight?, name?, pool? }`.
 
 **Routing rules.**
 
-1. **Requires the primary:** writes, `batch`, locking reads, advisory locks and anything inside `tx()`. Every other read is eligible.
-2. **Automatic.** With replicas configured, an eligible read is routed by candidate filtering then selection. If no replica is eligible it follows `fallback`.
-3. **`.primary()`** (reads) requires the primary and bypasses selection.
-4. **`.replica(opts?)`** requires a replica. Session consistency still applies unless `{ consistency: "eventual" }`. If no replica is eligible it fails with OKM1843 and never reads the primary; this includes a topology with no replicas (its `fix` says to configure one or drop the constraint). It is absent from the types of primary-required operations and fails at runtime with OKM1840.
-5. **One operation, one endpoint.** All statements of an operation (a `find` with includes, a multi-statement snapshot read) run on the endpoint chosen for it. A transport failure before any result re-routes the operation once among eligible endpoints (never to the primary for `.replica()`).
+1. **Requires the primary:** writes, `batch`, locking reads, advisory locks and anything inside `tx()`. Every other read is eligible. A replica constraint on one of these is OKM1840.
+2. **Automatic.** An eligible read uses the first replica whose circuit is closed. A session that has written uses the primary (`fallback:position-unknown`). If no replica is eligible the read follows `fallback`: the primary, or OKM1844 when `fallback` is `"error"`.
+3. **`route: "primary"`** requires the primary.
+4. **`route: "replica"`** and **`using("replica")`** require a replica. If none is eligible the call fails with OKM1843 and does not read the primary. This includes a topology with no replicas. The fix says to configure one or drop the route.
+5. **One operation, one endpoint.** All statements of an operation (a `find` with includes, a multi-statement snapshot read) run on the endpoint chosen for it. A connection failure before any result retries the read once on another eligible replica. A replica constraint does not continue to the primary.
 6. **Internal read-only transactions** that OKModel opens for an operation (snapshot reads, the `rls` context) are part of that operation and follow its routing. Only user `tx()` and writes require the primary.
-7. **Pages of a cursor are separate operations.** Each is consistent with the session position; they are not one snapshot.
+7. **Pages of a cursor are separate operations.** Each is consistent with the session flag; they are not one snapshot. P63 replaces that flag with the commit position.
 
 | Call | Endpoint | If no replica is eligible |
 |---|---|---|
 | write, `batch`, locking read, advisory lock, anything in `tx()` | primary | none needed |
 | read, no constraint, replicas configured | replica (automatic) | primary, or OKM1844 with `fallback: "error"` |
-| read `.primary()` | primary | none needed |
-| read `.replica()` | replica | OKM1843 |
-| no replicas configured | primary | `.replica()` fails with OKM1843 |
+| read `route: "primary"` or `using("primary")` | primary | none needed |
+| read `route: "replica"` or `using("replica")` | replica | OKM1843 |
+| no replicas configured | primary | `route: "replica"` fails with OKM1843 |
 
-**Candidate filtering, then selection.** Eligibility and choice are different steps and never merge into one strategy:
+**Candidate filtering, then selection (P62).** This version uses health only: the first replica in config order whose circuit is closed. Eligibility and choice stay different steps:
 
 ```text
 all replicas → health → consistency and lag → capacity → selection strategy → one replica
@@ -1064,7 +1076,7 @@ all replicas → health → consistency and lag → capacity → selection strat
 - **Capacity:** a replica whose pool is saturated is skipped for automatic reads.
 - **Strategy:** chooses among the survivors from weight, in-flight count (`stats()`) and observed latency (EWMA). `weighted` with equal weights is the default and behaves as smooth round-robin. A function `select(candidates, ctx)` receives `{ name, weight, inflight, latencyMs, lag }` for each candidate and returns one.
 
-**Consistency by commit position.**
+**Consistency by commit position (P63).** Until P63, a successful write on the topology handle keeps later reads on the primary. `for()` and `unscoped()` share that handle. P63 replaces the flag with the rules below, and then each `db.for()` client has its own watermark.
 
 - After a write commits, the session watermark becomes the primary's WAL position read **after** the commit, on the committing connection. PostgreSQL does not return a commit LSN to clients, so this is `pg_current_wal_insert_lsn()`: an upper bound of the commit record's LSN, hence safe, occasionally stricter than needed. Reading it inside the transaction would be wrong: it gives the start of the commit record, which a replica can reach before it has applied the commit; `pg_current_wal_lsn()` is also wrong under `synchronous_commit=off`. The read is sent on the same connection immediately after commit; sending `COMMIT; SELECT pg_current_wal_insert_lsn()` as one simple-query message is evaluated in P13 and P63, otherwise it costs one extra round trip. It applies only when replicas are configured and `consistency` is `"session"`. M0 confirmed the mechanism (the after-commit value was 40 bytes past the start of a 34-byte commit record; 0 read-your-writes violations); the extra fallback rate under write load is measured in P64 (D121).
 - A replica may serve a read for a session when its replay position is at or beyond the watermark. Replay positions only move forward, so the last observed value (from a probe or an earlier check) is a safe lower bound: if it satisfies the watermark no round trip is needed; otherwise one on-demand `pg_last_wal_replay_lsn()` check runs, then the next candidate or the fallback.
@@ -1074,7 +1086,7 @@ all replicas → health → consistency and lag → capacity → selection strat
 - **Capability gate:** reading positions needs `replication.position` on the engine and the role's privileges, detected per endpoint at connect. Without it a session that wrote reads from the primary (automatic) or fails with OKM1843 (strict); a stale replica is never used silently. `consistency: "eventual"` needs no positions.
 - Carrying a session's position across processes (a cookie or header) is deferred (section 25).
 
-**Inspection:** `inspect()` shows the endpoint and the reason: `primary-required`, `constraint:primary`, `constraint:replica`, `auto:<name>`, or `fallback:<no-replicas | unhealthy | behind | position-unknown | saturated>`.
+**`onRoute`.** A topology connect option. The callback receives `{ op, endpoint, reason }` after an endpoint is chosen. `op` is `"read"`, `"write"`, `"tx"`, or `"lock"`. `reason` is `primary-required`, `constraint:primary`, `constraint:replica`, `auto:<name>`, or `fallback:<no-replicas | unhealthy | position-unknown>`. A throw is swallowed and the operation continues. `behind` and `saturated` arrive with P62 and P63. `inspect()` stays `single-endpoint`. Routing reasons in `inspect()` are the M2 dev inspector.
 
 ### 15.2 Pools, connection affinity and target resolution
 

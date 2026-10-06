@@ -43,6 +43,7 @@ const OPTIONS = [
   "limit",
   "include",
   "after",
+  "route",
   "signal",
   "timeout",
 ] as const;
@@ -117,6 +118,7 @@ function plan(
         include: record.include,
         signal: record.signal,
         timeout: record.timeout,
+        route: record.route,
       },
       undefined,
       session.scope,

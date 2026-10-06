@@ -990,6 +990,10 @@ export default async function seed(t: {
 bunx okm seed seed.ts
 ```
 
+### Replicas
+
+`connect({ primary, replicas }, options)` opens one pool per endpoint. A read uses the first healthy replica. After a write in that connection, later reads use the primary. `find({ route: "replica" })` requires a replica. `db.using("replica")` returns a client that reads replicas and has no `close`. `onRoute` receives the endpoint and the reason. A string or an existing pool is one endpoint and serves either `route` from it.
+
 ### Startup
 
 `connect()` compares the app with `okm_history`. A database that is ahead by expand migrations still opens. Ahead by a contract migration, or behind the app, is OKM1520 and names the migration. `okm migrate status` prints the same states, plus `failed at step N (resume with okm migrate apply)`.

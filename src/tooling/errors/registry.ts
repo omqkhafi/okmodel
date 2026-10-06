@@ -627,7 +627,7 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
   {
     code: "OKM1840",
     title: "Replica not allowed",
-    summary: ".replica() was used on an operation that requires the primary, or inside tx().",
+    summary: "A replica route was used on an operation that requires the primary, or inside tx().",
     fix: "Run the operation on the primary. Writes, batch, locks, and tx() never go to a replica.",
   },
   {
@@ -647,7 +647,7 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     title: "No eligible replica",
     summary:
       "A replica was required and none is eligible: unhealthy, behind the session, or none configured.",
-    fix: "Configure a replica or drop .replica(). This call does not read the primary.",
+    fix: "Configure a replica or drop the route. This call does not read the primary.",
   },
   {
     code: "OKM1844",

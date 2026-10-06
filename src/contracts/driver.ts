@@ -69,6 +69,13 @@ export type ExecuteOptions = {
    * A deadline is kind `timeout`.
    */
   readonly timeout?: number;
+  /**
+   * Read routing hint.
+   *
+   * Drivers ignore it. A topology router reads it. Absent, the router
+   * classifies the statement.
+   */
+  readonly route?: "primary" | "replica";
 };
 
 /** Column names and parameter count from a describe. */

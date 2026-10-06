@@ -422,10 +422,17 @@ function held(session: Session, frame: Frame, after: After[], depth: number): Se
     depth === 0
       ? {
           capabilities: base.capabilities,
-          execute: (text: string, params?: readonly WireValue[], options?: ExecuteOptions) =>
-            guarded(() => frame.conn.execute(text, params, stoppable(frame, options)), false),
-          batch: (statements: readonly Statement[], options?: ExecuteOptions) =>
-            guarded(() => frame.conn.batch(statements, stoppable(frame, options)), true),
+          execute: (text: string, params?: readonly WireValue[], options?: ExecuteOptions) => {
+            if (options?.route === "replica") replicaInside();
+            return guarded(
+              () => frame.conn.execute(text, params, stoppable(frame, options)),
+              false,
+            );
+          },
+          batch: (statements: readonly Statement[], options?: ExecuteOptions) => {
+            if (options?.route === "replica") replicaInside();
+            return guarded(() => frame.conn.batch(statements, stoppable(frame, options)), true);
+          },
           stats: () => base.stats(),
           close: () => Promise.resolve(),
         }
@@ -491,9 +498,26 @@ function lockKey(key: string | number | bigint): readonly [string, string] {
 }
 
 function callOf(options: CallOptions | undefined): ExecuteOptions | undefined {
-  if (options?.signal === undefined && options?.timeout === undefined) return undefined;
+  if (
+    options?.signal === undefined &&
+    options?.timeout === undefined &&
+    options?.route === undefined
+  ) {
+    return undefined;
+  }
   return {
-    ...(options.signal !== undefined ? { signal: options.signal } : {}),
-    ...(options.timeout !== undefined ? { timeout: options.timeout } : {}),
+    ...(options?.signal !== undefined ? { signal: options.signal } : {}),
+    ...(options?.timeout !== undefined ? { timeout: options.timeout } : {}),
+    ...(options?.route !== undefined ? { route: options.route } : {}),
   };
+}
+
+/** OKM1840. A transaction already holds the primary. */
+function replicaInside(): never {
+  throw new OkmError("OKM1840", "This operation needs the primary.", {
+    fix: {
+      summary:
+        "Run the operation on the primary. Writes, batch, locks, and tx() never go to a replica.",
+    },
+  });
 }

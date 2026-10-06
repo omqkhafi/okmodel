@@ -1,5 +1,5 @@
 /**
- * Topology connect: one pool per endpoint, probes, and a primary-only query path.
+ * Topology connect: one pool per endpoint, probes, and a read on the first replica.
  *
  * Pool sizes are recorded by a stand-in `open`. Health uses independent PGlite
  * databases; the replay position comes from `ReplicaState`.
@@ -21,7 +21,7 @@ const notes = table("notes", {
 });
 const app = schema({ tables: [notes] });
 
-test("a topology opens one pool per endpoint and queries the primary", async () => {
+test("a topology opens one pool per endpoint and reads the first replica", async () => {
   const opened: { url: string; max: number | undefined; sql: string[] }[] = [];
   const db = await connectTopology(
     {
@@ -58,12 +58,11 @@ test("a topology opens one pool per endpoint and queries the primary", async () 
   expect(view?.endpoints[1]?.weight).toBe(2);
   expect(view?.endpoints[2]?.weight).toBe(1);
   expect(view?.endpoints.every((endpoint) => endpoint.position)).toBe(true);
-  const east = opened[1]?.sql.length ?? 0;
   const west = opened[2]?.sql.length ?? 0;
   const rows = await db.notes.find({ limit: 1 });
   expect(rows).toEqual([]);
-  expect(opened[0]?.sql.some((text) => text.includes("notes"))).toBe(true);
-  expect(opened[1]?.sql.length).toBe(east);
+  expect(opened[0]?.sql.some((text) => text.includes("notes"))).toBe(false);
+  expect(opened[1]?.sql.some((text) => text.includes("notes"))).toBe(true);
   expect(opened[2]?.sql.length).toBe(west);
   await db.close();
 });
