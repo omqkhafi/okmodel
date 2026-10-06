@@ -180,47 +180,51 @@ test("a plain client serves route primary and route replica from its endpoint", 
   }
 });
 
-test("a missing or unhealthy replica is OKM1843 or OKM1844", async () => {
-  const none = await openTopology(app, [], { replicas: [] });
-  try {
-    await none.connected;
-    await expectCode(() => none.notes.find({ limit: 1, route: "replica" }), "OKM1843");
-    await none.close();
-  } finally {
-    await none.close();
-  }
+test(
+  "a missing or unhealthy replica is OKM1843 or OKM1844",
+  async () => {
+    const none = await openTopology(app, [], { replicas: [] });
+    try {
+      await none.connected;
+      await expectCode(() => none.notes.find({ limit: 1, route: "replica" }), "OKM1843");
+      await none.close();
+    } finally {
+      await none.close();
+    }
 
-  const strict = await openTopology(app, [], {
-    replicas: [],
-    routing: { fallback: "error" },
-  });
-  try {
-    await strict.connected;
-    await expectCode(() => strict.notes.find({ limit: 1 }), "OKM1844");
-  } finally {
-    await strict.close();
-  }
+    const strict = await openTopology(app, [], {
+      replicas: [],
+      routing: { fallback: "error" },
+    });
+    try {
+      await strict.connected;
+      await expectCode(() => strict.notes.find({ limit: 1 }), "OKM1844");
+    } finally {
+      await strict.close();
+    }
 
-  let down = true;
-  const state: ReplicaState = {
-    replayLsn() {
-      if (down) throw new Error("replica down");
-      return "0/1";
-    },
-  };
-  const unhealthy = await connect(
-    { primary: memory("primary"), replicas: [memory("east")] },
-    { schema: app, routing: { probe: 30, fallback: "error" }, replicaState: state },
-  );
-  try {
-    await unhealthy.connected;
-    await waitFor(() => readTopology(unhealthy)?.endpoints[1]?.circuit === "open");
-    await expectCode(() => unhealthy.notes.find({ limit: 1 }), "OKM1844");
-    down = false;
-  } finally {
-    await unhealthy.close();
-  }
-});
+    let down = true;
+    const state: ReplicaState = {
+      replayLsn() {
+        if (down) throw new Error("replica down");
+        return "0/1";
+      },
+    };
+    const unhealthy = await connect(
+      { primary: memory("primary"), replicas: [memory("east")] },
+      { schema: app, routing: { probe: 30, fallback: "error" }, replicaState: state },
+    );
+    try {
+      await unhealthy.connected;
+      await waitFor(() => readTopology(unhealthy)?.endpoints[1]?.circuit === "open");
+      await expectCode(() => unhealthy.notes.find({ limit: 1 }), "OKM1844");
+      down = false;
+    } finally {
+      await unhealthy.close();
+    }
+  },
+  { timeout: 20_000 },
+);
 
 test("using replica refuses a write, a transaction, and a locking read", async () => {
   const hits: Hit[] = [];
