@@ -34,10 +34,16 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okm migrate check` replays every migration into a scratch schema, plans each result back to that file's catalog, checks the previous catalog, requires the last catalog to match the schema, and lints the history (D196). Success prints `ok N migrations`. A remaining step is OKM1547, including a fork (`migration X was generated from a different parent than Y`). An expand migration that drops something the previous catalog relies on is OKM1548. A stale head is OKM1549 and the fix is `okm generate`. A protected target is refused: point the command at a throwaway Postgres. `--allow-protected` does not apply.
 - `defineConfig({ lintFrom: "<migration id>" })` is the adoption baseline for `okm migrate check`. Files before that id are not linted. Apply still lints pending migrations only.
 - `okm migrate status` prints `current`, `behind by expand`, `behind by contract`, `ahead by expand`, `ahead by contract`, or `failed at step N (resume with okm migrate apply)`. The command stays read-only on a protected target (D197).
+- `okm migrate apply` on an empty target installs the head snapshot and `reference` rows, records `provisioned@<migration id>`, and does not replay steps. A non-empty target with no history is OKM1851. An empty protected target is allowed without `--allow-protected` (D198).
+- `table({ reference: { key, rows } })` inserts a missing key on provision and on every apply. It does not update or delete. The rows stay on the schema and out of the catalog hash.
+- `provision(target)` from `okmodel/migrate` provisions one configured target under the same rules.
+- `okm migrate check --provision` compares that snapshot with a full replay. A difference is OKM1521 and names the object. The default check is unchanged.
+- OKM1542 flags `insert`, `update`, `delete`, `merge`, and `truncate` outside a backfill step. Reference inserts are not migration steps, so they are not flagged.
 
 #### docs
 
 - `okm migrate check` has a CI recipe that starts Postgres and runs the command. The previous-catalog check is schema-level and does not prove application behaviour. Tenant targets and schema-per-tenant checking stay M5. Startup compatibility is the `connect()` check in D197, not this command.
+- Provisioning and reference rows are documented, including where the rows live and what `--provision` compares (D198).
 
 ### ♻️ Changed
 

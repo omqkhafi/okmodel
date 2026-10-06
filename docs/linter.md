@@ -97,8 +97,9 @@ OKM1706 and OKM1823 are not rules in this table. A tenant index that does not le
 | OKM1538 | locking | warning | Type change that rewrites the table. No safe form in this version |
 | OKM1539 | type-preference | warning | `timestamp` without time zone |
 | OKM1540 | type-preference | warning | `varchar(n)` where `text` would do |
+| OKM1542 | data-dependent | error | `insert`, `update`, `delete`, `merge`, or `truncate` outside a backfill step |
 | OKM1543 | type-preference | warning | `serial` or a `nextval` default |
 | OKM1544 | type-preference | warning | `json` where `jsonb` is available |
 | OKM1545 | type-preference | warning | Identity that is not generated always |
 
-OKM1520, OKM1521, OKM1522, OKM1530, OKM1541, OKM1542, OKM1546, OKM1547, OKM1548, and OKM1549 are already other guards in this range. They are listed in §21. What this linter does not do yet is in [known limits](known-limits.md#migrations).
+OKM1520, OKM1521, OKM1522, OKM1530, OKM1541, OKM1546, OKM1547, OKM1548, and OKM1549 are other guards in this range. They are listed in §21. What this linter does not do yet is in [known limits](known-limits.md#migrations). Reference rows are not migration steps, so OKM1542 does not see them. See [provisioning](provisioning.md).

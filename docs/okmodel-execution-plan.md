@@ -119,7 +119,7 @@ Spike code lives in the private workspace package `packages/spikes`; what proves
 | P52 | `p52-backfill-runner` | shipped: a backfill step is a batched, resumable `UPDATE` in the migration file, checkpointed in `okm_backfill`, and `okm migrate apply` runs `TargetRunner` for one target (D195). Tenant iteration, bounded concurrency, canary, class flags, and the control database are M5 |
 | P53 | `p53-migrate-check` | shipped: `okm migrate check` replays history into a scratch schema, checks the previous catalog, the head, and the linter (D196). `lintFrom` is the adoption baseline. A protected target is refused. OKM1547, OKM1548, OKM1549 |
 | P53b | `p53b-startup-compat` | shipped: `connect()` allows a database that is ahead by expand migrations; ahead by a contract migration, or behind, is OKM1520 and names the migration (D197). `okm migrate status` prints those states, plus `failed at step N (resume with okm migrate apply)`. A hash mismatch loads `.okm/catalog.json` once per process |
-| P53A | `p53a-provisioning` | provisioning from the current snapshot, `reference` data, snapshot ↔ replayed-history equivalence (OKM1521), OKM1542, OKM1851 |
+| P53A | `p53a-provisioning` | shipped: an empty target installs the head snapshot and `reference` rows (D198). A non-empty target with no history is OKM1851. `okm migrate check --provision` is OKM1521. OKM1542 flags a data statement outside backfill |
 | P54 | `p54-testing-package` | factories, `expectQueries`, isolation check, seeds |
 | P55 | `p55-gate-0.4` | the full `protected.policy` enumeration (every operation class through the CLI, engine, `backfill()`, `okm seed`, runner and `provision`); release 0.4 |
 

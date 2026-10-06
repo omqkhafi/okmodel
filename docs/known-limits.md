@@ -10,13 +10,12 @@ An option or builder that is not in this version throws OKM1061 and names the pr
 
 | Item | Version | Prompt |
 | --- | --- | --- |
-| `reference` | 0.4 | P53A |
 | `okmodel/testing` | 0.4 | P54 |
 | `morph` | later | M2 |
 | `computed` | later | no 0.x prompt |
 | `policies` | later | no 0.x prompt |
 
-Installing the head snapshot, snapshot-versus-replay equivalence (OKM1521), and `reference` rows arrive in P53A. Until then, `okm migrate apply` replays migration files. See [environments](environments.md).
+`provision(target)` installs one configured target. Creating a schema per tenant, creating a database per tenant, and the tenant registry are M5. See [provisioning](provisioning.md).
 
 Also not in this version:
 
@@ -99,7 +98,7 @@ Bun.sql keeps `idleTimeout` at 0, which is Bun's default (no idle timer). A fini
 - **The linter does not connect, and it is not data-aware.** It reads the plan and the catalogs. An existing table is one present in the catalog before the plan. It cannot see how many rows are stored.
 - **A type change that rewrites the table is not rewritten** (D193). OKM1538 stays a warning. There is no safe form in this version. A column swap is expand and contract work for a later step. OKM1524 already requires a reason for the type change.
 - **OKM1706 and OKM1823 are not linter rules.** A tenant index that does not lead with the tenant key is OKM1706 when the schema is built. `security: "definer"` without `searchPath` is OKM1823 on `fn()`. Both fail at declaration time, which is stronger than a lint, and the linter does not copy them.
-- **OKM1542 is not fired by this linter.** A data statement outside `backfill()` arrives with reference data in P53A.
+- **OKM1542 flags a data statement outside `backfill()`.** `insert`, `update`, `delete`, `merge`, `truncate`, and a `with` that writes, are errors. A backfill `update` is not. Reference rows are not migration steps, so they are not flagged. See [provisioning](provisioning.md).
 - **`okm migrate check` does not check tenant targets.** Tenant targets and schema-per-tenant checking are M5. The command checks the selected target's history in one scratch schema.
 - **The previous-catalog check is schema-level only.** It requires every table, column, constraint, and type from catalog N−1 to remain in N, with the same type, and it refuses a tighter nullability that has no default unless the migration's recomputed class is `contract`. It does not prove application behaviour.
 
