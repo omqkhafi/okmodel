@@ -99,7 +99,7 @@ test("a bad topology is OKM1120 and a later routing key is OKM1061", async () =>
     () =>
       connectTopology(
         { primary: "postgres://primary/db" },
-        { schema: app, routing: { select: "weighted" } },
+        { schema: app, routing: { consistency: "session" } },
         () => recordingPool([]),
       ),
     "OKM1061",

@@ -2,14 +2,15 @@
  * Primary and replica endpoints (spec §15.1).
  *
  * Loaded only when `connect` is given a topology object. The string and pool
- * paths do not import this module. Reads use the first healthy replica.
- * A session that has written keeps reading the primary until P63.
+ * paths do not import this module. An automatic read chooses among eligible
+ * replicas. A session that has written keeps reading the primary until P63.
  */
 
 import { isConnectionFailure } from "../contracts/connection.js";
 import type {
   DriverConnection,
   DriverPool,
+  DriverStats,
   DriverTimeouts,
   ExecuteOptions,
 } from "../contracts/driver.js";
@@ -35,10 +36,22 @@ const HEALTH_SQL = "select 1, pg_last_wal_replay_lsn()::text";
 const PING_SQL = "select 1";
 
 const LATER_ROUTING = {
-  select: "P62",
   consistency: "P63",
   maxLag: "P63",
 } as const;
+
+/** Built-in `routing.select` names, in the order the OKM1120 message lists them. */
+const SELECT_NAMES = ["weighted", "roundRobin", "leastConnections", "latencyAware"] as const;
+
+/**
+ * EWMA weight for `latencyAware` (D203).
+ *
+ * The first sample is stored as itself. Later samples use this alpha.
+ */
+const LATENCY_ALPHA = 0.2;
+
+/** Keys `routing` accepts. `consistency` and `maxLag` stay OKM1061 until P63. */
+const ROUTING_KEYS = "probe, select, fallback";
 
 /** `"primary"` or `"replica"`. `using` and `route` accept only these. */
 export type RouteName = "primary" | "replica";
@@ -55,10 +68,46 @@ export type RouteEvent = {
   readonly endpoint: string;
   /**
    * `primary-required`, `constraint:primary`, `constraint:replica`,
-   * `auto:<name>`, or `fallback:<no-replicas | unhealthy | position-unknown>`.
+   * `auto:<name>`, or `fallback:<no-replicas | unhealthy | position-unknown | saturated>`.
    */
   readonly reason: string;
 };
+
+/**
+ * One replica passed to a custom `routing.select`.
+ *
+ * `lag` stays `null` until P63. `latencyMs` stays `null` until a probe or a
+ * successful read has been timed.
+ */
+export type ReplicaCandidate = {
+  /** Endpoint name. */
+  readonly name: string;
+  /** Configured weight. Zero and below are OKM1120 at connect. */
+  readonly weight: number;
+  /** In-flight statements this router is running on the replica. */
+  readonly inflight: number;
+  /** EWMA of observed round-trip time, in milliseconds, or `null`. */
+  readonly latencyMs: number | null;
+  /** Replica lag. `null` until P63. */
+  readonly lag: null;
+};
+
+/** What a custom `routing.select` is choosing for. */
+type ReplicaSelectContext = {
+  /** Automatic reads are the only calls that invoke a custom select. */
+  readonly op: "read";
+};
+
+/** A built-in strategy name. */
+type SelectName = (typeof SELECT_NAMES)[number];
+
+/** `routing.select`. A function runs only for an automatic read with two or more candidates. */
+type SelectChoice =
+  | SelectName
+  | ((
+      candidates: readonly ReplicaCandidate[],
+      ctx: ReplicaSelectContext,
+    ) => ReplicaCandidate | string);
 
 /**
  * A topology client.
@@ -109,12 +158,21 @@ export type TopologyOptions = {
   /**
    * Background probe interval. `"1s"` when omitted.
    *
-   * `select` is P62. `consistency` and `maxLag` are P63. `fallback` is
-   * `"primary"` (the default) or `"error"`.
+   * `select` chooses among eligible replicas. The default is `"weighted"`.
+   * `consistency` and `maxLag` are P63. `fallback` is `"primary"` (the
+   * default) or `"error"`.
    */
   readonly routing?: {
     readonly probe?: string | number;
-    readonly select?: unknown;
+    readonly select?:
+      | "weighted"
+      | "roundRobin"
+      | "leastConnections"
+      | "latencyAware"
+      | ((
+          candidates: readonly ReplicaCandidate[],
+          ctx: { readonly op: "read" },
+        ) => ReplicaCandidate | string);
     readonly consistency?: unknown;
     readonly fallback?: "primary" | "error";
     readonly maxLag?: unknown;
@@ -176,6 +234,12 @@ type Endpoint = {
   replayLsn: string | null;
   nextDelayMs: number;
   timer: ReturnType<typeof setTimeout> | undefined;
+  /** Smooth weighted round-robin current weight. */
+  current: number;
+  /** Statements this router has started on the endpoint and not finished. */
+  inflight: number;
+  /** EWMA of round-trip time. `null` until the first probe or successful read. */
+  latencyMs: number | null;
 };
 
 type Handle = {
@@ -184,6 +248,11 @@ type Handle = {
   /** Set after a successful write on this connect, including through `reserve()`. */
   wrote: boolean;
   fallback: "primary" | "error";
+  select: SelectChoice;
+  /** Last replica `roundRobin` chose. Absent until the first pick. */
+  rrLast: Endpoint | undefined;
+  /** Reused candidate list. Not held across an await. */
+  scratch: Endpoint[];
   onRoute: ((event: RouteEvent) => void) | undefined;
   replicaState: ReplicaState | undefined;
   endpoints: Endpoint[];
@@ -195,8 +264,9 @@ const handles = new WeakMap<object, Handle>();
 /**
  * Opens one pool per endpoint, detects `replication.position`, and starts replica probes.
  *
- * Reads use the first healthy replica. `close()` stops the probes and closes
- * every pool this call opened, including clients from `using`.
+ * An automatic read runs the selection pipeline and `routing.select`.
+ * `close()` stops the probes and closes every pool this call opened,
+ * including clients from `using`.
  *
  * @param target - `{ primary, replicas }`
  * @param options - Schema, pool default, probe interval, and the optional seam
@@ -218,6 +288,7 @@ export async function connectTopology<S extends QuerySchema>(
     throw new OkmError("OKM1120", 'Table "using" collides with client.using(). Rename the table.');
   }
   refuseRouting(options.routing);
+  const select = readSelect(options.routing?.select);
   const primaryUrl = readPrimary(target);
   const replicas = readReplicas(target);
   const probeMs = readProbe(options.routing?.probe);
@@ -260,6 +331,9 @@ export async function connectTopology<S extends QuerySchema>(
       probeMs,
       wrote: false,
       fallback: readFallback(options.routing?.fallback),
+      select,
+      rrLast: undefined,
+      scratch: [],
       onRoute: options.onRoute,
       replicaState: options.replicaState,
       endpoints: opened,
@@ -333,19 +407,40 @@ export function readTopology(client: object): TopologyView | undefined {
 function refuseRouting(routing: TopologyOptions["routing"]): void {
   if (routing === undefined) return;
   if (typeof routing !== "object" || routing === null || Array.isArray(routing)) {
-    throw new OkmError("OKM1120", "routing must be an object. Accepted keys: probe, fallback.");
+    throw new OkmError("OKM1120", `routing must be an object. Accepted keys: ${ROUTING_KEYS}.`);
   }
   for (const key of Object.keys(routing)) {
-    if (key === "probe" || key === "fallback") continue;
+    if (key === "probe" || key === "fallback" || key === "select") continue;
     const later = LATER_ROUTING[key as keyof typeof LATER_ROUTING];
     if (later !== undefined) {
       throw new OkmError("OKM1061", `routing.${key} is not in this version. ${later} adds it.`);
     }
     throw new OkmError(
       "OKM1120",
-      `routing.${key} is not a routing option. Accepted keys: probe, fallback.`,
+      `routing.${key} is not a routing option. Accepted keys: ${ROUTING_KEYS}.`,
     );
   }
+}
+
+/**
+ * `routing.select`. Omitted means smooth weighted round-robin.
+ *
+ * @param value - The option the caller passed
+ * @returns The strategy
+ */
+function readSelect(value: unknown): SelectChoice {
+  if (value === undefined) return "weighted";
+  if (typeof value === "function") return value as SelectChoice;
+  if (typeof value === "string" && isSelectName(value)) return value;
+  throw new OkmError(
+    "OKM1120",
+    `routing.select must be "${SELECT_NAMES.join('", "')}", or a function.`,
+  );
+}
+
+/** One of the built-in strategy names. */
+function isSelectName(value: string): value is SelectName {
+  return (SELECT_NAMES as readonly string[]).includes(value);
 }
 
 function readPrimary(target: object): string {
@@ -551,6 +646,9 @@ async function openEndpoint(
     replayLsn: null,
     nextDelayMs: role === "replica" ? probeMs : 0,
     timer: undefined,
+    current: 0,
+    inflight: 0,
+    latencyMs: null,
   };
 }
 
@@ -577,16 +675,33 @@ async function sample(handle: Handle, endpoint: Endpoint): Promise<void> {
 
 async function readPosition(handle: Handle, endpoint: Endpoint): Promise<string | null> {
   const state = handle.replicaState;
+  const started = performance.now();
   if (state === undefined) {
     const result = await endpoint.pool.execute(HEALTH_SQL);
+    observe(endpoint, performance.now() - started);
     return result.rows[0]?.[1] ?? null;
   }
   await endpoint.pool.execute(PING_SQL);
+  observe(endpoint, performance.now() - started);
   const lsn = await state.replayLsn({ name: endpoint.name });
   if (typeof lsn !== "string" && lsn !== null) {
     throw new OkmError("OKM1120", "ReplicaState.replayLsn must return a WAL position or null.");
   }
   return lsn;
+}
+
+/**
+ * Records one round trip.
+ *
+ * The first sample is stored as itself. Later samples use {@link LATENCY_ALPHA}.
+ *
+ * @param endpoint - The replica that answered
+ * @param sampleMs - Elapsed milliseconds
+ */
+function observe(endpoint: Endpoint, sampleMs: number): void {
+  const previous = endpoint.latencyMs;
+  endpoint.latencyMs =
+    previous === null ? sampleMs : LATENCY_ALPHA * sampleMs + (1 - LATENCY_ALPHA) * previous;
 }
 
 function delayFor(probeMs: number, endpoint: Endpoint): number {
@@ -838,18 +953,17 @@ function choose(handle: Handle, text: string, route: string | undefined): Choice
     if (handle.fallback === "error") fallbackRefused("position-unknown");
     return { endpoint: primary, op, reason: "fallback:position-unknown" };
   }
-  const replica = firstReplica(handle);
+  const explicit = route === "replica";
+  const replica = pick(handle, eligible(handle, undefined, !explicit), !explicit);
   if (replica !== undefined) {
     return {
       endpoint: replica,
       op,
-      reason: route === "replica" ? "constraint:replica" : `auto:${replica.name}`,
+      reason: explicit ? "constraint:replica" : `auto:${replica.name}`,
     };
   }
-  if (route === "replica") noReplica();
-  const why = handle.endpoints.some((endpoint) => endpoint.role === "replica")
-    ? "unhealthy"
-    : "no-replicas";
+  if (explicit) noReplica();
+  const why = emptyReason(handle, true);
   if (handle.fallback === "error") fallbackRefused(why);
   return { endpoint: primary, op, reason: `fallback:${why}` };
 }
@@ -870,43 +984,333 @@ async function attempt(
 ): Promise<Awaited<ReturnType<DriverPool["execute"]>>> {
   tell(handle, { op: choice.op, endpoint: choice.endpoint.name, reason: choice.reason });
   try {
-    return await run(choice.endpoint);
+    return await tracked(choice.endpoint, choice.op === "read", () => run(choice.endpoint));
   } catch (error) {
     if (choice.op !== "read" || !isConnectionFailure(error)) throw error;
     const next = retryOf(handle, choice);
     if (next === undefined) throw error;
     tell(handle, { op: "read", endpoint: next.endpoint.name, reason: next.reason });
-    return run(next.endpoint);
+    return tracked(next.endpoint, true, () => run(next.endpoint));
   }
 }
 
-/** The other replica, or the primary when an automatic read may fall back. */
+/**
+ * Counts an in-flight replica statement and times a successful read.
+ *
+ * The counter moves before the first await so a concurrent choose sees it.
+ *
+ * @param endpoint - Where the statement runs
+ * @param time - Record round-trip time when the call succeeds
+ * @param run - The pool call
+ * @returns The statement result
+ */
+async function tracked(
+  endpoint: Endpoint,
+  time: boolean,
+  run: () => Promise<Awaited<ReturnType<DriverPool["execute"]>>>,
+): Promise<Awaited<ReturnType<DriverPool["execute"]>>> {
+  const replica = endpoint.role === "replica";
+  if (replica) endpoint.inflight += 1;
+  const started = replica && time ? performance.now() : 0;
+  try {
+    const result = await run();
+    if (replica && time) observe(endpoint, performance.now() - started);
+    return result;
+  } finally {
+    if (replica) endpoint.inflight -= 1;
+  }
+}
+
+/** The next eligible replica, or the primary when an automatic read may fall back. */
 function retryOf(handle: Handle, choice: Choice): Choice | undefined {
   if (choice.endpoint.role === "replica") noteFailure(choice.endpoint);
-  const replica = firstReplica(handle, choice.endpoint);
+  const explicit = choice.reason.startsWith("constraint:");
+  const replica = pick(handle, eligible(handle, choice.endpoint, !explicit), !explicit);
   if (replica !== undefined) {
     return {
       endpoint: replica,
       op: "read",
-      reason: choice.reason.startsWith("constraint:")
-        ? "constraint:replica"
-        : `auto:${replica.name}`,
+      reason: explicit ? "constraint:replica" : `auto:${replica.name}`,
     };
   }
-  if (choice.reason.startsWith("constraint:")) return undefined;
+  if (explicit) return undefined;
   if (handle.fallback === "error") fallbackRefused("unhealthy");
   const primary = handle.endpoints[0];
   if (primary === undefined) return undefined;
   return { endpoint: primary, op: "read", reason: "fallback:unhealthy" };
 }
 
-/** The first replica whose circuit is closed, skipping `except`. */
-function firstReplica(handle: Handle, except?: Endpoint): Endpoint | undefined {
+/**
+ * Replicas that can take this read, in config order.
+ *
+ * Health keeps a closed circuit. Consistency and lag are a no-op until P63.
+ * Capacity skips a saturated pool. `route: "replica"` does not apply capacity.
+ * `except` is the replica a connection failure just left.
+ *
+ * @param handle - Endpoints and the reused list
+ * @param except - Skip this replica
+ * @param capacity - Apply the saturation check
+ * @returns The candidates. Not held across an await
+ */
+function eligible(handle: Handle, except: Endpoint | undefined, capacity: boolean): Endpoint[] {
+  const healthy = handle.scratch;
+  healthy.length = 0;
   for (const endpoint of handle.endpoints) {
-    if (endpoint === except) continue;
-    if (endpoint.role === "replica" && endpoint.circuit === "closed") return endpoint;
+    if (endpoint.role !== "replica" || endpoint === except || endpoint.circuit !== "closed") {
+      continue;
+    }
+    healthy.push(endpoint);
   }
-  return undefined;
+  const lagged = consistent(healthy);
+  if (!capacity) return lagged;
+  let write = 0;
+  for (const endpoint of lagged) {
+    if (!saturated(endpoint)) {
+      lagged[write] = endpoint;
+      write += 1;
+    }
+  }
+  lagged.length = write;
+  return lagged;
+}
+
+/**
+ * Consistency and lag.
+ *
+ * P63 filters this list by the session watermark and `maxLag`. The stage is
+ * separate from health and from capacity, and it changes nothing until then.
+ *
+ * @param healthy - Replicas whose circuit is closed
+ * @returns The same replicas
+ */
+function consistent(healthy: Endpoint[]): Endpoint[] {
+  return healthy;
+}
+
+/**
+ * A pool with no idle connection, at its configured max, and at least one waiter.
+ *
+ * No `max` means the ceiling is unknown, so the replica is not treated as saturated.
+ *
+ * @param endpoint - Replica under consideration
+ * @returns Whether an automatic read should skip it
+ */
+function saturated(endpoint: Endpoint): boolean {
+  const max = endpoint.max;
+  if (max === undefined) return false;
+  const stats: DriverStats = endpoint.pool.stats();
+  return stats.idle === 0 && stats.waiting > 0 && stats.size >= max;
+}
+
+/**
+ * Why an automatic read found nobody to run on.
+ *
+ * @param handle - Configured endpoints
+ * @param capacity - Whether saturation counts
+ * @returns The `fallback:` suffix
+ */
+function emptyReason(handle: Handle, capacity: boolean): string {
+  let replicas = 0;
+  let healthy = 0;
+  let room = 0;
+  for (const endpoint of handle.endpoints) {
+    if (endpoint.role !== "replica") continue;
+    replicas += 1;
+    if (endpoint.circuit !== "closed") continue;
+    healthy += 1;
+    if (!capacity || !saturated(endpoint)) room += 1;
+  }
+  if (replicas === 0) return "no-replicas";
+  if (healthy === 0) return "unhealthy";
+  if (capacity && room === 0) return "saturated";
+  return "unhealthy";
+}
+
+/**
+ * One replica from `candidates`, using the handle's strategy.
+ *
+ * A custom function runs only for an automatic read with two or more
+ * candidates. One candidate skips the call. Weights are positive: P60 rejects
+ * `0` at connect, so `weighted` only sees those.
+ *
+ * @param handle - Strategy and round-robin cursor
+ * @param candidates - Pipeline output, in config order
+ * @param automatic - `false` for `route: "replica"` and `using("replica")`
+ * @returns The replica, or `undefined` when the pipeline kept none
+ */
+function pick(
+  handle: Handle,
+  candidates: readonly Endpoint[],
+  automatic: boolean,
+): Endpoint | undefined {
+  if (candidates.length === 0) return undefined;
+  const select = handle.select;
+  if (typeof select === "function") {
+    if (!automatic || candidates.length < 2) return candidates[0];
+    return fromSelect(select, candidates);
+  }
+  if (select === "roundRobin") return roundRobin(handle, candidates);
+  if (select === "leastConnections") return leastConnections(candidates);
+  if (select === "latencyAware") return latencyAware(candidates);
+  return weighted(candidates);
+}
+
+/**
+ * Smooth weighted round-robin (nginx).
+ *
+ * Current weight increases by the configured weight. The largest current
+ * weight wins, then loses the total of the weights that took part. Equal
+ * weights rotate in config order. Every weight is positive.
+ *
+ * @param candidates - Eligible replicas, at least one
+ * @returns The winner
+ */
+function weighted(candidates: readonly Endpoint[]): Endpoint {
+  const first = candidates[0];
+  if (first === undefined) throw new Error("selection saw no candidate");
+  let best = first;
+  let total = 0;
+  for (const endpoint of candidates) {
+    endpoint.current += endpoint.weight;
+    total += endpoint.weight;
+    if (endpoint.current > best.current) best = endpoint;
+  }
+  best.current -= total;
+  return best;
+}
+
+/**
+ * Next replica after the previous pick, ignoring weights.
+ *
+ * @param handle - Remembers the previous replica
+ * @param candidates - Eligible replicas, in config order
+ * @returns The next replica
+ */
+function roundRobin(handle: Handle, candidates: readonly Endpoint[]): Endpoint {
+  const next = after(handle, handle.rrLast, candidates);
+  handle.rrLast = next;
+  return next;
+}
+
+/**
+ * The candidate that follows `last` in config order, wrapping around.
+ *
+ * @param handle - Full endpoint list, primary included
+ * @param last - Previous pick. Absent on the first call
+ * @param candidates - Who may be chosen now
+ * @returns That replica
+ */
+function after(
+  handle: Handle,
+  last: Endpoint | undefined,
+  candidates: readonly Endpoint[],
+): Endpoint {
+  const first = candidates[0];
+  if (first === undefined) throw new Error("selection saw no candidate");
+  if (last === undefined) return first;
+  const start = handle.endpoints.indexOf(last);
+  if (start === -1) return first;
+  for (let step = 1; step <= handle.endpoints.length; step += 1) {
+    const endpoint = handle.endpoints[(start + step) % handle.endpoints.length];
+    if (endpoint !== undefined && candidates.includes(endpoint)) return endpoint;
+  }
+  return first;
+}
+
+/**
+ * Fewest in-flight statements. Ties stay with the earlier replica.
+ *
+ * @param candidates - Eligible replicas, in config order
+ * @returns The replica
+ */
+function leastConnections(candidates: readonly Endpoint[]): Endpoint {
+  let best = candidates[0];
+  if (best === undefined) throw new Error("selection saw no candidate");
+  for (let index = 1; index < candidates.length; index += 1) {
+    const endpoint = candidates[index];
+    if (endpoint !== undefined && endpoint.inflight < best.inflight) best = endpoint;
+  }
+  return best;
+}
+
+/**
+ * Lowest EWMA. A replica with no sample loses to one that has one.
+ * Ties stay with the earlier replica.
+ *
+ * @param candidates - Eligible replicas, in config order
+ * @returns The replica
+ */
+function latencyAware(candidates: readonly Endpoint[]): Endpoint {
+  let best = candidates[0];
+  if (best === undefined) throw new Error("selection saw no candidate");
+  for (let index = 1; index < candidates.length; index += 1) {
+    const endpoint = candidates[index];
+    if (endpoint !== undefined && lowerLatency(endpoint, best)) best = endpoint;
+  }
+  return best;
+}
+
+/** `endpoint` has a strictly better sample than `best`. */
+function lowerLatency(endpoint: Endpoint, best: Endpoint): boolean {
+  if (endpoint.latencyMs === null) return false;
+  if (best.latencyMs === null) return true;
+  return endpoint.latencyMs < best.latencyMs;
+}
+
+/**
+ * Runs a custom select. A throw leaves this function unchanged.
+ *
+ * @param select - The caller's function
+ * @param candidates - Two or more replicas
+ * @returns The replica it named
+ */
+function fromSelect(
+  select: (
+    candidates: readonly ReplicaCandidate[],
+    ctx: ReplicaSelectContext,
+  ) => ReplicaCandidate | string,
+  candidates: readonly Endpoint[],
+): Endpoint {
+  const endpoints = candidates.slice();
+  const offered: ReplicaCandidate[] = [];
+  for (const endpoint of endpoints) {
+    offered.push({
+      name: endpoint.name,
+      weight: endpoint.weight,
+      inflight: endpoint.inflight,
+      latencyMs: endpoint.latencyMs,
+      lag: null,
+    });
+  }
+  const returned: unknown = select(offered, { op: "read" });
+  if (typeof returned === "string") {
+    const endpoint = endpoints.find((item) => item.name === returned);
+    if (endpoint !== undefined) return endpoint;
+  } else if (offered.includes(returned as ReplicaCandidate)) {
+    const index = offered.indexOf(returned as ReplicaCandidate);
+    const endpoint = endpoints[index];
+    if (endpoint !== undefined) return endpoint;
+  }
+  throw new OkmError(
+    "OKM1120",
+    `routing.select returned ${shown(returned)}. It must return a candidate or its name.`,
+  );
+}
+
+/** A short name for a value a custom select returned. */
+function shown(value: unknown): string {
+  if (typeof value === "string") return JSON.stringify(value);
+  if (value === null) return "null";
+  if (value === undefined) return "undefined";
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return String(value);
+  }
+  if (typeof value === "object") {
+    const name: unknown = Reflect.get(value, "name");
+    if (typeof name === "string") return `an object named ${JSON.stringify(name)}`;
+    return "an object";
+  }
+  return typeof value;
 }
 
 /** Counts a connection failure toward the circuit. */

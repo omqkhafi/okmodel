@@ -228,7 +228,7 @@ export const db = await connect({ primary: url, replicas: [r1, r2] }, { schema: 
 export const db = connect(url, { schema: appSchema, tenancy: { registry } });   // M5
 ```
 
-A topology routes reads. `routing.probe` and `routing.fallback` are accepted. `routing.select` (P62), `consistency`, and `maxLag` (P63) throw OKM1061.
+A topology routes reads. `routing.probe`, `routing.fallback`, and `routing.select` are accepted. `consistency` and `maxLag` (P63) throw OKM1061.
 
 **Invariants.** Each has a named CI test; a rule without one is design intent.
 
@@ -1026,14 +1026,14 @@ export const db = await connect(
   },
 );
 
-await db.tasks.find({ limit: 50 }); // first healthy replica
+await db.tasks.find({ limit: 50 }); // an eligible replica
 await db.tasks.find({ limit: 50, route: "primary" });
 await db.tasks.find({ limit: 50, route: "replica" });
 const replica = db.using("replica"); // no close(), no using()
 await replica.tasks.find({ limit: 50 });
 ```
 
-Reads use the first replica whose circuit is closed, in config order. A successful write on that connect, including one through `reserve()` and through `for()`, sets a flag, and later reads use the primary until P63 replaces the flag with commit positions. `routing.fallback` is `"primary"` (the default) or `"error"`. `routing.select` is P62. `consistency` and `maxLag` are P63. Those three throw OKM1061. `inspect()` stays `single-endpoint`. Routing reasons are delivered to `onRoute`. Showing them from `inspect()` is the M2 dev inspector. A migrate target that carries `primary`, `replicas`, `weight`, or `pool` is OKM1845 and is not resolved.
+An automatic read chooses one eligible replica. The pipeline is health (a closed circuit), then consistency and lag (a no-op until P63), then capacity, then `routing.select`. The default is `weighted`: smooth weighted round-robin, with state on the topology handle. Equal weights rotate in config order. A replica `weight` of `0` or below is OKM1120, so `weighted` only sees positive weights. `roundRobin` ignores weights. `leastConnections` uses the router's in-flight count. `latencyAware` uses an exponentially weighted moving average of round-trip time, alpha 0.2. A function `select(candidates, ctx)` runs for an automatic read with two or more candidates. A successful write on that connect, including one through `reserve()` and through `for()`, sets a flag, and later reads use the primary until P63 replaces the flag with commit positions. `routing.fallback` is `"primary"` (the default) or `"error"`. `consistency` and `maxLag` throw OKM1061. `inspect()` stays `single-endpoint`. Routing reasons are delivered to `onRoute`. Showing them from `inspect()` is the M2 dev inspector. A migrate target that carries `primary`, `replicas`, `weight`, or `pool` is OKM1845 and is not resolved.
 
 A string or a pool is one endpoint. It serves `route: "primary"` and `route: "replica"` from that endpoint. It has no `using`. A write's options do not take `route`. `using("replica")` injects the route, and the router raises OKM1840 for a write, a batch, a transaction, or a locking read. Inside `tx()`, `route: "replica"` is OKM1840 because the transaction already holds the primary connection. The dialect check (`select current_setting(...)`) always uses the primary. A statement whose text starts with `with` is treated as a write. `schema()` rejects a table named `using` as a reserved word (OKM1122). A model that still carries that name is OKM1120 at connect.
 
@@ -1045,15 +1045,15 @@ A string or a pool is one endpoint. It serves `route: "primary"` and `route: "re
 | `maxLag` | none | eligibility filter on replica lag, `"5s"` or `"16MB"` |
 | `probe` | `"1s"` | interval of the background health and position probes |
 
-A replica entry is a URL or `{ url, weight?, name?, pool? }`.
+A replica entry is a URL or `{ url, weight?, name?, pool? }`. `weight` must be a positive finite number. `0` is OKM1120.
 
 **Routing rules.**
 
 1. **Requires the primary:** writes, `batch`, locking reads, advisory locks and anything inside `tx()`. Every other read is eligible. A replica constraint on one of these is OKM1840.
-2. **Automatic.** An eligible read uses the first replica whose circuit is closed. A session that has written uses the primary (`fallback:position-unknown`). If no replica is eligible the read follows `fallback`: the primary, or OKM1844 when `fallback` is `"error"`.
+2. **Automatic.** An eligible read runs the pipeline and `routing.select`. A session that has written uses the primary (`fallback:position-unknown`). If no replica is eligible the read follows `fallback`: the primary, or OKM1844 when `fallback` is `"error"`. When every healthy replica is saturated the reason is `fallback:saturated`.
 3. **`route: "primary"`** requires the primary.
 4. **`route: "replica"`** and **`using("replica")`** require a replica. If none is eligible the call fails with OKM1843 and does not read the primary. This includes a topology with no replicas. The fix says to configure one or drop the route.
-5. **One operation, one endpoint.** All statements of an operation (a `find` with includes, a multi-statement snapshot read) run on the endpoint chosen for it. A connection failure before any result retries the read once on another eligible replica. A replica constraint does not continue to the primary.
+5. **One operation, one endpoint.** All statements of an operation (a `find` with includes, a multi-statement snapshot read) run on the endpoint chosen for it. Selection runs once for that operation. A connection failure before any result retries the read once, with the same strategy, over the replicas that remain. A replica constraint does not continue to the primary.
 6. **Internal read-only transactions** that OKModel opens for an operation (snapshot reads, the `rls` context) are part of that operation and follow its routing. Only user `tx()` and writes require the primary.
 7. **Pages of a cursor are separate operations.** Each is consistent with the session flag; they are not one snapshot. P63 replaces that flag with the commit position.
 
@@ -1065,16 +1065,16 @@ A replica entry is a URL or `{ url, weight?, name?, pool? }`.
 | read `route: "replica"` or `using("replica")` | replica | OKM1843 |
 | no replicas configured | primary | `route: "replica"` fails with OKM1843 |
 
-**Candidate filtering, then selection (P62).** This version uses health only: the first replica in config order whose circuit is closed. Eligibility and choice stay different steps:
+**Candidate filtering, then selection.** Eligibility and choice stay different steps:
 
 ```text
 all replicas → health → consistency and lag → capacity → selection strategy → one replica
 ```
 
-- **Health:** a probe (`SELECT 1` plus the replay position) on each replica every `probe`; consecutive failures open a circuit, and the replica is re-probed with backoff.
-- **Consistency:** the replica's replay position must reach the session watermark; `maxLag` applies as well. Lag is a constraint, not a strategy.
-- **Capacity:** a replica whose pool is saturated is skipped for automatic reads.
-- **Strategy:** chooses among the survivors from weight, in-flight count (`stats()`) and observed latency (EWMA). `weighted` with equal weights is the default and behaves as smooth round-robin. A function `select(candidates, ctx)` receives `{ name, weight, inflight, latencyMs, lag }` for each candidate and returns one.
+- **Health:** a probe (`SELECT 1` plus the replay position) on each replica every `probe`; consecutive failures open a circuit, and the replica is re-probed with backoff. A closed circuit passes.
+- **Consistency and lag:** a separate stage, and a no-op until P63. P63 filters by the session watermark and `maxLag`. Lag is a constraint, not a strategy.
+- **Capacity:** a replica whose pool is saturated is skipped for automatic reads. Saturated means the endpoint has a `max` and `stats()` reports `idle === 0`, `waiting > 0`, and `size >= max`. No `max` means not saturated. `route: "replica"` and `using("replica")` do not apply this check; the call waits for a connection like any other.
+- **Strategy:** `weighted` (the default) is smooth weighted round-robin, the nginx algorithm, with state on the topology handle. Equal weights rotate in config order. `roundRobin` ignores weights and rotates over the eligible replicas. `leastConnections` picks the fewest in-flight statements, counted by the router around each execute, not from driver stats; ties stay in config order. `latencyAware` picks the lowest exponentially weighted moving average (alpha 0.2) of round-trip time. Successful reads and the health probe both feed it. The first sample is stored as itself. A replica with no sample loses to one that has one. Ties stay in config order. There is no random jitter. A function `select(candidates, ctx)` receives `{ name, weight, inflight, latencyMs, lag }` for each candidate (`lag` is `null` until P63; `latencyMs` is `null` with no sample) and `{ op: "read" }`. It returns one of those objects or its `name`. Any other return is OKM1120 and the message names the return value. A throw is not caught here. The function runs only for an automatic read with at least two candidates. One candidate skips the call. `route: "replica"` and `using("replica")` do not call the function; with a function configured they take the first eligible replica in config order. A named strategy still runs for that route, and capacity does not.
 
 **Consistency by commit position (P63).** Until P63, a successful write on the topology handle keeps later reads on the primary. `for()` and `unscoped()` share that handle. P63 replaces the flag with the rules below, and then each `db.for()` client has its own watermark.
 
@@ -1086,7 +1086,7 @@ all replicas → health → consistency and lag → capacity → selection strat
 - **Capability gate:** reading positions needs `replication.position` on the engine and the role's privileges, detected per endpoint at connect. Without it a session that wrote reads from the primary (automatic) or fails with OKM1843 (strict); a stale replica is never used silently. `consistency: "eventual"` needs no positions.
 - Carrying a session's position across processes (a cookie or header) is deferred (section 25).
 
-**`onRoute`.** A topology connect option. The callback receives `{ op, endpoint, reason }` after an endpoint is chosen. `op` is `"read"`, `"write"`, `"tx"`, or `"lock"`. `reason` is `primary-required`, `constraint:primary`, `constraint:replica`, `auto:<name>`, or `fallback:<no-replicas | unhealthy | position-unknown>`. A throw is swallowed and the operation continues. `behind` and `saturated` arrive with P62 and P63. `inspect()` stays `single-endpoint`. Routing reasons in `inspect()` are the M2 dev inspector.
+**`onRoute`.** A topology connect option. The callback receives `{ op, endpoint, reason }` after an endpoint is chosen. `op` is `"read"`, `"write"`, `"tx"`, or `"lock"`. `reason` is `primary-required`, `constraint:primary`, `constraint:replica`, `auto:<name>`, or `fallback:<no-replicas | unhealthy | position-unknown | saturated>`. A throw is swallowed and the operation continues. `behind` arrives with P63. `inspect()` stays `single-endpoint`. Routing reasons in `inspect()` are the M2 dev inspector.
 
 ### 15.2 Pools, connection affinity and target resolution
 
