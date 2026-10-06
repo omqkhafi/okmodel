@@ -16,14 +16,17 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### ✨ Added
 
-- `connect({ primary, replicas })` opens one pool per endpoint and probes each replica. A string or a pool is unchanged and does not load that code. `consistency` and `maxLag` throw OKM1061 (D201).
-- Reads on a topology go to an eligible replica. A write on that connect, including one through `reserve()` and `for()`, keeps later reads on the primary until P63. `route: "primary"` or `"replica"` forces a read. `db.using("primary" | "replica")` returns a client with no `close` and no `using`. `onRoute` reports the choice, and a throw from it is ignored. `routing.fallback` is `"primary"` or `"error"`. A required replica that is not eligible is OKM1843. An automatic read with `fallback: "error"` and no eligible replica is OKM1844. A write, transaction, or locking read on a replica scope is OKM1840. A string or pool client serves either `route` from its one endpoint and has no `using`. `inspect()` stays `single-endpoint`. Routing reasons in `inspect()` are the M2 dev inspector (D202).
+- `connect({ primary, replicas })` opens one pool per endpoint and probes each replica. A string or a pool is unchanged and does not load that code (D201).
+- Reads on a topology go to an eligible replica. `route: "primary"` or `"replica"` forces a read. `db.using("primary" | "replica")` returns a client with no `close` and no `using`. `onRoute` reports the choice, and a throw from it is ignored. `routing.fallback` is `"primary"` or `"error"`. A required replica that is not eligible is OKM1843. An automatic read with `fallback: "error"` and no eligible replica is OKM1844. A write, transaction, or locking read on a replica scope is OKM1840. A string or pool client serves either `route` from its one endpoint and has no `using`. `inspect()` stays `single-endpoint`. Routing reasons in `inspect()` are the M2 dev inspector (D202).
 - `routing.select` chooses the replica: `weighted` (the default, smooth weighted round-robin), `roundRobin`, `leastConnections`, `latencyAware`, or a function. A weight of 0 is OKM1120. A saturated replica is skipped on an automatic read. If every healthy replica is saturated, the read uses the primary (`fallback:saturated`) or OKM1844. `route: "replica"` still uses a saturated replica. A connection failure retries once with the same strategy (D203).
+- `routing.consistency` is `"session"` (the default) or `"eventual"`. A committed write reads `pg_current_wal_insert_lsn()` before its promise resolves when replicas are configured. That is one extra round trip. Later reads use a replica that has replayed at least that far. The root, `for()`, `unscoped()`, `using()`, and `reserve()` share that watermark. A failed position read keeps automatic reads on the primary (`fallback:position-unknown`, or OKM1844) until the next successful read. `route: "replica"` and `using("replica")` are OKM1843 while the position is unknown or no replica satisfies it. Healthy replicas that are behind report `fallback:behind` (D204).
+- `routing.maxLag` accepts `"5s"`, `"500ms"`, `"2m"`, `"16MB"`, `"512KB"`, `"1GB"`, and `"4096B"`. A bare number or any other form is OKM1120. A caught-up replica has lag zero. A custom `select` receives that lag in bytes, or `null` when it is unknown (D204).
 - A migrate target that carries `primary`, `replicas`, `weight`, or `pool` is OKM1845. The command does not resolve that URL.
 
 ### ♻️ Changed
 
 - An automatic read uses `routing.select` instead of the first healthy replica.
+- The session wrote flag is gone. A read after a committed write follows the commit position.
 
 ## v0.4.0 — 2026-10-06
 

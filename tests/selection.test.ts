@@ -1,7 +1,7 @@
 /**
  * Replica selection (spec §15.1).
  *
- * Health, then a no-op consistency stage, then capacity, then the strategy.
+ * Health, then consistency and lag, then capacity, then the strategy.
  * Weights, in-flight counts, and latency live on the topology handle.
  */
 
@@ -202,9 +202,10 @@ test(
         weight: 3,
         inflight: 0,
         latencyMs: expect.any(Number),
-        lag: null,
+        lag: expect.any(Number),
       });
-      expect(second).toMatchObject({ name: "west", weight: 1, inflight: 0, lag: null });
+      expect(second).toMatchObject({ name: "west", weight: 1, inflight: 0 });
+      expect(typeof second?.lag).toBe("number");
     } finally {
       await db.close();
     }
@@ -449,7 +450,7 @@ test(
   { timeout: 20_000 },
 );
 
-test("an unknown select is OKM1120, and consistency and maxLag stay OKM1061", async () => {
+test("an unknown select is OKM1120, and a bare maxLag is OKM1120", async () => {
   await expectCode(
     () =>
       connectTopology(
@@ -489,12 +490,12 @@ test("an unknown select is OKM1120, and consistency and maxLag stay OKM1061", as
     () =>
       connectTopology(
         { primary: "postgres://primary/db" },
-        { schema: app, routing: { maxLag: "5s" } },
+        { schema: app, routing: { maxLag: 5 as unknown as string } },
         () => {
           throw new Error("open");
         },
       ),
-    "OKM1061",
+    "OKM1120",
   );
 });
 

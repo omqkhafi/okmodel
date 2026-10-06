@@ -27,7 +27,13 @@ Also not in this version:
 - **`iStartsWith`, `iContains` and `iEndsWith` are not in this version** (D176). Use `ilike()` with an escaped pattern.
 - **`aggregate()` has no `having` and no `bucket`** (M2).
 - **Batch-mode drivers have no adapter yet.** Neon HTTP and Cloudflare D1 are covered by the driver contract (`batch` is required on every driver) and there is no adapter in this repository for either.
-- **Commit positions are later** (D203). Automatic reads use `routing.select` (default `weighted`). A write on the connect keeps later reads on the primary until P63. `consistency` and `maxLag` throw OKM1061. `inspect()` reports `single-endpoint`. Routing reasons go to `onRoute`, including `fallback:saturated`. Showing them from `inspect()` is the M2 dev inspector. A string or pool client has no `using` and serves either `route` from its one endpoint. See [topology](topology.md).
+- **`inspect()` does not show routing reasons.** It reports `single-endpoint`. Reasons go to `onRoute`, including `fallback:behind` and `fallback:saturated`. Showing them from `inspect()` is the M2 dev inspector. A string or pool client has no `using` and serves either `route` from its one endpoint. See [topology](topology.md).
+
+## Topology
+
+- **The watermark is client-wide.** The root, `for()`, `unscoped()`, `using()`, and `reserve()` share one commit position (D204). A write on any of them moves the watermark for the others. A watermark per `for()` client is deferred: the router cannot see which client issued the statement.
+- **A committed write costs one extra round trip** when replicas are configured and `consistency` is `"session"`. That read is `pg_current_wal_insert_lsn()` after the commit, and it finishes before the write's promise resolves. `"eventual"`, and a connect with no replicas, do not read it.
+- **A position is not carried across processes.** A cookie or a header that would keep read-your-writes across servers stays deferred (spec section 25).
 
 ## Views
 

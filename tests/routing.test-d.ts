@@ -46,7 +46,7 @@ void (async () => {
           expectTypeOf(candidate.weight).toEqualTypeOf<number>();
           expectTypeOf(candidate.inflight).toEqualTypeOf<number>();
           expectTypeOf(candidate.latencyMs).toEqualTypeOf<number | null>();
-          expectTypeOf(candidate.lag).toEqualTypeOf<null>();
+          expectTypeOf(candidate.lag).toEqualTypeOf<number | null>();
           return candidate;
         },
       },
@@ -67,3 +67,24 @@ void badName;
 // @ts-expect-error select is a strategy name or a function
 const badType: Select = 1;
 void badType;
+
+type Consistency = NonNullable<NonNullable<TopologyOptions["routing"]>["consistency"]>;
+type MaxLag = NonNullable<NonNullable<TopologyOptions["routing"]>["maxLag"]>;
+
+expectTypeOf<"session" | "eventual">().toEqualTypeOf<Consistency>();
+expectTypeOf<MaxLag>().toEqualTypeOf<string>();
+
+const session: Consistency = "session";
+const eventual: Consistency = "eventual";
+const lag: MaxLag = "5s";
+void session;
+void eventual;
+void lag;
+
+// @ts-expect-error consistency is session or eventual
+const badConsistency: Consistency = "linear";
+void badConsistency;
+
+// @ts-expect-error maxLag is a string, so a bare number is not a unit
+const badLag: MaxLag = 5;
+void badLag;

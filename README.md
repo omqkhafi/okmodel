@@ -992,9 +992,13 @@ bunx okm seed seed.ts
 
 ### Replicas
 
-`connect({ primary, replicas }, options)` opens one pool per endpoint. An automatic read chooses a healthy replica. After a write in that connection, later reads use the primary. `find({ route: "replica" })` requires a replica. `db.using("replica")` returns a client that reads replicas and has no `close`. `onRoute` receives the endpoint and the reason. A string or an existing pool is one endpoint and serves either `route` from it.
+`connect({ primary, replicas }, options)` opens one pool per endpoint. An automatic read chooses a replica that has replayed at least as far as this client's last committed write. `routing.consistency` is `"session"` by default. `"eventual"` does not keep that watermark. `routing.maxLag` is a duration (`"5s"`, `"500ms"`, `"2m"`) or a size (`"16MB"`, `"512KB"`, `"1GB"`, `"4096B"`). A bare number is rejected. `find({ route: "replica" })` requires a replica that satisfies the same watermark and lag, and it does not fall back to the primary. `db.using("replica")` returns a client that reads replicas and has no `close`. `onRoute` receives the endpoint and the reason. A string or an existing pool is one endpoint and serves either `route` from it.
 
-`routing.select` picks among the replicas that passed the health check. The default is `"weighted"`. `weighted` is smooth weighted round-robin. Equal weights take turns. A weight of `0` is rejected. `roundRobin` ignores weights and rotates through the eligible replicas. `leastConnections` uses the replica with the fewest statements already in flight on this client. A tie follows configuration order. `latencyAware` uses the replica with the lowest moving average of round-trip time. A function receives each candidate as `{ name, weight, inflight, latencyMs, lag }` and `{ op: "read" }`. It returns one of those objects or its `name`. It runs only when an automatic read has two or more candidates. Each `connect` below is an alternative.
+The watermark is one value for the whole `connect()`. The root, `for()`, `unscoped()`, `using()`, and `reserve()` share it. A write through any of them moves it for the others. A watermark per `for()` client is not in this version.
+
+When replicas are configured and consistency is `"session"`, a committed write reads `pg_current_wal_insert_lsn()` before its promise resolves. That is one extra round trip: on the primary pool after an autocommit `execute` or `batch`, and on the reserved connection after a successful `COMMIT`. A rollback does not read it. `"eventual"`, and a connect with no replicas, do not read it either.
+
+`routing.select` picks among the replicas that passed health, the watermark, and `maxLag`. The default is `"weighted"`. `weighted` is smooth weighted round-robin. Equal weights take turns. A weight of `0` is rejected. `roundRobin` ignores weights and rotates through the eligible replicas. `leastConnections` uses the replica with the fewest statements already in flight on this client. A tie follows configuration order. `latencyAware` uses the replica with the lowest moving average of round-trip time. A function receives each candidate as `{ name, weight, inflight, latencyMs, lag }` and `{ op: "read" }`. `lag` is the number of bytes the replica is behind the primary, or `null` when that distance is unknown. The function returns one of those objects or its `name`. It runs only when an automatic read has two or more candidates. Each `connect` below is an alternative.
 
 `replicas.ts`:
 
@@ -1030,7 +1034,7 @@ await connect(endpoints, {
 });
 ```
 
-A replica whose pool is at its maximum, with no idle connection and callers waiting, is skipped. If every healthy replica is in that state, the read uses the primary and `onRoute` reports `fallback:saturated`. `routing.fallback: "error"` fails that read with OKM1844. `route: "replica"` still uses a saturated replica. `consistency` and `maxLag` are not in this version.
+A replica whose pool is at its maximum, with no idle connection and callers waiting, is skipped. If every replica that can serve the read is in that state, the read uses the primary and `onRoute` reports `fallback:saturated`. When healthy replicas exist and none has caught up, or none is inside `maxLag`, the reason is `fallback:behind`. `routing.fallback: "error"` fails that read with OKM1844. `route: "replica"` still uses a saturated replica, and it still requires the watermark and `maxLag`.
 
 ### Startup
 
