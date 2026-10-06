@@ -1201,6 +1201,36 @@
       "kind": "stable"
     }
   ],
+  "okmodel/testing": [
+    {
+      "name": "FactoryContext",
+      "kind": "stable"
+    },
+    {
+      "name": "FactoryDefinitions",
+      "kind": "stable"
+    },
+    {
+      "name": "IsolationReport",
+      "kind": "stable"
+    },
+    {
+      "name": "TableFactory",
+      "kind": "stable"
+    },
+    {
+      "name": "Testing",
+      "kind": "stable"
+    },
+    {
+      "name": "TestingOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "testing",
+      "kind": "stable"
+    }
+  ],
   "okmodel/traits": [
     {
       "name": "ArchivableOptions",

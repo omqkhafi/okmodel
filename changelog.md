@@ -39,11 +39,14 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `provision(target)` from `okmodel/migrate` provisions one configured target under the same rules.
 - `okm migrate check --provision` compares that snapshot with a full replay. A difference is OKM1521 and names the object. The default check is unchanged.
 - OKM1542 flags `insert`, `update`, `delete`, `merge`, and `truncate` outside a backfill step. Reference inserts are not migration steps, so they are not flagged.
+- `okmodel/testing` exports `testing(schema, { driver })`. It opens a real driver pool (`open()` from `okmodel/pg/pglite`, or `open({ url })` from `okmodel/pg/postgresjs`) and returns `db`, `factories`, `expectQueries`, `isolation`, and `close`. A factory fills a required column from its type, replays from an optional seed, and `x.ref` reuses a row in the same tenant. `expectQueries` fails with the statements that ran and does not count transaction control. `isolation()` runs each tenant table's basic queries under tenant A against a row of tenant B and names a leak (D199).
+- `okm seed <file>` calls the module's default export with that harness on the selected target. A protected target is OKM1850 unless `--allow-protected`. Several targets need `--target` (OKM1853). The command prints the rows the factories inserted.
 
 #### docs
 
 - `okm migrate check` has a CI recipe that starts Postgres and runs the command. The previous-catalog check is schema-level and does not prove application behaviour. Tenant targets and schema-per-tenant checking stay M5. Startup compatibility is the `connect()` check in D197, not this command.
 - Provisioning and reference rows are documented, including where the rows live and what `--provision` compares (D198).
+- `docs/testing.md` documents factories, `expectQueries`, `isolation()`, and `okm seed`. Spec section 20 names `okmodel/testing` as an export and uses `open()` from `okmodel/pg/pglite`.
 
 ### ♻️ Changed
 

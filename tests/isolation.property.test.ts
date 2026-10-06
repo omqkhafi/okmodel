@@ -19,10 +19,12 @@
  * Every run uses the fixed seed in `gate-property.ts`; a failure prints it.
  */
 
-import { afterAll, expect } from "bun:test";
+import { afterAll, expect, test } from "bun:test";
 import fc from "fast-check";
 
 import type { Statement } from "../src/contracts/driver.js";
+import { open as openPglite } from "../src/adapters/pg/pglite.js";
+import { testing } from "../src/tooling/testing/index.js";
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
 import { SQL_NAME, withGate, type GateEnv } from "./gate-env.js";
 import {
@@ -43,7 +45,7 @@ import {
 } from "./gate-ops.js";
 import { assertGate, GATE_SEED } from "./gate-property.js";
 import { tenantProblems } from "./gate-recorder.js";
-import { key, TENANTS } from "./gate-schema.js";
+import { gateApp, key, TENANT_TABLES, TENANTS } from "./gate-schema.js";
 
 const gate = await loadPostgresGate();
 
@@ -471,5 +473,16 @@ postgresTest(
 afterAll(() => {
   if (process.env.OKM_PROPERTY_REPORT === "1") {
     console.log(`[isolation.property] ${JSON.stringify(totals)}`);
+  }
+});
+
+test("isolation() holds on the gate schema", async () => {
+  const harness = await testing(gateApp, { driver: openPglite() });
+  try {
+    const report = await harness.isolation();
+    expect([...report.checked]).toEqual([...TENANT_TABLES]);
+    expect(report.skipped).toEqual([{ table: "countries", reason: "shared reference data" }]);
+  } finally {
+    await harness.close();
   }
 });

@@ -63,7 +63,7 @@ const NOT_COMMANDS = [
   },
   {
     text: "Optionally seed, then deploy",
-    why: "0.1 has no seed command, and deploying the application is the pipeline.",
+    why: "Deploying the application is the pipeline. okm seed is covered by its own test.",
   },
   {
     text: "Deleting the database when the pull request closes is the infrastructure's job",

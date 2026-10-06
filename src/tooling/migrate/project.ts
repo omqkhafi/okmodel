@@ -362,7 +362,14 @@ export async function loadConfig(cwd: string): Promise<MigrateConfig> {
   return config;
 }
 
-async function loadSchema(cwd: string, spec: string): Promise<Built> {
+/**
+ * Loads the module named by `spec` and returns the schema it exports.
+ *
+ * @param cwd - Project directory
+ * @param spec - Path from `defineConfig({ schema })`, relative to `cwd`
+ * @returns The built schema
+ */
+export async function loadSchema(cwd: string, spec: string): Promise<Built> {
   const path = join(cwd, spec);
   const imported: unknown = await import(`${pathToFileURL(path).href}?okm=${Date.now()}`);
   const record = isRecord(imported) ? imported : {};

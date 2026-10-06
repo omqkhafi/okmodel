@@ -14,4 +14,4 @@ Stable exports are the application API this release commits to. Experimental exp
 
 `okmodel/migrate` exports `defineConfig`, `MigrateConfig`, and `TargetInput`. The CLI imports the planning and apply helpers from the package. Those helpers are not exports.
 
-`okmodel/testing` is reserved for 0.4 (P54) and is not in the exports map.
+`okmodel/testing` exports `testing`. It opens a real driver pool and returns factories, `expectQueries`, and `isolation`. See [testing](testing.md).

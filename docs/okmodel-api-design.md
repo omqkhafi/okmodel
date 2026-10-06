@@ -1338,9 +1338,9 @@ An empty target installs the head snapshot (section 19.6). A target that already
 
 ```ts
 import { testing } from "okmodel/testing";
-import { pglite } from "okmodel/pg/pglite";
+import { open } from "okmodel/pg/pglite";
 
-const t = await testing(appSchema, { driver: pglite() });
+const t = await testing(appSchema, { driver: open() });
 const f = t.factories({
   users: (x) => ({ email: x.email(), name: x.name() }),
   tasks: (x) => ({ title: x.words(3), listId: x.ref("lists") }),
@@ -1359,7 +1359,7 @@ test("today view runs one query", async () => {
 });
 ```
 
-`testing` ships a cross-tenant isolation check that runs every table's basic queries under two tenants and fails on any leak. The `okmodel/testing` name is reserved. It is not an export in 0.1. Factories and the isolation check arrive in 0.4 (P54).
+`testing(schema, { driver })` returns `{ db, factories, expectQueries, isolation, close }`. The driver is a real pool from `open()` (`okmodel/pg/pglite` or `okmodel/pg/postgresjs`). The database is never mocked. `isolation()` runs every tenant table's basic queries under tenant A against a row of tenant B and fails on a leak, naming the table, the query, and the row. Global tables are skipped and listed. `okm seed <file>` loads a module whose default export receives that harness. A protected target refuses the command unless `--allow-protected` (D199). See [testing](testing.md).
 
 **Testing principles.** Tests assert observable results, state changes, errors and emitted events of production code. The database is never mocked in ORM tests (PGlite or real Postgres); mock only external boundaries. File-content checks are for shipped artifacts, exports and cross-runtime contracts, never for source strings.
 
