@@ -1,9 +1,9 @@
 /**
  * Recreate round-trip across every object kind the planner handles.
  *
- * CI runs seeds 1 through 6, one required shape each (about half a second on
- * the local topology). `OKM_RECREATE_SEEDS` is a count: seeds `1..N` for a
- * longer local run. A failure names the seed.
+ * CI runs one seed per shape (seven, under a second on the local topology).
+ * `OKM_RECREATE_SEEDS` is a count: seeds `1..N` for a longer local run. A
+ * failure names the seed.
  */
 
 import { expect } from "bun:test";
@@ -50,6 +50,7 @@ const SHAPES = [
   "matview-index",
   "drop-dependents",
   "rename-column",
+  "rename-table",
 ] as const;
 
 type Shape = (typeof SHAPES)[number];
@@ -189,6 +190,115 @@ postgresTest(
 
 postgresTest(
   gate,
+  "a declared table rename applies and the live catalog matches",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const sql = openPostgres(database.url);
+    try {
+      const beforeTasks = table(
+        "tasks",
+        {
+          id: t.identity(),
+          email: t.text().unique(),
+          userId: t.integer().nullable().references("users"),
+        },
+        { indexes: (columns) => [index(columns.email).unique()] },
+      );
+      const beforeUsers = table("users", {
+        id: t.integer().primaryKey(),
+        taskId: t.bigint().nullable().references("tasks"),
+      });
+      const touch = fn("touch_title", {
+        returns: "trigger",
+        language: "plpgsql",
+        body: "begin return new; end",
+        dependsOn: [beforeTasks],
+      });
+      const before = schema({
+        tables: [beforeUsers, beforeTasks],
+        functions: [touch],
+        triggers: [
+          trigger("tasks_touch", {
+            on: beforeTasks,
+            timing: "before",
+            events: ["update"],
+            level: "row",
+            calls: touch,
+          }),
+        ],
+        views: [
+          view("task_rows", {
+            columns: [
+              { name: "id", type: "bigint" },
+              { name: "email", type: "text" },
+            ],
+            query: "select id, email from tasks",
+          }),
+        ],
+      });
+      const afterTasks = table(
+        "items",
+        {
+          id: t.identity(),
+          userId: t.integer().nullable().references("users"),
+          contact: t.text().unique().renamedFrom("email"),
+        },
+        {
+          indexes: (columns) => [index(columns.contact).unique()],
+          renamedFrom: "tasks",
+        },
+      );
+      const afterUsers = table("users", {
+        id: t.integer().primaryKey(),
+        taskId: t.bigint().nullable().references("items"),
+      });
+      const afterTouch = fn("touch_title", {
+        returns: "trigger",
+        language: "plpgsql",
+        body: "begin return new; end",
+        dependsOn: [afterTasks],
+      });
+      const after = schema({
+        tables: [afterUsers, afterTasks],
+        functions: [afterTouch],
+        triggers: [
+          trigger("tasks_touch", {
+            on: afterTasks,
+            timing: "before",
+            events: ["update"],
+            level: "row",
+            calls: afterTouch,
+          }),
+        ],
+        views: [
+          view("task_rows", {
+            columns: [
+              { name: "id", type: "bigint" },
+              { name: "contact", type: "text" },
+            ],
+            query: "select id, contact from items",
+          }),
+        ],
+      });
+      const runner = queryOf(sql);
+      const sealedBefore = await sealViews(runner, before.catalog);
+      const sealedAfter = await sealViews(runner, after.catalog);
+      const renames = schemaDeclarations(after).renames;
+      await applyPlan(sql, 0, catalog([]), sealedBefore, []);
+      await applyPlan(sql, 0, sealedBefore, sealedAfter, renames);
+      const live = await introspectSchema(runner, "public", "public");
+      const drift = planMigration({ before: live, after: sealedAfter, name: "check" });
+      expect(drift.steps).toEqual([]);
+    } finally {
+      await sql.end({ timeout: 5 });
+      await database.close();
+    }
+  },
+  30_000,
+);
+
+postgresTest(
+  gate,
   "a plan round-trips to zero steps for every object kind",
   async () => {
     const chosen = recreateSeeds();
@@ -245,7 +355,7 @@ async function roundTrip(sql: Sql, seed: number, shape: Shape, roles: RolesInput
   await applyPlan(sql, seed, catalog([]), sealedBefore, []);
   await applyPlan(sql, seed, sealedBefore, sealedAfter, after.renames);
   await expectNoDrift(sql, seed, sealedAfter, roles);
-  const reverse = after.renames.map((rename) => invertRename(rename));
+  const reverse = invertRenames(after.renames);
   await applyPlan(sql, seed, sealedAfter, sealedBefore, reverse);
   await expectNoDrift(sql, seed, sealedBefore, roles);
 }
@@ -316,9 +426,20 @@ async function dropRoles(names: readonly string[]): Promise<void> {
   }
 }
 
-function invertRename(rename: DeclaredRename): DeclaredRename {
-  if (rename.kind === "table") return { kind: "table", from: rename.to, to: rename.from };
-  return { kind: "column", table: rename.table, from: rename.to, to: rename.from };
+function invertRenames(renames: readonly DeclaredRename[]): DeclaredRename[] {
+  const tableTo = new Map<string, string>();
+  for (const rename of renames) {
+    if (rename.kind === "table") tableTo.set(rename.to, rename.from);
+  }
+  return renames.map((rename) => {
+    if (rename.kind === "table") return { kind: "table", from: rename.to, to: rename.from };
+    return {
+      kind: "column",
+      table: tableTo.get(rename.table) ?? rename.table,
+      from: rename.to,
+      to: rename.from,
+    };
+  });
 }
 
 type Declared = {
@@ -328,9 +449,11 @@ type Declared = {
 
 function declare(shape: Shape, flip: boolean, seed: number, roles: RolesInput): Declared {
   const trgm = pgTrgm();
+  const referenced = shape === "rename-table" && flip ? "items" : "tasks";
   const users = table("users", {
     id: t.integer().primaryKey(),
     email: t.text().unique(),
+    ...(shape === "rename-table" ? { taskId: t.bigint().nullable().references(referenced) } : {}),
   });
   const drop = shape === "drop-dependents" && flip;
   const tables: AnyTable[] = [users];
@@ -338,8 +461,10 @@ function declare(shape: Shape, flip: boolean, seed: number, roles: RolesInput): 
   const functions: Routine[] = [];
   const triggers: TriggerDeclaration[] = [];
   if (!drop) {
-    const titleName = shape === "rename-column" && flip ? "heading" : "title";
-    const tasks = tasksTable(shape, flip, seed, titleName, trgm);
+    const titleName =
+      (shape === "rename-column" || shape === "rename-table") && flip ? "heading" : "title";
+    const tableName = shape === "rename-table" && flip ? "items" : "tasks";
+    const tasks = tasksTable(shape, flip, seed, titleName, tableName, trgm);
     const body = functionBody(shape, flip, seed, titleName);
     const touch = fn("touch_title", {
       returns: "trigger",
@@ -365,14 +490,14 @@ function declare(shape: Shape, flip: boolean, seed: number, roles: RolesInput): 
           { name: "id", type: "bigint" },
           { name: titleName, type: titleType },
         ],
-        query: `select id, ${titleName} from tasks`,
+        query: `select id, ${titleName} from ${tableName}`,
       }),
       materializedView("task_titles", {
         columns: [
           { name: "id", type: "bigint" },
           { name: titleName, type: titleType },
         ],
-        query: `select id, ${titleName} from tasks`,
+        query: `select id, ${titleName} from ${tableName}`,
         indexes:
           shape === "matview-index"
             ? [{ columns: [titleName], unique: true }]
@@ -398,6 +523,7 @@ function tasksTable(
   flip: boolean,
   seed: number,
   titleName: string,
+  tableName: string,
   trgm: PgTrgm,
 ): AnyTable {
   const title = titleColumn(shape, flip);
@@ -424,11 +550,12 @@ function tasksTable(
       emailPresent: (columns: { readonly email: { readonly name: string } }) =>
         sqlText`((${columns.email} <> ''::text))`,
     },
+    ...(tableName === "items" ? { renamedFrom: "tasks" as const } : {}),
   };
   if (titleName === "heading") {
-    return table("tasks", { ...shared, heading: title.renamedFrom("title") }, options);
+    return table(tableName, { ...shared, heading: title.renamedFrom("title") }, options);
   }
-  return table("tasks", { ...shared, title }, options);
+  return table(tableName, { ...shared, title }, options);
 }
 
 function titleColumn(shape: Shape, flip: boolean) {
@@ -448,7 +575,7 @@ function domainCheck(shape: Shape, flip: boolean): string {
 }
 
 function functionBody(shape: Shape, flip: boolean, seed: number, titleName: string): string {
-  if (shape === "rename-column") return "begin return new; end";
+  if (shape === "rename-column" || shape === "rename-table") return "begin return new; end";
   const token =
     shape === "trigger-function" && flip ? "b" : seed > CI_SEED_COUNT && flip ? String(seed) : "a";
   return `begin new.${titleName} = '${token}'; return new; end`;

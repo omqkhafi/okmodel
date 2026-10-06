@@ -74,6 +74,7 @@ export const STEP_CLASS = {
   "revoke-default": "contract",
   "rename-table": "contract",
   "rename-column": "contract",
+  "rename-sequence": "contract",
   "backfill-expand": "expand",
   "backfill-contract": "contract",
   "raw-sql": "unclassified",

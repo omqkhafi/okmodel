@@ -30,6 +30,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### 🐛 Fixed
 
+- A table `renamedFrom` plans `ALTER TABLE … RENAME TO`, then renames a primary key, unique or check constraint, foreign key, index, or identity sequence when the name is the default `{table}_…`. A custom name stays. An add and a drop with no declaration is still OKM1530 (D194).
 - `okm check` creates domain and enum types in its scratch schema before the stub tables, so a view over those columns can be sealed.
 - A view, materialized view, table, sequence, or function that a plan drops and creates is granted again afterwards. Postgres drops the grant with the object.
 - Introspection reads a constraint `nameKey` from the default name, so a check declared as `emailPresent` still matches the live database.

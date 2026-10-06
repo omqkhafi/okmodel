@@ -676,6 +676,7 @@ function renameSteps(
         ACCESS,
       ),
     );
+    steps.push(...sequenceRenames(source, rename, schema));
   }
   for (const rename of renames) {
     if (rename.kind !== "column") continue;
@@ -685,6 +686,34 @@ function renameSteps(
       step(
         `alter table ${qualify(schema, rename.table)} rename column ${quoteIdent(rename.from)} to ${quoteIdent(rename.to)}`,
         "rename-column",
+        "ddl",
+        ACCESS,
+      ),
+    );
+  }
+  return steps;
+}
+
+function sequenceRenames(
+  source: Catalog,
+  rename: { readonly from: string; readonly to: string },
+  schema: string,
+): PlanStep[] {
+  const steps: PlanStep[] = [];
+  for (const object of source.objects) {
+    if (object.kind !== "column" || object.definition.identity === undefined) continue;
+    if (object.identity.parent.name !== rename.from) continue;
+    const fromName = fitIdentifier(`${rename.from}_${object.identity.name}_seq`);
+    const toName = fitIdentifier(`${rename.to}_${object.identity.name}_seq`);
+    if (fromName === toName) continue;
+    const owned = source.objects.some(
+      (item) => item.kind === "sequence" && item.identity.name === fromName,
+    );
+    if (!owned) continue;
+    steps.push(
+      step(
+        `alter sequence ${qualify(schema, fromName)} rename to ${quoteIdent(toName)}`,
+        "rename-sequence",
         "ddl",
         ACCESS,
       ),
