@@ -51,7 +51,13 @@ import {
   resolveBatchSize,
   type BackfillSpec,
 } from "./backfill.js";
-import { classOf, isStepKind, type MigrationClass, type StepKind } from "./classify.js";
+import {
+  classOf,
+  isStepKind,
+  strictestClass,
+  type MigrationClass,
+  type StepKind,
+} from "./classify.js";
 import { extensionAlterSteps } from "./extensions.js";
 import { omitManagedObjects } from "./managed.js";
 import {
@@ -1674,9 +1680,7 @@ function anchoredParent(object: CatalogObject): string | undefined {
 }
 
 function overall(steps: readonly PlanStep[]): MigrationClass {
-  if (steps.some((item) => item.class === "contract")) return "contract";
-  if (steps.some((item) => item.class === "unclassified")) return "unclassified";
-  return "expand";
+  return strictestClass(steps.map((item) => item.class));
 }
 
 function updateSql(

@@ -468,6 +468,26 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     fix: "Add a primary key. A backfill walks that key and does not scan the table.",
   },
   {
+    code: "OKM1547",
+    title: "History differs",
+    summary:
+      "Replaying a migration does not match its stored catalog, or the file was generated from a different parent than the previous migration.",
+    fix: "Regenerate the migration from the previous catalog so the SQL and the stored catalog describe the same schema.",
+  },
+  {
+    code: "OKM1548",
+    title: "Previous catalog",
+    summary:
+      "An expand migration drops or changes a table, column, constraint, or type the previous catalog relies on.",
+    fix: "Keep every table, column, constraint, and type the previous catalog relies on, or classify the migration as contract.",
+  },
+  {
+    code: "OKM1549",
+    title: "Stale head",
+    summary: "The last migration's catalog does not match the schema.",
+    fix: "Run okm generate.",
+  },
+  {
     code: "OKM1601",
     title: "Stale typed SQL",
     summary: "A typed SQL signature no longer matches the database.",

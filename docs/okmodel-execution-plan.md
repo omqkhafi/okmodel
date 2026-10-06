@@ -117,8 +117,9 @@ Spike code lives in the private workspace package `packages/spikes`; what proves
 | P50b | `p50b-safe-rewrites` | shipped: on an existing table, concurrent index create and drop, `NOT VALID` plus `VALIDATE`, `SET NOT NULL` through a validated check, a volatile default split (one `UPDATE` until P52), and a unique or primary key from a concurrent unique index (D193). OKM1534–OKM1537 are errors on SQL that is not that form. OKM1538 stays a warning. Resume drops an invalid concurrent index |
 | P51 | `p51-locks-recreate-verify` | shipped: `okm migrate plan` prints `pg_class.reltuples` estimates and does not store them (D194). A seeded round trip covers every planner object kind. A declared table rename renames default `{table}_…` names and leaves a custom name. The serializable retry test commits one transaction before the other writes, so one transaction is the victim |
 | P52 | `p52-backfill-runner` | shipped: a backfill step is a batched, resumable `UPDATE` in the migration file, checkpointed in `okm_backfill`, and `okm migrate apply` runs `TargetRunner` for one target (D195). Tenant iteration, bounded concurrency, canary, class flags, and the control database are M5 |
-| P53 | `p53-drift-verify` | catalog hash fast path, previous-catalog check, migration verification, serialised catalog |
-| P53A | `p53a-provisioning` | provisioning from the current snapshot, `reference` data, snapshot ↔ replayed-history equivalence in `okm migrate check` (OKM1521), OKM1542, OKM1851 |
+| P53 | `p53-migrate-check` | shipped: `okm migrate check` replays history into a scratch schema, checks the previous catalog, the head, and the linter (D196). `lintFrom` is the adoption baseline. A protected target is refused. OKM1547, OKM1548, OKM1549 |
+| P53b | `p53b-startup-catalog` | startup compatibility states in `connect()`, `okm migrate status` states, and loading the serialised catalog in production (D196). Separate from P53 because it touches the connect entries |
+| P53A | `p53a-provisioning` | provisioning from the current snapshot, `reference` data, snapshot ↔ replayed-history equivalence (OKM1521), OKM1542, OKM1851 |
 | P54 | `p54-testing-package` | factories, `expectQueries`, isolation check, seeds |
 | P55 | `p55-gate-0.4` | the full `protected.policy` enumeration (every operation class through the CLI, engine, `backfill()`, `okm seed`, runner and `provision`); release 0.4 |
 
@@ -147,7 +148,7 @@ Problems found in the earlier order and how the table above resolves them:
 - **Transactions before P29:** chunked inserts, `sync` and archive cascades need an atomic multi-statement write long before the public `tx`; P15 ships an internal runner and P29 exposes the public API.
 - **`connect()` had no owner:** P15 builds the L3 runtime with the single-endpoint Router, Endpoint and Pool.
 - **Final safety verifier before its rules exist:** P21 builds the framework; each later prompt registers its rules (process rule 7); P30 tests the composition.
-- **Classification needed by the protected policy:** P16 classifies steps by operation kind; P50 adds the linter core, P50b shipped the safe rewrites (D193), and P53 the previous-catalog check.
+- **Classification needed by the protected policy:** P16 classifies steps by operation kind; P50 adds the linter core, P50b shipped the safe rewrites (D193), and P53 shipped the previous-catalog check inside `okm migrate check` (D196). Startup compatibility is P53b.
 - **Ownership needed by every object kind:** it is in the P10 contract.
 - **Recreate needed by views:** dependency-aware recreate moved from P51 to P42; P51 keeps lock display and cross-kind verification.
 - **`protected.policy` enumeration needs seed:** `okm seed` arrives in P54, so the full enumeration test sits in P55.

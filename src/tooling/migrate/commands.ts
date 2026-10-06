@@ -33,7 +33,7 @@ export function formatFailure(error: OkmError): string {
  *
  * `--version` stays in the bin. This function handles `build`, `check`,
  * `generate`, `dev`, `push`, `ext list`, `ext check`, `doctor`, and `migrate plan`,
- * `apply`, and `status`.
+ * `apply`, `status`, and `check`.
  *
  * @param argv - Arguments after the program name
  * @param io - Working directory and stdout. Defaults to the process
@@ -92,6 +92,11 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
     if (sub === "status") {
       const { statusProject } = await import("./status.js");
       stdout(await statusProject(cwd, invoke(parsed)));
+      return;
+    }
+    if (sub === "check") {
+      const { checkMigrations } = await import("./check.js");
+      stdout(await checkMigrations(cwd, invoke(parsed)));
       return;
     }
   }

@@ -26,6 +26,12 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - An override is `-- okm-allow OKM15xx: reason` on the line above the statement. An empty reason, or a code the statement did not trigger, is OKM1510 and does not silence another code.
 - A backfill step stays one idempotent `UPDATE` in the migration file, with `-- backfill table=… key=… batch=…`. Apply runs it outside the migration transaction, one commit per batch, and resumes from `okm_backfill`. A table with no primary key is OKM1546. `defineConfig({ backfill })` sets the batch size (1,000), the pause (none), and the statement timeout (30 seconds). A protected target still needs `--allow-protected` (D195).
 - `okm migrate status` lists an unfinished backfill under the target table: migration, step, rows so far, last key, and state.
+- `okm migrate check` replays every migration into a scratch schema, plans each result back to that file's catalog, checks the previous catalog, requires the last catalog to match the schema, and lints the history (D196). Success prints `ok N migrations`. A remaining step is OKM1547, including a fork (`migration X was generated from a different parent than Y`). An expand migration that drops something the previous catalog relies on is OKM1548. A stale head is OKM1549 and the fix is `okm generate`. A protected target is refused: point the command at a throwaway Postgres. `--allow-protected` does not apply.
+- `defineConfig({ lintFrom: "<migration id>" })` is the adoption baseline for `okm migrate check`. Files before that id are not linted. Apply still lints pending migrations only.
+
+#### docs
+
+- `okm migrate check` has a CI recipe that starts Postgres and runs the command. The previous-catalog check is schema-level and does not prove application behaviour. Tenant targets and schema-per-tenant checking stay M5. Startup compatibility and the serialised catalog are P53b.
 
 ### ♻️ Changed
 
