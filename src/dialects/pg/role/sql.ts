@@ -51,12 +51,15 @@ const PRIVILEGE = /^(select|insert|update|delete|execute|usage)$/;
  * @param before - Previous catalog objects
  * @param after - Next catalog objects
  * @param schema - Concrete schema name
+ * @param recreated - Identity keys this plan drops and creates. Postgres drops
+ * grants with the object, so those grants are issued again after it exists
  * @returns Statements in three groups
  */
 export function privilegeSql(
   before: readonly CatalogObject[],
   after: readonly CatalogObject[],
   schema: string,
+  recreated: ReadonlySet<string> = new Set(),
 ): PrivilegeSql {
   const beforeBy = index(before);
   const afterBy = index(after);
@@ -90,12 +93,16 @@ export function privilegeSql(
       }
       continue;
     }
+    if (object.kind === "grant") {
+      const target = grantTargetKey(object.identity.object);
+      if (previous !== undefined && (target === undefined || !recreated.has(target))) continue;
+      grant.push({ sql: grantStatement(object, schema, false), kind: "grant" });
+      continue;
+    }
     if (previous !== undefined) continue;
     if (object.kind === "defaultPrivilege") {
       defaults.push({ sql: defaultStatement(object, false), kind: "grant-default" });
     }
-    if (object.kind === "grant")
-      grant.push({ sql: grantStatement(object, schema, false), kind: "grant" });
   }
   return { revoke, prepare: [...roles, ...defaults], grant };
 }
@@ -166,6 +173,28 @@ function defaultStatement(object: DefaultPrivilegeObject, revoke: boolean): stri
   const namespace =
     object.identity.namespace.form === "static" ? object.identity.namespace.name : "public";
   return `alter default privileges for role ${quoteIdent(object.identity.forRole)} in schema ${quoteIdent(namespace)} ${verb} ${privilege} on ${objectKindSql(object.identity.objectKind)} ${direction} ${quoteIdent(object.identity.grantee)}`;
+}
+
+function grantTargetKey(object: GrantObjectRef): string | undefined {
+  if (
+    object.kind === "table" ||
+    object.kind === "view" ||
+    object.kind === "materializedView" ||
+    object.kind === "sequence"
+  ) {
+    return identityKey({ kind: object.kind, namespace: object.namespace, name: object.name });
+  }
+  if (object.kind !== "function") return undefined;
+  const open = object.name.lastIndexOf("(");
+  if (open < 0 || !object.name.endsWith(")")) return undefined;
+  const name = object.name.slice(0, open);
+  const args = object.name.slice(open + 1, -1);
+  return identityKey({
+    kind: "function",
+    namespace: object.namespace,
+    name,
+    argTypes: args.length === 0 ? [] : args.split(","),
+  });
 }
 
 function grantTarget(object: GrantObjectRef, schema: string): string {

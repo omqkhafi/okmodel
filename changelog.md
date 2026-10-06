@@ -30,6 +30,9 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### 🐛 Fixed
 
+- `okm check` creates domain and enum types in its scratch schema before the stub tables, so a view over those columns can be sealed.
+- A view, materialized view, table, sequence, or function that a plan drops and creates is granted again afterwards. Postgres drops the grant with the object.
+- Introspection reads a constraint `nameKey` from the default name, so a check declared as `emailPresent` still matches the live database.
 - `bun run db:up` binds three free host ports when 55432, 55433, or 55434 is already taken, and records them for the next CI step. Release smoke no longer stops when the runner is already using 55432.
 
 ## v0.3.0 — 2026-10-05

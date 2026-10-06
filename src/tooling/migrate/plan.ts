@@ -258,7 +258,11 @@ export function planMigration(input: PlanRequest): MigrationPlan {
   omitOwnedSequences(createKeys, afterBy, request.after);
   omitOwnedSequences(dropKeys, beforeBy, renamed);
 
-  const privileges = privilegeSql(renamed.objects, request.after.objects, schema);
+  const recreated = new Set<string>();
+  for (const key of createKeys) {
+    if (dropKeys.has(key)) recreated.add(key);
+  }
+  const privileges = privilegeSql(renamed.objects, request.after.objects, schema, recreated);
   const steps: PlanStep[] = [];
   steps.push(...renameSteps(request.before, renames, schema));
   for (const item of privileges.revoke) steps.push(step(item.sql, item.kind, "ddl", ACCESS));
