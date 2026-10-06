@@ -2,22 +2,31 @@
  * Compatibility check used only when the catalog hashes differ.
  *
  * Ahead by expand is compatible. Ahead by a contract step, or behind, fails
- * closed (OKM1520).
+ * closed (OKM1520). The class is the value stored in `okm_history`.
  */
 
 import type { DriverPool, ExecuteOptions } from "../contracts/driver.js";
 import { OkmError } from "../contracts/error.js";
+import { AHEAD_CONTRACT, BEHIND_CONTRACT, BEHIND_EXPAND } from "./compat-words.js";
 
 /** One applied migration, in history order. */
 export type DriftMigration = {
   readonly id: string;
   readonly catalogHash: string;
-  /** True when every step is expand. */
+  /** True when every stored step class is `expand`. */
   readonly expand: boolean;
 };
 
+/** How far the database and the app have diverged. */
+export type DriftVerdict =
+  | { readonly state: "ok" }
+  | { readonly state: "ahead by contract"; readonly migrationId: string }
+  | { readonly state: "behind by expand"; readonly migrationId: string }
+  | { readonly state: "behind by contract"; readonly migrationId: string }
+  | { readonly state: "behind"; readonly migrationId: string };
+
 /**
- * Classifies a hash mismatch.
+ * Classifies a hash mismatch from stored history classes.
  *
  * @param codeHash - Hash of the code's catalog
  * @param recordedHash - Hash stored in `okm_meta`
@@ -28,15 +37,33 @@ export function driftVerdict(
   codeHash: string,
   recordedHash: string,
   migrations: readonly DriftMigration[],
-): "ok" | "behind" | "contract" {
+): DriftVerdict {
   const codeAt = indexOfHash(migrations, codeHash);
   const recordedAt = indexOfHash(migrations, recordedHash);
-  if (codeAt < 0 || recordedAt < 0 || recordedAt < codeAt) return "behind";
-  if (recordedAt === codeAt) return "ok";
-  for (let index = codeAt + 1; index <= recordedAt; index += 1) {
-    if (migrations[index]?.expand !== true) return "contract";
+  if (codeAt >= 0 && recordedAt >= codeAt) {
+    for (let index = codeAt + 1; index <= recordedAt; index += 1) {
+      const migration = migrations[index];
+      if (migration !== undefined && migration.expand !== true) {
+        return { state: "ahead by contract", migrationId: migration.id };
+      }
+    }
+    return { state: "ok" };
   }
-  return "ok";
+  if (codeAt >= 0 && recordedAt >= 0 && recordedAt < codeAt) {
+    const next = migrations[recordedAt + 1];
+    if (next !== undefined) {
+      return {
+        state: next.expand ? "behind by expand" : "behind by contract",
+        migrationId: next.id,
+      };
+    }
+  }
+  if (recordedAt >= 0) {
+    const at = migrations[recordedAt];
+    if (at !== undefined) return { state: "behind", migrationId: at.id };
+  }
+  const last = migrations.at(-1);
+  return { state: "behind", migrationId: last?.id ?? "" };
 }
 
 /**
@@ -62,19 +89,11 @@ export async function assertDrift(
     );
     rows = result.rows;
   } catch (error) {
-    throw behind(error);
+    throw gapError({ state: "behind", migrationId: "" }, error);
   }
   const verdict = driftVerdict(codeHash, recordedHash, groupMigrations(rows));
-  if (verdict === "ok") return;
-  if (verdict === "contract") {
-    throw new OkmError("OKM1520", "The database is ahead of the code by a contract migration.", {
-      fix: {
-        summary:
-          "Roll the application forward, or repair the database. A contract step is not compatible with this code.",
-      },
-    });
-  }
-  throw behind(undefined);
+  if (verdict.state === "ok") return;
+  throw gapError(verdict);
 }
 
 function indexOfHash(migrations: readonly DriftMigration[], hash: string): number {
@@ -85,6 +104,11 @@ function indexOfHash(migrations: readonly DriftMigration[], hash: string): numbe
   return found;
 }
 
+/**
+ * Groups history rows. `expand` is false when any stored class is not expand.
+ *
+ * The class column is used as stored. Nothing plans the SQL again.
+ */
 function groupMigrations(rows: readonly (readonly (string | null)[])[]): DriftMigration[] {
   const grouped: DriftMigration[] = [];
   for (const row of rows) {
@@ -107,12 +131,27 @@ function groupMigrations(rows: readonly (readonly (string | null)[])[]): DriftMi
   return grouped;
 }
 
-function behind(cause: unknown): OkmError {
-  return new OkmError("OKM1520", "The database is behind the code.", {
+function gapError(
+  verdict: Exclude<DriftVerdict, { readonly state: "ok" }>,
+  cause?: unknown,
+): OkmError {
+  const named = verdict.migrationId;
+  const phrase =
+    verdict.state === "ahead by contract"
+      ? `${AHEAD_CONTRACT} migration ${named}`
+      : verdict.state === "behind by expand"
+        ? `${BEHIND_EXPAND} migration ${named}`
+        : verdict.state === "behind by contract"
+          ? `${BEHIND_CONTRACT} migration ${named}`
+          : named.length > 0
+            ? `behind the app at migration ${named}`
+            : "behind the app";
+  const fix =
+    named.length > 0
+      ? `Apply ${named}, or change the deploy order.`
+      : "Apply migrations, or change the deploy order.";
+  return new OkmError("OKM1520", `The database is ${phrase}.`, {
     ...(cause === undefined ? {} : { cause }),
-    fix: {
-      summary:
-        "Inspect the diff and repair the database, or generate a migration that matches the drift.",
-    },
+    fix: { summary: fix },
   });
 }

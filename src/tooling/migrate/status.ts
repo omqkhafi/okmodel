@@ -2,15 +2,24 @@
  * `okm migrate status`.
  *
  * One row per target: version, catalog hash, state, and a separate protected
- * column. The state is current, behind by expand, behind by contract, ahead,
- * or failed at a step. An unfinished backfill is a later section: migration,
- * step, rows so far, last key, and state.
+ * column. The state is current, behind by expand, behind by contract, ahead
+ * by expand, ahead by contract, or failed at a step with a resume hint. An
+ * unfinished backfill is a later section: migration, step, rows so far, last
+ * key, and state.
  */
 
 import { join } from "node:path";
 
 import { open } from "../../adapters/pg/postgresjs.js";
 import { OkmError } from "../../contracts/error.js";
+import {
+  AHEAD_CONTRACT,
+  AHEAD_EXPAND,
+  BEHIND_CONTRACT,
+  BEHIND_EXPAND,
+  CURRENT,
+  failedAt,
+} from "../../runtime/compat-words.js";
 import type { MigrationClass } from "./plan.js";
 import type { StoredMigration } from "./files.js";
 import { loadMigrations } from "./files.js";
@@ -49,9 +58,11 @@ export type StatusHistory = {
 /**
  * Decides the status state from files and history.
  *
- * A partial migration is `failed at step`. History the files do not contain
- * is `ahead`. Pending files are behind by expand, or by contract when any
- * pending step is not expand.
+ * A partial migration is `failed at step` plus the resume hint. History the
+ * files do not contain is ahead by expand, or ahead by contract when a stored
+ * class is not expand. Pending files are behind by expand, or by contract
+ * when any pending step is not expand. The class is the one stored on the
+ * file or in `okm_history`.
  *
  * @param migrations - Files in apply order
  * @param history - Checkpoint rows
@@ -76,18 +87,18 @@ export function describeStatus(
       return {
         version: migration.id,
         catalogHash: recorded?.hash ?? "-",
-        state: `failed at step ${String(missing)}`,
+        state: failedAt(missing),
       };
     }
   }
-  const extra = history.some((row) => !known.has(row.migrationId));
   const pending = migrations.filter((migration) =>
     migration.steps.some((_, index) => !done.has(`${migration.id}:${String(index)}`)),
   );
   const finished = lastComplete(migrations, done);
   const version = recorded?.version ?? finished ?? "-";
   const catalogHash = recorded?.hash ?? "-";
-  if (extra) return { version, catalogHash, state: "ahead" };
+  const extra = history.some((row) => !known.has(row.migrationId));
+  if (extra) return { version, catalogHash, state: aheadState(history, known) };
   if (pending.length > 0) {
     const contract = pending.some((migration) =>
       migration.steps.some((step) => step.class !== "expand"),
@@ -95,17 +106,17 @@ export function describeStatus(
     return {
       version,
       catalogHash,
-      state: contract ? "behind by contract" : "behind by expand",
+      state: contract ? BEHIND_CONTRACT : BEHIND_EXPAND,
     };
   }
   const last = migrations.at(-1);
   if (last !== undefined && recorded !== undefined && recorded.hash !== last.catalogHash) {
-    return { version, catalogHash, state: "ahead" };
+    return { version, catalogHash, state: aheadState(history, known) };
   }
   return {
     version: recorded?.version ?? last?.id ?? "-",
     catalogHash: recorded?.hash ?? last?.catalogHash ?? "-",
-    state: "current",
+    state: CURRENT,
   };
 }
 
@@ -272,7 +283,7 @@ async function readHistory(pool: {
     rows.push({
       migrationId,
       stepIndex: Number(step),
-      class: stepClass === "contract" || stepClass === "unclassified" ? stepClass : "expand",
+      class: storedClass(stepClass),
     });
   }
   return rows;
@@ -309,4 +320,27 @@ async function readBackfills(pool: {
 
 function wireTrue(value: string | null): boolean {
   return value === "t" || value === "true";
+}
+
+/**
+ * Ahead by expand only when every extra history row, or every row when the
+ * catalog hash moved without a new id, stored `expand`.
+ */
+function aheadState(history: readonly StatusHistory[], known: ReadonlySet<string>): string {
+  let sawExtra = false;
+  let expandOnly = true;
+  for (const row of history) {
+    if (known.has(row.migrationId)) continue;
+    sawExtra = true;
+    if (row.class !== "expand") expandOnly = false;
+  }
+  if (!sawExtra) {
+    expandOnly = history.length > 0 && history.every((row) => row.class === "expand");
+  }
+  return expandOnly ? AHEAD_EXPAND : AHEAD_CONTRACT;
+}
+
+function storedClass(value: string): MigrationClass {
+  if (value === "expand" || value === "contract" || value === "unclassified") return value;
+  return "unclassified";
 }

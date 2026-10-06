@@ -16,6 +16,11 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### ✨ Added
 
+#### runtime
+
+- When the catalog hash differs, `connect()` reads `okm_history` and uses the stored class. Ahead by expand migrations succeeds. Ahead by a contract migration, or behind the app, is OKM1520. The message names the migration, and the fix says to apply it or change the deploy order. `requireMeta` is unchanged (D197).
+- A `catalog.hash` file makes that mismatch load `.okm/catalog.json` instead of rebuilding the catalog from the schema. Concurrent connects in one process parse the file once. A missing file, or a hash that does not match, is OKM1027. Equal hashes still return without that read.
+
 #### tooling
 
 - `okm migrate plan` prints a `pg_class.reltuples` estimate on each lock line when a selected target is reachable: `about 4.2M rows`, `rows unknown (table not analyzed)`, or `new table`. A safe rewrite is labelled on that line. `ACCESS EXCLUSIVE` on more than one million estimated rows, outside a safe rewrite, prints a note and is not a lint finding. No target, or a target that cannot be reached, prints the lock alone. `okm generate` stays offline, and the estimate is not written to SQL, catalog files, or `okm_history` (D194).
@@ -28,10 +33,11 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okm migrate status` lists an unfinished backfill under the target table: migration, step, rows so far, last key, and state.
 - `okm migrate check` replays every migration into a scratch schema, plans each result back to that file's catalog, checks the previous catalog, requires the last catalog to match the schema, and lints the history (D196). Success prints `ok N migrations`. A remaining step is OKM1547, including a fork (`migration X was generated from a different parent than Y`). An expand migration that drops something the previous catalog relies on is OKM1548. A stale head is OKM1549 and the fix is `okm generate`. A protected target is refused: point the command at a throwaway Postgres. `--allow-protected` does not apply.
 - `defineConfig({ lintFrom: "<migration id>" })` is the adoption baseline for `okm migrate check`. Files before that id are not linted. Apply still lints pending migrations only.
+- `okm migrate status` prints `current`, `behind by expand`, `behind by contract`, `ahead by expand`, `ahead by contract`, or `failed at step N (resume with okm migrate apply)`. The command stays read-only on a protected target (D197).
 
 #### docs
 
-- `okm migrate check` has a CI recipe that starts Postgres and runs the command. The previous-catalog check is schema-level and does not prove application behaviour. Tenant targets and schema-per-tenant checking stay M5. Startup compatibility and the serialised catalog are P53b.
+- `okm migrate check` has a CI recipe that starts Postgres and runs the command. The previous-catalog check is schema-level and does not prove application behaviour. Tenant targets and schema-per-tenant checking stay M5. Startup compatibility is the `connect()` check in D197, not this command.
 
 ### ♻️ Changed
 

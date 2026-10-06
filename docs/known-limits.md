@@ -102,7 +102,6 @@ Bun.sql keeps `idleTimeout` at 0, which is Bun's default (no idle timer). A fini
 - **OKM1542 is not fired by this linter.** A data statement outside `backfill()` arrives with reference data in P53A.
 - **`okm migrate check` does not check tenant targets.** Tenant targets and schema-per-tenant checking are M5. The command checks the selected target's history in one scratch schema.
 - **The previous-catalog check is schema-level only.** It requires every table, column, constraint, and type from catalog N−1 to remain in N, with the same type, and it refuses a tighter nullability that has no default unless the migration's recomputed class is `contract`. It does not prove application behaviour.
-- **Startup compatibility and the serialised catalog are P53b.** `connect()` does not yet compare the database with the code's catalog, and production does not load `.okm/catalog.json`. `okm migrate status` does not yet report the startup states.
 
 ## What works
 

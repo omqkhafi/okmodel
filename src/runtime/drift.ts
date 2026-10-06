@@ -1,8 +1,10 @@
 /**
  * Startup catalog check.
  *
- * The fast path compares two hashes. History, catalog JSON, and
- * {@link loadTrustedCatalog} load only when those hashes differ.
+ * The fast path compares two hashes and returns. History and
+ * `.okm/catalog.json` load only when those hashes differ. A hash read from
+ * `catalog.hash` requires that JSON file; a missing file or a hash that does
+ * not match is OKM1027. Concurrent loads share one parse.
  */
 
 import type { Catalog } from "../contracts/catalog/types.js";
@@ -40,15 +42,28 @@ export async function assertCompatible(
 ): Promise<void> {
   const code = await codeHash(schema, source);
   if (code.hash === recordedHash) return;
+  const { loadOnce } = await import("./catalog-cache.js");
   if (code.artifact !== undefined) {
-    const { loadTrustedCatalog } = await import("../contracts/catalog/document.js");
-    loadTrustedCatalog(code.artifact.text, code.artifact.hash);
-  } else {
-    const artifact = await readCatalogFile(source.catalogDir);
-    if (artifact !== undefined) {
+    const artifact = code.artifact;
+    await loadOnce(`text\0${artifact.hash}`, async () => {
       const { loadTrustedCatalog } = await import("../contracts/catalog/document.js");
       loadTrustedCatalog(artifact.text, artifact.hash);
-    }
+    });
+  } else if (code.fromFile) {
+    const dir = artifactDir(source.catalogDir);
+    await loadOnce(`file\0${dir}\0${code.hash}`, async () => {
+      const text = await readText(`${dir}/catalog.json`);
+      if (text === undefined) {
+        throw new OkmError("OKM1027", `${dir}/catalog.json is missing.`, {
+          fix: {
+            summary:
+              "Run okm build so catalog.json matches catalog.hash. connect does not rebuild the catalog from the schema.",
+          },
+        });
+      }
+      const { loadTrustedCatalog } = await import("../contracts/catalog/document.js");
+      loadTrustedCatalog(text, code.hash);
+    });
   }
   const { assertDrift } = await import("./drift-detail.js");
   await assertDrift(pool, code.hash, recordedHash, options);
@@ -57,12 +72,19 @@ export async function assertCompatible(
 async function codeHash(
   schema: QuerySchema,
   source: { readonly catalog?: CatalogArtifact; readonly catalogDir?: string },
-): Promise<{ readonly hash: string; readonly artifact?: CatalogArtifact }> {
-  if (source.catalog !== undefined) return { hash: source.catalog.hash, artifact: source.catalog };
+): Promise<{
+  readonly hash: string;
+  readonly artifact?: CatalogArtifact;
+  /** True when the hash came from `catalog.hash`, so the JSON file is required on a mismatch. */
+  readonly fromFile: boolean;
+}> {
+  if (source.catalog !== undefined) {
+    return { hash: source.catalog.hash, artifact: source.catalog, fromFile: false };
+  }
   const listed = await readHashFile(source.catalogDir);
-  if (listed !== undefined) return { hash: listed };
+  if (listed !== undefined) return { hash: listed, fromFile: true };
   const { catalogHash } = await import("../contracts/catalog/document.js");
-  return { hash: catalogHash(schemaCatalog(schema)) };
+  return { hash: catalogHash(schemaCatalog(schema)), fromFile: false };
 }
 
 function schemaCatalog(schema: QuerySchema): Catalog {
@@ -82,16 +104,6 @@ async function readHashFile(catalogDir: string | undefined): Promise<string | un
   if (text === undefined) return undefined;
   const hash = text.trim();
   return hash.length === 0 ? undefined : hash;
-}
-
-async function readCatalogFile(
-  catalogDir: string | undefined,
-): Promise<CatalogArtifact | undefined> {
-  const dir = artifactDir(catalogDir);
-  const hash = await readHashFile(catalogDir);
-  const text = await readText(`${dir}/catalog.json`);
-  if (hash === undefined || text === undefined) return undefined;
-  return { text, hash };
 }
 
 function artifactDir(catalogDir: string | undefined): string {

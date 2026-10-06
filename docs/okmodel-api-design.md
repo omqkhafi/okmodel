@@ -1225,7 +1225,7 @@ Codes already used in this range, and not new linter rules, are OKM1520 (drift),
 
 **Comparison pipeline:** introspect, then the dialect's `normalize`, then compare. Expressions that the database rewrites (defaults, checks, generated columns, view and function bodies) are not compared as text: the declared definition is applied to a scratch database and read back, and both sides go through the database before comparing.
 
-The catalog hash is computed over the normalised structure (D117). The fast path in `connect()`, and loading the serialised catalog (`.okm/catalog.json`) in production, are P53b. They are not part of `okm migrate check`.
+The catalog hash is computed over the normalised structure (D117). `connect()` compares that hash with `okm_meta` in the dialect query. Equal hashes return without reading `okm_history` or `.okm/catalog.json`. A difference, when `catalog.hash` is present, loads `.okm/catalog.json` once per process and does not rebuild the catalog from the schema. A missing file, or a file whose hash does not match, is OKM1027. The class is the value stored in `okm_history`; startup does not plan the SQL again (D197). This check is not part of `okm migrate check`.
 
 `okm migrate check` is the CI command for a migration history (D196). It does not prompt and it does not depend on colour. Exit zero prints `ok N migrations`. Any failure exits non-zero. One failure prints its code, message, and fix. Several failures print one greppable line per failure, each prefixed with its code.
 
@@ -1241,7 +1241,7 @@ The scratch schema is a write, so a protected target is refused (OKM1850). The m
 
 OKM1521 stays reserved for snapshot provisioning versus replayed history (P53A). This command does not use it.
 
-The startup compatibility check, when P53b ships it, allows the database to be ahead of the code by `expand` migrations; ahead by a `contract` migration, or behind, fails with OKM1520. A database with no recorded catalog hash skips the check, so an existing database can adopt OKModel. `connect({ requireMeta: true })` makes that missing hash OKM1520. The option is explicit: the target name and `NODE_ENV` do not turn it on. A production connection sets `requireMeta`.
+The startup compatibility check allows the database to be ahead of the app by `expand` migrations. Ahead by a `contract` migration, or behind the app, fails with OKM1520. The message names the migration. The fix says to apply that migration or change the deploy order. A database with no recorded catalog hash skips the check, so an existing database can adopt OKModel. `connect({ requireMeta: true })` makes that missing hash OKM1520. The option is explicit: the target name and `NODE_ENV` do not turn it on. A production connection sets `requireMeta`.
 
 ### 19.4 CLI
 
@@ -1252,7 +1252,7 @@ The startup compatibility check, when P53b ships it, allows the database to be a
 | `okm check` | capabilities, unlisted tables, validation conflicts, stale renames, lint |
 | `okm migrate plan <name>` | plan, classify, lint |
 | `okm migrate apply` | apply with timeouts, retries, checkpoints and resume; on an empty target it provisions from the current snapshot (section 19.6). Flags: `--target <name>` (required when several targets exist), `--allow-protected`; with many targets also `--class shared\|tenant`, `--canary <n>`, `--concurrency <n>`, `--max-failures <n>` (section 19.5) |
-| `okm migrate status` | per target: version, catalog hash, state (current, behind by `expand`, behind by `contract`, ahead, failed at step), with a separate `protected` column |
+| `okm migrate status` | per target: version, catalog hash, state (`current`, `behind by expand`, `behind by contract`, `ahead by expand`, `ahead by contract`, `failed at step N (resume with okm migrate apply)`), with a separate `protected` column. Read-only, including on a protected target |
 | `okm migrate check` | CI: replay the history into a scratch schema (OKM1547), previous catalog (OKM1548), stale head (OKM1549), and lint. Exit zero prints `ok N migrations`. A protected target is refused. No prompts |
 | `okm generate` | produce migration SQL from the schema, including extension lifecycle; no TS is generated |
 | `okm push` | prototype sync; blocked on a `protected` target (section 19.7). A target named `production` is not blocked unless that entry sets `protected` |
@@ -1287,7 +1287,7 @@ The migration engine works on a list of Targets from the start (a list of one in
 - **Contract gating.** A `contract` step applies to a tenant only if that tenant already has every earlier migration. The shared `contract` step is evaluated against the whole registry, not the scope: it runs only when every registered tenant has the migration. Any partial scope (`--canary`, `--class`, a `--target` subset) skips contract steps and reports "contract pending (N tenants not at this migration)"; if any tenant failed or is pending, the shared step does not run (D123). No tenant is left referencing something already removed.
 - **Second pass.** When the run finishes the runner reads the registry again and processes tenants created while it was running.
 - **Failures are isolated and resumable.** A failed target is recorded with its step and error; the exit code is non-zero; a later `apply` processes only failed and pending targets.
-- `okm migrate status` shows all targets in one table, with the same states used by the runtime check.
+- `okm migrate status` shows all targets in one table, with the same states the runtime check uses: `current`, `behind by expand`, `behind by contract`, `ahead by expand`, `ahead by contract`, and `failed at step N (resume with okm migrate apply)`.
 
 ### 19.6 Provisioning a new target
 
