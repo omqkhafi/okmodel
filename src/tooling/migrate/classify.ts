@@ -97,6 +97,21 @@ export function classOf(kind: StepKind): MigrationClass {
 }
 
 /**
+ * Strictest class in a plan.
+ *
+ * `contract` wins over `unclassified`, which wins over `expand`. An empty
+ * list is `expand`.
+ *
+ * @param classes - One class per step
+ * @returns The class of the plan header
+ */
+export function strictestClass(classes: readonly MigrationClass[]): MigrationClass {
+  if (classes.includes("contract")) return "contract";
+  if (classes.includes("unclassified")) return "unclassified";
+  return "expand";
+}
+
+/**
  * Reports whether a plan comment names a kind.
  *
  * @param value - Text after `-- kind: `

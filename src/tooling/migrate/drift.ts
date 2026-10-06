@@ -12,7 +12,11 @@ import postgres, { type Sql } from "postgres";
 
 import { OkmError } from "../../contracts/error.js";
 import type { Catalog } from "../../contracts/catalog/types.js";
-import { introspectSchema, type CatalogQuery } from "../../dialects/pg/introspect.js";
+import {
+  introspectSchema,
+  type CatalogQuery,
+  type IntrospectOptions,
+} from "../../dialects/pg/introspect.js";
 import { sealViews } from "../../dialects/pg/view/scratch.js";
 import type { RolesInput } from "../../dialects/pg/role/index.js";
 import { planMigration } from "./plan.js";
@@ -40,15 +44,9 @@ export async function assertAuthorDrift(
       select to_regclass('public.okm_meta')::text as reg
     `;
     if (present[0]?.reg == null) return;
-    const runner = queryOf(sql);
-    const managed = managedRoleNames(roles);
+    const runner = catalogQuery(sql);
     const authorOnServer = await sealViews(runner, author);
-    const live = await introspectSchema(
-      runner,
-      "public",
-      "public",
-      managed === undefined ? undefined : { managedRoles: managed },
-    );
+    const live = await introspectSchema(runner, "public", "public", managedRoleOptions(roles));
     const plan = planMigration({ before: live, after: authorOnServer, name: "check" });
     if (plan.steps.length === 0) return;
     throw new OkmError(
@@ -65,14 +63,13 @@ export async function assertAuthorDrift(
   }
 }
 
-function managedRoleNames(roles: RolesInput | undefined): readonly string[] | undefined {
-  if (roles === undefined) return undefined;
-  const names = new Set<string>([roles.migration, roles.app]);
-  for (const role of roles.managed ?? []) names.add(role.name);
-  return [...names];
-}
-
-function queryOf(sql: Sql): CatalogQuery {
+/**
+ * Turns a postgres.js handle into the query shape introspection uses.
+ *
+ * @param sql - One connection
+ * @returns A {@link CatalogQuery}
+ */
+export function catalogQuery(sql: Sql): CatalogQuery {
   return {
     async query(text, params) {
       const rows = await sql.unsafe(text, params === undefined ? undefined : [...params]);
@@ -83,4 +80,22 @@ function queryOf(sql: Sql): CatalogQuery {
       });
     },
   };
+}
+
+/**
+ * Role names introspection should read, when the config names them.
+ *
+ * @param roles - `defineConfig({ roles })`, when set
+ * @returns The introspect option, or `undefined` when roles are not configured
+ */
+export function managedRoleOptions(roles: RolesInput | undefined): IntrospectOptions | undefined {
+  const names = managedRoleNames(roles);
+  return names === undefined ? undefined : { managedRoles: names };
+}
+
+function managedRoleNames(roles: RolesInput | undefined): readonly string[] | undefined {
+  if (roles === undefined) return undefined;
+  const names = new Set<string>([roles.migration, roles.app]);
+  for (const role of roles.managed ?? []) names.add(role.name);
+  return [...names];
 }

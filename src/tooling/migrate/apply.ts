@@ -355,7 +355,15 @@ export async function pushProject(cwd: string, flags: InvokeFlags): Promise<stri
   return formatReport(report);
 }
 
-function backfillTiming(
+/**
+ * Pause and statement timeout `defineConfig({ backfill })` sets for a run.
+ *
+ * Omitted fields stay unset so the runner uses its built-in defaults.
+ *
+ * @param backfill - Config block, when the project set one
+ * @returns The fields {@link applyTarget} reads
+ */
+export function backfillTiming(
   backfill:
     | {
         readonly pauseMs?: number;

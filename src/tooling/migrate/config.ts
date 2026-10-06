@@ -42,6 +42,15 @@ export type MigrateConfig = {
     readonly statement?: number;
   };
   /**
+   * First migration id that `okm migrate check` lints.
+   *
+   * Files before this id in apply order are the adoption baseline: a project
+   * that turns the linter on later does not fail on old unreasoned drops.
+   * The id itself is linted. `okm migrate apply` still lints every pending
+   * migration.
+   */
+  readonly lintFrom?: string;
+  /**
    * Batched backfill (D195).
    *
    * `batchSize` is what a new plan writes as `batch=`. A step header overrides
