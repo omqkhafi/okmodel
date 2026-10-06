@@ -248,6 +248,13 @@ export const STEP_RULES: readonly StepRule[] = [
     "A type change that rewrites the table locks it for the rewrite.",
     (input) => typeChange(input, "rewrite"),
   ),
+  rule(
+    "OKM1542",
+    "data-dependent",
+    "error",
+    "A data statement outside backfill() is not a migration step.",
+    (input) => hit(dataStatement(input.step), "changes rows outside backfill()"),
+  ),
 ];
 
 /**
@@ -325,6 +332,13 @@ function normalized(sql: string): string {
     out += quoted ? char : char.toLowerCase();
   }
   return out;
+}
+
+function dataStatement(step: PlanStep): boolean {
+  if (step.backfill !== undefined) return false;
+  const text = normalized(step.sql);
+  if (/^(?:insert|update|delete|merge|truncate)\b/.test(text)) return true;
+  return /^with\b/.test(text) && /\b(?:insert|update|delete|merge)\b/.test(text);
 }
 
 function matches(step: PlanStep, kind: StepKind, pattern: RegExp): boolean {

@@ -23,7 +23,7 @@ test("public barrels do not export the moved helpers", () => {
   expect(pg).not.toContain("emitRowTypes");
   expect(pg).not.toContain("mapPostgresError");
   expect(pg).not.toContain("isOperator");
-  expect(migrate).toEqual(["MigrateConfig", "TargetInput", "defineConfig"]);
+  expect(migrate).toEqual(["MigrateConfig", "TargetInput", "defineConfig", "provision"]);
 });
 
 test("an export that imports the rest of the barrel fails the shake check", () => {

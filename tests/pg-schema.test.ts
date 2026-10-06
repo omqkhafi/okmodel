@@ -230,6 +230,18 @@ test("OKM1023 names a duplicate table and the accepted names", () => {
   expect(error.message).toContain("Accepted names: tasks");
 });
 
+test("reference is a table option", () => {
+  const roles = table(
+    "roles",
+    { code: t.text().primaryKey(), label: t.text() },
+    { reference: { key: "code", rows: [{ code: "admin", label: "Admin" }] } },
+  );
+  expect(roles.options?.reference).toEqual({
+    key: "code",
+    rows: [{ code: "admin", label: "Admin" }],
+  });
+});
+
 test("later options are OKM1061 and name the version that adds them", () => {
   const tableError = capture(() =>
     schema({ tables: [table("tasks", { id: t.id() }, { relations: { owner: true } })] }),

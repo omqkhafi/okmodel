@@ -77,6 +77,9 @@ test("protected policy matches the operation table", () => {
     }
     expect(() => assertTargetPolicy(target, operation, true)).not.toThrow();
   }
+  expect(() =>
+    assertTargetPolicy({ name: "production", protected: true }, "provision"),
+  ).not.toThrow();
   expect(() => assertTargetPolicy({ name: "dev", protected: false }, "push")).not.toThrow();
   expect(() => assertTargetPolicy({ name: "production", protected: false }, "push")).not.toThrow();
 });
@@ -197,6 +200,13 @@ test("status states from history", () => {
       hash: "a",
       version: "0001_init",
     }).state,
+  ).toBe("current");
+  expect(
+    describeStatus(
+      [expand],
+      [{ migrationId: "provisioned@0001_init", stepIndex: 0, class: "expand" }],
+      { hash: "a", version: "provisioned@0001_init" },
+    ).state,
   ).toBe("current");
   expect(
     describeStatus([expand], [{ migrationId: "0009_future", stepIndex: 0, class: "expand" }], {

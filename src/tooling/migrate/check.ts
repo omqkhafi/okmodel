@@ -27,6 +27,7 @@ import { quoteIdent } from "../../dialects/pg/ddl.js";
 import { introspectSchema } from "../../dialects/pg/introspect.js";
 import { sealViews } from "../../dialects/pg/view/scratch.js";
 import { applyTarget, backfillTiming } from "./apply.js";
+import { snapshotDifference } from "./snapshot.js";
 import { canonicalTypeName } from "./type-name.js";
 import { classOf, strictestClass, type MigrationClass } from "./classify.js";
 import type { MigrateConfig } from "./config.js";
@@ -76,9 +77,14 @@ type CheckFailure = {
  *
  * @param cwd - Project directory
  * @param flags - `--target` and pooler. Protection is ignored
+ * @param options - `--provision` also compares a snapshot install with a full replay
  * @returns One summary line, ending in a newline
  */
-export async function checkMigrations(cwd: string, flags: InvokeFlags): Promise<string> {
+export async function checkMigrations(
+  cwd: string,
+  flags: InvokeFlags,
+  options?: { readonly provision?: boolean },
+): Promise<string> {
   const opened = await openProject(cwd);
   const target = selectTarget(opened.config, flags.target);
   if (target.protected) {
@@ -96,6 +102,10 @@ export async function checkMigrations(cwd: string, flags: InvokeFlags): Promise<
   }
   const directory = join(cwd, opened.config.migrations ?? "migrations");
   const history = readHistory(directory);
+  if (options?.provision === true) {
+    const equivalence = await proveSnapshot(opened.config, target.url, target.name, flags, history);
+    if (equivalence !== undefined) throwFailure([equivalence]);
+  }
   const previous = previousFailures(history);
   const stale = staleFailure(history, opened.built.catalog);
   const lint = lintFailure(directory, history, opened.config.lintFrom);
@@ -245,6 +255,111 @@ function lintIds(
     });
   }
   return new Set(ids.slice(start));
+}
+
+async function proveSnapshot(
+  config: MigrateConfig,
+  url: string,
+  target: string,
+  flags: InvokeFlags,
+  history: readonly HistoryEntry[],
+): Promise<CheckFailure | undefined> {
+  const head = history.at(-1);
+  if (head === undefined) return undefined;
+  const sql = postgres(url, {
+    max: 1,
+    connect_timeout: 5,
+    idle_timeout: 1,
+    onnotice: () => {},
+  });
+  const provided = `${CHECK_SCHEMA_PREFIX}p${crypto.randomUUID().replaceAll("-", "")}`;
+  const replayed = `${CHECK_SCHEMA_PREFIX}r${crypto.randomUUID().replaceAll("-", "")}`;
+  const timing = {
+    ...(flags.lockTimeoutMs !== undefined
+      ? { lockTimeoutMs: flags.lockTimeoutMs }
+      : config.timeouts?.lock !== undefined
+        ? { lockTimeoutMs: config.timeouts.lock }
+        : {}),
+    ...(flags.statementTimeoutMs !== undefined
+      ? { statementTimeoutMs: flags.statementTimeoutMs }
+      : config.timeouts?.statement !== undefined
+        ? { statementTimeoutMs: config.timeouts.statement }
+        : {}),
+    ...backfillTiming(config.backfill),
+  };
+  try {
+    await sql.unsafe(`create schema ${quoteIdent(provided)}`);
+    await sql.unsafe(`create schema ${quoteIdent(replayed)}`);
+    const role =
+      config.roles === undefined ? {} : { migrationRole: config.roles.migration, schema: provided };
+    await applyTarget({
+      url,
+      target,
+      protected: false,
+      allowProtected: false,
+      allowPooler: flags.allowPooler || config.allowPooler === true,
+      searchPath: provided,
+      ...timing,
+      migrations: history.map((migration) => ({
+        id: migration.id,
+        catalogHash: migration.catalogHash,
+        steps: migration.steps,
+      })),
+      snapshot: {
+        catalog: head.catalog,
+        migrationId: head.id,
+        catalogHash: head.catalogHash,
+        reference: [],
+        only: true,
+      },
+      ...role,
+    });
+    await applyTarget({
+      url,
+      target,
+      protected: false,
+      allowProtected: false,
+      allowPooler: flags.allowPooler || config.allowPooler === true,
+      searchPath: replayed,
+      ...timing,
+      migrations: history.map((migration) => ({
+        id: migration.id,
+        catalogHash: migration.catalogHash,
+        steps: retargetSteps(migration.steps, replayed),
+      })),
+      ...(config.roles !== undefined
+        ? { migrationRole: config.roles.migration, schema: replayed }
+        : {}),
+    });
+    const runner = catalogQuery(sql);
+    const liveProvided = await introspectSchema(
+      runner,
+      provided,
+      "public",
+      managedRoleOptions(config.roles),
+    );
+    const liveReplayed = await introspectSchema(
+      runner,
+      replayed,
+      "public",
+      managedRoleOptions(config.roles),
+    );
+    const difference = snapshotDifference(liveProvided, liveReplayed);
+    if (difference === undefined) return undefined;
+    return {
+      code: "OKM1521",
+      message: `Provisioning from the snapshot does not match the replayed history.\n${difference}`,
+      fix: "Regenerate the snapshot from the history. okm migrate check --provision is the command that reports this.",
+    };
+  } finally {
+    await sql
+      .unsafe(`drop schema if exists ${quoteIdent(provided)} cascade`)
+      .catch(() => undefined);
+    await sql
+      .unsafe(`drop schema if exists ${quoteIdent(replayed)} cascade`)
+      .catch(() => undefined);
+    await sql.end({ timeout: 5 });
+  }
 }
 
 async function replayHistory(

@@ -45,6 +45,23 @@ test("every rule has a one-line doc", () => {
   }
 });
 
+test("a data statement outside backfill is OKM1542 and a backfill update is not", () => {
+  const empty = schema({ tables: [] }).catalog;
+  const inserted = parsePlan("-- class: expand\n\ninsert into roles (code) values ('admin');\n");
+  expect(lintPlan(inserted, empty, empty).some((item) => item.code === "OKM1542")).toBe(true);
+  const filled = parsePlan(
+    '-- class: expand\n\n-- backfill table="public"."roles" key="code" batch=100\nupdate "public"."roles" set "label" = \'x\' where "code" = \'a\';\n',
+  );
+  expect(lintPlan(filled, empty, empty).some((item) => item.code === "OKM1542")).toBe(false);
+  expect(
+    lintPlan(
+      parsePlan('-- class: expand\n\ncreate table "roles" ("code" text);\n'),
+      empty,
+      empty,
+    ).some((item) => item.code === "OKM1542"),
+  ).toBe(false);
+});
+
 test("destructive drops are errors and a create is not", () => {
   expect(codes(diff(tasks(), table("tasks", { id: t.identity() })))).toContain("OKM1512");
   expect(codes(fromEmpty(tasks()))).not.toContain("OKM1512");

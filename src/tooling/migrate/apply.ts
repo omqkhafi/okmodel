@@ -13,19 +13,27 @@ import { join } from "node:path";
 
 import { open } from "../../adapters/pg/postgresjs.js";
 import { catalogHash } from "../../contracts/catalog/document.js";
+import type { Catalog } from "../../contracts/catalog/types.js";
 import { hasError, lintMigrationDirectory, lintRefusal } from "./lint.js";
 import type { DriverConnection } from "../../contracts/driver.js";
 import { OkmError } from "../../contracts/error.js";
 import { assertCreateRole, currentUser, roleExists } from "../../dialects/pg/role/check.js";
 import { changesRole } from "../../dialects/pg/role/sql.js";
 import { batchSizeField } from "./backfill.js";
-import { assumeRole, runTarget, type BackfillBatch } from "./runner.js";
+import {
+  assumeRole,
+  runTarget,
+  statementOutsideTransaction,
+  type BackfillBatch,
+} from "./runner.js";
 import { assertExtensionsAvailable } from "./extensions.js";
 import { assertUuidV7Available } from "./engine.js";
-import { loadConfig, projectHead } from "./project.js";
+import { loadBuiltSchema, loadConfig, projectHead } from "./project.js";
+import { loadHeadSnapshot, loadMigrations } from "./files.js";
+import { readReference, referenceInserts, type ReferenceTable } from "./reference.js";
+import { expandProvisioned, installSnapshot, provisionMark } from "./snapshot.js";
 import { planMigration, type PlanStep } from "./plan.js";
 import type { StoredMigration } from "./files.js";
-import { loadMigrations } from "./files.js";
 import {
   assertDirectConnection,
   assertTargetPolicy,
@@ -92,6 +100,20 @@ export type ApplyRequest = {
    * `push` omits this: its steps are not files.
    */
   readonly lintDirectory?: string;
+  /**
+   * Head snapshot.
+   *
+   * Set by `okm migrate apply` and `provision()`. An empty target installs
+   * this catalog instead of replaying files. `only` refuses a target that
+   * is not empty (OKM1851) and does not fall through to replay.
+   */
+  readonly snapshot?: {
+    readonly catalog: Catalog;
+    readonly migrationId: string;
+    readonly catalogHash: string;
+    readonly reference: readonly ReferenceTable[];
+    readonly only?: boolean;
+  };
 };
 
 /** Migrations that ran at least one step in this invocation. */
@@ -170,7 +192,7 @@ export function applyUnits(
     if (
       item.step.backfill === undefined &&
       item.step.transactional &&
-      !outsideTransaction(item.step.sql)
+      !statementOutsideTransaction(item.step.sql)
     ) {
       batch.push(item);
       continue;
@@ -226,12 +248,23 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
     await prepareMigrationRole(connection, request, session);
     await assertExtensionsAvailable(connection, request.migrations);
     await assertUuidV7Available(connection, request.migrations);
+    const state = request.snapshot === undefined ? undefined : await targetState(connection);
+    if (request.snapshot !== undefined && state !== undefined) {
+      if (state.kind === "empty") {
+        return await provisionEmpty(connection, request, session);
+      }
+      if (state.kind === "interrupted") throw interruptedProvision(request.target, state.object);
+      if (state.kind === "occupied" || request.snapshot.only === true) {
+        throw notEmpty(request.target, state.kind === "occupied" ? state.object : "okm_meta");
+      }
+    }
     await connection.execute(META);
     await connection.execute(HISTORY);
     await connection.execute(BACKFILL);
-    const done = await readDone(connection);
+    const history = await readHistory(connection);
+    const done = expandProvisioned(request.migrations, history.done, history.ids);
     const units = request.migrations.flatMap((migration) => applyUnits(migration, done));
-    return await runTarget(
+    const report = await runTarget(
       connection,
       {
         policy: request,
@@ -251,6 +284,10 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
       },
       session,
     );
+    if (request.snapshot !== undefined) {
+      await insertReference(connection, request);
+    }
+    return report;
   } finally {
     if (locked)
       await connection.execute("select pg_advisory_unlock(hashtext($1))", [
@@ -281,7 +318,14 @@ export async function applyProject(
   const target = selectTarget(config, flags.target);
   const directory = joinMigrations(cwd, config.migrations);
   const migrations = loadMigrations(directory);
-  if (migrations.length === 0) return `target ${target.name}\nnothing to apply\n`;
+  const head = loadHeadSnapshot(directory);
+  if (migrations.length === 0 || head === undefined)
+    return `target ${target.name}\nnothing to apply\n`;
+  const built = await loadBuiltSchema(cwd, config).catch((error: unknown) => {
+    if (error instanceof OkmError && error.message.endsWith("must export a schema()."))
+      return undefined;
+    throw error;
+  });
   const progress: string[] = [];
   const report = await applyTarget({
     url: target.url,
@@ -301,6 +345,12 @@ export async function applyProject(
         : {}),
     ...backfillTiming(config.backfill),
     migrations,
+    snapshot: {
+      catalog: head.catalog,
+      migrationId: head.id,
+      catalogHash: head.catalogHash,
+      reference: built === undefined ? [] : readReference(built.tables, built.casing, head.catalog),
+    },
     ...(config.roles !== undefined ? { migrationRole: config.roles.migration } : {}),
     lintDirectory: directory,
     onProgress: (line) => {
@@ -453,7 +503,8 @@ async function pendingMigrationIds(
 ): Promise<ReadonlySet<string>> {
   const present = await connection.execute("select to_regclass('okm_history') is not null");
   if (!wireTrue(present.rows[0]?.[0])) return new Set(migrations.map((migration) => migration.id));
-  const done = await readDone(connection);
+  const history = await readHistory(connection);
+  const done = expandProvisioned(migrations, history.done, history.ids);
   const pending = new Set<string>();
   for (const migration of migrations) {
     for (let index = 0; index < migration.steps.length; index += 1) {
@@ -466,15 +517,191 @@ async function pendingMigrationIds(
   return pending;
 }
 
-async function readDone(connection: DriverConnection): Promise<Set<string>> {
+async function readHistory(
+  connection: DriverConnection,
+): Promise<{ readonly done: Set<string>; readonly ids: string[] }> {
   const result = await connection.execute("select migration_id, step_index::text from okm_history");
   const done = new Set<string>();
+  const ids: string[] = [];
   for (const row of result.rows) {
     const id = row[0];
     const step = row[1];
-    if (id !== null && step !== null) done.add(`${id}:${step}`);
+    if (id === null || id === undefined || step === null || step === undefined) continue;
+    done.add(`${id}:${step}`);
+    ids.push(id);
   }
-  return done;
+  return { done, ids };
+}
+
+async function provisionEmpty(
+  connection: DriverConnection,
+  request: ApplyRequest,
+  session: { setRole?: string },
+): Promise<ApplyReport> {
+  const snapshot = request.snapshot;
+  if (snapshot === undefined) throw new Error("provision requires a snapshot");
+  assertTargetPolicy(
+    { name: request.target, protected: request.protected },
+    "provision",
+    request.allowProtected === true,
+  );
+  if (snapshot.reference.length > 0) {
+    assertTargetPolicy(
+      { name: request.target, protected: request.protected },
+      "reference",
+      request.allowProtected === true,
+    );
+  }
+  const schema = concreteSchema(request);
+  await connection.execute(META);
+  await connection.execute(HISTORY);
+  await connection.execute(BACKFILL);
+  await installSnapshot(
+    connection,
+    snapshot.catalog,
+    schema,
+    snapshot.reference,
+    session,
+    request.migrationRole,
+  );
+  const mark = provisionMark(snapshot.migrationId);
+  await connection.execute("begin");
+  try {
+    await connection.execute(
+      "insert into okm_history (migration_id, step_index, class, catalog_hash) values ($1, 0, 'expand', $2)",
+      [mark, snapshot.catalogHash],
+    );
+    await connection.execute(
+      `insert into okm_meta (id, catalog_hash, migration_id) values ('head', $1, $2)
+       on conflict (id) do update set catalog_hash = excluded.catalog_hash, migration_id = excluded.migration_id`,
+      [snapshot.catalogHash, mark],
+    );
+    await connection.execute("commit");
+  } catch (error) {
+    await connection.execute("rollback").catch(() => undefined);
+    throw error;
+  }
+  return {
+    target: request.target,
+    applied: [mark],
+    ...(session.setRole !== undefined ? { setRole: session.setRole } : {}),
+  };
+}
+
+async function insertReference(connection: DriverConnection, request: ApplyRequest): Promise<void> {
+  const snapshot = request.snapshot;
+  if (snapshot === undefined || snapshot.reference.length === 0) return;
+  assertTargetPolicy(
+    { name: request.target, protected: request.protected },
+    "reference",
+    request.allowProtected === true,
+  );
+  const statements = referenceInserts(snapshot.reference, concreteSchema(request));
+  if (statements.length === 0) return;
+  await connection.execute("begin");
+  try {
+    for (const sql of statements) await connection.execute(sql);
+    await connection.execute("commit");
+  } catch (error) {
+    await connection.execute("rollback").catch(() => undefined);
+    throw error;
+  }
+}
+
+function concreteSchema(request: ApplyRequest): string {
+  return request.searchPath ?? request.schema ?? "public";
+}
+
+type TargetShape =
+  | { readonly kind: "empty" }
+  | { readonly kind: "tracked" }
+  | { readonly kind: "occupied"; readonly object: string }
+  | { readonly kind: "interrupted"; readonly object: string };
+
+async function targetState(connection: DriverConnection): Promise<TargetShape> {
+  const meta = await connection.execute(
+    `select to_regclass('okm_meta') is not null
+         or to_regclass('okm_history') is not null
+         or to_regclass('okm_backfill') is not null`,
+  );
+  if (wireTrue(meta.rows[0]?.[0])) {
+    const historyRows = await tableRows(connection, "okm_history");
+    const metaRows = await tableRows(connection, "okm_meta");
+    if (historyRows === 0 && metaRows === 0) {
+      const object = await namespaceObject(connection);
+      if (object === undefined) return { kind: "empty" };
+      return { kind: "interrupted", object };
+    }
+    return { kind: "tracked" };
+  }
+  const object = await namespaceObject(connection);
+  if (object === undefined) return { kind: "empty" };
+  return { kind: "occupied", object };
+}
+
+async function tableRows(
+  connection: DriverConnection,
+  name: "okm_history" | "okm_meta",
+): Promise<number> {
+  const present = await connection.execute(`select to_regclass('${name}') is not null`);
+  if (!wireTrue(present.rows[0]?.[0])) return 0;
+  const counted = await connection.execute(`select count(*)::text from ${name}`);
+  const text = counted.rows[0]?.[0];
+  if (text === null || text === undefined) return 0;
+  return Number(text);
+}
+
+async function namespaceObject(connection: DriverConnection): Promise<string | undefined> {
+  const current = await connection.execute("select current_schema()");
+  const schema = current.rows[0]?.[0];
+  if (schema === null || schema === undefined) return undefined;
+  const found = await connection.execute(
+    `select name from (
+       select c.relname as name from pg_class c
+         join pg_namespace n on n.oid = c.relnamespace
+        where n.nspname = $1
+          and c.relkind in ('r', 'p', 'v', 'm', 'S', 'f')
+          and c.relname not in ('okm_meta', 'okm_history', 'okm_backfill')
+       union all
+       select t.typname from pg_type t
+         join pg_namespace n on n.oid = t.typnamespace
+        where n.nspname = $1 and t.typtype in ('e', 'd')
+       union all
+       select e.extname from pg_extension e
+         join pg_namespace n on n.oid = e.extnamespace
+        where n.nspname = $1
+     ) objects limit 1`,
+    [schema],
+  );
+  const object = found.rows[0]?.[0];
+  if (object === null || object === undefined) return undefined;
+  return object;
+}
+
+function interruptedProvision(target: string, object: string): OkmError {
+  return new OkmError(
+    "OKM1851",
+    `Target ${target} is not empty (${object}): a previous provision stopped part-way; drop the schema or database and run again`,
+    {
+      kind: "forbidden",
+      fix: {
+        summary: "Drop the schema or database and run again. A partial provision is not repaired.",
+      },
+    },
+  );
+}
+
+function notEmpty(target: string, object: string): OkmError {
+  const message =
+    object === "okm_meta"
+      ? `Target ${target} already has migration history and cannot be provisioned.`
+      : `Target ${target} is not empty (${object}) and has no migration history.`;
+  return new OkmError("OKM1851", message, {
+    kind: "forbidden",
+    fix: {
+      summary: "Provision an empty schema or an empty database. A non-empty target is refused.",
+    },
+  });
 }
 
 async function prepareMigrationRole(
@@ -494,15 +721,6 @@ async function prepareMigrationRole(
   const exists = await roleExists(connection, role);
   if (changes) await assertCreateRole(connection, exists && current !== role ? role : current);
   if (exists && current !== role) await assumeRole(connection, role, session);
-}
-
-function outsideTransaction(sql: string): boolean {
-  const text = sql.trim().toLowerCase();
-  if (text.startsWith("vacuum")) return true;
-  if (/^alter\s+type\b/.test(text) && /\badd\s+value\b/.test(text)) return true;
-  if (/^create\s+(?:unique\s+)?index\s+concurrently\b/.test(text)) return true;
-  if (/^drop\s+index\s+concurrently\b/.test(text)) return true;
-  return false;
 }
 
 function wireTrue(value: string | null | undefined): boolean {

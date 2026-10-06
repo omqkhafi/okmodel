@@ -13,6 +13,10 @@ The command writes a scratch schema, so point it at a throwaway Postgres. A prot
 
 `defineConfig({ lintFrom: "<migration id>" })` is the adoption baseline. Files before that id are not linted by `okm migrate check`. The id itself is linted. Use it when older migrations have unreasoned drops and the linter is being turned on now.
 
+## `--provision`
+
+`okm migrate check --provision` also installs the head snapshot into a second scratch schema and compares it with the replay. Both schemas start with `okm_check_` and are dropped at the end, including after a failure. Type names are normalised before the comparison. A difference is OKM1521 and names the object. The default command does not do this. A protected target is still refused, and `--allow-protected` does not apply. See [provisioning](provisioning.md).
+
 Tenant targets and schema-per-tenant checking are M5. See [known limits](known-limits.md#migrations).
 
 ## GitHub Actions

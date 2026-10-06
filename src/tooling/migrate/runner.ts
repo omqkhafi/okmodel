@@ -495,6 +495,24 @@ function unquote(token: string): string {
   return token;
 }
 
+/**
+ * Reports whether Postgres refuses to run `sql` inside a transaction.
+ *
+ * `VACUUM`, `ALTER TYPE … ADD VALUE`, and concurrent index create or drop
+ * each need their own unit.
+ *
+ * @param sql - One statement
+ * @returns `true` when the statement cannot share a transaction
+ */
+export function statementOutsideTransaction(sql: string): boolean {
+  const text = sql.trim().toLowerCase();
+  if (text.startsWith("vacuum")) return true;
+  if (/^alter\s+type\b/.test(text) && /\badd\s+value\b/.test(text)) return true;
+  if (/^create\s+(?:unique\s+)?index\s+concurrently\b/.test(text)) return true;
+  if (/^drop\s+index\s+concurrently\b/.test(text)) return true;
+  return false;
+}
+
 function assertUnitPolicy(policy: RunPolicy, unit: RunnableUnit): void {
   let operation: PolicyOperation = "expand";
   for (const item of unit.steps) {

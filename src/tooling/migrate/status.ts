@@ -25,6 +25,7 @@ import type { StoredMigration } from "./files.js";
 import { loadMigrations } from "./files.js";
 import { assertTargetPolicy, listTargets, type InvokeFlags, type TargetRecord } from "./policy.js";
 import { loadConfig } from "./project.js";
+import { expandProvisioned, provisionHistoryIsKnown } from "./snapshot.js";
 
 /** One status row. `protected` is its own column, not a state. */
 export type TargetStatus = {
@@ -74,8 +75,12 @@ export function describeStatus(
   history: readonly StatusHistory[],
   recorded: { readonly hash: string; readonly version: string } | undefined,
 ): { readonly version: string; readonly catalogHash: string; readonly state: string } {
-  const done = new Set(history.map((row) => `${row.migrationId}:${String(row.stepIndex)}`));
   const known = new Set(migrations.map((migration) => migration.id));
+  const done = expandProvisioned(
+    migrations,
+    new Set(history.map((row) => `${row.migrationId}:${String(row.stepIndex)}`)),
+    history.map((row) => row.migrationId),
+  );
   for (const migration of migrations) {
     let have = 0;
     let missing = -1;
@@ -97,7 +102,7 @@ export function describeStatus(
   const finished = lastComplete(migrations, done);
   const version = recorded?.version ?? finished ?? "-";
   const catalogHash = recorded?.hash ?? "-";
-  const extra = history.some((row) => !known.has(row.migrationId));
+  const extra = history.some((row) => !provisionHistoryIsKnown(row.migrationId, known));
   if (extra) return { version, catalogHash, state: aheadState(history, known) };
   if (pending.length > 0) {
     const contract = pending.some((migration) =>

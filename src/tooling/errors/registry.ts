@@ -309,7 +309,7 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     code: "OKM1521",
     title: "Snapshot mismatch",
     summary: "Provisioning from the snapshot does not match the replayed migration history.",
-    fix: "Regenerate the snapshot from the history. okm migrate check is the command that reports this.",
+    fix: "Regenerate the snapshot from the history. okm migrate check --provision is the command that reports this.",
   },
   {
     code: "OKM1522",
