@@ -7,7 +7,6 @@
 
 import { OkmError } from "../../contracts/error.js";
 import { formatFindings, hasError, lintRefusal } from "./lint.js";
-import { formatPlan } from "./plan.js";
 import type { InvokeFlags } from "./policy.js";
 import { buildProject, checkProject, generateProject, planProject } from "./project.js";
 
@@ -79,8 +78,8 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
       if (parsed.name === undefined) {
         throw new OkmError("invalid", "okm migrate plan needs a name.");
       }
-      const planned = await planProject(cwd, parsed.name, parsed.flags);
-      stdout(formatPlan(planned.plan));
+      const planned = await planProject(cwd, parsed.name, parsed.flags, invoke(parsed));
+      stdout(planned.text);
       stdout(formatFindings(planned.findings));
       if (hasError(planned.findings)) throw lintRefusal(planned.findings);
       return;

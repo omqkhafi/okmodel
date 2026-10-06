@@ -21,7 +21,14 @@ import type { BuiltSchema } from "../../dialects/pg/schema.js";
 import type { AnyTable } from "../../dialects/pg/table.js";
 import type { Catalog } from "../../contracts/catalog/types.js";
 import { type MigrateConfig } from "./config.js";
-import { assertTargetAlias, listTargets, selectTarget, type InvokeFlags } from "./policy.js";
+import { annotateLock, readRowEstimates, type RowEstimate } from "./estimate.js";
+import {
+  assertTargetAlias,
+  assertTargetPolicy,
+  listTargets,
+  selectTarget,
+  type InvokeFlags,
+} from "./policy.js";
 import { formatPlan, planMigration, staleRenames, type MigrationPlan } from "./plan.js";
 import { hasError, lintCatalog, lintPlan, lintRefusal, type Finding } from "./lint.js";
 import { parseReplace } from "./values.js";
@@ -74,18 +81,33 @@ export async function generateProject(
 /**
  * Plans and returns the text. Nothing is written.
  *
+ * When one target is configured, or `--target` names one, and that database
+ * answers, the printed lock lines include `pg_class` row estimates. No
+ * target, several targets without `--target`, or a target that cannot be
+ * reached leaves the text identical to {@link formatPlan}.
+ *
  * @param cwd - Project directory
  * @param name - Plan name
  * @param flags - `--replace` values
- * @returns The plan and its lint findings
+ * @param invoke - Target and protection flags, when the command passed them
+ * @returns The plan, its lint findings, and the text to print
  */
 export async function planProject(
   cwd: string,
   name: string,
   flags: readonly string[],
-): Promise<{ readonly plan: MigrationPlan; readonly findings: readonly Finding[] }> {
+  invoke?: InvokeFlags,
+): Promise<{
+  readonly plan: MigrationPlan;
+  readonly findings: readonly Finding[];
+  readonly text: string;
+}> {
   const prepared = await prepare(cwd, name, flags);
-  return { plan: prepared.plan, findings: lintPrepared(prepared) };
+  return {
+    plan: prepared.plan,
+    findings: lintPrepared(prepared),
+    text: await displayPlan(prepared.config, prepared.plan, invoke),
+  };
 }
 
 /**
@@ -204,6 +226,41 @@ function lintPrepared(prepared: {
   readonly after: Catalog;
 }): readonly Finding[] {
   return lintPlan(prepared.plan, prepared.before, prepared.after);
+}
+
+/**
+ * Prints estimates when a selected target answers.
+ *
+ * A connection or query failure returns the offline text and does not throw.
+ * Protection and an unknown `--target` still throw: those are the same
+ * refusals the other read-only commands use. A pooler is not refused.
+ *
+ * @param config - Project config
+ * @param plan - Plan to print
+ * @param invoke - Target flags
+ * @returns Offline text, or the same text with lock estimates
+ */
+async function displayPlan(
+  config: MigrateConfig,
+  plan: MigrationPlan,
+  invoke: InvokeFlags | undefined,
+): Promise<string> {
+  const offline = formatPlan(plan);
+  const targets = listTargets(config);
+  if (targets.length === 0) return offline;
+  assertTargetAlias(targets);
+  const named = invoke?.target;
+  if (named === undefined && targets.length !== 1) return offline;
+  const target = selectTarget(config, named);
+  assertTargetPolicy(target, "plan", invoke?.allowProtected ?? false);
+  let estimates: ReadonlyMap<string, RowEstimate>;
+  try {
+    const names = plan.steps.flatMap((step) => step.tables ?? []);
+    estimates = await readRowEstimates(target.url, "public", names);
+  } catch {
+    return offline;
+  }
+  return formatPlan(plan, (step) => annotateLock(step, estimates));
 }
 
 function lintOpened(opened: {

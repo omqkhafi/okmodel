@@ -1,8 +1,9 @@
 /**
  * Verifies declared views on a scratch schema.
  *
- * Tables from the catalog are created there, then each view. `pg_get_viewdef`
- * replaces the author query and `pg_depend` supplies column edges (D117).
+ * Domain and enum types from the catalog are created there, then the tables,
+ * then each view. `pg_get_viewdef` replaces the author query and `pg_depend`
+ * supplies column edges (D117).
  * The scratch schema is dropped before this returns. Plans never use it.
  */
 
@@ -20,7 +21,7 @@ import type {
   TableObject,
   ViewObject,
 } from "../../../contracts/catalog/types.js";
-import { quoteIdent } from "../ddl.js";
+import { createObjectSql, quoteIdent } from "../ddl.js";
 import type { CatalogQuery } from "../introspect.js";
 import { cellText, PUBLIC, VIEW_DEPENDENCIES, viewDependencyEdges } from "./depend.js";
 
@@ -62,6 +63,11 @@ export async function sealViews(runner: CatalogQuery, source: Catalog): Promise<
   await runner.query(`create schema ${quoteIdent(SCRATCH)}`);
   try {
     await runner.query(`set search_path to ${quoteIdent(SCRATCH)}`);
+    for (const object of source.objects) {
+      if (object.kind !== "type") continue;
+      const statement = createObjectSql(object, SCRATCH);
+      if (statement !== undefined) await runner.query(statement);
+    }
     for (const object of source.objects) {
       if (object.kind !== "table") continue;
       await runner.query(stubTable(object, source));
@@ -224,5 +230,5 @@ async function dropScratch(runner: CatalogQuery): Promise<void> {
       `drop table if exists ${quoteIdent(SCRATCH)}.${quoteIdent(cellText(row.name))}`,
     );
   }
-  await runner.query(`drop schema if exists ${quoteIdent(SCRATCH)}`);
+  await runner.query(`drop schema if exists ${quoteIdent(SCRATCH)} cascade`);
 }

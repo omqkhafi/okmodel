@@ -467,16 +467,26 @@ export function registerTxSuite(suite: TxSuite): void {
       await withApp({}, async ({ db }) => {
         await seed(db);
         const attempts = { a: 0, b: 0 };
-        const ready = barrier(2);
+        const read = barrier(2);
+        let releaseB = (): void => {};
+        const aCommitted = new Promise<void>((resolve) => {
+          releaseB = resolve;
+        });
         const run = (me: "a" | "b") =>
           db.tx({ isolation: "serializable", retry: 3 }, async (tx) => {
             attempts[me] += 1;
             const rows = await tx.accounts.find({ limit: 10 });
             const total = rows.reduce((sum, row) => sum + row.balance, 0);
-            if (attempts[me] === 1) await ready();
+            if (attempts[me] === 1) await read();
+            // Both have read. A commits before B's first write, so B is the
+            // only serialization victim. Writing together lets SSI abort both.
+            if (me === "b" && attempts.b === 1) await aCommitted;
             await tx.accounts.update({ where: { id: me }, set: { balance: total } });
           });
-        await Promise.all([run("a"), run("b")]);
+        const a = run("a").finally(() => {
+          releaseB();
+        });
+        await Promise.all([a, run("b")]);
         expect(attempts.a + attempts.b).toBe(3);
         expect(Object.values(await balances(db)).toSorted((a, b) => a - b)).toEqual([200, 300]);
       });
@@ -489,17 +499,25 @@ export function registerTxSuite(suite: TxSuite): void {
     async () => {
       await withApp({}, async ({ db }) => {
         await seed(db);
-        const ready = barrier(2);
+        const read = barrier(2);
+        let releaseB = (): void => {};
+        const aCommitted = new Promise<void>((resolve) => {
+          releaseB = resolve;
+        });
         const run = (me: "a" | "b") =>
           db.tx({ isolation: "serializable" }, async (tx) => {
             const rows = await tx.accounts.find({ limit: 10 });
-            await ready();
+            await read();
+            if (me === "b") await aCommitted;
             await tx.accounts.update({
               where: { id: me },
               set: { balance: rows.reduce((sum, row) => sum + row.balance, 0) },
             });
           });
-        const settled = await Promise.allSettled([run("a"), run("b")]);
+        const a = run("a").finally(() => {
+          releaseB();
+        });
+        const settled = await Promise.allSettled([a, run("b")]);
         const rejected = settled.filter((item) => item.status === "rejected");
         expect(rejected).toHaveLength(1);
         const error = (rejected[0] as PromiseRejectedResult).reason as OkmError;

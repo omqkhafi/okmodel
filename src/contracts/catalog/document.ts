@@ -7,6 +7,7 @@
  */
 
 import { catalogError } from "../error.js";
+import { fitIdentifier } from "./identifier.js";
 import { sha256 } from "../sha256.js";
 import { canonicalJson, type Json } from "./json.js";
 import { replaceIdentifier } from "./rewrite.js";
@@ -34,6 +35,7 @@ import type {
   ColumnObject,
   ConstraintObject,
   DependencyEdge,
+  GrantObjectRef,
   IndexObject,
   MaterializedViewObject,
   Namespace,
@@ -104,8 +106,12 @@ export function renameColumn(
 /**
  * Renames a table without renaming its constraints or indexes.
  *
- * Column, index, and constraint parents move to the new name. Expression text
- * that names the table is rewritten. Constraint and index names stay.
+ * Column, index, constraint, and trigger parents move to the new name, and
+ * edges that pointed at those objects move with them. Expression text that
+ * names the table is rewritten. Constraint and index names stay. A grant on
+ * the table, or on an identity sequence named `{table}_{column}_seq`, follows
+ * the name the schema will use. The planner emits the `RENAME` for a default
+ * name; a custom name is left as it is.
  *
  * @param source - Catalog document
  * @param change - Namespace, current table name, and the new name
@@ -131,7 +137,7 @@ export function renameTable(
     catalogError("OKM1020", `Table ${change.from} is not in the catalog.`);
   }
   const next = source.objects.map((object) =>
-    rewriteTableName(object, change, fromKey, toIdentity),
+    rewriteTableName(object, change, fromKey, toIdentity, source),
   );
   return catalog(next);
 }
@@ -539,8 +545,9 @@ function rewriteTableName(
   change: { readonly namespace: Namespace; readonly from: string; readonly to: string },
   fromKey: string,
   toIdentity: ObjectIdentity,
+  source: Catalog,
 ): CatalogObject {
-  const dependencies = retarget(object.dependencies, fromKey, toIdentity);
+  const dependencies = retarget(object.dependencies, fromKey, toIdentity, change);
   const named =
     object.kind === "table" &&
     object.identity.name === change.from &&
@@ -697,8 +704,18 @@ function rewriteTableName(
       rewriteExpr(object.definition.query, { from: change.from, to: change.to }, local),
     );
   }
-  if (object.kind === "role" || object.kind === "grant" || object.kind === "defaultPrivilege") {
+  if (object.kind === "role" || object.kind === "defaultPrivilege") {
     return retargeted(object, dependencies);
+  }
+  if (object.kind === "grant") {
+    return grantObject({
+      role: object.identity.role,
+      object: movedGrantRef(object.identity.object, change, source),
+      privilege: object.identity.privilege,
+      owner: object.owner,
+      provenance: object.provenance,
+      dependencies,
+    });
   }
   if (object.kind === "trigger") {
     const parent = movedParent(object.identity.parent, change);
@@ -782,8 +799,64 @@ function retarget(
   edges: readonly DependencyEdge[],
   fromKey: string,
   to: ObjectIdentity,
+  change?: { readonly namespace: Namespace; readonly from: string; readonly to: string },
 ): ObjectIdentity[] {
-  return edges.map((edge) => (identityKey(edge.target) === fromKey ? to : edge.target));
+  return edges.map((edge) => {
+    if (identityKey(edge.target) === fromKey) return to;
+    if (change === undefined) return edge.target;
+    return movedChild(edge.target, change);
+  });
+}
+
+function movedChild(
+  target: ObjectIdentity,
+  change: { readonly namespace: Namespace; readonly from: string; readonly to: string },
+): ObjectIdentity {
+  if (!("parent" in target)) return target;
+  if (
+    target.parent.name !== change.from ||
+    !sameNamespace(target.parent.namespace, change.namespace)
+  ) {
+    return target;
+  }
+  return { ...target, parent: { namespace: target.parent.namespace, name: change.to } };
+}
+
+function movedGrantRef(
+  object: GrantObjectRef,
+  change: { readonly namespace: Namespace; readonly from: string; readonly to: string },
+  source: Catalog,
+): GrantObjectRef {
+  if (
+    object.kind === "table" &&
+    object.name === change.from &&
+    sameNamespace(object.namespace, change.namespace)
+  ) {
+    return { ...object, name: change.to };
+  }
+  if (object.kind !== "sequence") return object;
+  const next = renamedIdentitySequence(source, change, object.name);
+  if (next === undefined) return object;
+  return { ...object, name: next };
+}
+
+function renamedIdentitySequence(
+  source: Catalog,
+  change: { readonly namespace: Namespace; readonly from: string; readonly to: string },
+  sequenceName: string,
+): string | undefined {
+  for (const object of source.objects) {
+    if (object.kind !== "column" || object.definition.identity === undefined) continue;
+    if (
+      object.identity.parent.name !== change.from ||
+      !sameNamespace(object.identity.parent.namespace, change.namespace)
+    ) {
+      continue;
+    }
+    if (fitIdentifier(`${change.from}_${object.identity.name}_seq`) !== sequenceName) continue;
+    return fitIdentifier(`${change.to}_${object.identity.name}_seq`);
+  }
+  return undefined;
 }
 
 function dependencyJson(edges: readonly DependencyEdge[]): Json[] {

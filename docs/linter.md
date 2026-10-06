@@ -19,6 +19,23 @@ error OKM1511 step 1: drops a table -- fix: Stop reading the table in an expand 
 
 A database that has never been pushed has no `okm_meta`. `okm check` skips the drift comparison for that database and still prints lint findings.
 
+## Row estimates
+
+`okm migrate plan` prints a row estimate on the lock line when a selected target is reachable (D194). One configured target is selected. Several targets need `--target`. The number is `pg_class.reltuples` for each table the step names. The command does not run `count(*)` and does not scan the table.
+
+```text
+-- lock: ACCESS EXCLUSIVE on tasks, about 4.2M rows
+-- lock: ACCESS EXCLUSIVE on tasks, rows unknown (table not analyzed)
+-- lock: ACCESS EXCLUSIVE on notes, new table
+-- lock: SHARE UPDATE EXCLUSIVE on tasks, about 12 rows; safe rewrite applied
+```
+
+`reltuples` of `-1` means the table has not been analyzed. A name that is not in `pg_class` is `new table`. A step the planner emitted as a safe rewrite (D193) is labelled `safe rewrite applied`. `ACCESS EXCLUSIVE` on a table with more than 1,000,000 estimated rows, when that step is not a safe rewrite, adds `note: more than 1000000 estimated rows`. That note is not a lint finding.
+
+No target, several targets and no `--target`, or a target that cannot be reached prints the lock alone and does not error. The query runs in a read-only transaction. Plan is a read-only command: a protected target is allowed, and a pooler host is not refused.
+
+The linter does not read the estimate. `okm generate` stays offline. The SQL file, the catalog file, and `okm_history` do not store it. A partitioned table or an inheritance parent is estimated from that relation's own `reltuples`, not from its children, and the number is only as fresh as the last analyze.
+
 ## Override
 
 Put the line directly above the statement. The reason is the text after the colon.

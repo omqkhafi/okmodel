@@ -10,6 +10,11 @@ import { join } from "node:path";
 
 import { catalog } from "../src/contracts/catalog/build.js";
 import {
+  column as catalogColumn,
+  index as catalogIndex,
+  table as catalogTable,
+} from "../src/contracts/catalog/object.js";
+import {
   catalogHash,
   loadTrustedCatalog,
   parseCatalog,
@@ -20,7 +25,7 @@ import { staticNamespace } from "../src/contracts/catalog/identity.js";
 import { sha256 } from "../src/contracts/sha256.js";
 import { OkmError } from "../src/contracts/error.js";
 import { schemaDeclarations } from "../src/dialects/pg/declarations.js";
-import { schema, sql, table, t } from "../src/dialects/pg/index.js";
+import { index, schema, sql, table, t } from "../src/dialects/pg/index.js";
 import { repoRoot } from "../scripts/root.js";
 import { run } from "../src/tooling/migrate/commands.js";
 import { planMigration, staleRenames, type MigrationPlan } from "../src/tooling/migrate/plan.js";
@@ -119,6 +124,115 @@ test("an unexplained drop and add is OKM1530 and shows the line to add", () => {
   expect(error.code).toBe("OKM1530");
   expect(error.fix.summary).toContain('.renamedFrom("title")');
   expect(error.fix.summary).toContain("name");
+});
+
+test("a table drop and add without renamedFrom is OKM1530", () => {
+  const before = schema({ tables: [table("tasks", { id: t.identity() })] });
+  const after = schema({ tables: [table("items", { id: t.identity() })] });
+  const error = capture(() =>
+    planMigration({ before: before.catalog, after: after.catalog, name: "rename" }),
+  );
+  expect(error.code).toBe("OKM1530");
+  expect(error.fix.summary).toContain('renamedFrom: "tasks"');
+});
+
+test("a declared table rename renames default dependents and leaves a custom name", () => {
+  const before = schema({
+    tables: [
+      table("users", {
+        id: t.integer().primaryKey(),
+        taskId: t.bigint().nullable().references("tasks"),
+      }),
+      table(
+        "tasks",
+        {
+          id: t.identity(),
+          email: t.text().unique(),
+          userId: t.integer().nullable().references("users"),
+        },
+        { indexes: (columns) => [index(columns.email).unique()] },
+      ),
+    ],
+  });
+  const after = schema({
+    tables: [
+      table("users", {
+        id: t.integer().primaryKey(),
+        taskId: t.bigint().nullable().references("items"),
+      }),
+      table(
+        "items",
+        {
+          id: t.identity(),
+          userId: t.integer().nullable().references("users"),
+          contact: t.text().unique().renamedFrom("email"),
+        },
+        {
+          indexes: (columns) => [index(columns.contact).unique()],
+          renamedFrom: "tasks",
+        },
+      ),
+    ],
+  });
+  const plan = planMigration({
+    before: before.catalog,
+    after: after.catalog,
+    renames: schemaDeclarations(after).renames,
+    name: "rename-table",
+  });
+  const text = plan.steps.map((step) => step.sql).join("\n");
+  expect(text).toContain('alter table "public"."tasks" rename to "items"');
+  expect(text).toContain('rename constraint "tasks_pkey" to "items_pkey"');
+  expect(text).toContain('rename constraint "tasks_email_key" to "items_contact_key"');
+  expect(text).toContain('rename constraint "tasks_userId_fkey" to "items_userId_fkey"');
+  expect(text).toContain('alter index "public"."tasks_email_idx" rename to "items_contact_idx"');
+  expect(text).toContain('alter sequence "public"."tasks_id_seq" rename to "items_id_seq"');
+  expect(text).toContain('rename column "email" to "contact"');
+  expect(text).not.toContain("drop table");
+
+  const provenance = { origin: "file" as const, name: "custom" };
+  const customBefore = catalog([
+    catalogTable({ namespace, name: "tasks", provenance }),
+    catalogColumn({
+      parent: { namespace, name: "tasks" },
+      name: "id",
+      dataType: "bigint",
+      nullable: false,
+      provenance,
+    }),
+    catalogIndex({
+      parent: { namespace, name: "tasks" },
+      columns: ["id"],
+      name: "tasks_id_custom",
+      provenance,
+    }),
+  ]);
+  const customAfter = catalog([
+    catalogTable({ namespace, name: "items", provenance }),
+    catalogColumn({
+      parent: { namespace, name: "items" },
+      name: "id",
+      dataType: "bigint",
+      nullable: false,
+      provenance,
+    }),
+    catalogIndex({
+      parent: { namespace, name: "items" },
+      columns: ["id"],
+      name: "tasks_id_custom",
+      provenance,
+    }),
+  ]);
+  const custom = planMigration({
+    before: customBefore,
+    after: customAfter,
+    renames: [{ kind: "table", from: "tasks", to: "items" }],
+    name: "custom",
+  });
+  const customSql = custom.steps.map((step) => step.sql).join("\n");
+  expect(customSql).toContain('rename to "items"');
+  expect(customSql).not.toContain("tasks_id_custom");
+  expect(customSql).not.toContain("items_id_idx");
 });
 
 test("picklist removal requires --replace and then plans expand and contract", () => {

@@ -16,6 +16,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### ✨ Added
 
+- `okm migrate plan` prints a `pg_class.reltuples` estimate on each lock line when a selected target is reachable: `about 4.2M rows`, `rows unknown (table not analyzed)`, or `new table`. A safe rewrite is labelled on that line. `ACCESS EXCLUSIVE` on more than one million estimated rows, outside a safe rewrite, prints a note and is not a lint finding. No target, or a target that cannot be reached, prints the lock alone. `okm generate` stays offline, and the estimate is not written to SQL, catalog files, or `okm_history` (D194).
 - The migration linter flags a drop, a rename, a column type change, a required column with no default, a dropped default, a shorter length, and a new unique, check, or foreign key on an existing table as errors.
 - On an existing table the planner emits the safe form: a concurrent index create and drop, a check or foreign key as `NOT VALID` then `VALIDATE`, `SET NOT NULL` through a validated check, a volatile default split into one `UPDATE`, and a unique or primary key from a concurrent unique index (D193). A new table keeps the plain statements.
 - A failed concurrent index leaves an invalid index. Resume drops it and rebuilds, and does not repeat a finished step.
@@ -29,6 +30,11 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### 🐛 Fixed
 
+- A table `renamedFrom` plans `ALTER TABLE … RENAME TO`, then renames a primary key, unique or check constraint, foreign key, index, or identity sequence when the name is the default `{table}_…`. A custom name stays. An add and a drop with no declaration is still OKM1530 (D194).
+- Two serializable transactions in the conformance suite no longer write at the same time. One commits first, so the other is the only victim and the retry count stays one.
+- `okm check` creates domain and enum types in its scratch schema before the stub tables, so a view over those columns can be sealed.
+- A view, materialized view, table, sequence, or function that a plan drops and creates is granted again afterwards. Postgres drops the grant with the object.
+- Introspection reads a constraint `nameKey` from the default name, so a check declared as `emailPresent` still matches the live database.
 - `bun run db:up` binds three free host ports when 55432, 55433, or 55434 is already taken, and records them for the next CI step. Release smoke no longer stops when the runner is already using 55432.
 
 ## v0.3.0 — 2026-10-05

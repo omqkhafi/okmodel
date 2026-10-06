@@ -115,7 +115,7 @@ Spike code lives in the private workspace package `packages/spikes`; what proves
 |---|---|---|
 | P50 | `p50-classification-linter` | expand/contract classification and the linter core (D192) |
 | P50b | `p50b-safe-rewrites` | shipped: on an existing table, concurrent index create and drop, `NOT VALID` plus `VALIDATE`, `SET NOT NULL` through a validated check, a volatile default split (one `UPDATE` until P52), and a unique or primary key from a concurrent unique index (D193). OKM1534–OKM1537 are errors on SQL that is not that form. OKM1538 stays a warning. Resume drops an invalid concurrent index |
-| P51 | `p51-locks-recreate-verify` | lock display with row estimates; recreate verified across every object kind |
+| P51 | `p51-locks-recreate-verify` | shipped: `okm migrate plan` prints `pg_class.reltuples` estimates and does not store them (D194). A seeded round trip covers every planner object kind. A declared table rename renames default `{table}_…` names and leaves a custom name. The serializable retry test commits one transaction before the other writes, so one transaction is the victim |
 | P52 | `p52-backfill-runner` | `backfill()`, `TargetRunner` (one target) |
 | P53 | `p53-drift-verify` | catalog hash fast path, previous-catalog check, migration verification, serialised catalog |
 | P53A | `p53a-provisioning` | provisioning from the current snapshot, `reference` data, snapshot ↔ replayed-history equivalence in `okm migrate check` (OKM1521), OKM1542, OKM1851 |

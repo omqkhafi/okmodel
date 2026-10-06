@@ -75,6 +75,19 @@ export type PlanStep = {
   readonly kind?: StepKind;
   readonly action: "ddl" | "backfill";
   readonly lock: string;
+  /**
+   * Tables the statement names.
+   *
+   * Used to look up `pg_class.reltuples` when a plan is printed against a
+   * reachable target. {@link formatPlan} does not write this into a file.
+   */
+  readonly tables?: readonly string[];
+  /**
+   * Set when the step was emitted by a safe rewrite (D193).
+   *
+   * Display only. A migration file does not record it.
+   */
+  readonly safeRewrite?: true;
   readonly transactional: boolean;
   /**
    * Set on an extension upgrade the planner could not check.
@@ -245,7 +258,11 @@ export function planMigration(input: PlanRequest): MigrationPlan {
   omitOwnedSequences(createKeys, afterBy, request.after);
   omitOwnedSequences(dropKeys, beforeBy, renamed);
 
-  const privileges = privilegeSql(renamed.objects, request.after.objects, schema);
+  const recreated = new Set<string>();
+  for (const key of createKeys) {
+    if (dropKeys.has(key)) recreated.add(key);
+  }
+  const privileges = privilegeSql(renamed.objects, request.after.objects, schema, recreated);
   const steps: PlanStep[] = [];
   steps.push(...renameSteps(request.before, renames, schema));
   for (const item of privileges.revoke) steps.push(step(item.sql, item.kind, "ddl", ACCESS));
@@ -271,7 +288,12 @@ export function planMigration(input: PlanRequest): MigrationPlan {
     const kind = dropKind(object);
     if (sql === undefined || kind === undefined) return;
     if (object.kind === "index" && hasTable(renamed, object.identity.parent.name)) {
-      steps.push(step(concurrentDropIndexSql(sql), "drop-index", "ddl", SHARE_UPDATE, false));
+      steps.push({
+        ...step(concurrentDropIndexSql(sql), "drop-index", "ddl", SHARE_UPDATE, false, [
+          object.identity.parent.name,
+        ]),
+        safeRewrite: true,
+      });
       return;
     }
     steps.push(step(sql, kind, "ddl", ACCESS));
@@ -469,10 +491,15 @@ export function planMigration(input: PlanRequest): MigrationPlan {
  * Prints a plan. The header is the strictest class. Each step prints its
  * class and lock. The text is SQL plus those comments, never TypeScript.
  *
+ * `okm generate` calls this with no `lockText`, so a file stays free of row
+ * estimates. `okm migrate plan` passes `lockText` only after a reachable
+ * target has answered.
+ *
  * @param plan - Plan from {@link planMigration}
- * @returns The text `okm generate` writes and `okm migrate plan` prints
+ * @param lockText - Replaces the lock comment when a target supplied estimates
+ * @returns The text `okm generate` writes. `okm migrate plan` uses the same text offline
  */
-export function formatPlan(plan: MigrationPlan): string {
+export function formatPlan(plan: MigrationPlan, lockText?: (step: PlanStep) => string): string {
   const lines = [`-- class: ${plan.class}`, `-- name: ${plan.name}`, ""];
   if (plan.steps.length === 0) {
     lines.push("-- no steps");
@@ -483,7 +510,7 @@ export function formatPlan(plan: MigrationPlan): string {
     lines.push(`-- class: ${item.class}`);
     if (item.kind !== undefined) lines.push(`-- kind: ${item.kind}`);
     lines.push(`-- action: ${item.action}`);
-    lines.push(`-- lock: ${item.lock}`);
+    lines.push(`-- lock: ${lockText === undefined ? item.lock : lockText(item)}`);
     if (!item.transactional) lines.push("-- transactional: false");
     if (item.path !== undefined) lines.push(`-- path: ${item.path}`);
     if (item.behavior === "change") lines.push("-- behavior: change");
@@ -649,6 +676,7 @@ function renameSteps(
         ACCESS,
       ),
     );
+    steps.push(...sequenceRenames(source, rename, schema));
   }
   for (const rename of renames) {
     if (rename.kind !== "column") continue;
@@ -658,6 +686,34 @@ function renameSteps(
       step(
         `alter table ${qualify(schema, rename.table)} rename column ${quoteIdent(rename.from)} to ${quoteIdent(rename.to)}`,
         "rename-column",
+        "ddl",
+        ACCESS,
+      ),
+    );
+  }
+  return steps;
+}
+
+function sequenceRenames(
+  source: Catalog,
+  rename: { readonly from: string; readonly to: string },
+  schema: string,
+): PlanStep[] {
+  const steps: PlanStep[] = [];
+  for (const object of source.objects) {
+    if (object.kind !== "column" || object.definition.identity === undefined) continue;
+    if (object.identity.parent.name !== rename.from) continue;
+    const fromName = fitIdentifier(`${rename.from}_${object.identity.name}_seq`);
+    const toName = fitIdentifier(`${rename.to}_${object.identity.name}_seq`);
+    if (fromName === toName) continue;
+    const owned = source.objects.some(
+      (item) => item.kind === "sequence" && item.identity.name === fromName,
+    );
+    if (!owned) continue;
+    steps.push(
+      step(
+        `alter sequence ${qualify(schema, fromName)} rename to ${quoteIdent(toName)}`,
+        "rename-sequence",
         "ddl",
         ACCESS,
       ),
@@ -1614,14 +1670,97 @@ function step(
   action: PlanStep["action"],
   lock: string,
   transactional = true,
+  extraTables?: readonly string[],
 ): PlanStep {
-  return { sql, kind, class: classOf(kind), action, lock, transactional };
+  const tables = touchedTables(sql, lock, extraTables);
+  return {
+    sql,
+    kind,
+    class: classOf(kind),
+    action,
+    lock,
+    transactional,
+    ...(tables.length > 0 ? { tables } : {}),
+  };
 }
 
 function pushSafe(steps: PlanStep[], safe: readonly SafeStep[]): void {
   for (const item of safe) {
-    steps.push(step(item.sql, item.kind, item.action, item.lock, item.transactional));
+    steps.push({
+      ...step(item.sql, item.kind, item.action, item.lock, item.transactional),
+      safeRewrite: true,
+    });
   }
+}
+
+const TABLE_PREFIX =
+  /\b(?:create|alter|drop)\s+table(?:\s+if\s+exists)?\s+|\bupdate\s+|\binsert\s+into\s+|\breferences\s+|\bon\s+table\s+|\bon\s+/gi;
+
+/**
+ * Tables named by a statement or by a lock comment.
+ *
+ * A schema-qualified identifier after a table keyword counts. A following dot
+ * is a column (`"public"."tasks"."id"`) and is skipped. `rename to` is not a
+ * keyword here, so the new name of a rename is not treated as a second table.
+ *
+ * @param sql - Statement text
+ * @param lock - Lock comment, which may name a second relation
+ * @param extra - Tables the SQL does not name, such as the parent of a dropped index
+ * @returns Names in first-seen order, without duplicates
+ */
+function touchedTables(
+  sql: string,
+  lock: string,
+  extra: readonly string[] | undefined,
+): readonly string[] {
+  const names: string[] = [];
+  const text = `${sql}\n${lock}`;
+  TABLE_PREFIX.lastIndex = 0;
+  for (let match = TABLE_PREFIX.exec(text); match !== null; match = TABLE_PREFIX.exec(text)) {
+    const found = readQualified(text, match.index + match[0].length);
+    if (found !== undefined) pushTable(names, found.name);
+  }
+  for (const name of extra ?? []) pushTable(names, name);
+  return names;
+}
+
+function pushTable(names: string[], name: string): void {
+  if (!names.includes(name)) names.push(name);
+}
+
+function readQualified(
+  text: string,
+  start: number,
+): { readonly name: string; readonly end: number } | undefined {
+  const schema = readIdent(text, start);
+  if (schema === undefined) return undefined;
+  if (text[schema.end] !== "." || text[schema.end + 1] !== '"') return undefined;
+  const name = readIdent(text, schema.end + 1);
+  if (name === undefined || text[name.end] === ".") return undefined;
+  return name;
+}
+
+function readIdent(
+  text: string,
+  start: number,
+): { readonly name: string; readonly end: number } | undefined {
+  if (text[start] !== '"') return undefined;
+  let value = "";
+  let index = start + 1;
+  while (index < text.length) {
+    const char = text[index];
+    if (char === '"') {
+      if (text[index + 1] === '"') {
+        value += '"';
+        index += 2;
+        continue;
+      }
+      return { name: value, end: index + 1 };
+    }
+    value += char ?? "";
+    index += 1;
+  }
+  return undefined;
 }
 
 function pushDrop(steps: PlanStep[], object: CatalogObject, schema: string): void {

@@ -217,6 +217,7 @@ export async function introspectSchema(
     const parent = parents.get(parentName) ?? { namespace, name: parentName };
     const kind = constraintKind(text(row, "contype"));
     const columns = list(text(row, "columns"));
+    const name = text(row, "name");
     const expression = kind === "check" ? checkExpression(text(row, "definition")) : "";
     const refTable = text(row, "ref_table");
     const refColumns = list(text(row, "ref_columns"));
@@ -227,8 +228,8 @@ export async function introspectSchema(
       constraint({
         parent,
         constraintKind: kind,
-        name: text(row, "name"),
-        nameKey: kind === "primaryKey" ? "pkey" : columns.length > 0 ? columns.join("_") : "check",
+        name,
+        nameKey: constraintNameKey(kind, parentName, name, columns),
         columns,
         provenance,
         deferrable: flag(row, "deferrable"),
@@ -916,6 +917,27 @@ function partitionMethod(value: string): "range" | "list" | "hash" | undefined {
   if (value === "l") return "list";
   if (value === "h") return "hash";
   return undefined;
+}
+
+function constraintNameKey(
+  kind: "primaryKey" | "unique" | "foreignKey" | "check",
+  parent: string,
+  name: string,
+  columns: readonly string[],
+): string {
+  if (kind === "primaryKey") return "pkey";
+  const tag = kind === "unique" ? "key" : kind === "foreignKey" ? "fkey" : "check";
+  const prefix = `${parent}_`;
+  const suffix = `_${tag}`;
+  if (
+    name.startsWith(prefix) &&
+    name.endsWith(suffix) &&
+    name.length > prefix.length + suffix.length
+  ) {
+    return name.slice(prefix.length, -suffix.length);
+  }
+  if (columns.length > 0) return columns.join("_");
+  return tag;
 }
 
 function constraintKind(value: string): "primaryKey" | "unique" | "foreignKey" | "check" {
