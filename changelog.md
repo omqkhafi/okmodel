@@ -14,6 +14,11 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+### ✨ Added
+
+- `connect({ primary, replicas })` opens one pool per endpoint and probes each replica. A string or a pool is unchanged and does not load that code. Until read routing, every operation uses the primary. `routing.select`, `consistency`, `fallback`, and `maxLag` throw OKM1061 (D201).
+- A migrate target that carries `primary`, `replicas`, `weight`, or `pool` is OKM1845. The command does not resolve that URL.
+
 ## v0.4.0 — 2026-10-06
 
 ### ✨ Added

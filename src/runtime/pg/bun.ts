@@ -1,15 +1,16 @@
 /**
  * `connect` for Bun.sql (`okmodel/pg/bun`).
  *
- * One URL or an existing pool is one endpoint. The client is typed by the
- * schema passed in. This entry runs on Bun. Node cannot load the `bun` import
- * inside the adapter.
+ * A string or an existing pool is one endpoint. A `{ primary, replicas }` object
+ * loads the topology module. The client is typed by the schema passed in.
+ * This entry runs on Bun. Node cannot load the `bun` import inside the adapter.
  */
 
 import type { DriverPool } from "../../contracts/driver.js";
 import type { QuerySchema } from "../../dialects/pg/model.js";
 import { open, type BunSqlConfig } from "../../adapters/pg/bunsql.js";
 import { createClient } from "../client.js";
+import type { TopologyInput, TopologyOptions } from "../topology.js";
 import type { ConnectOptions, Connected } from "../types.js";
 
 export { open, type BunSqlConfig, type BunSqlTls } from "../../adapters/pg/bunsql.js";
@@ -21,23 +22,38 @@ export type BunSqlTarget = string | DriverPool;
 
 /** Driver options `connect` forwards to {@link open}. */
 export type BunSqlConnectOptions<S extends QuerySchema> = ConnectOptions<S> &
-  Omit<BunSqlConfig, "url">;
+  Omit<BunSqlConfig, "url"> &
+  TopologyOptions;
 
 /**
- * Connects one Postgres endpoint through Bun.sql and returns a client for `schema`.
+ * Connects one Postgres endpoint through Bun.sql, or a primary and its replicas.
+ *
+ * A string or a pool is unchanged. A topology loads on demand and the promise
+ * resolves to the client. Until read routing, every operation uses the primary.
  *
  * Named prepared statements are off unless `prepared` is `"named"`.
  * `prepared: "named"` is not for transaction-mode poolers.
  *
  * @typeParam S - Schema
- * @param target - URL or an existing pool
+ * @param target - URL, an existing pool, or `{ primary, replicas }`
  * @param options - Schema, errors, logger, and driver options
- * @returns The client. Await `connected` for the dialect check
+ * @returns The client. A topology returns a promise. Await `connected` for the dialect check
  */
+export function connect<const S extends QuerySchema>(
+  target: TopologyInput,
+  options: BunSqlConnectOptions<S>,
+): Promise<Connected<S>>;
 export function connect<const S extends QuerySchema>(
   target: BunSqlTarget,
   options: BunSqlConnectOptions<S>,
-): Connected<S> {
+): Connected<S>;
+export function connect<const S extends QuerySchema>(
+  target: BunSqlTarget | TopologyInput,
+  options: BunSqlConnectOptions<S>,
+): Connected<S> | Promise<Connected<S>> {
+  if (typeof target === "object" && !isPool(target)) {
+    return import("../topology.js").then((mod) => mod.default(target, options, open as never));
+  }
   const owned = !isPool(target);
   const pool = isPool(target)
     ? target
@@ -65,6 +81,6 @@ export function connect<const S extends QuerySchema>(
   });
 }
 
-function isPool(target: BunSqlTarget): target is DriverPool {
+function isPool(target: BunSqlTarget | TopologyInput): target is DriverPool {
   return typeof target === "object" && "execute" in target && "capabilities" in target;
 }

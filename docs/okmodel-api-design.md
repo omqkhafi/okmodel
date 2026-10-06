@@ -139,7 +139,7 @@ export const db = connect(process.env.DATABASE_URL!, {
 
 connect(existingClient, { schema: appSchema });   // wrap an existing client
 
-connect({ primary: url, replicas: [r1, r2] }, { schema: appSchema });        // topology, section 15.1
+await connect({ primary: url, replicas: [r1, r2] }, { schema: appSchema }); // topology, section 15.1
 connect(url, { schema: appSchema, tenancy: { registry } });                  // tenant registry, section 9.1 (M5)
 ```
 
@@ -220,13 +220,15 @@ Tenant ─ registry ─► Target ─ resolver ─► Topology ─► Endpoint �
 Operation ─► Router (role, consistency) ─► Endpoint selection ─► Pool ─► Connection
 ```
 
-**`connect()` takes one of two shapes for its first argument:** a string (the common case, unchanged) or a topology `{ primary, replicas }`. It is the default Target: the shared or control database. The tenant registry is not a connection and is passed as `tenancy: { registry }` (section 9.1). Each shape adds; none changes the meaning of the others.
+**`connect()` takes one of two shapes for its first argument:** a string (the common case, unchanged) or a topology `{ primary, replicas }`. A string or a pool stays synchronous on postgres.js, node-postgres, and Bun.sql. A topology returns a promise. It is the default Target: the shared or control database. The tenant registry is not a connection and is passed as `tenancy: { registry }` (section 9.1). Each shape adds; none changes the meaning of the others.
 
 ```ts
 export const db = connect(url, { schema: appSchema });
-export const db = connect({ primary: url, replicas: [r1, r2] }, { schema: appSchema, routing: { fallback: "primary" } });
+export const db = await connect({ primary: url, replicas: [r1, r2] }, { schema: appSchema, routing: { probe: "1s" } });
 export const db = connect(url, { schema: appSchema, tenancy: { registry } });   // M5
 ```
+
+Until read routing (P61), every operation on a topology uses the primary. `routing` keys other than `probe` throw OKM1061.
 
 **Invariants.** Each has a named CI test; a rule without one is design intent.
 
@@ -1013,15 +1015,15 @@ await scoped.batch([
 A Target has a topology: exactly one primary endpoint and any number of replica endpoints. Replicas serve the same catalog and dialect, never separate catalogs; their driver capabilities may differ. Migrations run against primaries only. The primary is its own class of endpoint with its own pool and semantics; it is never "replica zero" of a read pool. With no replicas configured, every operation goes to the primary.
 
 ```ts
-export const db = connect(
+export const db = await connect(
   { primary: url, replicas: [{ url: r1, weight: 2 }, r2] },
-  { schema: appSchema, routing: { select: "weighted", consistency: "session", fallback: "primary", maxLag: "5s" } },
+  { schema: appSchema, routing: { probe: "1s" } },
 );
 
-await db.tasks.find({ limit: 50 });                       // automatic: a consistent replica, else the primary
-await db.tasks.find({ limit: 50 }).primary();             // the primary is required
-await db.tasks.count().replica({ consistency: "eventual" });        // a replica is required; staleness accepted
+await db.tasks.find({ limit: 50 }); // the primary, until P61
 ```
+
+This version opens the pools and probes replicas. It does not route. `select`, `consistency`, `fallback`, and `maxLag` throw OKM1061 until P62, P63, and P61. `.primary()` and `.replica()` are not methods yet. `inspect()` stays `single-endpoint`. The table and the rules below are the design those prompts implement. A migrate target that carries `primary`, `replicas`, `weight`, or `pool` is OKM1845 and is not resolved.
 
 | `routing` key | Default | Meaning |
 |---|---|---|

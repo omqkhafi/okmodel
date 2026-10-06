@@ -6,45 +6,45 @@ Byte gates fail in that CI job. Install size is the unminified `dist/` and is pr
 
 | Graph | Minified | Gzip | Cold import | Gate |
 | --- | ---: | ---: | ---: | --- |
-| Runtime entry `okmodel` | 5,288 | 2,026 | 2.563 ms | 6,100 / 2,250 bytes, CI cold import 25 ms |
-| App startup (10 tables, one find) | 89,461 | 29,720 | 13.379 ms | 90,900 / 30,000 bytes (D160, P27; P27b adds 115 / 60, D178; P28 adds 330 / 168, D180; P29 adds 215 / 225, D181). Cold import is printed, not gated |
-| App startup, `postgres` stubbed | | | 5.954 ms | local reference 15 ms, not gated |
-| App startup, every 0.2 feature in use (P30) | 119,936 | 39,121 | 13.745 ms | printed, not gated. `scripts/app-full.ts` |
-| App total graph, lazy chunks included | 167,755 | 55,205 | | printed, not gated |
-| Feature-full app total graph, lazy chunks included | 212,438 | 68,646 | | printed, not gated |
-| `okmodel/testing` | 139,191 | 44,768 | 5.418 ms | printed, not gated |
-| `okmodel/pg` barrel | 77,244 | 24,401 | 4.002 ms | printed, not gated |
-| Connect `okmodel/pg/postgresjs` startup | 40,990 | 14,446 | 13.186 ms | 41,600 / 14,600 (D160, P27). Cold import printed, not gated |
-| Connect postgres.js, driver stubbed | | | 3.338 ms | local reference 15 ms, not gated |
-| Connect `okmodel/pg/pglite` startup | 38,957 | 13,826 | 12.818 ms | 39,300 / 13,980 (D160, P27). Cold import printed, not gated |
-| Connect PGlite, driver stubbed | | | 2.995 ms | local reference 15 ms, not gated |
-| Connect `okmodel/pg/pg` startup | 41,402 | 14,616 | 11.875 ms | 42,400 / 14,920 (D160, P27). Cold import printed, not gated |
-| Connect `okmodel/pg/pg`, driver stubbed | | | 2.912 ms | local reference 15 ms, not gated |
-| Connect `okmodel/pg/bun` startup | 40,251 | 14,134 | | 41,200 / 14,470 (D160, P27). Node cold import skipped: Bun.sql runs only on Bun |
-| Connect Bun.sql, driver stubbed | | | 2.852 ms | local reference 15 ms, not gated |
-| Install size (`dist/`) | 1,379,009 bytes unminified | | | printed, not gated |
+| Runtime entry `okmodel` | 5,288 | 2,026 | 1.717 ms | 6,100 / 2,250 bytes, CI cold import 25 ms |
+| App startup (10 tables, one find) | 89,561 | 29,757 | 10.934 ms | 90,900 / 30,000 bytes (D160, P27; P27b adds 115 / 60, D178; P28 adds 330 / 168, D180; P29 adds 215 / 225, D181; P60 adds 100 / 37, D201). Cold import is printed, not gated |
+| App startup, `postgres` stubbed | | | 5.562 ms | local reference 15 ms, not gated |
+| App startup, every 0.2 feature in use (P30) | 120,036 | 39,130 | 12.691 ms | printed, not gated. `scripts/app-full.ts` |
+| App total graph, lazy chunks included | 174,942 | 57,408 | | printed, not gated |
+| Feature-full app total graph, lazy chunks included | 219,622 | 70,740 | | printed, not gated |
+| `okmodel/testing` | 139,191 | 44,768 | 5.615 ms | printed, not gated |
+| `okmodel/pg` barrel | 77,244 | 24,401 | 3.359 ms | printed, not gated |
+| Connect `okmodel/pg/postgresjs` startup | 41,088 | 14,473 | 9.228 ms | 41,600 / 14,600 (D160, P27; P60 +98 / +27, D201). Cold import printed, not gated |
+| Connect postgres.js, driver stubbed | | | 7.426 ms | local reference 15 ms, not gated |
+| Connect `okmodel/pg/pglite` startup | 39,062 | 13,858 | 11.824 ms | 39,300 / 13,980 (D160, P27; P60 +105 / +32, D201). Cold import printed, not gated |
+| Connect PGlite, driver stubbed | | | 2.945 ms | local reference 15 ms, not gated |
+| Connect `okmodel/pg/pg` startup | 41,498 | 14,643 | 12.317 ms | 42,400 / 14,920 (D160, P27; P60 +96 / +27, D201). Cold import printed, not gated |
+| Connect `okmodel/pg/pg`, driver stubbed | | | 2.880 ms | local reference 15 ms, not gated |
+| Connect `okmodel/pg/bun` startup | 40,347 | 14,158 | | 41,200 / 14,470 (D160, P27; P60 +96 / +24, D201). Node cold import skipped: Bun.sql runs only on Bun |
+| Connect Bun.sql, driver stubbed | | | 2.798 ms | local reference 15 ms, not gated |
+| Install size (`dist/`) | 1,400,024 bytes unminified | | | printed, not gated |
 
-Adapter entries, driver included, are printed and not gated on cold import: postgres.js 9.583 ms, PGlite 13.200 ms. Their minified bytes that are not already in the runtime entry are gated: postgres.js 14,531 of 15,093, PGlite 10,155 of 12,010.
+Adapter entries, driver included, are printed and not gated on cold import: postgres.js 8.379 ms, PGlite 10.629 ms. Their minified bytes that are not already in the runtime entry are gated: postgres.js 14,531 of 15,093, PGlite 10,155 of 12,010.
 
 Moving `sha256`, `throwNamed`, `nearestName`, `catalogError`, and the catalog builders to `okmodel/internal` changed the runtime entry from 24,426 / 8,584 to 5,525 / 2,042. The runtime-entry gate is that measurement plus 10 percent (6,100 / 2,250). Taking `compileColumn`, `emitRowTypes`, `mapPostgresError`, and the operator tag helpers off `okmodel/pg` changed that barrel from 70,059 / 21,873 to 62,063 / 19,409. The app startup graph stayed 77,537 / 25,625. Connect startup graphs stayed 37,952 / 13,158 and 36,330 / 12,862. The internal entry is not on the application import path.
 
-The app startup graph is 1.6% under its minified ceiling and 0.9% under its gzip ceiling. The gates are the P27 measurement plus 3 percent (D160, D176), and the gzip gate is the 30,000 cap. What a feature costs an app that uses it is in the table below; none of those is a gate. The `manyThrough` resolver and emitter travel with the relation, so they sit in the startup graph of an app that declares one; the `page` and `aggregate` planners are lazy chunks. An application that declares presets pays for the dispatch already counted in the featureless graph and loads the preset chunk (a lazy chunk) on its first preset call. Under the gates of 90,900 / 30,000 the featureless graph has 1,439 minified bytes and 280 gzip left. The postgres.js connect entry has 610 minified and 154 gzip left. The PGlite connect entry has 343 minified and 154 gzip left.
+The app startup graph is 1.5% under its minified ceiling and 0.8% under its gzip ceiling. The gates are the P27 measurement plus 3 percent (D160, D176), and the gzip gate is the 30,000 cap. What a feature costs an app that uses it is in the table below; none of those is a gate. The `manyThrough` resolver and emitter travel with the relation, so they sit in the startup graph of an app that declares one; the `page` and `aggregate` planners are lazy chunks. An application that declares presets pays for the dispatch already counted in the featureless graph and loads the preset chunk (a lazy chunk) on its first preset call. Under the gates of 90,900 / 30,000 the featureless graph has 1,339 minified bytes and 243 gzip left. The postgres.js connect entry has 512 minified and 127 gzip left. The PGlite connect entry has 238 minified and 122 gzip left. node-postgres has 902 and 277 left. Bun.sql has 853 and 312 left. P61 to P63 do not spend those bytes (D201).
 
 First find on the local sample was 0.566 ms. First include was 2.035 ms. Those are one run of `scripts/query-latency.ts`, printed by the size script, and they are not a gate.
 
 ## What a feature costs (P30)
 
-The feature-full app (`scripts/app-full.ts`) turns on everything the 0.2 train adds in one 10-table app: column tenancy with one global table, `archivable()` with a cascade on five tables, `timestamps()` on three, a validation rule on one column, `one`, `many` and `manyThrough` relations, three presets, and calls to `include`, `page`, `aggregate`, `archive`, `tx` and `batch` inside a function that does not run at import. It measures 119,936 minified and 39,121 gzip bytes at startup, and 212,438 / 68,646 with every lazy chunk. That is 30,475 / 9,401 above the plain app, and 29,036 / 9,121 above the cap of 90,900 / 30,000 that applies to the plain app. The full app is printed and is not a gate: the cap is for an app that uses none of these, and each feature is paid by the app that uses it (D129).
+The feature-full app (`scripts/app-full.ts`) turns on everything the 0.2 train adds in one 10-table app: column tenancy with one global table, `archivable()` with a cascade on five tables, `timestamps()` on three, a validation rule on one column, `one`, `many` and `manyThrough` relations, three presets, and calls to `include`, `page`, `aggregate`, `archive`, `tx` and `batch` inside a function that does not run at import. It measures 120,036 minified and 39,130 gzip bytes at startup, and 219,622 / 70,740 with every lazy chunk. That is 30,475 / 9,373 above the plain app, and 29,136 / 9,130 above the cap of 90,900 / 30,000 that applies to the plain app. The full app is printed and is not a gate: the cap is for an app that uses none of these, and each feature is paid by the app that uses it (D129).
 
 | App | Startup min | Startup gzip | Over the plain app (min / gzip) |
 | --- | ---: | ---: | ---: |
-| Plain (gated) | 89,461 | 29,720 | |
-| `manyThrough`, `page`, `aggregate` | 91,444 | 30,433 | +1,983 / +713 |
-| Validation | 94,714 | 31,479 | +5,253 / +1,759 |
-| `archivable()` on one table | 99,468 | 32,891 | +10,007 / +3,171 |
-| Every 0.2 feature (full) | 119,936 | 39,121 | +30,475 / +9,401 |
+| Plain (gated) | 89,561 | 29,757 | |
+| `manyThrough`, `page`, `aggregate` | 91,544 | 30,470 | +1,983 / +713 |
+| Validation | 94,812 | 31,508 | +5,251 / +1,751 |
+| `archivable()` on one table | 99,568 | 32,922 | +10,007 / +3,165 |
+| Every 0.2 feature (full) | 120,036 | 39,130 | +30,475 / +9,373 |
 
-The three rows above the full app add up to +17,243 / +5,643; the full app also carries column tenancy, `timestamps()`, presets, `one` and `many`, `tx` and `batch`, which have no row of their own.
+The three rows above the full app add up to +17,241 / +5,629; the full app also carries column tenancy, `timestamps()`, presets, `one` and `many`, `tx` and `batch`, which have no row of their own.
 
 ### The entry-chunk size pass: what it could save
 
