@@ -10,6 +10,7 @@ import { expect } from "bun:test";
 import type { Sql } from "postgres";
 
 import { catalog } from "../src/contracts/catalog/build.js";
+import { catalogHash } from "../src/contracts/catalog/document.js";
 import type { Catalog } from "../src/contracts/catalog/types.js";
 import { schemaDeclarations, type DeclaredRename } from "../src/dialects/pg/declarations.js";
 import { extension } from "../src/dialects/pg/ext/index.js";
@@ -35,7 +36,9 @@ import {
 import { sealViews } from "../src/dialects/pg/view/scratch.js";
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
 import { createIsolatedDatabase, openPostgres } from "../packages/harness/src/postgres.js";
+import { applyTarget } from "../src/tooling/migrate/apply.js";
 import { planMigration } from "../src/tooling/migrate/plan.js";
+import { snapshotDifference } from "../src/tooling/migrate/snapshot.js";
 
 /**
  * One required recreate case per seed in CI.
@@ -333,6 +336,92 @@ postgresTest(
   180_000,
 );
 
+postgresTest(
+  gate,
+  "a head snapshot matches the replayed round trip",
+  async () => {
+    const chosen = recreateSeeds();
+    const mig = roleName("mig");
+    const app = roleName("app");
+    const roles: RolesInput = {
+      migration: mig,
+      app,
+      managed: [{ name: mig }, { name: app }],
+    };
+    const replay = await createIsolatedDatabase();
+    const snap = await createIsolatedDatabase();
+    const replaySql = openPostgres(replay.url);
+    const snapSql = openPostgres(snap.url);
+    try {
+      for (const seed of chosen) {
+        const shape = SHAPES[(seed - 1) % SHAPES.length] ?? "view-column";
+        try {
+          await resetPair(replaySql, snapSql, roles);
+          const before = declare(shape, false, seed, roles);
+          const after = declare(shape, true, seed, roles);
+          const runner = queryOf(replaySql);
+          const sealedBefore = await sealViews(runner, before.catalog);
+          const sealedAfter = await sealViews(runner, after.catalog);
+          const first = planMigration({ before: catalog([]), after: sealedBefore, name: "before" });
+          const second = planMigration({
+            before: sealedBefore,
+            after: sealedAfter,
+            ...(after.renames.length > 0 ? { renames: after.renames } : {}),
+            name: "after",
+          });
+          const migrations = [
+            {
+              id: "0001_before",
+              catalogHash: catalogHash(sealedBefore),
+              steps: first.steps,
+            },
+            {
+              id: "0002_after",
+              catalogHash: catalogHash(sealedAfter),
+              steps: second.steps,
+            },
+          ];
+          await applyTarget({
+            url: replay.url,
+            target: "replay",
+            protected: false,
+            migrations,
+          });
+          await applyTarget({
+            url: snap.url,
+            target: "snap",
+            protected: false,
+            migrations,
+            snapshot: {
+              catalog: sealedAfter,
+              migrationId: "0002_after",
+              catalogHash: catalogHash(sealedAfter),
+              reference: [],
+            },
+          });
+          const replayed = await introspectSchema(queryOf(replaySql), "public", "public");
+          const provided = await introspectSchema(queryOf(snapSql), "public", "public");
+          const difference = snapshotDifference(provided, replayed);
+          if (difference !== undefined) {
+            throw new Error(`recreate seed ${seed} (${shape}) snapshot\n${difference}`);
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (message.startsWith("recreate seed ")) throw error;
+          throw new Error(`recreate seed ${seed} (${shape}) failed\n${message}`);
+        }
+      }
+    } finally {
+      await replaySql.end({ timeout: 5 });
+      await snapSql.end({ timeout: 5 });
+      await replay.close();
+      await snap.close();
+      await dropRoles([mig, app]);
+    }
+  },
+  180_000,
+);
+
 function recreateSeeds(): readonly number[] {
   const raw = process.env.OKM_RECREATE_SEEDS;
   if (raw === undefined || raw.trim().length === 0) {
@@ -397,13 +486,24 @@ async function expectNoDrift(
   throw new Error(`recreate seed ${seed} drifted\n${text}`);
 }
 
-async function resetDatabase(sql: Sql, roles: RolesInput): Promise<void> {
+async function resetPair(replay: Sql, snap: Sql, roles: RolesInput): Promise<void> {
+  await clearDatabase(replay);
+  await clearDatabase(snap);
+  await dropRole(replay, roles.migration);
+  await dropRole(replay, roles.app);
+}
+
+async function clearDatabase(sql: Sql): Promise<void> {
   await sql.unsafe("drop extension if exists pg_trgm cascade");
   await sql.unsafe("drop extension if exists citext cascade");
   await sql.unsafe("drop schema if exists public cascade");
   await sql.unsafe("create schema public");
   await sql.unsafe("grant all on schema public to public");
   await sql.unsafe("set search_path to public");
+}
+
+async function resetDatabase(sql: Sql, roles: RolesInput): Promise<void> {
+  await clearDatabase(sql);
   await dropRole(sql, roles.migration);
   await dropRole(sql, roles.app);
 }

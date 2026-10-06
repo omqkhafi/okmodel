@@ -1119,6 +1119,10 @@
     {
       "name": "defineConfig",
       "kind": "stable"
+    },
+    {
+      "name": "provision",
+      "kind": "stable"
     }
   ],
   "okmodel/safety": [
