@@ -27,7 +27,7 @@ Also not in this version:
 - **`iStartsWith`, `iContains` and `iEndsWith` are not in this version** (D176). Use `ilike()` with an escaped pattern.
 - **`aggregate()` has no `having` and no `bucket`** (M2).
 - **Batch-mode drivers have no adapter yet.** Neon HTTP and Cloudflare D1 are covered by the driver contract (`batch` is required on every driver) and there is no adapter in this repository for either.
-- **Selection and commit positions are later** (D202). Reads use the first healthy replica. A write on the connect keeps later reads on the primary until P63. `routing.select` is P62. `consistency` and `maxLag` are P63 and throw OKM1061. `inspect()` reports `single-endpoint`. Routing reasons go to `onRoute`. Showing them from `inspect()` is the M2 dev inspector. A string or pool client has no `using` and serves either `route` from its one endpoint. See [topology](topology.md).
+- **Commit positions are later** (D203). Automatic reads use `routing.select` (default `weighted`). A write on the connect keeps later reads on the primary until P63. `consistency` and `maxLag` throw OKM1061. `inspect()` reports `single-endpoint`. Routing reasons go to `onRoute`, including `fallback:saturated`. Showing them from `inspect()` is the M2 dev inspector. A string or pool client has no `using` and serves either `route` from its one endpoint. See [topology](topology.md).
 
 ## Views
 

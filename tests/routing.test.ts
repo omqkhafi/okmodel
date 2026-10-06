@@ -1,7 +1,7 @@
 /**
  * Read routing (spec §15.1).
  *
- * Automatic reads use the first healthy replica. A write on the topology
+ * Automatic reads choose an eligible replica. A write on the topology
  * handle, including one through `reserve()`, keeps later reads on the primary.
  * `route` and `using` override that. A string or pool client has one endpoint.
  */

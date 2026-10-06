@@ -9,6 +9,7 @@ import { expectTypeOf } from "expect-type";
 
 import { schema, t, table } from "../src/dialects/pg/index.js";
 import { connect } from "../src/runtime/pg/pglite.js";
+import type { ReplicaCandidate, TopologyOptions } from "../src/runtime/topology.js";
 
 const notes = table("notes", { id: t.text().primaryKey(), title: t.text() });
 const app = schema({ tables: [notes] });
@@ -30,4 +31,39 @@ void (async () => {
   expectTypeOf<Has<typeof scoped, "close">>().toEqualTypeOf<false>();
   expectTypeOf<Has<typeof scoped, "using">>().toEqualTypeOf<false>();
   expectTypeOf<Has<typeof scoped, "notes">>().toEqualTypeOf<true>();
+
+  await connect(
+    { primary: "memory://primary", replicas: [{ url: "memory://east", weight: 2, name: "east" }] },
+    {
+      schema: app,
+      routing: {
+        select(candidates, ctx) {
+          expectTypeOf(candidates).toEqualTypeOf<readonly ReplicaCandidate[]>();
+          expectTypeOf(ctx).toEqualTypeOf<{ readonly op: "read" }>();
+          const candidate = candidates[0];
+          if (candidate === undefined) return "east";
+          expectTypeOf(candidate.name).toEqualTypeOf<string>();
+          expectTypeOf(candidate.weight).toEqualTypeOf<number>();
+          expectTypeOf(candidate.inflight).toEqualTypeOf<number>();
+          expectTypeOf(candidate.latencyMs).toEqualTypeOf<number | null>();
+          expectTypeOf(candidate.lag).toEqualTypeOf<null>();
+          return candidate;
+        },
+      },
+    },
+  );
 });
+
+type Select = NonNullable<NonNullable<TopologyOptions["routing"]>["select"]>;
+
+expectTypeOf<"weighted" | "roundRobin" | "leastConnections" | "latencyAware">().toEqualTypeOf<
+  Extract<Select, string>
+>();
+
+// @ts-expect-error an unknown strategy name is not a select option
+const badName: Select = "first";
+void badName;
+
+// @ts-expect-error select is a strategy name or a function
+const badType: Select = 1;
+void badType;

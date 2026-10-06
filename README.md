@@ -992,7 +992,45 @@ bunx okm seed seed.ts
 
 ### Replicas
 
-`connect({ primary, replicas }, options)` opens one pool per endpoint. A read uses the first healthy replica. After a write in that connection, later reads use the primary. `find({ route: "replica" })` requires a replica. `db.using("replica")` returns a client that reads replicas and has no `close`. `onRoute` receives the endpoint and the reason. A string or an existing pool is one endpoint and serves either `route` from it.
+`connect({ primary, replicas }, options)` opens one pool per endpoint. An automatic read chooses a healthy replica. After a write in that connection, later reads use the primary. `find({ route: "replica" })` requires a replica. `db.using("replica")` returns a client that reads replicas and has no `close`. `onRoute` receives the endpoint and the reason. A string or an existing pool is one endpoint and serves either `route` from it.
+
+`routing.select` picks among the replicas that passed the health check. The default is `"weighted"`. `weighted` is smooth weighted round-robin. Equal weights take turns. A weight of `0` is rejected. `roundRobin` ignores weights and rotates through the eligible replicas. `leastConnections` uses the replica with the fewest statements already in flight on this client. A tie follows configuration order. `latencyAware` uses the replica with the lowest moving average of round-trip time. A function receives each candidate as `{ name, weight, inflight, latencyMs, lag }` and `{ op: "read" }`. It returns one of those objects or its `name`. It runs only when an automatic read has two or more candidates. Each `connect` below is an alternative.
+
+`replicas.ts`:
+
+```ts
+import { connect } from "okmodel/pg/postgresjs";
+
+import schema from "./schema.ts";
+
+const url = process.env.DATABASE_URL;
+if (url === undefined || url.length === 0) throw new Error("DATABASE_URL is not set");
+const replica = process.env.REPLICA_URL;
+if (replica === undefined || replica.length === 0) throw new Error("REPLICA_URL is not set");
+
+const endpoints = {
+  primary: url,
+  replicas: [
+    { url: replica, weight: 3, name: "east" },
+    { url: replica, weight: 1, name: "west" },
+  ],
+};
+
+await connect(endpoints, { schema, routing: { select: "weighted" } });
+await connect(endpoints, { schema, routing: { select: "roundRobin" } });
+await connect(endpoints, { schema, routing: { select: "leastConnections" } });
+await connect(endpoints, { schema, routing: { select: "latencyAware" } });
+await connect(endpoints, {
+  schema,
+  routing: {
+    select(candidates) {
+      return candidates[0] ?? "east";
+    },
+  },
+});
+```
+
+A replica whose pool is at its maximum, with no idle connection and callers waiting, is skipped. If every healthy replica is in that state, the read uses the primary and `onRoute` reports `fallback:saturated`. `routing.fallback: "error"` fails that read with OKM1844. `route: "replica"` still uses a saturated replica. `consistency` and `maxLag` are not in this version.
 
 ### Startup
 
