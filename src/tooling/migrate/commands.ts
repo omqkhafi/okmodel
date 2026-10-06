@@ -96,7 +96,9 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
     }
     if (sub === "check") {
       const { checkMigrations } = await import("./check.js");
-      stdout(await checkMigrations(cwd, invoke(parsed)));
+      const provision =
+        parsed.flags.includes("--provision") || rest.slice(1).includes("--provision");
+      stdout(await checkMigrations(cwd, invoke(parsed), { provision }));
       return;
     }
   }

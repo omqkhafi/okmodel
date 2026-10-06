@@ -46,3 +46,26 @@ export function loadMigrations(directory: string): readonly StoredMigration[] {
   }
   return migrations;
 }
+
+/**
+ * Loads the last migration's catalog, which is the head snapshot.
+ *
+ * @param directory - Migrations directory
+ * @returns The last file, or `undefined` when there are none
+ */
+export function loadHeadSnapshot(directory: string):
+  | {
+      readonly id: string;
+      readonly catalogHash: string;
+      readonly catalog: ReturnType<typeof parseCatalog>;
+    }
+  | undefined {
+  const migrations = loadMigrations(directory);
+  const last = migrations.at(-1);
+  if (last === undefined) return undefined;
+  return {
+    id: last.id,
+    catalogHash: last.catalogHash,
+    catalog: parseCatalog(readFileSync(join(directory, `${last.id}.catalog.json`), "utf8")),
+  };
+}

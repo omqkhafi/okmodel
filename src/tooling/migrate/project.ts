@@ -335,6 +335,17 @@ function writeArtifact(cwd: string, config: MigrateConfig, built: Built): string
 }
 
 /**
+ * Loads the schema named by `config`.
+ *
+ * @param cwd - Project directory
+ * @param config - Project config
+ * @returns The built schema, with roles attached when the config declares them
+ */
+export async function loadBuiltSchema(cwd: string, config: MigrateConfig): Promise<Built> {
+  return withRoles(await loadSchema(cwd, config.schema), config);
+}
+
+/**
  * Loads `okmodel.config.ts`.
  *
  * @param cwd - Project directory

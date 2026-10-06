@@ -119,7 +119,13 @@ export type TableOptions<TColumns> = {
    */
   readonly presets?: PresetMap<RowFrom<TColumns>>;
   readonly policies?: unknown;
-  readonly reference?: unknown;
+  /**
+   * Rows the application requires to exist.
+   *
+   * Apply inserts a row when its key is missing. It does not update or delete.
+   * The rows stay on the schema. They are not a diff in the catalog.
+   */
+  readonly reference?: ReferenceOption;
   /** `one` and `many`. Other relation kinds stay reserved. */
   readonly relations?: unknown;
 };
@@ -244,6 +250,7 @@ const TABLE_KNOWN = new Set([
   "omitDefaults",
   "presets",
   "primaryKey",
+  "reference",
   "relations",
   "renamedFrom",
   "sqlName",
@@ -262,7 +269,17 @@ const TABLE_KNOWN = new Set([
 const TABLE_LATER: Readonly<Record<string, string>> = {
   computed: "later",
   policies: "later",
-  reference: "0.4",
+};
+
+/**
+ * Rows declared with the table option `reference`.
+ *
+ * `key` is one column name or several, in constraint order. `rows` are the
+ * values apply inserts when that key is absent.
+ */
+export type ReferenceOption = {
+  readonly key: string | readonly string[];
+  readonly rows: readonly Readonly<Record<string, string | number | boolean | null>>[];
 };
 
 /**
