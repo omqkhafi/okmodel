@@ -72,6 +72,34 @@ postgresTest(
   360_000,
 );
 
+test("okmodel/testing imports from the packed tarball", async () => {
+  const tarball = sharedTarball();
+  await withProject(
+    tarball,
+    new Map([["run.ts", TESTING_SCRIPT]]),
+    ["bun add okmodel", "bun add @electric-sql/pglite"],
+    async (dir) => {
+      await command(dir, ["bun", "run.ts"]);
+    },
+  );
+}, 180_000);
+
+const TESTING_SCRIPT = `import { id, schema, table, text } from "okmodel/pg";
+import { open } from "okmodel/pg/pglite";
+import { testing } from "okmodel/testing";
+
+const notes = table("notes", { id: id({ default: "none" }), title: text() });
+const app = schema({ tables: [notes] });
+const harness = await testing(app, { driver: open(), seed: 1 });
+const factories = harness.factories({
+  notes: (x) => ({ title: x.words(2) }),
+});
+await harness.expectQueries(1, () => factories.notes.create());
+const rows = await harness.db.notes.find({ limit: 5 });
+if (rows.length !== 1) throw new Error("expected one note");
+await harness.close();
+`;
+
 /**
  * Packs the repository once for every test in this file.
  *

@@ -53,7 +53,6 @@ test("package exports are the snapshot subpaths", () => {
     .sort();
   const snapshotted = API_ENTRIES.map((entry) => entry.subpath).sort();
   expect(published).toEqual(snapshotted);
-  expect(published).not.toContain("okmodel/testing");
 });
 
 function readSnapshot(path: string): Readonly<Record<string, readonly ApiExport[]>> {

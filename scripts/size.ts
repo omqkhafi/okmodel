@@ -992,6 +992,8 @@ if (import.meta.main) {
     const full = measureStartup(root, FULL_ENTRY, "app-full.js", ["postgres"], "postgres");
     console.log(`${formatEntry(full, ci)} (feature-full app, reported, not gated)`);
     console.log(formatTotal(full));
+    const testingEntry = measureEntry(root, "src/tooling/testing/index.ts");
+    console.log(`${formatEntry(testingEntry, ci)} (okmodel/testing, reported, not gated)`);
     printStubbed(app, ci);
     problems.push(...appBudgetProblems(app));
     printColdImportFinding(app, ci);

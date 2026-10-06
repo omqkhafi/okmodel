@@ -3,8 +3,8 @@
  *
  * The gate property tests wrap a real pool with it. The log is what reached the
  * driver, so a check on it is a check on the wire and not on `sql()`.
- * `countQueries` is the `expectQueries` of spec section 20, local to the tests
- * until `okmodel/testing` ships in 0.4.
+ * `countQueries` is the same idea as `expectQueries` in `okmodel/testing`.
+ * The property tests keep this recorder so they can read the wire themselves.
  */
 
 import type {

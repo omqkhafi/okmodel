@@ -120,7 +120,7 @@ Spike code lives in the private workspace package `packages/spikes`; what proves
 | P53 | `p53-migrate-check` | shipped: `okm migrate check` replays history into a scratch schema, checks the previous catalog, the head, and the linter (D196). `lintFrom` is the adoption baseline. A protected target is refused. OKM1547, OKM1548, OKM1549 |
 | P53b | `p53b-startup-compat` | shipped: `connect()` allows a database that is ahead by expand migrations; ahead by a contract migration, or behind, is OKM1520 and names the migration (D197). `okm migrate status` prints those states, plus `failed at step N (resume with okm migrate apply)`. A hash mismatch loads `.okm/catalog.json` once per process |
 | P53A | `p53a-provisioning` | shipped: an empty target installs the head snapshot and `reference` rows (D198). A non-empty target with no history is OKM1851. `okm migrate check --provision` is OKM1521. OKM1542 flags a data statement outside backfill |
-| P54 | `p54-testing-package` | factories, `expectQueries`, isolation check, seeds |
+| P54 | `p54-testing-package` | shipped: `okmodel/testing` (`testing`, factories, `expectQueries`, `isolation`) and `okm seed <file>` (D199). The full `protected.policy` enumeration stays in P55 |
 | P55 | `p55-gate-0.4` | the full `protected.policy` enumeration (every operation class through the CLI, engine, `backfill()`, `okm seed`, runner and `provision`); release 0.4 |
 
 ### Phase 6 — Train 0.5 Topology
@@ -151,7 +151,7 @@ Problems found in the earlier order and how the table above resolves them:
 - **Classification needed by the protected policy:** P16 classifies steps by operation kind; P50 adds the linter core, P50b shipped the safe rewrites (D193), and P53 shipped the previous-catalog check inside `okm migrate check` (D196). Startup compatibility shipped in P53b (D197).
 - **Ownership needed by every object kind:** it is in the P10 contract.
 - **Recreate needed by views:** dependency-aware recreate moved from P51 to P42; P51 keeps lock display and cross-kind verification.
-- **`protected.policy` enumeration needs seed:** `okm seed` arrives in P54, so the full enumeration test sits in P55.
+- **`protected.policy` enumeration needs seed:** `okm seed` shipped in P54 (D199). The full enumeration test sits in P55.
 - **Routing before consistency:** P61 ships the conservative behavior (writers read from the primary) until P63 adds commit positions.
 - **The M1 reference app had no prompt:** P65.
 - **Named targets and apply semantics are foundations, not M5 features:** environments and previews need `--target`, resume and the per-target lock from the first release, so they are in P16; only the multi-target rollout flags wait for M5.

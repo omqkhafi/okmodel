@@ -32,8 +32,8 @@ export function formatFailure(error: OkmError): string {
  * Runs one `okm` invocation.
  *
  * `--version` stays in the bin. This function handles `build`, `check`,
- * `generate`, `dev`, `push`, `ext list`, `ext check`, `doctor`, and `migrate plan`,
- * `apply`, `status`, and `check`.
+ * `generate`, `dev`, `push`, `seed`, `ext list`, `ext check`, `doctor`, and
+ * `migrate plan`, `apply`, `status`, and `check`.
  *
  * @param argv - Arguments after the program name
  * @param io - Working directory and stdout. Defaults to the process
@@ -101,6 +101,17 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
       stdout(await checkMigrations(cwd, invoke(parsed), { provision }));
       return;
     }
+  }
+  if (command === "seed") {
+    const parsed = splitFlags(rest);
+    if (parsed.name === undefined) {
+      throw new OkmError("invalid", "okm seed needs a file.", {
+        fix: { summary: "Pass okm seed <file>." },
+      });
+    }
+    const { seedProject } = await import("./seed.js");
+    stdout(await seedProject(cwd, parsed.name, invoke(parsed)));
+    return;
   }
   if (command === "doctor") {
     const parsed = splitFlags(rest);
