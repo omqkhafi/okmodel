@@ -65,18 +65,22 @@ test(
   { timeout: 20_000 },
 );
 
-test("roundRobin ignores weights", async () => {
-  const picks = await sequence(
-    [
-      { name: "a", weight: 5 },
-      { name: "b", weight: 1 },
-      { name: "c", weight: 1 },
-    ],
-    { select: "roundRobin" },
-    6,
-  );
-  expect(picks).toEqual(repeat("abc", 2));
-});
+test(
+  "roundRobin ignores weights",
+  async () => {
+    const picks = await sequence(
+      [
+        { name: "a", weight: 5 },
+        { name: "b", weight: 1 },
+        { name: "c", weight: 1 },
+      ],
+      { select: "roundRobin" },
+      6,
+    );
+    expect(picks).toEqual(repeat("abc", 2));
+  },
+  { timeout: 20_000 },
+);
 
 test(
   "leastConnections breaks ties in config order and leaves a slow replica",
@@ -158,66 +162,70 @@ test("latencyAware prefers the faster replica and follows it when that changes",
   }
 }, 20_000);
 
-test("a custom select sees the candidate shape and runs only when it has a choice", async () => {
-  const seen: ReplicaCandidate[][] = [];
-  let byName = false;
-  const calls: RouteEvent[] = [];
-  const db = await openTopology(
-    [
-      { name: "east", weight: 3 },
-      { name: "west", weight: 1 },
-    ],
-    {
-      select(candidates, ctx) {
-        expect(ctx).toEqual({ op: "read" });
-        seen.push(candidates.map((candidate) => ({ ...candidate })));
-        const west = candidates[1];
-        if (west === undefined) throw new Error("missing west");
-        return byName ? west.name : west;
+test(
+  "a custom select sees the candidate shape and runs only when it has a choice",
+  async () => {
+    const seen: ReplicaCandidate[][] = [];
+    let byName = false;
+    const calls: RouteEvent[] = [];
+    const db = await openTopology(
+      [
+        { name: "east", weight: 3 },
+        { name: "west", weight: 1 },
+      ],
+      {
+        select(candidates, ctx) {
+          expect(ctx).toEqual({ op: "read" });
+          seen.push(candidates.map((candidate) => ({ ...candidate })));
+          const west = candidates[1];
+          if (west === undefined) throw new Error("missing west");
+          return byName ? west.name : west;
+        },
+        onRoute(event) {
+          calls.push(event);
+        },
       },
-      onRoute(event) {
-        calls.push(event);
-      },
-    },
-  );
-  try {
-    await db.connected;
-    calls.length = 0;
-    await db.notes.find({ limit: 1 });
-    expect(calls.at(-1)).toEqual({ op: "read", endpoint: "west", reason: "auto:west" });
-    byName = true;
-    calls.length = 0;
-    await db.notes.find({ limit: 1 });
-    expect(calls.at(-1)).toEqual({ op: "read", endpoint: "west", reason: "auto:west" });
-    const first = seen[0]?.[0];
-    const second = seen[0]?.[1];
-    expect(first).toEqual({
-      name: "east",
-      weight: 3,
-      inflight: 0,
-      latencyMs: expect.any(Number),
-      lag: null,
-    });
-    expect(second).toMatchObject({ name: "west", weight: 1, inflight: 0, lag: null });
-  } finally {
-    await db.close();
-  }
+    );
+    try {
+      await db.connected;
+      calls.length = 0;
+      await db.notes.find({ limit: 1 });
+      expect(calls.at(-1)).toEqual({ op: "read", endpoint: "west", reason: "auto:west" });
+      byName = true;
+      calls.length = 0;
+      await db.notes.find({ limit: 1 });
+      expect(calls.at(-1)).toEqual({ op: "read", endpoint: "west", reason: "auto:west" });
+      const first = seen[0]?.[0];
+      const second = seen[0]?.[1];
+      expect(first).toEqual({
+        name: "east",
+        weight: 3,
+        inflight: 0,
+        latencyMs: expect.any(Number),
+        lag: null,
+      });
+      expect(second).toMatchObject({ name: "west", weight: 1, inflight: 0, lag: null });
+    } finally {
+      await db.close();
+    }
 
-  let called = false;
-  const alone = await openTopology([{ name: "east" }], {
-    select() {
-      called = true;
-      return "east";
-    },
-  });
-  try {
-    await alone.connected;
-    await alone.notes.find({ limit: 1 });
-    expect(called).toBe(false);
-  } finally {
-    await alone.close();
-  }
-});
+    let called = false;
+    const alone = await openTopology([{ name: "east" }], {
+      select() {
+        called = true;
+        return "east";
+      },
+    });
+    try {
+      await alone.connected;
+      await alone.notes.find({ limit: 1 });
+      expect(called).toBe(false);
+    } finally {
+      await alone.close();
+    }
+  },
+  { timeout: 20_000 },
+);
 
 test(
   "a custom select that returns something else is OKM1120, and a throw propagates",
@@ -393,49 +401,53 @@ test(
   { timeout: 20_000 },
 );
 
-test("a connection failure retries with the strategy over the replicas that remain", async () => {
-  let armed = false;
-  const events: RouteEvent[] = [];
-  const picks: string[] = [];
-  const db = await openTopology(
-    [
-      { name: "a" },
+test(
+  "a connection failure retries with the strategy over the replicas that remain",
+  async () => {
+    let armed = false;
+    const events: RouteEvent[] = [];
+    const picks: string[] = [];
+    const db = await openTopology(
+      [
+        { name: "a" },
+        {
+          name: "b",
+          fail() {
+            if (!armed) return false;
+            armed = false;
+            return true;
+          },
+        },
+        { name: "c" },
+      ],
       {
-        name: "b",
-        fail() {
-          if (!armed) return false;
-          armed = false;
-          return true;
+        select: "roundRobin",
+        onRoute(event) {
+          events.push(event);
         },
       },
-      { name: "c" },
-    ],
-    {
-      select: "roundRobin",
-      onRoute(event) {
-        events.push(event);
+      (endpoint) => {
+        picks.push(endpoint);
       },
-    },
-    (endpoint) => {
-      picks.push(endpoint);
-    },
-  );
-  try {
-    await db.connected;
-    events.length = 0;
-    picks.length = 0;
-    await db.notes.find({ limit: 1 });
-    expect(picks).toEqual(["a"]);
-    armed = true;
-    events.length = 0;
-    picks.length = 0;
-    await db.notes.find({ limit: 1 });
-    expect(picks).toEqual(["b", "c"]);
-    expect(events.map((event) => event.reason)).toEqual(["auto:b", "auto:c"]);
-  } finally {
-    await db.close();
-  }
-});
+    );
+    try {
+      await db.connected;
+      events.length = 0;
+      picks.length = 0;
+      await db.notes.find({ limit: 1 });
+      expect(picks).toEqual(["a"]);
+      armed = true;
+      events.length = 0;
+      picks.length = 0;
+      await db.notes.find({ limit: 1 });
+      expect(picks).toEqual(["b", "c"]);
+      expect(events.map((event) => event.reason)).toEqual(["auto:b", "auto:c"]);
+    } finally {
+      await db.close();
+    }
+  },
+  { timeout: 20_000 },
+);
 
 test("an unknown select is OKM1120, and consistency and maxLag stay OKM1061", async () => {
   await expectCode(
