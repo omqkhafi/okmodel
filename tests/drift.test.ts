@@ -22,6 +22,40 @@ test("a text default matches the cast Postgres reprints and a different value st
   expect(sqlOf(author, titled("'x'::text"))).toEqual([]);
   const changed = sqlOf(titled("'y'::text"), author);
   expect(changed.some((statement) => statement.includes("set default 'x'"))).toBe(true);
+  expect(
+    sqlOf(titled("'x'::integer"), author).some((statement) => statement.includes("set default")),
+  ).toBe(true);
+});
+
+test("a length or precision omitted from a default cast is still the column type", () => {
+  expect(
+    sqlOf(noted("varchar(10)", "'x'::character varying"), noted("varchar(10)", "'x'")),
+  ).toEqual([]);
+  expect(sqlOf(noted("char(3)", "'x'::bpchar"), noted("char(3)", "'x'"))).toEqual([]);
+  expect(
+    sqlOf(
+      noted("timestamp(3)", "'2020-01-02 03:04:05.006'::timestamp without time zone"),
+      noted("timestamp(3)", "'2020-01-02 03:04:05.006'"),
+    ),
+  ).toEqual([]);
+  expect(
+    sqlOf(
+      noted("timestamptz(3)", "'2020-01-02 03:04:05.006+00'::timestamp with time zone"),
+      noted("timestamptz(3)", "'2020-01-02 03:04:05.006+00'"),
+    ),
+  ).toEqual([]);
+  const wrongType = sqlOf(noted("varchar(10)", "'x'::bpchar"), noted("varchar(10)", "'x'"));
+  expect(wrongType.some((statement) => statement.includes("set default 'x'"))).toBe(true);
+  const wrongValue = sqlOf(
+    noted("varchar(10)", "'y'::character varying"),
+    noted("varchar(10)", "'x'"),
+  );
+  expect(wrongValue.some((statement) => statement.includes("set default 'x'"))).toBe(true);
+  const rewritten = sqlOf(
+    noted("timestamp(3)", "'2020-01-02 03:04:05.006'::timestamp without time zone"),
+    noted("timestamp(3)", "'2020-01-02T03:04:05.006'"),
+  );
+  expect(rewritten.some((statement) => statement.includes("set default"))).toBe(true);
 });
 
 test("a plan keeps okm_meta and okm_history in both directions and still drops a user table", () => {
@@ -41,6 +75,10 @@ function sqlOf(before: Catalog, after: Catalog): readonly string[] {
 }
 
 function titled(expression: string): Catalog {
+  return noted("text", expression);
+}
+
+function noted(dataType: string, expression: string): Catalog {
   const parent = { namespace, name: "notes" };
   return catalog([
     table({ namespace, name: "notes", provenance }),
@@ -48,7 +86,7 @@ function titled(expression: string): Catalog {
     column({
       parent,
       name: "title",
-      dataType: "text",
+      dataType,
       nullable: false,
       defaultExpression: expression,
       provenance,
