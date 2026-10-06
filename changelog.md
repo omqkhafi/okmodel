@@ -16,16 +16,21 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### ✨ Added
 
+#### tooling
+
 - `okm migrate plan` prints a `pg_class.reltuples` estimate on each lock line when a selected target is reachable: `about 4.2M rows`, `rows unknown (table not analyzed)`, or `new table`. A safe rewrite is labelled on that line. `ACCESS EXCLUSIVE` on more than one million estimated rows, outside a safe rewrite, prints a note and is not a lint finding. No target, or a target that cannot be reached, prints the lock alone. `okm generate` stays offline, and the estimate is not written to SQL, catalog files, or `okm_history` (D194).
 - The migration linter flags a drop, a rename, a column type change, a required column with no default, a dropped default, a shorter length, and a new unique, check, or foreign key on an existing table as errors.
-- On an existing table the planner emits the safe form: a concurrent index create and drop, a check or foreign key as `NOT VALID` then `VALIDATE`, `SET NOT NULL` through a validated check, a volatile default split into one `UPDATE`, and a unique or primary key from a concurrent unique index (D193). A new table keeps the plain statements.
+- On an existing table the planner emits the safe form: a concurrent index create and drop, a check or foreign key as `NOT VALID` then `VALIDATE`, `SET NOT NULL` through a validated check, a volatile default split into a batched fill, and a unique or primary key from a concurrent unique index (D193). A new table keeps the plain statements.
 - A failed concurrent index leaves an invalid index. Resume drops it and rebuilds, and does not repeat a finished step.
 - `okm generate` prints findings and still writes the file. `okm migrate plan` and `okm check` exit non-zero on an error finding. `okm migrate apply` lints migrations that are still pending on the target and refuses with OKM1510 before any DDL or data statement.
 - An override is `-- okm-allow OKM15xx: reason` on the line above the statement. An empty reason, or a code the statement did not trigger, is OKM1510 and does not silence another code.
+- A backfill step stays one idempotent `UPDATE` in the migration file, with `-- backfill table=… key=… batch=…`. Apply runs it outside the migration transaction, one commit per batch, and resumes from `okm_backfill`. A table with no primary key is OKM1546. `defineConfig({ backfill })` sets the batch size (1,000), the pause (none), and the statement timeout (30 seconds). A protected target still needs `--allow-protected` (D195).
+- `okm migrate status` lists an unfinished backfill under the target table: migration, step, rows so far, last key, and state.
 
 ### ♻️ Changed
 
 - Drop default, a `NOT NULL` column with no default on an existing table, drop identity, `SET GENERATED ALWAYS`, and `ALTER ROLE` are classified contract. `okm migrate plan` prints each step's class and lock.
+- A removed picklist or enum value, and a volatile default on an existing table, are filled by that batched backfill. The final rows match the single `UPDATE` they replace. `okm migrate plan` adds `about N batches` when a row estimate is available.
 - OKM1534, OKM1535, OKM1536, and OKM1537 are errors, and they fire only when the statement is not the safe form. A type change that rewrites the table (OKM1538) stays a warning. `timestamp` without time zone, `varchar(n)`, `serial`, `json`, and an identity that is not generated always stay warnings on `okm check`.
 
 ### 🐛 Fixed

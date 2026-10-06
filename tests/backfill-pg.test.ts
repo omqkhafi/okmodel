@@ -19,6 +19,7 @@ import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres
 import { openPostgres, withPostgresSchema } from "../packages/harness/src/postgres.js";
 import { primaryUrl } from "../packages/harness/src/topology.js";
 import { applyTarget, type ApplyReport } from "../src/tooling/migrate/apply.js";
+import { formatStatus, readTargetStatus } from "../src/tooling/migrate/status.js";
 import type { BackfillBatch } from "../src/tooling/migrate/runner.js";
 import type { StoredMigration } from "../src/tooling/migrate/files.js";
 import { planMigration, type PlanStep } from "../src/tooling/migrate/plan.js";
@@ -328,6 +329,52 @@ postgresTest(
       const sizes = await statementSizes(sql);
       const pairSizes = sizes.filter((n) => n > 0);
       expect(pairSizes).toEqual([1, 1, 1]);
+    });
+  },
+  30_000,
+);
+
+postgresTest(
+  gate,
+  "status shows an unfinished backfill and omits a finished one",
+  async () => {
+    await withPostgresSchema(async (sql, schemaName) => {
+      await sql.unsafe(
+        `create table ${q(schemaName)}.items (id integer primary key, touches integer not null default 0)`,
+      );
+      await sql.unsafe(
+        `insert into ${q(schemaName)}.items (id) select g from generate_series(1, 20) g`,
+      );
+      const failing = fillStep(
+        schemaName,
+        10,
+        " and case when $1::text is not distinct from '10' then (1 / 0) = 1 else true end",
+      );
+      const file = migration("0001_fill", "hash-fill", [failing]);
+      const failed = await catchError(() => applyTo(schemaName, [file]));
+      expect(messageOf(failed)).toContain("failed at step 0");
+      const status = await readTargetStatus({
+        url,
+        target: schemaName,
+        protected: false,
+        searchPath: schemaName,
+        migrations: [file],
+      });
+      expect(status.state).toBe("behind by expand");
+      const text = formatStatus([status]);
+      expect(text.startsWith("target\tversion\tcatalog\tstate\tprotected\n")).toBe(true);
+      expect(text).toContain("migration\tstep\trows\tkey\tstate\n");
+      expect(text).toContain("0001_fill\t0\t10\t10\trunning\n");
+      await applyTo(schemaName, [migration("0001_fill", "hash-fill", [fillStep(schemaName, 10)])]);
+      const done = await readTargetStatus({
+        url,
+        target: schemaName,
+        protected: false,
+        searchPath: schemaName,
+        migrations: [migration("0001_fill", "hash-fill", [fillStep(schemaName, 10)])],
+      });
+      expect(done.backfills).toEqual([]);
+      expect(formatStatus([done])).not.toContain("backfill");
     });
   },
   30_000,

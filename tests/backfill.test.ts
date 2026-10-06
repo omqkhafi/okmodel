@@ -13,6 +13,7 @@ import { schema, table, t } from "../src/dialects/pg/index.js";
 import { boundaryQuery } from "../src/tooling/migrate/backfill.js";
 import { annotateLock } from "../src/tooling/migrate/estimate.js";
 import { formatPlan, parsePlan, planMigration } from "../src/tooling/migrate/plan.js";
+import { formatStatus } from "../src/tooling/migrate/status.js";
 import { parseReplace } from "../src/tooling/migrate/values.js";
 
 const RANGE =
@@ -79,6 +80,33 @@ test("a plan with estimates prints rows and batches, and the file does not", () 
   expect(printed).toContain("-- lock: ROW EXCLUSIVE on tasks, about 25K rows, about 25 batches");
   expect(printed).toContain('-- backfill table="public"."tasks" key="id" batch=1000');
   expect(formatPlan(plan)).not.toContain("about");
+});
+
+test("status keeps the target columns and lists an unfinished backfill", () => {
+  const row = {
+    target: "default",
+    version: "0001",
+    catalogHash: "h",
+    state: "current",
+    protected: false,
+    backfills: [],
+  };
+  expect(formatStatus([row])).toBe(
+    "target\tversion\tcatalog\tstate\tprotected\ndefault\t0001\th\tcurrent\tfalse\n",
+  );
+  const running = formatStatus([
+    {
+      ...row,
+      state: "behind by expand",
+      backfills: [
+        { migrationId: "0002_fill", stepIndex: 1, rows: "1000", lastKey: "1000", state: "running" },
+      ],
+    },
+  ]);
+  expect(running).toContain("target\tversion\tcatalog\tstate\tprotected\n");
+  expect(running).toContain("default\t0001\th\tbehind by expand\tfalse\n");
+  expect(running).toContain("migration\tstep\trows\tkey\tstate\n");
+  expect(running).toContain("0002_fill\t1\t1000\t1000\trunning\n");
 });
 
 test("a boundary query reads one key and does not count the table", () => {

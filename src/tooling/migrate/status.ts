@@ -3,7 +3,8 @@
  *
  * One row per target: version, catalog hash, state, and a separate protected
  * column. The state is current, behind by expand, behind by contract, ahead,
- * or failed at a step.
+ * or failed at a step. An unfinished backfill is a later section: migration,
+ * step, rows so far, last key, and state.
  */
 
 import { join } from "node:path";
@@ -23,6 +24,19 @@ export type TargetStatus = {
   readonly catalogHash: string;
   readonly state: string;
   readonly protected: boolean;
+  /** Unfinished `okm_backfill` rows for this target. A finished step is absent. */
+  readonly backfills: readonly BackfillProgress[];
+};
+
+/** One backfill that has committed at least one batch and is not done. */
+export type BackfillProgress = {
+  readonly migrationId: string;
+  readonly stepIndex: number;
+  /** Rows the committed batches changed. */
+  readonly rows: string;
+  /** Last committed boundary, or `-` when the first batch is still open. */
+  readonly lastKey: string;
+  readonly state: string;
 };
 
 /** A checkpoint row the state function reads. */
@@ -129,6 +143,7 @@ export async function readTargetStatus(input: {
       catalogHash: described.catalogHash,
       state: described.state,
       protected: input.protected,
+      backfills: await readBackfills(pool),
     };
   } finally {
     await pool.close();
@@ -165,17 +180,31 @@ export async function statusProject(cwd: string, flags: InvokeFlags): Promise<st
 /**
  * Prints status rows.
  *
+ * The target columns stay `target`, `version`, `catalog`, `state`, and
+ * `protected`. Unfinished backfills follow as their own section.
+ *
  * @param rows - One per target
- * @returns Header plus one line per target
+ * @returns Header plus one line per target, then unfinished backfills
  */
 export function formatStatus(rows: readonly TargetStatus[]): string {
   const lines = ["target\tversion\tcatalog\tstate\tprotected"];
+  const backfills: BackfillProgress[] = [];
   for (const row of rows) {
     lines.push(
       [row.target, row.version, row.catalogHash, row.state, row.protected ? "true" : "false"].join(
         "\t",
       ),
     );
+    backfills.push(...row.backfills);
+  }
+  if (backfills.length > 0) {
+    lines.push("backfill");
+    lines.push("migration\tstep\trows\tkey\tstate");
+    for (const item of backfills) {
+      lines.push(
+        [item.migrationId, String(item.stepIndex), item.rows, item.lastKey, item.state].join("\t"),
+      );
+    }
   }
   return `${lines.join("\n")}\n`;
 }
@@ -244,6 +273,35 @@ async function readHistory(pool: {
       migrationId,
       stepIndex: Number(step),
       class: stepClass === "contract" || stepClass === "unclassified" ? stepClass : "expand",
+    });
+  }
+  return rows;
+}
+
+async function readBackfills(pool: {
+  execute: (text: string) => Promise<{ rows: readonly (readonly (string | null)[])[] }>;
+}): Promise<BackfillProgress[]> {
+  const present = await pool.execute("select to_regclass('okm_backfill') is not null");
+  if (!wireTrue(present.rows[0]?.[0] ?? null)) return [];
+  const result = await pool.execute(
+    `select migration_id, step_index::text, rows_touched::text, last_key, state
+     from okm_backfill
+     where state <> 'done'
+     order by migration_id, step_index`,
+  );
+  const rows: BackfillProgress[] = [];
+  for (const row of result.rows) {
+    const migrationId = row[0];
+    const step = row[1];
+    const touched = row[2];
+    const state = row[4];
+    if (migrationId == null || step == null || touched == null || state == null) continue;
+    rows.push({
+      migrationId,
+      stepIndex: Number(step),
+      rows: touched,
+      lastKey: row[3] ?? "-",
+      state,
     });
   }
   return rows;
