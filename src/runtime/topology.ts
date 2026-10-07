@@ -287,6 +287,13 @@ type Handle = {
   watermark: bigint | undefined;
   /** A committed write's position could not be read. Automatic reads use the primary. */
   positionUnknown: boolean;
+  /**
+   * Generation of {@link Handle.positionUnknown}.
+   *
+   * Increments every time the flag is set. A primary probe may clear the flag
+   * only when it started in the generation that is still current.
+   */
+  unknownEpoch: number;
   /** Latest primary insert LSN from a probe or a write. Never moves backwards. */
   primaryLsn: bigint | undefined;
   fallback: "primary" | "error";
@@ -379,6 +386,7 @@ export async function connectTopology<S extends QuerySchema>(
       hasReplicas: replicaEndpoints.length > 0,
       watermark: undefined,
       positionUnknown: false,
+      unknownEpoch: 0,
       primaryLsn: undefined,
       fallback: readFallback(options.routing?.fallback),
       select,
@@ -909,8 +917,10 @@ async function runPrimary(handle: Handle): Promise<void> {
 /**
  * Reads `pg_current_wal_insert_lsn()` on the primary.
  *
- * A success refreshes the lag baseline. While the watermark is unknown, that
- * reading is also a safe upper bound of the commit whose position read failed.
+ * A success refreshes the lag baseline. It may also clear `position unknown`
+ * when this probe started while that flag was set and nothing has marked a
+ * newer generation since. A query issued earlier can sit below the commit
+ * whose position read failed, so that result does not move the watermark.
  *
  * @param handle - Primary pool and watermark
  */
@@ -918,11 +928,16 @@ async function samplePrimary(handle: Handle): Promise<void> {
   if (!probesPrimary(handle)) return;
   const primary = handle.endpoints[0];
   if (primary === undefined) return;
+  const epoch = handle.unknownEpoch;
+  const wasUnknown = handle.positionUnknown;
   try {
     const lsn = await readInsertLsn(primary.pool);
     if (lsn === undefined) return;
+    if (wasUnknown && handle.unknownEpoch === epoch && handle.positionUnknown) {
+      raiseWatermark(handle, lsn);
+      return;
+    }
     notePrimary(handle, lsn);
-    if (handle.positionUnknown) raiseWatermark(handle, lsn);
   } catch {
     // The last sample stays. A later probe or write can recover.
   }
@@ -1639,19 +1654,25 @@ async function noteWrite(
   if (!tracks(handle)) return;
   const primary = handle.endpoints[0];
   if (primary === undefined || !primary.position) {
-    handle.positionUnknown = true;
+    markUnknown(handle);
     return;
   }
   try {
     const lsn = await readInsertLsn(runner);
     if (lsn === undefined) {
-      handle.positionUnknown = true;
+      markUnknown(handle);
       return;
     }
     raiseWatermark(handle, lsn);
   } catch {
-    handle.positionUnknown = true;
+    markUnknown(handle);
   }
+}
+
+/** Sets `position unknown` and starts a new generation for in-flight probes. */
+function markUnknown(handle: Handle): void {
+  handle.positionUnknown = true;
+  handle.unknownEpoch += 1;
 }
 
 /** Session consistency with replicas configured. `"eventual"` and a lone primary do not track. */

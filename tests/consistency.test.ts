@@ -404,6 +404,146 @@ test(
 );
 
 test(
+  "a primary probe that started before the failed read does not clear position unknown",
+  async () => {
+    const probeMs = 1_234_567;
+    const probes = captureProbeTimers(probeMs);
+    let mode: "boot" | "commit" | "hold" | "fail" | "recover" = "boot";
+    let releaseHold: (lsn: string) => void = () => {};
+    const held = new Promise<string>((resolve) => {
+      releaseHold = resolve;
+    });
+    let markHeld: () => void = () => {};
+    const holdInFlight = new Promise<void>((resolve) => {
+      markHeld = resolve;
+    });
+    const events: RouteEvent[] = [];
+    let replay = "0/150";
+    const db = await openTopology(app, [], {
+      replicas: [named("east")],
+      routing: { probe: probeMs },
+      replay: () => replay,
+      onRoute(event) {
+        events.push(event);
+      },
+      scriptLsn() {
+        if (mode === "fail") throw new Error("position read failed");
+        if (mode === "hold") {
+          markHeld();
+          return held;
+        }
+        if (mode === "recover") return "0/400";
+        if (mode === "commit") return "0/100";
+        return "0/80";
+      },
+    });
+    try {
+      await db.connected;
+      mode = "commit";
+      await db.notes.insert({ id: "n1", title: "a" });
+      mode = "hold";
+      probes.fire();
+      await holdInFlight;
+      mode = "fail";
+      await db.notes.insert({ id: "n2", title: "b" });
+      const queued = probes.queued();
+      releaseHold("0/150");
+      await probes.waitForGrowth(queued);
+      events.length = 0;
+      await db.notes.find({ limit: 1 });
+      expect(events.at(-1)).toEqual({
+        op: "read",
+        endpoint: "primary",
+        reason: "fallback:position-unknown",
+      });
+      await expectCode(() => db.notes.find({ limit: 1, route: "replica" }), "OKM1843");
+      mode = "recover";
+      replay = "0/400";
+      probes.fire();
+      await probes.flush();
+      events.length = 0;
+      await db.notes.find({ limit: 1 });
+      expect(events.at(-1)).toEqual({ op: "read", endpoint: "east", reason: "auto:east" });
+    } finally {
+      probes.restore();
+      await db.close();
+    }
+  },
+  { timeout: 20_000 },
+);
+
+test(
+  "an older probe does not clear position unknown after a write sets it again",
+  async () => {
+    const probeMs = 1_234_567;
+    const probes = captureProbeTimers(probeMs);
+    let mode: "boot" | "commit" | "hold" | "fail" | "recover" = "boot";
+    let releaseHold: (lsn: string) => void = () => {};
+    const held = new Promise<string>((resolve) => {
+      releaseHold = resolve;
+    });
+    let markHeld: () => void = () => {};
+    const holdInFlight = new Promise<void>((resolve) => {
+      markHeld = resolve;
+    });
+    const events: RouteEvent[] = [];
+    let replay = "0/300";
+    const db = await openTopology(app, [], {
+      replicas: [named("east")],
+      routing: { probe: probeMs },
+      replay: () => replay,
+      onRoute(event) {
+        events.push(event);
+      },
+      scriptLsn() {
+        if (mode === "fail") throw new Error("position read failed");
+        if (mode === "hold") {
+          markHeld();
+          return held;
+        }
+        if (mode === "recover") return "0/300";
+        if (mode === "commit") return "0/300";
+        return "0/100";
+      },
+    });
+    try {
+      await db.connected;
+      mode = "fail";
+      await db.notes.insert({ id: "n1", title: "a" });
+      mode = "hold";
+      probes.fire();
+      await holdInFlight;
+      mode = "commit";
+      await db.notes.insert({ id: "n2", title: "b" });
+      mode = "fail";
+      await db.notes.insert({ id: "n3", title: "c" });
+      const queued = probes.queued();
+      releaseHold("0/400");
+      await probes.waitForGrowth(queued);
+      events.length = 0;
+      await db.notes.find({ limit: 1 });
+      expect(events.at(-1)).toEqual({
+        op: "read",
+        endpoint: "primary",
+        reason: "fallback:position-unknown",
+      });
+      await expectCode(() => db.notes.find({ limit: 1, route: "replica" }), "OKM1843");
+      mode = "recover";
+      replay = "0/300";
+      probes.fire();
+      await probes.flush();
+      events.length = 0;
+      await db.notes.find({ limit: 1 });
+      expect(events.at(-1)).toEqual({ op: "read", endpoint: "east", reason: "auto:east" });
+    } finally {
+      probes.restore();
+      await db.close();
+    }
+  },
+  { timeout: 20_000 },
+);
+
+test(
   "a missing position capability keeps a written session off that replica",
   async () => {
     const events: RouteEvent[] = [];
@@ -786,6 +926,8 @@ async function openTopology<S extends QuerySchema>(
     readonly failLsn?: () => boolean;
     readonly holdLsn?: () => Promise<void>;
     readonly onLsn?: (text: string, ms: number) => void;
+    /** Replaces the insert-LSN query. A throw is a failed position read. */
+    readonly scriptLsn?: () => string | Promise<string>;
   },
 ): Promise<RoutedClient<S>> {
   const catalog = (source as S & { readonly catalog: Catalog }).catalog;
@@ -819,6 +961,7 @@ async function openTopology<S extends QuerySchema>(
         ...(input.failLsn !== undefined ? { failLsn: input.failLsn } : {}),
         ...(input.holdLsn !== undefined ? { holdLsn: input.holdLsn } : {}),
         ...(input.onLsn !== undefined ? { onLsn: input.onLsn } : {}),
+        ...(input.scriptLsn !== undefined ? { scriptLsn: input.scriptLsn } : {}),
       });
     },
   );
@@ -834,6 +977,7 @@ function watch(
     readonly failLsn?: () => boolean;
     readonly holdLsn?: () => Promise<void>;
     readonly onLsn?: (text: string, ms: number) => void;
+    readonly scriptLsn?: () => string | Promise<string>;
   },
 ): DriverPool {
   const endpoint = labelOf(url);
@@ -847,6 +991,10 @@ function watch(
       return { rows: [["f"]], count: 1, notices: [] };
     }
     if (isInsertLsn(text)) {
+      if (fault.scriptLsn !== undefined) {
+        const lsn = await fault.scriptLsn();
+        return { rows: [[lsn]], count: 1, notices: [] };
+      }
       if (fault.failLsn?.() === true) throw new Error("position read failed");
       await fault.holdLsn?.();
       const started = performance.now();
@@ -1015,6 +1163,60 @@ async function rejection(run: unknown): Promise<unknown> {
     return error;
   }
   throw new Error("expected a rejection");
+}
+
+/**
+ * Queues timers scheduled for `probeMs` so a test can start one probe and hold it.
+ *
+ * Every other delay uses the real timer. `restore` puts that timer back.
+ *
+ * @param probeMs - The topology probe interval this test configured
+ * @returns Controls for the queued callbacks
+ */
+function captureProbeTimers(probeMs: number): {
+  fire(): void;
+  queued(): number;
+  restore(): void;
+  flush(): Promise<void>;
+  waitForGrowth(previous: number): Promise<void>;
+} {
+  const real = globalThis.setTimeout;
+  const queued: Array<() => void> = [];
+  const patched = ((handler: TimerHandler, ms?: number, ...args: unknown[]) => {
+    if (ms === probeMs && typeof handler === "function") {
+      const id = real(() => {}, 60_000);
+      queued.push(() => {
+        handler();
+      });
+      return id;
+    }
+    return real(handler, ms, ...(args as []));
+  }) as typeof setTimeout;
+  globalThis.setTimeout = patched;
+  return {
+    fire() {
+      const batch = queued.splice(0, queued.length);
+      for (const run of batch) run();
+    },
+    queued: () => queued.length,
+    restore() {
+      globalThis.setTimeout = real;
+    },
+    flush() {
+      return new Promise((resolve) => {
+        real(resolve, 0);
+      });
+    },
+    async waitForGrowth(previous: number) {
+      for (let attempt = 0; attempt < 50; attempt += 1) {
+        if (queued.length > previous) return;
+        await new Promise((resolve) => {
+          real(resolve, 0);
+        });
+      }
+      throw new Error("the next probe was not scheduled");
+    },
+  };
 }
 
 function delay(ms: number): Promise<void> {
