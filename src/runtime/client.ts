@@ -400,6 +400,23 @@ async function runWrite(
   }
 }
 
+function rejectedRead(error: unknown): Promise<unknown> & Record<string, unknown> {
+  const fail = (): Promise<never> => Promise.reject(error);
+  return queryHandle(fail, {
+    all: () => rejectedRead(error),
+    required: () => rejectedRead(error),
+    inspect: fail,
+    sql: fail,
+    stream() {
+      return {
+        [Symbol.asyncIterator]() {
+          return { next: fail };
+        },
+      };
+    },
+  }) as Promise<unknown> & Record<string, unknown>;
+}
+
 function start(
   session: Session,
   op: ReadOp,
@@ -409,7 +426,12 @@ function start(
   view?: ArchiveView,
 ): Promise<unknown> & Record<string, unknown> {
   const model = session.schema.model[table];
-  const call = readCall(op, table, options, mods.all, session.scope, model, session.schema, view);
+  let call: ReadCall;
+  try {
+    call = readCall(op, table, options, mods.all, session.scope, model, session.schema, view);
+  } catch (error) {
+    return rejectedRead(error instanceof OkmError ? attachHttp(session.http, error) : error);
+  }
   return readHandle(
     session,
     table,

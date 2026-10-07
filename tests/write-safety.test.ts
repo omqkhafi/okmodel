@@ -8,7 +8,7 @@
 import { expect, test } from "bun:test";
 
 import type { DriverPool } from "../src/contracts/driver.js";
-import { OkmError } from "../src/contracts/error.js";
+import { OkmError, safe } from "../src/contracts/error.js";
 import { eq, has, id, many, not, or, schema, table, text, uuid } from "../src/dialects/pg/index.js";
 import { tag } from "../src/dialects/pg/operators.js";
 import { connect } from "../src/runtime/pg/postgresjs.js";
@@ -166,6 +166,42 @@ test("QA-M2: unknown update keys and swapped tx options are OKM1120", async () =
     .update({ where: { id: NOTE }, set: { title: "x" } }, { timeout: 5 })
     .sql();
   expect(kept.statements[0]?.text).toContain('"id" = ');
+});
+
+test("QA-M11: a bad read option rejects the query", async () => {
+  const db = client();
+  await db.connected;
+  const bad = { limt: 1 } as never;
+  for (const run of [
+    () => db.notes.find(bad),
+    () => db.notes.one(bad),
+    () => db.notes.count(bad),
+  ]) {
+    let sync = false;
+    let query: Promise<unknown> & { catch: Promise<unknown>["catch"] };
+    try {
+      query = run() as Promise<unknown> & { catch: Promise<unknown>["catch"] };
+    } catch {
+      sync = true;
+      throw new Error("the call threw before returning a query");
+    }
+    expect(sync).toBe(false);
+    const settled = await safe(query);
+    expect(settled.ok).toBe(false);
+    if (!settled.ok) {
+      expect(settled.error.code).toBe("OKM1120");
+      expect(settled.error.message).toContain("limt");
+    }
+    const caught = await query.catch((error: unknown) => error);
+    expect(caught).toBeInstanceOf(OkmError);
+    expect((caught as OkmError).code).toBe("OKM1120");
+  }
+  for (const run of [() => db.notes.page(bad), () => db.notes.aggregate(bad)]) {
+    const query = run();
+    const settled = await safe(query);
+    expect(settled.ok).toBe(false);
+    if (!settled.ok) expect(settled.error.code).toBe("OKM1120");
+  }
 });
 
 test("QA-H2: archive and restore refuse an undefined-only where", async () => {
