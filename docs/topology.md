@@ -8,10 +8,27 @@ import { connect } from "okmodel/pg/postgresjs";
 export const db = await connect(
   {
     primary: process.env.DATABASE_URL!,
-    replicas: [{ url: process.env.REPLICA_URL!, weight: 2, name: "east", pool: { max: 4 } }],
+    replicas: [
+      { url: process.env.REPLICA_URL!, weight: 2, name: "east", pool: { max: 4 } },
+      process.env.REPLICA_URL_WEST!,
+    ],
   },
-  { schema: app, max: 10, routing: { probe: "1s" } },
+  {
+    schema: app,
+    max: 10,
+    routing: { probe: "1s", fallback: "primary", consistency: "session" },
+    onRoute(event) {
+      // { op: "read", endpoint: "east", reason: "auto:east" }
+      void event;
+    },
+  },
 );
+
+await db.tasks.find({ limit: 50 });
+await db.tasks.find({ limit: 50, route: "primary" });
+await db.tasks.find({ limit: 50, route: "replica" });
+const replica = db.using("replica");
+await replica.tasks.find({ limit: 50 });
 ```
 
 `max` is the default pool size. A replica's `pool.max` overrides it for that endpoint. The primary is named `primary`. It is not `replica-0`. A replica with no name is `replica-1`, `replica-2`, and so on. A URL replica has weight 1.
@@ -58,12 +75,13 @@ The CI topology is the compose file `packages/harness/docker/compose.yml`: one p
 
 The named tests are `routing.auto`, `routing.classes`, `routing.strict`, `pool.separation`, `tx.affinity`, and `consistency.position`. Selection and health (`selection.weighted`, `selection.weighted-return`, `selection.leastConnections`, `selection.latencyAware`, `selection.maxLag`, `selection.health`, `selection.failure`, `selection.custom`, `selection.primary-fallback`) run on the same primary and replicas. `pool.separation: PGlite reserve` uses in-memory databases. The suite waits on replay positions, circuits, and caught-up reads.
 
-Measured in CI on this topology, 40 inserts after 3 warmup. The extra cost is the session sample's percentile minus the eventual sample's percentile.
+P64 recorded a thin sample on this topology: 40 inserts after 3 warmup, and a fallback count of about 25 reads. That sample is not the measurement. P66 (`packages/bench/src/topology.ts`, D209) times 200 inserts in each consistency mode after 10 warmup inserts, then inserts 200 more rows while two readers keep calling `find` until the read count is at least 2,000. Replicas are replaying and are not paused. The extra cost is the session percentile minus the eventual percentile. One local run on Postgres 17 (primary and two standbys):
 
-- Postgres 15: p50 0.24 ms (session 0.92 ms, eventual 0.68 ms), p95 0.36 ms (session 1.16 ms, eventual 0.80 ms).
-- Postgres 18: p50 0.19 ms (session 0.90 ms, eventual 0.71 ms), p95 −0.48 ms (session 0.98 ms, eventual 1.46 ms). The negative p95 is the two samples' percentiles, so one slow eventual insert moves it.
-- Fallback rate with `consistency: "session"`. One writer inserts 20 rows as fast as it can while two find loops run. Replicas are replaying and are not paused. Postgres 15: 0 of 24 reads in 29 ms. Postgres 18: 0 of 27 reads in 30 ms. A local sample before that was 1 of 24 (0.042) over 15 ms.
-- Replica read share under a read-heavy mix, 8 rounds of 1 write and 8 reads: 64 of 64 reads used a replica on Postgres 15 and on Postgres 18.
+- Session: p50 0.48 ms, p95 0.71 ms. Eventual: p50 0.33 ms, p95 0.61 ms. Extra: p50 0.15 ms, p95 0.10 ms.
+- Fallback: 1 of 2,002 reads (`fallback:behind`), rate 0.0005. 2,000 reads used a replica (`auto:a` 1,016, `auto:b` 984). One read was `primary-required` (the dialect check, which always uses the primary). Elapsed 869 ms.
+- A second run on the same topology, before reason counts were printed: extra p50 0.07 ms (session 0.65, eventual 0.58) and extra p95 0.32 ms (session 1.62, eventual 1.30), with 2 of 2,001 reads on the primary. The p95 gap stays under a millisecond and moves with the sample. There is no gate on these numbers.
+
+Replica read share under a read-heavy mix, 8 rounds of 1 write and 8 reads: 64 of 64 reads used a replica on Postgres 15 and on Postgres 18.
 
 With weights 5 and 1, one pick while the lighter replica is out, then 24 reads together, the sequence is `abaaaaabaaaaabaaaaabaaaa` (20 of the heavier replica, 4 of the lighter, first read on the heavier). The same schedule before `current` was cleared for a replica that sat the pick out was `baaaaabaaaaabaaaaabaaaaa` (the same 20 and 4, first read on the lighter). D205.
 

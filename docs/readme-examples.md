@@ -465,6 +465,67 @@ export default defineConfig({
 });
 ```
 
+## Topology
+
+`replicas.ts`:
+
+```ts
+import { connect } from "okmodel/pg/postgresjs";
+
+import schema from "./schema.ts";
+
+const url = process.env.DATABASE_URL;
+if (url === undefined || url.length === 0) throw new Error("DATABASE_URL is not set");
+const east = process.env.REPLICA_URL;
+if (east === undefined || east.length === 0) throw new Error("REPLICA_URL is not set");
+const west = process.env.REPLICA_URL_WEST ?? east;
+
+const endpoints = {
+  primary: url,
+  replicas: [{ url: east, weight: 2, name: "east" }, west],
+};
+
+const db = await connect(endpoints, {
+  schema,
+  routing: { probe: "1s", fallback: "primary", consistency: "session", select: "weighted" },
+  onRoute(event) {
+    // { op: "read", endpoint: "east", reason: "auto:east" }
+    void event;
+  },
+});
+
+await db.notes.find({ limit: 50 });
+await db.notes.find({ limit: 50, route: "primary" });
+await db.notes.find({ limit: 50, route: "replica" });
+const replica = db.using("replica");
+await replica.notes.find({ limit: 50 });
+await db.close();
+
+const eventual = await connect(endpoints, {
+  schema,
+  routing: { consistency: "eventual" },
+});
+await eventual.notes.find({ limit: 50 });
+await eventual.close();
+
+for (const select of ["roundRobin", "leastConnections", "latencyAware"] as const) {
+  const client = await connect(endpoints, { schema, routing: { select } });
+  await client.notes.find({ limit: 1 });
+  await client.close();
+}
+
+const custom = await connect(endpoints, {
+  schema,
+  routing: {
+    select(candidates) {
+      return candidates[0] ?? "east";
+    },
+  },
+});
+await custom.notes.find({ limit: 1 });
+await custom.close();
+```
+
 ## okm ext and okm doctor
 
 ```text

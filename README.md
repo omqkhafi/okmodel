@@ -2,7 +2,7 @@
 
 okmodel is a catalog-first TypeScript ORM, PostgreSQL first. Other SQL databases are the direction. CI runs PostgreSQL 15 to 18. The schema is the single source. Migrations and queries come from it.
 
-Version 0.4.0. Apache-2.0.
+Version 0.5.0. Apache-2.0.
 
 ## Contents
 
@@ -58,6 +58,8 @@ Version 0.4.0. Apache-2.0.
   - [Reference data](#reference-data)
   - [Backfill](#backfill)
   - [Testing](#testing)
+  - [Topology](#topology)
+  - [Reference app](#reference-app)
   - [Startup](#startup)
   - [Protected targets](#protected-targets)
 - [Commands](#commands)
@@ -990,15 +992,19 @@ export default async function seed(t: {
 bunx okm seed seed.ts
 ```
 
-### Replicas
+### Topology
 
-`connect({ primary, replicas }, options)` opens one pool per endpoint. An automatic read chooses a replica that has replayed at least as far as this client's last committed write. `routing.consistency` is `"session"` by default. `"eventual"` does not keep that watermark. `routing.maxLag` is a duration (`"5s"`, `"500ms"`, `"2m"`) or a size (`"16MB"`, `"512KB"`, `"1GB"`, `"4096B"`). A bare number is rejected. `find({ route: "replica" })` requires a replica that satisfies the same watermark and lag, and it does not fall back to the primary. `db.using("replica")` returns a client that reads replicas and has no `close`. `onRoute` receives the endpoint and the reason. A string or an existing pool is one endpoint and serves either `route` from it.
+`connect({ primary, replicas }, options)` opens one pool per endpoint. An automatic read chooses a replica that has replayed at least as far as this client's last committed write. `routing.consistency` is `"session"` by default. `"eventual"` does not keep that watermark. `routing.maxLag` is a duration (`"5s"`, `"500ms"`, `"2m"`) or a size (`"16MB"`, `"512KB"`, `"1GB"`, `"4096B"`). A bare number is rejected. `find({ route: "primary" })` reads the primary. `find({ route: "replica" })` requires a replica that satisfies the same watermark and lag, and it does not fall back to the primary. `db.using("primary")` or `db.using("replica")` returns a client that forces that route. That client has no `close` and no `using`. `onRoute` receives `{ op, endpoint, reason }`. A throw from it is ignored. A string or an existing pool is one endpoint and serves either `route` from it, and it has no `using`.
 
 The watermark is one value for the whole `connect()`. The root, `for()`, `unscoped()`, `using()`, and `reserve()` share it. A write through any of them moves it for the others. A watermark per `for()` client is not in this version.
 
 When replicas are configured and consistency is `"session"`, a committed write reads `pg_current_wal_insert_lsn()` before its promise resolves. That is one extra round trip: on the primary pool after an autocommit `execute` or `batch`, and on the reserved connection after a successful `COMMIT`. A rollback does not read it. `"eventual"`, and a connect with no replicas, do not read it either.
 
-`routing.select` picks among the replicas that passed health, the watermark, and `maxLag`. The default is `"weighted"`. `weighted` is smooth weighted round-robin. Equal weights take turns. A weight of `0` is rejected. `roundRobin` ignores weights and rotates through the eligible replicas. `leastConnections` uses the replica with the fewest statements already in flight on this client. A tie follows configuration order. `latencyAware` uses the replica with the lowest moving average of round-trip time. A function receives each candidate as `{ name, weight, inflight, latencyMs, lag }` and `{ op: "read" }`. `lag` is the number of bytes the replica is behind the primary, or `null` when that distance is unknown. The function returns one of those objects or its `name`. It runs only when an automatic read has two or more candidates. Each `connect` below is an alternative.
+`routing.select` picks among the replicas that passed health, the watermark, and `maxLag`. The default is `"weighted"`. `weighted` is smooth weighted round-robin. Equal weights take turns. A weight of `0` is rejected. `roundRobin` ignores weights and rotates through the eligible replicas. `leastConnections` uses the replica with the fewest statements already in flight on this client. A tie follows configuration order. `latencyAware` uses the replica with the lowest moving average of round-trip time. A function receives each candidate as `{ name, weight, inflight, latencyMs, lag }` and `{ op: "read" }`. `lag` is the number of bytes the replica is behind the primary, or `null` when that distance is unknown. The function returns one of those objects or its `name`. It runs only when an automatic read has two or more candidates.
+
+A write, a batch, a transaction, or a locking read on a replica route is OKM1840. `route: "replica"` or `using("replica")` with no eligible replica is OKM1843, including a topology with no replicas. An automatic read with `routing.fallback: "error"` and no eligible replica is OKM1844. A migrate target that carries `primary`, `replicas`, `weight`, or `pool` is OKM1845. Waiting for a connection past `timeouts.acquire` is OKM1846, and that wait stays on the endpoint's own pool. The rules are in [topology](https://github.com/omqkhafi/okmodel/blob/main/docs/topology.md).
+
+A replica whose pool is at its maximum, with no idle connection and callers waiting, is skipped. If every replica that can serve the read is in that state, the read uses the primary and `onRoute` reports `fallback:saturated`. When healthy replicas exist and none has caught up, or none is inside `maxLag`, the reason is `fallback:behind`. `route: "replica"` still uses a saturated replica, and it still requires the watermark and `maxLag`.
 
 `replicas.ts`:
 
@@ -1009,22 +1015,45 @@ import schema from "./schema.ts";
 
 const url = process.env.DATABASE_URL;
 if (url === undefined || url.length === 0) throw new Error("DATABASE_URL is not set");
-const replica = process.env.REPLICA_URL;
-if (replica === undefined || replica.length === 0) throw new Error("REPLICA_URL is not set");
+const east = process.env.REPLICA_URL;
+if (east === undefined || east.length === 0) throw new Error("REPLICA_URL is not set");
+const west = process.env.REPLICA_URL_WEST ?? east;
 
 const endpoints = {
   primary: url,
-  replicas: [
-    { url: replica, weight: 3, name: "east" },
-    { url: replica, weight: 1, name: "west" },
-  ],
+  replicas: [{ url: east, weight: 2, name: "east" }, west],
 };
 
-await connect(endpoints, { schema, routing: { select: "weighted" } });
-await connect(endpoints, { schema, routing: { select: "roundRobin" } });
-await connect(endpoints, { schema, routing: { select: "leastConnections" } });
-await connect(endpoints, { schema, routing: { select: "latencyAware" } });
-await connect(endpoints, {
+const db = await connect(endpoints, {
+  schema,
+  routing: { probe: "1s", fallback: "primary", consistency: "session", select: "weighted" },
+  onRoute(event) {
+    // { op: "read", endpoint: "east", reason: "auto:east" }
+    void event;
+  },
+});
+
+await db.notes.find({ limit: 50 });
+await db.notes.find({ limit: 50, route: "primary" });
+await db.notes.find({ limit: 50, route: "replica" });
+const replica = db.using("replica");
+await replica.notes.find({ limit: 50 });
+await db.close();
+
+const eventual = await connect(endpoints, {
+  schema,
+  routing: { consistency: "eventual" },
+});
+await eventual.notes.find({ limit: 50 });
+await eventual.close();
+
+for (const select of ["roundRobin", "leastConnections", "latencyAware"] as const) {
+  const client = await connect(endpoints, { schema, routing: { select } });
+  await client.notes.find({ limit: 1 });
+  await client.close();
+}
+
+const custom = await connect(endpoints, {
   schema,
   routing: {
     select(candidates) {
@@ -1032,9 +1061,13 @@ await connect(endpoints, {
     },
   },
 });
+await custom.notes.find({ limit: 1 });
+await custom.close();
 ```
 
-A replica whose pool is at its maximum, with no idle connection and callers waiting, is skipped. If every replica that can serve the read is in that state, the read uses the primary and `onRoute` reports `fallback:saturated`. When healthy replicas exist and none has caught up, or none is inside `maxLag`, the reason is `fallback:behind`. `routing.fallback: "error"` fails that read with OKM1844. `route: "replica"` still uses a saturated replica, and it still requires the watermark and `maxLag`.
+### Reference app
+
+The worked example is a project tracker: workspaces as tenants, archive, a function, two views, three generated migrations, and this topology. It is a private package in the repository, not on npm. CI runs it on the primary and two standbys. Board reads go to a replica. A read just after a write, with replay paused, comes back from the primary. The report uses `route: "replica"`. See the [example app](https://github.com/omqkhafi/okmodel/blob/main/docs/example-app.md) and the [reference app notes](https://github.com/omqkhafi/okmodel/blob/main/packages/reference-app/README.md).
 
 ### Startup
 
@@ -1110,7 +1143,7 @@ Status is on the [board](https://github.com/users/omqkhafi/projects/1). Each rel
 - [x] [0.2](https://github.com/omqkhafi/okmodel/milestone/2) — Hidden and sensitive fields, validation, traits, tenancy, archive and restore, richer relations, presets, transactions, and operators for JSON, arrays, ranges, and search.
 - [x] [0.3](https://github.com/omqkhafi/okmodel/milestone/3) — Extensions, domains, functions, triggers, views, roles, and grants.
 - [x] [0.4](https://github.com/omqkhafi/okmodel/milestone/4) — Safer migration plans, backfill, drift checks, provisioning, reference data, and a testing package.
-- [ ] [0.5](https://github.com/omqkhafi/okmodel/milestone/5) — A primary with replicas, read routing, and a reference app.
+- [x] [0.5](https://github.com/omqkhafi/okmodel/milestone/5) — A primary with replicas, read routing, and a reference app.
 
 `okmodel/internal` has no stability promise. Names on that subpath can change or disappear in any release.
 
@@ -1122,11 +1155,11 @@ Measured on this release.
 
 |                                              | Minified |   Gzip | Cold import |
 | -------------------------------------------- | -------: | -----: | ----------: |
-| Runtime entry                                |    5,288 |  2,026 |    2.563 ms |
-| App startup (10 tables, one find)            |   89,461 | 29,720 |   13.379 ms |
-| App startup, every 0.2 feature in use (full) |  119,936 | 39,121 |   13.745 ms |
+| Runtime entry                                |    5,288 |  2,026 |    2.347 ms |
+| App startup (10 tables, one find)            |   89,751 | 29,801 |   15.061 ms |
+| App startup, every 0.2 feature in use (full) |  120,132 | 39,162 |   15.956 ms |
 
-The full app has column tenancy, `archivable()`, `timestamps()`, validation rules, `one`, `many` and `manyThrough` relations, presets, and calls `include`, `page`, `aggregate`, `tx` and `batch`. A feature costs bytes only in an app that uses it: the full app is 30,475 minified and 9,401 gzip bytes above the plain one. The runtime entry and the plain app are gated. The full app is printed, not gated.
+The full app has column tenancy, `archivable()`, `timestamps()`, validation rules, `one`, `many` and `manyThrough` relations, presets, and calls `include`, `page`, `aggregate`, `tx` and `batch`. A feature costs bytes only in an app that uses it: the full app is 30,381 minified and 9,361 gzip bytes above the plain one. The runtime entry and the plain app are gated. The full app is printed, not gated. The plain app's cold import on this sample is above the 15 ms local reference. That figure is printed and is not a gate.
 
 The rest of the measurements are in [size](https://github.com/omqkhafi/okmodel/blob/main/docs/size.md).
 
@@ -1138,5 +1171,6 @@ The rest of the measurements are in [size](https://github.com/omqkhafi/okmodel/b
 - [Backfill](https://github.com/omqkhafi/okmodel/blob/main/docs/backfill.md)
 - [Provisioning](https://github.com/omqkhafi/okmodel/blob/main/docs/provisioning.md)
 - [Testing](https://github.com/omqkhafi/okmodel/blob/main/docs/testing.md)
+- [Topology](https://github.com/omqkhafi/okmodel/blob/main/docs/topology.md)
 - [Known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md)
 - [Changelog](https://github.com/omqkhafi/okmodel/blob/main/changelog.md)
