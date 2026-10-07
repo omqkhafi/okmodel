@@ -29,8 +29,13 @@ const TITLE = new RegExp(
   `^(?:${TITLE_TYPES.join("|")})\\([a-z][a-z0-9]*(?:-[a-z0-9]+)*\\): \\S(?:.*\\S)?$`,
 );
 
+/** Dependabot opens update pull requests with no issue and no milestone. */
+export const DEPENDABOT_LOGIN = "dependabot[bot]";
+
 /** Pull request fields the standard checks. Labels are names, not ids. */
 export type PullRequestMeta = {
+  /** Login of the pull request author. */
+  readonly author: string;
   /** The pull request title. */
   readonly title: string;
   /** The pull request body. Empty when GitHub has none. */
@@ -44,15 +49,19 @@ export type PullRequestMeta = {
 /**
  * Problems for one pull request. Empty when it matches the standard.
  *
- * @param pr - Title, body, label names, and milestone title
+ * A Dependabot pull request skips the closing line and the milestone. Its
+ * title and labels are still checked.
+ *
+ * @param pr - Author, title, body, label names, and milestone title
  * @returns Actionable problem lines, in check order
  */
 export function lintPullRequest(pr: PullRequestMeta): readonly string[] {
   const problems: string[] = [];
+  const dependabot = pr.author === DEPENDABOT_LOGIN;
   if (!TITLE.test(pr.title)) {
     problems.push(`title must match type(scope): summary, where type is ${TITLE_TYPES.join(", ")}`);
   }
-  if (!closesIssue(pr.body)) {
+  if (!dependabot && !closesIssue(pr.body)) {
     problems.push("body must end with Closes #N");
   }
   const types = pr.labels.filter((label) => label.startsWith("type: "));
@@ -62,7 +71,7 @@ export function lintPullRequest(pr: PullRequestMeta): readonly string[] {
   if (!pr.labels.some((label) => label.startsWith("area: "))) {
     problems.push("at least one area: label is required");
   }
-  if (pr.milestone === null || pr.milestone.length === 0) {
+  if (!dependabot && (pr.milestone === null || pr.milestone.length === 0)) {
     problems.push("milestone is required");
   }
   return problems;
@@ -107,11 +116,15 @@ async function lintNumber(repo: string, number: number, token: string): Promise<
  * Narrows a pulls API payload to the fields the linter reads.
  *
  * @param payload - JSON from `GET /repos/{owner}/{repo}/pulls/{n}`
- * @returns Title, body, label names, and milestone title
+ * @returns Author, title, body, label names, and milestone title
  */
 function pullRequestMeta(payload: unknown): PullRequestMeta {
   if (!isRecord(payload) || typeof payload.title !== "string") {
     throw new Error("GitHub pull payload has no title");
+  }
+  const user = payload.user;
+  if (!isRecord(user) || typeof user.login !== "string") {
+    throw new Error("GitHub pull payload has no author login");
   }
   const body = payload.body;
   if (body !== null && typeof body !== "string") {
@@ -137,6 +150,7 @@ function pullRequestMeta(payload: unknown): PullRequestMeta {
     throw new Error("GitHub pull payload milestone has no title");
   }
   return {
+    author: user.login,
     title: payload.title,
     body: body ?? "",
     labels,

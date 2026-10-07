@@ -1,8 +1,13 @@
 name: PR meta
 
-# Checks the title, the closing line, one type: label, at least one area:
-# label, and a milestone. The checkout is the base commit. Pull request
-# code is never checked out and never executed.
+# labeler adds area: labels from changed paths, then lint checks the title,
+# the closing line, one type: label, at least one area: label, and a
+# milestone. Labels added with GITHUB_TOKEN do not start another workflow, so
+# both jobs live here and lint waits for labeler.
+#
+# pull_request_target runs this file from the base branch. Pull request code
+# is never checked out and never executed: labeler reads the changed paths
+# through the API, and lint checks out the base commit.
 on:
   pull_request_target:
     types:
@@ -21,18 +26,36 @@ on:
         required: true
         type: string
 
-permissions:
-  contents: read
-  pull-requests: read
+permissions: {}
 
 concurrency:
   group: pr-meta-${{ github.event.pull_request.number || inputs.pr }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
+  labeler:
+    name: labeler
+    if: >-
+      github.event_name == 'pull_request_target' &&
+      contains(fromJSON('["opened", "synchronize", "reopened"]'), github.event.action)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Label by path
+        uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # v7.0.0
+
   lint:
     name: lint
+    needs: labeler
+    if: >-
+      !cancelled() &&
+      (needs.labeler.result == 'success' || needs.labeler.result == 'skipped')
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - name: Checkout base
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0

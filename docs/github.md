@@ -24,11 +24,13 @@ Every issue and every pull request has exactly one `type:` label and at least on
 - The pull request milestone is the milestone of that issue.
 - The path labeler adds `area:` from the files that changed. Set `type:` yourself.
 
-`.github/workflows/pr-meta.yml` checks the title, the closing line, one `type:` label, at least one `area:` label, and a milestone. It checks out the base branch and runs `scripts/pr-lint.ts`. It does not check out pull request code.
+`.github/workflows/pr-meta.yml` has two jobs. `labeler` adds `area:` labels when a pull request is opened, reopened, or pushed to. `lint` runs after it and checks the title, the closing line, one `type:` label, at least one `area:` label, and a milestone. A label added with `GITHUB_TOKEN` does not start another workflow, so the jobs share one file and `lint` waits for `labeler`. When `labeler` is skipped (a label, milestone, or title edit, or a manual run with a `pr` number), `lint` still runs. `lint` checks out the base branch and runs `scripts/pr-lint.ts`. Neither job checks out pull request code.
+
+A Dependabot pull request has no issue and no milestone, so `lint` skips the closing line and the milestone for `dependabot[bot]`. Its title and labels are still checked.
 
 ## Milestones
 
-One milestone per release train (`0.5`). A patch keeps its number (`0.2.1`). The release workflow closes that milestone when the release ships.
+One milestone per release train (`0.5`). A patch keeps its number (`0.2.1`). The `github release` job in `.github/workflows/release.yml` closes that milestone when the release ships: `scripts/github-release.ts` creates the GitHub Release, then closes the milestone named by the version (`0.5.0` closes `0.5`, `0.2.1` closes `0.2.1`). A train whose `.0` was never published (0.2) keeps its milestone open until it is closed by hand.
 
 ## Project
 
@@ -42,5 +44,5 @@ Squash only. The branch is deleted on merge.
 
 - Issue forms in `.github/ISSUE_TEMPLATE/` apply the `type:` label. Add the `area:` label that matches the area you selected. A vulnerability is a private advisory, not an issue (`../SECURITY.md`).
 - `.github/labeler.yml` maps `src/contracts`, `src/dialects`, `src/adapters`, `src/runtime`, `src/tooling`, `scripts/`, `.github/`, and `docs/` onto `area:` labels.
-- `.github/dependabot.yml` groups GitHub Actions updates and npm updates, weekly.
+- `.github/dependabot.yml` groups GitHub Actions updates and npm updates, weekly. Commits and titles start with `chore(deps)`, and each pull request gets `type: chore` and `area: ci`.
 - `.github/release.yml` groups generated release notes by the `type:` label. The release workflow still publishes the notes from `changelog.md`.
