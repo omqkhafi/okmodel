@@ -43,7 +43,7 @@ A required column the factory leaves out is filled from its type: text, uuid, in
 
 ## Isolation
 
-`isolation()` inserts one row as tenant B on every tenant table and reads and writes it as tenant A: `find`, `one`, `count`, `exists`, `include` when the table has a relation, `update`, and `delete`. A returned row, or an update or delete that touches a row, fails with the table, the query, and the row. Global tables are skipped and named, with the reason from `global("reason")`. Column tenancy is the strategy this version checks. Schema-per-tenant and database-per-tenant are M5.
+`isolation()` inserts one row as tenant B on every tenant table and reads and writes it as tenant A: `find`, `one`, `count`, `exists`, `include` when the table has a relation, `update`, and `delete`. A returned row, or an update or delete that touches a row, fails with the table, the query, and the row. Global tables are skipped and named, with the reason from `global("reason")`. Views and materialized views are not checked: they have no rows of their own to insert. Column tenancy is the strategy this version checks. Schema-per-tenant and database-per-tenant are M5.
 
 ## okm seed
 

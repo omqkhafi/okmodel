@@ -9,6 +9,7 @@ import { expect, test } from "bun:test";
 import { OkmError } from "../src/contracts/error.js";
 import { open as openPglite } from "../src/adapters/pg/pglite.js";
 import { boolean, id, integer, many, schema, table, text, uuid } from "../src/dialects/pg/index.js";
+import { view } from "../src/dialects/pg/view/index.js";
 import { columnTenancy, global } from "../src/runtime/tenancy/index.js";
 import { tenantProbe } from "../src/tooling/testing/facts.js";
 import { testing } from "../src/tooling/testing/index.js";
@@ -113,22 +114,8 @@ test("isolation passes on the fixture schemas and fails when the predicate is dr
     await related.close();
   }
 
-  const real = columnTenancy({ key: "tenantId", type: "uuid" });
-  const leaking = {
-    ...real,
-    predicate(input: Parameters<typeof real.predicate>[0]): boolean {
-      if (
-        input.scope !== undefined &&
-        "value" in input.scope &&
-        input.scope.value === tenantProbe
-      ) {
-        return real.predicate(input);
-      }
-      return false;
-    },
-  };
   const secret = table("notes", { id: id({ default: "none" }), body: text() });
-  const leak = schema({ tenancy: leaking, tables: [secret] });
+  const leak = schema({ tenancy: leakingTenancy("tenantId"), tables: [secret] });
   const harness = await testing(leak, { driver: openPglite() });
   try {
     let failure: unknown;
@@ -145,6 +132,68 @@ test("isolation passes on the fixture schemas and fails when the predicate is dr
     await harness.close();
   }
 });
+
+test("isolation checks the tables of a schema with a tenant view and leaves the view out", async () => {
+  const withView = (tenancy: ReturnType<typeof columnTenancy>) =>
+    schema({
+      casing: "snake",
+      tenancy,
+      tables: [table("projects", { id: id({ default: "none" }), name: text() })],
+      views: [
+        view("project_names", {
+          columns: [
+            { name: "workspace_id", type: "uuid" },
+            { name: "name", type: "text" },
+          ],
+          query: " SELECT workspace_id,\n    name\n   FROM projects;",
+        }),
+      ],
+    });
+  const harness = await testing(withView(columnTenancy({ key: "workspaceId", type: "uuid" })), {
+    driver: openPglite(),
+  });
+  try {
+    const report = await harness.isolation();
+    expect([...report.checked]).toEqual(["projects"]);
+    expect(report.skipped).toEqual([]);
+  } finally {
+    await harness.close();
+  }
+
+  const leaking = await testing(withView(leakingTenancy("workspaceId")), { driver: openPglite() });
+  try {
+    let failure: unknown;
+    try {
+      await leaking.isolation();
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toBeInstanceOf(OkmError);
+    expect(failure instanceof OkmError ? failure.message : "").toContain(
+      "Isolation leak on projects.find",
+    );
+  } finally {
+    await leaking.close();
+  }
+});
+
+/** Column tenancy that answers the probe and drops the predicate on real queries. */
+function leakingTenancy(key: string): ReturnType<typeof columnTenancy> {
+  const real = columnTenancy({ key, type: "uuid" });
+  return {
+    ...real,
+    predicate(input: Parameters<typeof real.predicate>[0]): boolean {
+      if (
+        input.scope !== undefined &&
+        "value" in input.scope &&
+        input.scope.value === tenantProbe
+      ) {
+        return real.predicate(input);
+      }
+      return false;
+    },
+  };
+}
 
 const directory = table(
   "tenants",

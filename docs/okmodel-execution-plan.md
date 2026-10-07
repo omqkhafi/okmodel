@@ -159,6 +159,7 @@ Problems found in the earlier order and how the table above resolves them:
 - **Routing before consistency:** P61 shipped the wrote flag (writers read from the primary). P63 replaced it with commit positions (D204). A watermark per `for()` client stays deferred. The extra fallback rate under write load was measured in P64 (D205).
 - **The M1 reference app had no prompt:** P65.
 - **Reference app follow-ups not in P65A** (D208): the raw driver stack printed when the database does not exist; exporting `Connected` and `RoutedClient` by name; the application role's manual `GRANT SELECT` on `okm_meta`.
+- **Reference app follow-ups from P65:** a read-only `isolation()` check for tenant views (M2).
 - **Named targets and apply semantics are foundations, not M5 features:** environments and previews need `--target`, resume and the per-target lock from the first release, so they are in P16; only the multi-target rollout flags wait for M5.
 
 ## Repository conventions (fixed at bootstrap)
