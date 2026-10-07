@@ -1,0 +1,31 @@
+"area: contracts":
+  - changed-files:
+      - any-glob-to-any-file: src/contracts/**
+
+"area: dialects":
+  - changed-files:
+      - any-glob-to-any-file: src/dialects/**
+
+"area: adapters":
+  - changed-files:
+      - any-glob-to-any-file: src/adapters/**
+
+"area: runtime":
+  - changed-files:
+      - any-glob-to-any-file: src/runtime/**
+
+"area: tooling":
+  - changed-files:
+      - any-glob-to-any-file: src/tooling/**
+
+"area: ci":
+  - changed-files:
+      - any-glob-to-any-file:
+          - .github/**
+          - scripts/**
+
+"area: docs":
+  - changed-files:
+      - any-glob-to-any-file:
+          - docs/**
+          - "*.md"

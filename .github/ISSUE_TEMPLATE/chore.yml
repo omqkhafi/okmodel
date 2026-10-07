@@ -1,0 +1,30 @@
+name: Chore
+description: Repository work that is not a product change
+labels: ["type: chore"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This applies `type: chore`. Add at least one `area:` label. See docs/github.md.
+  - type: textarea
+    id: what
+    attributes:
+      label: What to change
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: "Add the matching area: label on the issue."
+      multiple: true
+      options:
+        - contracts
+        - dialects
+        - adapters
+        - runtime
+        - tooling
+        - ci
+        - docs
+    validations:
+      required: true
