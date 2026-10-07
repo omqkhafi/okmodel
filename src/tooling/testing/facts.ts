@@ -64,15 +64,22 @@ export const tenantProbe = "00000000-0000-4000-8000-000000000001";
 /**
  * Reads every table in declaration order.
  *
+ * Views and materialized views are in the query model too. They have no rows
+ * of their own to insert, so they are left out.
+ *
  * @param schema - Compiled schema
  * @returns One facts object per table
  */
 export function readFacts(schema: TestingSchema): readonly TableFacts[] {
   const foreign = foreignKeys(schema.catalog);
+  const tables = new Set<string>();
+  for (const object of schema.catalog.objects) {
+    if (object.kind === "table") tables.add(object.identity.name);
+  }
   const facts: TableFacts[] = [];
   for (const name of Object.keys(schema.model)) {
     const model = schema.model[name];
-    if (model === undefined) continue;
+    if (model === undefined || !tables.has(model.sql)) continue;
     const keys = foreign.get(model.sql) ?? [];
     facts.push({
       name,

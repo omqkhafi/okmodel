@@ -55,6 +55,13 @@
         "postgres": "^3.4.9",
       },
     },
+    "packages/reference-app": {
+      "name": "@okmodel/reference-app",
+      "version": "0.0.0",
+      "dependencies": {
+        "postgres": "^3.4.9",
+      },
+    },
     "packages/spikes": {
       "name": "@okmodel/spikes",
       "version": "0.0.0",
@@ -107,6 +114,8 @@
     "@okmodel/bench": ["@okmodel/bench@workspace:packages/bench"],
 
     "@okmodel/harness": ["@okmodel/harness@workspace:packages/harness"],
+
+    "@okmodel/reference-app": ["@okmodel/reference-app@workspace:packages/reference-app"],
 
     "@okmodel/spikes": ["@okmodel/spikes@workspace:packages/spikes"],
 

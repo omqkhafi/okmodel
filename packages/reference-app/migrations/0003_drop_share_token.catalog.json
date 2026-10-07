@@ -1,0 +1,2625 @@
+{
+  "objects": [
+    {
+      "definition": {
+        "arguments": [{ "name": "status", "type": "task_status" }],
+        "body": "select status <> 'done'::task_status",
+        "language": "sql",
+        "returns": "boolean",
+        "security": "invoker",
+        "volatility": "immutable"
+      },
+      "dependencies": [],
+      "identity": {
+        "argTypes": ["task_status"],
+        "kind": "function",
+        "name": "task_is_open",
+        "namespace": { "form": "static", "name": "public" }
+      },
+      "kind": "function",
+      "owner": "managed",
+      "provenance": { "name": "task_is_open", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [
+        { "target": { "kind": "role", "name": "okm" } },
+        { "target": { "kind": "role", "name": "ref_app" } }
+      ],
+      "identity": {
+        "forRole": "okm",
+        "grantee": "ref_app",
+        "kind": "defaultPrivilege",
+        "namespace": { "form": "static", "name": "public" },
+        "objectKind": "function",
+        "privilege": "EXECUTE"
+      },
+      "kind": "defaultPrivilege",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [
+        { "target": { "kind": "role", "name": "okm" } },
+        { "target": { "kind": "role", "name": "ref_app" } }
+      ],
+      "identity": {
+        "forRole": "okm",
+        "grantee": "ref_app",
+        "kind": "defaultPrivilege",
+        "namespace": { "form": "static", "name": "public" },
+        "objectKind": "sequence",
+        "privilege": "SELECT"
+      },
+      "kind": "defaultPrivilege",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [
+        { "target": { "kind": "role", "name": "okm" } },
+        { "target": { "kind": "role", "name": "ref_app" } }
+      ],
+      "identity": {
+        "forRole": "okm",
+        "grantee": "ref_app",
+        "kind": "defaultPrivilege",
+        "namespace": { "form": "static", "name": "public" },
+        "objectKind": "sequence",
+        "privilege": "USAGE"
+      },
+      "kind": "defaultPrivilege",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [
+        { "target": { "kind": "role", "name": "okm" } },
+        { "target": { "kind": "role", "name": "ref_app" } }
+      ],
+      "identity": {
+        "forRole": "okm",
+        "grantee": "ref_app",
+        "kind": "defaultPrivilege",
+        "namespace": { "form": "static", "name": "public" },
+        "objectKind": "table",
+        "privilege": "DELETE"
+      },
+      "kind": "defaultPrivilege",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [
+        { "target": { "kind": "role", "name": "okm" } },
+        { "target": { "kind": "role", "name": "ref_app" } }
+      ],
+      "identity": {
+        "forRole": "okm",
+        "grantee": "ref_app",
+        "kind": "defaultPrivilege",
+        "namespace": { "form": "static", "name": "public" },
+        "objectKind": "table",
+        "privilege": "INSERT"
+      },
+      "kind": "defaultPrivilege",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [
+        { "target": { "kind": "role", "name": "okm" } },
+        { "target": { "kind": "role", "name": "ref_app" } }
+      ],
+      "identity": {
+        "forRole": "okm",
+        "grantee": "ref_app",
+        "kind": "defaultPrivilege",
+        "namespace": { "form": "static", "name": "public" },
+        "objectKind": "table",
+        "privilege": "SELECT"
+      },
+      "kind": "defaultPrivilege",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [
+        { "target": { "kind": "role", "name": "okm" } },
+        { "target": { "kind": "role", "name": "ref_app" } }
+      ],
+      "identity": {
+        "forRole": "okm",
+        "grantee": "ref_app",
+        "kind": "defaultPrivilege",
+        "namespace": { "form": "static", "name": "public" },
+        "objectKind": "table",
+        "privilege": "UPDATE"
+      },
+      "kind": "defaultPrivilege",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": { "dataType": "uuid", "nullable": true },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "projects",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "archive_id",
+        "parent": { "name": "projects", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "archivable", "origin": "trait" }
+    },
+    {
+      "definition": { "dataType": "uuid", "nullable": true },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "tasks",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "archive_id",
+        "parent": { "name": "tasks", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "archivable", "origin": "trait" }
+    },
+    {
+      "definition": { "dataType": "timestamptz", "nullable": true },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "projects",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "archived_at",
+        "parent": { "name": "projects", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "archivable", "origin": "trait" }
+    },
+    {
+      "definition": { "dataType": "timestamptz", "nullable": true },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "tasks",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "archived_at",
+        "parent": { "name": "tasks", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "archivable", "origin": "trait" }
+    },
+    {
+      "definition": { "dataType": "uuid", "nullable": true },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "tasks",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "assignee_id",
+        "parent": { "name": "tasks", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "tasks", "origin": "file" }
+    },
+    {
+      "definition": { "dataType": "uuid", "nullable": false },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "comments",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "author_id",
+        "parent": { "name": "comments", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "comments", "origin": "file" }
+    },
+    {
+      "definition": { "dataType": "text", "nullable": false },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "comments",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "body",
+        "parent": { "name": "comments", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "comments", "origin": "file" }
+    },
+    {
+      "definition": { "dataType": "timestamptz", "defaultExpression": "now()", "nullable": false },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "comments",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "created_at",
+        "parent": { "name": "comments", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "timestamps", "origin": "trait" }
+    },
+    {
+      "definition": { "dataType": "timestamptz", "defaultExpression": "now()", "nullable": false },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "members",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "created_at",
+        "parent": { "name": "members", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "timestamps", "origin": "trait" }
+    },
+    {
+      "definition": { "dataType": "timestamptz", "defaultExpression": "now()", "nullable": false },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "projects",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "created_at",
+        "parent": { "name": "projects", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "timestamps", "origin": "trait" }
+    },
+    {
+      "definition": { "dataType": "timestamptz", "defaultExpression": "now()", "nullable": false },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "tasks",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "created_at",
+        "parent": { "name": "tasks", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "timestamps", "origin": "trait" }
+    },
+    {
+      "definition": { "dataType": "timestamptz", "defaultExpression": "now()", "nullable": false },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "workspaces",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "created_at",
+        "parent": { "name": "workspaces", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "timestamps", "origin": "trait" }
+    },
+    {
+      "definition": { "dataType": "text", "nullable": false },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "members",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "email",
+        "parent": { "name": "members", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "members", "origin": "file" }
+    },
+    {
+      "definition": {
+        "dataType": "uuid",
+        "defaultExpression": "gen_random_uuid()",
+        "nullable": false
+      },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "comments",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "id",
+        "parent": { "name": "comments", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "comments", "origin": "file" }
+    },
+    {
+      "definition": {
+        "dataType": "uuid",
+        "defaultExpression": "gen_random_uuid()",
+        "nullable": false
+      },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "members",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "id",
+        "parent": { "name": "members", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "members", "origin": "file" }
+    },
+    {
+      "definition": {
+        "dataType": "uuid",
+        "defaultExpression": "gen_random_uuid()",
+        "nullable": false
+      },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "projects",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "id",
+        "parent": { "name": "projects", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "projects", "origin": "file" }
+    },
+    {
+      "definition": {
+        "dataType": "uuid",
+        "defaultExpression": "gen_random_uuid()",
+        "nullable": false
+      },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "tasks",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "id",
+        "parent": { "name": "tasks", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "tasks", "origin": "file" }
+    },
+    {
+      "definition": {
+        "dataType": "uuid",
+        "defaultExpression": "gen_random_uuid()",
+        "nullable": false
+      },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "workspaces",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "id",
+        "parent": { "name": "workspaces", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "workspaces", "origin": "file" }
+    },
+    {
+      "definition": { "dataType": "text", "nullable": false },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "members",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "name",
+        "parent": { "name": "members", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "members", "origin": "file" }
+    },
+    {
+      "definition": { "dataType": "text", "nullable": false },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "projects",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "name",
+        "parent": { "name": "projects", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "projects", "origin": "file" }
+    },
+    {
+      "definition": { "dataType": "text", "nullable": false },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "workspaces",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "name",
+        "parent": { "name": "workspaces", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "workspaces", "origin": "file" }
+    },
+    {
+      "definition": { "dataType": "uuid", "nullable": false },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "projects",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "owner_id",
+        "parent": { "name": "projects", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "projects", "origin": "file" }
+    },
+    {
+      "definition": { "dataType": "uuid", "nullable": false },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "tasks",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "project_id",
+        "parent": { "name": "tasks", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "tasks", "origin": "file" }
+    },
+    {
+      "definition": {
+        "dataType": "uuid",
+        "defaultExpression": "gen_random_uuid()",
+        "nullable": false
+      },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "tasks",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "public_id",
+        "parent": { "name": "tasks", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "tasks", "origin": "file" }
+    },
+    {
+      "definition": { "dataType": "text", "nullable": false },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "projects",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "slug",
+        "parent": { "name": "projects", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "projects", "origin": "file" }
+    },
+    {
+      "definition": { "dataType": "text", "nullable": false },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "workspaces",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "slug",
+        "parent": { "name": "workspaces", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "workspaces", "origin": "file" }
+    },
+    {
+      "definition": { "dataType": "task_status", "nullable": false },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "tasks",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        },
+        {
+          "target": {
+            "kind": "type",
+            "name": "task_status",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "status",
+        "parent": { "name": "tasks", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "tasks", "origin": "file" }
+    },
+    {
+      "definition": { "dataType": "uuid", "nullable": false },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "comments",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "task_id",
+        "parent": { "name": "comments", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "comments", "origin": "file" }
+    },
+    {
+      "definition": { "dataType": "text", "nullable": false },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "tasks",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "title",
+        "parent": { "name": "tasks", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "tasks", "origin": "file" }
+    },
+    {
+      "definition": { "dataType": "timestamptz", "defaultExpression": "now()", "nullable": false },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "comments",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "updated_at",
+        "parent": { "name": "comments", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "timestamps", "origin": "trait" }
+    },
+    {
+      "definition": { "dataType": "timestamptz", "defaultExpression": "now()", "nullable": false },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "members",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "updated_at",
+        "parent": { "name": "members", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "timestamps", "origin": "trait" }
+    },
+    {
+      "definition": { "dataType": "timestamptz", "defaultExpression": "now()", "nullable": false },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "projects",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "updated_at",
+        "parent": { "name": "projects", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "timestamps", "origin": "trait" }
+    },
+    {
+      "definition": { "dataType": "timestamptz", "defaultExpression": "now()", "nullable": false },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "tasks",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "updated_at",
+        "parent": { "name": "tasks", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "timestamps", "origin": "trait" }
+    },
+    {
+      "definition": { "dataType": "timestamptz", "defaultExpression": "now()", "nullable": false },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "workspaces",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "updated_at",
+        "parent": { "name": "workspaces", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "timestamps", "origin": "trait" }
+    },
+    {
+      "definition": { "dataType": "uuid", "nullable": false },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "comments",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "workspace_id",
+        "parent": { "name": "comments", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "comments", "origin": "file" }
+    },
+    {
+      "definition": { "dataType": "uuid", "nullable": false },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "members",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "workspace_id",
+        "parent": { "name": "members", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "members", "origin": "file" }
+    },
+    {
+      "definition": { "dataType": "uuid", "nullable": false },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "projects",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "workspace_id",
+        "parent": { "name": "projects", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "projects", "origin": "file" }
+    },
+    {
+      "definition": { "dataType": "uuid", "nullable": false },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "tasks",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "workspace_id",
+        "parent": { "name": "tasks", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "tasks", "origin": "file" }
+    },
+    {
+      "definition": {
+        "columns": ["author_id", "workspace_id"],
+        "constraintKind": "foreignKey",
+        "deferrable": false,
+        "initially": "immediate",
+        "nameKey": "author_id",
+        "nullsNotDistinct": false,
+        "references": {
+          "columns": ["id", "workspace_id"],
+          "parent": { "name": "members", "namespace": { "form": "static", "name": "public" } }
+        }
+      },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "column",
+            "name": "author_id",
+            "parent": { "name": "comments", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "column",
+            "name": "id",
+            "parent": { "name": "members", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "column",
+            "name": "workspace_id",
+            "parent": { "name": "comments", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "column",
+            "name": "workspace_id",
+            "parent": { "name": "members", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "table",
+            "name": "comments",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        },
+        {
+          "target": {
+            "kind": "table",
+            "name": "members",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "constraint",
+        "name": "comments_author_id_fkey",
+        "parent": { "name": "comments", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "constraint",
+      "owner": "managed",
+      "provenance": { "name": "comments", "origin": "file" }
+    },
+    {
+      "definition": {
+        "columns": ["id", "workspace_id"],
+        "constraintKind": "unique",
+        "deferrable": false,
+        "initially": "immediate",
+        "nameKey": "id_workspaceId",
+        "nullsNotDistinct": false
+      },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "column",
+            "name": "id",
+            "parent": { "name": "comments", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "column",
+            "name": "workspace_id",
+            "parent": { "name": "comments", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "table",
+            "name": "comments",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "constraint",
+        "name": "comments_id_workspaceId_key",
+        "parent": { "name": "comments", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "constraint",
+      "owner": "managed",
+      "provenance": { "name": "comments", "origin": "file" }
+    },
+    {
+      "definition": {
+        "columns": ["id", "workspace_id"],
+        "constraintKind": "primaryKey",
+        "deferrable": false,
+        "initially": "immediate",
+        "nameKey": "pkey",
+        "nullsNotDistinct": false
+      },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "column",
+            "name": "id",
+            "parent": { "name": "comments", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "column",
+            "name": "workspace_id",
+            "parent": { "name": "comments", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "table",
+            "name": "comments",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "constraint",
+        "name": "comments_pkey",
+        "parent": { "name": "comments", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "constraint",
+      "owner": "managed",
+      "provenance": { "name": "comments", "origin": "file" }
+    },
+    {
+      "definition": {
+        "columns": ["task_id", "workspace_id"],
+        "constraintKind": "foreignKey",
+        "deferrable": false,
+        "initially": "immediate",
+        "nameKey": "task_id",
+        "nullsNotDistinct": false,
+        "references": {
+          "columns": ["id", "workspace_id"],
+          "parent": { "name": "tasks", "namespace": { "form": "static", "name": "public" } }
+        }
+      },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "column",
+            "name": "id",
+            "parent": { "name": "tasks", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "column",
+            "name": "task_id",
+            "parent": { "name": "comments", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "column",
+            "name": "workspace_id",
+            "parent": { "name": "comments", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "column",
+            "name": "workspace_id",
+            "parent": { "name": "tasks", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "table",
+            "name": "comments",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        },
+        {
+          "target": {
+            "kind": "table",
+            "name": "tasks",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "constraint",
+        "name": "comments_task_id_fkey",
+        "parent": { "name": "comments", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "constraint",
+      "owner": "managed",
+      "provenance": { "name": "comments", "origin": "file" }
+    },
+    {
+      "definition": {
+        "columns": ["workspace_id", "email"],
+        "constraintKind": "unique",
+        "deferrable": false,
+        "initially": "immediate",
+        "nameKey": "email",
+        "nullsNotDistinct": false
+      },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "column",
+            "name": "email",
+            "parent": { "name": "members", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "column",
+            "name": "workspace_id",
+            "parent": { "name": "members", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "table",
+            "name": "members",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "constraint",
+        "name": "members_email_key",
+        "parent": { "name": "members", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "constraint",
+      "owner": "managed",
+      "provenance": { "name": "members", "origin": "file" }
+    },
+    {
+      "definition": {
+        "columns": ["id", "workspace_id"],
+        "constraintKind": "unique",
+        "deferrable": false,
+        "initially": "immediate",
+        "nameKey": "id_workspaceId",
+        "nullsNotDistinct": false
+      },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "column",
+            "name": "id",
+            "parent": { "name": "members", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "column",
+            "name": "workspace_id",
+            "parent": { "name": "members", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "table",
+            "name": "members",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "constraint",
+        "name": "members_id_workspaceId_key",
+        "parent": { "name": "members", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "constraint",
+      "owner": "managed",
+      "provenance": { "name": "members", "origin": "file" }
+    },
+    {
+      "definition": {
+        "columns": ["id", "workspace_id"],
+        "constraintKind": "primaryKey",
+        "deferrable": false,
+        "initially": "immediate",
+        "nameKey": "pkey",
+        "nullsNotDistinct": false
+      },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "column",
+            "name": "id",
+            "parent": { "name": "members", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "column",
+            "name": "workspace_id",
+            "parent": { "name": "members", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "table",
+            "name": "members",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "constraint",
+        "name": "members_pkey",
+        "parent": { "name": "members", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "constraint",
+      "owner": "managed",
+      "provenance": { "name": "members", "origin": "file" }
+    },
+    {
+      "definition": {
+        "columns": ["owner_id", "workspace_id"],
+        "constraintKind": "foreignKey",
+        "deferrable": false,
+        "initially": "immediate",
+        "nameKey": "owner_id",
+        "nullsNotDistinct": false,
+        "references": {
+          "columns": ["id", "workspace_id"],
+          "parent": { "name": "members", "namespace": { "form": "static", "name": "public" } }
+        }
+      },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "column",
+            "name": "id",
+            "parent": { "name": "members", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "column",
+            "name": "owner_id",
+            "parent": { "name": "projects", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "column",
+            "name": "workspace_id",
+            "parent": { "name": "members", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "column",
+            "name": "workspace_id",
+            "parent": { "name": "projects", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "table",
+            "name": "members",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        },
+        {
+          "target": {
+            "kind": "table",
+            "name": "projects",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "constraint",
+        "name": "projects_owner_id_fkey",
+        "parent": { "name": "projects", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "constraint",
+      "owner": "managed",
+      "provenance": { "name": "projects", "origin": "file" }
+    },
+    {
+      "definition": {
+        "columns": ["id", "workspace_id"],
+        "constraintKind": "primaryKey",
+        "deferrable": false,
+        "initially": "immediate",
+        "nameKey": "pkey",
+        "nullsNotDistinct": false
+      },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "column",
+            "name": "id",
+            "parent": { "name": "projects", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "column",
+            "name": "workspace_id",
+            "parent": { "name": "projects", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "table",
+            "name": "projects",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "constraint",
+        "name": "projects_pkey",
+        "parent": { "name": "projects", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "constraint",
+      "owner": "managed",
+      "provenance": { "name": "projects", "origin": "file" }
+    },
+    {
+      "definition": {
+        "columns": ["assignee_id", "workspace_id"],
+        "constraintKind": "foreignKey",
+        "deferrable": false,
+        "initially": "immediate",
+        "nameKey": "assignee_id",
+        "nullsNotDistinct": false,
+        "references": {
+          "columns": ["id", "workspace_id"],
+          "parent": { "name": "members", "namespace": { "form": "static", "name": "public" } }
+        }
+      },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "column",
+            "name": "assignee_id",
+            "parent": { "name": "tasks", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "column",
+            "name": "id",
+            "parent": { "name": "members", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "column",
+            "name": "workspace_id",
+            "parent": { "name": "members", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "column",
+            "name": "workspace_id",
+            "parent": { "name": "tasks", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "table",
+            "name": "members",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        },
+        {
+          "target": {
+            "kind": "table",
+            "name": "tasks",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "constraint",
+        "name": "tasks_assignee_id_fkey",
+        "parent": { "name": "tasks", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "constraint",
+      "owner": "managed",
+      "provenance": { "name": "tasks", "origin": "file" }
+    },
+    {
+      "definition": {
+        "columns": ["id", "workspace_id"],
+        "constraintKind": "primaryKey",
+        "deferrable": false,
+        "initially": "immediate",
+        "nameKey": "pkey",
+        "nullsNotDistinct": false
+      },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "column",
+            "name": "id",
+            "parent": { "name": "tasks", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "column",
+            "name": "workspace_id",
+            "parent": { "name": "tasks", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "table",
+            "name": "tasks",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "constraint",
+        "name": "tasks_pkey",
+        "parent": { "name": "tasks", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "constraint",
+      "owner": "managed",
+      "provenance": { "name": "tasks", "origin": "file" }
+    },
+    {
+      "definition": {
+        "columns": ["project_id", "workspace_id"],
+        "constraintKind": "foreignKey",
+        "deferrable": false,
+        "initially": "immediate",
+        "nameKey": "project_id",
+        "nullsNotDistinct": false,
+        "references": {
+          "columns": ["id", "workspace_id"],
+          "parent": { "name": "projects", "namespace": { "form": "static", "name": "public" } }
+        }
+      },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "column",
+            "name": "id",
+            "parent": { "name": "projects", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "column",
+            "name": "project_id",
+            "parent": { "name": "tasks", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "column",
+            "name": "workspace_id",
+            "parent": { "name": "projects", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "column",
+            "name": "workspace_id",
+            "parent": { "name": "tasks", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "table",
+            "name": "projects",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        },
+        {
+          "target": {
+            "kind": "table",
+            "name": "tasks",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "constraint",
+        "name": "tasks_project_id_fkey",
+        "parent": { "name": "tasks", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "constraint",
+      "owner": "managed",
+      "provenance": { "name": "tasks", "origin": "file" }
+    },
+    {
+      "definition": {
+        "columns": ["id"],
+        "constraintKind": "primaryKey",
+        "deferrable": false,
+        "initially": "immediate",
+        "nameKey": "pkey",
+        "nullsNotDistinct": false
+      },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "column",
+            "name": "id",
+            "parent": { "name": "workspaces", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "table",
+            "name": "workspaces",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "constraint",
+        "name": "workspaces_pkey",
+        "parent": { "name": "workspaces", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "constraint",
+      "owner": "managed",
+      "provenance": { "name": "workspaces", "origin": "file" }
+    },
+    {
+      "definition": {
+        "columns": ["slug"],
+        "constraintKind": "unique",
+        "deferrable": false,
+        "initially": "immediate",
+        "nameKey": "slug",
+        "nullsNotDistinct": false
+      },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "column",
+            "name": "slug",
+            "parent": { "name": "workspaces", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "table",
+            "name": "workspaces",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "constraint",
+        "name": "workspaces_slug_key",
+        "parent": { "name": "workspaces", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "constraint",
+      "owner": "managed",
+      "provenance": { "name": "workspaces", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [
+        {
+          "target": {
+            "argTypes": ["task_status"],
+            "kind": "function",
+            "name": "task_is_open",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        },
+        { "target": { "kind": "role", "name": "ref_app" } }
+      ],
+      "identity": {
+        "kind": "grant",
+        "object": {
+          "kind": "function",
+          "name": "task_is_open(task_status)",
+          "namespace": { "form": "static", "name": "public" }
+        },
+        "privilege": "EXECUTE",
+        "role": "ref_app"
+      },
+      "kind": "grant",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [
+        { "target": { "kind": "role", "name": "ref_app" } },
+        {
+          "target": {
+            "kind": "table",
+            "name": "comments",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "grant",
+        "object": {
+          "kind": "table",
+          "name": "comments",
+          "namespace": { "form": "static", "name": "public" }
+        },
+        "privilege": "DELETE",
+        "role": "ref_app"
+      },
+      "kind": "grant",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [
+        { "target": { "kind": "role", "name": "ref_app" } },
+        {
+          "target": {
+            "kind": "table",
+            "name": "comments",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "grant",
+        "object": {
+          "kind": "table",
+          "name": "comments",
+          "namespace": { "form": "static", "name": "public" }
+        },
+        "privilege": "INSERT",
+        "role": "ref_app"
+      },
+      "kind": "grant",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [
+        { "target": { "kind": "role", "name": "ref_app" } },
+        {
+          "target": {
+            "kind": "table",
+            "name": "comments",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "grant",
+        "object": {
+          "kind": "table",
+          "name": "comments",
+          "namespace": { "form": "static", "name": "public" }
+        },
+        "privilege": "SELECT",
+        "role": "ref_app"
+      },
+      "kind": "grant",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [
+        { "target": { "kind": "role", "name": "ref_app" } },
+        {
+          "target": {
+            "kind": "table",
+            "name": "comments",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "grant",
+        "object": {
+          "kind": "table",
+          "name": "comments",
+          "namespace": { "form": "static", "name": "public" }
+        },
+        "privilege": "UPDATE",
+        "role": "ref_app"
+      },
+      "kind": "grant",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [
+        { "target": { "kind": "role", "name": "ref_app" } },
+        {
+          "target": {
+            "kind": "table",
+            "name": "members",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "grant",
+        "object": {
+          "kind": "table",
+          "name": "members",
+          "namespace": { "form": "static", "name": "public" }
+        },
+        "privilege": "DELETE",
+        "role": "ref_app"
+      },
+      "kind": "grant",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [
+        { "target": { "kind": "role", "name": "ref_app" } },
+        {
+          "target": {
+            "kind": "table",
+            "name": "members",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "grant",
+        "object": {
+          "kind": "table",
+          "name": "members",
+          "namespace": { "form": "static", "name": "public" }
+        },
+        "privilege": "INSERT",
+        "role": "ref_app"
+      },
+      "kind": "grant",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [
+        { "target": { "kind": "role", "name": "ref_app" } },
+        {
+          "target": {
+            "kind": "table",
+            "name": "members",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "grant",
+        "object": {
+          "kind": "table",
+          "name": "members",
+          "namespace": { "form": "static", "name": "public" }
+        },
+        "privilege": "SELECT",
+        "role": "ref_app"
+      },
+      "kind": "grant",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [
+        { "target": { "kind": "role", "name": "ref_app" } },
+        {
+          "target": {
+            "kind": "table",
+            "name": "members",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "grant",
+        "object": {
+          "kind": "table",
+          "name": "members",
+          "namespace": { "form": "static", "name": "public" }
+        },
+        "privilege": "UPDATE",
+        "role": "ref_app"
+      },
+      "kind": "grant",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [
+        { "target": { "kind": "role", "name": "ref_app" } },
+        {
+          "target": {
+            "kind": "table",
+            "name": "projects",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "grant",
+        "object": {
+          "kind": "table",
+          "name": "projects",
+          "namespace": { "form": "static", "name": "public" }
+        },
+        "privilege": "DELETE",
+        "role": "ref_app"
+      },
+      "kind": "grant",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [
+        { "target": { "kind": "role", "name": "ref_app" } },
+        {
+          "target": {
+            "kind": "table",
+            "name": "projects",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "grant",
+        "object": {
+          "kind": "table",
+          "name": "projects",
+          "namespace": { "form": "static", "name": "public" }
+        },
+        "privilege": "INSERT",
+        "role": "ref_app"
+      },
+      "kind": "grant",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [
+        { "target": { "kind": "role", "name": "ref_app" } },
+        {
+          "target": {
+            "kind": "table",
+            "name": "projects",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "grant",
+        "object": {
+          "kind": "table",
+          "name": "projects",
+          "namespace": { "form": "static", "name": "public" }
+        },
+        "privilege": "SELECT",
+        "role": "ref_app"
+      },
+      "kind": "grant",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [
+        { "target": { "kind": "role", "name": "ref_app" } },
+        {
+          "target": {
+            "kind": "table",
+            "name": "projects",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "grant",
+        "object": {
+          "kind": "table",
+          "name": "projects",
+          "namespace": { "form": "static", "name": "public" }
+        },
+        "privilege": "UPDATE",
+        "role": "ref_app"
+      },
+      "kind": "grant",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [
+        { "target": { "kind": "role", "name": "ref_app" } },
+        {
+          "target": {
+            "kind": "table",
+            "name": "tasks",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "grant",
+        "object": {
+          "kind": "table",
+          "name": "tasks",
+          "namespace": { "form": "static", "name": "public" }
+        },
+        "privilege": "DELETE",
+        "role": "ref_app"
+      },
+      "kind": "grant",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [
+        { "target": { "kind": "role", "name": "ref_app" } },
+        {
+          "target": {
+            "kind": "table",
+            "name": "tasks",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "grant",
+        "object": {
+          "kind": "table",
+          "name": "tasks",
+          "namespace": { "form": "static", "name": "public" }
+        },
+        "privilege": "INSERT",
+        "role": "ref_app"
+      },
+      "kind": "grant",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [
+        { "target": { "kind": "role", "name": "ref_app" } },
+        {
+          "target": {
+            "kind": "table",
+            "name": "tasks",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "grant",
+        "object": {
+          "kind": "table",
+          "name": "tasks",
+          "namespace": { "form": "static", "name": "public" }
+        },
+        "privilege": "SELECT",
+        "role": "ref_app"
+      },
+      "kind": "grant",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [
+        { "target": { "kind": "role", "name": "ref_app" } },
+        {
+          "target": {
+            "kind": "table",
+            "name": "tasks",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "grant",
+        "object": {
+          "kind": "table",
+          "name": "tasks",
+          "namespace": { "form": "static", "name": "public" }
+        },
+        "privilege": "UPDATE",
+        "role": "ref_app"
+      },
+      "kind": "grant",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [
+        { "target": { "kind": "role", "name": "ref_app" } },
+        {
+          "target": {
+            "kind": "table",
+            "name": "workspaces",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "grant",
+        "object": {
+          "kind": "table",
+          "name": "workspaces",
+          "namespace": { "form": "static", "name": "public" }
+        },
+        "privilege": "DELETE",
+        "role": "ref_app"
+      },
+      "kind": "grant",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [
+        { "target": { "kind": "role", "name": "ref_app" } },
+        {
+          "target": {
+            "kind": "table",
+            "name": "workspaces",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "grant",
+        "object": {
+          "kind": "table",
+          "name": "workspaces",
+          "namespace": { "form": "static", "name": "public" }
+        },
+        "privilege": "INSERT",
+        "role": "ref_app"
+      },
+      "kind": "grant",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [
+        { "target": { "kind": "role", "name": "ref_app" } },
+        {
+          "target": {
+            "kind": "table",
+            "name": "workspaces",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "grant",
+        "object": {
+          "kind": "table",
+          "name": "workspaces",
+          "namespace": { "form": "static", "name": "public" }
+        },
+        "privilege": "SELECT",
+        "role": "ref_app"
+      },
+      "kind": "grant",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [
+        { "target": { "kind": "role", "name": "ref_app" } },
+        {
+          "target": {
+            "kind": "table",
+            "name": "workspaces",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "grant",
+        "object": {
+          "kind": "table",
+          "name": "workspaces",
+          "namespace": { "form": "static", "name": "public" }
+        },
+        "privilege": "UPDATE",
+        "role": "ref_app"
+      },
+      "kind": "grant",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [
+        { "target": { "kind": "role", "name": "ref_app" } },
+        {
+          "target": {
+            "kind": "view",
+            "name": "active_projects",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "grant",
+        "object": {
+          "kind": "view",
+          "name": "active_projects",
+          "namespace": { "form": "static", "name": "public" }
+        },
+        "privilege": "DELETE",
+        "role": "ref_app"
+      },
+      "kind": "grant",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [
+        { "target": { "kind": "role", "name": "ref_app" } },
+        {
+          "target": {
+            "kind": "view",
+            "name": "active_projects",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "grant",
+        "object": {
+          "kind": "view",
+          "name": "active_projects",
+          "namespace": { "form": "static", "name": "public" }
+        },
+        "privilege": "INSERT",
+        "role": "ref_app"
+      },
+      "kind": "grant",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [
+        { "target": { "kind": "role", "name": "ref_app" } },
+        {
+          "target": {
+            "kind": "view",
+            "name": "active_projects",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "grant",
+        "object": {
+          "kind": "view",
+          "name": "active_projects",
+          "namespace": { "form": "static", "name": "public" }
+        },
+        "privilege": "SELECT",
+        "role": "ref_app"
+      },
+      "kind": "grant",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [
+        { "target": { "kind": "role", "name": "ref_app" } },
+        {
+          "target": {
+            "kind": "view",
+            "name": "active_projects",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "grant",
+        "object": {
+          "kind": "view",
+          "name": "active_projects",
+          "namespace": { "form": "static", "name": "public" }
+        },
+        "privilege": "UPDATE",
+        "role": "ref_app"
+      },
+      "kind": "grant",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [
+        { "target": { "kind": "role", "name": "ref_app" } },
+        {
+          "target": {
+            "kind": "view",
+            "name": "open_tasks",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "grant",
+        "object": {
+          "kind": "view",
+          "name": "open_tasks",
+          "namespace": { "form": "static", "name": "public" }
+        },
+        "privilege": "DELETE",
+        "role": "ref_app"
+      },
+      "kind": "grant",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [
+        { "target": { "kind": "role", "name": "ref_app" } },
+        {
+          "target": {
+            "kind": "view",
+            "name": "open_tasks",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "grant",
+        "object": {
+          "kind": "view",
+          "name": "open_tasks",
+          "namespace": { "form": "static", "name": "public" }
+        },
+        "privilege": "INSERT",
+        "role": "ref_app"
+      },
+      "kind": "grant",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [
+        { "target": { "kind": "role", "name": "ref_app" } },
+        {
+          "target": {
+            "kind": "view",
+            "name": "open_tasks",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "grant",
+        "object": {
+          "kind": "view",
+          "name": "open_tasks",
+          "namespace": { "form": "static", "name": "public" }
+        },
+        "privilege": "SELECT",
+        "role": "ref_app"
+      },
+      "kind": "grant",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [
+        { "target": { "kind": "role", "name": "ref_app" } },
+        {
+          "target": {
+            "kind": "view",
+            "name": "open_tasks",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "grant",
+        "object": {
+          "kind": "view",
+          "name": "open_tasks",
+          "namespace": { "form": "static", "name": "public" }
+        },
+        "privilege": "UPDATE",
+        "role": "ref_app"
+      },
+      "kind": "grant",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": {
+        "columns": ["id", "workspace_id"],
+        "nameKey": "id_workspace_id",
+        "predicate": "(archived_at IS NULL)",
+        "unique": true
+      },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "column",
+            "name": "id",
+            "parent": { "name": "projects", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "column",
+            "name": "workspace_id",
+            "parent": { "name": "projects", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "table",
+            "name": "projects",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "index",
+        "name": "projects_id_workspace_id_idx",
+        "parent": { "name": "projects", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "index",
+      "owner": "managed",
+      "provenance": { "name": "projects", "origin": "file" }
+    },
+    {
+      "definition": {
+        "columns": ["workspace_id", "slug"],
+        "nameKey": "workspace_id_slug",
+        "predicate": "(archived_at IS NULL)",
+        "unique": true
+      },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "column",
+            "name": "slug",
+            "parent": { "name": "projects", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "column",
+            "name": "workspace_id",
+            "parent": { "name": "projects", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "table",
+            "name": "projects",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "index",
+        "name": "projects_workspace_id_slug_idx",
+        "parent": { "name": "projects", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "index",
+      "owner": "managed",
+      "provenance": { "name": "projects", "origin": "file" }
+    },
+    {
+      "definition": {
+        "columns": ["id", "workspace_id"],
+        "nameKey": "id_workspace_id",
+        "predicate": "(archived_at IS NULL)",
+        "unique": true
+      },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "column",
+            "name": "id",
+            "parent": { "name": "tasks", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "column",
+            "name": "workspace_id",
+            "parent": { "name": "tasks", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "table",
+            "name": "tasks",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "index",
+        "name": "tasks_id_workspace_id_idx",
+        "parent": { "name": "tasks", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "index",
+      "owner": "managed",
+      "provenance": { "name": "tasks", "origin": "file" }
+    },
+    {
+      "definition": { "inherit": true, "login": false },
+      "dependencies": [],
+      "identity": { "kind": "role", "name": "okm" },
+      "kind": "role",
+      "owner": "external",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": { "inherit": true, "login": true },
+      "dependencies": [],
+      "identity": { "kind": "role", "name": "ref_app" },
+      "kind": "role",
+      "owner": "managed",
+      "provenance": { "name": "roles", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [],
+      "identity": {
+        "kind": "table",
+        "name": "comments",
+        "namespace": { "form": "static", "name": "public" }
+      },
+      "kind": "table",
+      "owner": "managed",
+      "provenance": { "name": "comments", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [],
+      "identity": {
+        "kind": "table",
+        "name": "members",
+        "namespace": { "form": "static", "name": "public" }
+      },
+      "kind": "table",
+      "owner": "managed",
+      "provenance": { "name": "members", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [],
+      "identity": {
+        "kind": "table",
+        "name": "projects",
+        "namespace": { "form": "static", "name": "public" }
+      },
+      "kind": "table",
+      "owner": "managed",
+      "provenance": { "name": "projects", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [],
+      "identity": {
+        "kind": "table",
+        "name": "tasks",
+        "namespace": { "form": "static", "name": "public" }
+      },
+      "kind": "table",
+      "owner": "managed",
+      "provenance": { "name": "tasks", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [],
+      "identity": {
+        "kind": "table",
+        "name": "workspaces",
+        "namespace": { "form": "static", "name": "public" }
+      },
+      "kind": "table",
+      "owner": "managed",
+      "provenance": { "name": "workspaces", "origin": "file" }
+    },
+    {
+      "definition": { "labels": ["todo", "doing", "done"] },
+      "dependencies": [],
+      "identity": {
+        "kind": "type",
+        "name": "task_status",
+        "namespace": { "form": "static", "name": "public" }
+      },
+      "kind": "type",
+      "owner": "managed",
+      "provenance": { "name": "tasks", "origin": "file" }
+    },
+    {
+      "definition": {
+        "columns": [
+          { "dataType": "uuid", "name": "workspace_id" },
+          { "dataType": "uuid", "name": "id" },
+          { "dataType": "text", "name": "name" }
+        ],
+        "query": "SELECT workspace_id,\n    id,\n    name\n   FROM projects\n  WHERE archived_at IS NULL"
+      },
+      "dependencies": [],
+      "identity": {
+        "kind": "view",
+        "name": "active_projects",
+        "namespace": { "form": "static", "name": "public" }
+      },
+      "kind": "view",
+      "owner": "managed",
+      "provenance": { "name": "active_projects", "origin": "file" }
+    },
+    {
+      "definition": {
+        "columns": [
+          { "dataType": "uuid", "name": "workspace_id" },
+          { "dataType": "uuid", "name": "project_id" },
+          { "dataType": "bigint", "name": "open_tasks" }
+        ],
+        "query": "SELECT workspace_id,\n    project_id,\n    count(*) AS open_tasks\n   FROM tasks\n  WHERE task_is_open(status) AND archived_at IS NULL\n  GROUP BY workspace_id, project_id"
+      },
+      "dependencies": [],
+      "identity": {
+        "kind": "view",
+        "name": "open_tasks",
+        "namespace": { "form": "static", "name": "public" }
+      },
+      "kind": "view",
+      "owner": "managed",
+      "provenance": { "name": "open_tasks", "origin": "file" }
+    }
+  ],
+  "version": 1
+}

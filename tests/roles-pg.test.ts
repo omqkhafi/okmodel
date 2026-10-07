@@ -26,7 +26,6 @@ import { connect } from "../src/runtime/pg/postgresjs.js";
 import { applyTarget } from "../src/tooling/migrate/apply.js";
 import { run } from "../src/tooling/migrate/commands.js";
 import { planMigration } from "../src/tooling/migrate/plan.js";
-import { app as reference } from "./fixtures/reference-app/schema.js";
 
 const gate = await loadPostgresGate();
 const root = repoRoot();
@@ -395,37 +394,159 @@ postgresTest(
 
 postgresTest(
   gate,
-  "the reference schema passes every check and connects without catalogDir",
+  "databases provisioned at once with a missing managed role all apply, round after round",
   async () => {
-    const fixture = JSON.stringify(join(root, "tests/fixtures/reference-app/schema.ts"));
-    await withRolesProject(`export { app } from ${fixture};`, async ({ cwd, url }) => {
-      await output(["generate", "init"], cwd);
-      await output(["migrate", "apply"], cwd);
-      expect(await output(["check"], cwd)).toBe("ok\n");
-      expect(await output(["migrate", "check"], cwd)).toBe("ok 1 migrations\n");
-      expect(await output(["migrate", "check", "--provision"], cwd)).toBe("ok 1 migrations\n");
-      const db = connect(url, { schema: reference, max: 1 });
-      try {
-        const scoped = db.for({ workspaceId: "00000000-0000-4000-8000-000000000001" });
-        const project = await scoped.projects.insert({ name: "Launch", slug: "launch" });
-        await scoped.tasks.insert({ projectId: project.id, title: "Ship", status: "todo" });
-        await scoped.tasks.insert({ projectId: project.id, title: "Plan", status: "done" });
-        const open = await scoped.views.openTasks.find({ limit: 5 });
-        expect(open).toEqual([
-          {
-            workspaceId: "00000000-0000-4000-8000-000000000001",
-            projectId: project.id,
-            openTasks: "1",
-          },
+    const app = roleName("app");
+    const started = performance.now();
+    try {
+      for (let round = 0; round < 4; round += 1) {
+        await dropRoles([app]);
+        const cwd = mkdtempSync(join(tmpdir(), "okm-roles-"));
+        const databases = await Promise.all([
+          createIsolatedDatabase(),
+          createIsolatedDatabase(),
+          createIsolatedDatabase(),
+          createIsolatedDatabase(),
         ]);
-        const active = await scoped.views.activeProjects.find({ limit: 5, select: ["name"] });
-        expect(active).toEqual([{ name: "Launch" }]);
-      } finally {
-        await db.close();
+        try {
+          const [first, second, third, fourth] = databases.map((database) => database.url);
+          if (!first || !second || !third || !fourth) throw new Error("four databases expected");
+          const migration = decodeURIComponent(new URL(first).username);
+          const declared = attachRoles(tasksSchema().catalog, {
+            migration,
+            app,
+            managed: [{ name: app }],
+          });
+          const steps = planMigration({
+            before: catalog([]),
+            after: declared,
+            name: "roles",
+          }).steps;
+          writeProject(cwd, third, { app }, TASKS);
+          const config = join(cwd, "okmodel.config.ts");
+          writeFileSync(
+            config,
+            readFileSync(config, "utf8").replace(
+              `database: ${JSON.stringify(third)},`,
+              `targets: { a: ${JSON.stringify(third)}, b: ${JSON.stringify(fourth)} },`,
+            ),
+          );
+          await output(["generate", "init"], cwd);
+          const applied = await Promise.all([
+            ...[first, second].map(async (url) => {
+              await applyTarget({
+                url,
+                target: "default",
+                protected: false,
+                migrationRole: migration,
+                migrations: [{ id: "0001_roles", catalogHash: "roles", steps }],
+              });
+              return "provisioned@0001_init";
+            }),
+            output(["migrate", "apply", "--target", "a"], cwd),
+            output(["migrate", "apply", "--target", "b"], cwd),
+          ]);
+          for (const text of applied) expect(text).toContain("provisioned@0001_init");
+          for (const url of [first, second, third, fourth]) {
+            const sql = openPostgres(url);
+            try {
+              const allowed = await sql<{ allowed: boolean }[]>`
+                select has_table_privilege(${app}, 'tasks', 'select') as allowed
+              `;
+              expect(allowed[0]?.allowed).toBe(true);
+            } finally {
+              await sql.end({ timeout: 5 });
+            }
+          }
+        } finally {
+          rmSync(cwd, { recursive: true, force: true });
+          await Promise.all(databases.map((database) => database.close()));
+        }
       }
-    });
+      expect(performance.now() - started).toBeLessThan(20_000);
+    } finally {
+      await dropRoles([app]);
+    }
   },
-  120_000,
+  60_000,
+);
+
+postgresTest(
+  gate,
+  "a CREATE ROLE that loses the race still runs the ALTER ROLE after it",
+  async () => {
+    const app = roleName("app");
+    const database = await createIsolatedDatabase();
+    const holder = openPostgres();
+    const watcher = openPostgres();
+    try {
+      const migration = decodeURIComponent(new URL(database.url).username);
+      const declared = attachRoles(tasksSchema().catalog, {
+        migration,
+        app,
+        managed: [{ name: app }],
+      });
+      const login = attachRoles(tasksSchema().catalog, {
+        migration,
+        app,
+        managed: [{ name: app, login: true }],
+      });
+      const altered = planMigration({ before: declared, after: login, name: "login" }).steps;
+      expect(altered.map((step) => step.sql)).toEqual([expect.stringMatching(/^alter role/)]);
+
+      let release = (): void => {};
+      const released = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let created = (): void => {};
+      const holding = new Promise<void>((resolve) => {
+        created = resolve;
+      });
+      const held = holder.begin(async (tx) => {
+        await tx.unsafe(`create role ${quoteIdent(app)} nologin`);
+        created();
+        await released;
+      });
+      await holding;
+      const applying = applyTarget({
+        url: database.url,
+        target: "default",
+        protected: false,
+        migrationRole: migration,
+        migrations: [
+          {
+            id: "0001_roles",
+            catalogHash: "roles",
+            steps: planMigration({ before: catalog([]), after: declared, name: "roles" }).steps,
+          },
+          { id: "0002_login", catalogHash: "login", steps: altered },
+        ],
+      });
+      const deadline = performance.now() + 10_000;
+      for (;;) {
+        const waiting = await watcher<{ count: number }[]>`
+          select count(*)::int as count from pg_stat_activity
+           where wait_event_type = 'Lock' and query like 'do $okm$ begin create role%'
+        `;
+        if ((waiting[0]?.count ?? 0) > 0) break;
+        if (performance.now() > deadline) throw new Error("CREATE ROLE never waited on the lock");
+        await Bun.sleep(20);
+      }
+      release();
+      await held;
+      await applying;
+      const rows = await watcher<{ rolcanlogin: boolean }[]>`
+        select rolcanlogin from pg_roles where rolname = ${app}
+      `;
+      expect(rows[0]?.rolcanlogin).toBe(true);
+    } finally {
+      await holder.end({ timeout: 5 });
+      await watcher.end({ timeout: 5 });
+      await database.close();
+      await dropRoles([app]);
+    }
+  },
+  60_000,
 );
 
 function roleName(prefix: string): string {

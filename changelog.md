@@ -23,6 +23,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `routing.maxLag` accepts `"5s"`, `"500ms"`, `"2m"`, `"16MB"`, `"512KB"`, `"1GB"`, and `"4096B"`. A bare number or any other form is OKM1120. A caught-up replica has lag zero. A custom `select` receives that lag in bytes, or `null` when it is unknown (D204).
 - A migrate target that carries `primary`, `replicas`, `weight`, or `pool` is OKM1845. The command does not resolve that URL.
 - Issues and pull requests follow one GitHub standard: one `type:` label, at least one `area:` label, a `type(scope):` title, and a milestone. A check on the pull request adds the `area:` labels from changed paths, then enforces it. Dependabot opens grouped weekly `chore(deps)` updates, labelled, with no issue or milestone required (D206).
+- A reference app in `packages/reference-app` (private, not published): a multi-tenant project tracker on public entry points, with traits, archive, three generated migrations, a function, views, and the replica topology. CI runs it in the `postgres` and `tarball` jobs: use cases with query counts and `isolation()`, two preview databases at once from the snapshot, a rehearsal on a populated `TEMPLATE` clone, and read-your-write as the application role. `docs/example-app.md` describes it (D207).
 
 ### ♻️ Changed
 
@@ -51,6 +52,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okm migrate apply` moves a hash stored before D208 to the new hash when it is exactly the old hash of a migration already applied, also when nothing is pending, and prints `restamped <migration id>`. A protected target needs `--allow-protected`. Any other hash is left as drift (D208).
 - Upgrade, archivable with a unique column: after upgrading, `connect()` is OKM1520 and `okm check` is OKM1510 (`OKM1529 creates a unique index`). Run `okm generate archive_predicate`, add `-- okm-allow OKM1529: rebuilds the same index` above the `create unique index concurrently` line, then `okm migrate apply`. `okm migrate check` still reports OKM1547 at the migration that first created the index, as it did before; see known limits (D208).
 - Upgrade, a database applied with `roles`: after upgrading, `connect()` is OKM1520 until `okm migrate apply` runs once (`--allow-protected` on a protected target). It prints `restamped <migration id>` (D208).
+- `okm migrate apply` on several databases of one cluster at once no longer fails when they create the same managed role. Every apply but the first failed on `pg_authid_rolname_index` with a raw driver error. `CREATE ROLE` now ignores a role another session created first, in the step runner and in the snapshot install, and later `ALTER ROLE` steps still run (D207).
+- `isolation()` no longer fails with OKM1120 on a schema with a tenant-scoped view. It checks tables only; a view that hides the tenant key is still OKM1820 in `okm check` (D207).
 
 ## v0.4.0 — 2026-10-06
 

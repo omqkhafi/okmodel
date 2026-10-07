@@ -1,0 +1,11 @@
+{
+  "name": "@okmodel/reference-app",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Private reference app: a project tracker that uses OKModel through its public entry points. Not published.",
+  "type": "module",
+  "sideEffects": false,
+  "dependencies": {
+    "postgres": "^3.4.9"
+  }
+}

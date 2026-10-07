@@ -11,7 +11,7 @@ import type { DriverConnection } from "../../contracts/driver.js";
 import { OkmError } from "../../contracts/error.js";
 import { quoteIdent } from "../../dialects/pg/ddl.js";
 import { roleExists } from "../../dialects/pg/role/check.js";
-import { createdRoleName } from "../../dialects/pg/role/sql.js";
+import { createdRoleName, createRoleOnce } from "../../dialects/pg/role/sql.js";
 import {
   boundaryQuery,
   checkedCast,
@@ -183,7 +183,8 @@ async function runUnit(
         await rebuildInvalidIndex(connection, item.step.sql);
         const created = createdRoleName(item.step.sql);
         const existed = created !== undefined && (await roleExists(connection, created));
-        if (created === undefined || !existed) await connection.execute(item.step.sql);
+        if (created === undefined) await connection.execute(item.step.sql);
+        else if (!existed) await connection.execute(createRoleOnce(item.step.sql));
         if (created !== undefined && created === run.migrationRole) {
           if (!existed) {
             await grantSchema(connection, run.schema ?? "public", created);
