@@ -414,7 +414,7 @@ function rejectedRead(error: unknown): Promise<unknown> & Record<string, unknown
         },
       };
     },
-  }) as Promise<unknown> & Record<string, unknown>;
+  }) as unknown as Promise<unknown> & Record<string, unknown>;
 }
 
 function start(
