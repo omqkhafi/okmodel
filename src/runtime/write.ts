@@ -17,6 +17,7 @@ import { isOperator, operatorName, operatorValue } from "../dialects/pg/operator
 import {
   archiveRules,
   decodeRow,
+  effectivePredicate,
   emitWhere,
   fail,
   withRowFilters,
@@ -398,6 +399,7 @@ function planUpdate(
   if (Array.isArray(input)) {
     const rows = input.map((item) => {
       const row = updateItem(table, item, allow, schema.tenancy);
+      requireFilter(table, row.where, mods, "update");
       return { ...row, where: stack(row.where, mods.presets) };
     });
     return {
@@ -894,9 +896,9 @@ function requireFilter(table: Indexed, where: unknown, mods: WriteMods, op: Writ
     }
     return;
   }
-  if (isOperator(where)) return;
-  if (isRecord(where) && Object.keys(where).length > 0) return;
-  fail("OKM1102", `${op} on ${table.model.name} needs a where. Pass a filter, or .all(reason).`);
+  if (!effectivePredicate(where)) {
+    fail("OKM1102", `${op} on ${table.model.name} needs a where. Pass a filter, or .all(reason).`);
+  }
 }
 
 function chunkRows(rows: readonly Cell[][]): Cell[][][] {

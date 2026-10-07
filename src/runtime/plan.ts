@@ -731,10 +731,9 @@ export function emitWhere(
   for (const part of isOperator(where) && operatorName(where) === "and"
     ? (operatorValue(where) as readonly unknown[])
     : [where]) {
-    if (part === undefined) continue;
+    if (part === undefined || !effectivePredicate(part)) continue;
     const joined = isOperator(part);
     if (!joined && !isRecord(part)) fail("OKM1121", WHERE_FIELDS);
-    if (!joined && Object.keys(part).length === 0) continue;
     sink.text(started ? " and " : " where ");
     started = true;
     if (joined && operatorName(part) === "or")
@@ -1327,6 +1326,36 @@ export function list(names: readonly string[]): string {
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value) && !isOperator(value);
+}
+
+/**
+ * Whether `where` constrains a row.
+ *
+ * `undefined`, `{}`, and an object whose values are all `undefined` do not.
+ * The walk goes through `and` and `not`. A relation filter and an `or` are
+ * predicates. An empty `or()` branch is refused separately.
+ *
+ * @param where - Caller filter, or a nested operand
+ * @returns `false` when the filter matches every row
+ */
+export function effectivePredicate(where: unknown): boolean {
+  if (where === undefined) return false;
+  if (isOperator(where)) {
+    const name = operatorName(where);
+    const value = operatorValue(where);
+    if (name === "or") return true;
+    if (name === "and") {
+      return Array.isArray(value) && value.some((part) => effectivePredicate(part));
+    }
+    if (name === "not") return effectivePredicate(value);
+    if (name === "has" || name === "none" || name === "every") return true;
+    return true;
+  }
+  if (!isRecord(where)) return true;
+  for (const key of Object.keys(where)) {
+    if (effectivePredicate(where[key])) return true;
+  }
+  return false;
 }
 
 const FAIL_FIX: Partial<Record<QueryCode, string>> = {
