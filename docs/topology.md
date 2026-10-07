@@ -50,6 +50,21 @@ Each replica is probed in the background. The default interval is one second (`"
 
 Migrations do not resolve a replica. A `database` or `targets` value that carries `primary`, `replicas`, `weight`, or `pool` is OKM1845.
 
-The router, `using`, `onRoute`, selection, and commit positions stay in the lazy topology chunk (D203, D204). The connect entries carry the `route` key only (D202). The gates do not move. Streaming replication in CI is P64.
+The router, `using`, `onRoute`, selection, and commit positions stay in the lazy topology chunk (D203, D204, D205). The connect entries carry the `route` key only (D202). The gates do not move.
+
+## Conformance
+
+The CI topology is the compose file `packages/harness/docker/compose.yml`: one primary and two hot standbys (`replica-a`, `replica-b`). `bun run db:up` starts it. `bun test tests/topology-conformance.test.ts` runs the suite against that topology. The Postgres job already starts the same compose project, and `scripts/postgres-suite.ts` picks the file up with the rest of the suite. It is not listed in `POSTGRES_EXCLUSIONS`.
+
+The named tests are `routing.auto`, `routing.classes`, `routing.strict`, `pool.separation`, `tx.affinity`, and `consistency.position`. Selection and health (`selection.weighted`, `selection.weighted-return`, `selection.leastConnections`, `selection.latencyAware`, `selection.maxLag`, `selection.health`, `selection.failure`, `selection.custom`, `selection.primary-fallback`) run on the same primary and replicas. `pool.separation: PGlite reserve` uses in-memory databases. The suite waits on replay positions, circuits, and caught-up reads.
+
+Measured in CI on this topology, 40 inserts after 3 warmup. The extra cost is the session sample's percentile minus the eventual sample's percentile.
+
+- Postgres 15: p50 0.24 ms (session 0.92 ms, eventual 0.68 ms), p95 0.36 ms (session 1.16 ms, eventual 0.80 ms).
+- Postgres 18: p50 0.19 ms (session 0.90 ms, eventual 0.71 ms), p95 −0.48 ms (session 0.98 ms, eventual 1.46 ms). The negative p95 is the two samples' percentiles, so one slow eventual insert moves it.
+- Fallback rate with `consistency: "session"`. One writer inserts 20 rows as fast as it can while two find loops run. Replicas are replaying and are not paused. Postgres 15: 0 of 24 reads in 29 ms. Postgres 18: 0 of 27 reads in 30 ms. A local sample before that was 1 of 24 (0.042) over 15 ms.
+- Replica read share under a read-heavy mix, 8 rounds of 1 write and 8 reads: 64 of 64 reads used a replica on Postgres 15 and on Postgres 18.
+
+With weights 5 and 1, one pick while the lighter replica is out, then 24 reads together, the sequence is `abaaaaabaaaaabaaaaabaaaa` (20 of the heavier replica, 4 of the lighter, first read on the heavier). The same schedule before `current` was cleared for a replica that sat the pick out was `baaaaabaaaaabaaaaabaaaaa` (the same 20 and 4, first read on the lighter). D205.
 
 The design this implements, and the routing rules that are not built yet, are §15.1 of the [API design](okmodel-api-design.md#151-topology-routing-and-consistency).

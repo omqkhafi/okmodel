@@ -133,7 +133,7 @@ Open after 0.4, not built in this train: typed function calls and builder views 
 | P61 | `p61-read-routing` | automatic read routing, `route` on a read, `db.using("primary" \| "replica")`, `onRoute`, fallback policy, OKM1840/1843/1844. Conservative until P63: a session that has written reads from the primary (the position-unknown path) and the first healthy replica is picked. Routing reasons in `inspect()` move to the M2 dev inspector |
 | P62 | `p62-selection` | shipped: candidate filtering (health, a no-op consistency and lag stage, capacity) and `weighted`, `roundRobin`, `leastConnections`, `latencyAware`, or a custom `select` (D203). A saturated pool is skipped for automatic reads. `weight <= 0` stays OKM1120 |
 | P63 | `p63-consistency-position` | shipped: one client-wide watermark from `pg_current_wal_insert_lsn()` after commit, `routing.consistency` and `routing.maxLag`, position-unknown handling, and the capability gate (D204). A watermark per `for()` client stays deferred |
-| P64 | `p64-topology-conformance` | streaming-replication CI containers, topology conformance and property tests (`routing.*`, `pool.separation`, `tx.affinity`, `consistency.position`) |
+| P64 | `p64-topology-conformance` | shipped: topology conformance on the CI primary and two hot standbys (`routing.*`, `pool.separation`, `tx.affinity`, `consistency.position`, selection and health). Weighted `current` is cleared for a replica that sat a pick out, and statement class stays the statement text (D205) |
 | P65 | `p65-reference-app` | the small reference app (private workspace package `packages/reference-app`) promised by M1: multi-tenant, traits, archive, migrations, objects, and a replica topology; runs in CI as the end-to-end proof, including a preview workflow (a database per job, `migrate apply` from the snapshot) and a rehearsal against a populated clone |
 | P66 | `p66-gate-m1` | release 0.5; M1 complete; OKE `store.sql` prototype starts |
 
@@ -154,7 +154,7 @@ Problems found in the earlier order and how the table above resolves them:
 - **Ownership needed by every object kind:** it is in the P10 contract.
 - **Recreate needed by views:** dependency-aware recreate moved from P51 to P42; P51 keeps lock display and cross-kind verification.
 - **`protected.policy` enumeration needs seed:** `okm seed` shipped in P54 (D199). The full enumeration shipped in P55 (D200).
-- **Routing before consistency:** P61 shipped the wrote flag (writers read from the primary). P63 replaced it with commit positions (D204). A watermark per `for()` client stays deferred. The extra fallback rate under write load is P64.
+- **Routing before consistency:** P61 shipped the wrote flag (writers read from the primary). P63 replaced it with commit positions (D204). A watermark per `for()` client stays deferred. The extra fallback rate under write load was measured in P64 (D205).
 - **The M1 reference app had no prompt:** P65.
 - **Named targets and apply semantics are foundations, not M5 features:** environments and previews need `--target`, resume and the per-target lock from the first release, so they are in P16; only the multi-target rollout flags wait for M5.
 
@@ -175,7 +175,7 @@ Problems found in the earlier order and how the table above resolves them:
 - P25/P40: OKM1122, OKM1123 and OKM1190 `violations` (D126); `eq()` and additive-only presets (D125).
 - P43: extension planning rules (D118), including `path-unverified` and the non-relocatable refusal.
 - P50/P51: role and grant rules (D119); OKM1852 under D122.
-- P29/P63/P64: driver contract clarifications (D124); commit-position fallback rate under write load (P64).
+- P29/P63/P64: driver contract clarifications (D124). The commit-position fallback rate under write load was measured in P64 (D205).
 - P16/P60: contract gating over the whole registry (D123).
 - P16: normalise check expressions and index predicates through the database (stored as text in P10, D128); declared renames must update references inside that text; drop copied partition primary keys and inherited indexes while introspecting (M0-06, D116).
 - Every train: report the runtime entry size; P10 measured 29.6 KB minified / 8.9 KB gzip / 5.8 ms cold import against the 0.1 budget of 60 KB / 20 KB / 15 ms, so P11–P16 must stay within the remaining half; trim before P17 if tooling code is reachable from the runtime entry.

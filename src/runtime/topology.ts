@@ -1469,20 +1469,27 @@ function pick(
   if (select === "roundRobin") return roundRobin(handle, candidates);
   if (select === "leastConnections") return leastConnections(candidates);
   if (select === "latencyAware") return latencyAware(candidates);
-  return weighted(candidates);
+  return weighted(handle, candidates);
 }
 
 /**
  * Smooth weighted round-robin (nginx).
  *
  * Current weight increases by the configured weight. The largest current
- * weight wins, then loses the total of the weights that took part. Equal
- * weights rotate in config order. Every weight is positive.
+ * weight wins, then loses the total of the weights that took part. A replica
+ * that did not take part has its current weight cleared, so a value left over
+ * from an earlier round cannot put it first when it becomes eligible again.
+ * Equal weights rotate in config order. Every weight is positive.
  *
+ * @param handle - Endpoints, including ones the pipeline left out
  * @param candidates - Eligible replicas, at least one
  * @returns The winner
  */
-function weighted(candidates: readonly Endpoint[]): Endpoint {
+function weighted(handle: Handle, candidates: readonly Endpoint[]): Endpoint {
+  const live = new Set(candidates);
+  for (const endpoint of handle.endpoints) {
+    if (endpoint.role === "replica" && !live.has(endpoint)) endpoint.current = 0;
+  }
   const first = candidates[0];
   if (first === undefined) throw new Error("selection saw no candidate");
   let best = first;

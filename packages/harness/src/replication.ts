@@ -1,8 +1,16 @@
+import { join } from "node:path";
+
 import type { Sql } from "postgres";
 
 import { compareLsn } from "./lsn.js";
-import { openPostgres } from "./postgres.js";
+import { openPostgres, postgresReachable } from "./postgres.js";
 import { replicaUrl, primaryUrl, type ReplicaName } from "./topology.js";
+
+/** Session lock so two files do not pause or stop a replica at the same time. */
+const REPLICATION_LOCK = 640640640;
+
+const composeFile = join(import.meta.dir, "..", "docker", "compose.yml");
+const repoRoot = join(import.meta.dir, "..", "..", "..");
 
 /**
  * Reads `pg_current_wal_insert_lsn()` on the primary.
@@ -90,6 +98,73 @@ export async function waitForReplayLsn(
     );
     return latest;
   });
+}
+
+/**
+ * Holds a cluster advisory lock for the duration of `fn`.
+ *
+ * Streaming-replication tests share one primary. The lock keeps a pause, a
+ * resume, or a stopped replica from overlapping another file.
+ *
+ * @param fn - Work that touches replay or a replica container
+ * @returns Whatever `fn` returns
+ */
+export async function withReplicationLock<T>(fn: () => Promise<T>): Promise<T> {
+  const sql = openPostgres(primaryUrl());
+  await sql.unsafe(`select pg_advisory_lock(${String(REPLICATION_LOCK)})`);
+  try {
+    return await fn();
+  } finally {
+    await sql
+      .unsafe(`select pg_advisory_unlock(${String(REPLICATION_LOCK)})`)
+      .catch(() => undefined);
+    await sql.end({ timeout: 5 });
+  }
+}
+
+/**
+ * Stops or starts one replica container and waits until that is visible.
+ *
+ * Stop waits until the published port refuses connections. Start waits until
+ * the server accepts connections and `pg_is_in_recovery()` is true.
+ *
+ * @param replica - Which replica
+ * @param running - `false` stops the container, `true` starts it
+ */
+export async function setReplicaContainer(replica: ReplicaName, running: boolean): Promise<void> {
+  const service = replica === "a" ? "replica-a" : "replica-b";
+  const proc = Bun.spawn(
+    ["docker", "compose", "-f", composeFile, "-p", "okmodel", running ? "start" : "stop", service],
+    { cwd: repoRoot, stdout: "ignore", stderr: "pipe", env: process.env },
+  );
+  const stderr = await new Response(proc.stderr).text();
+  const code = await proc.exited;
+  if (code !== 0) {
+    throw new Error(
+      `docker compose ${running ? "start" : "stop"} ${service} failed: ${stderr.trim()}`,
+    );
+  }
+  const url = replicaUrl(replica);
+  if (!running) {
+    await waitUntil(async () => !(await postgresReachable(url)), `replica ${replica} did not stop`);
+    return;
+  }
+  await waitUntil(
+    async () => {
+      if (!(await postgresReachable(url))) return false;
+      const sql = openPostgres(url);
+      try {
+        const rows = await sql<{ recovering: boolean }[]>`select pg_is_in_recovery() as recovering`;
+        return rows[0]?.recovering === true;
+      } catch {
+        return false;
+      } finally {
+        await sql.end({ timeout: 5 });
+      }
+    },
+    `replica ${replica} did not start`,
+    45_000,
+  );
 }
 
 async function readLsn(sql: Sql, query: string): Promise<string> {

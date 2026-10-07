@@ -28,6 +28,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - An automatic read uses `routing.select` instead of the first healthy replica.
 - The session wrote flag is gone. A read after a committed write follows the commit position.
 
+### 🐛 Fixed
+
+- Smooth weighted round-robin clears the current weight of a replica that did not take part in a pick. After that replica is eligible again, a heavier replica keeps the next read (D205).
+
 ## v0.4.0 — 2026-10-06
 
 ### ✨ Added
