@@ -8,6 +8,7 @@
 import { expect, test } from "bun:test";
 
 import { catalog } from "../src/contracts/catalog/build.js";
+import { catalogHash, startupCatalog, startupHash } from "../src/contracts/catalog/document.js";
 import { grantObject, roleObject } from "../src/contracts/catalog/privilege.js";
 import { staticNamespace } from "../src/contracts/catalog/identity.js";
 import { OkmError } from "../src/contracts/error.js";
@@ -16,6 +17,26 @@ import { attachRoles } from "../src/dialects/pg/role/index.js";
 import { planMigration } from "../src/tooling/migrate/plan.js";
 
 const provenance = { origin: "file" as const, name: "roles" };
+
+test("the startup hash leaves roles out, and a catalog without roles hashes as before", () => {
+  const tasks = table("tasks", {
+    id: t.text().primaryKey(),
+    title: t.text(),
+    done: t.boolean().nullable(),
+  });
+  const declared = schema({ tables: [tasks] }).catalog;
+  const before = "eef6bc7c12bae7ead432757da9d77df95fe21f6c630f9b1da0c259eff45c6f7f";
+  expect(catalogHash(declared)).toBe(before);
+  expect(startupHash(declared)).toBe(before);
+  expect(startupCatalog(declared)).toBe(declared);
+  const withRoles = attachRoles(declared, {
+    migration: "mig",
+    app: "app",
+    managed: [{ name: "app" }],
+  });
+  expect(catalogHash(withRoles)).not.toBe(before);
+  expect(startupHash(withRoles)).toBe(before);
+});
 
 test("a managed role is created without IF NOT EXISTS and is never dropped", () => {
   const tasks = table("tasks", { id: t.text().primaryKey() });

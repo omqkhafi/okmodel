@@ -23,7 +23,7 @@ test("archivable adds the two columns and turns uniques into partial indexes", (
 
   const sql = renderCatalog(app.catalog, "public").join("\n");
   expect(sql).toContain("create unique index");
-  expect(sql).toContain('where "archived_at" is null');
+  expect(sql).toContain("where (archived_at IS NULL)");
   expect(sql).not.toContain('unique ("name")');
   expect(sql).not.toContain('unique ("title")');
   expect(sql).toContain('primary key ("id")');
@@ -34,14 +34,14 @@ test("archivable adds the two columns and turns uniques into partial indexes", (
   expect(notes).not.toContain("archived_at");
 
   const named = indexOf(app.catalog, "lists");
-  expect(named.some((item) => item.definition.predicate === '"archived_at" is null')).toBe(true);
+  expect(named.some((item) => item.definition.predicate === "(archived_at IS NULL)")).toBe(true);
 });
 
 test("a tenant unique keeps the tenant key and the partial predicate", () => {
   const sql = renderCatalog(tenantApp.catalog, "public").join("\n");
   expect(sql).toContain('primary key ("id", "tenant_id")');
   expect(sql).toContain('"tenant_id", "name"');
-  expect(sql).toContain('where "archived_at" is null');
+  expect(sql).toContain("where (archived_at IS NULL)");
   expect(sql).not.toContain('unique ("tenant_id", "name")');
   const nameIndex = tenantApp.catalog.objects.find(
     (object): object is IndexObject =>
@@ -50,7 +50,7 @@ test("a tenant unique keeps the tenant key and the partial predicate", () => {
       object.definition.columns.includes("name"),
   );
   expect(nameIndex?.definition.columns).toEqual(["tenant_id", "name"]);
-  expect(nameIndex?.definition.predicate).toBe('"archived_at" is null');
+  expect(nameIndex?.definition.predicate).toBe("(archived_at IS NULL)");
   expect(nameIndex?.definition.unique).toBe(true);
 });
 

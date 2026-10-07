@@ -7,6 +7,7 @@
 import type { DriverPool } from "../../../contracts/driver.js";
 import { OkmError } from "../../../contracts/error.js";
 import type { CatalogObject, GrantObject } from "../../../contracts/catalog/types.js";
+import { FUNCTION_ARG_TYPES } from "../introspect.js";
 import type { RolesInput } from "./index.js";
 
 /** A pool or a reserved connection. Both can run one statement. */
@@ -166,7 +167,7 @@ async function functionExists(
     `select 1 from pg_proc p
      join pg_namespace n on n.oid = p.pronamespace
      where n.nspname = $1 and p.proname = $2
-       and replace(pg_get_function_identity_arguments(p.oid), ' ', '') = $3`,
+       and ${FUNCTION_ARG_TYPES} = $3`,
     [schema, name, args],
   );
   return result.rows.length > 0;

@@ -73,7 +73,7 @@ export function privilegeSql(
       revoke.push({ sql: grantStatement(object, schema, true), kind: "revoke" });
     }
     if (object.kind === "defaultPrivilege") {
-      revoke.push({ sql: defaultStatement(object, true), kind: "revoke-default" });
+      revoke.push({ sql: defaultStatement(object, schema, true), kind: "revoke-default" });
     }
   }
   for (const [key, object] of afterBy) {
@@ -101,7 +101,7 @@ export function privilegeSql(
     }
     if (previous !== undefined) continue;
     if (object.kind === "defaultPrivilege") {
-      defaults.push({ sql: defaultStatement(object, false), kind: "grant-default" });
+      defaults.push({ sql: defaultStatement(object, schema, false), kind: "grant-default" });
     }
   }
   return { revoke, prepare: [...roles, ...defaults], grant };
@@ -165,14 +165,12 @@ function grantStatement(object: GrantObject, schema: string, revoke: boolean): s
   return `${verb} ${privilege} on ${grantTarget(object.identity.object, schema)} ${direction} ${quoteIdent(object.identity.role)}`;
 }
 
-function defaultStatement(object: DefaultPrivilegeObject, revoke: boolean): string {
+function defaultStatement(object: DefaultPrivilegeObject, schema: string, revoke: boolean): string {
   const privilege = object.identity.privilege.toLowerCase();
   assertPrivilege(privilege);
   const verb = revoke ? "revoke" : "grant";
   const direction = revoke ? "from" : "to";
-  const namespace =
-    object.identity.namespace.form === "static" ? object.identity.namespace.name : "public";
-  return `alter default privileges for role ${quoteIdent(object.identity.forRole)} in schema ${quoteIdent(namespace)} ${verb} ${privilege} on ${objectKindSql(object.identity.objectKind)} ${direction} ${quoteIdent(object.identity.grantee)}`;
+  return `alter default privileges for role ${quoteIdent(object.identity.forRole)} in schema ${quoteIdent(schema)} ${verb} ${privilege} on ${objectKindSql(object.identity.objectKind)} ${direction} ${quoteIdent(object.identity.grantee)}`;
 }
 
 function grantTargetKey(object: GrantObjectRef): string | undefined {
@@ -198,11 +196,10 @@ function grantTargetKey(object: GrantObjectRef): string | undefined {
 }
 
 function grantTarget(object: GrantObjectRef, schema: string): string {
-  const name = object.namespace.form === "static" ? object.namespace.name : schema;
-  if (object.kind === "sequence") return `sequence ${qualify(name, object.name)}`;
-  if (object.kind === "function") return functionTarget(object.name, name);
+  if (object.kind === "sequence") return `sequence ${qualify(schema, object.name)}`;
+  if (object.kind === "function") return functionTarget(object.name, schema);
   if (object.kind === "namespace") return `schema ${quoteIdent(object.name)}`;
-  return `table ${qualify(name, object.name)}`;
+  return `table ${qualify(schema, object.name)}`;
 }
 
 function functionTarget(name: string, schema: string): string {

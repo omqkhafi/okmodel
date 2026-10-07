@@ -234,23 +234,18 @@ postgresTest(
         const b = db.for({ tenantId: TENANT_B });
         await a.tasks.insert({ id: "1", title: "a" });
         await b.tasks.insert({ id: "1", title: "b" });
-        const scoped = a as typeof a & {
-          readonly views: {
-            readonly activeTasks: ViewFind;
-            readonly sharedTitles: ViewFind;
-          };
-        };
-        const read = scoped.views.activeTasks.find({ limit: 5 });
+        const read = a.views.activeTasks.find({ limit: 5 });
         const described = read.sql();
         if (described instanceof Promise) throw new Error("find planned asynchronously");
         expect(described.text).toContain('"tenant_id" = ');
         expect(described.params[0]).toBe(TENANT_A);
         expect((await read).map((row) => row.title)).toEqual(["a"]);
-        const shared = scoped.views.sharedTitles.find({ limit: 5 });
+        const shared = a.views.sharedTitles.find({ limit: 5 });
         const sharedSql = shared.sql();
         if (sharedSql instanceof Promise) throw new Error("find planned asynchronously");
         expect(sharedSql.text.includes("tenant_id")).toBe(false);
-        expect((await shared).map((row) => row.title).sort()).toEqual(["a", "b"]);
+        const titles = (await shared).map((row) => row.title ?? "");
+        expect(titles.sort((left, right) => left.localeCompare(right))).toEqual(["a", "b"]);
       } finally {
         await db.close();
       }
@@ -277,14 +272,6 @@ async function using(body: (sql: Sql) => Promise<void>): Promise<void> {
     await database.close();
   }
 }
-
-type ViewFind = {
-  find(options: { readonly limit: number }): Promise<readonly { readonly title: string }[]> & {
-    sql():
-      | { readonly text: string; readonly params: readonly (string | null)[] }
-      | Promise<{ readonly text: string; readonly params: readonly (string | null)[] }>;
-  };
-};
 
 function viewSteps(before: Catalog, after: Catalog): string[] {
   return planMigration({ before, after, name: "views" })

@@ -12,7 +12,7 @@
 import { join } from "node:path";
 
 import { open } from "../../adapters/pg/postgresjs.js";
-import { catalogHash } from "../../contracts/catalog/document.js";
+import { startupHash } from "../../contracts/catalog/document.js";
 import type { Catalog } from "../../contracts/catalog/types.js";
 import { hasError, lintMigrationDirectory, lintRefusal } from "./lint.js";
 import type { DriverConnection } from "../../contracts/driver.js";
@@ -120,6 +120,8 @@ export type ApplyRequest = {
 export type ApplyReport = {
   readonly target: string;
   readonly applied: readonly string[];
+  /** Migrations whose stored hash moved from the pre-D208 hash to the startup hash. */
+  readonly restamped?: readonly string[];
   /** Set when the runner issued `SET ROLE` at session start. */
   readonly setRole?: string;
 };
@@ -261,6 +263,7 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
     await connection.execute(META);
     await connection.execute(HISTORY);
     await connection.execute(BACKFILL);
+    const restamped = await restampLegacy(connection, request);
     const history = await readHistory(connection);
     const done = expandProvisioned(request.migrations, history.done, history.ids);
     const units = request.migrations.flatMap((migration) => applyUnits(migration, done));
@@ -287,7 +290,7 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
     if (request.snapshot !== undefined) {
       await insertReference(connection, request);
     }
-    return report;
+    return restamped.length === 0 ? report : { ...report, restamped };
   } finally {
     if (locked)
       await connection.execute("select pg_advisory_unlock(hashtext($1))", [
@@ -396,7 +399,7 @@ export async function pushProject(cwd: string, flags: InvokeFlags): Promise<stri
     migrations: [
       {
         id: "push",
-        catalogHash: catalogHash(head.catalog),
+        catalogHash: startupHash(head.catalog),
         steps: plan.steps,
       },
     ],
@@ -434,9 +437,71 @@ export function backfillTiming(
 
 function formatReport(report: ApplyReport): string {
   const role = report.setRole !== undefined ? `set role ${report.setRole}\n` : "";
-  if (report.applied.length === 0) return `target ${report.target}\n${role}nothing to apply\n`;
-  return `target ${report.target}\n${role}${report.applied.map((id) => `applied ${id}`).join("\n")}\n`;
+  const restamped = (report.restamped ?? []).map((id) => `restamped ${id}\n`).join("");
+  if (report.applied.length === 0)
+    return `target ${report.target}\n${role}${restamped}nothing to apply\n`;
+  return `target ${report.target}\n${role}${restamped}${report.applied.map((id) => `applied ${id}`).join("\n")}\n`;
 }
+
+/**
+ * Moves a hash written before D208 to the startup hash.
+ *
+ * A row changes only when its migration is one of these files, already in
+ * `okm_history`, and its stored hash is that file's pre-D208 hash. Any other
+ * hash is left for the startup check to report as drift. The rewrite is a
+ * history repair, so a protected target needs `--allow-protected`.
+ *
+ * @param connection - Reserved connection holding the advisory lock
+ * @param request - Target, protection, and the migrations on disk
+ * @returns Migration ids whose rows changed
+ */
+async function restampLegacy(
+  connection: DriverConnection,
+  request: ApplyRequest,
+): Promise<readonly string[]> {
+  const pairs: { id: string; mark: string; legacy: string; startup: string }[] = [];
+  for (const migration of request.migrations) {
+    if (migration.legacyHash === undefined) continue;
+    pairs.push({
+      id: migration.id,
+      mark: provisionMark(migration.id),
+      legacy: migration.legacyHash,
+      startup: migration.catalogHash,
+    });
+  }
+  if (pairs.length === 0) return [];
+  await connection.execute("begin");
+  try {
+    const result = await connection.execute(RESTAMP, [JSON.stringify(pairs)]);
+    const restamped = result.rows.flatMap((row) => (typeof row[0] === "string" ? [row[0]] : []));
+    if (restamped.length > 0) {
+      assertTargetPolicy(
+        { name: request.target, protected: request.protected },
+        "history-repair",
+        request.allowProtected === true,
+      );
+    }
+    await connection.execute("commit");
+    return restamped;
+  } catch (error) {
+    await connection.execute("rollback");
+    throw error;
+  }
+}
+
+const RESTAMP = `with pairs as (
+  select * from json_to_recordset($1::json) as p(id text, mark text, legacy text, startup text)
+), history as (
+  update okm_history h set catalog_hash = p.startup from pairs p
+   where h.migration_id in (p.id, p.mark) and h.catalog_hash = p.legacy
+  returning p.id, h.migration_id
+), meta as (
+  update okm_meta m set catalog_hash = p.startup from pairs p
+   where m.id = 'head' and m.migration_id in (p.id, p.mark) and m.catalog_hash = p.legacy
+     and m.migration_id in (select migration_id from history)
+  returning m.id
+)
+select distinct id from history order by id`;
 
 function joinMigrations(cwd: string, migrations: string | undefined): string {
   return join(cwd, migrations ?? "migrations");

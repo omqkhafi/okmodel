@@ -45,10 +45,18 @@ export type ViewOptions = {
  *
  * `contribute` builds the catalog record. Column dependencies are filled
  * from `pg_depend` by scratch verification, not at this call.
+ *
+ * @typeParam N - View name
+ * @typeParam C - Declared output columns
  */
-export type ViewDeclaration = {
-  readonly name: string;
+export type ViewDeclaration<
+  N extends string = string,
+  C extends readonly ViewColumnInput[] = readonly ViewColumnInput[],
+> = {
+  readonly name: N;
   readonly schema: string;
+  /** Declared columns, for types only. `db.views` reads them. */
+  readonly "~columns"?: C;
   /**
    * Catalog record for this declaration.
    *
@@ -87,10 +95,18 @@ export type MaterializedViewOptions = ViewOptions & {
  * One declared materialized view.
  *
  * Identity is `(namespace, name)`. Indexes are separate catalog objects.
+ *
+ * @typeParam N - Materialized view name
+ * @typeParam C - Declared output columns
  */
-export type MaterializedViewDeclaration = {
-  readonly name: string;
+export type MaterializedViewDeclaration<
+  N extends string = string,
+  C extends readonly ViewColumnInput[] = readonly ViewColumnInput[],
+> = {
+  readonly name: N;
   readonly schema: string;
+  /** Declared columns, for types only. `db.views` reads them. */
+  readonly "~columns"?: C;
   /**
    * Catalog records for this declaration.
    *
@@ -115,7 +131,10 @@ export type MaterializedViewDeclaration = {
  * @param options - Columns and query
  * @returns The definition object `schema({ views })` stores
  */
-export function view(name: string, options: ViewOptions): ViewDeclaration {
+export function view<const N extends string, const C extends readonly ViewColumnInput[]>(
+  name: N,
+  options: ViewOptions & { readonly columns: C },
+): ViewDeclaration<N, C> {
   const schema = options.schema ?? "public";
   const columns = options.columns.map((column) => ({ name: column.name, dataType: column.type }));
   const query = bodyText(options.query);
@@ -152,10 +171,13 @@ export function view(name: string, options: ViewOptions): ViewDeclaration {
  * @param options - Columns, query, indexes, and refresh mode
  * @returns The definition object `schema({ views })` stores
  */
-export function materializedView(
-  name: string,
-  options: MaterializedViewOptions,
-): MaterializedViewDeclaration {
+export function materializedView<
+  const N extends string,
+  const C extends readonly ViewColumnInput[],
+>(
+  name: N,
+  options: MaterializedViewOptions & { readonly columns: C },
+): MaterializedViewDeclaration<N, C> {
   const schema = options.schema ?? "public";
   const columns = options.columns.map((column) => ({ name: column.name, dataType: column.type }));
   const query = bodyText(options.query);

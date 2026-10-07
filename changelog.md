@@ -31,7 +31,26 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### 🐛 Fixed
 
+#### dialects
+
+- View scratch verification creates the schema's functions before its views, so `okm check` passes for a view that calls a declared function (D208).
+- `archivable()` writes the partial unique index predicate the way Postgres prints it, `(archived_at IS NULL)`, so a unique column on an archivable table no longer drifts after every apply. Stored catalogs change once (D208).
+- A function grant names its argument types from `oidvectortypes`, so `EXECUTE` on a function with named arguments no longer drifts, and `okm doctor` and the apply preflight check that grant instead of skipping it (OKM1825) (D208).
+- Grants and default privileges target the schema they are applied to. `okm migrate check --provision` with `roles` no longer grants on the target's own objects (D208).
+
+#### runtime
+
+- `db.views` is typed from `schema({ views })` on connected, scoped, and routed clients. Each field is the camel-cased column name, typed `string | null`. Types only (D208).
 - Smooth weighted round-robin clears the current weight of a replica that did not take part in a pick. After that replica is eligible again, a heavier replica keeps the next read (D205).
+
+#### tooling
+
+- `okm migrate check` reads each scratch schema with that schema as the search path. A declared view and a function that takes a schema enum no longer fail with OKM1547 or OKM1020 (D208).
+- `okm migrate check` with `roles` keeps default privileges in the scratch schema, so it passes and no longer writes them to the target's `public` (D208).
+- Roles, grants, and default privileges are left out of the stored catalog hash and the `.okm` artifact. `connect()` after an apply with `roles` no longer fails with OKM1520 when `catalogDir` is not passed. `okm check` still verifies them. A catalog without roles hashes as before (D208).
+- `okm migrate apply` moves a hash stored before D208 to the new hash when it is exactly the old hash of a migration already applied, also when nothing is pending, and prints `restamped <migration id>`. A protected target needs `--allow-protected`. Any other hash is left as drift (D208).
+- Upgrade, archivable with a unique column: after upgrading, `connect()` is OKM1520 and `okm check` is OKM1510 (`OKM1529 creates a unique index`). Run `okm generate archive_predicate`, add `-- okm-allow OKM1529: rebuilds the same index` above the `create unique index concurrently` line, then `okm migrate apply`. `okm migrate check` still reports OKM1547 at the migration that first created the index, as it did before; see known limits (D208).
+- Upgrade, a database applied with `roles`: after upgrading, `connect()` is OKM1520 until `okm migrate apply` runs once (`--allow-protected` on a protected target). It prints `restamped <migration id>` (D208).
 
 ## v0.4.0 — 2026-10-06
 

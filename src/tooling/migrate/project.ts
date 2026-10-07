@@ -10,7 +10,12 @@ import { basename, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { catalog } from "../../contracts/catalog/build.js";
-import { catalogHash, parseCatalog, serializeCatalog } from "../../contracts/catalog/document.js";
+import {
+  catalogHash,
+  parseCatalog,
+  serializeCatalog,
+  startupCatalog,
+} from "../../contracts/catalog/document.js";
 import { OkmError } from "../../contracts/error.js";
 import { errorDoc } from "../errors/registry.js";
 import { assertValidation, writeWouldValidate } from "../../runtime/validate/places.js";
@@ -327,9 +332,9 @@ function withRoles(built: Built, config: MigrateConfig): Built {
 function writeArtifact(cwd: string, config: MigrateConfig, built: Built): string {
   const directory = join(cwd, config.out ?? ".okm");
   mkdirSync(directory, { recursive: true });
-  const text = serializeCatalog(built.catalog);
-  writeFileSync(join(directory, "catalog.json"), text);
-  writeFileSync(join(directory, "catalog.hash"), `${catalogHash(built.catalog)}\n`);
+  const startup = startupCatalog(built.catalog);
+  writeFileSync(join(directory, "catalog.json"), serializeCatalog(startup));
+  writeFileSync(join(directory, "catalog.hash"), `${catalogHash(startup)}\n`);
   writeFileSync(
     join(directory, "types.d.ts"),
     `${emitRowTypes(built)}${referenceAugmentation(built)}`,

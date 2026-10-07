@@ -331,19 +331,8 @@ async function proveSnapshot(
         ? { migrationRole: config.roles.migration, schema: replayed }
         : {}),
     });
-    const runner = catalogQuery(sql);
-    const liveProvided = await introspectSchema(
-      runner,
-      provided,
-      "public",
-      managedRoleOptions(config.roles),
-    );
-    const liveReplayed = await introspectSchema(
-      runner,
-      replayed,
-      "public",
-      managedRoleOptions(config.roles),
-    );
+    const liveProvided = await introspectScratch(sql, provided, config);
+    const liveReplayed = await introspectScratch(sql, replayed, config);
     const difference = snapshotDifference(liveProvided, liveReplayed);
     if (difference === undefined) return undefined;
     return {
@@ -413,12 +402,7 @@ async function replayHistory(
           ? { migrationRole: config.roles.migration, schema: scratch }
           : {}),
       });
-      const live = await introspectSchema(
-        runner,
-        scratch,
-        "public",
-        managedRoleOptions(config.roles),
-      );
+      const live = await introspectScratch(sql, scratch, config);
       const sealed = await sealViews(runner, migration.catalog);
       const back = planMigration({ before: live, after: sealed, name: migration.id });
       if (back.steps.length === 0) continue;
@@ -430,6 +414,22 @@ async function replayHistory(
     await sql.end({ timeout: 5 });
   }
   return failures;
+}
+
+/**
+ * Introspects one scratch schema as if it were `public`.
+ *
+ * `pg_get_viewdef` and `format_type` qualify every name that is not on the
+ * search path, so the scratch schema has to be the search path while it is
+ * read. The connection has one session, so the setting holds.
+ */
+async function introspectScratch(
+  sql: postgres.Sql,
+  schema: string,
+  config: MigrateConfig,
+): Promise<Catalog> {
+  await sql.unsafe(`set search_path to ${quoteIdent(schema)}`);
+  return introspectSchema(catalogQuery(sql), schema, "public", managedRoleOptions(config.roles));
 }
 
 function historyFailure(
@@ -480,9 +480,11 @@ function sameSql(planned: MigrationPlan, file: MigrationPlan): boolean {
 function retargetSteps(steps: readonly PlanStep[], schema: string): readonly PlanStep[] {
   const from = `${quoteIdent("public")}.`;
   const to = `${quoteIdent(schema)}.`;
+  const fromDefaults = `in schema ${quoteIdent("public")} `;
+  const toDefaults = `in schema ${quoteIdent(schema)} `;
   return steps.map((step) => ({
     ...step,
-    sql: step.sql.replaceAll(from, to),
+    sql: step.sql.replaceAll(from, to).replaceAll(fromDefaults, toDefaults),
     ...(step.backfill === undefined
       ? {}
       : { backfill: { ...step.backfill, table: step.backfill.table.replaceAll(from, to) } }),
