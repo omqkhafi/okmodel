@@ -131,8 +131,8 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
   {
     code: "OKM1102",
     title: "Unfiltered write",
-    summary: "update or delete would run with an empty where.",
-    fix: "Pass a filter. undefined in a write filter does not mean every row.",
+    summary: "A write with no effective predicate, including undefined values, is OKM1102.",
+    fix: "Pass a predicate, or .all(reason). An undefined-only where is the same as {}.",
   },
   {
     code: "OKM1104",
@@ -161,14 +161,16 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
   {
     code: "OKM1120",
     title: "Unknown field",
-    summary: "A field name in where, select, orderBy, or include is not on the table.",
-    fix: "Use a field from the catalog. The error includes a nearest-name hint when one is close.",
+    summary:
+      "The name is not a field or an option. timeout and signal go in the second argument of update. Options go first: tx(options, fn).",
+    fix: "Use a field from the catalog, or move the option. The error includes a nearest-name hint when one is close.",
   },
   {
     code: "OKM1121",
     title: "Object as value",
-    summary: "A plain object was passed where a value is required. JSON cannot create an operator.",
-    fix: "Wrap the value with eq. eq is the equality form for json and jsonb.",
+    summary:
+      "An empty or() branch is OKM1121. or() takes one array: or([a, b]). A plain object was passed where a value is required.",
+    fix: "Give every or() branch a predicate. Pass an array: or([a, b]). Wrap a json value with eq.",
   },
   {
     code: "OKM1122",

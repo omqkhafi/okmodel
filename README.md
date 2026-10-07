@@ -373,7 +373,7 @@ if (!(await db.notes.exists({ where: { id: note.id } }))) {
 
 ### Update
 
-`update` changes the columns in `set` on the rows that match `where`. A call with no `where` is OKM1102. `.all(reason)` is the form that means every row.
+`update` changes the columns in `set` on the rows that match `where`. A write with no effective predicate, including undefined values, is OKM1102. An empty `or()` branch is OKM1121. `.all(reason)` is the form that means every row.
 
 ```ts
 // where picks the row. set names the new title.
@@ -382,7 +382,7 @@ await db.notes.update({ where: { id: note.id }, set: { title: "next" } });
 
 ### Delete
 
-`delete` removes the rows that match `where`. A call with no `where` is OKM1102. `.all(reason)` is the form that means every row.
+`delete` removes the rows that match `where`. A write with no effective predicate, including undefined values, is OKM1102. An empty `or()` branch is OKM1121. `.all(reason)` is the form that means every row.
 
 ```ts
 // where picks the row. Without it the call is refused.
@@ -1144,6 +1144,7 @@ Status is on the [board](https://github.com/users/omqkhafi/projects/1). Each rel
 - [x] [0.3](https://github.com/omqkhafi/okmodel/milestone/3) — Extensions, domains, functions, triggers, views, roles, and grants.
 - [x] [0.4](https://github.com/omqkhafi/okmodel/milestone/4) — Safer migration plans, backfill, drift checks, provisioning, reference data, and a testing package.
 - [x] [0.5](https://github.com/omqkhafi/okmodel/milestone/5) — A primary with replicas, read routing, and a reference app.
+- [ ] [0.5.1](https://github.com/omqkhafi/okmodel/milestone/7) — QA fixes for 0.5.0.
 
 `okmodel/internal` has no stability promise. Names on that subpath can change or disappear in any release.
 

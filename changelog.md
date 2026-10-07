@@ -14,6 +14,15 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+### 🐛 Fixed
+
+- `update`, `delete`, `archive`, and `restore` now refuse a where with no effective predicate, including undefined values (QA-C1, QA-H2). A field value is a leaf. `eq` keeps a timestamp, a date, bytes, or a jsonb object in the filter. A bare object stays OKM1121 (D125, D210).
+- An `or()` branch with no effective predicate is now refused, in reads and in writes (QA-H1). `or([])` still matches nothing.
+- `or()` with a non-array or with more than one argument is now refused (QA-M4).
+- An unknown key on `update`, and `tx` with the function before the options, are now refused (QA-M2).
+- A bad option on `find`, `one`, and `count` now rejects the query, so `safe` and `catch` see OKM1120 (QA-M11). `page` and `aggregate` already did.
+- Compiled SQL for a tenant table keeps the tenant predicate on every table alias, including a where that compares an object through `eq` (QA-S4).
+
 ## v0.5.0 — 2026-10-07
 
 ### ✨ Added
