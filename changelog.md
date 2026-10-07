@@ -14,6 +14,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+### ♻️ Changed
+
+- CI runs the pieces of `bun run check` in parallel as `CI / check / static`, `structure`, `test`, `package`, and `release`.
+
 ### 🐛 Fixed
 
 - `update`, `delete`, `archive`, and `restore` now refuse a where with no effective predicate, including undefined values (QA-C1, QA-H2). A field value is a leaf. `eq` keeps a timestamp, a date, bytes, or a jsonb object in the filter. A bare object stays OKM1121 (D125, D210).

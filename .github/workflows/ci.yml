@@ -4,8 +4,9 @@ name: CI
 # pinned, so moving to a newer Ubuntu is a deliberate change made in a pull
 # request, not something GitHub does when it moves the latest label.
 #
-# A push runs on main only, and that push runs check and attest. The postgres
-# job (suite and tarball) runs on pull requests. Release and weekly call
+# A push runs on main only, and that push runs check and attest. `check` calls
+# check.yml, so the pieces show up as `CI / check / *`. The postgres job
+# (suite and tarball) runs on pull requests. Release and weekly call
 # postgres.yml themselves. A newer run on the same ref cancels the older one.
 on:
   push:
@@ -23,38 +24,9 @@ permissions:
 jobs:
   check:
     name: check
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: 1.4.2
-
-      - name: Install
-        run: bun install --frozen-lockfile
-
-      - name: Setup Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 22
-
-      - name: Setup Deno
-        run: curl -fsSL https://deno.land/install.sh | DENO_INSTALL=$HOME/.deno sh -s v2.9.7
-
-      - name: Deno on PATH
-        run: echo "$HOME/.deno/bin" >> "$GITHUB_PATH"
-
-      - name: Check
-        run: bun run check
-
-      - name: Release flow
-        if: github.event_name == 'pull_request'
-        run: bun ./scripts/release-check.ts --base ${{ github.event.pull_request.base.sha }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/check.yml
 
   postgres:
     name: postgres

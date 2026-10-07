@@ -208,16 +208,24 @@ test("npm publish is given the tarball by explicit path, never a bare name", () 
   expect(bareNpmPublishTargets("run: npm publish --access public")).toEqual([]);
 });
 
-test("every job that runs bun run check sets up Node and Deno the way ci.yml does", () => {
-  const ci = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
+test("every job that runs bun run check sets up Node and Deno the way check.yml does", () => {
+  const check = readFileSync(join(root, ".github/workflows/check.yml"), "utf8");
   const release = readFileSync(join(root, ".github/workflows/release.yml"), "utf8");
-  expect(checkSetupProblems(ci, ci)).toEqual([]);
-  expect(checkSetupProblems(release, ci)).toEqual([]);
+  expect(checkSetupProblems(check, check)).toEqual([]);
+  expect(checkSetupProblems(release, check)).toEqual([]);
   expect(checkJobs(release).map(([name]) => name)).toContain("publish");
+  const script = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
+    scripts: { check: string };
+  };
+  for (const command of script.scripts.check.split(" && ")) {
+    expect(check).toContain(command);
+  }
+  const ci = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
+  expect(ci).toContain("uses: ./.github/workflows/check.yml");
 });
 
 test("the setup guard names a check job without Deno, without Node, or with Deno after Check", () => {
-  const ci = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
+  const ci = readFileSync(join(root, ".github/workflows/check.yml"), "utf8");
   const noDeno = [
     "jobs:",
     "  publish:",
@@ -314,7 +322,7 @@ function checkJobs(yaml: string): readonly (readonly [string, readonly WorkflowS
   for (const [name, job] of Object.entries(jobs)) {
     if (!isRecord(job) || !Array.isArray(job.steps)) continue;
     const steps = job.steps.filter(isRecord) as WorkflowStep[];
-    if (steps.some((step) => step.run?.trim() === "bun run check")) found.push([name, steps]);
+    if (steps.some(isMarker)) found.push([name, steps]);
   }
   return found;
 }
@@ -323,12 +331,32 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** Step positions of `bun run check` and the steps before it. */
-function stepsBeforeCheck(steps: readonly WorkflowStep[]): readonly WorkflowStep[] {
-  return steps.slice(
-    0,
-    steps.findIndex((step) => step.run?.trim() === "bun run check"),
-  );
+/** Steps before `bun run check` or, in the split check workflow, `bun run test:runtimes`. */
+function stepsBeforeMarker(steps: readonly WorkflowStep[]): readonly WorkflowStep[] {
+  const at = steps.findIndex((step) => {
+    const run = step.run?.trim();
+    return run === "bun run check" || run === "bun run test:runtimes";
+  });
+  return steps.slice(0, at);
+}
+
+/** The first job whose steps include the Deno marker. */
+function setupReference(yaml: string): readonly [string, readonly WorkflowStep[]] | undefined {
+  const parsed: unknown = Bun.YAML.parse(yaml);
+  const jobs = isRecord(parsed) && isRecord(parsed.jobs) ? parsed.jobs : {};
+  for (const [name, job] of Object.entries(jobs)) {
+    if (!isRecord(job) || !Array.isArray(job.steps)) continue;
+    const steps = job.steps.filter(isRecord) as WorkflowStep[];
+    if (stepsBeforeMarker(steps).length < steps.length && steps.some(isMarker)) {
+      return [name, steps];
+    }
+  }
+  return undefined;
+}
+
+function isMarker(step: WorkflowStep): boolean {
+  const run = step.run?.trim();
+  return run === "bun run check" || run === "bun run test:runtimes";
 }
 
 /** The `run` lines that install Deno or put it on PATH, in order. */
@@ -338,16 +366,20 @@ function denoRuns(steps: readonly WorkflowStep[]): readonly string[] {
     .filter((run) => run.includes("deno.land/install.sh") || run.includes(".deno/bin"));
 }
 
-/** The Deno steps of the first job in `ci.yml` that runs `bun run check`. */
+/**
+ * The Deno steps of the first job that runs `bun run check` or `bun run test:runtimes`.
+ *
+ * `check.yml` splits the old check job. The runtime step is the one that needs Deno.
+ */
 function denoSteps(ci: string): readonly string[] {
-  const first = checkJobs(ci)[0];
-  if (first === undefined) throw new Error("ci.yml has no job that runs bun run check");
-  return denoRuns(stepsBeforeCheck(first[1]));
+  const first = setupReference(ci);
+  if (first === undefined) throw new Error("no job runs bun run check or bun run test:runtimes");
+  return denoRuns(stepsBeforeMarker(first[1]));
 }
 
 /** The `node-version` of the last setup-node step before `bun run check`. */
 function nodeBeforeCheck(steps: readonly WorkflowStep[]): string | undefined {
-  const setups = stepsBeforeCheck(steps).filter((step) =>
+  const setups = stepsBeforeMarker(steps).filter((step) =>
     step.uses?.includes("actions/setup-node@"),
   );
   const version = setups[setups.length - 1]?.with?.["node-version"];
@@ -360,7 +392,7 @@ function nodeBeforeCheck(steps: readonly WorkflowStep[]): string | undefined {
  */
 function checkSetupProblems(workflow: string, reference: string): readonly string[] {
   const expectedDeno = denoSteps(reference);
-  const first = checkJobs(reference)[0];
+  const first = setupReference(reference);
   const expectedNode = first === undefined ? undefined : nodeBeforeCheck(first[1]);
   if (expectedDeno.length !== 2 || !/sh -s v\d+\.\d+\.\d+$/.test(expectedDeno[0] ?? "")) {
     return ["ci.yml does not install a pinned Deno and put it on PATH before Check"];
@@ -368,7 +400,7 @@ function checkSetupProblems(workflow: string, reference: string): readonly strin
   if (expectedNode === undefined) return ["ci.yml has no setup-node before Check"];
   const problems: string[] = [];
   for (const [name, steps] of checkJobs(workflow)) {
-    const before = stepsBeforeCheck(steps);
+    const before = stepsBeforeMarker(steps);
     if (JSON.stringify(denoRuns(before)) !== JSON.stringify(expectedDeno)) {
       problems.push(
         `${name}: runs bun run check without the Deno install and PATH steps ci.yml has before it`,
