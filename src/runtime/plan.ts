@@ -962,7 +962,8 @@ function emitOr(
   alias: string,
   depth: number,
 ): void {
-  if (!Array.isArray(value) || value.length === 0) {
+  if (!Array.isArray(value)) orFail(false);
+  if (value.length === 0) {
     sink.text("false");
     sink.mark(":0");
     return;
@@ -984,7 +985,7 @@ function emitOr(
       wrote = true;
       emitPredicate(schema, table, key, item, sink, alias, depth);
     }
-    if (!wrote) orBranch();
+    if (!wrote) orFail(true);
     sink.text(")");
   }
   sink.text(")");
@@ -1344,9 +1345,10 @@ export function effectivePredicate(where: unknown): boolean {
     const name = operatorName(where);
     const value = operatorValue(where);
     if (name === "or") {
-      if (!Array.isArray(value) || value.length === 0) return true;
+      if (!Array.isArray(value)) orFail(false);
+      if (value.length === 0) return true;
       for (const branch of value) {
-        if (!effectivePredicate(branch)) orBranch();
+        if (!effectivePredicate(branch)) orFail(true);
       }
       return true;
     }
@@ -1367,9 +1369,13 @@ export function effectivePredicate(where: unknown): boolean {
   return false;
 }
 
-function orBranch(): never {
-  throw new OkmError("OKM1121", "or() branch is empty.", {
-    fix: { summary: "Give every or() branch a predicate. An empty branch matches every row." },
+function orFail(empty: boolean): never {
+  throw new OkmError("OKM1121", empty ? "or() branch is empty." : "Pass an array: or([a, b]).", {
+    fix: {
+      summary: empty
+        ? "Give every or() branch a predicate. An empty branch matches every row."
+        : "Pass an array: or([a, b]).",
+    },
   });
 }
 

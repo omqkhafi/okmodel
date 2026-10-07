@@ -120,6 +120,28 @@ test("QA-H1: an or() branch with no predicate is OKM1121", async () => {
   expect(kept.text).toContain(" or ");
 });
 
+test("QA-M4: or() without one array is OKM1121", async () => {
+  const spread = or as (left: unknown, right?: unknown) => unknown;
+  for (const run of [
+    () => spread({ id: NOTE }, { title: "a" }),
+    () => spread([{ id: NOTE }], { title: "b" }),
+    () => (or as () => unknown)(),
+    () => spread("nope"),
+  ]) {
+    const error = await codeOf(run);
+    expect(error.code).toBe("OKM1121");
+    expect(error.message).toContain("Pass an array: or([a, b])");
+  }
+  const db = client();
+  await db.connected;
+  const planned = await codeOf(() =>
+    db.notes.find({ where: tag("or", { id: NOTE }), limit: 1 }).sql(),
+  );
+  expect(planned.code).toBe("OKM1121");
+  expect(planned.message).toContain("Pass an array: or([a, b])");
+  expect(planned.message.includes("false")).toBe(false);
+});
+
 test("QA-H2: archive and restore refuse an undefined-only where", async () => {
   const db = connect(pool, { schema: archiveApp });
   await db.connected;
