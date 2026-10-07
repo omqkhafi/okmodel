@@ -1,6 +1,6 @@
 # Size and cold start
 
-Numbers are from `bun run size` (`scripts/size.ts`) on this release commit. CI job `check / package` in [`.github/workflows/check.yml`](../.github/workflows/check.yml) runs that script. Cold import is the median of five fresh Node processes (D134). The failing cold-import gate is 25 ms, and it applies to the runtime entry only. A local sample above 15 ms is printed and does not fail the script.
+Numbers are from `bun run size` (`scripts/size.ts`) on this release commit. CI job `check` in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs `bun run check`, which runs that script. Cold import is the median of five fresh Node processes (D134). The failing cold-import gate is 25 ms, and it applies to the runtime entry only. A local sample above 15 ms is printed and does not fail the script.
 
 Byte gates fail in that CI job. Install size is the unminified `dist/` and is printed, not gated.
 
