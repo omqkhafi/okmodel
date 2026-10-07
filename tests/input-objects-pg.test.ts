@@ -3,8 +3,8 @@
  *
  * A column takes the objects its codec declares as input: Temporal for the date
  * and time types, any JSON for json and jsonb, arrays for array columns, bytes
- * for bytea, plain shapes for ranges and points. A where value the codec accepts
- * is equality. Every other object is OKM1121 and no statement is sent.
+ * for bytea, plain shapes for ranges and points. Every other object is OKM1121
+ * and no statement is sent.
  */
 
 import { expect } from "bun:test";
@@ -203,10 +203,6 @@ postgresTest(
         await db.samples.find({ where: { tod: eq(T.PlainTime.from("00:00:01")) }, ...here }),
       ).toHaveLength(1);
       expect(await db.samples.count({ where: { at: eq(LATER) } })).toBe(1);
-      expect(await db.samples.find({ where: { at: LATER as never }, ...here })).toHaveLength(1);
-      expect(
-        await db.samples.count({ where: { day: T.PlainDate.from("2022-01-02") as never } }),
-      ).toBe(1);
       expect(await db.samples.delete({ where: { at: eq(LATER) } })).toEqual({ count: 1 });
 
       // Date is not an input of any default codec: refused, nothing sent
@@ -218,6 +214,10 @@ postgresTest(
         () => db.samples.insert({ every: NOON as never }),
         () => db.samples.update({ where: { n: 1 }, set: { at: new Date() as never } }),
         () => db.samples.find({ where: { at: eq(new Date() as never) }, limit: 1 }),
+        // a bare object in a where is refused for every column, Temporal included
+        () => db.samples.find({ where: { at: LATER as never }, limit: 1 }),
+        () => db.samples.update({ where: { at: NOON as never }, set: { n: 1 } }),
+        () => db.samples.count({ where: { day: T.PlainDate.from("2022-01-02") as never } }),
         () => db.samples.find({ where: { at: lt(new Date() as never) }, limit: 1 }),
         () => db.samples.find({ where: { at: inList([NOON, new Date() as never]) }, limit: 1 }),
       ];
@@ -290,18 +290,13 @@ postgresTest(
       expect(next.map((r) => r.meta)).toEqual([{ replaced: true }]);
       expect(next.map((r) => r.tags)).toEqual([["z"]]);
 
-      // where equality: bigint bare, arrays, jsonb, and ranges through eq or a bare value
+      // where equality: bigint bare, arrays, jsonb, and ranges through eq
       const here = { limit: 5, select: ["n"] } as const;
       expect(await db.samples.find({ where: { tags: eq(["z"]) }, ...here })).toHaveLength(1);
-      expect(await db.samples.find({ where: { tags: ["z"] as never }, ...here })).toHaveLength(1);
       expect(await db.samples.find({ where: { tags: eq(["y"]) }, ...here })).toHaveLength(0);
       expect(
         await db.samples.find({ where: { meta: eq({ replaced: true }) }, ...here }),
       ).toHaveLength(1);
-      expect(
-        await db.samples.find({ where: { meta: { replaced: true } as never }, ...here }),
-      ).toHaveLength(1);
-      expect(await db.samples.find({ where: { meta: [1] as never }, ...here })).toHaveLength(0);
       expect(await db.samples.find({ where: { meta: eq({ replaced: 1 }) }, ...here })).toHaveLength(
         0,
       );
@@ -321,9 +316,14 @@ postgresTest(
       ).toHaveLength(1);
       expect(await total(sql, "samples")).toBe(1);
 
-      // a bare object the codec does not take stays OKM1121
+      // a bare object in a where stays refused (D125), arrays included
       const before = sent();
       const bare: readonly (() => Promise<unknown>)[] = [
+        () => db.samples.find({ where: { meta: { replaced: true } as never }, limit: 1 }),
+        () => db.samples.find({ where: { meta: [1] as never }, limit: 1 }),
+        () => db.samples.find({ where: { span: { empty: true } as never }, limit: 1 }),
+        () => db.samples.find({ where: { pt: { x: 0, y: 0 } as never }, limit: 1 }),
+        () => db.samples.find({ where: { tags: ["z"] as never }, limit: 1 }),
         () => db.samples.find({ where: { tags: { gt: ["a"] } as never }, limit: 1 }),
       ];
       for (const run of bare) expect(await code(run)).toBe("OKM1121");

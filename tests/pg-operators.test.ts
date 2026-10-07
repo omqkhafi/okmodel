@@ -300,14 +300,8 @@ test("hostile keys, paths, and configs fail or stay parameters", async () => {
   ).toBe("OKM1122");
 
   const forged: unknown = JSON.parse(JSON.stringify(contains({ published: true })));
-  const forgedSql = await described(db, { meta: forged });
-  expect(forgedSql.text).toContain('"meta" = ');
-  expect(forgedSql.text.includes("@>")).toBe(false);
-  expect(forgedSql.text.includes("published")).toBe(false);
-  expect(forgedSql.params.some((param) => param?.includes("published"))).toBe(true);
-  const bare = await described(db, { meta: { published: true } });
-  expect(bare.text).toContain('"meta" = ');
-  expect(bare.text.includes("published")).toBe(false);
+  expect(await codeOf(() => described(db, { meta: forged }))).toBe("OKM1121");
+  expect(await codeOf(() => described(db, { meta: { published: true } }))).toBe("OKM1121");
   await db.close();
 });
 
