@@ -32,6 +32,7 @@ Also not in this version:
 ## Topology
 
 - **The watermark is client-wide.** The root, `for()`, `unscoped()`, `using()`, and `reserve()` share one commit position (D204). A write on any of them moves the watermark for the others. A watermark per `for()` client is deferred: the router cannot see which client issued the statement.
+- **Statement class is the statement text.** A leading `select` is a read. That includes a `select` whose body calls `nextval`, and a view defined that way: `find` sends it to a replica, and the hot standby rejects it as read-only. The classifier stays text-based. Raw SQL in M2 needs an explicit class (D205).
 - **A committed write costs one extra round trip** when replicas are configured and `consistency` is `"session"`. That read is `pg_current_wal_insert_lsn()` after the commit, and it finishes before the write's promise resolves. `"eventual"`, and a connect with no replicas, do not read it.
 - **A position is not carried across processes.** A cookie or a header that would keep read-your-writes across servers stays deferred (spec section 25).
 
