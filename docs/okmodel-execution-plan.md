@@ -139,6 +139,20 @@ Open after 0.4, not built in this train: typed function calls and builder views 
 | P65 | `p65-reference-app` | shipped: the reference app (private workspace package `packages/reference-app`, D207): multi-tenant, traits, archive, three generated migrations, a function and views, and the replica topology. It runs in the existing `postgres` and `tarball` jobs as the end-to-end proof: use cases with query counts and `isolation()`, two preview databases at once from the snapshot, a rehearsal on a populated `TEMPLATE` clone, and read-your-write as the application role. Two defects it found are fixed: parallel applies racing on a new managed role (`CREATE ROLE` ignores a role created first), and `isolation()` failing on a schema with a tenant view (views are left out) |
 | P66 | `p66-gate-m1` | shipped: release 0.5; M1 complete (D209). The OKE `store.sql` prototype starts after this release |
 
+### Train 0.5.1 (QA fixes)
+
+QA of 0.5.0 (`fe9fad8`) found defects. This train fixes them and releases 0.5.1. Milestone [0.5.1](https://github.com/omqkhafi/okmodel/milestone/7).
+
+| ID | Branch | Delivers |
+|---|---|---|
+| P67 | `p67-qa-write-safety` | Write safety (D210). A write whose where has no effective predicate, including undefined values, is OKM1102 on `update`, `delete`, `archive`, and `restore` (QA-C1, QA-H2). A field value is a leaf, so a timestamp, a date, bytes, and a jsonb object stay in the filter. An `or()` branch with no effective predicate is OKM1121 in reads and writes; `or([])` stays `false` (QA-H1). `or()` with a non-array or more than one argument is OKM1121 at the call, and a non-array value in the planner is OKM1121 (QA-M4). An unknown key on `update`, including `timeout` and `retruning`, is OKM1120, and `tx(fn, opts)` is OKM1120 (QA-M2). A bad option on `find`, `one`, and `count` returns a rejected query (QA-M11). `page` and `aggregate` already did. A property test checks the tenant predicate on every table alias (QA-S4) |
+| P68 | `p68-migration-linter` | Migration linter lexer (QA-H3). `okm migrate check` reads comments, `DO` blocks, and every statement |
+| P69 | `p69-runtime-reliability` | Runtime reliability (QA-M1, QA-M3, QA-M5, QA-L8, QA-L9, QA-L11, QA-L12). Replica fallback, timeouts, early close, and error mapping |
+| P70 | `p70-tooling-helpers` | Tooling and testing helpers (QA-M6, QA-M7, QA-M8, QA-M9, QA-M10, QA-L1, QA-L2, QA-L3, QA-L5, QA-L6, QA-L7, QA-L10 as docs, QA-L13, QA-S1 audit, QA-S2, QA-S3). CLI, check, isolation, and filters |
+| P71 | `p71-release-051` | Packaging, CI, docs, the gate, and release 0.5.1 (QA-R1 to QA-R4, D1 to D8) |
+
+Deferred, with reasons. QA-L4 (catalog identity and constraint names) waits for 0.6, with a rename design. A `refresh()` handle for materialized views waits for 0.6.
+
 ### Later phases (prompts written when reached)
 
 M2 Depth (tenancy `path`/`composite`/`rls`, `filters()`, SQL builder lane, typed raw SQL, full linter, `okm pull`, `versioned`/`sortable`, extension packs, several catalogs, dev inspector including routing reasons on `inspect()`, `explain()`, `okmodel/otel`, GitHub Action, adapters), M3 SQLite, M4 MySQL, M5 Hardening (schema-per-tenant and database-per-tenant with `tenancy.registry`, target resolution, tenant provisioning and rollout control (`--class`, `--canary`, `--concurrency`, `--max-failures`, contract gating, second pass), studio, live docs), then the 1.0 gate.

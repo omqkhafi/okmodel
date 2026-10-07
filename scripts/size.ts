@@ -77,10 +77,11 @@ export const APP_MAX_MIN_BYTES = 90_900;
 /**
  * Gzipped app-fixture ceiling, in bytes (D160).
  *
- * P27 measured 29,326. Plus 3 percent is 30,206, so the 30,000 allowance (D143) is the gate.
+ * P27 measured 29,326. Plus 3 percent is 30,206, so the 30,000 allowance (D143) was the gate.
+ * P67 measured 30,007 and set the gate to that plus 20, rounded up (D210).
  * Was 29,210 (P24).
  */
-export const APP_MAX_GZIP_BYTES = 30_000;
+export const APP_MAX_GZIP_BYTES = 30_030;
 
 /**
  * Public connect entries, driver left external (D142, D143, D156).
@@ -96,15 +97,15 @@ export const CONNECT_ENTRIES = [
     entry: "src/runtime/pg/postgresjs.ts",
     file: "postgresjs.js",
     external: ["postgres"],
-    maxMinBytes: 41_600,
-    maxGzipBytes: 14_600,
+    maxMinBytes: 41_950,
+    maxGzipBytes: 14_750,
   },
   {
     entry: "src/runtime/pg/pglite.ts",
     file: "pglite.js",
     external: ["@electric-sql/pglite"],
-    maxMinBytes: 39_300,
-    maxGzipBytes: 13_980,
+    maxMinBytes: 40_000,
+    maxGzipBytes: 14_130,
   },
   {
     entry: "src/runtime/pg/pg.ts",
