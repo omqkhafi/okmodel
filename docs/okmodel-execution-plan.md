@@ -137,7 +137,7 @@ Open after 0.4, not built in this train: typed function calls and builder views 
 | P64A | `p64a-github-standards` | shipped: one GitHub standard in `docs/github.md`, issue forms, a path labeler, a pull-request metadata check, Dependabot, and release-note groups (D206). No change under `src/` or `packages/` |
 | P65A | `p65a-reference-app-fixes` | shipped: the catalog check defects the reference app found (D208). `okm migrate check` reads each scratch schema on its own search path and retargets default privileges; view scratch creates functions before views; the archivable predicate is the printed text; function grants compare argument types; provision grants stay in the scratch schema; roles and grants leave the startup hash, and `okm migrate apply` restamps a pre-D208 hash; `db.views` is typed. Follow-ups are listed under the dependency notes |
 | P65 | `p65-reference-app` | shipped: the reference app (private workspace package `packages/reference-app`, D207): multi-tenant, traits, archive, three generated migrations, a function and views, and the replica topology. It runs in the existing `postgres` and `tarball` jobs as the end-to-end proof: use cases with query counts and `isolation()`, two preview databases at once from the snapshot, a rehearsal on a populated `TEMPLATE` clone, and read-your-write as the application role. Two defects it found are fixed: parallel applies racing on a new managed role (`CREATE ROLE` ignores a role created first), and `isolation()` failing on a schema with a tenant view (views are left out) |
-| P66 | `p66-gate-m1` | release 0.5; M1 complete; OKE `store.sql` prototype starts |
+| P66 | `p66-gate-m1` | shipped: release 0.5; M1 complete (D209). The OKE `store.sql` prototype starts after this release |
 
 ### Later phases (prompts written when reached)
 
@@ -156,7 +156,7 @@ Problems found in the earlier order and how the table above resolves them:
 - **Ownership needed by every object kind:** it is in the P10 contract.
 - **Recreate needed by views:** dependency-aware recreate moved from P51 to P42; P51 keeps lock display and cross-kind verification.
 - **`protected.policy` enumeration needs seed:** `okm seed` shipped in P54 (D199). The full enumeration shipped in P55 (D200).
-- **Routing before consistency:** P61 shipped the wrote flag (writers read from the primary). P63 replaced it with commit positions (D204). A watermark per `for()` client stays deferred. The extra fallback rate under write load was measured in P64 (D205).
+- **Routing before consistency:** P61 shipped the wrote flag (writers read from the primary). P63 replaced it with commit positions (D204). A watermark per `for()` client stays deferred. The extra fallback rate under write load is the P66 sample (D209), which replaces the thin P64 count (D205).
 - **The M1 reference app had no prompt:** P65.
 - **Reference app follow-ups not in P65A** (D208): the raw driver stack printed when the database does not exist; exporting `Connected` and `RoutedClient` by name; the application role's manual `GRANT SELECT` on `okm_meta`.
 - **Reference app follow-ups from P65** (D207): a read-only `isolation()` check for tenant views (M2).

@@ -13,7 +13,8 @@ import { join } from "node:path";
 
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
 import { openPostgres } from "../packages/harness/src/postgres.js";
-import { primaryUrl } from "../packages/harness/src/topology.js";
+import { compareLsn } from "../packages/harness/src/lsn.js";
+import { primaryUrl, replicaUrl, type ReplicaName } from "../packages/harness/src/topology.js";
 import { repoRoot } from "../scripts/root.js";
 import {
   command,
@@ -73,6 +74,20 @@ postgresTest(
   },
   360_000,
 );
+
+test("the topology example in the readme is the docs sample", () => {
+  const readme = fenceSource(join(root, "README.md"), "replicas.ts");
+  const docs = fenceSource(join(root, "docs/readme-examples.md"), "replicas.ts");
+  expect(docs).toBe(readme);
+  expect(readme).toContain("onRoute");
+  expect(readme).toContain('route: "primary"');
+  expect(readme).toContain('route: "replica"');
+  expect(readme).toContain('db.using("replica")');
+  expect(readme).toContain('consistency: "session"');
+  expect(readme).toContain('consistency: "eventual"');
+  expect(readme).toContain('select: "weighted"');
+  expect(readme).toContain("await db.close()");
+});
 
 test("okmodel/testing imports from the packed tarball", async () => {
   const tarball = sharedTarball();
@@ -262,6 +277,14 @@ async function runReadme(
     expect(checked.trim()).toBe("ok");
     await command(dir, ["bun", "factory.ts"]);
     for (const line of push) await command(dir, line.split(/\s+/), { DATABASE_URL: pushUrl });
+    if (replay) {
+      await waitForReplicas(pushUrl);
+      await command(dir, ["bun", "replicas.ts"], {
+        DATABASE_URL: pushUrl,
+        REPLICA_URL: databaseOnReplica(pushUrl, "a"),
+        REPLICA_URL_WEST: databaseOnReplica(pushUrl, "b"),
+      });
+    }
     await command(dir, ["bun", "run.ts"], { DATABASE_URL: pushUrl });
     await command(dir, ["bun", "script.ts"], { DATABASE_URL: pushUrl });
     for (const line of migrate) await command(dir, line.split(/\s+/), { DATABASE_URL: applyUrl });
@@ -372,6 +395,62 @@ async function withProject(
  * @param path - Document path, for the error
  * @returns Sources keyed by file name
  */
+function fenceSource(path: string, file: string): string {
+  const fence = markdownFences(readFileSync(path, "utf8")).find(
+    (item) => item.lang === "ts" && fenceFileName(item.label) === file,
+  );
+  if (fence === undefined) throw new Error(`${path} has no ${file} fence`);
+  return fence.code;
+}
+
+/**
+ * Waits until both standbys have replayed the primary's insert position.
+ *
+ * @param databaseUrl - Primary URL of the database the example reads
+ */
+async function waitForReplicas(databaseUrl: string): Promise<void> {
+  const primary = openPostgres(databaseUrl);
+  try {
+    const rows = await primary<{ lsn: string }[]>`
+      select pg_current_wal_insert_lsn()::text as lsn
+    `;
+    const lsn = rows[0]?.lsn;
+    if (lsn === undefined) throw new Error("primary did not return an insert LSN");
+    for (const name of ["a", "b"] as const) {
+      const sql = openPostgres(databaseOnReplica(databaseUrl, name));
+      const deadline = Date.now() + 20_000;
+      try {
+        for (;;) {
+          const seen = await sql<{ lsn: string | null }[]>`
+            select pg_last_wal_replay_lsn()::text as lsn
+          `;
+          const value = seen[0]?.lsn;
+          if (value !== null && value !== undefined && compareLsn(value, lsn) >= 0) break;
+          if (Date.now() > deadline) throw new Error(`replica ${name} did not replay ${lsn}`);
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+      } finally {
+        await sql.end({ timeout: 5 });
+      }
+    }
+  } finally {
+    await primary.end({ timeout: 5 });
+  }
+}
+
+/**
+ * The same database on one published standby port.
+ *
+ * @param databaseUrl - Primary URL, including the database name
+ * @param name - Standby `a` or `b`
+ * @returns A `postgres://` URL
+ */
+function databaseOnReplica(databaseUrl: string, name: ReplicaName): string {
+  const replica = new URL(replicaUrl(name));
+  replica.pathname = new URL(databaseUrl).pathname;
+  return replica.href.replace(/\/$/, "");
+}
+
 function typescriptFiles(
   fences: readonly MarkdownFence[],
   required: readonly string[],
