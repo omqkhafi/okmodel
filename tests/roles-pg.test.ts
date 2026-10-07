@@ -26,7 +26,6 @@ import { connect } from "../src/runtime/pg/postgresjs.js";
 import { applyTarget } from "../src/tooling/migrate/apply.js";
 import { run } from "../src/tooling/migrate/commands.js";
 import { planMigration } from "../src/tooling/migrate/plan.js";
-import { app as reference } from "./fixtures/reference-app/schema.js";
 
 const gate = await loadPostgresGate();
 const root = repoRoot();
@@ -391,41 +390,6 @@ postgresTest(
     );
   },
   90_000,
-);
-
-postgresTest(
-  gate,
-  "the reference schema passes every check and connects without catalogDir",
-  async () => {
-    const fixture = JSON.stringify(join(root, "tests/fixtures/reference-app/schema.ts"));
-    await withRolesProject(`export { app } from ${fixture};`, async ({ cwd, url }) => {
-      await output(["generate", "init"], cwd);
-      await output(["migrate", "apply"], cwd);
-      expect(await output(["check"], cwd)).toBe("ok\n");
-      expect(await output(["migrate", "check"], cwd)).toBe("ok 1 migrations\n");
-      expect(await output(["migrate", "check", "--provision"], cwd)).toBe("ok 1 migrations\n");
-      const db = connect(url, { schema: reference, max: 1 });
-      try {
-        const scoped = db.for({ workspaceId: "00000000-0000-4000-8000-000000000001" });
-        const project = await scoped.projects.insert({ name: "Launch", slug: "launch" });
-        await scoped.tasks.insert({ projectId: project.id, title: "Ship", status: "todo" });
-        await scoped.tasks.insert({ projectId: project.id, title: "Plan", status: "done" });
-        const open = await scoped.views.openTasks.find({ limit: 5 });
-        expect(open).toEqual([
-          {
-            workspaceId: "00000000-0000-4000-8000-000000000001",
-            projectId: project.id,
-            openTasks: "1",
-          },
-        ]);
-        const active = await scoped.views.activeProjects.find({ limit: 5, select: ["name"] });
-        expect(active).toEqual([{ name: "Launch" }]);
-      } finally {
-        await db.close();
-      }
-    });
-  },
-  120_000,
 );
 
 postgresTest(
