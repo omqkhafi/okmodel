@@ -236,7 +236,7 @@ test("QA-H2: archive and restore refuse an undefined-only where", async () => {
   expect(every.statements[0]?.text).toContain("archived_at");
 });
 
-test("QA-C1: an object field value stays in the compiled where", async () => {
+test("QA-C1: an eq object value stays in the compiled where", async () => {
   const stamps = table("stamps", {
     id: id({ default: "none" }),
     createdAt: timestamptz(),
@@ -251,13 +251,13 @@ test("QA-C1: an object field value stays in the compiled where", async () => {
   const plain = Temporal.PlainDate.from("2020-02-29");
   const bytes = new Uint8Array([1, 2, 3, 4]);
   const cases = [
-    db.stamps.find({ where: { createdAt: instant } as never, limit: 1 }).sql(),
-    db.stamps.count({ where: { day: plain } as never }).sql(),
-    db.stamps.find({ where: { blob: bytes } as never, limit: 1 }).sql(),
-    db.stamps.find({ where: { meta: {} }, limit: 1 }).sql(),
-    db.stamps.find({ where: { meta: { a: 1 } }, limit: 1 }).sql(),
-    db.stamps.delete({ where: { day: plain } as never }).sql(),
-    db.stamps.update({ where: { createdAt: instant } as never, set: { meta: { a: 1 } } }).sql(),
+    db.stamps.find({ where: { createdAt: eq(instant) }, limit: 1 }).sql(),
+    db.stamps.count({ where: { day: eq(plain) } }).sql(),
+    db.stamps.find({ where: { blob: eq(bytes) }, limit: 1 }).sql(),
+    db.stamps.find({ where: { meta: eq({}) }, limit: 1 }).sql(),
+    db.stamps.find({ where: { meta: eq({ a: 1 }) }, limit: 1 }).sql(),
+    db.stamps.delete({ where: { day: eq(plain) } }).sql(),
+    db.stamps.update({ where: { createdAt: eq(instant) }, set: { meta: { a: 1 } } }).sql(),
   ];
   for (const pending of cases) {
     const value = await pending;
@@ -267,6 +267,32 @@ test("QA-C1: an object field value stays in the compiled where", async () => {
     expect(text).toContain(" = ");
     expect(params?.length ?? 0).toBeGreaterThan(0);
   }
+});
+
+test("QA-C1: a bare object is a predicate, then OKM1121", async () => {
+  const stamps = table("stamps", {
+    id: id({ default: "none" }),
+    createdAt: timestamptz(),
+    day: date(),
+    blob: bytea(),
+    meta: jsonb(),
+  });
+  const db = connect(pool, { schema: schema({ casing: "snake", tables: [stamps] }) });
+  await db.connected;
+  const instant = Temporal.Instant.from("2020-01-02T03:04:05Z");
+  const plain = Temporal.PlainDate.from("2020-02-29");
+  expect(effectivePredicate({ createdAt: instant })).toBe(true);
+  expect(effectivePredicate({ day: plain })).toBe(true);
+  expect(effectivePredicate({ blob: new Uint8Array([1]) })).toBe(true);
+  expect(effectivePredicate({ meta: {} })).toBe(true);
+  expect(effectivePredicate({ createdAt: eq(instant) })).toBe(true);
+  expect(effectivePredicate({ meta: eq({}) })).toBe(true);
+  expect(effectivePredicate({ title: tag("lt", 1) })).toBe(true);
+  expect(effectivePredicate({ title: tag("inList", ["a"]) })).toBe(true);
+  const bare = await codeOf(() => db.stamps.delete({ where: { day: plain } as never }).sql());
+  expect(bare.code).toBe("OKM1121");
+  const empty = await codeOf(() => db.stamps.delete({ where: { meta: {} } }).sql());
+  expect(empty.code).toBe("OKM1121");
 });
 
 test("effective predicate ignores undefined through and, not, relations, and operators", () => {

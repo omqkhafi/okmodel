@@ -1,14 +1,18 @@
 /**
- * Object column values are leaves. A where on them filters the matching rows.
+ * Object column values are leaves. Equality goes through `eq` (D125).
  *
- * The timestamp input is Temporal.Instant. A Date is not a codec input (D178).
+ * A bare object is OKM1121 and sends no statement. The timestamp input is
+ * Temporal.Instant. A Date is not a codec input (D178).
  */
 
 import { expect } from "bun:test";
 
+import type { DriverPool } from "../src/contracts/driver.js";
+import { OkmError } from "../src/contracts/error.js";
 import {
   bytea,
   date,
+  eq,
   id,
   jsonb,
   schema,
@@ -20,6 +24,7 @@ import { renderCatalog } from "../src/dialects/pg/ddl.js";
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
 import { withPostgresSchema } from "../packages/harness/src/postgres.js";
 import { primaryUrl } from "../packages/harness/src/topology.js";
+import { open } from "../src/adapters/pg/postgresjs.js";
 import { connect } from "../src/runtime/pg/postgresjs.js";
 import { archivable } from "../src/runtime/traits/index.js";
 
@@ -50,13 +55,43 @@ const app = schema({ casing: "snake", tables: [notes] });
 
 const gate = await loadPostgresGate();
 
+function counted(pool: DriverPool): { readonly pool: DriverPool; sent(): number } {
+  let sent = 0;
+  return {
+    pool: {
+      ...pool,
+      execute: (...args) => {
+        sent += 1;
+        return pool.execute(...args);
+      },
+      batch: (...args) => {
+        sent += 1;
+        return pool.batch(...args);
+      },
+    },
+    sent: () => sent,
+  };
+}
+
+async function code(pending: () => Promise<unknown>): Promise<string | undefined> {
+  try {
+    await pending();
+  } catch (error) {
+    if (error instanceof OkmError) return error.code;
+    throw error;
+  }
+  return undefined;
+}
+
 postgresTest(
   gate,
-  "QA-C1: object field values filter the matching rows",
+  "QA-C1: eq object values filter the matching rows",
   async () => {
     await withPostgresSchema(async (sql, schemaName) => {
       for (const statement of renderCatalog(app.catalog, schemaName)) await sql.unsafe(statement);
-      const db = connect(primaryUrl(), { schema: app, searchPath: schemaName, max: 1 });
+      const raw = open({ url: primaryUrl(), searchPath: schemaName });
+      const spy = counted(raw);
+      const db = connect(spy.pool, { schema: app });
       try {
         await db.connected;
         await db.notes.insert({
@@ -76,37 +111,52 @@ postgresTest(
           meta: { a: 1 },
         });
 
-        const byInstant = await db.notes.find({ where: { createdAt: AT } as never, limit: 5 });
+        const byInstant = await db.notes.find({ where: { createdAt: eq(AT) }, limit: 5 });
         expect(byInstant.map((row) => row.id)).toEqual([MATCH]);
-        expect(
-          await db.notes.find({ where: { createdAt: AT_OTHER } as never, limit: 5 }),
-        ).toHaveLength(1);
-        expect(await db.notes.count({ where: { day: DAY } as never })).toBe(1);
-        expect(await db.notes.count({ where: { day: DAY_OTHER } as never })).toBe(1);
-        expect(await db.notes.find({ where: { meta: {} }, limit: 5 })).toHaveLength(1);
-        expect(await db.notes.find({ where: { meta: { a: 1 } }, limit: 5 })).toHaveLength(1);
-        expect(await db.notes.find({ where: { blob: BYTES } as never, limit: 5 })).toHaveLength(1);
+        expect(await db.notes.find({ where: { createdAt: eq(AT_OTHER) }, limit: 5 })).toHaveLength(
+          1,
+        );
+        expect(await db.notes.count({ where: { day: eq(DAY) } })).toBe(1);
+        expect(await db.notes.count({ where: { day: eq(DAY_OTHER) } })).toBe(1);
+        expect(await db.notes.find({ where: { meta: eq({}) }, limit: 5 })).toHaveLength(1);
+        expect(await db.notes.find({ where: { meta: eq({ a: 1 }) }, limit: 5 })).toHaveLength(1);
+        expect(await db.notes.find({ where: { blob: eq(BYTES) }, limit: 5 })).toHaveLength(1);
         expect(await db.notes.count()).toBe(2);
 
         expect(
-          await db.notes.update({ where: { createdAt: AT } as never, set: { title: "edited" } }),
+          await db.notes.update({ where: { createdAt: eq(AT) }, set: { title: "edited" } }),
         ).toEqual({ count: 1 });
         expect((await db.notes.find({ where: { id: OTHER }, limit: 1 }))[0]?.title).toBe("other");
 
-        expect(await db.notes.archive({ where: { day: DAY } as never })).toMatchObject({
-          count: 1,
-        });
+        expect(await db.notes.archive({ where: { day: eq(DAY) } })).toMatchObject({ count: 1 });
         expect(await db.notes.count()).toBe(1);
         expect(await db.notes.onlyArchived().count()).toBe(1);
-        expect(await db.notes.restore({ where: { blob: BYTES } as never })).toEqual({ count: 1 });
+        expect(await db.notes.restore({ where: { blob: eq(BYTES) } })).toEqual({ count: 1 });
         expect(await db.notes.count()).toBe(2);
         expect(await db.notes.onlyArchived().count()).toBe(0);
 
-        expect(await db.notes.delete({ where: { meta: {} } })).toEqual({ count: 1 });
+        expect(await db.notes.delete({ where: { meta: eq({}) } })).toEqual({ count: 1 });
         expect(await db.notes.count()).toBe(1);
         expect((await db.notes.find({ where: { id: OTHER }, limit: 1 }))[0]?.title).toBe("other");
+
+        const before = spy.sent();
+        const bare: readonly (() => Promise<unknown>)[] = [
+          () => db.notes.find({ where: { createdAt: AT } as never, limit: 1 }),
+          () => db.notes.count({ where: { day: DAY } as never }),
+          () => db.notes.find({ where: { blob: BYTES } as never, limit: 1 }),
+          () => db.notes.find({ where: { meta: {} }, limit: 1 }),
+          () => db.notes.find({ where: { meta: { a: 1 } }, limit: 1 }),
+          () => db.notes.update({ where: { createdAt: AT } as never, set: { title: "no" } }),
+          () => db.notes.archive({ where: { day: DAY } as never }),
+          () => db.notes.restore({ where: { blob: BYTES } as never }),
+          () => db.notes.delete({ where: { meta: {} } }),
+        ];
+        for (const run of bare) expect(await code(run)).toBe("OKM1121");
+        expect(spy.sent()).toBe(before);
+        expect(await db.notes.count()).toBe(1);
       } finally {
         await db.close();
+        await raw.close();
       }
     });
   },

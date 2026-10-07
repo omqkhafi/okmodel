@@ -50,13 +50,11 @@ const valuedApp = schema({
 });
 
 const objectWhere = fc.oneof(
-  fc.constant({ createdAt: INSTANT }),
-  fc.constant({ day: PLAIN }),
-  fc.constant({ blob: BYTES }),
-  fc.constant({ meta: {} }),
-  fc.constant({ meta: { a: 1 } }),
   fc.constant({ createdAt: eq(INSTANT) }),
+  fc.constant({ day: eq(PLAIN) }),
+  fc.constant({ blob: eq(BYTES) }),
   fc.constant({ meta: eq({}) }),
+  fc.constant({ meta: eq({ a: 1 }) }),
 );
 
 const TENANT = new Set(["orgs", "tasks"]);
@@ -186,7 +184,7 @@ test("QA-S4: object-valued equality keeps the predicate", async () => {
   await assertGate(
     "QA-S4-objects",
     fc.asyncProperty(objectWhere, async (filter) => {
-      const compiled = await scoped.valued.find({ where: filter as never, limit: 2 }).sql();
+      const compiled = await scoped.valued.find({ where: filter, limit: 2 }).sql();
       const text = "text" in compiled ? compiled.text : "";
       expect(text).toContain('t."tenant_id"');
       expect(text).toContain(" = ");
