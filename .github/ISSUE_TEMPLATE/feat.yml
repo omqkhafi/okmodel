@@ -1,0 +1,38 @@
+name: Feature
+description: A new capability
+labels: ["type: feat"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This applies `type: feat`. Add at least one `area:` label. See docs/github.md.
+  - type: textarea
+    id: what
+    attributes:
+      label: What should this do
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: "Add the matching area: label on the issue."
+      multiple: true
+      options:
+        - contracts
+        - dialects
+        - adapters
+        - runtime
+        - tooling
+        - ci
+        - docs
+    validations:
+      required: true
+  - type: checkboxes
+    id: needs
+    attributes:
+      label: Needs
+      description: "Add the matching needs: label when one applies."
+      options:
+        - label: "needs: decision"
+        - label: "needs: design"

@@ -1,0 +1,26 @@
+changelog:
+  categories:
+    - title: Features
+      labels:
+        - "type: feat"
+    - title: Performance
+      labels:
+        - "type: perf"
+    - title: Fixes
+      labels:
+        - "type: fix"
+    - title: Security
+      labels:
+        - "type: security"
+    - title: Documentation
+      labels:
+        - "type: docs"
+    - title: Tests
+      labels:
+        - "type: test"
+    - title: Refactors
+      labels:
+        - "type: refactor"
+    - title: Chores
+      labels:
+        - "type: chore"

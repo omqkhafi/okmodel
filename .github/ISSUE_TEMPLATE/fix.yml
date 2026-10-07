@@ -1,0 +1,46 @@
+name: Bug
+description: Current behavior is wrong
+labels: ["type: fix"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This applies `type: fix`. Add at least one `area:` label. See docs/github.md.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: "Steps, a schema, and the error. Add needs: repro if you cannot reproduce it yet."
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: "Add the matching area: label on the issue."
+      multiple: true
+      options:
+        - contracts
+        - dialects
+        - adapters
+        - runtime
+        - tooling
+        - ci
+        - docs
+    validations:
+      required: true
+  - type: checkboxes
+    id: needs
+    attributes:
+      label: Needs
+      description: "Add the matching needs: label when one applies."
+      options:
+        - label: "needs: decision"
+        - label: "needs: repro"
+        - label: "needs: design"

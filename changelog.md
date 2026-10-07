@@ -22,6 +22,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `routing.consistency` is `"session"` (the default) or `"eventual"`. A committed write reads `pg_current_wal_insert_lsn()` before its promise resolves when replicas are configured. That is one extra round trip. Later reads use a replica that has replayed at least that far. The root, `for()`, `unscoped()`, `using()`, and `reserve()` share that watermark. A failed position read keeps automatic reads on the primary (`fallback:position-unknown`, or OKM1844) until the next successful read. A primary probe already in flight does not clear that state; only a probe started in the same unknown generation does. `route: "replica"` and `using("replica")` are OKM1843 while the position is unknown or no replica satisfies it. Healthy replicas that are behind report `fallback:behind` (D204).
 - `routing.maxLag` accepts `"5s"`, `"500ms"`, `"2m"`, `"16MB"`, `"512KB"`, `"1GB"`, and `"4096B"`. A bare number or any other form is OKM1120. A caught-up replica has lag zero. A custom `select` receives that lag in bytes, or `null` when it is unknown (D204).
 - A migrate target that carries `primary`, `replicas`, `weight`, or `pool` is OKM1845. The command does not resolve that URL.
+- Issues and pull requests follow one GitHub standard: one `type:` label, at least one `area:` label, a `type(scope):` title, and a milestone. A check on the pull request enforces it. Dependabot opens grouped weekly updates (D206).
 
 ### ♻️ Changed
 

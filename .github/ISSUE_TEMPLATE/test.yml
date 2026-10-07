@@ -1,0 +1,30 @@
+name: Test
+description: A missing or wrong test
+labels: ["type: test"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This applies `type: test`. Add at least one `area:` label. See docs/github.md.
+  - type: textarea
+    id: what
+    attributes:
+      label: What should the test prove
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: "Add the matching area: label on the issue."
+      multiple: true
+      options:
+        - contracts
+        - dialects
+        - adapters
+        - runtime
+        - tooling
+        - ci
+        - docs
+    validations:
+      required: true
