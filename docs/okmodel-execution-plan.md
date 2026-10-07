@@ -135,6 +135,7 @@ Open after 0.4, not built in this train: typed function calls and builder views 
 | P63 | `p63-consistency-position` | shipped: one client-wide watermark from `pg_current_wal_insert_lsn()` after commit, `routing.consistency` and `routing.maxLag`, position-unknown handling, and the capability gate (D204). A watermark per `for()` client stays deferred |
 | P64 | `p64-topology-conformance` | shipped: topology conformance on the CI primary and two hot standbys (`routing.*`, `pool.separation`, `tx.affinity`, `consistency.position`, selection and health). Weighted `current` is cleared for a replica that sat a pick out, and statement class stays the statement text (D205) |
 | P64A | `p64a-github-standards` | shipped: one GitHub standard in `docs/github.md`, issue forms, a path labeler, a pull-request metadata check, Dependabot, and release-note groups (D206). No change under `src/` or `packages/` |
+| P65A | `p65a-reference-app-fixes` | shipped: the catalog check defects the reference app found (D208). `okm migrate check` reads each scratch schema on its own search path and retargets default privileges; view scratch creates functions before views; the archivable predicate is the printed text; function grants compare argument types; provision grants stay in the scratch schema; roles and grants leave the startup hash, and `okm migrate apply` restamps a pre-D208 hash; `db.views` is typed. Follow-ups are listed under the dependency notes |
 | P65 | `p65-reference-app` | the small reference app (private workspace package `packages/reference-app`) promised by M1: multi-tenant, traits, archive, migrations, objects, and a replica topology; runs in CI as the end-to-end proof, including a preview workflow (a database per job, `migrate apply` from the snapshot) and a rehearsal against a populated clone |
 | P66 | `p66-gate-m1` | release 0.5; M1 complete; OKE `store.sql` prototype starts |
 
@@ -157,6 +158,7 @@ Problems found in the earlier order and how the table above resolves them:
 - **`protected.policy` enumeration needs seed:** `okm seed` shipped in P54 (D199). The full enumeration shipped in P55 (D200).
 - **Routing before consistency:** P61 shipped the wrote flag (writers read from the primary). P63 replaced it with commit positions (D204). A watermark per `for()` client stays deferred. The extra fallback rate under write load was measured in P64 (D205).
 - **The M1 reference app had no prompt:** P65.
+- **Reference app follow-ups not in P65A** (D208): the raw driver stack printed when the database does not exist; exporting `Connected` and `RoutedClient` by name; the application role's manual `GRANT SELECT` on `okm_meta`.
 - **Named targets and apply semantics are foundations, not M5 features:** environments and previews need `--target`, resume and the per-target lock from the first release, so they are in P16; only the multi-target rollout flags wait for M5.
 
 ## Repository conventions (fixed at bootstrap)

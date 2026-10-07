@@ -188,6 +188,37 @@ export function catalogHash(source: Catalog): string {
 }
 
 /**
+ * The catalog `connect()` compares with `okm_meta` (D208).
+ *
+ * Roles, grants, and default privileges come from the migration config, not
+ * the schema, so they are left out. A `schema()` catalog never has them, so
+ * `connect()` hashes it unchanged. `okm check` still verifies them. A
+ * catalog without them is returned as is.
+ *
+ * @param source - Catalog document
+ * @returns The catalog without role, grant, and default-privilege objects
+ */
+export function startupCatalog(source: Catalog): Catalog {
+  if (!source.objects.some(isPrivilege)) return source;
+  return { version: source.version, objects: source.objects.filter((item) => !isPrivilege(item)) };
+}
+
+/**
+ * {@link catalogHash} of {@link startupCatalog}. The hash `okm_meta` and
+ * `okm_history` store, and the one `connect()` computes.
+ *
+ * @param source - Catalog document
+ * @returns Lowercase hex digest
+ */
+export function startupHash(source: Catalog): string {
+  return catalogHash(startupCatalog(source));
+}
+
+function isPrivilege(object: CatalogObject): boolean {
+  return object.kind === "role" || object.kind === "grant" || object.kind === "defaultPrivilege";
+}
+
+/**
  * Loads a build artifact without validating objects.
  *
  * `okm build` already validated the catalog. Production startup checks the

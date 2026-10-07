@@ -19,6 +19,11 @@ import { run } from "../src/tooling/migrate/commands.js";
 const gate = await loadPostgresGate();
 const root = repoRoot();
 
+const ARCHIVABLE_UNIQUE = [
+  `const projects = table("projects", { id: t.id({ default: "uuidv4" }), slug: t.text().unique() }, { traits: [archivable()] });`,
+  "export const app = schema({ tables: [projects] });",
+].join("\n");
+
 postgresTest(
   gate,
   "a clean multi-migration history passes",
@@ -211,6 +216,133 @@ postgresTest(
   60_000,
 );
 
+postgresTest(
+  gate,
+  "a declared view replays and passes",
+  async () => {
+    await withProject(async ({ cwd }) => {
+      writeModule(
+        cwd,
+        [
+          `const tasks = table("tasks", { id: t.identity(), status: t.text() });`,
+          "export const app = schema({",
+          "  tables: [tasks],",
+          `  views: [view("open_tasks", { columns: [{ name: "id", type: "bigint" }], query: ${JSON.stringify(" SELECT id\n   FROM tasks\n  WHERE status <> 'done'::text;")} })],`,
+          "});",
+        ].join("\n"),
+      );
+      await cli(cwd, ["generate", "init"]);
+      expect(await capture(["migrate", "check"], cwd)).toBe("ok 1 migrations\n");
+      expect(await scratchSchemas(cwd)).toEqual([]);
+    });
+  },
+  60_000,
+);
+
+postgresTest(
+  gate,
+  "a function that takes a schema enum replays and passes",
+  async () => {
+    await withProject(async ({ cwd }) => {
+      writeModule(
+        cwd,
+        [
+          `const tasks = table("tasks", { id: t.identity(), status: t.enum("task_status", ["todo", "done"]) });`,
+          `const isOpen = fn("task_is_open", { arguments: [{ name: "status", type: "task_status" }], returns: "boolean", language: "sql", volatility: "immutable", body: "select status <> 'done'::task_status" });`,
+          "export const app = schema({ tables: [tasks], functions: [isOpen] });",
+        ].join("\n"),
+      );
+      await cli(cwd, ["generate", "init"]);
+      expect(await capture(["migrate", "check"], cwd)).toBe("ok 1 migrations\n");
+    });
+  },
+  60_000,
+);
+
+postgresTest(
+  gate,
+  "a view that calls a declared function passes okm check",
+  async () => {
+    await withProject(async ({ cwd }) => {
+      writeModule(
+        cwd,
+        [
+          `const tasks = table("tasks", { id: t.identity(), status: t.text() });`,
+          `const isOpen = fn("is_open", { arguments: [{ name: "status", type: "text" }], returns: "boolean", language: "sql", volatility: "immutable", body: "select status <> 'done'" });`,
+          "export const app = schema({",
+          "  tables: [tasks],",
+          "  functions: [isOpen],",
+          `  views: [view("open_tasks", { columns: [{ name: "id", type: "bigint" }], query: ${JSON.stringify(" SELECT id\n   FROM tasks\n  WHERE is_open(status);")} })],`,
+          "});",
+        ].join("\n"),
+      );
+      await cli(cwd, ["generate", "init"]);
+      await capture(["migrate", "apply"], cwd);
+      expect(await capture(["check"], cwd)).toBe("ok\n");
+      expect(await capture(["migrate", "check"], cwd)).toBe("ok 1 migrations\n");
+    });
+  },
+  60_000,
+);
+
+postgresTest(
+  gate,
+  "an archivable table with a unique column has no drift",
+  async () => {
+    await withProject(async ({ cwd }) => {
+      writeModule(cwd, ARCHIVABLE_UNIQUE);
+      await cli(cwd, ["generate", "init"]);
+      await capture(["migrate", "apply"], cwd);
+      expect(await capture(["check"], cwd)).toBe("ok\n");
+      expect(await capture(["migrate", "check"], cwd)).toBe("ok 1 migrations\n");
+    });
+  },
+  60_000,
+);
+
+postgresTest(
+  gate,
+  "an archivable unique index stored with the old predicate is cleared by one migration",
+  async () => {
+    await withProject(async ({ cwd }) => {
+      writeModule(cwd, ARCHIVABLE_UNIQUE);
+      await cli(cwd, ["generate", "init"]);
+      const printed = '("archivedAt" IS NULL)';
+      const old = '"archivedAt" is null';
+      const sqlPath = migrationPath(cwd, ".sql");
+      const catalogPath = migrationPath(cwd, ".catalog.json");
+      writeFileSync(sqlPath, readFileSync(sqlPath, "utf8").replaceAll(printed, old));
+      const json = (text: string): string => JSON.stringify(text).slice(1, -1);
+      writeFileSync(
+        catalogPath,
+        readFileSync(catalogPath, "utf8").replaceAll(json(printed), json(old)),
+      );
+      await capture(["migrate", "apply"], cwd);
+
+      const pending = await rejected(["check"], cwd);
+      expect(pending.code).toBe("OKM1510");
+      expect(pending.message).toContain("OKM1529");
+      await cli(cwd, ["generate", "archive_predicate"]);
+      const upgrade = migrationPath(cwd, ".sql");
+      expect(upgrade).toContain("0002_archive_predicate");
+      writeFileSync(
+        upgrade,
+        readFileSync(upgrade, "utf8").replace(
+          /^(create unique index concurrently .*)$/m,
+          "-- okm-allow OKM1529: rebuilds the same index with the printed predicate\n$1",
+        ),
+      );
+      expect(await capture(["migrate", "apply"], cwd)).toContain("applied 0002_archive_predicate");
+      expect(await capture(["check"], cwd)).toBe("ok\n");
+
+      const history = await rejected(["migrate", "check"], cwd);
+      expect(history.code).toBe("OKM1547");
+      expect(history.message).toContain("0001_init");
+    });
+  },
+  90_000,
+);
+
 async function writeDrop(cwd: string): Promise<void> {
   writeSchema(cwd, `table("items", { id: t.integer().primaryKey(), note: t.text().nullable() })`);
   await cli(cwd, ["generate", "init"]);
@@ -284,18 +416,23 @@ function writeSchema(
   tables: string,
   options?: { readonly protected?: boolean },
 ): void {
-  const pg = JSON.stringify(join(root, "src/dialects/pg/index.ts"));
+  writeModule(cwd, `export const app = schema({\n  tables: [${tables}],\n});`);
+  if (options?.protected === true) writeConfig(cwd, { protected: true });
+}
+
+function writeModule(cwd: string, body: string): void {
+  const source = (path: string): string => JSON.stringify(join(root, path));
   writeFileSync(
     join(cwd, "schema.ts"),
     [
-      `import { schema, t, table } from ${pg};`,
-      "export const app = schema({",
-      `  tables: [${tables}],`,
-      "});",
+      `import { schema, t, table } from ${source("src/dialects/pg/index.ts")};`,
+      `import { fn } from ${source("src/dialects/pg/fn/index.ts")};`,
+      `import { view } from ${source("src/dialects/pg/view/index.ts")};`,
+      `import { archivable } from ${source("src/runtime/traits/index.ts")};`,
+      body,
       "",
     ].join("\n"),
   );
-  if (options?.protected === true) writeConfig(cwd, { protected: true });
 }
 
 function writeConfig(

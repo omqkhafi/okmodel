@@ -56,7 +56,8 @@ export function rewriteArchivable(
   const edges = foreignKeys(tables, casing, byName);
   const archiveSql = casing === "snake" ? "archived_at" : "archivedAt";
   const idSql = casing === "snake" ? "archive_id" : "archiveId";
-  const predicate = `"${archiveSql.replaceAll('"', '""')}" is null`;
+  // The text Postgres prints back for this predicate. Any other spelling drifts.
+  const predicate = casing === "snake" ? "(archived_at IS NULL)" : '("archivedAt" IS NULL)';
   return tables.map((item) => {
     if (!applies(self, item, schemaTraits)) return item;
     return rewriteOne(

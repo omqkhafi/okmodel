@@ -5,7 +5,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { catalogHash, parseCatalog } from "../../contracts/catalog/document.js";
+import { catalogHash, parseCatalog, startupCatalog } from "../../contracts/catalog/document.js";
 import { OkmError } from "../../contracts/error.js";
 import { parsePlan, type PlanStep } from "./plan.js";
 
@@ -13,6 +13,13 @@ import { parsePlan, type PlanStep } from "./plan.js";
 export type StoredMigration = {
   readonly id: string;
   readonly catalogHash: string;
+  /**
+   * The hash written before D208, which counted roles and grants.
+   *
+   * Set only when the catalog has them. Apply moves a stored copy of it to
+   * {@link StoredMigration.catalogHash}.
+   */
+  readonly legacyHash?: string;
   readonly steps: readonly PlanStep[];
 };
 
@@ -41,8 +48,14 @@ export function loadMigrations(directory: string): readonly StoredMigration[] {
       });
     }
     const plan = parsePlan(readFileSync(join(directory, file), "utf8"));
-    const hash = catalogHash(parseCatalog(readFileSync(catalogPath, "utf8")));
-    migrations.push({ id, catalogHash: hash, steps: plan.steps });
+    const stored = parseCatalog(readFileSync(catalogPath, "utf8"));
+    const startup = startupCatalog(stored);
+    const hash = catalogHash(startup);
+    migrations.push(
+      startup === stored
+        ? { id, catalogHash: hash, steps: plan.steps }
+        : { id, catalogHash: hash, legacyHash: catalogHash(stored), steps: plan.steps },
+    );
   }
   return migrations;
 }

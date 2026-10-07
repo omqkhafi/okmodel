@@ -724,6 +724,64 @@ export type TxClient<S extends QuerySchema, Root extends boolean = false> = {
   advisoryLock(key: string | number | bigint, options?: CallOptions): Promise<void>;
 } & TxApi<S, Root>;
 
+/** A view field: its column name in camel case, as the client publishes it. */
+type CamelName<N extends string> = N extends `_${infer Rest}`
+  ? CamelName<Rest>
+  : N extends `${infer Head}_${infer Tail}`
+    ? `${Head}${Capitalize<CamelName<Tail>>}`
+    : N;
+
+/** One view row. Every column is decoded as text, so each field is a string or null. */
+type ViewRow<D> = D extends {
+  readonly "~columns"?: infer C extends readonly { readonly name: string }[];
+}
+  ? { readonly [Col in C[number] as CamelName<Col["name"]>]: string | null }
+  : never;
+
+/** Options `find` and `one` take on a view. */
+type ViewReadOptions<Row> = CallOptions & {
+  readonly where?: FieldWhere<Row>;
+  readonly select?: readonly (keyof Row & string)[];
+  readonly orderBy?: OrderBy<Row>;
+  readonly limit?: number;
+};
+
+/** The read-only handle `db.views` holds for one view. */
+type ViewApi<Row> = {
+  find<const O extends ViewReadOptions<Row> & { readonly limit: number }>(
+    options: O,
+  ): Read<
+    readonly Show<Selected<Row, O extends { readonly select: infer Sel } ? Sel : undefined>>[]
+  >;
+  find<const O extends ViewReadOptions<Row>>(
+    options: O,
+  ): {
+    all(
+      reason: string,
+    ): Read<
+      readonly Show<Selected<Row, O extends { readonly select: infer Sel } ? Sel : undefined>>[]
+    >;
+  };
+  one<const O extends ViewReadOptions<Row>>(
+    options?: O,
+  ): Read<Show<Selected<Row, O extends { readonly select: infer Sel } ? Sel : undefined>> | null>;
+  count(options?: CallOptions & { readonly where?: FieldWhere<Row> }): Read<number>;
+  exists(options?: CallOptions & { readonly where?: FieldWhere<Row> }): Read<boolean>;
+};
+
+/** `db.views`, typed from `schema({ views })`. Absent when the schema declares none. */
+type ViewsClient<S> = S extends { readonly "~views": infer V extends readonly unknown[] }
+  ? {
+      readonly views: {
+        readonly [
+          D in V[number] as D extends { readonly name: infer N extends string }
+            ? CamelName<N>
+            : never
+        ]: ViewApi<Show<ViewRow<D>>>;
+      };
+    }
+  : unknown;
+
 /** A client whose tables are already inside one tenant or an unscoped reason. */
 type ScopedClient<S extends QuerySchema> = {
   readonly [K in keyof S["~byName"] & string]: TableApi<S, K>;
@@ -735,6 +793,7 @@ type ScopedClient<S extends QuerySchema> = {
   /** Resolves when the dialect and `requires` checks have finished. */
   readonly connected: Promise<void>;
 } & TxApi<S, false> &
+  ViewsClient<S> &
   IfAsyncDisposable<typeof Symbol>;
 
 /** `for` and `unscoped` on a schema that set tenancy. */
@@ -778,6 +837,7 @@ export type Connected<S extends QuerySchema> = {
   readonly connected: Promise<void>;
 } & TxApi<S, true> &
   ScopeMethods<S> &
+  ViewsClient<S> &
   IfAsyncDisposable<typeof Symbol>;
 
 /**

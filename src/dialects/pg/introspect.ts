@@ -441,8 +441,15 @@ const RELATION_GRANTS = `select c.relname as name,
       where d.classid = 'pg_class'::regclass and d.objid = c.oid and d.deptype = 'e'
     )`;
 
+/**
+ * A function's argument types as a grant names them, for `pg_proc p`.
+ *
+ * Types only, comma-separated, no spaces. Argument names are left out.
+ */
+export const FUNCTION_ARG_TYPES = "replace(oidvectortypes(p.proargtypes), ' ', '')";
+
 const FUNCTION_GRANTS = `select p.proname as name,
-  replace(pg_get_function_identity_arguments(p.oid), ' ', '') as args,
+  ${FUNCTION_ARG_TYPES} as args,
   r.rolname as role, a.privilege_type as privilege
   from pg_proc p
   join pg_namespace n on n.oid = p.pronamespace

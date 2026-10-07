@@ -319,6 +319,14 @@ type Prepared = {
 };
 
 /**
+ * `~views` when `schema({ views })` declared any, so `db.views` is typed.
+ * Nothing at runtime carries the key.
+ */
+type SchemaViews<TViews extends readonly unknown[]> = TViews extends readonly []
+  ? unknown
+  : { readonly "~views": TViews };
+
+/**
  * Compiles tables into a catalog.
  *
  * Names, dependencies, and provenance are fixed here. Calling it twice on
@@ -333,31 +341,37 @@ export function schema<
   const TTraits extends readonly { readonly fields: Readonly<Record<string, object>> }[],
   const TTenancy extends ColumnTenancy | undefined = undefined,
   const TValidation = undefined,
+  const TViews extends readonly unknown[] = readonly [],
 >(
-  config: Omit<SchemaInput<TTables>, "traits" | "tenancy" | "validation"> & {
+  config: Omit<SchemaInput<TTables>, "traits" | "tenancy" | "validation" | "views"> & {
     readonly traits: TTraits;
     readonly tenancy?: TTenancy;
     readonly validation?: TValidation;
+    readonly views?: TViews;
   },
-): [TValidation] extends [undefined]
+): ([TValidation] extends [undefined]
   ? TenancySchema<SchemaWithTraits<TTables, TTraits>, TTables, TTenancy>
   : TenancySchema<SchemaWithTraits<TTables, TTraits>, TTables, TTenancy> & {
       readonly "~validation": TValidation;
-    };
+    }) &
+  SchemaViews<TViews>;
 export function schema<
   const TTables extends readonly AnyTable[],
   const TTenancy extends ColumnTenancy | undefined = undefined,
   const TValidation = undefined,
+  const TViews extends readonly unknown[] = readonly [],
 >(
-  config: Omit<SchemaInput<TTables>, "tenancy" | "validation"> & {
+  config: Omit<SchemaInput<TTables>, "tenancy" | "validation" | "views"> & {
     readonly tenancy?: TTenancy;
     readonly validation?: TValidation;
+    readonly views?: TViews;
   },
-): [TValidation] extends [undefined]
+): ([TValidation] extends [undefined]
   ? TenancySchema<BuiltSchema<TTables>, TTables, TTenancy>
   : TenancySchema<BuiltSchema<TTables>, TTables, TTenancy> & {
       readonly "~validation": TValidation;
-    };
+    }) &
+  SchemaViews<TViews>;
 export function schema<const TTables extends readonly AnyTable[]>(
   config: SchemaInput<TTables>,
 ): BuiltSchema<TTables> {
