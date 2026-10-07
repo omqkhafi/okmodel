@@ -142,6 +142,9 @@ class Frame {
  * @returns What `fn` returned
  */
 export async function tx(session: Session, args: readonly unknown[]): Promise<unknown> {
+  if (typeof args[0] === "function" && args.length > 1) {
+    fail("OKM1120", "options go first: tx(options, fn).");
+  }
   const fn = typeof args[0] === "function" ? args[0] : args[1];
   const given = typeof args[0] === "function" ? {} : (args[0] ?? {});
   try {

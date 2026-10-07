@@ -6,7 +6,7 @@
  */
 
 import type { ExecuteOptions, ExecuteResult, Statement } from "../contracts/driver.js";
-import { OkmError, type ValidationIssue } from "../contracts/error.js";
+import { OkmError, throwNamed, type ValidationIssue } from "../contracts/error.js";
 import type { ClientFill, IdGenerators } from "../contracts/generator.js";
 import type { ColumnModel, PresetUse } from "../dialects/pg/model.js";
 import type { QuerySchema } from "../dialects/pg/model.js";
@@ -168,6 +168,8 @@ const INSERT_OPTIONS = [
   "validate",
 ] as const;
 const FILTER_OPTIONS = ["allow", "expect", "returning", "signal", "timeout", "validate"] as const;
+const UPDATE_KEYS = ["set", "where"] as const;
+const UPDATE_ROW_KEYS = ["id", "set", "where"] as const;
 const NO_ALLOW: ReadonlySet<string> = new Set();
 
 /**
@@ -412,6 +414,7 @@ function planUpdate(
     };
   }
   if (!isRecord(input)) fail("OKM1121", "update expects { where, set } or a list of rows.");
+  rejectUpdateKeys(input, false);
   const set = writeSet(table, input.set, allow, schema.tenancy);
   requireFilter(table, input.where, mods, "update");
   if (Object.keys(set).length === 0) fail("OKM1120", "update set is empty.");
@@ -883,10 +886,24 @@ function updateItem(
   tenancy: QuerySchema["tenancy"],
 ): { readonly where: unknown; readonly set: Record<string, unknown> } {
   if (!isRecord(value)) fail("OKM1121", "update expects { where, set } or a list of rows.");
+  rejectUpdateKeys(value, true);
   const set = writeSet(table, value.set, allow, tenancy);
   if (value.where !== undefined) return { where: value.where, set };
   if (value.id !== undefined) return { where: { id: value.id }, set };
   fail("OKM1102", `update on ${table.model.name} needs id or where for each row.`);
+}
+
+function rejectUpdateKeys(input: Record<string, unknown>, row: boolean): void {
+  const accepted = row ? UPDATE_ROW_KEYS : UPDATE_KEYS;
+  for (const key of Object.keys(input)) {
+    if ((accepted as readonly string[]).includes(key)) continue;
+    throwNamed(
+      "OKM1120",
+      key,
+      [...accepted, ...FILTER_OPTIONS],
+      `Option ${key} is not accepted by update. Accepted options: ${accepted.join(", ")}. timeout and signal go in the second argument.`,
+    );
+  }
 }
 
 function requireFilter(table: Indexed, where: unknown, mods: WriteMods, op: WriteOp): void {

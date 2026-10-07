@@ -142,6 +142,32 @@ test("QA-M4: or() without one array is OKM1121", async () => {
   expect(planned.message.includes("false")).toBe(false);
 });
 
+test("QA-M2: unknown update keys and swapped tx options are OKM1120", async () => {
+  const db = client();
+  await db.connected;
+  const timeout = await codeOf(() =>
+    db.notes
+      .update({ where: { id: NOTE }, set: { title: "x" }, timeout: 5 } as never)
+      .sql(),
+  );
+  expect(timeout.code).toBe("OKM1120");
+  expect(timeout.message).toContain("timeout and signal go in the second argument");
+  const typo = await codeOf(() =>
+    db.notes.update({ where: { id: NOTE }, set: { title: "x" }, retruning: ["id"] } as never),
+  );
+  expect(typo.code).toBe("OKM1120");
+  expect(typo.message).toContain("Did you mean `returning`?");
+  const swapped = await codeOf(() =>
+    (db.tx as (fn: unknown, options: unknown) => Promise<unknown>)(async () => 1, { timeout: 5 }),
+  );
+  expect(swapped.code).toBe("OKM1120");
+  expect(swapped.message).toContain("options go first: tx(options, fn)");
+  const kept = await db.notes
+    .update({ where: { id: NOTE }, set: { title: "x" } }, { timeout: 5 })
+    .sql();
+  expect(kept.statements[0]?.text).toContain('"id" = ');
+});
+
 test("QA-H2: archive and restore refuse an undefined-only where", async () => {
   const db = connect(pool, { schema: archiveApp });
   await db.connected;
