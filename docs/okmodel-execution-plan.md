@@ -132,7 +132,7 @@ Open after 0.4, not built in this train: typed function calls and builder views 
 | P60 | `p60-topology-runtime` | `connect({ primary, replicas })` in the lazy topology chunk: per-endpoint pools, health and position probes, `ReplicaState`. Routing is P61. After this step the connect entries get no more bytes (D201), except the `route` key in P61 (D202) |
 | P61 | `p61-read-routing` | automatic read routing, `route` on a read, `db.using("primary" \| "replica")`, `onRoute`, fallback policy, OKM1840/1843/1844. Conservative until P63: a session that has written reads from the primary (the position-unknown path) and the first healthy replica is picked. Routing reasons in `inspect()` move to the M2 dev inspector |
 | P62 | `p62-selection` | shipped: candidate filtering (health, a no-op consistency and lag stage, capacity) and `weighted`, `roundRobin`, `leastConnections`, `latencyAware`, or a custom `select` (D203). A saturated pool is skipped for automatic reads. `weight <= 0` stays OKM1120 |
-| P63 | `p63-consistency-position` | commit position after commit, session and root watermarks, position-unknown handling, capability gate, `maxLag` |
+| P63 | `p63-consistency-position` | shipped: one client-wide watermark from `pg_current_wal_insert_lsn()` after commit, `routing.consistency` and `routing.maxLag`, position-unknown handling, and the capability gate (D204). A watermark per `for()` client stays deferred |
 | P64 | `p64-topology-conformance` | streaming-replication CI containers, topology conformance and property tests (`routing.*`, `pool.separation`, `tx.affinity`, `consistency.position`) |
 | P65 | `p65-reference-app` | the small reference app (private workspace package `packages/reference-app`) promised by M1: multi-tenant, traits, archive, migrations, objects, and a replica topology; runs in CI as the end-to-end proof, including a preview workflow (a database per job, `migrate apply` from the snapshot) and a rehearsal against a populated clone |
 | P66 | `p66-gate-m1` | release 0.5; M1 complete; OKE `store.sql` prototype starts |
@@ -154,7 +154,7 @@ Problems found in the earlier order and how the table above resolves them:
 - **Ownership needed by every object kind:** it is in the P10 contract.
 - **Recreate needed by views:** dependency-aware recreate moved from P51 to P42; P51 keeps lock display and cross-kind verification.
 - **`protected.policy` enumeration needs seed:** `okm seed` shipped in P54 (D199). The full enumeration shipped in P55 (D200).
-- **Routing before consistency:** P61 ships the conservative behavior (writers read from the primary) until P63 adds commit positions.
+- **Routing before consistency:** P61 shipped the wrote flag (writers read from the primary). P63 replaced it with commit positions (D204). A watermark per `for()` client stays deferred. The extra fallback rate under write load is P64.
 - **The M1 reference app had no prompt:** P65.
 - **Named targets and apply semantics are foundations, not M5 features:** environments and previews need `--target`, resume and the per-target lock from the first release, so they are in P16; only the multi-target rollout flags wait for M5.
 
@@ -171,7 +171,7 @@ Problems found in the earlier order and how the table above resolves them:
 ## M0 follow-ups placed in prompts (from `docs/m0-findings.md`)
 
 - P41 (function and trigger recreate): drop triggers before functions even when `DROP TABLE` removes them (found by the P07 property test).
-- P12/P13: emitted types as default (D120) with a manual editor hover check; `schema()` build versus `.okm/catalog.json` load measured; evaluate `COMMIT; SELECT pg_current_wal_insert_lsn()` as one message (P13/P63).
+- P12/P13: emitted types as default (D120) with a manual editor hover check; `schema()` build versus `.okm/catalog.json` load measured. P63 did not send `COMMIT; SELECT pg_current_wal_insert_lsn()` as one message. The position read stays one extra round trip.
 - P25/P40: OKM1122, OKM1123 and OKM1190 `violations` (D126); `eq()` and additive-only presets (D125).
 - P43: extension planning rules (D118), including `path-unverified` and the non-relocatable refusal.
 - P50/P51: role and grant rules (D119); OKM1852 under D122.

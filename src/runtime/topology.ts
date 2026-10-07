@@ -3,7 +3,8 @@
  *
  * Loaded only when `connect` is given a topology object. The string and pool
  * paths do not import this module. An automatic read chooses among eligible
- * replicas. A session that has written keeps reading the primary until P63.
+ * replicas. One watermark on this handle covers the root, `for()`, `unscoped()`,
+ * `using()`, and `reserve()`.
  */
 
 import { isConnectionFailure } from "../contracts/connection.js";
@@ -13,6 +14,8 @@ import type {
   DriverStats,
   DriverTimeouts,
   ExecuteOptions,
+  ExecuteResult,
+  WireValue,
 } from "../contracts/driver.js";
 import { OkmError } from "../contracts/error.js";
 import type { QuerySchema } from "../dialects/pg/model.js";
@@ -33,12 +36,13 @@ const CAPABILITY_SQL =
 
 const HEALTH_SQL = "select 1, pg_last_wal_replay_lsn()::text";
 
-const PING_SQL = "select 1";
+/** Replay position and timestamp. Used only when `maxLag` is a duration. */
+const HEALTH_TIME_SQL =
+  "select 1, pg_last_wal_replay_lsn()::text, pg_last_xact_replay_timestamp()::text";
 
-const LATER_ROUTING = {
-  consistency: "P63",
-  maxLag: "P63",
-} as const;
+const INSERT_LSN_SQL = "select pg_current_wal_insert_lsn()::text";
+
+const PING_SQL = "select 1";
 
 /** Built-in `routing.select` names, in the order the OKM1120 message lists them. */
 const SELECT_NAMES = ["weighted", "roundRobin", "leastConnections", "latencyAware"] as const;
@@ -50,8 +54,8 @@ const SELECT_NAMES = ["weighted", "roundRobin", "leastConnections", "latencyAwar
  */
 const LATENCY_ALPHA = 0.2;
 
-/** Keys `routing` accepts. `consistency` and `maxLag` stay OKM1061 until P63. */
-const ROUTING_KEYS = "probe, select, fallback";
+/** Keys `routing` accepts. */
+const ROUTING_KEYS = "probe, select, fallback, consistency, maxLag";
 
 /** `"primary"` or `"replica"`. `using` and `route` accept only these. */
 export type RouteName = "primary" | "replica";
@@ -68,7 +72,7 @@ export type RouteEvent = {
   readonly endpoint: string;
   /**
    * `primary-required`, `constraint:primary`, `constraint:replica`,
-   * `auto:<name>`, or `fallback:<no-replicas | unhealthy | position-unknown | saturated>`.
+   * `auto:<name>`, or `fallback:<no-replicas | unhealthy | position-unknown | saturated | behind>`.
    */
   readonly reason: string;
 };
@@ -76,8 +80,9 @@ export type RouteEvent = {
 /**
  * One replica passed to a custom `routing.select`.
  *
- * `lag` stays `null` until P63. `latencyMs` stays `null` until a probe or a
- * successful read has been timed.
+ * `lag` is the replica's byte lag, or `null` when the primary insert position
+ * or the replica replay position has not been seen. `latencyMs` stays `null`
+ * until a probe or a successful read has been timed.
  */
 export type ReplicaCandidate = {
   /** Endpoint name. */
@@ -88,8 +93,8 @@ export type ReplicaCandidate = {
   readonly inflight: number;
   /** EWMA of observed round-trip time, in milliseconds, or `null`. */
   readonly latencyMs: number | null;
-  /** Replica lag. `null` until P63. */
-  readonly lag: null;
+  /** Byte lag behind the primary, or `null` when either position is unknown. */
+  readonly lag: number | null;
 };
 
 /** What a custom `routing.select` is choosing for. */
@@ -137,6 +142,18 @@ export type ReplicaState = {
    * @returns The replay LSN, or `null` when the replica has not replayed
    */
   replayLsn(endpoint: { readonly name: string }): string | null | Promise<string | null>;
+  /**
+   * Replay timestamp for a time `maxLag`.
+   *
+   * Omitted, and with no seam, the probe reads `pg_last_xact_replay_timestamp()`
+   * only when `maxLag` is a duration.
+   *
+   * @param endpoint - The replica being probed
+   * @returns A timestamp, or `null` when the replica has not replayed a transaction
+   */
+  replayTime?(endpoint: {
+    readonly name: string;
+  }): Date | string | null | Promise<Date | string | null>;
 };
 
 /** One replica in `{ primary, replicas }`. A string is a URL with weight 1. */
@@ -159,8 +176,9 @@ export type TopologyOptions = {
    * Background probe interval. `"1s"` when omitted.
    *
    * `select` chooses among eligible replicas. The default is `"weighted"`.
-   * `consistency` and `maxLag` are P63. `fallback` is `"primary"` (the
-   * default) or `"error"`.
+   * `consistency` is `"session"` (the default) or `"eventual"`. `maxLag` is a
+   * duration (`"5s"`, `"500ms"`, `"2m"`) or a size (`"16MB"`, `"512KB"`,
+   * `"1GB"`, `"4096B"`). `fallback` is `"primary"` (the default) or `"error"`.
    */
   readonly routing?: {
     readonly probe?: string | number;
@@ -173,9 +191,9 @@ export type TopologyOptions = {
           candidates: readonly ReplicaCandidate[],
           ctx: { readonly op: "read" },
         ) => ReplicaCandidate | string);
-    readonly consistency?: unknown;
+    readonly consistency?: "session" | "eventual";
     readonly fallback?: "primary" | "error";
-    readonly maxLag?: unknown;
+    readonly maxLag?: string;
   };
   /**
    * Called after an endpoint is chosen.
@@ -194,7 +212,7 @@ export type EndpointView = {
   readonly weight: number;
   /** `max` passed to the driver. Absent when connect did not set one. */
   readonly max: number | undefined;
-  /** Whether `replication.position` was detected. Routing does not read this yet. */
+  /** Whether `replication.position` was detected on this endpoint. */
   readonly position: boolean;
   readonly circuit: "closed" | "open";
   readonly failures: number;
@@ -232,6 +250,10 @@ type Endpoint = {
   circuit: "closed" | "open";
   failures: number;
   replayLsn: string | null;
+  /** Parsed replay LSN. Absent until a probe or an on-demand check returns one. */
+  replayPos: bigint | undefined;
+  /** Replay timestamp, in epoch milliseconds. `null` until a time probe sees one. */
+  replayAt: number | null;
   nextDelayMs: number;
   timer: ReturnType<typeof setTimeout> | undefined;
   /** Smooth weighted round-robin current weight. */
@@ -242,11 +264,38 @@ type Endpoint = {
   latencyMs: number | null;
 };
 
+/** `"session"` tracks a watermark. `"eventual"` does not. */
+type Consistency = "session" | "eventual";
+
+/** A parsed `routing.maxLag`. */
+type MaxLag =
+  | { readonly kind: "time"; readonly ms: number }
+  | { readonly kind: "bytes"; readonly bytes: bigint };
+
 type Handle = {
   closed: boolean;
   probeMs: number;
-  /** Set after a successful write on this connect, including through `reserve()`. */
-  wrote: boolean;
+  consistency: Consistency;
+  maxLag: MaxLag | undefined;
+  /** At least one replica was configured. */
+  hasReplicas: boolean;
+  /**
+   * Client-wide commit watermark.
+   *
+   * Absent until a committed write's position read succeeds. Never moves backwards.
+   */
+  watermark: bigint | undefined;
+  /** A committed write's position could not be read. Automatic reads use the primary. */
+  positionUnknown: boolean;
+  /**
+   * Generation of {@link Handle.positionUnknown}.
+   *
+   * Increments every time the flag is set. A primary probe may clear the flag
+   * only when it started in the generation that is still current.
+   */
+  unknownEpoch: number;
+  /** Latest primary insert LSN from a probe or a write. Never moves backwards. */
+  primaryLsn: bigint | undefined;
   fallback: "primary" | "error";
   select: SelectChoice;
   /** Last replica `roundRobin` chose. Absent until the first pick. */
@@ -288,6 +337,8 @@ export async function connectTopology<S extends QuerySchema>(
     throw new OkmError("OKM1120", 'Table "using" collides with client.using(). Rename the table.');
   }
   refuseRouting(options.routing);
+  const consistency = readConsistency(options.routing?.consistency);
+  const maxLag = readMaxLag(options.routing?.maxLag);
   const select = readSelect(options.routing?.select);
   const primaryUrl = readPrimary(target);
   const replicas = readReplicas(target);
@@ -326,10 +377,17 @@ export async function connectTopology<S extends QuerySchema>(
     }
     assertNames(opened);
     await Promise.all(opened.map((endpoint) => detectPosition(endpoint)));
+    const replicaEndpoints = opened.filter((endpoint) => endpoint.role === "replica");
     const handle: Handle = {
       closed: false,
       probeMs,
-      wrote: false,
+      consistency,
+      maxLag,
+      hasReplicas: replicaEndpoints.length > 0,
+      watermark: undefined,
+      positionUnknown: false,
+      unknownEpoch: 0,
+      primaryLsn: undefined,
       fallback: readFallback(options.routing?.fallback),
       select,
       rrLast: undefined,
@@ -339,12 +397,15 @@ export async function connectTopology<S extends QuerySchema>(
       endpoints: opened,
       closing: undefined,
     };
-    const replicaEndpoints = opened.filter((endpoint) => endpoint.role === "replica");
-    await Promise.all(replicaEndpoints.map((endpoint) => sample(handle, endpoint)));
+    await Promise.all([
+      ...replicaEndpoints.map((endpoint) => sample(handle, endpoint)),
+      samplePrimary(handle),
+    ]);
     for (const endpoint of replicaEndpoints) {
       endpoint.nextDelayMs = delayFor(probeMs, endpoint);
       schedule(handle, endpoint);
     }
+    schedulePrimary(handle);
     const primary = opened[0];
     if (primary === undefined) {
       throw new OkmError("OKM1120", "A topology needs one primary URL.");
@@ -410,10 +471,14 @@ function refuseRouting(routing: TopologyOptions["routing"]): void {
     throw new OkmError("OKM1120", `routing must be an object. Accepted keys: ${ROUTING_KEYS}.`);
   }
   for (const key of Object.keys(routing)) {
-    if (key === "probe" || key === "fallback" || key === "select") continue;
-    const later = LATER_ROUTING[key as keyof typeof LATER_ROUTING];
-    if (later !== undefined) {
-      throw new OkmError("OKM1061", `routing.${key} is not in this version. ${later} adds it.`);
+    if (
+      key === "probe" ||
+      key === "fallback" ||
+      key === "select" ||
+      key === "consistency" ||
+      key === "maxLag"
+    ) {
+      continue;
     }
     throw new OkmError(
       "OKM1120",
@@ -441,6 +506,70 @@ function readSelect(value: unknown): SelectChoice {
 /** One of the built-in strategy names. */
 function isSelectName(value: string): value is SelectName {
   return (SELECT_NAMES as readonly string[]).includes(value);
+}
+
+/**
+ * `routing.consistency`. Omitted means `"session"`.
+ *
+ * @param value - The option the caller passed
+ * @returns The mode
+ */
+function readConsistency(value: unknown): Consistency {
+  if (value === undefined || value === "session") return "session";
+  if (value === "eventual") return "eventual";
+  throw new OkmError(
+    "OKM1120",
+    `routing.consistency must be "session" or "eventual". ${shown(value)} is not one of those.`,
+  );
+}
+
+/**
+ * `routing.maxLag`. Omitted means no lag filter.
+ *
+ * A bare number is rejected: the unit would be ambiguous.
+ *
+ * @param value - The option the caller passed
+ * @returns The filter, or `undefined` when omitted
+ */
+function readMaxLag(value: unknown): MaxLag | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") {
+    throw new OkmError("OKM1120", maxLagMessage(shown(value)));
+  }
+  const text = value.trim();
+  const time = /^(\d+(?:\.\d+)?)(ms|s|m)$/.exec(text);
+  if (time !== null) {
+    const amount = Number(time[1]);
+    const unit = time[2];
+    if (!Number.isFinite(amount) || amount < 0 || unit === undefined) {
+      throw new OkmError("OKM1120", maxLagMessage(value));
+    }
+    const ms = unit === "ms" ? amount : unit === "s" ? amount * 1_000 : amount * 60_000;
+    return { kind: "time", ms };
+  }
+  const size = /^(\d+(?:\.\d+)?)(B|KB|MB|GB)$/.exec(text);
+  if (size !== null) {
+    const amount = Number(size[1]);
+    const unit = size[2];
+    if (!Number.isFinite(amount) || amount < 0 || unit === undefined) {
+      throw new OkmError("OKM1120", maxLagMessage(value));
+    }
+    return { kind: "bytes", bytes: scaleBytes(amount, unit) };
+  }
+  throw new OkmError("OKM1120", maxLagMessage(value));
+}
+
+/** The OKM1120 text for a `maxLag` value. */
+function maxLagMessage(value: string): string {
+  return `routing.maxLag must be a duration ("5s", "500ms", "2m") or a size ("16MB", "512KB", "1GB", "4096B"). ${value} is not one of those forms.`;
+}
+
+/** `amount` in `unit`, as bytes. `KB` is 1024. */
+function scaleBytes(amount: number, unit: string): bigint {
+  const scale =
+    unit === "B" ? 1n : unit === "KB" ? 1024n : unit === "MB" ? 1_048_576n : 1_073_741_824n;
+  if (Number.isInteger(amount)) return BigInt(amount) * scale;
+  return BigInt(Math.trunc(amount * Number(scale)));
 }
 
 function readPrimary(target: object): string {
@@ -644,6 +773,8 @@ async function openEndpoint(
     circuit: "closed",
     failures: 0,
     replayLsn: null,
+    replayPos: undefined,
+    replayAt: null,
     nextDelayMs: role === "replica" ? probeMs : 0,
     timer: undefined,
     current: 0,
@@ -663,23 +794,31 @@ async function detectPosition(endpoint: Endpoint): Promise<void> {
 
 async function sample(handle: Handle, endpoint: Endpoint): Promise<void> {
   try {
-    const lsn = await readPosition(handle, endpoint);
+    const sampled = await readPosition(handle, endpoint);
     endpoint.failures = 0;
     endpoint.circuit = "closed";
-    endpoint.replayLsn = lsn;
+    applySample(endpoint, sampled);
   } catch {
     endpoint.failures += 1;
     if (endpoint.failures >= CIRCUIT_AT) endpoint.circuit = "open";
   }
 }
 
-async function readPosition(handle: Handle, endpoint: Endpoint): Promise<string | null> {
+/** One probe or on-demand reading of a replica. */
+type Sampled = {
+  readonly lsn: string | null;
+  readonly time: string | null;
+};
+
+async function readPosition(handle: Handle, endpoint: Endpoint): Promise<Sampled> {
   const state = handle.replicaState;
   const started = performance.now();
   if (state === undefined) {
-    const result = await endpoint.pool.execute(HEALTH_SQL);
+    const sql = handle.maxLag?.kind === "time" ? HEALTH_TIME_SQL : HEALTH_SQL;
+    const result = await endpoint.pool.execute(sql);
     observe(endpoint, performance.now() - started);
-    return result.rows[0]?.[1] ?? null;
+    const row = result.rows[0];
+    return { lsn: row?.[1] ?? null, time: row?.[2] ?? null };
   }
   await endpoint.pool.execute(PING_SQL);
   observe(endpoint, performance.now() - started);
@@ -687,7 +826,42 @@ async function readPosition(handle: Handle, endpoint: Endpoint): Promise<string 
   if (typeof lsn !== "string" && lsn !== null) {
     throw new OkmError("OKM1120", "ReplicaState.replayLsn must return a WAL position or null.");
   }
-  return lsn;
+  return { lsn, time: await seamTime(handle, endpoint, state) };
+}
+
+/** The seam's replay timestamp, when `maxLag` is a duration and the seam provides one. */
+async function seamTime(
+  handle: Handle,
+  endpoint: Endpoint,
+  state: ReplicaState,
+): Promise<string | null> {
+  if (handle.maxLag?.kind !== "time" || state.replayTime === undefined) return null;
+  const value = await state.replayTime({ name: endpoint.name });
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === "string" || value === null) return value;
+  throw new OkmError("OKM1120", "ReplicaState.replayTime must return a timestamp or null.");
+}
+
+/** Stores a replay position when it moves forward, and a replay timestamp when present. */
+function applySample(endpoint: Endpoint, sampled: Sampled): void {
+  if (sampled.lsn !== null) noteReplay(endpoint, sampled.lsn);
+  if (sampled.time !== null) noteTime(endpoint, sampled.time);
+}
+
+/** Keeps the higher replay LSN. A later lower reading is not a safe bound. */
+function noteReplay(endpoint: Endpoint, text: string): void {
+  const pos = parseLsn(text);
+  if (pos === undefined) return;
+  if (endpoint.replayPos !== undefined && pos < endpoint.replayPos) return;
+  endpoint.replayPos = pos;
+  endpoint.replayLsn = text.trim();
+}
+
+/** Stores a replay timestamp. */
+function noteTime(endpoint: Endpoint, text: string): void {
+  const parsed = parseTime(text);
+  if (parsed === undefined) return;
+  endpoint.replayAt = parsed;
 }
 
 /**
@@ -719,6 +893,62 @@ function schedule(handle: Handle, endpoint: Endpoint): void {
   }, endpoint.nextDelayMs);
   timer.unref();
   endpoint.timer = timer;
+}
+
+/** Samples the primary insert LSN on the same interval as the replica probes. */
+function schedulePrimary(handle: Handle): void {
+  const primary = handle.endpoints[0];
+  if (handle.closed || primary === undefined || !probesPrimary(handle)) return;
+  const timer = setTimeout(() => {
+    primary.timer = undefined;
+    void runPrimary(handle);
+  }, handle.probeMs);
+  timer.unref();
+  primary.timer = timer;
+}
+
+async function runPrimary(handle: Handle): Promise<void> {
+  if (handle.closed) return;
+  await samplePrimary(handle);
+  if (handle.closed) return;
+  schedulePrimary(handle);
+}
+
+/**
+ * Reads `pg_current_wal_insert_lsn()` on the primary.
+ *
+ * A success refreshes the lag baseline. It may also clear `position unknown`
+ * when this probe started while that flag was set and nothing has marked a
+ * newer generation since. A query issued earlier can sit below the commit
+ * whose position read failed, so that result does not move the watermark.
+ *
+ * @param handle - Primary pool and watermark
+ */
+async function samplePrimary(handle: Handle): Promise<void> {
+  if (!probesPrimary(handle)) return;
+  const primary = handle.endpoints[0];
+  if (primary === undefined) return;
+  const epoch = handle.unknownEpoch;
+  const wasUnknown = handle.positionUnknown;
+  try {
+    const lsn = await readInsertLsn(primary.pool);
+    if (lsn === undefined) return;
+    if (wasUnknown && handle.unknownEpoch === epoch && handle.positionUnknown) {
+      raiseWatermark(handle, lsn);
+      return;
+    }
+    notePrimary(handle, lsn);
+  } catch {
+    // The last sample stays. A later probe or write can recover.
+  }
+}
+
+/** The primary insert LSN is useful for session recovery and for `maxLag`. */
+function probesPrimary(handle: Handle): boolean {
+  if (!handle.hasReplicas) return false;
+  const primary = handle.endpoints[0];
+  if (primary === undefined || !primary.position) return false;
+  return handle.consistency === "session" || handle.maxLag !== undefined;
 }
 
 async function runProbe(handle: Handle, endpoint: Endpoint): Promise<void> {
@@ -755,7 +985,7 @@ type ClientOpts = Parameters<typeof createClient>[2];
  * Routes one statement. The session is this handle: one per `connect`, shared
  * by `for()` and by a connection from `reserve()`.
  *
- * @param handle - Pools, the wrote flag, and `onRoute`
+ * @param handle - Pools, the watermark, and `onRoute`
  * @returns The pool `createClient` holds
  */
 function routePool(handle: Handle): DriverPool {
@@ -767,11 +997,11 @@ function routePool(handle: Handle): DriverPool {
     capabilities: primary.pool.capabilities,
     execute: async (text, params, options) => {
       if (handle.closed) closed();
-      const choice = choose(handle, text, options?.route);
+      const choice = await choose(handle, text, options?.route);
       const result = await attempt(handle, choice, (endpoint) =>
         endpoint.pool.execute(text, params, strip(options)),
       );
-      if (choice.op === "write") handle.wrote = true;
+      if (choice.op === "write") await noteWrite(handle, primary.pool);
       return result;
     },
     batch: async (statements, options) => {
@@ -780,7 +1010,7 @@ function routePool(handle: Handle): DriverPool {
       const reason = options?.route === "primary" ? "constraint:primary" : "primary-required";
       tell(handle, { op: "write", endpoint: primary.name, reason });
       const result = await primary.pool.batch(statements, strip(options));
-      handle.wrote = true;
+      await noteWrite(handle, primary.pool);
       return result;
     },
     stats: () => primary.pool.stats(),
@@ -794,8 +1024,8 @@ function routePool(handle: Handle): DriverPool {
     };
   }
   if (primary.pool.describe !== undefined) {
-    pool.describe = (text, params) => {
-      const choice = choose(handle, text, undefined);
+    pool.describe = async (text, params) => {
+      const choice = await choose(handle, text, undefined);
       tell(handle, { op: choice.op, endpoint: choice.endpoint.name, reason: choice.reason });
       if (choice.endpoint.pool.describe !== undefined) {
         return choice.endpoint.pool.describe(text, params);
@@ -804,14 +1034,7 @@ function routePool(handle: Handle): DriverPool {
     };
   }
   if (primary.pool.stream !== undefined) {
-    pool.stream = (text, params) => {
-      const choice = choose(handle, text, undefined);
-      tell(handle, { op: choice.op, endpoint: choice.endpoint.name, reason: choice.reason });
-      if (choice.endpoint.pool.stream !== undefined) {
-        return choice.endpoint.pool.stream(text, params);
-      }
-      return primary.pool.stream!(text, params);
-    };
+    pool.stream = (text, params) => readStream(handle, text, undefined, params, primary.pool);
   }
   if (primary.pool.listen !== undefined) {
     pool.listen = (channel, onNotify) => {
@@ -874,8 +1097,8 @@ function force(handle: Handle, router: DriverPool, route: RouteName): DriverPool
     };
   }
   if (router.describe !== undefined) {
-    pool.describe = (text, params) => {
-      const choice = choose(handle, text, route);
+    pool.describe = async (text, params) => {
+      const choice = await choose(handle, text, route);
       tell(handle, { op: choice.op, endpoint: choice.endpoint.name, reason: choice.reason });
       if (choice.endpoint.pool.describe !== undefined) {
         return choice.endpoint.pool.describe(text, params);
@@ -884,14 +1107,7 @@ function force(handle: Handle, router: DriverPool, route: RouteName): DriverPool
     };
   }
   if (router.stream !== undefined) {
-    pool.stream = (text, params) => {
-      const choice = choose(handle, text, route);
-      tell(handle, { op: choice.op, endpoint: choice.endpoint.name, reason: choice.reason });
-      if (choice.endpoint.pool.stream !== undefined) {
-        return choice.endpoint.pool.stream(text, params);
-      }
-      return router.stream!(text, params);
-    };
+    pool.stream = (text, params) => readStream(handle, text, route, params, router);
   }
   if (router.listen !== undefined) {
     pool.listen = (channel, onNotify) => {
@@ -924,12 +1140,15 @@ function classOf(text: string): RouteEvent["op"] {
 /**
  * Picks an endpoint.
  *
- * @param handle - Session flag and replica health
+ * The consistency stage may check a replica's replay position. That check
+ * finishes before this promise resolves.
+ *
+ * @param handle - Watermark, lag, and replica health
  * @param text - Statement text
  * @param route - Caller hint. Absent means classify
  * @returns The endpoint, the class, and the reason
  */
-function choose(handle: Handle, text: string, route: string | undefined): Choice {
+async function choose(handle: Handle, text: string, route: string | undefined): Promise<Choice> {
   if (route !== undefined && route !== "primary" && route !== "replica") {
     throw new OkmError("OKM1120", 'route must be "primary" or "replica".');
   }
@@ -949,12 +1168,14 @@ function choose(handle: Handle, text: string, route: string | undefined): Choice
     };
   }
   if (route === "primary") return { endpoint: primary, op, reason: "constraint:primary" };
-  if (route !== "replica" && handle.wrote) {
+  if (handle.positionUnknown && handle.consistency === "session" && handle.hasReplicas) {
+    if (route === "replica") noReplica();
     if (handle.fallback === "error") fallbackRefused("position-unknown");
     return { endpoint: primary, op, reason: "fallback:position-unknown" };
   }
   const explicit = route === "replica";
-  const replica = pick(handle, eligible(handle, undefined, !explicit), !explicit);
+  const gated = await gate(handle, undefined, !explicit);
+  const replica = pick(handle, gated.ready, !explicit);
   if (replica !== undefined) {
     return {
       endpoint: replica,
@@ -963,9 +1184,32 @@ function choose(handle: Handle, text: string, route: string | undefined): Choice
     };
   }
   if (explicit) noReplica();
-  const why = emptyReason(handle, true);
-  if (handle.fallback === "error") fallbackRefused(why);
-  return { endpoint: primary, op, reason: `fallback:${why}` };
+  if (handle.fallback === "error") fallbackRefused(gated.miss);
+  return { endpoint: primary, op, reason: `fallback:${gated.miss}` };
+}
+
+/**
+ * Yields rows from the endpoint chosen for `text`.
+ *
+ * @param handle - Watermark and replicas
+ * @param text - Statement text
+ * @param route - Forced route, or absent
+ * @param params - Wire parameters
+ * @param fallback - Pool whose stream runs when the chosen pool has none
+ * @returns Row chunks
+ */
+async function* readStream(
+  handle: Handle,
+  text: string,
+  route: string | undefined,
+  params: readonly WireValue[] | undefined,
+  fallback: DriverPool,
+): AsyncGenerator<readonly (readonly WireValue[])[]> {
+  const choice = await choose(handle, text, route);
+  tell(handle, { op: choice.op, endpoint: choice.endpoint.name, reason: choice.reason });
+  const pool = choice.endpoint.pool.stream !== undefined ? choice.endpoint.pool : fallback;
+  if (pool.stream === undefined) return;
+  yield* pool.stream(text, params);
 }
 
 /**
@@ -987,7 +1231,7 @@ async function attempt(
     return await tracked(choice.endpoint, choice.op === "read", () => run(choice.endpoint));
   } catch (error) {
     if (choice.op !== "read" || !isConnectionFailure(error)) throw error;
-    const next = retryOf(handle, choice);
+    const next = await retryOf(handle, choice);
     if (next === undefined) throw error;
     tell(handle, { op: "read", endpoint: next.endpoint.name, reason: next.reason });
     return tracked(next.endpoint, true, () => run(next.endpoint));
@@ -1022,10 +1266,11 @@ async function tracked(
 }
 
 /** The next eligible replica, or the primary when an automatic read may fall back. */
-function retryOf(handle: Handle, choice: Choice): Choice | undefined {
+async function retryOf(handle: Handle, choice: Choice): Promise<Choice | undefined> {
   if (choice.endpoint.role === "replica") noteFailure(choice.endpoint);
   const explicit = choice.reason.startsWith("constraint:");
-  const replica = pick(handle, eligible(handle, choice.endpoint, !explicit), !explicit);
+  const gated = await gate(handle, choice.endpoint, !explicit);
+  const replica = pick(handle, gated.ready, !explicit);
   if (replica !== undefined) {
     return {
       endpoint: replica,
@@ -1034,57 +1279,129 @@ function retryOf(handle: Handle, choice: Choice): Choice | undefined {
     };
   }
   if (explicit) return undefined;
-  if (handle.fallback === "error") fallbackRefused("unhealthy");
+  if (handle.fallback === "error") fallbackRefused(gated.miss);
   const primary = handle.endpoints[0];
   if (primary === undefined) return undefined;
-  return { endpoint: primary, op: "read", reason: "fallback:unhealthy" };
+  return { endpoint: primary, op: "read", reason: `fallback:${gated.miss}` };
 }
 
 /**
  * Replicas that can take this read, in config order.
  *
- * Health keeps a closed circuit. Consistency and lag are a no-op until P63.
- * Capacity skips a saturated pool. `route: "replica"` does not apply capacity.
- * `except` is the replica a connection failure just left.
+ * Health keeps a closed circuit. Consistency and lag may check a replay
+ * position. Capacity skips a saturated pool. `route: "replica"` does not
+ * apply capacity. `except` is the replica a connection failure just left.
+ * The shared scratch array is cleared before any await.
+ *
+ * @param handle - Endpoints, watermark, and the reused list
+ * @param except - Skip this replica
+ * @param capacity - Apply the saturation check
+ * @returns The candidates, and why the list is empty
+ */
+async function gate(
+  handle: Handle,
+  except: Endpoint | undefined,
+  capacity: boolean,
+): Promise<{ readonly ready: Endpoint[]; readonly miss: string }> {
+  const healthy = takeHealthy(handle, except);
+  if (healthy.length === 0) return { ready: healthy, miss: emptyReason(handle, capacity) };
+  const lagged = await consistent(handle, healthy);
+  if (lagged.length === 0) return { ready: lagged, miss: "behind" };
+  if (!capacity) return { ready: lagged, miss: "behind" };
+  const room: Endpoint[] = [];
+  for (const endpoint of lagged) {
+    if (!saturated(endpoint)) room.push(endpoint);
+  }
+  if (room.length === 0) return { ready: room, miss: "saturated" };
+  return { ready: room, miss: "behind" };
+}
+
+/**
+ * Copies closed-circuit replicas off the shared scratch list.
+ *
+ * The scratch list is empty again before the caller awaits.
  *
  * @param handle - Endpoints and the reused list
  * @param except - Skip this replica
- * @param capacity - Apply the saturation check
- * @returns The candidates. Not held across an await
+ * @returns A private list
  */
-function eligible(handle: Handle, except: Endpoint | undefined, capacity: boolean): Endpoint[] {
-  const healthy = handle.scratch;
-  healthy.length = 0;
+function takeHealthy(handle: Handle, except: Endpoint | undefined): Endpoint[] {
+  const scratch = handle.scratch;
+  scratch.length = 0;
   for (const endpoint of handle.endpoints) {
     if (endpoint.role !== "replica" || endpoint === except || endpoint.circuit !== "closed") {
       continue;
     }
-    healthy.push(endpoint);
+    scratch.push(endpoint);
   }
-  const lagged = consistent(healthy);
-  if (!capacity) return lagged;
-  let write = 0;
-  for (const endpoint of lagged) {
-    if (!saturated(endpoint)) {
-      lagged[write] = endpoint;
-      write += 1;
-    }
-  }
-  lagged.length = write;
-  return lagged;
+  const copy = scratch.slice();
+  scratch.length = 0;
+  return copy;
 }
 
 /**
  * Consistency and lag.
  *
- * P63 filters this list by the session watermark and `maxLag`. The stage is
- * separate from health and from capacity, and it changes nothing until then.
+ * A cached replay position that already satisfies the watermark and `maxLag`
+ * needs no round trip. Otherwise one on-demand check runs, through the same
+ * seam as the probe, and then the next candidate.
  *
- * @param healthy - Replicas whose circuit is closed
- * @returns The same replicas
+ * @param handle - Watermark, primary position, and `maxLag`
+ * @param healthy - Replicas whose circuit is closed. Not the shared scratch list
+ * @returns The replicas that satisfy the watermark and `maxLag`
  */
-function consistent(healthy: Endpoint[]): Endpoint[] {
-  return healthy;
+async function consistent(handle: Handle, healthy: Endpoint[]): Promise<Endpoint[]> {
+  if (!filters(handle)) return healthy;
+  const kept: Endpoint[] = [];
+  for (const endpoint of healthy) {
+    if (freshEnough(handle, endpoint)) {
+      kept.push(endpoint);
+      continue;
+    }
+    if (!endpoint.position) continue;
+    try {
+      applySample(endpoint, await readPosition(handle, endpoint));
+    } catch (error) {
+      if (error instanceof OkmError) throw error;
+      noteFailure(endpoint);
+      continue;
+    }
+    if (freshEnough(handle, endpoint)) kept.push(endpoint);
+  }
+  return kept;
+}
+
+/** Whether this read has a watermark or a lag ceiling to apply. */
+function filters(handle: Handle): boolean {
+  if (handle.maxLag !== undefined) return true;
+  return handle.consistency === "session" && handle.watermark !== undefined;
+}
+
+/** The cached position already satisfies the watermark and `maxLag`. */
+function freshEnough(handle: Handle, endpoint: Endpoint): boolean {
+  return coversWatermark(handle, endpoint) && coversLag(handle, endpoint);
+}
+
+/** A session watermark is met when the cached replay position has reached it. */
+function coversWatermark(handle: Handle, endpoint: Endpoint): boolean {
+  if (handle.consistency !== "session" || handle.watermark === undefined) return true;
+  if (!endpoint.position) return false;
+  const replay = endpoint.replayPos;
+  if (replay === undefined) return false;
+  return replay >= handle.watermark;
+}
+
+/** `maxLag` is met. A caught-up replica has lag zero. */
+function coversLag(handle: Handle, endpoint: Endpoint): boolean {
+  const lag = handle.maxLag;
+  if (lag === undefined) return true;
+  if (!endpoint.position) return false;
+  if (lag.kind === "bytes") {
+    const diff = byteLag(handle, endpoint);
+    return diff !== null && diff <= lag.bytes;
+  }
+  const ms = timeLag(handle, endpoint);
+  return ms !== null && ms <= lag.ms;
 }
 
 /**
@@ -1147,7 +1464,7 @@ function pick(
   const select = handle.select;
   if (typeof select === "function") {
     if (!automatic || candidates.length < 2) return candidates[0];
-    return fromSelect(select, candidates);
+    return fromSelect(handle, select, candidates);
   }
   if (select === "roundRobin") return roundRobin(handle, candidates);
   if (select === "leastConnections") return leastConnections(candidates);
@@ -1260,11 +1577,13 @@ function lowerLatency(endpoint: Endpoint, best: Endpoint): boolean {
 /**
  * Runs a custom select. A throw leaves this function unchanged.
  *
+ * @param handle - Supplies each candidate's byte lag
  * @param select - The caller's function
  * @param candidates - Two or more replicas
  * @returns The replica it named
  */
 function fromSelect(
+  handle: Handle,
   select: (
     candidates: readonly ReplicaCandidate[],
     ctx: ReplicaSelectContext,
@@ -1279,7 +1598,7 @@ function fromSelect(
       weight: endpoint.weight,
       inflight: endpoint.inflight,
       latencyMs: endpoint.latencyMs,
-      lag: null,
+      lag: byteLagNumber(handle, endpoint),
     });
   }
   const returned: unknown = select(offered, { op: "read" });
@@ -1327,19 +1646,166 @@ function strip(options: ExecuteOptions | undefined): ExecuteOptions | undefined 
   return rest;
 }
 
-/** Sets the wrote flag when the reserved connection runs a write. */
+/** Reads the commit position after a successful write, before the write's promise resolves. */
+async function noteWrite(
+  handle: Handle,
+  runner: { execute(text: string): Promise<ExecuteResult> },
+): Promise<void> {
+  if (!tracks(handle)) return;
+  const primary = handle.endpoints[0];
+  if (primary === undefined || !primary.position) {
+    markUnknown(handle);
+    return;
+  }
+  try {
+    const lsn = await readInsertLsn(runner);
+    if (lsn === undefined) {
+      markUnknown(handle);
+      return;
+    }
+    raiseWatermark(handle, lsn);
+  } catch {
+    markUnknown(handle);
+  }
+}
+
+/** Sets `position unknown` and starts a new generation for in-flight probes. */
+function markUnknown(handle: Handle): void {
+  handle.positionUnknown = true;
+  handle.unknownEpoch += 1;
+}
+
+/** Session consistency with replicas configured. `"eventual"` and a lone primary do not track. */
+function tracks(handle: Handle): boolean {
+  return handle.hasReplicas && handle.consistency === "session";
+}
+
+/** `pg_current_wal_insert_lsn()` parsed as a bigint, or `undefined` when the row is empty. */
+async function readInsertLsn(runner: {
+  execute(text: string): Promise<ExecuteResult>;
+}): Promise<bigint | undefined> {
+  const result = await runner.execute(INSERT_LSN_SQL);
+  const text = result.rows[0]?.[0];
+  if (text === null || text === undefined) return undefined;
+  return parseLsn(text);
+}
+
+/** Moves the primary insert LSN forward. */
+function notePrimary(handle: Handle, lsn: bigint): void {
+  if (handle.primaryLsn === undefined || lsn > handle.primaryLsn) handle.primaryLsn = lsn;
+}
+
+/**
+ * Moves the watermark forward and clears `position unknown`.
+ *
+ * A smaller reading is ignored. The primary insert LSN moves with it.
+ *
+ * @param handle - Client-wide watermark
+ * @param lsn - A position read after a commit, or a recovering primary probe
+ */
+function raiseWatermark(handle: Handle, lsn: bigint): void {
+  notePrimary(handle, lsn);
+  if (handle.watermark === undefined || lsn > handle.watermark) handle.watermark = lsn;
+  handle.positionUnknown = false;
+}
+
+/** Primary insert LSN minus the replica replay LSN. Zero when the replica has caught up. */
+function byteLag(handle: Handle, endpoint: Endpoint): bigint | null {
+  const primary = handle.primaryLsn;
+  const replay = endpoint.replayPos;
+  if (primary === undefined || replay === undefined) return null;
+  if (replay >= primary) return 0n;
+  return primary - replay;
+}
+
+/** Byte lag as a number, or `null` when either position is unknown. */
+function byteLagNumber(handle: Handle, endpoint: Endpoint): number | null {
+  const diff = byteLag(handle, endpoint);
+  if (diff === null) return null;
+  if (diff > BigInt(Number.MAX_SAFE_INTEGER)) return Number.MAX_SAFE_INTEGER;
+  return Number(diff);
+}
+
+/**
+ * Time lag in milliseconds.
+ *
+ * Zero when the replica's replay position has reached the primary. Otherwise
+ * the age of the replica's replay timestamp. `null` when that timestamp is unknown.
+ *
+ * @param handle - Primary insert LSN
+ * @param endpoint - Replay position and timestamp
+ * @returns The lag, or `null`
+ */
+function timeLag(handle: Handle, endpoint: Endpoint): number | null {
+  const primary = handle.primaryLsn;
+  const replay = endpoint.replayPos;
+  if (primary === undefined || replay === undefined) return null;
+  if (replay >= primary) return 0;
+  if (endpoint.replayAt === null) return null;
+  const lag = Date.now() - endpoint.replayAt;
+  return lag < 0 ? 0 : lag;
+}
+
+/** `X/Y` hex LSN as a bigint. Anything else is undefined. */
+function parseLsn(text: string): bigint | undefined {
+  const match = /^([0-9A-Fa-f]+)\/([0-9A-Fa-f]+)$/.exec(text.trim());
+  const high = match?.[1];
+  const low = match?.[2];
+  if (high === undefined || low === undefined) return undefined;
+  return (BigInt(`0x${high}`) << 32n) + BigInt(`0x${low}`);
+}
+
+/** A timestamp string as epoch milliseconds. */
+function parseTime(text: string): number | undefined {
+  const direct = Date.parse(text);
+  if (!Number.isNaN(direct)) return direct;
+  const iso = Date.parse(text.replace(" ", "T"));
+  if (!Number.isNaN(iso)) return iso;
+  return undefined;
+}
+
+/** `COMMIT`, a full `ROLLBACK`, or anything else (including `ROLLBACK TO`). */
+function controlKind(text: string): "commit" | "rollback" | "other" {
+  const head = text.trimStart().toLowerCase().replace(/\s+/g, " ");
+  if (/^commit\b/.test(head)) return "commit";
+  if (/^rollback\b/.test(head) && !/^rollback\s+to\b/.test(head)) return "rollback";
+  return "other";
+}
+
+/**
+ * Watches a reserved connection.
+ *
+ * A write inside the transaction is pending until `COMMIT`. The position is
+ * read on this connection after that commit succeeds. `ROLLBACK` drops the
+ * pending write. `ROLLBACK TO` does not.
+ *
+ * @param handle - Client-wide watermark
+ * @param conn - The reserved connection
+ * @returns The connection `tx()` holds
+ */
 function wrap(handle: Handle, conn: DriverConnection): DriverConnection {
+  let pending = false;
   return {
     execute: async (text, params, options) => {
       if (options?.route === "replica") replicaRefused();
       const result = await conn.execute(text, params, strip(options));
-      if (classOf(text) === "write") handle.wrote = true;
+      const kind = controlKind(text);
+      if (kind === "commit") {
+        if (pending) {
+          pending = false;
+          await noteWrite(handle, conn);
+        }
+      } else if (kind === "rollback") {
+        pending = false;
+      } else if (classOf(text) === "write") {
+        pending = true;
+      }
       return result;
     },
     batch: async (statements, options) => {
       if (options?.route === "replica") replicaRefused();
       const result = await conn.batch(statements, strip(options));
-      handle.wrote = true;
+      pending = true;
       return result;
     },
     release: () => conn.release(),

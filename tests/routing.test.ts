@@ -78,7 +78,7 @@ test("reads use the first replica until the session writes", async () => {
     expect(events.at(-1)).toEqual({
       op: "read",
       endpoint: "primary",
-      reason: "fallback:position-unknown",
+      reason: "fallback:behind",
     });
 
     const seen = await Promise.resolve(db.notes.find({ limit: 1 }).inspect());
@@ -121,7 +121,7 @@ test("a transaction write through reserve keeps later reads on the primary", asy
   }
 });
 
-test("for() shares the wrote flag with the topology client", async () => {
+test("for() and unscoped() share the client-wide watermark", async () => {
   const hits: Hit[] = [];
   const db = await openTopology(tenantApp, hits, { replicas: [named("east")] });
   try {
@@ -134,6 +134,9 @@ test("for() shares the wrote flag with the topology client", async () => {
     const second = db.for({ tenantId: TENANT });
     hits.length = 0;
     await Promise.resolve(second.notes.find({ limit: 1 }));
+    expect(hits.at(-1)?.endpoint).toBe("primary");
+    hits.length = 0;
+    await Promise.resolve(db.unscoped("report").notes.find({ limit: 1 }));
     expect(hits.at(-1)?.endpoint).toBe("primary");
   } finally {
     await db.close();
@@ -422,6 +425,8 @@ function housekeeping(text: string): boolean {
     head.startsWith("select current_setting") ||
     head.includes("has_function_privilege") ||
     head.includes("pg_last_wal_replay_lsn") ||
+    head.includes("pg_current_wal_insert_lsn") ||
+    head.includes("pg_last_xact_replay_timestamp") ||
     head === "select 1" ||
     head.startsWith("begin") ||
     head.startsWith("commit") ||

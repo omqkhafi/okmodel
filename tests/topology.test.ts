@@ -67,7 +67,7 @@ test("a topology opens one pool per endpoint and reads the first replica", async
   await db.close();
 });
 
-test("a bad topology is OKM1120 and a later routing key is OKM1061", async () => {
+test("a bad topology is OKM1120", async () => {
   await expectCode(
     () => connectTopology({ replicas: [] }, { schema: app }, () => recordingPool([])),
     "OKM1120",
@@ -99,10 +99,10 @@ test("a bad topology is OKM1120 and a later routing key is OKM1061", async () =>
     () =>
       connectTopology(
         { primary: "postgres://primary/db" },
-        { schema: app, routing: { consistency: "session" } },
+        { schema: app, routing: { consistency: "linear" as "session" } },
         () => recordingPool([]),
       ),
-    "OKM1061",
+    "OKM1120",
   );
 });
 
