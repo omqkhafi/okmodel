@@ -121,6 +121,19 @@ export function createdRoleName(sql: string): string | undefined {
 }
 
 /**
+ * Runs a plan's `CREATE ROLE` so a role another session created first is not an error.
+ *
+ * Roles belong to the cluster. Two databases provisioned at once both find the
+ * role absent, and the second `CREATE ROLE` fails on `pg_authid`.
+ *
+ * @param sql - A `CREATE ROLE` statement from the plan
+ * @returns The statement in a `DO` block that ignores a duplicate role
+ */
+export function createRoleOnce(sql: string): string {
+  return `do $okm$ begin ${sql}; exception when duplicate_object or unique_violation then null; end $okm$`;
+}
+
+/**
  * Reports whether a statement creates or alters a role.
  *
  * @param sql - One plan statement

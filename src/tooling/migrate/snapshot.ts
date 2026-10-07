@@ -21,7 +21,7 @@ import type {
 import type { DriverConnection } from "../../contracts/driver.js";
 import { quoteIdent } from "../../dialects/pg/ddl.js";
 import { roleExists } from "../../dialects/pg/role/check.js";
-import { createdRoleName } from "../../dialects/pg/role/sql.js";
+import { createdRoleName, createRoleOnce } from "../../dialects/pg/role/sql.js";
 import { catalogsEqual } from "./equal.js";
 import { omitManagedObjects } from "./managed.js";
 import { planMigration } from "./plan.js";
@@ -146,11 +146,12 @@ export async function installSnapshot(
         if (created === migrationRole) await assumeRole(connection, created, session);
         continue;
       }
+      const sql = created === undefined ? step.sql : createRoleOnce(step.sql);
       if (step.transactional && !statementOutsideTransaction(step.sql)) {
-        batch.push(step.sql);
+        batch.push(sql);
       } else {
         await flush();
-        await connection.execute(step.sql);
+        await connection.execute(sql);
       }
       if (created !== undefined && created === migrationRole) {
         await flush();
