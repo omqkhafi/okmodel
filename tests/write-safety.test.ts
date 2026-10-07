@@ -9,7 +9,22 @@ import { expect, test } from "bun:test";
 
 import type { DriverPool } from "../src/contracts/driver.js";
 import { OkmError, safe } from "../src/contracts/error.js";
-import { eq, has, id, many, not, or, schema, table, text, uuid } from "../src/dialects/pg/index.js";
+import {
+  bytea,
+  date,
+  eq,
+  has,
+  id,
+  jsonb,
+  many,
+  not,
+  or,
+  schema,
+  table,
+  text,
+  timestamptz,
+  uuid,
+} from "../src/dialects/pg/index.js";
 import { tag } from "../src/dialects/pg/operators.js";
 import { connect } from "../src/runtime/pg/postgresjs.js";
 import { effectivePredicate } from "../src/runtime/plan.js";
@@ -87,14 +102,15 @@ test("QA-C1: a read with only undefined matches the empty where", async () => {
   if (empty instanceof Promise || missing instanceof Promise) {
     throw new Error("a read without include plans synchronously");
   }
-  expect(missing.text).toBe(empty.text);
-  expect(missing.text.includes("where")).toBe(false);
+  expect(empty.text.includes("where")).toBe(false);
+  expect(missing.text).toContain("where true");
   const oneEmpty = db.notes.one({ where: {} }).sql();
   const oneMissing = db.notes.one({ where: { id: undefined } }).sql();
   if (oneEmpty instanceof Promise || oneMissing instanceof Promise) {
     throw new Error("one() planned asynchronously");
   }
-  expect(oneMissing.text).toBe(oneEmpty.text);
+  expect(oneEmpty.text.includes("where")).toBe(false);
+  expect(oneMissing.text).toContain("where true");
 });
 
 test("QA-H1: an or() branch with no predicate is OKM1121", async () => {
@@ -112,7 +128,7 @@ test("QA-H1: an or() branch with no predicate is OKM1121", async () => {
   if (none instanceof Promise) throw new Error("or([]) planned asynchronously");
   expect(none.text).toContain("where false");
   const nested = await codeOf(() =>
-    db.notes.find({ where: { comments: has(or([{}])) }, limit: 1 }).sql(),
+    db.notes.find({ where: { comments: has(or([{}])) } as never, limit: 1 }).sql(),
   );
   expect(nested.code).toBe("OKM1121");
   const kept = db.notes.find({ where: or([{ title: "a" }, { title: "b" }]), limit: 1 }).sql();
@@ -135,7 +151,7 @@ test("QA-M4: or() without one array is OKM1121", async () => {
   const db = client();
   await db.connected;
   const planned = await codeOf(() =>
-    db.notes.find({ where: tag("or", { id: NOTE }), limit: 1 }).sql(),
+    db.notes.find({ where: tag("or", { id: NOTE }) as never, limit: 1 }).sql(),
   );
   expect(planned.code).toBe("OKM1121");
   expect(planned.message).toContain("Pass an array: or([a, b])");
@@ -146,9 +162,7 @@ test("QA-M2: unknown update keys and swapped tx options are OKM1120", async () =
   const db = client();
   await db.connected;
   const timeout = await codeOf(() =>
-    db.notes
-      .update({ where: { id: NOTE }, set: { title: "x" }, timeout: 5 } as never)
-      .sql(),
+    db.notes.update({ where: { id: NOTE }, set: { title: "x" }, timeout: 5 } as never).sql(),
   );
   expect(timeout.code).toBe("OKM1120");
   expect(timeout.message).toContain("timeout and signal go in the second argument");
@@ -196,7 +210,11 @@ test("QA-M11: a bad read option rejects the query", async () => {
     expect(caught).toBeInstanceOf(OkmError);
     expect((caught as OkmError).code).toBe("OKM1120");
   }
-  for (const run of [() => db.notes.page(bad), () => db.notes.aggregate(bad)]) {
+  const late: readonly (() => Promise<unknown>)[] = [
+    () => db.notes.page(bad),
+    () => db.notes.aggregate(bad),
+  ];
+  for (const run of late) {
     const query = run();
     const settled = await safe(query);
     expect(settled.ok).toBe(false);
@@ -218,6 +236,39 @@ test("QA-H2: archive and restore refuse an undefined-only where", async () => {
   expect(every.statements[0]?.text).toContain("archived_at");
 });
 
+test("QA-C1: an object field value stays in the compiled where", async () => {
+  const stamps = table("stamps", {
+    id: id({ default: "none" }),
+    createdAt: timestamptz(),
+    day: date(),
+    blob: bytea(),
+    meta: jsonb(),
+  });
+  const stampsApp = schema({ casing: "snake", tables: [stamps] });
+  const db = connect(pool, { schema: stampsApp });
+  await db.connected;
+  const instant = Temporal.Instant.from("2020-01-02T03:04:05Z");
+  const plain = Temporal.PlainDate.from("2020-02-29");
+  const bytes = new Uint8Array([1, 2, 3, 4]);
+  const cases = [
+    db.stamps.find({ where: { createdAt: instant } as never, limit: 1 }).sql(),
+    db.stamps.count({ where: { day: plain } as never }).sql(),
+    db.stamps.find({ where: { blob: bytes } as never, limit: 1 }).sql(),
+    db.stamps.find({ where: { meta: {} }, limit: 1 }).sql(),
+    db.stamps.find({ where: { meta: { a: 1 } }, limit: 1 }).sql(),
+    db.stamps.delete({ where: { day: plain } as never }).sql(),
+    db.stamps.update({ where: { createdAt: instant } as never, set: { meta: { a: 1 } } }).sql(),
+  ];
+  for (const pending of cases) {
+    const value = await pending;
+    const text =
+      "text" in value ? value.text : value.statements.map((statement) => statement.text).join("\n");
+    const params = "params" in value ? value.params : value.statements[0]?.params;
+    expect(text).toContain(" = ");
+    expect(params?.length ?? 0).toBeGreaterThan(0);
+  }
+});
+
 test("effective predicate ignores undefined through and, not, relations, and operators", () => {
   expect(effectivePredicate(undefined)).toBe(false);
   expect(effectivePredicate({})).toBe(false);
@@ -230,7 +281,13 @@ test("effective predicate ignores undefined through and, not, relations, and ope
   expect(effectivePredicate(not(undefined))).toBe(false);
   expect(effectivePredicate(not(null))).toBe(true);
   expect(effectivePredicate({ title: not("x") })).toBe(true);
-  expect(effectivePredicate({ title: not(undefined) })).toBe(false);
+  expect(effectivePredicate({ title: not(undefined) })).toBe(true);
+  expect(effectivePredicate({ day: Temporal.PlainDate.from("2020-02-29") })).toBe(true);
+  expect(effectivePredicate({ createdAt: Temporal.Instant.from("2020-01-02T03:04:05Z") })).toBe(
+    true,
+  );
+  expect(effectivePredicate({ meta: {} })).toBe(true);
+  expect(effectivePredicate({ blob: new Uint8Array([1]) })).toBe(true);
   expect(effectivePredicate({ comments: has({}) })).toBe(true);
   expect(effectivePredicate({ comments: has({ body: undefined }) })).toBe(true);
   expect(effectivePredicate({ comments: undefined })).toBe(false);

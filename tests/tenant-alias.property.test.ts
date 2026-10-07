@@ -9,12 +9,55 @@ import { expect, test } from "bun:test";
 import fc from "fast-check";
 
 import type { DriverPool } from "../src/contracts/driver.js";
-import { eq, has, not, or } from "../src/dialects/pg/index.js";
+import {
+  bytea,
+  date,
+  eq,
+  has,
+  id,
+  jsonb,
+  not,
+  or,
+  schema,
+  table,
+  timestamptz,
+  uuid,
+} from "../src/dialects/pg/index.js";
 import { tag } from "../src/dialects/pg/operators.js";
 import { connect } from "../src/runtime/pg/postgresjs.js";
 import { effectivePredicate } from "../src/runtime/plan.js";
 import { assertGate } from "./gate-property.js";
+import { columnTenancy } from "../src/runtime/tenancy/index.js";
 import { app, ORG, TASK, TENANT_A } from "./tenancy-schema.js";
+
+const INSTANT = Temporal.Instant.from("2020-01-02T03:04:05Z");
+const PLAIN = Temporal.PlainDate.from("2020-02-29");
+const BYTES = new Uint8Array([1, 2, 3, 4]);
+
+const valued = table("valued", {
+  id: id({ default: "none" }),
+  createdAt: timestamptz(),
+  day: date(),
+  blob: bytea(),
+  meta: jsonb(),
+  orgId: uuid(),
+});
+
+const valuedApp = schema({
+  casing: "snake",
+  tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
+  tables: [valued],
+});
+
+const objectWhere = fc.oneof(
+  fc.constant({ createdAt: INSTANT }),
+  fc.constant({ day: PLAIN }),
+  fc.constant({ blob: BYTES }),
+  fc.constant({ meta: {} }),
+  fc.constant({ meta: { a: 1 } }),
+  fc.constant({ createdAt: eq(INSTANT) }),
+  fc.constant({ meta: eq({}) }),
+);
 
 const TENANT = new Set(["orgs", "tasks"]);
 
@@ -97,28 +140,34 @@ test("QA-S4: tenant SQL keeps the predicate on every table alias", async () => {
   await assertGate(
     "QA-S4",
     fc.asyncProperty(kind, where, async (op, filter) => {
-      const clause = filter === undefined ? {} : { where: filter };
+      const clause = filter === undefined ? {} : { where: filter as never };
       const pending =
         op === "find"
-          ? scoped.tasks.find({ ...clause, limit: 2 }).sql()
+          ? scoped.tasks.find({ ...clause, limit: 2 } as never).sql()
           : op === "include"
-            ? scoped.tasks.find({ ...clause, limit: 1, include: { org: true } }).sql()
+            ? scoped.tasks.find({ ...clause, limit: 1, include: { org: true } } as never).sql()
             : op === "nested"
-              ? scoped.orgs.find({ limit: 1, include: { tasks: { limit: 2, ...clause } } }).sql()
+              ? scoped.orgs
+                  .find({ limit: 1, include: { tasks: { limit: 2, ...clause } } } as never)
+                  .sql()
               : op === "aggregate"
-                ? scoped.tasks.aggregate({ count: true, ...clause }).sql()
+                ? scoped.tasks.aggregate({ count: true, ...clause } as never).sql()
                 : op === "page"
-                  ? scoped.tasks.page({ limit: 2, orderBy: { title: "asc" }, ...clause }).sql()
+                  ? scoped.tasks
+                      .page({ limit: 2, orderBy: { title: "asc" }, ...clause } as never)
+                      .sql()
                   : Promise.all([
                       scoped.tasks.insert({ id: TASK, title: "ship", code: "a", orgId: ORG }).sql(),
                       scoped.tasks
                         .update({
-                          where: effectivePredicate(filter) ? filter : { id: TASK },
+                          where: (effectivePredicate(filter) ? filter : { id: TASK }) as never,
                           set: { title: "next" },
                         })
                         .sql(),
                       scoped.tasks
-                        .delete({ where: effectivePredicate(filter) ? filter : { id: TASK } })
+                        .delete({
+                          where: (effectivePredicate(filter) ? filter : { id: TASK }) as never,
+                        })
                         .sql(),
                     ]);
       const value = await pending;
@@ -127,5 +176,22 @@ test("QA-S4: tenant SQL keeps the predicate on every table alias", async () => {
       for (const text of texts) tenantOnEveryAlias(text);
     }),
     24,
+  );
+});
+
+test("QA-S4: object-valued equality keeps the predicate", async () => {
+  const db = connect(pool, { schema: valuedApp });
+  await db.connected;
+  const scoped = db.for({ tenantId: TENANT_A });
+  await assertGate(
+    "QA-S4-objects",
+    fc.asyncProperty(objectWhere, async (filter) => {
+      const compiled = await scoped.valued.find({ where: filter as never, limit: 2 }).sql();
+      const text = "text" in compiled ? compiled.text : "";
+      expect(text).toContain('t."tenant_id"');
+      expect(text).toContain(" = ");
+      expect(text).toContain("$");
+    }),
+    12,
   );
 });
