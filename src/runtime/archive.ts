@@ -8,9 +8,9 @@
 import type { ExecuteOptions, ExecuteResult } from "../contracts/driver.js";
 import { OkmError } from "../contracts/error.js";
 import type { ArchiveLink, QuerySchema } from "../dialects/pg/model.js";
-import { isOperator } from "../dialects/pg/operators.js";
 import {
   archiveRules,
+  effectivePredicate,
   emitWhere,
   fail,
   indexes,
@@ -501,9 +501,9 @@ function requireFilter(table: Indexed, where: unknown, mods: Mods, op: Lifecycle
     }
     return;
   }
-  if (isOperator(where)) return;
-  if (isRecord(where) && Object.keys(where).length > 0) return;
-  fail("OKM1102", `${op} on ${table.model.name} needs a where. Pass a filter, or .all(reason).`);
+  if (!effectivePredicate(where)) {
+    fail("OKM1102", `${op} on ${table.model.name} needs a where. Pass a filter, or .all(reason).`);
+  }
 }
 
 function callOptions(input: Record<string, unknown>): ExecuteOptions | undefined {

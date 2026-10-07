@@ -13,6 +13,7 @@ import { eq, has, id, many, not, or, schema, table, text, uuid } from "../src/di
 import { tag } from "../src/dialects/pg/operators.js";
 import { connect } from "../src/runtime/pg/postgresjs.js";
 import { effectivePredicate } from "../src/runtime/plan.js";
+import { app as archiveApp } from "./archive-schema.js";
 
 const NOTE = "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c21";
 
@@ -117,6 +118,20 @@ test("QA-H1: an or() branch with no predicate is OKM1121", async () => {
   const kept = db.notes.find({ where: or([{ title: "a" }, { title: "b" }]), limit: 1 }).sql();
   if (kept instanceof Promise) throw new Error("or planned asynchronously");
   expect(kept.text).toContain(" or ");
+});
+
+test("QA-H2: archive and restore refuse an undefined-only where", async () => {
+  const db = connect(pool, { schema: archiveApp });
+  await db.connected;
+  const archived = await codeOf(() => db.lists.archive({ where: { id: undefined } }).sql());
+  expect(archived.code).toBe("OKM1102");
+  const restored = await codeOf(() => db.lists.restore({ where: { name: undefined } }));
+  expect(restored.code).toBe("OKM1102");
+  const branch = await codeOf(() => db.lists.archive({ where: or([{}]) }));
+  expect(branch.code).toBe("OKM1121");
+  const every = await db.lists.archive({}).all("clear the inbox").sql();
+  expect(every.statements[0]?.text.includes("and true")).toBe(false);
+  expect(every.statements[0]?.text).toContain("archived_at");
 });
 
 test("effective predicate ignores undefined through and, not, relations, and operators", () => {

@@ -79,3 +79,37 @@ postgresTest(
   },
   60_000,
 );
+
+postgresTest(
+  gate,
+  "QA-H2: archive and restore with no predicate leave the parent and the child",
+  async () => {
+    await withPostgresSchema(async (sql, schemaName) => {
+      for (const statement of renderCatalog(tenantApp.catalog, schemaName)) {
+        await sql.unsafe(statement);
+      }
+      const db = connect(primaryUrl(), { schema: tenantApp, searchPath: schemaName, max: 1 });
+      try {
+        await db.connected;
+        const scoped = db.for({ tenantId: TENANT_A });
+        await scoped.orgs.insert({ id: LIST, name: "Acme" });
+        await scoped.tasks.insert({ id: TASK, title: "ship", orgId: LIST });
+        const archived = await scoped.orgs
+          .archive({ where: { name: undefined } })
+          .catch((error: unknown) => error);
+        expect((archived as OkmError).code).toBe("OKM1102");
+        const restored = await scoped.orgs
+          .restore({ where: { id: undefined } })
+          .catch((error: unknown) => error);
+        expect((restored as OkmError).code).toBe("OKM1102");
+        expect(await scoped.orgs.find({ where: { id: LIST }, limit: 1 })).toHaveLength(1);
+        expect(await scoped.tasks.find({ where: { id: TASK }, limit: 1 })).toHaveLength(1);
+        expect(await scoped.orgs.onlyArchived().count()).toBe(0);
+        expect(await scoped.tasks.onlyArchived().count()).toBe(0);
+      } finally {
+        await db.close();
+      }
+    });
+  },
+  60_000,
+);
