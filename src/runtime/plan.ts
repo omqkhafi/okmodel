@@ -984,7 +984,7 @@ function emitOr(
       wrote = true;
       emitPredicate(schema, table, key, item, sink, alias, depth);
     }
-    if (!wrote) sink.text("true");
+    if (!wrote) orBranch();
     sink.text(")");
   }
   sink.text(")");
@@ -1332,8 +1332,8 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
  * Whether `where` constrains a row.
  *
  * `undefined`, `{}`, and an object whose values are all `undefined` do not.
- * The walk goes through `and` and `not`. A relation filter and an `or` are
- * predicates. An empty `or()` branch is refused separately.
+ * The walk goes through `and`, `or`, `not`, and relation filters. An `or()`
+ * branch with no predicate is OKM1121. `or([])` matches nothing.
  *
  * @param where - Caller filter, or a nested operand
  * @returns `false` when the filter matches every row
@@ -1343,12 +1343,21 @@ export function effectivePredicate(where: unknown): boolean {
   if (isOperator(where)) {
     const name = operatorName(where);
     const value = operatorValue(where);
-    if (name === "or") return true;
+    if (name === "or") {
+      if (!Array.isArray(value) || value.length === 0) return true;
+      for (const branch of value) {
+        if (!effectivePredicate(branch)) orBranch();
+      }
+      return true;
+    }
     if (name === "and") {
       return Array.isArray(value) && value.some((part) => effectivePredicate(part));
     }
     if (name === "not") return effectivePredicate(value);
-    if (name === "has" || name === "none" || name === "every") return true;
+    if (name === "has" || name === "none" || name === "every") {
+      if (value !== undefined) effectivePredicate(value);
+      return true;
+    }
     return true;
   }
   if (!isRecord(where)) return true;
@@ -1356,6 +1365,12 @@ export function effectivePredicate(where: unknown): boolean {
     if (effectivePredicate(where[key])) return true;
   }
   return false;
+}
+
+function orBranch(): never {
+  throw new OkmError("OKM1121", "or() branch is empty.", {
+    fix: { summary: "Give every or() branch a predicate. An empty branch matches every row." },
+  });
 }
 
 const FAIL_FIX: Partial<Record<QueryCode, string>> = {

@@ -9,7 +9,7 @@ import { expect, test } from "bun:test";
 
 import type { DriverPool } from "../src/contracts/driver.js";
 import { OkmError } from "../src/contracts/error.js";
-import { eq, has, id, many, not, schema, table, text, uuid } from "../src/dialects/pg/index.js";
+import { eq, has, id, many, not, or, schema, table, text, uuid } from "../src/dialects/pg/index.js";
 import { tag } from "../src/dialects/pg/operators.js";
 import { connect } from "../src/runtime/pg/postgresjs.js";
 import { effectivePredicate } from "../src/runtime/plan.js";
@@ -49,9 +49,9 @@ function client() {
   return connect(pool, { schema: app });
 }
 
-async function codeOf(pending: Promise<unknown>): Promise<OkmError> {
+async function codeOf(run: () => unknown): Promise<OkmError> {
   try {
-    await pending;
+    await run();
   } catch (error) {
     expect(error).toBeInstanceOf(OkmError);
     return error as OkmError;
@@ -62,13 +62,13 @@ async function codeOf(pending: Promise<unknown>): Promise<OkmError> {
 test("QA-C1: undefined-only where is OKM1102", async () => {
   const db = client();
   await db.connected;
-  const deleted = await codeOf(db.notes.delete({ where: { id: undefined } }));
+  const deleted = await codeOf(() => db.notes.delete({ where: { id: undefined } }));
   expect(deleted.code).toBe("OKM1102");
-  const updated = await codeOf(
+  const updated = await codeOf(() =>
     db.notes.update({ where: { id: undefined, title: undefined }, set: { title: "x" } }),
   );
   expect(updated.code).toBe("OKM1102");
-  const listed = await codeOf(
+  const listed = await codeOf(() =>
     db.notes.update([{ where: { title: undefined }, set: { title: "x" } }]),
   );
   expect(listed.code).toBe("OKM1102");
@@ -94,6 +94,29 @@ test("QA-C1: a read with only undefined matches the empty where", async () => {
     throw new Error("one() planned asynchronously");
   }
   expect(oneMissing.text).toBe(oneEmpty.text);
+});
+
+test("QA-H1: an or() branch with no predicate is OKM1121", async () => {
+  const db = client();
+  await db.connected;
+  for (const where of [or([{}]), or([{ id: undefined }]), or([{ id: NOTE }, {}])]) {
+    const read = await codeOf(() => db.notes.find({ where, limit: 1 }).sql());
+    expect(read.code).toBe("OKM1121");
+    expect(read.message).toContain("or() branch is empty");
+    const write = await codeOf(() => db.notes.delete({ where }));
+    expect(write.code).toBe("OKM1121");
+    expect(write.message).toContain("or() branch is empty");
+  }
+  const none = db.notes.find({ where: or([]), limit: 1 }).sql();
+  if (none instanceof Promise) throw new Error("or([]) planned asynchronously");
+  expect(none.text).toContain("where false");
+  const nested = await codeOf(() =>
+    db.notes.find({ where: { comments: has(or([{}])) }, limit: 1 }).sql(),
+  );
+  expect(nested.code).toBe("OKM1121");
+  const kept = db.notes.find({ where: or([{ title: "a" }, { title: "b" }]), limit: 1 }).sql();
+  if (kept instanceof Promise) throw new Error("or planned asynchronously");
+  expect(kept.text).toContain(" or ");
 });
 
 test("effective predicate ignores undefined through and, not, relations, and operators", () => {
