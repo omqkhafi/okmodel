@@ -12,18 +12,16 @@ import { postgresDecision, type DockerDecision } from "./docker-gate.js";
 /**
  * Probes the topology once per test file and prints the skip reason.
  *
- * Under `CI=true` a missing database fails the file instead of skipping it,
- * so CI can never go green on vacuous Postgres skips.
+ * A missing database skips here and fails under the suite runner, which sets
+ * `REQUIRE_DOCKER=1` and fails fast under `CI=true` in its preflight. This
+ * function itself never throws for a missing database: the always-on CI
+ * slices run these files with no database and skip them by design (D212).
  *
  * @returns The decision for Postgres tests in this process
  */
 export async function loadPostgresGate(): Promise<DockerDecision> {
   const decision = await postgresDecision();
-  if (decision.run) return decision;
-  if (process.env.CI === "true") {
-    throw new Error(`${decision.message} Failing because CI=true: a Postgres suite with no database must be red, not skipped.`);
-  }
-  console.warn(decision.message);
+  if (!decision.run) console.warn(decision.message);
   return decision;
 }
 

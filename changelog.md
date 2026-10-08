@@ -14,10 +14,15 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+## v0.5.1 — 2026-10-08
+
 ### ♻️ Changed
 
 - A pull request no longer runs the Postgres suite. The label `needs: postgres` runs the suite on 15 and 18 and the tarball on 18, in the same Actions run as the other checks. Adding that label without a push starts it on its own and does not cancel the run. `bun run verify` runs that suite on this machine. The release and the weekly run still cover 15 through 18 (D212).
 - A pull request update is one Actions run. Checks are named `area / piece`, so each one reads `CI / area / piece`. Long test groups are split (`migrate` and `migrate pg`, `drivers` and `rows`, `schema`, `columns`, and `schema pg`, `tenancy`, `client`, and `client pg`, `package`, `contracts`, and `safety`). Node and Deno are `runtimes / portable`. Path labels and the pull request lint are jobs in that run. The required status is `gate / check` (D213).
+- Running the Postgres suite with no database is loud. The preflight names the unreachable primary and how many files would skip, and `CI=true` fails instead of running. Each skipped Postgres test counts toward a final `N Postgres tests SKIPPED` line (QA-R2, D216).
+- CI runs the date/time codecs on Node 22 and 24 with `temporal-polyfill` and on Node 26 natively, in a `temporal / node` job that joins the `gate / check` needs. The Postgres suite workflow proves the D215 pid probe refuses a transaction-mode pgbouncer with OKM1854 on every suite run (QA-R3, D216).
+- `bun run type-cost` measures a 250-table inferred schema beside the other probes and fails above measured +20% (21,180 instantiations). Check time is reported, not gated (QA-R4, D216).
 
 ### 🐛 Fixed
 
@@ -50,6 +55,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okm check` on a schema with `citext` and a view exits 0. The scratch search path includes the schemas that hold extension types, then restores the previous value (QA-M7, D215).
 - `isolation()` uses a new tenant pair each run, asserts only on the row it inserted, deletes that row, and names a missing factory. It covers aggregate, page, batch, and stream when the client has them (QA-M8, D215).
 - A CLI error prints `error <code>: <message>` and the fix, and exits 1. The stack is printed only with `--verbose` or `OKM_DEBUG=1` (QA-M10, D215).
+- The published `package.json` no longer carries the `workspaces` field. The pack step strips it from the tarball only; the root keeps it, and the tarball smoke test asserts it (QA-R1, D216).
 - Apply's `failed at step N` counts from 1, the same number the linter prints. Status still prints the stored index (QA-L5, D215).
 - A renamed table's plan row estimate uses the old table's row count (QA-L6, D215).
 - `okm`, `okm help`, `okm --help`, and `okm -h` print the commands and exit 0. `okm <command> --help` prints that command (QA-L7, D215).
@@ -62,6 +68,15 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `lists_touch` is the trigger `timestamps({ enforce: "trigger" })` installs on a table named `lists`. `archivable()` installs no trigger (QA-L13, D215).
 - Hidden columns in `where` and `orderBy` are unchanged. The options for 0.6 are recorded in D215 (QA-S1).
 - `timeout` and `signal` on Bun.sql and PGlite do not settle a call whose statement is already running, and an outer-client call inside a PGlite `tx()` callback queues behind the transaction instead of throwing (QA-M3, D216). Neither driver can cancel an in-flight statement, and the client-side race did not fit the size cap, so both stay known limits. OKM1192 is reserved for the later refusal.
+- Date and time columns need a `Temporal` global. Bun and Node 26 have it; Node 22 and 24 need the polyfill line before the columns are used (QA-D1, D216).
+- The `okm` bin's shebang is node: `bunx okm` runs with Node, `bun --bun okm` selects the Bun runtime, and a `.ts` config needs Node 22.18 or newer (QA-D2, D216).
+- The update/delete rule names its codes: no effective predicate, including undefined values, is OKM1102, and an empty `or()` branch is OKM1121 (QA-D3, D216).
+- The linter page states the statement split, comment handling, and the `DO` and `CALL` rule (QA-D4, D216).
+- Circuits start closed, so the first read goes to a replica without waiting for a probe (QA-D5, D216).
+- Known limits records the M3 outcome, sub-microsecond rounding on write, the PGlite outer-client queue rule, and the thirteen `filters().parse` operators (QA-D6, D216).
+- Production states the pooler refusal: the refused hosts and ports, the pid probe, and `--allow-pooler` (QA-D7, D216).
+- The views section shows the camelCase handle and the `REFRESH MATERIALIZED VIEW` refresh (QA-D8, D216).
+- Catalog identity and constraint names wait for 0.6, with the rename design (QA-L4).
 
 ## v0.5.0 — 2026-10-07
 

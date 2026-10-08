@@ -19,7 +19,9 @@ const holder = globalThis as unknown as Record<string, unknown>;
 
 if (polyfill) {
   if (holder.Temporal !== undefined) {
-    throw new Error("node-temporal: --polyfill was passed but this Node already has a native Temporal global");
+    throw new Error(
+      "node-temporal: --polyfill was passed but this Node already has a native Temporal global",
+    );
   }
   const { Temporal } = await import("temporal-polyfill");
   holder.Temporal = Temporal;
@@ -30,15 +32,22 @@ if (polyfill) {
 let count = 0;
 function round(name: string, encoded: string, decoded: string): void {
   count += 1;
-  if (encoded !== decoded) throw new Error(`node-temporal: ${name} changed: ${encoded} became ${decoded}`);
+  if (encoded !== decoded)
+    throw new Error(`node-temporal: ${name} changed: ${encoded} became ${decoded}`);
 }
 
 const instant = Temporal.Instant.from("2020-01-02T03:04:05.123456789Z");
-round("timestamptz", instant.toString(), timestamptz().decode(timestamptz().encode(instant)).toString());
+round(
+  "timestamptz",
+  instant.toString(),
+  timestamptz().decode(timestamptz().encode(instant)).toString(),
+);
 round(
   "timestamptz(0)",
   Temporal.Instant.from("2020-01-02T03:04:05Z").toString(),
-  timestamptz(0).decode(timestamptz(0).encode(Temporal.Instant.from("2020-01-02T03:04:05Z"))).toString(),
+  timestamptz(0)
+    .decode(timestamptz(0).encode(Temporal.Instant.from("2020-01-02T03:04:05Z")))
+    .toString(),
 );
 const plain = Temporal.PlainDateTime.from("2020-01-02T03:04:05.123456");
 round("timestamp", plain.toString(), timestamp().decode(timestamp().encode(plain)).toString());

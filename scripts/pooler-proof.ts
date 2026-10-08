@@ -62,10 +62,14 @@ if (import.meta.main) {
 export async function poolerProof(_root: string): Promise<void> {
   const version = await pgbouncerVersion();
   if (version === undefined) {
-    throw new Error("pooler-proof: no pgbouncer binary on PATH (CI installs it with apt; macOS: brew install pgbouncer)");
+    throw new Error(
+      "pooler-proof: no pgbouncer binary on PATH (CI installs it with apt; macOS: brew install pgbouncer)",
+    );
   }
   if (version < 1.21) {
-    throw new Error(`pooler-proof: pgbouncer ${String(version)} is older than the 1.21 round-robin setting`);
+    throw new Error(
+      `pooler-proof: pgbouncer ${String(version)} is older than the 1.21 round-robin setting`,
+    );
   }
   const primary = new URL(primaryUrl());
   const dir = mkdtempSync(join(tmpdir(), "okm-pooler-"));
@@ -166,7 +170,15 @@ async function expectPidRefusal(): Promise<void> {
   const migration: StoredMigration = {
     id: "0001_items",
     catalogHash: "hash-pooler-proof",
-    steps: [{ sql: `create table ${schemaName}.items (id integer)`, class: "expand", action: "ddl", lock: "ACCESS EXCLUSIVE", transactional: true }],
+    steps: [
+      {
+        sql: `create table ${schemaName}.items (id integer)`,
+        class: "expand",
+        action: "ddl",
+        lock: "ACCESS EXCLUSIVE",
+        transactional: true,
+      },
+    ],
   };
   let error: unknown;
   try {
