@@ -1,16 +1,17 @@
 /**
  * Cross-tenant isolation check.
  *
- * For every tenant table, insert one row as tenant B and run the basic reads
- * and writes as tenant A. A returned row, a count above zero, or an update or
- * delete that touches a row is a leak. Global tables are skipped and listed.
+ * For every tenant table, insert one row as tenant B and run the reads and
+ * writes as tenant A against that row's key. A returned row, or an update or
+ * delete that touches it, is a leak. The row is deleted afterwards. Global
+ * tables are skipped and listed.
  * Column tenancy is the strategy this version has. A table is tenant when its
  * predicate says so (D199).
  */
 
 import { OkmError } from "../../contracts/error.js";
 import type { RelationModel } from "../../dialects/pg/model.js";
-import { insertRow, type FactoryHost } from "./factories.js";
+import { forgetCached, insertRow, type FactoryHost } from "./factories.js";
 import type { TableFacts } from "./facts.js";
 
 /** What {@link isolation} checked, and the global tables it skipped. */
@@ -20,9 +21,6 @@ export type IsolationReport = {
   /** Global tables, with the reason from `global("reason")`. */
   readonly skipped: readonly { readonly table: string; readonly reason: string }[];
 };
-
-const TENANT_A = "00000000-0000-4000-8000-00000000000a";
-const TENANT_B = "00000000-0000-4000-8000-00000000000b";
 
 /**
  * Runs the check on `host`.
@@ -39,13 +37,15 @@ export async function isolation(host: FactoryHost): Promise<IsolationReport> {
   try {
     const checked: string[] = [];
     const skipped: { table: string; reason: string }[] = [];
+    const tenantA = crypto.randomUUID();
+    const tenantB = crypto.randomUUID();
     for (const facts of host.facts.values()) {
       if (facts.globalReason !== undefined) {
         skipped.push({ table: facts.name, reason: facts.globalReason });
         continue;
       }
       if (!facts.tenant) continue;
-      await checkTable(host, facts);
+      await checkTable(host, facts, tenantA, tenantB);
       checked.push(facts.name);
     }
     return { checked, skipped };
@@ -54,25 +54,71 @@ export async function isolation(host: FactoryHost): Promise<IsolationReport> {
   }
 }
 
-async function checkTable(host: FactoryHost, facts: TableFacts): Promise<void> {
+async function checkTable(
+  host: FactoryHost,
+  facts: TableFacts,
+  tenantA: string,
+  tenantB: string,
+): Promise<void> {
   const key = host.schema.tenancy?.key;
   if (key === undefined) return;
-  const row = await insertRow(host, facts.name, { [key]: TENANT_B }, undefined, TENANT_B);
+  if (host.definitions.size > 0 && !host.definitions.has(facts.name)) {
+    throw new OkmError("invalid", `Factory ${facts.name} is missing.`, {
+      fix: { summary: `Add ${facts.name} to factories().` },
+    });
+  }
+  const row = await insertRow(host, facts.name, { [key]: tenantB }, undefined, tenantB);
   const where = primaryWhere(facts, row, key);
-  const client = openTenant(host, TENANT_A);
+  const client = openTenant(host, tenantA);
   const handle = tableHandle(client, facts.name);
+  try {
+    await readTenant(facts, handle, where);
+    const set = updateSet(host, facts, row);
+    if (set !== undefined) {
+      const updated = asCount(await handle.update({ where, set }));
+      if (updated > 0) leak(facts.name, "update", { count: updated });
+      if (typeof client.batch === "function") {
+        const batched: unknown = await client.batch([handle.update({ where, set })]);
+        if (Array.isArray(batched) && batched.some((item) => asCount(item) > 0)) {
+          leak(facts.name, "batch", batched);
+        }
+      }
+    }
+    const removed = asCount(await handle.delete({ where }));
+    if (removed > 0) leak(facts.name, "delete", { count: removed });
+  } finally {
+    const owner = tableHandle(openTenant(host, tenantB), facts.name);
+    await owner.delete({ where }).catch(() => undefined);
+    forgetCached(host, facts.name, tenantB);
+  }
+}
 
-  const found: unknown = await handle.find({ where, limit: 1 });
-  const rows = asRows(found);
+async function readTenant(
+  facts: TableFacts,
+  handle: QueryHandle,
+  where: Record<string, unknown>,
+): Promise<void> {
+  const query = handle.find({ where, limit: 1 });
+  const rows = asRows(await query);
   if (rows.length > 0) leak(facts.name, "find", rows[0]);
+  const streamed = handle.find({ where, limit: 1 });
+  if (typeof streamed.stream === "function") {
+    try {
+      for await (const item of streamed.stream()) {
+        if (isRow(item)) leak(facts.name, "stream", item);
+      }
+    } catch (error) {
+      if (!(error instanceof OkmError) || error.code !== "OKM1111") throw error;
+    }
+  }
 
   const one: unknown = await handle.one({ where });
   if (isRow(one)) leak(facts.name, "one", one);
 
-  const counted = asCount(await handle.count());
+  const counted = asCount(await handle.count({ where }));
   if (counted > 0) leak(facts.name, "count", { count: counted });
 
-  const exists: unknown = await handle.exists();
+  const exists: unknown = await handle.exists({ where });
   if (exists === true) leak(facts.name, "exists", { exists: true });
 
   const relation = facts.relations[0];
@@ -81,14 +127,28 @@ async function checkTable(host: FactoryHost, facts: TableFacts): Promise<void> {
     if (isRow(included)) leak(facts.name, "include", included);
   }
 
-  const set = updateSet(host, facts, row);
-  if (set !== undefined) {
-    const updated = asCount(await handle.update({ where, set }));
-    if (updated > 0) leak(facts.name, "update", { count: updated });
+  if (typeof handle.aggregate === "function") {
+    const aggregated: unknown = await handle.aggregate({ where, count: true });
+    if (Array.isArray(aggregated)) {
+      for (const item of aggregated) {
+        if (isRow(item) && asCount(item) > 0) leak(facts.name, "aggregate", item);
+      }
+    }
   }
 
-  const deleted = asCount(await handle.delete({ where }));
-  if (deleted > 0) leak(facts.name, "delete", { count: deleted });
+  if (typeof handle.page === "function") {
+    const orderField = Object.keys(where)[0];
+    if (orderField !== undefined) {
+      const paged: unknown = await handle.page({
+        where,
+        orderBy: { [orderField]: "asc" },
+        limit: 5,
+      });
+      if (isRow(paged) && Array.isArray(paged.items) && paged.items.length > 0) {
+        leak(facts.name, "page", paged.items[0]);
+      }
+    }
+  }
 }
 
 function includeOf(relation: RelationModel): Record<string, unknown> {
@@ -153,7 +213,7 @@ function leak(table: string, query: string, row: unknown): never {
   });
 }
 
-function openTenant(host: FactoryHost, tenant: string): object {
+function openTenant(host: FactoryHost, tenant: string): ClientLike {
   const key = host.schema.tenancy?.key ?? "tenantId";
   const db: object = host.db;
   if (!("for" in db) || typeof db.for !== "function") {
@@ -167,16 +227,24 @@ function openTenant(host: FactoryHost, tenant: string): object {
       fix: { summary: "The tenant key must be a uuid." },
     });
   }
-  return opened;
+  return opened as ClientLike;
 }
 
+type Streamed = Promise<unknown> & { stream?(): AsyncIterable<unknown> };
+
 type QueryHandle = {
-  find(options: object): Promise<unknown>;
+  find(options: object): Streamed;
   one(options: object): Promise<unknown>;
   count(options?: object): Promise<unknown>;
   exists(options?: object): Promise<unknown>;
   update(target: object): Promise<unknown>;
   delete(target: object): Promise<unknown>;
+  aggregate?(options: object): Promise<unknown>;
+  page?(options: object): Promise<unknown>;
+};
+
+type ClientLike = {
+  batch?(ops: readonly unknown[]): Promise<unknown>;
 };
 
 function tableHandle(client: object, name: string): QueryHandle {

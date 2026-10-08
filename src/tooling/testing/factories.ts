@@ -564,6 +564,19 @@ function cacheKey(table: string, tenant: string | undefined): string {
   return `${tenant ?? "*"}:${table}`;
 }
 
+/**
+ * Drops a cached factory row.
+ *
+ * `isolation()` deletes the row it inserted. A later table must not reuse that id.
+ *
+ * @param host - The open harness
+ * @param table - Table name
+ * @param tenant - Tenant scope, when the table is tenanted
+ */
+export function forgetCached(host: FactoryHost, table: string, tenant: string | undefined): void {
+  host.cache.delete(cacheKey(table, tenant));
+}
+
 function refOf(value: unknown): string | undefined {
   if (typeof value !== "object" || value === null || !(REF in value)) return undefined;
   const table = (value as { readonly [REF]: unknown })[REF];
