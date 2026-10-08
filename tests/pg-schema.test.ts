@@ -283,8 +283,8 @@ test("emitRowTypes spells the inferred field modes", () => {
     text.indexOf("export interface TasksInsert"),
   );
   expect(row).not.toContain("secret");
-  expect(text).toContain('readonly status: "draft" | "active" | undefined;');
-  expect(text).toContain("readonly notes: string | null | undefined;");
+  expect(text).toContain('readonly status?: "draft" | "active";');
+  expect(text).toContain("readonly notes?: string | null;");
 });
 
 test("an enum column is one catalog type with a column dependency", () => {

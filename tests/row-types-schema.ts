@@ -18,6 +18,7 @@ export const tasks = table("tasks", {
   title: t.varchar(200),
   status: t.varchar(20).picklist(["draft", "active", "done"]).default("draft"),
   notes: t.text().nullable(),
+  payload: t.jsonb(),
   secret: t.text().hidden(),
   position: t.integer().default(0),
   locked: t.text().guarded(),

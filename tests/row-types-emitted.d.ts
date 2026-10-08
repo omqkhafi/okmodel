@@ -1,3 +1,5 @@
+export type jsonb<T> = T;
+
 /**
  * Row types emitted from the schema.
  * Mode: emitted.
@@ -11,12 +13,12 @@ export interface Users {
 
 export interface UsersInsert {
   readonly email: string;
-  readonly nickname: string | null | undefined;
+  readonly nickname?: string | null;
 }
 
 export interface UsersUpdate {
-  readonly email: string | undefined;
-  readonly nickname: string | null | undefined;
+  readonly email?: string;
+  readonly nickname?: string | null;
 }
 
 export interface Tasks {
@@ -25,6 +27,7 @@ export interface Tasks {
   readonly title: string;
   readonly status: "draft" | "active" | "done";
   readonly notes: string | null;
+  readonly payload: jsonb<unknown>;
   readonly position: number;
   readonly locked: string;
 }
@@ -32,19 +35,21 @@ export interface Tasks {
 export interface TasksInsert {
   readonly ownerId: string;
   readonly title: string;
-  readonly status: "draft" | "active" | "done" | undefined;
-  readonly notes: string | null | undefined;
+  readonly status?: "draft" | "active" | "done";
+  readonly notes?: string | null;
+  readonly payload: jsonb<unknown>;
   readonly secret: string;
-  readonly position: number | undefined;
+  readonly position?: number;
 }
 
 export interface TasksUpdate {
-  readonly ownerId: string | undefined;
-  readonly title: string | undefined;
-  readonly status: "draft" | "active" | "done" | undefined;
-  readonly notes: string | null | undefined;
-  readonly secret: string | undefined;
-  readonly position: number | undefined;
+  readonly ownerId?: string;
+  readonly title?: string;
+  readonly status?: "draft" | "active" | "done";
+  readonly notes?: string | null;
+  readonly payload?: jsonb<unknown>;
+  readonly secret?: string;
+  readonly position?: number;
 }
 
 export interface Rows {

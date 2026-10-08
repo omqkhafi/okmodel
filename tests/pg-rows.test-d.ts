@@ -14,6 +14,7 @@ type TaskRow = {
   readonly title: string;
   readonly status: "draft" | "active" | "done";
   readonly notes: string | null;
+  readonly payload: unknown;
   readonly position: number;
   readonly locked: string;
 };
@@ -25,6 +26,7 @@ expectTypeOf<Insert<"tasks", typeof appSchema>>().toEqualTypeOf<{
   readonly title: string;
   readonly status: "draft" | "active" | "done" | undefined;
   readonly notes: string | null | undefined;
+  readonly payload: unknown;
   readonly secret: string;
   readonly position: number | undefined;
 }>();
@@ -34,6 +36,7 @@ expectTypeOf<Update<"tasks", typeof appSchema>>().toEqualTypeOf<{
   readonly title: string | undefined;
   readonly status: "draft" | "active" | "done" | undefined;
   readonly notes: string | null | undefined;
+  readonly payload: unknown | undefined;
   readonly secret: string | undefined;
   readonly position: number | undefined;
 }>();
@@ -50,8 +53,24 @@ expectTypeOf<Insert<"users", typeof appSchema>>().toEqualTypeOf<{
 }>();
 
 expectTypeOf<Tasks>().toEqualTypeOf<Row<"tasks", typeof appSchema>>();
-expectTypeOf<TasksInsert>().toEqualTypeOf<Insert<"tasks", typeof appSchema>>();
-expectTypeOf<TasksUpdate>().toEqualTypeOf<Update<"tasks", typeof appSchema>>();
+expectTypeOf<TasksInsert>().toEqualTypeOf<{
+  readonly ownerId: string;
+  readonly title: string;
+  readonly status?: "draft" | "active" | "done";
+  readonly notes?: string | null;
+  readonly payload: unknown;
+  readonly secret: string;
+  readonly position?: number;
+}>();
+expectTypeOf<TasksUpdate>().toEqualTypeOf<{
+  readonly ownerId?: string;
+  readonly title?: string;
+  readonly status?: "draft" | "active" | "done";
+  readonly notes?: string | null;
+  readonly payload?: unknown;
+  readonly secret?: string;
+  readonly position?: number;
+}>();
 
 type ReferenceArgument = Parameters<(typeof tasks)["columns"]["ownerId"]["references"]>[0];
 expectTypeOf<ReferenceArgument>().toEqualTypeOf<string>();
