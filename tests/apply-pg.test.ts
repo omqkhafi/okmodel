@@ -40,7 +40,7 @@ postgresTest(
         ],
       };
       const failed = await catchError(() => applyTo(schemaName, [failing]));
-      expect(messageOf(failed)).toContain("failed at step 2");
+      expect(messageOf(failed)).toContain("failed at step 3");
       const present = await sql<{ id: number }[]>`select id from items`;
       expect(present.map((row) => row.id)).toEqual([1]);
       const fixed: StoredMigration = {
@@ -166,7 +166,7 @@ postgresTest(
       const failed = await catchError(() =>
         applyTo(schemaName, [migration("0001_idx", "hash-idx", [step(create, false)])]),
       );
-      expect(messageOf(failed)).toContain("failed at step 0");
+      expect(messageOf(failed)).toContain("failed at step 1");
       await sql.unsafe(
         `delete from ${q(schemaName)}.items where ctid <> (select min(ctid) from ${q(schemaName)}.items)`,
       );
@@ -336,7 +336,7 @@ postgresTest(
         step("insert into missing values (1)", false),
       ]);
       const failedApply = await catchError(() => applyTo(schemaName, [partial]));
-      expect(messageOf(failedApply)).toContain("failed at step 1");
+      expect(messageOf(failedApply)).toContain("failed at step 2");
       const failed = await readTargetStatus({
         url,
         target: schemaName,

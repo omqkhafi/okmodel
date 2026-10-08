@@ -217,7 +217,7 @@ postgresTest(
       const failed = await catchError(() =>
         applyTo(schemaName, [migration("0002_key", "hash", steps)]),
       );
-      expect(messageOf(failed)).toContain("failed at step 1");
+      expect(messageOf(failed)).toContain("failed at step 2");
       expect(await indexValid(sql, schemaName, "items_id_key")).toBe(false);
       const once = await sql<{ n: number }[]>`select n from marker`;
       expect(once).toHaveLength(1);

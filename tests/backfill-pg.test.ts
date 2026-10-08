@@ -149,7 +149,7 @@ postgresTest(
           onProgress: (line) => progress.push(line),
         }),
       );
-      expect(messageOf(failed)).toContain("failed at step 0");
+      expect(messageOf(failed)).toContain("failed at step 1");
       expect(progress).toEqual([
         "backfill 0001_fill step 0 batch 1 rows 10 key 10",
         "backfill 0001_fill step 0 batch 2 rows 20 key 20",
@@ -352,7 +352,7 @@ postgresTest(
       );
       const file = migration("0001_fill", "hash-fill", [failing]);
       const failed = await catchError(() => applyTo(schemaName, [file]));
-      expect(messageOf(failed)).toContain("failed at step 0");
+      expect(messageOf(failed)).toContain("failed at step 1");
       const status = await readTargetStatus({
         url,
         target: schemaName,
