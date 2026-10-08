@@ -50,6 +50,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### tooling
 
+- The commit-cut harness waits until the server has answered `COMMIT` before it drops the client. A fixed delay could reset the socket first, so the transaction rolled back while the caller still got `outcome_unknown`.
 - A hand-written migration step is linted per statement. A leading comment, a second statement, a semicolon inside a comment, `DO` and `CALL`, and `ALTER COLUMN … TYPE` can now be refused (QA-H3). `-- okm-allow` on the step silences that code on every statement of the step.
 - Port 6432 counts as a pooler. Apply, seed, and check refuse a backend pid that changes between two statements, with OKM1854, unless `--allow-pooler` is set (QA-M6, D215).
 - `okm check` on a schema with `citext` and a view exits 0. The scratch search path includes the schemas that hold extension types, then restores the previous value (QA-M7, D215).

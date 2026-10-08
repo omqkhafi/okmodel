@@ -93,13 +93,20 @@ export async function startCutProxy(target: string): Promise<CutProxy> {
       if (armed && chunk.includes("COMMIT")) {
         armed = false;
         cut = true;
-        // Hold the answer back and drop the client a moment later, once the driver has finished writing.
-        setTimeout(() => client.destroy(), 25);
       }
       remote.write(chunk);
     });
     remote.on("data", (chunk: Buffer) => {
-      if (!cut && !client.destroyed) client.write(chunk);
+      if (cut) {
+        // The server only answers a simple-query COMMIT after it has executed
+        // it. Drop that answer and the client. A fixed delay races a busy
+        // server: the socket dies before COMMIT is read, and the transaction
+        // rolls back while the client still reports outcome_unknown.
+        cut = false;
+        client.destroy();
+        return;
+      }
+      if (!client.destroyed) client.write(chunk);
     });
     for (const socket of [client, remote]) {
       socket.on("error", () => {
