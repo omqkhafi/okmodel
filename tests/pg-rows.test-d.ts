@@ -36,7 +36,7 @@ expectTypeOf<Update<"tasks", typeof appSchema>>().toEqualTypeOf<{
   readonly title: string | undefined;
   readonly status: "draft" | "active" | "done" | undefined;
   readonly notes: string | null | undefined;
-  readonly payload: unknown | undefined;
+  readonly payload: unknown;
   readonly secret: string | undefined;
   readonly position: number | undefined;
 }>();

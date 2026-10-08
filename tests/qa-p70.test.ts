@@ -58,12 +58,10 @@ test("QA-M6: a backend pid that changes between the two statements is OKM1854", 
   expect(error.code).toBe("OKM1854");
   expect(error.message).toContain("11");
   expect(error.message).toContain("22");
-  await expect(
-    assertStableBackend(async () => {
-      pid = pid === "11" ? "22" : "11";
-      return pid;
-    }, true),
-  ).resolves.toBeUndefined();
+  await assertStableBackend(async () => {
+    pid = pid === "11" ? "22" : "11";
+    return pid;
+  }, true);
 });
 
 test("QA-M9: prototype keys are OKM1123 and parse applies the allowed operators", async () => {
