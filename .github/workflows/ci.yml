@@ -252,7 +252,7 @@ jobs:
             name="${pair%%=*}"
             result="${pair#*=}"
             echo "$name $result"
-            if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
+            if [ "$result" != "success" ]; then
               fail=1
             fi
           done
