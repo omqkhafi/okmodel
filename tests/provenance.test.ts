@@ -52,7 +52,7 @@ test("a duplicate table error names the source okm prints", () => {
   expect(caught.code).toBe("OKM1023");
   expect(caught.message).toMatch(location);
   expect(formatFailure(caught)).toContain(caught.message);
-  expect(formatFailure(caught).startsWith("OKM1023:")).toBe(true);
+  expect(formatFailure(caught).startsWith("error OKM1023:")).toBe(true);
 });
 
 test("inspect shows the table source on catalog rules", () => {

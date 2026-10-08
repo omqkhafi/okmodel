@@ -2,7 +2,6 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { OkmError } from "../contracts/error.js";
 import { formatFailure, run } from "./migrate/commands.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -10,16 +9,13 @@ const packageJsonPath = join(here, "..", "..", "package.json");
 
 if (process.argv.includes("--version")) {
   process.stdout.write(`${readPackageVersion(packageJsonPath)}\n`);
-} else if (process.argv.length > 2) {
+} else {
   try {
     await run(process.argv.slice(2));
   } catch (error) {
-    if (error instanceof OkmError) {
-      process.stderr.write(formatFailure(error));
-      process.exitCode = 1;
-    } else {
-      throw error;
-    }
+    const verbose = process.argv.includes("--verbose") || process.env.OKM_DEBUG === "1";
+    process.stderr.write(formatFailure(error, verbose));
+    process.exitCode = 1;
   }
 }
 
