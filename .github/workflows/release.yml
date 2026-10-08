@@ -26,7 +26,7 @@ permissions:
 
 jobs:
   tag:
-    name: tag
+    name: tag / version
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -65,19 +65,47 @@ jobs:
           retention-days: 1
 
   gate:
-    name: postgres
+    name: gate / passed
+    needs: [suite, tarball]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require the matrix
+        run: |
+          fail=0
+          for pair in "suite=${{ needs.suite.result }}" "tarball=${{ needs.tarball.result }}"; do
+            name="${pair%%=*}"
+            result="${pair#*=}"
+            echo "$name $result"
+            if [ "$result" != "success" ]; then
+              fail=1
+            fi
+          done
+          exit "$fail"
+
+  suite:
+    name: suite
     needs: tag
     permissions:
       contents: read
       actions: read
-    uses: ./.github/workflows/postgres.yml
+    uses: ./.github/workflows/postgres-suite.yml
     with:
-      suite_versions: '["15", "16", "17", "18"]'
-      tarball_versions: '["15", "16", "17", "18"]'
+      versions: '["15", "16", "17", "18"]'
+
+  tarball:
+    name: tarball
+    needs: tag
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/postgres-tarball.yml
+    with:
+      versions: '["15", "16", "17", "18"]'
       tarball_artifact: release-tarball
 
   publish:
-    name: publish
+    name: publish / npm
     needs: gate
     runs-on: ubuntu-24.04
     permissions:
@@ -127,7 +155,7 @@ jobs:
           NPM_CONFIG_PROVENANCE: "true"
 
   smoke:
-    name: smoke
+    name: smoke / quickstart
     needs: publish
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -167,7 +195,7 @@ jobs:
           POSTGRES_VERSION: "17"
 
   github-release:
-    name: github release
+    name: github / release
     needs: smoke
     runs-on: ubuntu-24.04
     permissions:

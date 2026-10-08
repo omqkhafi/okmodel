@@ -6,10 +6,12 @@ name: CI
 #
 # A push runs on main only. A pull request runs the same jobs. `bun run check`
 # is split across lint, types, named test groups, runtimes, and package, so
-# the wait is the slowest slice. The job named check is the required status:
-# it passes when every slice passed. Real Postgres is postgres-pr.yml, and only when the pull
-# request has the label `needs: postgres`. Release and weekly call
-# postgres.yml themselves. A newer run on the same ref cancels the older one.
+# the wait is the slowest slice. Every job name is `area / piece`, so the
+# check reads `CI / area / piece`. The job named `gate / check` is the
+# required status: it passes when every slice passed. Real Postgres is
+# postgres-pr.yml, and only when the pull request has the label
+# `needs: postgres`. Release and weekly call the suite and tarball workflows
+# themselves. A newer run on the same ref cancels the older one.
 on:
   push:
     branches:
@@ -25,7 +27,7 @@ permissions:
 
 jobs:
   lint:
-    name: lint
+    name: lint / static
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -73,7 +75,7 @@ jobs:
         run: bun ./scripts/release-check.ts --base ${{ github.event.pull_request.base.sha }}
 
   types:
-    name: types
+    name: types / compiler
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -105,10 +107,19 @@ jobs:
         group:
           - reference app
           - migrate
-          - runtime
+          - migrate pg
+          - drivers
+          - rows
+          - topology
           - schema
+          - columns
+          - schema pg
+          - tenancy
           - client
-          - tooling
+          - client pg
+          - package
+          - contracts
+          - safety
           - scripts
     steps:
       - name: Checkout
@@ -135,7 +146,7 @@ jobs:
           bun test $files
 
   runtimes:
-    name: runtimes
+    name: runtimes / portable
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -164,7 +175,7 @@ jobs:
         run: bun run test:runtimes
 
   package:
-    name: package
+    name: package / checks
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -191,7 +202,7 @@ jobs:
         run: bun run size
 
   check:
-    name: check
+    name: gate / check
     needs: [lint, types, test, runtimes, package]
     if: always()
     runs-on: ubuntu-24.04
@@ -210,7 +221,7 @@ jobs:
           exit "$fail"
 
   attest:
-    name: attest
+    name: attest / measure
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout

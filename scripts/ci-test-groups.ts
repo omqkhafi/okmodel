@@ -55,38 +55,44 @@ const SCHEMA = [
   "input-",
 ] as const;
 
-const CLIENT = [
-  "archive",
-  "tenancy",
-  "tenant",
-  "traits",
-  "validate",
-  "relations",
-  "presets",
-  "tx",
-  "isolation",
-  "write-safety",
-] as const;
+const TENANCY = ["tenancy", "tenant", "traits", "isolation"] as const;
 
-const RUNTIME = [
+const CLIENT = ["archive", "validate", "relations", "presets", "tx", "write-safety"] as const;
+
+const DRIVERS = [
   "driver-",
   "error-suite",
   "client-close",
   "capabilities",
   "compatibility",
   "connect-floor",
-  "pg-read",
-  "pg-write",
-  "pg-rows",
-  "pg-bundle",
-  "collation",
   "error.test",
   "harness",
-  "topology",
-  "routing",
-  "replication",
-  "selection",
-  "consistency",
+] as const;
+
+const ROWS = ["pg-read", "pg-write", "pg-rows", "pg-bundle", "collation"] as const;
+
+const TOPOLOGY = ["topology", "routing", "replication", "selection", "consistency"] as const;
+
+const CONTRACTS = [
+  "client-id",
+  "engine-version",
+  "okid",
+  "reference",
+  "sha256",
+  "sql-lex",
+  "statements.",
+] as const;
+
+const PACKAGE = [
+  "api-surface",
+  "export-shake",
+  "package.",
+  "quickstart",
+  "release-gate",
+  "provenance",
+  "specifiers",
+  "testing.",
 ] as const;
 
 /**
@@ -109,10 +115,19 @@ export function ciTestGroups(root: string): readonly CiTestGroup[] {
 const GROUP_NAMES = [
   "reference app",
   "migrate",
-  "runtime",
+  "migrate pg",
+  "drivers",
+  "rows",
+  "topology",
   "schema",
+  "columns",
+  "schema pg",
+  "tenancy",
   "client",
-  "tooling",
+  "client pg",
+  "package",
+  "contracts",
+  "safety",
   "scripts",
 ] as const;
 
@@ -120,11 +135,21 @@ function groupName(file: string): (typeof GROUP_NAMES)[number] {
   if (file.startsWith("packages/reference-app/")) return "reference app";
   if (file.startsWith("scripts/")) return "scripts";
   const base = file.slice(file.lastIndexOf("/") + 1);
-  if (startsWithOne(base, MIGRATE)) return "migrate";
-  if (startsWithOne(base, RUNTIME)) return "runtime";
-  if (startsWithOne(base, SCHEMA)) return "schema";
-  if (startsWithOne(base, CLIENT)) return "client";
-  if (file.startsWith("tests/")) return "tooling";
+  const pg = file.endsWith("-pg.test.ts");
+  if (startsWithOne(base, MIGRATE)) return pg ? "migrate pg" : "migrate";
+  if (startsWithOne(base, DRIVERS)) return "drivers";
+  if (startsWithOne(base, ROWS)) return "rows";
+  if (startsWithOne(base, TOPOLOGY)) return "topology";
+  if (startsWithOne(base, SCHEMA)) {
+    if (pg) return "schema pg";
+    if (base.startsWith("pg-")) return "columns";
+    return "schema";
+  }
+  if (startsWithOne(base, TENANCY)) return pg ? "client pg" : "tenancy";
+  if (startsWithOne(base, CLIENT)) return pg ? "client pg" : "client";
+  if (startsWithOne(base, PACKAGE)) return "package";
+  if (startsWithOne(base, CONTRACTS)) return "contracts";
+  if (file.startsWith("tests/")) return "safety";
   throw new Error(`no test group for ${file}`);
 }
 

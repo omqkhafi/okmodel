@@ -17,6 +17,7 @@ import {
   discoverTestFiles,
   postgresSuitePlan,
 } from "../scripts/postgres-suite.js";
+import { ciTestGroups } from "../scripts/ci-test-groups.js";
 import { repoRoot } from "../scripts/root.js";
 
 const root = repoRoot();
@@ -115,31 +116,35 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   const workflows = readdirSync(join(root, ".github/workflows")).filter((name) =>
     name.endsWith(".yml"),
   );
-  expect(workflows).toContain("postgres.yml");
+  expect(workflows).toContain("postgres-suite.yml");
+  expect(workflows).toContain("postgres-tarball.yml");
   expect(workflows).toContain("release.yml");
   for (const name of workflows) {
     const yaml = readFileSync(join(root, ".github/workflows", name), "utf8");
     expect(unpinnedActions(yaml), name).toEqual([]);
   }
-  const postgres = readFileSync(join(root, ".github/workflows/postgres.yml"), "utf8");
-  expect(postgres).toContain("bun ./scripts/postgres-suite.ts");
-  expect(postgres).toContain("bun ./scripts/tarball-smoke.ts");
-  expect(postgres).not.toContain("tests/harness.test.ts");
-  expect(postgres).toContain("fromJSON(inputs.suite_versions)");
-  expect(postgres).toContain("fromJSON(inputs.tarball_versions)");
-  expect(postgres).toContain("OKMODEL_TARBALL");
-  expect(postgres).toContain("inputs.tarball_artifact");
-  expect(matrixVersions(postgres)).toEqual([]);
+  const suite = readFileSync(join(root, ".github/workflows/postgres-suite.yml"), "utf8");
+  const tarball = readFileSync(join(root, ".github/workflows/postgres-tarball.yml"), "utf8");
+  expect(suite).toContain("bun ./scripts/postgres-suite.ts");
+  expect(suite).not.toContain("tests/harness.test.ts");
+  expect(suite).toContain("fromJSON(inputs.versions)");
+  expect(tarball).toContain("bun ./scripts/tarball-smoke.ts");
+  expect(tarball).toContain("fromJSON(inputs.versions)");
+  expect(tarball).toContain("OKMODEL_TARBALL");
+  expect(tarball).toContain("inputs.tarball_artifact");
+  expect(matrixVersions(suite)).toEqual([]);
+  expect(matrixVersions(tarball)).toEqual([]);
   const release = readFileSync(join(root, ".github/workflows/release.yml"), "utf8");
   expect(release).toContain("group: release");
   expect(release).toContain("cancel-in-progress: false");
-  expect(release).toContain("uses: ./.github/workflows/postgres.yml");
+  expect(release).toContain("uses: ./.github/workflows/postgres-suite.yml");
+  expect(release).toContain("uses: ./.github/workflows/postgres-tarball.yml");
   expect(release).toContain("needs: tag");
   expect(release).toContain("needs: gate");
   expect(release).toContain("needs: publish");
   expect(release).toContain("needs: smoke");
   const releaseRef = release.indexOf("bun ./scripts/release-ref.ts");
-  const gate = release.indexOf("uses: ./.github/workflows/postgres.yml");
+  const gate = release.indexOf("uses: ./.github/workflows/postgres-suite.yml");
   expect(releaseRef).toBeGreaterThan(-1);
   expect(releaseRef).toBeLessThan(gate);
   expect(release.indexOf("bun ./scripts/release-ref.ts", releaseRef + 1)).toBe(-1);
@@ -148,10 +153,13 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   expect(release).toContain('NPM_CONFIG_PROVENANCE: "true"');
   expect(release).toContain("bun ./scripts/npm-smoke.ts");
   expect(release).toContain("bun ./scripts/github-release.ts");
-  expect(jsonVersions(release, "suite_versions")).toEqual([...POSTGRES_VERSIONS]);
-  expect(jsonVersions(release, "tarball_versions")).toEqual([...POSTGRES_VERSIONS]);
+  expect(jsonVersionLists(release, "versions")).toEqual([
+    [...POSTGRES_VERSIONS],
+    [...POSTGRES_VERSIONS],
+  ]);
   const ci = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
-  expect(ci).not.toContain("uses: ./.github/workflows/postgres.yml");
+  expect(ci).not.toContain("uses: ./.github/workflows/postgres-suite.yml");
+  expect(ci).not.toContain("uses: ./.github/workflows/postgres-tarball.yml");
   expect(ci).not.toContain("tests/harness.test.ts");
   expect(ci).toMatch(/push:\n {4}branches:\n {6}- main\n/);
   expect(ci).toContain("pull_request:");
@@ -161,24 +169,22 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   const newest = POSTGRES_VERSIONS[POSTGRES_VERSIONS.length - 1];
   if (floor === undefined || newest === undefined) throw new Error("no postgres versions");
   const pullRequest = readFileSync(join(root, ".github/workflows/postgres-pr.yml"), "utf8");
-  expect(pullRequest).toContain("uses: ./.github/workflows/postgres.yml");
+  expect(pullRequest).toContain("uses: ./.github/workflows/postgres-suite.yml");
+  expect(pullRequest).toContain("uses: ./.github/workflows/postgres-tarball.yml");
   expect(pullRequest).toContain("actions: read");
   expect(pullRequest).toContain("needs: postgres");
   expect(pullRequest).toContain("labeled");
-  expect(jsonVersions(pullRequest, "suite_versions")).toEqual([floor, newest]);
-  expect(jsonVersions(pullRequest, "tarball_versions")).toEqual([newest]);
+  expect(jsonVersionLists(pullRequest, "versions")).toEqual([[floor, newest], [newest]]);
   expect(ci).toContain("needs: [lint, types, test, runtimes, package]");
   expect(ci).toContain("name: test / ${{ matrix.group }}");
-  for (const name of [
-    "reference app",
-    "migrate",
-    "runtime",
-    "schema",
-    "client",
-    "tooling",
-    "scripts",
-  ]) {
-    expect(ci).toContain(`- ${name}`);
+  expect(ci).toContain("name: lint / static");
+  expect(ci).toContain("name: types / compiler");
+  expect(ci).toContain("name: runtimes / portable");
+  expect(ci).toContain("name: package / checks");
+  expect(ci).toContain("name: gate / check");
+  expect(ci).toContain("name: attest / measure");
+  for (const group of ciTestGroups(root)) {
+    expect(ci).toContain(`- ${group.name}\n`);
   }
   const checkScript = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
     scripts: { check: string };
@@ -188,10 +194,13 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   }
   const weekly = readFileSync(join(root, ".github/workflows/weekly.yml"), "utf8");
   expect(weekly).toContain('cron: "0 6 * * 1"');
-  expect(weekly).toContain("uses: ./.github/workflows/postgres.yml");
+  expect(weekly).toContain("uses: ./.github/workflows/postgres-suite.yml");
+  expect(weekly).toContain("uses: ./.github/workflows/postgres-tarball.yml");
   expect(weekly).toContain("actions: read");
-  expect(jsonVersions(weekly, "suite_versions")).toEqual([...POSTGRES_VERSIONS]);
-  expect(jsonVersions(weekly, "tarball_versions")).toEqual([...POSTGRES_VERSIONS]);
+  expect(jsonVersionLists(weekly, "versions")).toEqual([
+    [...POSTGRES_VERSIONS],
+    [...POSTGRES_VERSIONS],
+  ]);
 });
 
 /**
@@ -299,15 +308,19 @@ function unpinnedActions(yaml: string): readonly string[] {
   return problems;
 }
 
-function jsonVersions(yaml: string, key: string): readonly string[] {
-  const match = new RegExp(`${key}:\\s*'(\\[[^']*\\])'`).exec(yaml);
-  const body = match?.[1];
-  if (body === undefined) throw new Error(`missing ${key}`);
-  const parsed: unknown = JSON.parse(body);
-  if (!Array.isArray(parsed) || parsed.some((item) => typeof item !== "string")) {
-    throw new Error(`${key} is not a string list`);
+function jsonVersionLists(yaml: string, key: string): readonly (readonly string[])[] {
+  const found: string[][] = [];
+  for (const match of yaml.matchAll(new RegExp(`${key}:\\s*'(\\[[^']*\\])'`, "g"))) {
+    const body = match[1];
+    if (body === undefined) continue;
+    const parsed: unknown = JSON.parse(body);
+    if (!Array.isArray(parsed) || parsed.some((item) => typeof item !== "string")) {
+      throw new Error(`${key} is not a string list`);
+    }
+    found.push(parsed);
   }
-  return parsed;
+  if (found.length === 0) throw new Error(`missing ${key}`);
+  return found;
 }
 
 function matrixVersions(yaml: string): readonly (readonly string[])[] {

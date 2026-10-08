@@ -11,12 +11,20 @@ permissions:
   contents: read
 
 jobs:
-  postgres:
-    name: postgres
+  suite:
+    name: suite
     permissions:
       contents: read
       actions: read
-    uses: ./.github/workflows/postgres.yml
+    uses: ./.github/workflows/postgres-suite.yml
     with:
-      suite_versions: '["15", "16", "17", "18"]'
-      tarball_versions: '["15", "16", "17", "18"]'
+      versions: '["15", "16", "17", "18"]'
+
+  tarball:
+    name: tarball
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/postgres-tarball.yml
+    with:
+      versions: '["15", "16", "17", "18"]'

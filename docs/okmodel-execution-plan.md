@@ -149,7 +149,7 @@ QA of 0.5.0 (`fe9fad8`) found defects. This train fixes them and releases 0.5.1.
 | P68 | `p68-migration-linter` | shipped: the migration linter reads comments, quotes, `DO` blocks, and every statement (QA-H3, D211). `ALTER COLUMN … TYPE` is a type change. A blank line inside a quote stays in the step |
 | P69 | `p69-runtime-reliability` | Runtime reliability (QA-M1, QA-M3, QA-M5, QA-L8, QA-L9, QA-L11, QA-L12). Replica fallback, timeouts, early close, and error mapping. The flaky test `consistency.position: a stale replica is not used` (`tests/topology-conformance.test.ts`): a new client with `probe: 60000` already had a position, seen once on Postgres 15 and passing on 18 |
 | P70 | `p70-tooling-helpers` | Tooling and testing helpers (QA-M6, QA-M7, QA-M8, QA-M9, QA-M10, QA-L1, QA-L2, QA-L3, QA-L5, QA-L6, QA-L7, QA-L10 as docs, QA-L13, QA-S1 audit, QA-S2, QA-S3). CLI, check, isolation, and filters |
-| P71 | `p71-release-051` | Packaging, CI, docs, the gate, and release 0.5.1 (QA-R1 to QA-R4, D1 to D8). The parallel check jobs, with a final aggregate job named `check` that needs all of them and fails if any did not succeed, so the required check name stays `check` |
+| P71 | `p71-release-051` | Packaging, CI, docs, the gate, and release 0.5.1 (QA-R1 to QA-R4, D1 to D8). The parallel check jobs, with a final aggregate job named `gate / check` that needs all of them and fails if any did not succeed. That name is the required status |
 
 Deferred, with reasons. QA-L4 (catalog identity and constraint names) waits for 0.6, with a rename design. A `refresh()` handle for materialized views waits for 0.6.
 

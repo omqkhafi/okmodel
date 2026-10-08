@@ -1,10 +1,10 @@
-name: Postgres PR
+name: Postgres
 
-# Real Postgres on a pull request is opt-in. `check` already runs PGlite and
-# the wire server. The label `needs: postgres` runs the suite on the floor
-# and the newest major, and the tarball on the newest. Adding or removing
-# that label starts this workflow. Release and weekly call postgres.yml with
-# every supported major.
+# Real Postgres on a pull request is opt-in. `gate / check` already covers
+# PGlite and the wire server. The label `needs: postgres` runs `suite / 15`,
+# `suite / 18`, and `tarball / 18`. Adding or removing that label starts this
+# workflow. Release and weekly call the suite and tarball workflows with every
+# supported major.
 on:
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled]
@@ -17,13 +17,22 @@ permissions:
   contents: read
 
 jobs:
-  postgres:
-    name: postgres
+  suite:
+    name: suite
     if: "contains(github.event.pull_request.labels.*.name, 'needs: postgres')"
     permissions:
       contents: read
       actions: read
-    uses: ./.github/workflows/postgres.yml
+    uses: ./.github/workflows/postgres-suite.yml
     with:
-      suite_versions: '["15", "18"]'
-      tarball_versions: '["18"]'
+      versions: '["15", "18"]'
+
+  tarball:
+    name: tarball
+    if: "contains(github.event.pull_request.labels.*.name, 'needs: postgres')"
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/postgres-tarball.yml
+    with:
+      versions: '["18"]'

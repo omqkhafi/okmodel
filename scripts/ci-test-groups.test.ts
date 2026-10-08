@@ -19,10 +19,19 @@ test("every test file is in exactly one CI group", () => {
   expect(groups.map((group) => group.name)).toEqual([
     "reference app",
     "migrate",
-    "runtime",
+    "migrate pg",
+    "drivers",
+    "rows",
+    "topology",
     "schema",
+    "columns",
+    "schema pg",
+    "tenancy",
     "client",
-    "tooling",
+    "client pg",
+    "package",
+    "contracts",
+    "safety",
     "scripts",
   ]);
 });
