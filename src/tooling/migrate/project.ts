@@ -27,7 +27,7 @@ import type { AnyTable } from "../../dialects/pg/table.js";
 import type { Catalog } from "../../contracts/catalog/types.js";
 import { batchSizeField } from "./backfill.js";
 import { type MigrateConfig } from "./config.js";
-import { annotateLock, readRowEstimates, type RowEstimate } from "./estimate.js";
+import { annotateLock, readRowEstimates, renameAliases, type RowEstimate } from "./estimate.js";
 import {
   assertTargetAlias,
   assertTargetPolicy,
@@ -161,7 +161,8 @@ export async function checkProject(cwd: string, flags?: InvokeFlags): Promise<re
   assertTargetPolicy(target, "check", flags?.allowProtected ?? false);
   assertTargetPolicy(target, "drift", flags?.allowProtected ?? false);
   const { assertAuthorDrift } = await import("./drift.js");
-  await assertAuthorDrift(target.url, opened.built.catalog, opened.config.roles);
+  const allowPooler = flags?.allowPooler === true || opened.config.allowPooler === true;
+  await assertAuthorDrift(target.url, opened.built.catalog, opened.config.roles, allowPooler);
   return findings;
 }
 
@@ -270,7 +271,8 @@ async function displayPlan(
   } catch {
     return offline;
   }
-  return formatPlan(plan, (step) => annotateLock(step, estimates));
+  const aliases = renameAliases(plan.steps);
+  return formatPlan(plan, (step) => annotateLock(step, estimates, aliases));
 }
 
 function lintOpened(opened: {

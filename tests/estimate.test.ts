@@ -14,7 +14,12 @@ import { join } from "node:path";
 import { schema, table, t, index } from "../src/dialects/pg/index.js";
 import { repoRoot } from "../scripts/root.js";
 import { run } from "../src/tooling/migrate/commands.js";
-import { aboutRows, annotateLock, LARGE_TABLE_ROWS } from "../src/tooling/migrate/estimate.js";
+import {
+  aboutRows,
+  annotateLock,
+  LARGE_TABLE_ROWS,
+  renameAliases,
+} from "../src/tooling/migrate/estimate.js";
 import { formatPlan, planMigration, type PlanStep } from "../src/tooling/migrate/plan.js";
 
 const root = repoRoot();
@@ -116,6 +121,31 @@ test("an added column names the table and a rename does not name the new column"
   const rename = renamed.steps.find((step) => step.kind === "rename-column");
   expect(rename?.sql).toContain("rename column");
   expect(rename?.tables).toEqual(["tasks"]);
+});
+
+test("QA-L6: a renamed table uses the old table's row estimate", () => {
+  const before = schema({ tables: [table("tasks", { id: t.identity(), title: t.text() })] });
+  const after = schema({
+    tables: [
+      table(
+        "items",
+        { id: t.identity(), title: t.text(), note: t.text().nullable() },
+        { renamedFrom: "tasks" },
+      ),
+    ],
+  });
+  const plan = planMigration({
+    before: before.catalog,
+    after: after.catalog,
+    renames: [{ kind: "table", from: "tasks", to: "items" }],
+    name: "rename",
+  });
+  const added = plan.steps.find((step) => step.kind === "add-column");
+  expect(added?.tables).toEqual(["items"]);
+  const estimates = new Map([["tasks", { kind: "rows" as const, reltuples: 42 }]]);
+  const text = annotateLock(added ?? columnStep(), estimates, renameAliases(plan.steps));
+  expect(text).toContain("about 42 rows");
+  expect(text).not.toContain("new table");
 });
 
 test("no target, an unreachable target, and a pooler host print the offline plan", async () => {

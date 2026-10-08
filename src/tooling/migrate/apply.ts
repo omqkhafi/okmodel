@@ -36,6 +36,7 @@ import { planMigration, type PlanStep } from "./plan.js";
 import type { StoredMigration } from "./files.js";
 import {
   assertDirectConnection,
+  assertStableBackend,
   assertTargetPolicy,
   selectTarget,
   type InvokeFlags,
@@ -239,6 +240,8 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
   const connection = await pool.reserve();
   let locked = false;
   try {
+    await assertStableBackend(() => backendPid(connection), request.allowPooler === true);
+    await assertStandardStrings(connection);
     await setTimeouts(connection, request);
     await lockTarget(connection, request.target);
     locked = true;
@@ -505,6 +508,23 @@ select distinct id from history order by id`;
 
 function joinMigrations(cwd: string, migrations: string | undefined): string {
   return join(cwd, migrations ?? "migrations");
+}
+
+async function backendPid(connection: DriverConnection): Promise<string> {
+  const result = await connection.execute("select pg_backend_pid()::text");
+  const cell = result.rows[0]?.[0];
+  return cell === null || cell === undefined ? "" : String(cell);
+}
+
+async function assertStandardStrings(connection: DriverConnection): Promise<void> {
+  const result = await connection.execute("show standard_conforming_strings");
+  const value = result.rows[0]?.[0];
+  if (value === "on") return;
+  throw new OkmError(
+    "invalid",
+    `standard_conforming_strings is ${value === null || value === undefined ? "off" : String(value)}. Apply refuses to run.`,
+    { fix: { summary: "Turn standard_conforming_strings on for this database." } },
+  );
 }
 
 async function setTimeouts(connection: DriverConnection, request: ApplyRequest): Promise<void> {

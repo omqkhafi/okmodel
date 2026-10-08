@@ -61,8 +61,11 @@ export async function sealViews(runner: CatalogQuery, source: Catalog): Promise<
   if (views.length === 0) return source;
   await dropScratch(runner);
   await runner.query(`create schema ${quoteIdent(SCRATCH)}`);
+  const previous = await runner.query(`select current_setting('search_path') as path`);
+  const saved = cellText(previous[0]?.path);
+  const path = await scratchSearchPath(runner, source);
   try {
-    await runner.query(`set search_path to ${quoteIdent(SCRATCH)}`);
+    await runner.query(`select set_config('search_path', $1, false)`, [path]);
     await createObjects(runner, source, "type");
     for (const object of source.objects) {
       if (object.kind !== "table") continue;
@@ -113,9 +116,43 @@ export async function sealViews(runner: CatalogQuery, source: Catalog): Promise<
     });
     return catalog(next);
   } finally {
-    await runner.query("set search_path to public");
+    await runner
+      .query(`select set_config('search_path', $1, false)`, [saved])
+      .catch(() => undefined);
     await dropScratch(runner);
   }
+}
+
+async function scratchSearchPath(runner: CatalogQuery, source: Catalog): Promise<string> {
+  const names = new Set<string>();
+  for (const object of source.objects) {
+    if (object.kind !== "column") continue;
+    const bare = object.definition.dataType
+      .split(".")
+      .pop()
+      ?.replace(/\(.*$/, "")
+      .replace(/\[\]$/, "")
+      .trim()
+      .toLowerCase();
+    if (bare !== undefined && bare.length > 0) names.add(bare);
+  }
+  const extra: string[] = [];
+  if (names.size > 0) {
+    const rows = await runner.query(
+      `select distinct n.nspname as schema
+       from pg_type t
+       join pg_namespace n on n.oid = t.typnamespace
+       where t.typname = any(string_to_array($1, E'\\x1f'))
+         and n.nspname not in ('pg_catalog', 'information_schema', 'pg_toast')`,
+      [[...names].join("\u001f")],
+    );
+    for (const row of rows) {
+      const schema = cellText(row.schema);
+      if (schema.length > 0 && schema !== "public" && schema !== SCRATCH) extra.push(schema);
+    }
+  }
+  extra.sort();
+  return [SCRATCH, ...extra, "public"].map((name) => quoteIdent(name)).join(", ");
 }
 
 async function createObjects(
