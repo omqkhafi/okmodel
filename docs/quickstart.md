@@ -45,6 +45,8 @@ bunx okm generate init
 bunx okm migrate apply
 ```
 
+The `okm` bin runs with Node; use `bun --bun okm` when the command must use the Bun runtime.
+
 A script exits when its queries finish. It does not need `close()` for that. `await using` closes the pool at the end of the block. `db.close()` is that call on a line you choose. A pool opened with `ssl` still waits out the driver's 30 second idle timer.
 
 `run.ts`:
