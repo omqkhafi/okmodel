@@ -9,10 +9,12 @@
  *   REQUIRE_DOCKER=1 bun ./scripts/postgres-suite.ts
  */
 
-import { readdirSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, readdirSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
 
 import { postgresVersionFromEnv, type PostgresVersion } from "../packages/harness/src/version.js";
+import { primaryUrl } from "../packages/harness/src/topology.js";
 import { repoRoot } from "./root.js";
 
 /** A test file the Docker run does not execute, and why. */
@@ -109,10 +111,75 @@ function walk(root: string, dir: string, files: string[]): void {
   }
 }
 
-async function runBunTest(root: string, files: readonly string[]): Promise<number> {
+/**
+ * A TCP probe of the topology primary. A refused connection means every
+ * Postgres test in the run will skip.
+ *
+ * @param url - `postgres://` URL of the primary
+ * @returns False when nothing listens
+ */
+export async function postgresReachable(url: string): Promise<boolean> {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  const port = parsed.port === "" ? 5432 : Number(parsed.port);
+  if (!Number.isInteger(port)) return false;
+  try {
+    const socket = await Bun.connect({
+      hostname: parsed.hostname,
+      port,
+      socket: {
+        data() {},
+        error() {},
+      },
+      // Bun.connect has no timeout option; the race below bounds the probe.
+    });
+    socket.end();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Fails the suite on CI when no database listens; otherwise says so loudly.
+ *
+ * A `DATABASE_URL` pointing at an existing server is orthogonal: the probe
+ * only reads the topology primary, and nothing about `DATABASE_URL` changes.
+ *
+ * @param files - How many files the plan would run
+ */
+async function preflightPostgres(files: number): Promise<void> {
+  const url = primaryUrl();
+  const probe = postgresReachable(url);
+  // A hung probe must not surface as an unhandled rejection after the race.
+  probe.catch(() => {});
+  const status = await Promise.race([
+    probe.then((ok): "up" | "down" => (ok ? "up" : "down")),
+    Bun.sleep(2_000).then((): "slow" => "slow"),
+  ]);
+  if (status === "up") return;
+  console.error(
+    `[postgres-suite] Postgres is not reachable at ${url}: ` +
+      `${String(files)} files would run with every Postgres test SKIPPED.`,
+  );
+  if (process.env.CI === "true") {
+    console.error("[postgres-suite] CI=true: failing instead of running a skipped Postgres suite.");
+    process.exit(1);
+  }
+}
+
+async function runBunTest(
+  root: string,
+  files: readonly string[],
+  env: Readonly<Record<string, string | undefined>>,
+): Promise<number> {
   const proc = Bun.spawn(["bun", "test", ...files], {
     cwd: root,
-    env: { ...process.env, REQUIRE_DOCKER: "1" },
+    env: { ...process.env, REQUIRE_DOCKER: "1", ...env },
     stdout: "inherit",
     stderr: "inherit",
   });
@@ -121,12 +188,30 @@ async function runBunTest(root: string, files: readonly string[]): Promise<numbe
   return code;
 }
 
+/**
+ * Counts the skipped Postgres tests the children recorded.
+ *
+ * Each `postgresTest` skip appends one byte to `path`. The count is exact:
+ * only harness-gated Postgres skips write it, never a bare `test.skip`.
+ *
+ * @param path - Counter file the children shared
+ * @returns Skipped Postgres tests
+ */
+export function readSkipCount(path: string): number {
+  try {
+    return readFileSync(path, "utf8").split("\n").length - 1;
+  } catch {
+    return 0;
+  }
+}
+
 if (import.meta.main) {
   const root = repoRoot();
   const plan = postgresSuitePlan(root, postgresVersionFromEnv());
   console.error(
     `[postgres-suite] Postgres ${plan.version}: ${String(plan.run.length)} files, ${String(plan.excluded.length)} excluded, ${String(plan.known.length)} known failures`,
   );
+  await preflightPostgres(plan.run.length);
   for (const item of plan.excluded) {
     console.error(`[postgres-suite] excluded ${item.file}: ${item.reason}`);
   }
@@ -134,16 +219,29 @@ if (import.meta.main) {
     console.error("[postgres-suite] no files to run");
     process.exit(1);
   }
-  const code = await runBunTest(root, plan.run);
-  if (code !== 0) process.exit(code);
-  for (const item of plan.known) {
-    console.error(`[postgres-suite] known failure ${item.file}: ${item.reason}`);
-    const failed = await runBunTest(root, [item.file]);
-    if (failed === 0) {
-      console.error(
-        `[postgres-suite] ${item.file} passed on Postgres ${plan.version}. Remove it from POSTGRES_KNOWN_FAILURES.`,
-      );
-      process.exit(1);
+  const scratch = mkdtempSync(join(tmpdir(), "okm-postgres-skips-"));
+  const skipFile = join(scratch, "skips");
+  const childEnv = { OKM_POSTGRES_SKIP_FILE: skipFile };
+  let code = await runBunTest(root, plan.run, childEnv);
+  let unexpectedPass: string | undefined;
+  if (code === 0) {
+    for (const item of plan.known) {
+      console.error(`[postgres-suite] known failure ${item.file}: ${item.reason}`);
+      const failed = await runBunTest(root, [item.file], childEnv);
+      if (failed === 0) {
+        unexpectedPass = item.file;
+        code = 1;
+        break;
+      }
     }
   }
+  const skipped = readSkipCount(skipFile);
+  rmSync(scratch, { recursive: true, force: true });
+  if (skipped > 0) console.error(`${String(skipped)} Postgres tests SKIPPED`);
+  if (unexpectedPass !== undefined) {
+    console.error(
+      `[postgres-suite] ${unexpectedPass} passed on Postgres ${plan.version}. Remove it from POSTGRES_KNOWN_FAILURES.`,
+    );
+  }
+  if (code !== 0) process.exit(code);
 }

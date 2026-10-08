@@ -92,6 +92,8 @@ export const TYPE_CEILINGS = {
   inferred200Instantiations: 17_300,
   inferred200Types: 6_500,
   inferred500Instantiations: 42_400,
+  /** The 250-table probe (R4): measured 17,650 plus 20 percent. */
+  inferred250Instantiations: 21_180,
   instantiationsPerAddedTable: 84,
   emittedConsumerTypes: 700,
   /** Query composite probe on 200 tables (D140). Separate from the inferred-schema baseline. */
@@ -327,6 +329,19 @@ function measureFixtureRows(
       }),
     );
   }
+  // R4: the 250-table probe. Table generation is prefix-stable (each table
+  // only references earlier tables), so the first 250 tables of the seed-1
+  // 500-table fixture are exactly what a 250-table fixture would be.
+  const twoFifty = generateFixture({ seed: 1, tables: 500 });
+  rows.push(
+    measureProject(root, "inferred-250", 250, (dir) => {
+      writeProductionInferredProject(
+        dir,
+        { ...twoFifty, tableCount: 250, tables: twoFifty.tables.slice(0, 250) },
+        target,
+      );
+    }),
+  );
   const twoHundred = generateFixture({ seed: 1, tables: 200 });
   rows.push(
     measureProject(root, "emitted-200", 200, (dir) => {
@@ -400,6 +415,12 @@ export function ceilingProblems(
   if (inferred500.instantiations > TYPE_CEILINGS.inferred500Instantiations) {
     problems.push(
       `type-cost: inferred 500 tables used ${String(inferred500.instantiations)} instantiations, above ${String(TYPE_CEILINGS.inferred500Instantiations)}`,
+    );
+  }
+  const inferred250 = rowNamed(report.rows, "inferred-250");
+  if (inferred250.instantiations > TYPE_CEILINGS.inferred250Instantiations) {
+    problems.push(
+      `type-cost: inferred 250 tables used ${String(inferred250.instantiations)} instantiations, above ${String(TYPE_CEILINGS.inferred250Instantiations)}`,
     );
   }
   if (emitted200.types > TYPE_CEILINGS.emittedConsumerTypes) {

@@ -51,6 +51,7 @@ test("type ceilings fail when a fixture is over the D133 limits", () => {
   const rows: TypeBudgetRow[] = [
     row("inferred-50", 50, 15_000, 3_000),
     row("inferred-200", 200, 80_000, 12_000),
+    row("inferred-250", 250, 100_000, 15_000),
     row("inferred-500", 500, 200_000, 20_000),
     row("emitted-200", 200, 0, 900),
     row("equality-200", 200, 20, 800),
@@ -58,6 +59,7 @@ test("type ceilings fail when a fixture is over the D133 limits", () => {
   ];
   const problems = ceilingProblems(budgetReport(rows));
   expect(problems.some((problem) => problem.includes("inferred 200"))).toBe(true);
+  expect(problems.some((problem) => problem.includes("inferred 250"))).toBe(true);
   expect(problems.some((problem) => problem.includes("inferred 500"))).toBe(true);
   expect(problems.some((problem) => problem.includes("emitted"))).toBe(true);
   expect(problems.some((problem) => problem.includes("per table"))).toBe(true);
@@ -68,6 +70,7 @@ test("the feature-using query probes have their own ceilings (D176)", () => {
   const rows: TypeBudgetRow[] = [
     row("inferred-50", 50, 1, 1),
     row("inferred-200", 200, 1, 1),
+    row("inferred-250", 250, 21_180, 1),
     row("inferred-500", 500, 1, 1),
     row("emitted-200", 200, 0, 1),
     row("equality-200", 200, 1, 1),

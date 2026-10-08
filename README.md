@@ -80,6 +80,8 @@ bun add okmodel @electric-sql/pglite
 
 Bun.sql needs no extra package: `import { connect } from "okmodel/pg/bun"`. okmodel has no runtime dependencies. Each installed driver is an optional peer.
 
+The `okm` bin's shebang is node, so `bunx okm` runs it with Node even inside a Bun project. Run `bun --bun okm` when the command must use the Bun runtime (Bun.sql runs only there). A `.ts` config file under plain Node needs Node 22.18 or newer for type stripping.
+
 ## Quickstart
 
 This builds two tables, applies them, and runs one script. The script writes an author and a note, then reads the note with its author. `DATABASE_URL` is a direct Postgres URL, not a pooler. Port `6432` and port `6543` count as a pooler. Apply, seed, and check also refuse when the backend pid changes between two statements (OKM1854), unless `--allow-pooler` is set.
@@ -828,7 +830,7 @@ export const app = schema({
 
 ### Views
 
-A view is a saved query. You give it the SQL and the columns that query returns. `db.views.active.find({ limit: 20 })` reads `active`. That handle has no insert or update. There is no query-builder form yet. `okm check` reprints the query on the connected server before it compares, so a difference that is only how that server prints the query is not drift. A materialized view that refreshes while people are reading it needs a unique index, or the declaration is OKM1822. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
+A view is a saved query. You give it the SQL and the columns that query returns. `db.views.active.find({ limit: 20 })` reads `active`. That handle has no insert or update. View handles are camelCased: a view named `active_projects` reads as `db.views.activeProjects`. There is no query-builder form yet. `okm check` reprints the query on the connected server before it compares, so a difference that is only how that server prints the query is not drift. A materialized view refreshes with `REFRESH MATERIALIZED VIEW`: the plan populates it with a plain refresh first (Postgres rejects `CONCURRENTLY` on an empty view), then refreshes concurrently when the declaration sets `refresh: "concurrently"`. A materialized view that refreshes while people are reading it needs a unique index, or the declaration is OKM1822. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
 
 `views.ts`:
 

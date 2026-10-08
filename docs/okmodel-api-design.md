@@ -628,6 +628,14 @@ Modifiers: `.nullable()`, `.default(v)`, `.defaultSql(sql)`, `.primaryKey()`, `.
 
 A `timestamptz`, `timestamp`, `time`, or `timetz` value keeps microseconds. Precision is 0 through 6, and omitting it keeps the full value. `Temporal.Instant.toString()` with no options is not how to show that value: pass `fractionalSecondDigits` when the display should be shorter. The codecs do not warn.
 
+Date and time columns need a `Temporal` global. Bun and Node 26 have it. Node 22 and 24 need a polyfill assigned before the columns are used:
+
+```ts
+import { Temporal } from "temporal-polyfill";
+
+globalThis.Temporal = Temporal;
+```
+
 `t.id()` with `uuidv7()` or `uuidv4`, and `t.identity()`, are omitted from insert and update. `t.id({ default: "none" })`, `.primaryKey()`, and a composite `primaryKey` are required on insert (optional when the column already has a default) and omitted from update. A declared `requires` below Postgres 18 rejects `uuidv7()` at schema build (OKM1812) and the message names `defaults.id`; with no `requires`, apply refuses it on a server below 18 (D185), and its fix names `t.id({ default: "uuidv4" })` and `schema({ requires })`.
 
 **Client defaults and id generators (0.2, D153, D154).** `.default(x)` takes a literal or a client generator (`uuidv4`, `uuidv7`, `okid(...)`, or a function): the client fills the field on insert when it is omitted, nothing enters the database catalog or its hash, and the column has no database default, so a writer that bypasses okmodel must supply the value. `.defaultSql(sql)` is the database default. `schema({ tables, defaults: { id } })` sets what a bare `t.id()` means; a per-column option wins; `connect({ generators })` replaces a built-in generator for tests. OKID columns are `text` with `COLLATE "C"` so sortable ids order as time. Builder shape (shipped in P19): `t.id({ default: uuidv4 | uuidv7 | okid({ prefix, sortable, length }) })` fills the id in the application; the strings `"uuidv4"`, `"uuidv7"` and `"none"` stay database defaults (`"none"` is column-only, so the insert type requires that id); `okid` and the other generators come from `okmodel/ids`. A literal passed to `.default()` is a database default, a function is a client generator.
