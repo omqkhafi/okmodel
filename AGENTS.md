@@ -15,7 +15,7 @@ This file is the single source of rules for this repository. `CLAUDE.md` imports
 
 - The published package is `okmodel` at the repository root: ESM only, Apache-2.0, `sideEffects: false`.
 - Other packages live under `packages/*` as Bun workspaces. Their dependencies never go into the root `package.json`.
-- Normative docs are draft 22 (`docs/okmodel-api-design.md`) and decisions D1–D211. The M0 spike implementations are on the `m0-spikes` tag. `packages/spikes` keeps the row-type and operator fixtures the type ceilings measure. Findings stay in `docs/m0-findings.md`.
+- Normative docs are draft 22 (`docs/okmodel-api-design.md`) and decisions D1–D213. The M0 spike implementations are on the `m0-spikes` tag. `packages/spikes` keeps the row-type and operator fixtures the type ceilings measure. Findings stay in `docs/m0-findings.md`.
 
 ## Errors
 
@@ -35,7 +35,7 @@ A layer may import layers below it. It must not import a layer above it. Adapter
 
 ## Scripts
 
-- `bun run check` runs format, lint, typecheck, `editor-check`, `type-cost`, `layers-check`, `core-purity`, `docs:check`, `readme:check`, the compiler-API scan, `bundle-purity`, build, tests, publint, arethetypeswrong, and the size budget. It does not run `@ark/attest`.
+- `bun run check` runs format, lint, typecheck, `editor-check`, `type-cost`, `layers-check`, `core-purity`, `docs:check`, `readme:check`, the compiler-API scan, `bundle-purity`, build, tests, publint, arethetypeswrong, and the size budget. It does not run `@ark/attest`. CI runs those steps in parallel. Each check is `area / piece` (`CI / lint / static`, `CI / test / migrate pg`, and the rest). The required status is `gate / check`.
 - `bun run build` writes JavaScript with `bun build --target node` and declarations with `tsc` (`emitDeclarationOnly`).
 - `bun run typecheck` runs `tsc --noEmit`.
 - `bun run lint` uses oxlint with type-aware rules. `bun run format:check` uses oxfmt. `bun run format` rewrites formatting.
@@ -48,7 +48,7 @@ A layer may import layers below it. It must not import a layer above it. Adapter
 - `bun run release-check -- --base <git-rev>` fails when `package.json` matches that revision or `changelog.md` has no new lines under `## Unreleased`. A release that promotes Unreleased is allowed, including a cut from one bare version to the next when the new `## vX.Y.Z` section has the notes. Before `vX.Y.Z` is tagged, notes added under that heading are allowed and the version stays. CI runs it on pull requests. A pull request whose changed files are all under `.github/` is exempt from the version and changelog rules and prints why; one file outside `.github/` brings both rules back.
 - `bun run db:up` and `bun run db:down` start and stop the Postgres topology. `POSTGRES_VERSION` selects 15, 16, 17, or 18 (default 17).
 - `bun run test:postgres` runs every test file against that topology. `POSTGRES_EXCLUSIONS` in `scripts/postgres-suite.ts` is the only list of files left out, and each entry has a reason. `bun run test:tarball` packs the tarball and runs the README and the quickstart on the topology.
-- `bun run verify` runs that suite in Docker on this machine. One version by default (`POSTGRES_VERSION`, or 17). `--all` runs every supported major. CI stays the authority for a release. A pull request runs the suite on 15 and 18 and the tarball job on 18. The release and a weekly run cover 15 through 18 for both.
+- `bun run verify` runs that suite in Docker on this machine. One version by default (`POSTGRES_VERSION`, or 17). `--all` runs every supported major. CI stays the authority for a release. A pull request skips real Postgres unless it has the label `needs: postgres`, which runs the suite on 15 and 18 and the tarball job on 18. The release and a weekly run cover 15 through 18 for both.
 - `bun run type-cost` writes TypeScript 7 extended diagnostics as JSON and fails when a D127 ceiling is exceeded.
 - `bun run bundle-purity` fails when a runtime bundle contains an npm package, or when `src/` imports the `@okmodel/harness` barrel.
 - The size check reports `dist/` and does not gate it. The runtime entry (`src/contracts/index.ts`) gate is measured +10% (D144): 6,100 bytes minified and 2,250 gzip. CI fails a runtime-entry cold import above 25 ms. A local sample above 15 ms is a finding. The app startup budget is the 0.1 gate in `scripts/size.ts` (startup graph, static imports). Connect-entry cold imports are printed, not gated; the 15 ms local reference is our own code with the driver stubbed. `okmodel/pg` is printed, not gated. Adapter entries are gated on minified bytes over the runtime entry.
@@ -58,7 +58,7 @@ A layer may import layers below it. It must not import a layer above it. Adapter
 
 ## Docs
 
-Documents in `docs/` are normative. The spec is draft 22. Decisions run D1–D211. GitHub organization is [docs/github.md](docs/github.md) (D206).
+Documents in `docs/` are normative. The spec is draft 22. Decisions run D1–D213. GitHub organization is [docs/github.md](docs/github.md) (D206).
 
 ## Engineering standards
 

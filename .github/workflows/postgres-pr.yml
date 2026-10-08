@@ -1,0 +1,37 @@
+name: Postgres
+
+# Real Postgres on a pull request is opt-in. A code push runs it inside CI
+# when the label is already there. Adding or removing `needs: postgres`,
+# without a push, starts this workflow and does not cancel CI. Release and
+# weekly call the suite and tarball workflows with every supported major.
+on:
+  pull_request:
+    types: [labeled, unlabeled]
+
+concurrency:
+  group: postgres-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  suite:
+    name: suite
+    if: "contains(github.event.pull_request.labels.*.name, 'needs: postgres')"
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/postgres-suite.yml
+    with:
+      versions: '["15", "18"]'
+
+  tarball:
+    name: tarball
+    if: "contains(github.event.pull_request.labels.*.name, 'needs: postgres')"
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/postgres-tarball.yml
+    with:
+      versions: '["18"]'

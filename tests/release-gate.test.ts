@@ -17,6 +17,7 @@ import {
   discoverTestFiles,
   postgresSuitePlan,
 } from "../scripts/postgres-suite.js";
+import { ciTestGroups } from "../scripts/ci-test-groups.js";
 import { repoRoot } from "../scripts/root.js";
 
 const root = repoRoot();
@@ -63,7 +64,7 @@ test("compatibility names the supported majors", () => {
     "The floor is 15: Postgres 13 is past end of life, 14 ends in November 2026, and 15 gives us features we can use later.",
   );
   expect(sentence).toContain(
-    "A pull request runs the suite on 15 and 18 and the tarball job on 18.",
+    "A pull request runs real Postgres only with the label `needs: postgres`: the suite on 15 and 18 and the tarball job on 18.",
   );
   const committed = readFileSync(join(root, "docs/compatibility.md"), "utf8");
   expect(committed).toContain(sentence);
@@ -115,31 +116,35 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   const workflows = readdirSync(join(root, ".github/workflows")).filter((name) =>
     name.endsWith(".yml"),
   );
-  expect(workflows).toContain("postgres.yml");
+  expect(workflows).toContain("postgres-suite.yml");
+  expect(workflows).toContain("postgres-tarball.yml");
   expect(workflows).toContain("release.yml");
   for (const name of workflows) {
     const yaml = readFileSync(join(root, ".github/workflows", name), "utf8");
     expect(unpinnedActions(yaml), name).toEqual([]);
   }
-  const postgres = readFileSync(join(root, ".github/workflows/postgres.yml"), "utf8");
-  expect(postgres).toContain("bun ./scripts/postgres-suite.ts");
-  expect(postgres).toContain("bun ./scripts/tarball-smoke.ts");
-  expect(postgres).not.toContain("tests/harness.test.ts");
-  expect(postgres).toContain("fromJSON(inputs.suite_versions)");
-  expect(postgres).toContain("fromJSON(inputs.tarball_versions)");
-  expect(postgres).toContain("OKMODEL_TARBALL");
-  expect(postgres).toContain("inputs.tarball_artifact");
-  expect(matrixVersions(postgres)).toEqual([]);
+  const suite = readFileSync(join(root, ".github/workflows/postgres-suite.yml"), "utf8");
+  const tarball = readFileSync(join(root, ".github/workflows/postgres-tarball.yml"), "utf8");
+  expect(suite).toContain("bun ./scripts/postgres-suite.ts");
+  expect(suite).not.toContain("tests/harness.test.ts");
+  expect(suite).toContain("fromJSON(inputs.versions)");
+  expect(tarball).toContain("bun ./scripts/tarball-smoke.ts");
+  expect(tarball).toContain("fromJSON(inputs.versions)");
+  expect(tarball).toContain("OKMODEL_TARBALL");
+  expect(tarball).toContain("inputs.tarball_artifact");
+  expect(matrixVersions(suite)).toEqual([]);
+  expect(matrixVersions(tarball)).toEqual([]);
   const release = readFileSync(join(root, ".github/workflows/release.yml"), "utf8");
   expect(release).toContain("group: release");
   expect(release).toContain("cancel-in-progress: false");
-  expect(release).toContain("uses: ./.github/workflows/postgres.yml");
+  expect(release).toContain("uses: ./.github/workflows/postgres-suite.yml");
+  expect(release).toContain("uses: ./.github/workflows/postgres-tarball.yml");
   expect(release).toContain("needs: tag");
   expect(release).toContain("needs: gate");
   expect(release).toContain("needs: publish");
   expect(release).toContain("needs: smoke");
   const releaseRef = release.indexOf("bun ./scripts/release-ref.ts");
-  const gate = release.indexOf("uses: ./.github/workflows/postgres.yml");
+  const gate = release.indexOf("uses: ./.github/workflows/postgres-suite.yml");
   expect(releaseRef).toBeGreaterThan(-1);
   expect(releaseRef).toBeLessThan(gate);
   expect(release.indexOf("bun ./scripts/release-ref.ts", releaseRef + 1)).toBe(-1);
@@ -148,11 +153,15 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   expect(release).toContain('NPM_CONFIG_PROVENANCE: "true"');
   expect(release).toContain("bun ./scripts/npm-smoke.ts");
   expect(release).toContain("bun ./scripts/github-release.ts");
-  expect(jsonVersions(release, "suite_versions")).toEqual([...POSTGRES_VERSIONS]);
-  expect(jsonVersions(release, "tarball_versions")).toEqual([...POSTGRES_VERSIONS]);
+  expect(jsonVersionLists(release, "versions")).toEqual([
+    [...POSTGRES_VERSIONS],
+    [...POSTGRES_VERSIONS],
+  ]);
   const ci = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
-  expect(ci).toContain("uses: ./.github/workflows/postgres.yml");
-  expect(ci).toContain("actions: read");
+  expect(ci).toContain("uses: ./.github/workflows/postgres-suite.yml");
+  expect(ci).toContain("uses: ./.github/workflows/postgres-tarball.yml");
+  expect(ci).toContain("name: label / paths");
+  expect(ci).toContain("name: lint / pull request");
   expect(ci).not.toContain("tests/harness.test.ts");
   expect(ci).toMatch(/push:\n {4}branches:\n {6}- main\n/);
   expect(ci).toContain("pull_request:");
@@ -161,14 +170,44 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   const floor = POSTGRES_VERSIONS[0];
   const newest = POSTGRES_VERSIONS[POSTGRES_VERSIONS.length - 1];
   if (floor === undefined || newest === undefined) throw new Error("no postgres versions");
-  expect(jsonVersions(ci, "suite_versions")).toEqual([floor, newest]);
-  expect(jsonVersions(ci, "tarball_versions")).toEqual([newest]);
+  const pullRequest = readFileSync(join(root, ".github/workflows/postgres-pr.yml"), "utf8");
+  expect(pullRequest).toContain("uses: ./.github/workflows/postgres-suite.yml");
+  expect(pullRequest).toContain("uses: ./.github/workflows/postgres-tarball.yml");
+  expect(pullRequest).toContain("actions: read");
+  expect(pullRequest).toContain("needs: postgres");
+  expect(pullRequest).toContain("labeled");
+  expect(pullRequest).not.toContain("synchronize");
+  expect(pullRequest).toContain("types: [labeled, unlabeled]");
+  const prMeta = readFileSync(join(root, ".github/workflows/pr-meta.yml"), "utf8");
+  expect(prMeta).not.toContain("synchronize");
+  expect(prMeta).not.toContain("opened");
+  expect(jsonVersionLists(pullRequest, "versions")).toEqual([[floor, newest], [newest]]);
+  expect(ci).toContain("needs: [lint, types, test, runtimes, package]");
+  expect(ci).toContain("name: test / ${{ matrix.group }}");
+  expect(ci).toContain("name: lint / static");
+  expect(ci).toContain("name: types / compiler");
+  expect(ci).toContain("name: runtimes / portable");
+  expect(ci).toContain("name: package / checks");
+  expect(ci).toContain("name: gate / check");
+  expect(ci).toContain("name: attest / measure");
+  for (const group of ciTestGroups(root)) {
+    expect(ci).toContain(`- ${group.name}\n`);
+  }
+  const checkScript = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
+    scripts: { check: string };
+  };
+  for (const part of checkScript.scripts.check.split(" && ")) {
+    expect(ci, part).toContain(part);
+  }
   const weekly = readFileSync(join(root, ".github/workflows/weekly.yml"), "utf8");
   expect(weekly).toContain('cron: "0 6 * * 1"');
-  expect(weekly).toContain("uses: ./.github/workflows/postgres.yml");
+  expect(weekly).toContain("uses: ./.github/workflows/postgres-suite.yml");
+  expect(weekly).toContain("uses: ./.github/workflows/postgres-tarball.yml");
   expect(weekly).toContain("actions: read");
-  expect(jsonVersions(weekly, "suite_versions")).toEqual([...POSTGRES_VERSIONS]);
-  expect(jsonVersions(weekly, "tarball_versions")).toEqual([...POSTGRES_VERSIONS]);
+  expect(jsonVersionLists(weekly, "versions")).toEqual([
+    [...POSTGRES_VERSIONS],
+    [...POSTGRES_VERSIONS],
+  ]);
 });
 
 /**
@@ -251,8 +290,9 @@ test("the setup guard names a check job without Deno, without Node, or with Deno
     ...denoSteps(ci).map((run) => `      - run: ${JSON.stringify(run)}`),
   ].join("\n");
   expect(checkSetupProblems(late, ci)).toHaveLength(1);
+  const release = readFileSync(join(root, ".github/workflows/release.yml"), "utf8");
   const otherVersion = ci.replace("sh -s v2.9.7", "sh -s v2.0.0");
-  expect(checkSetupProblems(ci, otherVersion)).toHaveLength(1);
+  expect(checkSetupProblems(release, otherVersion)).toHaveLength(1);
 });
 
 test("verify runs one version unless --all", () => {
@@ -275,15 +315,19 @@ function unpinnedActions(yaml: string): readonly string[] {
   return problems;
 }
 
-function jsonVersions(yaml: string, key: string): readonly string[] {
-  const match = new RegExp(`${key}:\\s*'(\\[[^']*\\])'`).exec(yaml);
-  const body = match?.[1];
-  if (body === undefined) throw new Error(`missing ${key}`);
-  const parsed: unknown = JSON.parse(body);
-  if (!Array.isArray(parsed) || parsed.some((item) => typeof item !== "string")) {
-    throw new Error(`${key} is not a string list`);
+function jsonVersionLists(yaml: string, key: string): readonly (readonly string[])[] {
+  const found: string[][] = [];
+  for (const match of yaml.matchAll(new RegExp(`${key}:\\s*'(\\[[^']*\\])'`, "g"))) {
+    const body = match[1];
+    if (body === undefined) continue;
+    const parsed: unknown = JSON.parse(body);
+    if (!Array.isArray(parsed) || parsed.some((item) => typeof item !== "string")) {
+      throw new Error(`${key} is not a string list`);
+    }
+    found.push(parsed);
   }
-  return parsed;
+  if (found.length === 0) throw new Error(`missing ${key}`);
+  return found;
 }
 
 function matrixVersions(yaml: string): readonly (readonly string[])[] {
@@ -338,11 +382,30 @@ function denoRuns(steps: readonly WorkflowStep[]): readonly string[] {
     .filter((run) => run.includes("deno.land/install.sh") || run.includes(".deno/bin"));
 }
 
-/** The Deno steps of the first job in `ci.yml` that runs `bun run check`. */
-function denoSteps(ci: string): readonly string[] {
-  const first = checkJobs(ci)[0];
-  if (first === undefined) throw new Error("ci.yml has no job that runs bun run check");
-  return denoRuns(stepsBeforeCheck(first[1]));
+/** The Deno install steps of the first job in `reference` that has them. */
+function denoSteps(reference: string): readonly string[] {
+  const steps = denoJob(reference);
+  if (steps === undefined) throw new Error("ci.yml does not install Deno");
+  return denoRuns(steps);
+}
+
+/** Steps of the first job that installs Deno. */
+function denoJob(reference: string): readonly WorkflowStep[] | undefined {
+  const parsed: unknown = Bun.YAML.parse(reference);
+  const jobs = isRecord(parsed) && isRecord(parsed.jobs) ? parsed.jobs : {};
+  for (const job of Object.values(jobs)) {
+    if (!isRecord(job) || !Array.isArray(job.steps)) continue;
+    const steps = job.steps.filter(isRecord) as WorkflowStep[];
+    if (denoRuns(steps).length > 0) return steps;
+  }
+  return undefined;
+}
+
+/** The `node-version` of the last setup-node step in a job. */
+function nodeVersion(steps: readonly WorkflowStep[]): string | undefined {
+  const setups = steps.filter((step) => step.uses?.includes("actions/setup-node@"));
+  const version = setups[setups.length - 1]?.with?.["node-version"];
+  return typeof version === "string" || typeof version === "number" ? String(version) : undefined;
 }
 
 /** The `node-version` of the last setup-node step before `bun run check`. */
@@ -360,8 +423,8 @@ function nodeBeforeCheck(steps: readonly WorkflowStep[]): string | undefined {
  */
 function checkSetupProblems(workflow: string, reference: string): readonly string[] {
   const expectedDeno = denoSteps(reference);
-  const first = checkJobs(reference)[0];
-  const expectedNode = first === undefined ? undefined : nodeBeforeCheck(first[1]);
+  const deno = denoJob(reference);
+  const expectedNode = deno === undefined ? undefined : nodeVersion(deno);
   if (expectedDeno.length !== 2 || !/sh -s v\d+\.\d+\.\d+$/.test(expectedDeno[0] ?? "")) {
     return ["ci.yml does not install a pinned Deno and put it on PATH before Check"];
   }

@@ -4,9 +4,17 @@ name: CI
 # pinned, so moving to a newer Ubuntu is a deliberate change made in a pull
 # request, not something GitHub does when it moves the latest label.
 #
-# A push runs on main only, and that push runs check and attest. The postgres
-# job (suite and tarball) runs on pull requests. Release and weekly call
-# postgres.yml themselves. A newer run on the same ref cancels the older one.
+# A push runs on main only. A pull request runs the same jobs. `bun run check`
+# is split across lint, types, named test groups, runtimes, and package, so
+# the wait is the slowest slice. Every job name is `area / piece`, so the
+# check reads `CI / area / piece`. The job named `gate / check` is the
+# required status: it passes when every slice passed. A pull request update
+# starts this workflow only. Path labels and the pull request lint are jobs
+# here. The suite and the tarball run in this same workflow when the pull
+# request already has `needs: postgres`. Adding that label, without a push,
+# starts postgres-pr.yml and does not cancel this run. Release and weekly
+# call the suite and tarball workflows themselves. A newer run on the same
+# ref cancels the older one.
 on:
   push:
     branches:
@@ -19,16 +27,135 @@ concurrency:
 
 permissions:
   contents: read
+  pull-requests: write
+  actions: read
 
 jobs:
-  check:
-    name: check
+  lint:
+    name: lint / static
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Format
+        run: bun run format:check
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Layers
+        run: bun run layers-check
+
+      - name: Core purity
+        run: bun run core-purity
+
+      - name: OKID drift
+        run: bun run okid-drift
+
+      - name: Docs
+        run: bun run docs:check
+
+      - name: Readme
+        run: bun run readme:check
+
+      - name: Compiler API
+        run: bun run compiler-api
+
+      - name: Bundle purity
+        run: bun run bundle-purity
+
+      - name: Release flow
+        if: github.event_name == 'pull_request'
+        run: bun ./scripts/release-check.ts --base ${{ github.event.pull_request.base.sha }}
+
+  types:
+    name: types / compiler
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Editor
+        run: bun run editor-check
+
+      - name: Type cost
+        run: bun run type-cost
+
+  test:
+    name: test / ${{ matrix.group }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        group:
+          - reference app
+          - migrate
+          - migrate pg
+          - drivers
+          - rows
+          - topology
+          - schema
+          - columns
+          - schema pg
+          - tenancy
+          - client
+          - client pg
+          - package
+          - contracts
+          - safety
+          - scripts
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Build
+        run: bun run build
+
+      - name: Test
+        run: |
+          files="$(bun ./scripts/ci-test-groups.ts "${{ matrix.group }}")"
+          if [ -z "$files" ]; then
+            echo "no test files"
+            exit 1
+          fi
+          bun test $files
+
+  runtimes:
+    name: runtimes / portable
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
@@ -49,26 +176,57 @@ jobs:
       - name: Deno on PATH
         run: echo "$HOME/.deno/bin" >> "$GITHUB_PATH"
 
-      - name: Check
-        run: bun run check
+      - name: Runtimes
+        run: bun run test:runtimes
 
-      - name: Release flow
-        if: github.event_name == 'pull_request'
-        run: bun ./scripts/release-check.ts --base ${{ github.event.pull_request.base.sha }}
+  package:
+    name: package / checks
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-  postgres:
-    name: postgres
-    if: github.event_name != 'push' || github.ref != 'refs/heads/main'
-    permissions:
-      contents: read
-      actions: read
-    uses: ./.github/workflows/postgres.yml
-    with:
-      suite_versions: '["15", "18"]'
-      tarball_versions: '["18"]'
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Build
+        run: bun run build
+
+      - name: Publint
+        run: bun run publint
+
+      - name: Are the types wrong
+        run: bun run attw
+
+      - name: Size
+        run: bun run size
+
+  check:
+    name: gate / check
+    needs: [lint, types, test, runtimes, package]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require the slices
+        run: |
+          fail=0
+          for pair in "lint=${{ needs.lint.result }}" "types=${{ needs.types.result }}" "test=${{ needs.test.result }}" "runtimes=${{ needs.runtimes.result }}" "package=${{ needs.package.result }}"; do
+            name="${pair%%=*}"
+            result="${pair#*=}"
+            echo "$name $result"
+            if [ "$result" != "success" ]; then
+              fail=1
+            fi
+          done
+          exit "$fail"
 
   attest:
-    name: attest
+    name: attest / measure
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -84,3 +242,64 @@ jobs:
 
       - name: Attest
         run: bun run attest
+
+  paths:
+    name: label / paths
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Label by path
+        uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # v7.0.0
+
+  pull:
+    name: lint / pull request
+    needs: paths
+    if: >-
+      github.event_name == 'pull_request' &&
+      !cancelled() &&
+      (needs.paths.result == 'success' || needs.paths.result == 'skipped')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout base
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Lint pull request
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: bun ./scripts/pr-lint.ts --pr "$PR_NUMBER"
+
+  suite:
+    name: suite
+    if: "github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'needs: postgres')"
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/postgres-suite.yml
+    with:
+      versions: '["15", "18"]'
+
+  tarball:
+    name: tarball
+    if: "github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'needs: postgres')"
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/postgres-tarball.yml
+    with:
+      versions: '["18"]'

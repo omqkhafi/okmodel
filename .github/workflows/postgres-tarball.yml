@@ -1,18 +1,13 @@
 name: Postgres
 
-# Reusable suite and tarball jobs. Callers pass JSON lists of majors.
-# A pull request passes the floor and the newest for the suite, and the
-# newest for the tarball. The release and the weekly run pass every
-# supported major for both.
+# Reusable tarball job. The caller job is named `tarball`, so a run reads
+# `Postgres / tarball / 18`. A pull request with `needs: postgres` passes the
+# newest. Release and weekly pass every supported major.
 on:
   workflow_call:
     inputs:
-      suite_versions:
-        description: JSON list of Postgres majors for the suite
-        required: true
-        type: string
-      tarball_versions:
-        description: JSON list of Postgres majors for the tarball job
+      versions:
+        description: JSON list of Postgres majors
         required: true
         type: string
       tarball_artifact:
@@ -26,54 +21,14 @@ permissions:
   actions: read
 
 jobs:
-  suite:
-    name: postgres ${{ matrix.version }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        version: ${{ fromJSON(inputs.suite_versions) }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: 1.4.2
-
-      - name: Install
-        run: bun install --frozen-lockfile
-
-      - name: Build
-        run: bun run build
-
-      - name: Start Postgres
-        run: bun run db:up
-        env:
-          POSTGRES_VERSION: ${{ matrix.version }}
-
-      - name: Postgres suite
-        run: bun ./scripts/postgres-suite.ts
-        env:
-          REQUIRE_DOCKER: "1"
-          POSTGRES_VERSION: ${{ matrix.version }}
-
-      - name: Stop Postgres
-        if: always()
-        run: bun run db:down
-        env:
-          POSTGRES_VERSION: ${{ matrix.version }}
-
   tarball:
-    name: tarball ${{ matrix.version }}
+    name: ${{ matrix.version }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        version: ${{ fromJSON(inputs.tarball_versions) }}
+        version: ${{ fromJSON(inputs.versions) }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

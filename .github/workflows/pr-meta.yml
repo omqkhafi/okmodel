@@ -1,20 +1,16 @@
 name: PR meta
 
-# labeler adds area: labels from changed paths, then lint checks the title,
-# the closing line, one type: label, at least one area: label, and a
-# milestone. Labels added with GITHUB_TOKEN do not start another workflow, so
-# both jobs live here and lint waits for labeler.
+# A pull request update is the CI workflow. This file runs only when the
+# title, a label, or the milestone changes, so that event is its own run and
+# a code push is not a second one. Labels added with GITHUB_TOKEN do not
+# start another workflow.
 #
 # pull_request_target runs this file from the base branch. Pull request code
-# is never checked out and never executed: labeler reads the changed paths
-# through the API, and lint checks out the base commit.
+# is never checked out and never executed. Lint checks out the base commit.
 on:
   pull_request_target:
     types:
-      - opened
       - edited
-      - reopened
-      - synchronize
       - labeled
       - unlabeled
       - milestoned
@@ -33,25 +29,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  labeler:
-    name: labeler
-    if: >-
-      github.event_name == 'pull_request_target' &&
-      contains(fromJSON('["opened", "synchronize", "reopened"]'), github.event.action)
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      pull-requests: write
-    steps:
-      - name: Label by path
-        uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # v7.0.0
-
   lint:
-    name: lint
-    needs: labeler
-    if: >-
-      !cancelled() &&
-      (needs.labeler.result == 'success' || needs.labeler.result == 'skipped')
+    name: lint / pull request
     runs-on: ubuntu-24.04
     permissions:
       contents: read

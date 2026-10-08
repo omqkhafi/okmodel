@@ -14,6 +14,11 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+### ♻️ Changed
+
+- A pull request no longer runs the Postgres suite. The label `needs: postgres` runs the suite on 15 and 18 and the tarball on 18, in the same Actions run as the other checks. Adding that label without a push starts it on its own and does not cancel the run. `bun run verify` runs that suite on this machine. The release and the weekly run still cover 15 through 18 (D212).
+- A pull request update is one Actions run. Checks are named `area / piece`, so each one reads `CI / area / piece`. Long test groups are split (`migrate` and `migrate pg`, `drivers` and `rows`, `schema`, `columns`, and `schema pg`, `tenancy`, `client`, and `client pg`, `package`, `contracts`, and `safety`). Node and Deno are `runtimes / portable`. Path labels and the pull request lint are jobs in that run. The required status is `gate / check` (D213).
+
 ### 🐛 Fixed
 
 - `update`, `delete`, `archive`, and `restore` now refuse a where with no effective predicate, including undefined values (QA-C1, QA-H2). A field value is a leaf. `eq` keeps a timestamp, a date, bytes, or a jsonb object in the filter. A bare object stays OKM1121 (D125, D210).
