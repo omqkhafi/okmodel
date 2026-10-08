@@ -168,7 +168,18 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   expect(jsonVersions(pullRequest, "suite_versions")).toEqual([floor, newest]);
   expect(jsonVersions(pullRequest, "tarball_versions")).toEqual([newest]);
   expect(ci).toContain("needs: [lint, types, test, runtimes, package]");
-  expect(ci).toContain('shard: ["1/3", "2/3", "3/3"]');
+  expect(ci).toContain("name: test / ${{ matrix.group }}");
+  for (const name of [
+    "reference app",
+    "migrate",
+    "runtime",
+    "schema",
+    "client",
+    "tooling",
+    "scripts",
+  ]) {
+    expect(ci).toContain(`- ${name}`);
+  }
   const checkScript = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
     scripts: { check: string };
   };

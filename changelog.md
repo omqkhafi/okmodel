@@ -17,7 +17,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 ### ♻️ Changed
 
 - A pull request no longer runs the Postgres suite. The label `needs: postgres` runs the suite on 15 and 18 and the tarball on 18. `bun run verify` runs that suite on this machine. The release and the weekly run still cover 15 through 18 (D212).
-- CI runs the steps of `bun run check` in parallel. Tests run as three shards. Node and Deno run beside them. The required `check` status passes when every slice has passed (D213).
+- CI runs the steps of `bun run check` in parallel. Tests run as `test / reference app`, `test / migrate`, `test / runtime`, `test / schema`, `test / client`, `test / tooling`, and `test / scripts`. Node and Deno run beside them. The required `check` status passes when every slice has passed (D213).
 
 ### 🐛 Fixed
 

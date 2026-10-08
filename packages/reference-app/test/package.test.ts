@@ -8,9 +8,11 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
 
+import { linkSelfPackage } from "../../../scripts/link-package.js";
 import { appDir, okmodelRoot } from "./support.js";
 
 test("the reference app typechecks against the okmodel declarations it resolves", () => {
+  linkSelfPackage();
   const proc = Bun.spawnSync(["bunx", "tsc", "--noEmit", "-p", join(appDir, "tsconfig.json")], {
     cwd: appDir,
     stdout: "pipe",

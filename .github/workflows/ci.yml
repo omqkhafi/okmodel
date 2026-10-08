@@ -5,7 +5,7 @@ name: CI
 # request, not something GitHub does when it moves the latest label.
 #
 # A push runs on main only. A pull request runs the same jobs. `bun run check`
-# is split across lint, types, three test shards, runtimes, and package, so
+# is split across lint, types, named test groups, runtimes, and package, so
 # the wait is the slowest slice. The job named check is the required status:
 # it passes when every slice passed. Real Postgres is postgres-pr.yml, and only when the pull
 # request has the label `needs: postgres`. Release and weekly call
@@ -97,12 +97,19 @@ jobs:
         run: bun run type-cost
 
   test:
-    name: test ${{ matrix.shard }}
+    name: test / ${{ matrix.group }}
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        shard: ["1/3", "2/3", "3/3"]
+        group:
+          - reference app
+          - migrate
+          - runtime
+          - schema
+          - client
+          - tooling
+          - scripts
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -119,7 +126,13 @@ jobs:
         run: bun run build
 
       - name: Test
-        run: bun test --shard=${{ matrix.shard }}
+        run: |
+          files="$(bun ./scripts/ci-test-groups.ts "${{ matrix.group }}")"
+          if [ -z "$files" ]; then
+            echo "no test files"
+            exit 1
+          fi
+          bun test $files
 
   runtimes:
     name: runtimes
