@@ -61,6 +61,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `db.views` keys are camelCased. A materialized view is refreshed with `REFRESH MATERIALIZED VIEW` until a `refresh()` handle in 0.6 (QA-L10, D215).
 - `lists_touch` is the trigger `timestamps({ enforce: "trigger" })` installs on a table named `lists`. `archivable()` installs no trigger (QA-L13, D215).
 - Hidden columns in `where` and `orderBy` are unchanged. The options for 0.6 are recorded in D215 (QA-S1).
+- `timeout` and `signal` on Bun.sql and PGlite do not settle a call whose statement is already running, and an outer-client call inside a PGlite `tx()` callback queues behind the transaction instead of throwing (QA-M3, D216). Neither driver can cancel an in-flight statement, and the client-side race did not fit the size cap, so both stay known limits. OKM1192 is reserved for the later refusal.
 
 ## v0.5.0 — 2026-10-07
 
