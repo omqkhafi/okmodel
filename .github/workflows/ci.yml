@@ -4,9 +4,10 @@ name: CI
 # pinned, so moving to a newer Ubuntu is a deliberate change made in a pull
 # request, not something GitHub does when it moves the latest label.
 #
-# A push runs on main only, and that push runs check and attest. The postgres
-# job (suite and tarball) runs on pull requests. Release and weekly call
-# postgres.yml themselves. A newer run on the same ref cancels the older one.
+# A push runs on main only, and that push runs check and attest. A pull
+# request runs the same two jobs. Real Postgres is postgres-pr.yml, and only
+# when the pull request has the label `needs: postgres`. Release and weekly
+# call postgres.yml themselves. A newer run on the same ref cancels the older one.
 on:
   push:
     branches:
@@ -55,17 +56,6 @@ jobs:
       - name: Release flow
         if: github.event_name == 'pull_request'
         run: bun ./scripts/release-check.ts --base ${{ github.event.pull_request.base.sha }}
-
-  postgres:
-    name: postgres
-    if: github.event_name != 'push' || github.ref != 'refs/heads/main'
-    permissions:
-      contents: read
-      actions: read
-    uses: ./.github/workflows/postgres.yml
-    with:
-      suite_versions: '["15", "18"]'
-      tarball_versions: '["18"]'
 
   attest:
     name: attest

@@ -1,0 +1,29 @@
+name: Postgres PR
+
+# Real Postgres on a pull request is opt-in. `check` already runs PGlite and
+# the wire server. The label `needs: postgres` runs the suite on the floor
+# and the newest major, and the tarball on the newest. Adding or removing
+# that label starts this workflow. Release and weekly call postgres.yml with
+# every supported major.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+concurrency:
+  group: postgres-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  postgres:
+    name: postgres
+    if: "contains(github.event.pull_request.labels.*.name, 'needs: postgres')"
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/postgres.yml
+    with:
+      suite_versions: '["15", "18"]'
+      tarball_versions: '["18"]'

@@ -10,7 +10,7 @@ The GitHub defaults are not used. Three groups:
 | -------- | ---------------------------------------------------------------------------------------- |
 | `type:`  | `feat`, `fix`, `perf`, `docs`, `test`, `chore`, `refactor`, `security`                   |
 | `area:`  | `contracts`, `dialects`, `adapters`, `runtime`, `tooling`, `ci`, `docs`                  |
-| `needs:` | `decision`, `repro`, `design`                                                            |
+| `needs:` | `decision`, `repro`, `design`, `postgres`                                                |
 
 `area:` follows the directories under `src/`. `ci` is workflows and `scripts/`. `docs` is `docs/` and the repository markdown.
 

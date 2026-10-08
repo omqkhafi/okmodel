@@ -14,6 +14,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+### ♻️ Changed
+
+- A pull request no longer runs the Postgres suite. The label `needs: postgres` runs the suite on 15 and 18 and the tarball on 18. `bun run verify` runs that suite on this machine. The release and the weekly run still cover 15 through 18 (D211).
+
 ### 🐛 Fixed
 
 - `update`, `delete`, `archive`, and `restore` now refuse a where with no effective predicate, including undefined values (QA-C1, QA-H2). A field value is a leaf. `eq` keeps a timestamp, a date, bytes, or a jsonb object in the filter. A bare object stays OKM1121 (D125, D210).

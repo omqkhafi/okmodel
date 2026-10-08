@@ -1,9 +1,9 @@
 name: Postgres
 
 # Reusable suite and tarball jobs. Callers pass JSON lists of majors.
-# A pull request passes the floor and the newest for the suite, and the
-# newest for the tarball. The release and the weekly run pass every
-# supported major for both.
+# A pull request with the label `needs: postgres` passes the floor and the
+# newest for the suite, and the newest for the tarball. The release and the
+# weekly run pass every supported major for both.
 on:
   workflow_call:
     inputs:

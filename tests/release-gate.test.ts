@@ -63,7 +63,7 @@ test("compatibility names the supported majors", () => {
     "The floor is 15: Postgres 13 is past end of life, 14 ends in November 2026, and 15 gives us features we can use later.",
   );
   expect(sentence).toContain(
-    "A pull request runs the suite on 15 and 18 and the tarball job on 18.",
+    "A pull request runs real Postgres only with the label `needs: postgres`: the suite on 15 and 18 and the tarball job on 18.",
   );
   const committed = readFileSync(join(root, "docs/compatibility.md"), "utf8");
   expect(committed).toContain(sentence);
@@ -151,8 +151,7 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   expect(jsonVersions(release, "suite_versions")).toEqual([...POSTGRES_VERSIONS]);
   expect(jsonVersions(release, "tarball_versions")).toEqual([...POSTGRES_VERSIONS]);
   const ci = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
-  expect(ci).toContain("uses: ./.github/workflows/postgres.yml");
-  expect(ci).toContain("actions: read");
+  expect(ci).not.toContain("uses: ./.github/workflows/postgres.yml");
   expect(ci).not.toContain("tests/harness.test.ts");
   expect(ci).toMatch(/push:\n {4}branches:\n {6}- main\n/);
   expect(ci).toContain("pull_request:");
@@ -161,8 +160,13 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   const floor = POSTGRES_VERSIONS[0];
   const newest = POSTGRES_VERSIONS[POSTGRES_VERSIONS.length - 1];
   if (floor === undefined || newest === undefined) throw new Error("no postgres versions");
-  expect(jsonVersions(ci, "suite_versions")).toEqual([floor, newest]);
-  expect(jsonVersions(ci, "tarball_versions")).toEqual([newest]);
+  const pullRequest = readFileSync(join(root, ".github/workflows/postgres-pr.yml"), "utf8");
+  expect(pullRequest).toContain("uses: ./.github/workflows/postgres.yml");
+  expect(pullRequest).toContain("actions: read");
+  expect(pullRequest).toContain("needs: postgres");
+  expect(pullRequest).toContain("labeled");
+  expect(jsonVersions(pullRequest, "suite_versions")).toEqual([floor, newest]);
+  expect(jsonVersions(pullRequest, "tarball_versions")).toEqual([newest]);
   const weekly = readFileSync(join(root, ".github/workflows/weekly.yml"), "utf8");
   expect(weekly).toContain('cron: "0 6 * * 1"');
   expect(weekly).toContain("uses: ./.github/workflows/postgres.yml");
