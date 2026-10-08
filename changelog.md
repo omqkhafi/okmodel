@@ -38,10 +38,29 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Compiled SQL for a tenant table keeps the tenant predicate on every table alias, including a where that compares an object through `eq` (QA-S4).
 - A missing table or column maps to `undefined_table` or `undefined_column`, with a fix that names `okm migrate apply` and `okm migrate status`. Calls that share one caller signal now share one abort listener instead of adding one each (QA-L8, D214).
 - A TLS or certificate failure maps to `unavailable` with reason `tls` and a fix that names `sslmode` (QA-L9, D214).
+- `filters().parse` no longer throws a TypeError on `constructor`, `__proto__`, `toString`, or `hasOwnProperty`. A key that is not allowlisted is OKM1123. Parse applies `eq`, `in`, `notIn`, `lt`, `lte`, `gt`, `gte`, `between`, `startsWith`, `endsWith`, `contains`, `like`, and `ilike`. An operator the allow type accepts and parse cannot apply is OKM1120 when `parse()` runs (QA-M9, D215).
+- The shipped `Temporal` declaration is empty interfaces, so it merges with TypeScript's Temporal lib and with `temporal-polyfill` (QA-L2, D215).
+- Emitted row types keep `jsonb<T>` and write an optional insert column as `x?: T` (QA-L3, D215).
+- `fn({ searchPath })` is checked as a comma-separated list of identifiers when the function is built (QA-S3, D215).
 
 #### tooling
 
 - A hand-written migration step is linted per statement. A leading comment, a second statement, a semicolon inside a comment, `DO` and `CALL`, and `ALTER COLUMN … TYPE` can now be refused (QA-H3). `-- okm-allow` on the step silences that code on every statement of the step.
+- Port 6432 counts as a pooler. Apply, seed, and check refuse a backend pid that changes between two statements, with OKM1854, unless `--allow-pooler` is set (QA-M6, D215).
+- `okm check` on a schema with `citext` and a view exits 0. The scratch search path includes the schemas that hold extension types, then restores the previous value (QA-M7, D215).
+- `isolation()` uses a new tenant pair each run, asserts only on the row it inserted, deletes that row, and names a missing factory. It covers aggregate, page, batch, and stream when the client has them (QA-M8, D215).
+- A CLI error prints `error <code>: <message>` and the fix, and exits 1. The stack is printed only with `--verbose` or `OKM_DEBUG=1` (QA-M10, D215).
+- Apply's `failed at step N` counts from 1, the same number the linter prints. Status still prints the stored index (QA-L5, D215).
+- A renamed table's plan row estimate uses the old table's row count (QA-L6, D215).
+- `okm`, `okm help`, `okm --help`, and `okm -h` print the commands and exit 0. `okm <command> --help` prints that command (QA-L7, D215).
+- Apply refuses a database whose `standard_conforming_strings` is off (QA-S2, D215).
+
+#### docs
+
+- Temporal values keep microseconds. Showing one passes `fractionalSecondDigits`. The codecs do not warn (QA-L1, D215).
+- `db.views` keys are camelCased. A materialized view is refreshed with `REFRESH MATERIALIZED VIEW` until a `refresh()` handle in 0.6 (QA-L10, D215).
+- `lists_touch` is the trigger `timestamps({ enforce: "trigger" })` installs on a table named `lists`. `archivable()` installs no trigger (QA-L13, D215).
+- Hidden columns in `where` and `orderBy` are unchanged. The options for 0.6 are recorded in D215 (QA-S1).
 
 ## v0.5.0 — 2026-10-07
 
