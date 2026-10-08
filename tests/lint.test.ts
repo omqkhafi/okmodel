@@ -559,6 +559,23 @@ test("a semicolon inside a block comment does not hide the next statement (QA-H3
   ]);
 });
 
+test("a DO block is OKM1542 because its body is not analysed (QA-H3)", () => {
+  for (const sql of ["do $$ begin delete from logs; end $$;", "call refresh_logs();"]) {
+    const findings = hand(sql);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.code).toBe("OKM1542");
+    expect(findings[0]?.place).toBe("step 1");
+    expect(findings[0]?.reason).toBe("the body is not analysed");
+  }
+  const filled = parsePlan(
+    '-- class: expand\n\n-- backfill table="public"."logs" key="id" batch=100\ndo $$ begin delete from logs; end $$;\n',
+  );
+  const empty = schema({ tables: [] }).catalog;
+  expect(
+    lintPlan(filled, empty, empty).some((item) => item.reason === "the body is not analysed"),
+  ).toBe(true);
+});
+
 test("words inside a string, a comment, or a function body are not statements (QA-H3)", () => {
   expect(codesOfHand("select 'drop table logs;';")).toEqual([]);
   expect(codesOfHand("select 1 /* ; drop table logs */ ;")).toEqual([]);

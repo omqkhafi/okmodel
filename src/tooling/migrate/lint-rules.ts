@@ -252,8 +252,8 @@ export const STEP_RULES: readonly StepRule[] = [
     "OKM1542",
     "data-dependent",
     "error",
-    "A data statement outside backfill() is not a migration step.",
-    (input) => hit(dataStatement(input.step), "changes rows outside backfill()"),
+    "A data statement outside backfill(), or DO or CALL, is not a migration step.",
+    (input) => dataStatement(input.step),
   ),
 ];
 
@@ -334,11 +334,17 @@ function normalized(sql: string): string {
   return out;
 }
 
-function dataStatement(step: PlanStep): boolean {
-  if (step.backfill !== undefined) return false;
+function dataStatement(step: PlanStep): readonly string[] {
   const text = normalized(step.sql);
-  if (/^(?:insert|update|delete|merge|truncate)\b/.test(text)) return true;
-  return /^with\b/.test(text) && /\b(?:insert|update|delete|merge)\b/.test(text);
+  if (/^(?:do|call)\b/.test(text)) return ["the body is not analysed"];
+  if (step.backfill !== undefined) return [];
+  if (/^(?:insert|update|delete|merge|truncate)\b/.test(text)) {
+    return ["changes rows outside backfill()"];
+  }
+  if (/^with\b/.test(text) && /\b(?:insert|update|delete|merge)\b/.test(text)) {
+    return ["changes rows outside backfill()"];
+  }
+  return [];
 }
 
 function matches(step: PlanStep, kind: StepKind, pattern: RegExp): boolean {
