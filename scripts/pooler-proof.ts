@@ -9,8 +9,11 @@
  *
  *   REQUIRE_DOCKER=1 bun ./scripts/pooler-proof.ts
  *
- * Needs the topology up (`bun run db:up`) and a pgbouncer 1.21 or newer
- * binary (CI installs it with apt; macOS: `brew install pgbouncer`).
+ * Needs the topology up (`bun run db:up`) and a pgbouncer 1.26 or newer
+ * binary: older releases reuse one server per client (LIFO), so sequential
+ * statements never alternate and the rotation check fails. CI installs 1.26
+ * from apt.postgresql.org (the Ubuntu archive is still 1.22); macOS:
+ * `brew install pgbouncer`.
  */
 
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -108,12 +111,12 @@ export async function poolerProof(_root: string): Promise<void> {
   const version = await pgbouncerVersion();
   if (version === undefined) {
     throw new Error(
-      "pooler-proof: no pgbouncer binary on PATH (CI installs it with apt; macOS: brew install pgbouncer)",
+      "pooler-proof: no pgbouncer binary on PATH (CI installs 1.26 from apt.postgresql.org; macOS: brew install pgbouncer)",
     );
   }
-  if (version < 1.21) {
+  if (version.major !== 1 || version.minor < 26) {
     throw new Error(
-      `pooler-proof: pgbouncer ${String(version)} is older than the 1.21 round-robin setting`,
+      `pooler-proof: pgbouncer ${String(version.major)}.${String(version.minor)} rotates per client, not per statement; the proof needs 1.26 or newer`,
     );
   }
   const primary = new URL(primaryUrl());
@@ -152,14 +155,14 @@ export async function poolerProof(_root: string): Promise<void> {
   }
 }
 
-async function pgbouncerVersion(): Promise<number | undefined> {
+async function pgbouncerVersion(): Promise<{ major: number; minor: number } | undefined> {
   try {
     const proc = Bun.spawn(["pgbouncer", "--version"], { stdout: "pipe", stderr: "ignore" });
     const out = await new Response(proc.stdout).text();
     await proc.exited;
     const match = /PgBouncer (\d+)\.(\d+)/.exec(out);
     if (match?.[1] === undefined || match?.[2] === undefined) return undefined;
-    return Number(match[1]) + Number(match[2]) / 100;
+    return { major: Number(match[1]), minor: Number(match[2]) };
   } catch {
     return undefined;
   }
