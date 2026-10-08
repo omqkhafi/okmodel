@@ -19,5 +19,10 @@
     "noEmit": true
   },
   "include": ["src", "scripts", "tests", "packages/harness", "packages/bench", "packages/spikes"],
-  "exclude": ["tests/fixtures", "packages/attest", "packages/bench/results"]
+  "exclude": [
+    "tests/fixtures",
+    "tests/temporal-compat",
+    "packages/attest",
+    "packages/bench/results"
+  ]
 }
