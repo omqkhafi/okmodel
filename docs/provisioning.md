@@ -40,7 +40,7 @@ const roles = table(
 
 Provisioning and every `okm migrate apply` insert a row when its key is missing. They never update and they never delete. Changing a label leaves the stored row. Removing a row from the declaration leaves it in the database. Adding a key inserts it on the next apply, with no DDL migration.
 
-The statements are insert-if-missing. They are not migration steps, so OKM1542 does not see them. OKM1542 still flags `insert`, `update`, `delete`, `merge`, and `truncate` in a migration file outside a backfill step.
+The statements are insert-if-missing. They are not migration steps, so OKM1542 does not see them. OKM1542 still flags `insert`, `update`, `delete`, `merge`, `truncate`, `DO`, and `CALL` in a migration file outside a backfill step. `DO` and `CALL` are flagged because the body is not analysed (D211).
 
 ## `provision(target)`
 

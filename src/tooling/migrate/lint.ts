@@ -2,8 +2,8 @@
  * Runs the migration linter.
  *
  * The linter reads a plan and the two catalogs. It does not connect.
- * An override is a `-- okm-allow` line on the statement. It silences only
- * the code it names, and only with a reason.
+ * An override is a `-- okm-allow` line on the step. It silences that code
+ * on every statement of the step, and only with a reason.
  */
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -16,8 +16,9 @@ import { OkmError } from "../../contracts/error.js";
 import { errorDoc } from "../errors/registry.js";
 import { COLUMN_RULES, STEP_RULES, type LintSeverity } from "./lint-rules.js";
 import { parsePlan, type MigrationPlan, type PlanStep } from "./plan.js";
+import { sqlStatements } from "./sql-lex.js";
 
-/** One finding. `place` is `step N` or `table.column`, optionally prefixed with the file. */
+/** One finding. `place` is `step N`, `step N statement M`, or `table.column`. */
 export type Finding = {
   readonly severity: LintSeverity;
   readonly code: string;
@@ -144,6 +145,12 @@ export function lintRefusal(findings: readonly Finding[]): OkmError {
   });
 }
 
+type Hit = {
+  readonly code: string;
+  readonly severity: LintSeverity;
+  readonly reason: string;
+};
+
 function lintStep(
   step: PlanStep,
   number: number,
@@ -153,38 +160,84 @@ function lintStep(
   earlier: readonly PlanStep[],
   later: readonly PlanStep[],
 ): readonly Finding[] {
-  const hits: {
-    readonly code: string;
-    readonly severity: LintSeverity;
-    readonly reason: string;
-  }[] = [];
-  for (const rule of STEP_RULES) {
-    for (const reason of rule.check({ step, before, after, existingTables, earlier, later })) {
-      hits.push({ code: rule.code, severity: rule.severity, reason });
+  const texts = statementTexts(step);
+  const multi = texts.length > 1;
+  const earlierStatements = earlier.flatMap(contextSteps);
+  const laterStatements = later.flatMap(contextSteps);
+  const perStatement: { readonly place: string; readonly hits: readonly Hit[] }[] = [];
+  const triggered = new Set<string>();
+  texts.forEach((sql, index) => {
+    const statement = multi ? withoutKind(step, sql) : withSql(step, sql);
+    const hits: Hit[] = [];
+    for (const rule of STEP_RULES) {
+      for (const reason of rule.check({
+        step: statement,
+        before,
+        after,
+        existingTables,
+        earlier: earlierStatements,
+        later: laterStatements,
+      })) {
+        const hit = { code: rule.code, severity: rule.severity, reason };
+        hits.push(hit);
+        triggered.add(hit.code);
+      }
     }
-  }
-  const triggered = new Set(hits.map((item) => item.code));
+    const place = multi
+      ? `step ${String(number)} statement ${String(index + 1)}`
+      : `step ${String(number)}`;
+    perStatement.push({ place, hits });
+  });
   const silenced = new Set<string>();
   const findings: Finding[] = [];
-  const place = `step ${String(number)}`;
+  const stepPlace = `step ${String(number)}`;
   for (const allow of step.allows ?? []) {
     if (allow.reason.trim().length === 0 || allow.code.length === 0) {
-      findings.push(finding("error", "OKM1510", place, "override needs a reason"));
+      findings.push(finding("error", "OKM1510", stepPlace, "override needs a reason"));
       continue;
     }
     if (!triggered.has(allow.code)) {
       findings.push(
-        finding("error", "OKM1510", place, `override ${allow.code} does not match this statement`),
+        finding(
+          "error",
+          "OKM1510",
+          stepPlace,
+          `override ${allow.code} does not match this statement`,
+        ),
       );
       continue;
     }
     silenced.add(allow.code);
   }
-  for (const hit of hits) {
-    if (silenced.has(hit.code)) continue;
-    findings.push(finding(hit.severity, hit.code, place, hit.reason));
+  for (const item of perStatement) {
+    for (const hit of item.hits) {
+      if (silenced.has(hit.code)) continue;
+      findings.push(finding(hit.severity, hit.code, item.place, hit.reason));
+    }
   }
   return findings;
+}
+
+function statementTexts(step: PlanStep): readonly string[] {
+  const statements = sqlStatements(step.sql);
+  return statements.length === 0 ? [step.sql] : statements;
+}
+
+function contextSteps(step: PlanStep): readonly PlanStep[] {
+  const statements = sqlStatements(step.sql);
+  if (statements.length === 0) return [step];
+  if (statements.length === 1 && statements[0] === step.sql) return [step];
+  return statements.map((sql) => withSql(step, sql));
+}
+
+function withSql(step: PlanStep, sql: string): PlanStep {
+  if (sql === step.sql) return step;
+  return { ...step, sql };
+}
+
+function withoutKind(step: PlanStep, sql: string): PlanStep {
+  const { kind: _kind, ...rest } = step;
+  return { ...rest, sql };
 }
 
 function finding(severity: LintSeverity, code: string, place: string, reason: string): Finding {

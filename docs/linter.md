@@ -6,7 +6,7 @@ The linter reads a migration plan and the catalogs before and after it. It does 
 error OKM1511 step 1: drops a table -- fix: Stop reading the table in an expand migration, then drop it in a later contract. Or allow OKM1511 with a reason.
 ```
 
-`error` fails the command. `warning` prints and the command still succeeds. The place is `step N` for a statement and `table.column` for a type preference. `okm migrate apply` prefixes the place with the migration id (`0001_drop step 1`).
+`error` fails the command. `warning` prints and the command still succeeds. The place is `step N` when the step has one statement, `step N statement M` when it has more, and `table.column` for a type preference. `okm migrate apply` prefixes the place with the migration id (`0001_drop step 1`).
 
 ## Where it runs
 
@@ -40,14 +40,32 @@ The linter does not read the estimate. `okm generate` stays offline. The SQL fil
 
 ## Override
 
-Put the line directly above the statement. The reason is the text after the colon.
+Put the line on the step, directly above its statements. The reason is the text after the colon.
 
 ```sql
 -- okm-allow OKM1511: the table is empty and nothing reads it
 drop table "public"."notes";
 ```
 
-An override silences only the code it names. A missing or empty reason, or a code the statement did not trigger, is OKM1510 and does not silence the finding.
+An override silences only the code it names, on every statement of that step. A missing or empty reason, or a code no statement triggered, is OKM1510 and does not silence the finding.
+
+## How hand-edited SQL is judged
+
+The linter splits each step into statements before the rules run (D211). Comments are not part of a statement. `--` runs to the end of the line. `/* */` nests. A semicolon splits statements only at the top level. A semicolon inside a string, a quoted identifier, a comment, or a dollar quote does not.
+
+`standard_conforming_strings` is assumed on. A plain `'...'` ends on one quote, and `''` is a quote inside it. `E'...'` keeps backslash escapes. `"..."` is an identifier, and `""` is a quote inside it. A dollar quote runs until the same tag. A different tag inside it is text, so it does not end the outer quote. An unterminated string, identifier, block comment, or dollar quote is one opaque tail. The split does not throw.
+
+Each statement is linted. The place stays `step N` when the step has one statement. It is `step N statement M`, counting from 1, when the step has more. Step numbers do not change. Rules that look at earlier or later steps see the statements of those steps, with comments removed. A later `USING INDEX`, and a `VALIDATE` after `NOT VALID`, still count when they sit in another statement of that step or after a comment. Words inside a comment do not.
+
+`-- okm-allow CODE: reason` stays a line on the step. It silences that code on every statement of the step that triggers it. A code that no statement triggers is OKM1510.
+
+`DO` and `CALL` are data-touching statements. The body is not analysed, so each is OKM1542. Only `-- okm-allow OKM1542: reason` silences that finding. A dollar-quoted body inside `CREATE FUNCTION` or `CREATE PROCEDURE` stays inside that statement. It is not linted as its own statements.
+
+`ALTER TABLE … ALTER COLUMN … TYPE` is the same type change as `SET DATA TYPE`, with or without `USING`. OKM1524, OKM1527, OKM1533, and OKM1538 see both forms.
+
+A blank line ends a step. A blank line inside a quote, a dollar quote, or a block comment stays in the step, including a `--` line while that quote is still open.
+
+`okm migrate plan`, `okm migrate apply`, and `okm migrate check` use this linter. Check and apply read the migration files. Plan lints the plan it generates. An error finding is OKM1510 in each command. The planner still writes one statement per step, so a generated migration lints as before.
 
 ## Severity
 
@@ -70,7 +88,7 @@ OKM1706 and OKM1823 are not rules in this table. A tenant index that does not le
 
 | Code | Category | Severity | What it flags |
 | --- | --- | --- | --- |
-| OKM1510 | refusal | error | Unresolved lint error, or an override with an empty reason or a code the statement did not trigger |
+| OKM1510 | refusal | error | Unresolved lint error, or an override with an empty reason or a code no statement in the step triggered |
 | OKM1511 | destructive | error | Drop table |
 | OKM1512 | destructive | error | Drop column |
 | OKM1513 | destructive | error | Drop enum |
@@ -81,7 +99,7 @@ OKM1706 and OKM1823 are not rules in this table. A tenant index that does not le
 | OKM1518 | destructive | error | Drop materialized view |
 | OKM1519 | backward-incompatible | error | Rename column |
 | OKM1523 | backward-incompatible | error | Rename table |
-| OKM1524 | backward-incompatible | error | Column type change |
+| OKM1524 | backward-incompatible | error | Column type change, including `ALTER COLUMN … TYPE` and `SET DATA TYPE` |
 | OKM1525 | backward-incompatible | error | New NOT NULL column with no default on an existing table |
 | OKM1526 | backward-incompatible | error | Remove a default |
 | OKM1527 | backward-incompatible | error | Shrink a character length |
@@ -97,7 +115,7 @@ OKM1706 and OKM1823 are not rules in this table. A tenant index that does not le
 | OKM1538 | locking | warning | Type change that rewrites the table. No safe form in this version |
 | OKM1539 | type-preference | warning | `timestamp` without time zone |
 | OKM1540 | type-preference | warning | `varchar(n)` where `text` would do |
-| OKM1542 | data-dependent | error | `insert`, `update`, `delete`, `merge`, or `truncate` outside a backfill step |
+| OKM1542 | data-dependent | error | `insert`, `update`, `delete`, `merge`, `truncate`, or a `with` that writes, outside a backfill step. `DO` and `CALL` too: the body is not analysed |
 | OKM1543 | type-preference | warning | `serial` or a `nextval` default |
 | OKM1544 | type-preference | warning | `json` where `jsonb` is available |
 | OKM1545 | type-preference | warning | Identity that is not generated always |

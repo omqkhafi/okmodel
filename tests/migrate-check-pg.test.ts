@@ -343,6 +343,33 @@ postgresTest(
   90_000,
 );
 
+postgresTest(
+  gate,
+  "a comment-prefixed truncate fails migrate check and apply (QA-H3)",
+  async () => {
+    await withProject(async ({ cwd }) => {
+      writeSchema(cwd, `table("logs", { id: t.integer().primaryKey() })`);
+      await cli(cwd, ["generate", "init"]);
+      const sqlPath = migrationPath(cwd, ".sql");
+      writeFileSync(sqlPath, `${readFileSync(sqlPath, "utf8")}\n/* note */ truncate logs;\n`);
+      const proc = Bun.spawn(["bun", join(root, "src/tooling/cli.ts"), "migrate", "check"], {
+        cwd,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const stderr = await new Response(proc.stderr).text();
+      const code = await proc.exited;
+      expect(code).not.toBe(0);
+      expect(stderr).toContain("OKM1510");
+      expect(stderr).toContain("OKM1542");
+      const applied = await rejected(["migrate", "apply"], cwd);
+      expect(applied.code).toBe("OKM1510");
+      expect(applied.message).toContain("OKM1542");
+    });
+  },
+  60_000,
+);
+
 async function writeDrop(cwd: string): Promise<void> {
   writeSchema(cwd, `table("items", { id: t.integer().primaryKey(), note: t.text().nullable() })`);
   await cli(cwd, ["generate", "init"]);
