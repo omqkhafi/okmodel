@@ -519,14 +519,14 @@ function validates(input: StepInput, kind: "check" | "foreignKey"): boolean {
   return false;
 }
 
+const TYPE_CHANGE = /^alter table\s+(\S+)\s+alter column\s+(\S+)\s+(?:set data type|type)\b/;
+
 function typeChange(
   input: StepInput,
   mode: "incompatible" | "shrink" | "narrow" | "rewrite",
 ): readonly string[] {
   const text = normalized(input.step.sql);
-  const changing =
-    /^alter table\s+\S+\s+alter column\s+\S+\s+set data type\b/.test(text) ||
-    input.step.kind === "set-column-type";
+  const changing = TYPE_CHANGE.test(text) || input.step.kind === "set-column-type";
   if (!changing) return [];
   const compared = columnTypes(input);
   if (compared === undefined) {
@@ -548,7 +548,7 @@ function columnTypes(
   input: StepInput,
 ): { readonly before: string; readonly after: string } | undefined {
   const text = normalized(input.step.sql);
-  const match = /^alter table\s+(\S+)\s+alter column\s+(\S+)\s+set data type\b/.exec(text);
+  const match = TYPE_CHANGE.exec(text);
   const table = lastName(match?.[1]);
   const column = lastName(match?.[2]);
   if (table === undefined || column === undefined) return undefined;

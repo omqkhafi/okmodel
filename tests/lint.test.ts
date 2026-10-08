@@ -576,6 +576,16 @@ test("a DO block is OKM1542 because its body is not analysed (QA-H3)", () => {
   ).toBe(true);
 });
 
+test("alter column type is the same type change as set data type (QA-H3)", () => {
+  const shorthand = hand("alter table users alter column age type bigint;");
+  const using = hand("alter table users alter column age type bigint using age::bigint;");
+  const spelled = hand("alter table users alter column age set data type bigint;");
+  for (const findings of [shorthand, using, spelled]) {
+    expect(findings.map((item) => item.code).sort()).toEqual(["OKM1524", "OKM1538"]);
+    expect(findings.every((item) => item.place === "step 1")).toBe(true);
+  }
+});
+
 test("words inside a string, a comment, or a function body are not statements (QA-H3)", () => {
   expect(codesOfHand("select 'drop table logs;';")).toEqual([]);
   expect(codesOfHand("select 1 /* ; drop table logs */ ;")).toEqual([]);
