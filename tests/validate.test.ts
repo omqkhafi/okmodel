@@ -321,3 +321,22 @@ test("a table can turn validation on when the schema default is off", async () =
   await checked(client(inherited).tasks).insert.check({ title: "ok" });
   expect(inherited.model.tasks?.validation?.onRead).toBe(true);
 });
+
+test("OKM1200 message names the first failing field and its reason (QA-L12)", async () => {
+  const built = schema({
+    tables: [
+      table(
+        "tasks",
+        {
+          title: text().validate([v.onUpdate(), v.min(4, "update_min")]),
+        },
+        { validation: true },
+      ),
+    ],
+    validation: true,
+  });
+  const db = client(built);
+  const failed = await rejection(checked(db.tasks).update.validate({ title: "abc" }));
+  expect(failed.code).toBe("OKM1200");
+  expect(failed.message).toBe("Validation failed: title update_min");
+});

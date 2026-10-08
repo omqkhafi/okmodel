@@ -6,7 +6,7 @@
  */
 
 import { throwNamed } from "../contracts/error.js";
-import type { ColumnModel } from "../dialects/pg/model.js";
+import type { ColumnModel, TableModel } from "../dialects/pg/model.js";
 import { isRecord, fail, list, projectExpr, quote, registerFailFix, type Indexed } from "./plan.js";
 import { fieldSealed, touchFields } from "./trait-read.js";
 
@@ -28,12 +28,14 @@ const NO_ALLOW: ReadonlySet<string> = new Set();
  * @param table - Target table
  * @param value - The option the caller passed
  * @param allow - Guarded fields this write may set
+ * @param tenantKey - The tenant key on a tenant schema, which every unique includes
  * @returns The plan, or `undefined` for the default `"error"`
  */
 export function readConflict(
   table: Indexed,
   value: unknown,
   allow: ReadonlySet<string> = NO_ALLOW,
+  tenantKey?: string,
 ): ConflictPlan | undefined {
   if (value === undefined || value === "error") return undefined;
   if (value === "ignore") return { kind: "ignore", columns: [], update: [] };
@@ -51,13 +53,13 @@ export function readConflict(
   }
   if (ret === true) {
     rejectConflictKeys(keys, ["on", "return"]);
-    return { kind: "return", columns: uniqueColumns(table, value.on), update: [] };
+    return { kind: "return", columns: uniqueColumns(table, value.on, tenantKey), update: [] };
   }
   if (update !== undefined) {
     rejectConflictKeys(keys, ["on", "update"]);
     return {
       kind: "update",
-      columns: uniqueColumns(table, value.on),
+      columns: uniqueColumns(table, value.on, tenantKey),
       update: updateColumns(table, update, allow),
     };
   }
@@ -162,7 +164,11 @@ function samePrimary(table: Indexed, columns: readonly ColumnModel[]): boolean {
   return true;
 }
 
-function uniqueColumns(table: Indexed, on: unknown): readonly ColumnModel[] {
+function uniqueColumns(
+  table: Indexed,
+  on: unknown,
+  tenantKey: string | undefined,
+): readonly ColumnModel[] {
   const names = conflictNames(on);
   for (const unique of table.model.uniques) {
     if (!same(unique, names)) continue;
@@ -176,13 +182,37 @@ function uniqueColumns(table: Indexed, on: unknown): readonly ColumnModel[] {
     }
     return columns;
   }
-  const accepted = table.model.uniques.map((fields) => fields.join(", "));
+  const accepted = acceptedConstraints(table.model, tenantKey);
+  const implicit =
+    tenantKey === undefined
+      ? ""
+      : ` The tenant key ${tenantKey} is part of each one and is not named here.`;
   throwNamed(
     "OKM1104",
     names.join(", "),
     accepted,
-    `onConflict on ${table.model.name} names ${names.join(", ")}, which is not a unique constraint. Accepted: ${list(accepted)}.`,
+    `onConflict on ${table.model.name} names ${names.join(", ")}, which is not a unique constraint. Accepted: ${list(accepted)}.${implicit}`,
   );
+}
+
+/**
+ * Each unique constraint once, without the tenant key (QA-L11).
+ *
+ * A tenant table widens every unique with the tenant key, and the primary key
+ * can repeat as a unique. The list shows each set of named columns once. A
+ * multi-column set is in parentheses.
+ *
+ * @param model - Table model
+ * @returns Display names, in declaration order
+ */
+function acceptedConstraints(model: TableModel, key: string | undefined): readonly string[] {
+  const shown = new Set<string>();
+  for (const fields of model.uniques) {
+    const named = key === undefined ? fields : fields.filter((field) => field !== key);
+    if (named.length === 0) continue;
+    shown.add(named.length > 1 ? `(${named.join(", ")})` : named.join(""));
+  }
+  return [...shown];
 }
 
 function updateColumns(

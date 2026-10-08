@@ -174,7 +174,7 @@ export function mapDriverError(error: unknown, batchIndex?: number | null): unkn
   if (error instanceof DriverError) {
     return batchIndex === undefined ? error : error.at(batchIndex);
   }
-  const message = error instanceof Error ? error.message : "driver error";
+  const message = messageOf(error);
   return new DriverError(
     message,
     driverFields({
@@ -187,6 +187,22 @@ export function mapDriverError(error: unknown, batchIndex?: number | null): unkn
       batchIndex,
     }),
   );
+}
+
+/**
+ * Text for a driver failure, never empty (QA-M1).
+ *
+ * A failed connect can throw an `AggregateError` with an empty message whose
+ * first nested error has the text. Kept small: this is on the startup graph.
+ *
+ * @param error - Caught value
+ * @returns A non-empty message
+ */
+function messageOf(error: unknown): string {
+  if (!(error instanceof Error)) return "driver error";
+  if (error.message.length > 0) return error.message;
+  const first = (error as { readonly errors?: readonly unknown[] }).errors?.[0];
+  return first instanceof Error && first.message.length > 0 ? first.message : "driver error";
 }
 
 /**

@@ -347,7 +347,7 @@ async function planInsert(
     options.onConflict === undefined || options.onConflict === "error"
       ? undefined
       : await import("./conflict.js");
-  const conflict = conflictMod?.readConflict(table, options.onConflict, allow);
+  const conflict = conflictMod?.readConflict(table, options.onConflict, allow, tenancy?.key);
   const chunks = chunkRows(rows.map((row) => cellsFor(columns, row)));
   const statements: Statement[] = [];
   const keys: (string | null)[][] = [];

@@ -42,13 +42,16 @@ export function mapPostgresError(error: unknown, options?: MapPostgresErrorOptio
   if (!isDriverError(error)) return OkmError.from(error);
   const kind = kindOf(error);
   const columns = columnsOf(error);
+  const hint = hintOf(error, kind);
   const fieldReason =
-    kind === "not_null" ? "not_null" : reasonOf(kind, error.table, error.constraint);
+    hint?.reason ??
+    (kind === "not_null" ? "not_null" : reasonOf(kind, error.table, error.constraint));
   const values = options?.includeValues === true ? valuesOf(error.detail, columns) : undefined;
   const code = kind === "outcome_unknown" ? "OKM1401" : kind;
   return new OkmError(code, summaryOf(kind, error, columns, fieldReason), {
     kind,
     fieldReason,
+    ...(hint !== undefined ? { fix: hint.fix } : {}),
     ...(error.table !== undefined ? { table: error.table } : {}),
     ...(columns.length > 0 ? { columns } : {}),
     ...(error.constraint !== undefined ? { constraint: error.constraint } : {}),
@@ -60,6 +63,24 @@ export function mapPostgresError(error: unknown, options?: MapPostgresErrorOptio
       : {}),
     ...(options?.http !== undefined ? { http: options.http } : {}),
   });
+}
+
+/** TLS and certificate codes from Node, OpenSSL, and Bun.sql (QA-L9). */
+const TLS_CODE =
+  /^(ERR_TLS_|ERR_POSTGRES_TLS_|SELF_SIGNED_CERT_|DEPTH_ZERO_SELF_SIGNED_CERT$|UNABLE_TO_VERIFY_LEAF_SIGNATURE$)/;
+
+/**
+ * Reports whether the driver failed on TLS or a certificate (QA-L9).
+ *
+ * The TLS error is the driver error's `cause`.
+ *
+ * @param error - The driver error
+ * @returns True when the cause carries a TLS code
+ */
+function isTlsFailure(error: DriverShape): boolean {
+  const cause: unknown = error.cause;
+  const code = typeof cause === "object" && cause !== null ? Reflect.get(cause, "code") : undefined;
+  return typeof code === "string" && TLS_CODE.test(code);
 }
 
 type DriverShape = {
@@ -88,8 +109,41 @@ function kindOf(error: DriverShape): ErrorKind {
     const mapped = kindFromSqlstate(sqlstate);
     if (mapped !== undefined) return mapped;
   }
-  if (isConnectionFailure(error)) return "unavailable";
+  if (isTlsFailure(error) || isConnectionFailure(error)) return "unavailable";
   return "driver";
+}
+
+/** Fix text for a reason the database or the TLS layer names (QA-L8, QA-L9). */
+const MIGRATE_FIX = {
+  summary:
+    "Run okm migrate apply so the object exists, then check okm migrate status. The reason names the missing object.",
+};
+
+const TLS_FIX = {
+  summary:
+    "Check sslmode in the connection URL against the server certificate: use require, verify-ca, or verify-full with the CA the certificate chains to. For node-postgres, add uselibpqcompat=true so sslmode follows libpq.",
+};
+
+/**
+ * The reason and fix for an error that has more than the kind says (QA-L8, QA-L9).
+ *
+ * The kind does not change. `42P01` and `42703` keep `driver`, and a TLS failure
+ * keeps `unavailable`. Only the field reason and the fix are added.
+ *
+ * @param error - The driver error
+ * @param kind - The kind {@link kindOf} picked
+ * @returns The reason and fix, or `undefined` when there is nothing more to say
+ */
+function hintOf(
+  error: DriverShape,
+  kind: ErrorKind,
+): { readonly reason: string; readonly fix: { readonly summary: string } } | undefined {
+  if (error.sqlstate === "42P01") return { reason: "undefined_table", fix: MIGRATE_FIX };
+  if (error.sqlstate === "42703") return { reason: "undefined_column", fix: MIGRATE_FIX };
+  if (kind === "unavailable" && error.sqlstate === undefined && isTlsFailure(error)) {
+    return { reason: "tls", fix: TLS_FIX };
+  }
+  return undefined;
 }
 
 function kindFromSqlstate(sqlstate: string): ErrorKind | undefined {

@@ -67,8 +67,12 @@ export type Session = {
   readonly tx?: { readonly extras: object; readonly depth: number };
   /** Tenant value or an unscoped reason. Absent on the root client. */
   readonly scope?: CallScope;
-  /** Shared close. `for()` and `unscoped()` reuse the same promise. */
-  readonly closing: { current: Promise<void> | undefined };
+  /**
+   * Shared close. `for()` and `unscoped()` reuse the same promise.
+   *
+   * `early` is set when `close()` runs before `connected` settles (QA-M5).
+   */
+  readonly closing: { current: Promise<void> | undefined; early: boolean };
 };
 
 /** Per-call modifiers of a read. */
@@ -112,7 +116,11 @@ export function createClient<S extends QuerySchema>(
     readonly generators?: IdGenerators | undefined;
   },
 ): Connected<S> {
-  const connected = checkServer(
+  const closing: { current: Promise<void> | undefined; early: boolean } = {
+    current: undefined,
+    early: false,
+  };
+  const checked = checkServer(
     pool,
     schema,
     options.http,
@@ -123,6 +131,18 @@ export function createClient<S extends QuerySchema>(
       ...(options.catalogDir !== undefined ? { catalogDir: options.catalogDir } : {}),
     },
   );
+  // QA-M5: `connected` always has a handler. A caller that closes before awaiting
+  // it must not leave a rejection unhandled. A caller who awaits it later gets
+  // a clear error instead of the pool's.
+  const connected = checked.catch((error: unknown) => {
+    if (!closing.early) throw error;
+    throw new OkmError(
+      "unavailable",
+      "The client was closed before it connected. Await connected before close(), or do not close it before use.",
+      { kind: "unavailable", fix: { summary: "Await client.connected before calling close()." } },
+    );
+  });
+  connected.catch(() => undefined);
   const session: Session = {
     schema,
     pool,
@@ -135,7 +155,7 @@ export function createClient<S extends QuerySchema>(
     generators: options.generators,
     timeouts: options.timeouts,
     hookm: options.hookm,
-    closing: { current: undefined },
+    closing,
   };
   return openClient(session);
 }
@@ -146,6 +166,7 @@ export function openClient<S extends QuerySchema>(session: Session): Connected<S
   for (const name of names) tables[name] = tableApi(session, name);
   const close = (): Promise<void> => {
     if (!session.ownsPool) return Promise.resolve();
+    session.closing.early = true;
     session.closing.current ??= session.pool.close();
     return session.closing.current;
   };

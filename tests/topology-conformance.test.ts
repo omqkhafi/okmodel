@@ -586,6 +586,12 @@ serial(
       await grantWal(admin);
       events.length = 0;
       await revokeWal(admin);
+      // The revoke is a catalog change that replicas replay later. Wait for
+      // both to replay it, or the probe can still see the grant and read a
+      // position the test is not about (flaky on 15; see P69).
+      const revoked = await readInsertLsn(admin);
+      await waitForReplayLsn("a", revoked);
+      await waitForReplayLsn("b", revoked);
       const blind = await openDb(schemaName, events, {
         primary: roleUrl(primaryUrl(), role),
         replicaA: roleUrl(replicaUrl("a"), role),

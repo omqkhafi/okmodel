@@ -27,6 +27,7 @@ Also not in this version:
 - **`onRead` is stored and not applied.** `validation: { onRead: true }` is accepted and read values are not validated.
 - **`iStartsWith`, `iContains` and `iEndsWith` are not in this version** (D176). Use `ilike()` with an escaped pattern.
 - **`aggregate()` has no `having` and no `bucket`** (M2).
+- **A refused replica holds reads that are already queued on postgres.js.** A read queued behind a refused replica waits for postgres.js's reconnect backoff before it falls back to the primary. The backoff is shared per pool and capped at 20 seconds. Reads that start after the failure go to the primary at once. In one run of 20 concurrent reads with one refused replica, node-postgres and Bun.sql finished in about 0.1 to 0.2 seconds each, and postgres.js took up to 19.6 seconds (QA-M1, D214).
 - **Batch-mode drivers have no adapter yet.** Neon HTTP and Cloudflare D1 are covered by the driver contract (`batch` is required on every driver) and there is no adapter in this repository for either.
 - **`inspect()` does not show routing reasons.** It reports `single-endpoint`. Reasons go to `onRoute`, including `fallback:behind` and `fallback:saturated`. Showing them from `inspect()` is the M2 dev inspector. A string or pool client has no `using` and serves either `route` from its one endpoint. See [topology](topology.md).
 
