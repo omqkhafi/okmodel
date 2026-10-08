@@ -21,12 +21,26 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### 🐛 Fixed
 
+#### runtime
+
 - `update`, `delete`, `archive`, and `restore` now refuse a where with no effective predicate, including undefined values (QA-C1, QA-H2). A field value is a leaf. `eq` keeps a timestamp, a date, bytes, or a jsonb object in the filter. A bare object stays OKM1121 (D125, D210).
 - An `or()` branch with no effective predicate is now refused, in reads and in writes (QA-H1). `or([])` still matches nothing.
 - `or()` with a non-array or with more than one argument is now refused (QA-M4).
 - An unknown key on `update`, and `tx` with the function before the options, are now refused (QA-M2).
 - A bad option on `find`, `one`, and `count` now rejects the query, so `safe` and `catch` see OKM1120 (QA-M11). `page` and `aggregate` already did.
+- A read on a replica that refuses or drops the connection falls back to the primary on postgres.js, node-postgres, and Bun.sql. `onRoute` reports `fallback:unhealthy`. A driver error with an empty message now has text (QA-M1, D214).
+- Closing a client before it connects no longer leaves an unhandled rejection. `connected` rejects with an `unavailable` error that says the client was closed first (QA-M5, D214).
+- OKM1104 lists each accepted constraint once and does not name the tenant key, which every unique includes (QA-L11, D214).
+- OKM1200 reads `Validation failed: <field> <reason>` and names the first failing field (QA-L12, D214).
+
+#### dialects
+
 - Compiled SQL for a tenant table keeps the tenant predicate on every table alias, including a where that compares an object through `eq` (QA-S4).
+- A missing table or column maps to `undefined_table` or `undefined_column`, with a fix that names `okm migrate apply` and `okm migrate status`. Calls that share one caller signal now share one abort listener instead of adding one each (QA-L8, D214).
+- A TLS or certificate failure maps to `unavailable` with reason `tls` and a fix that names `sslmode` (QA-L9, D214).
+
+#### tooling
+
 - A hand-written migration step is linted per statement. A leading comment, a second statement, a semicolon inside a comment, `DO` and `CALL`, and `ALTER COLUMN … TYPE` can now be refused (QA-H3). `-- okm-allow` on the step silences that code on every statement of the step.
 
 ## v0.5.0 — 2026-10-07

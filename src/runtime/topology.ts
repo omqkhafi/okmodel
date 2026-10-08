@@ -7,7 +7,7 @@
  * `using()`, and `reserve()`.
  */
 
-import { isConnectionFailure } from "../contracts/connection.js";
+import { isConnectionErrno, isConnectionSqlstate } from "../contracts/connection.js";
 import type {
   DriverConnection,
   DriverPool,
@@ -1230,12 +1230,67 @@ async function attempt(
   try {
     return await tracked(choice.endpoint, choice.op === "read", () => run(choice.endpoint));
   } catch (error) {
-    if (choice.op !== "read" || !isConnectionFailure(error)) throw error;
+    if (choice.op !== "read" || !isUnreachable(error)) throw error;
     const next = await retryOf(handle, choice);
     if (next === undefined) throw error;
     tell(handle, { op: "read", endpoint: next.endpoint.name, reason: next.reason });
     return tracked(next.endpoint, true, () => run(next.endpoint));
   }
+}
+
+/** Chain depth the unreachable check walks. A driver wraps once or twice. */
+const CHAIN_DEPTH = 8;
+
+/**
+ * Reports whether a read failed because its endpoint refused or dropped the connection (QA-M1).
+ *
+ * Looks through `cause`, through each entry of an `AggregateError`'s `errors`
+ * (one per address on a failed connect), and through nested `code` and `errno`.
+ * Bun.sql sends only its own `ERR_POSTGRES_CONNECTION_*` code. A cycle or a chain
+ * past {@link CHAIN_DEPTH} stops the walk. Lives here so the startup graph keeps
+ * the shallow check.
+ *
+ * @param error - Caught value
+ * @returns True when the next endpoint should be tried
+ */
+function isUnreachable(error: unknown): boolean {
+  const seen = new Set<object>();
+  const visit = (value: unknown, depth: number): boolean => {
+    if (typeof value !== "object" || value === null || depth > CHAIN_DEPTH) return false;
+    if (seen.has(value)) return false;
+    seen.add(value);
+    if (unreachableNode(value)) return true;
+    if (visit(Reflect.get(value, "cause"), depth + 1)) return true;
+    const errors: unknown = Reflect.get(value, "errors");
+    return Array.isArray(errors) && errors.some((item) => visit(item, depth + 1));
+  };
+  return visit(error, 0);
+}
+
+/**
+ * Reports whether one node of the chain is an unreachable connection by its own fields.
+ *
+ * @param node - One error in the chain
+ * @returns True for a connection SQLSTATE, errno or code, a Bun.sql connection code, or a connection message
+ */
+function unreachableNode(node: object): boolean {
+  for (const key of ["sqlstate", "code", "errno"] as const) {
+    const code: unknown = Reflect.get(node, key);
+    if (typeof code !== "string" || code.length === 0) continue;
+    if (isConnectionSqlstate(code) || isConnectionErrno(code)) return true;
+    if (code.startsWith("ERR_POSTGRES_CONNECTION_")) return true;
+    if (code === "ERR_POSTGRES_IDLE_TIMEOUT" || code === "ERR_POSTGRES_LIFETIME_TIMEOUT") {
+      return true;
+    }
+  }
+  if (!(node instanceof Error)) return false;
+  return (
+    node.message.includes("ECONNREFUSED") ||
+    node.message.includes("ECONNRESET") ||
+    node.message.includes("CONNECTION_CLOSED") ||
+    node.message.includes("terminating connection") ||
+    node.message.includes("The pool is closed")
+  );
 }
 
 /**

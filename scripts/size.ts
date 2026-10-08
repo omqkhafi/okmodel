@@ -81,7 +81,7 @@ export const APP_MAX_MIN_BYTES = 90_900;
  * P67 measured 30,007 and set the gate to that plus 20, rounded up (D210).
  * Was 29,210 (P24).
  */
-export const APP_MAX_GZIP_BYTES = 30_030;
+export const APP_MAX_GZIP_BYTES = 30_170;
 
 /**
  * Public connect entries, driver left external (D142, D143, D156).
@@ -97,30 +97,30 @@ export const CONNECT_ENTRIES = [
     entry: "src/runtime/pg/postgresjs.ts",
     file: "postgresjs.js",
     external: ["postgres"],
-    maxMinBytes: 41_950,
-    maxGzipBytes: 14_750,
+    maxMinBytes: 42_450,
+    maxGzipBytes: 14_920,
   },
   {
     entry: "src/runtime/pg/pglite.ts",
     file: "pglite.js",
     external: ["@electric-sql/pglite"],
-    maxMinBytes: 40_000,
-    maxGzipBytes: 14_130,
+    maxMinBytes: 40_450,
+    maxGzipBytes: 14_280,
   },
   {
     entry: "src/runtime/pg/pg.ts",
     file: "pg.js",
     external: ["pg"],
-    maxMinBytes: 42_400,
-    maxGzipBytes: 14_920,
+    maxMinBytes: 42_850,
+    maxGzipBytes: 15_070,
   },
   {
     entry: "src/runtime/pg/bun.ts",
     file: "bun.js",
     external: ["bun"],
     nodeColdImport: false,
-    maxMinBytes: 41_200,
-    maxGzipBytes: 14_470,
+    maxMinBytes: 41_700,
+    maxGzipBytes: 14_620,
   },
 ] as const;
 

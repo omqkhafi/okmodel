@@ -585,13 +585,28 @@ function failShape(message: string): never {
   throw new OkmError("OKM1121", message, { kind: "invalid" });
 }
 
+/**
+ * OKM1200 text: the first issue's field and reason key (QA-L12).
+ *
+ * `issues` carries every failure. The message names only the first, so a log
+ * line says what failed without reading the array.
+ *
+ * @param first - First issue, when there is one
+ * @returns `Validation failed: <path> <key>`, or the bare phrase with no issue
+ */
+function failedMessage(first: ValidationIssue | undefined): string {
+  if (first === undefined) return "Validation failed.";
+  const field = first.path.length === 0 ? "$row" : first.path.join(".");
+  return `Validation failed: ${field} ${first.message}`;
+}
+
 function throwIssues(issues: readonly ValidationIssue[]): never {
   const columns: string[] = [];
   for (const issue of issues) {
     const field = [...issue.path].reverse().find((part) => typeof part === "string");
     if (typeof field === "string" && !columns.includes(field)) columns.push(field);
   }
-  throw new OkmError("OKM1200", "Validation failed.", {
+  throw new OkmError("OKM1200", failedMessage(issues[0]), {
     kind: "invalid",
     ...(columns.length > 0 ? { columns } : {}),
     issues,
