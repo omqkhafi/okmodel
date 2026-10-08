@@ -182,11 +182,12 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   expect(prMeta).not.toContain("synchronize");
   expect(prMeta).not.toContain("opened");
   expect(jsonVersionLists(pullRequest, "versions")).toEqual([[floor, newest], [newest]]);
-  expect(ci).toContain("needs: [lint, types, test, runtimes, package]");
+  expect(ci).toContain("needs: [lint, types, test, runtimes, temporal, package]");
   expect(ci).toContain("name: test / ${{ matrix.group }}");
   expect(ci).toContain("name: lint / static");
   expect(ci).toContain("name: types / compiler");
   expect(ci).toContain("name: runtimes / portable");
+  expect(ci).toContain("name: temporal / node ${{ matrix.node }}");
   expect(ci).toContain("name: package / checks");
   expect(ci).toContain("name: gate / check");
   expect(ci).toContain("name: attest / measure");
