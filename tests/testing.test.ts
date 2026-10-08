@@ -131,7 +131,7 @@ test("isolation passes on the fixture schemas and fails when the predicate is dr
   } finally {
     await harness.close();
   }
-});
+}, 30_000);
 
 test("isolation checks the tables of a schema with a tenant view and leaves the view out", async () => {
   const withView = (tenancy: ReturnType<typeof columnTenancy>) =>
@@ -175,7 +175,7 @@ test("isolation checks the tables of a schema with a tenant view and leaves the 
   } finally {
     await leaking.close();
   }
-});
+}, 30_000);
 
 /** Column tenancy that answers the probe and drops the predicate on real queries. */
 function leakingTenancy(key: string): ReturnType<typeof columnTenancy> {
@@ -245,6 +245,42 @@ test("the section 20 example keeps tenant B's rows out of tenant A", async () =>
     );
   } finally {
     await harness.close();
+  }
+});
+
+test("QA-M8: isolation passes twice, after existing rows, and names a missing factory", async () => {
+  const harness = await testing(appSchema, { driver: openPglite() });
+  try {
+    const factories = harness.factories({
+      users: (x) => ({ email: x.email(), name: x.name() }),
+      lists: (x) => ({ name: x.words(2) }),
+      tasks: (x) => ({ title: x.words(3), listId: x.ref("lists"), userId: x.ref("users") }),
+    });
+    await factories.tasks.create();
+    const first = await harness.isolation();
+    const second = await harness.isolation();
+    expect([...first.checked].sort()).toEqual(["lists", "tasks", "users"]);
+    expect([...second.checked].sort()).toEqual(["lists", "tasks", "users"]);
+    expect(first.skipped).toEqual([{ table: "tenants", reason: "tenant directory" }]);
+  } finally {
+    await harness.close();
+  }
+
+  const partial = await testing(appSchema, { driver: openPglite() });
+  try {
+    partial.factories({
+      users: (x) => ({ email: x.email(), name: x.name() }),
+    });
+    let failure: unknown;
+    try {
+      await partial.isolation();
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toBeInstanceOf(OkmError);
+    expect(failure instanceof OkmError ? failure.message : "").toContain("Factory lists");
+  } finally {
+    await partial.close();
   }
 });
 

@@ -82,7 +82,7 @@ Bun.sql needs no extra package: `import { connect } from "okmodel/pg/bun"`. okmo
 
 ## Quickstart
 
-This builds two tables, applies them, and runs one script. The script writes an author and a note, then reads the note with its author. `DATABASE_URL` is a direct Postgres URL, not a pooler.
+This builds two tables, applies them, and runs one script. The script writes an author and a note, then reads the note with its author. `DATABASE_URL` is a direct Postgres URL, not a pooler. Port `6432` and port `6543` count as a pooler. Apply, seed, and check also refuse when the backend pid changes between two statements (OKM1854), unless `--allow-pooler` is set.
 
 ### Configure
 
@@ -945,7 +945,7 @@ update "public"."notes" set "title" = 'noted' where "title" = 'hello' and ("id" 
 
 ### Testing
 
-`okmodel/testing` opens a real pool. `factories` insert rows, `expectQueries` counts statements, and `isolation()` checks that tenant A cannot see tenant B. `okm seed <file>` calls the file's default export with that harness. The target must already be migrated. A protected target is refused unless `--allow-protected`.
+`okmodel/testing` opens a real pool. `factories` insert rows, `expectQueries` counts statements, and `isolation()` checks that tenant A cannot see the row it inserted for tenant B. Each call uses a new pair of tenant ids, deletes what it inserted, and names a factory that is missing. `okm seed <file>` calls the file's default export with that harness. The target must already be migrated. A protected target is refused unless `--allow-protected`.
 
 `factory.ts`:
 
@@ -1071,7 +1071,7 @@ The worked example is a project tracker: workspaces as tenants, archive, a funct
 
 ### Startup
 
-`connect()` compares the app with `okm_history`. A database that is ahead by expand migrations still opens. Ahead by a contract migration, or behind the app, is OKM1520 and names the migration. `okm migrate status` prints the same states, plus `failed at step N (resume with okm migrate apply)`.
+`connect()` compares the app with `okm_history`. A database that is ahead by expand migrations still opens. Ahead by a contract migration, or behind the app, is OKM1520 and names the migration. `okm migrate status` prints the same states, plus `failed at step N (resume with okm migrate apply)`, where N is the stored step index. Apply's own `failed at step N` counts from 1, the same number the linter prints.
 
 ### Protected targets
 

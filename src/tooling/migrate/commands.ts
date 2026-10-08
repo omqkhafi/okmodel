@@ -24,8 +24,13 @@ export type CommandIo = {
  * @param error - Failure from a command
  * @returns The stderr text, including the trailing newline
  */
-export function formatFailure(error: OkmError): string {
-  return `${error.code}: ${error.message}\n${error.fix.summary}\n`;
+export function formatFailure(error: unknown, verbose = false): string {
+  const mapped = OkmError.from(error);
+  let text = `error ${mapped.code}: ${mapped.message}\n${mapped.fix.summary}\n`;
+  if (verbose && error instanceof Error && error.stack !== undefined) {
+    text += `${error.stack}\n`;
+  }
+  return text;
 }
 
 /**
@@ -41,6 +46,14 @@ export function formatFailure(error: OkmError): string {
 export async function run(argv: readonly string[], io?: CommandIo): Promise<void> {
   const cwd = io?.cwd ?? process.cwd();
   const stdout = io?.stdout ?? ((text: string) => process.stdout.write(text));
+  if (argv.length === 0 || argv[0] === "help" || argv[0] === "--help" || argv[0] === "-h") {
+    stdout(commandsTable());
+    return;
+  }
+  if (argv.includes("--help") || argv.includes("-h")) {
+    stdout(commandHelp(argv.filter((arg) => arg !== "--help" && arg !== "-h")));
+    return;
+  }
   const [command, ...rest] = argv;
   if (command === "build") {
     const directory = await buildProject(cwd);
@@ -226,6 +239,38 @@ function splitFlags(args: readonly string[]): Parsed {
     lockTimeoutMs,
     statementTimeoutMs,
   };
+}
+
+const COMMANDS: readonly (readonly [string, string])[] = [
+  ["build", "Write the schema build."],
+  ["check", "Lint the schema and compare it with one target."],
+  ["dev", "Watch the schema and reload."],
+  ["doctor [code]", "Print a target report, or one error code."],
+  ["ext list", "List extensions the server can install."],
+  ["ext check", "Compare declared extensions with the server."],
+  ["generate [name]", "Write the next migration."],
+  ["migrate plan <name>", "Print the plan and its lock estimates."],
+  ["migrate apply", "Apply pending migrations."],
+  ["migrate status", "Print whether the target is current."],
+  ["migrate check", "Replay migration history in a scratch schema."],
+  ["push", "Apply the schema diff to one target."],
+  ["seed <file>", "Run a seed file on one target."],
+];
+
+function commandsTable(): string {
+  const lines = ["okm <command>", ""];
+  for (const [name, summary] of COMMANDS) lines.push(`  ${name.padEnd(24)} ${summary}`);
+  lines.push("", "okm <command> --help prints that command.", "");
+  return `${lines.join("\n")}\n`;
+}
+
+function commandHelp(argv: readonly string[]): string {
+  const key = argv.join(" ");
+  const found = COMMANDS.find(([name]) => name === key || name.startsWith(`${key} `));
+  if (found === undefined) {
+    return `Unknown command ${key}.\n\n${commandsTable()}`;
+  }
+  return `${found[0]}\n${found[1]}\n`;
 }
 
 function numberFlag(flag: string, value: string | undefined): number {

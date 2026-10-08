@@ -695,6 +695,13 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     summary: "Several targets are configured and the command was not given --target.",
     fix: "Pass --target <name>. The command does not guess.",
   },
+  {
+    code: "OKM1854",
+    title: "Pooler session",
+    summary:
+      "Two statements on the same connection saw different backend pids. A transaction-mode pooler is in the way.",
+    fix: "Use a direct connection, or pass --allow-pooler.",
+  },
 ];
 
 let byCode: ReadonlyMap<string, ErrorDoc> | undefined;

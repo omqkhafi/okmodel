@@ -147,6 +147,7 @@ export function assertDirectConnection(url: string, allowPooler: boolean): void 
     host.includes("pgbouncer") ||
     host.includes("-pooler") ||
     endpoint.port === "6543" ||
+    endpoint.port === "6432" ||
     parsed.searchParams.get("pgbouncer") === "true"
   ) {
     throw new OkmError(
@@ -155,6 +156,31 @@ export function assertDirectConnection(url: string, allowPooler: boolean): void 
       { fix: { summary: "Use a direct connection, or pass --allow-pooler." } },
     );
   }
+}
+
+/**
+ * Refuses a session whose backend pid changes between two statements.
+ *
+ * The two reads are separate round trips and are not wrapped in a
+ * transaction. A transaction-mode pooler can hand back a different backend
+ * for the second one. `--allow-pooler` skips the probe.
+ *
+ * @param readPid - Reads `pg_backend_pid()` on the session under test
+ * @param allowPooler - The invocation opted in
+ */
+export async function assertStableBackend(
+  readPid: () => Promise<string>,
+  allowPooler: boolean,
+): Promise<void> {
+  if (allowPooler) return;
+  const first = await readPid();
+  const second = await readPid();
+  if (first === second) return;
+  throw new OkmError(
+    "OKM1854",
+    `The backend pid changed from ${first} to ${second}. A pooler is handing out a new session between statements.`,
+    { fix: { summary: "Use a direct connection, or pass --allow-pooler." } },
+  );
 }
 
 /**

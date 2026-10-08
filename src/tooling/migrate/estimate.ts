@@ -91,23 +91,63 @@ export async function readRowEstimates(
  * @param estimates - `reltuples` for tables that exist on the target
  * @returns The text after `-- lock: `
  */
-export function annotateLock(step: PlanStep, estimates: ReadonlyMap<string, RowEstimate>): string {
+export function annotateLock(
+  step: PlanStep,
+  estimates: ReadonlyMap<string, RowEstimate>,
+  aliases: ReadonlyMap<string, string> = new Map(),
+): string {
   const pieces = lockPieces(step);
   const text = withBatches(
     step,
     pieces
       .map((piece) => {
         if (piece.table === undefined) return piece.mode;
-        return `${piece.mode} on ${piece.table}, ${estimatePhrase(estimates.get(piece.table))}`;
+        return `${piece.mode} on ${piece.table}, ${estimatePhrase(lookupEstimate(piece.table, estimates, aliases))}`;
       })
       .join("; "),
     estimates,
+    aliases,
   );
   if (step.safeRewrite === true) return `${text}; safe rewrite applied`;
-  if (exclusiveOverLarge(pieces, estimates)) {
+  if (exclusiveOverLarge(pieces, estimates, aliases)) {
     return `${text}; note: more than ${String(LARGE_TABLE_ROWS)} estimated rows`;
   }
   return text;
+}
+
+/**
+ * Maps a rename destination to the table that still has `reltuples`.
+ *
+ * The rename statement names the old table. Later steps name the new one,
+ * which is not in `pg_class` yet.
+ *
+ * @param steps - Plan steps
+ * @returns New name to old name
+ */
+export function renameAliases(
+  steps: readonly { readonly kind?: string; readonly sql: string }[],
+): ReadonlyMap<string, string> {
+  const map = new Map<string, string>();
+  for (const step of steps) {
+    if (step.kind !== "rename-table") continue;
+    const match =
+      /^alter table "(?:(?:[^"]|"")*)"\."((?:[^"]|"")*)" rename to "((?:[^"]|"")*)"/.exec(step.sql);
+    const from = match?.[1]?.replaceAll('""', '"');
+    const to = match?.[2]?.replaceAll('""', '"');
+    if (from !== undefined && to !== undefined) map.set(to, from);
+  }
+  return map;
+}
+
+function lookupEstimate(
+  table: string,
+  estimates: ReadonlyMap<string, RowEstimate>,
+  aliases: ReadonlyMap<string, string>,
+): RowEstimate | undefined {
+  const direct = estimates.get(table);
+  if (direct !== undefined) return direct;
+  const previous = aliases.get(table);
+  return previous === undefined ? undefined : estimates.get(previous);
 }
 
 /**
@@ -138,11 +178,12 @@ function withBatches(
   step: PlanStep,
   text: string,
   estimates: ReadonlyMap<string, RowEstimate>,
+  aliases: ReadonlyMap<string, string> = new Map(),
 ): string {
   const batch = step.backfill?.batch;
   if (batch === undefined) return text;
   const name = step.tables?.[0];
-  const estimate = name === undefined ? undefined : estimates.get(name);
+  const estimate = name === undefined ? undefined : lookupEstimate(name, estimates, aliases);
   if (estimate === undefined || estimate.kind !== "rows") return text;
   return `${text}, about ${String(aboutBatchCount(estimate.reltuples, batch))} batches`;
 }
@@ -210,10 +251,11 @@ function lockPieces(step: PlanStep): readonly LockPiece[] {
 function exclusiveOverLarge(
   pieces: readonly LockPiece[],
   estimates: ReadonlyMap<string, RowEstimate>,
+  aliases: ReadonlyMap<string, string> = new Map(),
 ): boolean {
   for (const piece of pieces) {
     if (piece.mode !== "ACCESS EXCLUSIVE" || piece.table === undefined) continue;
-    const estimate = estimates.get(piece.table);
+    const estimate = lookupEstimate(piece.table, estimates, aliases);
     if (estimate === undefined || estimate.kind !== "rows") continue;
     if (estimate.reltuples > LARGE_TABLE_ROWS) return true;
   }

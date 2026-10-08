@@ -1,6 +1,6 @@
 {
   "name": "okmodel",
-  "version": "0.5.1-next.6",
+  "version": "0.5.1-next.7",
   "description": "okmodel is a catalog-first TypeScript ORM, PostgreSQL first.",
   "keywords": [
     "migrations",
@@ -112,7 +112,7 @@
     }
   },
   "scripts": {
-    "build": "rm -rf dist && bun build ./src/contracts/index.ts ./src/contracts/internal.ts ./src/dialects/pg/index.ts ./src/runtime/pg/postgresjs.ts ./src/runtime/pg/pglite.ts ./src/runtime/pg/pg.ts ./src/runtime/pg/bun.ts ./src/runtime/ids/index.ts ./src/runtime/safety/index.ts ./src/runtime/traits/index.ts ./src/runtime/tenancy/index.ts ./src/runtime/validate/index.ts ./src/dialects/pg/ext/index.ts ./src/dialects/pg/fn/index.ts ./src/dialects/pg/view/index.ts ./src/dialects/pg/ext/citext.ts ./src/dialects/pg/ext/pg-trgm.ts ./src/tooling/migrate/index.ts ./src/tooling/testing/index.ts ./src/tooling/cli.ts --outdir ./dist --root ./src --format esm --target node --splitting --chunk-naming=shared/[hash].js --external postgres --external @electric-sql/pglite --external pg --external bun && bunx tsc -p tsconfig.build.json && bun ./scripts/write-bin-wrappers.ts",
+    "build": "rm -rf dist && bun build ./src/contracts/index.ts ./src/contracts/internal.ts ./src/dialects/pg/index.ts ./src/runtime/pg/postgresjs.ts ./src/runtime/pg/pglite.ts ./src/runtime/pg/pg.ts ./src/runtime/pg/bun.ts ./src/runtime/ids/index.ts ./src/runtime/safety/index.ts ./src/runtime/traits/index.ts ./src/runtime/tenancy/index.ts ./src/runtime/validate/index.ts ./src/dialects/pg/ext/index.ts ./src/dialects/pg/fn/index.ts ./src/dialects/pg/view/index.ts ./src/dialects/pg/ext/citext.ts ./src/dialects/pg/ext/pg-trgm.ts ./src/tooling/migrate/index.ts ./src/tooling/testing/index.ts ./src/tooling/cli.ts --outdir ./dist --root ./src --format esm --target node --splitting --chunk-naming=shared/[hash].js --external postgres --external @electric-sql/pglite --external pg --external bun && bunx tsc -p tsconfig.build.json && rm -f ./dist/dialects/pg/temporal.local.d.ts && bun ./scripts/write-bin-wrappers.ts",
     "driver-bench": "bun ./scripts/driver-bench.ts",
     "typecheck": "bunx tsc --noEmit -p tsconfig.json",
     "editor-check": "bun ./scripts/editor-check.ts",
@@ -157,6 +157,8 @@
     "oxlint": "^1.86.0",
     "oxlint-tsgolint": "^7.0.2003",
     "publint": "^0.3.24",
+    "temporal-polyfill": "^1.0.5",
+    "temporal-spec": "^1.0.1",
     "typescript": "7",
     "typescript-editor": "npm:typescript@6.0.3"
   },

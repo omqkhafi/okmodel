@@ -53,7 +53,7 @@ An override silences only the code it names, on every statement of that step. A 
 
 The linter splits each step into statements before the rules run (D211). Comments are not part of a statement. `--` runs to the end of the line. `/* */` nests. A semicolon splits statements only at the top level. A semicolon inside a string, a quoted identifier, a comment, or a dollar quote does not.
 
-`standard_conforming_strings` is assumed on. A plain `'...'` ends on one quote, and `''` is a quote inside it. `E'...'` keeps backslash escapes. `"..."` is an identifier, and `""` is a quote inside it. A dollar quote runs until the same tag. A different tag inside it is text, so it does not end the outer quote. An unterminated string, identifier, block comment, or dollar quote is one opaque tail. The split does not throw.
+`standard_conforming_strings` is assumed on. `okm migrate apply` reads the setting and refuses when it is off. A plain `'...'` ends on one quote, and `''` is a quote inside it. `E'...'` keeps backslash escapes. `"..."` is an identifier, and `""` is a quote inside it. A dollar quote runs until the same tag. A different tag inside it is text, so it does not end the outer quote. An unterminated string, identifier, block comment, or dollar quote is one opaque tail. The split does not throw.
 
 Each statement is linted. The place stays `step N` when the step has one statement. It is `step N statement M`, counting from 1, when the step has more. Step numbers do not change. Rules that look at earlier or later steps see the statements of those steps, with comments removed. A later `USING INDEX`, and a `VALIDATE` after `NOT VALID`, still count when they sit in another statement of that step or after a comment. Words inside a comment do not.
 

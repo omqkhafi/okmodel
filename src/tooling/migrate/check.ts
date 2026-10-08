@@ -36,7 +36,12 @@ import { catalogsEqual } from "./equal.js";
 import { loadMigrations } from "./files.js";
 import { hasError, lintMigrationDirectory, lintRefusal } from "./lint.js";
 import { parsePlan, planMigration, type MigrationPlan, type PlanStep } from "./plan.js";
-import { selectTarget, type InvokeFlags } from "./policy.js";
+import {
+  assertDirectConnection,
+  assertStableBackend,
+  selectTarget,
+  type InvokeFlags,
+} from "./policy.js";
 import { openProject } from "./project.js";
 
 /** Prefix of the scratch schema. The random suffix makes the name unique. */
@@ -87,6 +92,8 @@ export async function checkMigrations(
 ): Promise<string> {
   const opened = await openProject(cwd);
   const target = selectTarget(opened.config, flags.target);
+  const allowPooler = flags.allowPooler || opened.config.allowPooler === true;
+  assertDirectConnection(target.url, allowPooler);
   if (target.protected) {
     throw new OkmError(
       "OKM1850",
@@ -272,6 +279,7 @@ async function proveSnapshot(
     idle_timeout: 1,
     onnotice: () => {},
   });
+  const allowPooler = flags.allowPooler || config.allowPooler === true;
   const provided = `${CHECK_SCHEMA_PREFIX}p${crypto.randomUUID().replaceAll("-", "")}`;
   const replayed = `${CHECK_SCHEMA_PREFIX}r${crypto.randomUUID().replaceAll("-", "")}`;
   const timing = {
@@ -288,6 +296,10 @@ async function proveSnapshot(
     ...backfillTiming(config.backfill),
   };
   try {
+    await assertStableBackend(async () => {
+      const rows = await sql<{ pid: string }[]>`select pg_backend_pid()::text as pid`;
+      return rows[0]?.pid ?? "";
+    }, allowPooler);
     await sql.unsafe(`create schema ${quoteIdent(provided)}`);
     await sql.unsafe(`create schema ${quoteIdent(replayed)}`);
     const role =
@@ -365,9 +377,14 @@ async function replayHistory(
     idle_timeout: 1,
     onnotice: () => {},
   });
+  const allowPooler = flags.allowPooler || config.allowPooler === true;
   const scratch = `${CHECK_SCHEMA_PREFIX}${crypto.randomUUID().replaceAll("-", "")}`;
   const failures: CheckFailure[] = [];
   try {
+    await assertStableBackend(async () => {
+      const rows = await sql<{ pid: string }[]>`select pg_backend_pid()::text as pid`;
+      return rows[0]?.pid ?? "";
+    }, allowPooler);
     await sql.unsafe(`create schema ${quoteIdent(scratch)}`);
     const runner = catalogQuery(sql);
     for (let index = 0; index < history.length; index += 1) {
@@ -428,8 +445,19 @@ async function introspectScratch(
   schema: string,
   config: MigrateConfig,
 ): Promise<Catalog> {
-  await sql.unsafe(`set search_path to ${quoteIdent(schema)}`);
-  return introspectSchema(catalogQuery(sql), schema, "public", managedRoleOptions(config.roles));
+  const previous = await sql<{ path: string }[]>`select current_setting('search_path') as path`;
+  const saved = previous[0]?.path ?? "public";
+  try {
+    await sql.unsafe(`set search_path to ${quoteIdent(schema)}`);
+    return await introspectSchema(
+      catalogQuery(sql),
+      schema,
+      "public",
+      managedRoleOptions(config.roles),
+    );
+  } finally {
+    await sql`select set_config('search_path', ${saved}, false)`.catch(() => undefined);
+  }
 }
 
 function historyFailure(

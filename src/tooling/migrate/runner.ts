@@ -470,7 +470,7 @@ function failStep(unit: RunnableUnit, index: number, error: unknown): OkmError {
   const message = error instanceof Error ? error.message : "The step failed.";
   return new OkmError(
     "invalid",
-    `Migration ${unit.migrationId} failed at step ${String(index)}: ${message}`,
+    `Migration ${unit.migrationId} failed at step ${String(index + 1)}: ${message}`,
     {
       cause: error,
       fix: { summary: "Fix the step and run apply again. Finished steps are not repeated." },

@@ -14,8 +14,12 @@ const TEMPORAL_MISSING =
  * The codecs do not bundle a polyfill. Node and Bun provide the global;
  * another runtime must assign one before encode or decode.
  */
+type ClockText = {
+  toString(options?: { readonly fractionalSecondDigits?: number }): string;
+};
+
 function requireTemporal(): void {
-  const temporal: unknown = globalThis.Temporal;
+  const temporal: unknown = (globalThis as { readonly Temporal?: unknown }).Temporal;
   if (typeof temporal !== "object" || temporal === null || !("Instant" in temporal)) {
     rejected(TEMPORAL_MISSING);
   }
@@ -60,9 +64,9 @@ export function timePrecision(
 export function encodeInstant(value: Temporal.Instant, precision?: TimePrecision): string {
   requireTemporal();
   if (precision === undefined) {
-    return value.toString();
+    return (value as ClockText).toString();
   }
-  return value.toString({ fractionalSecondDigits: precision });
+  return (value as ClockText).toString({ fractionalSecondDigits: precision });
 }
 
 /**
@@ -74,6 +78,8 @@ export function encodeInstant(value: Temporal.Instant, precision?: TimePrecision
 export function decodeInstant(wire: string): Temporal.Instant {
   requireTemporal();
   try {
+    // Temporal is a runtime global. TypeScript 7 has no Temporal lib, and the shipped declaration stays empty so it can merge.
+    // @ts-ignore TS2708
     return Temporal.Instant.from(wire);
   } catch {
     rejected(`timestamptz ${wire} must be an ISO-8601 instant, for example 2020-01-01T00:00:00Z.`);
@@ -90,9 +96,9 @@ export function decodeInstant(wire: string): Temporal.Instant {
 export function encodeDateTime(value: Temporal.PlainDateTime, precision?: TimePrecision): string {
   requireTemporal();
   if (precision === undefined) {
-    return value.toString();
+    return (value as ClockText).toString();
   }
-  return value.toString({ fractionalSecondDigits: precision });
+  return (value as ClockText).toString({ fractionalSecondDigits: precision });
 }
 
 /**
@@ -104,6 +110,7 @@ export function encodeDateTime(value: Temporal.PlainDateTime, precision?: TimePr
 export function decodeDateTime(wire: string): Temporal.PlainDateTime {
   requireTemporal();
   try {
+    // @ts-ignore TS2708
     return Temporal.PlainDateTime.from(wire);
   } catch {
     rejected(
@@ -120,7 +127,7 @@ export function decodeDateTime(wire: string): Temporal.PlainDateTime {
  */
 export function encodeDate(value: Temporal.PlainDate): string {
   requireTemporal();
-  return value.toString();
+  return (value as ClockText).toString();
 }
 
 /**
@@ -132,6 +139,7 @@ export function encodeDate(value: Temporal.PlainDate): string {
 export function decodeDate(wire: string): Temporal.PlainDate {
   requireTemporal();
   try {
+    // @ts-ignore TS2708
     return Temporal.PlainDate.from(wire);
   } catch {
     rejected(`date ${wire} must be YYYY-MM-DD.`);
@@ -148,9 +156,9 @@ export function decodeDate(wire: string): Temporal.PlainDate {
 export function encodeTime(value: Temporal.PlainTime, precision?: TimePrecision): string {
   requireTemporal();
   if (precision === undefined) {
-    return value.toString();
+    return (value as ClockText).toString();
   }
-  return value.toString({ fractionalSecondDigits: precision });
+  return (value as ClockText).toString({ fractionalSecondDigits: precision });
 }
 
 /**
@@ -162,6 +170,7 @@ export function encodeTime(value: Temporal.PlainTime, precision?: TimePrecision)
 export function decodeTime(wire: string): Temporal.PlainTime {
   requireTemporal();
   try {
+    // @ts-ignore TS2708
     return Temporal.PlainTime.from(wire);
   } catch {
     rejected(`time ${wire} must be a time of day, for example 00:00:00.`);
@@ -207,7 +216,7 @@ export function decodeTimeZone(wire: string): TimeWithOffset {
  */
 export function encodeDuration(value: Temporal.Duration): string {
   requireTemporal();
-  const text = value.toString();
+  const text = (value as ClockText).toString();
   // Postgres refuses a leading minus and takes a sign on each field
   return text.startsWith("-") ? text.slice(1).replace(/\d+(?:\.\d+)?(?=[A-Z])/g, "-$&") : text;
 }
@@ -241,6 +250,7 @@ export function decodeDuration(wire: string): Temporal.Duration {
     },
   );
   try {
+    // @ts-ignore TS2708
     return Temporal.Duration.from(rest.trim() === "" && wire !== "" ? fields : wire);
   } catch {
     rejected(
@@ -292,93 +302,24 @@ let offsetPattern: RegExp | undefined;
 let timeZonePattern: RegExp | undefined;
 
 /**
- * Temporal is in the runtime (Node and Bun) and not in this repository's
- * TypeScript libs. These declarations name the methods the codecs call.
+ * Empty names so `Temporal.Instant` and the other codec types merge with
+ * TypeScript's Temporal lib and with `temporal-polyfill`. Method signatures
+ * live in `temporal.local.d.ts` for this repository's typecheck only. They
+ * are not shipped: a second `toString` or `var Temporal` conflicts with those
+ * libraries (QA-L2).
  */
 declare global {
   /** Instant, plain date-time, date, time, and duration. */
   namespace Temporal {
     /** UTC instant. */
-    interface Instant {
-      /**
-       * @param options - Fractional digits to keep
-       * @returns ISO-8601 text
-       */
-      toString(options?: { readonly fractionalSecondDigits?: number }): string;
-    }
+    interface Instant {}
     /** Date and time without a zone. */
-    interface PlainDateTime {
-      /**
-       * @param options - Fractional digits to keep
-       * @returns ISO-8601 text
-       */
-      toString(options?: { readonly fractionalSecondDigits?: number }): string;
-    }
+    interface PlainDateTime {}
     /** Calendar date. */
-    interface PlainDate {
-      /**
-       * @returns `YYYY-MM-DD`
-       */
-      toString(): string;
-      /**
-       * @param duration - Days to add
-       * @returns A later or earlier date
-       */
-      add(duration: { readonly days: number }): Temporal.PlainDate;
-    }
+    interface PlainDate {}
     /** Time of day. */
-    interface PlainTime {
-      /**
-       * @param options - Fractional digits to keep
-       * @returns Time text
-       */
-      toString(options?: { readonly fractionalSecondDigits?: number }): string;
-    }
+    interface PlainTime {}
     /** ISO-8601 duration. */
-    interface Duration {
-      /**
-       * @returns ISO-8601 duration text
-       */
-      toString(): string;
-    }
+    interface Duration {}
   }
-
-  /** Temporal constructors used by the codecs. */
-  var Temporal: {
-    readonly Instant: {
-      /**
-       * @param item - ISO-8601 instant
-       * @returns An instant
-       */
-      from(item: string): Temporal.Instant;
-    };
-    readonly PlainDateTime: {
-      /**
-       * @param item - ISO-8601 date-time
-       * @returns A plain date-time
-       */
-      from(item: string): Temporal.PlainDateTime;
-    };
-    readonly PlainDate: {
-      /**
-       * @param item - `YYYY-MM-DD`
-       * @returns A date
-       */
-      from(item: string): Temporal.PlainDate;
-    };
-    readonly PlainTime: {
-      /**
-       * @param item - Time text
-       * @returns A time
-       */
-      from(item: string): Temporal.PlainTime;
-    };
-    readonly Duration: {
-      /**
-       * @param item - ISO-8601 duration, or numeric fields
-       * @returns A duration
-       */
-      from(item: string | Readonly<Record<string, number>>): Temporal.Duration;
-    };
-  };
 }

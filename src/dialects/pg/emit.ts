@@ -55,7 +55,12 @@ export function emitRowTypes(source: BuiltSchema<readonly AnyTable[]>): string {
   lines.push("export interface Updates {");
   lines.push(updates.join("\n"));
   lines.push("}");
-  return `${lines.join("\n")}\n`;
+  const body = `${lines.join("\n")}\n`;
+  const aliases: string[] = [];
+  if (body.includes("jsonb<")) aliases.push("export type jsonb<T> = T;");
+  if (body.includes("json<")) aliases.push("export type json<T> = T;");
+  if (aliases.length === 0) return body;
+  return `${aliases.join("\n")}\n\n${body}`;
 }
 
 function propertyName(name: string): string {
@@ -93,7 +98,7 @@ function fields(
     const state = builder.state;
     if (kind === "row") {
       if (!state.hidden) {
-        printed.push(`  readonly ${field}: ${valueType(state, "required")};`);
+        printed.push(`  readonly ${field}: ${valueType(state)};`);
       }
       continue;
     }
@@ -102,7 +107,10 @@ function fields(
       continue;
     }
     const mode = kind === "update" ? "optional" : written;
-    printed.push(`  readonly ${field}: ${valueType(state, mode)};`);
+    const label = valueType(state);
+    printed.push(
+      mode === "optional" ? `  readonly ${field}?: ${label};` : `  readonly ${field}: ${label};`,
+    );
   }
   return printed.join("\n");
 }
@@ -128,7 +136,7 @@ function updateMode(state: ColumnState<unknown>): "omit" | "optional" {
   return "optional";
 }
 
-function valueType(state: ColumnState<unknown>, mode: "required" | "optional"): string {
+function valueType(state: ColumnState<unknown>): string {
   let label = scalarLabel(state);
   if (state.dims > 0) {
     for (let rank = 0; rank < state.dims; rank += 1) {
@@ -137,9 +145,6 @@ function valueType(state: ColumnState<unknown>, mode: "required" | "optional"): 
   }
   if (state.nullable) {
     label += " | null";
-  }
-  if (mode === "optional") {
-    label += " | undefined";
   }
   return label;
 }
@@ -177,8 +182,9 @@ function scalarLabel(state: ColumnState<unknown>): string {
     case "bytea":
       return "Uint8Array";
     case "json":
+      return "json<unknown>";
     case "jsonb":
-      return "unknown";
+      return "jsonb<unknown>";
     case "timestamptz":
       return "Temporal.Instant";
     case "timestamp":

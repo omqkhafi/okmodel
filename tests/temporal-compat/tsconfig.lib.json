@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "exactOptionalPropertyTypes": true,
+    "verbatimModuleSyntax": true,
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "target": "es2023",
+    "lib": ["es2023", "esnext.temporal"],
+    "types": [],
+    "skipLibCheck": false,
+    "noEmit": true,
+    "noUnusedLocals": true
+  },
+  "files": ["probe-lib.ts"]
+}
