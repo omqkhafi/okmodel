@@ -24,7 +24,7 @@ Every issue and every pull request has exactly one `type:` label and at least on
 - The pull request milestone is the milestone of that issue.
 - The path labeler adds `area:` from the files that changed. Set `type:` yourself.
 
-`.github/workflows/pr-meta.yml` has two jobs. `labeler` adds `area:` labels when a pull request is opened, reopened, or pushed to. `lint` runs after it and checks the title, the closing line, one `type:` label, at least one `area:` label, and a milestone. A label added with `GITHUB_TOKEN` does not start another workflow, so the jobs share one file and `lint` waits for `labeler`. When `labeler` is skipped (a label, milestone, or title edit, or a manual run with a `pr` number), `lint` still runs. `lint` checks out the base branch and runs `scripts/pr-lint.ts`. Neither job checks out pull request code.
+A pull request update starts one Actions run, `CI`. `label / paths` adds `area:` labels from the changed files. `lint / pull request` then checks the title, the closing line, one `type:` label, at least one `area:` label, and a milestone. It checks out the base branch and runs `scripts/pr-lint.ts`. Neither job checks out pull request code. A title edit, a label change, or a milestone change starts `pr-meta.yml` instead, which runs the same lint. A label added with `GITHUB_TOKEN` does not start another workflow.
 
 A Dependabot pull request has no issue and no milestone, so `lint` skips the closing line and the milestone for `dependabot[bot]`. Its title and labels are still checked.
 

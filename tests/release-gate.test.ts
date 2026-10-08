@@ -158,8 +158,10 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
     [...POSTGRES_VERSIONS],
   ]);
   const ci = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
-  expect(ci).not.toContain("uses: ./.github/workflows/postgres-suite.yml");
-  expect(ci).not.toContain("uses: ./.github/workflows/postgres-tarball.yml");
+  expect(ci).toContain("uses: ./.github/workflows/postgres-suite.yml");
+  expect(ci).toContain("uses: ./.github/workflows/postgres-tarball.yml");
+  expect(ci).toContain("name: label / paths");
+  expect(ci).toContain("name: lint / pull request");
   expect(ci).not.toContain("tests/harness.test.ts");
   expect(ci).toMatch(/push:\n {4}branches:\n {6}- main\n/);
   expect(ci).toContain("pull_request:");
@@ -174,6 +176,11 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   expect(pullRequest).toContain("actions: read");
   expect(pullRequest).toContain("needs: postgres");
   expect(pullRequest).toContain("labeled");
+  expect(pullRequest).not.toContain("synchronize");
+  expect(pullRequest).toContain("types: [labeled, unlabeled]");
+  const prMeta = readFileSync(join(root, ".github/workflows/pr-meta.yml"), "utf8");
+  expect(prMeta).not.toContain("synchronize");
+  expect(prMeta).not.toContain("opened");
   expect(jsonVersionLists(pullRequest, "versions")).toEqual([[floor, newest], [newest]]);
   expect(ci).toContain("needs: [lint, types, test, runtimes, package]");
   expect(ci).toContain("name: test / ${{ matrix.group }}");

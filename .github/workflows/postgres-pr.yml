@@ -1,13 +1,12 @@
 name: Postgres
 
-# Real Postgres on a pull request is opt-in. `gate / check` already covers
-# PGlite and the wire server. The label `needs: postgres` runs `suite / 15`,
-# `suite / 18`, and `tarball / 18`. Adding or removing that label starts this
-# workflow. Release and weekly call the suite and tarball workflows with every
-# supported major.
+# Real Postgres on a pull request is opt-in. A code push runs it inside CI
+# when the label is already there. Adding or removing `needs: postgres`,
+# without a push, starts this workflow and does not cancel CI. Release and
+# weekly call the suite and tarball workflows with every supported major.
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    types: [labeled, unlabeled]
 
 concurrency:
   group: postgres-pr-${{ github.event.pull_request.number }}

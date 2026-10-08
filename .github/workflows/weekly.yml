@@ -1,8 +1,8 @@
 name: Weekly
 
 # Full Postgres matrix, suite and tarball, Monday 06:00 UTC.
-# A pull request runs a shorter list from postgres-pr.yml when it has the
-# label `needs: postgres`.
+# A pull request with `needs: postgres` runs the shorter list inside CI.
+# Adding that label starts postgres-pr.yml.
 on:
   schedule:
     - cron: "0 6 * * 1"

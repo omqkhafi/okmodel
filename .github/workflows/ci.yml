@@ -8,10 +8,13 @@ name: CI
 # is split across lint, types, named test groups, runtimes, and package, so
 # the wait is the slowest slice. Every job name is `area / piece`, so the
 # check reads `CI / area / piece`. The job named `gate / check` is the
-# required status: it passes when every slice passed. Real Postgres is
-# postgres-pr.yml, and only when the pull request has the label
-# `needs: postgres`. Release and weekly call the suite and tarball workflows
-# themselves. A newer run on the same ref cancels the older one.
+# required status: it passes when every slice passed. A pull request update
+# starts this workflow only. Path labels and the pull request lint are jobs
+# here. The suite and the tarball run in this same workflow when the pull
+# request already has `needs: postgres`. Adding that label, without a push,
+# starts postgres-pr.yml and does not cancel this run. Release and weekly
+# call the suite and tarball workflows themselves. A newer run on the same
+# ref cancels the older one.
 on:
   push:
     branches:
@@ -24,6 +27,8 @@ concurrency:
 
 permissions:
   contents: read
+  pull-requests: write
+  actions: read
 
 jobs:
   lint:
@@ -237,3 +242,64 @@ jobs:
 
       - name: Attest
         run: bun run attest
+
+  paths:
+    name: label / paths
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Label by path
+        uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # v7.0.0
+
+  pull:
+    name: lint / pull request
+    needs: paths
+    if: >-
+      github.event_name == 'pull_request' &&
+      !cancelled() &&
+      (needs.paths.result == 'success' || needs.paths.result == 'skipped')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout base
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Lint pull request
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: bun ./scripts/pr-lint.ts --pr "$PR_NUMBER"
+
+  suite:
+    name: suite
+    if: "github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'needs: postgres')"
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/postgres-suite.yml
+    with:
+      versions: '["15", "18"]'
+
+  tarball:
+    name: tarball
+    if: "github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'needs: postgres')"
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/postgres-tarball.yml
+    with:
+      versions: '["18"]'
