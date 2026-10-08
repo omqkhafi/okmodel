@@ -65,19 +65,23 @@ test("a client that adopted a pool does not close it", async () => {
   expect(closes).toBe(0);
 });
 
-test("pglite exits without close", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "okm-pglite-"));
-  const script = `import { PGlite } from ${JSON.stringify(pgliteEntry())};
+test(
+  "pglite exits without close",
+  async () => {
+    const dir = mkdtempSync(join(tmpdir(), "okm-pglite-"));
+    const script = `import { PGlite } from ${JSON.stringify(pgliteEntry())};
 const db = new PGlite("memory://");
 await db.waitReady;
 await db.query("select 1");
 `;
-  writeFileSync(join(dir, "run.mjs"), script);
-  const bun = await runWithin(["bun", "run.mjs"], dir, 8_000);
-  const node = await runWithin(["node", "run.mjs"], dir, 8_000);
-  expect(bun).toBeLessThan(8_000);
-  expect(node).toBeLessThan(8_000);
-});
+    writeFileSync(join(dir, "run.mjs"), script);
+    const bun = await runWithin(["bun", "run.mjs"], dir, 8_000);
+    const node = await runWithin(["node", "run.mjs"], dir, 8_000);
+    expect(bun).toBeLessThan(8_000);
+    expect(node).toBeLessThan(8_000);
+  },
+  { timeout: 20_000 },
+);
 
 postgresTest(
   gate,
