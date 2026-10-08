@@ -23,6 +23,7 @@ if (import.meta.main) {
 
   const given = process.env.OKMODEL_TARBALL;
   const tarball = given === undefined || given === "" ? pack(root) : given;
+  await assertNoWorkspaces(tarball, root);
   const target = join(root, "packages", "reference-app", "node_modules", "okmodel");
   rmSync(target, { recursive: true, force: true });
   mkdirSync(target, { recursive: true });
@@ -35,6 +36,23 @@ if (import.meta.main) {
   } finally {
     rmSync(target, { recursive: true, force: true });
     if (tarball !== given) rmSync(tarball, { force: true });
+  }
+}
+
+async function assertNoWorkspaces(tarball: string, cwd: string): Promise<void> {
+  // R1: the published manifest keeps no `workspaces` field. The pack step
+  // (`prepack` in package.json) strips it from the tarball only.
+  const proc = Bun.spawn(["tar", "-xzOf", tarball, "package/package.json"], {
+    cwd,
+    stdout: "pipe",
+    stderr: "inherit",
+  });
+  const out = await new Response(proc.stdout).text();
+  const code = await proc.exited;
+  if (code !== 0) throw new Error(`tar -xzOf ${tarball} exited ${String(code)}`);
+  const manifest: unknown = JSON.parse(out);
+  if (typeof manifest === "object" && manifest !== null && "workspaces" in manifest) {
+    throw new Error(`${tarball} manifest must not contain a workspaces field`);
   }
 }
 
