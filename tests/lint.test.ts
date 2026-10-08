@@ -540,6 +540,182 @@ test("a later file is linted against the previous catalog, and an applied id is 
   }
 });
 
+test("a leading comment does not hide truncate (QA-H3)", () => {
+  const findings = hand("/* note */ truncate logs;");
+  expect(findings.map((item) => `${item.place} ${item.code}`)).toEqual(["step 1 OKM1542"]);
+});
+
+test("a second statement in the same step is linted (QA-H3)", () => {
+  const findings = hand('select 1; drop table "public"."logs";');
+  expect(findings.map((item) => `${item.place} ${item.code}`)).toEqual([
+    "step 1 statement 2 OKM1511",
+  ]);
+});
+
+test("a semicolon inside a block comment does not hide the next statement (QA-H3)", () => {
+  const findings = hand("select 1 /* ; */; delete from logs;");
+  expect(findings.map((item) => `${item.place} ${item.code}`)).toEqual([
+    "step 1 statement 2 OKM1542",
+  ]);
+});
+
+test("a DO block is OKM1542 because its body is not analysed (QA-H3)", () => {
+  for (const sql of ["do $$ begin delete from logs; end $$;", "call refresh_logs();"]) {
+    const findings = hand(sql);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.code).toBe("OKM1542");
+    expect(findings[0]?.place).toBe("step 1");
+    expect(findings[0]?.reason).toBe("the body is not analysed");
+  }
+  const filled = parsePlan(
+    '-- class: expand\n\n-- backfill table="public"."logs" key="id" batch=100\ndo $$ begin delete from logs; end $$;\n',
+  );
+  const empty = schema({ tables: [] }).catalog;
+  expect(
+    lintPlan(filled, empty, empty).some((item) => item.reason === "the body is not analysed"),
+  ).toBe(true);
+});
+
+test("alter column type is the same type change as set data type (QA-H3)", () => {
+  const shorthand = hand("alter table users alter column age type bigint;");
+  const using = hand("alter table users alter column age type bigint using age::bigint;");
+  const spelled = hand("alter table users alter column age set data type bigint;");
+  for (const findings of [shorthand, using, spelled]) {
+    expect(findings.map((item) => item.code).sort()).toEqual(["OKM1524", "OKM1538"]);
+    expect(findings.every((item) => item.place === "step 1")).toBe(true);
+  }
+});
+
+test("words inside a string, a comment, or a function body are not statements (QA-H3)", () => {
+  expect(codesOfHand("select 'drop table logs;';")).toEqual([]);
+  expect(codesOfHand("select 1 /* ; drop table logs */ ;")).toEqual([]);
+  expect(codesOfHand("/* drop table logs; */ select 1;")).toEqual([]);
+  expect(
+    codesOfHand(
+      "create function f() returns void language plpgsql as $$ begin delete from logs; end $$;",
+    ),
+  ).toEqual([]);
+  expect(
+    codesOfHand(
+      "create procedure p() language plpgsql as $body$ begin delete from logs; end $body$;",
+    ),
+  ).toEqual([]);
+});
+
+test("an allow on a multi-statement step silences that code on every statement (QA-H3)", () => {
+  const empty = schema({ tables: [] }).catalog;
+  const silenced = lintPlan(
+    parsePlan(
+      "-- name: hand\n\n-- okm-allow OKM1542: clear the table once\nselect 1;\ntruncate logs;\ndelete from logs;\n",
+    ),
+    empty,
+    empty,
+  );
+  expect(silenced.map((item) => item.code)).not.toContain("OKM1542");
+  expect(silenced.map((item) => item.code)).not.toContain("OKM1510");
+
+  const missed = lintPlan(
+    parsePlan("-- name: hand\n\n-- okm-allow OKM1511: not a drop\ntruncate logs;\n"),
+    empty,
+    empty,
+  );
+  expect(missed.map((item) => `${item.place} ${item.code}`).sort()).toEqual([
+    "step 1 OKM1510",
+    "step 1 OKM1542",
+  ]);
+});
+
+test("earlier and later steps are read statement by statement (QA-H3)", () => {
+  const before = schema({ tables: [tasks()] }).catalog;
+  const index = {
+    sql: 'create unique index concurrently "tasks_title_idx" on "public"."tasks" ("title")',
+    class: "expand" as const,
+    kind: "create-index" as const,
+    action: "ddl" as const,
+    lock: "SHARE UPDATE EXCLUSIVE",
+    transactional: false,
+  };
+  const consumed = lintPlan(
+    {
+      name: "hand",
+      class: "expand",
+      steps: [
+        index,
+        {
+          sql: 'select 1; alter table "public"."tasks" add constraint "tasks_title_key" unique using index "tasks_title_idx"',
+          class: "expand",
+          action: "ddl",
+          lock: "ACCESS EXCLUSIVE",
+          transactional: true,
+        },
+      ],
+    },
+    before,
+    before,
+  );
+  expect(consumed.map((item) => item.code)).toContain("OKM1528");
+  expect(consumed.map((item) => item.code)).not.toContain("OKM1529");
+
+  const commented = lintPlan(
+    {
+      name: "hand",
+      class: "expand",
+      steps: [
+        index,
+        {
+          sql: '/* using index "tasks_title_idx" */ select 1',
+          class: "expand",
+          action: "ddl",
+          lock: "",
+          transactional: true,
+        },
+      ],
+    },
+    before,
+    before,
+  );
+  expect(commented.map((item) => item.code)).toContain("OKM1529");
+  expect(commented.map((item) => item.code)).not.toContain("OKM1528");
+
+  const loose = schema({
+    tables: [table("tasks", { id: t.identity(), title: t.text().nullable() })],
+  }).catalog;
+  const tight = schema({ tables: [table("tasks", { id: t.identity(), title: t.text() })] }).catalog;
+  const safe = lintPlan(
+    {
+      name: "hand",
+      class: "contract",
+      steps: [
+        {
+          sql: 'select 1; alter table "public"."tasks" add constraint "tasks_title_not_null" check ("title" is not null) not valid',
+          class: "expand",
+          action: "ddl",
+          lock: "",
+          transactional: true,
+        },
+        {
+          sql: '/* note */ alter table "public"."tasks" validate constraint "tasks_title_not_null"',
+          class: "expand",
+          action: "ddl",
+          lock: "",
+          transactional: true,
+        },
+        {
+          sql: 'alter table "public"."tasks" alter column "title" set not null',
+          class: "contract",
+          kind: "set-not-null",
+          action: "ddl",
+          lock: "",
+          transactional: true,
+        },
+      ],
+    },
+    loose,
+    tight,
+  );
+  expect(safe.map((item) => item.code)).not.toContain("OKM1537");
+});
+
 test("a generated create with an index, a unique, and a foreign key lints clean", () => {
   const users = table("users", { id: t.identity(), name: t.text() });
   const owned = table(
@@ -573,6 +749,15 @@ type Built = {
   readonly tables: readonly AnyTable[];
   readonly casing: "snake" | undefined;
 };
+
+function hand(sql: string): readonly Finding[] {
+  const empty = schema({ tables: [] }).catalog;
+  return lintPlan(parsePlan(`-- name: hand\n\n${sql}\n`), empty, empty);
+}
+
+function codesOfHand(sql: string): readonly string[] {
+  return hand(sql).map((item) => item.code);
+}
 
 function fromEmpty(source: AnyTable | Built): Planned {
   if ("catalog" in source) return plans(schema({ tables: [] }), source);

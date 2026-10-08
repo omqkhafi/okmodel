@@ -243,8 +243,8 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     code: "OKM1510",
     title: "Unsafe migration",
     summary:
-      "A migration has an unresolved lint error, or an override with an empty reason or a code the statement did not trigger.",
-    fix: "Put `-- okm-allow OKM15xx: reason` on the line above the statement. The code must be one that statement triggered, and the reason must not be empty.",
+      "A migration has an unresolved lint error, or an override with an empty reason or a code no statement in the step triggered.",
+    fix: "Put `-- okm-allow OKM15xx: reason` on the step. The code must be one a statement in that step triggered, and the reason must not be empty. The line silences that code on every statement of the step.",
   },
   {
     code: "OKM1511",
@@ -442,8 +442,9 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
   {
     code: "OKM1542",
     title: "Data statement",
-    summary: "A migration contains a data statement outside backfill().",
-    fix: "Move the statement into backfill(). Data changes are batched and resumable there.",
+    summary:
+      "A migration contains a data statement outside backfill(), or a DO or CALL whose body is not analysed.",
+    fix: "Move insert, update, delete, merge, and truncate into backfill(). DO and CALL are refused because the body is not analysed. Allow OKM1542 with a reason to keep one.",
   },
   {
     code: "OKM1543",

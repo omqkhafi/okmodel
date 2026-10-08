@@ -252,8 +252,8 @@ export const STEP_RULES: readonly StepRule[] = [
     "OKM1542",
     "data-dependent",
     "error",
-    "A data statement outside backfill() is not a migration step.",
-    (input) => hit(dataStatement(input.step), "changes rows outside backfill()"),
+    "A data statement outside backfill(), or DO or CALL, is not a migration step.",
+    (input) => dataStatement(input.step),
   ),
 ];
 
@@ -334,11 +334,17 @@ function normalized(sql: string): string {
   return out;
 }
 
-function dataStatement(step: PlanStep): boolean {
-  if (step.backfill !== undefined) return false;
+function dataStatement(step: PlanStep): readonly string[] {
   const text = normalized(step.sql);
-  if (/^(?:insert|update|delete|merge|truncate)\b/.test(text)) return true;
-  return /^with\b/.test(text) && /\b(?:insert|update|delete|merge)\b/.test(text);
+  if (/^(?:do|call)\b/.test(text)) return ["the body is not analysed"];
+  if (step.backfill !== undefined) return [];
+  if (/^(?:insert|update|delete|merge|truncate)\b/.test(text)) {
+    return ["changes rows outside backfill()"];
+  }
+  if (/^with\b/.test(text) && /\b(?:insert|update|delete|merge)\b/.test(text)) {
+    return ["changes rows outside backfill()"];
+  }
+  return [];
 }
 
 function matches(step: PlanStep, kind: StepKind, pattern: RegExp): boolean {
@@ -513,14 +519,14 @@ function validates(input: StepInput, kind: "check" | "foreignKey"): boolean {
   return false;
 }
 
+const TYPE_CHANGE = /^alter table\s+(\S+)\s+alter column\s+(\S+)\s+(?:set data type|type)\b/;
+
 function typeChange(
   input: StepInput,
   mode: "incompatible" | "shrink" | "narrow" | "rewrite",
 ): readonly string[] {
   const text = normalized(input.step.sql);
-  const changing =
-    /^alter table\s+\S+\s+alter column\s+\S+\s+set data type\b/.test(text) ||
-    input.step.kind === "set-column-type";
+  const changing = TYPE_CHANGE.test(text) || input.step.kind === "set-column-type";
   if (!changing) return [];
   const compared = columnTypes(input);
   if (compared === undefined) {
@@ -542,7 +548,7 @@ function columnTypes(
   input: StepInput,
 ): { readonly before: string; readonly after: string } | undefined {
   const text = normalized(input.step.sql);
-  const match = /^alter table\s+(\S+)\s+alter column\s+(\S+)\s+set data type\b/.exec(text);
+  const match = TYPE_CHANGE.exec(text);
   const table = lastName(match?.[1]);
   const column = lastName(match?.[2]);
   if (table === undefined || column === undefined) return undefined;

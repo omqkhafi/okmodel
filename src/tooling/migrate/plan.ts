@@ -66,6 +66,7 @@ import {
   stepsForExistingTable,
   type SafeStep,
 } from "./safe.js";
+import { sqlQuoteOpen } from "./sql-lex.js";
 import { canonicalTypeName } from "./type-name.js";
 import { assertNoChains, type Replacement } from "./values.js";
 
@@ -126,10 +127,10 @@ export type PlanStep = {
    */
   readonly behavior?: "change";
   /**
-   * `-- okm-allow` lines directly above the statement.
+   * `-- okm-allow` lines on the step.
    *
-   * A reason silences that code only. An empty reason, or a code the
-   * statement did not trigger, is OKM1510 and silences nothing.
+   * A reason silences that code on every statement of the step. An empty
+   * reason, or a code no statement triggered, is OKM1510 and silences nothing.
    */
   readonly allows?: readonly StepAllow[];
 };
@@ -562,6 +563,10 @@ export function formatPlan(plan: MigrationPlan, lockText?: (step: PlanStep) => s
 /**
  * Reads a plan written by {@link formatPlan}.
  *
+ * A blank line ends a step. A blank line inside a quote, a dollar quote, or
+ * a block comment stays in that step, and so does a `--` line while the
+ * quote is still open.
+ *
  * @param text - SQL file text
  * @returns The plan. The header class is kept when the file has no steps
  */
@@ -594,9 +599,15 @@ export function parsePlan(text: string): MigrationPlan {
     let behavior: PlanStep["behavior"];
     const allows: StepAllow[] = [];
     const sql: string[] = [];
-    while (index < lines.length && (lines[index] ?? "") !== "") {
+    let quoteOpen = false;
+    while (index < lines.length && (quoteOpen || (lines[index] ?? "") !== "")) {
       const line = lines[index] ?? "";
       index += 1;
+      if (quoteOpen) {
+        sql.push(line);
+        quoteOpen = sqlQuoteOpen(sql.join("\n"));
+        continue;
+      }
       if (line.startsWith("-- class: ")) {
         stepClass = readClass(line.slice("-- class: ".length));
         sawClass = true;
@@ -611,7 +622,10 @@ export function parsePlan(text: string): MigrationPlan {
       else if (line === "-- path: unverified") path = "unverified";
       else if (line === "-- behavior: change") behavior = "change";
       else if (line.startsWith("-- okm-allow")) allows.push(readAllow(line));
-      else if (!line.startsWith("--")) sql.push(line);
+      else if (!line.startsWith("--")) {
+        sql.push(line);
+        quoteOpen = sqlQuoteOpen(sql.join("\n"));
+      }
     }
     const statement = sql.join("\n").replace(/;\s*$/, "");
     if (statement.length > 0) {
