@@ -15,7 +15,7 @@ test("every test file is in exactly one CI group", () => {
       seen.set(file, group.name);
     }
   }
-  expect([...seen.keys()].sort()).toEqual(discoverTestFiles(root));
+  expect([...seen.keys()].sort()).toEqual([...discoverTestFiles(root)]);
   expect(groups.map((group) => group.name)).toEqual([
     "reference app",
     "migrate",
