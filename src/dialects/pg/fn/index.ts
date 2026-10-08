@@ -5,6 +5,7 @@
  * records. `schema()` only asks each declared object for those records.
  */
 
+import { assertIdentifier } from "../../../contracts/catalog/identifier.js";
 import { OkmError } from "../../../contracts/error.js";
 import { staticNamespace } from "../../../contracts/catalog/identity.js";
 import { functionObject, triggerObject } from "../../../contracts/catalog/routine.js";
@@ -138,6 +139,11 @@ export function fn(name: string, options: FunctionOptions): Routine {
     throw new OkmError("OKM1823", `Function ${name} is security definer and has no search_path.`, {
       fix: { summary: "Set search_path on the function to the schemas it is allowed to see." },
     });
+  }
+  if (options.searchPath !== undefined && options.searchPath.trim().length > 0) {
+    for (const part of options.searchPath.split(",")) {
+      assertIdentifier(part.trim(), `function ${name} search_path`);
+    }
   }
   const argTypes = (options.arguments ?? []).map((argument) => argument.type);
   const schema = options.schema ?? "public";
