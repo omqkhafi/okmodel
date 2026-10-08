@@ -1499,6 +1499,7 @@ test("today view runs one query", async () => {
 | Provisioning a target that is not empty | CLI / engine | OKM1851 |
 | Targets resolving to the same database differ in protection, or tenants of one `schemaPerTenant` database differ in protection | `okm check` / `okm doctor` | OKM1852 |
 | Several targets configured and none named (`--target`) | CLI | OKM1853 |
+| Two statements saw different backend pids (a pooler handed out a new session) | apply, seed, check | OKM1854 |
 
 ## 22. Non-goals
 
