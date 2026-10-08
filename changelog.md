@@ -22,6 +22,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - An unknown key on `update`, and `tx` with the function before the options, are now refused (QA-M2).
 - A bad option on `find`, `one`, and `count` now rejects the query, so `safe` and `catch` see OKM1120 (QA-M11). `page` and `aggregate` already did.
 - Compiled SQL for a tenant table keeps the tenant predicate on every table alias, including a where that compares an object through `eq` (QA-S4).
+- A hand-written migration step is linted per statement. A leading comment, a second statement, a semicolon inside a comment, `DO` and `CALL`, and `ALTER COLUMN … TYPE` can now be refused (QA-H3). `-- okm-allow` on the step silences that code on every statement of the step.
 
 ## v0.5.0 — 2026-10-07
 
