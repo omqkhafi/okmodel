@@ -50,6 +50,15 @@ jobs:
           REQUIRE_DOCKER: "1"
           POSTGRES_VERSION: ${{ matrix.version }}
 
+      - name: Install pgbouncer
+        run: sudo apt-get update && sudo apt-get install -y pgbouncer
+
+      - name: Pooler refusal proof
+        run: bun ./scripts/pooler-proof.ts
+        env:
+          REQUIRE_DOCKER: "1"
+          POSTGRES_VERSION: ${{ matrix.version }}
+
       - name: Stop Postgres
         if: always()
         run: bun run db:down

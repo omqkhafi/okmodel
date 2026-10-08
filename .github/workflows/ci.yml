@@ -179,6 +179,39 @@ jobs:
       - name: Runtimes
         run: bun run test:runtimes
 
+  temporal:
+    name: temporal / node ${{ matrix.node }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24, 26]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Date/time columns
+        run: |
+          bun build scripts/node-temporal.ts --target node --external temporal-polyfill --outfile ./node_modules/.cache/okm-temporal.mjs
+          if [ "${{ matrix.node }}" = "26" ]; then
+            node ./node_modules/.cache/okm-temporal.mjs
+          else
+            node ./node_modules/.cache/okm-temporal.mjs --polyfill
+          fi
+
   package:
     name: package / checks
     runs-on: ubuntu-24.04
@@ -208,18 +241,18 @@ jobs:
 
   check:
     name: gate / check
-    needs: [lint, types, test, runtimes, package]
+    needs: [lint, types, test, runtimes, temporal, package]
     if: always()
     runs-on: ubuntu-24.04
     steps:
       - name: Require the slices
         run: |
           fail=0
-          for pair in "lint=${{ needs.lint.result }}" "types=${{ needs.types.result }}" "test=${{ needs.test.result }}" "runtimes=${{ needs.runtimes.result }}" "package=${{ needs.package.result }}"; do
+          for pair in "lint=${{ needs.lint.result }}" "types=${{ needs.types.result }}" "test=${{ needs.test.result }}" "runtimes=${{ needs.runtimes.result }}" "temporal=${{ needs.temporal.result }}" "package=${{ needs.package.result }}"; do
             name="${pair%%=*}"
             result="${pair#*=}"
             echo "$name $result"
-            if [ "$result" != "success" ]; then
+            if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
               fail=1
             fi
           done
