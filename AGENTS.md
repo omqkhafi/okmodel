@@ -15,7 +15,7 @@ This file is the single source of rules for this repository. `CLAUDE.md` imports
 
 - The published package is `okmodel` at the repository root: ESM only, Apache-2.0, `sideEffects: false`.
 - Other packages live under `packages/*` as Bun workspaces. Their dependencies never go into the root `package.json`.
-- Normative docs are draft 22 (`docs/okmodel-api-design.md`) and decisions D1–D212. The M0 spike implementations are on the `m0-spikes` tag. `packages/spikes` keeps the row-type and operator fixtures the type ceilings measure. Findings stay in `docs/m0-findings.md`.
+- Normative docs are draft 22 (`docs/okmodel-api-design.md`) and decisions D1–D213. The M0 spike implementations are on the `m0-spikes` tag. `packages/spikes` keeps the row-type and operator fixtures the type ceilings measure. Findings stay in `docs/m0-findings.md`.
 
 ## Errors
 
@@ -35,7 +35,7 @@ A layer may import layers below it. It must not import a layer above it. Adapter
 
 ## Scripts
 
-- `bun run check` runs format, lint, typecheck, `editor-check`, `type-cost`, `layers-check`, `core-purity`, `docs:check`, `readme:check`, the compiler-API scan, `bundle-purity`, build, tests, publint, arethetypeswrong, and the size budget. It does not run `@ark/attest`.
+- `bun run check` runs format, lint, typecheck, `editor-check`, `type-cost`, `layers-check`, `core-purity`, `docs:check`, `readme:check`, the compiler-API scan, `bundle-purity`, build, tests, publint, arethetypeswrong, and the size budget. It does not run `@ark/attest`. CI runs those steps in parallel (`lint`, `types`, `test`, `package`). The required status `check` passes when every slice passed.
 - `bun run build` writes JavaScript with `bun build --target node` and declarations with `tsc` (`emitDeclarationOnly`).
 - `bun run typecheck` runs `tsc --noEmit`.
 - `bun run lint` uses oxlint with type-aware rules. `bun run format:check` uses oxfmt. `bun run format` rewrites formatting.
@@ -58,7 +58,7 @@ A layer may import layers below it. It must not import a layer above it. Adapter
 
 ## Docs
 
-Documents in `docs/` are normative. The spec is draft 22. Decisions run D1–D212. GitHub organization is [docs/github.md](docs/github.md) (D206).
+Documents in `docs/` are normative. The spec is draft 22. Decisions run D1–D213. GitHub organization is [docs/github.md](docs/github.md) (D206).
 
 ## Engineering standards
 

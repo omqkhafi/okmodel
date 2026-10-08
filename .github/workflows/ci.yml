@@ -4,10 +4,12 @@ name: CI
 # pinned, so moving to a newer Ubuntu is a deliberate change made in a pull
 # request, not something GitHub does when it moves the latest label.
 #
-# A push runs on main only, and that push runs check and attest. A pull
-# request runs the same two jobs. Real Postgres is postgres-pr.yml, and only
-# when the pull request has the label `needs: postgres`. Release and weekly
-# call postgres.yml themselves. A newer run on the same ref cancels the older one.
+# A push runs on main only. A pull request runs the same jobs. `bun run check`
+# is split across lint, types, test, and package so the wait is the slowest
+# slice. The job named check is the required status: it passes when every
+# slice passed. Real Postgres is postgres-pr.yml, and only when the pull
+# request has the label `needs: postgres`. Release and weekly call
+# postgres.yml themselves. A newer run on the same ref cancels the older one.
 on:
   push:
     branches:
@@ -22,14 +24,84 @@ permissions:
   contents: read
 
 jobs:
-  check:
-    name: check
+  lint:
+    name: lint
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Format
+        run: bun run format:check
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Layers
+        run: bun run layers-check
+
+      - name: Core purity
+        run: bun run core-purity
+
+      - name: OKID drift
+        run: bun run okid-drift
+
+      - name: Docs
+        run: bun run docs:check
+
+      - name: Readme
+        run: bun run readme:check
+
+      - name: Compiler API
+        run: bun run compiler-api
+
+      - name: Bundle purity
+        run: bun run bundle-purity
+
+      - name: Release flow
+        if: github.event_name == 'pull_request'
+        run: bun ./scripts/release-check.ts --base ${{ github.event.pull_request.base.sha }}
+
+  types:
+    name: types
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Editor
+        run: bun run editor-check
+
+      - name: Type cost
+        run: bun run type-cost
+
+  test:
+    name: test
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
@@ -50,12 +122,60 @@ jobs:
       - name: Deno on PATH
         run: echo "$HOME/.deno/bin" >> "$GITHUB_PATH"
 
-      - name: Check
-        run: bun run check
+      - name: Build
+        run: bun run build
 
-      - name: Release flow
-        if: github.event_name == 'pull_request'
-        run: bun ./scripts/release-check.ts --base ${{ github.event.pull_request.base.sha }}
+      - name: Test
+        run: bun test
+
+      - name: Runtimes
+        run: bun run test:runtimes
+
+  package:
+    name: package
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Build
+        run: bun run build
+
+      - name: Publint
+        run: bun run publint
+
+      - name: Are the types wrong
+        run: bun run attw
+
+      - name: Size
+        run: bun run size
+
+  check:
+    name: check
+    needs: [lint, types, test, package]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require the slices
+        run: |
+          fail=0
+          for pair in "lint=${{ needs.lint.result }}" "types=${{ needs.types.result }}" "test=${{ needs.test.result }}" "package=${{ needs.package.result }}"; do
+            name="${pair%%=*}"
+            result="${pair#*=}"
+            echo "$name $result"
+            if [ "$result" != "success" ]; then
+              fail=1
+            fi
+          done
+          exit "$fail"
 
   attest:
     name: attest

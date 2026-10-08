@@ -17,6 +17,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 ### ♻️ Changed
 
 - A pull request no longer runs the Postgres suite. The label `needs: postgres` runs the suite on 15 and 18 and the tarball on 18. `bun run verify` runs that suite on this machine. The release and the weekly run still cover 15 through 18 (D212).
+- CI runs the steps of `bun run check` in parallel. The required `check` status passes when lint, types, tests, and the package checks have passed (D213).
 
 ### 🐛 Fixed
 
