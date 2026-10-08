@@ -30,15 +30,33 @@ export const POOLER_PORT = 6433;
 /**
  * Renders the pgbouncer config fronting one Postgres.
  *
+ * The server connection carries the primary password parsed from the URL:
+ * client `trust` only covers the client side, and a server with password
+ * authentication rejects an empty one.
+ *
  * @param host - Primary host
  * @param port - Primary port
+ * @param user - Primary user, forced for every server connection
+ * @param password - Primary password, percent-decoded
  * @param dir - Directory for the auth file
  * @returns The ini text
  */
-export function poolerConfig(host: string, port: string, dir: string): string {
+export function poolerConfig(
+  host: string,
+  port: string,
+  user: string,
+  password: string,
+  dir: string,
+): string {
+  const secret = password === "" ? "" : ` password=${password}`;
+  // `user=` is load-bearing, not cosmetic: without it pgbouncer logs into
+  // the server as the client user but takes the server password from
+  // auth_file (empty under trust) instead of this database line, and the
+  // SCRAM login fails. With `user=` there is one pool, which is all the
+  // proof needs.
   return [
     "[databases]",
-    `okm = host=${host} port=${port} dbname=okm`,
+    `okm = host=${host} port=${port} dbname=okm user=${user}${secret}`,
     "[pgbouncer]",
     "listen_addr = 127.0.0.1",
     `listen_port = ${String(POOLER_PORT)}`,
@@ -50,8 +68,35 @@ export function poolerConfig(host: string, port: string, dir: string): string {
   ].join("\n");
 }
 
+/** The pgbouncer child and its config dir, for the exit hook when the proof times out. */
+let activeChild: Bun.Subprocess | undefined;
+let activeDir: string | undefined;
+
+process.on("exit", () => {
+  // Plain `bun` runs exit hooks. A timed-out proof leaves pgbouncer and its
+  // temp dir behind; the process exit is the backstop that reaps them.
+  try {
+    activeChild?.kill();
+  } catch {
+    // Already gone.
+  }
+  if (activeDir !== undefined) rmSync(activeDir, { recursive: true, force: true });
+});
+
 if (import.meta.main) {
-  await poolerProof(repoRoot());
+  const done = poolerProof(repoRoot());
+  // The proof must fail, never hang: a broken pooler can park apply on a lock.
+  // The timer is cleared on settle: a pending timer keeps the event loop
+  // alive, which would park a finished proof here for the full two minutes.
+  const timer = setTimeout(() => {
+    console.error("pooler-proof: timed out after 120 seconds");
+    process.exit(1);
+  }, 120_000);
+  try {
+    await done;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
@@ -74,18 +119,33 @@ export async function poolerProof(_root: string): Promise<void> {
   const primary = new URL(primaryUrl());
   const dir = mkdtempSync(join(tmpdir(), "okm-pooler-"));
   writeFileSync(join(dir, "users.txt"), '"okm" ""\n');
-  writeFileSync(join(dir, "pgbouncer.ini"), poolerConfig(primary.hostname, primary.port, dir));
+  writeFileSync(
+    join(dir, "pgbouncer.ini"),
+    poolerConfig(
+      primary.hostname,
+      primary.port,
+      decodeURIComponent(primary.username),
+      decodeURIComponent(primary.password),
+      dir,
+    ),
+  );
   const pgbouncer = Bun.spawn(["pgbouncer", join(dir, "pgbouncer.ini")], {
     cwd: dir,
     stdout: "ignore",
     stderr: "pipe",
   });
+  activeChild = pgbouncer;
+  activeDir = dir;
   try {
-    await waitForPooler();
+    await waitForPooler(pgbouncer);
+    console.error("[pooler-proof] pooler is listening; warming two backends");
     await warmTwoBackends();
+    console.error("[pooler-proof] backends rotate; running apply for the pid refusal");
     await expectPidRefusal();
     console.error("[pooler-proof] apply through pgbouncer refused with OKM1854");
   } finally {
+    activeChild = undefined;
+    activeDir = undefined;
     pgbouncer.kill();
     await pgbouncer.exited.catch(() => undefined);
     rmSync(dir, { recursive: true, force: true });
@@ -105,24 +165,42 @@ async function pgbouncerVersion(): Promise<number | undefined> {
   }
 }
 
-async function waitForPooler(): Promise<void> {
+async function waitForPooler(pgbouncer: Bun.Subprocess): Promise<void> {
+  // A pgbouncer that cannot bind (stale daemon, clashing service) exits at
+  // once; surfacing that beats ten seconds of refused connections.
+  const exited = pgbouncer.exited.then(async () => {
+    const stderr = pgbouncer.stderr;
+    const text =
+      stderr instanceof ReadableStream ? await new Response(stderr).text().catch(() => "") : "";
+    const last = text.trim().split("\n").pop() ?? "";
+    throw new Error(
+      `pooler-proof: pgbouncer exited before opening 127.0.0.1:${String(POOLER_PORT)}${last === "" ? "" : `: ${last}`}`,
+    );
+  });
+  await Promise.race([pollPooler(), exited]);
+}
+
+async function pollPooler(): Promise<void> {
   for (let attempt = 0; attempt < 50; attempt += 1) {
-    try {
-      const socket = await Bun.connect({
-        hostname: "127.0.0.1",
-        port: POOLER_PORT,
-        socket: {
-          data() {},
-          error() {},
-        },
-      });
+    // No `error` handler: a refused connection must reject so the loop can
+    // retry. With one, Bun routes the failure to the handler and this
+    // await never settles.
+    const socket = await Bun.connect({
+      hostname: "127.0.0.1",
+      port: POOLER_PORT,
+      socket: {
+        data() {},
+      },
+    }).catch(() => undefined);
+    if (socket !== undefined) {
       socket.end();
       return;
-    } catch {
-      await Bun.sleep(200);
     }
+    await Bun.sleep(200);
   }
-  throw new Error("pooler-proof: pgbouncer did not open 127.0.0.1:6433 within 10 seconds");
+  throw new Error(
+    `pooler-proof: pgbouncer did not open 127.0.0.1:${String(POOLER_PORT)} within 10 seconds`,
+  );
 }
 
 /**
@@ -134,14 +212,14 @@ async function waitForPooler(): Promise<void> {
  */
 async function warmTwoBackends(): Promise<void> {
   const url = poolerUrl();
-  const first = postgres(url, { max: 1 });
-  const second = postgres(url, { max: 1 });
+  const first = postgres(url, { max: 1, connect_timeout: 10 });
+  const second = postgres(url, { max: 1, connect_timeout: 10 });
   try {
     await Promise.all([first`select pg_sleep(2)`, second`select pg_sleep(2)`]);
   } finally {
     await Promise.all([first.end(), second.end()]);
   }
-  const check = postgres(url, { max: 1 });
+  const check = postgres(url, { max: 1, connect_timeout: 10 });
   try {
     const one = await check`select pg_backend_pid() as pid`;
     const two = await check`select pg_backend_pid() as pid`;
@@ -161,7 +239,7 @@ function poolerUrl(): string {
 
 async function expectPidRefusal(): Promise<void> {
   const schemaName = `poolproof_${String(process.pid)}`;
-  const direct = postgres(primaryUrl(), { max: 1 });
+  const direct = postgres(primaryUrl(), { max: 1, connect_timeout: 10 });
   try {
     await direct.unsafe(`create schema ${schemaName}`);
   } finally {
@@ -192,7 +270,7 @@ async function expectPidRefusal(): Promise<void> {
   } catch (thrown) {
     error = thrown;
   } finally {
-    const cleanup = postgres(primaryUrl(), { max: 1 });
+    const cleanup = postgres(primaryUrl(), { max: 1, connect_timeout: 10 });
     try {
       await cleanup.unsafe(`drop schema if exists ${schemaName} cascade`);
     } finally {
