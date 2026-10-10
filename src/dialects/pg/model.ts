@@ -23,8 +23,13 @@ export type ColumnModel = {
    * call a codec it does not need.
    */
   readonly decode: ((wire: string) => unknown) | undefined;
-  /** Excluded from a default select. Named selects still return it. Includes never return it. */
-  readonly hidden: boolean;
+  /**
+   * Excluded from a default select. Named selects still return it. Includes never return it.
+   *
+   * `"filter"` is still excluded, and `where` and `orderBy` may name it.
+   * `true` is excluded and refused there (OKM1120).
+   */
+  readonly hidden: boolean | "filter";
   /**
    * Redacted in logs, errors, and `inspect()`.
    *

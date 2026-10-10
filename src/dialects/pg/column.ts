@@ -268,6 +268,12 @@ export type ColumnState<TValue> = {
   readonly picklist: { readonly values: readonly string[]; readonly check: boolean } | undefined;
   readonly guarded: boolean;
   readonly hidden: boolean;
+  /**
+   * Hidden, and allowed in `where` and `orderBy`.
+   *
+   * Absent otherwise. Not part of the catalog or its hash.
+   */
+  readonly filterable?: true;
   /** Redacted in logs, errors, and `inspect()`. Not part of the catalog hash. */
   readonly sensitive: boolean;
   readonly omitWrite: boolean;
@@ -580,12 +586,20 @@ export class ColumnBuilder<TValue, TFlags extends ColumnFlags> {
   /**
    * Excludes the column from the default row.
    *
-   * A named `select` still returns it. Includes never do.
+   * A named `select` still returns it. Includes never do. `where` and
+   * `orderBy` refuse it (OKM1120) unless `filterable` is set. `filters()`
+   * still refuses it.
    *
+   * @param options - `filterable` allows the column in `where` and `orderBy`
    * @returns The same column, hidden
    */
-  hidden(): ColumnBuilder<TValue, FlagTrue<TFlags, "hidden">> {
-    return rebuild<TValue, FlagTrue<TFlags, "hidden">>(this.state, { hidden: true });
+  hidden(options?: {
+    readonly filterable?: boolean;
+  }): ColumnBuilder<TValue, FlagTrue<TFlags, "hidden">> {
+    return rebuild<TValue, FlagTrue<TFlags, "hidden">>(this.state, {
+      hidden: true,
+      ...(options?.filterable === true ? { filterable: true as const } : {}),
+    });
   }
 
   /**

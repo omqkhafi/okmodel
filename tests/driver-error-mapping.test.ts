@@ -32,6 +32,15 @@ test("42703 maps to undefined_column with a migration fix (QA-L8)", () => {
   expect(mapped.fix.summary).toContain("okm migrate apply");
 });
 
+test("a refresh failure keeps kind driver and names the fix", () => {
+  const owner = mapPostgresError(
+    mapDriverError(sqlError("permission denied for materialized view v", "42501")),
+  );
+  expect(owner.kind).toBe("driver");
+  expect(owner.fieldReason).toBe("not_owner");
+  expect(owner.fix.summary).toContain("owner of the materialized view");
+});
+
 test.each([
   "ERR_TLS_CERT_ALTNAME_INVALID",
   "SELF_SIGNED_CERT_IN_CHAIN",

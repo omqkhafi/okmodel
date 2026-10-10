@@ -177,11 +177,11 @@ test("QA-L1: Temporal values keep microseconds, with no runtime warning", () => 
   expect(source).not.toContain("fractionalSecondDigits is omitted");
 });
 
-test("QA-L10: view keys are camelCased and a materialized view is refreshed with SQL", () => {
+test("QA-L10: view keys are camelCased and refresh() runs REFRESH MATERIALIZED VIEW", () => {
   const limits = readFileSync(`${root}/docs/known-limits.md`, "utf8");
   expect(limits).toContain("db.views.activeProjects");
   expect(limits).toContain("REFRESH MATERIALIZED VIEW");
-  expect(limits).toContain("no `refresh()` handle");
+  expect(limits).toContain("`db.views.name.refresh()`");
 });
 
 test("QA-L13: lists_touch is the timestamps trigger, and only with enforce", () => {
@@ -207,12 +207,13 @@ test("QA-L13: lists_touch is the timestamps trigger, and only with enforce", () 
   expect(limits).toContain('enforce: "trigger"');
 });
 
-test("QA-S1: hidden where and orderBy stay as they are until 0.6", () => {
+test("QA-S1: a hidden column in where and orderBy is OKM1120", () => {
   const decisions = readFileSync(`${root}/docs/okmodel-decisions.md`, "utf8");
   expect(decisions).toContain("| D215 |");
+  expect(decisions).toContain("| D226 |");
   expect(decisions).toContain("allow where and refuse orderBy");
-  const limits = readFileSync(`${root}/docs/known-limits.md`, "utf8");
-  expect(limits).toContain("hidden column can be named in `where` and `orderBy`");
+  const spec = readFileSync(`${root}/docs/okmodel-api-design.md`, "utf8");
+  expect(spec).toContain("hidden({ filterable: true })");
 });
 
 function capture(runCall: () => void): OkmError {

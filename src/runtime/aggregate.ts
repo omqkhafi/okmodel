@@ -25,6 +25,7 @@ import {
   projectExpr,
   quote,
   readLimit,
+  refuseHidden,
   rejectKeys,
   type ArchiveView,
   type Built,
@@ -121,12 +122,14 @@ function plan(
   if (orderBy !== undefined) {
     if (!isRecord(orderBy)) fail("OKM1120", "orderBy must be an object of fields.");
     for (const field of Object.keys(orderBy)) {
-      if (!spec.groups.some((column) => column.field === field)) {
+      const column = indexed.columns.get(field);
+      if (column !== undefined) refuseHidden(column);
+      if (!spec.groups.some((group) => group.field === field)) {
         throwNamed(
           "OKM1120",
           field,
-          spec.groups.map((column) => column.field),
-          `aggregate() orders by a groupBy field. Accepted names: ${list(spec.groups.map((column) => column.field))}.`,
+          spec.groups.map((group) => group.field),
+          `aggregate() orders by a groupBy field. Accepted names: ${list(spec.groups.map((group) => group.field))}.`,
         );
       }
     }

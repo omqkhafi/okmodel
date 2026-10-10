@@ -431,7 +431,7 @@ export const app = schema({ tables: [tasks] });
 
 ### Hidden
 
-A password hash should not come back on an ordinary read. `.hidden()` leaves the column out of `find` and out of `include`. Name it in `select` when that call needs it.
+A password hash should not come back on an ordinary read, and a caller should not be able to filter on it. `.hidden()` leaves the column out of `find` and out of `include`, and `where` and `orderBy` refuse it (OKM1120). Name it in `select` when that call needs it. `hidden({ filterable: true })` allows `where` and `orderBy` and still leaves it out of the default row. `filters()` still refuses a hidden column.
 
 `hidden.ts`:
 

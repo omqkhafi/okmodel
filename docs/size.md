@@ -234,6 +234,44 @@ Cold import after the move: runtime 1.801 ms, app 10.898 ms (stubbed 5.643 ms), 
 
 The check from D218, plus `hidden({ filterable: true })` on the column, was measured once on top of the move and reverted (D220). The featureless app was 90,943 / 30,199, over the 90,900 / 30,170 gate. Connect entries stayed under their gates: postgres.js 42,252 / 14,879, PGlite 40,263 / 14,252, node-postgres 42,665 / 15,042, Bun.sql 41,513 / 14,569. The runtime entry stayed 5,288 / 2,026.
 
+### Why that check cost 437 / 136
+
+`plan.ts` is in the featureless app and in every connect entry. It is not in the runtime entry. `emitPredicate` and `emitOrder` run while planning, and planning is synchronous, so the check cannot be an `import()`. D220's +214 minified on each connect entry is that planner branch plus a new `OkmError` fix object whose sentence names `hidden({ filterable: true })`. The app's extra 223 minified bytes are `column.ts` and `schema.ts`, which the connect entries do not contain. The runtime entry stayed 5,288 / 2,026.
+
+The same behaviour was measured again on the D221 tree (gated bytes still the D219 table; app total graph 196,302 / 63,858) and reverted (D225). Each row is minified / gzip, then the delta from that baseline.
+
+| Variant | Runtime | App | postgres.js | PGlite | node-postgres | Bun.sql |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Baseline | 5,288 / 2,026 | 90,506 / 30,063 | 42,038 / 14,805 | 40,049 / 14,163 | 42,451 / 14,965 | 41,299 / 14,504 |
+| A. Shared `OkmError` and a `filterable` field on the model | 5,288 / 2,026 | 90,820 / 30,164 (+314 / +101) | 42,250 / 14,877 (+212 / +72) | 40,261 / 14,246 (+212 / +83) | 42,663 / 15,040 (+212 / +75) | 41,511 / 14,584 (+212 / +80) |
+| B. `hidden === true` refuses; `"filter"` is allowed. One `fail()` | 5,288 / 2,026 | 90,718 / 30,143 (+212 / +80) | 42,174 / 14,851 (+136 / +46) | 40,185 / 14,215 (+136 / +52) | 42,587 / 15,014 (+136 / +49) | 41,435 / 14,553 (+136 / +49) |
+| C. Sealed names collected in the index loop, then `fail()` | 5,288 / 2,026 | 90,766 / 30,167 (+260 / +104) | 42,229 / 14,874 (+191 / +69) | 40,240 / 14,238 (+191 / +75) | 42,642 / 15,032 (+191 / +67) | 41,490 / 14,580 (+191 / +76) |
+
+Variant A is the D220 shape with one shared throw. Connect entries grew 212 minified, two bytes under D220's 214. The app grew 314, of which 102 is the column and schema copy. Storing `filterable: false` on every builder added 14 / 2 on the app and nothing on the connect entries (90,834 / 30,166). Variant A's app total graph was 196,616 / 63,893.
+
+Variant B is the smallest on every gated graph. The featureless app has 182 minified and 27 gzip left under 90,900 / 30,170. Each connect entry stays under its gate, and under the D220 connect measurement. `client.ts` is untouched. The app total graph was 196,514 / 63,830.
+
+### Hidden where and orderBy, shipped
+
+P81B ships variant B (D226). One `bun run size` run after the check. The runtime entry stays 5,288 / 2,026. The featureless-app gate stays 90,900 / 30,170. No other gate moves.
+
+| Graph | Before (D219) | After | Delta (min / gzip) | Gate | Left (min / gzip) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Runtime entry | 5,288 / 2,026 | 5,288 / 2,026 | 0 / 0 | 6,100 / 2,250 | 812 / 224 |
+| Featureless app | 90,506 / 30,063 | 90,721 / 30,154 | +215 / +91 | 90,900 / 30,170 | 179 / 16 |
+| postgres.js | 42,038 / 14,805 | 42,177 / 14,856 | +139 / +51 | 42,450 / 14,920 | 273 / 64 |
+| PGlite | 40,049 / 14,163 | 40,187 / 14,223 | +138 / +60 | 40,450 / 14,280 | 263 / 57 |
+| node-postgres | 42,451 / 14,965 | 42,590 / 15,016 | +139 / +51 | 42,850 / 15,070 | 260 / 54 |
+| Bun.sql | 41,299 / 14,504 | 41,438 / 14,544 | +139 / +40 | 41,700 / 14,620 | 262 / 76 |
+
+The shipped app is 3 minified and 11 gzip above the variant B prototype (90,718 / 30,143). Each connect entry is 2 or 3 minified above that prototype. `refuseHidden` is exported so the lazy aggregate chunk can apply it before the groupBy rule. The app total graph is 196,565 / 63,904. Cold import: runtime 1.696 ms, app 10.296 ms (stubbed 5.361 ms), postgres.js 8.593 ms (stubbed 2.673 ms), PGlite 11.078 ms (stubbed 3.035 ms), node-postgres 10.842 ms (stubbed 2.624 ms), Bun.sql stubbed 2.594 ms. All are under the 15 ms local reference. query-200 is 17,119 instantiations and 6,314 types (ceilings 17,300 and 6,500) and inferred-250 is 17,650 (ceiling 21,180).
+
+### `refresh()`, shipped
+
+`refresh()` loads on the first call (D227). One `bun run size` run after it. Minified bytes on the six gated graphs match the table above. Gzip moved by at most 3 bytes. The featureless app is 90,721 / 30,153. An app that imports a view and a materialized view is 98,071 / 32,349 at startup (98,071 is +7,350 over the featureless app: that is the view module). Its total graph is 204,991 / 66,349. The `refresh.js` chunk is 531 bytes and is not in the startup graph.
+
+Variant C rebuilds a name list inside `indexes()`, which already walks columns. That list is more code in `plan.ts` than the comparison, so every graph that contains `plan.ts` is larger. The app total graph was 196,562 / 63,887.
+
 ### Tenant onConflict
 
 The branch stays in the lazy conflict chunk (D221). Gated graphs match the table above. The app total graph is 196,302 / 63,858.
