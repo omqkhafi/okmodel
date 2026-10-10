@@ -2,7 +2,7 @@
 
 okmodel is a catalog-first TypeScript ORM, PostgreSQL first. Other SQL databases are the direction. CI runs PostgreSQL 15 to 18. The schema is the single source. Migrations and queries come from it.
 
-Version 0.5.0. Apache-2.0.
+Apache-2.0. The published version is [okmodel on npm](https://www.npmjs.com/package/okmodel).
 
 ## Contents
 

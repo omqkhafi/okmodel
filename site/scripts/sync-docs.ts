@@ -15,7 +15,7 @@ import {
   pageHref,
   type MappedPage,
 } from "../lib/docs-map";
-import { extractReadmeH2, readRootPackage } from "../lib/package-meta";
+import { extractReadmeH2 } from "../lib/package-meta";
 import { repoRoot, siteRoot } from "../lib/repo";
 import { githubBlobUrl } from "../lib/shared";
 
@@ -193,13 +193,7 @@ function readmeIntroduction(readme: string): string {
   const end = lines.findIndex((line, index) => index > 0 && line.startsWith("## "));
   const slice = lines.slice(0, end < 0 ? lines.length : end);
   const withoutTitle = slice[0]?.startsWith("# ") ? slice.slice(1) : slice;
-  // The README still says "Version 0.5.0". The sidebar shows the package
-  // version. Keep the license name from package.json on that line.
-  const license = readRootPackage().license;
-  const withoutStaleVersion = withoutTitle.map((line) =>
-    line.startsWith("Version ") ? license : line,
-  );
-  return `${withoutStaleVersion.join("\n").trim()}\n`;
+  return `${withoutTitle.join("\n").trim()}\n`;
 }
 
 function stripLeadingH1(body: string): string {

@@ -155,7 +155,8 @@ export const mappedPages: readonly MappedPage[] = [
   {
     slug: "specification",
     title: "Specification",
-    description: "Status: design draft, 2026-09-30. Not yet approved for implementation.",
+    description:
+      "Status: normative specification, draft 26. The repository implements it through the 0.5.1 release, and the 0.6 Access train is in progress (P80–P82 are on main).",
     group: "reference",
     order: 1,
     source: "docs/okmodel-api-design.md",
@@ -263,7 +264,8 @@ export const mappedPages: readonly MappedPage[] = [
   {
     slug: "size",
     title: "Size and cold start",
-    description: "The table in this section is the 0.5.0 release sample.",
+    description:
+      "The opening table is the current sample on main, measured after composite and path tenancy (D228, D229).",
     group: "limits",
     order: 1,
     source: "docs/size.md",

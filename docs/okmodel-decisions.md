@@ -1,4 +1,4 @@
-# OKModel — Decisions log (companion to okmodel-api-design.md, draft 19)
+# OKModel — Decisions log (companion to okmodel-api-design.md, draft 26)
 
 Every decision states what was chosen and why. The spec states the rules; this file keeps the history.
 
