@@ -14,6 +14,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+### ♻️ Changed
+
+- The plan schedules M2 Depth as four trains: 0.6 Access (P80–P86), then 0.7 Query depth, 0.8 SQL lane, and 0.9 Tooling. Access is first. Each feature loads lazily, or the step stops with numbers. The OKE prototype starts after 0.6 (D217).
+
 ## v0.5.1 — 2026-10-08
 
 ### ♻️ Changed
