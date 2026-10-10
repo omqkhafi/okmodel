@@ -27,7 +27,7 @@ import {
 } from "../src/dialects/pg/index.js";
 import { tag } from "../src/dialects/pg/operators.js";
 import { connect } from "../src/runtime/pg/postgresjs.js";
-import { effectivePredicate } from "../src/runtime/plan.js";
+import { effectivePredicate } from "../src/runtime/predicate.js";
 import { app as archiveApp } from "./archive-schema.js";
 
 const NOTE = "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c21";

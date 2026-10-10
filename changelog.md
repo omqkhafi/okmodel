@@ -21,6 +21,15 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 ### ♻️ Changed
 
 - The plan schedules M2 Depth as four trains: 0.6 Access (P80–P86), then 0.7 Query depth, 0.8 SQL lane, and 0.9 Tooling. Access is first. Each feature loads lazily, or the step stops with numbers. The OKE prototype starts after 0.6 (D217).
+- A where with no effective predicate is checked from the write and archive chunks. A read does not carry that walk. The runtime entry stays 5,288 / 2,026. The featureless app is 90,506 / 30,063 (D219).
+- A hidden column named in `where` or `orderBy` stays allowed. The check measured 90,943 / 30,199 on the featureless app, over the 90,900 / 30,170 gate, and was not shipped (D220).
+- A materialized view is still refreshed with `REFRESH MATERIALIZED VIEW`. §5.7 does not define a `refresh()` handle, so one was not added (D222).
+- The extra unique beside a tenant primary key stays `{table}_{TypeScript fields}_{tenant field}_key`, for example `tasks_id_tenantId_key`. `renamedFrom` already renames it. The formula is unchanged, so existing catalogs do not move (D223).
+- A `timeout` or `signal` still does not settle an in-flight statement on Bun.sql or PGlite. The fix grew Bun.sql by 108 / 39, so it was not shipped (D224).
+
+### 🐛 Fixed
+
+- `onConflict: { on: "title" }` on a tenant unique of (tenant key, title) updates that tenant's row. The conflict target includes the tenant key. Naming the tenant key is still OKM1104. Two tenants can keep the same title (D221).
 
 ## v0.5.1 — 2026-10-08
 

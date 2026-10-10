@@ -214,3 +214,30 @@ Each saving is a reverted experiment, two runs, against the same baseline. They 
 | Remove the `filters.ts` import from `table()` | App −799 / −252. postgres.js +0 / +0 | No. D161 requires the synchronous check |
 
 Ranked by saving against risk: the predicate move first, then the watch move. Both sit behind a lazy boundary that already exists. The array, nearest, and catalog numbers are larger and are not safe to take. The filters-module number is blocked by D161.
+
+## P81 after the predicate move
+
+Ali chose D218 option d: move first, then spend (D219). No gate, cap, or ceiling moves. `effectivePredicate` now loads with writes and archive. `orFail` stays in `plan.ts`. The table is one `bun run size` run after that move. The runtime entry is unchanged at 5,288 / 2,026.
+
+| Graph | Before (D218) | After the move | Delta (min / gzip) | Gate | Left (min / gzip) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Runtime entry | 5,288 / 2,026 | 5,288 / 2,026 | 0 / 0 | 6,100 / 2,250 | 812 / 224 |
+| Featureless app | 90,851 / 30,157 | 90,506 / 30,063 | −345 / −94 | 90,900 / 30,170 | 394 / 107 |
+| postgres.js | 42,382 / 14,898 | 42,038 / 14,805 | −344 / −93 | 42,450 / 14,920 | 412 / 115 |
+| PGlite | 40,393 / 14,257 | 40,049 / 14,163 | −344 / −94 | 40,450 / 14,280 | 401 / 117 |
+| node-postgres | 42,795 / 15,048 | 42,451 / 14,965 | −344 / −83 | 42,850 / 15,070 | 399 / 105 |
+| Bun.sql | 41,643 / 14,592 | 41,299 / 14,504 | −344 / −88 | 41,700 / 14,620 | 401 / 116 |
+
+Cold import after the move: runtime 1.801 ms, app 10.898 ms (stubbed 5.643 ms), postgres.js 8.732 ms (stubbed 2.822 ms), PGlite 11.015 ms (stubbed 2.931 ms), node-postgres 14.817 ms (stubbed 2.871 ms), Bun.sql stubbed 2.664 ms. All are under the 15 ms local reference. The app total graph is 196,139 / 63,765. The prototype's larger saving is not this measurement: `orFail` still ships in the read planner.
+
+### Hidden where and orderBy, measured and not shipped
+
+The check from D218, plus `hidden({ filterable: true })` on the column, was measured once on top of the move and reverted (D220). The featureless app was 90,943 / 30,199, over the 90,900 / 30,170 gate. Connect entries stayed under their gates: postgres.js 42,252 / 14,879, PGlite 40,263 / 14,252, node-postgres 42,665 / 15,042, Bun.sql 41,513 / 14,569. The runtime entry stayed 5,288 / 2,026.
+
+### Tenant onConflict
+
+The branch stays in the lazy conflict chunk (D221). Gated graphs match the table above. The app total graph is 196,302 / 63,858.
+
+`refresh()` was not added (D222). §5.7 does not define the handle. The extra tenant unique keeps its TypeScript name key (D223). That decision does not change a generator, so the gated graphs stay on the table above.
+
+The in-flight timeout on Bun.sql and PGlite stays a known limit (D224). D216 measured the behaviour at Bun.sql +108 / +39 and PGlite +191 / +92. Bun.sql must not grow, so the fix is not rebuilt. The lazy watch hook that shrinks connect graphs by 45 minified is not that behaviour.

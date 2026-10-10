@@ -25,7 +25,7 @@ import {
 } from "../src/dialects/pg/index.js";
 import { tag } from "../src/dialects/pg/operators.js";
 import { connect } from "../src/runtime/pg/postgresjs.js";
-import { effectivePredicate } from "../src/runtime/plan.js";
+import { effectivePredicate } from "../src/runtime/predicate.js";
 import { assertGate } from "./gate-property.js";
 import { columnTenancy } from "../src/runtime/tenancy/index.js";
 import { app, ORG, TASK, TENANT_A } from "./tenancy-schema.js";

@@ -38,6 +38,33 @@ test("the tenant key is left out of the accepted list and named once (QA-L11)", 
   );
 });
 
+test("a tenant unique matches without the tenant key and keeps it in the target", () => {
+  const columns = new Map<string, { field: string }>([
+    ["tenantId", { field: "tenantId" }],
+    ["title", { field: "title" }],
+    ["id", { field: "id" }],
+    ["code", { field: "code" }],
+  ]);
+  const table = {
+    model: {
+      name: "tasks",
+      uniques: [["tenantId", "title"], ["id", "tenantId"], ["code"]],
+    },
+    columns,
+  } as never;
+  const title = readConflict(table, { on: "title", return: true }, undefined, "tenantId");
+  const primary = readConflict(table, { on: "id", return: true }, undefined, "tenantId");
+  const global = readConflict(table, { on: "code", return: true }, undefined, "tenantId");
+  expect(title?.columns.map((column) => column.field)).toEqual(["tenantId", "title"]);
+  expect(primary?.columns.map((column) => column.field)).toEqual(["id", "tenantId"]);
+  expect(global?.columns.map((column) => column.field)).toEqual(["code"]);
+  expect(
+    messageOf(() =>
+      readConflict(table, { on: ["tenantId", "title"], return: true }, undefined, "tenantId"),
+    ),
+  ).toContain("which is not a unique constraint");
+});
+
 test("a multi-column constraint is in parentheses and a plain table has no tenant sentence (QA-L11)", () => {
   const table = tenantTable([["sku", "warehouse"], ["id"]]);
   const message = messageOf(() => readConflict(table, { on: "nope", return: true }));

@@ -495,7 +495,7 @@ Raw SQL is not a database object. A declared view, function, trigger or grant is
 
 Every node carries: owner (`managed` / `external` / `ignored`), a canonical definition: the normalised structure, never authoring text (view, materialized view and function bodies are judged by a scratch reprint); its hash drives diff and drift (D117), dependency edges at object or **column** granularity, and provenance (which trait, extension or file contributed it). Each kind declares its operations: create, replace (when compatible), alter, drop, and recreate-with-dependents.
 
-**Views.** SQL with declared columns, verified against a scratch database where dependencies are read from `pg_depend`. Views are read-only in the client. `db.views` keys are the camelCased SQL names: `active_projects` is `db.views.activeProjects`. Refresh a materialized view with `REFRESH MATERIALIZED VIEW`. A `refresh()` handle waits for 0.6. The query builder form (`view(name, (q) => q.from(...))`) is not in this version (D190).
+**Views.** SQL with declared columns, verified against a scratch database where dependencies are read from `pg_depend`. Views are read-only in the client. `db.views` keys are the camelCased SQL names: `active_projects` is `db.views.activeProjects`. Refresh a materialized view with `REFRESH MATERIALIZED VIEW`. A `refresh()` handle is not in this version: this section does not define its arguments or return type (D222). The query builder form (`view(name, (q) => q.from(...))`) is not in this version (D190).
 
 **Materialized views.** `materializedView()` is a separate kind: no `CREATE OR REPLACE`, so a change is drop, create and populate. They own indexes and a `refresh` declaration; `REFRESH ... CONCURRENTLY` needs a unique index (OKM1822). `WITH NO DATA` avoids a long lock at creation; populate is a planned data step shown in the plan. Scheduling refreshes is left to `pg_cron` or the application.
 
@@ -768,8 +768,8 @@ const countries = table("countries", { id: id(), name: text() }, { tenancy: glob
 
 - Every table is isolated by default; exceptions: `tenancy: { via }` or `tenancy: global("reason")`.
 - The `column` strategy adds the key to inheriting tables.
-- `.unique()` on a tenant table becomes `UNIQUE (tenant_key, …)`; `.unique({ global: "reason" })` opts out.
-- Every tenant table's primary key is the declared key plus the tenant key, and the table also has `UNIQUE` on those columns, so two tenants can share an id. FKs between tenant tables are composite, so no row can reference another tenant's row, even through raw SQL.
+- `.unique()` on a tenant table becomes `UNIQUE (tenant_key, …)`; `.unique({ global: "reason" })` opts out. `onConflict.on` names that unique without the tenant key. The conflict target includes the key, in the unique's order, and the inserted row still carries the caller's tenant, so the update cannot land on another tenant's row (D221). Naming the tenant key in `on` is OKM1104.
+- Every tenant table's primary key is the declared key plus the tenant key, and the table also has `UNIQUE` on those columns, so two tenants can share an id. That unique's name is `{sql table}_{TypeScript primary fields joined by _}_{tenant field}_key`. With casing `snake`, table `tasks`, field `id`, and tenant field `tenantId`, it is `tasks_id_tenantId_key` on columns `(id, tenant_id)`. The primary key stays `tasks_pkey`. A column `.unique()` is `{sql table}_{field}_key` on `(tenant key, field)`, so `title` is `tasks_title_key`. An index uses SQL names (`tasks_tenant_id_title_idx`). `archivable()` turns the unique into a partial unique index named with those SQL names (`tasks_id_tenant_id_idx`). `renamedFrom` on the table or on a field in the name plans `RENAME CONSTRAINT` to the name compiled from the current TypeScript fields. It does not drop the unique. The formula stays on TypeScript field names, so existing catalogs do not move (D223, D168, D194). FKs between tenant tables are composite, so no row can reference another tenant's row, even through raw SQL.
 - Lint OKM1706: an index on a tenant table that does not lead with the tenant key.
 - Changing the tenant key in `update` is refused (OKM1704); a global table referencing a tenant table is flagged (OKM1705).
 - Adding tenancy to an existing project requires a backfill migration before the key becomes `NOT NULL`.
@@ -876,7 +876,7 @@ Relations are filterable only when listed with the exact fields allowed (`relati
 
 | Method | Rule |
 |---|---|
-| `insert(data \| data[], opts)` | unknown keys dropped; guarded fields refused; auto-chunked. `onConflict`: `"error"` (default), `"ignore"`, `{ on, update }` (upsert), `{ on, return: true }` (first-or-create). `on` must name a unique constraint (OKM1104) |
+| `insert(data \| data[], opts)` | unknown keys dropped; guarded fields refused; auto-chunked. `onConflict`: `"error"` (default), `"ignore"`, `{ on, update }` (upsert), `{ on, return: true }` (first-or-create). `on` must name a unique constraint (OKM1104). On a tenant table, name it without the tenant key; the target includes the key (D221) |
 | `update(target, opts)` | target is `{ where, set }` or a list `[{ id \| where, set }]` (per-row values in one statement). `where` required or `.all("reason")`. `lock: "skip"` with `limit` claims rows (job queues) |
 | `delete({ where }, opts)` | permanent deletion of the matched records. On `archivable` tables it targets the active set unless `withArchived()` / `onlyArchived()` is used |
 | `archive({ where }, opts)` | `archivable` tables only; returns `{ count, archiveId }` |

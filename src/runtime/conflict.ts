@@ -28,7 +28,7 @@ const NO_ALLOW: ReadonlySet<string> = new Set();
  * @param table - Target table
  * @param value - The option the caller passed
  * @param allow - Guarded fields this write may set
- * @param tenantKey - The tenant key on a tenant schema, which every unique includes
+ * @param tenantKey - The tenant key on a tenant schema. A unique that includes it matches when `on` names the other columns. The target keeps the key, in the unique's order. Naming the key is OKM1104.
  * @returns The plan, or `undefined` for the default `"error"`
  */
 export function readConflict(
@@ -171,9 +171,10 @@ function uniqueColumns(
 ): readonly ColumnModel[] {
   const names = conflictNames(on);
   for (const unique of table.model.uniques) {
-    if (!same(unique, names)) continue;
+    const fields = fieldsOf(unique, names, tenantKey);
+    if (fields === undefined) continue;
     const columns: ColumnModel[] = [];
-    for (const name of names) {
+    for (const name of fields) {
       const column = table.columns.get(name);
       if (column === undefined) {
         fail("OKM1104", `onConflict column ${name} is not on ${table.model.name}.`);
@@ -253,6 +254,35 @@ function conflictNames(on: unknown): readonly string[] {
     return on as readonly string[];
   }
   fail("OKM1104", "onConflict on must name a unique constraint's columns.");
+}
+
+/**
+ * The conflict target for one unique.
+ *
+ * A unique that includes the tenant key matches the other columns only. The
+ * target is that unique, tenant key included, in constraint order. Any other
+ * unique matches the names the caller wrote, in that order.
+ *
+ * @param unique - Field names of one unique constraint
+ * @param names - Columns named in `on`
+ * @param tenantKey - Tenant field, when the schema has one
+ * @returns Target fields, or `undefined` when this unique is not the target
+ */
+function fieldsOf(
+  unique: readonly string[],
+  names: readonly string[],
+  tenantKey: string | undefined,
+): readonly string[] | undefined {
+  if (tenantKey !== undefined && unique.includes(tenantKey)) {
+    const rest: string[] = [];
+    for (const field of unique) {
+      if (field !== tenantKey) rest.push(field);
+    }
+    if (!same(rest, names)) return undefined;
+    return unique;
+  }
+  if (!same(unique, names)) return undefined;
+  return names;
 }
 
 function same(unique: readonly string[], names: readonly string[]): boolean {
