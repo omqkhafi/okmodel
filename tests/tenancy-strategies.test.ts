@@ -11,6 +11,7 @@ import type { DriverPool } from "../src/contracts/driver.js";
 import { id, index, one, schema, table, text, uuid } from "../src/dialects/pg/index.js";
 import { connect } from "../src/runtime/pg/postgresjs.js";
 import { columnTenancy, compositeTenancy, global, via } from "../src/runtime/tenancy/index.js";
+import { archivable } from "../src/runtime/traits/index.js";
 import {
   compositeApp,
   DOC,
@@ -275,6 +276,71 @@ test("a path that is too long, broken, cyclic, or short of a tenant table is OKM
     },
   );
   expect(() => schema({ tenancy, tables: [organizations, left, right] })).toThrow(/cycles/);
+});
+
+test("archivable on a path endpoint is OKM1705 when the schema is built", () => {
+  const tenancy = columnTenancy({ key: "tenantId", type: "uuid" });
+  const endpoint = table(
+    "organizations",
+    { id: id({ default: "none" }), name: text() },
+    {
+      traits: [archivable()],
+      indexes: (columns) => [index(...handles(columns, "tenantId"))],
+    },
+  );
+  const projects = table(
+    "projects",
+    {
+      id: id({ default: "none" }),
+      name: text(),
+      organizationId: uuid().references("organizations"),
+    },
+    {
+      tenancy: via("organization"),
+      relations: { organization: one("organizations", "organizationId") },
+    },
+  );
+  let error: unknown;
+  try {
+    schema({ casing: "snake", tenancy, tables: [endpoint, projects] });
+  } catch (caught) {
+    error = caught;
+  }
+  expect(error).toBeInstanceOf(OkmError);
+  if (!(error instanceof OkmError)) return;
+  expect(error.code).toBe("OKM1705");
+  expect(error.message).toContain("organizations");
+  expect(error.fix.summary).toContain("organizations");
+
+  const shared = archivable();
+  const plain = table(
+    "organizations",
+    { id: id({ default: "none" }), name: text() },
+    { indexes: (columns) => [index(...handles(columns, "tenantId"))] },
+  );
+  let schemaLevel: unknown;
+  try {
+    schema({ casing: "snake", tenancy, traits: [shared], tables: [plain, projects] });
+  } catch (caught) {
+    schemaLevel = caught;
+  }
+  expect(schemaLevel).toBeInstanceOf(OkmError);
+  expect(schemaLevel instanceof OkmError ? schemaLevel.message : "").toContain("organizations");
+
+  const child = table(
+    "projects",
+    {
+      id: id({ default: "none" }),
+      name: text(),
+      organizationId: uuid().references("organizations"),
+    },
+    {
+      tenancy: via("organization"),
+      relations: { organization: one("organizations", "organizationId") },
+      traits: [archivable()],
+    },
+  );
+  expect(() => schema({ casing: "snake", tenancy, tables: [plain, child] })).not.toThrow();
 });
 
 function handles(columns: object, ...fields: readonly string[]): { readonly name: string }[] {

@@ -40,6 +40,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 ### 🔒 Security
 
 - An update that sets a path column checks the new parent in that same statement. A parent in another tenant, a missing parent, or a parent deleted while the statement waits is OKM1705, and the row stays. `batch()` refuses that update before it runs. `tx()` is the verified form.
+- `archivable()` on the table a path ends on is refused when the schema is built (OKM1705). The fix names that table. A path child can still be archived.
 
 ## v0.5.1 — 2026-10-08
 

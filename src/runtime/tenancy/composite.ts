@@ -13,6 +13,7 @@ import { uuid } from "../../dialects/pg/keys.js";
 import { definition } from "../../dialects/pg/misuse.js";
 import type { AnyTable } from "../../dialects/pg/table.js";
 import type { TableRewriteContext } from "./context.js";
+import { markPathEndpoint } from "../../dialects/pg/path-endpoint.js";
 import type {
   ColumnTenancy,
   TenancyClient,
@@ -265,7 +266,7 @@ function rewriteTenant(
   tenants.add(item.name);
   if (notes.length > 0) exemptions.set(item.name, notes);
   const indexes = wrapIndexes(keys[0] ?? "", item.name, options?.indexes);
-  return {
+  const rewritten = {
     ...item,
     columns,
     options: {
@@ -275,6 +276,7 @@ function rewriteTenant(
       ...(indexes !== undefined ? { indexes } : {}),
     },
   };
+  return declared !== undefined && declared.length > 0 ? markPathEndpoint(rewritten) : rewritten;
 }
 
 function covers(fields: readonly string[], keys: readonly string[]): boolean {

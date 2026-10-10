@@ -5,11 +5,12 @@
  * `schema()` does not import it.
  */
 
-import { catalogError, throwNamed } from "../../contracts/error.js";
+import { catalogError, OkmError, throwNamed } from "../../contracts/error.js";
 import { compareText } from "../../contracts/catalog/object.js";
 import { ColumnBuilder, retarget, type ReferenceModifier } from "./column.js";
 import type { ArchiveLink, ArchiveModel } from "./model.js";
 import { type AnyTable, type IndexCall, snakeCase } from "./table.js";
+import { pathEndpoint } from "./path-endpoint.js";
 
 type TableOptions = {
   readonly sqlName?: string;
@@ -87,6 +88,13 @@ function rewriteOne(
   idSql: string,
   predicate: string,
 ): AnyTable {
+  if (Object.hasOwn(item, pathEndpoint)) {
+    throw new OkmError(
+      "OKM1705",
+      `Table ${item.name} is the end of a path and cannot be archivable().`,
+      { fix: { summary: `Leave ${item.name} out of archivable().` } },
+    );
+  }
   const links = childLinks(
     item,
     cascade,
