@@ -1193,6 +1193,14 @@
       "kind": "stable"
     },
     {
+      "name": "RlsRoleError",
+      "kind": "stable"
+    },
+    {
+      "name": "RlsRoleReason",
+      "kind": "stable"
+    },
+    {
       "name": "columnTenancy",
       "kind": "stable"
     },
@@ -1202,6 +1210,10 @@
     },
     {
       "name": "global",
+      "kind": "stable"
+    },
+    {
+      "name": "rlsTenancy",
       "kind": "stable"
     },
     {

@@ -101,6 +101,7 @@ export async function sealViews(runner: CatalogQuery, source: Catalog): Promise<
           owner: object.owner,
           provenance: object.provenance,
           dependencies,
+          ...(object.definition.securityInvoker === true ? { securityInvoker: true as const } : {}),
         });
       }
       return materializedViewObject({

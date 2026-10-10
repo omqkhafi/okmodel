@@ -36,6 +36,15 @@ export async function isolation(host: FactoryHost): Promise<IsolationReport> {
   const saved = host.cache;
   host.cache = new Map();
   try {
+    if (host.schema.tenancy?.strategy === "rls") {
+      const check = (host.db as { "~rls"?: () => Promise<void> })["~rls"];
+      if (check === undefined) {
+        throw new OkmError("invalid", "Row-level security has no policy check on this client.", {
+          fix: { summary: "Open the client from a schema that uses rlsTenancy()." },
+        });
+      }
+      await check();
+    }
     const checked: string[] = [];
     const skipped: { table: string; reason: string }[] = [];
     const tenantA = crypto.randomUUID();

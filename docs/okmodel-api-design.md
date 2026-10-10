@@ -514,7 +514,7 @@ Every node carries: owner (`managed` / `external` / `ignored`), a canonical defi
 | replace, incompatible; change to a column a view depends on | drop dependents in reverse order, alter, recreate (planned by OKModel, never `CASCADE`) | contract |
 | drop | reverse dependency order; refused while a dependent remains | contract |
 
-**Tenancy.** A view over tenant tables inherits the classification. If it exposes the tenant key, the tenant predicate is applied to it; otherwise `okm check` fails (OKM1820) unless declared `global("reason")`. `security_invoker` belongs to the `rls` strategy and is not set in this version.
+**Tenancy.** A view over tenant tables inherits the classification. If it exposes the tenant key, the tenant predicate is applied to it; otherwise `okm check` fails (OKM1820) unless declared `global("reason")`. Under `rlsTenancy()`, that view is created `WITH (security_invoker = true)` so the invoker's policies apply. PostgreSQL 15 is the floor, and the option exists there. Other strategies omit it. A materialized view does not set it (D54, D231).
 
 ```ts
 export const touchUpdatedAt = fn("touch_updated_at", {
@@ -753,7 +753,7 @@ export const appSchema = schema({
 const countries = table("countries", { id: id(), name: text() }, { tenancy: global("shared reference data") });
 ```
 
-`columnTenancy()` carries the column, the widened uniques, the foreign keys, the scope predicate, and `for()` / `unscoped()`. It takes one key. A list of keys is `compositeTenancy()`, imported from the same place, and every key has the same `type: "uuid"`. An object map is not accepted. A table that follows relations uses `via("project.organization")`, also from `okmodel/tenancy`. A schema that does not pass `okmodel/tenancy` does not load that code, and a column-only import does not load `compositeTenancy` or `via` (D229). `schemaPerTenant` and `databasePerTenant` are separate objects in the same subpath later.
+`columnTenancy()` carries the column, the widened uniques, the foreign keys, the scope predicate, and `for()` / `unscoped()`. It takes one key. A list of keys is `compositeTenancy()`, imported from the same place, and every key has the same `type: "uuid"`. An object map is not accepted. A table that follows relations uses `via("project.organization")`, also from `okmodel/tenancy`. `rlsTenancy({ key: "tenantId", type: "uuid" })` is that same single key. The column predicate stays on every statement, and the policies in section 9.4 are the backstop. Combining it with `via()` or `compositeTenancy()` is refused when the schema is built. A schema that does not pass `okmodel/tenancy` does not load that code. A column-only import does not load `compositeTenancy`, `via`, or `rlsTenancy` (D229, D231). `schemaPerTenant` and `databasePerTenant` are separate objects in the same subpath later.
 
 | Strategy | Isolation |
 |---|---|
@@ -795,10 +795,23 @@ A composite scope passes every key. `compositeTenancy()` is that scope. A missin
 
 ### 9.4 `rls` strategy hardening
 
-- `FORCE ROW LEVEL SECURITY` on tenant tables.
-- Tenant set with `set_config('app.tenant', $1, true)` inside the transaction OKModel opens for each scoped call (safe with transaction-mode poolers). For reads that transaction is read-only and part of the operation: it follows the operation's routing (section 15.1) and can run on a replica.
-- Policies use the missing-ok form, so an unset tenant returns no rows.
-- `connect()` refuses a role that owns the tables or is a superuser (OKM1707).
+`rlsTenancy({ key: "tenantId", type: "uuid" })` from `okmodel/tenancy`. One key. `via()` or `compositeTenancy()` on that schema is refused when the schema is built: combining them is not supported yet.
+
+The column predicate stays on every statement, the same as `columnTenancy()`. Policies are the backstop for a statement that omits the predicate. A query that still carries the tenant predicate uses the tenant-leading index. The policy is a filter on that plan, not a sequential scan.
+
+`okm generate` emits this for every tenant table, and `okm migrate check` replays it. A `global()` table gets no policy. A schema that does not use `rlsTenancy()` emits none of it, and its catalog hash does not change.
+
+- `ENABLE ROW LEVEL SECURITY` and `FORCE ROW LEVEL SECURITY`.
+- One permissive policy for all commands, named `{sql table}_tenant`. `USING` and `WITH CHECK` are `tenant_col = nullif(current_setting('app.tenant', true), '')::<key type>`. An unset setting returns no rows.
+- A second permissive policy for `SELECT` only, named `{sql table}_unscoped_select`, `USING (current_setting('app.unscoped', true) = 'on')`. `unscoped(reason)` sets that for a read. A write under `unscoped()` is OKM1701. Cross-tenant writes belong to the migration role. Use `for()` to write as one tenant.
+
+Every scoped call runs in a transaction that starts with `select set_config('app.tenant', $1, true)`. The third argument is transaction-local, so a transaction-mode pooler cannot hand the tenant to the next client. A user `tx()` sets it once, at the start of that transaction. A read's transaction is read-only, part of the operation, and follows the operation's routing (section 15.1), so it may run on a replica. After commit, the same connection has no tenant setting.
+
+The role check runs on the first scoped call for a pool, before any statement of that call, and the result is cached for that pool (D231). It is not inside `connect()`. It refuses a superuser, a role with `BYPASSRLS`, or the owner of a tenant table (OKM1707). `reason` is `superuser`, `bypassrls`, or `owner`, in that order.
+
+A view over tenant tables is created `WITH (security_invoker = true)`. A view under another strategy is unchanged. A view that exposes no tenant key still fails `okm check` (OKM1820).
+
+These policies protect against an application bug that drops the column predicate. They do not protect against code that can run arbitrary SQL as the application role and set `app.tenant` itself. That code is the application role.
 
 ## 10. Reading
 
@@ -1485,7 +1498,7 @@ test("today view runs one query", async () => {
 | Changing the tenant key | types + runtime | OKM1704 |
 | Global table referencing tenant table | `okm check` | OKM1705 |
 | Tenant index not led by the key | schema, when the schema is built. Not a linter rule | OKM1706 |
-| RLS with owner or superuser role | connect | OKM1707 |
+| RLS with owner, superuser, or BYPASSRLS role | first scoped call | OKM1707 |
 | Schema/driver dialect mismatch | types | OKM1801 |
 | Server does not satisfy `requires` | connect | OKM1802 |
 | Server is older than PostgreSQL 15 and `requires` does not name that older major | connect | OKM1803 |

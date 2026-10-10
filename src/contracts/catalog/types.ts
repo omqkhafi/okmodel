@@ -512,6 +512,13 @@ export type ViewColumn = {
 export type ViewDefinition = {
   readonly columns: readonly ViewColumn[];
   readonly query: string;
+  /**
+   * `WITH (security_invoker = true)`.
+   *
+   * Set only for a view over tenant tables under `rlsTenancy`. Omitted
+   * otherwise, so a view under another strategy keeps the same catalog bytes.
+   */
+  readonly securityInvoker?: true;
 };
 
 /**
@@ -577,6 +584,28 @@ export type DefaultPrivilegeObject = CatalogEnvelope<
   DefaultPrivilegeDefinition
 >;
 
+/** Which statements a policy covers. `all` is every command. `select` is reads. */
+export type PolicyCommand = "all" | "select";
+
+/**
+ * One row-level security policy.
+ *
+ * `expression` is the `USING` text, and the `WITH CHECK` text when `command`
+ * is `all`. `force` is true when the table is `FORCE ROW LEVEL SECURITY`.
+ */
+export type PolicyDefinition = {
+  readonly command: PolicyCommand;
+  readonly expression: string;
+  readonly force: boolean;
+};
+
+/** A policy. Identity is `(parent, name)`. */
+export type PolicyObject = CatalogEnvelope<
+  "policy",
+  AnchoredIdentity & { readonly kind: "policy" },
+  PolicyDefinition
+>;
+
 /**
  * One built catalog object.
  */
@@ -594,7 +623,8 @@ export type CatalogObject =
   | MaterializedViewObject
   | RoleObject
   | GrantObject
-  | DefaultPrivilegeObject;
+  | DefaultPrivilegeObject
+  | PolicyObject;
 
 /** Format version stored in the serialized catalog. */
 export const CATALOG_VERSION = 1;

@@ -530,8 +530,8 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     code: "OKM1707",
     title: "RLS role",
     summary:
-      "connect() was given a role that owns the tables or is a superuser, under the rls strategy.",
-    fix: "Connect as a role that is neither the owner nor a superuser.",
+      "A scoped call under rls ran as a role that owns the tenant tables, is a superuser, or has BYPASSRLS. The reason field says which.",
+    fix: "Connect as a role that is not the table owner, a superuser, or BYPASSRLS.",
   },
   {
     code: "OKM1801",

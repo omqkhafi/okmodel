@@ -26,6 +26,7 @@ import { domainType, enumType, isDomain } from "./enum.js";
 import { extensionObject } from "./extension.js";
 import { defaultPrivilegeObject, grantObject, roleObject } from "./privilege.js";
 import { functionObject, triggerObject } from "./routine.js";
+import { policyObject } from "./policy.js";
 import { materializedViewIndex, materializedViewObject, viewObject } from "./view.js";
 import { column, compareText, constraint, index, sequence, table } from "./object.js";
 import { dependencyOrder } from "./order.js";
@@ -345,6 +346,8 @@ function rewriteRenamed(
     case "grant":
     case "defaultPrivilege":
       return retargeted(object, dependencies);
+    case "policy":
+      return rewritePolicyColumn(object, change, dependencies);
     case "trigger": {
       const local = sameRef(object.identity.parent, change.parent);
       return triggerObject({
@@ -559,7 +562,28 @@ function rewriteView(
       ...(object.definition.refresh !== undefined ? { refresh: object.definition.refresh } : {}),
     });
   }
-  return viewObject(input);
+  return viewObject({
+    ...input,
+    ...(object.definition.securityInvoker === true ? { securityInvoker: true as const } : {}),
+  });
+}
+
+function rewritePolicyColumn(
+  object: CatalogObject & { readonly kind: "policy" },
+  change: { readonly parent: ObjectRef; readonly from: string; readonly to: string },
+  dependencies: readonly ObjectIdentity[],
+): CatalogObject {
+  const local = sameRef(object.identity.parent, change.parent);
+  return policyObject({
+    parent: object.identity.parent,
+    name: object.identity.name,
+    command: object.definition.command,
+    expression: rewriteExpr(object.definition.expression, change, local),
+    force: object.definition.force,
+    owner: object.owner,
+    provenance: object.provenance,
+    dependencies,
+  });
 }
 
 function rewriteExpr(
@@ -765,6 +789,24 @@ function rewriteTableName(
       ...(object.definition.when !== undefined
         ? { when: rewriteExpr(object.definition.when, { from: change.from, to: change.to }, local) }
         : {}),
+    });
+  }
+  if (object.kind === "policy") {
+    const parent = movedParent(object.identity.parent, change);
+    const local = parent.name !== object.identity.parent.name;
+    return policyObject({
+      parent,
+      name: object.identity.name,
+      command: object.definition.command,
+      expression: rewriteExpr(
+        object.definition.expression,
+        { from: change.from, to: change.to },
+        local,
+      ),
+      force: object.definition.force,
+      owner: object.owner,
+      provenance: object.provenance,
+      dependencies,
     });
   }
   return assertNever(object);
@@ -1036,6 +1078,13 @@ function definitionToJson(object: CatalogObject): Json {
           name: column.name,
         })),
         query: object.definition.query,
+        ...(object.definition.securityInvoker === true ? { securityInvoker: true } : {}),
+      };
+    case "policy":
+      return {
+        command: object.definition.command,
+        expression: object.definition.expression,
+        force: object.definition.force,
       };
     case "materializedView":
       return {
@@ -1064,6 +1113,7 @@ function parseObject(value: unknown): CatalogObject {
     "catalog object",
   );
   const kind = requireString(record.kind, "kind");
+  if (kind === "policy") return parsePolicy(record);
   if (!isBuiltKind(kind)) {
     catalogError(
       "OKM1020",
@@ -1451,7 +1501,8 @@ function parseView(
   if (identity.kind !== kind) {
     catalogError("OKM1020", `View object identity is ${identity.kind}, not a ${kind}.`);
   }
-  const fields = kind === "view" ? ["columns", "query"] : ["columns", "query", "refresh"];
+  const fields =
+    kind === "view" ? ["columns", "query", "securityInvoker"] : ["columns", "query", "refresh"];
   rejectUnknown(definition, fields, "view definition");
   const columns = parseViewColumns(definition.columns);
   const query = requireString(definition.query, "view query");
@@ -1474,7 +1525,39 @@ function parseView(
       ...(refresh === "concurrently" ? { refresh: "concurrently" as const } : {}),
     });
   }
-  return viewObject(input);
+  if (definition.securityInvoker !== undefined && definition.securityInvoker !== true) {
+    catalogError("OKM1020", `View ${identity.name} securityInvoker must be true when set.`);
+  }
+  return viewObject({
+    ...input,
+    ...(definition.securityInvoker === true ? { securityInvoker: true as const } : {}),
+  });
+}
+
+function parsePolicy(record: Record<string, unknown>): CatalogObject {
+  const identity = parseIdentity(record.identity);
+  if (identity.kind !== "policy") {
+    catalogError("OKM1020", `Policy object identity is ${identity.kind}, not a policy.`);
+  }
+  const owner = parseOwner(record.owner);
+  const provenance = parseProvenance(record.provenance);
+  const dependencies = parseDependencies(record.dependencies);
+  const definition = requireRecord(record.definition, "definition");
+  rejectUnknown(definition, ["command", "expression", "force"], "policy definition");
+  const command = requireString(definition.command, "policy command");
+  if (command !== "all" && command !== "select") {
+    catalogError("OKM1020", `Policy ${identity.name} command is not supported.`);
+  }
+  return policyObject({
+    parent: identity.parent,
+    name: identity.name,
+    command,
+    expression: requireString(definition.expression, "policy expression"),
+    force: requireBoolean(definition.force, "policy force"),
+    owner,
+    provenance,
+    dependencies,
+  });
 }
 
 function parseViewColumns(value: unknown): { readonly name: string; readonly dataType: string }[] {
@@ -1795,7 +1878,7 @@ function parseDependencies(value: unknown): readonly ObjectIdentity[] {
   });
 }
 
-function isBuiltKind(kind: string): kind is CatalogObject["kind"] {
+function isBuiltKind(kind: string): kind is Exclude<CatalogObject["kind"], "policy"> {
   return (
     kind === "extension" ||
     kind === "function" ||

@@ -15,6 +15,7 @@ import type {
   DriverTimeouts,
   ExecuteOptions,
   ExecuteResult,
+  Statement,
   WireValue,
 } from "../contracts/driver.js";
 import { OkmError } from "../contracts/error.js";
@@ -1047,6 +1048,11 @@ function routePool(handle: Handle): DriverPool {
       for (const endpoint of handle.endpoints) endpoint.pool.cancel?.();
     };
   }
+  const routed = pool as RlsRouted;
+  routed.okmReadOnlyUnit = (text, params, prelude, options) =>
+    readOnlyUnit(handle, text, params, prelude, options);
+  routed.okmReadOnlyStream = (text, params, prelude, options) =>
+    readOnlyStream(handle, text, params, prelude, options);
   return pool;
 }
 
@@ -1116,7 +1122,109 @@ function force(handle: Handle, router: DriverPool, route: RouteName): DriverPool
     };
   }
   if (router.cancel !== undefined) pool.cancel = () => router.cancel!();
+  const unit = (router as RlsRouted).okmReadOnlyUnit;
+  const stream = (router as RlsRouted).okmReadOnlyStream;
+  const forced = pool as RlsRouted;
+  if (unit !== undefined) {
+    forced.okmReadOnlyUnit = (text, params, prelude, options) =>
+      unit(text, params, prelude, { ...options, route });
+  }
+  if (stream !== undefined) {
+    forced.okmReadOnlyStream = (text, params, prelude, options) =>
+      stream(text, params, prelude, { ...options, route });
+  }
   return pool;
+}
+
+type RlsPrelude = Pick<Statement, "text" | "params">;
+
+type RlsRouted = DriverPool & {
+  okmReadOnlyUnit?: (
+    text: string,
+    params: readonly WireValue[] | undefined,
+    prelude: RlsPrelude,
+    options: ExecuteOptions | undefined,
+  ) => Promise<ExecuteResult>;
+  okmReadOnlyStream?: (
+    text: string,
+    params: readonly WireValue[] | undefined,
+    prelude: RlsPrelude,
+    options: ExecuteOptions | undefined,
+  ) => AsyncIterable<readonly (readonly WireValue[])[]>;
+};
+
+async function readOnlyUnit(
+  handle: Handle,
+  text: string,
+  params: readonly WireValue[] | undefined,
+  prelude: RlsPrelude,
+  options: ExecuteOptions | undefined,
+): Promise<ExecuteResult> {
+  if (handle.closed) closed();
+  const choice = await choose(handle, text, options?.route);
+  return attempt(handle, choice, async (endpoint) => {
+    if (endpoint.pool.reserve === undefined) replicaReserve();
+    const conn = await endpoint.pool.reserve();
+    try {
+      await conn.execute("begin read only");
+      try {
+        await conn.execute(prelude.text, prelude.params);
+        const result = await conn.execute(text, params, strip(options));
+        await conn.execute("commit");
+        return result;
+      } catch (error) {
+        await conn.execute("rollback").catch(() => undefined);
+        throw error;
+      }
+    } finally {
+      await conn.release();
+    }
+  });
+}
+
+function readOnlyStream(
+  handle: Handle,
+  text: string,
+  params: readonly WireValue[] | undefined,
+  prelude: RlsPrelude,
+  options: ExecuteOptions | undefined,
+): AsyncIterable<readonly (readonly WireValue[])[]> {
+  return (async function* () {
+    if (handle.closed) closed();
+    const choice = await choose(handle, text, options?.route);
+    tell(handle, { op: choice.op, endpoint: choice.endpoint.name, reason: choice.reason });
+    if (choice.endpoint.pool.reserve === undefined) replicaReserve();
+    const conn = await choice.endpoint.pool.reserve();
+    try {
+      await conn.execute("begin read only");
+      try {
+        await conn.execute(prelude.text, prelude.params);
+        await conn.execute(`declare okm_rls no scroll cursor for ${text}`, params);
+        for (;;) {
+          const chunk = await conn.execute("fetch 64 from okm_rls");
+          if (chunk.rows.length === 0) break;
+          yield chunk.rows;
+        }
+        await conn.execute("close okm_rls");
+        await conn.execute("commit");
+      } catch (error) {
+        await conn.execute("rollback").catch(() => undefined);
+        throw error;
+      }
+    } finally {
+      await conn.release();
+    }
+  })();
+}
+
+function replicaReserve(): never {
+  throw new OkmError(
+    "OKM1111",
+    "Row-level security needs a driver that can reserve a connection.",
+    {
+      fix: { summary: "Use a Postgres driver that supports interactive transactions." },
+    },
+  );
 }
 
 /** Classifies a statement from its text. A `with` stays on the primary. */

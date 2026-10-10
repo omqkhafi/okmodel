@@ -18,6 +18,7 @@ import type {
   FunctionObject,
   IndexObject,
   MaterializedViewObject,
+  PolicyObject,
   SequenceObject,
   TableObject,
   TriggerObject,
@@ -63,6 +64,7 @@ export function renderCatalog(source: Catalog, schema: string): readonly string[
       object.kind === "trigger" ||
       object.kind === "view" ||
       object.kind === "materializedView" ||
+      object.kind === "policy" ||
       ownedByView(object)
     ) {
       continue;
@@ -76,6 +78,10 @@ export function renderCatalog(source: Catalog, schema: string): readonly string[
     if (folded.has(key)) continue;
     const sql = createObjectSql(object, schema);
     if (sql !== undefined) statements.push(sql);
+  }
+  for (const object of created) {
+    if (object.kind !== "policy" || object.owner === "ignored") continue;
+    for (const step of policyCreatePlan(object, schema)) statements.push(step.sql);
   }
   for (const kind of ["function", "trigger"] as const) {
     for (const object of ordered) {
@@ -291,7 +297,64 @@ export function functionSql(object: FunctionObject, schema: string, replace: boo
  */
 export function viewSql(object: ViewObject, schema: string, replace: boolean): string {
   const verb = replace ? "create or replace view" : "create view";
-  return `${verb} ${qualify(schema, object.identity.name)} as ${object.definition.query}`;
+  const invoker =
+    object.definition.securityInvoker === true ? " with (security_invoker = true)" : "";
+  return `${verb} ${qualify(schema, object.identity.name)}${invoker} as ${object.definition.query}`;
+}
+
+/** One policy statement and the planner kind that classifies it. */
+export type PolicyPlanStep = {
+  readonly sql: string;
+  readonly kind: "enable-rls" | "create-policy" | "drop-policy" | "disable-rls";
+};
+
+/**
+ * `ENABLE`, `FORCE`, and `CREATE POLICY` for one policy.
+ *
+ * The `all` command policy also enables and forces row-level security.
+ * The `select` policy is the unscoped read. Names are the stored identity.
+ *
+ * @param object - Policy to create
+ * @param schema - Concrete schema name
+ * @returns Statements in apply order
+ */
+export function policyCreatePlan(object: PolicyObject, schema: string): readonly PolicyPlanStep[] {
+  const table = qualify(schema, object.identity.parent.name);
+  const name = quoteIdent(object.identity.name);
+  const command = object.definition.command === "all" ? "all" : "select";
+  const check =
+    object.definition.command === "all" ? ` with check ${object.definition.expression}` : "";
+  const create: PolicyPlanStep = {
+    sql: `create policy ${name} on ${table} as permissive for ${command} using ${object.definition.expression}${check}`,
+    kind: "create-policy",
+  };
+  if (object.definition.command !== "all") return [create];
+  return [
+    { sql: `alter table ${table} enable row level security`, kind: "enable-rls" },
+    { sql: `alter table ${table} force row level security`, kind: "enable-rls" },
+    create,
+  ];
+}
+
+/**
+ * `DROP POLICY`, and for the `all` command policy `NO FORCE` and `DISABLE`.
+ *
+ * @param object - Policy to drop
+ * @param schema - Concrete schema name
+ * @returns Statements in apply order
+ */
+export function policyDropPlan(object: PolicyObject, schema: string): readonly PolicyPlanStep[] {
+  const table = qualify(schema, object.identity.parent.name);
+  const drop: PolicyPlanStep = {
+    sql: `drop policy ${quoteIdent(object.identity.name)} on ${table}`,
+    kind: "drop-policy",
+  };
+  if (object.definition.command !== "all") return [drop];
+  return [
+    drop,
+    { sql: `alter table ${table} no force row level security`, kind: "disable-rls" },
+    { sql: `alter table ${table} disable row level security`, kind: "disable-rls" },
+  ];
 }
 
 /**

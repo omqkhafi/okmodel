@@ -33,6 +33,7 @@ expectTypeOf<CatalogObject["kind"]>().toEqualTypeOf<
   | "role"
   | "grant"
   | "defaultPrivilege"
+  | "policy"
 >();
 
 expectTypeOf<ObjectKind>().toEqualTypeOf<
