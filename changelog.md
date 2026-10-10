@@ -20,6 +20,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `db.views.name.refresh()` runs `REFRESH MATERIALIZED VIEW` on a materialized view, with `CONCURRENTLY` when the view declares it. A plain view has no `refresh()` in its type. The statement is a write, and it is not tenant-scoped (D227).
 - `compositeTenancy({ key: ["organizationId", "workspaceId"], type: "uuid" })` isolates on every key together. `tenancy: via("project.organization")` isolates a table through up to three relations. `for()` takes every key. A column-only import does not load either factory (D228, D229).
 - The docs site in `site/` publishes the handbook from the repository markdown, with search, per-page markdown, and a changelog page. The homepage is a placeholder.
+- `rlsTenancy({ key: "tenantId", type: "uuid" })` adds PostgreSQL row-level security behind the column predicate. Tenant tables get forced policies, each scoped call sets `app.tenant` for that transaction, and a view over those tables is `security_invoker`. A superuser, a `BYPASSRLS` role, or the table owner is refused on the first scoped call (D231).
 
 ### 💥 Breaking Changes
 

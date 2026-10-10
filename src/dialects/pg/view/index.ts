@@ -143,11 +143,15 @@ export function view<const N extends string, const C extends readonly ViewColumn
   const columns = options.columns.map((column) => ({ name: column.name, dataType: column.type }));
   const query = bodyText(options.query);
   const bound = viewClient(name, options.columns, query, options.tenancy, "plain");
+  let securityInvoker = false;
   return {
     name,
     schema,
     "~kind": "view",
-    install: bound.install,
+    install(model, tenancy, tables, casing, scoped) {
+      bound.install(model, tenancy, tables, casing, scoped);
+      securityInvoker = tenancy?.strategy === "rls" && scoped.has(name);
+    },
     hook: bound.hook,
     contribute(peers, built) {
       assertPeers(peers);
@@ -160,6 +164,7 @@ export function view<const N extends string, const C extends readonly ViewColumn
           columns,
           query,
           provenance,
+          ...(securityInvoker ? { securityInvoker: true as const } : {}),
         }),
       ];
     },

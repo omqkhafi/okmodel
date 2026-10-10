@@ -18,7 +18,7 @@ An option or builder that is not in this version throws OKM1061 and names the pr
 
 Also not in this version:
 
-- **Row-level security is M2.** `rls` tenancy is not built. Column, composite, and path tenancy are. Inside `tx()` the tenant is the column or path predicate on every statement (D181, D228).
+- **Row-level security does not stop the application role.** `rlsTenancy()` keeps the column predicate and adds policies (section 9.4). Code that can run arbitrary SQL as the application role can set `app.tenant` itself. `via()` and `compositeTenancy()` do not combine with `rlsTenancy()`. `table({ policies })` is still later. `isolation()` checks that the policies are present.
 - **Schema-per-tenant and database-per-tenant are M5.** `isolation()` checks column tenancy, composite tenancy (one key at a time), and a path table whose parent is in the other tenant. A global table is skipped and listed. A factory row is the inserted record, not a generated row type.
 - **A path ends on a unique declared key.** The table a path points at gains `UNIQUE` on that key, so the child can reference it. Two tenants cannot share the key. A path table's own primary key is not widened. `onConflict` on a path table is OKM1120. An insert or an update that sets the path column checks the new parent in that same statement and throws OKM1705 when the parent is outside the tenant. `batch()` refuses that update.
 - **`archivable()` and a path target do not combine.** The table a path ends on is refused when the schema is built (OKM1705). The fix names that table. A path child can still be archivable: archive and restore leave its foreign key unchanged.
@@ -47,7 +47,7 @@ Also not in this version:
 - **Column dependencies come from `pg_depend`.** Scratch verification (`sealViews`) creates the view and reads those edges. A plan from two author catalogs does not see them until that read.
 - **`okm check` reprints a view on the connected server before it compares.** `pg_get_viewdef` replaces the author text, so a spelling that server prints differently is not drift after push. A query that reprints to something else still is. Two introspections of the same view match. A plan between two author catalogs still compares the text that was written.
 - **`refresh: "concurrently"` is not stored by Postgres.** Introspection leaves it unset. Equality ignores it, so a later plan does not recreate the materialized view only because the mode was declared. `REFRESH ... CONCURRENTLY` still needs a unique index (OKM1822). The plan's first populate is a plain `REFRESH`, because Postgres rejects `CONCURRENTLY` until the view has rows.
-- **`security_invoker` is not set.** It belongs to the `rls` strategy, which is later.
+- **`security_invoker` is set only under `rls`.** A view over tenant tables is created `WITH (security_invoker = true)`. Other strategies omit the option. A materialized view does not set it.
 
 ## Functions and triggers
 

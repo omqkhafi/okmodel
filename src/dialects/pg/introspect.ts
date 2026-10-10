@@ -12,6 +12,7 @@ import { domainType, enumType } from "../../contracts/catalog/enum.js";
 import { staticNamespace } from "../../contracts/catalog/identity.js";
 import { extensionObject } from "../../contracts/catalog/extension.js";
 import { column, constraint, index, sequence, table } from "../../contracts/catalog/object.js";
+import { policyObject } from "../../contracts/catalog/policy.js";
 import {
   defaultPrivilegeObject,
   grantObject,
@@ -98,6 +99,7 @@ export async function introspectSchema(
     functionDeps,
     views,
     viewDeps,
+    policies,
   ] = await Promise.all([
     runner.query(TABLES, params),
     runner.query(COLUMNS, params),
@@ -112,6 +114,7 @@ export async function introspectSchema(
     runner.query(FUNCTION_DEPS, params),
     runner.query(VIEWS, params),
     runner.query(VIEW_DEPENDENCIES, params),
+    runner.query(POLICIES, params),
   ]);
   const objects: CatalogObject[] = [];
   const parents = new Map<string, ObjectRef>();
@@ -372,11 +375,39 @@ export async function introspectSchema(
     const columns = printedColumns(text(row, "columns"));
     const query = normaliseViewQuery(text(row, "query"));
     const name = text(row, "name");
+    const invoker = kind === "view" && securityInvokerOption(text(row, "options"));
     if (kind === "materializedView") {
       objects.push(materializedViewObject({ namespace, name, columns, query, provenance }));
     } else {
-      objects.push(viewObject({ namespace, name, columns, query, provenance }));
+      objects.push(
+        viewObject({
+          namespace,
+          name,
+          columns,
+          query,
+          provenance,
+          ...(invoker ? { securityInvoker: true as const } : {}),
+        }),
+      );
     }
+  }
+  for (const row of policies) {
+    const parentName = text(row, "table_name");
+    const parent = parents.get(parentName);
+    if (parent === undefined) continue;
+    const command = policyCommand(text(row, "command"));
+    if (command === undefined) continue;
+    objects.push(
+      policyObject({
+        parent,
+        name: text(row, "name"),
+        command,
+        expression: text(row, "using_expr"),
+        force: text(row, "force") === "true",
+        provenance,
+        dependencies: [{ kind: "table", namespace, name: parentName }],
+      }),
+    );
   }
   const viewEdges = viewDependencyEdges(viewDeps, namespace, objects);
   for (let index = 0; index < objects.length; index += 1) {
@@ -394,6 +425,9 @@ export async function introspectSchema(
             query: object.definition.query,
             provenance,
             dependencies,
+            ...(object.definition.securityInvoker === true
+              ? { securityInvoker: true as const }
+              : {}),
           })
         : materializedViewObject({
             namespace,
@@ -860,6 +894,7 @@ const TRIGGERS = `
 
 const VIEWS = `
   select c.relname as name, c.relkind as kind, pg_get_viewdef(c.oid, true) as query,
+    coalesce(array_to_string(c.reloptions, ','), '') as options,
     (
       select coalesce(string_agg(
         a.attname || '|' || format_type(a.atttypid, a.atttypmod),
@@ -894,6 +929,33 @@ const FUNCTION_DEPS = `
     and p.prokind = 'f'
     and p.prosrc = ''
 `;
+
+const POLICIES = `
+  select c.relname as table_name,
+    p.polname as name,
+    p.polcmd as command,
+    coalesce(pg_get_expr(p.polqual, p.polrelid), '') as using_expr,
+    c.relforcerowsecurity::text as force
+  from pg_policy p
+  join pg_class c on c.oid = p.polrelid
+  join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = $1
+    and c.relkind = 'r'
+    and ${CHILD}
+    and ${member("c.oid", "pg_class")}
+`;
+
+function securityInvokerOption(options: string): boolean {
+  return options
+    .split(",")
+    .some((item) => item === "security_invoker=true" || item === "security_invoker=on");
+}
+
+function policyCommand(command: string): "all" | "select" | undefined {
+  if (command === "*") return "all";
+  if (command === "r") return "select";
+  return undefined;
+}
 
 function member(oid: string, classid: string): string {
   return `not exists (

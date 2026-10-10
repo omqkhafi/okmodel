@@ -514,3 +514,4 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export { compositeTenancy } from "./composite.js";
 export { via } from "./via.js";
+export { RlsRoleError, rlsTenancy, type RlsRoleReason } from "./rls.js";

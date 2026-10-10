@@ -29,6 +29,8 @@ export type ViewInput = {
   readonly name: string;
   readonly columns: readonly ViewColumn[];
   readonly query: string;
+  /** `WITH (security_invoker = true)`. Omitted from the record when unset. */
+  readonly securityInvoker?: true;
   readonly owner?: Owner;
   readonly provenance: Provenance;
   readonly dependencies?: readonly ObjectIdentity[];
@@ -81,7 +83,11 @@ export function viewObject(input: ViewInput): ViewObject {
   const query = readQuery(input.name, input.query);
   assertNamespace(namespace);
   assertProvenance(input.provenance);
-  const definition: ViewDefinition = { columns, query };
+  const definition: ViewDefinition = {
+    columns,
+    query,
+    ...(input.securityInvoker === true ? { securityInvoker: true as const } : {}),
+  };
   return {
     kind: "view",
     identity: { kind: "view", namespace, name: input.name },

@@ -35,6 +35,8 @@ import {
   dropObjectSql,
   functionSql,
   identitySequence,
+  policyCreatePlan,
+  policyDropPlan,
   ownedByView,
   qualify,
   quoteIdent,
@@ -341,11 +343,20 @@ export function planMigration(input: PlanRequest): MigrationPlan {
     if (object.kind === "view" || object.kind === "materializedView") emitDrop(object);
   }
   for (const object of reverse) {
+    if (object.kind !== "policy") continue;
+    const key = identityKey(object.identity);
+    if (!dropKeys.has(key) || deferred.has(key)) continue;
+    for (const item of policyDropPlan(object, schema)) {
+      steps.push(step(item.sql, item.kind, "ddl", ACCESS, true, [object.identity.parent.name]));
+    }
+  }
+  for (const object of reverse) {
     if (
       object.kind === "trigger" ||
       object.kind === "function" ||
       object.kind === "view" ||
       object.kind === "materializedView" ||
+      object.kind === "policy" ||
       ownedByView(object)
     ) {
       continue;
@@ -426,6 +437,7 @@ export function planMigration(input: PlanRequest): MigrationPlan {
       object.kind === "trigger" ||
       object.kind === "view" ||
       object.kind === "materializedView" ||
+      object.kind === "policy" ||
       ownedByView(object)
     ) {
       continue;
@@ -455,6 +467,15 @@ export function planMigration(input: PlanRequest): MigrationPlan {
       }
     }
     steps.push(step(sql, kind, "ddl", object.kind === "index" ? SHARE : ACCESS));
+  }
+  for (const object of creationOrder(request.after)) {
+    if (object.kind !== "policy") continue;
+    const key = identityKey(object.identity);
+    if (!createKeys.has(key) || emitted.has(key)) continue;
+    emitted.add(key);
+    for (const item of policyCreatePlan(object, schema)) {
+      steps.push(step(item.sql, item.kind, "ddl", ACCESS, true, [object.identity.parent.name]));
+    }
   }
   for (const change of replaces) {
     if (sameDefinition(change.before, change.after)) continue;

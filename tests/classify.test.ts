@@ -84,6 +84,10 @@ const EXPECTED = [
   ["rename-sequence", "contract"],
   ["backfill-expand", "expand"],
   ["backfill-contract", "contract"],
+  ["enable-rls", "expand"],
+  ["create-policy", "expand"],
+  ["drop-policy", "contract"],
+  ["disable-rls", "contract"],
   ["raw-sql", "unclassified"],
 ] as const satisfies readonly (readonly [StepKind, MigrationClass])[];
 
