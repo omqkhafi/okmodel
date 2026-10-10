@@ -8,7 +8,10 @@ import { expect, test } from "bun:test";
 
 import { OkmError } from "../src/contracts/error.js";
 import type { DriverPool } from "../src/contracts/driver.js";
+import { catalogHash } from "../src/contracts/catalog/document.js";
 import { renderCatalog } from "../src/dialects/pg/ddl.js";
+import { schemaDeclarations } from "../src/dialects/pg/declarations.js";
+import { planMigration } from "../src/tooling/migrate/plan.js";
 import {
   every,
   has,
@@ -64,6 +67,7 @@ test("catalog stores the tenant column, composite keys, and widened uniques", ()
       object.definition.constraintKind === "primaryKey",
   );
   expect(pk?.kind === "constraint" ? pk.definition.columns : []).toEqual(["id", "tenant_id"]);
+  expect(pk?.identity.name).toBe("tasks_pkey");
 
   const tenantUnique = objects.find(
     (object) =>
@@ -72,7 +76,10 @@ test("catalog stores the tenant column, composite keys, and widened uniques", ()
       object.identity.parent.name === "tasks" &&
       object.definition.columns.join(",") === "id,tenant_id",
   );
-  expect(tenantUnique).toBeDefined();
+  expect(tenantUnique?.identity.name).toBe("tasks_id_tenantId_key");
+  expect(tenantUnique?.kind === "constraint" ? tenantUnique.definition.nameKey : "").toBe(
+    "id_tenantId",
+  );
 
   const title = objects.find(
     (object) =>
@@ -84,6 +91,7 @@ test("catalog stores the tenant column, composite keys, and widened uniques", ()
     "tenant_id",
     "title",
   ]);
+  expect(title?.identity.name).toBe("tasks_title_key");
 
   const code = objects.find(
     (object) =>
@@ -109,6 +117,7 @@ test("catalog stores the tenant column, composite keys, and widened uniques", ()
     (object) => object.kind === "index" && object.identity.parent.name === "tasks",
   );
   expect(listed?.kind === "index" ? listed.definition.columns : []).toEqual(["tenant_id", "title"]);
+  expect(listed?.identity.name).toBe("tasks_tenant_id_title_idx");
 
   const sql = renderCatalog(app.catalog, "public").join("\n");
   expect(sql).toContain("tenant_id");
@@ -116,6 +125,78 @@ test("catalog stores the tenant column, composite keys, and widened uniques", ()
   expect(sql).toContain('unique ("tenant_id", "title")');
   expect(sql).toContain('primary key ("id", "tenant_id")');
 });
+
+test("renamedFrom renames the extra tenant unique and does not drop it", () => {
+  const before = schema({
+    casing: "snake",
+    tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
+    tables: [
+      table("tasks", {
+        id: id({ default: "none" }),
+        title: text().unique(),
+      }),
+    ],
+  });
+  const renamedTable = schema({
+    casing: "snake",
+    tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
+    tables: [
+      table(
+        "items",
+        {
+          id: id({ default: "none" }),
+          title: text().unique(),
+        },
+        { renamedFrom: "tasks" },
+      ),
+    ],
+  });
+  const tableSql = sqlOf(
+    before.catalog,
+    renamedTable.catalog,
+    schemaDeclarations(renamedTable).renames,
+  );
+  expect(tableSql).toContain(
+    'rename constraint "tasks_id_tenantId_key" to "items_id_tenantId_key"',
+  );
+  expect(tableSql).toContain('rename constraint "tasks_title_key" to "items_title_key"');
+  expect(tableSql).toContain('rename constraint "tasks_pkey" to "items_pkey"');
+  expect(tableSql.includes("drop constraint")).toBe(false);
+
+  const renamedColumn = schema({
+    casing: "snake",
+    tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
+    tables: [
+      table("tasks", {
+        taskId: id({ default: "none" }).renamedFrom("id"),
+        title: text().unique(),
+      }),
+    ],
+  });
+  const columnSql = sqlOf(
+    before.catalog,
+    renamedColumn.catalog,
+    schemaDeclarations(renamedColumn).renames,
+  );
+  expect(columnSql).toContain('rename column "id" to "task_id"');
+  expect(columnSql).toContain(
+    'rename constraint "tasks_id_tenantId_key" to "tasks_taskId_tenantId_key"',
+  );
+  expect(columnSql.includes("drop constraint")).toBe(false);
+  expect(catalogHash(before.catalog)).toBe(
+    "a9c2ca6f3853e4eca2d7e2c679588cb36ff2109ebd7b3848a5d6245ef6b73f29",
+  );
+});
+
+function sqlOf(
+  before: ReturnType<typeof schema>["catalog"],
+  after: ReturnType<typeof schema>["catalog"],
+  renames: ReturnType<typeof schemaDeclarations>["renames"],
+): string {
+  return planMigration({ before, after, renames, name: "rename" })
+    .steps.map((step) => step.sql)
+    .join("\n");
+}
 
 test("a schema without tenancy does not grow a tenant column", () => {
   const notes = table("notes", { id: id({ default: "none" }), title: text() });
