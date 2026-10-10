@@ -8,13 +8,15 @@ name: CI
 # is split across lint, types, named test groups, runtimes, and package, so
 # the wait is the slowest slice. Every job name is `area / piece`, so the
 # check reads `CI / area / piece`. The job named `gate / check` is the
-# required status: it passes when every slice passed. A pull request update
-# starts this workflow only. Path labels and the pull request lint are jobs
-# here. The suite and the tarball run in this same workflow when the pull
-# request already has `needs: postgres`. Adding that label, without a push,
-# starts postgres-pr.yml and does not cancel this run. Release and weekly
-# call the suite and tarball workflows themselves. A newer run on the same
-# ref cancels the older one.
+# required status: it passes when every slice that should have run succeeded.
+# The suite and the tarball are slices when the pull request already has
+# `needs: postgres`. Without that label they are skipped, and a skip is
+# allowed. A skip or a failure while the label is present fails the gate.
+# A pull request update starts this workflow only. Path labels and the pull
+# request lint are jobs here. Adding that label, without a push, starts
+# postgres-pr.yml and does not cancel this run. Release and weekly call the
+# suite and tarball workflows themselves. A newer run on the same ref
+# cancels the older one.
 on:
   push:
     branches:
@@ -241,22 +243,30 @@ jobs:
 
   check:
     name: gate / check
-    needs: [lint, types, test, runtimes, temporal, package]
+    needs: [lint, types, test, runtimes, temporal, package, suite, tarball]
     if: always()
     runs-on: ubuntu-24.04
     steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
       - name: Require the slices
-        run: |
-          fail=0
-          for pair in "lint=${{ needs.lint.result }}" "types=${{ needs.types.result }}" "test=${{ needs.test.result }}" "runtimes=${{ needs.runtimes.result }}" "temporal=${{ needs.temporal.result }}" "package=${{ needs.package.result }}"; do
-            name="${pair%%=*}"
-            result="${pair#*=}"
-            echo "$name $result"
-            if [ "$result" != "success" ]; then
-              fail=1
-            fi
-          done
-          exit "$fail"
+        run: >
+          bun ./scripts/ci-gate.ts --postgres
+          ${{ github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'needs: postgres') && '1' || '0' }}
+          lint=${{ needs.lint.result }}
+          types=${{ needs.types.result }}
+          test=${{ needs.test.result }}
+          runtimes=${{ needs.runtimes.result }}
+          temporal=${{ needs.temporal.result }}
+          package=${{ needs.package.result }}
+          suite=${{ needs.suite.result }}
+          tarball=${{ needs.tarball.result }}
 
   attest:
     name: attest / measure
