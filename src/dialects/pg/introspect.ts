@@ -27,6 +27,7 @@ import {
 } from "../../contracts/catalog/view.js";
 import { VIEW_DEPENDENCIES, viewDependencyEdges } from "./view/depend.js";
 import { quoteIdent } from "./ddl.js";
+import { columnPrivilege } from "./role/sql.js";
 import type {
   Catalog,
   CatalogObject,
@@ -49,6 +50,13 @@ export type IntrospectOptions = {
    * When omitted, roles, grants, and default privileges are not read.
    */
   readonly managedRoles?: readonly string[];
+  /**
+   * Read-only role.
+   *
+   * Schema `USAGE` is read for this role only. Other roles keep the schema
+   * privileges they already have.
+   */
+  readonly reportingRole?: string;
 };
 
 /** A connection that can run one query. Parameters are `$1`, `$2`, … */
@@ -447,6 +455,7 @@ export async function introspectSchema(
         provenance,
         objects,
         options.managedRoles,
+        options.reportingRole,
       )),
     );
   }
@@ -498,6 +507,32 @@ const FUNCTION_GRANTS = `select p.proname as name,
       where d.classid = 'pg_proc'::regclass and d.objid = p.oid and d.deptype = 'e'
     )`;
 
+const COLUMN_GRANTS = `select c.relname as name,
+  case c.relkind when 'v' then 'view' when 'm' then 'materializedView' else 'table' end as kind,
+  a.attname as column_name,
+  r.rolname as role, x.privilege_type as privilege
+  from pg_class c
+  join pg_namespace n on n.oid = c.relnamespace
+  join pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
+  cross join lateral aclexplode(a.attacl) as x
+  join pg_roles r on r.oid = x.grantee
+  where n.nspname = $1
+    and c.relkind in ('r', 'p', 'v', 'm')
+    and a.attacl is not null
+    and x.grantee <> 0
+    and x.grantee <> c.relowner`;
+
+const SCHEMA_USAGE = `select 1 as ok
+  from pg_namespace n
+  cross join lateral aclexplode(n.nspacl) as a
+  where n.nspname = $1
+    and a.privilege_type = 'USAGE'
+    and (
+      a.grantee = 0
+      or a.grantee = (select oid from pg_roles where rolname = $2)
+    )
+  limit 1`;
+
 const DEFAULT_PRIVILEGES = `select owner_role.rolname as for_role, grantee.rolname as grantee,
   case d.defaclobjtype when 'S' then 'sequence' when 'f' then 'function' else 'table' end as object_kind,
   a.privilege_type as privilege
@@ -517,13 +552,18 @@ async function readPrivileges(
   provenance: Provenance,
   built: readonly CatalogObject[],
   managedRoles: readonly string[],
+  reportingRole: string | undefined,
 ): Promise<CatalogObject[]> {
   const managed = new Set(managedRoles);
-  const [roles, relations, functions, defaults] = await Promise.all([
+  const [roles, relations, functions, defaults, columns, usage] = await Promise.all([
     runner.query(ROLES, []),
     runner.query(RELATION_GRANTS, [concrete]),
     runner.query(FUNCTION_GRANTS, [concrete]),
     runner.query(DEFAULT_PRIVILEGES, [concrete]),
+    runner.query(COLUMN_GRANTS, [concrete]),
+    reportingRole === undefined
+      ? Promise.resolve([])
+      : runner.query(SCHEMA_USAGE, [concrete, reportingRole]),
   ]);
   const objects: CatalogObject[] = [];
   for (const row of roles) {
@@ -586,6 +626,54 @@ async function readPrivileges(
           { kind: "role", name: forRole },
           { kind: "role", name: grantee },
         ],
+      }),
+    );
+  }
+  const grouped = new Map<
+    string,
+    {
+      role: string;
+      kind: "table" | "view" | "materializedView";
+      name: string;
+      privilege: string;
+      columns: string[];
+    }
+  >();
+  for (const row of columns) {
+    const privilege = text(row, "privilege").toUpperCase();
+    if (privilege !== "SELECT" && privilege !== "UPDATE") continue;
+    const kind = grantKind(text(row, "kind"));
+    if (kind !== "table" && kind !== "view" && kind !== "materializedView") continue;
+    const name = text(row, "name");
+    const role = text(row, "role");
+    const key = `${role}\0${kind}\0${name}\0${privilege}`;
+    const current = grouped.get(key) ?? { role, kind, name, privilege, columns: [] };
+    current.columns.push(text(row, "column_name"));
+    grouped.set(key, current);
+  }
+  for (const group of grouped.values()) {
+    const target = built.find(
+      (object) => privilegeTarget(object) === `${group.kind}:${group.name}`,
+    );
+    if (target === undefined) continue;
+    objects.push(
+      grantObject({
+        role: group.role,
+        object: { kind: group.kind, namespace, name: group.name },
+        privilege: columnPrivilege(group.privilege, group.columns),
+        provenance,
+        dependencies: [{ kind: "role", name: group.role }, target.identity],
+      }),
+    );
+  }
+  if (usage.length > 0 && reportingRole !== undefined) {
+    objects.push(
+      grantObject({
+        role: reportingRole,
+        object: { kind: "namespace", namespace, name: concrete },
+        privilege: "USAGE",
+        provenance,
+        dependencies: [{ kind: "role", name: reportingRole }],
       }),
     );
   }

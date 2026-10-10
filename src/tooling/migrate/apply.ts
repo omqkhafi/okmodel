@@ -22,6 +22,7 @@ import { changesRole } from "../../dialects/pg/role/sql.js";
 import { batchSizeField } from "./backfill.js";
 import {
   assumeRole,
+  grantAppMeta,
   runTarget,
   statementOutsideTransaction,
   type BackfillBatch,
@@ -79,6 +80,14 @@ export type ApplyRequest = {
    * `SET ROLE` before any statement. That statement is not a plan step.
    */
   readonly migrationRole?: string;
+  /**
+   * Application role.
+   *
+   * After the plan, this role receives `SELECT` on `okm_meta` and nothing
+   * else. `connect()` can then read the stored hash. Check scratch paths
+   * leave this unset.
+   */
+  readonly appRole?: string;
   /**
    * Schema the migration role may create in.
    *
@@ -293,6 +302,7 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
     if (request.snapshot !== undefined) {
       await insertReference(connection, request);
     }
+    await grantAppMeta(connection, request.appRole, session);
     return restamped.length === 0 ? report : { ...report, restamped };
   } finally {
     if (locked)
@@ -357,7 +367,9 @@ export async function applyProject(
       catalogHash: head.catalogHash,
       reference: built === undefined ? [] : readReference(built.tables, built.casing, head.catalog),
     },
-    ...(config.roles !== undefined ? { migrationRole: config.roles.migration } : {}),
+    ...(config.roles !== undefined
+      ? { migrationRole: config.roles.migration, appRole: config.roles.app }
+      : {}),
     lintDirectory: directory,
     onProgress: (line) => {
       if (write !== undefined) write(`${line}\n`);
@@ -406,7 +418,9 @@ export async function pushProject(cwd: string, flags: InvokeFlags): Promise<stri
         steps: plan.steps,
       },
     ],
-    ...(config.roles !== undefined ? { migrationRole: config.roles.migration } : {}),
+    ...(config.roles !== undefined
+      ? { migrationRole: config.roles.migration, appRole: config.roles.app }
+      : {}),
   });
   return formatReport(report);
 }
@@ -649,6 +663,7 @@ async function provisionEmpty(
     session,
     request.migrationRole,
   );
+  await grantAppMeta(connection, request.appRole, session);
   const mark = provisionMark(snapshot.migrationId);
   await connection.execute("begin");
   try {

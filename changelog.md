@@ -22,6 +22,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The docs site in `site/` publishes the handbook from the repository markdown, with search, per-page markdown, and a changelog page. The home page links install, the first query, schema, and migrations.
 - Learning pages for install, the first query, schema, queries, safety, migrations, and drivers are written in the site handbook. Repository docs stay under Reference. A public fence that names a shipped API is type-checked against the built package.
 - `rlsTenancy({ key: "tenantId", type: "uuid" })` adds PostgreSQL row-level security behind the column predicate. Tenant tables get forced policies, each scoped call sets `app.tenant` for that transaction, and a view over those tables is `security_invoker`. A superuser, a `BYPASSRLS` role, or the table owner is refused on the first scoped call (D231).
+- `roles.reporting` is a read-only role: select on tables, views, and materialized views, usage on schemas, and default select on later tables. A hidden column stays out of that select unless `roles.columns` names it. The role is not `BYPASSRLS`. `roles.columns` grants select or update on named columns. `withOwner(table(...), "ignored" | "external")` keeps a table out of the plan. Apply grants the application role select on `okm_meta` and no other privilege there (D232).
 
 ### 💥 Breaking Changes
 

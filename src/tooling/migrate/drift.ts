@@ -97,12 +97,18 @@ export function catalogQuery(sql: Sql): CatalogQuery {
  */
 export function managedRoleOptions(roles: RolesInput | undefined): IntrospectOptions | undefined {
   const names = managedRoleNames(roles);
-  return names === undefined ? undefined : { managedRoles: names };
+  return names === undefined
+    ? undefined
+    : {
+        managedRoles: names,
+        ...(roles?.reporting !== undefined ? { reportingRole: roles.reporting } : {}),
+      };
 }
 
 function managedRoleNames(roles: RolesInput | undefined): readonly string[] | undefined {
   if (roles === undefined) return undefined;
   const names = new Set<string>([roles.migration, roles.app]);
+  if (roles.reporting !== undefined) names.add(roles.reporting);
   for (const role of roles.managed ?? []) names.add(role.name);
   return [...names];
 }

@@ -52,7 +52,9 @@ export async function provision(target: string, cwd = process.cwd()): Promise<st
       reference: readReference(built.tables, built.casing, head.catalog),
       only: true,
     },
-    ...(config.roles !== undefined ? { migrationRole: config.roles.migration } : {}),
+    ...(config.roles !== undefined
+      ? { migrationRole: config.roles.migration, appRole: config.roles.app }
+      : {}),
     lintDirectory: directory,
   });
   if (report.applied.length === 0) return `target ${report.target}\nnothing to apply\n`;

@@ -239,15 +239,20 @@ export function planMigration(input: PlanRequest): MigrationPlan {
   for (const item of beforeList) {
     if (!afterBy.has(item.key)) {
       if (item.object.kind === "role") continue;
+      if (handsOff(item.object) || childOfHandsOff(item.object, afterBy)) continue;
       dropKeys.add(item.key);
     }
   }
   for (const item of afterList) {
-    if (!beforeBy.has(item.key)) createKeys.add(item.key);
+    if (!beforeBy.has(item.key)) {
+      if (handsOff(item.object) || childOfHandsOff(item.object, afterBy)) continue;
+      createKeys.add(item.key);
+    }
   }
   for (const item of afterList) {
     const previous = beforeBy.get(item.key);
     if (previous === undefined || sameDefinition(previous, item.object)) continue;
+    if (handsOff(item.object) || childOfHandsOff(item.object, afterBy)) continue;
     if (previous.kind === "extension" && item.object.kind === "extension") continue;
     if (previous.kind === "role" && item.object.kind === "role") continue;
     if (
@@ -291,6 +296,8 @@ export function planMigration(input: PlanRequest): MigrationPlan {
   refuseRoutineDrops(beforeBy, afterBy, dropKeys);
   omitOwnedSequences(createKeys, afterBy, request.after);
   omitOwnedSequences(dropKeys, beforeBy, renamed);
+  releaseHandsOff(dropKeys, beforeBy, afterBy);
+  releaseHandsOff(createKeys, afterBy, afterBy);
 
   const recreated = new Set<string>();
   for (const key of createKeys) {
@@ -1673,6 +1680,43 @@ function reprintedDefaultBase(typeName: string): string | undefined {
   const time = /^(timestamp|time)(?:\(\d+\))? (with time zone|without time zone)$/.exec(canonical);
   if (time !== null) return `${time[1] ?? ""} ${time[2] ?? ""}`;
   return undefined;
+}
+
+function handsOff(object: CatalogObject): boolean {
+  return object.owner === "external" || object.owner === "ignored";
+}
+
+function childOfHandsOff(
+  object: CatalogObject,
+  catalog: ReadonlyMap<string, CatalogObject>,
+): boolean {
+  if (
+    object.kind !== "column" &&
+    object.kind !== "index" &&
+    object.kind !== "constraint" &&
+    object.kind !== "trigger" &&
+    object.kind !== "policy"
+  ) {
+    return false;
+  }
+  const parent = object.identity.parent;
+  const table = catalog.get(
+    identityKey({ kind: "table", namespace: parent.namespace, name: parent.name }),
+  );
+  return table !== undefined && handsOff(table);
+}
+
+function releaseHandsOff(
+  keys: Set<string>,
+  objects: ReadonlyMap<string, CatalogObject>,
+  parents: ReadonlyMap<string, CatalogObject>,
+): void {
+  for (const key of keys) {
+    const object = objects.get(key);
+    if (object !== undefined && (handsOff(object) || childOfHandsOff(object, parents))) {
+      keys.delete(key);
+    }
+  }
 }
 
 function sameDefinition(left: CatalogObject, right: CatalogObject): boolean {

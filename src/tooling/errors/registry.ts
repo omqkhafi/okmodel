@@ -618,7 +618,7 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
   {
     code: "OKM1825",
     title: "Missing privilege",
-    summary: "The application role lacks a privilege on a managed object.",
+    summary: "A role lacks a privilege on a managed object.",
     fix: "Grant the privilege, or change the role. okm doctor reports the object and the privilege.",
   },
   {

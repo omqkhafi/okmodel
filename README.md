@@ -866,7 +866,13 @@ export const app = schema({
 
 ### Roles and grants
 
-The migration connects as one role and the app connects as another. `roles` names both. The app role receives select, insert, update, and delete on tables and views, select on materialized views, execute on functions, and usage plus select on sequences. Apply runs as the migration role, and switches to it with `SET ROLE` when the connection is someone else. The app role is a role you already created, unless you list it in `managed`. Grants on one column are not in this version. Tenant isolation with row-level security is `rlsTenancy()`. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
+The migration connects as one role and the app connects as another. `roles` names both. The app role receives select, insert, update, and delete on tables and views, select on materialized views, execute on functions, and usage plus select on sequences. Apply also grants that role select on `okm_meta`, and nothing else there, so `connect()` can read the stored hash. Apply runs as the migration role, and switches to it with `SET ROLE` when the connection is someone else. A role you already created is external, unless you list it in `managed`.
+
+`roles.reporting` is a third role that can only select. It gets select on tables, views, and materialized views, usage on schemas, and the same select on tables created later. It does not get insert, update, delete, or execute. A hidden column is left out unless `roles.columns` names it. Under `rlsTenancy()` this role is not `BYPASSRLS`, so it sees no tenant rows until the session sets `app.tenant`. `unscoped()` is the application client's read escape and is not given to this role.
+
+`roles.columns` grants select or update on named columns: `{ role, on, select, update }`. `on` is the table or view. A listed column grant on a view replaces select on the whole view for the reporting role.
+
+`withOwner(table(...), "ignored")` keeps a table out of diffs, plans, and `okm check`. `"external"` is known and never created, altered, or dropped. A managed table that becomes either stays in the database. Drop it while it is still managed if it should go away. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
 
 `roles.ts`:
 
@@ -880,7 +886,13 @@ export default defineConfig({
   schema: "./schema.ts",
   database: url,
   // Apply uses the migration role. The app uses the app role.
-  roles: { migration: "okm_migrate", app: "okm_app", managed: [{ name: "okm_migrate" }] },
+  roles: {
+    migration: "okm_migrate",
+    app: "okm_app",
+    reporting: "okm_report",
+    managed: [{ name: "okm_migrate" }, { name: "okm_report", login: true }],
+    columns: [{ role: "okm_report", on: "tasks", select: ["title"] }],
+  },
 });
 ```
 

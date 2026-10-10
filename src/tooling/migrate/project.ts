@@ -21,7 +21,8 @@ import { errorDoc } from "../errors/registry.js";
 import { assertValidation, writeWouldValidate } from "../../runtime/validate/places.js";
 import { schemaDeclarations, type DeclaredRename } from "../../dialects/pg/declarations.js";
 import { emitRowTypes } from "../../dialects/pg/emit.js";
-import { attachRoles } from "../../dialects/pg/role/index.js";
+import { stampOwnership, tableOwner } from "../../dialects/pg/owner.js";
+import { attachRoles, type RolesInput, type TableExposure } from "../../dialects/pg/role/index.js";
 import type { BuiltSchema } from "../../dialects/pg/schema.js";
 import type { AnyTable } from "../../dialects/pg/table.js";
 import type { Catalog } from "../../contracts/catalog/types.js";
@@ -327,8 +328,43 @@ export async function openProject(cwd: string): Promise<{
 }
 
 function withRoles(built: Built, config: MigrateConfig): Built {
-  if (config.roles === undefined) return built;
-  return { ...built, catalog: attachRoles(built.catalog, config.roles) };
+  const marks = ownershipMarks(built);
+  const stamped = marks.size === 0 ? built.catalog : stampOwnership(built.catalog, marks);
+  const roles = config.roles;
+  const catalog =
+    roles === undefined ? stamped : attachRoles(stamped, roles, exposureFor(built, roles));
+  if (catalog === built.catalog) return built;
+  return { ...built, catalog };
+}
+
+function ownershipMarks(built: Built): ReadonlyMap<string, "external" | "ignored"> {
+  const marks = new Map<string, "external" | "ignored">();
+  const models = built.model as Readonly<Record<string, { readonly sql: string }>>;
+  for (const table of built.tables) {
+    const owner = tableOwner(table);
+    if (owner === undefined) continue;
+    const model = models[table["~name"]];
+    if (model === undefined) continue;
+    marks.set(model.sql, owner);
+  }
+  return marks;
+}
+
+function exposureFor(built: Built, roles: RolesInput): readonly TableExposure[] | undefined {
+  if (
+    roles.reporting === undefined &&
+    (roles.columns === undefined || roles.columns.length === 0)
+  ) {
+    return undefined;
+  }
+  return Object.values(built.model).map((model) => ({
+    table: model.sql,
+    columns: model.columns.map((column) => ({
+      field: column.field,
+      sql: column.sql,
+      hidden: column.hidden === true || column.hidden === "filter",
+    })),
+  }));
 }
 
 function writeArtifact(cwd: string, config: MigrateConfig, built: Built): string {

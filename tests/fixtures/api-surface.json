@@ -543,6 +543,10 @@
       "kind": "stable"
     },
     {
+      "name": "DeclaredOwner",
+      "kind": "stable"
+    },
+    {
       "name": "FlagTrue",
       "kind": "stable"
     },
@@ -948,6 +952,10 @@
     },
     {
       "name": "varchar",
+      "kind": "stable"
+    },
+    {
+      "name": "withOwner",
       "kind": "stable"
     }
   ],
