@@ -673,7 +673,7 @@ Set in `schema({ codecs })`, override per field: `t.bigint({ as: "number" })`. D
 | (default) | unknown keys in input are dropped |
 | `.guarded()` | never filled from `insert`/`update` input; set by code with `{ allow: ["field"] }` |
 | automatic guards | `t.id()` with a database default and `t.identity()` (omitted from insert and update); a column `.primaryKey()`, a composite `primaryKey`, and `t.id({ default: "none" })` (supplied on insert, omitted from update); tenant key and trait fields (`createdAt`, `updatedAt`, `archivedAt`, `archiveId`, `version`) |
-| `.hidden()` | excluded from default selects and includes; returned only when named in `select` |
+| `.hidden()` | excluded from default selects and includes; returned only when named in `select`. `where` and `orderBy` refuse it (OKM1120). `hidden({ filterable: true })` allows those two and still leaves it out of the default row. `filters()` still refuses it (OKM1123). `groupBy`, `sum`, `avg`, `min`, and `max` still refuse it |
 | `.sensitive()` | values never appear in logs, error messages, `inspect()` output or fixtures; shown as `[redacted]` even in development |
 
 **One concept, four mechanisms: field exposure.** Every field answers four questions:
@@ -681,6 +681,7 @@ Set in `schema({ codecs })`, override per field: `t.bigint({ as: "number" })`. D
 | Question | Default | Changed by |
 |---|---|---|
 | Returned by default reads? | yes | `.hidden()` |
+| Named in `where` or `orderBy`? | yes | `.hidden()` refuses it (OKM1120). `hidden({ filterable: true })` allows it |
 | Filled from external input? | yes | `.guarded()`, and a primary key on update. `t.id()` with a default and `t.identity()` are also omitted from insert |
 | Filterable from client input? | no | `tasks.filters({ allow })` |
 | Writable by code? | yes | guarded fields need `{ allow }` |
@@ -835,7 +836,7 @@ const today = await scoped.tasks.pending().ownedBy(userId).find({
 
 - A plain value means equality; `null` means `IS NULL`.
 - Operators and relation filters are tagged values created by helpers. JSON cannot create them, so request data can never add an operator or traverse a relation. An object is accepted only where the column's codec takes one: Temporal objects for the date and time types, any JSON object or array for json and jsonb, arrays for array columns, `Uint8Array` for bytea, the range, point, line and timetz shapes, and what a `t.custom({ accepts })` codec names. Any other object, including a `Date`, is rejected at runtime (OKM1121) before a statement is sent, on `insert`, `update` `set`, and every `where` operand. In a `where`, a bare object is rejected for every column (its fix names `eq`); `eq(value)` is the equality form for object values (json, jsonb, Temporal, arrays, ranges), and the comparison operators take the codec's objects as their operands. An identifier that fails the rules (length, NUL, control characters, unquoted reserved word) is rejected at runtime (OKM1122). Allowlisting a hidden field in a filter or sort allowlist fails at build (OKM1123). `filters().parse` reads a request object with own-property lookups, so `constructor`, `__proto__`, `toString`, and `hasOwnProperty` are ordinary keys (OKM1123 when they are not allowlisted). A scalar is equality when `eq` is allowed. An object value names `eq`, `in` (stored as `inList`), `notIn`, `lt`, `lte`, `gt`, `gte`, `between`, `startsWith`, `endsWith`, `contains`, `like`, or `ilike`. An operator the allow type accepts and parse cannot apply is OKM1120 when `parse()` runs. `sort` is a field name from the sort list. A preset's `where` appends (AND) and the preset builder exposes only additive methods, never replacement (D125, D126).
-- Field names in `where`, `select`, `orderBy` and `include` are checked against the catalog at runtime (OKM1120).
+- Field names in `where`, `select`, `orderBy` and `include` are checked against the catalog at runtime (OKM1120). A hidden field in `where` or `orderBy` is the same code. `hidden({ filterable: true })` allows those two.
 - `undefined` in a `find` filter means no filter. In `update`, `delete`, `archive`, and `restore`, a where with no effective predicate, including undefined values, is OKM1102. An empty `or()` branch is OKM1121. A field value is a leaf (D210).
 - One logical operation per call (section 5.3). Reads and relation loading: the statement count depends on query shape, never on result cardinality; no lazy loading. Writes may be split by input size or driver limits, within the operation's declared atomicity.
 - To-many `include` requires `limit` or `.all("reason")` (OKM1105); hidden fields and archived rows are excluded from includes.
@@ -1425,7 +1426,7 @@ test("today view runs one query", async () => {
 | To-many include without `limit` | types | OKM1105 |
 | Feature needs a newer engine than `requires` allows | types | OKM1110 (not thrown in 0.2; `uuidv7()` is OKM1812) |
 | A dynamic call the driver's capabilities do not allow | runtime | OKM1111 |
-| Unknown field name at runtime | runtime | OKM1120 |
+| Unknown field name at runtime, or a hidden field in `where` or `orderBy` | runtime | OKM1120 |
 | Object where a value is expected | runtime | OKM1121 |
 | Cursor used with a different order | runtime | OKM1130 |
 | Composition breaks a core invariant (final safety verification) | runtime | OKM1190 |

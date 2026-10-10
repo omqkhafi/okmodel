@@ -265,7 +265,7 @@ type PreparedColumn = {
   readonly references: ReferenceModifier | undefined;
   readonly encode: (value: unknown) => string;
   readonly decode: ((wire: string) => unknown) | undefined;
-  readonly hidden: boolean;
+  readonly hidden: boolean | "filter";
   readonly sensitive: boolean;
   readonly guarded: boolean;
   readonly writable: boolean;
@@ -891,7 +891,7 @@ function compileTable(
       references: column.state.references,
       encode: column.state.encode as (value: unknown) => string,
       decode: decode === decodeText ? undefined : (decode as (wire: string) => unknown),
-      hidden: column.state.hidden,
+      hidden: column.state.filterable === true ? "filter" : column.state.hidden,
       sensitive: column.state.sensitive,
       guarded: column.state.guarded,
       writable:

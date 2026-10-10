@@ -792,6 +792,7 @@ function emitPredicate(
       `Field ${key} is not on ${table.model.name}. Accepted names: ${list(table.names)}.`,
     );
   }
+  refuseHidden(column);
   sink.mark(`w:${key}`);
   emitOperand(schema, table, column, value, sink, alias, depth);
 }
@@ -1052,6 +1053,7 @@ export function emitOrder(table: Indexed, orderBy: unknown, sink: Sink, alias: s
         `Field ${key} is not on ${table.model.name}. Accepted names: ${list(table.names)}.`,
       );
     }
+    refuseHidden(column);
     const parsed = parseOrder(key, orderBy[key]);
     if (index > 0) sink.text(", ");
     sink.text(alias);
@@ -1076,6 +1078,19 @@ export function emitPrimaryOrder(table: Indexed, sink: Sink, alias: string): voi
     sink.text(quote(column.sql));
     sink.text(" asc");
   }
+}
+
+/**
+ * Refuses a hidden field in `where` or `orderBy`.
+ *
+ * `"filter"` is `hidden({ filterable: true })` and is allowed here.
+ * Aggregate loads this on its first call and applies it before the groupBy rule.
+ *
+ * @param column - The field the caller named
+ */
+export function refuseHidden(column: ColumnModel): void {
+  if (column.hidden !== true) return;
+  fail("OKM1120", `Field ${column.field} is hidden.`, "Call hidden({ filterable: true }).");
 }
 
 function emitLimit(call: ReadCall, sink: Sink): void {
@@ -1372,9 +1387,10 @@ export function registerFailFix(code: QueryCode, summary: string): void {
  *
  * @param code - Spec code
  * @param message - What failed
+ * @param fix - Fix sentence for this call. Omitted, the sentence registered for `code` is used
  */
-export function fail(code: QueryCode, message: string): never {
-  const summary = FAIL_FIX[code];
+export function fail(code: QueryCode, message: string, fix?: string): never {
+  const summary = fix ?? FAIL_FIX[code];
   throw new OkmError(code, message, summary === undefined ? undefined : { fix: { summary } });
 }
 

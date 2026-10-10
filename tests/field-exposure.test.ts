@@ -39,6 +39,20 @@ const sessions = table(
 
 const app = schema({ casing: "snake", tables: [users, sessions] });
 
+async function expectHidden(pending: PromiseLike<unknown>): Promise<void> {
+  try {
+    await pending;
+  } catch (error) {
+    expect(error).toBeInstanceOf(OkmError);
+    if (error instanceof OkmError) {
+      expect(error.code).toBe("OKM1120");
+      expect(error.fix.summary).toContain("hidden({ filterable: true })");
+    }
+    return;
+  }
+  throw new Error("expected OKM1120");
+}
+
 async function expectCode(pending: PromiseLike<unknown>, code: string): Promise<void> {
   try {
     await pending;
@@ -103,7 +117,12 @@ test("reads omit hidden fields, writes strip input, and inspect redacts", async 
     })) as readonly Record<string, unknown>[];
     expect(selected[0]?.passwordHash).toBe(SECRET);
 
-    await db.sessions.insert({ id: SESSION, userId: USER, token: "tok" });
+    await db.sessions.insert({ id: SESSION, userId: USER, token: "session-secret-value" });
+    const tokenView = await db.sessions
+      .find({ where: { token: "session-secret-value" }, limit: 1 })
+      .inspect();
+    expect(tokenView.sql.params).toContain("[redacted]");
+    expect(JSON.stringify(tokenView).includes("session-secret-value")).toBe(false);
     const included = await db.sessions.find({
       where: { id: SESSION },
       include: { user: { select: ["passwordHash"] as never } },
@@ -112,15 +131,14 @@ test("reads omit hidden fields, writes strip input, and inspect redacts", async 
     expect(JSON.stringify(included).includes(SECRET)).toBe(false);
     expect(JSON.stringify(included).includes("passwordHash")).toBe(false);
 
-    const described = await db.users
-      .find({ where: { passwordHash: SECRET } as never, limit: 1 })
-      .inspect();
+    const described = await db.users.find({ where: { email: "a@b.c" }, limit: 1 }).inspect();
     expect(JSON.stringify(described).includes(SECRET)).toBe(false);
-    expect(described.sql.params).toContain("[redacted]");
     expect(
       described.rules.some((rule) => rule.contribution.includes("passwordHash excluded")),
     ).toBe(true);
-    expect(described.sql.text.includes("password_hash")).toBe(true);
+
+    await expectHidden(db.users.find({ where: { passwordHash: SECRET } as never, limit: 1 }));
+    await expectHidden(db.users.find({ orderBy: { passwordHash: "asc" } as never, limit: 1 }));
 
     const logged: string[] = [];
     const failing = await connectPglite(pool, {

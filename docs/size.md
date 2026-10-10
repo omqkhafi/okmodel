@@ -251,6 +251,21 @@ Variant A is the D220 shape with one shared throw. Connect entries grew 212 mini
 
 Variant B is the smallest on every gated graph. The featureless app has 182 minified and 27 gzip left under 90,900 / 30,170. Each connect entry stays under its gate, and under the D220 connect measurement. `client.ts` is untouched. The app total graph was 196,514 / 63,830.
 
+### Hidden where and orderBy, shipped
+
+P81B ships variant B (D226). One `bun run size` run after the check. The runtime entry stays 5,288 / 2,026. The featureless-app gate stays 90,900 / 30,170. No other gate moves.
+
+| Graph | Before (D219) | After | Delta (min / gzip) | Gate | Left (min / gzip) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Runtime entry | 5,288 / 2,026 | 5,288 / 2,026 | 0 / 0 | 6,100 / 2,250 | 812 / 224 |
+| Featureless app | 90,506 / 30,063 | 90,721 / 30,154 | +215 / +91 | 90,900 / 30,170 | 179 / 16 |
+| postgres.js | 42,038 / 14,805 | 42,177 / 14,856 | +139 / +51 | 42,450 / 14,920 | 273 / 64 |
+| PGlite | 40,049 / 14,163 | 40,187 / 14,223 | +138 / +60 | 40,450 / 14,280 | 263 / 57 |
+| node-postgres | 42,451 / 14,965 | 42,590 / 15,016 | +139 / +51 | 42,850 / 15,070 | 260 / 54 |
+| Bun.sql | 41,299 / 14,504 | 41,438 / 14,544 | +139 / +40 | 41,700 / 14,620 | 262 / 76 |
+
+The shipped app is 3 minified and 11 gzip above the variant B prototype (90,718 / 30,143). Each connect entry is 2 or 3 minified above that prototype. `refuseHidden` is exported so the lazy aggregate chunk can apply it before the groupBy rule. The app total graph is 196,565 / 63,904. Cold import: runtime 1.696 ms, app 10.296 ms (stubbed 5.361 ms), postgres.js 8.593 ms (stubbed 2.673 ms), PGlite 11.078 ms (stubbed 3.035 ms), node-postgres 10.842 ms (stubbed 2.624 ms), Bun.sql stubbed 2.594 ms. All are under the 15 ms local reference. query-200 is 17,119 instantiations and 6,314 types (ceilings 17,300 and 6,500) and inferred-250 is 17,650 (ceiling 21,180).
+
 Variant C rebuilds a name list inside `indexes()`, which already walks columns. That list is more code in `plan.ts` than the comparison, so every graph that contains `plan.ts` is larger. The app total graph was 196,562 / 63,887.
 
 ### Tenant onConflict
