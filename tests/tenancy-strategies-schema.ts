@@ -7,7 +7,7 @@
 
 import { id, index, one, schema, table, text, uuid } from "../src/dialects/pg/index.js";
 import { archivable } from "../src/runtime/traits/index.js";
-import { columnTenancy } from "../src/runtime/tenancy/index.js";
+import { columnTenancy, compositeTenancy, via } from "../src/runtime/tenancy/index.js";
 
 /** First organization. */
 export const ORG_A = "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c11";
@@ -48,7 +48,7 @@ export const TEAM = "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c04";
 /** Note id at the end of the three-hop path. */
 export const NOTE = "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c05";
 
-const compositeTenancy = columnTenancy({
+const compositeKeys = compositeTenancy({
   key: ["organizationId", "workspaceId"],
   type: "uuid",
 });
@@ -75,7 +75,7 @@ const files = table(
 /** Composite tenancy: organization and workspace together. */
 export const compositeApp = schema({
   casing: "snake",
-  tenancy: compositeTenancy,
+  tenancy: compositeKeys,
   tables: [documents, files],
 });
 
@@ -93,7 +93,7 @@ const projects = table(
     organizationId: uuid().references("organizations"),
   },
   {
-    tenancy: { via: "organization" },
+    tenancy: via("organization"),
     relations: { organization: one("organizations", "organizationId") },
   },
 );
@@ -106,7 +106,7 @@ const departments = table(
     organizationId: uuid().references("organizations"),
   },
   {
-    tenancy: { via: "organization" },
+    tenancy: via("organization"),
     relations: { organization: one("organizations", "organizationId") },
   },
 );
@@ -119,7 +119,7 @@ const teams = table(
     departmentId: uuid().references("departments"),
   },
   {
-    tenancy: { via: "department.organization" },
+    tenancy: via("department.organization"),
     relations: { department: one("departments", "departmentId") },
   },
 );
@@ -132,7 +132,7 @@ const notes = table(
     teamId: uuid().references("teams"),
   },
   {
-    tenancy: { via: "team.department.organization" },
+    tenancy: via("team.department.organization"),
     relations: { team: one("teams", "teamId") },
   },
 );

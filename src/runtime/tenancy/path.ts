@@ -1,7 +1,7 @@
 /**
  * Path tenancy.
  *
- * A table with `tenancy: { via: "project.organization" }` has no tenant column.
+ * A table with `tenancy: via("project.organization")` has no tenant column.
  * Reads and writes add `EXISTS` along that relation path. An insert checks the
  * parent in the same statement. The featureless app does not import this file.
  */
@@ -89,7 +89,7 @@ type ExistsInput = {
 const MAX_HOPS = 3;
 
 /**
- * Resolves every `tenancy: { via }` table.
+ * Resolves every `via()` table.
  *
  * A path that does not end at a tenant table, a missing relation, a cycle, or
  * more than three hops is OKM1705. The caller rewrites tenant tables after this
@@ -131,7 +131,7 @@ export function compilePaths(
 }
 
 /**
- * Reads `tenancy: { via }` from a table.
+ * Reads the path text from a `via()` table.
  *
  * @param item - Table already classified as a path
  * @returns The path text

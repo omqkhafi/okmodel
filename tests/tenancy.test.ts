@@ -472,7 +472,7 @@ test("tenancy definition errors name the column, the index, and the reference", 
       tenancy,
       tables: [table("child", { id: id({ default: "none" }) }, { tenancy: { via: "parent.org" } })],
     }),
-  ).toThrow(OkmError);
+  ).toThrow(/via\(\)/);
 
   expect(() => global("")).toThrow(/reason/);
   expect(() =>

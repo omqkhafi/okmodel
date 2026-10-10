@@ -19,7 +19,12 @@ import { createIsolatedDatabase, withPostgresSchema } from "../packages/harness/
 import { primaryUrl } from "../packages/harness/src/topology.js";
 import { connect } from "../src/runtime/pg/postgresjs.js";
 import type { Connected } from "../src/runtime/types.js";
-import { columnTenancy, type ColumnTenancy } from "../src/runtime/tenancy/index.js";
+import {
+  columnTenancy,
+  compositeTenancy,
+  via,
+  type ColumnTenancy,
+} from "../src/runtime/tenancy/index.js";
 import { tenantProbe } from "../src/tooling/testing/facts.js";
 import { testing } from "../src/tooling/testing/index.js";
 import {
@@ -173,7 +178,7 @@ postgresTest(
   "isolation passes for composite and path and fails when the predicate is removed",
   async () => {
     await expectIsolation(
-      () => columnTenancy({ key: ["organizationId", "workspaceId"], type: "uuid" }),
+      () => compositeTenancy({ key: ["organizationId", "workspaceId"], type: "uuid" }),
       compositeSchema,
       ["documents"],
     );
@@ -270,7 +275,7 @@ function pathSchema(tenancy: ColumnTenancy) {
       organizationId: uuid().references("organizations"),
     },
     {
-      tenancy: { via: "organization" },
+      tenancy: via("organization"),
       relations: { organization: one("organizations", "organizationId") },
     },
   );

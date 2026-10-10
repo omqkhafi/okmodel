@@ -5,6 +5,7 @@
 import { expectTypeOf } from "expect-type";
 
 import type { Connected } from "../src/runtime/types.js";
+import { columnTenancy } from "../src/runtime/tenancy/index.js";
 import { compositeApp, pathApp } from "./tenancy-strategies-schema.js";
 
 expectTypeOf<keyof (typeof compositeApp)["~byName"]["documents"]["~row"]>().toEqualTypeOf<
@@ -22,6 +23,9 @@ expectTypeOf<keyof (typeof pathApp)["~byName"]["projects"]["~row"]>().toEqualTyp
 expectTypeOf<keyof (typeof pathApp)["~byName"]["notes"]["~row"]>().toEqualTypeOf<
   "id" | "body" | "teamId"
 >();
+
+// @ts-expect-error columnTenancy() takes one key. Use compositeTenancy().
+columnTenancy({ key: ["organizationId", "workspaceId"], type: "uuid" });
 
 type Composite = Connected<typeof compositeApp>;
 

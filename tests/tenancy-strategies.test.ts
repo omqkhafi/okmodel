@@ -10,7 +10,7 @@ import { OkmError } from "../src/contracts/error.js";
 import type { DriverPool } from "../src/contracts/driver.js";
 import { id, index, one, schema, table, text, uuid } from "../src/dialects/pg/index.js";
 import { connect } from "../src/runtime/pg/postgresjs.js";
-import { columnTenancy, global } from "../src/runtime/tenancy/index.js";
+import { columnTenancy, compositeTenancy, global, via } from "../src/runtime/tenancy/index.js";
 import {
   compositeApp,
   DOC,
@@ -96,6 +96,12 @@ test("an object map is refused in favor of the key list", () => {
       key: { organizationId: "uuid", workspaceId: "uuid" },
       type: "uuid",
     } as never),
+  ).toThrow(/field name/);
+  expect(() =>
+    compositeTenancy({
+      key: { organizationId: "uuid", workspaceId: "uuid" },
+      type: "uuid",
+    } as never),
   ).toThrow(/list of field names/);
 });
 
@@ -103,7 +109,7 @@ test("an index that does not lead with the first composite key is OKM1706", () =
   expect(() =>
     schema({
       casing: "snake",
-      tenancy: columnTenancy({ key: ["organizationId", "workspaceId"], type: "uuid" }),
+      tenancy: compositeTenancy({ key: ["organizationId", "workspaceId"], type: "uuid" }),
       tables: [
         table(
           "documents",
@@ -185,7 +191,7 @@ test("a path that is too long, broken, cyclic, or short of a tenant table is OKM
         table(
           "notes",
           { id: id({ default: "none" }), organizationId: uuid().references("organizations") },
-          { tenancy: { via: "a.b.c.d" }, relations: { a: one("organizations", "organizationId") } },
+          { tenancy: via("a.b.c.d"), relations: { a: one("organizations", "organizationId") } },
         ),
       ],
     }),
@@ -199,7 +205,7 @@ test("a path that is too long, broken, cyclic, or short of a tenant table is OKM
         table(
           "notes",
           { id: id({ default: "none" }), organizationId: uuid().references("organizations") },
-          { tenancy: { via: "missing" } },
+          { tenancy: via("missing") },
         ),
       ],
     }),
@@ -218,7 +224,7 @@ test("a path that is too long, broken, cyclic, or short of a tenant table is OKM
         table(
           "notes",
           { id: id({ default: "none" }), countryId: uuid().references("countries") },
-          { tenancy: { via: "country" }, relations: { country: one("countries", "countryId") } },
+          { tenancy: via("country"), relations: { country: one("countries", "countryId") } },
         ),
       ],
     }),
@@ -228,7 +234,7 @@ test("a path that is too long, broken, cyclic, or short of a tenant table is OKM
     "left",
     { id: id({ default: "none" }), rightId: uuid() },
     {
-      tenancy: { via: "right.left" },
+      tenancy: via("right.left"),
       relations: { right: one("right", "rightId") },
     },
   );
@@ -236,7 +242,7 @@ test("a path that is too long, broken, cyclic, or short of a tenant table is OKM
     "right",
     { id: id({ default: "none" }), leftId: uuid() },
     {
-      tenancy: { via: "left.right" },
+      tenancy: via("left.right"),
       relations: { left: one("left", "leftId") },
     },
   );
