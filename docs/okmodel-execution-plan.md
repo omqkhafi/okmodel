@@ -14,7 +14,7 @@ Companion to `okmodel-api-design.md` (draft 22). The spec is normative; this fil
 6. The spec changes only through a recorded decision (D-number). If implementation contradicts the spec, the report says so and Claude decides: fix the code or amend the spec.
 7. Guarantees grow with the code. Every prompt that adds behavior also adds its tests: conformance tests for semantics, a registration in the final safety verifier for anything that adds or changes a rule, and the CI test named in the spec for any invariant it touches. A prompt is not done while a guarantee it introduces has no test.
 8. Order rule: a prompt may use only what earlier prompts delivered. Where a later prompt completes a behavior, the earlier prompt ships the conservative version (stated in its row) so every branch is safe on its own.
-9. Hygiene (D115): P09A is a cleanup round after the M0 gate; every later gate (P17, P30, P44, P55, P66) ends with a lighter hygiene step (dead code, duplicated helpers, flaky tests, doc sync, dependency audit, budgets re-checked) before `bun run bump release`.
+9. Hygiene (D115): P09A is a cleanup round after the M0 gate; every later gate (P17, P30, P44, P55, P66, P86) ends with a lighter hygiene step (dead code, duplicated helpers, flaky tests, doc sync, dependency audit, budgets re-checked) before `bun run bump release`. The 0.7, 0.8, and 0.9 gates do the same when their prompts are written (D217).
 10. Engineering standards (D129): every prompt optimises for performance, speed, lightness and cold start, avoids duplicated code, keeps the public API small and clear, and ends with a self-review against these rules; the report states runtime entry size, cold import and type-cost change.
 11. Changelog and version: every prompt adds its notes under `## Unreleased` in `changelog.md` (what changed for someone using or building the package, one line each) and ends with `bun run bump next`, so `package.json` moves with every merged prompt. A gate prompt that releases ends with `bun run bump release` instead (D113). The pull request fails CI if either is missing.
 
@@ -152,11 +152,39 @@ QA of 0.5.0 (`fe9fad8`) found defects. This train fixes them and releases 0.5.1.
 | P69b | `p69b-timeouts` | Bun.sql and PGlite timeout and signal (QA-M3, OKM1192 for PGlite outer-client-in-tx). Split out of P69 on #147. The first PR says `Refs #147`, the last says `Closes #147` |
 | P71 | `p71-release-051` | Packaging, CI, docs, the gate, and release 0.5.1 (QA-R1 to QA-R4, D1 to D8). The parallel check jobs, with a final aggregate job named `gate / check` that needs all of them and fails if any did not succeed. That name is the required status |
 
-Deferred, with reasons. QA-L4 (catalog identity and constraint names) waits for 0.6, with a rename design. A `refresh()` handle for materialized views waits for 0.6.
+Deferred, with reasons. QA-L4 (catalog identity and constraint names) waits for 0.6, with a rename design. A `refresh()` handle for materialized views waits for 0.6. Both are P81.
+
+### Phase 7 — M2 Depth
+
+M2 Depth ships as four trains, in this order (D217). Access is first: tenancy and grants are the isolation boundary, and the query, SQL, and tooling trains have to obey it. Milestone [0.6](https://github.com/omqkhafi/okmodel/milestone/8). The OKE `store.sql` prototype starts after 0.6 is released, and it uses only the public API.
+
+Startup room after 0.5.1 (D216): the featureless app is 90,851 / 30,157 against a gate of 90,900 / 30,170 (49 minified bytes and 13 gzip left). The connect entries have about 20 gzip left (postgres.js 22, PGlite 23, node-postgres 22, Bun.sql 28). Every M2 feature loads lazily, or the step stops with the numbers first and does not move a gate (the D201 rule, for all of M2). P80 is the report that says which 0.6 features can be lazy. Ali approves that proposal before P81.
+
+Ranges reserved, prompts written when reached except for 0.6: 0.6 is P80–P89, 0.7 is P90–P99, 0.8 is P100–P109, 0.9 is P110–P119. Each train ends with a gate step and a release commit, like P66. P87–P89 are not scheduled.
+
+#### Train 0.6 Access
+
+| ID | Branch | Delivers |
+|---|---|---|
+| P80 | `p80-m2-budget-audit` | Report only. No feature section. Measure where the bytes go in each startup graph (the featureless app, the runtime entry, and the four connect entries) and which 0.6 features can load lazily. The gates are D129, D201, and D216. §2 measures types and isolation, not these byte gates. Propose gate options. No feature code. No gate, cap, or ceiling moves. The output is a decision proposal Ali approves before P81 |
+| P81 | `p81-access-hygiene` | Deferred 0.5.x items on the same code. Hidden columns in `where` and `orderBy` (QA-S1, §6.7, §10, §10.1, D215): a decision with examples first. The spec does not refuse them there. The recommendation to decide is refuse with OKM1120, and an opt-in per column. Tenant `onConflict` on a unique of (tenant key, column) is OKM1104 today (§9.2, §11). QA-L4 is constraint names and the extra `UNIQUE` on (id, tenant key), with a rename design (§5.1, §5.7, §9.2, D168, D194). §9.2 requires that unique beside the composite primary key, so this step does not drop it ahead of the design. A `refresh()` handle for materialized views (§5.7). The Bun.sql and PGlite timeout and signal race (QA-M3), as a lazy design, using the D216 numbers (§15, D56). Stop: lazy, or stop with the numbers first. No gate move |
+| P82 | `p82-tenancy-composite-path` | Tenancy strategies `composite` and `path` (§9.1, §9.2, §9.3). `schemaPerTenant` and `databasePerTenant` stay M5. Stop: lazy, or stop with the numbers first. No gate move |
+| P83 | `p83-tenancy-rls` | Strategy `rls`: policies, the session variable set per transaction, and the hardening in §9 and §9.4 (`FORCE ROW LEVEL SECURITY`, `set_config`, missing-ok policies, OKM1707, `security_invoker` on views in §5.7). `table({ policies })` is `later` in §6.4. It leaves `later` only for the part this step does not ship. Stop: lazy, or stop with the numbers first. No gate move |
+| P84 | `p84-grants-ownership` | Column-level grants (§5.7 Grants), a read-only reporting role (D207 names it; the spec's surface is the grants), ownership (`ignored` and `owner:`, §5.1, D61), and the application role's `SELECT` on `okm_meta` (D208 follow-up; known limit, not a spec section). Stop: lazy, or stop with the numbers first. No gate move |
+| P85 | `p85-view-isolation` | A read-only `isolation()` check for views and tenant views (§5.7 Tenancy, §20, D199, D207). `filters()` completion: operators and relations beyond the thirteen D215 parses (§10.1, §10.2). `filters()` itself stays the synchronous spec in D161. Stop: lazy, or stop with the numbers first. No gate move |
+| P86 | `p86-gate-0.6` | Gate and release 0.6, like P66. Hygiene before `bun run bump release` (D115). No new API in the gate step |
+
+#### Later trains (prompts written when reached)
+
+| Train | Steps | Scope |
+|---|---|---|
+| 0.7 Query depth | P90–P99 | Tools 2, 4, 5, and 7 to 15 (§13), `versioned` and `sortable` (§8), `morph` (§6.2), and `.stream()` (§10). §5.3 and §11 already specify conflict modes, the per-row update list, atomic operators, and `lock: "skip"`, and `.stream()` already has a lazy chunk. The prompt audits what is left before it builds. Milestone [0.7](https://github.com/omqkhafi/okmodel/milestone/9). Ends with a gate and a release, like P66 |
+| 0.8 SQL lane | P100–P109 | The SQL builder lane (the M2 row; rule 15 names composed `sql` fragments, and there is no builder section), typed raw SQL with an explicit class (§16, D205), `explain()` and the dev inspector with routing reasons (§5.4, §15.1, D202), `okmodel/otel` (§5.5, D80), the Neon adapter (§4; `okmodel/pg/pg` and `okmodel/pg/bun` shipped in 0.2, D156), `okm driver test` (§4.2, §20), and typed `fn` calls and builder views if the budget allows (§5.7, D190). Milestone [0.8](https://github.com/omqkhafi/okmodel/milestone/10). Ends with a gate and a release, like P66 |
+| 0.9 Tooling | P110–P119 | The full linter and the safe rewrites still missing after 0.4 (§19.1; OKM1538 has no safe form), `okm pull` (§19.4) including plpgsql dependency verification on a scratch database (§5.7; the M2 row, not repeated in the train brief), several catalogs, `external()`, and `okm catalog export` (§3.6), extension packs and `okm ext` (§4.1; `list` and `check` shipped in 0.3), the GitHub Action (§19.8, D80), the programmatic schema API (D26), `okm import drizzle` (§19.4), and the M2 gate. Milestone [0.9](https://github.com/omqkhafi/okmodel/milestone/11). Ends with a gate and a release, like P66 |
 
 ### Later phases (prompts written when reached)
 
-M2 Depth (tenancy `path`/`composite`/`rls`, `filters()`, SQL builder lane, typed raw SQL, full linter, `okm pull`, `versioned`/`sortable`, extension packs, several catalogs, dev inspector including routing reasons on `inspect()`, `explain()`, `okmodel/otel`, GitHub Action, adapters), M3 SQLite, M4 MySQL, M5 Hardening (schema-per-tenant and database-per-tenant with `tenancy.registry`, target resolution, tenant provisioning and rollout control (`--class`, `--canary`, `--concurrency`, `--max-failures`, contract gating, second pass), studio, live docs), then the 1.0 gate.
+M2 Depth is Phase 7 (trains 0.6 Access, 0.7 Query depth, 0.8 SQL lane, 0.9 Tooling). M3 SQLite, M4 MySQL, M5 Hardening (schema-per-tenant and database-per-tenant with `tenancy.registry`, target resolution, tenant provisioning and rollout control (`--class`, `--canary`, `--concurrency`, `--max-failures`, contract gating, second pass), studio, live docs), then the 1.0 gate.
 
 ## Dependency notes (audit of draft 16)
 
@@ -174,7 +202,8 @@ Problems found in the earlier order and how the table above resolves them:
 - **Routing before consistency:** P61 shipped the wrote flag (writers read from the primary). P63 replaced it with commit positions (D204). A watermark per `for()` client stays deferred. The extra fallback rate under write load is the P66 sample (D209), which replaces the thin P64 count (D205).
 - **The M1 reference app had no prompt:** P65.
 - **Reference app follow-ups not in P65A** (D208): the raw driver stack printed when the database does not exist; exporting `Connected` and `RoutedClient` by name; the application role's manual `GRANT SELECT` on `okm_meta`.
-- **Reference app follow-ups from P65** (D207): a read-only `isolation()` check for tenant views (M2).
+- **Reference app follow-ups from P65** (D207): a read-only `isolation()` check for tenant views (M2). It is P85.
+- **The OKE prototype start moved:** D209 and the P66 row say it starts after 0.5. It starts after 0.6, and it uses only the public API (D217).
 - **Named targets and apply semantics are foundations, not M5 features:** environments and previews need `--target`, resume and the per-target lock from the first release, so they are in P16; only the multi-target rollout flags wait for M5.
 
 ## Repository conventions (fixed at bootstrap)
@@ -183,7 +212,7 @@ Problems found in the earlier order and how the table above resolves them:
 - The tarball is controlled by a `files` whitelist (`dist`, `README.md`, `LICENSE`); repository tooling (`tools/`, `docs/`, `packages/`) is never published.
 - The repository belongs to `github.com/omqkhafi`; copyright is `Copyright 2026 Omq Khafi`; Apache-2.0.
 - Every commit carries exactly two trailers: `Signed-off-by: Omq Khafi <omqkhafi@gmail.com>` (DCO) and `Co-authored-by: Ali Alnaghmoush <alialnaghmoush@gmail.com>`. No other trailer (no tool or assistant attribution) and no other personal address in any file or commit beyond these two.
-- Versioning (D113): versions are `<next release>-next.N` while a train is in progress (`0.1.0-next.1`, `0.1.0-next.2`, ...). The gate prompt of a train releases it: P17 is 0.1.0, P30 is 0.2.0, P44 is 0.3.0, P55 is 0.4.0, P66 is 0.5.0. Only released versions are published to npm and tagged (`v0.1.0`); `-next` versions stay in the repository.
+- Versioning (D113): versions are `<next release>-next.N` while a train is in progress (`0.1.0-next.1`, `0.1.0-next.2`, ...). The gate prompt of a train releases it: P17 is 0.1.0, P30 is 0.2.0, P44 is 0.3.0, P55 is 0.4.0, P66 is 0.5.0, P86 is 0.6.0. The 0.7, 0.8, and 0.9 gates release those versions (D217). Only released versions are published to npm and tagged (`v0.1.0`); `-next` versions stay in the repository.
 - No commit, pull request description, comment or file may mention the tool that produced it (no `Co-authored-by` for a tool, no "Made with" lines).
 - `AGENTS.md` is the single source of agent rules; `CLAUDE.md` imports it.
 

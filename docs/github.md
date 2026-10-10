@@ -9,10 +9,10 @@ The GitHub defaults are not used. Three groups:
 | Group    | Labels                                                                                   |
 | -------- | ---------------------------------------------------------------------------------------- |
 | `type:`  | `feat`, `fix`, `perf`, `docs`, `test`, `chore`, `refactor`, `security`                   |
-| `area:`  | `contracts`, `dialects`, `adapters`, `runtime`, `tooling`, `ci`, `docs`                  |
+| `area:`  | `contracts`, `dialects`, `adapters`, `runtime`, `tooling`, `ci`, `docs`, `tenancy`, `grants` |
 | `needs:` | `decision`, `repro`, `design`, `postgres`                                                |
 
-`area:` follows the directories under `src/`. `ci` is workflows and `scripts/`. `docs` is `docs/` and the repository markdown.
+`area:` follows the directories under `src/`. `ci` is workflows and `scripts/`. `docs` is `docs/` and the repository markdown. `tenancy` and `grants` are set on the issue. The path labeler does not add them: they are not directories under `src/` (D217).
 
 Every issue and every pull request has exactly one `type:` label and at least one `area:` label. `needs:` is optional.
 
