@@ -67,7 +67,7 @@ test("catalog stores the tenant column, composite keys, and widened uniques", ()
       object.definition.constraintKind === "primaryKey",
   );
   expect(pk?.kind === "constraint" ? pk.definition.columns : []).toEqual(["id", "tenant_id"]);
-  expect(pk?.identity.name).toBe("tasks_pkey");
+  expect(objectName(pk)).toBe("tasks_pkey");
 
   const tenantUnique = objects.find(
     (object) =>
@@ -76,7 +76,7 @@ test("catalog stores the tenant column, composite keys, and widened uniques", ()
       object.identity.parent.name === "tasks" &&
       object.definition.columns.join(",") === "id,tenant_id",
   );
-  expect(tenantUnique?.identity.name).toBe("tasks_id_tenantId_key");
+  expect(objectName(tenantUnique)).toBe("tasks_id_tenantId_key");
   expect(tenantUnique?.kind === "constraint" ? tenantUnique.definition.nameKey : "").toBe(
     "id_tenantId",
   );
@@ -91,7 +91,7 @@ test("catalog stores the tenant column, composite keys, and widened uniques", ()
     "tenant_id",
     "title",
   ]);
-  expect(title?.identity.name).toBe("tasks_title_key");
+  expect(objectName(title)).toBe("tasks_title_key");
 
   const code = objects.find(
     (object) =>
@@ -117,7 +117,7 @@ test("catalog stores the tenant column, composite keys, and widened uniques", ()
     (object) => object.kind === "index" && object.identity.parent.name === "tasks",
   );
   expect(listed?.kind === "index" ? listed.definition.columns : []).toEqual(["tenant_id", "title"]);
-  expect(listed?.identity.name).toBe("tasks_tenant_id_title_idx");
+  expect(objectName(listed)).toBe("tasks_tenant_id_title_idx");
 
   const sql = renderCatalog(app.catalog, "public").join("\n");
   expect(sql).toContain("tenant_id");
@@ -187,6 +187,11 @@ test("renamedFrom renames the extra tenant unique and does not drop it", () => {
     "a9c2ca6f3853e4eca2d7e2c679588cb36ff2109ebd7b3848a5d6245ef6b73f29",
   );
 });
+
+function objectName(object: (typeof app.catalog.objects)[number] | undefined): string {
+  if (object === undefined || (object.kind !== "constraint" && object.kind !== "index")) return "";
+  return "name" in object.identity ? object.identity.name : "";
+}
 
 function sqlOf(
   before: ReturnType<typeof schema>["catalog"],
