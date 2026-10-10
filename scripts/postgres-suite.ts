@@ -7,6 +7,7 @@
  * A known failure that starts passing fails the run.
  *
  *   REQUIRE_DOCKER=1 bun ./scripts/postgres-suite.ts
+ *   REQUIRE_DOCKER=1 bun ./scripts/postgres-suite.ts --shard isolation
  */
 
 import { mkdtempSync, readFileSync, rmSync, readdirSync, statSync } from "node:fs";
@@ -15,6 +16,11 @@ import { join, relative, sep } from "node:path";
 
 import { postgresVersionFromEnv, type PostgresVersion } from "../packages/harness/src/version.js";
 import { primaryUrl } from "../packages/harness/src/topology.js";
+import {
+  assignPostgresShards,
+  parsePostgresShard,
+  type PostgresShard,
+} from "./ci-postgres-shards.js";
 import { repoRoot } from "./root.js";
 
 /** A test file the Docker run does not execute, and why. */
@@ -205,27 +211,56 @@ export function readSkipCount(path: string): number {
   }
 }
 
+/**
+ * The shard's files, or every path when the suite is not sharded.
+ *
+ * @param root - Repository root
+ * @param shard - Shard for this job, or undefined for every file
+ * @returns A set of repository-root paths
+ */
+function shardFiles(
+  root: string,
+  shard: PostgresShard | undefined,
+): ReadonlySet<string> | undefined {
+  if (shard === undefined) return undefined;
+  const group = assignPostgresShards(discoverTestFiles(root)).find((item) => item.name === shard);
+  return new Set(group?.files ?? []);
+}
+
 if (import.meta.main) {
   const root = repoRoot();
+  let shard: PostgresShard | undefined;
+  try {
+    shard = parsePostgresShard(process.argv);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
   const plan = postgresSuitePlan(root, postgresVersionFromEnv());
+  const allowed = shardFiles(root, shard);
+  const onShard = (file: string): boolean => allowed === undefined || allowed.has(file);
+  const run = plan.run.filter(onShard);
+  const known = plan.known.filter((item) => onShard(item.file));
+  const excluded = plan.excluded.filter((item) => onShard(item.file));
+  const shardLabel = shard === undefined ? "" : ` shard ${shard}`;
   console.error(
-    `[postgres-suite] Postgres ${plan.version}: ${String(plan.run.length)} files, ${String(plan.excluded.length)} excluded, ${String(plan.known.length)} known failures`,
+    `[postgres-suite] Postgres ${plan.version}${shardLabel}: ${String(run.length)} files, ${String(excluded.length)} excluded, ${String(known.length)} known failures`,
   );
-  await preflightPostgres(plan.run.length);
-  for (const item of plan.excluded) {
+  await preflightPostgres(run.length);
+  for (const item of excluded) {
     console.error(`[postgres-suite] excluded ${item.file}: ${item.reason}`);
   }
-  if (plan.run.length === 0) {
+  if (run.length === 0 && known.length === 0) {
     console.error("[postgres-suite] no files to run");
     process.exit(1);
   }
   const scratch = mkdtempSync(join(tmpdir(), "okm-postgres-skips-"));
   const skipFile = join(scratch, "skips");
   const childEnv = { OKM_POSTGRES_SKIP_FILE: skipFile };
-  let code = await runBunTest(root, plan.run, childEnv);
+  let code = run.length === 0 ? 0 : await runBunTest(root, run, childEnv);
   let unexpectedPass: string | undefined;
   if (code === 0) {
-    for (const item of plan.known) {
+    for (const item of known) {
       console.error(`[postgres-suite] known failure ${item.file}: ${item.reason}`);
       const failed = await runBunTest(root, [item.file], childEnv);
       if (failed === 0) {

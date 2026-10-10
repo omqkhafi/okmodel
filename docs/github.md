@@ -26,6 +26,8 @@ Every issue and every pull request has exactly one `type:` label and at least on
 
 A pull request update starts one Actions run, `CI`. `label / paths` adds `area:` labels from the changed files. `lint / pull request` then checks the title, the closing line, one `type:` label, at least one `area:` label, and a milestone. It checks out the base branch and runs `scripts/pr-lint.ts`. Neither job checks out pull request code. A title edit, a label change, or a milestone change starts `pr-meta.yml` instead, which runs the same lint. A label added with `GITHUB_TOKEN` does not start another workflow.
 
+`gate / check` is the required status. It needs every CI slice, including `suite` and `tarball`. Those two run when the pull request has `needs: postgres`: the suite is four shards (`isolation`, `selection`, `consistency`, `tx`) on Postgres 15 and 18, each with its own database, and the pgbouncer proof is a separate job in that same workflow. The tarball job is Postgres 18. A slice that should have run must be `success`. Without the label, `suite` and `tarball` are skipped and the gate allows that skip. A skip while the label is present fails the gate (D213, D230). Release and the weekly run still pass every supported major through the same workflows.
+
 A Dependabot pull request has no issue and no milestone, so `lint` skips the closing line and the milestone for `dependabot[bot]`. Its title and labels are still checked.
 
 ## Milestones

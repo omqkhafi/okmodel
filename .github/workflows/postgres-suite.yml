@@ -1,8 +1,10 @@
 name: Postgres
 
 # Reusable suite. The caller job is named `suite`, so a run reads
-# `Postgres / suite / 15`. A pull request with `needs: postgres` passes the
-# floor and the newest. Release and weekly pass every supported major.
+# `Postgres / suite / 15 / isolation`. A pull request with `needs: postgres`
+# passes the floor and the newest. Release and weekly pass every supported
+# major. Each shard has its own topology. The pooler proof is its own job,
+# so apt-get is not on the suite path. `versions` is unchanged (D230).
 on:
   workflow_call:
     inputs:
@@ -17,9 +19,72 @@ permissions:
 
 jobs:
   suite:
-    name: ${{ matrix.version }}
+    name: ${{ matrix.version }} / ${{ matrix.shard }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ${{ fromJSON(inputs.versions) }}
+        shard:
+          - isolation
+          - selection
+          - consistency
+          - tx
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Cache Bun
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Build
+        run: |
+          answer="$(bun ./scripts/ci-postgres-shards.ts --needs-build "${{ matrix.shard }}")"
+          if [ "$answer" != "yes" ]; then
+            echo "no dist build for ${{ matrix.shard }}"
+            exit 0
+          fi
+          bun run build
+
+      - name: Pull Postgres
+        run: docker pull "postgres:${POSTGRES_VERSION}"
+        env:
+          POSTGRES_VERSION: ${{ matrix.version }}
+
+      - name: Start Postgres
+        run: bun run db:up
+        env:
+          POSTGRES_VERSION: ${{ matrix.version }}
+
+      - name: Postgres suite
+        run: bun ./scripts/postgres-suite.ts --shard "${{ matrix.shard }}"
+        env:
+          REQUIRE_DOCKER: "1"
+          POSTGRES_VERSION: ${{ matrix.version }}
+
+      - name: Stop Postgres
+        if: always()
+        run: bun run db:down
+        env:
+          POSTGRES_VERSION: ${{ matrix.version }}
+
+  pooler:
+    name: pooler / ${{ matrix.version }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -33,21 +98,24 @@ jobs:
         with:
           bun-version: 1.4.2
 
+      - name: Cache Bun
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+
       - name: Install
         run: bun install --frozen-lockfile
 
-      - name: Build
-        run: bun run build
+      - name: Pull Postgres
+        run: docker pull "postgres:${POSTGRES_VERSION}"
+        env:
+          POSTGRES_VERSION: ${{ matrix.version }}
 
       - name: Start Postgres
         run: bun run db:up
         env:
-          POSTGRES_VERSION: ${{ matrix.version }}
-
-      - name: Postgres suite
-        run: bun ./scripts/postgres-suite.ts
-        env:
-          REQUIRE_DOCKER: "1"
           POSTGRES_VERSION: ${{ matrix.version }}
 
       - name: Install pgbouncer
