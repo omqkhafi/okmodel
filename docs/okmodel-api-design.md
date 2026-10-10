@@ -768,7 +768,7 @@ const countries = table("countries", { id: id(), name: text() }, { tenancy: glob
 
 - Every table is isolated by default; exceptions: `tenancy: { via }` or `tenancy: global("reason")`.
 - The `column` strategy adds the key to inheriting tables.
-- `.unique()` on a tenant table becomes `UNIQUE (tenant_key, …)`; `.unique({ global: "reason" })` opts out.
+- `.unique()` on a tenant table becomes `UNIQUE (tenant_key, …)`; `.unique({ global: "reason" })` opts out. `onConflict.on` names that unique without the tenant key. The conflict target includes the key, in the unique's order, and the inserted row still carries the caller's tenant, so the update cannot land on another tenant's row (D221). Naming the tenant key in `on` is OKM1104.
 - Every tenant table's primary key is the declared key plus the tenant key, and the table also has `UNIQUE` on those columns, so two tenants can share an id. FKs between tenant tables are composite, so no row can reference another tenant's row, even through raw SQL.
 - Lint OKM1706: an index on a tenant table that does not lead with the tenant key.
 - Changing the tenant key in `update` is refused (OKM1704); a global table referencing a tenant table is flagged (OKM1705).
@@ -876,7 +876,7 @@ Relations are filterable only when listed with the exact fields allowed (`relati
 
 | Method | Rule |
 |---|---|
-| `insert(data \| data[], opts)` | unknown keys dropped; guarded fields refused; auto-chunked. `onConflict`: `"error"` (default), `"ignore"`, `{ on, update }` (upsert), `{ on, return: true }` (first-or-create). `on` must name a unique constraint (OKM1104) |
+| `insert(data \| data[], opts)` | unknown keys dropped; guarded fields refused; auto-chunked. `onConflict`: `"error"` (default), `"ignore"`, `{ on, update }` (upsert), `{ on, return: true }` (first-or-create). `on` must name a unique constraint (OKM1104). On a tenant table, name it without the tenant key; the target includes the key (D221) |
 | `update(target, opts)` | target is `{ where, set }` or a list `[{ id \| where, set }]` (per-row values in one statement). `where` required or `.all("reason")`. `lock: "skip"` with `limit` claims rows (job queues) |
 | `delete({ where }, opts)` | permanent deletion of the matched records. On `archivable` tables it targets the active set unless `withArchived()` / `onlyArchived()` is used |
 | `archive({ where }, opts)` | `archivable` tables only; returns `{ count, archiveId }` |

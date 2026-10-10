@@ -229,3 +229,11 @@ Ali chose D218 option d: move first, then spend (D219). No gate, cap, or ceiling
 | Bun.sql | 41,643 / 14,592 | 41,299 / 14,504 | −344 / −88 | 41,700 / 14,620 | 401 / 116 |
 
 Cold import after the move: runtime 1.801 ms, app 10.898 ms (stubbed 5.643 ms), postgres.js 8.732 ms (stubbed 2.822 ms), PGlite 11.015 ms (stubbed 2.931 ms), node-postgres 14.817 ms (stubbed 2.871 ms), Bun.sql stubbed 2.664 ms. All are under the 15 ms local reference. The app total graph is 196,139 / 63,765. The prototype's larger saving is not this measurement: `orFail` still ships in the read planner.
+
+### Hidden where and orderBy, measured and not shipped
+
+The check from D218, plus `hidden({ filterable: true })` on the column, was measured once on top of the move and reverted (D220). The featureless app was 90,943 / 30,199, over the 90,900 / 30,170 gate. Connect entries stayed under their gates: postgres.js 42,252 / 14,879, PGlite 40,263 / 14,252, node-postgres 42,665 / 15,042, Bun.sql 41,513 / 14,569. The runtime entry stayed 5,288 / 2,026.
+
+### Tenant onConflict
+
+The branch stays in the lazy conflict chunk (D221). Gated graphs match the table above. The app total graph is 196,302 / 63,858.
