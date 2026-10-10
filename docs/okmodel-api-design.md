@@ -753,13 +753,13 @@ export const appSchema = schema({
 const countries = table("countries", { id: id(), name: text() }, { tenancy: global("shared reference data") });
 ```
 
-`columnTenancy()` carries the column, the widened uniques, the composite foreign keys, the scope predicate, and `for()` / `unscoped()`. A schema that does not pass it does not load that code. `schemaPerTenant` and `databasePerTenant` are separate objects in the same subpath later.
+`columnTenancy()` carries the column, the widened uniques, the composite foreign keys, the scope predicate, and `for()` / `unscoped()`. A list of keys is composite tenancy. Every key has the same `type: "uuid"`. An object map is not accepted. A schema that does not pass `okmodel/tenancy` does not load that code. `schemaPerTenant` and `databasePerTenant` are separate objects in the same subpath later.
 
 | Strategy | Isolation |
 |---|---|
 | `column` | filter on the key; inserts fill it from context |
 | `path` (`tenancy: { via: "project.organization" }`) | `EXISTS` along the path; inserts verify the parent's tenant |
-| `composite` (`key: ["organizationId", "workspaceId"]`) | all keys together |
+| `composite` (`columnTenancy({ key: ["organizationId", "workspaceId"], type: "uuid" })`) | all keys together, in that order |
 | `rls` (pg) | database-enforced policies (9.4) |
 | `schemaPerTenant`, `databasePerTenant` | physical isolation |
 
@@ -771,8 +771,10 @@ const countries = table("countries", { id: id(), name: text() }, { tenancy: glob
 - The `column` strategy adds the key to inheriting tables.
 - `.unique()` on a tenant table becomes `UNIQUE (tenant_key, …)`; `.unique({ global: "reason" })` opts out. `onConflict.on` names that unique without the tenant key. The conflict target includes the key, in the unique's order, and the inserted row still carries the caller's tenant, so the update cannot land on another tenant's row (D221). Naming the tenant key in `on` is OKM1104.
 - Every tenant table's primary key is the declared key plus the tenant key, and the table also has `UNIQUE` on those columns, so two tenants can share an id. That unique's name is `{sql table}_{TypeScript primary fields joined by _}_{tenant field}_key`. With casing `snake`, table `tasks`, field `id`, and tenant field `tenantId`, it is `tasks_id_tenantId_key` on columns `(id, tenant_id)`. The primary key stays `tasks_pkey`. A column `.unique()` is `{sql table}_{field}_key` on `(tenant key, field)`, so `title` is `tasks_title_key`. An index uses SQL names (`tasks_tenant_id_title_idx`). `archivable()` turns the unique into a partial unique index named with those SQL names (`tasks_id_tenant_id_idx`). `renamedFrom` on the table or on a field in the name plans `RENAME CONSTRAINT` to the name compiled from the current TypeScript fields. It does not drop the unique. The formula stays on TypeScript field names, so existing catalogs do not move (D223, D168, D194). FKs between tenant tables are composite, so no row can reference another tenant's row, even through raw SQL.
-- Lint OKM1706: an index on a tenant table that does not lead with the tenant key.
-- Changing the tenant key in `update` is refused (OKM1704); a global table referencing a tenant table is flagged (OKM1705).
+- Lint OKM1706: an index on a tenant table that does not lead with the tenant key. Composite tenancy leads with the first key. A path table gets an index on the foreign key the path uses, and a missing handle is the same lint.
+- Changing the tenant key in `update` is refused (OKM1704). Composite tenancy refuses any of the keys. A global table referencing a tenant table is flagged (OKM1705).
+- Composite tenancy uses every key, in declaration order. The primary key is the declared key plus those keys. The extra `UNIQUE` uses the same name formula with the tenant fields joined by `_`, so `id` with `organizationId` and `workspaceId` is `{table}_id_organizationId_workspaceId_key`. `.unique()` becomes `UNIQUE (every tenant key, column)`. `onConflict` includes every key (D221). Foreign keys between tenant tables include every key.
+- A path is resolved when the schema is built, to at most three existing to-one relations. A fourth hop, a missing relation, a cycle, or a path that does not end at a tenant table is OKM1705. Reads and writes add `EXISTS` along the path. An insert checks the parent in that same statement. A parent in another tenant is OKM1705. The table a path ends on gains `UNIQUE` on its declared primary key, so the child can reference that key, and two tenants cannot share it. `onConflict` on a path table is OKM1120. `unscoped(reason)` still skips the predicate and records the reason (D228).
 - Adding tenancy to an existing project requires a backfill migration before the key becomes `NOT NULL`.
 - Resolving the tenant from a request is the application's job.
 
@@ -781,10 +783,13 @@ const countries = table("countries", { id: id(), name: text() }, { tenancy: glob
 ```ts
 const scoped = db.for({ tenantId: session.tenantId });
 await scoped.tasks.find({ limit: 20 });
+const workspace = db.for({ organizationId, workspaceId });
 db.tasks;                                           // type error OKM1701
 db.unscoped("nightly report across tenants").tasks.count();
 db.countries.find({ limit: 300 });                  // global tables on the root client
 ```
+
+A composite scope passes every key. A missing key or an extra key is a type error and OKM1701 at runtime. One key still passes `{ tenantId }`.
 
 ### 9.4 `rls` strategy hardening
 

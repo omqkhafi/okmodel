@@ -32,7 +32,9 @@ export type RouteConstraint = "auto" | "primary" | "replica";
  *
  * The value is a parameter. The cache key records `tenant` or `unscoped`, not the value.
  */
-export type CallScope = { readonly value: string } | { readonly unscoped: string };
+export type CallScope =
+  | { readonly value: string; readonly values?: Readonly<Record<string, string>> }
+  | { readonly unscoped: string };
 
 /** Writes one more `where` condition after the tenant and active-set predicates. */
 export type Keyset = (sink: Sink, alias: string) => void;

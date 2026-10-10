@@ -115,6 +115,8 @@ type Planned = {
   readonly expect: number | undefined;
   readonly keys: readonly (readonly (string | null)[])[] | undefined;
   readonly keyFields: readonly string[] | undefined;
+  /** Rows a path insert must return. Fewer means the parent is not in this tenant. */
+  readonly parent?: number;
 };
 
 type StoredSchema = QuerySchema & {
@@ -302,7 +304,7 @@ async function planWrite(
   if (op === "update") {
     return withRowFilters(scope, mods.archive, () => {
       noteArchive(table, mods.archive);
-      return planUpdate(schema, table, input, record, mods);
+      return planUpdate(schema, table, input, record, mods, scope);
     });
   }
   return withRowFilters(scope, mods.archive, () => {
@@ -326,12 +328,19 @@ async function planInsert(
   const rows = (many ? input : [input]).map((row) => insertRow(table, row, allow, tenancy));
   tenancy?.stamp(table.model.name, rows, scope);
   fillInsert(table, rows, generators);
-  const columns = writtenColumns(table, rows, allow, tenancy?.key);
+  const columns = writtenColumns(table, rows, allow, tenantKeyList(tenancy));
   const returning = selectedColumns(table, options.returning);
   const outputs = outputsOf(returning);
   const clause = returningClause(returning, undefined);
   const expect = expectOf(options, mods);
   const shape = many ? "rows" : "row";
+  const path = tenancy?.isPath?.(table.model.name) === true;
+  if (path && options.onConflict !== undefined && options.onConflict !== "error") {
+    fail(
+      "OKM1120",
+      `onConflict on ${table.model.name} is not available. The insert checks the parent.`,
+    );
+  }
   if (columns.length === 0) {
     const text = `insert into ${quote(table.model.sql)} default values${clause}`;
     return {
@@ -347,7 +356,12 @@ async function planInsert(
     options.onConflict === undefined || options.onConflict === "error"
       ? undefined
       : await import("./conflict.js");
-  const conflict = conflictMod?.readConflict(table, options.onConflict, allow, tenancy?.key);
+  const conflict = conflictMod?.readConflict(
+    table,
+    options.onConflict,
+    allow,
+    tenantKeyList(tenancy),
+  );
   const chunks = chunkRows(rows.map((row) => cellsFor(columns, row)));
   const statements: Statement[] = [];
   const keys: (string | null)[][] = [];
@@ -355,7 +369,9 @@ async function planInsert(
   for (const chunk of chunks) {
     const slice = rows.slice(offset, offset + chunk.length);
     offset += chunk.length;
-    const built = insertHead(table, columns, chunk);
+    const built = path
+      ? pathInsert(table, columns, chunk, scope, tenancy)
+      : insertHead(table, columns, chunk);
     if (conflict === undefined || conflictMod === undefined) {
       statements.push(withParams(`${built.text}${clause}`, built.params));
       continue;
@@ -383,6 +399,7 @@ async function planInsert(
     keys: conflict?.kind === "return" ? keys : undefined,
     keyFields:
       conflict?.kind === "return" ? conflict.columns.map((column) => column.field) : undefined,
+    ...(path ? { parent: rows.length } : {}),
   };
 }
 
@@ -392,6 +409,7 @@ function planUpdate(
   input: unknown,
   options: Record<string, unknown>,
   mods: WriteMods,
+  scope: CallScope | undefined,
 ): Planned {
   const allow = allowSet(table, options.allow);
   noteGuarded(table, allow, "update");
@@ -424,6 +442,13 @@ function planUpdate(
   sql.text(" as t set ");
   emitSet(sql, table, set, "t");
   emitFilter(schema, table, stack(input.where, mods.presets), sql, "t");
+  schema.tenancy?.noteParent?.(
+    table.model.name,
+    set,
+    sql.sink(),
+    scope,
+    (field) => table.columns.get(field)?.sql,
+  );
   sql.text(returningClause(returning, "t"));
   return {
     statements: [sql.statement()],
@@ -478,6 +503,11 @@ function finish(results: readonly ExecuteResult[], planned: Planned, table: stri
       ? decoded
       : orderByKeys(decoded, planned.keyFields, planned.keys);
   checkExpect(rows.length, planned.expect, table, "insert");
+  if (planned.parent !== undefined && rows.length < planned.parent) {
+    throw new OkmError("OKM1705", `Insert on ${table} did not find a parent in this tenant.`, {
+      fix: { summary: "Insert under a parent that belongs to this tenant." },
+    });
+  }
   if (planned.shape === "row") return rows[0] ?? null;
   return rows;
 }
@@ -842,7 +872,7 @@ function writtenColumns(
   table: Indexed,
   rows: readonly Record<string, unknown>[],
   allow: ReadonlySet<string>,
-  tenantKey: string | undefined,
+  tenantKeys: readonly string[] | undefined,
 ): ColumnModel[] {
   const present = new Set<string>();
   for (const row of rows) {
@@ -852,12 +882,60 @@ function writtenColumns(
   for (const column of table.model.columns) {
     if (
       present.has(column.field) &&
-      (writable(table, column, allow) || column.fill !== undefined || column.field === tenantKey)
+      (writable(table, column, allow) ||
+        column.fill !== undefined ||
+        tenantKeys?.includes(column.field) === true)
     ) {
       columns.push(column);
     }
   }
   return columns;
+}
+
+function tenantKeyList(tenancy: QuerySchema["tenancy"]): readonly string[] | undefined {
+  if (tenancy === undefined) return undefined;
+  if (tenancy.keys !== undefined && tenancy.keys.length > 0) return tenancy.keys;
+  return [tenancy.key];
+}
+
+function pathInsert(
+  table: Indexed,
+  columns: readonly ColumnModel[],
+  rows: readonly Cell[][],
+  scope: CallScope | undefined,
+  tenancy: QuerySchema["tenancy"],
+): Statement {
+  const sql = new Sql();
+  const names = columns.map((column) => quote(column.sql)).join(", ");
+  const selected = columns.map((column) => `v.${quote(column.sql)}`).join(", ");
+  sql.text(`insert into ${quote(table.model.sql)} (${names}) select ${selected} from (values `);
+  for (let row = 0; row < rows.length; row += 1) {
+    const cells = rows[row];
+    if (cells === undefined) continue;
+    if (row > 0) sql.text(", ");
+    sql.text("(");
+    for (let index = 0; index < cells.length; index += 1) {
+      const cell = cells[index];
+      if (index > 0) sql.text(", ");
+      if (cell === undefined || cell.kind === "default") {
+        sql.text("default");
+        continue;
+      }
+      sql.param(cell.kind === "null" ? null : cell.wire, cell.dataType);
+    }
+    sql.text(")");
+  }
+  sql.text(`) as v(${names})`);
+  tenancy?.lockPredicate?.({
+    table: table.model.name,
+    fieldSql: (field) => table.columns.get(field)?.sql,
+    encode: table.columns.get(tenancy.key)?.encode,
+    alias: "v",
+    appended: false,
+    scope,
+    sink: sql.sink(),
+  });
+  return sql.statement();
 }
 
 function writeSet(

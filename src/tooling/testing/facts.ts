@@ -2,9 +2,9 @@
  * What a factory needs from a compiled schema: required columns, foreign keys,
  * and which tables are tenant or global.
  *
- * Column tenancy is the only strategy in this version. A table is tenant when
- * its predicate binds a scope, and global when `global("reason")` opted it out.
- * `schemaPerTenant` and `databasePerTenant` are not in 0.4.
+ * A table is tenant when its predicate binds a scope, and global when
+ * `global("reason")` opted it out. Composite and path use that probe.
+ * `schemaPerTenant` and `databasePerTenant` are not in this version.
  */
 
 import type { Catalog, ColumnDefinition } from "../../contracts/catalog/types.js";
@@ -174,7 +174,7 @@ function isTenant(tenancy: ColumnTenancy | undefined, model: TableModel): boolea
     return (
       tenancy.predicate({
         table: model.name,
-        fieldSql: (field) => (field === tenancy.key ? key?.sql : undefined),
+        fieldSql: (field) => model.columns.find((column) => column.field === field)?.sql,
         encode: key?.encode,
         alias: "t",
         appended: false,

@@ -5,8 +5,9 @@
  * writes as tenant A against that row's key. A returned row, or an update or
  * delete that touches it, is a leak. The row is deleted afterwards. Global
  * tables are skipped and listed.
- * Column tenancy is the strategy this version has. A table is tenant when its
- * predicate says so (D199).
+ * A table is tenant when its predicate says so (D199). Composite tenancy changes
+ * one key at a time. A path table is checked through a parent that belongs to
+ * tenant B.
  */
 
 import { OkmError } from "../../contracts/error.js";
@@ -45,7 +46,14 @@ export async function isolation(host: FactoryHost): Promise<IsolationReport> {
         continue;
       }
       if (!facts.tenant) continue;
-      await checkTable(host, facts, tenantA, tenantB);
+      const hops = host.schema.tenancy?.pathOf?.(facts.name);
+      if (hops !== undefined && hops.length > 0) {
+        await checkPath(host, facts, hops, tenantA, tenantB);
+      } else {
+        await checkTable(host, facts, tenantA, tenantB);
+        const keys = tenantKeys(host);
+        if (keys.length > 1) await checkFlips(host, facts, keys, tenantA, tenantB);
+      }
       checked.push(facts.name);
     }
     return { checked, skipped };
@@ -62,13 +70,14 @@ async function checkTable(
 ): Promise<void> {
   const key = host.schema.tenancy?.key;
   if (key === undefined) return;
+  const keys = tenantKeys(host);
   if (host.definitions.size > 0 && !host.definitions.has(facts.name)) {
     throw new OkmError("invalid", `Factory ${facts.name} is missing.`, {
       fix: { summary: `Add ${facts.name} to factories().` },
     });
   }
   const row = await insertRow(host, facts.name, { [key]: tenantB }, undefined, tenantB);
-  const where = primaryWhere(facts, row, key);
+  const where = primaryWhere(facts, row, keys);
   const client = openTenant(host, tenantA);
   const handle = tableHandle(client, facts.name);
   try {
@@ -192,11 +201,11 @@ function valueFrom(
 function primaryWhere(
   facts: TableFacts,
   row: Record<string, unknown>,
-  tenantKey: string | undefined,
+  tenantKeys: readonly string[],
 ): Record<string, unknown> {
   const where: Record<string, unknown> = {};
   for (const field of facts.primary) {
-    if (field === tenantKey) continue;
+    if (tenantKeys.includes(field)) continue;
     where[field] = row[field];
   }
   if (Object.keys(where).length === 0) {
@@ -213,15 +222,137 @@ function leak(table: string, query: string, row: unknown): never {
   });
 }
 
-function openTenant(host: FactoryHost, tenant: string): ClientLike {
-  const key = host.schema.tenancy?.key ?? "tenantId";
+function tenantKeys(host: FactoryHost): readonly string[] {
+  const tenancy = host.schema.tenancy;
+  if (tenancy === undefined) return [];
+  if (tenancy.keys !== undefined && tenancy.keys.length > 0) return tenancy.keys;
+  return [tenancy.key];
+}
+
+function scopeFor(keys: readonly string[], tenant: string): Record<string, string> {
+  const input: Record<string, string> = {};
+  for (const key of keys) input[key] = tenant;
+  return input;
+}
+
+async function checkFlips(
+  host: FactoryHost,
+  facts: TableFacts,
+  keys: readonly string[],
+  tenantA: string,
+  tenantB: string,
+): Promise<void> {
+  const template = await insertRow(host, facts.name, undefined, undefined, tenantB);
+  const data: Record<string, unknown> = { ...template };
+  for (const key of keys) delete data[key];
+  const clientA = openTenant(host, scopeFor(keys, tenantA));
+  try {
+    for (let index = 0; index < keys.length; index += 1) {
+      const values = scopeFor(keys, tenantA);
+      const flipped = keys[index];
+      if (flipped === undefined) continue;
+      values[flipped] = tenantB;
+      const client = openTenant(host, values);
+      const stored: unknown = await tableHandle(client, facts.name).insert(data);
+      if (!isRow(stored)) continue;
+      const where = primaryWhere(facts, stored, keys);
+      await readTenant(facts, tableHandle(clientA, facts.name), where);
+      await tableHandle(client, facts.name)
+        .delete({ where })
+        .catch(() => undefined);
+    }
+  } finally {
+    const where = primaryWhere(facts, template, keys);
+    await tableHandle(openTenant(host, tenantB), facts.name)
+      .delete({ where })
+      .catch(() => undefined);
+    forgetCached(host, facts.name, tenantB);
+  }
+}
+
+async function checkPath(
+  host: FactoryHost,
+  facts: TableFacts,
+  hops: readonly {
+    readonly child: string;
+    readonly parent: string;
+    readonly localField: string;
+    readonly remoteField: string;
+  }[],
+  tenantA: string,
+  tenantB: string,
+): Promise<void> {
+  const keys = tenantKeys(host);
+  const created: { readonly table: string; readonly where: Record<string, unknown> }[] = [];
+  const last = hops[hops.length - 1];
+  if (last === undefined) return;
+  let parent = await insertRow(host, last.parent, undefined, undefined, tenantB);
+  created.push({
+    table: last.parent,
+    where: primaryWhere(requireFacts(host, last.parent), parent, keys),
+  });
+  for (let index = hops.length - 1; index >= 0; index -= 1) {
+    const hop = hops[index];
+    if (hop === undefined) continue;
+    const row = await insertRow(
+      host,
+      hop.child,
+      { [hop.localField]: parent[hop.remoteField] },
+      undefined,
+      tenantB,
+    );
+    parent = row;
+    created.push({
+      table: hop.child,
+      where: primaryWhere(requireFacts(host, hop.child), row, keys),
+    });
+  }
+  const where = primaryWhere(facts, parent, keys);
+  const client = openTenant(host, tenantA);
+  try {
+    await readTenant(facts, tableHandle(client, facts.name), where);
+    const set = updateSet(host, facts, parent);
+    if (set !== undefined) {
+      const updated = asCount(await tableHandle(client, facts.name).update({ where, set }));
+      if (updated > 0) leak(facts.name, "update", { count: updated });
+    }
+    const removed = asCount(await tableHandle(client, facts.name).delete({ where }));
+    if (removed > 0) leak(facts.name, "delete", { count: removed });
+  } finally {
+    for (let index = created.length - 1; index >= 0; index -= 1) {
+      const item = created[index];
+      if (item === undefined) continue;
+      await tableHandle(openTenant(host, tenantB), item.table)
+        .delete({ where: item.where })
+        .catch(() => undefined);
+      forgetCached(host, item.table, tenantB);
+    }
+  }
+}
+
+function requireFacts(host: FactoryHost, name: string): TableFacts {
+  const facts = host.facts.get(name);
+  if (facts === undefined) {
+    throw new OkmError("invalid", `Table ${name} is not in the schema.`, {
+      fix: { summary: "The path must name a table in this schema." },
+    });
+  }
+  return facts;
+}
+
+function openTenant(
+  host: FactoryHost,
+  tenant: string | Readonly<Record<string, string>>,
+): ClientLike {
+  const keys = tenantKeys(host);
+  const input = typeof tenant === "string" ? scopeFor(keys, tenant) : tenant;
   const db: object = host.db;
   if (!("for" in db) || typeof db.for !== "function") {
     throw new OkmError("invalid", "This schema has no for().", {
       fix: { summary: "Pass columnTenancy() to schema({ tenancy })." },
     });
   }
-  const opened: unknown = db.for({ [key]: tenant });
+  const opened: unknown = db.for(input);
   if (typeof opened !== "object" || opened === null) {
     throw new OkmError("invalid", "for() did not return a client.", {
       fix: { summary: "The tenant key must be a uuid." },
@@ -239,6 +370,7 @@ type QueryHandle = {
   exists(options?: object): Promise<unknown>;
   update(target: object): Promise<unknown>;
   delete(target: object): Promise<unknown>;
+  insert(row: object): Promise<unknown>;
   aggregate?(options: object): Promise<unknown>;
   page?(options: object): Promise<unknown>;
 };

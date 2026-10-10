@@ -10,7 +10,7 @@ import { assertIdentifier } from "../../contracts/catalog/identifier.js";
 import { OkmError } from "../../contracts/error.js";
 import { ColumnBuilder, retarget, type ReferenceModifier } from "../../dialects/pg/column.js";
 import { uuid } from "../../dialects/pg/keys.js";
-import { definition, unavailable } from "../../dialects/pg/misuse.js";
+import { definition } from "../../dialects/pg/misuse.js";
 import type { AnyTable } from "../../dialects/pg/table.js";
 import type {
   ColumnTenancy,
@@ -20,6 +20,7 @@ import type {
   TenantCall,
 } from "../../dialects/pg/tenancy.js";
 import { quote } from "../plan.js";
+import { compilePaths, type PathPlan } from "./path.js";
 
 export type { ColumnTenancy };
 
@@ -50,62 +51,143 @@ export function global(reason: string): { readonly kind: "global"; readonly reas
 /**
  * Column tenancy for `schema({ tenancy })`.
  *
- * Every table gains `key` unless it passes `global("reason")`. The key is a
- * guarded uuid. Insert fills it from `for()`. Reads and writes filter on it.
+ * Every table gains `key` unless it passes `global("reason")` or
+ * `tenancy: { via }`. The key is a guarded uuid. A list of keys is composite
+ * tenancy: every tenant table carries all of them, in that order.
+ * Insert fills them from `for()`. Reads and writes filter on them.
  *
- * @typeParam Key - Field name of the tenant key
- * @param input - Field name and `uuid`
+ * @typeParam Key - Field name of one tenant key
+ * @param input - One field, or a list of fields, and `uuid`
  * @returns The object `schema()` applies
  */
+export function columnTenancy<const Keys extends readonly [string, ...string[]]>(input: {
+  readonly key: Keys;
+  readonly type: "uuid";
+}): ColumnTenancy & { readonly key: Keys[number]; readonly keys: Keys };
 export function columnTenancy<const Key extends string>(input: {
   readonly key: Key;
   readonly type: "uuid";
-}): ColumnTenancy & { readonly key: Key } {
+}): ColumnTenancy & { readonly key: Key; readonly keys: readonly [Key] };
+export function columnTenancy(input: {
+  readonly key: string | readonly string[];
+  readonly type: "uuid";
+}): ColumnTenancy & { readonly key: string; readonly keys: readonly string[] } {
   if (input === undefined || typeof input !== "object") {
     definition("columnTenancy() needs { key, type }.");
   }
   if (input.type !== "uuid") {
     definition(`columnTenancy() type ${String(input.type)} must be uuid.`);
   }
-  if (typeof input.key !== "string" || input.key.length === 0) {
-    definition("columnTenancy() key must be a field name.");
-  }
-  assertIdentifier(input.key, "tenancy key");
-  const key = input.key;
-  const column = uuid().guarded();
-  const encode = column.state.encode;
+  const keys = readKeys(input.key);
+  const key = keys[0] ?? "";
+  const columns = keys.map(() => uuid().guarded());
+  const encodes = columns.map((column) => column.state.encode);
   const tenants = new Set<string>();
   const globals = new Map<string, string>();
   const exemptions = new Map<string, { name: string; reason: string }[]>();
-  const api: ColumnTenancy & { readonly key: Key } = {
+  let paths: PathPlan | undefined;
+  const encodeKey = (name: string, value: string): string => {
+    const at = keys.indexOf(name);
+    const encode = at < 0 ? undefined : encodes[at];
+    return encode === undefined ? value : encode(value);
+  };
+  const api: ColumnTenancy & { readonly key: string; readonly keys: readonly string[] } = {
     key,
+    keys,
     type: "uuid",
-    strategy: "column",
+    strategy: keys.length === 1 ? "column" : "composite",
     rewrite(tables) {
       tenants.clear();
       globals.clear();
       exemptions.clear();
-      return rewriteTables(key, column, tables, tenants, globals, exemptions);
+      return rewriteTables(keys, columns, tables, tenants, globals, exemptions, (plan) => {
+        paths = plan;
+      });
     },
-    column: () => column,
+    column: () => columns[0] ?? uuid().guarded(),
+    isPath(table) {
+      return paths?.isPath(table) === true;
+    },
+    pathOf(table) {
+      return paths?.hops(table)?.map((hop) => ({
+        child: hop.child,
+        parent: hop.parent,
+        localField: hop.localField,
+        remoteField: hop.remoteField,
+      }));
+    },
     predicate(spec) {
-      return writePredicate(key, tenants, spec);
+      if (paths?.isPath(spec.table) === true) {
+        return (
+          paths.writeExists({
+            table: spec.table,
+            alias: spec.alias,
+            fieldSql: spec.fieldSql,
+            scope: spec.scope,
+            sink: spec.sink,
+            appended: spec.appended,
+            lock: false,
+            keys,
+            encodeKey,
+          }) === true
+        );
+      }
+      return writePredicate(keys, tenants, spec, encodeKey);
+    },
+    lockPredicate(spec) {
+      if (paths?.isPath(spec.table) !== true || paths === undefined) return false;
+      return paths.writeExists({
+        table: spec.table,
+        alias: spec.alias,
+        fieldSql: spec.fieldSql,
+        scope: spec.scope,
+        sink: spec.sink,
+        appended: false,
+        lock: true,
+        keys,
+        encodeKey,
+      });
+    },
+    noteParent(table, set, sink, scope, fieldSql) {
+      const hop = paths?.hops(table)?.[0];
+      if (hop === undefined || paths === undefined) return;
+      if (scope === undefined || "unscoped" in scope) return;
+      const assigned: Record<string, string> = {};
+      const next = set[hop.localField];
+      if (typeof next === "string") assigned[hop.localField] = hop.encode(next);
+      paths.writeExists({
+        table,
+        alias: "t",
+        fieldSql,
+        scope,
+        sink,
+        appended: true,
+        lock: true,
+        keys,
+        encodeKey,
+        ...(Object.keys(assigned).length > 0 ? { assigned } : {}),
+      });
     },
     guard(table, field, kind) {
-      if (!tenants.has(table) || field !== key) return;
+      if (!tenants.has(table) || !keys.includes(field)) return;
       refuseKey(kind, table, field);
     },
     stamp(table, rows, scope) {
+      if (paths?.isPath(table) === true) {
+        requireScope(keys, table, scope);
+        return;
+      }
       if (!tenants.has(table)) return;
-      stampRows(key, table, rows, scope);
+      stampRows(keys, table, rows, scope);
     },
     client(spec): TenancyClient {
-      const names = spec.scoped ? spec.names : spec.names.filter((name) => !tenants.has(name));
+      const hidden = (name: string): boolean => tenants.has(name) || paths?.isPath(name) === true;
+      const names = spec.scoped ? spec.names : spec.names.filter((name) => !hidden(name));
       if (spec.scoped) return { names };
-      return { names, ...bindClient(key, encode, spec.open) };
+      return { names, ...bindClient(keys, encodes, spec.open) };
     },
     rules(table, source, scope) {
-      return tenancyRules(table, source, scope, tenants, globals, exemptions);
+      return tenancyRules(table, source, scope, tenants, globals, exemptions, paths);
     },
     scopeView(name: string) {
       tenants.add(name);
@@ -133,7 +215,7 @@ export function columnTenancy<const Key extends string>(input: {
     missing(table): never {
       throw new OkmError(
         "OKM1701",
-        `Table ${table} is tenant-scoped. Call for({ ${key} }) or unscoped("reason").`,
+        `Table ${table} is tenant-scoped. Call for({ ${keys.join(", ")} }) or unscoped("reason").`,
       );
     },
   };
@@ -141,14 +223,15 @@ export function columnTenancy<const Key extends string>(input: {
 }
 
 function rewriteTables(
-  key: string,
-  column: object,
+  keys: readonly string[],
+  columns: readonly object[],
   tables: readonly AnyTable[],
   tenants: Set<string>,
   globals: Map<string, string>,
   exemptions: Map<string, { name: string; reason: string }[]>,
+  keep: (plan: PathPlan) => void,
 ): readonly AnyTable[] {
-  const kind = new Map<string, "tenant" | "global">();
+  const kind = new Map<string, "tenant" | "global" | "path">();
   for (const item of tables) {
     const options = item.options as TableOptions | undefined;
     const mark = options?.tenancy;
@@ -162,22 +245,27 @@ function rewriteTables(
       continue;
     }
     if (isRecord(mark) && "via" in mark) {
-      unavailable(`Table ${item.name} tenancy via is not available yet. It arrives later.`);
+      kind.set(item.name, "path");
+      continue;
     }
-    definition(`Table ${item.name} tenancy must be global("reason").`);
+    definition(`Table ${item.name} tenancy must be global("reason") or { via }.`);
   }
+  const plan = compilePaths(tables, kind);
+  keep(plan);
   return tables.map((item) => {
-    if (kind.get(item.name) !== "tenant") {
-      if (kind.get(item.name) === "global") refuseGlobalReference(item, kind);
+    const mark = kind.get(item.name);
+    if (mark === "global") {
+      refuseGlobalReference(item, kind);
       return item;
     }
-    return rewriteTenant(key, column, item, tables, kind, tenants, exemptions);
+    if (mark === "path") return plan.adjust(item);
+    return rewriteTenant(keys, columns, item, tables, kind, tenants, exemptions, plan);
   });
 }
 
 function refuseGlobalReference(
   item: AnyTable,
-  kind: ReadonlyMap<string, "tenant" | "global">,
+  kind: ReadonlyMap<string, "tenant" | "global" | "path">,
 ): void {
   for (const [field, builder] of Object.entries(item.columns)) {
     if (!(builder instanceof ColumnBuilder)) continue;
@@ -192,19 +280,22 @@ function refuseGlobalReference(
 }
 
 function rewriteTenant(
-  key: string,
-  column: object,
+  keys: readonly string[],
+  keyColumns: readonly object[],
   item: AnyTable,
   tables: readonly AnyTable[],
-  kind: ReadonlyMap<string, "tenant" | "global">,
+  kind: ReadonlyMap<string, "tenant" | "global" | "path">,
   tenants: Set<string>,
   exemptions: Map<string, { name: string; reason: string }[]>,
+  plan: PathPlan,
 ): AnyTable {
-  if (Object.hasOwn(item.columns, key)) {
-    throw new OkmError(
-      "OKM1012",
-      `Table ${item.name} already declares ${key}, which tenancy adds. Rename the field or drop it from the table.`,
-    );
+  for (const key of keys) {
+    if (Object.hasOwn(item.columns, key)) {
+      throw new OkmError(
+        "OKM1012",
+        `Table ${item.name} already declares ${key}, which tenancy adds. Rename the field or drop it from the table.`,
+      );
+    }
   }
   const options = item.options as TableOptions | undefined;
   const columns: Record<string, object> = {};
@@ -212,7 +303,7 @@ function rewriteTenant(
   const named = options?.unique;
   if (named !== undefined) {
     for (const [name, fields] of Object.entries(named)) {
-      unique[name] = fields.includes(key) ? fields : [key, ...fields];
+      unique[name] = covers(fields, keys) ? fields : [...keys, ...fields];
     }
   }
   const notes: { name: string; reason: string }[] = [];
@@ -234,12 +325,12 @@ function rewriteTenant(
         notes.push({ name: field, reason });
       } else {
         patch.dropUnique = true;
-        unique[field] = [key, field];
+        unique[field] = [...keys, field];
       }
     }
     const reference = builder.state.references;
     if (reference !== undefined) {
-      const widened = widenReference(key, item.name, field, reference, tables, kind);
+      const widened = widenReference(keys, item.name, field, reference, tables, kind);
       if (widened !== undefined) patch.references = widened;
     }
     const changed =
@@ -247,12 +338,21 @@ function rewriteTenant(
     columns[field] = changed ? retarget(builder, patch) : builder;
   }
   const primary = primaryFields(item);
-  const primaryKey = primary.length > 0 && !primary.includes(key) ? [...primary, key] : undefined;
-  if (primaryKey !== undefined) unique[`${primary.join("_")}_${key}`] = primaryKey;
-  columns[key] = column;
+  const primaryKey =
+    primary.length > 0 && !covers(primary, keys) ? [...primary, ...keys] : undefined;
+  if (primaryKey !== undefined) unique[`${primary.join("_")}_${keys.join("_")}`] = primaryKey;
+  const declared = plan.endpoints.get(item.name);
+  if (declared !== undefined && declared.length > 0 && unique[declared.join("_")] === undefined) {
+    unique[declared.join("_")] = declared;
+  }
+  for (let index = 0; index < keys.length; index += 1) {
+    const name = keys[index];
+    const column = keyColumns[index];
+    if (name !== undefined && column !== undefined) columns[name] = column;
+  }
   tenants.add(item.name);
   if (notes.length > 0) exemptions.set(item.name, notes);
-  const indexes = wrapIndexes(key, item.name, options?.indexes);
+  const indexes = wrapIndexes(keys[0] ?? "", item.name, options?.indexes);
   return {
     ...item,
     columns,
@@ -265,13 +365,18 @@ function rewriteTenant(
   };
 }
 
+function covers(fields: readonly string[], keys: readonly string[]): boolean {
+  for (const key of keys) if (!fields.includes(key)) return false;
+  return true;
+}
+
 function widenReference(
-  key: string,
+  keys: readonly string[],
   table: string,
   field: string,
   reference: ReferenceModifier,
   tables: readonly AnyTable[],
-  kind: ReadonlyMap<string, "tenant" | "global">,
+  kind: ReadonlyMap<string, "tenant" | "global" | "path">,
 ): ReferenceModifier | undefined {
   const targetKind = kind.get(reference.table);
   if (targetKind !== "tenant") return undefined;
@@ -280,21 +385,18 @@ function widenReference(
   );
   if (action !== undefined) {
     definition(
-      `Foreign key ${table}.${field} includes ${key}, so ${action} cannot clear it. Accepted actions: cascade, restrict, no action.`,
+      `Foreign key ${table}.${field} includes ${keys.join(", ")}, so ${action} cannot clear it. Accepted actions: cascade, restrict, no action.`,
     );
   }
   const target = tables.find((item) => item.name === reference.table);
   const remote = reference.columns ?? (target === undefined ? undefined : primaryFields(target));
   if (remote === undefined || remote.length === 0) return undefined;
-  if (remote.includes(key)) {
-    if (reference.along?.includes(key)) return undefined;
-    return { ...reference, along: [...(reference.along ?? []), key] };
-  }
-  return {
-    ...reference,
-    columns: [...remote, key],
-    along: [...(reference.along ?? []), key],
-  };
+  const along = [...(reference.along ?? [])];
+  let columns = remote;
+  if (!covers(remote, keys)) columns = [...remote, ...keys];
+  for (const key of keys) if (!along.includes(key)) along.push(key);
+  if (covers(remote, keys) && covers(reference.along ?? [], keys)) return undefined;
+  return { ...reference, columns, along };
 }
 
 function primaryFields(item: AnyTable): string[] {
@@ -329,7 +431,7 @@ function wrapIndexes(
 }
 
 function writePredicate(
-  key: string,
+  keys: readonly string[],
   tenants: ReadonlySet<string>,
   input: {
     readonly table: string;
@@ -340,29 +442,37 @@ function writePredicate(
     readonly scope: TenantCall | undefined;
     readonly sink: TenancyText;
   },
+  encodeKey: (key: string, value: string) => string,
 ): boolean {
   if (!tenants.has(input.table)) return false;
   const scope = input.scope;
   if (scope === undefined) {
     throw new OkmError(
       "OKM1701",
-      `Table ${input.table} is tenant-scoped. Call for({ ${key} }) or unscoped("reason").`,
+      `Table ${input.table} is tenant-scoped. Call for({ ${keys.join(", ")} }) or unscoped("reason").`,
     );
   }
   if ("unscoped" in scope) {
     input.sink.mark("unscoped|");
     return false;
   }
-  const sql = input.fieldSql(key);
-  if (sql === undefined) {
-    throw new OkmError("OKM1701", `Table ${input.table} is missing its tenant key ${key}.`);
+  for (let index = 0; index < keys.length; index += 1) {
+    const key = keys[index];
+    if (key === undefined) continue;
+    const sql = input.fieldSql(key);
+    if (sql === undefined) {
+      throw new OkmError("OKM1701", `Table ${input.table} is missing its tenant key ${key}.`);
+    }
+    input.sink.text(index === 0 ? (input.appended ? " and " : " where ") : " and ");
+    input.sink.text(input.alias);
+    input.sink.text(".");
+    input.sink.text(quote(sql));
+    input.sink.text(" = ");
+    const raw = scope.values?.[key] ?? scope.value;
+    const encoded =
+      keys.length === 1 && input.encode !== undefined ? input.encode(raw) : encodeKey(key, raw);
+    input.sink.param(encoded);
   }
-  input.sink.text(input.appended ? " and " : " where ");
-  input.sink.text(input.alias);
-  input.sink.text(".");
-  input.sink.text(quote(sql));
-  input.sink.text(" = ");
-  input.sink.param(input.encode === undefined ? scope.value : input.encode(scope.value));
   input.sink.mark("tenant|");
   return true;
 }
@@ -387,42 +497,63 @@ function refuseKey(kind: "where" | "insert" | "update", table: string, field: st
 }
 
 function stampRows(
-  key: string,
+  keys: readonly string[],
   table: string,
   rows: Record<string, unknown>[],
   scope: TenantCall | undefined,
 ): void {
+  requireScope(keys, table, scope);
+  if (scope === undefined || "unscoped" in scope) return;
+  for (const row of rows) {
+    for (const key of keys) row[key] = scope.values?.[key] ?? scope.value;
+  }
+}
+
+function requireScope(
+  keys: readonly string[],
+  table: string,
+  scope: TenantCall | undefined,
+): asserts scope is { readonly value: string; readonly values?: Readonly<Record<string, string>> } {
   if (scope === undefined || "unscoped" in scope) {
     throw new OkmError(
       "OKM1701",
-      `insert on ${table} has no tenant. Call for({ ${key} }) so the scope can set it.`,
+      `insert on ${table} has no tenant. Call for({ ${keys.join(", ")} }) so the scope can set it.`,
     );
   }
-  for (const row of rows) row[key] = scope.value;
 }
 
 function bindClient(
-  key: string,
-  encode: (value: string) => string,
+  keys: readonly string[],
+  encodes: readonly ((value: string) => string)[],
   openScope: (scope: TenantCall) => unknown,
 ): { for: (input: unknown) => unknown; unscoped: (reason: string) => unknown } {
+  const list = keys.join(", ");
   return {
     for: (input: unknown) => {
       if (typeof input !== "object" || input === null || Array.isArray(input)) {
-        throw new OkmError("OKM1701", `for() needs { ${key} }.`);
+        throw new OkmError("OKM1701", `for() needs { ${list} }.`);
       }
       const record = input as Record<string, unknown>;
-      const value = record[key];
-      if (typeof value !== "string" || value.length === 0) {
-        throw new OkmError("OKM1701", `for() needs { ${key} } as a uuid.`);
+      const values: Record<string, string> = {};
+      for (let index = 0; index < keys.length; index += 1) {
+        const key = keys[index];
+        if (key === undefined) continue;
+        const value = record[key];
+        if (typeof value !== "string" || value.length === 0) {
+          throw new OkmError("OKM1701", `for() needs { ${list} } as a uuid.`);
+        }
+        const encode = encodes[index];
+        if (encode !== undefined) encode(value);
+        values[key] = value;
       }
       for (const name of Object.keys(record)) {
-        if (name !== key) {
-          throw new OkmError("OKM1701", `for() accepts ${key}. ${name} is not the tenant key.`);
-        }
+        if (keys.includes(name)) continue;
+        throw new OkmError("OKM1701", `for() accepts ${list}. ${name} is not the tenant key.`);
       }
-      encode(value);
-      return openScope({ value });
+      const first = keys[0] ?? "";
+      return openScope(
+        keys.length === 1 ? { value: values[first] ?? "" } : { value: values[first] ?? "", values },
+      );
     },
     unscoped: (reason: string) => {
       if (typeof reason !== "string" || reason.trim().length === 0) {
@@ -440,6 +571,7 @@ function tenancyRules(
   tenants: ReadonlySet<string>,
   globals: ReadonlyMap<string, string>,
   exemptions: ReadonlyMap<string, readonly { readonly name: string; readonly reason: string }[]>,
+  paths: PathPlan | undefined,
 ): readonly TenancyRule[] {
   const rules: TenancyRule[] = [];
   const reason = globals.get(table);
@@ -462,7 +594,16 @@ function tenancyRules(
       });
     }
   }
-  if (tenants.has(table) && scope !== undefined && "value" in scope) {
+  const via = paths?.hops(table);
+  if (via !== undefined) {
+    rules.push({
+      rule: "tenancy",
+      contribution: `path ${via.map((hop) => hop.parent).join(".")}`,
+      provenance: "catalog",
+      ...(source !== undefined ? { source } : {}),
+    });
+  }
+  if ((tenants.has(table) || via !== undefined) && scope !== undefined && "value" in scope) {
     rules.push({ rule: "tenancy", contribution: "scoped", provenance: "planner" });
   }
   if (scope !== undefined && "unscoped" in scope) {
@@ -473,6 +614,30 @@ function tenancyRules(
     });
   }
   return rules;
+}
+
+function readKeys(key: string | readonly string[]): readonly string[] {
+  if (typeof key === "string") {
+    if (key.length === 0) definition("columnTenancy() key must be a field name.");
+    assertIdentifier(key, "tenancy key");
+    return [key];
+  }
+  if (!Array.isArray(key)) {
+    definition(
+      'columnTenancy() key must be a field name or a list of field names, such as ["organizationId", "workspaceId"].',
+    );
+  }
+  if (key.length === 0) definition("columnTenancy() key needs a field name.");
+  const keys: string[] = [];
+  for (const name of key) {
+    if (typeof name !== "string" || name.length === 0) {
+      definition("columnTenancy() key must be a field name.");
+    }
+    if (keys.includes(name)) definition(`columnTenancy() key repeats ${name}.`);
+    assertIdentifier(name, "tenancy key");
+    keys.push(name);
+  }
+  return keys;
 }
 
 function isGlobal(value: unknown): value is { readonly kind: "global"; readonly reason: string } {

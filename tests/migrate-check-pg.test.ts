@@ -370,6 +370,56 @@ postgresTest(
   60_000,
 );
 
+postgresTest(
+  gate,
+  "a composite and path schema generates, applies, and replays",
+  async () => {
+    await withProject(async ({ cwd }) => {
+      writeTenancySchema(cwd);
+      await cli(cwd, ["generate", "init"]);
+      const sql = readFileSync(migrationPath(cwd, ".sql"), "utf8");
+      expect(sql).toContain('"organization_id"');
+      expect(sql).toContain('"workspace_id"');
+      expect(sql).toContain("projects");
+      expect(await cli(cwd, ["migrate", "apply"])).toContain("applied");
+      expect(await cli(cwd, ["migrate", "check"])).toBe("ok 1 migrations\n");
+    });
+  },
+  60_000,
+);
+
+function writeTenancySchema(cwd: string): void {
+  const source = (path: string): string => JSON.stringify(join(root, path));
+  writeFileSync(
+    join(cwd, "schema.ts"),
+    [
+      `import { index, one, schema, t, table } from ${source("src/dialects/pg/index.ts")};`,
+      `import { columnTenancy } from ${source("src/runtime/tenancy/index.ts")};`,
+      'const tenancy = columnTenancy({ key: ["organizationId", "workspaceId"], type: "uuid" });',
+      "const organizations = table(",
+      '  "organizations",',
+      "  { id: t.uuid().primaryKey(), name: t.text() },",
+      "  { indexes: (columns) => [index((columns as typeof columns & { organizationId: typeof columns.id }).organizationId)] },",
+      ");",
+      "const documents = table(",
+      '  "documents",',
+      '  { id: t.uuid().primaryKey(), title: t.text().unique(), folderId: t.uuid().references("organizations") },',
+      "  { indexes: (columns) => {",
+      "    const handle = columns as typeof columns & { organizationId: typeof columns.id; workspaceId: typeof columns.id };",
+      "    return [index(handle.organizationId, handle.workspaceId)];",
+      "  } },",
+      ");",
+      "const projects = table(",
+      '  "projects",',
+      '  { id: t.uuid().primaryKey(), name: t.text(), organizationId: t.uuid().references("organizations") },',
+      '  { tenancy: { via: "organization" }, relations: { organization: one("organizations", "organizationId") } },',
+      ");",
+      'export const app = schema({ casing: "snake", tenancy, tables: [organizations, documents, projects] });',
+      "",
+    ].join("\n"),
+  );
+}
+
 async function writeDrop(cwd: string): Promise<void> {
   writeSchema(cwd, `table("items", { id: t.integer().primaryKey(), note: t.text().nullable() })`);
   await cli(cwd, ["generate", "init"]);

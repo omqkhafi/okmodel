@@ -429,7 +429,7 @@ async function writeRow(
 ): Promise<Record<string, unknown>> {
   const client =
     facts.tenant && tenant !== undefined
-      ? openScope(host.db, host.schema.tenancy?.key ?? "tenantId", tenant)
+      ? openScope(host.db, host.schema.tenancy, tenant)
       : host.db;
   const handle = tableHandle(client, facts.name);
   const inserted: unknown = await handle.insert(data);
@@ -583,13 +583,20 @@ function refOf(value: unknown): string | undefined {
   return typeof table === "string" ? table : undefined;
 }
 
-function openScope(db: object, key: string, tenant: string): object {
+function openScope(
+  db: object,
+  tenancy: { readonly key: string; readonly keys?: readonly string[] } | undefined,
+  tenant: string,
+): object {
   if (!("for" in db) || typeof db.for !== "function") {
     throw new OkmError("invalid", "This schema has no for().", {
       fix: { summary: "Pass columnTenancy() to schema({ tenancy })." },
     });
   }
-  const opened: unknown = db.for({ [key]: tenant });
+  const keys = tenancy?.keys ?? [tenancy?.key ?? "tenantId"];
+  const input: Record<string, string> = {};
+  for (const key of keys) input[key] = tenant;
+  const opened: unknown = db.for(input);
   if (typeof opened !== "object" || opened === null) {
     throw new OkmError("invalid", "for() did not return a client.", {
       fix: { summary: "The tenant key must be a uuid." },
