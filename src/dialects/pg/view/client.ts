@@ -28,6 +28,7 @@ export type ViewInstall = (
  * @param columns - Declared output columns
  * @param query - Author SQL
  * @param tenancy - `global("reason")`, when the view opts out
+ * @param refresh - `plain` throws OKM1120. A materialized view is `blocking` or `concurrently`
  * @returns Methods stored on the declaration
  */
 export function viewClient(
@@ -35,6 +36,7 @@ export function viewClient(
   columns: readonly { readonly name: string; readonly type: string }[],
   query: string,
   tenancy: unknown,
+  refresh: "plain" | "blocking" | "concurrently" = "plain",
 ): { readonly field: string; readonly install: ViewInstall; readonly hook: SchemaHook } {
   const field = camelCase(name);
   const marked = readGlobal(name, tenancy);
@@ -75,9 +77,41 @@ export function viewClient(
       };
     },
     hook(target, ctx) {
+      if (ctx.table === field && ctx.session !== undefined) {
+        target.refresh = refreshHandle(ctx.session, name, refresh);
+        return;
+      }
       publish(field, target, ctx);
     },
   };
+}
+
+/**
+ * `refresh()` for one view.
+ *
+ * A plain view throws OKM1120 (kind `invalid`). A missing method would be a
+ * TypeError, and `OkmError.from` would report that as kind `driver`. A
+ * materialized view loads the statement on the first call.
+ *
+ * @param session - Client session from the table hook
+ * @param name - SQL name
+ * @param mode - Plain, blocking, or concurrent
+ * @returns The method stored on the handle
+ */
+function refreshHandle(
+  session: object,
+  name: string,
+  mode: "plain" | "blocking" | "concurrently",
+): () => Promise<void> {
+  if (mode === "plain") {
+    return () => {
+      throw new OkmError("OKM1120", `View ${name} is not materialized.`, {
+        fix: { summary: "Call refresh() on a materialized view." },
+      });
+    };
+  }
+  const concurrently = mode === "concurrently";
+  return () => import("./refresh.js").then((mod) => mod.refreshView(session, name, concurrently));
 }
 
 function publish(field: string, target: Record<string, unknown>, ctx: SchemaHookCtx): void {
@@ -93,6 +127,7 @@ function publish(field: string, target: Record<string, unknown>, ctx: SchemaHook
     one: source.one,
     count: source.count,
     exists: source.exists,
+    ...(typeof source.refresh === "function" ? { refresh: source.refresh } : {}),
   };
   target.views = map;
   delete ctx.tables[field];

@@ -1128,7 +1128,7 @@ function classOf(text: string): RouteEvent["op"] {
   if (head.includes("pg_advisory")) return "lock";
   if (/\sfor (no key update|key share|update|share)\b/.test(head)) return "lock";
   if (
-    /^(insert|update|delete|with|create|alter|drop|truncate|grant|revoke|comment|vacuum|analyze|reindex|copy)\b/.test(
+    /^(insert|update|delete|refresh|with|create|alter|drop|truncate|grant|revoke|comment|vacuum|analyze|reindex|copy)\b/.test(
       head,
     )
   ) {

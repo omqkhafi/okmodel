@@ -266,6 +266,10 @@ P81B ships variant B (D226). One `bun run size` run after the check. The runtime
 
 The shipped app is 3 minified and 11 gzip above the variant B prototype (90,718 / 30,143). Each connect entry is 2 or 3 minified above that prototype. `refuseHidden` is exported so the lazy aggregate chunk can apply it before the groupBy rule. The app total graph is 196,565 / 63,904. Cold import: runtime 1.696 ms, app 10.296 ms (stubbed 5.361 ms), postgres.js 8.593 ms (stubbed 2.673 ms), PGlite 11.078 ms (stubbed 3.035 ms), node-postgres 10.842 ms (stubbed 2.624 ms), Bun.sql stubbed 2.594 ms. All are under the 15 ms local reference. query-200 is 17,119 instantiations and 6,314 types (ceilings 17,300 and 6,500) and inferred-250 is 17,650 (ceiling 21,180).
 
+### `refresh()`, shipped
+
+`refresh()` loads on the first call (D227). One `bun run size` run after it. Minified bytes on the six gated graphs match the table above. Gzip moved by at most 3 bytes. The featureless app is 90,721 / 30,153. An app that imports a view and a materialized view is 98,071 / 32,349 at startup (98,071 is +7,350 over the featureless app: that is the view module). Its total graph is 204,991 / 66,349. The `refresh.js` chunk is 531 bytes and is not in the startup graph.
+
 Variant C rebuilds a name list inside `indexes()`, which already walks columns. That list is more code in `plan.ts` than the comparison, so every graph that contains `plan.ts` is larger. The app total graph was 196,562 / 63,887.
 
 ### Tenant onConflict

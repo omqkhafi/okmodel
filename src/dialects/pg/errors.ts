@@ -140,8 +140,50 @@ function hintOf(
 ): { readonly reason: string; readonly fix: { readonly summary: string } } | undefined {
   if (error.sqlstate === "42P01") return { reason: "undefined_table", fix: MIGRATE_FIX };
   if (error.sqlstate === "42703") return { reason: "undefined_column", fix: MIGRATE_FIX };
+  const refresh = refreshHint(error);
+  if (refresh !== undefined) return refresh;
   if (kind === "unavailable" && error.sqlstate === undefined && isTlsFailure(error)) {
     return { reason: "tls", fix: TLS_FIX };
+  }
+  return undefined;
+}
+
+/**
+ * Fix lines for `REFRESH MATERIALIZED VIEW` failures.
+ *
+ * The kind stays `driver`. `0A000` is an unpopulated concurrent refresh.
+ * `55000` is a concurrent refresh with no unique index. `42501` is a caller
+ * who does not own the view.
+ *
+ * @param error - The driver error
+ * @returns The reason and fix, or `undefined` when this is not a refresh failure
+ */
+function refreshHint(
+  error: DriverShape,
+): { readonly reason: string; readonly fix: { readonly summary: string } } | undefined {
+  if (error.sqlstate === "0A000" && error.message.includes("materialized view is not populated")) {
+    return {
+      reason: "not_populated",
+      fix: { summary: "Refresh once without CONCURRENTLY so the view is populated." },
+    };
+  }
+  if (
+    error.sqlstate === "55000" &&
+    error.message.includes("cannot refresh materialized view") &&
+    error.message.includes("concurrently")
+  ) {
+    return {
+      reason: "no_unique_index",
+      fix: {
+        summary: "Add a unique index with no WHERE clause, or refresh without CONCURRENTLY.",
+      },
+    };
+  }
+  if (error.sqlstate === "42501" && error.message.includes("materialized view")) {
+    return {
+      reason: "not_owner",
+      fix: { summary: "Run the refresh as the owner of the materialized view." },
+    };
   }
   return undefined;
 }

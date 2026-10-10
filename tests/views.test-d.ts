@@ -57,6 +57,10 @@ void (async () => {
     await scoped.views.activeTasks.exists({ where: { openCount: "0" } }),
   ).toEqualTypeOf<boolean>();
 
+  expectTypeOf(db.views.taskTitles.refresh()).toEqualTypeOf<Promise<void>>();
+  // @ts-expect-error a plain view has no refresh()
+  void scoped.views.activeTasks.refresh;
+
   // @ts-expect-error a view field that was not declared
   void scoped.views.activeTasks.find({ limit: 1, where: { title: "x" } });
   // @ts-expect-error a view that was not declared

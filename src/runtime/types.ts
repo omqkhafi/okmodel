@@ -769,6 +769,17 @@ type ViewApi<Row> = {
   exists(options?: CallOptions & { readonly where?: FieldWhere<Row> }): Read<boolean>;
 };
 
+/**
+ * `refresh()` on a materialized view.
+ *
+ * No arguments. It runs `REFRESH MATERIALIZED VIEW`, with `CONCURRENTLY` when
+ * the view declares `refresh: "concurrently"`. It is a write, so it uses the
+ * primary. It is not tenant-scoped: a scoped client still refreshes the whole view.
+ */
+type MaterializedViewApi<Row> = ViewApi<Row> & {
+  refresh(): Promise<void>;
+};
+
 /** `db.views`, typed from `schema({ views })`. Absent when the schema declares none. */
 type ViewsClient<S> = S extends { readonly "~views": infer V extends readonly unknown[] }
   ? {
@@ -777,7 +788,9 @@ type ViewsClient<S> = S extends { readonly "~views": infer V extends readonly un
           D in V[number] as D extends { readonly name: infer N extends string }
             ? CamelName<N>
             : never
-        ]: ViewApi<Show<ViewRow<D>>>;
+        ]: D extends { readonly "~kind": "materialized" }
+          ? MaterializedViewApi<Show<ViewRow<D>>>
+          : ViewApi<Show<ViewRow<D>>>;
       };
     }
   : unknown;

@@ -57,6 +57,8 @@ export type ViewDeclaration<
   readonly schema: string;
   /** Declared columns, for types only. `db.views` reads them. */
   readonly "~columns"?: C;
+  /** `"view"`. A materialized view is `"materialized"`, which adds `refresh()`. */
+  readonly "~kind": "view";
   /**
    * Catalog record for this declaration.
    *
@@ -107,6 +109,8 @@ export type MaterializedViewDeclaration<
   readonly schema: string;
   /** Declared columns, for types only. `db.views` reads them. */
   readonly "~columns"?: C;
+  /** `"materialized"`. `db.views` adds `refresh()` for this kind only. */
+  readonly "~kind": "materialized";
   /**
    * Catalog records for this declaration.
    *
@@ -138,10 +142,11 @@ export function view<const N extends string, const C extends readonly ViewColumn
   const schema = options.schema ?? "public";
   const columns = options.columns.map((column) => ({ name: column.name, dataType: column.type }));
   const query = bodyText(options.query);
-  const bound = viewClient(name, options.columns, query, options.tenancy);
+  const bound = viewClient(name, options.columns, query, options.tenancy, "plain");
   return {
     name,
     schema,
+    "~kind": "view",
     install: bound.install,
     hook: bound.hook,
     contribute(peers, built) {
@@ -181,7 +186,13 @@ export function materializedView<
   const schema = options.schema ?? "public";
   const columns = options.columns.map((column) => ({ name: column.name, dataType: column.type }));
   const query = bodyText(options.query);
-  const bound = viewClient(name, options.columns, query, options.tenancy);
+  const bound = viewClient(
+    name,
+    options.columns,
+    query,
+    options.tenancy,
+    options.refresh === "concurrently" ? "concurrently" : "blocking",
+  );
   const indexes = options.indexes ?? [];
   if (options.refresh === "concurrently" && !indexes.some((index) => index.unique === true)) {
     throw new OkmError(
@@ -205,6 +216,7 @@ export function materializedView<
   return {
     name,
     schema,
+    "~kind": "materialized",
     install: bound.install,
     hook: bound.hook,
     contribute(peers, built) {
