@@ -239,3 +239,5 @@ The check from D218, plus `hidden({ filterable: true })` on the column, was meas
 The branch stays in the lazy conflict chunk (D221). Gated graphs match the table above. The app total graph is 196,302 / 63,858.
 
 `refresh()` was not added (D222). §5.7 does not define the handle. The extra tenant unique keeps its TypeScript name key (D223). That decision does not change a generator, so the gated graphs stay on the table above.
+
+The in-flight timeout on Bun.sql and PGlite stays a known limit (D224). D216 measured the behaviour at Bun.sql +108 / +39 and PGlite +191 / +92. Bun.sql must not grow, so the fix is not rebuilt. The lazy watch hook that shrinks connect graphs by 45 minified is not that behaviour.
