@@ -17,7 +17,6 @@ import { isOperator, operatorName, operatorValue } from "../dialects/pg/operator
 import {
   archiveRules,
   decodeRow,
-  effectivePredicate,
   emitWhere,
   fail,
   withRowFilters,
@@ -42,6 +41,7 @@ import {
   type SafetyHatch,
 } from "./safety-hook.js";
 import { stack } from "./preset-stack.js";
+import { effectivePredicate } from "./predicate.js";
 import { fieldSealed, sealingTrait, touchFields } from "./trait-read.js";
 import { runWrite, type RunHost } from "./tx.js";
 import { writeWouldValidate } from "./validate/places.js";

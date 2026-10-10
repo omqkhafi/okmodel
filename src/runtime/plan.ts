@@ -1331,44 +1331,15 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Whether `where` constrains a row.
+ * Throws OKM1121 for an `or()` that is not an array, or for an empty branch.
  *
- * A field value is a leaf. Anything other than `undefined` counts, including
- * `null`, objects, arrays, and operators. The walk does not enter a field value.
- * It enters the where object's own keys, `and`, `or`, and `not` when `not` is
- * the where itself. An `or()` branch with no predicate is OKM1121. `or([])`
- * matches nothing.
+ * The write and archive predicate walk uses the same throw. It lives here
+ * because the read planner throws it too, and that planner stays in this module.
  *
- * @param where - Caller filter, or one `and` / `or` / `not` operand
- * @returns `false` when the filter matches every row
+ * @param empty - `true` when a branch has no predicate
+ * @returns Never
  */
-export function effectivePredicate(where: unknown): boolean {
-  if (where === undefined) return false;
-  if (isOperator(where)) {
-    const name = operatorName(where);
-    const value = operatorValue(where);
-    if (name === "or") {
-      if (!Array.isArray(value)) orFail(false);
-      if (value.length === 0) return true;
-      for (const branch of value) {
-        if (!effectivePredicate(branch)) orFail(true);
-      }
-      return true;
-    }
-    if (name === "and") {
-      return Array.isArray(value) && value.some((part) => effectivePredicate(part));
-    }
-    if (name === "not") return effectivePredicate(value);
-    return true;
-  }
-  if (!isRecord(where)) return true;
-  for (const key of Object.keys(where)) {
-    if (where[key] !== undefined) return true;
-  }
-  return false;
-}
-
-function orFail(empty: boolean): never {
+export function orFail(empty: boolean): never {
   throw new OkmError("OKM1121", empty ? "or() branch is empty." : "Pass an array: or([a, b]).", {
     fix: {
       summary: empty

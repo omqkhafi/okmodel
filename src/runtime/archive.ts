@@ -10,7 +10,6 @@ import { OkmError } from "../contracts/error.js";
 import type { ArchiveLink, QuerySchema } from "../dialects/pg/model.js";
 import {
   archiveRules,
-  effectivePredicate,
   emitWhere,
   fail,
   indexes,
@@ -23,6 +22,7 @@ import {
   type CallScope,
   type Indexed,
 } from "./plan.js";
+import { effectivePredicate } from "./predicate.js";
 import { stack } from "./preset-stack.js";
 import { runSafety, safetyInstalled } from "./safety-hook.js";
 import { runWrite, type RunHost } from "./tx.js";

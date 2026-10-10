@@ -214,3 +214,18 @@ Each saving is a reverted experiment, two runs, against the same baseline. They 
 | Remove the `filters.ts` import from `table()` | App −799 / −252. postgres.js +0 / +0 | No. D161 requires the synchronous check |
 
 Ranked by saving against risk: the predicate move first, then the watch move. Both sit behind a lazy boundary that already exists. The array, nearest, and catalog numbers are larger and are not safe to take. The filters-module number is blocked by D161.
+
+## P81 after the predicate move
+
+Ali chose D218 option d: move first, then spend (D219). No gate, cap, or ceiling moves. `effectivePredicate` now loads with writes and archive. `orFail` stays in `plan.ts`. The table is one `bun run size` run after that move. The runtime entry is unchanged at 5,288 / 2,026.
+
+| Graph | Before (D218) | After the move | Delta (min / gzip) | Gate | Left (min / gzip) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Runtime entry | 5,288 / 2,026 | 5,288 / 2,026 | 0 / 0 | 6,100 / 2,250 | 812 / 224 |
+| Featureless app | 90,851 / 30,157 | 90,506 / 30,063 | −345 / −94 | 90,900 / 30,170 | 394 / 107 |
+| postgres.js | 42,382 / 14,898 | 42,038 / 14,805 | −344 / −93 | 42,450 / 14,920 | 412 / 115 |
+| PGlite | 40,393 / 14,257 | 40,049 / 14,163 | −344 / −94 | 40,450 / 14,280 | 401 / 117 |
+| node-postgres | 42,795 / 15,048 | 42,451 / 14,965 | −344 / −83 | 42,850 / 15,070 | 399 / 105 |
+| Bun.sql | 41,643 / 14,592 | 41,299 / 14,504 | −344 / −88 | 41,700 / 14,620 | 401 / 116 |
+
+Cold import after the move: runtime 1.801 ms, app 10.898 ms (stubbed 5.643 ms), postgres.js 8.732 ms (stubbed 2.822 ms), PGlite 11.015 ms (stubbed 2.931 ms), node-postgres 14.817 ms (stubbed 2.871 ms), Bun.sql stubbed 2.664 ms. All are under the 15 ms local reference. The app total graph is 196,139 / 63,765. The prototype's larger saving is not this measurement: `orFail` still ships in the read planner.
