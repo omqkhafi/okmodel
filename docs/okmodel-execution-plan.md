@@ -1,6 +1,6 @@
 # OKModel — Execution plan
 
-Companion to `okmodel-api-design.md` (draft 22). The spec is normative; this file fixes the order of work.
+Companion to `okmodel-api-design.md` (draft 26). The spec is normative; this file fixes the order of work.
 
 ## How we work
 

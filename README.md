@@ -2,7 +2,7 @@
 
 okmodel is a catalog-first TypeScript ORM, PostgreSQL first. Other SQL databases are the direction. CI runs PostgreSQL 15 to 18. The schema is the single source. Migrations and queries come from it.
 
-Version 0.5.0. Apache-2.0.
+Apache-2.0. The published version is [okmodel on npm](https://www.npmjs.com/package/okmodel).
 
 ## Contents
 
@@ -345,12 +345,12 @@ if (row?.title !== "hello" || row.author?.name !== "Ada") {
 
 ### One
 
-`one` returns the single note for that id. More than one match throws `not_unique`.
+`one` returns the note for that id, or null when none matches. More than one match throws `not_unique`.
 
 ```ts
-// One row. More than one match throws.
+// One row, or null. More than one match throws.
 const single = await db.notes.one({ where: { id: note.id } });
-if (single.title !== "hello") throw new Error("one did not return the note");
+if (single === null || single.title !== "hello") throw new Error("one did not return the note");
 ```
 
 ### Count
@@ -397,6 +397,8 @@ Inserting Ada again fails because the name is unique. `safe` returns that `OkmEr
 
 ```ts
 import { OkmError, safe } from "okmodel";
+
+import { db } from "./db.ts";
 
 // safe returns the unique error instead of throwing.
 const duplicate = await safe(db.authors.insert({ name: "Ada" }));

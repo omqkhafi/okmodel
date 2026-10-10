@@ -96,15 +96,7 @@ html {
 }
 
 .docs-sidebar {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  border-bottom: 1px solid color-mix(in oklch, var(--color-fd-foreground) 8%, transparent);
-  background: var(--color-fd-background);
-}
-
-.docs-sidebar nav {
-  max-height: 40vh;
+  display: none;
 }
 
 @media (min-width: 64rem) {
@@ -119,13 +111,11 @@ html {
     bottom: 0;
     left: 0;
     z-index: 30;
+    display: flex;
+    flex-direction: column;
     width: var(--landing-left-pane-width);
     border-right: 1px solid color-mix(in oklch, var(--color-fd-foreground) 8%, transparent);
-    border-bottom: 0;
-  }
-
-  .docs-sidebar nav {
-    max-height: none;
+    background: var(--color-fd-background);
   }
 }
 
@@ -142,6 +132,12 @@ html {
     justify-self: center;
     width: 100%;
     max-width: 900px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .topbar-width {
+    transition: none;
   }
 }
 

@@ -4,14 +4,7 @@
  */
 
 /** Sidebar group. `root` pages sit above the folders. */
-export type DocGroupId =
-  | "root"
-  | "guides"
-  | "reference"
-  | "run"
-  | "migrations"
-  | "tooling"
-  | "limits";
+export type DocGroupId = "root" | "start" | "model" | "ship" | "reference";
 
 /** One public page. */
 export interface MappedPage {
@@ -32,6 +25,11 @@ export interface MappedPage {
   readonly readmeSection?: string;
   /** True for the README preamble (title and positioning), not an `##` section. */
   readonly readmeIntro?: boolean;
+  /**
+   * Site-relative authored page (`site/handbook/...`). The public handbook
+   * is written here. README sections are not handbook pages.
+   */
+  readonly handbook?: string;
 }
 
 /** A `docs/` file that is not a handbook page, and why. */
@@ -44,229 +42,215 @@ export interface ExcludedDoc {
 export interface DocGroup {
   readonly id: Exclude<DocGroupId, "root">;
   readonly title: string;
+  /** Root-sidebar label, including the learning-path number. */
+  readonly separator: string;
   readonly order: number;
 }
 
-/** Folder order in the sidebar. */
+/** Folder order in the sidebar. The number is the learning path, not a spec section. */
 export const docGroups: readonly DocGroup[] = [
-  { id: "guides", title: "Guides", order: 10 },
-  { id: "reference", title: "Reference", order: 20 },
-  { id: "run", title: "Run", order: 30 },
-  { id: "migrations", title: "Migrations", order: 40 },
-  { id: "tooling", title: "Tooling", order: 50 },
-  { id: "limits", title: "Limits", order: 60 },
+  { id: "start", title: "Start", separator: "01 Start", order: 10 },
+  { id: "model", title: "Model", separator: "02 Model", order: 20 },
+  { id: "ship", title: "Ship", separator: "03 Ship", order: 30 },
+  { id: "reference", title: "Reference", separator: "04 Reference", order: 40 },
 ];
 
 /**
- * Public pages. Descriptions are the source's own first sentence.
- * Titles for repository docs are the source `h1`, except the design spec,
- * which is published as Specification.
+ * Public pages. The learning path is authored under `site/handbook`.
+ * Repository docs stay in Reference, with descriptions written for a reader.
  */
 export const mappedPages: readonly MappedPage[] = [
   {
     slug: "index",
-    title: "Introduction",
+    title: "Documentation",
     description: "okmodel is a catalog-first TypeScript ORM, PostgreSQL first.",
     group: "root",
     order: 0,
-    source: "README.md",
-    readmeIntro: true,
-  },
-  {
-    slug: "quickstart",
-    title: "Quickstart",
-    description: "Set `DATABASE_URL` to a direct Postgres URL, not a pooler.",
-    group: "root",
-    order: 1,
-    source: "docs/quickstart.md",
+    source: "site/handbook/index.mdx",
+    handbook: "handbook/index.mdx",
   },
   {
     slug: "install",
     title: "Install",
-    description: "Four Postgres drivers.",
-    group: "guides",
+    description: "Add the package and point the config at your schema.",
+    group: "start",
     order: 0,
-    source: "README.md",
-    readmeSection: "Install",
+    source: "site/handbook/install.mdx",
+    handbook: "handbook/install.mdx",
   },
   {
-    slug: "quickstart",
-    title: "Quickstart",
-    description: "This builds two tables, applies them, and runs one script.",
-    group: "guides",
+    slug: "query",
+    title: "First query",
+    description: "Define one table, apply it, and read the row back.",
+    group: "start",
     order: 1,
-    source: "README.md",
-    readmeSection: "Quickstart",
+    source: "site/handbook/query.mdx",
+    handbook: "handbook/query.mdx",
   },
   {
-    slug: "core",
-    title: "Core",
-    description: "The calls below use the same schema and the same client.",
-    group: "guides",
+    slug: "schema",
+    title: "Schema",
+    description: "Tables, keys, and relations. The schema is the catalog.",
+    group: "model",
+    order: 0,
+    source: "site/handbook/schema.mdx",
+    handbook: "handbook/schema.mdx",
+  },
+  {
+    slug: "queries",
+    title: "Queries",
+    description: "Insert a row, then find it. The result follows the table.",
+    group: "model",
+    order: 1,
+    source: "site/handbook/queries.mdx",
+    handbook: "handbook/queries.mdx",
+  },
+  {
+    slug: "safety",
+    title: "Safety",
+    description: "Hidden fields, guarded writes, and tenancy declared once.",
+    group: "model",
     order: 2,
-    source: "README.md",
-    readmeSection: "Core",
+    source: "site/handbook/safety.mdx",
+    handbook: "handbook/safety.mdx",
   },
   {
-    slug: "in-the-box",
-    title: "What is in the box",
-    description: "Each section below is one feature you can add to the schema above.",
-    group: "guides",
-    order: 3,
-    source: "README.md",
-    readmeSection: "What is in the box",
-  },
-  {
-    slug: "commands",
-    title: "Commands",
-    description: "`okmodel` and `okm` are the same command.",
-    group: "guides",
-    order: 4,
-    source: "README.md",
-    readmeSection: "Commands",
-  },
-  {
-    slug: "check",
-    title: "Check a history in CI",
-    description: "`okm migrate check` is the command for a pipeline.",
-    group: "guides",
-    order: 5,
-    source: "README.md",
-    readmeSection: "Check a history in CI",
-  },
-  {
-    slug: "roadmap",
-    title: "Roadmap",
-    description: "Each release is a milestone.",
-    group: "guides",
-    order: 6,
-    source: "README.md",
-    readmeSection: "Roadmap",
-  },
-  {
-    slug: "api",
-    title: "API",
-    description:
-      "0.1 classifies every export as **stable**, **experimental**, or **internal**.",
-    group: "reference",
+    slug: "migrations",
+    title: "Migrations",
+    description: "Generate SQL from the schema. The files lint and check themselves.",
+    group: "ship",
     order: 0,
-    source: "docs/api.md",
+    source: "site/handbook/migrations.mdx",
+    handbook: "handbook/migrations.mdx",
   },
   {
-    slug: "specification",
-    title: "Specification",
-    description: "Status: design draft, 2026-09-30. Not yet approved for implementation.",
-    group: "reference",
+    slug: "drivers",
+    title: "Drivers",
+    description: "postgres.js, node-postgres, PGlite, and Bun.sql. Postgres 15 to 18.",
+    group: "ship",
     order: 1,
-    source: "docs/okmodel-api-design.md",
+    source: "site/handbook/drivers.mdx",
+    handbook: "handbook/drivers.mdx",
   },
   {
     slug: "production",
     title: "Production",
-    description:
-      "Nothing about an environment is inferred from `NODE_ENV` or from a target's name (spec §19.8).",
-    group: "run",
+    description: "Protect the production database, and require its catalog before connecting.",
+    group: "reference",
     order: 0,
     source: "docs/production.md",
   },
   {
     slug: "environments",
     title: "Environments",
-    description: "An environment is a named target.",
-    group: "run",
+    description: "An environment is a named database target.",
+    group: "reference",
     order: 1,
     source: "docs/environments.md",
   },
   {
     slug: "testing",
     title: "Testing",
-    description:
-      "`okmodel/testing` opens a real database and returns factories, a query counter, and a cross-tenant isolation check.",
-    group: "run",
+    description: "Open a real database. There is no mock.",
+    group: "reference",
     order: 2,
     source: "docs/testing.md",
   },
   {
     slug: "topology",
     title: "Topology",
-    description: "`connect({ primary, replicas }, options)` opens one pool per endpoint.",
-    group: "run",
+    description: "One primary and any number of replicas, each with its own pool.",
+    group: "reference",
     order: 3,
     source: "docs/topology.md",
   },
   {
     slug: "provisioning",
     title: "Provisioning",
-    description: "An empty target installs the head snapshot.",
-    group: "run",
+    description: "Rows the application needs are declared on the table and inserted when missing.",
+    group: "reference",
     order: 4,
     source: "docs/provisioning.md",
   },
   {
     slug: "check",
-    title: "Check a history in CI",
-    description: "`okm migrate check` proves a migration history is sound.",
-    group: "migrations",
-    order: 0,
+    title: "Check migrations",
+    description: "Replay a migration history on a throwaway database and fail the pipeline if it is wrong.",
+    group: "reference",
+    order: 5,
     source: "docs/migrate-check.md",
   },
   {
     slug: "backfill",
     title: "Backfill",
-    description: "A backfill is a step in a migration file (D59, D195).",
-    group: "migrations",
-    order: 1,
+    description: "A backfill is a step in a migration file. There is no separate backfill command.",
+    group: "reference",
+    order: 6,
     source: "docs/backfill.md",
   },
   {
     slug: "linter",
     title: "Linter",
-    description: "The linter reads a migration plan and the catalogs before and after it.",
-    group: "migrations",
-    order: 2,
+    description: "The linter reads a migration plan. It does not connect to the database.",
+    group: "reference",
+    order: 7,
     source: "docs/linter.md",
   },
   {
     slug: "compatibility",
     title: "Driver compatibility",
-    description:
-      "Generated from the conformance run (`tests/driver-suite.test.ts` and `tests/error-suite.test.ts`).",
-    group: "tooling",
-    order: 0,
+    description: "What each driver does, from the conformance run.",
+    group: "reference",
+    order: 8,
     source: "docs/compatibility.md",
+  },
+  {
+    slug: "size",
+    title: "Size",
+    description: "Measured size of the runtime and a small application.",
+    group: "reference",
+    order: 9,
+    source: "docs/size.md",
+  },
+  {
+    slug: "known-limits",
+    title: "Known limits",
+    description: "What this version does not do.",
+    group: "reference",
+    order: 10,
+    source: "docs/known-limits.md",
+  },
+  {
+    slug: "api",
+    title: "API",
+    description: "Which exports are stable, which are experimental, and which stay internal.",
+    group: "reference",
+    order: 11,
+    source: "docs/api.md",
+  },
+  {
+    slug: "specification",
+    title: "Specification",
+    description: "The contract for the catalog, queries, and migrations.",
+    group: "reference",
+    order: 12,
+    source: "docs/okmodel-api-design.md",
   },
   {
     slug: "editor-check",
     title: "Editor check",
-    description: "`bun run editor-check` drives the TypeScript 6 language server over stdio.",
-    group: "tooling",
-    order: 1,
+    description: "Hover, completions, and diagnostics for the editor.",
+    group: "reference",
+    order: 13,
     source: "docs/editor-check.md",
   },
   {
     slug: "example-app",
     title: "Example application",
-    description:
-      "`packages/reference-app` is a small project tracker that uses OKModel only through its public entry points.",
-    group: "tooling",
-    order: 2,
+    description: "A small project tracker that uses only the public entry points.",
+    group: "reference",
+    order: 14,
     source: "docs/example-app.md",
-  },
-  {
-    slug: "known-limits",
-    title: "Known limits",
-    description: "What this version does not do, or does differently from what you might expect.",
-    group: "limits",
-    order: 0,
-    source: "docs/known-limits.md",
-  },
-  {
-    slug: "size",
-    title: "Size and cold start",
-    description: "The table in this section is the 0.5.0 release sample.",
-    group: "limits",
-    order: 1,
-    source: "docs/size.md",
   },
 ];
 
@@ -301,8 +285,11 @@ export const excludedDocs: readonly ExcludedDoc[] = [
   },
   {
     path: "docs/readme-examples.md",
-    reason:
-      "Tested code corpus. Guide pages splice these fences in; the file is not its own article.",
+    reason: "Tested code corpus. Learning pages quote these fences. The file is not its own article.",
+  },
+  {
+    path: "docs/quickstart.md",
+    reason: "The tarball test script. The handbook Start pages are the public quickstart.",
   },
 ];
 
@@ -324,6 +311,7 @@ export function pageHref(page: MappedPage): string {
  * @param page - Mapped page
  */
 export function pageContentPath(page: MappedPage): string {
-  if (page.group === "root") return `${page.slug}.md`;
-  return `${page.group}/${page.slug}.md`;
+  const ext = page.handbook?.endsWith(".mdx") === true ? "mdx" : "md";
+  if (page.group === "root") return `${page.slug}.${ext}`;
+  return `${page.group}/${page.slug}.${ext}`;
 }

@@ -4,9 +4,9 @@
 
 import { docs } from "collections/server";
 import { loader } from "fumadocs-core/source";
-import { lucideIconsPlugin } from "fumadocs-core/source/plugins/lucide-icons";
 
 import { readDocsSourceBody } from "./markdown-source";
+import { sidebarIconsPlugin } from "./sidebar-icons";
 
 /** Docs base path. */
 export const docsRoute = "/docs";
@@ -21,7 +21,7 @@ export const docsImageRoute = "/og/docs";
 export const source = loader({
   baseUrl: docsRoute,
   source: docs.toFumadocsSource(),
-  plugins: [lucideIconsPlugin()],
+  plugins: [sidebarIconsPlugin()],
 });
 
 /**

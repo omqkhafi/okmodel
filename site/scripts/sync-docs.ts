@@ -15,7 +15,7 @@ import {
   pageHref,
   type MappedPage,
 } from "../lib/docs-map";
-import { extractReadmeH2, readRootPackage } from "../lib/package-meta";
+import { extractReadmeH2 } from "../lib/package-meta";
 import { repoRoot, siteRoot } from "../lib/repo";
 import { githubBlobUrl } from "../lib/shared";
 
@@ -63,6 +63,12 @@ export function docMapProblems(): readonly string[] {
     }
     if (page.readmeSection !== undefined && page.readmeIntro === true) {
       problems.push(`${key} cannot be both a README section and the introduction`);
+    }
+    if (page.handbook !== undefined && (page.readmeSection !== undefined || page.readmeIntro === true)) {
+      problems.push(`${key} cannot be both an authored page and a README extract`);
+    }
+    if (page.handbook !== undefined && !existsSync(join(siteRoot(), page.handbook))) {
+      problems.push(`authored page is missing: ${page.handbook} (${key})`);
     }
   }
 
@@ -182,6 +188,9 @@ if (import.meta.main) {
 }
 
 function pageBody(page: MappedPage, readme: string, root: string): string {
+  if (page.handbook !== undefined) {
+    return readFileSync(join(siteRoot(), page.handbook), "utf8").replace(/\r\n/g, "\n");
+  }
   if (page.readmeIntro === true) return readmeIntroduction(readme);
   if (page.readmeSection !== undefined) return extractReadmeH2(readme, page.readmeSection);
   const raw = readFileSync(join(root, page.source), "utf8").replace(/\r\n/g, "\n");
@@ -193,13 +202,7 @@ function readmeIntroduction(readme: string): string {
   const end = lines.findIndex((line, index) => index > 0 && line.startsWith("## "));
   const slice = lines.slice(0, end < 0 ? lines.length : end);
   const withoutTitle = slice[0]?.startsWith("# ") ? slice.slice(1) : slice;
-  // The README still says "Version 0.5.0". The sidebar shows the package
-  // version. Keep the license name from package.json on that line.
-  const license = readRootPackage().license;
-  const withoutStaleVersion = withoutTitle.map((line) =>
-    line.startsWith("Version ") ? license : line,
-  );
-  return `${withoutStaleVersion.join("\n").trim()}\n`;
+  return `${withoutTitle.join("\n").trim()}\n`;
 }
 
 function stripLeadingH1(body: string): string {
@@ -387,7 +390,7 @@ function writeMeta(): void {
   const folders = docGroups
     .slice()
     .sort((a, b) => a.order - b.order)
-    .flatMap((group) => [`---${group.title}---`, group.id]);
+    .flatMap((group) => [`---${group.separator}---`, group.id]);
   writeJson(join(contentDir, "meta.json"), {
     title: "Documentation",
     pages: [...rootPages, ...folders],

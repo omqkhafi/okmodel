@@ -1,0 +1,61 @@
+Three declarations cover the usual mistakes: returning a secret, writing a privileged column by accident, and forgetting which tenant a row belongs to.
+
+## What you declare
+
+<Tabs items={["Hidden", "Guarded", "Tenancy"]}>
+
+<Tab value="Hidden">
+
+A hidden field is stored and left out of the default row. Name it in `select` when a query needs it. `where` and `orderBy` refuse it.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const users = table("users", {
+  id: t.identity(),
+  email: t.text(),
+  passwordHash: t.text().hidden(),
+});
+export const app = schema({ tables: [users] });
+```
+
+</Tab>
+
+<Tab value="Guarded">
+
+A guarded field is not part of an ordinary insert. The write names it in `allow`.
+
+```ts title="index.ts"
+import { schema, table, t } from "okmodel/pg";
+import { connect } from "okmodel/pg/postgresjs";
+
+const users = table("users", { id: t.identity(), email: t.text(), role: t.text().guarded() });
+const app = schema({ tables: [users] });
+
+export async function grant(url: string): Promise<void> {
+  await using db = connect(url, { schema: app });
+  await db.users.insert({ email: "a@b.c", role: "admin" }, { allow: ["role"] });
+}
+```
+
+</Tab>
+
+<Tab value="Tenancy">
+
+Declare the tenant key once, on the schema. A table that is shared by every tenant opts out.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+import { columnTenancy, global } from "okmodel/tenancy";
+
+const notes = table("notes", { id: t.identity(), title: t.text() });
+const countries = table("countries", { id: t.identity() }, { tenancy: global("shared") });
+export const app = schema({
+  tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
+  tables: [notes, countries],
+});
+```
+
+</Tab>
+
+</Tabs>

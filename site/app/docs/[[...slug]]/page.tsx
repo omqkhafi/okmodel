@@ -28,14 +28,6 @@ export default async function Page(props: PageProps<"/docs/[[...slug]]">) {
     <DocsPage toc={page.data.toc} full={page.data.full}>
       <DocsTitle>{page.data.title}</DocsTitle>
       <DocsDescription className="mb-0">{page.data.description}</DocsDescription>
-      <a
-        href={githubBlobUrl(sourcePath)}
-        rel="noreferrer noopener"
-        target="_blank"
-        className="mb-4 inline-flex text-sm text-fd-muted-foreground underline-offset-4 hover:text-fd-foreground hover:underline"
-      >
-        Edit on GitHub
-      </a>
       <DocsPageActions markdownUrl={markdownUrl} githubUrl={githubBlobUrl(sourcePath)} />
       <DocsBody>
         <MDX

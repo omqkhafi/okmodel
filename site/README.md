@@ -11,3 +11,13 @@ bun run site:build
 `site/lib/docs-map.ts` lists every public page. `bun run sync` (from this directory) writes `content/docs/` from the repository markdown. That directory is generated.
 
 `mdast-util-to-markdown` is pinned to 2.1.2. 2.2 rewrites emphasis so the Fumadocs stringifier recurses forever on bold text.
+
+## Status
+
+The site is not deployed. The domain is not decided.
+
+What works: docs from `docs/`, llms files, markdown negotiation, search, and the home page.
+
+Known incomplete, and the backlog for the next site steps: docs layout polish against the okengine handbook (sidebar structure, introduction page, "On this page", duplicate Quickstart, long-page navigation, code block chrome).
+
+First-load JavaScript gzip is over the audit goals: home 236202 bytes (goal 150000), docs page 311629 bytes (goal 250000).

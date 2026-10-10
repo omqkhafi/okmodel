@@ -35,6 +35,143 @@ export function NpmMark({ className }: { className?: string }) {
 }
 
 /**
+ * Git branch, for the version row.
+ *
+ * @param className - Sizing / colour classes
+ */
+export function BranchIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className} aria-hidden>
+      <circle cx="6" cy="3" r="2" />
+      <circle cx="18" cy="9" r="2" />
+      <circle cx="6" cy="21" r="2" />
+      <path d="M6 5v14M18 11a6 6 0 0 1-6 6H6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/**
+ * Magnifying glass for the search buttons.
+ *
+ * @param className - Sizing / colour classes
+ */
+export function SearchIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className} aria-hidden>
+      <circle cx="11" cy="11" r="7" />
+      <path d="M20 20L16.5 16.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/**
+ * Three bars for the mobile menu.
+ *
+ * @param className - Sizing / colour classes
+ */
+export function MenuIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className} aria-hidden>
+      <path d="M4 7h16M4 12h16M4 17h16" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/**
+ * Close mark for the mobile menu.
+ *
+ * @param className - Sizing / colour classes
+ */
+export function CloseIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className} aria-hidden>
+      <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/**
+ * Sun, shown while the page is dark so the button switches to light.
+ *
+ * @param className - Sizing / colour classes
+ */
+export function SunIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className} aria-hidden>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/**
+ * Moon, shown while the page is light so the button switches to dark.
+ *
+ * @param className - Sizing / colour classes
+ */
+export function MoonIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className} aria-hidden>
+      <path d="M20 14.5A8 8 0 1 1 9.5 4 6.5 6.5 0 0 0 20 14.5z" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/**
+ * Clipboard, for the terminal copy button.
+ *
+ * @param className - Sizing / colour classes
+ */
+export function ClipboardIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className} aria-hidden>
+      <rect x="8" y="2" width="8" height="4" rx="1" />
+      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/**
+ * Terminal prompt, for the snippet header.
+ *
+ * @param className - Sizing / colour classes
+ */
+export function TerminalIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className} aria-hidden>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M7 9l3 3-3 3M12 15h5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/**
+ * Check, shown after a copy succeeds.
+ *
+ * @param className - Sizing / colour classes
+ */
+export function CheckIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className} aria-hidden>
+      <path d="M5 12.5 10 17.5 19 7.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/**
+ * Down chevron for the Open menu.
+ *
+ * @param className - Sizing / colour classes
+ */
+export function ChevronIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className} aria-hidden>
+      <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/**
  * Diagonal external-link arrow, sized for mono labels.
  *
  * @param className - Sizing / colour classes
