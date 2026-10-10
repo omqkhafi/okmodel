@@ -14,6 +14,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+### ✨ Added
+
+- The startup budget audit for train 0.6 records where the bytes in each gated graph go, the headroom under the current gates, and the measured cost of the smallest hook for each 0.6 feature. It does not move a gate (D218).
+
 ### ♻️ Changed
 
 - The plan schedules M2 Depth as four trains: 0.6 Access (P80–P86), then 0.7 Query depth, 0.8 SQL lane, and 0.9 Tooling. Access is first. Each feature loads lazily, or the step stops with numbers. The OKE prototype starts after 0.6 (D217).
