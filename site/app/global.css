@@ -1,0 +1,151 @@
+@import "tailwindcss";
+
+@source "../components";
+@source "../lib";
+@source "../app";
+
+@import "@fumadocs/base-ui/css/generated/glass.css";
+@import "@fumadocs/base-ui/css/black.css";
+@import "@fumadocs/base-ui/css/preset.css";
+
+/*
+ * Shared chrome numbers. The topbar height is what pinned panes offset by.
+ * The left pane width is the header brand cell, the docs sidebar, and the
+ * docs content inset. Same contract as better-auth's docs app (see site/NOTICE).
+ */
+:root {
+  --landing-topbar-height: 48px;
+  --landing-left-pane-width: min(22vw, 300px);
+}
+
+@media (min-width: 64rem) {
+  :root {
+    --landing-topbar-height: 44px;
+  }
+}
+
+html {
+  scrollbar-gutter: stable;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-fd-primary);
+  outline-offset: 2px;
+}
+
+.skip-link {
+  position: absolute;
+  left: 1rem;
+  top: -4rem;
+  z-index: 100;
+  background: var(--color-fd-background);
+  color: var(--color-fd-foreground);
+  padding: 0.5rem 0.75rem;
+}
+
+.skip-link:focus {
+  top: 0.5rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+#nd-page article {
+  font-size: 0.95rem;
+}
+
+#nd-page article :where(table) {
+  width: 100%;
+  max-width: 100%;
+  table-layout: fixed;
+}
+
+#nd-page article :where(th),
+#nd-page article :where(td) {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+#nd-page article h2 {
+  margin-top: 2.25rem;
+}
+
+#nd-page article h3 {
+  margin-top: 1.5rem;
+}
+
+/*
+ * Fumadocs' own nav, sidebar, and theme switch are disabled on /docs.
+ * The inset comes from padding. `--fd-banner-height` keeps the table of
+ * contents clear of the pinned topbar. Same technique as better-auth's
+ * `.docs-layout` rule (see site/NOTICE).
+ */
+.docs-layout {
+  --fd-layout-width: 100vw;
+  --fd-layout-offset: 0px;
+  --fd-banner-height: var(--landing-topbar-height);
+  --fd-docs-height: calc(100dvh - var(--landing-topbar-height));
+}
+
+.docs-sidebar {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  border-bottom: 1px solid color-mix(in oklch, var(--color-fd-foreground) 8%, transparent);
+  background: var(--color-fd-background);
+}
+
+.docs-sidebar nav {
+  max-height: 40vh;
+}
+
+@media (min-width: 64rem) {
+  .docs-layout {
+    --fd-layout-width: calc(100vw - var(--landing-left-pane-width));
+    padding-inline-start: var(--landing-left-pane-width);
+  }
+
+  .docs-sidebar {
+    position: fixed;
+    top: var(--landing-topbar-height);
+    bottom: 0;
+    left: 0;
+    z-index: 30;
+    width: var(--landing-left-pane-width);
+    border-right: 1px solid color-mix(in oklch, var(--color-fd-foreground) 8%, transparent);
+    border-bottom: 0;
+  }
+
+  .docs-sidebar nav {
+    max-height: none;
+  }
+}
+
+@media (min-width: 80rem) {
+  .docs-layout {
+    grid-template:
+      "sidebar sidebar header toc toc"
+      "sidebar sidebar toc-popover toc toc"
+      "sidebar sidebar main toc toc" 1fr /
+      0px 0px minmax(0, 1fr) var(--fd-toc-width) 0px !important;
+  }
+
+  .docs-layout #nd-page {
+    justify-self: center;
+    width: 100%;
+    max-width: 900px;
+  }
+}
+
+.docs-sidebar-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-fd-border) transparent;
+}

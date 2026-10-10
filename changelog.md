@@ -19,6 +19,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The startup budget audit for train 0.6 records where the bytes in each gated graph go, the headroom under the current gates, and the measured cost of the smallest hook for each 0.6 feature. It does not move a gate (D218).
 - `db.views.name.refresh()` runs `REFRESH MATERIALIZED VIEW` on a materialized view, with `CONCURRENTLY` when the view declares it. A plain view has no `refresh()` in its type. The statement is a write, and it is not tenant-scoped (D227).
 - `compositeTenancy({ key: ["organizationId", "workspaceId"], type: "uuid" })` isolates on every key together. `tenancy: via("project.organization")` isolates a table through up to three relations. `for()` takes every key. A column-only import does not load either factory (D228, D229).
+- The docs site in `site/` publishes the handbook from the repository markdown, with search, per-page markdown, and a changelog page. The homepage is a placeholder.
 
 ### 💥 Breaking Changes
 

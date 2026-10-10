@@ -1,0 +1,5 @@
+[test]
+# The docs site has its own test run (`bun run site:check`). Root `bun test`
+# does not enter it. Postgres discovery still only sees `*.test.ts` names;
+# site tests use `*.site-test.ts` so that walk does not pick them up either.
+pathIgnorePatterns = ["site/**"]

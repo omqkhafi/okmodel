@@ -28,3 +28,17 @@ updates:
       npm:
         patterns:
           - "*"
+  - package-ecosystem: npm
+    directory: /site
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+    labels:
+      - "type: chore"
+      - "area: ci"
+    groups:
+      site:
+        patterns:
+          - "*"

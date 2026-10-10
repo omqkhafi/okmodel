@@ -12,6 +12,7 @@
     ".cursor",
     "bun.lock",
     "tests/fixtures",
+    "site",
     "*.tgz"
   ]
 }
