@@ -37,6 +37,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - `onConflict: { on: "title" }` on a tenant unique of (tenant key, title) updates that tenant's row. The conflict target includes the tenant key. Naming the tenant key is still OKM1104. Two tenants can keep the same title (D221).
 
+### 🔒 Security
+
+- An update that sets a path column checks the new parent in that same statement. A parent in another tenant, a missing parent, or a parent deleted while the statement waits is OKM1705, and the row stays. `batch()` refuses that update before it runs. `tx()` is the verified form.
+
 ## v0.5.1 — 2026-10-08
 
 ### ♻️ Changed

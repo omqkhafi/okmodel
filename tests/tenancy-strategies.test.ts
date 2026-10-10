@@ -15,6 +15,7 @@ import {
   compositeApp,
   DOC,
   ORG_A,
+  ORG,
   pathApp,
   PROJECT,
   TENANT_A,
@@ -169,6 +170,33 @@ test("a path ends at the tenant table and stores a unique on its declared key", 
   const insert = inserted.statements[0]?.text ?? "";
   expect(insert).toContain("exists (select 1 from");
   expect(insert).toContain("for share");
+  const moved = await scoped.projects
+    .update({ where: { id: PROJECT }, set: { organizationId: ORG } })
+    .sql();
+  const update = moved.statements[0]?.text ?? "";
+  expect(update).toContain("with matched as");
+  expect(update).toContain("for share");
+  const renamed = await scoped.projects
+    .update({ where: { id: PROJECT }, set: { name: "Road" } })
+    .sql();
+  expect(renamed.statements[0]?.text ?? "").not.toContain("with matched");
+  const listed = await scoped.projects
+    .update([{ where: { id: PROJECT }, set: { organizationId: ORG } }])
+    .sql();
+  const list = listed.statements[0]?.text ?? "";
+  expect(list).toContain("rejected");
+  expect(list).toContain("for share");
+  let conflict: unknown;
+  try {
+    await scoped.projects.insert(
+      { id: PROJECT, name: "Road", organizationId: ORG },
+      { onConflict: { on: "name", return: true } },
+    );
+  } catch (error) {
+    conflict = error;
+  }
+  expect(conflict).toBeInstanceOf(OkmError);
+  expect(conflict instanceof OkmError ? conflict.code : "").toBe("OKM1120");
   const deep = await scoped.notes.find({ limit: 1 }).sql();
   const hops = deep.text;
   expect(hops).toContain("teams");

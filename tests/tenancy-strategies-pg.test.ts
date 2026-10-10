@@ -25,6 +25,7 @@ import {
   via,
   type ColumnTenancy,
 } from "../src/runtime/tenancy/index.js";
+import { archivable } from "../src/runtime/traits/index.js";
 import { tenantProbe } from "../src/tooling/testing/facts.js";
 import { testing } from "../src/tooling/testing/index.js";
 import {
@@ -171,6 +172,124 @@ postgresTest(
     });
   },
   60_000,
+);
+
+postgresTest(
+  gate,
+  "a path update refuses a parent the caller cannot see",
+  async () => {
+    const missing = "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c43";
+    const extra = "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c44";
+    const beta = "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c45";
+    await withApp(pathApp, async (db) => {
+      const a = db.for({ tenantId: TENANT_A });
+      const b = db.for({ tenantId: TENANT_B });
+      await a.organizations.insert({ id: ORG_ALPHA, name: "Alpha" });
+      await a.projects.insert({ id: PROJECT, name: "Road", organizationId: ORG_ALPHA });
+      await b.organizations.insert({ id: ORG, name: "Beta" });
+
+      await expectCode(
+        a.projects.update({ where: { id: PROJECT }, set: { organizationId: ORG } }),
+        "OKM1705",
+      );
+      await expectCode(
+        a.projects.update({ where: { id: PROJECT }, set: { organizationId: missing } }),
+        "OKM1705",
+      );
+      expect(
+        countOf(await a.projects.update({ where: { id: missing }, set: { organizationId: ORG } })),
+      ).toBe(0);
+      expect(
+        countOf(await a.projects.update({ where: { id: PROJECT }, set: { name: "Kept" } })),
+      ).toBe(1);
+      await expectCode(
+        a.projects.update([{ where: { id: PROJECT }, set: { organizationId: ORG } }]),
+        "OKM1705",
+      );
+      await expectCode(
+        a.batch([
+          a.projects.update({ where: { id: PROJECT }, set: { organizationId: ORG } }),
+          a.organizations.insert({ id: extra, name: "nope" }),
+        ]),
+        "OKM1705",
+      );
+      expect(await a.organizations.one({ where: { id: extra } })).toBeNull();
+      await expectCode(
+        a.tx(async (tx) => {
+          await tx.projects.update({ where: { id: PROJECT }, set: { organizationId: ORG } });
+        }),
+        "OKM1705",
+      );
+      await expectCode(
+        a.projects.insert(
+          { id: LATE, name: "other", organizationId: ORG_ALPHA },
+          { onConflict: { on: "name", return: true } },
+        ),
+        "OKM1120",
+      );
+      expect(await a.projects.one({ where: { id: LATE } })).toBeNull();
+      expect((await a.projects.one({ where: { id: PROJECT } }))?.organizationId).toBe(ORG_ALPHA);
+      expect((await a.projects.one({ where: { id: PROJECT } }))?.name).toBe("Kept");
+      expect(await b.projects.find({ where: { id: PROJECT }, limit: 5 })).toEqual([]);
+
+      await a.organizations.insert({ id: beta, name: "Soon" });
+      let release: (() => void) | undefined;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const deleting = a.tx(async (tx) => {
+        await tx.organizations.delete({ where: { id: beta } });
+        release?.();
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      });
+      await held;
+      const moving = a.projects.update({
+        where: { id: PROJECT },
+        set: { organizationId: beta },
+      });
+      await expectCode(moving, "OKM1705");
+      await deleting;
+      expect((await a.projects.one({ where: { id: PROJECT } }))?.organizationId).toBe(ORG_ALPHA);
+      expect(await b.projects.find({ where: { id: PROJECT }, limit: 5 })).toEqual([]);
+    });
+
+    const organizations = table(
+      "organizations",
+      { id: id({ default: "none" }), name: text() },
+      { indexes: (columns) => [index(...handles(columns, "tenantId"))] },
+    );
+    const projects = table(
+      "projects",
+      {
+        id: id({ default: "none" }),
+        name: text(),
+        organizationId: uuid().references("organizations"),
+      },
+      {
+        tenancy: via("organization"),
+        relations: { organization: one("organizations", "organizationId") },
+        traits: [archivable()],
+      },
+    );
+    const archived = schema({
+      casing: "snake",
+      tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
+      tables: [organizations, projects],
+    });
+    await withApp(archived, async (db) => {
+      const a = db.for({ tenantId: TENANT_A });
+      await a.organizations.insert({ id: ORG_ALPHA, name: "Alpha" });
+      await a.projects.insert({ id: PROJECT, name: "Road", organizationId: ORG_ALPHA });
+      const saved = await a.projects.archive({ where: { id: PROJECT } });
+      expect(await a.projects.one({ where: { id: PROJECT } })).toBeNull();
+      expect(
+        (await a.projects.onlyArchived().one({ where: { id: PROJECT } }))?.organizationId,
+      ).toBe(ORG_ALPHA);
+      await a.projects.onlyArchived().restore({ archiveId: saved.archiveId });
+      expect((await a.projects.one({ where: { id: PROJECT } }))?.organizationId).toBe(ORG_ALPHA);
+    });
+  },
+  90_000,
 );
 
 postgresTest(
