@@ -1,0 +1,70 @@
+The schema is the source. Migrations and queries come from it. Start with one table, then add only the part you need.
+
+<Callout title="The source">
+  The tables you declare are the catalog. Queries, migrations, and checks come from that catalog.
+</Callout>
+
+```ts title="schema.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+```
+
+## 01 Start
+
+One table, then a query that reads the row back.
+
+<Cards>
+  <Card
+    title="Install"
+    description="Add the package and point the config at your schema."
+    href="/docs/start/install"
+  />
+  <Card
+    title="First query"
+    description="Define one table, apply it, and read the row back."
+    href="/docs/start/query"
+  />
+</Cards>
+
+## 02 Model
+
+Keys, relations, and the writes you allow.
+
+<Cards>
+  <Card
+    title="Schema"
+    description="Keys and relations. The client is typed from the tables you declare."
+    href="/docs/model/schema"
+  />
+  <Card
+    title="Queries"
+    description="Insert a row, then find it."
+    href="/docs/model/queries"
+  />
+  <Card
+    title="Safety"
+    description="Hidden fields, guarded writes, and tenancy declared once."
+    href="/docs/model/safety"
+  />
+</Cards>
+
+## 03 Ship
+
+The migration files are generated from the schema. They lint and check themselves.
+
+<Cards>
+  <Card
+    title="Migrations"
+    description="Generate SQL from the schema. The files lint and check themselves."
+    href="/docs/ship/migrations"
+  />
+  <Card
+    title="Drivers"
+    description="postgres.js, node-postgres, PGlite, and Bun.sql."
+    href="/docs/ship/drivers"
+  />
+</Cards>

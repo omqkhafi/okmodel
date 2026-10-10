@@ -6,12 +6,10 @@
  * documented deep-link API — offer copy-prompt instead of fake hrefs.
  */
 
-import { GithubMark } from "@/components/chrome/icons";
+import { CheckIcon, ChevronIcon, ExternalArrow, GithubMark } from "@/components/chrome/icons";
 import { cn } from "@/lib/cn";
 import { buttonVariants } from "@fumadocs/base-ui/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@fumadocs/base-ui/components/ui/popover";
-import { MarkdownCopyButton } from "@fumadocs/base-ui/layouts/docs/page";
-import { Bot, Check, ChevronDown, ExternalLinkIcon, Sparkles, TextIcon } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 
 export interface DocsPageActionsProps {
@@ -50,10 +48,32 @@ export function cursorPromptHref(text: string): string {
 export function DocsPageActions({ markdownUrl, githubUrl }: DocsPageActionsProps): ReactNode {
   return (
     <div className="flex flex-row gap-2 items-center border-b pb-6">
-      <MarkdownCopyButton markdownUrl={markdownUrl} />
+      <CopyMarkdownButton markdownUrl={markdownUrl} />
       <CopyPromptButton markdownUrl={markdownUrl} />
       <HonestViewOptions markdownUrl={markdownUrl} githubUrl={githubUrl} />
     </div>
+  );
+}
+
+function CopyMarkdownButton({ markdownUrl }: { readonly markdownUrl: string }): ReactNode {
+  const [copied, setCopied] = useState(false);
+
+  async function copyMarkdown(): Promise<void> {
+    const text = await fetch(markdownUrl).then((response) => response.text());
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => void copyMarkdown()}
+      className={cn(buttonVariants({ color: "secondary", size: "sm" }), "gap-2")}
+    >
+      {copied ? <CheckIcon className="size-3.5" /> : null}
+      {copied ? "Copied" : "Copy Markdown"}
+    </button>
   );
 }
 
@@ -72,8 +92,8 @@ function CopyPromptButton({ markdownUrl }: { readonly markdownUrl: string }): Re
       onClick={() => void copyPrompt()}
       className={cn(buttonVariants({ color: "secondary", size: "sm" }), "gap-2")}
     >
-      {copied ? <Check className="size-3.5" /> : <Bot className="size-3.5" />}
-      Copy prompt
+      {copied ? <CheckIcon className="size-3.5" /> : null}
+      {copied ? "Copied" : "Copy prompt"}
     </button>
   );
 }
@@ -100,14 +120,14 @@ function HonestViewOptions({ markdownUrl, githubUrl }: DocsPageActionsProps): Re
         )}
       >
         Open
-        <ChevronDown className="size-3.5 text-fd-muted-foreground" />
+        <ChevronIcon className="size-3.5 text-fd-muted-foreground" />
       </PopoverTrigger>
       <PopoverContent className="flex flex-col min-w-56">
         {items.githubHref ? (
           <MenuLink href={items.githubHref} title="Open in GitHub" icon={<GithubMark />} />
         ) : null}
-        <MenuLink href={items.markdownHref} title="View as Markdown" icon={<TextIcon />} />
-        <MenuLink href={items.cursorHref} title="Open in Cursor" icon={<Sparkles />} />
+        <MenuLink href={items.markdownHref} title="View as Markdown" />
+        <MenuLink href={items.cursorHref} title="Open in Cursor" />
       </PopoverContent>
     </Popover>
   );
@@ -131,7 +151,7 @@ function MenuLink({
     >
       {icon}
       {title}
-      <ExternalLinkIcon className="text-fd-muted-foreground size-3.5 ms-auto" />
+      <ExternalArrow className="text-fd-muted-foreground size-3.5 ms-auto" />
     </a>
   );
 }

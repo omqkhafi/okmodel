@@ -121,16 +121,12 @@ export function checkDocsCode(): DocsCodeReport {
           fence.fileName ??
           `${page.replace(/[^\w]+/g, "-").replace(/^-|-$/g, "")}-${String(anonymous).padStart(2, "0")}${ext}`;
         if (fence.fileName === undefined) anonymous += 1;
-        const disk = join(dir, preferred);
+        let disk = join(dir, preferred);
         if (used.has(preferred) || written.has(disk)) {
-          failures.push({
-            page,
-            preview: fence.preview,
-            message: `two fences in this repository file are named ${preferred}`,
-          });
-          continue;
+          disk = join(dir, `also-${String(written.size)}`, preferred);
+        } else {
+          used.add(preferred);
         }
-        used.add(preferred);
         written.add(disk);
         mkdirSync(join(disk, ".."), { recursive: true });
         writeFileSync(disk, fence.body.endsWith("\n") ? fence.body : `${fence.body}\n`);
@@ -175,8 +171,8 @@ function exampleBodies(): Set<string> {
 }
 
 /**
- * Opening-fence languages this module understands, plus an optional file
- * name taken from a preceding `` `file.ts`: `` line.
+ * Opening-fence languages this module understands. The file name is
+ * `title="file.ts"` on the fence, or a preceding `` `file.ts`: `` line.
  */
 function extractFences(markdown: string): Fence[] {
   const lines = markdown.split("\n");
@@ -199,7 +195,7 @@ function extractFences(markdown: string): Fence[] {
         lang,
         meta,
         body: text,
-        fileName: fileNameBefore(lines, index),
+        fileName: fileNameFromMeta(meta) ?? fileNameBefore(lines, index),
         preview: text.trim().split("\n")[0]?.trim() ?? "",
       });
     }
@@ -208,18 +204,36 @@ function extractFences(markdown: string): Fence[] {
   return fences;
 }
 
+/**
+ * File name from `title="file.ts"` on the opening fence.
+ *
+ * @param meta - Text after the language on the opening fence
+ */
+function fileNameFromMeta(meta: string): string | undefined {
+  const match = /(?:^|\s)title="([^"]*)"/.exec(meta);
+  return sanitizeFenceName(match?.[1]?.trim());
+}
+
 function fileNameBefore(lines: readonly string[], openAt: number): string | undefined {
   for (let index = openAt - 1; index >= 0; index -= 1) {
     const line = (lines[index] ?? "").trim();
     if (line.length === 0) continue;
     const match = /^`([^`]+)`:?$/.exec(line);
-    const name = match?.[1];
-    if (name === undefined) return undefined;
-    if (name.includes("..") || name.startsWith("/") || name.startsWith("\\")) return undefined;
-    if (!/^[\w./-]+\.tsx?$/.test(name)) return undefined;
-    return name.replace(/^\.\//, "");
+    return sanitizeFenceName(match?.[1]);
   }
   return undefined;
+}
+
+/**
+ * A fence file name that stays inside the scratch project.
+ *
+ * @param name - Candidate from a title or a caption line
+ */
+function sanitizeFenceName(name: string | undefined): string | undefined {
+  if (name === undefined || name.length === 0) return undefined;
+  if (name.includes("..") || name.startsWith("/") || name.startsWith("\\")) return undefined;
+  if (!/^[\w./-]+\.tsx?$/.test(name)) return undefined;
+  return name.replace(/^\.\//, "");
 }
 
 /**
@@ -342,7 +356,7 @@ function markdownFiles(dir: string): string[] {
         walk(path);
         continue;
       }
-      if (entry.isFile() && entry.name.endsWith(".md")) files.push(path);
+      if (entry.isFile() && (entry.name.endsWith(".md") || entry.name.endsWith(".mdx"))) files.push(path);
     }
   };
   walk(dir);

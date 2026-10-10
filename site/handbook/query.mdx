@@ -1,0 +1,312 @@
+One table, three commands, then a client. The insert omits the id. The row that comes back carries it, as a string.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+export default schema({ tables: [notes] });
+```
+
+```sh
+bunx okm build
+bunx okm generate init
+bunx okm migrate apply
+```
+
+`okm build` checks the schema and writes `.okm/`. It does not connect.
+
+`okm generate init` writes the first SQL migration and names it `init`. Read that file. The next schema change is `okm generate`.
+
+`okm migrate apply` runs the SQL this database has not applied yet. An empty database gets the tables created.
+
+The `okm` command runs with Node, even under `bunx`. Use `bun --bun okm` when the command must use the Bun runtime.
+
+```ts title="db.ts"
+import { connect } from "okmodel/pg/postgresjs";
+
+import schema from "./schema.ts";
+
+const url = process.env.DATABASE_URL;
+if (url === undefined || url.length === 0) throw new Error("DATABASE_URL is not set");
+
+export const db = connect(url, { schema });
+```
+
+<Tabs items={["Hono", "Express", "Elysia", "Fastify", "Next.js", "Nuxt", "TanStack Start", "Cloudflare Workers", "Any-runtime"]}>
+
+<Tab value="Hono">
+
+```ts title="index.ts" no-check="hono is not installed for this check"
+import { Hono } from "hono";
+
+import { db } from "./db.ts";
+
+const app = new Hono();
+
+app.post("/notes", async (c) => {
+  const body = await c.req.json<{ title: string }>();
+  const note = await db.notes.insert({ title: body.title });
+  return c.json(note, 201);
+});
+
+app.get("/notes/:id", async (c) => {
+  const found = await db.notes.find({ where: { id: c.req.param("id") }, limit: 1 });
+  const note = found[0];
+  if (note === undefined) return c.json({ error: "not found" }, 404);
+  return c.json(note);
+});
+
+export default app;
+```
+
+</Tab>
+
+<Tab value="Express">
+
+```ts title="index.ts" no-check="express is not installed for this check"
+import express from "express";
+
+import { db } from "./db.ts";
+
+const app = express();
+app.use(express.json());
+
+app.post("/notes", async (req, res) => {
+  const note = await db.notes.insert({ title: req.body.title });
+  res.status(201).json(note);
+});
+
+app.get("/notes/:id", async (req, res) => {
+  const found = await db.notes.find({ where: { id: String(req.params.id) }, limit: 1 });
+  const note = found[0];
+  if (note === undefined) {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  res.json(note);
+});
+
+app.listen(3000);
+```
+
+</Tab>
+
+<Tab value="Elysia">
+
+```ts title="index.ts" no-check="elysia is not installed for this check"
+import { Elysia, t } from "elysia";
+
+import { db } from "./db.ts";
+
+const app = new Elysia()
+  .post(
+    "/notes",
+    async ({ body, status }) => {
+      const note = await db.notes.insert({ title: body.title });
+      return status(201, note);
+    },
+    { body: t.Object({ title: t.String() }) },
+  )
+  .get(
+    "/notes/:id",
+    async ({ params, status }) => {
+      const found = await db.notes.find({ where: { id: params.id }, limit: 1 });
+      const note = found[0];
+      if (note === undefined) return status(404, { error: "not found" });
+      return note;
+    },
+    { params: t.Object({ id: t.String() }) },
+  )
+  .listen(3000);
+
+export default app;
+```
+
+</Tab>
+
+<Tab value="Fastify">
+
+```ts title="index.ts" no-check="fastify is not installed for this check"
+import Fastify from "fastify";
+
+import { db } from "./db.ts";
+
+const app = Fastify();
+
+app.post<{ Body: { title: string } }>("/notes", async (req, reply) => {
+  const note = await db.notes.insert({ title: req.body.title });
+  return reply.code(201).send(note);
+});
+
+app.get<{ Params: { id: string } }>("/notes/:id", async (req, reply) => {
+  const found = await db.notes.find({ where: { id: req.params.id }, limit: 1 });
+  const note = found[0];
+  if (note === undefined) return reply.code(404).send({ error: "not found" });
+  return note;
+});
+
+await app.listen({ port: 3000 });
+```
+
+</Tab>
+
+<Tab value="Next.js">
+
+```ts title="app/notes/route.ts" no-check="next is not installed for this check"
+import { NextResponse } from "next/server";
+
+import { db } from "./db.ts";
+
+export async function POST(request: Request) {
+  const body = (await request.json()) as { title: string };
+  const note = await db.notes.insert({ title: body.title });
+  return NextResponse.json(note, { status: 201 });
+}
+```
+
+```ts title="app/notes/[id]/route.ts" no-check="next is not installed for this check"
+import { NextResponse } from "next/server";
+
+import { db } from "./db.ts";
+
+export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const found = await db.notes.find({ where: { id }, limit: 1 });
+  const note = found[0];
+  if (note === undefined) return NextResponse.json({ error: "not found" }, { status: 404 });
+  return NextResponse.json(note);
+}
+```
+
+</Tab>
+
+<Tab value="Nuxt">
+
+```ts title="server/routes/notes.post.ts" no-check="nuxt is not installed for this check"
+import { db } from "../../db.ts";
+
+export default defineEventHandler(async (event) => {
+  const body = await readBody<{ title: string }>(event);
+  const note = await db.notes.insert({ title: body.title });
+  return note;
+});
+```
+
+```ts title="server/routes/notes/[id].get.ts" no-check="nuxt is not installed for this check"
+import { db } from "../../../db.ts";
+
+export default defineEventHandler(async (event) => {
+  const id = getRouterParam(event, "id") ?? "";
+  const found = await db.notes.find({ where: { id }, limit: 1 });
+  const note = found[0];
+  if (note === undefined) throw createError({ statusCode: 404, statusMessage: "not found" });
+  return note;
+});
+```
+
+</Tab>
+
+<Tab value="TanStack Start">
+
+```ts title="src/routes/notes.ts" no-check="tanstack start is not installed for this check"
+import { createFileRoute } from "@tanstack/react-router";
+
+import { db } from "../../db.ts";
+
+export const Route = createFileRoute("/notes")({
+  server: {
+    handlers: {
+      POST: async ({ request }) => {
+        const body = (await request.json()) as { title: string };
+        const note = await db.notes.insert({ title: body.title });
+        return Response.json(note, { status: 201 });
+      },
+    },
+  },
+});
+```
+
+```ts title="src/routes/notes/$id.ts" no-check="tanstack start is not installed for this check"
+import { createFileRoute } from "@tanstack/react-router";
+
+import { db } from "../../../db.ts";
+
+export const Route = createFileRoute("/notes/$id")({
+  server: {
+    handlers: {
+      GET: async ({ params }) => {
+        const found = await db.notes.find({ where: { id: params.id }, limit: 1 });
+        const note = found[0];
+        if (note === undefined) return Response.json({ error: "not found" }, { status: 404 });
+        return Response.json(note);
+      },
+    },
+  },
+});
+```
+
+</Tab>
+
+<Tab value="Cloudflare Workers">
+
+```ts title="src/index.ts"
+import { db } from "../db.ts";
+
+export default {
+  async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    if (request.method === "POST" && url.pathname === "/notes") {
+      const body = (await request.json()) as { title: string };
+      const note = await db.notes.insert({ title: body.title });
+      return Response.json(note, { status: 201 });
+    }
+    const id = /^\/notes\/([^/]+)$/.exec(url.pathname)?.[1];
+    if (request.method === "GET" && id !== undefined) {
+      const found = await db.notes.find({ where: { id }, limit: 1 });
+      const note = found[0];
+      if (note === undefined) return Response.json({ error: "not found" }, { status: 404 });
+      return Response.json(note);
+    }
+    return Response.json({ error: "not found" }, { status: 404 });
+  },
+};
+```
+
+</Tab>
+
+<Tab value="Any-runtime">
+
+```ts title="index.ts"
+import { db } from "./db.ts";
+
+export default {
+  async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    if (request.method === "POST" && url.pathname === "/notes") {
+      const body = (await request.json()) as { title: string };
+      const note = await db.notes.insert({ title: body.title });
+      return Response.json(note, { status: 201 });
+    }
+    const id = /^\/notes\/([^/]+)$/.exec(url.pathname)?.[1];
+    if (request.method === "GET" && id !== undefined) {
+      const found = await db.notes.find({ where: { id }, limit: 1 });
+      const note = found[0];
+      if (note === undefined) return Response.json({ error: "not found" }, { status: 404 });
+      return Response.json(note);
+    }
+    return Response.json({ error: "not found" }, { status: 404 });
+  },
+};
+```
+
+</Tab>
+
+</Tabs>
+
+The same two routes, in the server you already run. The process keeps `db`. `find` returns a list, so the read asks for one row with `limit: 1`. Cloudflare Workers export that `fetch` handler from `src/index.ts`. Any-runtime is the same handler where Bun or Deno calls `fetch(request)`. Node uses one of the servers above.
+
+The schema can say more than one column. [Schema](/docs/model/schema) adds a relation. [Queries](/docs/model/queries) is the same read, written as a function you can call.

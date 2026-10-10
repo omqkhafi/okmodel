@@ -57,6 +57,9 @@ test("generated pages have frontmatter, resolved links, and fenced languages", (
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name),
   );
-  expect(groups.has("guides")).toBe(true);
+  expect(groups.has("start")).toBe(true);
+  expect(groups.has("model")).toBe(true);
+  expect(groups.has("ship")).toBe(true);
   expect(groups.has("reference")).toBe(true);
+  expect(groups.has("guides")).toBe(false);
 });

@@ -64,6 +64,12 @@ export function docMapProblems(): readonly string[] {
     if (page.readmeSection !== undefined && page.readmeIntro === true) {
       problems.push(`${key} cannot be both a README section and the introduction`);
     }
+    if (page.handbook !== undefined && (page.readmeSection !== undefined || page.readmeIntro === true)) {
+      problems.push(`${key} cannot be both an authored page and a README extract`);
+    }
+    if (page.handbook !== undefined && !existsSync(join(siteRoot(), page.handbook))) {
+      problems.push(`authored page is missing: ${page.handbook} (${key})`);
+    }
   }
 
   const readme = readFileSync(join(root, "README.md"), "utf8");
@@ -182,6 +188,9 @@ if (import.meta.main) {
 }
 
 function pageBody(page: MappedPage, readme: string, root: string): string {
+  if (page.handbook !== undefined) {
+    return readFileSync(join(siteRoot(), page.handbook), "utf8").replace(/\r\n/g, "\n");
+  }
   if (page.readmeIntro === true) return readmeIntroduction(readme);
   if (page.readmeSection !== undefined) return extractReadmeH2(readme, page.readmeSection);
   const raw = readFileSync(join(root, page.source), "utf8").replace(/\r\n/g, "\n");
@@ -381,7 +390,7 @@ function writeMeta(): void {
   const folders = docGroups
     .slice()
     .sort((a, b) => a.order - b.order)
-    .flatMap((group) => [`---${group.title}---`, group.id]);
+    .flatMap((group) => [`---${group.separator}---`, group.id]);
   writeJson(join(contentDir, "meta.json"), {
     title: "Documentation",
     pages: [...rootPages, ...folders],
