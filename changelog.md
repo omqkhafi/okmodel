@@ -26,6 +26,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - A materialized view is still refreshed with `REFRESH MATERIALIZED VIEW`. §5.7 does not define a `refresh()` handle, so one was not added (D222).
 - The extra unique beside a tenant primary key stays `{table}_{TypeScript fields}_{tenant field}_key`, for example `tasks_id_tenantId_key`. `renamedFrom` already renames it. The formula is unchanged, so existing catalogs do not move (D223).
 - A `timeout` or `signal` still does not settle an in-flight statement on Bun.sql or PGlite. The fix grew Bun.sql by 108 / 39, so it was not shipped (D224).
+- The hidden `where` and `orderBy` check was measured in three forms. The smallest reuses `fail()` and fits under the current gates: the featureless app would be 90,718 / 30,143 (D225).
 
 ### 🐛 Fixed
 

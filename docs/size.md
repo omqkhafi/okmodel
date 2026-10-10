@@ -234,6 +234,25 @@ Cold import after the move: runtime 1.801 ms, app 10.898 ms (stubbed 5.643 ms), 
 
 The check from D218, plus `hidden({ filterable: true })` on the column, was measured once on top of the move and reverted (D220). The featureless app was 90,943 / 30,199, over the 90,900 / 30,170 gate. Connect entries stayed under their gates: postgres.js 42,252 / 14,879, PGlite 40,263 / 14,252, node-postgres 42,665 / 15,042, Bun.sql 41,513 / 14,569. The runtime entry stayed 5,288 / 2,026.
 
+### Why that check cost 437 / 136
+
+`plan.ts` is in the featureless app and in every connect entry. It is not in the runtime entry. `emitPredicate` and `emitOrder` run while planning, and planning is synchronous, so the check cannot be an `import()`. D220's +214 minified on each connect entry is that planner branch plus a new `OkmError` fix object whose sentence names `hidden({ filterable: true })`. The app's extra 223 minified bytes are `column.ts` and `schema.ts`, which the connect entries do not contain. The runtime entry stayed 5,288 / 2,026.
+
+The same behaviour was measured again on the D221 tree (gated bytes still the D219 table; app total graph 196,302 / 63,858) and reverted (D225). Each row is minified / gzip, then the delta from that baseline.
+
+| Variant | Runtime | App | postgres.js | PGlite | node-postgres | Bun.sql |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Baseline | 5,288 / 2,026 | 90,506 / 30,063 | 42,038 / 14,805 | 40,049 / 14,163 | 42,451 / 14,965 | 41,299 / 14,504 |
+| A. Shared `OkmError` and a `filterable` field on the model | 5,288 / 2,026 | 90,820 / 30,164 (+314 / +101) | 42,250 / 14,877 (+212 / +72) | 40,261 / 14,246 (+212 / +83) | 42,663 / 15,040 (+212 / +75) | 41,511 / 14,584 (+212 / +80) |
+| B. `hidden === true` refuses; `"filter"` is allowed. One `fail()` | 5,288 / 2,026 | 90,718 / 30,143 (+212 / +80) | 42,174 / 14,851 (+136 / +46) | 40,185 / 14,215 (+136 / +52) | 42,587 / 15,014 (+136 / +49) | 41,435 / 14,553 (+136 / +49) |
+| C. Sealed names collected in the index loop, then `fail()` | 5,288 / 2,026 | 90,766 / 30,167 (+260 / +104) | 42,229 / 14,874 (+191 / +69) | 40,240 / 14,238 (+191 / +75) | 42,642 / 15,032 (+191 / +67) | 41,490 / 14,580 (+191 / +76) |
+
+Variant A is the D220 shape with one shared throw. Connect entries grew 212 minified, two bytes under D220's 214. The app grew 314, of which 102 is the column and schema copy. Storing `filterable: false` on every builder added 14 / 2 on the app and nothing on the connect entries (90,834 / 30,166). Variant A's app total graph was 196,616 / 63,893.
+
+Variant B is the smallest on every gated graph. The featureless app has 182 minified and 27 gzip left under 90,900 / 30,170. Each connect entry stays under its gate, and under the D220 connect measurement. `client.ts` is untouched. The app total graph was 196,514 / 63,830.
+
+Variant C rebuilds a name list inside `indexes()`, which already walks columns. That list is more code in `plan.ts` than the comparison, so every graph that contains `plan.ts` is larger. The app total graph was 196,562 / 63,887.
+
 ### Tenant onConflict
 
 The branch stays in the lazy conflict chunk (D221). Gated graphs match the table above. The app total graph is 196,302 / 63,858.
