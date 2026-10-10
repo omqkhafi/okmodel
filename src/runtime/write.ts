@@ -99,7 +99,7 @@ export type PreparedWrite = {
   readonly statements: readonly Statement[];
   readonly options: ExecuteOptions | undefined;
   /** Set when `finish` can refuse a statement that already ran. `batch` refuses such a write (D183). */
-  readonly checked?: "restore" | "expect";
+  readonly checked?: "restore" | "expect" | "parent";
   finish(results: readonly ExecuteResult[]): unknown;
 };
 
@@ -115,6 +115,10 @@ type Planned = {
   readonly expect: number | undefined;
   readonly keys: readonly (readonly (string | null)[])[] | undefined;
   readonly keyFields: readonly string[] | undefined;
+  /** Rows a path insert must return. Fewer means the parent is not in this tenant. */
+  readonly parent?: number;
+  /** The statement returns matched and updated counts. A shortfall is OKM1705. */
+  readonly parentGuard?: boolean;
 };
 
 type StoredSchema = QuerySchema & {
@@ -237,7 +241,11 @@ async function prepareWrite(
     return {
       statements: planned.statements,
       options: callOptions(options),
-      ...(planned.expect !== undefined ? { checked: "expect" as const } : {}),
+      ...(planned.parentGuard === true
+        ? { checked: "parent" as const }
+        : planned.expect !== undefined
+          ? { checked: "expect" as const }
+          : {}),
       finish: (results) => finish(results, planned, table),
     };
   } catch (error) {
@@ -302,7 +310,7 @@ async function planWrite(
   if (op === "update") {
     return withRowFilters(scope, mods.archive, () => {
       noteArchive(table, mods.archive);
-      return planUpdate(schema, table, input, record, mods);
+      return planUpdate(schema, table, input, record, mods, scope);
     });
   }
   return withRowFilters(scope, mods.archive, () => {
@@ -326,12 +334,19 @@ async function planInsert(
   const rows = (many ? input : [input]).map((row) => insertRow(table, row, allow, tenancy));
   tenancy?.stamp(table.model.name, rows, scope);
   fillInsert(table, rows, generators);
-  const columns = writtenColumns(table, rows, allow, tenancy?.key);
+  const columns = writtenColumns(table, rows, allow, tenantKeyList(tenancy));
   const returning = selectedColumns(table, options.returning);
   const outputs = outputsOf(returning);
   const clause = returningClause(returning, undefined);
   const expect = expectOf(options, mods);
   const shape = many ? "rows" : "row";
+  const path = tenancy?.isPath?.(table.model.name) === true;
+  if (path && options.onConflict !== undefined && options.onConflict !== "error") {
+    fail(
+      "OKM1120",
+      `onConflict on ${table.model.name} is not available. The insert checks the parent.`,
+    );
+  }
   if (columns.length === 0) {
     const text = `insert into ${quote(table.model.sql)} default values${clause}`;
     return {
@@ -347,7 +362,12 @@ async function planInsert(
     options.onConflict === undefined || options.onConflict === "error"
       ? undefined
       : await import("./conflict.js");
-  const conflict = conflictMod?.readConflict(table, options.onConflict, allow, tenancy?.key);
+  const conflict = conflictMod?.readConflict(
+    table,
+    options.onConflict,
+    allow,
+    tenantKeyList(tenancy),
+  );
   const chunks = chunkRows(rows.map((row) => cellsFor(columns, row)));
   const statements: Statement[] = [];
   const keys: (string | null)[][] = [];
@@ -355,7 +375,9 @@ async function planInsert(
   for (const chunk of chunks) {
     const slice = rows.slice(offset, offset + chunk.length);
     offset += chunk.length;
-    const built = insertHead(table, columns, chunk);
+    const built = path
+      ? pathInsert(table, columns, chunk, scope, tenancy)
+      : insertHead(table, columns, chunk);
     if (conflict === undefined || conflictMod === undefined) {
       statements.push(withParams(`${built.text}${clause}`, built.params));
       continue;
@@ -383,6 +405,7 @@ async function planInsert(
     keys: conflict?.kind === "return" ? keys : undefined,
     keyFields:
       conflict?.kind === "return" ? conflict.columns.map((column) => column.field) : undefined,
+    ...(path ? { parent: rows.length } : {}),
   };
 }
 
@@ -392,6 +415,7 @@ function planUpdate(
   input: unknown,
   options: Record<string, unknown>,
   mods: WriteMods,
+  scope: CallScope | undefined,
 ): Planned {
   const allow = allowSet(table, options.allow);
   noteGuarded(table, allow, "update");
@@ -402,8 +426,23 @@ function planUpdate(
     const rows = input.map((item) => {
       const row = updateItem(table, item, allow, schema.tenancy);
       requireFilter(table, row.where, mods, "update");
+      pathAssignment(schema.tenancy, table.model.name, row.set, scope);
       return { ...row, where: stack(row.where, mods.presets) };
     });
+    const moves = rows.some(
+      (row) => pathField(schema.tenancy, table.model.name, row.set) !== undefined,
+    );
+    if (moves) {
+      return {
+        statements: [pathListUpdate(schema, table, rows, scope, returning)],
+        outputs: parentOutputs(returning),
+        shape: returning === undefined ? "count" : "rows",
+        expect,
+        keys: undefined,
+        keyFields: undefined,
+        parentGuard: true,
+      };
+    }
     return {
       statements: updateList(schema, table, rows, returning),
       outputs,
@@ -418,12 +457,31 @@ function planUpdate(
   const set = writeSet(table, input.set, allow, schema.tenancy);
   requireFilter(table, input.where, mods, "update");
   if (Object.keys(set).length === 0) fail("OKM1120", "update set is empty.");
+  const where = stack(input.where, mods.presets);
+  if (pathAssignment(schema.tenancy, table.model.name, set, scope) !== undefined) {
+    return {
+      statements: [pathSetUpdate(schema, table, where, set, scope, returning)],
+      outputs: parentOutputs(returning),
+      shape: returning === undefined ? "count" : "rows",
+      expect,
+      keys: undefined,
+      keyFields: undefined,
+      parentGuard: true,
+    };
+  }
   const sql = new Sql();
   sql.text("update ");
   sql.text(quote(table.model.sql));
   sql.text(" as t set ");
   emitSet(sql, table, set, "t");
-  emitFilter(schema, table, stack(input.where, mods.presets), sql, "t");
+  emitFilter(schema, table, where, sql, "t");
+  schema.tenancy?.noteParent?.(
+    table.model.name,
+    set,
+    sql.sink(),
+    scope,
+    (field) => table.columns.get(field)?.sql,
+  );
   sql.text(returningClause(returning, "t"));
   return {
     statements: [sql.statement()],
@@ -463,6 +521,7 @@ function planDelete(
 }
 
 function finish(results: readonly ExecuteResult[], planned: Planned, table: string): unknown {
+  if (planned.parentGuard === true) return finishParent(results, planned, table);
   if (planned.shape === "count") {
     let count = 0;
     for (const result of results) count += result.count;
@@ -478,8 +537,255 @@ function finish(results: readonly ExecuteResult[], planned: Planned, table: stri
       ? decoded
       : orderByKeys(decoded, planned.keyFields, planned.keys);
   checkExpect(rows.length, planned.expect, table, "insert");
+  if (planned.parent !== undefined && rows.length < planned.parent) {
+    throw new OkmError("OKM1705", `Insert on ${table} did not find a parent in this tenant.`, {
+      fix: { summary: "Insert under a parent that belongs to this tenant." },
+    });
+  }
   if (planned.shape === "row") return rows[0] ?? null;
   return rows;
+}
+
+function finishParent(results: readonly ExecuteResult[], planned: Planned, table: string): unknown {
+  const row = results[0]?.rows[0];
+  const matched = countCell(row?.[0]);
+  const updated = countCell(row?.[1]);
+  if (updated < matched) {
+    throw new OkmError("OKM1705", `Update on ${table} did not find a parent in this tenant.`, {
+      fix: { summary: "Point the foreign key at a parent in this tenant." },
+    });
+  }
+  if (planned.shape === "count") {
+    checkExpect(updated, planned.expect, table, "write");
+    return { count: updated };
+  }
+  const decoded: Record<string, unknown>[] = [];
+  if (updated > 0) {
+    for (const result of results) {
+      for (const item of result.rows) decoded.push(decodeRow(planned.outputs, item));
+    }
+  }
+  checkExpect(decoded.length, planned.expect, table, "write");
+  if (planned.shape === "row") return decoded[0] ?? null;
+  return decoded;
+}
+
+function countCell(value: unknown): number {
+  if (typeof value === "number") return value;
+  if (typeof value === "bigint") return Number(value);
+  if (typeof value === "string" && value.length > 0) return Number(value);
+  return 0;
+}
+
+function pathField(
+  tenancy: QuerySchema["tenancy"],
+  table: string,
+  set: Readonly<Record<string, unknown>>,
+): string | undefined {
+  if (tenancy?.isPath?.(table) !== true) return undefined;
+  const field = tenancy.pathOf?.(table)?.[0]?.localField;
+  if (field === undefined || !Object.hasOwn(set, field)) return undefined;
+  return field;
+}
+
+function pathAssignment(
+  tenancy: QuerySchema["tenancy"],
+  table: string,
+  set: Readonly<Record<string, unknown>>,
+  scope: CallScope | undefined,
+): string | undefined {
+  const field = pathField(tenancy, table, set);
+  if (field === undefined) return undefined;
+  const value = set[field];
+  if (typeof value !== "string" || value.length === 0) {
+    throw new OkmError(
+      "OKM1705",
+      `Update on ${table} cannot verify ${field}. Pass the parent id as a string.`,
+      { fix: { summary: "Pass the parent id as a string so the tenant can be checked." } },
+    );
+  }
+  if (scope === undefined || "unscoped" in scope) {
+    throw new OkmError("OKM1705", `Update on ${table} cannot verify ${field} without a tenant.`, {
+      fix: { summary: `Call for({ ... }) so ${field} can be checked.` },
+    });
+  }
+  return field;
+}
+
+function parentOutputs(returning: readonly ColumnModel[] | undefined): Outputs {
+  const outputs = outputsOf(returning);
+  if (returning === undefined) return outputs;
+  return {
+    fields: outputs.fields.map((field) => ({ ...field, at: field.at + 2 })),
+    includes: outputs.includes,
+  };
+}
+
+function pathSetUpdate(
+  schema: QuerySchema,
+  table: Indexed,
+  where: unknown,
+  set: Record<string, unknown>,
+  scope: CallScope | undefined,
+  returning: readonly ColumnModel[] | undefined,
+): Statement {
+  const sql = new Sql();
+  sql.text("with matched as (select t.ctid as tid from ");
+  sql.text(quote(table.model.sql));
+  sql.text(" as t");
+  emitFilter(schema, table, where, sql, "t");
+  sql.text("), updated as (update ");
+  sql.text(quote(table.model.sql));
+  sql.text(" as t set ");
+  emitSet(sql, table, set, "t");
+  sql.text(" where t.ctid in (select tid from matched)");
+  schema.tenancy?.noteParent?.(
+    table.model.name,
+    set,
+    sql.sink(),
+    scope,
+    (field) => table.columns.get(field)?.sql,
+  );
+  endParent(sql, returning);
+  return sql.statement();
+}
+
+function pathListUpdate(
+  schema: QuerySchema,
+  table: Indexed,
+  rows: readonly { readonly where: unknown; readonly set: Record<string, unknown> }[],
+  scope: CallScope | undefined,
+  returning: readonly ColumnModel[] | undefined,
+): Statement {
+  const sql = new Sql();
+  sql.text("with matched as (");
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    if (row === undefined) continue;
+    if (index > 0) sql.text(" union all ");
+    sql.text("select t.ctid as tid, ");
+    sql.text(String(index));
+    sql.text(" as ord from ");
+    sql.text(quote(table.model.sql));
+    sql.text(" as t where ");
+    emitBare(schema, table, row.where, sql, "t");
+  }
+  sql.text("), rejected as (");
+  let rejected = false;
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    if (row === undefined) continue;
+    if (pathField(schema.tenancy, table.model.name, row.set) === undefined) continue;
+    if (rejected) sql.text(" union all ");
+    rejected = true;
+    sql.text("select ");
+    sql.text(String(index));
+    sql.text(" as ord where exists (select 1 from matched where ord = ");
+    sql.text(String(index));
+    sql.text(")");
+    noteParentNot(schema, table, row.set, scope, sql);
+  }
+  if (!rejected) sql.text("select 0 as ord where false");
+  sql.text("), updated as (");
+  updateSliceBody(schema, table, rows, sql, true);
+  sql.text(" and not exists (select 1 from rejected)");
+  endParent(sql, returning);
+  return sql.statement();
+}
+
+function noteParentNot(
+  schema: QuerySchema,
+  table: Indexed,
+  set: Readonly<Record<string, unknown>>,
+  scope: CallScope | undefined,
+  sql: Sql,
+): void {
+  let first = true;
+  schema.tenancy?.noteParent?.(
+    table.model.name,
+    set,
+    {
+      text(value) {
+        if (first) {
+          first = false;
+          sql.text(" and not ");
+          return;
+        }
+        sql.text(value);
+      },
+      param(encoded) {
+        sql.param(encoded, "");
+      },
+      mark() {},
+    },
+    scope,
+    (field) => table.columns.get(field)?.sql,
+  );
+}
+
+function endParent(sql: Sql, returning: readonly ColumnModel[] | undefined): void {
+  if (returning === undefined || returning.length === 0) {
+    sql.text(
+      " returning 1) select (select count(*)::int from matched), (select count(*)::int from updated)",
+    );
+    return;
+  }
+  sql.text(returningClause(returning, "t"));
+  sql.text(
+    ") select c.matched, c.updated, u.* from (select (select count(*)::int from matched) as matched, (select count(*)::int from updated) as updated) c left join updated u on true",
+  );
+}
+
+function updateSliceBody(
+  schema: QuerySchema,
+  table: Indexed,
+  rows: readonly { readonly where: unknown; readonly set: Record<string, unknown> }[],
+  sql: Sql,
+  wrapWhere = false,
+): void {
+  const fields: ColumnModel[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    for (const key of Object.keys(row.set)) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const column = table.columns.get(key);
+      if (column !== undefined) fields.push(column);
+    }
+  }
+  if (fields.length === 0) fail("OKM1120", "update set is empty.");
+  sql.text("update ");
+  sql.text(quote(table.model.sql));
+  sql.text(" as t set ");
+  for (let field = 0; field < fields.length; field += 1) {
+    const column = fields[field];
+    if (column === undefined) continue;
+    if (field > 0) sql.text(", ");
+    sql.text(quote(column.sql));
+    sql.text(" = case");
+    for (const row of rows) {
+      sql.text(" when ");
+      emitBare(schema, table, row.where, sql, "t");
+      sql.text(" then ");
+      const value = row.set[column.field];
+      if (value === undefined) sql.text(`t.${quote(column.sql)}`);
+      else emitValue(sql, column, value, "t");
+    }
+    sql.text(" else t.");
+    sql.text(quote(column.sql));
+    sql.text(" end");
+  }
+  emitTouch(sql, table, fields.length > 0);
+  sql.text(wrapWhere ? " where (" : " where ");
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    if (row === undefined) continue;
+    if (index > 0) sql.text(" or ");
+    sql.text("(");
+    emitBare(schema, table, row.where, sql, "t");
+    sql.text(")");
+  }
+  if (wrapWhere) sql.text(")");
 }
 
 function orderByKeys(
@@ -553,49 +859,8 @@ function updateSlice(
   rows: readonly { readonly where: unknown; readonly set: Record<string, unknown> }[],
   returning: readonly ColumnModel[] | undefined,
 ): Statement {
-  const fields: ColumnModel[] = [];
-  const seen = new Set<string>();
-  for (const row of rows) {
-    for (const key of Object.keys(row.set)) {
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const column = table.columns.get(key);
-      if (column !== undefined) fields.push(column);
-    }
-  }
-  if (fields.length === 0) fail("OKM1120", "update set is empty.");
   const sql = new Sql();
-  sql.text("update ");
-  sql.text(quote(table.model.sql));
-  sql.text(" as t set ");
-  for (let field = 0; field < fields.length; field += 1) {
-    const column = fields[field];
-    if (column === undefined) continue;
-    if (field > 0) sql.text(", ");
-    sql.text(quote(column.sql));
-    sql.text(" = case");
-    for (const row of rows) {
-      sql.text(" when ");
-      emitBare(schema, table, row.where, sql, "t");
-      sql.text(" then ");
-      const value = row.set[column.field];
-      if (value === undefined) sql.text(`t.${quote(column.sql)}`);
-      else emitValue(sql, column, value, "t");
-    }
-    sql.text(" else t.");
-    sql.text(quote(column.sql));
-    sql.text(" end");
-  }
-  emitTouch(sql, table, fields.length > 0);
-  sql.text(" where ");
-  for (let index = 0; index < rows.length; index += 1) {
-    const row = rows[index];
-    if (row === undefined) continue;
-    if (index > 0) sql.text(" or ");
-    sql.text("(");
-    emitBare(schema, table, row.where, sql, "t");
-    sql.text(")");
-  }
+  updateSliceBody(schema, table, rows, sql);
   sql.text(returningClause(returning, "t"));
   return sql.statement();
 }
@@ -842,7 +1107,7 @@ function writtenColumns(
   table: Indexed,
   rows: readonly Record<string, unknown>[],
   allow: ReadonlySet<string>,
-  tenantKey: string | undefined,
+  tenantKeys: readonly string[] | undefined,
 ): ColumnModel[] {
   const present = new Set<string>();
   for (const row of rows) {
@@ -852,12 +1117,60 @@ function writtenColumns(
   for (const column of table.model.columns) {
     if (
       present.has(column.field) &&
-      (writable(table, column, allow) || column.fill !== undefined || column.field === tenantKey)
+      (writable(table, column, allow) ||
+        column.fill !== undefined ||
+        tenantKeys?.includes(column.field) === true)
     ) {
       columns.push(column);
     }
   }
   return columns;
+}
+
+function tenantKeyList(tenancy: QuerySchema["tenancy"]): readonly string[] | undefined {
+  if (tenancy === undefined) return undefined;
+  if (tenancy.keys !== undefined && tenancy.keys.length > 0) return tenancy.keys;
+  return [tenancy.key];
+}
+
+function pathInsert(
+  table: Indexed,
+  columns: readonly ColumnModel[],
+  rows: readonly Cell[][],
+  scope: CallScope | undefined,
+  tenancy: QuerySchema["tenancy"],
+): Statement {
+  const sql = new Sql();
+  const names = columns.map((column) => quote(column.sql)).join(", ");
+  const selected = columns.map((column) => `v.${quote(column.sql)}`).join(", ");
+  sql.text(`insert into ${quote(table.model.sql)} (${names}) select ${selected} from (values `);
+  for (let row = 0; row < rows.length; row += 1) {
+    const cells = rows[row];
+    if (cells === undefined) continue;
+    if (row > 0) sql.text(", ");
+    sql.text("(");
+    for (let index = 0; index < cells.length; index += 1) {
+      const cell = cells[index];
+      if (index > 0) sql.text(", ");
+      if (cell === undefined || cell.kind === "default") {
+        sql.text("default");
+        continue;
+      }
+      sql.param(cell.kind === "null" ? null : cell.wire, cell.dataType);
+    }
+    sql.text(")");
+  }
+  sql.text(`) as v(${names})`);
+  tenancy?.lockPredicate?.({
+    table: table.model.name,
+    fieldSql: (field) => table.columns.get(field)?.sql,
+    encode: table.columns.get(tenancy.key)?.encode,
+    alias: "v",
+    appended: false,
+    scope,
+    sink: sql.sink(),
+  });
+  return sql.statement();
 }
 
 function writeSet(

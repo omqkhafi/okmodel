@@ -579,7 +579,7 @@ export const tasks = table("tasks", {
 | `validate` | per-field rule arrays or Standard Schemas; `$row` cross-field rules |
 | `validation` | table override of the schema default |
 | `traits`, `omitDefaults` | behavior bundles; opting out of schema traits with a reason |
-| `tenancy` | `{ via: "relation.path" }` or `global("reason")` |
+| `tenancy` | `via("relation.path")` or `global("reason")` |
 | `relations` | `one`, `many`, `manyThrough`, `morph`, by table name. `manyThrough("labels", { through: "taskLabels" })` is a to-many relation through a declared join table with one foreign key to each side; name `from` and `to` (join-table fields) when a table has more than one. It works in `include`, in `has` / `none` / `every` and in filters, and the join rows and the targets carry the same tenancy and active-set predicates as any relation. `morph("commentable", ["tasks", "lists"])` declares a closed list of targets and returns a flat discriminated union (M2) |
 | `computed` | SQL expressions usable like fields |
 | `indexes`, `checks` | database indexes, unique constraints, check constraints |
@@ -753,13 +753,13 @@ export const appSchema = schema({
 const countries = table("countries", { id: id(), name: text() }, { tenancy: global("shared reference data") });
 ```
 
-`columnTenancy()` carries the column, the widened uniques, the composite foreign keys, the scope predicate, and `for()` / `unscoped()`. A schema that does not pass it does not load that code. `schemaPerTenant` and `databasePerTenant` are separate objects in the same subpath later.
+`columnTenancy()` carries the column, the widened uniques, the foreign keys, the scope predicate, and `for()` / `unscoped()`. It takes one key. A list of keys is `compositeTenancy()`, imported from the same place, and every key has the same `type: "uuid"`. An object map is not accepted. A table that follows relations uses `via("project.organization")`, also from `okmodel/tenancy`. A schema that does not pass `okmodel/tenancy` does not load that code, and a column-only import does not load `compositeTenancy` or `via` (D229). `schemaPerTenant` and `databasePerTenant` are separate objects in the same subpath later.
 
 | Strategy | Isolation |
 |---|---|
 | `column` | filter on the key; inserts fill it from context |
-| `path` (`tenancy: { via: "project.organization" }`) | `EXISTS` along the path; inserts verify the parent's tenant |
-| `composite` (`key: ["organizationId", "workspaceId"]`) | all keys together |
+| `path` (`tenancy: via("project.organization")`) | `EXISTS` along the path; inserts verify the parent's tenant |
+| `composite` (`compositeTenancy({ key: ["organizationId", "workspaceId"], type: "uuid" })`) | all keys together, in that order |
 | `rls` (pg) | database-enforced policies (9.4) |
 | `schemaPerTenant`, `databasePerTenant` | physical isolation |
 
@@ -767,24 +767,31 @@ const countries = table("countries", { id: id(), name: text() }, { tenancy: glob
 
 ### 9.2 Inheritance and integrity
 
-- Every table is isolated by default; exceptions: `tenancy: { via }` or `tenancy: global("reason")`.
+- Every table is isolated by default; exceptions: `tenancy: via("project.organization")` or `tenancy: global("reason")`. A handwritten `{ via: "..." }` is not a strategy. Schema build rejects it and names `via()` (D229, pre-v1).
 - The `column` strategy adds the key to inheriting tables.
 - `.unique()` on a tenant table becomes `UNIQUE (tenant_key, …)`; `.unique({ global: "reason" })` opts out. `onConflict.on` names that unique without the tenant key. The conflict target includes the key, in the unique's order, and the inserted row still carries the caller's tenant, so the update cannot land on another tenant's row (D221). Naming the tenant key in `on` is OKM1104.
 - Every tenant table's primary key is the declared key plus the tenant key, and the table also has `UNIQUE` on those columns, so two tenants can share an id. That unique's name is `{sql table}_{TypeScript primary fields joined by _}_{tenant field}_key`. With casing `snake`, table `tasks`, field `id`, and tenant field `tenantId`, it is `tasks_id_tenantId_key` on columns `(id, tenant_id)`. The primary key stays `tasks_pkey`. A column `.unique()` is `{sql table}_{field}_key` on `(tenant key, field)`, so `title` is `tasks_title_key`. An index uses SQL names (`tasks_tenant_id_title_idx`). `archivable()` turns the unique into a partial unique index named with those SQL names (`tasks_id_tenant_id_idx`). `renamedFrom` on the table or on a field in the name plans `RENAME CONSTRAINT` to the name compiled from the current TypeScript fields. It does not drop the unique. The formula stays on TypeScript field names, so existing catalogs do not move (D223, D168, D194). FKs between tenant tables are composite, so no row can reference another tenant's row, even through raw SQL.
-- Lint OKM1706: an index on a tenant table that does not lead with the tenant key.
-- Changing the tenant key in `update` is refused (OKM1704); a global table referencing a tenant table is flagged (OKM1705).
+- Lint OKM1706: an index on a tenant table that does not lead with the tenant key. Composite tenancy leads with the first key. A path table gets an index on the foreign key the path uses, and a missing handle is the same lint.
+- Changing the tenant key in `update` is refused (OKM1704). Composite tenancy refuses any of the keys. A global table referencing a tenant table is flagged (OKM1705).
+- Composite tenancy uses every key, in declaration order. The primary key is the declared key plus those keys. The extra `UNIQUE` uses the same name formula with the tenant fields joined by `_`, so `id` with `organizationId` and `workspaceId` is `{table}_id_organizationId_workspaceId_key`. `.unique()` becomes `UNIQUE (every tenant key, column)`. `onConflict` includes every key (D221). Foreign keys between tenant tables include every key.
+- A path is `via("project.organization")`, resolved when the schema is built, to at most three existing to-one relations. A fourth hop, a missing relation, a cycle, or a path that does not end at a tenant table is OKM1705. Reads and writes add `EXISTS` along the path. An insert checks the parent in that same statement. Every update that sets the path column checks the new parent in that same statement with `FOR SHARE` on the tenant row: a list update changes nothing when any new parent fails, and `{ where, set }` changes nothing when its new parent fails. A parent in another tenant, a missing parent, or a parent deleted while the statement waits is OKM1705, and the row stays on its old parent. A filter that matches no row returns a count of 0. `batch()` refuses the update before it runs (OKM1705); `tx()` is the verified form. `onConflict` on a path table is OKM1120. Archive and restore do not set the path column. `archivable()` on the table a path ends on is OKM1705 when the schema is built, and the fix names that table. A path child can be archivable. The table a path ends on gains `UNIQUE` on its declared primary key, so the child can reference that key, and two tenants cannot share it. `unscoped(reason)` still skips the predicate and records the reason (D228, D229).
 - Adding tenancy to an existing project requires a backfill migration before the key becomes `NOT NULL`.
 - Resolving the tenant from a request is the application's job.
 
 ### 9.3 Context client
 
 ```ts
+import { columnTenancy, compositeTenancy, via } from "okmodel/tenancy";
+
 const scoped = db.for({ tenantId: session.tenantId });
 await scoped.tasks.find({ limit: 20 });
+const workspace = db.for({ organizationId, workspaceId });
 db.tasks;                                           // type error OKM1701
 db.unscoped("nightly report across tenants").tasks.count();
 db.countries.find({ limit: 300 });                  // global tables on the root client
 ```
+
+A composite scope passes every key. `compositeTenancy()` is that scope. A missing key or an extra key is a type error and OKM1701 at runtime. One key still passes `{ tenantId }`. A path table uses the same `for()` as the tenant table it reaches. `via("project.organization")` is the table option, not a second scope (D229).
 
 ### 9.4 `rls` strategy hardening
 

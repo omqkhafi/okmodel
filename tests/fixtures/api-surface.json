@@ -1197,7 +1197,15 @@
       "kind": "stable"
     },
     {
+      "name": "compositeTenancy",
+      "kind": "stable"
+    },
+    {
       "name": "global",
+      "kind": "stable"
+    },
+    {
+      "name": "via",
       "kind": "stable"
     }
   ],

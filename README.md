@@ -711,7 +711,7 @@ export async function hide(url: string, id: string): Promise<void> {
 
 ### Tenancy
 
-Every note belongs to one tenant. Column tenancy adds `tenantId` and puts that tenant on every read and write. `db.for({ tenantId }).notes.find({ limit: 20 })` reads one tenant. `global("shared")` marks a table every tenant can read, such as a list of countries. Row-level security is not in this version. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
+Every note belongs to one tenant. Column tenancy adds `tenantId` and puts that tenant on every read and write. `db.for({ tenantId }).notes.find({ limit: 20 })` reads one tenant. Composite tenancy passes every key, `compositeTenancy({ key: ["organizationId", "workspaceId"], type: "uuid" })` and `db.for({ organizationId, workspaceId })`. A table without its own key uses `tenancy: via("project.organization")`, up to three relations, and reads and writes follow that path. `global("shared")` marks a table every tenant can read, such as a list of countries. Row-level security is not in this version. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
 
 `tenancy.ts`:
 

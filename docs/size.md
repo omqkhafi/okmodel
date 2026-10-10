@@ -279,3 +279,20 @@ The branch stays in the lazy conflict chunk (D221). Gated graphs match the table
 `refresh()` was not added (D222). §5.7 does not define the handle. The extra tenant unique keeps its TypeScript name key (D223). That decision does not change a generator, so the gated graphs stay on the table above.
 
 The in-flight timeout on Bun.sql and PGlite stays a known limit (D224). D216 measured the behaviour at Bun.sql +108 / +39 and PGlite +191 / +92. Bun.sql must not grow, so the fix is not rebuilt. The lazy watch hook that shrinks connect graphs by 45 minified is not that behaviour.
+
+### Composite and path tenancy, shipped
+
+`readTenancy` keeps the rewrite-function check and drops the `strategy === "column"` comparison, so the featureless app does not name `composite` or `path` (D228). One `bun run size` run. The runtime entry stays 5,288 / 2,026.
+
+| Graph | Before (D226) | After | Delta (min / gzip) | Gate | Left (min / gzip) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Runtime entry | 5,288 / 2,026 | 5,288 / 2,026 | 0 / 0 | 6,100 / 2,250 | 812 / 224 |
+| Featureless app | 90,721 / 30,154 | 90,690 / 30,145 | −31 / −9 | 90,900 / 30,170 | 210 / 25 |
+| postgres.js | 42,177 / 14,856 | 42,177 / 14,856 | 0 / 0 | 42,450 / 14,920 | 273 / 64 |
+| PGlite | 40,187 / 14,223 | 40,187 / 14,225 | 0 / +2 | 40,450 / 14,280 | 263 / 55 |
+| node-postgres | 42,590 / 15,016 | 42,590 / 15,019 | 0 / +3 | 42,850 / 15,070 | 260 / 51 |
+| Bun.sql | 41,438 / 14,544 | 41,438 / 14,545 | 0 / +1 | 41,700 / 14,620 | 262 / 75 |
+
+Connect minified bytes match D226. The gzip deltas are the same noise D227 records (at most 3 bytes) on graphs that do not contain `tenancy.ts`. Cold import: runtime 1.742 ms, app 10.519 ms (stubbed 5.453 ms), postgres.js 8.410 ms (stubbed 2.722 ms), PGlite 10.778 ms (stubbed 2.804 ms), node-postgres 11.355 ms (stubbed 2.869 ms), Bun.sql stubbed 2.595 ms. The app total graph is 198,575 / 64,603. The same featureless fixture with `columnTenancy` on the schema is 105,154 / 34,571 (cold 11.759 ms, stubbed 6.195 ms), +14,464 / +4,427 over the featureless app. query-200 is 17,171 instantiations and 6,328 types (ceilings 17,300 and 6,500, both within 3 percent) and inferred-250 stays 17,650 (ceiling 21,180).
+
+D229 splits that fixture. `columnTenancy()` is one key again. `compositeTenancy()` and `via()` are separate imports, and bun drops them when the app does not name them. The column fixture is 97,550 / 32,423, +226 / +111 over `origin/main` at 97,324 / 32,312. The composite fixture is 98,670 / 32,818. The path fixture is 105,763 / 34,669. The six gated graphs stay on the D228 bytes.

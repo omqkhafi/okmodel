@@ -28,14 +28,14 @@ const NO_ALLOW: ReadonlySet<string> = new Set();
  * @param table - Target table
  * @param value - The option the caller passed
  * @param allow - Guarded fields this write may set
- * @param tenantKey - The tenant key on a tenant schema. A unique that includes it matches when `on` names the other columns. The target keeps the key, in the unique's order. Naming the key is OKM1104.
+ * @param tenantKey - The tenant key, or every tenant key when the schema has several. A unique that includes them matches when `on` names the other columns. The target keeps the keys, in the unique's order. Naming a key is OKM1104.
  * @returns The plan, or `undefined` for the default `"error"`
  */
 export function readConflict(
   table: Indexed,
   value: unknown,
   allow: ReadonlySet<string> = NO_ALLOW,
-  tenantKey?: string,
+  tenantKey?: string | readonly string[],
 ): ConflictPlan | undefined {
   if (value === undefined || value === "error") return undefined;
   if (value === "ignore") return { kind: "ignore", columns: [], update: [] };
@@ -167,11 +167,12 @@ function samePrimary(table: Indexed, columns: readonly ColumnModel[]): boolean {
 function uniqueColumns(
   table: Indexed,
   on: unknown,
-  tenantKey: string | undefined,
+  tenantKey: string | readonly string[] | undefined,
 ): readonly ColumnModel[] {
   const names = conflictNames(on);
+  const keys = keyList(tenantKey);
   for (const unique of table.model.uniques) {
-    const fields = fieldsOf(unique, names, tenantKey);
+    const fields = fieldsOf(unique, names, keys);
     if (fields === undefined) continue;
     const columns: ColumnModel[] = [];
     for (const name of fields) {
@@ -183,11 +184,11 @@ function uniqueColumns(
     }
     return columns;
   }
-  const accepted = acceptedConstraints(table.model, tenantKey);
+  const accepted = acceptedConstraints(table.model, keys);
   const implicit =
-    tenantKey === undefined
+    keys.length === 0
       ? ""
-      : ` The tenant key ${tenantKey} is part of each one and is not named here.`;
+      : ` The tenant key ${keys.join(", ")} is part of each one and is not named here.`;
   throwNamed(
     "OKM1104",
     names.join(", "),
@@ -206,10 +207,10 @@ function uniqueColumns(
  * @param model - Table model
  * @returns Display names, in declaration order
  */
-function acceptedConstraints(model: TableModel, key: string | undefined): readonly string[] {
+function acceptedConstraints(model: TableModel, keys: readonly string[]): readonly string[] {
   const shown = new Set<string>();
   for (const fields of model.uniques) {
-    const named = key === undefined ? fields : fields.filter((field) => field !== key);
+    const named = keys.length === 0 ? fields : fields.filter((field) => !keys.includes(field));
     if (named.length === 0) continue;
     shown.add(named.length > 1 ? `(${named.join(", ")})` : named.join(""));
   }
@@ -265,24 +266,30 @@ function conflictNames(on: unknown): readonly string[] {
  *
  * @param unique - Field names of one unique constraint
  * @param names - Columns named in `on`
- * @param tenantKey - Tenant field, when the schema has one
+ * @param tenantKeys - Tenant fields, when the schema has them
  * @returns Target fields, or `undefined` when this unique is not the target
  */
 function fieldsOf(
   unique: readonly string[],
   names: readonly string[],
-  tenantKey: string | undefined,
+  tenantKeys: readonly string[],
 ): readonly string[] | undefined {
-  if (tenantKey !== undefined && unique.includes(tenantKey)) {
+  if (tenantKeys.some((key) => unique.includes(key))) {
     const rest: string[] = [];
     for (const field of unique) {
-      if (field !== tenantKey) rest.push(field);
+      if (!tenantKeys.includes(field)) rest.push(field);
     }
     if (!same(rest, names)) return undefined;
     return unique;
   }
   if (!same(unique, names)) return undefined;
   return names;
+}
+
+function keyList(tenantKey: string | readonly string[] | undefined): readonly string[] {
+  if (tenantKey === undefined) return [];
+  if (typeof tenantKey === "string") return [tenantKey];
+  return tenantKey;
 }
 
 function same(unique: readonly string[], names: readonly string[]): boolean {

@@ -20,8 +20,15 @@ export type TenantFields<Key extends string> = {
   readonly [K in Key]: ColumnBuilder<string, FlagTrue<PlainFlags, "guarded">>;
 };
 
-/** One tenant value, or a reason for leaving the scope. The value is not a cache key. */
-export type TenantCall = { readonly value: string } | { readonly unscoped: string };
+/**
+ * One tenant value, or a reason for leaving the scope. The value is not a cache key.
+ *
+ * `values` is set when the tenant is several keys. `value` stays the first key,
+ * which is what a single-key scope already stored.
+ */
+export type TenantCall =
+  | { readonly value: string; readonly values?: Readonly<Record<string, string>> }
+  | { readonly unscoped: string };
 
 /** Text the scope predicate writes. The planner's sink has these methods. */
 export type TenancyText = {
@@ -53,10 +60,53 @@ export type TenancyRule = {
  */
 export type ColumnTenancy = {
   readonly key: string;
+  /** Every tenant field, in declaration order. One entry for column tenancy. */
+  readonly keys?: readonly string[];
   readonly type: "uuid";
-  readonly strategy: "column";
+  readonly strategy: string;
   /** Tables with the tenant column, widened uniques, and composite references. */
   rewrite(tables: readonly AnyTable[]): readonly AnyTable[];
+  /** Path table: isolation follows a relation instead of a tenant column. */
+  isPath?(table: string): boolean;
+  /**
+   * Steps from a path table to the tenant table.
+   *
+   * Absent when `table` has its own tenant column.
+   */
+  pathOf?(table: string):
+    | readonly {
+        readonly child: string;
+        readonly parent: string;
+        readonly localField: string;
+        readonly remoteField: string;
+      }[]
+    | undefined;
+  /**
+   * Writes a locking `EXISTS` for an insert into a path table.
+   *
+   * @returns `false` when `table` is not a path table
+   */
+  lockPredicate?(input: {
+    readonly table: string;
+    readonly fieldSql: (field: string) => string | undefined;
+    readonly encode: ((value: unknown) => string) | undefined;
+    readonly alias: string;
+    readonly appended: boolean;
+    readonly scope: TenantCall | undefined;
+    readonly sink: TenancyText;
+  }): boolean;
+  /**
+   * Checks a path update's new parent in the same statement.
+   *
+   * A column-tenant table ignores it.
+   */
+  noteParent?(
+    table: string,
+    set: Readonly<Record<string, unknown>>,
+    sink: TenancyText,
+    scope: TenantCall | undefined,
+    fieldSql: (field: string) => string | undefined,
+  ): void;
   /** The guarded uuid column, for emitted row types. */
   column(): object;
   predicate(input: {
@@ -104,7 +154,8 @@ export type ColumnTenancy = {
 /**
  * Reads `schema({ tenancy })`.
  *
- * Omitted stays `undefined`. Anything else must be `columnTenancy()`.
+ * Omitted stays `undefined`. Anything else must carry `rewrite`. The strategy
+ * name stays on the object from `okmodel/tenancy`. This file does not list them.
  *
  * @param value - The option the caller passed
  * @returns The tenancy object, or `undefined`
@@ -115,7 +166,7 @@ export function readTenancy(value: unknown): ColumnTenancy | undefined {
     definition("schema() tenancy must be columnTenancy() from okmodel/tenancy.");
   }
   const record = value as Record<string, unknown>;
-  if (record.strategy !== "column" || typeof record.rewrite !== "function") {
+  if (typeof record.rewrite !== "function") {
     definition("schema() tenancy must be columnTenancy() from okmodel/tenancy.");
   }
   return value as ColumnTenancy;

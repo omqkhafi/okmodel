@@ -18,6 +18,11 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - The startup budget audit for train 0.6 records where the bytes in each gated graph go, the headroom under the current gates, and the measured cost of the smallest hook for each 0.6 feature. It does not move a gate (D218).
 - `db.views.name.refresh()` runs `REFRESH MATERIALIZED VIEW` on a materialized view, with `CONCURRENTLY` when the view declares it. A plain view has no `refresh()` in its type. The statement is a write, and it is not tenant-scoped (D227).
+- `compositeTenancy({ key: ["organizationId", "workspaceId"], type: "uuid" })` isolates on every key together. `tenancy: via("project.organization")` isolates a table through up to three relations. `for()` takes every key. A column-only import does not load either factory (D228, D229).
+
+### 💥 Breaking Changes
+
+- `columnTenancy()` takes one key. A key list is `compositeTenancy()`. `tenancy: { via: "..." }` is not a strategy. Use `via()` from `okmodel/tenancy`. A handwritten object is rejected when the schema is built (D229, pre-v1).
 
 ### ♻️ Changed
 
@@ -31,6 +36,11 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 ### 🐛 Fixed
 
 - `onConflict: { on: "title" }` on a tenant unique of (tenant key, title) updates that tenant's row. The conflict target includes the tenant key. Naming the tenant key is still OKM1104. Two tenants can keep the same title (D221).
+
+### 🔒 Security
+
+- An update that sets a path column checks the new parent in that same statement. A parent in another tenant, a missing parent, or a parent deleted while the statement waits is OKM1705, and the row stays. `batch()` refuses that update before it runs. `tx()` is the verified form.
+- `archivable()` on the table a path ends on is refused when the schema is built (OKM1705). The fix names that table. A path child can still be archived.
 
 ## v0.5.1 — 2026-10-08
 

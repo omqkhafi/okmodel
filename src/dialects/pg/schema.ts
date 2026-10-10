@@ -172,11 +172,13 @@ export type TenancySchema<
       readonly "~byName": {
         readonly [T in TTables[number] as T["~name"]]: T extends { readonly "~global": string }
           ? T
-          : T & {
-              readonly "~row": RowFrom<TenantFields<TTenancy["key"]>>;
-              readonly "~insert": InsertFrom<TenantFields<TTenancy["key"]>>;
-              readonly "~update": UpdateFrom<TenantFields<TTenancy["key"]>>;
-            };
+          : T extends { readonly "~path": string }
+            ? T
+            : T & {
+                readonly "~row": RowFrom<TenantFields<TTenancy["key"]>>;
+                readonly "~insert": InsertFrom<TenantFields<TTenancy["key"]>>;
+                readonly "~update": UpdateFrom<TenantFields<TTenancy["key"]>>;
+              };
       };
     }
   : S;

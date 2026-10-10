@@ -57,6 +57,13 @@ export async function batch(
         );
       }
       const item = await plan();
+      if (item.checked === "parent") {
+        throw new OkmError(
+          "OKM1705",
+          "batch does not take an update that sets a path column. The parent is checked in the statement, and a batch cannot report that after it commits. Use update({ where, set }) inside tx().",
+          { fix: { summary: "Use update({ where, set }) inside tx()." } },
+        );
+      }
       if (item.checked !== undefined) {
         fail(
           "OKM1121",

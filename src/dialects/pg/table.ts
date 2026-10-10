@@ -376,7 +376,8 @@ type DeclaredTable<TName extends string, TColumns, TOptions> = Table<
   ArchiveFlag<TOptions> &
   PresetFlag<TOptions> &
   OmitFlag<TOptions> &
-  GlobalFlag<TOptions>;
+  GlobalFlag<TOptions> &
+  PathFlag<TOptions>;
 
 type ArchiveFlag<TOptions> = TOptions extends { readonly traits: infer TTraits }
   ? HasArchive<TTraits>
@@ -396,6 +397,13 @@ type GlobalFlag<TOptions> = TOptions extends {
   readonly tenancy: { readonly kind: "global"; readonly reason: infer TReason };
 }
   ? { readonly "~global": TReason }
+  : unknown;
+
+/** A path table keeps its own columns. The schema type does not add the tenant key. */
+type PathFlag<TOptions> = TOptions extends {
+  readonly tenancy: { readonly via: infer TVia extends string };
+}
+  ? { readonly "~path": TVia }
   : unknown;
 
 type TraitShapes<TColumns, TOptions> = TOptions extends { readonly traits: infer TTraits }

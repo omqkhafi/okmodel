@@ -12,6 +12,7 @@ import { creationOrder } from "../../contracts/catalog/document.js";
 import type {
   Catalog,
   CatalogObject,
+  ObjectRef,
   ColumnObject,
   ConstraintObject,
   FunctionObject,
@@ -49,12 +50,13 @@ export function renderCatalog(source: Catalog, schema: string): readonly string[
   const folded = foldedKeys(source);
   const statements: string[] = [];
   const ordered = creationOrder(source);
+  const created = uniqueBeforeForeignKey(ordered);
   for (const object of ordered) {
     if (object.kind !== "type" || object.owner === "ignored") continue;
     const sql = createObjectSql(object, schema);
     if (sql !== undefined) statements.push(sql);
   }
-  for (const object of ordered) {
+  for (const object of created) {
     if (
       object.kind === "type" ||
       object.kind === "function" ||
@@ -95,6 +97,70 @@ export function renderCatalog(source: Catalog, schema: string): readonly string[
     if (sql !== undefined) statements.push(sql);
   }
   return statements;
+}
+
+/**
+ * Pulls a unique constraint in front of a foreign key that references it.
+ *
+ * The primary key is created with the table. A foreign key aimed at another
+ * unique has to wait for that unique. Create order ties those two by name, so
+ * the foreign key can otherwise come first.
+ *
+ * @param objects - Create order
+ * @returns The same objects, with those uniques moved forward
+ */
+function uniqueBeforeForeignKey(objects: readonly CatalogObject[]): readonly CatalogObject[] {
+  const uniques = objects.filter(
+    (object): object is ConstraintObject =>
+      object.kind === "constraint" && object.definition.constraintKind === "unique",
+  );
+  if (uniques.length === 0) return objects;
+  const emitted = new Set<CatalogObject>();
+  const result: CatalogObject[] = [];
+  for (const object of objects) {
+    if (emitted.has(object)) continue;
+    if (object.kind === "constraint" && object.definition.constraintKind === "foreignKey") {
+      const target = object.definition.references;
+      if (target !== undefined && !coveredByPrimary(objects, target.parent, target.columns)) {
+        const columns = target.columns.join("\0");
+        for (const unique of uniques) {
+          if (emitted.has(unique)) continue;
+          if (!sameRef(unique.identity.parent, target.parent)) continue;
+          if (unique.definition.columns.join("\0") !== columns) continue;
+          result.push(unique);
+          emitted.add(unique);
+        }
+      }
+    }
+    result.push(object);
+    emitted.add(object);
+  }
+  return result;
+}
+
+function coveredByPrimary(
+  objects: readonly CatalogObject[],
+  parent: ObjectRef,
+  columns: readonly string[],
+): boolean {
+  const key = columns.join("\0");
+  return objects.some(
+    (object) =>
+      object.kind === "constraint" &&
+      object.definition.constraintKind === "primaryKey" &&
+      sameRef(object.identity.parent, parent) &&
+      object.definition.columns.join("\0") === key,
+  );
+}
+
+function sameRef(left: ObjectRef, right: ObjectRef): boolean {
+  if (left.name !== right.name || left.namespace.form !== right.namespace.form) return false;
+  if (left.namespace.form === "static" && right.namespace.form === "static") {
+    return left.namespace.name === right.namespace.name;
+  }
+  return left.namespace.form === "template" && right.namespace.form === "template"
+    ? left.namespace.pattern === right.namespace.pattern
+    : false;
 }
 
 /**
