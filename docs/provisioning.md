@@ -21,6 +21,8 @@ Each migration has a sibling catalog file. That file is the catalog after the mi
 Rows the application needs to exist are a table option. They live on the schema. They are not copied into the catalog, and they do not change the catalog hash.
 
 ```ts
+import { table, t } from "okmodel/pg";
+
 const roles = table(
   "roles",
   { code: t.text().primaryKey(), label: t.text() },

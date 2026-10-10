@@ -2,7 +2,7 @@
 
 `okmodel/testing` opens a real database and returns factories, a query counter, and a cross-tenant isolation check. The pool comes from `open()`. There is no mock database.
 
-```ts
+```ts no-check="needs a running database and the application's schema"
 import { testing } from "okmodel/testing";
 import { open } from "okmodel/pg/pglite";
 
@@ -47,7 +47,7 @@ A required column the factory leaves out is filled from its type: text, uuid, in
 
 ## okm seed
 
-```ts
+```ts no-check="seed file; the harness argument is supplied by okm seed"
 export default async function seed(t) {
   const f = t.factories({
     notes: (x) => ({ title: x.words(2) }),

@@ -62,7 +62,7 @@ Safety and correctness — also in CI:
 
 ### 3.1 `okm.config.ts`
 
-```ts
+```ts no-check="queries and lint are not fields of defineConfig"
 import { defineConfig } from "okmodel/migrate";
 
 export default defineConfig({
@@ -78,12 +78,21 @@ export default defineConfig({
 **Targets and protection.** `database` is the shorthand for one migration Target named `default`: a string or `{ url, protected: true }`. Several environments use `targets` instead, a map of names to the same shapes (section 19.8):
 
 ```ts
+import { defineConfig } from "okmodel/migrate";
+
+const production = process.env.PROD_DATABASE_URL;
+const staging = process.env.STAGING_DATABASE_URL;
+const preview = process.env.PREVIEW_DATABASE_URL;
+if (production === undefined || staging === undefined || preview === undefined) {
+  throw new Error("database URLs are not set");
+}
+
 export default defineConfig({
   schema: "./db/schema.ts",
   targets: {
-    production: { url: process.env.PROD_DATABASE_URL, protected: true },
-    staging: process.env.STAGING_DATABASE_URL,
-    preview: process.env.PREVIEW_DATABASE_URL,
+    production: { url: production, protected: true },
+    staging,
+    preview,
   },
 });
 ```
@@ -92,7 +101,7 @@ With more than one target every command that touches a database needs `--target 
 
 ### 3.2 `db/schema.ts`
 
-```ts
+```ts no-check="names local table files, vector, and Register, which this fence does not define"
 import { schema } from "okmodel/pg";
 import { columnTenancy } from "okmodel/tenancy";
 import { timestamps } from "okmodel/traits";
@@ -125,7 +134,7 @@ declare module "okmodel" {
 
 ### 3.3 `db/client.ts`
 
-```ts
+```ts no-check="hookm, logger, and the tenant registry are not shipped connect options"
 import { connect } from "okmodel/pg/postgresjs";
 import { appSchema } from "./schema";
 
@@ -222,7 +231,7 @@ Operation ─► Router (role, consistency) ─► Endpoint selection ─► Poo
 
 **`connect()` takes one of two shapes for its first argument:** a string (the common case, unchanged) or a topology `{ primary, replicas }`. A string or a pool stays synchronous on postgres.js, node-postgres, and Bun.sql. A topology returns a promise. It is the default Target: the shared or control database. The tenant registry is not a connection and is passed as `tenancy: { registry }` (section 9.1). Each shape adds; none changes the meaning of the others.
 
-```ts
+```ts no-check="three connect shapes, including the M5 tenant registry"
 export const db = connect(url, { schema: appSchema });
 export const db = await connect({ primary: url, replicas: [r1, r2] }, { schema: appSchema, routing: { probe: "1s" } });
 export const db = connect(url, { schema: appSchema, tenancy: { registry } });   // M5
@@ -252,7 +261,7 @@ A topology routes reads. `routing` accepts `probe`, `select`, `fallback`, `consi
 
 ## 4. Dialects and capabilities
 
-```ts
+```ts no-check="okmodel/sqlite, okmodel/mysql, and okmodel/sql are not packages in this version"
 import { table, t } from "okmodel/pg";
 import { table, t } from "okmodel/sqlite";
 import { table, t } from "okmodel/mysql";
@@ -285,7 +294,7 @@ Adapters by milestone: M1 `okmodel/pg/postgresjs`, `okmodel/pg/pglite` · M2 `ok
 
 **TS is immediate.** Adding a definition to `extensions` makes its types, operators, functions and index methods available as ordinary typed TypeScript, inferred from the definition. There is no code generation for use. The extension's functions return typed SQL fragments, so they compose inside raw `sql` and the other way around.
 
-```ts
+```ts no-check="expression fragment, not a module"
 extensions: [pgTrgm(), vector({ version: ">=0.7" })],
 find({ where: { name: pgTrgm.similar(q) }, limit: 20 })
 ```
@@ -436,7 +445,7 @@ Mode names above are the current proposal; they are fixed once the semantics tab
 
 ### 5.4 Inspection
 
-```ts
+```ts no-check="inspect illustration; scoped is defined in the surrounding section and explain is M2"
 const q = scoped.tasks.pending().find({ include: { list: true }, limit: 50 });
 
 q.inspect()                 // stable, documented structure
@@ -471,7 +480,7 @@ A deterministic hash of the canonical logical query and chosen strategy, excludi
 - Transforms and validation run only when validation is enabled for the write; codecs always run.
 - Reusable value types are ordinary constants, no new concept:
 
-```ts
+```ts no-check="column helper sketch; citext and v are not imported in this fence"
 export const email = () => t.citext().validate([v.trim(), v.lowercase(), v.email("email_invalid")]);
 export const money = () => t.numeric(12, 2);
 ```
@@ -516,7 +525,7 @@ Every node carries: owner (`managed` / `external` / `ignored`), a canonical defi
 
 **Tenancy.** A view over tenant tables inherits the classification. If it exposes the tenant key, the tenant predicate is applied to it; otherwise `okm check` fails (OKM1820) unless declared `global("reason")`. Under `rlsTenancy()`, that view is created `WITH (security_invoker = true)` so the invoker's policies apply. PostgreSQL 15 is the floor, and the option exists there. Other strategies omit it. A materialized view does not set it (D54, D231).
 
-```ts
+```ts no-check="fn, trigger, and view depend on tasks from another section"
 export const touchUpdatedAt = fn("touch_updated_at", {
   returns: "trigger", language: "plpgsql", volatility: "volatile",
   body: sql`begin new."updatedAt" = now(); return new; end`, dependsOn: [tasks],
@@ -532,7 +541,7 @@ export const activeTasks = view("active_tasks", {
 
 ### 6.1 Shape
 
-```ts
+```ts no-check="table sketch; computed and the row rule are not a closed module"
 // db/tables/tasks.ts
 import { table, t, one, many, index, sql } from "okmodel/pg";
 import { v } from "okmodel/validate";
@@ -654,7 +663,12 @@ globalThis.Temporal = Temporal;
 ### 6.5 Picklists
 
 ```ts
-status: t.varchar(20).picklist(["draft", "accepted", "sent", "returned", "cancelled", "archived"]).default("draft"),
+import { t } from "okmodel/pg";
+
+export const status = t
+  .varchar(20)
+  .picklist(["draft", "accepted", "sent", "returned", "cancelled", "archived"])
+  .default("draft");
 ```
 
 - TypeScript type becomes the literal union.
@@ -689,7 +703,7 @@ Set in `schema({ codecs })`, override per field: `t.bigint({ as: "number" })`. D
 
 ### 6.8 Types
 
-```ts
+```ts no-check="Row, Insert, Update, and Input need a Register augmentation this fence does not include"
 import type { Row, Insert, Update, Input } from "okmodel";
 
 type Task = Row<"tasks">;        // excludes hidden fields unless selected
@@ -742,7 +756,7 @@ Project traits: `trait(name, { fields, presets, methods, requires })`, the same 
 
 Ownership is a field and a preset (`ownedBy`). Tenancy is the isolation boundary, defined once by an object from `okmodel/tenancy`:
 
-```ts
+```ts no-check="tenancy sketch; schema, tasks, and id are defined in other sections"
 import { columnTenancy, global } from "okmodel/tenancy";
 
 export const appSchema = schema({
@@ -780,7 +794,7 @@ const countries = table("countries", { id: id(), name: text() }, { tenancy: glob
 
 ### 9.3 Context client
 
-```ts
+```ts no-check="scope illustration; db and session are defined in other sections"
 import { columnTenancy, compositeTenancy, via } from "okmodel/tenancy";
 
 const scoped = db.for({ tenantId: session.tenantId });
@@ -827,15 +841,17 @@ Aggregates decode with the source column's codec. `count` is a number. `min` and
 
 Query modifiers apply to any read: `.stream()` (async iteration over a server-side cursor, driver capability), `.required()`, `.safe()`, `.inspect()`, `.sql()`, `.explain()`.
 
-```ts
+```ts no-check="read illustration; scoped is defined in the surrounding section"
 const task = await scoped.tasks.one({ where: { id } }).required();
 const next = await scoped.tasks.one({ where: { listId }, orderBy: { position: "asc" } });
-for await (const row of scoped.tasks.find({ where: { listId } }).all("export").stream()) { … }
+for await (const row of scoped.tasks.find({ where: { listId } }).all("export").stream()) {
+  …
+}
 ```
 
 ### 10.1 Filters with tagged operators
 
-```ts
+```ts no-check="filter illustration; scoped, pending, and tomorrow are defined in other sections"
 import { eq, lt, lte, gt, between, startsWith, contains, inList, not, has, none, every, or } from "okmodel/pg";
 
 const today = await scoped.tasks.pending().ownedBy(userId).find({
@@ -880,7 +896,7 @@ Atomic write operators (section 11) are `json.set(path, v)`, `arr.append(v)`, `a
 
 For list endpoints that accept filters from the client:
 
-```ts
+```ts no-check="filters illustration; tasks and request are defined in other sections"
 const taskFilters = tasks.filters({
   allow: { status: ["eq", "in"], dueAt: ["lt", "gt"], title: ["startsWith"] },
   sort: ["dueAt", "createdAt"],
@@ -904,7 +920,7 @@ Relations are filterable only when listed with the exact fields allowed (`relati
 | `restore({ where } \| { archiveId }, opts)` | `archivable` tables only; targets the archived set |
 | `sync(id, relation, ids)` | relationship operation: set a to-many relation exactly |
 
-```ts
+```ts no-check="write illustration; scoped, rows, and order are defined in other sections"
 await scoped.tags.insert({ name }, { onConflict: { on: "name", return: true } });          // first-or-create
 await scoped.stock.insert(rows, { onConflict: { on: ["sku"], update: ["qty"] } });          // upsert
 await scoped.tasks.update(order.map((id, i) => ({ id, set: { position: i } })));           // per-row list
@@ -966,7 +982,7 @@ Specified before M1 and tested on every driver through the conformance suite:
 
 ## 14. Errors
 
-```ts
+```ts no-check="error illustration; e is a caught value this fence does not create"
 const err = OkmError.from(e);   // any thrown value
 
 err.kind        // "unique"
@@ -989,7 +1005,7 @@ err.retryable   // false
 
 `outcome_unknown` (OKM1401) means a commit or batch was sent and its result never arrived, so the write may or may not have happened; it is never retried automatically (`retryable: false`) and its `fix` says to check by an idempotency key. `OkmError` also carries `fix` (a structured, applicable suggestion, for people and coding agents) and, for unknown tables, fields, presets and options, a nearest-name hint ("did you mean `dueAt`?"). Every OKM code has a documentation page (cause, fix, example) generated from the error registry.
 
-```ts
+```ts no-check="safe result illustration; scoped, input, and e are defined in other sections"
 const r = await scoped.users.insert(input).safe();
 if (!r.ok) return r.error.match({
   input:    (e) => form(e.fields()),
@@ -1008,7 +1024,7 @@ Code ranges: OKM1000 schema · 1100 queries and capabilities · 1200 validation 
 
 ## 15. Transactions and batches
 
-```ts
+```ts no-check="transaction illustration; scoped, listId, and id are defined in other sections"
 await scoped.tx({ isolation: "serializable", retry: 3, timeout: 5_000 }, async (t) => {
   const list = await t.lists.insert({ name: "Inbox" });
   await t.tasks.insert({ listId: list.id, title: "Welcome" });
@@ -1045,7 +1061,7 @@ await scoped.batch([
 
 A Target has a topology: exactly one primary endpoint and any number of replica endpoints. Replicas serve the same catalog and dialect, never separate catalogs; their driver capabilities may differ. Migrations run against primaries only. The primary is its own class of endpoint with its own pool and semantics; it is never "replica zero" of a read pool. With no replicas configured, every operation goes to the primary.
 
-```ts
+```ts no-check="topology illustration; url, r1, r2, and appSchema are defined in other sections"
 export const db = await connect(
   { primary: url, replicas: [{ url: r1, weight: 2, name: "east" }, r2] },
   {
@@ -1128,7 +1144,7 @@ all replicas → health → consistency and lag → capacity → selection strat
 
 ## 16. Typed raw SQL
 
-```ts
+```ts no-check="typed raw SQL is M2 and scoped.sql is not a shipped method"
 const overdue = await scoped.sql`
   select l.id, l.name, count(t.id)::int as overdue
   from lists l join tasks t on t.list_id = l.id
@@ -1143,7 +1159,7 @@ const overdue = await scoped.sql`
 
 ## 17. Generics
 
-```ts
+```ts no-check="db.table and these generic aliases are not public exports"
 class Crud<N extends TableName> {
   constructor(protected db: Client, protected name: N) {}
   list(opts: FindOpts<N>)            { return this.db.table(this.name).find(opts); }
@@ -1182,7 +1198,7 @@ Which one to use:
 | observe queries, results, errors, transactions | hook (cannot change behavior) |
 | use a database extension (pgvector, pg_trgm) | extension |
 
-```ts
+```ts no-check="hook() and connect({ hookm }) stay internal until 1.0"
 export const tracing = (onSpan: (s: Span) => void) => hook({
   onQuery: (q) => { … },            // q.fingerprint, q.tables, q.sql — read-only
   onResult: (r) => { … },
@@ -1382,7 +1398,7 @@ An empty target installs the head snapshot (section 19.6). A target that already
 
 ## 20. Testing
 
-```ts
+```ts no-check="needs a running database and the application's schema"
 import { testing } from "okmodel/testing";
 import { open } from "okmodel/pg/pglite";
 

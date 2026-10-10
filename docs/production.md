@@ -20,10 +20,19 @@ export default defineConfig({
 ```
 
 ```ts
-const db = await connect(process.env.DATABASE_URL, {
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", { id: t.identity(), title: t.text() });
+const app = schema({ tables: [notes] });
+const url = process.env.DATABASE_URL;
+if (url === undefined || url.length === 0) throw new Error("DATABASE_URL is not set");
+
+const db = await connect(url, {
   schema: app,
   requireMeta: true,
 });
+await db.close();
 ```
 
 Apply that target by name:

@@ -2,8 +2,19 @@
 
 `connect({ primary, replicas }, options)` opens one pool per endpoint. The first argument is still a string or an existing pool, and that path does not load this code. A topology returns a promise on every driver. PGlite already returned a promise for a string.
 
+`schema.ts`:
+
+```ts
+import { schema, table, t } from "okmodel/pg";
+
+const tasks = table("tasks", { id: t.identity(), title: t.text() });
+export const app = schema({ tables: [tasks] });
+```
+
 ```ts
 import { connect } from "okmodel/pg/postgresjs";
+
+import { app } from "./schema.ts";
 
 export const db = await connect(
   {
@@ -38,17 +49,33 @@ An automatic read chooses one eligible replica. The stages stay separate: every 
 `roundRobin` ignores weights and rotates through the eligible replicas. `leastConnections` sends the read to the replica with the fewest statements this router already has in flight. A tie stays in config order. The count is the router's, not `stats().inflight`. `latencyAware` sends the read to the lowest moving average of round-trip time (alpha 0.2). Successful reads and the health probe both feed it. The first sample is kept as itself. A replica with no sample loses to one that has one. Ties stay in config order.
 
 ```ts
-routing: { select: "roundRobin" }
-routing: { select: "leastConnections" }
-routing: { select: "latencyAware" }
-routing: {
-  select(candidates, ctx) {
-    // candidates: { name, weight, inflight, latencyMs, lag }
-    // lag is bytes behind the primary, or null when unknown
-    // ctx: { op: "read" }
-    return candidates[0] ?? "east";
-  },
+import { connect } from "okmodel/pg/postgresjs";
+
+import { app } from "./schema.ts";
+
+const endpoints = {
+  primary: "postgres://localhost/app",
+  replicas: ["postgres://localhost/east", "postgres://localhost/west"],
+};
+
+for (const select of ["roundRobin", "leastConnections", "latencyAware"] as const) {
+  const client = await connect(endpoints, { schema: app, routing: { select } });
+  await client.tasks.find({ limit: 1 });
+  await client.close();
 }
+
+const custom = await connect(endpoints, {
+  schema: app,
+  routing: {
+    select(candidates) {
+      // candidates: { name, weight, inflight, latencyMs, lag }
+      // lag is bytes behind the primary, or null when unknown
+      return candidates[0] ?? "east";
+    },
+  },
+});
+await custom.tasks.find({ limit: 1 });
+await custom.close();
 ```
 
 A function must return one of the candidate objects it was given, or that candidate's `name`. Anything else is OKM1120 and the message names the return value. A throw is not replaced with OKM1120. The function runs only when an automatic read has two or more candidates. `route: "replica"` and `using("replica")` do not call it.
