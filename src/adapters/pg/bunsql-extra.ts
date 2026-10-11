@@ -8,6 +8,7 @@ import type { SQL } from "bun";
 
 import { isConnectionLost } from "../../contracts/connection.js";
 import type { DriverConnection } from "../../contracts/driver.js";
+import { DriverError } from "../error.js";
 import { rejectClosed } from "../failure.js";
 import { runCall, type Watch } from "./call.js";
 import { noTimeout } from "./no-inflight-timeout.js";
@@ -46,6 +47,11 @@ export async function checkout(held: HeldPool): Promise<DriverConnection> {
       ? rejectClosed("The connection was lost.")
       : run().catch((error: unknown) => {
           if (isConnectionLost(error)) lost = true;
+          // Bun.sql says "Connection closed". The shared mapper already treats
+          // CONNECTION_CLOSED as unavailable. Rewriting here stays out of contracts.
+          if (error instanceof Error && error.message === "Connection closed") {
+            throw new DriverError("CONNECTION_CLOSED", { cause: error });
+          }
           throw error;
         });
   let released = false;
@@ -72,7 +78,10 @@ export async function checkout(held: HeldPool): Promise<DriverConnection> {
         if (!lost) await reset(session, reserved);
       } finally {
         counters.reserved = Math.max(0, counters.reserved - 1);
-        if (!lost) await park(held.parked, reserved);
+        // A closed Bun.sql connection rejects the next statement with
+        // "Connection closed". A discarded statement takes that rejection.
+        if (lost) await held.sql.unsafe("select 1").catch(() => undefined);
+        else await park(held.parked, reserved);
       }
     },
   };

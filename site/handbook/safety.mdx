@@ -60,7 +60,7 @@ export const app = schema({
 
 </Tabs>
 
-`columnTenancy` is one key. `compositeTenancy({ key: ["organizationId", "workspaceId"], type: "uuid" })` isolates on every key together. `via("team.department.organization")` follows up to three relations. `rlsTenancy` keeps the column predicate and adds forced row-level security. A superuser, a `BYPASSRLS` role, or the table owner is refused on the first scoped use of each endpoint, and the error names that endpoint. The same check refuses a policy whose expression is not the one `okm generate` stores.
+`columnTenancy` is one key. `compositeTenancy({ key: ["organizationId", "workspaceId"], type: "uuid" })` isolates on every key together. `via("team.department.organization")` follows up to three relations. `rlsTenancy` keeps the column predicate and adds forced row-level security. A superuser, a `BYPASSRLS` role, or the table owner is refused on the first scoped use of each endpoint (OKM1707), and the error names that endpoint. A policy that does not match is OKM1708. The guard runs once per endpoint until that connection is replaced, so a policy changed while the process stays up is noticed on reconnect. A scoped read is about 0.3 ms, against about 0.06 ms with column tenancy.
 
 `roles.reporting` can select and cannot write. It is not tenant-safe against its own SQL: under `rlsTenancy` it can set `app.unscoped` itself and read every tenant. A hidden column stays out of that select unless `roles.columns` names it. The migration role has to own the schema before apply, or the usage grant does not land (`ALTER SCHEMA public OWNER TO` that role). `withOwner(table(...), "external")` or `"ignored"` stays out of generated SQL and out of apply. `okm check` ignores both.
 
@@ -68,4 +68,4 @@ export const app = schema({
 
 `UNIQUE (id, tenant_id)` stays beside `PRIMARY KEY (id, tenant_id)`. Two tenants can share an id. Composite foreign keys and `onConflict` target the unique. `archivable()` turns that unique into a partial index, which a primary key cannot be.
 
-`okm seed` under `rlsTenancy` runs as the application role. The owner gets OKM1707. `isolation()` and `testing()` need a non-superuser role on a real Postgres (`open({ url })`, `migrate: false`). PGlite and a superuser harness are OKM1707.
+`okm seed` under `rlsTenancy` runs as the application role. The owner gets OKM1707. A weakened policy gets OKM1708. `isolation()` and `testing()` need a non-superuser role on a real Postgres (`open({ url })`, `migrate: false`). PGlite and a superuser harness are OKM1707. Column grants quote the stored column name: `tenantId` stays `"tenantId"`.

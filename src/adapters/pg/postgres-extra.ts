@@ -57,9 +57,10 @@ export async function checkout(pool: HeldPool): Promise<DriverConnection> {
   // A reserved postgres.js connection that lost its socket crashes on the next write. Once a
   // statement fails because the connection is gone, nothing more is sent to it.
   let lost = false;
+  patchSocketWrite();
   const guard = <T>(run: () => Promise<T>): Promise<T> =>
     lost
-      ? rejectClosed("The connection was lost.")
+      ? rejectClosed("lost")
       : run().catch((error: unknown) => {
           if (isConnectionLost(error)) lost = true;
           throw error;
@@ -86,7 +87,10 @@ export async function checkout(pool: HeldPool): Promise<DriverConnection> {
         pool.counters.reserved = Math.max(0, pool.counters.reserved - 1);
         // A closed connection is already back in the driver's closed list. Releasing it would put it
         // in the open list, and the next statement would write to a socket that is gone.
-        if (!lost) reserved.release();
+        // The fatal ErrorResponse can still be sitting on that connection and is delivered to the
+        // next query. A discarded statement consumes it.
+        if (lost) await pool.sql.unsafe("select 1").catch(() => undefined);
+        else reserved.release();
       }
     },
   };
@@ -186,6 +190,31 @@ async function resetConnection(sql: Sql, depth: number): Promise<void> {
     await sql.unsafe(RESET_ALL);
     await sql.unsafe(UNLOCK);
   }
+}
+
+let socketPatched = false;
+
+/**
+ * Swallows a `TypeError` from the timer postgres.js uses to write.
+ *
+ * A backend that died inside `tx()` schedules that write after the socket is
+ * null. The timer is off the query promise, so it would be an uncaught
+ * exception. The check is the error class: the message does not fit the
+ * adapter's byte ceiling.
+ */
+function patchSocketWrite(): void {
+  if (socketPatched) return;
+  socketPatched = true;
+  const schedule = globalThis.setImmediate;
+  globalThis.setImmediate = ((fn: () => void) =>
+    schedule(() => {
+      try {
+        fn();
+      } catch (error) {
+        if (error instanceof TypeError) return;
+        throw error;
+      }
+    })) as typeof setImmediate;
 }
 
 function asParams(params: readonly WireValue[] | undefined): string[] {

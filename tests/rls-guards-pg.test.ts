@@ -157,6 +157,8 @@ postgresTest(
           }
           expect(caught).toBeInstanceOf(OkmError);
           if (caught instanceof OkmError) {
+            expect(caught.code).toBe("OKM1708");
+            expect(caught.kind).toBe("invalid");
             expect(caught.message).toContain("row-level security");
             expect(caught.message).toContain("Endpoint primary");
           }
@@ -244,6 +246,104 @@ postgresTest(
     }
   },
   120_000,
+);
+
+postgresTest(
+  gate,
+  "concurrent scopes in one transaction stay on their own tenant",
+  async () => {
+    for (const adapter of adapters) {
+      if (
+        adapter.name === "Bun.sql" &&
+        (typeof Bun === "undefined" || typeof Bun.SQL !== "function")
+      ) {
+        continue;
+      }
+      await withPostgresSchema(async (admin, schemaName) => {
+        await install(admin, schemaName);
+        const role = `c_${schemaName}`;
+        await grantPlain(admin, schemaName, role);
+        await seed(admin, schemaName);
+        const db = await adapter.open(roleUrl(primaryUrl(), role), schemaName);
+        try {
+          for (let attempt = 0; attempt < 50; attempt += 1) {
+            await db.tx(async (tx) => {
+              const a = tx.for({ tenantId: TENANT_A });
+              const b = tx.for({ tenantId: TENANT_B });
+              const found = await Promise.all([
+                a.notes.find({ limit: 100 }),
+                b.notes.find({ limit: 100 }),
+                a.notes.find({ limit: 100 }),
+                b.notes.find({ limit: 100 }),
+              ]);
+              expect(owns(found[0], TENANT_A, NOTE_A, NOTE_B)).toBe(true);
+              expect(owns(found[1], TENANT_B, NOTE_B, NOTE_A)).toBe(true);
+              expect(owns(found[2], TENANT_A, NOTE_A, NOTE_B)).toBe(true);
+              expect(owns(found[3], TENANT_B, NOTE_B, NOTE_A)).toBe(true);
+              const idA = crypto.randomUUID();
+              const idB = crypto.randomUUID();
+              await Promise.all([
+                a.notes.insert({ id: idA, title: `a-${String(attempt)}` }),
+                b.notes.insert({ id: idB, title: `b-${String(attempt)}` }),
+              ]);
+              const after = await Promise.all([
+                a.notes.find({ limit: 100 }),
+                b.notes.find({ limit: 100 }),
+              ]);
+              expect(after[0]?.some((row) => row.id === idA)).toBe(true);
+              expect(after[0]?.some((row) => row.id === idB)).toBe(false);
+              expect(after[1]?.some((row) => row.id === idB)).toBe(true);
+              expect(after[1]?.some((row) => row.id === idA)).toBe(false);
+            });
+          }
+        } finally {
+          await db.close();
+          await dropRole(admin, schemaName, role);
+        }
+      });
+    }
+  },
+  180_000,
+);
+
+postgresTest(
+  gate,
+  "a role schema does not hide public tenant tables from the policy guard",
+  async () => {
+    await withProject(async (cwd, url) => {
+      writeSchema(cwd);
+      await run(["generate"], { cwd, stdout() {} });
+      await run(["migrate", "apply"], { cwd, stdout() {} });
+      const admin = postgres(url, { max: 1, onnotice() {} });
+      const role = "rls_user_guard";
+      try {
+        await admin.unsafe(`drop schema if exists ${role} cascade`).catch(() => undefined);
+        await admin.unsafe(`drop role if exists ${role}`).catch(() => undefined);
+        await admin.unsafe(
+          `create role ${role} login password '${PASSWORD}' nosuperuser nobypassrls`,
+        );
+        await admin.unsafe(`grant connect on database ${databaseName(url)} to ${role}`);
+        await admin.unsafe(`grant usage on schema public to ${role}`);
+        await admin.unsafe(`grant select, insert on all tables in schema public to ${role}`);
+        await admin.unsafe(`create schema ${role} authorization ${role}`);
+        await admin.unsafe(
+          `insert into notes (id, title, tenant_id) values ('${NOTE_A}', 'alpha', '${TENANT_A}')`,
+        );
+        const db = connectPostgres(roleUrl(url, role), { schema: built, max: 1 });
+        try {
+          const rows = await db.for({ tenantId: TENANT_A }).notes.find({ limit: 5 });
+          expect(rows.map((row) => row.id)).toEqual([NOTE_A]);
+        } finally {
+          await db.close();
+        }
+      } finally {
+        await admin.unsafe(`drop schema if exists ${role} cascade`).catch(() => undefined);
+        await admin.unsafe(`drop role if exists ${role}`).catch(() => undefined);
+        await admin.end({ timeout: 5 });
+      }
+    });
+  },
+  60_000,
 );
 
 postgresTest(
@@ -380,6 +480,19 @@ async function expectRole(
     expect(caught.reason).toBe(kind === "bypass" ? "bypassrls" : kind);
     expect(caught.message).toContain(`Endpoint ${endpoint}`);
   }
+}
+
+function owns(
+  rows: readonly { id: string; tenantId: string }[] | undefined,
+  tenant: string,
+  present: string,
+  absent: string,
+): boolean {
+  if (rows === undefined) return false;
+  return (
+    rows.some((row) => row.id === present) &&
+    rows.every((row) => row.id !== absent && row.tenantId === tenant)
+  );
 }
 
 async function install(admin: ReturnType<typeof postgres>, schemaName: string): Promise<void> {

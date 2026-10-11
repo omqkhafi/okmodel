@@ -823,7 +823,9 @@ The column predicate stays on every statement, the same as `columnTenancy()`. Po
 
 Every scoped call runs in a transaction that starts with `select set_config('app.tenant', $1, true)`. The third argument is transaction-local, so a transaction-mode pooler cannot hand the tenant to the next client. A user `tx()` sets it at the start of that transaction, before any savepoint, and sets it again when a later statement's scope differs from the last one set in that transaction. A rolled-back savepoint does not leave the transaction unscoped. A read's transaction is read-only, part of the operation, and follows the operation's routing (section 15.1), so it may run on a replica. After commit, the same connection has no tenant setting.
 
-The role check and the policy check run on the first scoped statement of each endpoint that can serve one, the primary and each replica, before that statement. The result is cached for that endpoint until the endpoint fails over or its circuit closes again. The check is not inside `connect()`. It refuses a superuser, a role with `BYPASSRLS`, or the owner of a tenant table (OKM1707). The message names the endpoint. `reason` is `superuser`, `bypassrls`, or `owner`, in that order. The policy check reads `relrowsecurity`, `relforcerowsecurity`, and each policy expression, and raises when they do not match the catalog. `okm check` compares the same three with the catalog (D231, D238).
+The role check and the policy check run on the first scoped statement of each endpoint that can serve one, the primary and each replica, before that statement. The result is cached for that endpoint and its generation until the endpoint fails over or its circuit closes again. A policy weakened while that process stays up is noticed on reconnect, not on the next statement (D241). The check is not inside `connect()`. It refuses a superuser, a role with `BYPASSRLS`, or the owner of a tenant table (OKM1707). The message names the endpoint. `reason` is `superuser`, `bypassrls`, or `owner`, in that order. The policy check resolves each tenant table with `to_regclass` on the session search path, then reads `relrowsecurity`, `relforcerowsecurity`, and each policy expression. A mismatch is OKM1708. A schema named after the connected role does not hide the tables. `okm check` compares the same three with the catalog (D231, D238, D241).
+
+Statements of different scopes on one transaction connection run one at a time. Each statement sets `app.tenant` or `app.unscoped` before it runs, so one scope cannot read the other's rows (D241).
 
 A view over tenant tables is created `WITH (security_invoker = true)`. A view under another strategy is unchanged. A view that exposes no tenant key still fails `okm check` (OKM1820).
 
@@ -1511,7 +1513,7 @@ test("today view runs one query", async () => {
 | Replayed migration differs from its stored catalog, or was generated from a different parent | `okm migrate check` | OKM1547 |
 | Previous catalog is not satisfied by an expand migration | `okm migrate check` | OKM1548 |
 | Last migration catalog does not match the schema | `okm migrate check` | OKM1549 |
-| Disabling row-level security, dropping or widening a policy to `USING (true)` or `WITH CHECK (true)`, granting `BYPASSRLS`, or changing the owner of a tenant table | lint | OKM1550 |
+| Disabling row-level security, dropping a policy, creating or altering one that is not the emitted predicate, granting `BYPASSRLS`, or changing the owner of a tenant table | lint | OKM1550 |
 | Stale typed-SQL signature | CI | OKM1601 |
 | Commit or batch outcome unknown (result never received) | runtime | OKM1401 |
 | Tenant table without context | types | OKM1701 |
@@ -1520,6 +1522,7 @@ test("today view runs one query", async () => {
 | Global table referencing tenant table | `okm check` | OKM1705 |
 | Tenant index not led by the key | schema, when the schema is built. Not a linter rule | OKM1706 |
 | RLS with owner, superuser, or BYPASSRLS role | first scoped call | OKM1707 |
+| RLS policy missing, not forced, or not the emitted predicate | first scoped call | OKM1708 |
 | Schema/driver dialect mismatch | types | OKM1801 |
 | Server does not satisfy `requires` | connect | OKM1802 |
 | Server is older than PostgreSQL 15 and `requires` does not name that older major | connect | OKM1803 |

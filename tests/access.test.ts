@@ -7,12 +7,15 @@
 import { expect, test } from "bun:test";
 
 import { catalog } from "../src/contracts/catalog/build.js";
+import { staticNamespace } from "../src/contracts/catalog/identity.js";
+import { grantObject } from "../src/contracts/catalog/privilege.js";
 import { catalogHash, startupCatalog, startupHash } from "../src/contracts/catalog/document.js";
 import { OkmError } from "../src/contracts/error.js";
 import { schema, table, t, withOwner } from "../src/dialects/pg/index.js";
 import { rlsTenancy } from "../src/runtime/tenancy/index.js";
 import { stampOwnership } from "../src/dialects/pg/owner.js";
 import { RoleDeclarationError, attachRoles } from "../src/dialects/pg/role/index.js";
+import { columnPrivilege, privilegeSql } from "../src/dialects/pg/role/sql.js";
 import type { TableExposure } from "../src/dialects/pg/role/index.js";
 import { view } from "../src/dialects/pg/view/index.js";
 import { planMigration } from "../src/tooling/migrate/plan.js";
@@ -72,6 +75,75 @@ test("a column grant names columns and refuses one that is not there", () => {
     expect(error).toBeInstanceOf(OkmError);
     expect((error as OkmError).code).toBe("OKM1020");
   }
+});
+
+test("column grants quote identifier bytes and lowercase only the privilege", () => {
+  const rows = table("rows", {
+    id: t.integer().primaryKey(),
+    tenantId: t.uuid(),
+    label: t.text().sqlName("Mixed Case"),
+    note_body: t.text(),
+    secret: t.text().hidden(),
+  });
+  const built = schema({ tables: [rows] });
+  const exposure: TableExposure[] = [
+    {
+      table: "rows",
+      columns: [
+        { field: "id", sql: "id", hidden: false },
+        { field: "tenantId", sql: "tenantId", hidden: false },
+        { field: "label", sql: "Mixed Case", hidden: false },
+        { field: "note_body", sql: "note_body", hidden: false },
+        { field: "secret", sql: "secret", hidden: true },
+      ],
+    },
+  ];
+  const after = attachRoles(
+    built.catalog,
+    {
+      ...roles,
+      reporting: "report",
+      columns: [
+        {
+          role: "reader",
+          on: "rows",
+          select: ["tenantId", "Mixed Case", "note_body"],
+          update: ["tenantId", "note_body"],
+        },
+      ],
+    },
+    exposure,
+  );
+  const sql = planMigration({ before: catalog([]), after, name: "case" }).steps.map(
+    (step) => step.sql,
+  );
+  expect(sql).toContain(
+    'grant select ("Mixed Case", "id", "note_body", "tenantId") on table "public"."rows" to "report"',
+  );
+  expect(sql).toContain(
+    'grant select ("Mixed Case", "note_body", "tenantId") on table "public"."rows" to "reader"',
+  );
+  expect(sql).toContain(
+    'grant update ("note_body", "tenantId") on table "public"."rows" to "reader"',
+  );
+  expect(sql.some((step) => step.includes("tenantid") || step.includes("mixed case"))).toBe(false);
+
+  const privilege = columnPrivilege("select", ["tenantId", "Mixed Case", "user", "note_body"]);
+  const grant = grantObject({
+    role: "report",
+    object: { kind: "table", namespace: staticNamespace("public"), name: "rows" },
+    privilege,
+    provenance: { origin: "file", name: "schema.ts" },
+  });
+  const issued = privilegeSql([], [grant], "public");
+  expect(issued.grant.map((step) => step.sql)).toEqual([
+    'revoke select on table "public"."rows" from "report"',
+    'grant select ("Mixed Case", "note_body", "tenantId", "user") on table "public"."rows" to "report"',
+  ]);
+  const revoked = privilegeSql([grant], [], "public");
+  expect(revoked.revoke.map((step) => step.sql)).toEqual([
+    'revoke select ("Mixed Case", "note_body", "tenantId", "user") on table "public"."rows" from "report"',
+  ]);
 });
 
 test("the reporting role gets select, and a hidden column only when named", () => {

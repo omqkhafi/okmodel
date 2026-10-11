@@ -7,6 +7,6 @@ Pick the driver the same way you pick the client. The calls on `db` do not chang
 | postgres.js | `okmodel/pg/postgresjs` | The usual Node and Bun client. |
 | node-postgres | `okmodel/pg/pg` | The `pg` package. It does not describe a statement without running it. |
 | PGlite | `okmodel/pg/pglite` | Postgres in the same process. No server to start. |
-| Bun.sql | `okmodel/pg/bun` | Bun only. It does not describe a statement without running it and does not surface `RAISE NOTICE`. A positive `timeout` is OKM1120 (kind `invalid`). PGlite is the same. Neither cancels a statement already in flight. |
+| Bun.sql | `okmodel/pg/bun` | Bun only. It does not describe a statement without running it and does not surface `RAISE NOTICE`. A positive `timeout` on a call, on `tx()`, or on `batch()` is OKM1120 (kind `invalid`). PGlite is the same. A `signal` is not refused, and neither driver cancels a statement already in flight. |
 
 The [compatibility table](/docs/reference/compatibility) is the full list, generated from the conformance run. Install starts on postgres.js and switches the package: `postgres`, `pg`, `@electric-sql/pglite`, or okmodel alone for Bun.sql.

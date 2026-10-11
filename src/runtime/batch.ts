@@ -12,6 +12,7 @@ import type { ExecuteOptions, Statement } from "../contracts/driver.js";
 import { OkmError } from "../contracts/error.js";
 import { settleCall, withHttp, type Session } from "./client.js";
 import { fail, isRecord, rejectKeys } from "./plan.js";
+import { refuseUncancellableTimeout } from "./inflight.js";
 import { runWrite } from "./tx.js";
 import type { PreparedWrite } from "./write.js";
 
@@ -47,6 +48,10 @@ export async function batch(
     const record = options ?? {};
     if (!isRecord(record)) fail("OKM1121", "batch options must be an object.");
     rejectKeys(record, ["signal", "timeout"], "batch");
+    await refuseUncancellableTimeout(
+      session.pool,
+      typeof record["timeout"] === "number" ? record["timeout"] : undefined,
+    );
     for (const op of ops as readonly Op[]) {
       if (typeof op === "object" && op !== null && op["~refresh"] === true) {
         fail(

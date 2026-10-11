@@ -259,7 +259,7 @@ export const STEP_RULES: readonly StepRule[] = [
     "OKM1550",
     "destructive",
     "error",
-    "Disabling row-level security, dropping or widening a policy, granting BYPASSRLS, or changing the owner of a tenant table removes the rlsTenancy backstop.",
+    "Disabling row-level security, dropping a policy, creating or altering one that is not the emitted tenant predicate, granting BYPASSRLS, or changing the owner of a tenant table removes the rlsTenancy backstop.",
     (input) => weakensRls(input),
   ),
 ];
@@ -346,21 +346,140 @@ function weakensRls(input: StepInput): readonly string[] {
   if (/\bdisable row level security\b/.test(text)) return ["disables row level security"];
   if (/\bno force row level security\b/.test(text)) return ["stops forcing row level security"];
   if (/^drop policy\b/.test(text)) return ["drops a policy"];
-  if (
-    /^(?:create|alter) policy\b/.test(text) &&
-    /\b(?:using|with check)\s*\(\s*true\s*\)/.test(text)
-  ) {
-    return [
-      text.startsWith("alter ")
-        ? "widens a policy to match every row"
-        : "creates a policy that matches every row",
-    ];
-  }
+  const drifted = policyDrift(input, text);
+  if (drifted !== undefined) return [drifted];
   if (/^(?:alter|create) (?:role|user)\b/.test(text) && /(?<!no)bypassrls\b/.test(text)) {
     return ["grants BYPASSRLS"];
   }
   if (changesTenantOwner(input, text)) return ["changes the owner of a tenant table"];
   return [];
+}
+
+/**
+ * A create or alter policy on a tenant table that is not the emitted predicate.
+ *
+ * `USING (true)` and `WITH CHECK (true)` keep their own reasons. Any other
+ * expression, an extra policy name, or `AS RESTRICTIVE` is the same rule.
+ * A known policy may omit `WITH CHECK`. An alter that does not touch the
+ * expression is left alone.
+ */
+function policyDrift(input: StepInput, text: string): string | undefined {
+  const header = /^(create|alter) policy\s+(\S+)\s+on\s+(\S+)/.exec(text);
+  const kind = header?.[1];
+  const table = lastName(header?.[3]);
+  if (kind === undefined || table === undefined) return undefined;
+  if (!hasPolicy(input.before, table) && !hasPolicy(input.after, table)) return undefined;
+  const name = lastName(header?.[2]) ?? "";
+  const using = clause(text, "using");
+  const check = clause(text, "with check");
+  if (isTrue(using) || isTrue(check)) {
+    return kind === "alter"
+      ? "widens a policy to match every row"
+      : "creates a policy that matches every row";
+  }
+  if (kind === "alter" && using === undefined && check === undefined) return undefined;
+  const tenant = policyExpression(input, table, `${table}_tenant`);
+  const unscoped = policyExpression(input, table, `${table}_unscoped_select`);
+  const emitted =
+    !/\bas restrictive\b/.test(text) &&
+    (matchesEmitted(name, `${table}_tenant`, using, check, tenant) ||
+      matchesEmitted(name, `${table}_unscoped_select`, using, check, unscoped));
+  if (emitted) return undefined;
+  return kind === "alter"
+    ? "widens a policy away from the tenant predicate"
+    : "creates a policy that is not the tenant predicate";
+}
+
+function matchesEmitted(
+  name: string,
+  expectedName: string,
+  using: string | undefined,
+  check: string | undefined,
+  expression: string | undefined,
+): boolean {
+  if (name !== expectedName || expression === undefined || using === undefined) return false;
+  if (!sameExpression(using, expression)) return false;
+  return check === undefined || sameExpression(check, expression);
+}
+
+function sameExpression(found: string, expected: string): boolean {
+  return found === expected || unwrap(found) === unwrap(expected);
+}
+
+function unwrap(expression: string): string {
+  const body = expression.trim();
+  if (!body.startsWith("(") || !body.endsWith(")")) return body;
+  let depth = 0;
+  for (let index = 0; index < body.length; index += 1) {
+    const char = body[index];
+    if (char === "(") depth += 1;
+    else if (char === ")") {
+      depth -= 1;
+      if (depth === 0) return index === body.length - 1 ? body.slice(1, -1).trim() : body;
+    }
+  }
+  return body;
+}
+
+function isTrue(expression: string | undefined): boolean {
+  return expression !== undefined && expression.replaceAll(" ", "") === "(true)";
+}
+
+function clause(text: string, keyword: "using" | "with check"): string | undefined {
+  const needle = keyword === "using" ? /\busing\s*\(/g : /\bwith check\s*\(/g;
+  const found = needle.exec(text);
+  if (found === null) return undefined;
+  return parenthesized(text, found.index + found[0].length - 1);
+}
+
+function parenthesized(text: string, open: number): string | undefined {
+  let depth = 0;
+  let quoted = false;
+  let single = false;
+  for (let index = open; index < text.length; index += 1) {
+    const char = text[index];
+    if (single) {
+      if (char === "'" && text[index + 1] === "'") {
+        index += 1;
+        continue;
+      }
+      if (char === "'") single = false;
+      continue;
+    }
+    if (quoted) {
+      if (char === '"') quoted = false;
+      continue;
+    }
+    if (char === "'") {
+      single = true;
+      continue;
+    }
+    if (char === '"') {
+      quoted = true;
+      continue;
+    }
+    if (char === "(") depth += 1;
+    else if (char === ")") {
+      depth -= 1;
+      if (depth === 0) return text.slice(open, index + 1);
+    }
+  }
+  return undefined;
+}
+
+function policyExpression(input: StepInput, table: string, name: string): string | undefined {
+  const expression =
+    expressionOf(input.after, table, name) ?? expressionOf(input.before, table, name);
+  return expression === undefined ? undefined : normalized(expression);
+}
+
+function expressionOf(source: Catalog, table: string, name: string): string | undefined {
+  for (const object of source.objects) {
+    if (object.kind !== "policy") continue;
+    if (object.identity.parent.name !== table || object.identity.name !== name) continue;
+    return object.definition.expression;
+  }
+  return undefined;
 }
 
 function changesTenantOwner(input: StepInput, text: string): boolean {

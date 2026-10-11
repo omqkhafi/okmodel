@@ -86,6 +86,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 #### dialects
 
 - `okm check` sees row-level security that was turned off. Introspection omits policies while `relrowsecurity` is false, so the plan enables and forces them again (D238).
+- A column grant or revoke lowercases only the privilege keyword. `tenantId`, `Mixed Case`, a reserved word, and a snake_case column stay quoted byte for byte in `roles.reporting` and in `roles.columns` select and update (D241).
 - `rlsTenancy` stores the policy text Postgres prints. A lowercase unreserved column stays bare, so a snake-case `tenant_id` catalog hash does not change. `tenantId`, `TenantId`, and a reserved word are double-quoted. Apply of a default-casing key no longer fails with `column "tenantid" does not exist`, and `okm check` reports no drift (D236).
 - A materialized view no longer keeps the application role's table default privileges. The plan revokes `INSERT`, `UPDATE`, and `DELETE` after `SELECT`. The catalog stays select only (D236).
 - A superuser passes the managed-role `CREATEROLE` preflight when `rolcreaterole` is false (D236).
@@ -95,6 +96,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 #### runtime
 
 - The first scoped statement on each endpoint checks the role and the policy expressions. OKM1707 names that endpoint. A policy changed to `using (true)` fails the check, and `isolation()` fails with it (D238).
+- A policy that is missing, not forced, or not the one okm emits is OKM1708. The guard resolves the table with `to_regclass`, so a schema named after the connected role does not hide it. The check still runs once per endpoint and generation (D241).
+- Statements of different scopes on one transaction connection run one at a time. Each sets its own `app.tenant` before the statement, so one scope cannot return the other's rows (D241).
+- `tx({ timeout })` and `batch({ timeout })` on Bun.sql and PGlite are OKM1120, the same refusal as a per-call timeout. A `signal` is not refused (D241).
+- postgres.js no longer crashes the process when the backend dies inside `tx()`. The pending statement and the transaction reject with `unavailable`, or OKM1401 when a `COMMIT` may have happened, and the next call still runs. node-postgres maps a socket error that arrives before the next statement to the same `unavailable` (D241).
 - OKM1707 says `okm seed` under `rlsTenancy` runs as the application role. The owner gets this error (D239).
 - A trailing backslash on the catalog directory is ignored, and a Windows stack frame still records `file.ts:line` (D237).
 - `onConflict: { on: "title" }` on a tenant unique of (tenant key, title) updates that tenant's row. The conflict target includes the tenant key. Naming the tenant key is still OKM1104. Two tenants can keep the same title (D221).
@@ -102,6 +107,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 #### tooling
 
 - A hand-written step that disables row-level security, stops forcing it, drops a policy, widens one with `using (true)` or `with check (true)`, grants `BYPASSRLS`, or changes the owner of a tenant table is OKM1550. `okm migrate check` and apply refuse it unless the step has `-- okm-allow OKM1550: reason` (D238).
+- OKM1550 also flags a create or alter policy on a tenant table that is not the emitted expression: `using (1=1)`, `using ((true))`, `using (true or false)`, `alter policy … to public using (1=1)`, and an extra permissive policy (D241).
+- `okm migrate check` lints before it replays, and a replay cannot commit a change outside its scratch schema. `public.t`, `"public"."t"`, `PUBLIC.t`, `public . t`, and a `DO` block that runs `public.t` leave the real schema byte identical (D241).
 - A path foreign key is planned after the unique it references. Table names no longer decide that order. Drops reverse it (D236).
 - `okm generate` then apply accepts an index on a materialized view. The stored document depends on the view, not on a column, for one column or several, unique or not (D236).
 - `GRANT USAGE ON SCHEMA` that does not land fails with OKM1825. The migration role has to own the schema (`ALTER SCHEMA … OWNER TO`). `okm migrate check` gives that role its scratch schema and replays the grant there (D236).
@@ -116,6 +123,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 #### docs
 
 - Known limits and the migrations page describe a Windows checkout: CRLF, a BOM, resolved paths, a TCP URL, and case-sensitive file names (D237).
+- Known limits record that CRLF normalisation rewrites `\r\n` inside SQL string literals, that a `signal` does not cancel a lock wait, that the policy guard is once per endpoint and generation, and the row-level security latency sample (about 0.3 ms scoped, about 0.06 ms with column tenancy, about 1 ms on a `tx()` statement) (D241).
 - The handbook names draft 26, and the opening size table is the current sample.
 
 ### 🔒 Security
