@@ -538,7 +538,7 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     title: "RLS role",
     summary:
       "A scoped call under rls ran as a role that owns the tenant tables, is a superuser, or has BYPASSRLS. The reason field says which. The message names the endpoint.",
-    fix: "Connect as a role that is not the table owner, a superuser, or BYPASSRLS.",
+    fix: "Connect as a role that is not the table owner, a superuser, or BYPASSRLS. okm seed under rlsTenancy runs as the application role. The owner gets this error.",
   },
   {
     code: "OKM1801",

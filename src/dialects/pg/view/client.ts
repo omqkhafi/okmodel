@@ -59,7 +59,7 @@ export type ViewInstall = (
  * @param columns - Declared output columns
  * @param query - Author SQL
  * @param tenancy - `global("reason")`, when the view opts out
- * @param refresh - `plain` throws OKM1120. A materialized view is `blocking` or `concurrently`
+ * @param refresh - `plain` stores no `refresh`. A materialized view is `blocking` or `concurrently`
  * @returns Methods stored on the declaration
  */
 export function viewClient(
@@ -111,7 +111,7 @@ export function viewClient(
     },
     hook(target, ctx) {
       if (ctx.table === field && ctx.session !== undefined) {
-        target.refresh = refreshHandle(ctx.session, name, refresh);
+        if (refresh !== "plain") target.refresh = refreshHandle(ctx.session, name, refresh);
         return;
       }
       publish(field, target, ctx);
@@ -120,31 +120,70 @@ export function viewClient(
 }
 
 /**
- * `refresh()` for one view.
+ * `refresh()` for one materialized view.
  *
- * A plain view throws OKM1120 (kind `invalid`). A missing method would be a
- * TypeError, and `OkmError.from` would report that as kind `driver`. A
- * materialized view loads the statement on the first call.
+ * The call returns a thenable and does not start the statement. The import
+ * and the refresh run on the first `await`, the same way a query handle does.
+ * `batch` sees `~refresh` and refuses the handle before any statement.
  *
  * @param session - Client session from the table hook
  * @param name - SQL name
- * @param mode - Plain, blocking, or concurrent
+ * @param mode - Blocking or concurrent. A plain view does not call this
  * @returns The method stored on the handle
  */
 function refreshHandle(
   session: object,
   name: string,
-  mode: "plain" | "blocking" | "concurrently",
+  mode: "blocking" | "concurrently",
 ): () => Promise<void> {
-  if (mode === "plain") {
-    return () => {
-      throw new OkmError("OKM1120", `View ${name} is not materialized.`, {
-        fix: { summary: "Call refresh() on a materialized view." },
-      });
-    };
-  }
   const concurrently = mode === "concurrently";
-  return () => import("./refresh.js").then((mod) => mod.refreshView(session, name, concurrently));
+  return () =>
+    lazyRefresh(() =>
+      import("./refresh.js").then((mod) => mod.refreshView(session, name, concurrently)),
+    );
+}
+
+/**
+ * A thenable that starts `run` the first time it is awaited.
+ *
+ * Calling `refresh()` does not start it, so an unawaited failure is not an
+ * unhandled rejection, and `batch` can refuse the handle before any statement.
+ *
+ * @param run - The refresh. Called at most once
+ * @returns The handle `await` and `batch` see
+ */
+function lazyRefresh(run: () => Promise<void>): Promise<void> {
+  let pending: Promise<void> | undefined;
+  const once = (): Promise<void> => {
+    pending ??= run();
+    return pending;
+  };
+  const self = {
+    // oxlint-disable-next-line unicorn/no-thenable -- await starts the refresh; calling it does not
+    then(
+      onFulfilled?: (value: void) => unknown,
+      onRejected?: (error: unknown) => unknown,
+    ): Promise<unknown> {
+      return once().then(onFulfilled, onRejected);
+    },
+    catch(onRejected?: (error: unknown) => unknown): Promise<unknown> {
+      return self.then(undefined, onRejected);
+    },
+    finally(fn: () => void): Promise<unknown> {
+      return self.then(
+        (value) => {
+          fn();
+          return value;
+        },
+        (error: unknown) => {
+          fn();
+          throw error;
+        },
+      );
+    },
+    "~refresh": true as const,
+  };
+  return self as unknown as Promise<void>;
 }
 
 function publish(field: string, target: Record<string, unknown>, ctx: SchemaHookCtx): void {

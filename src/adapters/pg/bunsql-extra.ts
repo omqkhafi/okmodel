@@ -10,6 +10,7 @@ import { isConnectionLost } from "../../contracts/connection.js";
 import type { DriverConnection } from "../../contracts/driver.js";
 import { rejectClosed } from "../failure.js";
 import { runCall, type Watch } from "./call.js";
+import { noTimeout } from "./no-inflight-timeout.js";
 import { park, reserve, send, type HeldPool } from "./bunsql.js";
 import { WireSession } from "./session.js";
 
@@ -49,15 +50,21 @@ export async function checkout(held: HeldPool): Promise<DriverConnection> {
         });
   let released = false;
   return {
-    execute: (text, params, options) =>
-      guard(() => runCall(isClosed(), options, (watch) => session.query(text, params, watch))),
-    batch: (statements, options) =>
-      guard(() =>
+    execute: (text, params, options) => {
+      noTimeout(options);
+      return guard(() =>
+        runCall(isClosed(), options, (watch) => session.query(text, params, watch)),
+      );
+    },
+    batch: (statements, options) => {
+      noTimeout(options);
+      return guard(() =>
         runCall(isClosed(), options, async (watch: Watch | undefined) => {
           const { runAtomicBatch } = await import("./batch.js");
           return runAtomicBatch(session, statements, watch);
         }),
-      ),
+      );
+    },
     async release() {
       if (released) return;
       released = true;

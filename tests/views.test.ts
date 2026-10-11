@@ -16,6 +16,8 @@ import { viewObject } from "../src/contracts/catalog/view.js";
 import { OkmError } from "../src/contracts/error.js";
 import { schema, table, t } from "../src/dialects/pg/index.js";
 import { materializedView, view } from "../src/dialects/pg/view/index.js";
+import { open } from "../src/adapters/pg/pglite.js";
+import { connect } from "../src/runtime/pg/pglite.js";
 import { columnTenancy, global } from "../src/runtime/tenancy/index.js";
 import { repoRoot } from "../scripts/root.js";
 import { checkProject } from "../src/tooling/migrate/project.js";
@@ -327,6 +329,42 @@ function dependOnTitle(source: Catalog): Catalog {
   });
   return catalog(objects);
 }
+
+test("a plain view has no refresh at runtime", async () => {
+  const app = schema({
+    tables: [tasks],
+    views: [
+      view("active_tasks", {
+        columns: [{ name: "id", type: "text" }],
+        query: "select id from tasks",
+      }),
+      materializedView("task_titles", {
+        columns: [{ name: "title", type: "text" }],
+        query: "select title from tasks",
+      }),
+    ],
+  });
+  const db = await connect(await open(), { schema: app });
+  try {
+    expect(Reflect.get(db.views.activeTasks, "refresh")).toBeUndefined();
+    expect(typeof db.views.taskTitles.refresh).toBe("function");
+  } finally {
+    await db.close();
+  }
+});
+
+test("materializedView refuses a refresh value other than concurrently", () => {
+  const error = capture(() =>
+    materializedView("daily", {
+      columns: [{ name: "id", type: "text" }],
+      query: "select id from tasks",
+      refresh: "blocking" as "concurrently",
+    }),
+  );
+  expect(error.code).toBe("OKM1120");
+  expect(error.kind).toBe("invalid");
+  expect(error.message).toContain('must be "concurrently"');
+});
 
 function indexOf(sql: readonly string[], prefix: string): number {
   const found = sql.findIndex((step) => step.startsWith(prefix));

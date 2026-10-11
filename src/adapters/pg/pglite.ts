@@ -27,6 +27,7 @@ import {
 } from "../failure.js";
 import type { BatchSession } from "./batch.js";
 import { nextTransactionDepth, runCall, type Watch } from "./call.js";
+import { noTimeout } from "./no-inflight-timeout.js";
 import { EMPTY_NOTICES, resultFrom } from "./result.js";
 
 export {
@@ -88,13 +89,17 @@ export async function open(config: PgliteConfig = {}): Promise<DriverPool> {
     await slot.acquire(acquireMs);
     let released = false;
     return {
-      execute: (text, params, options) =>
-        runCall(closed, options, (watch) => session.query(text, params, watch)),
-      batch: (statements, options) =>
-        runCall(closed, options, async (watch) => {
+      execute: (text, params, options) => {
+        noTimeout(options);
+        return runCall(closed, options, (watch) => session.query(text, params, watch));
+      },
+      batch: (statements, options) => {
+        noTimeout(options);
+        return runCall(closed, options, async (watch) => {
           const { runAtomicBatch } = await import("./batch.js");
           return runAtomicBatch(session, statements, watch);
-        }),
+        });
+      },
       async release() {
         if (released) return;
         released = true;
@@ -110,6 +115,7 @@ export async function open(config: PgliteConfig = {}): Promise<DriverPool> {
   return {
     capabilities: PGLITE_CAPABILITIES,
     execute(text, params, options) {
+      noTimeout(options);
       return runCall(closed, options, async (watch) => {
         await slot.acquire(acquireMs);
         try {
@@ -120,6 +126,7 @@ export async function open(config: PgliteConfig = {}): Promise<DriverPool> {
       });
     },
     async batch(statements, options) {
+      noTimeout(options);
       const connection = await lease();
       try {
         return await connection.batch(statements, options);

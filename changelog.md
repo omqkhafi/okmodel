@@ -16,6 +16,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### ♻️ Changed
 
+#### adapters
+
+- Bun.sql and PGlite throw OKM1120 (kind `invalid`, message `timeout`) when a positive `timeout` is passed. They do not cancel a statement that is already running. `timeout: 0` is still kind `timeout`. A `signal` on its own is unchanged (D224, D239).
+
 #### runtime
 
 - Inside `tx()`, `app.tenant` is set again when the statement's scope differs from the last one in that transaction. A rolled-back savepoint does not leave the transaction unscoped (D238).
@@ -23,6 +27,9 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 #### docs
 
 - The reporting role is not tenant-safe against its own SQL. It can set `app.unscoped` and read every tenant through the select policy. It still cannot write (D238).
+- `okm seed` under `rlsTenancy` runs as the application role. The owner gets OKM1707. `isolation()` and `testing()` on PGlite or a superuser harness are the same error. The supported path is a non-superuser role on a real Postgres through `open({ url })` with `migrate: false` (D239).
+- `UNIQUE (id, tenant_id)` stays beside `PRIMARY KEY (id, tenant_id)`. Two tenants can share an id. Composite foreign keys and `onConflict` target the unique. `archivable()` turns it into a partial unique index, which a primary key cannot be (D234, D239).
+- Known limits put the Bun.sql and PGlite `timeout` refusal on the first screen. A populated materialized view is not RLS-protected (D239).
 
 ### 🐛 Fixed
 
@@ -36,10 +43,13 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `rlsTenancy` stores the policy text Postgres prints. A lowercase unreserved column stays bare, so a snake-case `tenant_id` catalog hash does not change. `tenantId`, `TenantId`, and a reserved word are double-quoted. Apply of a default-casing key no longer fails with `column "tenantid" does not exist`, and `okm check` reports no drift (D236).
 - A materialized view no longer keeps the application role's table default privileges. The plan revokes `INSERT`, `UPDATE`, and `DELETE` after `SELECT`. The catalog stays select only (D236).
 - A superuser passes the managed-role `CREATEROLE` preflight when `rolcreaterole` is false (D236).
+- `refresh()` waits until it is awaited. `batch([view.refresh()])` is OKM1121 and runs no statement. An unawaited failure is not an unhandled rejection. The refresh sets `app.unscoped` on a reserved primary connection, so the owner sees rows under `FORCE ROW LEVEL SECURITY`. The application role is `not_owner`, and the error names the migration role. A plain view has no `refresh` at runtime. `refresh: "blocking"` and any other value is OKM1120 (D239).
+- `okm build` keeps `t.jsonb<{ published?: boolean }>()` and `t.json<T>()` in `.okm/types.d.ts`. A bare `t.jsonb()` stays `jsonb<unknown>` (D215, D239).
 
 #### runtime
 
 - The first scoped statement on each endpoint checks the role and the policy expressions. OKM1707 names that endpoint. A policy changed to `using (true)` fails the check, and `isolation()` fails with it (D238).
+- OKM1707 says `okm seed` under `rlsTenancy` runs as the application role. The owner gets this error (D239).
 - A trailing backslash on the catalog directory is ignored, and a Windows stack frame still records `file.ts:line` (D237).
 
 #### tooling

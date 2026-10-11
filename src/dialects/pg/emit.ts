@@ -11,15 +11,28 @@ import { type AnyTable, emittedTypeName } from "./table.js";
 import { contributedFields, type Trait } from "./trait.js";
 
 /**
+ * Type arguments read from `t.json<T>()` and `t.jsonb<T>()` in schema source.
+ *
+ * The key is `table.field`. QA-L3 kept the wrapper for a bare `t.jsonb()`,
+ * which has no argument and stays `jsonb<unknown>`. The documented call
+ * `t.jsonb<{ published?: boolean }>()` is this map.
+ */
+export type JsonColumnTypes = ReadonlyMap<string, string>;
+
+/**
  * Emits row, insert, and update interfaces for every table.
  *
  * Names come from the table name: `tasks` becomes `Tasks`, `TasksInsert`,
  * and `TasksUpdate`.
  *
  * @param source - Schema from {@link schema}
+ * @param jsonTypes - Type arguments from the schema source. Omitted, json and jsonb stay `unknown`
  * @returns Declaration text
  */
-export function emitRowTypes(source: BuiltSchema<readonly AnyTable[]>): string {
+export function emitRowTypes(
+  source: BuiltSchema<readonly AnyTable[]>,
+  jsonTypes?: JsonColumnTypes,
+): string {
   const lines: string[] = [
     "/**",
     " * Row types emitted from the schema.",
@@ -37,13 +50,13 @@ export function emitRowTypes(source: BuiltSchema<readonly AnyTable[]>): string {
     inserts.push(`  readonly ${key}: ${name}Insert;`);
     updates.push(`  readonly ${key}: ${name}Update;`);
     lines.push(`export interface ${name} {`);
-    lines.push(fields(item, "row", source));
+    lines.push(fields(item, "row", source, jsonTypes));
     lines.push("}", "");
     lines.push(`export interface ${name}Insert {`);
-    lines.push(fields(item, "insert", source));
+    lines.push(fields(item, "insert", source, jsonTypes));
     lines.push("}", "");
     lines.push(`export interface ${name}Update {`);
-    lines.push(fields(item, "update", source));
+    lines.push(fields(item, "update", source, jsonTypes));
     lines.push("}", "");
   }
   lines.push("export interface Rows {");
@@ -67,10 +80,84 @@ function propertyName(name: string): string {
   return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) ? name : JSON.stringify(name);
 }
 
+/**
+ * Reads `t.json<T>()` and `t.jsonb<T>()` type arguments from schema source.
+ *
+ * A bare `t.jsonb()` has no argument. The key is the table name and the field.
+ *
+ * @param source - Schema source, comments removed by the caller or still present
+ * @returns `table.field` to the type argument text
+ */
+export function jsonColumnTypes(source: string): JsonColumnTypes {
+  const text = source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
+  const found = new Map<string, string>();
+  const pattern = /(?:\bt\s*\.\s*)?(jsonb|json)\s*</g;
+  for (const match of text.matchAll(pattern)) {
+    const open = (match.index ?? 0) + match[0].length - 1;
+    const argument = readGeneric(text, open);
+    const field = propertyBefore(text, match.index ?? 0);
+    const table = tableBefore(text, match.index ?? 0);
+    if (argument === undefined || field === undefined || table === undefined) continue;
+    found.set(`${table}.${field}`, argument);
+  }
+  return found;
+}
+
+function readGeneric(source: string, open: number): string | undefined {
+  if (source[open] !== "<") return undefined;
+  let depth = 0;
+  let quote: "'" | '"' | "`" | undefined;
+  for (let index = open; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === undefined) return undefined;
+    if (quote !== undefined) {
+      if (char === "\\") {
+        index += 1;
+        continue;
+      }
+      if (char === quote) quote = undefined;
+      continue;
+    }
+    if (char === "'" || char === '"' || char === "`") {
+      quote = char;
+      continue;
+    }
+    if (char === "<") depth += 1;
+    else if (char === ">") {
+      depth -= 1;
+      if (depth === 0)
+        return source
+          .slice(open + 1, index)
+          .trim()
+          .replace(/\s+/g, " ");
+    }
+  }
+  return undefined;
+}
+
+function propertyBefore(source: string, index: number): string | undefined {
+  let cursor = index;
+  while (cursor > 0 && /\s/.test(source[cursor - 1] ?? "")) cursor -= 1;
+  if (source[cursor - 1] !== ":") return undefined;
+  cursor -= 1;
+  while (cursor > 0 && /\s/.test(source[cursor - 1] ?? "")) cursor -= 1;
+  const end = cursor;
+  while (cursor > 0 && /[\w$]/.test(source[cursor - 1] ?? "")) cursor -= 1;
+  const name = source.slice(cursor, end);
+  return /^[$A-Za-z_][\w$]*$/.test(name) ? name : undefined;
+}
+
+function tableBefore(source: string, index: number): string | undefined {
+  const head = source.slice(0, index);
+  const tables = [...head.matchAll(/table\(\s*["']([^"']+)["']/g)];
+  return tables.at(-1)?.[1];
+}
+
 function fields(
   item: AnyTable,
   kind: "row" | "insert" | "update",
   source: BuiltSchema<readonly AnyTable[]>,
+  jsonTypes: JsonColumnTypes | undefined,
 ): string {
   const printed: string[] = [];
   const options = item.options as
@@ -98,7 +185,9 @@ function fields(
     const state = builder.state;
     if (kind === "row") {
       if (!state.hidden) {
-        printed.push(`  readonly ${field}: ${valueType(state)};`);
+        printed.push(
+          `  readonly ${field}: ${valueType(state, jsonTypes?.get(`${item.name}.${field}`))};`,
+        );
       }
       continue;
     }
@@ -107,7 +196,7 @@ function fields(
       continue;
     }
     const mode = kind === "update" ? "optional" : written;
-    const label = valueType(state);
+    const label = valueType(state, jsonTypes?.get(`${item.name}.${field}`));
     printed.push(
       mode === "optional" ? `  readonly ${field}?: ${label};` : `  readonly ${field}: ${label};`,
     );
@@ -136,8 +225,8 @@ function updateMode(state: ColumnState<unknown>): "omit" | "optional" {
   return "optional";
 }
 
-function valueType(state: ColumnState<unknown>): string {
-  let label = scalarLabel(state);
+function valueType(state: ColumnState<unknown>, jsonArg: string | undefined): string {
+  let label = scalarLabel(state, jsonArg);
   if (state.dims > 0) {
     for (let rank = 0; rank < state.dims; rank += 1) {
       label = `readonly (${label})[]`;
@@ -149,7 +238,7 @@ function valueType(state: ColumnState<unknown>): string {
   return label;
 }
 
-function scalarLabel(state: ColumnState<unknown>): string {
+function scalarLabel(state: ColumnState<unknown>, jsonArg: string | undefined): string {
   if (state.picklist !== undefined) {
     return state.picklist.values.map((value) => JSON.stringify(value)).join(" | ");
   }
@@ -182,9 +271,9 @@ function scalarLabel(state: ColumnState<unknown>): string {
     case "bytea":
       return "Uint8Array";
     case "json":
-      return "json<unknown>";
+      return `json<${jsonArg ?? "unknown"}>`;
     case "jsonb":
-      return "jsonb<unknown>";
+      return `jsonb<${jsonArg ?? "unknown"}>`;
     case "timestamptz":
       return "Temporal.Instant";
     case "timestamp":

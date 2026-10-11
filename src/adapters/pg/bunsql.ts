@@ -22,6 +22,7 @@ import type {
 import { BUNSQL_CAPABILITIES } from "../capabilities.js";
 import { driverErrors, mapFailure, rejectClosed } from "../failure.js";
 import { runCall } from "./call.js";
+import { noTimeout } from "./no-inflight-timeout.js";
 import { cursorStream, noticeBuffer, WireSession, type WireQuery } from "./session.js";
 
 export {
@@ -130,12 +131,14 @@ export function open(config: BunSqlConfig): DriverPool {
   return {
     capabilities: BUNSQL_CAPABILITIES,
     execute(text, params, options) {
+      noTimeout(options);
       return runCall(closed, options, async (watch) => {
         await releaseParked(parked);
         return root.query(text, params, watch);
       });
     },
     async batch(statements, options) {
+      noTimeout(options);
       const connection = await checkout();
       try {
         return await connection.batch(statements, options);

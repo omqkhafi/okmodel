@@ -56,7 +56,8 @@ export class RlsRoleError extends OkmError {
         : `${ROLE_MESSAGE[reason]} Endpoint ${endpoint}.`;
     super("OKM1707", named, {
       fix: {
-        summary: "Connect as a role that is not the table owner, a superuser, or BYPASSRLS.",
+        summary:
+          "Connect as a role that is not the table owner, a superuser, or BYPASSRLS. okm seed under rlsTenancy runs as the application role. The owner gets this error.",
       },
     });
     this.name = "OkmError";
@@ -741,7 +742,8 @@ async function verifyEndpoint(
       `The connected role is not visible in pg_roles. Endpoint ${endpoint}.`,
       {
         fix: {
-          summary: "Connect as a role that is not the table owner, a superuser, or BYPASSRLS.",
+          summary:
+            "Connect as a role that is not the table owner, a superuser, or BYPASSRLS. okm seed under rlsTenancy runs as the application role. The owner gets this error.",
         },
       },
     );

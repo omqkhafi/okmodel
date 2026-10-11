@@ -7,7 +7,7 @@
  */
 
 import type { DriverPool, ExecuteOptions } from "../../../contracts/driver.js";
-import type { ErrorStatuses } from "../../../contracts/error.js";
+import { OkmError, type ErrorStatuses } from "../../../contracts/error.js";
 import type { MapPostgresErrorSchema } from "../errors.js";
 
 /** The client fields a refresh uses. The view hook passes its session. */
@@ -31,6 +31,11 @@ type RefreshHost = {
  * the client's, the same ceiling a write uses. A database failure is mapped
  * and logged like any other statement.
  *
+ * The refresh runs on a reserved primary connection with `app.unscoped` set
+ * in that same transaction. Under `FORCE ROW LEVEL SECURITY` the owner would
+ * otherwise refresh zero rows. `CONCURRENTLY` cannot run inside a transaction,
+ * so that form sets the session value and clears it before release.
+ *
  * @param session - Pool, timeout, and logger from the client
  * @param name - SQL name of the materialized view
  * @param concurrently - True when the view declares `refresh: "concurrently"`
@@ -45,8 +50,33 @@ export async function refreshView(
   const timeout = host.timeouts?.statement;
   const options: ExecuteOptions | undefined = timeout === undefined ? undefined : { timeout };
   const text = `refresh materialized view${concurrently ? " concurrently" : ""} ${quote(name)}`;
+  const connection = await host.pool.reserve?.();
+  if (connection === undefined) {
+    throw new OkmError("OKM1111", "Refresh needs a driver that can reserve a connection.", {
+      fix: { summary: "Use a Postgres driver that supports interactive transactions." },
+    });
+  }
   try {
-    await host.pool.execute(text, undefined, options);
+    if (concurrently) {
+      await connection.execute("select set_config('app.unscoped', 'on', false)");
+      try {
+        await connection.execute(text, undefined, options);
+      } finally {
+        await connection
+          .execute("select set_config('app.unscoped', '', false)")
+          .catch(() => undefined);
+      }
+      return;
+    }
+    await connection.execute("begin");
+    try {
+      await connection.execute("select set_config('app.unscoped', 'on', true)");
+      await connection.execute(text, undefined, options);
+      await connection.execute("commit");
+    } catch (error) {
+      await connection.execute("rollback").catch(() => undefined);
+      throw error;
+    }
   } catch (error) {
     const { mapPostgresError } = await import("../errors.js");
     const mapped = mapPostgresError(error, {
@@ -56,6 +86,8 @@ export async function refreshView(
     });
     host.logger?.error?.({ code: mapped.code, summary: mapped.summary });
     throw mapped;
+  } finally {
+    await connection.release();
   }
 }
 
