@@ -18,7 +18,7 @@ The [linter](/docs/reference/linter) reads the plan and does not connect. [Check
 
 ## Names, and an upgrade from 0.5.1
 
-A unique or a foreign key is named from every SQL column, after `casing` and `sqlName`. A database created on 0.5.1 still has the older names. `connect()` is OKM1520 until `okm migrate apply` runs once. That migration is `RENAME CONSTRAINT`. It does not drop the table or the row. A protected target needs `--allow-protected` on that invocation. The next plan is empty.
+A unique or a foreign key is named from every SQL column, after `casing` and `sqlName`. A database created on 0.5.1 still has the older names. `connect()` is OKM1520 until `okm migrate apply` runs once. That migration is `RENAME CONSTRAINT`. It does not drop the table or the row. A protected target needs `--allow-protected` on that invocation. The next plan is empty. This ships in 0.6.0. The stored hash from 0.5.1 stays until that rename is applied.
 
 ## Windows
 

@@ -297,6 +297,21 @@ test("release check rejects an emptied Unreleased that is not the suffix drop", 
   expect(problems).toEqual(["changelog.md has no new lines under ## Unreleased"]);
 });
 
+test("release check accepts notes folded into an untagged release heading", () => {
+  const base = {
+    version: "0.7.0-next.4",
+    changelog: "# Changelog\n\n## Unreleased\n\n- QA.\n\n## v0.6.0 — 2026-10-11\n\n- First.\n",
+  };
+  const head = {
+    version: "0.6.0",
+    changelog: "# Changelog\n\n## Unreleased\n\n## v0.6.0 — 2026-10-11\n\n- QA.\n- First.\n",
+  };
+  expect(checkReleaseSnapshots(base, head)).toEqual([
+    "changelog.md has no new lines under ## Unreleased",
+  ]);
+  expect(checkReleaseSnapshots(base, head, { untaggedRelease: true })).toEqual([]);
+});
+
 test("release check accepts a bare version cut with notes under the new heading", () => {
   const base = {
     version: "0.1.0",

@@ -14,61 +14,6 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
-### ♻️ Changed
-
-#### adapters
-
-- Bun.sql and PGlite throw OKM1120 (kind `invalid`, message `timeout`) when a positive `timeout` is passed. They do not cancel a statement that is already running. `timeout: 0` is still kind `timeout`. A `signal` on its own is unchanged (D224, D239).
-
-#### runtime
-
-- Inside `tx()`, `app.tenant` is set again when the statement's scope differs from the last one in that transaction. A rolled-back savepoint does not leave the transaction unscoped (D238).
-
-#### docs
-
-- The reporting role is not tenant-safe against its own SQL. It can set `app.unscoped` and read every tenant through the select policy. It still cannot write (D238).
-- `okm seed` under `rlsTenancy` runs as the application role. The owner gets OKM1707. `isolation()` and `testing()` on PGlite or a superuser harness are the same error. The supported path is a non-superuser role on a real Postgres through `open({ url })` with `migrate: false` (D239).
-- `UNIQUE (id, tenant_id)` stays beside `PRIMARY KEY (id, tenant_id)`. Two tenants can share an id. Composite foreign keys and `onConflict` target the unique. `archivable()` turns it into a partial unique index, which a primary key cannot be (D234, D239).
-- Known limits put the Bun.sql and PGlite `timeout` refusal on the first screen. A populated materialized view is not RLS-protected (D239).
-
-### 🐛 Fixed
-
-#### contracts
-
-- `.okm/catalog.json` and `catalog.hash` are checked after a UTF-8 BOM is stripped and every carriage return is removed. An LF catalog keeps the hash `okm build` wrote (D237).
-
-#### dialects
-
-- `okm check` sees row-level security that was turned off. Introspection omits policies while `relrowsecurity` is false, so the plan enables and forces them again (D238).
-- `rlsTenancy` stores the policy text Postgres prints. A lowercase unreserved column stays bare, so a snake-case `tenant_id` catalog hash does not change. `tenantId`, `TenantId`, and a reserved word are double-quoted. Apply of a default-casing key no longer fails with `column "tenantid" does not exist`, and `okm check` reports no drift (D236).
-- A materialized view no longer keeps the application role's table default privileges. The plan revokes `INSERT`, `UPDATE`, and `DELETE` after `SELECT`. The catalog stays select only (D236).
-- A superuser passes the managed-role `CREATEROLE` preflight when `rolcreaterole` is false (D236).
-- `refresh()` waits until it is awaited. `batch([view.refresh()])` is OKM1121 and runs no statement. An unawaited failure is not an unhandled rejection. The refresh sets `app.unscoped` on a reserved primary connection, so the owner sees rows under `FORCE ROW LEVEL SECURITY`. The application role is `not_owner`, and the error names the migration role. A plain view has no `refresh` at runtime. `refresh: "blocking"` and any other value is OKM1120 (D239).
-- `okm build` keeps `t.jsonb<{ published?: boolean }>()` and `t.json<T>()` in `.okm/types.d.ts`. A bare `t.jsonb()` stays `jsonb<unknown>` (D215, D239).
-
-#### runtime
-
-- The first scoped statement on each endpoint checks the role and the policy expressions. OKM1707 names that endpoint. A policy changed to `using (true)` fails the check, and `isolation()` fails with it (D238).
-- OKM1707 says `okm seed` under `rlsTenancy` runs as the application role. The owner gets this error (D239).
-- A trailing backslash on the catalog directory is ignored, and a Windows stack frame still records `file.ts:line` (D237).
-
-#### tooling
-
-- A hand-written step that disables row-level security, stops forcing it, drops a policy, widens one with `using (true)` or `with check (true)`, grants `BYPASSRLS`, or changes the owner of a tenant table is OKM1550. `okm migrate check` and apply refuse it unless the step has `-- okm-allow OKM1550: reason` (D238).
-- A path foreign key is planned after the unique it references. Table names no longer decide that order. Drops reverse it (D236).
-- `okm generate` then apply accepts an index on a materialized view. The stored document depends on the view, not on a column, for one column or several, unique or not (D236).
-- `GRANT USAGE ON SCHEMA` that does not land fails with OKM1825. The migration role has to own the schema (`ALTER SCHEMA … OWNER TO`). `okm migrate check` gives that role its scratch schema and replays the grant there (D236).
-- `withOwner(..., "ignored" | "external")` is omitted from generated SQL and from provisioning. `okm check` still ignores both (D236).
-- A CRLF or lone-CR migration file is read as LF. Apply, `okm migrate check`, the linter, and `okm migrate status` see the same steps. A non-empty file with no steps and no `-- no steps` line fails instead of printing `nothing to apply`. A hand-written `truncate` is OKM1542 in LF and in CRLF (D237).
-- A UTF-8 BOM is stripped from migration SQL. UTF-16 is refused. The kind stays `invalid` (D237).
-- `schema`, `tables`, `migrations`, `out`, and a seed path resolve from the project directory. An absolute path and a `..` path both work (D237).
-- `okm generate init` writes `.gitattributes` so migration SQL, catalog JSON, and `.okm/` stay LF. An existing `.gitattributes` is left as it is (D237).
-- `okm` on Node older than 22.18 stops and names `bun --bun okm`. `engines.node` is `>=22.18` (D237).
-
-#### docs
-
-- Known limits and the migrations page describe a Windows checkout: CRLF, a BOM, resolved paths, a TCP URL, and case-sensitive file names (D237).
-
 ## v0.6.0 — 2026-10-11
 
 ### 💥 Breaking Changes
@@ -102,20 +47,75 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### ♻️ Changed
 
-- The plan schedules M2 Depth as four trains: 0.6 Access (P80–P86), then 0.7 Query depth, 0.8 SQL lane, and 0.9 Tooling. Access is first. Each feature loads lazily, or the step stops with numbers. The OKE prototype starts after 0.6 (D217).
+#### dialects
+
+- The extra unique beside a tenant primary key keeps the stored name key `{primary fields}_{tenant field}`. Its SQL name is the column list (D234, supersedes the TypeScript spelling in D223).
+
+#### adapters
+
+- Bun.sql and PGlite throw OKM1120 (kind `invalid`, message `timeout`) when a positive `timeout` is passed. They do not cancel a statement that is already running. `timeout: 0` is still kind `timeout`. A `signal` on its own is unchanged (D224, D239).
+- A `timeout` or `signal` still does not settle an in-flight statement on Bun.sql or PGlite. The fix grew Bun.sql by 108 / 39, so it was not shipped (D224).
+
+#### runtime
+
+- Inside `tx()`, `app.tenant` is set again when the statement's scope differs from the last one in that transaction. A rolled-back savepoint does not leave the transaction unscoped (D238).
 - A where with no effective predicate is checked from the write and archive chunks. A read does not carry that walk. The runtime entry stays 5,288 / 2,026. The featureless app is 90,506 / 30,063 (D219).
 - A hidden column named in `where` or `orderBy` is OKM1120. `hidden({ filterable: true })` allows those two clauses and still leaves the column out of the default row. `filters()` still refuses it (OKM1123). The catalog hash is unchanged. The featureless app is 90,721 / 30,154, under the 90,900 / 30,170 gate (D226).
-- The extra unique beside a tenant primary key keeps the stored name key `{primary fields}_{tenant field}`. Its SQL name is the column list (D234, supersedes the TypeScript spelling in D223).
-- A `timeout` or `signal` still does not settle an in-flight statement on Bun.sql or PGlite. The fix grew Bun.sql by 108 / 39, so it was not shipped (D224).
 - The hidden `where` and `orderBy` check was measured in three forms. The smallest reuses `fail()` and fits under the current gates: the featureless app would be 90,718 / 30,143 (D225).
+
+#### tooling
+
 - A pull request labelled `needs: postgres` runs the Postgres suite as four shards per version, each with its own database, and proves the pooler beside those shards. `gate / check` waits for the suite and the tarball. A skipped Postgres slice fails that gate while the label is present (D230).
+
+#### docs
+
+- The reporting role is not tenant-safe against its own SQL. It can set `app.unscoped` and read every tenant through the select policy. It still cannot write (D238).
+- `okm seed` under `rlsTenancy` runs as the application role. The owner gets OKM1707. `isolation()` and `testing()` on PGlite or a superuser harness are the same error. The supported path is a non-superuser role on a real Postgres through `open({ url })` with `migrate: false` (D239).
+- `UNIQUE (id, tenant_id)` stays beside `PRIMARY KEY (id, tenant_id)`. Two tenants can share an id. Composite foreign keys and `onConflict` target the unique. `archivable()` turns it into a partial unique index, which a primary key cannot be (D234, D239).
+- Known limits put the Bun.sql and PGlite `timeout` refusal on the first screen. A populated materialized view is not RLS-protected (D239).
+- The plan schedules M2 Depth as four trains: 0.6 Access (P80–P86), then 0.7 Query depth, 0.8 SQL lane, and 0.9 Tooling. Access is first. Each feature loads lazily, or the step stops with numbers. The OKE prototype starts after 0.6 (D217).
 - Known limits name the driver reasons `undefined_table`, `undefined_column`, `tls`, `not_populated`, `no_unique_index`, and `not_owner`. The handbook covers composite, path, and row-level tenancy, the reporting role, and the constraint-name upgrade from 0.5.1. A production database that is behind the app is OKM1520 until `okm migrate apply`.
 - The 0.6 gate remeasured the six startup graphs. Minified and gzip bytes match the previous sample, so the gates stay. The featureless app has 138 minified and 31 gzip left under 90,900 / 30,170. The same ten tables with column tenancy are 97,735 / 32,468 (D235).
 
 ### 🐛 Fixed
 
-- `okm migrate check` keeps a constraint whose only difference is the stored name key. Postgres does not store that key, so a replay no longer drops and recreates it. The reference app migration `0004_sql_names` renames the constraints whose SQL names changed (D234).
+#### contracts
+
+- `.okm/catalog.json` and `catalog.hash` are checked after a UTF-8 BOM is stripped and every carriage return is removed. An LF catalog keeps the hash `okm build` wrote (D237).
+
+#### dialects
+
+- `okm check` sees row-level security that was turned off. Introspection omits policies while `relrowsecurity` is false, so the plan enables and forces them again (D238).
+- `rlsTenancy` stores the policy text Postgres prints. A lowercase unreserved column stays bare, so a snake-case `tenant_id` catalog hash does not change. `tenantId`, `TenantId`, and a reserved word are double-quoted. Apply of a default-casing key no longer fails with `column "tenantid" does not exist`, and `okm check` reports no drift (D236).
+- A materialized view no longer keeps the application role's table default privileges. The plan revokes `INSERT`, `UPDATE`, and `DELETE` after `SELECT`. The catalog stays select only (D236).
+- A superuser passes the managed-role `CREATEROLE` preflight when `rolcreaterole` is false (D236).
+- `refresh()` waits until it is awaited. `batch([view.refresh()])` is OKM1121 and runs no statement. An unawaited failure is not an unhandled rejection. The refresh sets `app.unscoped` on a reserved primary connection, so the owner sees rows under `FORCE ROW LEVEL SECURITY`. The application role is `not_owner`, and the error names the migration role. A plain view has no `refresh` at runtime. `refresh: "blocking"` and any other value is OKM1120 (D239).
+- `okm build` keeps `t.jsonb<{ published?: boolean }>()` and `t.json<T>()` in `.okm/types.d.ts`. A bare `t.jsonb()` stays `jsonb<unknown>` (D215, D239).
+
+#### runtime
+
+- The first scoped statement on each endpoint checks the role and the policy expressions. OKM1707 names that endpoint. A policy changed to `using (true)` fails the check, and `isolation()` fails with it (D238).
+- OKM1707 says `okm seed` under `rlsTenancy` runs as the application role. The owner gets this error (D239).
+- A trailing backslash on the catalog directory is ignored, and a Windows stack frame still records `file.ts:line` (D237).
 - `onConflict: { on: "title" }` on a tenant unique of (tenant key, title) updates that tenant's row. The conflict target includes the tenant key. Naming the tenant key is still OKM1104. Two tenants can keep the same title (D221).
+
+#### tooling
+
+- A hand-written step that disables row-level security, stops forcing it, drops a policy, widens one with `using (true)` or `with check (true)`, grants `BYPASSRLS`, or changes the owner of a tenant table is OKM1550. `okm migrate check` and apply refuse it unless the step has `-- okm-allow OKM1550: reason` (D238).
+- A path foreign key is planned after the unique it references. Table names no longer decide that order. Drops reverse it (D236).
+- `okm generate` then apply accepts an index on a materialized view. The stored document depends on the view, not on a column, for one column or several, unique or not (D236).
+- `GRANT USAGE ON SCHEMA` that does not land fails with OKM1825. The migration role has to own the schema (`ALTER SCHEMA … OWNER TO`). `okm migrate check` gives that role its scratch schema and replays the grant there (D236).
+- `withOwner(..., "ignored" | "external")` is omitted from generated SQL and from provisioning. `okm check` still ignores both (D236).
+- A CRLF or lone-CR migration file is read as LF. Apply, `okm migrate check`, the linter, and `okm migrate status` see the same steps. A non-empty file with no steps and no `-- no steps` line fails instead of printing `nothing to apply`. A hand-written `truncate` is OKM1542 in LF and in CRLF (D237).
+- A UTF-8 BOM is stripped from migration SQL. UTF-16 is refused. The kind stays `invalid` (D237).
+- `schema`, `tables`, `migrations`, `out`, and a seed path resolve from the project directory. An absolute path and a `..` path both work (D237).
+- `okm generate init` writes `.gitattributes` so migration SQL, catalog JSON, and `.okm/` stay LF. An existing `.gitattributes` is left as it is (D237).
+- `okm` on Node older than 22.18 stops and names `bun --bun okm`. `engines.node` is `>=22.18` (D237).
+- `okm migrate check` keeps a constraint whose only difference is the stored name key. Postgres does not store that key, so a replay no longer drops and recreates it. The reference app migration `0004_sql_names` renames the constraints whose SQL names changed (D234).
+
+#### docs
+
+- Known limits and the migrations page describe a Windows checkout: CRLF, a BOM, resolved paths, a TCP URL, and case-sensitive file names (D237).
 - The handbook names draft 26, and the opening size table is the current sample.
 
 ### 🔒 Security

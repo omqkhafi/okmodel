@@ -6,7 +6,9 @@
  * `## vX.Y.Z` is allowed to leave Unreleased empty. A cut from one bare
  * version to the next, with notes under the new heading, is allowed too.
  * Before that tag exists, notes added under the release heading are allowed
- * and the version stays.
+ * and the version stays. Folding those notes into an existing untagged
+ * heading, while the package version moves to that heading, is the same
+ * release.
  *
  * A pull request whose changed files are all under `.github/` is exempt from
  * both rules (see {@link releaseExemption}). Any file outside `.github/`
@@ -53,6 +55,7 @@ export function checkReleaseSnapshots(
 ): readonly string[] {
   const problems: string[] = [];
   const preTag = options?.untaggedRelease === true && hasNewReleaseNotes(base, head);
+  const folded = options?.untaggedRelease === true && isFoldedUntaggedRelease(base, head);
   if (head.version === base.version && !preTag) {
     problems.push(`package.json version ${head.version} equals the base branch`);
   }
@@ -65,7 +68,8 @@ export function checkReleaseSnapshots(
     !hasNewUnreleasedLines(base.changelog, head.changelog) &&
     !isReleasePromotion(base, head) &&
     !isBareReleaseCut(base, head) &&
-    !preTag
+    !preTag &&
+    !folded
   ) {
     problems.push("changelog.md has no new lines under ## Unreleased");
   }
@@ -184,6 +188,28 @@ function isBareReleaseCut(base: ReleaseSnapshot, head: ReleaseSnapshot): boolean
   if (hasVersionHeading(base.changelog, head.version)) return false;
   if (!hasVersionHeading(head.changelog, head.version)) return false;
   return sectionLines(head.changelog, head.version).some((line) => line.startsWith("-"));
+}
+
+/**
+ * Notes moved into an existing untagged `## vX.Y.Z` while the package
+ * version becomes `X.Y.Z`.
+ *
+ * `0.7.0-next.4` to `0.6.0`, with new bullets under the `v0.6.0` heading
+ * that was already on the base, is a re-cut. The heading has to gain a
+ * bullet. A tagged release does not take this path.
+ *
+ * @param base - Version and changelog on the base branch
+ * @param head - Version and changelog on the pull request
+ * @returns Whether Unreleased may be empty
+ */
+function isFoldedUntaggedRelease(base: ReleaseSnapshot, head: ReleaseSnapshot): boolean {
+  if (!isBareVersion(head.version)) return false;
+  if (!hasVersionHeading(base.changelog, head.version)) return false;
+  if (!hasVersionHeading(head.changelog, head.version)) return false;
+  const previous = new Set(sectionLines(base.changelog, head.version));
+  return sectionLines(head.changelog, head.version).some(
+    (line) => line.startsWith("-") && !previous.has(line),
+  );
 }
 
 function isBareVersion(version: string): boolean {
