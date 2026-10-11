@@ -14,7 +14,7 @@ import {
   type ErrorStatuses,
   type OkmErrorOptions,
 } from "../contracts/error.js";
-import type { MapPostgresErrorOptions } from "../dialects/pg/errors.js";
+import type { MapPostgresErrorOptions, MapPostgresErrorSchema } from "../dialects/pg/errors.js";
 import type { PresetUse, QuerySchema } from "../dialects/pg/model.js";
 import {
   appliedRules,
@@ -730,7 +730,7 @@ async function checkServer(
     rows = result.rows;
   } catch (error) {
     const { mapPostgresError } = await import("../dialects/pg/errors.js");
-    throw mapPostgresError(error, mapOptions(http, false));
+    throw mapPostgresError(error, mapOptions(http, false, schema));
   }
   await server.acceptServer(pool, schema, rows, http, requireMeta, options, source);
 }
@@ -742,7 +742,7 @@ async function mapError(session: Session, error: unknown): Promise<OkmError> {
       : new OkmError(error.code, error.message, { ...errorFields(error), http: session.http });
   }
   const { mapPostgresError } = await import("../dialects/pg/errors.js");
-  return mapPostgresError(error, mapOptions(session.http, session.includeValues));
+  return mapPostgresError(error, mapOptions(session.http, session.includeValues, session.schema));
 }
 
 function errorFields(error: OkmError): {
@@ -854,10 +854,12 @@ function callOptions(
 function mapOptions(
   http: ErrorStatuses | undefined,
   includeValues: boolean,
+  schema: QuerySchema,
 ): MapPostgresErrorOptions {
   return {
     ...(http !== undefined ? { http } : {}),
     ...(includeValues ? { includeValues: true } : {}),
+    schema: schema as QuerySchema & MapPostgresErrorSchema,
   };
 }
 

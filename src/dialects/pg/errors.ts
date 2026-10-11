@@ -2,8 +2,8 @@
  * Maps a Postgres {@link DriverError} to an {@link OkmError} (spec §4.2, §14).
  *
  * Adapters normalise the driver into `DriverError`. They do not construct
- * `OkmError`. When {@link MapPostgresErrorOptions.schema} is set, a reason
- * comes from the error's columns matched to a catalog object. Otherwise the
+ * `OkmError`. `connect()` passes its schema. A reason then comes from the
+ * error's columns matched to a catalog object. With no catalog, the
  * constraint name is parsed.
  */
 
@@ -20,7 +20,8 @@ import {
 /**
  * Catalog and model used to name a unique, foreign key, or check.
  *
- * `connect()` does not pass this. Callers that have the schema do.
+ * `connect()` passes the schema it already holds. The reference is enough:
+ * matching stays in this module.
  */
 export type MapPostgresErrorSchema = {
   readonly catalog: Catalog;
@@ -262,7 +263,7 @@ function reasonOf(
   columns: readonly string[],
   schema: MapPostgresErrorSchema | undefined,
 ): string {
-  if (schema !== undefined && table !== undefined) {
+  if (schema !== undefined && schema.catalog !== undefined && table !== undefined) {
     const matched = matchObject(schema.catalog, table, constraint, columns);
     if (matched !== undefined) return reasonFromObject(schema, table, matched, columns);
   }
