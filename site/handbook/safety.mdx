@@ -62,4 +62,6 @@ export const app = schema({
 
 `columnTenancy` is one key. `compositeTenancy({ key: ["organizationId", "workspaceId"], type: "uuid" })` isolates on every key together. `via("team.department.organization")` follows up to three relations. `rlsTenancy` keeps the column predicate and adds forced row-level security. A superuser, a `BYPASSRLS` role, or the table owner is refused on the first scoped call.
 
-`roles.reporting` can select and cannot write. A hidden column stays out of that select unless `roles.columns` names it. `withOwner(table(...), "external")` or `"ignored"` keeps the table out of the plan.
+`roles.reporting` can select and cannot write. A hidden column stays out of that select unless `roles.columns` names it. The migration role has to own the schema before apply, or the usage grant does not land (`ALTER SCHEMA public OWNER TO` that role). `withOwner(table(...), "external")` or `"ignored"` stays out of generated SQL and out of apply. `okm check` ignores both.
+
+`rlsTenancy` stores the policy text Postgres prints back. A lowercase unreserved column stays bare. `tenantId` is quoted. A materialized view index applies with the view, and the application role's extra write privileges on that view are revoked.

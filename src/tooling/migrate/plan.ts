@@ -40,6 +40,7 @@ import {
   ownedByView,
   qualify,
   quoteIdent,
+  uniqueBeforeForeignKey,
   refreshMaterializedViewSql,
   viewSql,
 } from "../../dialects/pg/ddl.js";
@@ -323,7 +324,7 @@ export function planMigration(input: PlanRequest): MigrationPlan {
   const deferred = new Set(picklists.map((change) => identityKey(change.before.identity)));
   const typeDrops: CatalogObject[] = [];
   const extensionDrops: CatalogObject[] = [];
-  const reverse = [...creationOrder(renamed)].reverse();
+  const reverse = [...uniqueBeforeForeignKey(creationOrder(renamed))].reverse();
   const emitDrop = (object: CatalogObject): void => {
     const key = identityKey(object.identity);
     if (!dropKeys.has(key) || deferred.has(key) || covered(object, droppedTables)) return;
@@ -436,7 +437,7 @@ export function planMigration(input: PlanRequest): MigrationPlan {
     if (sql === undefined || kind === undefined) continue;
     steps.push(step(sql, kind, "ddl", ACCESS));
   }
-  for (const object of creationOrder(request.after)) {
+  for (const object of uniqueBeforeForeignKey(creationOrder(request.after))) {
     if (
       object.kind === "type" ||
       object.kind === "extension" ||

@@ -451,6 +451,7 @@ export async function introspectSchema(
       ...(await readPrivileges(
         runner,
         concrete,
+        logical,
         namespace,
         provenance,
         objects,
@@ -548,6 +549,7 @@ const DEFAULT_PRIVILEGES = `select owner_role.rolname as for_role, grantee.rolna
 async function readPrivileges(
   runner: CatalogQuery,
   concrete: string,
+  logical: string,
   namespace: ReturnType<typeof staticNamespace>,
   provenance: Provenance,
   built: readonly CatalogObject[],
@@ -670,7 +672,7 @@ async function readPrivileges(
     objects.push(
       grantObject({
         role: reportingRole,
-        object: { kind: "namespace", namespace, name: concrete },
+        object: { kind: "namespace", namespace, name: logical },
         privilege: "USAGE",
         provenance,
         dependencies: [{ kind: "role", name: reportingRole }],

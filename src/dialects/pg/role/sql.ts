@@ -114,6 +114,8 @@ export function privilegeSql(
       const tighten = tightenColumnSelect(object, after, schema);
       if (tighten !== undefined) grant.push(tighten);
       grant.push({ sql: grantStatement(object, schema, false), kind: "grant" });
+      const writes = revokeMatviewWrites(object, after, schema);
+      if (writes !== undefined) grant.push(writes);
       continue;
     }
     if (previous !== undefined) continue;
@@ -205,6 +207,30 @@ function tightenColumnSelect(
   if (covered) return undefined;
   return {
     sql: `revoke select on ${grantTarget(target, schema)} from ${quoteIdent(object.identity.role)}`,
+    kind: "revoke",
+  };
+}
+
+function revokeMatviewWrites(
+  object: GrantObject,
+  after: readonly CatalogObject[],
+  schema: string,
+): PrivilegeStatement | undefined {
+  if (object.identity.privilege.toUpperCase() !== "SELECT") return undefined;
+  const target = object.identity.object;
+  if (target.kind !== "materializedView") return undefined;
+  const inheritsWrites = after.some(
+    (item) =>
+      item.kind === "defaultPrivilege" &&
+      item.identity.grantee === object.identity.role &&
+      item.identity.objectKind === "table" &&
+      (item.identity.privilege === "INSERT" ||
+        item.identity.privilege === "UPDATE" ||
+        item.identity.privilege === "DELETE"),
+  );
+  if (!inheritsWrites) return undefined;
+  return {
+    sql: `revoke insert, update, delete on ${grantTarget(target, schema)} from ${quoteIdent(object.identity.role)}`,
     kind: "revoke",
   };
 }

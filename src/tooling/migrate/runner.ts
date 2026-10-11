@@ -206,8 +206,10 @@ async function runUnit(
         await rebuildInvalidIndex(connection, item.step.sql);
         const created = createdRoleName(item.step.sql);
         const existed = created !== undefined && (await roleExists(connection, created));
-        if (created === undefined) await connection.execute(item.step.sql);
-        else if (!existed) await connection.execute(createRoleOnce(item.step.sql));
+        if (created === undefined) {
+          await connection.execute(item.step.sql);
+          await assertSchemaUsageLanded(connection, item.step.sql);
+        } else if (!existed) await connection.execute(createRoleOnce(item.step.sql));
         if (created !== undefined && created === run.migrationRole) {
           if (!existed) {
             await grantSchema(connection, run.schema ?? "public", created);
@@ -486,6 +488,47 @@ function concurrentIndexName(sql: string): string | undefined {
       sql.trim(),
     );
   return match?.[1] ?? match?.[2];
+}
+
+const SCHEMA_USAGE =
+  /^\s*grant\s+usage\s+on\s+schema\s+(?:"((?:[^"]|"")*)"|([A-Za-z_][\w$]*))\s+to\s+(?:"((?:[^"]|"")*)"|([A-Za-z_][\w$]*))\s*;?\s*$/i;
+
+/**
+ * Fails when `GRANT USAGE ON SCHEMA` did not add the role.
+ *
+ * Postgres warns and changes nothing when the acting role does not own the
+ * schema. A later check then reports the grant forever. The migration role
+ * has to own the schema first.
+ *
+ * @param connection - Reserved connection, in the grant's transaction
+ * @param sql - The statement that just ran
+ */
+export async function assertSchemaUsageLanded(
+  connection: DriverConnection,
+  sql: string,
+): Promise<void> {
+  const match = SCHEMA_USAGE.exec(sql.trim());
+  if (match === null) return;
+  const schema = (match[1] ?? match[2] ?? "").replaceAll('""', '"');
+  const role = (match[3] ?? match[4] ?? "").replaceAll('""', '"');
+  const found = await connection.execute(
+    `select exists (
+       select 1
+       from pg_namespace n
+       cross join lateral aclexplode(n.nspacl) a
+       join pg_roles r on r.oid = a.grantee
+       where n.nspname = $1 and r.rolname = $2 and a.privilege_type = 'USAGE'
+     )`,
+    [schema, role],
+  );
+  const landed = found.rows[0]?.[0];
+  if (landed === "t" || landed === "true") return;
+  throw new OkmError("OKM1825", `Grant usage on schema ${schema} to ${role} did not take effect.`, {
+    kind: "forbidden",
+    fix: {
+      summary: `Make the migration role the owner of schema ${schema}. ALTER SCHEMA ${quoteIdent(schema)} OWNER TO <migration role>.`,
+    },
+  });
 }
 
 function failStep(unit: RunnableUnit, index: number, error: unknown): OkmError {

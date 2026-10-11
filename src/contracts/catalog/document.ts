@@ -1250,7 +1250,7 @@ function parseIndex(
     ["columns", "expression", "nameKey", "predicate", "unique"],
     "index definition",
   );
-  return index({
+  const shared = {
     parent: identity.parent,
     name: identity.name,
     nameKey: requireString(definition.nameKey, "name key"),
@@ -1265,7 +1265,12 @@ function parseIndex(
     ...(definition.expression === undefined
       ? {}
       : { expression: requireString(definition.expression, "expression") }),
-  });
+  };
+  const onView = dependencies.some(
+    (edge) => edge.kind === "view" || edge.kind === "materializedView",
+  );
+  if (onView) return materializedViewIndex(shared);
+  return index(shared);
 }
 
 function parseConstraint(
