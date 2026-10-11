@@ -279,25 +279,6 @@ postgresTest(
         } finally {
           await harness.close();
         }
-        await admin.unsafe(`drop policy if exists notes_tenant on ${schemaName}.notes`);
-        await admin.unsafe(`drop policy if exists notes_unscoped_select on ${schemaName}.notes`);
-        await admin.unsafe(`alter table ${schemaName}.notes disable row level security`);
-        const broken = await testing(built, {
-          driver: open({ url: appUrl, max: 2, searchPath: schemaName }),
-          migrate: false,
-        });
-        try {
-          let missing: unknown;
-          try {
-            await broken.isolation();
-          } catch (error) {
-            missing = error;
-          }
-          expect(missing).toBeInstanceOf(OkmError);
-          if (missing instanceof OkmError) expect(missing.message).toContain("row-level security");
-        } finally {
-          await broken.close();
-        }
 
         const replica = await connect(
           {
@@ -318,6 +299,52 @@ postgresTest(
         }
 
         await provePooler(appUrl, appRole, schemaName);
+
+        await admin.unsafe(`drop policy if exists notes_tenant on ${schemaName}.notes`);
+        await admin.unsafe(`drop policy if exists notes_unscoped_select on ${schemaName}.notes`);
+        await admin.unsafe(`alter table ${schemaName}.notes disable row level security`);
+        const broken = await testing(built, {
+          driver: open({ url: appUrl, max: 2, searchPath: schemaName }),
+          migrate: false,
+        });
+        try {
+          let missing: unknown;
+          try {
+            await broken.isolation();
+          } catch (error) {
+            missing = error;
+          }
+          expect(missing).toBeInstanceOf(OkmError);
+          if (missing instanceof OkmError) expect(missing.message).toContain("row-level security");
+        } finally {
+          await broken.close();
+        }
+
+        const brokenReplica = await connect(
+          {
+            primary: appUrl,
+            replicas: [{ url: roleUrl(replicaUrl("a"), appRole), name: "a" }],
+          },
+          { schema: built, searchPath: schemaName },
+        );
+        try {
+          let routed: unknown;
+          try {
+            await brokenReplica.for({ tenantId: TENANT_A }).notes.find({
+              route: "replica",
+              limit: 1,
+            });
+          } catch (error) {
+            routed = error;
+          }
+          expect(routed).toBeInstanceOf(OkmError);
+          if (routed instanceof OkmError) {
+            expect(routed.message).toContain("row-level security");
+            expect(routed.message).toContain("Endpoint a");
+          }
+        } finally {
+          await brokenReplica.close();
+        }
       } finally {
         for (const role of roles) {
           await admin.unsafe(`drop owned by ${role} cascade`).catch(() => undefined);

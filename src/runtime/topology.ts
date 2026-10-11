@@ -263,6 +263,13 @@ type Endpoint = {
   inflight: number;
   /** EWMA of round-trip time. `null` until the first probe or successful read. */
   latencyMs: number | null;
+  /**
+   * Bumps when this endpoint fails over or its circuit closes again.
+   *
+   * The row-level security guard caches by this value, so the next use checks
+   * the role and the policies again.
+   */
+  generation: number;
 };
 
 /** `"session"` tracks a watermark. `"eventual"` does not. */
@@ -781,6 +788,7 @@ async function openEndpoint(
     current: 0,
     inflight: 0,
     latencyMs: null,
+    generation: 0,
   };
 }
 
@@ -796,8 +804,10 @@ async function detectPosition(endpoint: Endpoint): Promise<void> {
 async function sample(handle: Handle, endpoint: Endpoint): Promise<void> {
   try {
     const sampled = await readPosition(handle, endpoint);
+    const reopened = endpoint.circuit === "open";
     endpoint.failures = 0;
     endpoint.circuit = "closed";
+    if (reopened) endpoint.generation += 1;
     applySample(endpoint, sampled);
   } catch {
     endpoint.failures += 1;
@@ -978,6 +988,8 @@ type Choice = {
   endpoint: Endpoint;
   op: RouteEvent["op"];
   reason: string;
+  /** The dialect probe is not a tenant statement. */
+  skipGuard?: boolean;
 };
 
 type ClientOpts = Parameters<typeof createClient>[2];
@@ -1010,6 +1022,7 @@ function routePool(handle: Handle): DriverPool {
       if (options?.route === "replica") replicaRefused();
       const reason = options?.route === "primary" ? "constraint:primary" : "primary-required";
       tell(handle, { op: "write", endpoint: primary.name, reason });
+      await callGuard(primary);
       const result = await primary.pool.batch(statements, strip(options));
       await noteWrite(handle, primary.pool);
       return result;
@@ -1053,6 +1066,12 @@ function routePool(handle: Handle): DriverPool {
     readOnlyUnit(handle, text, params, prelude, options);
   routed.okmReadOnlyStream = (text, params, prelude, options) =>
     readOnlyStream(handle, text, params, prelude, options);
+  routed.okmEndpoints = () =>
+    handle.endpoints.map((endpoint) => ({
+      name: endpoint.name,
+      generation: endpoint.generation,
+      pool: endpoint.pool,
+    }));
   return pool;
 }
 
@@ -1139,6 +1158,11 @@ function force(handle: Handle, router: DriverPool, route: RouteName): DriverPool
 type RlsPrelude = Pick<Statement, "text" | "params">;
 
 type RlsRouted = DriverPool & {
+  okmEndpoints?: () => readonly {
+    readonly name: string;
+    readonly generation: number;
+    readonly pool: DriverPool;
+  }[];
   okmReadOnlyUnit?: (
     text: string,
     params: readonly WireValue[] | undefined,
@@ -1193,6 +1217,7 @@ function readOnlyStream(
     if (handle.closed) closed();
     const choice = await choose(handle, text, options?.route);
     tell(handle, { op: choice.op, endpoint: choice.endpoint.name, reason: choice.reason });
+    await callGuard(choice.endpoint);
     if (choice.endpoint.pool.reserve === undefined) replicaReserve();
     const conn = await choice.endpoint.pool.reserve();
     try {
@@ -1265,7 +1290,7 @@ async function choose(handle: Handle, text: string, route: string | undefined): 
   if (primary === undefined) throw new OkmError("OKM1120", "A topology needs one primary URL.");
   // The dialect check is not a user read. It always uses the primary.
   if (text.trimStart().toLowerCase().startsWith("select current_setting")) {
-    return { endpoint: primary, op: "read", reason: "primary-required" };
+    return { endpoint: primary, op: "read", reason: "primary-required", skipGuard: true };
   }
   if (route === "replica" && op !== "read") replicaRefused();
   if (op !== "read") {
@@ -1336,14 +1361,42 @@ async function attempt(
 ): Promise<Awaited<ReturnType<DriverPool["execute"]>>> {
   tell(handle, { op: choice.op, endpoint: choice.endpoint.name, reason: choice.reason });
   try {
+    if (choice.skipGuard !== true) await callGuard(choice.endpoint);
     return await tracked(choice.endpoint, choice.op === "read", () => run(choice.endpoint));
   } catch (error) {
     if (choice.op !== "read" || !isUnreachable(error)) throw error;
+    choice.endpoint.generation += 1;
     const next = await retryOf(handle, choice);
     if (next === undefined) throw error;
     tell(handle, { op: "read", endpoint: next.endpoint.name, reason: next.reason });
+    if (choice.skipGuard !== true) await callGuard(next.endpoint);
     return tracked(next.endpoint, true, () => run(next.endpoint));
   }
+}
+
+/**
+ * Runs the row-level security guard on this endpoint, when one is installed.
+ *
+ * A schema that does not use `rlsTenancy` leaves the property unset.
+ *
+ * @param endpoint - The endpoint about to run the statement
+ */
+function callGuard(endpoint: Endpoint): Promise<void> {
+  const guard = (
+    endpoint.pool as {
+      okmGuard?: (input: {
+        readonly name: string;
+        readonly generation: number;
+        readonly pool: DriverPool;
+      }) => Promise<void>;
+    }
+  ).okmGuard;
+  if (guard === undefined) return Promise.resolve();
+  return guard({
+    name: endpoint.name,
+    generation: endpoint.generation,
+    pool: endpoint.pool,
+  });
 }
 
 /** Chain depth the unreachable check walks. A driver wraps once or twice. */

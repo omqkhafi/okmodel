@@ -255,6 +255,13 @@ export const STEP_RULES: readonly StepRule[] = [
     "A data statement outside backfill(), or DO or CALL, is not a migration step.",
     (input) => dataStatement(input.step),
   ),
+  rule(
+    "OKM1550",
+    "destructive",
+    "error",
+    "Disabling row-level security, dropping or widening a policy, granting BYPASSRLS, or changing the owner of a tenant table removes the rlsTenancy backstop.",
+    (input) => weakensRls(input),
+  ),
 ];
 
 /**
@@ -332,6 +339,41 @@ function normalized(sql: string): string {
     out += quoted ? char : char.toLowerCase();
   }
   return out;
+}
+
+function weakensRls(input: StepInput): readonly string[] {
+  const text = normalized(input.step.sql);
+  if (/\bdisable row level security\b/.test(text)) return ["disables row level security"];
+  if (/\bno force row level security\b/.test(text)) return ["stops forcing row level security"];
+  if (/^drop policy\b/.test(text)) return ["drops a policy"];
+  if (
+    /^(?:create|alter) policy\b/.test(text) &&
+    /\b(?:using|with check)\s*\(\s*true\s*\)/.test(text)
+  ) {
+    return [
+      text.startsWith("alter ")
+        ? "widens a policy to match every row"
+        : "creates a policy that matches every row",
+    ];
+  }
+  if (/^(?:alter|create) (?:role|user)\b/.test(text) && /(?<!no)bypassrls\b/.test(text)) {
+    return ["grants BYPASSRLS"];
+  }
+  if (changesTenantOwner(input, text)) return ["changes the owner of a tenant table"];
+  return [];
+}
+
+function changesTenantOwner(input: StepInput, text: string): boolean {
+  const match = /^alter table\s+(\S+)\s+owner to\b/.exec(text);
+  const table = lastName(match?.[1]);
+  if (table === undefined) return false;
+  return hasPolicy(input.before, table) || hasPolicy(input.after, table);
+}
+
+function hasPolicy(source: Catalog, table: string): boolean {
+  return source.objects.some(
+    (object) => object.kind === "policy" && object.identity.parent.name === table,
+  );
 }
 
 function dataStatement(step: PlanStep): readonly string[] {

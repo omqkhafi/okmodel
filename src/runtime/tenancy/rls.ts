@@ -47,9 +47,14 @@ export class RlsRoleError extends OkmError {
 
   /**
    * @param reason - Which privilege bypassed row-level security
+   * @param endpoint - Endpoint that answered the check. The message names it
    */
-  constructor(reason: RlsRoleReason) {
-    super("OKM1707", ROLE_MESSAGE[reason], {
+  constructor(reason: RlsRoleReason, endpoint?: string) {
+    const named =
+      endpoint === undefined
+        ? ROLE_MESSAGE[reason]
+        : `${ROLE_MESSAGE[reason]} Endpoint ${endpoint}.`;
+    super("OKM1707", named, {
       fix: {
         summary: "Connect as a role that is not the table owner, a superuser, or BYPASSRLS.",
       },
@@ -71,10 +76,34 @@ type Model = Readonly<
     {
       readonly sql: string;
       readonly primary: readonly unknown[];
-      readonly columns: readonly { readonly field: string; readonly sql: string }[];
+      readonly columns: readonly {
+        readonly field: string;
+        readonly sql: string;
+        readonly dataType?: string;
+      }[];
     }
   >
 >;
+
+/** One tenant table the policy check compares with the catalog. */
+type TenantGuard = {
+  readonly name: string;
+  readonly column: string;
+  readonly dataType: string;
+};
+
+/** One endpoint the router can hand a scoped statement. */
+type GuardEndpoint = {
+  readonly name: string;
+  readonly generation: number;
+  readonly pool: DriverPool;
+};
+
+type ScopeState = {
+  last: string | undefined;
+  pending: Promise<void> | undefined;
+  epoch: number;
+};
 
 type HookSession = {
   pool: DriverPool;
@@ -100,9 +129,17 @@ type ReadStream = (
 type RoutedPool = DriverPool & {
   readonly okmReadOnlyUnit?: ReadUnit;
   readonly okmReadOnlyStream?: ReadStream;
+  okmEndpoints?: () => readonly GuardEndpoint[];
+  okmGuardInstalled?: boolean;
 };
 
-const roleChecks = new WeakMap<object, Promise<void>>();
+type ScopeHooks = {
+  okmForgetScope?: () => void;
+  okmScopePending?: () => Promise<void> | undefined;
+};
+
+const guardChecks = new WeakMap<object, Map<number, Promise<void>>>();
+const scopeStates = new WeakMap<object, ScopeState>();
 
 function openColumn(key: string): ColumnTenancy {
   return (
@@ -374,7 +411,7 @@ function arm(
   if (!isSession(session) || session === armedFor) return;
   const raw = innerPool(session.pool);
   const tables = tenantTables(session.schema.model, key);
-  remember(() => assertPolicies(raw, tables), session);
+  remember(() => checkEndpoint(raw, "primary", 0, tables), session);
   if (session.scope === undefined || isWrapped(session.pool)) return;
   session.pool = wrapPool(session.pool, session.scope, session.tx !== undefined, tables);
 }
@@ -385,15 +422,16 @@ function isSession(value: object | undefined): value is HookSession {
   return typeof pool === "object" && pool !== null && "execute" in pool;
 }
 
-function tenantTables(model: Model, key: string): readonly string[] {
+function tenantTables(model: Model, key: string): readonly TenantGuard[] {
   const snake = snakeCase(key);
-  const names: string[] = [];
+  const tables: TenantGuard[] = [];
   for (const table of Object.values(model)) {
     if (table.primary.length === 0) continue;
-    const tenant = table.columns.some((column) => column.field === key || column.sql === snake);
-    if (tenant) names.push(table.sql);
+    const column = table.columns.find((item) => item.field === key || item.sql === snake);
+    if (column?.dataType === undefined) continue;
+    tables.push({ name: table.sql, column: column.sql, dataType: column.dataType });
   }
-  return names;
+  return tables;
 }
 
 function isWrapped(pool: object): boolean {
@@ -409,24 +447,26 @@ function wrapPool(
   inner: DriverPool,
   scope: Scope,
   inside: boolean,
-  tables: readonly string[],
+  tables: readonly TenantGuard[],
 ): DriverPool {
   const setting = settingOf(scope);
   const unscoped = "unscoped" in scope;
-  let armed = false;
-  const ensure = (): Promise<void> => ensureRole(inner, tables);
-  const armOnce = async (): Promise<void> => {
-    if (armed) return;
-    armed = true;
-    await inner.execute(setting.text, setting.params);
-  };
+  installGuard(inner, tables);
+  const ensure = (): Promise<void> =>
+    (inner as RoutedPool).okmGuardInstalled === true
+      ? Promise.resolve()
+      : checkEndpoint(inner, "primary", 0, tables);
+  const state = inside ? scopeState(inner) : undefined;
+  if (state !== undefined) queueScope(inner, scope, state);
+  const arm = (): Promise<void> =>
+    state === undefined ? Promise.resolve() : ensureScope(inner, scope, state);
   const wrapped: DriverPool = {
     capabilities: inner.capabilities,
     execute: async (text, params, options) => {
       await ensure();
       if (unscoped && isWriteSql(text)) unscopedWrite();
       if (inside) {
-        await armOnce();
+        await arm();
         return inner.execute(text, params, options);
       }
       if (isReadSql(text)) return runScopedRead(inner, text, params, setting, options);
@@ -443,7 +483,7 @@ function wrapPool(
       await ensure();
       if (unscoped && statements.some((statement) => isWriteSql(statement.text))) unscopedWrite();
       if (inside) {
-        await armOnce();
+        await arm();
         return inner.batch(statements, options);
       }
       if (statements.length > 0 && statements.every((statement) => isReadSql(statement.text))) {
@@ -464,6 +504,7 @@ function wrapPool(
     stats: () => inner.stats(),
     close: () => inner.close(),
   };
+  if (state !== undefined) bindScopeHooks(inner, wrapped, state);
   if (inner.reserve !== undefined) wrapped.reserve = () => inner.reserve!();
   if (inner.describe !== undefined) {
     wrapped.describe = (text, params) => inner.describe!(text, params);
@@ -473,7 +514,7 @@ function wrapPool(
   if (inner.cancel !== undefined) wrapped.cancel = () => inner.cancel!();
   if (inner.stream !== undefined || (inner as RoutedPool).okmReadOnlyStream !== undefined) {
     wrapped.stream = (text, params) =>
-      streamScoped(inner, text, params, setting, inside, unscoped, ensure, armOnce);
+      streamScoped(inner, text, params, setting, inside, unscoped, ensure, arm);
   }
   Object.defineProperty(wrapped, WRAPPED, { value: true });
   Object.defineProperty(wrapped, INNER, { value: inner });
@@ -519,7 +560,7 @@ function streamScoped(
   inside: boolean,
   unscoped: boolean,
   ensure: () => Promise<void>,
-  armOnce: () => Promise<void>,
+  arm: () => Promise<void>,
 ): AsyncIterable<readonly (readonly WireValue[])[]> {
   return (async function* () {
     await ensure();
@@ -530,7 +571,7 @@ function streamScoped(
       return;
     }
     if (inside) {
-      await armOnce();
+      await arm();
       if (inner.stream === undefined) {
         throw new OkmError("OKM1111", "stream() inside tx() needs a driver stream.", {
           fix: { summary: "Stream outside the transaction, or read with find()." },
@@ -557,69 +598,234 @@ function streamScoped(
   })();
 }
 
-function ensureRole(pool: DriverPool, tables: readonly string[]): Promise<void> {
-  const existing = roleChecks.get(pool);
-  if (existing !== undefined) return existing;
-  const pending = readRole(pool, tables).then((reason) => {
-    if (reason !== undefined) throw new RlsRoleError(reason);
+function scopeState(pool: object): ScopeState {
+  let state = scopeStates.get(pool);
+  if (state === undefined) {
+    state = { last: undefined, pending: undefined, epoch: 0 };
+    scopeStates.set(pool, state);
+  }
+  return state;
+}
+
+function scopeKey(scope: Scope): string {
+  return "unscoped" in scope ? `unscoped:${scope.unscoped}` : scope.value;
+}
+
+/**
+ * Queues `set_config` as soon as the transaction client exists.
+ *
+ * That is after `BEGIN` and before the callback, so a later savepoint cannot
+ * roll the setting back. A second scope waits until the first write finishes.
+ */
+function queueScope(inner: DriverPool, scope: Scope, state: ScopeState): void {
+  const key = scopeKey(scope);
+  if (state.last === key || state.pending !== undefined) return;
+  const epoch = state.epoch;
+  const setting = settingOf(scope);
+  const run = inner.execute(setting.text, setting.params).then(() => {
+    if (state.epoch !== epoch) return;
+    state.last = key;
+    state.pending = undefined;
   });
-  roleChecks.set(pool, pending);
+  state.pending = run;
+  void run.catch(() => {
+    if (state.pending === run) state.pending = undefined;
+  });
+}
+
+/** Sets the tenant when this statement's scope is not the one last applied. */
+async function ensureScope(inner: DriverPool, scope: Scope, state: ScopeState): Promise<void> {
+  const key = scopeKey(scope);
+  const pending = state.pending;
+  if (pending !== undefined) await pending;
+  if (state.last === key) return;
+  const epoch = state.epoch;
+  const setting = settingOf(scope);
+  await inner.execute(setting.text, setting.params);
+  if (state.epoch !== epoch) return;
+  state.last = key;
+}
+
+function bindScopeHooks(inner: DriverPool, wrapped: DriverPool, state: ScopeState): void {
+  const hooks: ScopeHooks = {
+    okmForgetScope() {
+      state.epoch += 1;
+      state.last = undefined;
+      state.pending = undefined;
+    },
+    okmScopePending() {
+      return state.pending;
+    },
+  };
+  Object.assign(inner, hooks);
+  Object.assign(wrapped, hooks);
+}
+
+/**
+ * Attaches the role and policy check to each endpoint the router can use.
+ *
+ * A pool without `okmEndpoints` is one connection. Its wrapper checks that
+ * pool. The router calls the guard before the statement, on the endpoint it
+ * chose, so a replica is not cleared by a check that ran on the primary.
+ */
+function installGuard(inner: DriverPool, tables: readonly TenantGuard[]): void {
+  const routed = inner as RoutedPool;
+  if (routed.okmEndpoints === undefined || routed.okmGuardInstalled === true) return;
+  const guard = (endpoint: GuardEndpoint): Promise<void> =>
+    checkEndpoint(endpoint.pool, endpoint.name, endpoint.generation, tables);
+  for (const endpoint of routed.okmEndpoints()) {
+    (endpoint.pool as { okmGuard?: (endpoint: GuardEndpoint) => Promise<void> }).okmGuard = guard;
+  }
+  routed.okmGuardInstalled = true;
+}
+
+/**
+ * Role and policy check for one endpoint, cached until that generation changes.
+ *
+ * A failed check is not cached. A healthy call pays this once per endpoint.
+ */
+function checkEndpoint(
+  pool: DriverPool,
+  endpoint: string,
+  generation: number,
+  tables: readonly TenantGuard[],
+): Promise<void> {
+  let generations = guardChecks.get(pool);
+  if (generations === undefined) {
+    generations = new Map();
+    guardChecks.set(pool, generations);
+  }
+  const existing = generations.get(generation);
+  if (existing !== undefined) return existing;
+  const pending = verifyEndpoint(pool, endpoint, tables);
+  generations.set(generation, pending);
   void pending.catch(() => {
-    roleChecks.delete(pool);
+    if (generations.get(generation) === pending) generations.delete(generation);
   });
   return pending;
 }
 
-async function readRole(
+async function verifyEndpoint(
   pool: DriverPool,
-  tables: readonly string[],
-): Promise<RlsRoleReason | undefined> {
+  endpoint: string,
+  tables: readonly TenantGuard[],
+): Promise<void> {
+  const listed =
+    tables.length === 0 ? "" : tables.map((table) => quoteLiteral(table.name)).join(", ");
   const owns =
     tables.length === 0
       ? "false"
       : `exists (
-          select 1 from pg_class c
-          join pg_namespace n on n.oid = c.relnamespace
-          where n.nspname = current_schema()
-            and c.relkind = 'r'
-            and c.relname in (${tables.map((name) => quoteLiteral(name)).join(", ")})
-            and c.relowner = r.oid
+          select 1 from pg_class owned
+          join pg_namespace ns on ns.oid = owned.relnamespace
+          where ns.nspname = current_schema()
+            and owned.relkind = 'r'
+            and owned.relname in (${listed})
+            and owned.relowner = r.oid
         )`;
+  const policies =
+    tables.length === 0
+      ? ""
+      : `, c.relname, c.relrowsecurity::text, c.relforcerowsecurity::text, p.polname, coalesce(pg_get_expr(p.polqual, p.polrelid), ''), coalesce(pg_get_expr(p.polwithcheck, p.polrelid), '')`;
+  const join =
+    tables.length === 0
+      ? ""
+      : ` left join pg_namespace n on n.nspname = current_schema() left join pg_class c on c.relnamespace = n.oid and c.relkind = 'r' and c.relname in (${listed}) left join pg_policy p on p.polrelid = c.oid`;
   const result = await pool.execute(
-    `select r.rolsuper::text, r.rolbypassrls::text, (${owns})::text from pg_roles r where r.rolname = current_user`,
+    `select r.rolsuper::text, r.rolbypassrls::text, (${owns})::text${policies} from pg_roles r${join} where r.rolname = current_user`,
   );
   const row = result.rows[0];
   if (row === undefined) {
-    throw new OkmError("OKM1707", "The connected role is not visible in pg_roles.", {
-      fix: { summary: "Connect as a role that is not the table owner, a superuser, or BYPASSRLS." },
-    });
+    throw new OkmError(
+      "OKM1707",
+      `The connected role is not visible in pg_roles. Endpoint ${endpoint}.`,
+      {
+        fix: {
+          summary: "Connect as a role that is not the table owner, a superuser, or BYPASSRLS.",
+        },
+      },
+    );
   }
-  if (row[0] === "true") return "superuser";
-  if (row[1] === "true") return "bypassrls";
-  if (row[2] === "true") return "owner";
-  return undefined;
-}
-
-async function assertPolicies(pool: DriverPool, tables: readonly string[]): Promise<void> {
+  if (row[0] === "true") throw new RlsRoleError("superuser", endpoint);
+  if (row[1] === "true") throw new RlsRoleError("bypassrls", endpoint);
+  if (row[2] === "true") throw new RlsRoleError("owner", endpoint);
   if (tables.length === 0) return;
-  const listed = tables.map((name) => quoteLiteral(name)).join(", ");
-  const result = await pool.execute(
-    `select c.relname, c.relrowsecurity::text, c.relforcerowsecurity::text, (select count(*)::text from pg_policy p where p.polrelid = c.oid) from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = current_schema() and c.relkind = 'r' and c.relname in (${listed})`,
-  );
-  const seen = new Set<string>();
-  for (const row of result.rows) {
-    const name = row[0] ?? "";
-    seen.add(name);
-    const count = Number(row[3] ?? "0");
-    if (row[1] !== "true" || row[2] !== "true" || count < 2) policyMissing(name);
+  assertPolicyRows(result.rows, tables, endpoint);
+}
+
+type LivePolicy = {
+  readonly using: string;
+  readonly check: string;
+};
+
+function assertPolicyRows(
+  rows: readonly (readonly (string | null)[])[],
+  tables: readonly TenantGuard[],
+  endpoint: string,
+): void {
+  const live = new Map<
+    string,
+    { rowsecurity: string; force: string; policies: Map<string, LivePolicy> }
+  >();
+  for (const row of rows) {
+    const name = row[3];
+    if (name === undefined || name === null || name.length === 0) continue;
+    let table = live.get(name);
+    if (table === undefined) {
+      table = {
+        rowsecurity: row[4] ?? "",
+        force: row[5] ?? "",
+        policies: new Map(),
+      };
+      live.set(name, table);
+    }
+    const policy = row[6];
+    if (policy === undefined || policy === null || policy.length === 0) continue;
+    table.policies.set(policy, { using: row[7] ?? "", check: row[8] ?? "" });
   }
-  for (const name of tables) {
-    if (!seen.has(name)) policyMissing(name);
+  for (const table of tables) {
+    const found = live.get(table.name);
+    if (found === undefined || found.rowsecurity !== "true") {
+      policyError(table.name, "is missing forced row-level security.", endpoint);
+    }
+    if (found.force !== "true") {
+      policyError(table.name, "does not force row-level security.", endpoint);
+    }
+    const tenant = tenantPolicyExpression(table.column, table.dataType);
+    const unscoped = unscopedPolicyExpression();
+    const tenantPolicy = found.policies.get(`${table.name}_tenant`);
+    const unscopedPolicy = found.policies.get(`${table.name}_unscoped_select`);
+    if (
+      tenantPolicy === undefined ||
+      tenantPolicy.using !== tenant ||
+      tenantPolicy.check !== tenant
+    ) {
+      policyError(
+        table.name,
+        `policy ${table.name}_tenant does not match the tenant predicate.`,
+        endpoint,
+      );
+    }
+    if (
+      unscopedPolicy === undefined ||
+      unscopedPolicy.using !== unscoped ||
+      unscopedPolicy.check !== ""
+    ) {
+      policyError(
+        table.name,
+        `policy ${table.name}_unscoped_select does not match the unscoped predicate.`,
+        endpoint,
+      );
+    }
+    if (found.policies.size !== 2) {
+      policyError(table.name, "has a row-level security policy okm did not emit.", endpoint);
+    }
   }
 }
 
-function policyMissing(table: string): never {
-  throw new OkmError("invalid", `Table ${table} is missing forced row-level security policies.`, {
+function policyError(table: string, detail: string, endpoint: string): never {
+  throw new OkmError("invalid", `Table ${table} ${detail} Endpoint ${endpoint}.`, {
+    table,
     fix: { summary: "Restore the policies okm generate emits for this rls schema." },
   });
 }

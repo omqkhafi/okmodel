@@ -14,6 +14,16 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+### ♻️ Changed
+
+#### runtime
+
+- Inside `tx()`, `app.tenant` is set again when the statement's scope differs from the last one in that transaction. A rolled-back savepoint does not leave the transaction unscoped (D238).
+
+#### docs
+
+- The reporting role is not tenant-safe against its own SQL. It can set `app.unscoped` and read every tenant through the select policy. It still cannot write (D238).
+
 ### 🐛 Fixed
 
 #### contracts
@@ -22,16 +32,19 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### dialects
 
+- `okm check` sees row-level security that was turned off. Introspection omits policies while `relrowsecurity` is false, so the plan enables and forces them again (D238).
 - `rlsTenancy` stores the policy text Postgres prints. A lowercase unreserved column stays bare, so a snake-case `tenant_id` catalog hash does not change. `tenantId`, `TenantId`, and a reserved word are double-quoted. Apply of a default-casing key no longer fails with `column "tenantid" does not exist`, and `okm check` reports no drift (D236).
 - A materialized view no longer keeps the application role's table default privileges. The plan revokes `INSERT`, `UPDATE`, and `DELETE` after `SELECT`. The catalog stays select only (D236).
 - A superuser passes the managed-role `CREATEROLE` preflight when `rolcreaterole` is false (D236).
 
 #### runtime
 
+- The first scoped statement on each endpoint checks the role and the policy expressions. OKM1707 names that endpoint. A policy changed to `using (true)` fails the check, and `isolation()` fails with it (D238).
 - A trailing backslash on the catalog directory is ignored, and a Windows stack frame still records `file.ts:line` (D237).
 
 #### tooling
 
+- A hand-written step that disables row-level security, stops forcing it, drops a policy, widens one with `using (true)` or `with check (true)`, grants `BYPASSRLS`, or changes the owner of a tenant table is OKM1550. `okm migrate check` and apply refuse it unless the step has `-- okm-allow OKM1550: reason` (D238).
 - A path foreign key is planned after the unique it references. Table names no longer decide that order. Drops reverse it (D236).
 - `okm generate` then apply accepts an index on a materialized view. The stored document depends on the view, not on a column, for one column or several, unique or not (D236).
 - `GRANT USAGE ON SCHEMA` that does not land fails with OKM1825. The migration role has to own the schema (`ALTER SCHEMA … OWNER TO`). `okm migrate check` gives that role its scratch schema and replays the grant there (D236).

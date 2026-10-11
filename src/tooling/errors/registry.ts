@@ -491,6 +491,13 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     fix: "Run okm generate.",
   },
   {
+    code: "OKM1550",
+    title: "Row-level security weakened",
+    summary:
+      "A statement disables row-level security, drops or widens a policy, grants BYPASSRLS, or changes the owner of a tenant table.",
+    fix: "Remove the statement, or allow OKM1550 with a reason when the change is reviewed.",
+  },
+  {
     code: "OKM1601",
     title: "Stale typed SQL",
     summary: "A typed SQL signature no longer matches the database.",
@@ -530,7 +537,7 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     code: "OKM1707",
     title: "RLS role",
     summary:
-      "A scoped call under rls ran as a role that owns the tenant tables, is a superuser, or has BYPASSRLS. The reason field says which.",
+      "A scoped call under rls ran as a role that owns the tenant tables, is a superuser, or has BYPASSRLS. The reason field says which. The message names the endpoint.",
     fix: "Connect as a role that is not the table owner, a superuser, or BYPASSRLS.",
   },
   {

@@ -63,6 +63,8 @@ Each statement is linted. The place stays `step N` when the step has one stateme
 
 `ALTER TABLE … ALTER COLUMN … TYPE` is the same type change as `SET DATA TYPE`, with or without `USING`. OKM1524, OKM1527, OKM1533, and OKM1538 see both forms.
 
+OKM1550 flags a statement that weakens `rlsTenancy`: `DISABLE ROW LEVEL SECURITY`, `NO FORCE ROW LEVEL SECURITY`, `DROP POLICY`, `CREATE POLICY` or `ALTER POLICY` with `USING (true)` or `WITH CHECK (true)`, `ALTER ROLE` or `CREATE ROLE` that grants `BYPASSRLS`, and `ALTER TABLE … OWNER TO` when that table has a policy in the catalog. `NOBYPASSRLS` does not match. A line break of `\n`, `\r\n`, or `\r` is the same statement. `-- okm-allow OKM1550: reason` is the only bypass, and the reason must not be empty.
+
 A blank line ends a step. A blank line inside a quote, a dollar quote, or a block comment stays in the step, including a `--` line while that quote is still open.
 
 `okm migrate plan`, `okm migrate apply`, and `okm migrate check` use this linter. Check and apply read the migration files. Plan lints the plan it generates. An error finding is OKM1510 in each command. The planner still writes one statement per step, so a generated migration lints as before.
@@ -116,6 +118,7 @@ OKM1706 and OKM1823 are not rules in this table. A tenant index that does not le
 | OKM1539 | type-preference | warning | `timestamp` without time zone |
 | OKM1540 | type-preference | warning | `varchar(n)` where `text` would do |
 | OKM1542 | data-dependent | error | `insert`, `update`, `delete`, `merge`, `truncate`, or a `with` that writes, outside a backfill step. `DO` and `CALL` too: the body is not analysed |
+| OKM1550 | destructive | error | `DISABLE ROW LEVEL SECURITY`, `NO FORCE ROW LEVEL SECURITY`, `DROP POLICY`, `CREATE` or `ALTER POLICY` with `USING (true)` or `WITH CHECK (true)`, `BYPASSRLS` on a role, or `OWNER TO` on a tenant table |
 | OKM1543 | type-preference | warning | `serial` or a `nextval` default |
 | OKM1544 | type-preference | warning | `json` where `jsonb` is available |
 | OKM1545 | type-preference | warning | Identity that is not generated always |

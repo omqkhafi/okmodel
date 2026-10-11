@@ -60,8 +60,8 @@ export const app = schema({
 
 </Tabs>
 
-`columnTenancy` is one key. `compositeTenancy({ key: ["organizationId", "workspaceId"], type: "uuid" })` isolates on every key together. `via("team.department.organization")` follows up to three relations. `rlsTenancy` keeps the column predicate and adds forced row-level security. A superuser, a `BYPASSRLS` role, or the table owner is refused on the first scoped call.
+`columnTenancy` is one key. `compositeTenancy({ key: ["organizationId", "workspaceId"], type: "uuid" })` isolates on every key together. `via("team.department.organization")` follows up to three relations. `rlsTenancy` keeps the column predicate and adds forced row-level security. A superuser, a `BYPASSRLS` role, or the table owner is refused on the first scoped use of each endpoint, and the error names that endpoint. The same check refuses a policy whose expression is not the one `okm generate` stores.
 
-`roles.reporting` can select and cannot write. A hidden column stays out of that select unless `roles.columns` names it. The migration role has to own the schema before apply, or the usage grant does not land (`ALTER SCHEMA public OWNER TO` that role). `withOwner(table(...), "external")` or `"ignored"` stays out of generated SQL and out of apply. `okm check` ignores both.
+`roles.reporting` can select and cannot write. It is not tenant-safe against its own SQL: under `rlsTenancy` it can set `app.unscoped` itself and read every tenant. A hidden column stays out of that select unless `roles.columns` names it. The migration role has to own the schema before apply, or the usage grant does not land (`ALTER SCHEMA public OWNER TO` that role). `withOwner(table(...), "external")` or `"ignored"` stays out of generated SQL and out of apply. `okm check` ignores both.
 
 `rlsTenancy` stores the policy text Postgres prints back. A lowercase unreserved column stays bare. `tenantId` is quoted. A materialized view index applies with the view, and the application role's extra write privileges on that view are revoked.
