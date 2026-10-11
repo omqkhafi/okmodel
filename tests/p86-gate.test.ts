@@ -110,7 +110,7 @@ test("parse applies every operator and keeps the value out of the SQL", async ()
   const db = await connect(stub(), { schema: app });
   try {
     const sql = await db.items
-      .find({ where: parsed.where as { readonly id: string }, limit: 1 })
+      .find({ where: parsed.where as unknown as { readonly id: string }, limit: 1 })
       .sql();
     expect(sql.text.includes(marker)).toBe(false);
     expect(sql.params.some((param) => JSON.stringify(param).includes(marker))).toBe(true);
@@ -148,7 +148,7 @@ test("hostile JSON through parse fails closed or stays a parameter", async () =>
           return;
         }
         const sql = await db.items
-          .find({ where: parsed.where as { readonly id: string }, limit: 1 })
+          .find({ where: parsed.where as unknown as { readonly id: string }, limit: 1 })
           .sql();
         const raw = JSON.stringify(value);
         if (raw.length > 0 && raw !== "null" && raw !== "{}" && raw !== "[]") {

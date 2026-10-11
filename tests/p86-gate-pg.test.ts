@@ -181,7 +181,9 @@ postgresTest(
         (step) => step.sql,
       );
       expect(drift.some((step) => /drop table|drop column|alter table/i.test(step))).toBe(false);
-      expect(await sql<{ name: string }[]>`select name from people`).toEqual([{ name: "Ada" }]);
+      expect(
+        (await sql<{ name: string }[]>`select name from people`).map((row) => row.name),
+      ).toEqual(["Ada"]);
 
       await sql.unsafe(`create table notes (id text primary key, body text, extra text)`);
       const notes = withOwner(
@@ -199,7 +201,7 @@ postgresTest(
         name: "external",
       }).steps.map((step) => step.sql);
       expect(externalPlan.some((step) => step.toLowerCase().includes("notes"))).toBe(false);
-      expect(await sql<{ extra: string | null }[]>`select extra from notes`).toEqual([]);
+      expect((await sql<{ extra: string | null }[]>`select extra from notes`).length).toBe(0);
     } finally {
       await sql.end({ timeout: 5 });
       await database.close();
