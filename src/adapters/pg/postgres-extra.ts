@@ -54,10 +54,12 @@ export async function checkout(pool: HeldPool): Promise<DriverConnection> {
     pool.named,
   );
   let released = false;
-  // A reserved postgres.js connection that lost its socket crashes on the next write. Once a
-  // statement fails because the connection is gone, nothing more is sent to it.
+  // postgres.js queues a small write with setImmediate. nextWrite then calls
+  // socket.write. After closed() sets the socket to null, that timer throws
+  // outside the query promise. Once this connection is lost, nothing more is
+  // sent on it, so that timer is never scheduled and setImmediate stays the
+  // process's own function.
   let lost = false;
-  patchSocketWrite();
   const guard = <T>(run: () => Promise<T>): Promise<T> =>
     lost
       ? rejectClosed("lost")
@@ -190,31 +192,6 @@ async function resetConnection(sql: Sql, depth: number): Promise<void> {
     await sql.unsafe(RESET_ALL);
     await sql.unsafe(UNLOCK);
   }
-}
-
-let socketPatched = false;
-
-/**
- * Swallows a `TypeError` from the timer postgres.js uses to write.
- *
- * A backend that died inside `tx()` schedules that write after the socket is
- * null. The timer is off the query promise, so it would be an uncaught
- * exception. The check is the error class: the message does not fit the
- * adapter's byte ceiling.
- */
-function patchSocketWrite(): void {
-  if (socketPatched) return;
-  socketPatched = true;
-  const schedule = globalThis.setImmediate;
-  globalThis.setImmediate = ((fn: () => void) =>
-    schedule(() => {
-      try {
-        fn();
-      } catch (error) {
-        if (error instanceof TypeError) return;
-        throw error;
-      }
-    })) as typeof setImmediate;
 }
 
 function asParams(params: readonly WireValue[] | undefined): string[] {

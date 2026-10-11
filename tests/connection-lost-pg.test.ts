@@ -1,10 +1,15 @@
 /**
  * A backend that dies inside `tx()` must not crash the process.
  *
- * postgres.js writes the next statement with `setImmediate`. After
- * `pg_terminate_backend` that write throws on a null socket, off the promise.
- * The statement and the transaction reject, and the next call still runs.
+ * postgres.js queues a small write with `setImmediate`. After the socket is
+ * null, `nextWrite` throws off the query promise. A lost reserved connection
+ * is not written again, so that timer is never scheduled. `setImmediate`
+ * stays the function the process installed.
  */
+
+import { existsSync, mkdtempSync, readdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { expect } from "bun:test";
 
@@ -66,8 +71,16 @@ for (const driver of ["postgresjs", "pg", "bun"] as const) {
           `create constraint trigger okm_delay after insert on notes deferrable initially deferred for each row execute function okm_delay()`,
         );
         const db = connectors[driver](database.url);
+        const schedule = globalThis.setImmediate;
         try {
+          if (driver === "postgresjs") {
+            await db.tx(async (tx) => {
+              await tx.notes.find({ limit: 1 });
+            });
+            expect(globalThis.setImmediate).toBe(schedule);
+          }
           await expectLost(db, () => killIdle(admin), "unavailable");
+          if (driver === "postgresjs") expect(globalThis.setImmediate).toBe(schedule);
           await db.notes.find({ limit: 1 });
 
           await admin.unsafe("begin");
@@ -93,6 +106,7 @@ for (const driver of ["postgresjs", "pg", "bun"] as const) {
         } finally {
           await db.close();
         }
+        if (driver === "postgresjs") expect(globalThis.setImmediate).toBe(schedule);
         await Bun.sleep(50);
         expect(crashes).toEqual([]);
       } finally {
@@ -106,6 +120,41 @@ for (const driver of ["postgresjs", "pg", "bun"] as const) {
     90_000,
   );
 }
+
+postgresTest(
+  gate,
+  "postgres.js does not swallow a TypeError from the application's setImmediate",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const admin = openPostgres(database.url);
+    try {
+      await admin.unsafe("create table notes (id int primary key, title text not null)");
+      expectTimer(Bun.spawnSync(["bun", "tests/connection-lost-timer.worker.ts", database.url]));
+      const node = node24();
+      if (node !== undefined) {
+        const dir = mkdtempSync(join(tmpdir(), "okm-timer-"));
+        const outfile = join(dir, "timer.mjs");
+        const built = Bun.spawnSync(
+          [
+            "bun",
+            "build",
+            "tests/connection-lost-timer.worker.ts",
+            "--target",
+            "node",
+            "--outfile",
+            outfile,
+          ],
+          { cwd: process.cwd() },
+        );
+        expect(built.exitCode).toBe(0);
+        expectTimer(Bun.spawnSync([node, outfile, database.url]));
+      }
+    } finally {
+      await admin.end({ timeout: 5 });
+      await database.close();
+    }
+  },
+);
 
 async function expectLost(db: Db, kill: () => Promise<void>, kind: string): Promise<void> {
   const error = await rejection(
@@ -173,4 +222,31 @@ function kindOf(error: unknown): string | undefined {
 
 function codeOf(error: unknown): string | undefined {
   return error instanceof OkmError ? error.code : undefined;
+}
+
+/** A v24 Node binary, when this machine has one. CI without it still runs the Bun child. */
+function node24(): string | undefined {
+  const fromEnv = process.env.OKM_NODE24;
+  if (fromEnv !== undefined && fromEnv !== "") return fromEnv;
+  const home = process.env.HOME;
+  if (home === undefined) return undefined;
+  const root = join(home, ".nvm/versions/node");
+  if (!existsSync(root)) return undefined;
+  const latest = readdirSync(root)
+    .filter((name) => name.startsWith("v24."))
+    .sort()
+    .at(-1);
+  if (latest === undefined) return undefined;
+  const bin = join(root, latest, "bin", "node");
+  return existsSync(bin) ? bin : undefined;
+}
+
+function expectTimer(proc: ReturnType<typeof Bun.spawnSync>): void {
+  const out = proc.stdout?.toString() ?? "";
+  const err = proc.stderr?.toString() ?? "";
+  if (proc.exitCode !== 0) {
+    throw new Error(`timer child ${String(proc.exitCode)}\n${out}\n${err}`);
+  }
+  expect(out).toContain("schedule-same");
+  expect(out).toContain("uncaught");
 }

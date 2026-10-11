@@ -44,12 +44,14 @@ export async function checkout(held: HeldPool): Promise<DriverConnection> {
   let lost = false;
   const guard = <T>(run: () => Promise<T>): Promise<T> =>
     lost
-      ? rejectClosed("The connection was lost.")
+      ? rejectClosed("CONNECTION_CLOSED")
       : run().catch((error: unknown) => {
           if (isConnectionLost(error)) lost = true;
-          // Bun.sql says "Connection closed". The shared mapper already treats
-          // CONNECTION_CLOSED as unavailable. Rewriting here stays out of contracts.
-          if (error instanceof Error && error.message === "Connection closed") {
+          // Bun.sql says "Connection closed", or, after the handle is already
+          // gone, "connection must be a PostgresSQLConnection". The shared
+          // mapper treats CONNECTION_CLOSED as unavailable.
+          if (error instanceof Error && bunClosed(error.message)) {
+            lost = true;
             throw new DriverError("CONNECTION_CLOSED", { cause: error });
           }
           throw error;
@@ -85,6 +87,12 @@ export async function checkout(held: HeldPool): Promise<DriverConnection> {
       }
     },
   };
+}
+
+function bunClosed(message: string): boolean {
+  return (
+    message === "Connection closed" || message === "connection must be a PostgresSQLConnection"
+  );
 }
 
 async function reset(session: WireSession, sql: SQL): Promise<void> {
