@@ -160,7 +160,7 @@ M2 Depth ships as four trains, in this order (D217). Access is first: tenancy an
 
 Startup room after 0.5.1 (D216): the featureless app is 90,851 / 30,157 against a gate of 90,900 / 30,170 (49 minified bytes and 13 gzip left). The connect entries have about 20 gzip left (postgres.js 22, PGlite 23, node-postgres 22, Bun.sql 28). Every M2 feature loads lazily, or the step stops with the numbers first and does not move a gate (the D201 rule, for all of M2). P80 is the report that says which 0.6 features can be lazy. Ali approves that proposal before P81.
 
-Ranges reserved, prompts written when reached except for 0.6: 0.6 is P80–P89, 0.7 is P90–P99, 0.8 is P100–P109, 0.9 is P110–P119. Each train ends with a gate step and a release commit, like P66. P88 shipped as generate and apply matching what Postgres stores (D236). P88W is the Windows read fix (D237). P89 is not scheduled.
+Ranges reserved, prompts written when reached except for 0.6: 0.6 is P80–P89, 0.7 is P90–P99, 0.8 is P100–P109, 0.9 is P110–P119. Each train ends with a gate step and a release commit, like P66. P88 shipped as generate and apply matching what Postgres stores (D236). P88W is the Windows read fix (D237). P89 and P89B shipped the remaining QA fixes (D238, D239). P86R re-cuts 0.6.0 because that version was never tagged or published (D240).
 
 #### Train 0.6 Access
 
@@ -175,12 +175,13 @@ Ranges reserved, prompts written when reached except for 0.6: 0.6 is P80–P89, 
 | P86 | `p86-gate-0.6` | Gate and release 0.6, like P66. Hygiene before `bun run bump release` (D115). No new API in the gate step. The app gate stays at 90,900 / 30,170 (D235) |
 | P87 | `p87-constraint-names` | Constraint and index names from SQL names (QA-L4, §5.7, §9.2, D234). Unique and foreign-key names use every SQL column. The stored name key stays. `okm migrate` renames. No gate move |
 | P88W | `p88w-crlf-safety` | CRLF and lone-CR migration files, a zero-step guard, catalog hash over text with `\r` removed, UTF-8 BOM, resolved config paths, and Node `>=22.18` (D237). No new error kind. No gate move |
+| P86R | `p86r-release-0.6.0` | Re-cut 0.6.0 after the QA fixes. `bun run bump --set 0.6.0` folds Unreleased into the existing v0.6.0 section. The gates stay (D240) |
 
 #### Later trains (prompts written when reached)
 
 | Train | Steps | Scope |
 |---|---|---|
-| 0.7 Query depth | P90–P99 | Tools 2, 4, 5, and 7 to 15 (§13), `versioned` and `sortable` (§8), `morph` (§6.2), and `.stream()` (§10). §5.3 and §11 already specify conflict modes, the per-row update list, atomic operators, and `lock: "skip"`, and `.stream()` already has a lazy chunk. The prompt audits what is left before it builds. Milestone [0.7](https://github.com/omqkhafi/okmodel/milestone/9). Ends with a gate and a release, like P66 |
+| 0.7 Query depth | P90–P99 | Tools 2, 4, 5, and 7 to 15 (§13), `versioned` and `sortable` (§8), `morph` (§6.2), and `.stream()` (§10). §5.3 and §11 already specify conflict modes, the per-row update list, atomic operators, and `lock: "skip"`, and `.stream()` already has a lazy chunk. The prompt audits what is left before it builds. Milestone [0.7](https://github.com/omqkhafi/okmodel/milestone/9). Ends with a gate and a release, like P66. Backlog from the 0.6 re-cut (D240): PGlite gzip headroom (move the OKM1120 timeout message to the lazy registry), featureless app headroom, a dedicated missing-table reason, a Windows CI job, and an OKE Windows audit |
 | 0.8 SQL lane | P100–P109 | The SQL builder lane (the M2 row; rule 15 names composed `sql` fragments, and there is no builder section), typed raw SQL with an explicit class (§16, D205), `explain()` and the dev inspector with routing reasons (§5.4, §15.1, D202), `okmodel/otel` (§5.5, D80), the Neon adapter (§4; `okmodel/pg/pg` and `okmodel/pg/bun` shipped in 0.2, D156), `okm driver test` (§4.2, §20), and typed `fn` calls and builder views if the budget allows (§5.7, D190). Milestone [0.8](https://github.com/omqkhafi/okmodel/milestone/10). Ends with a gate and a release, like P66 |
 | 0.9 Tooling | P110–P119 | The full linter and the safe rewrites still missing after 0.4 (§19.1; OKM1538 has no safe form), `okm pull` (§19.4) including plpgsql dependency verification on a scratch database (§5.7; the M2 row, not repeated in the train brief), several catalogs, `external()`, and `okm catalog export` (§3.6), extension packs and `okm ext` (§4.1; `list` and `check` shipped in 0.3), the GitHub Action (§19.8, D80), the programmatic schema API (D26), `okm import drizzle` (§19.4), and the M2 gate. Milestone [0.9](https://github.com/omqkhafi/okmodel/milestone/11). Ends with a gate and a release, like P66 |
 
