@@ -8,18 +8,24 @@
  * A table is tenant when its predicate says so (D199). Composite tenancy changes
  * one key at a time. A path table is checked through a parent that belongs to
  * tenant B.
+ * Tenant views and materialized views are read the same way. The rows are
+ * inserted into the underlying tables, never into the view. A global view is
+ * skipped and listed with its `global("reason")`.
  */
 
 import { OkmError } from "../../contracts/error.js";
 import type { RelationModel } from "../../dialects/pg/model.js";
+import { viewMentions } from "../../dialects/pg/view/client.js";
 import { forgetCached, insertRow, type FactoryHost } from "./factories.js";
-import type { TableFacts } from "./facts.js";
+import { readViews, type TableFacts, type ViewFacts } from "./facts.js";
 
-/** What {@link isolation} checked, and the global tables it skipped. */
+/** What {@link isolation} checked, and the global objects it skipped. */
 export type IsolationReport = {
   /** Tenant tables whose queries stayed inside tenant A. */
   readonly checked: readonly string[];
-  /** Global tables, with the reason from `global("reason")`. */
+  /** Tenant views and materialized views whose reads stayed inside tenant A. */
+  readonly views: readonly string[];
+  /** Global tables and views, with the reason from `global("reason")`. */
   readonly skipped: readonly { readonly table: string; readonly reason: string }[];
 };
 
@@ -30,7 +36,7 @@ export type IsolationReport = {
  * already inserted is not reused as tenant B's row.
  *
  * @param host - The open harness
- * @returns The tables that were checked and the global tables that were not
+ * @returns The tables and views that were checked, and the global objects that were not
  */
 export async function isolation(host: FactoryHost): Promise<IsolationReport> {
   const saved = host.cache;
@@ -65,7 +71,8 @@ export async function isolation(host: FactoryHost): Promise<IsolationReport> {
       }
       checked.push(facts.name);
     }
-    return { checked, skipped };
+    const views = await checkViews(host, tenantA, tenantB, skipped);
+    return { checked, skipped, views };
   } finally {
     host.cache = saved;
   }
@@ -337,6 +344,261 @@ async function checkPath(
       forgetCached(host, item.table, tenantB);
     }
   }
+}
+
+const SCAN_LIMIT = 100;
+
+async function checkViews(
+  host: FactoryHost,
+  tenantA: string,
+  tenantB: string,
+  skipped: { table: string; reason: string }[],
+): Promise<string[]> {
+  const checked: string[] = [];
+  const keys = tenantKeys(host);
+  for (const view of readViews(host.schema)) {
+    if (view.globalReason !== undefined) {
+      skipped.push({ table: view.name, reason: view.globalReason });
+      continue;
+    }
+    if (!view.tenant) continue;
+    await checkView(host, view, keys, tenantA, tenantB);
+    checked.push(view.name);
+  }
+  return checked;
+}
+
+async function checkView(
+  host: FactoryHost,
+  view: ViewFacts,
+  keys: readonly string[],
+  tenantA: string,
+  tenantB: string,
+): Promise<void> {
+  const sources = orderSources(host, sourceNames(host, view.query));
+  if (sources.length === 0) {
+    throw new OkmError("invalid", `View ${view.name} names no table isolation can seed.`, {
+      fieldReason: "no-source",
+      fix: { summary: 'Point the view at a table in this schema, or mark it global("reason").' },
+    });
+  }
+  for (const name of sources) {
+    if (host.definitions.size > 0 && !host.definitions.has(name)) {
+      throw new OkmError("invalid", `Factory ${name} is missing.`, {
+        fix: { summary: `Add ${name} to factories().` },
+      });
+    }
+  }
+  const before = new Map(host.cache);
+  const seeded: Record<string, unknown>[] = [];
+  try {
+    for (const tenant of [tenantA, tenantB]) {
+      for (const name of sources) {
+        const facts = requireFacts(host, name);
+        const key = keys[0];
+        const overrides = markerFor(view, facts, keys, tenant);
+        if (key !== undefined) overrides[key] = tenant;
+        const row = await insertRow(host, name, overrides, undefined, tenant);
+        if (tenant === tenantB) seeded.push(row);
+      }
+    }
+    const handle = viewHandle(openTenant(host, tenantA), view.name);
+    if (view.kind === "materializedView") {
+      if (handle.refresh === undefined) {
+        throw new OkmError("invalid", `View ${view.name} has no refresh().`, {
+          fieldReason: "no-refresh",
+          fix: { summary: "A materialized view refreshes before the isolation read." },
+        });
+      }
+      await handle.refresh();
+    }
+    await readView(view, handle, keys, tenantB, seeded);
+  } finally {
+    await dropNewRows(host, before, keys);
+  }
+}
+
+function sourceNames(host: FactoryHost, query: string): string[] {
+  const names: string[] = [];
+  for (const facts of host.facts.values()) {
+    if (viewMentions(query, facts.sql) || viewMentions(query, facts.name)) names.push(facts.name);
+  }
+  return names;
+}
+
+function orderSources(host: FactoryHost, names: readonly string[]): string[] {
+  const wanted = new Set(names);
+  const ordered: string[] = [];
+  const pending = [...names];
+  const guard = pending.length * pending.length + 1;
+  let spins = 0;
+  while (pending.length > 0 && spins < guard) {
+    spins += 1;
+    const name = pending.shift();
+    if (name === undefined) break;
+    const facts = host.facts.get(name);
+    const waiting = facts?.foreignKeys.some((key) => {
+      let parent: string | undefined;
+      for (const item of host.facts.values()) {
+        if (item.sql === key.target) parent = item.name;
+      }
+      return parent !== undefined && wanted.has(parent) && !ordered.includes(parent);
+    });
+    if (waiting) pending.push(name);
+    else ordered.push(name);
+  }
+  return ordered.length === names.length ? ordered : [...names];
+}
+
+function markerFor(
+  view: ViewFacts,
+  facts: TableFacts,
+  keys: readonly string[],
+  tenant: string,
+): Record<string, unknown> {
+  const value = `isolation-${tenant}`;
+  const out: Record<string, unknown> = {};
+  for (const column of view.columns) {
+    if (column.guarded || keys.includes(column.field)) continue;
+    if (column.dataType.toLowerCase() !== "text") continue;
+    const source = facts.columns.find((item) => item.field === column.field);
+    if (source === undefined || !source.writable || source.guarded) continue;
+    if (keys.includes(source.field)) continue;
+    if (facts.foreignKeys.some((key) => key.columns.includes(source.sql))) continue;
+    out[source.field] = value;
+  }
+  return out;
+}
+
+async function readView(
+  view: ViewFacts,
+  handle: ViewQuery,
+  keys: readonly string[],
+  tenantB: string,
+  seeded: readonly Record<string, unknown>[],
+): Promise<void> {
+  const exposed = view.columns.filter((column) => keys.includes(column.field));
+  const where = markerWhere(view, keys, seeded);
+  if (where === undefined && exposed.length === 0) {
+    throw new OkmError(
+      "invalid",
+      `View ${view.name} exposes no tenant key and no text column isolation can match.`,
+      {
+        fieldReason: "no-marker",
+        fix: { summary: "Expose the tenant key, or a text column isolation can match." },
+      },
+    );
+  }
+  if (where !== undefined) await readFiltered(view.name, handle, where);
+  if (exposed.length === 0) return;
+  const rows = asRows(await handle.find({ limit: SCAN_LIMIT }));
+  const needle = tenantB.toLowerCase();
+  for (const row of rows) {
+    for (const column of exposed) {
+      const value = row[column.field];
+      if (typeof value === "string" && value.toLowerCase() === needle) leak(view.name, "find", row);
+    }
+  }
+}
+
+function markerWhere(
+  view: ViewFacts,
+  keys: readonly string[],
+  rows: readonly Record<string, unknown>[],
+): Record<string, unknown> | undefined {
+  for (const column of view.columns) {
+    if (column.guarded || keys.includes(column.field)) continue;
+    if (column.dataType.toLowerCase() !== "text") continue;
+    for (const row of rows) {
+      const value = row[column.field];
+      if (typeof value === "string") return { [column.field]: value };
+    }
+  }
+  return undefined;
+}
+
+async function readFiltered(
+  name: string,
+  handle: ViewQuery,
+  where: Record<string, unknown>,
+): Promise<void> {
+  const query = handle.find({ where, limit: 1 });
+  const rows = asRows(await query);
+  if (rows.length > 0) leak(name, "find", rows[0]);
+  const streamed = handle.find({ where, limit: 1 });
+  if (typeof streamed.stream === "function") {
+    try {
+      for await (const item of streamed.stream()) {
+        if (isRow(item)) leak(name, "stream", item);
+      }
+    } catch (error) {
+      if (!(error instanceof OkmError) || error.code !== "OKM1111") throw error;
+    }
+  }
+  const one: unknown = await handle.one({ where });
+  if (isRow(one)) leak(name, "one", one);
+  if (asCount(await handle.count({ where })) > 0) leak(name, "count", { count: 1 });
+  if ((await handle.exists({ where })) === true) leak(name, "exists", { exists: true });
+}
+
+async function dropNewRows(
+  host: FactoryHost,
+  before: ReadonlyMap<string, Record<string, unknown>>,
+  keys: readonly string[],
+): Promise<void> {
+  const added: { key: string; row: Record<string, unknown> }[] = [];
+  for (const [key, row] of host.cache) {
+    if (!before.has(key)) added.push({ key, row });
+  }
+  for (let index = added.length - 1; index >= 0; index -= 1) {
+    const item = added[index];
+    if (item === undefined) continue;
+    const colon = item.key.indexOf(":");
+    const scope = item.key.slice(0, colon);
+    const table = item.key.slice(colon + 1);
+    const facts = host.facts.get(table);
+    const tenant = scope === "*" ? undefined : scope;
+    if (facts !== undefined) {
+      try {
+        const where = primaryWhere(facts, item.row, keys);
+        const client = tenant === undefined ? host.db : openTenant(host, tenant);
+        await tableHandle(client, table).delete({ where });
+      } catch {
+        // The row may already be gone.
+      }
+    }
+    forgetCached(host, table, tenant);
+  }
+}
+
+type ViewQuery = {
+  find(options: object): Streamed;
+  one(options: object): Promise<unknown>;
+  count(options?: object): Promise<unknown>;
+  exists(options?: object): Promise<unknown>;
+  refresh?(): Promise<void>;
+};
+
+function viewHandle(client: object, name: string): ViewQuery {
+  const views = "views" in client ? client.views : undefined;
+  if (typeof views !== "object" || views === null) {
+    throw new OkmError("invalid", "The client has no views.", {
+      fix: { summary: "Declare the view on schema({ views }) and connect with that schema." },
+    });
+  }
+  const handle = (views as Record<string, unknown>)[name];
+  if (!isViewQuery(handle)) {
+    throw new OkmError("invalid", `View ${name} is not on this client.`, {
+      fix: { summary: "A tenant view is read through for().views." },
+    });
+  }
+  return handle;
+}
+
+function isViewQuery(value: unknown): value is ViewQuery {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  return typeof record.find === "function" && typeof record.one === "function";
 }
 
 function requireFacts(host: FactoryHost, name: string): TableFacts {

@@ -323,6 +323,25 @@ test("request text never becomes SQL", async () => {
       expect(search.text.includes("pg_catalog.simple")).toBe(false);
       expect(search.params[0]).toBe("pg_catalog.simple");
       expect(search.params[1]).toBe(marker);
+      const parsed = await docs
+        .filters({
+          allow: {
+            title: ["not"],
+            tags: ["overlaps", "containedBy"],
+            meta: ["hasKey", "hasAnyKey"],
+          },
+        })
+        .parse({
+          title: { not: marker },
+          tags: { overlaps: [marker], containedBy: [marker] },
+          meta: { hasKey: marker, hasAnyKey: [marker] },
+        });
+      const applied = await described(db, parsed.where);
+      expect(applied.text.includes(marker)).toBe(false);
+      expect(applied.params.some((param) => param?.includes(marker))).toBe(true);
+      const forged: unknown = JSON.parse(JSON.stringify(parsed.where));
+      const forgedCode = await codeOf(() => described(db, forged));
+      expect(forgedCode === "OKM1120" || forgedCode === "OKM1121").toBe(true);
     }),
     { numRuns: 30 },
   );

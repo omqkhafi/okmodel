@@ -7,9 +7,10 @@
 import { expect, test } from "bun:test";
 
 import { catalog } from "../src/contracts/catalog/build.js";
-import { startupCatalog, startupHash } from "../src/contracts/catalog/document.js";
+import { catalogHash, startupCatalog, startupHash } from "../src/contracts/catalog/document.js";
 import { OkmError } from "../src/contracts/error.js";
 import { schema, table, t, withOwner } from "../src/dialects/pg/index.js";
+import { rlsTenancy } from "../src/runtime/tenancy/index.js";
 import { stampOwnership } from "../src/dialects/pg/owner.js";
 import { RoleDeclarationError, attachRoles } from "../src/dialects/pg/role/index.js";
 import type { TableExposure } from "../src/dialects/pg/role/index.js";
@@ -194,4 +195,24 @@ test("ignored and external tables are not created, altered, or dropped", () => {
     name: "adopt",
   });
   expect(adopted.steps).toEqual([]);
+});
+
+test("an external table under rlsTenancy keeps its policies and is not created", () => {
+  const notes = table("notes", { id: t.uuid().primaryKey(), title: t.text() });
+  const marked = withOwner(notes, "external");
+  const tenancy = rlsTenancy({ key: "tenantId", type: "uuid" });
+  const built = schema({ tenancy, tables: [marked] });
+  const plain = schema({ tenancy, tables: [notes] });
+  expect(catalogHash(built.catalog)).toBe(catalogHash(plain.catalog));
+  expect(built.catalog.objects.some((object) => object.kind === "policy")).toBe(true);
+  expect(built.catalog.objects.find((object) => object.kind === "table")?.owner).toBe("managed");
+  const stamped = stampOwnership(built.catalog, new Map([["notes", "external"]]));
+  const tableObject = stamped.objects.find((object) => object.kind === "table");
+  expect(tableObject?.owner).toBe("external");
+  const policies = stamped.objects.filter((object) => object.kind === "policy");
+  expect(policies.length).toBeGreaterThan(0);
+  expect(policies.every((object) => object.owner === "external")).toBe(true);
+  expect(
+    planMigration({ before: catalog([]), after: stamped, name: "external-rls" }).steps,
+  ).toEqual([]);
 });

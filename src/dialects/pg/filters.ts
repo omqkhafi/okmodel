@@ -36,7 +36,7 @@ export function openFilters(
   }
   return {
     parse(query: unknown): Promise<ParsedFilters> {
-      return import("./filter-parse.js").then((mod) => mod.parseQuery(allow, sort, query));
+      return import("./filter-parse.js").then((mod) => mod.parseQuery(allow, sort, query, nested));
     },
   };
 }
@@ -45,8 +45,9 @@ function deny(hiddenFields: ReadonlySet<string>, table: string, field: string): 
   if (!hiddenFields.has(`${table}.${field}`)) return;
   throw new OkmError("OKM1123", `Field ${table}.${field} is hidden.`, {
     fix: {
+      // 93 characters. A shorter sentence moves the featureless-app gzip (D233).
       summary:
-        "Remove the hidden field from the allowlist. Hidden fields stay out of caller filters and sorts.",
+        "Remove this hidden field from the allowlist. Hidden fields stay out of caller filter or sort.",
     },
   });
 }

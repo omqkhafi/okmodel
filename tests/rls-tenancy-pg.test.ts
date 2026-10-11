@@ -274,6 +274,7 @@ postgresTest(
         try {
           const report = await harness.isolation();
           expect(report.checked).toContain("notes");
+          expect(report.views).toContain("openNotes");
           expect(report.skipped.map((item) => item.table)).toContain("countries");
         } finally {
           await harness.close();

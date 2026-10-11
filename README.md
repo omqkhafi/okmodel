@@ -961,7 +961,7 @@ update "public"."notes" set "title" = 'noted' where "title" = 'hello' and ("id" 
 
 ### Testing
 
-`okmodel/testing` opens a real pool. `factories` insert rows, `expectQueries` counts statements, and `isolation()` checks that tenant A cannot see the row it inserted for tenant B. Each call uses a new pair of tenant ids, deletes what it inserted, and names a factory that is missing. `okm seed <file>` calls the file's default export with that harness. The target must already be migrated. A protected target is refused unless `--allow-protected`.
+`okmodel/testing` opens a real pool. `factories` insert rows, `expectQueries` counts statements, and `isolation()` checks that tenant A cannot see the row it inserted for tenant B, including through a tenant view or materialized view. Each call uses a new pair of tenant ids, deletes what it inserted, and names a factory that is missing. A global table or view is skipped and listed. `okm seed <file>` calls the file's default export with that harness. The target must already be migrated. A protected target is refused unless `--allow-protected`.
 
 `factory.ts`:
 

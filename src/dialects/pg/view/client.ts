@@ -12,6 +12,37 @@ import { snakeCase, type AnyTable } from "../table.js";
 import { decodeText, encodeText } from "../text.js";
 import { decodeUuid, encodeUuid } from "../keys.js";
 
+const globalViews = new WeakMap<object, string>();
+
+/**
+ * Reason from `global("reason")` on a view, when the view opted out.
+ *
+ * The reason is not a catalog field, so the catalog hash does not change.
+ *
+ * @param model - The view's query model
+ * @returns The reason, or `undefined` when the view is not global
+ */
+export function viewGlobalReason(model: object): string | undefined {
+  return globalViews.get(model);
+}
+
+/**
+ * Whether `query` names `name` as an identifier.
+ *
+ * @param query - Author SQL
+ * @param name - Table name, SQL or client
+ * @returns Whether the text mentions that name
+ */
+export function viewMentions(query: string, name: string): boolean {
+  let pattern = '(^|[^A-Za-z0-9_])"?';
+  for (const char of name) {
+    if ("\\^$[]().*+?|{}".includes(char)) pattern += "\\";
+    pattern += char;
+  }
+  pattern += '"?(?![A-Za-z0-9_])';
+  return new RegExp(pattern).test(query);
+}
+
 /** What `schema()` passes when it binds a view. */
 export type ViewInstall = (
   model: { [name: string]: TableModel },
@@ -67,7 +98,7 @@ export function viewClient(
           scoped.add(name);
         }
       }
-      model[field] = {
+      const built: TableModel = {
         name: field,
         sql: name,
         primary: [],
@@ -75,6 +106,8 @@ export function viewClient(
         columns: columnModels(columns, scope),
         relations: [],
       };
+      if (marked !== undefined) globalViews.set(built, marked);
+      model[field] = built;
     },
     hook(target, ctx) {
       if (ctx.table === field && ctx.session !== undefined) {
@@ -183,13 +216,13 @@ function readsTenant(
   scoped: ReadonlySet<string>,
 ): boolean {
   for (const name of scoped) {
-    if (mentions(query, name)) return true;
+    if (viewMentions(query, name)) return true;
   }
   for (const table of tables) {
     const mark = (table.options as { readonly tenancy?: unknown } | undefined)?.tenancy;
     if (isGlobalMark(mark)) continue;
     const sql = casing === "snake" ? snakeCase(table.name) : table.name;
-    if (mentions(query, sql) || mentions(query, table.name)) return true;
+    if (viewMentions(query, sql) || viewMentions(query, table.name)) return true;
   }
   return false;
 }
@@ -233,16 +266,6 @@ function camelCase(name: string): string {
     upper = false;
   }
   return out;
-}
-
-function mentions(query: string, name: string): boolean {
-  let pattern = '(^|[^A-Za-z0-9_])"?';
-  for (const char of name) {
-    if ("\\^$[]().*+?|{}".includes(char)) pattern += "\\";
-    pattern += char;
-  }
-  pattern += '"?(?![A-Za-z0-9_])';
-  return new RegExp(pattern).test(query);
 }
 
 function textValue(value: unknown): string {

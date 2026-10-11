@@ -84,7 +84,7 @@ export type Testing<S extends TestingSchema = TestingSchema> = {
   /**
    * Runs the cross-tenant check.
    *
-   * @returns Checked tenant tables and skipped global tables
+   * @returns Checked tenant tables and views, and skipped global objects
    */
   isolation(): Promise<IsolationReport>;
   /** Closes the client and the pool. */

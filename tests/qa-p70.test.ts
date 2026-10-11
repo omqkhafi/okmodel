@@ -79,7 +79,7 @@ test("QA-M9: prototype keys are OKM1123 and parse applies the allowed operators"
     expect(error).not.toBeInstanceOf(TypeError);
   }
   const refused = await tasks
-    .filters({ allow: { title: ["path"] } })
+    .filters({ allow: { title: ["path" as never] } })
     .parse({})
     .then(
       () => undefined,

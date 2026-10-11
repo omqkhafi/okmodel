@@ -9,7 +9,7 @@ import { expect, test } from "bun:test";
 import { OkmError } from "../src/contracts/error.js";
 import { open as openPglite } from "../src/adapters/pg/pglite.js";
 import { boolean, id, integer, many, schema, table, text, uuid } from "../src/dialects/pg/index.js";
-import { view } from "../src/dialects/pg/view/index.js";
+import { materializedView, view } from "../src/dialects/pg/view/index.js";
 import { columnTenancy, global } from "../src/runtime/tenancy/index.js";
 import { tenantProbe } from "../src/tooling/testing/facts.js";
 import { testing } from "../src/tooling/testing/index.js";
@@ -133,7 +133,7 @@ test("isolation passes on the fixture schemas and fails when the predicate is dr
   }
 }, 30_000);
 
-test("isolation checks the tables of a schema with a tenant view and leaves the view out", async () => {
+test("isolation reads a tenant view and a materialized view, and skips a global view", async () => {
   const withView = (tenancy: ReturnType<typeof columnTenancy>) =>
     schema({
       casing: "snake",
@@ -147,6 +147,18 @@ test("isolation checks the tables of a schema with a tenant view and leaves the 
           ],
           query: " SELECT workspace_id,\n    name\n   FROM projects;",
         }),
+        materializedView("project_directory", {
+          columns: [
+            { name: "workspace_id", type: "uuid" },
+            { name: "name", type: "text" },
+          ],
+          query: "select workspace_id, name from projects",
+        }),
+        view("shared_titles", {
+          columns: [{ name: "name", type: "text" }],
+          query: "select name from projects",
+          tenancy: global("shared titles"),
+        }),
       ],
     });
   const harness = await testing(withView(columnTenancy({ key: "workspaceId", type: "uuid" })), {
@@ -155,7 +167,8 @@ test("isolation checks the tables of a schema with a tenant view and leaves the 
   try {
     const report = await harness.isolation();
     expect([...report.checked]).toEqual(["projects"]);
-    expect(report.skipped).toEqual([]);
+    expect([...report.views]).toEqual(["projectNames", "projectDirectory"]);
+    expect(report.skipped).toEqual([{ table: "sharedTitles", reason: "shared titles" }]);
   } finally {
     await harness.close();
   }
@@ -174,6 +187,37 @@ test("isolation checks the tables of a schema with a tenant view and leaves the 
     );
   } finally {
     await leaking.close();
+  }
+
+  const real = columnTenancy({ key: "workspaceId", type: "uuid" });
+  const viewLeak = {
+    ...real,
+    predicate(input: Parameters<typeof real.predicate>[0]): boolean {
+      if (
+        input.scope !== undefined &&
+        "value" in input.scope &&
+        input.scope.value === tenantProbe
+      ) {
+        return real.predicate(input);
+      }
+      if (input.table === "projectNames") return false;
+      return real.predicate(input);
+    },
+  };
+  const viewsOnly = await testing(withView(viewLeak), { driver: openPglite() });
+  try {
+    let failure: unknown;
+    try {
+      await viewsOnly.isolation();
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toBeInstanceOf(OkmError);
+    expect(failure instanceof OkmError ? failure.message : "").toContain(
+      "Isolation leak on projectNames.find",
+    );
+  } finally {
+    await viewsOnly.close();
   }
 }, 30_000);
 

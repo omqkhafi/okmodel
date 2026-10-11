@@ -169,7 +169,8 @@ export type Table<
    * Allowlisted client filters.
    *
    * A hidden field in `allow`, `sort`, or `relations` throws OKM1123 here.
-   * `parse` loads the parser on first use.
+   * `parse` loads the parser on first use. An operator outside
+   * {@link FilterOperator} is not assignable.
    *
    * @param spec - Fields, operators, and sorts the caller may send
    * @returns A parser for one request object
@@ -177,10 +178,43 @@ export type Table<
   filters(spec: FilterSpec): { parse(query: unknown): Promise<ParsedFilters> };
 };
 
+/**
+ * Operators `filters().parse` applies.
+ *
+ * `path`, `matches`, `similar`, `wordSimilar`, boolean trees, relation
+ * quantifiers, and write operators are not in this list. A caller cannot
+ * name them in `allow`.
+ */
+export type FilterOperator =
+  | "eq"
+  | "in"
+  | "inList"
+  | "notIn"
+  | "lt"
+  | "lte"
+  | "gt"
+  | "gte"
+  | "between"
+  | "startsWith"
+  | "endsWith"
+  | "contains"
+  | "like"
+  | "ilike"
+  | "not"
+  | "containedBy"
+  | "overlaps"
+  | "hasKey"
+  | "hasAnyKey";
+
 /** What {@link Table.filters} accepts. */
 export type FilterSpec = {
-  readonly allow?: Readonly<Record<string, readonly string[]>>;
+  readonly allow?: Readonly<Record<string, readonly FilterOperator[]>>;
   readonly sort?: readonly string[];
+  /**
+   * Relation name to the fields a caller may filter.
+   *
+   * `parse` turns `{ list: { name: { startsWith: "a" } } }` into `has`.
+   */
   readonly relations?: Readonly<Record<string, readonly string[]>>;
 };
 

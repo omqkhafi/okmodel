@@ -16,17 +16,31 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### ✨ Added
 
-- The startup budget audit for train 0.6 records where the bytes in each gated graph go, the headroom under the current gates, and the measured cost of the smallest hook for each 0.6 feature. It does not move a gate (D218).
+#### dialects
+
 - `db.views.name.refresh()` runs `REFRESH MATERIALIZED VIEW` on a materialized view, with `CONCURRENTLY` when the view declares it. A plain view has no `refresh()` in its type. The statement is a write, and it is not tenant-scoped (D227).
+- `filters().parse` applies `not`, `containedBy`, `overlaps`, `hasKey`, and `hasAnyKey`, and a `relations` allowlist becomes `has`. The allow type is `FilterOperator` (D233).
+
+#### runtime
+
 - `compositeTenancy({ key: ["organizationId", "workspaceId"], type: "uuid" })` isolates on every key together. `tenancy: via("project.organization")` isolates a table through up to three relations. `for()` takes every key. A column-only import does not load either factory (D228, D229).
+- `rlsTenancy({ key: "tenantId", type: "uuid" })` adds PostgreSQL row-level security behind the column predicate. Tenant tables get forced policies, each scoped call sets `app.tenant` for that transaction, and a view over those tables is `security_invoker`. A superuser, a `BYPASSRLS` role, or the table owner is refused on the first scoped call (D231).
+
+#### tooling
+
+- `roles.reporting` is a read-only role: select on tables, views, and materialized views, usage on schemas, and default select on later tables. A hidden column stays out of that select unless `roles.columns` names it. The role is not `BYPASSRLS`. `roles.columns` grants select or update on named columns. `withOwner(table(...), "ignored" | "external")` keeps a table out of the plan. Apply grants the application role select on `okm_meta` and no other privilege there (D232).
+- `isolation()` reads tenant views and materialized views after seeding the underlying tables. A global view is skipped and listed (D233).
+
+#### docs
+
+- The startup budget audit for train 0.6 records where the bytes in each gated graph go, the headroom under the current gates, and the measured cost of the smallest hook for each 0.6 feature. It does not move a gate (D218).
 - The docs site in `site/` publishes the handbook from the repository markdown, with search, per-page markdown, and a changelog page. The home page links install, the first query, schema, and migrations.
 - Learning pages for install, the first query, schema, queries, safety, migrations, and drivers are written in the site handbook. Repository docs stay under Reference. A public fence that names a shipped API is type-checked against the built package.
-- `rlsTenancy({ key: "tenantId", type: "uuid" })` adds PostgreSQL row-level security behind the column predicate. Tenant tables get forced policies, each scoped call sets `app.tenant` for that transaction, and a view over those tables is `security_invoker`. A superuser, a `BYPASSRLS` role, or the table owner is refused on the first scoped call (D231).
-- `roles.reporting` is a read-only role: select on tables, views, and materialized views, usage on schemas, and default select on later tables. A hidden column stays out of that select unless `roles.columns` names it. The role is not `BYPASSRLS`. `roles.columns` grants select or update on named columns. `withOwner(table(...), "ignored" | "external")` keeps a table out of the plan. Apply grants the application role select on `okm_meta` and no other privilege there (D232).
 
 ### 💥 Breaking Changes
 
 - `columnTenancy()` takes one key. A key list is `compositeTenancy()`. `tenancy: { via: "..." }` is not a strategy. Use `via()` from `okmodel/tenancy`. A handwritten object is rejected when the schema is built (D229, pre-v1).
+- `filters({ allow })` accepts only the operators `parse` applies. `path`, `matches`, `similar`, `wordSimilar`, `or`, `and`, `none`, `every`, and the write operators are a type error (D233, pre-v1).
 
 ### ♻️ Changed
 
