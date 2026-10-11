@@ -5,8 +5,8 @@
  * `.catalog`, which runs that validation. Generate writes SQL only.
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { catalog } from "../../contracts/catalog/build.js";
@@ -21,7 +21,7 @@ import { OkmError } from "../../contracts/error.js";
 import { errorDoc } from "../errors/registry.js";
 import { assertValidation, writeWouldValidate } from "../../runtime/validate/places.js";
 import { schemaDeclarations, type DeclaredRename } from "../../dialects/pg/declarations.js";
-import { emitRowTypes } from "../../dialects/pg/emit.js";
+import { emitRowTypes, jsonColumnTypes } from "../../dialects/pg/emit.js";
 import { stampOwnership, tableOwner } from "../../dialects/pg/owner.js";
 import { attachRoles, type RolesInput, type TableExposure } from "../../dialects/pg/role/index.js";
 import type { BuiltSchema } from "../../dialects/pg/schema.js";
@@ -391,6 +391,60 @@ function writeGitAttributes(cwd: string): void {
   writeFileSync(path, GIT_ATTRIBUTES);
 }
 
+/**
+ * Row types for `.okm/types.d.ts`.
+ *
+ * `t.jsonb<T>()` is erased at runtime. The type argument is read from the
+ * schema file. A bare `t.jsonb()` stays `jsonb<unknown>`.
+ *
+ * @param cwd - Project directory
+ * @param spec - Schema path from the config
+ * @param built - Loaded schema
+ * @returns Declaration text
+ */
+function typesText(cwd: string, spec: string, built: Built): string {
+  return `${emitRowTypes(built, jsonColumnTypes(readSchemaSource(cwd, spec)))}${referenceAugmentation(built)}`;
+}
+
+/**
+ * Schema source plus the local files it imports.
+ *
+ * @param cwd - Project directory
+ * @param spec - Schema path from the config
+ * @returns The concatenated source
+ */
+function readSchemaSource(cwd: string, spec: string): string {
+  const parts: string[] = [];
+  const seen = new Set<string>();
+  const visit = (file: string): void => {
+    if (seen.has(file) || !existsSync(file)) return;
+    let stat;
+    try {
+      stat = statSync(file);
+    } catch {
+      return;
+    }
+    if (!stat.isFile()) return;
+    seen.add(file);
+    const text = readFileSync(file, "utf8");
+    parts.push(text);
+    for (const match of text.matchAll(/from\s+["'](\.[^"']+)["']/g)) {
+      const rel = match[1];
+      if (rel === undefined) continue;
+      const base = join(dirname(file), rel);
+      const candidates = [base, `${base}.ts`, `${base}.tsx`, `${base}.mts`, join(base, "index.ts")];
+      for (const candidate of candidates) {
+        if (existsSync(candidate)) {
+          visit(candidate);
+          break;
+        }
+      }
+    }
+  };
+  visit(projectPath(cwd, spec));
+  return parts.join("\n");
+}
+
 function writeArtifact(cwd: string, config: MigrateConfig, built: Built): string {
   const directory = projectPath(cwd, config.out ?? ".okm");
   mkdirSync(directory, { recursive: true });
@@ -398,10 +452,7 @@ function writeArtifact(cwd: string, config: MigrateConfig, built: Built): string
   const text = catalogFileText(serializeCatalog(startup));
   writeFileSync(join(directory, "catalog.json"), text);
   writeFileSync(join(directory, "catalog.hash"), `${sha256(text)}\n`);
-  writeFileSync(
-    join(directory, "types.d.ts"),
-    `${emitRowTypes(built)}${referenceAugmentation(built)}`,
-  );
+  writeFileSync(join(directory, "types.d.ts"), typesText(cwd, config.schema, built));
   return directory;
 }
 

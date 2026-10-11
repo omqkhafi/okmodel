@@ -215,7 +215,10 @@ function refreshHint(
   if (error.sqlstate === "42501" && error.message.includes("materialized view")) {
     return {
       reason: "not_owner",
-      fix: { summary: "Run the refresh as the owner of the materialized view." },
+      fix: {
+        summary:
+          "Refresh runs as the owner, the migration role. Connect as that role and call refresh(), or run REFRESH MATERIALIZED VIEW as that role. The application role is not the owner.",
+      },
     };
   }
   return undefined;
@@ -436,6 +439,9 @@ function summaryOf(
   fieldReason: string,
 ): string {
   const label = labelOf(kind);
+  if (kind === "driver" && fieldReason === "not_owner") {
+    return "The application role cannot refresh a materialized view. Refresh runs as the owner, the migration role.";
+  }
   if (kind === "driver") return stripRowValues(error.message);
   const where = place(error.table, columns);
   if (where === undefined) return label;

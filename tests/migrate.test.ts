@@ -472,6 +472,44 @@ test("okm generate writes SQL and okm migrate plan prints the class", async () =
   }
 });
 
+test("okm build keeps a jsonb type argument", async () => {
+  const root = repoRoot();
+  const cwd = mkdtempSync(join(tmpdir(), "okm-jsonb-"));
+  try {
+    writeFileSync(
+      join(cwd, "schema.ts"),
+      [
+        `import { schema, table, t } from ${JSON.stringify(join(root, "src/dialects/pg/index.ts"))};`,
+        "export const app = schema({",
+        '  tables: [table("posts", {',
+        "    id: t.text().primaryKey(),",
+        "    meta: t.jsonb<{ published?: boolean }>(),",
+        "  })],",
+        "});",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(cwd, "okmodel.config.ts"),
+      [
+        `import { defineConfig } from ${JSON.stringify(join(root, "src/tooling/migrate/index.ts"))};`,
+        "export default defineConfig({",
+        '  schema: "./schema.ts",',
+        '  migrations: "./migrations",',
+        '  out: "./.okm",',
+        "});",
+        "",
+      ].join("\n"),
+    );
+    await run(["build"], { cwd, stdout: () => undefined });
+    const types = readFileSync(join(cwd, ".okm/types.d.ts"), "utf8");
+    expect(types).toContain("readonly meta: jsonb<{ published?: boolean }>;");
+    expect(types).toContain("export type jsonb<T> = T;");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 function sqlOf(plan: MigrationPlan): string {
   return plan.steps
     .map((step) => step.sql)

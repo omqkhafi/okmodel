@@ -38,7 +38,9 @@ test("a refresh failure keeps kind driver and names the fix", () => {
   );
   expect(owner.kind).toBe("driver");
   expect(owner.fieldReason).toBe("not_owner");
-  expect(owner.fix.summary).toContain("owner of the materialized view");
+  expect(owner.message).toContain("migration role");
+  expect(owner.fix.summary).toContain("migration role");
+  expect(owner.fix.summary).toContain("refresh()");
 });
 
 test.each([

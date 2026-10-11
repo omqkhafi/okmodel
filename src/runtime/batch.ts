@@ -16,13 +16,13 @@ import { runWrite } from "./tx.js";
 import type { PreparedWrite } from "./write.js";
 
 /** A write handle, as `batch` reads it: it can plan itself without running. */
-type Op = { readonly "~plan"?: () => Promise<PreparedWrite> };
+type Op = { readonly "~plan"?: () => Promise<PreparedWrite>; readonly "~refresh"?: true };
 
 /**
  * Runs write handles as one atomic unit.
  *
  * @param session - Client session
- * @param ops - Write handles: `insert`, `update`, `delete`, `archive`. A `restore`, or a write with `expect`, is OKM1121 (D183)
+ * @param ops - Write handles: `insert`, `update`, `delete`, `archive`. A `restore`, a write with `expect`, or `refresh()` is OKM1121 (D183, D239)
  * @param options - `signal` and `timeout` for the whole batch
  * @param replica - Set by `.replica()`. A batch needs the primary (OKM1840)
  * @returns One result per operation, in order
@@ -47,6 +47,14 @@ export async function batch(
     const record = options ?? {};
     if (!isRecord(record)) fail("OKM1121", "batch options must be an object.");
     rejectKeys(record, ["signal", "timeout"], "batch");
+    for (const op of ops as readonly Op[]) {
+      if (typeof op === "object" && op !== null && op["~refresh"] === true) {
+        fail(
+          "OKM1121",
+          "batch does not take refresh(). Await refresh() on its own. It is one statement and cannot share the batch.",
+        );
+      }
+    }
     const prepared: PreparedWrite[] = [];
     for (const op of ops as readonly Op[]) {
       const plan = typeof op === "object" && op !== null ? op["~plan"] : undefined;

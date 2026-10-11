@@ -43,6 +43,8 @@ A required column the factory leaves out is filled from its type: text, uuid, in
 
 ## Isolation
 
+`isolation()` and `testing()` cannot open `rlsTenancy` on PGlite or on a superuser harness. The first scoped call is OKM1707, because that role is the table owner or a superuser. The supported path is a non-superuser role on a real Postgres: `open({ url })` from `okmodel/pg/postgresjs`, with `migrate: false` when the tables are already there.
+
 `isolation()` picks a new tenant A and tenant B on every call. It inserts one row as tenant B on every tenant table that has a factory, then reads and writes that row as tenant A, filtered by the key it inserted: `find`, `one`, `count`, `exists`, `include` when the table has a relation, `aggregate`, `page`, `update`, and `delete`. `batch` runs when the client has it. `stream` runs when the driver has it. A returned row, a count above zero, or an update or delete that touches a row, fails with the table, the query, and the row. It deletes what it inserted. A tenant table with no factory, when `factories()` was given other tables, fails with `Factory <table> is missing.` It then reads every tenant view and materialized view. Both tenants' rows are inserted into the underlying tables, never into the view. A materialized view is refreshed first. `find`, `one`, `count`, `exists`, and `stream` use a text column from tenant B when the view exposes one, and the read is also scanned for tenant B's key. A global view is skipped and named, with the reason from `global("reason")`, in the same `skipped` list as a global table. Checked views are `report.views`. Checked tables stay `report.checked`. Column, composite, path, and `rls` tenancy are the strategies this version checks, including a `security_invoker` view and a table marked `withOwner(..., "external")` under `rlsTenancy`. Schema-per-tenant and database-per-tenant are M5.
 
 ## okm seed
@@ -56,4 +58,4 @@ export default async function seed(t) {
 }
 ```
 
-`okm seed <file>` loads that default export and calls it with the harness for the selected target. The target's schema must already be applied. One configured target is used as it stands. Several targets require `--target` (OKM1853). A protected target is blocked (OKM1850) unless the invocation passes `--allow-protected`. The command prints `target <name>` and one line per table that the factories inserted, or `created nothing`.
+`okm seed <file>` loads that default export and calls it with the harness for the selected target. Under `rlsTenancy` the command runs as the application role. The owner, a superuser, or a `BYPASSRLS` role gets OKM1707. The target's schema must already be applied. One configured target is used as it stands. Several targets require `--target` (OKM1853). A protected target is blocked (OKM1850) unless the invocation passes `--allow-protected`. The command prints `target <name>` and one line per table that the factories inserted, or `created nothing`.

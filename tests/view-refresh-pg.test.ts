@@ -1,7 +1,7 @@
 /**
  * `refresh()` on a materialized view, against real Postgres.
  *
- * A plain view throws OKM1120. A concurrent refresh does not block a reader.
+ * A plain view has no `refresh`. A concurrent refresh does not block a reader.
  * A replica client sends the statement to the primary. A missing unique index
  * is the mapped driver error.
  */
@@ -89,18 +89,7 @@ postgresTest(gate, "refresh() shows new rows and is not tenant-scoped", async ()
       expect(both.map((row) => row.id)).toEqual([ROW_A, ROW_B]);
       expect((await a.views.dailyTotals.find({ limit: 5 })).map((row) => row.id)).toEqual([ROW_A]);
 
-      const plain = a.views.noteTitles as unknown as { refresh(): Promise<void> };
-      try {
-        await plain.refresh();
-        throw new Error("expected OKM1120");
-      } catch (error) {
-        expect(error).toBeInstanceOf(OkmError);
-        if (error instanceof OkmError) {
-          expect(error.code).toBe("OKM1120");
-          expect(error.kind).toBe("invalid");
-          expect(error.fix.summary).toContain("materialized view");
-        }
-      }
+      expect(Reflect.get(a.views.noteTitles, "refresh")).toBeUndefined();
     } finally {
       await db.close();
     }
@@ -199,13 +188,75 @@ postgresTest(gate, "refresh() on a replica client runs on the primary", async ()
       await db.connected;
       events.length = 0;
       await db.views.dailyTotals.refresh();
-      expect(events.some((event) => event.op === "write" && event.endpoint === "primary")).toBe(
-        true,
-      );
-      expect(events.some((event) => event.op === "write" && event.endpoint !== "primary")).toBe(
-        false,
-      );
+      expect(events.some((event) => event.endpoint === "primary")).toBe(true);
+      expect(events.some((event) => event.endpoint !== "primary")).toBe(false);
     } finally {
+      await db.close();
+    }
+  });
+});
+
+postgresTest(gate, "batch refuses refresh() before any statement", async () => {
+  await withPostgresSchema(async (sql, schemaName) => {
+    for (const statement of renderCatalog(app.catalog, schemaName)) {
+      await sql.unsafe(statement);
+    }
+    const db = connect(primaryUrl(), { schema: app, searchPath: schemaName, max: 2 });
+    try {
+      await db.connected;
+      let thrown: unknown;
+      try {
+        await db.batch([db.views.dailyTotals.refresh() as never]);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(OkmError);
+      if (thrown instanceof OkmError) {
+        expect(thrown.code).toBe("OKM1121");
+        expect(thrown.message).toContain("refresh()");
+      }
+      await Bun.sleep(400);
+      const populated = await sql<{ populated: boolean }[]>`
+        select c.relispopulated as populated
+        from pg_class c
+        join pg_namespace n on n.oid = c.relnamespace
+        where n.nspname = ${schemaName} and c.relname = 'daily_totals'
+      `;
+      expect(populated[0]?.populated).toBe(false);
+    } finally {
+      await db.close();
+    }
+  });
+});
+
+postgresTest(gate, "an unawaited refresh() is not an unhandled rejection", async () => {
+  await withPostgresSchema(async (sql, schemaName) => {
+    for (const statement of renderCatalog(app.catalog, schemaName)) {
+      await sql.unsafe(statement);
+    }
+    const db = connect(primaryUrl(), { schema: app, searchPath: schemaName, max: 2 });
+    const events: unknown[] = [];
+    const onUnhandled = (error: unknown): void => {
+      events.push(error);
+    };
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      await db.connected;
+      const pending = db.views.slowTotals.refresh();
+      await Bun.sleep(300);
+      expect(events).toEqual([]);
+      const populated = await sql<{ populated: boolean }[]>`
+        select c.relispopulated as populated
+        from pg_class c
+        join pg_namespace n on n.oid = c.relnamespace
+        where n.nspname = ${schemaName} and c.relname = 'slow_totals'
+      `;
+      expect(populated[0]?.populated).toBe(false);
+      await pending.catch(() => undefined);
+      await Bun.sleep(50);
+      expect(events).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
       await db.close();
     }
   });

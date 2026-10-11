@@ -64,4 +64,8 @@ export const app = schema({
 
 `roles.reporting` can select and cannot write. It is not tenant-safe against its own SQL: under `rlsTenancy` it can set `app.unscoped` itself and read every tenant. A hidden column stays out of that select unless `roles.columns` names it. The migration role has to own the schema before apply, or the usage grant does not land (`ALTER SCHEMA public OWNER TO` that role). `withOwner(table(...), "external")` or `"ignored"` stays out of generated SQL and out of apply. `okm check` ignores both.
 
-`rlsTenancy` stores the policy text Postgres prints back. A lowercase unreserved column stays bare. `tenantId` is quoted. A materialized view index applies with the view, and the application role's extra write privileges on that view are revoked.
+`rlsTenancy` stores the policy text Postgres prints back. A lowercase unreserved column stays bare. `tenantId` is quoted. A materialized view index applies with the view, and the application role's extra write privileges on that view are revoked. A populated materialized view is not row-level secured. The column predicate and OKM1820 are what guard it. `refresh()` runs as the migration role and sets `app.unscoped` in that transaction. The application role gets `not_owner`.
+
+`UNIQUE (id, tenant_id)` stays beside `PRIMARY KEY (id, tenant_id)`. Two tenants can share an id. Composite foreign keys and `onConflict` target the unique. `archivable()` turns that unique into a partial index, which a primary key cannot be.
+
+`okm seed` under `rlsTenancy` runs as the application role. The owner gets OKM1707. `isolation()` and `testing()` need a non-superuser role on a real Postgres (`open({ url })`, `migrate: false`). PGlite and a superuser harness are OKM1707.

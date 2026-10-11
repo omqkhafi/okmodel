@@ -191,6 +191,11 @@ export function materializedView<
   const schema = options.schema ?? "public";
   const columns = options.columns.map((column) => ({ name: column.name, dataType: column.type }));
   const query = bodyText(options.query);
+  if (options.refresh !== undefined && options.refresh !== "concurrently") {
+    throw new OkmError("OKM1120", `Materialized view ${name} refresh must be "concurrently".`, {
+      fix: { summary: 'Omit refresh, or pass refresh: "concurrently" with a unique index.' },
+    });
+  }
   const bound = viewClient(
     name,
     options.columns,

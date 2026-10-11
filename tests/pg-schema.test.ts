@@ -13,7 +13,7 @@ import {
   serializeCatalog,
 } from "../src/contracts/catalog/document.js";
 import { creationOrder } from "../src/contracts/catalog/document.js";
-import { emitRowTypes } from "../src/dialects/pg/emit.js";
+import { emitRowTypes, jsonColumnTypes } from "../src/dialects/pg/emit.js";
 import { index, schema, sql, table, t } from "../src/dialects/pg/index.js";
 
 const users = table("users", {
@@ -258,6 +258,32 @@ test("later options are OKM1061 and name the version that adds them", () => {
   expect(policies.code).toBe("OKM1061");
   expect(policies.message).toContain("arrives later");
   expect(policies.message).not.toContain("M2");
+});
+
+test("emitRowTypes keeps a jsonb type argument from the schema source", () => {
+  const source = [
+    'const posts = table("posts", {',
+    "  id: t.text().primaryKey(),",
+    "  meta: t.jsonb<{ published?: boolean }>(),",
+    "  body: t.json<{ published?: boolean }>(),",
+    "  bare: t.jsonb(),",
+    "});",
+  ].join("\n");
+  const app = schema({
+    tables: [
+      table("posts", {
+        id: t.text().primaryKey(),
+        meta: t.jsonb<{ published?: boolean }>(),
+        body: t.json<{ published?: boolean }>(),
+        bare: t.jsonb(),
+      }),
+    ],
+  });
+  const text = emitRowTypes(app, jsonColumnTypes(source));
+  expect(text).toContain("readonly meta: jsonb<{ published?: boolean }>;");
+  expect(text).toContain("readonly body: json<{ published?: boolean }>;");
+  expect(text).toContain("readonly bare: jsonb<unknown>;");
+  expect(text).toContain("export type jsonb<T> = T;");
 });
 
 test("emitRowTypes spells the inferred field modes", () => {
