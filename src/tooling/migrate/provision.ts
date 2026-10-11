@@ -6,7 +6,7 @@
  * Tenant registry creation is M5.
  */
 
-import { join } from "node:path";
+import { projectPath } from "./paths.js";
 
 import { OkmError } from "../../contracts/error.js";
 import { applyTarget, backfillTiming } from "./apply.js";
@@ -29,7 +29,7 @@ export async function provision(target: string, cwd = process.cwd()): Promise<st
   const config = await loadConfig(cwd);
   const selected = selectTarget(config, target);
   assertTargetPolicy(selected, "provision");
-  const directory = join(cwd, config.migrations ?? "migrations");
+  const directory = projectPath(cwd, config.migrations ?? "migrations");
   const migrations = loadMigrations(directory);
   const head = loadHeadSnapshot(directory);
   if (head === undefined) {

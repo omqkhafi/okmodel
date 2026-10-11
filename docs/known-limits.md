@@ -130,6 +130,15 @@ Bun.sql keeps `idleTimeout` at 0, which is Bun's default (no idle timer). A fini
 - **Upgrade: a database applied with `roles` before D208.** It stores a hash that counted roles and grants, so after the upgrade `connect()` is OKM1520 until `okm migrate apply` runs once. That apply prints `restamped <migration id>` and needs `--allow-protected` on a protected target.
 - **A migrate target cannot be a replica** (D201). `database` or `targets` that carries `primary`, `replicas`, `weight`, or `pool` is OKM1845. The command does not resolve that URL. A string URL is still the primary.
 
+## Windows
+
+- **Migration SQL is read as LF.** `\r\n` and a lone `\r` are normalized when the file is read. Apply, `okm migrate check`, the linter, and `okm migrate status` see the same steps as an LF file. A non-empty file that still has no steps, and no `-- no steps` line, fails with kind `invalid` and reason `no-steps` instead of printing `nothing to apply` (D237).
+- **Save files as UTF-8.** A leading BOM is stripped from migration SQL, catalog JSON, and `catalog.hash`. UTF-16 is refused.
+- **`.okm/catalog.json` is hashed after `\r` is removed.** An LF file keeps the hash `okm build` wrote. `okm generate init` writes `.gitattributes` when the project has none: `migrations/*.sql text eol=lf`, `*.catalog.json text eol=lf`, and `.okm/** text eol=lf`. An existing `.gitattributes` is left as it is. Add those lines when the file is already there.
+- **Config paths are resolved from the project directory.** `schema`, `tables`, `migrations`, `out`, and a seed file may be absolute or begin with `..`.
+- **Use a TCP URL.** `postgres://localhost:5432/app` is a direct connection. A Windows named pipe is not a URL this version opens.
+- **Keep file names in the same case as the disk.** The catalog treats `Schema.ts` and `schema.ts` as different modules. Windows does not.
+
 ## What works
 
 `.hidden()` stays out of default selects and includes. `.sensitive()` redacts values in logs, errors, and `inspect()`. `one()`, `many()` and `manyThrough()` work; a relation value that is not one of those throws OKM1061.

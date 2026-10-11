@@ -7,7 +7,8 @@ import { join } from "node:path";
 
 import { catalogHash, parseCatalog, startupCatalog } from "../../contracts/catalog/document.js";
 import { OkmError } from "../../contracts/error.js";
-import { parsePlan, type PlanStep } from "./plan.js";
+import { parsePlan, type MigrationPlan, type PlanStep } from "./plan.js";
+import { assertMigrationSteps, prepareMigrationText } from "./text.js";
 
 /** One migration the applier can run and resume. */
 export type StoredMigration = {
@@ -47,7 +48,7 @@ export function loadMigrations(directory: string): readonly StoredMigration[] {
         },
       });
     }
-    const plan = parsePlan(readFileSync(join(directory, file), "utf8"));
+    const plan = readMigrationPlan(join(directory, file));
     const stored = parseCatalog(readFileSync(catalogPath, "utf8"));
     const startup = startupCatalog(stored);
     const hash = catalogHash(startup);
@@ -58,6 +59,22 @@ export function loadMigrations(directory: string): readonly StoredMigration[] {
     );
   }
   return migrations;
+}
+
+/**
+ * Reads one migration SQL file.
+ *
+ * Line endings and a UTF-8 BOM are normalized. A non-empty file with no steps
+ * and no `-- no steps` line is refused.
+ *
+ * @param path - `*.sql` path
+ * @returns The plan
+ */
+export function readMigrationPlan(path: string): MigrationPlan {
+  const text = prepareMigrationText(readFileSync(path, "utf8"), path);
+  const plan = parsePlan(text);
+  assertMigrationSteps(text, plan.steps.length, path);
+  return plan;
 }
 
 /**

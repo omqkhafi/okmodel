@@ -9,8 +9,6 @@
  * batch in `okm_backfill` and resumes from that boundary.
  */
 
-import { join } from "node:path";
-
 import { open } from "../../adapters/pg/postgresjs.js";
 import { startupHash } from "../../contracts/catalog/document.js";
 import type { Catalog } from "../../contracts/catalog/types.js";
@@ -29,6 +27,7 @@ import {
 } from "./runner.js";
 import { assertExtensionsAvailable } from "./extensions.js";
 import { assertUuidV7Available } from "./engine.js";
+import { projectPath } from "./paths.js";
 import { loadBuiltSchema, loadConfig, projectHead } from "./project.js";
 import { loadHeadSnapshot, loadMigrations } from "./files.js";
 import { readReference, referenceInserts, type ReferenceTable } from "./reference.js";
@@ -521,7 +520,7 @@ const RESTAMP = `with pairs as (
 select distinct id from history order by id`;
 
 function joinMigrations(cwd: string, migrations: string | undefined): string {
-  return join(cwd, migrations ?? "migrations");
+  return projectPath(cwd, migrations ?? "migrations");
 }
 
 async function backendPid(connection: DriverConnection): Promise<string> {

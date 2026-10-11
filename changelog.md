@@ -16,13 +16,35 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### 🐛 Fixed
 
+#### contracts
+
+- `.okm/catalog.json` and `catalog.hash` are checked after a UTF-8 BOM is stripped and every carriage return is removed. An LF catalog keeps the hash `okm build` wrote (D237).
+
+#### dialects
+
 - `rlsTenancy` stores the policy text Postgres prints. A lowercase unreserved column stays bare, so a snake-case `tenant_id` catalog hash does not change. `tenantId`, `TenantId`, and a reserved word are double-quoted. Apply of a default-casing key no longer fails with `column "tenantid" does not exist`, and `okm check` reports no drift (D236).
 - A materialized view no longer keeps the application role's table default privileges. The plan revokes `INSERT`, `UPDATE`, and `DELETE` after `SELECT`. The catalog stays select only (D236).
+- A superuser passes the managed-role `CREATEROLE` preflight when `rolcreaterole` is false (D236).
+
+#### runtime
+
+- A trailing backslash on the catalog directory is ignored, and a Windows stack frame still records `file.ts:line` (D237).
+
+#### tooling
+
 - A path foreign key is planned after the unique it references. Table names no longer decide that order. Drops reverse it (D236).
 - `okm generate` then apply accepts an index on a materialized view. The stored document depends on the view, not on a column, for one column or several, unique or not (D236).
 - `GRANT USAGE ON SCHEMA` that does not land fails with OKM1825. The migration role has to own the schema (`ALTER SCHEMA … OWNER TO`). `okm migrate check` gives that role its scratch schema and replays the grant there (D236).
 - `withOwner(..., "ignored" | "external")` is omitted from generated SQL and from provisioning. `okm check` still ignores both (D236).
-- A superuser passes the managed-role `CREATEROLE` preflight when `rolcreaterole` is false (D236).
+- A CRLF or lone-CR migration file is read as LF. Apply, `okm migrate check`, the linter, and `okm migrate status` see the same steps. A non-empty file with no steps and no `-- no steps` line fails instead of printing `nothing to apply`. A hand-written `truncate` is OKM1542 in LF and in CRLF (D237).
+- A UTF-8 BOM is stripped from migration SQL. UTF-16 is refused. The kind stays `invalid` (D237).
+- `schema`, `tables`, `migrations`, `out`, and a seed path resolve from the project directory. An absolute path and a `..` path both work (D237).
+- `okm generate init` writes `.gitattributes` so migration SQL, catalog JSON, and `.okm/` stay LF. An existing `.gitattributes` is left as it is (D237).
+- `okm` on Node older than 22.18 stops and names `bun --bun okm`. `engines.node` is `>=22.18` (D237).
+
+#### docs
+
+- Known limits and the migrations page describe a Windows checkout: CRLF, a BOM, resolved paths, a TCP URL, and case-sensitive file names (D237).
 
 ## v0.6.0 — 2026-10-11
 

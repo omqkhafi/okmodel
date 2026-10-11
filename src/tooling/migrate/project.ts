@@ -11,11 +11,12 @@ import { pathToFileURL } from "node:url";
 
 import { catalog } from "../../contracts/catalog/build.js";
 import {
-  catalogHash,
+  catalogFileText,
   parseCatalog,
   serializeCatalog,
   startupCatalog,
 } from "../../contracts/catalog/document.js";
+import { sha256 } from "../../contracts/sha256.js";
 import { OkmError } from "../../contracts/error.js";
 import { errorDoc } from "../errors/registry.js";
 import { assertValidation, writeWouldValidate } from "../../runtime/validate/places.js";
@@ -36,6 +37,7 @@ import {
   selectTarget,
   type InvokeFlags,
 } from "./policy.js";
+import { projectPath } from "./paths.js";
 import { formatPlan, planMigration, staleRenames, type MigrationPlan } from "./plan.js";
 import { hasError, lintCatalog, lintPlan, lintRefusal, type Finding } from "./lint.js";
 import { parseReplace } from "./values.js";
@@ -74,9 +76,10 @@ export async function generateProject(
   flags: readonly string[],
 ): Promise<{ readonly path: string; readonly findings: readonly Finding[] } | undefined> {
   const prepared = await prepare(cwd, name, flags);
+  if (name === "init") writeGitAttributes(cwd);
   writeArtifact(cwd, prepared.config, prepared.built);
   if (prepared.plan.steps.length === 0) return undefined;
-  const directory = join(cwd, prepared.config.migrations ?? "migrations");
+  const directory = projectPath(cwd, prepared.config.migrations ?? "migrations");
   mkdirSync(directory, { recursive: true });
   const base = `${nextNumber(directory)}_${safeName(name)}`;
   const sqlPath = join(directory, `${base}.sql`);
@@ -143,9 +146,9 @@ export async function checkProject(cwd: string, flags?: InvokeFlags): Promise<re
   const targets = listTargets(opened.config);
   assertTargetAlias(targets);
   if (opened.config.tables !== undefined) {
-    const directory = join(cwd, opened.config.tables);
+    const directory = projectPath(cwd, opened.config.tables);
     const files = existsSync(directory) ? readdirSync(directory) : [];
-    const source = readFileSync(join(cwd, opened.config.schema), "utf8");
+    const source = readFileSync(projectPath(cwd, opened.config.schema), "utf8");
     const missing = unlistedTableFiles(source, files);
     if (missing.length > 0) {
       throw new OkmError("OKM1024", `Table file not in schema: ${missing.join(", ")}.`, {
@@ -312,7 +315,7 @@ export async function openProject(cwd: string): Promise<{
   const config = await loadConfig(cwd);
   const built = withRoles(await loadSchema(cwd, config.schema), config);
   const declarations = schemaDeclarations(built);
-  const previous = readPrevious(join(cwd, config.migrations ?? "migrations"));
+  const previous = readPrevious(projectPath(cwd, config.migrations ?? "migrations"));
   const stale = staleRenames(previous?.catalog, declarations.renames);
   if (stale.length > 0) {
     throw new OkmError("OKM1020", stale.join(" "), {
@@ -367,12 +370,34 @@ function exposureFor(built: Built, roles: RolesInput): readonly TableExposure[] 
   }));
 }
 
+const GIT_ATTRIBUTES = [
+  "migrations/*.sql text eol=lf",
+  "*.catalog.json text eol=lf",
+  ".okm/** text eol=lf",
+  "",
+].join("\n");
+
+/**
+ * Writes `.gitattributes` for LF migration and catalog files.
+ *
+ * An existing file is left unchanged, including one that does not list these
+ * patterns. `okm generate init` is the only caller.
+ *
+ * @param cwd - Project directory
+ */
+function writeGitAttributes(cwd: string): void {
+  const path = projectPath(cwd, ".gitattributes");
+  if (existsSync(path)) return;
+  writeFileSync(path, GIT_ATTRIBUTES);
+}
+
 function writeArtifact(cwd: string, config: MigrateConfig, built: Built): string {
-  const directory = join(cwd, config.out ?? ".okm");
+  const directory = projectPath(cwd, config.out ?? ".okm");
   mkdirSync(directory, { recursive: true });
   const startup = startupCatalog(built.catalog);
-  writeFileSync(join(directory, "catalog.json"), serializeCatalog(startup));
-  writeFileSync(join(directory, "catalog.hash"), `${catalogHash(startup)}\n`);
+  const text = catalogFileText(serializeCatalog(startup));
+  writeFileSync(join(directory, "catalog.json"), text);
+  writeFileSync(join(directory, "catalog.hash"), `${sha256(text)}\n`);
   writeFileSync(
     join(directory, "types.d.ts"),
     `${emitRowTypes(built)}${referenceAugmentation(built)}`,
@@ -398,7 +423,7 @@ export async function loadBuiltSchema(cwd: string, config: MigrateConfig): Promi
  * @returns The config object
  */
 export async function loadConfig(cwd: string): Promise<MigrateConfig> {
-  const path = join(cwd, "okmodel.config.ts");
+  const path = projectPath(cwd, "okmodel.config.ts");
   const imported: unknown = await import(`${pathToFileURL(path).href}?okm=${Date.now()}`);
   const record = isRecord(imported) ? imported : {};
   const config = record.default ?? record.config;
@@ -416,7 +441,7 @@ export async function loadConfig(cwd: string): Promise<MigrateConfig> {
  * @returns The built schema
  */
 export async function loadSchema(cwd: string, spec: string): Promise<Built> {
-  const path = join(cwd, spec);
+  const path = projectPath(cwd, spec);
   const imported: unknown = await import(`${pathToFileURL(path).href}?okm=${Date.now()}`);
   const record = isRecord(imported) ? imported : {};
   for (const value of Object.values(record)) {

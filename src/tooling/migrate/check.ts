@@ -33,9 +33,10 @@ import { classOf, strictestClass, type MigrationClass } from "./classify.js";
 import type { MigrateConfig } from "./config.js";
 import { catalogQuery, managedRoleOptions } from "./drift.js";
 import { catalogsEqual } from "./equal.js";
-import { loadMigrations } from "./files.js";
+import { loadMigrations, readMigrationPlan } from "./files.js";
+import { projectPath } from "./paths.js";
 import { hasError, lintMigrationDirectory, lintRefusal } from "./lint.js";
-import { parsePlan, planMigration, type MigrationPlan, type PlanStep } from "./plan.js";
+import { planMigration, type MigrationPlan, type PlanStep } from "./plan.js";
 import {
   assertDirectConnection,
   assertStableBackend,
@@ -107,7 +108,7 @@ export async function checkMigrations(
       },
     );
   }
-  const directory = join(cwd, opened.config.migrations ?? "migrations");
+  const directory = projectPath(cwd, opened.config.migrations ?? "migrations");
   const history = readHistory(directory);
   if (options?.provision === true) {
     const equivalence = await proveSnapshot(opened.config, target.url, target.name, flags, history);
@@ -541,7 +542,7 @@ function readHistory(directory: string): readonly HistoryEntry[] {
     id: migration.id,
     catalogHash: migration.catalogHash,
     steps: migration.steps,
-    plan: parsePlan(readFileSync(join(directory, `${migration.id}.sql`), "utf8")),
+    plan: readMigrationPlan(join(directory, `${migration.id}.sql`)),
     catalog: parseCatalog(readFileSync(join(directory, `${migration.id}.catalog.json`), "utf8")),
   }));
 }

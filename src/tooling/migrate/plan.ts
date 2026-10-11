@@ -11,6 +11,7 @@
  */
 
 import { OkmError } from "../../contracts/error.js";
+import { prepareMigrationText } from "./text.js";
 import { creationOrder, renameColumn, renameTable } from "../../contracts/catalog/document.js";
 import { isDomain, sameEnumLabels } from "../../contracts/catalog/enum.js";
 import { fitIdentifier } from "../../contracts/catalog/identifier.js";
@@ -596,11 +597,14 @@ export function formatPlan(plan: MigrationPlan, lockText?: (step: PlanStep) => s
  * a block comment stays in that step, and so does a `--` line while the
  * quote is still open.
  *
+ * `\r\n` and a lone `\r` are read as `\n`. A leading UTF-8 BOM is stripped.
+ * UTF-16 is refused.
+ *
  * @param text - SQL file text
  * @returns The plan. The header class is kept when the file has no steps
  */
 export function parsePlan(text: string): MigrationPlan {
-  const lines = text.split("\n");
+  const lines = prepareMigrationText(text).split("\n");
   let name = "migration";
   let planClass: MigrationClass = "expand";
   let index = 0;
