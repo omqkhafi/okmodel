@@ -52,6 +52,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - A `timeout` or `signal` still does not settle an in-flight statement on Bun.sql or PGlite. The fix grew Bun.sql by 108 / 39, so it was not shipped (D224).
 - The hidden `where` and `orderBy` check was measured in three forms. The smallest reuses `fail()` and fits under the current gates: the featureless app would be 90,718 / 30,143 (D225).
 - A pull request labelled `needs: postgres` runs the Postgres suite as four shards per version, each with its own database, and proves the pooler beside those shards. `gate / check` waits for the suite and the tarball. A skipped Postgres slice fails that gate while the label is present (D230).
+- Known limits name the driver reasons `undefined_table`, `undefined_column`, `tls`, `not_populated`, `no_unique_index`, and `not_owner`. The handbook covers composite, path, and row-level tenancy, the reporting role, and the constraint-name upgrade from 0.5.1. A production database that is behind the app is OKM1520 until `okm migrate apply`.
 
 ### 🐛 Fixed
 
