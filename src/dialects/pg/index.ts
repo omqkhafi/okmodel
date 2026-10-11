@@ -22,6 +22,7 @@ export {
   type IndexCall,
   type SqlText,
   type SqlValue,
+  type FilterOperator,
   type Table,
   type TableOptions,
 } from "./table.js";

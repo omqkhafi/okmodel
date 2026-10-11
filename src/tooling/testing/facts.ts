@@ -10,6 +10,7 @@
 import type { Catalog, ColumnDefinition } from "../../contracts/catalog/types.js";
 import type { QuerySchema, RelationModel, TableModel } from "../../dialects/pg/model.js";
 import type { ColumnTenancy } from "../../dialects/pg/tenancy.js";
+import { viewGlobalReason } from "../../dialects/pg/view/client.js";
 
 /** A schema `testing()` can open. `schema()` returns this shape. */
 export type TestingSchema = QuerySchema & {
@@ -53,6 +54,26 @@ export type TableFacts = {
   readonly globalReason: string | undefined;
 };
 
+/** One view or materialized view. Isolation reads it; it does not insert into it. */
+export type ViewFacts = {
+  /** Client name, camelCase. */
+  readonly name: string;
+  /** SQL name. */
+  readonly sql: string;
+  readonly kind: "view" | "materializedView";
+  /** Author SQL. */
+  readonly query: string;
+  readonly columns: readonly {
+    readonly field: string;
+    readonly dataType: string;
+    readonly guarded: boolean;
+  }[];
+  /** The predicate binds a scope. A global view is not tenant. */
+  readonly tenant: boolean;
+  /** `global("reason")` on the view. Absent when the view is not global. */
+  readonly globalReason: string | undefined;
+};
+
 /**
  * Scope value used to ask a tenancy object whether a table is tenant.
  *
@@ -64,8 +85,7 @@ export const tenantProbe = "00000000-0000-4000-8000-000000000001";
 /**
  * Reads every table in declaration order.
  *
- * Views and materialized views are in the query model too. They have no rows
- * of their own to insert, so they are left out.
+ * Views are read by {@link readViews}. They are not tables, so they are left out here.
  *
  * @param schema - Compiled schema
  * @returns One facts object per table
@@ -93,6 +113,47 @@ export function readFacts(schema: TestingSchema): readonly TableFacts[] {
     });
   }
   return facts;
+}
+
+/**
+ * Reads every view and materialized view in model order.
+ *
+ * A global view is not tenant. The reason comes from the view declaration,
+ * which is not stored on the catalog.
+ *
+ * @param schema - Compiled schema
+ * @returns One facts object per view
+ */
+export function readViews(schema: TestingSchema): readonly ViewFacts[] {
+  const tables = new Set<string>();
+  const listed = new Map<string, { kind: ViewFacts["kind"]; query: string }>();
+  for (const object of schema.catalog.objects) {
+    if (object.kind === "table") tables.add(object.identity.name);
+    if (object.kind !== "view" && object.kind !== "materializedView") continue;
+    listed.set(object.identity.name, { kind: object.kind, query: object.definition.query });
+  }
+  const views: ViewFacts[] = [];
+  for (const name of Object.keys(schema.model)) {
+    const model = schema.model[name];
+    if (model === undefined || tables.has(model.sql)) continue;
+    const meta = listed.get(model.sql);
+    if (meta === undefined) continue;
+    const reason = viewGlobalReason(model);
+    views.push({
+      name,
+      sql: model.sql,
+      kind: meta.kind,
+      query: meta.query,
+      columns: model.columns.map((column) => ({
+        field: column.field,
+        dataType: column.dataType,
+        guarded: column.guarded,
+      })),
+      tenant: reason === undefined && isTenant(schema.tenancy, model),
+      globalReason: reason,
+    });
+  }
+  return views;
 }
 
 /**
