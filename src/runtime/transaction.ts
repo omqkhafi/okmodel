@@ -378,6 +378,12 @@ async function nested(
   const saved = frame.failed;
   const after: After[] = [];
   let released = false;
+  const hooks = session.pool as {
+    okmForgetScope?: () => void;
+    okmScopePending?: () => Promise<void> | undefined;
+  };
+  const pending = hooks.okmScopePending?.();
+  if (pending !== undefined) await pending;
   try {
     await step(session, frame, `SAVEPOINT ${name}`);
     hear?.phase(session.hookm, "start", depth + 1);
@@ -394,6 +400,7 @@ async function nested(
     if (!released && frame.stopped === undefined) {
       // The savepoint absorbs the failure: the transaction goes on if the caller handles the error.
       await frame.conn.execute(`ROLLBACK TO SAVEPOINT ${name}`).catch(() => undefined);
+      hooks.okmForgetScope?.();
       frame.failed = saved;
       hear?.phase(session.hookm, "rollback", depth + 1);
     }

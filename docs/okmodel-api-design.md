@@ -821,15 +821,15 @@ The column predicate stays on every statement, the same as `columnTenancy()`. Po
 - One permissive policy for all commands, named `{sql table}_tenant`. `USING` and `WITH CHECK` are the text `pg_get_expr` prints. A lowercase unreserved column stays bare: `(tenant_id = (NULLIF(current_setting('app.tenant'::text, true), ''::text))::uuid)`. Any other column, including a reserved word, is double-quoted: `("tenantId" = (NULLIF(current_setting('app.tenant'::text, true), ''::text))::uuid)`. An unset setting returns no rows. A snake-case `tenant_id` catalog hash does not change (D236).
 - A second permissive policy for `SELECT` only, named `{sql table}_unscoped_select`, `USING (current_setting('app.unscoped', true) = 'on')`. `unscoped(reason)` sets that for a read. A write under `unscoped()` is OKM1701. Cross-tenant writes belong to the migration role. Use `for()` to write as one tenant.
 
-Every scoped call runs in a transaction that starts with `select set_config('app.tenant', $1, true)`. The third argument is transaction-local, so a transaction-mode pooler cannot hand the tenant to the next client. A user `tx()` sets it once, at the start of that transaction. A read's transaction is read-only, part of the operation, and follows the operation's routing (section 15.1), so it may run on a replica. After commit, the same connection has no tenant setting.
+Every scoped call runs in a transaction that starts with `select set_config('app.tenant', $1, true)`. The third argument is transaction-local, so a transaction-mode pooler cannot hand the tenant to the next client. A user `tx()` sets it at the start of that transaction, before any savepoint, and sets it again when a later statement's scope differs from the last one set in that transaction. A rolled-back savepoint does not leave the transaction unscoped. A read's transaction is read-only, part of the operation, and follows the operation's routing (section 15.1), so it may run on a replica. After commit, the same connection has no tenant setting.
 
-The role check runs on the first scoped call for a pool, before any statement of that call, and the result is cached for that pool (D231). It is not inside `connect()`. It refuses a superuser, a role with `BYPASSRLS`, or the owner of a tenant table (OKM1707). `reason` is `superuser`, `bypassrls`, or `owner`, in that order.
+The role check and the policy check run on the first scoped statement of each endpoint that can serve one, the primary and each replica, before that statement. The result is cached for that endpoint until the endpoint fails over or its circuit closes again. The check is not inside `connect()`. It refuses a superuser, a role with `BYPASSRLS`, or the owner of a tenant table (OKM1707). The message names the endpoint. `reason` is `superuser`, `bypassrls`, or `owner`, in that order. The policy check reads `relrowsecurity`, `relforcerowsecurity`, and each policy expression, and raises when they do not match the catalog. `okm check` compares the same three with the catalog (D231, D238).
 
 A view over tenant tables is created `WITH (security_invoker = true)`. A view under another strategy is unchanged. A view that exposes no tenant key still fails `okm check` (OKM1820).
 
 These policies protect against an application bug that drops the column predicate. They do not protect against code that can run arbitrary SQL as the application role and set `app.tenant` itself. That code is the application role.
 
-The reporting role from section 5.7 is not `BYPASSRLS` and does not own the tables, so the same policies apply. With no `app.tenant` it sees no tenant rows. `unscoped()` is not granted to it. A session that sets `app.unscoped` itself can read every tenant row through the select policy and still cannot write (D232).
+The reporting role from section 5.7 is not tenant-safe against its own SQL. It is not `BYPASSRLS` and does not own the tables, so the policies apply to statements that do not set the session variables. With no `app.tenant` it sees no tenant rows. `unscoped()` is not granted to it. The role can still set `app.unscoped` itself and read every tenant row through the select policy. It still cannot write (D232, D238).
 
 ## 10. Reading
 
@@ -1511,6 +1511,7 @@ test("today view runs one query", async () => {
 | Replayed migration differs from its stored catalog, or was generated from a different parent | `okm migrate check` | OKM1547 |
 | Previous catalog is not satisfied by an expand migration | `okm migrate check` | OKM1548 |
 | Last migration catalog does not match the schema | `okm migrate check` | OKM1549 |
+| Disabling row-level security, dropping or widening a policy to `USING (true)` or `WITH CHECK (true)`, granting `BYPASSRLS`, or changing the owner of a tenant table | lint | OKM1550 |
 | Stale typed-SQL signature | CI | OKM1601 |
 | Commit or batch outcome unknown (result never received) | runtime | OKM1401 |
 | Tenant table without context | types | OKM1701 |

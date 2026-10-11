@@ -404,7 +404,7 @@ export async function introspectSchema(
     const parent = parents.get(parentName);
     if (parent === undefined) continue;
     const command = policyCommand(text(row, "command"));
-    if (command === undefined) continue;
+    if (command === undefined || text(row, "enabled") !== "true") continue;
     objects.push(
       policyObject({
         parent,
@@ -1025,7 +1025,8 @@ const POLICIES = `
     p.polname as name,
     p.polcmd as command,
     coalesce(pg_get_expr(p.polqual, p.polrelid), '') as using_expr,
-    c.relforcerowsecurity::text as force
+    c.relforcerowsecurity::text as force,
+    c.relrowsecurity::text as enabled
   from pg_policy p
   join pg_class c on c.oid = p.polrelid
   join pg_namespace n on n.oid = c.relnamespace
