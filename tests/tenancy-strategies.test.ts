@@ -58,7 +58,7 @@ test("composite keys widen the primary key, the unique, and the conflict target"
       object.identity.parent.name === "documents" &&
       object.definition.columns.join(",") === "id,organization_id,workspace_id",
   );
-  expect(nameOf(beside)).toBe("documents_id_organizationId_workspaceId_key");
+  expect(nameOf(beside)).toBe("documents_id_organization_id_workspace_id_key");
   const title = objects.find(
     (object) =>
       object.kind === "constraint" &&
@@ -132,7 +132,10 @@ test("a path ends at the tenant table and stores a unique on its declared key", 
       object.identity.parent.name === "organizations" &&
       object.definition.columns.join(",") === "id",
   );
-  expect(endpoint).toBeDefined();
+  expect(endpoint?.kind === "constraint" ? endpoint.identity.name : "").toBe(
+    "organizations_id_key",
+  );
+  expect(endpoint?.kind === "constraint" ? endpoint.definition.columns : []).toEqual(["id"]);
   const projectFk = objects.find(
     (object) =>
       object.kind === "constraint" &&

@@ -76,7 +76,7 @@ test("catalog stores the tenant column, composite keys, and widened uniques", ()
       object.identity.parent.name === "tasks" &&
       object.definition.columns.join(",") === "id,tenant_id",
   );
-  expect(objectName(tenantUnique)).toBe("tasks_id_tenantId_key");
+  expect(objectName(tenantUnique)).toBe("tasks_id_tenant_id_key");
   expect(tenantUnique?.kind === "constraint" ? tenantUnique.definition.nameKey : "").toBe(
     "id_tenantId",
   );
@@ -91,7 +91,7 @@ test("catalog stores the tenant column, composite keys, and widened uniques", ()
     "tenant_id",
     "title",
   ]);
-  expect(objectName(title)).toBe("tasks_title_key");
+  expect(objectName(title)).toBe("tasks_tenant_id_title_key");
 
   const code = objects.find(
     (object) =>
@@ -157,9 +157,11 @@ test("renamedFrom renames the extra tenant unique and does not drop it", () => {
     schemaDeclarations(renamedTable).renames,
   );
   expect(tableSql).toContain(
-    'rename constraint "tasks_id_tenantId_key" to "items_id_tenantId_key"',
+    'rename constraint "tasks_id_tenant_id_key" to "items_id_tenant_id_key"',
   );
-  expect(tableSql).toContain('rename constraint "tasks_title_key" to "items_title_key"');
+  expect(tableSql).toContain(
+    'rename constraint "tasks_tenant_id_title_key" to "items_tenant_id_title_key"',
+  );
   expect(tableSql).toContain('rename constraint "tasks_pkey" to "items_pkey"');
   expect(tableSql.includes("drop constraint")).toBe(false);
 
@@ -180,11 +182,11 @@ test("renamedFrom renames the extra tenant unique and does not drop it", () => {
   );
   expect(columnSql).toContain('rename column "id" to "task_id"');
   expect(columnSql).toContain(
-    'rename constraint "tasks_id_tenantId_key" to "tasks_taskId_tenantId_key"',
+    'rename constraint "tasks_id_tenant_id_key" to "tasks_task_id_tenant_id_key"',
   );
   expect(columnSql.includes("drop constraint")).toBe(false);
   expect(catalogHash(before.catalog)).toBe(
-    "a9c2ca6f3853e4eca2d7e2c679588cb36ff2109ebd7b3848a5d6245ef6b73f29",
+    "d029ad2cc216ec1b89062614a881d81841e7dbb1fc33602f9fd33203a1bc8461",
   );
 });
 

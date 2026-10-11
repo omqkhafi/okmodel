@@ -30,7 +30,7 @@ postgresTest(
       await withClone(original, async (clone) => {
         const env = { REHEARSAL_DATABASE_URL: clone };
         expect(await okmOk(["migrate", "check", "--target", "rehearsal"], env)).toBe(
-          "ok 3 migrations\n",
+          "ok 4 migrations\n",
         );
         const applied = await okmOk(["migrate", "apply", "--target", "rehearsal"], env);
         expect(applied).toContain("applied 0002_public_id");

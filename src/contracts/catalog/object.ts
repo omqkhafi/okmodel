@@ -270,7 +270,8 @@ export function index(input: IndexInput): IndexObject {
  * Builds a constraint object.
  *
  * Primary key names are `{parent}_pkey` and do not include column names.
- * Other names use `nameKey`, which stays fixed when a field is renamed.
+ * Unique and foreign-key names use every SQL column. Checks use `nameKey`,
+ * which stays fixed when a field is renamed. `nameKey` is always stored.
  *
  * @param input - Parent, kind, columns, and the stable name key
  * @returns A constraint envelope
@@ -344,7 +345,10 @@ export function constraint(input: ConstraintInput): ConstraintObject {
       ? deterministicName({
           parent: input.parent.name,
           purpose: input.constraintKind,
-          nameKey,
+          nameKey:
+            input.constraintKind === "check"
+              ? nameKey
+              : defaultNameKey(input.constraintKind, columns),
         })
       : fitIdentifier(input.name);
   const identity: AnchoredIdentity & { readonly kind: "constraint" } = {

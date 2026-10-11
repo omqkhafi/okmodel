@@ -186,6 +186,12 @@ test("a declared table rename renames default dependents and leaves a custom nam
   expect(text).toContain('rename constraint "tasks_email_key" to "items_contact_key"');
   expect(text).toContain('rename constraint "tasks_userId_fkey" to "items_userId_fkey"');
   expect(text).toContain('alter index "public"."tasks_email_idx" rename to "items_contact_idx"');
+  const constraintRename = plan.steps.find((step) => step.sql.includes("rename constraint"));
+  const indexRename = plan.steps.find(
+    (step) => step.action === "ddl" && step.sql.includes("alter index"),
+  );
+  expect(constraintRename?.lock).toBe("ACCESS EXCLUSIVE");
+  expect(indexRename?.lock).toBe("SHARE UPDATE EXCLUSIVE");
   expect(text).toContain('alter sequence "public"."tasks_id_seq" rename to "items_id_seq"');
   expect(text).toContain('rename column "email" to "contact"');
   expect(text).not.toContain("drop table");

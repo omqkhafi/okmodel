@@ -334,7 +334,7 @@ postgresTest(
   "okm migrate check replays rls policies and a column schema does not grow them",
   async () => {
     expect(catalogHash(columnApp.catalog)).toBe(
-      "12bdf154322bd0f113aabd10055763e74781458a9d5bd1589d18f291b336e445",
+      "df7f8549fea5cde8e35a21e84541900abfe30fd605f4af0e7e98792f66aab32b",
     );
     await withProject(async (cwd) => {
       writeRlsSchema(cwd);

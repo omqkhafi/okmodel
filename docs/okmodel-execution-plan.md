@@ -160,7 +160,7 @@ M2 Depth ships as four trains, in this order (D217). Access is first: tenancy an
 
 Startup room after 0.5.1 (D216): the featureless app is 90,851 / 30,157 against a gate of 90,900 / 30,170 (49 minified bytes and 13 gzip left). The connect entries have about 20 gzip left (postgres.js 22, PGlite 23, node-postgres 22, Bun.sql 28). Every M2 feature loads lazily, or the step stops with the numbers first and does not move a gate (the D201 rule, for all of M2). P80 is the report that says which 0.6 features can be lazy. Ali approves that proposal before P81.
 
-Ranges reserved, prompts written when reached except for 0.6: 0.6 is P80–P89, 0.7 is P90–P99, 0.8 is P100–P109, 0.9 is P110–P119. Each train ends with a gate step and a release commit, like P66. P87–P89 are not scheduled.
+Ranges reserved, prompts written when reached except for 0.6: 0.6 is P80–P89, 0.7 is P90–P99, 0.8 is P100–P109, 0.9 is P110–P119. Each train ends with a gate step and a release commit, like P66. P88–P89 are not scheduled.
 
 #### Train 0.6 Access
 
@@ -172,7 +172,8 @@ Ranges reserved, prompts written when reached except for 0.6: 0.6 is P80–P89, 
 | P83 | `p83-tenancy-rls` | Strategy `rls`: policies, the session variable set per transaction, and the hardening in §9 and §9.4 (`FORCE ROW LEVEL SECURITY`, `set_config`, missing-ok policies, OKM1707, `security_invoker` on views in §5.7). `table({ policies })` is `later` in §6.4. It leaves `later` only for the part this step does not ship. Stop: lazy, or stop with the numbers first. No gate move |
 | P84 | `p84-grants-ownership` | Column-level grants (§5.7 Grants), a read-only reporting role (D207 names it; the spec's surface is the grants), ownership (`ignored` and `owner:`, §5.1, D61), and the application role's `SELECT` on `okm_meta` (D208 follow-up; known limit, not a spec section). Stop: lazy, or stop with the numbers first. No gate move |
 | P85 | `p85-view-isolation` | A read-only `isolation()` check for views and tenant views (§5.7 Tenancy, §20, D199, D207). `filters()` completion: operators and relations beyond the thirteen D215 parses (§10.1, §10.2). `filters()` itself stays the synchronous spec in D161. Stop: lazy, or stop with the numbers first. No gate move. Shipped (D233) |
-| P86 | `p86-gate-0.6` | Gate and release 0.6, like P66. Hygiene before `bun run bump release` (D115). No new API in the gate step |
+| P86 | `p86-gate-0.6` | Gate and release 0.6, like P66. Hygiene before `bun run bump release` (D115). No new API in the gate step. P86 decides whether the app gate is re-set after hygiene |
+| P87 | `p87-constraint-names` | Constraint and index names from SQL names (QA-L4, §5.7, §9.2, D234). Unique and foreign-key names use every SQL column. The stored name key stays. `okm migrate` renames. No gate move |
 
 #### Later trains (prompts written when reached)
 

@@ -8,6 +8,7 @@
 
 import type { DriverPool, ExecuteOptions } from "../../../contracts/driver.js";
 import type { ErrorStatuses } from "../../../contracts/error.js";
+import type { MapPostgresErrorSchema } from "../errors.js";
 
 /** The client fields a refresh uses. The view hook passes its session. */
 type RefreshHost = {
@@ -16,6 +17,8 @@ type RefreshHost = {
   readonly timeouts?: { readonly statement?: number } | undefined;
   readonly http?: ErrorStatuses | undefined;
   readonly includeValues?: boolean | undefined;
+  /** Catalog and model already on the client. The lazy mapper reads this reference. */
+  readonly schema?: MapPostgresErrorSchema | undefined;
   readonly logger?:
     | { error?(entry: { readonly code: string; readonly summary: string }): void }
     | undefined;
@@ -49,6 +52,7 @@ export async function refreshView(
     const mapped = mapPostgresError(error, {
       ...(host.http !== undefined ? { http: host.http } : {}),
       ...(host.includeValues === true ? { includeValues: true } : {}),
+      ...(host.schema !== undefined ? { schema: host.schema } : {}),
     });
     host.logger?.error?.({ code: mapped.code, summary: mapped.summary });
     throw mapped;

@@ -1,6 +1,6 @@
 # Size and cold start
 
-The opening table is the current sample on main, measured after composite and path tenancy (D228, D229). The 0.5.0 release sample is [history](#history-the-050-release).
+The opening table is the current sample, measured after SQL constraint names (D234). The 0.5.0 release sample is [history](#history-the-050-release).
 
 Numbers are from the same bundler walk as `bun run size` ([`scripts/size.ts`](../scripts/size.ts)). CI job `check` in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs `bun run check`, which runs that script. Cold import is the median of five fresh Node processes (D134). The failing cold-import gate is 25 ms, and it applies to the runtime entry only. A local sample above 15 ms is printed and does not fail the script.
 
@@ -8,19 +8,19 @@ Byte gates fail in that CI job. Install size is the unminified `dist/` and is pr
 
 | Graph | Minified | Gzip | Cold import | Gate |
 | --- | ---: | ---: | ---: | --- |
-| Runtime entry `okmodel` | 5,288 | 2,026 | 1.742 ms | 6,100 / 2,250 bytes, CI cold import 25 ms |
-| App startup (10 tables, one find) | 90,690 | 30,145 | 10.519 ms | 90,900 / 30,170 bytes. Cold import is printed, not gated |
-| App startup, `postgres` stubbed | | | 5.453 ms | local reference 15 ms, not gated |
-| Connect `okmodel/pg/postgresjs` startup | 42,177 | 14,856 | 8.410 ms | 42,450 / 14,920. Cold import printed, not gated |
-| Connect postgres.js, driver stubbed | | | 2.722 ms | local reference 15 ms, not gated |
-| Connect `okmodel/pg/pglite` startup | 40,187 | 14,225 | 10.778 ms | 40,450 / 14,280. Cold import printed, not gated |
-| Connect PGlite, driver stubbed | | | 2.804 ms | local reference 15 ms, not gated |
-| Connect `okmodel/pg/pg` startup | 42,590 | 15,019 | 11.355 ms | 42,850 / 15,070. Cold import printed, not gated |
-| Connect `okmodel/pg/pg`, driver stubbed | | | 2.869 ms | local reference 15 ms, not gated |
-| Connect `okmodel/pg/bun` startup | 41,438 | 14,545 | | 41,700 / 14,620. Node cold import skipped: Bun.sql runs only on Bun |
-| Connect Bun.sql, driver stubbed | | | 2.595 ms | local reference 15 ms, not gated |
+| Runtime entry `okmodel` | 5,288 | 2,026 | 2.014 ms | 6,100 / 2,250 bytes, CI cold import 25 ms |
+| App startup (10 tables, one find) | 90,762 | 30,139 | 11.326 ms | 90,900 / 30,170 bytes. Cold import is printed, not gated |
+| App startup, `postgres` stubbed | | | 6.128 ms | local reference 15 ms, not gated |
+| Connect `okmodel/pg/postgresjs` startup | 42,199 | 14,867 | 9.795 ms | 42,450 / 14,920. Cold import printed, not gated |
+| Connect postgres.js, driver stubbed | | | 3.240 ms | local reference 15 ms, not gated |
+| Connect `okmodel/pg/pglite` startup | 40,209 | 14,233 | 11.839 ms | 40,450 / 14,280. Cold import printed, not gated |
+| Connect PGlite, driver stubbed | | | 3.050 ms | local reference 15 ms, not gated |
+| Connect `okmodel/pg/pg` startup | 42,612 | 15,020 | 12.230 ms | 42,850 / 15,070. Cold import printed, not gated |
+| Connect `okmodel/pg/pg`, driver stubbed | | | 2.851 ms | local reference 15 ms, not gated |
+| Connect `okmodel/pg/bun` startup | 41,460 | 14,553 | | 41,700 / 14,620. Node cold import skipped: Bun.sql runs only on Bun |
+| Connect Bun.sql, driver stubbed | | | 2.713 ms | local reference 15 ms, not gated |
 
-Left under those gates, minified / gzip: runtime entry 812 / 224, featureless app 210 / 25, postgres.js 273 / 64, PGlite 263 / 55, node-postgres 260 / 51, Bun.sql 262 / 75. The sections below record the 0.5.0 release and each later measurement. They are not a second current sample.
+Left under those gates, minified / gzip: runtime entry 812 / 224, featureless app 138 / 31, postgres.js 251 / 53, PGlite 241 / 47, node-postgres 238 / 50, Bun.sql 240 / 67. The sections below record the 0.5.0 release and each later measurement. They are not a second current sample.
 
 ## History: the 0.5.0 release
 

@@ -6,7 +6,7 @@ A small project tracker built on OKModel's public entry points (`okmodel/pg`, `o
 - `src/db.ts`: one primary, or a primary with named replicas.
 - `src/use-cases.ts`: create a workspace, add a project and tasks, comment, move a task, archive and restore a project, a board page, and a report read from a replica.
 - `okmodel.config.ts`: targets from the environment (`DATABASE_URL`, `PREVIEW_DATABASE_URL`, `REHEARSAL_DATABASE_URL`, `PRODUCTION_DATABASE_URL`, which is protected), roles, and a backfill batch of 500.
-- `migrations/`: `0001_init`, `0002_public_id` (expand with a backfill), `0003_drop_share_token` (contract), all from `okm generate`.
+- `migrations/`: `0001_init`, `0002_public_id` (expand with a backfill), `0003_drop_share_token` (contract), `0004_sql_names` (renames constraints to SQL column names), all from `okm generate`.
 
 ## Run it locally
 

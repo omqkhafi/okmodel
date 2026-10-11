@@ -41,19 +41,21 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - `columnTenancy()` takes one key. A key list is `compositeTenancy()`. `tenancy: { via: "..." }` is not a strategy. Use `via()` from `okmodel/tenancy`. A handwritten object is rejected when the schema is built (D229, pre-v1).
 - `filters({ allow })` accepts only the operators `parse` applies. `path`, `matches`, `similar`, `wordSimilar`, `or`, `and`, `none`, `every`, and the write operators are a type error (D233, pre-v1).
+- Generated unique and foreign-key names use every SQL column after `casing` and `sqlName`. A primary key stays `{table}_pkey`. A picklist check stays the SQL column. A named check keeps the author's name. Indexes are unchanged. A catalog with a multi-column unique or foreign key changes `catalogHash`. `okm migrate` plans `RENAME CONSTRAINT` and does not drop the object. `ALTER INDEX … RENAME` is `SHARE UPDATE EXCLUSIVE`. A database created before this spelling plans only those renames, and the next plan is empty. `connect()` on the old catalog is OKM1520 until apply. A violation through `connect()` still reasons the stored name key. The column-tenancy fixture hash is now `df7f8549fea5cde8e35a21e84541900abfe30fd605f4af0e7e98792f66aab32b`. The small tasks schema is `d029ad2cc216ec1b89062614a881d81841e7dbb1fc33602f9fd33203a1bc8461` (D234, supersedes the TypeScript-name formula in D223).
 
 ### ♻️ Changed
 
 - The plan schedules M2 Depth as four trains: 0.6 Access (P80–P86), then 0.7 Query depth, 0.8 SQL lane, and 0.9 Tooling. Access is first. Each feature loads lazily, or the step stops with numbers. The OKE prototype starts after 0.6 (D217).
 - A where with no effective predicate is checked from the write and archive chunks. A read does not carry that walk. The runtime entry stays 5,288 / 2,026. The featureless app is 90,506 / 30,063 (D219).
 - A hidden column named in `where` or `orderBy` is OKM1120. `hidden({ filterable: true })` allows those two clauses and still leaves the column out of the default row. `filters()` still refuses it (OKM1123). The catalog hash is unchanged. The featureless app is 90,721 / 30,154, under the 90,900 / 30,170 gate (D226).
-- The extra unique beside a tenant primary key stays `{table}_{TypeScript fields}_{tenant field}_key`, for example `tasks_id_tenantId_key`. `renamedFrom` already renames it. The formula is unchanged, so existing catalogs do not move (D223).
+- The extra unique beside a tenant primary key keeps the stored name key `{primary fields}_{tenant field}`. Its SQL name is the column list (D234, supersedes the TypeScript spelling in D223).
 - A `timeout` or `signal` still does not settle an in-flight statement on Bun.sql or PGlite. The fix grew Bun.sql by 108 / 39, so it was not shipped (D224).
 - The hidden `where` and `orderBy` check was measured in three forms. The smallest reuses `fail()` and fits under the current gates: the featureless app would be 90,718 / 30,143 (D225).
 - A pull request labelled `needs: postgres` runs the Postgres suite as four shards per version, each with its own database, and proves the pooler beside those shards. `gate / check` waits for the suite and the tarball. A skipped Postgres slice fails that gate while the label is present (D230).
 
 ### 🐛 Fixed
 
+- `okm migrate check` keeps a constraint whose only difference is the stored name key. Postgres does not store that key, so a replay no longer drops and recreates it. The reference app migration `0004_sql_names` renames the constraints whose SQL names changed (D234).
 - `onConflict: { on: "title" }` on a tenant unique of (tenant key, title) updates that tenant's row. The conflict target includes the tenant key. Naming the tenant key is still OKM1104. Two tenants can keep the same title (D221).
 - The handbook names draft 26, and the opening size table is the current sample.
 

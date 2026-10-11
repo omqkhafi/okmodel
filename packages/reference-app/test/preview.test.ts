@@ -23,10 +23,10 @@ postgresTest(
       const { database, applied } = await previewDatabase();
       try {
         const env = { PREVIEW_DATABASE_URL: database.url };
-        expect(applied).toContain("applied provisioned@0003_drop_share_token");
+        expect(applied).toContain("applied provisioned@0004_sql_names");
         expect(await okmOk(["check", "--target", "preview"], env)).toBe("ok\n");
         expect(await okmOk(["migrate", "status", "--target", "preview"], env)).toContain(
-          "0003_drop_share_token",
+          "0004_sql_names",
         );
         const db = app.openPrimary(await appRoleUrl(database.url), { max: 2 });
         try {
@@ -70,7 +70,7 @@ postgresTest(
         await okmOk(["migrate", "check", "--provision", "--target", "preview"], {
           PREVIEW_DATABASE_URL: a.url,
         }),
-      ).toBe("ok 3 migrations\n");
+      ).toBe("ok 4 migrations\n");
     } finally {
       await Promise.all(databases.map((database) => database.close()));
     }

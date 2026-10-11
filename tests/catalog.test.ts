@@ -188,7 +188,7 @@ test("renaming a field keeps constraint and index names", () => {
   expect(unique === undefined ? "" : objectName(unique)).toBe("tasks_email_key");
   expect(unique?.kind === "constraint" ? unique.definition.columns : []).toEqual(["contact"]);
   expect(unique?.kind === "constraint" ? unique.definition.nameKey : "").toBe("email");
-  expect(fk === undefined ? "" : objectName(fk)).toBe("tasks_user_fkey");
+  expect(fk === undefined ? "" : objectName(fk)).toBe("tasks_email_fkey");
   expect(fk?.kind === "constraint" ? fk.definition.columns : []).toEqual(["contact"]);
   expect(secondary === undefined ? "" : objectName(secondary)).toBe("tasks_email_idx");
   expect(secondary?.kind === "index" ? secondary.definition.columns : []).toEqual(["contact"]);
