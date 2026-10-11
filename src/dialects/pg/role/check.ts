@@ -31,6 +31,7 @@ export async function assertRoleHealth(
 ): Promise<void> {
   const managed = new Set((roles.managed ?? []).map((role) => role.name));
   const named = [roles.migration, roles.app];
+  if (roles.reporting !== undefined) named.push(roles.reporting);
   for (const name of named) {
     if (managed.has(name)) continue;
     if (!(await roleExists(runner, name))) {
@@ -42,7 +43,10 @@ export async function assertRoleHealth(
   }
   if (managed.size > 0) await assertCreateRole(runner, await currentUser(runner));
   for (const object of objects) {
-    if (object.kind !== "grant" || object.identity.role !== roles.app) continue;
+    if (object.kind !== "grant") continue;
+    if (managed.has(object.identity.role) && !(await roleExists(runner, object.identity.role))) {
+      continue;
+    }
     await assertGrant(runner, object);
   }
 }
@@ -105,7 +109,23 @@ async function assertGrant(runner: Runner, object: GrantObject): Promise<void> {
     if (!truthy(allowed.rows[0]?.[0])) missing(object, `${schema}.${fn}`);
     return;
   }
-  if (target.kind === "namespace") return;
+  if (target.kind === "namespace") {
+    const allowed = await runner.execute(
+      `select exists (
+         select 1 from pg_namespace n
+         cross join lateral aclexplode(n.nspacl) as a
+         where n.nspname = $2
+           and a.privilege_type = $3
+           and (
+             a.grantee = 0
+             or a.grantee = (select oid from pg_roles where rolname = $1)
+           )
+       )`,
+      [object.identity.role, schema, privilege],
+    );
+    if (!truthy(allowed.rows[0]?.[0])) missing(object, `schema ${schema}`);
+    return;
+  }
   const relkinds =
     target.kind === "sequence"
       ? "'S'"
@@ -115,6 +135,20 @@ async function assertGrant(runner: Runner, object: GrantObject): Promise<void> {
           ? "'m'"
           : "'r', 'p'";
   if (!(await relationExists(runner, schema, target.name, relkinds))) return;
+  const column = /^(SELECT|UPDATE)\(([^)]*)\)$/.exec(privilege);
+  const listed = column?.[2];
+  const base = column?.[1];
+  if (listed !== undefined && base !== undefined) {
+    const names = listed.split(",").filter((name) => name.length > 0);
+    for (const name of names) {
+      const allowed = await runner.execute(
+        "select has_column_privilege($1, format('%I.%I', $2::text, $3::text), $4, $5)",
+        [object.identity.role, schema, target.name, name, base],
+      );
+      if (!truthy(allowed.rows[0]?.[0])) missing(object, `${schema}.${target.name}.${name}`);
+    }
+    return;
+  }
   const probe =
     target.kind === "sequence"
       ? "select has_sequence_privilege($1, format('%I.%I', $2::text, $3::text), $4)"

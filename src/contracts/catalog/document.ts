@@ -193,15 +193,31 @@ export function catalogHash(source: Catalog): string {
  *
  * Roles, grants, and default privileges come from the migration config, not
  * the schema, so they are left out. A `schema()` catalog never has them, so
- * `connect()` hashes it unchanged. `okm check` still verifies them. A
- * catalog without them is returned as is.
+ * `connect()` hashes it unchanged. `okm check` still verifies them. An
+ * `external` or `ignored` owner is planning state. The startup copy writes
+ * it back to `managed`, which is what `schema()` stored. A catalog with
+ * neither privileges nor those owners is returned as is.
  *
  * @param source - Catalog document
- * @returns The catalog without role, grant, and default-privilege objects
+ * @returns The catalog `connect()` hashes
  */
 export function startupCatalog(source: Catalog): Catalog {
-  if (!source.objects.some(isPrivilege)) return source;
-  return { version: source.version, objects: source.objects.filter((item) => !isPrivilege(item)) };
+  let privileges = false;
+  let foreign = false;
+  for (const object of source.objects) {
+    if (isPrivilege(object)) privileges = true;
+    else if (object.owner !== "managed") foreign = true;
+    if (privileges && foreign) break;
+  }
+  if (!privileges && !foreign) return source;
+  return {
+    version: source.version,
+    objects: source.objects.flatMap((item) => {
+      if (isPrivilege(item)) return [];
+      if (item.owner === "managed") return [item];
+      return [{ ...item, owner: "managed" as const }];
+    }),
+  };
 }
 
 /**

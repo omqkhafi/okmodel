@@ -149,6 +149,29 @@ export async function assumeRole(
  * @param schema - Schema the migration writes
  * @param role - Role that was just created
  */
+/**
+ * Grants the application role `SELECT` on `okm_meta`.
+ *
+ * No other privilege. When the session has `SET ROLE`, the grant runs as
+ * the session user and the role is restored. A second apply grants the
+ * same privilege again.
+ *
+ * @param connection - Reserved connection
+ * @param role - Application role. Omitted when the config names none
+ * @param session - Role the runner already assumed
+ */
+export async function grantAppMeta(
+  connection: DriverConnection,
+  role: string | undefined,
+  session: { setRole?: string },
+): Promise<void> {
+  if (role === undefined) return;
+  const previous = session.setRole;
+  if (previous !== undefined) await connection.execute("reset role");
+  await connection.execute(`grant select on okm_meta to ${quoteIdent(role)}`);
+  if (previous !== undefined) await connection.execute(`set role ${quoteIdent(previous)}`);
+}
+
 export async function grantSchema(
   connection: DriverConnection,
   schema: string,

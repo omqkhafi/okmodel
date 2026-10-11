@@ -64,10 +64,11 @@ export type MigrateConfig = {
     readonly statementTimeoutMs?: number;
   };
   /**
-   * Migration role and application role.
+   * Migration role, application role, and the optional reporting role.
    *
    * A name is external unless it is also listed in `managed`. The plan creates
-   * a managed role and never drops one.
+   * a managed role and never drops one. `reporting` receives select only.
+   * `columns` grants select or update on named columns.
    */
   readonly roles?: RolesInput;
 };

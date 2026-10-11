@@ -39,6 +39,21 @@ export type PrivilegeStatement = {
 };
 
 const PRIVILEGE = /^(select|insert|update|delete|execute|usage)$/;
+const COLUMN_PRIVILEGE = /^(select|update)\(([^)]*)\)$/;
+
+/**
+ * Privilege name for a column grant.
+ *
+ * Columns are sorted so the identity is stable. The catalog stores this
+ * string. It does not grow the grant type.
+ *
+ * @param name - `SELECT` or `UPDATE`
+ * @param columns - SQL column names
+ * @returns `SELECT(email,name)`
+ */
+export function columnPrivilege(name: string, columns: readonly string[]): string {
+  return `${name.toUpperCase()}(${[...columns].sort().join(",")})`;
+}
 
 /**
  * Diffs role, grant, and default-privilege objects into SQL.
@@ -96,6 +111,8 @@ export function privilegeSql(
     if (object.kind === "grant") {
       const target = grantTargetKey(object.identity.object);
       if (previous !== undefined && (target === undefined || !recreated.has(target))) continue;
+      const tighten = tightenColumnSelect(object, after, schema);
+      if (tighten !== undefined) grant.push(tighten);
       grant.push({ sql: grantStatement(object, schema, false), kind: "grant" });
       continue;
     }
@@ -170,12 +187,47 @@ function inherit(object: RoleObject): string {
   return object.definition.inherit ? "inherit" : "noinherit";
 }
 
+function tightenColumnSelect(
+  object: GrantObject,
+  after: readonly CatalogObject[],
+  schema: string,
+): PrivilegeStatement | undefined {
+  if (!/^select\([^)]*\)$/.test(object.identity.privilege.toLowerCase())) return undefined;
+  const target = object.identity.object;
+  const covered = after.some(
+    (item) =>
+      item.kind === "grant" &&
+      item.identity.role === object.identity.role &&
+      item.identity.privilege.toUpperCase() === "SELECT" &&
+      item.identity.object.kind === target.kind &&
+      item.identity.object.name === target.name,
+  );
+  if (covered) return undefined;
+  return {
+    sql: `revoke select on ${grantTarget(target, schema)} from ${quoteIdent(object.identity.role)}`,
+    kind: "revoke",
+  };
+}
+
 function grantStatement(object: GrantObject, schema: string, revoke: boolean): string {
   const privilege = object.identity.privilege.toLowerCase();
-  assertPrivilege(privilege);
+  const column = COLUMN_PRIVILEGE.exec(privilege);
   const verb = revoke ? "revoke" : "grant";
   const direction = revoke ? "from" : "to";
-  return `${verb} ${privilege} on ${grantTarget(object.identity.object, schema)} ${direction} ${quoteIdent(object.identity.role)}`;
+  const target = grantTarget(object.identity.object, schema);
+  const role = quoteIdent(object.identity.role);
+  const listed = column?.[2];
+  const base = column?.[1];
+  if (listed !== undefined && base !== undefined) {
+    const names = listed
+      .split(",")
+      .filter((name) => name.length > 0)
+      .map((name) => quoteIdent(name))
+      .join(", ");
+    return `${verb} ${base} (${names}) on ${target} ${direction} ${role}`;
+  }
+  assertPrivilege(privilege);
+  return `${verb} ${privilege} on ${target} ${direction} ${role}`;
 }
 
 function defaultStatement(object: DefaultPrivilegeObject, schema: string, revoke: boolean): string {
@@ -211,7 +263,7 @@ function grantTargetKey(object: GrantObjectRef): string | undefined {
 function grantTarget(object: GrantObjectRef, schema: string): string {
   if (object.kind === "sequence") return `sequence ${qualify(schema, object.name)}`;
   if (object.kind === "function") return functionTarget(object.name, schema);
-  if (object.kind === "namespace") return `schema ${quoteIdent(object.name)}`;
+  if (object.kind === "namespace") return `schema ${quoteIdent(schema)}`;
   return `table ${qualify(schema, object.name)}`;
 }
 

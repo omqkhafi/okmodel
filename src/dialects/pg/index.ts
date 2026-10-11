@@ -12,6 +12,7 @@ export {
   type SchemaInput,
   type SchemaRequires,
 } from "./schema.js";
+export { withOwner, type DeclaredOwner } from "./owner.js";
 export {
   index,
   sql,
