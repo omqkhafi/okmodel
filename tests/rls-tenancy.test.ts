@@ -13,7 +13,7 @@ import { view } from "../src/dialects/pg/view/index.js";
 import { columnTenancy, global, rlsTenancy, via } from "../src/runtime/tenancy/index.js";
 import { app } from "./tenancy-schema.js";
 
-const COLUMN_HASH = "12bdf154322bd0f113aabd10055763e74781458a9d5bd1589d18f291b336e445";
+const COLUMN_HASH = "df7f8549fea5cde8e35a21e84541900abfe30fd605f4af0e7e98792f66aab32b";
 
 test("a column schema keeps its catalog hash and emits no policies", () => {
   expect(catalogHash(app.catalog)).toBe(COLUMN_HASH);

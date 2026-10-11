@@ -864,7 +864,7 @@ function renameShapeStep(
       `alter index ${qualify(schema, pair.from.identity.name)} rename to ${quoteIdent(pair.to.identity.name)}`,
       "rename-index",
       "ddl",
-      ACCESS,
+      SHARE_UPDATE,
     );
   }
   if (pair.from.kind !== "constraint" || pair.to.kind !== "constraint") {

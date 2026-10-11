@@ -2,10 +2,13 @@
  * Maps a Postgres {@link DriverError} to an {@link OkmError} (spec §4.2, §14).
  *
  * Adapters normalise the driver into `DriverError`. They do not construct
- * `OkmError`. Constraint names follow the catalog: `{table}_{nameKey}_{tag}`.
+ * `OkmError`. When {@link MapPostgresErrorOptions.schema} is set, a reason
+ * comes from the error's columns matched to a catalog object. Otherwise the
+ * constraint name is parsed.
  */
 
 import { isConnectionFailure, isConnectionSqlstate } from "../../contracts/connection.js";
+import type { Catalog, ConstraintObject, IndexObject } from "../../contracts/catalog/types.js";
 import {
   OkmError,
   matchingParen,
@@ -13,6 +16,24 @@ import {
   type ErrorKind,
   type ErrorStatuses,
 } from "../../contracts/error.js";
+
+/**
+ * Catalog and model used to name a unique, foreign key, or check.
+ *
+ * `connect()` does not pass this. Callers that have the schema do.
+ */
+export type MapPostgresErrorSchema = {
+  readonly catalog: Catalog;
+  readonly model: Readonly<
+    Record<string, { readonly sql: string; readonly columns: readonly SqlField[] }>
+  >;
+};
+
+/** One column the reason mapper can turn back into a TypeScript field. */
+type SqlField = {
+  readonly field: string;
+  readonly sql: string;
+};
 
 /** Options for {@link mapPostgresError}. */
 export type MapPostgresErrorOptions = {
@@ -24,6 +45,15 @@ export type MapPostgresErrorOptions = {
   readonly includeValues?: boolean;
   /** Category overrides from `connect({ errors })`. */
   readonly http?: ErrorStatuses;
+  /**
+   * Schema whose catalog still has the stored name key.
+   *
+   * Columns in the error select the object. The stored name key is the
+   * reason. A composite key that is only the SQL column list becomes the
+   * TypeScript fields. With no columns, the stored name key is the reason.
+   * An index keeps its full name.
+   */
+  readonly schema?: MapPostgresErrorSchema;
 };
 
 /**
@@ -45,7 +75,9 @@ export function mapPostgresError(error: unknown, options?: MapPostgresErrorOptio
   const hint = hintOf(error, kind);
   const fieldReason =
     hint?.reason ??
-    (kind === "not_null" ? "not_null" : reasonOf(kind, error.table, error.constraint));
+    (kind === "not_null"
+      ? "not_null"
+      : reasonOf(kind, error.table, error.constraint, columns, options?.schema));
   const values = options?.includeValues === true ? valuesOf(error.detail, columns) : undefined;
   const code = kind === "outcome_unknown" ? "OKM1401" : kind;
   return new OkmError(code, summaryOf(kind, error, columns, fieldReason), {
@@ -227,6 +259,20 @@ function reasonOf(
   kind: ErrorKind,
   table: string | undefined,
   constraint: string | undefined,
+  columns: readonly string[],
+  schema: MapPostgresErrorSchema | undefined,
+): string {
+  if (schema !== undefined && table !== undefined) {
+    const matched = matchObject(schema.catalog, table, constraint, columns);
+    if (matched !== undefined) return reasonFromObject(schema, table, matched, columns);
+  }
+  return reasonFromName(kind, table, constraint);
+}
+
+function reasonFromName(
+  kind: ErrorKind,
+  table: string | undefined,
+  constraint: string | undefined,
 ): string {
   if (constraint === undefined || constraint.length === 0) return kind;
   if (table !== undefined) {
@@ -239,6 +285,68 @@ function reasonOf(
     }
   }
   return constraint;
+}
+
+function matchObject(
+  catalog: Catalog,
+  table: string,
+  constraint: string | undefined,
+  columns: readonly string[],
+): ConstraintObject | IndexObject | undefined {
+  const rows: (ConstraintObject | IndexObject)[] = [];
+  for (const object of catalog.objects) {
+    if (object.kind !== "constraint" && object.kind !== "index") continue;
+    if (object.identity.parent.name !== table) continue;
+    rows.push(object);
+  }
+  if (columns.length > 0) {
+    const key = columns.join(",");
+    const hits = rows.filter((object) => object.definition.columns.join(",") === key);
+    if (constraint !== undefined) {
+      const named = hits.find((object) => object.identity.name === constraint);
+      if (named !== undefined) return named;
+    }
+    const only = hits.length === 1 ? hits[0] : undefined;
+    if (only !== undefined) return only;
+  }
+  if (constraint === undefined) return undefined;
+  return rows.find((object) => object.identity.name === constraint);
+}
+
+function reasonFromObject(
+  schema: MapPostgresErrorSchema,
+  table: string,
+  object: ConstraintObject | IndexObject,
+  columns: readonly string[],
+): string {
+  if (object.kind === "index") return object.identity.name;
+  const nameKey = object.definition.nameKey;
+  if (columns.length === 0) return nameKey;
+  const sqlKey = object.definition.columns.join("_");
+  if (nameKey !== sqlKey || object.definition.columns.length < 2) return nameKey;
+  return fieldKey(schema, table, object.definition.columns) ?? nameKey;
+}
+
+function fieldKey(
+  schema: MapPostgresErrorSchema,
+  table: string,
+  columns: readonly string[],
+): string | undefined {
+  let model: MapPostgresErrorSchema["model"][string] | undefined;
+  for (const item of Object.values(schema.model)) {
+    if (item.sql === table) {
+      model = item;
+      break;
+    }
+  }
+  if (model === undefined) return undefined;
+  const fields: string[] = [];
+  for (const column of columns) {
+    const found = model.columns.find((item) => item.sql === column);
+    if (found === undefined) return undefined;
+    fields.push(found.field);
+  }
+  return fields.join("_");
 }
 
 function nameKeyOf(rest: string): string | undefined {
