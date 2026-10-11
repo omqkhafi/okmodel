@@ -59,3 +59,7 @@ export const app = schema({
 </Tab>
 
 </Tabs>
+
+`columnTenancy` is one key. `compositeTenancy({ key: ["organizationId", "workspaceId"], type: "uuid" })` isolates on every key together. `via("team.department.organization")` follows up to three relations. `rlsTenancy` keeps the column predicate and adds forced row-level security. A superuser, a `BYPASSRLS` role, or the table owner is refused on the first scoped call.
+
+`roles.reporting` can select and cannot write. A hidden column stays out of that select unless `roles.columns` names it. `withOwner(table(...), "external")` or `"ignored"` keeps the table out of the plan.
