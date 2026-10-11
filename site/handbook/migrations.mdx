@@ -19,3 +19,19 @@ The [linter](/docs/reference/linter) reads the plan and does not connect. [Check
 ## Names, and an upgrade from 0.5.1
 
 A unique or a foreign key is named from every SQL column, after `casing` and `sqlName`. A database created on 0.5.1 still has the older names. `connect()` is OKM1520 until `okm migrate apply` runs once. That migration is `RENAME CONSTRAINT`. It does not drop the table or the row. A protected target needs `--allow-protected` on that invocation. The next plan is empty.
+
+## Windows
+
+Git on Windows checks SQL out as CRLF unless `.gitattributes` says otherwise. `okm` reads those files as LF, so apply, check, and the linter see the same steps. A file that still parses to no steps, and does not say `-- no steps`, fails instead of printing `nothing to apply`.
+
+`okm generate init` writes this `.gitattributes` when the project does not have one. An existing file is not edited.
+
+```text
+migrations/*.sql text eol=lf
+*.catalog.json text eol=lf
+.okm/** text eol=lf
+```
+
+Save the files as UTF-8. A BOM is stripped. UTF-16 is refused. Point `schema`, `migrations`, and `out` at an absolute path or at `..` when the project is not the process directory. Use `postgres://localhost:5432/app`. A named pipe is not a connection string here.
+
+`okmodel.config.ts` needs Node.js 22.18 or newer, because that is when Node strips types without a flag. `bunx okm` runs on Node. `bun --bun okm` runs on Bun.

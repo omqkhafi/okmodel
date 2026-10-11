@@ -48,3 +48,5 @@ export default defineConfig({
 </Tabs>
 
 `schema` is the file you are about to write. `database` is the one target those commands use. Direct asserts the URL. Safe refuses an empty `DATABASE_URL`.
+
+Node.js 22.18 or newer loads `okmodel.config.ts` (type stripping). Older Node prints that and stops. `bunx okm` uses Node. `bun --bun okm` uses Bun. On Windows, use a `postgres://` URL. `okm generate init` adds a `.gitattributes` so migration SQL stays LF. The [migrations](/docs/ship/migrations) page has the lines.

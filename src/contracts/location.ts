@@ -17,9 +17,22 @@
 export function callerLocation(skip: number): string | undefined {
   const lines = new Error().stack?.split("\n");
   if (lines === undefined) return undefined;
+  return locationFromLines(lines, skip);
+}
+
+/**
+ * File and line from stack lines, skipping `location.ts` frames.
+ *
+ * A frame may use `/` or `\`.
+ *
+ * @param lines - `Error.stack` split on `\n`
+ * @param skip - Callers to pass before the frame that is recorded
+ * @returns `file.ts:line`, or `undefined` when no frame remains
+ */
+export function locationFromLines(lines: readonly string[], skip: number): string | undefined {
   let left = skip;
   for (const line of lines) {
-    const slash = line.lastIndexOf("/");
+    const slash = Math.max(line.lastIndexOf("/"), line.lastIndexOf("\\"));
     if (slash < 0) continue;
     const tail = line.slice(slash + 1);
     const colon = tail.indexOf(":");

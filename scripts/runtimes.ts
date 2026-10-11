@@ -11,6 +11,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { nodeSupportsConfigTypes } from "../src/tooling/node-version.js";
 import { exitOnProblems } from "./report.js";
 import { repoRoot } from "./root.js";
 
@@ -58,8 +59,8 @@ function runRuntime(
     }
     return [];
   }
-  if (runtime === "node" && !nodeAtLeast22(found)) {
-    const reason = `node ${found} is older than engines.node >=22`;
+  if (runtime === "node" && !nodeSupportsConfigTypes(nodeVersion(found))) {
+    const reason = `node ${found} is older than engines.node >=22.18`;
     console.log(`skip node: ${reason}`);
     if (process.env.CI === "true" || process.env.CI === "1") return [`runtimes: ${reason}`];
     return [];
@@ -145,10 +146,10 @@ function commandVersion(command: string): string | undefined {
   return line.length === 0 ? command : line;
 }
 
-function nodeAtLeast22(versionText: string): boolean {
-  const match = /v?(\d+)/.exec(versionText);
-  const major = Number(match?.[1] ?? "0");
-  return major >= 22;
+function nodeVersion(versionText: string): string {
+  const match = /v?\d+\.\d+(?:\.\d+)?/.exec(versionText);
+  const found = match?.[0] ?? "0.0.0";
+  return found.startsWith("v") ? found : `v${found}`;
 }
 
 function spawn(args: readonly string[]): {

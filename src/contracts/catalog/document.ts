@@ -242,17 +242,18 @@ function isPrivilege(object: CatalogObject): boolean {
  * stored hash and the version, then trusts the objects (D133). `okm check`
  * and dev keep {@link parseCatalog}.
  *
- * @param text - Canonical catalog JSON
- * @param hash - SHA-256 of `text`, stored beside the artifact
+ * @param text - Catalog JSON. A BOM is stripped and `\r` is removed before the hash check
+ * @param hash - SHA-256 of that normalized text, stored beside the artifact
  * @returns The catalog document
  */
 export function loadTrustedCatalog(text: string, hash: string): Catalog {
-  if (sha256(text) !== hash) {
+  const canonical = catalogFileText(text);
+  if (sha256(canonical) !== hash) {
     catalogError("OKM1027", "Catalog hash does not match the build artifact.");
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text);
+    parsed = JSON.parse(canonical);
   } catch {
     catalogError("OKM1027", "Catalog text is not valid JSON.");
   }
@@ -269,9 +270,31 @@ export function loadTrustedCatalog(text: string, hash: string): Catalog {
     version: CATALOG_VERSION,
     objects: parsed.objects as Catalog["objects"],
   };
-  serializedText.set(loaded, text);
+  serializedText.set(loaded, canonical);
   serializedHash.set(loaded, hash);
   return loaded;
+}
+
+/**
+ * Catalog file bytes the hash covers.
+ *
+ * A leading UTF-8 BOM is dropped. Carriage returns are removed, so a CRLF
+ * checkout hashes like the LF file the writer stored. An LF file is unchanged.
+ * UTF-16 is OKM1027.
+ *
+ * @param text - Raw catalog JSON or hash file
+ * @param label - Name used when the text is UTF-16
+ * @returns Text to hash and parse
+ */
+export function catalogFileText(text: string, label = "Catalog text"): string {
+  if (text.includes("\u0000")) {
+    catalogError("OKM1027", `${label} is UTF-16. Save the file as UTF-8.`, {
+      fieldReason: "utf16",
+      fix: { summary: "Save the file as UTF-8. This version does not read UTF-16." },
+    });
+  }
+  const withoutBom = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+  return withoutBom.replaceAll("\r", "");
 }
 
 /**
@@ -281,9 +304,10 @@ export function loadTrustedCatalog(text: string, hash: string): Catalog {
  * @returns A checked catalog
  */
 export function parseCatalog(text: string): Catalog {
+  const canonical = catalogFileText(text);
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text);
+    parsed = JSON.parse(canonical);
   } catch {
     catalogError("OKM1027", "Catalog text is not valid JSON.");
   }

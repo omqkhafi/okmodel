@@ -8,8 +8,6 @@
  * key, and state.
  */
 
-import { join } from "node:path";
-
 import { open } from "../../adapters/pg/postgresjs.js";
 import { OkmError } from "../../contracts/error.js";
 import {
@@ -23,6 +21,7 @@ import {
 import type { MigrationClass } from "./plan.js";
 import type { StoredMigration } from "./files.js";
 import { loadMigrations } from "./files.js";
+import { projectPath } from "./paths.js";
 import { assertTargetPolicy, listTargets, type InvokeFlags, type TargetRecord } from "./policy.js";
 import { loadConfig } from "./project.js";
 import { expandProvisioned, provisionHistoryIsKnown } from "./snapshot.js";
@@ -178,7 +177,7 @@ export async function readTargetStatus(input: {
 export async function statusProject(cwd: string, flags: InvokeFlags): Promise<string> {
   const config = await loadConfig(cwd);
   const targets = chosen(listTargets(config), flags.target);
-  const migrations = loadMigrations(join(cwd, config.migrations ?? "migrations"));
+  const migrations = loadMigrations(projectPath(cwd, config.migrations ?? "migrations"));
   const rows: TargetStatus[] = [];
   for (const target of targets) {
     rows.push(

@@ -7,8 +7,9 @@
  */
 
 import { existsSync } from "node:fs";
-import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+
+import { projectPath } from "./paths.js";
 
 import { OkmError } from "../../contracts/error.js";
 import { open } from "../../adapters/pg/postgresjs.js";
@@ -38,7 +39,7 @@ export async function seedProject(cwd: string, file: string, flags: InvokeFlags)
   const config = await loadConfig(cwd);
   const target = selectTarget(config, flags.target);
   assertTargetPolicy(target, "seed", flags.allowProtected);
-  const path = join(cwd, file);
+  const path = projectPath(cwd, file);
   if (!existsSync(path)) {
     throw new OkmError("invalid", `Seed file ${file} was not found.`, {
       fix: { summary: "Pass okm seed <file> a module in this project." },

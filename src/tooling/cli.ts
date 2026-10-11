@@ -3,11 +3,16 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { formatFailure, run } from "./migrate/commands.js";
+import { nodeStartupMessage } from "./node-version.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const packageJsonPath = join(here, "..", "..", "package.json");
 
-if (process.argv.includes("--version")) {
+const nodeProblem = nodeStartupMessage(process.version, process.versions.bun !== undefined);
+if (nodeProblem !== undefined) {
+  process.stderr.write(nodeProblem);
+  process.exitCode = 1;
+} else if (process.argv.includes("--version")) {
   process.stdout.write(`${readPackageVersion(packageJsonPath)}\n`);
 } else {
   try {

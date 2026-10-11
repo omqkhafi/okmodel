@@ -7,6 +7,7 @@
  * not match is OKM1027. Concurrent loads share one parse.
  */
 
+import { catalogFileText } from "../contracts/catalog/document.js";
 import type { Catalog } from "../contracts/catalog/types.js";
 import type { DriverPool, ExecuteOptions } from "../contracts/driver.js";
 import { OkmError } from "../contracts/error.js";
@@ -102,12 +103,20 @@ function schemaCatalog(schema: QuerySchema): Catalog {
 async function readHashFile(catalogDir: string | undefined): Promise<string | undefined> {
   const text = await readText(`${artifactDir(catalogDir)}/catalog.hash`);
   if (text === undefined) return undefined;
-  const hash = text.trim();
+  const hash = catalogFileText(text, "catalog.hash").trim();
   return hash.length === 0 ? undefined : hash;
 }
 
-function artifactDir(catalogDir: string | undefined): string {
-  if (catalogDir !== undefined) return catalogDir.replace(/\/$/, "");
+/**
+ * Directory of `catalog.hash` and `catalog.json`.
+ *
+ * A trailing `/` or `\` is removed so the joined file name is one path.
+ *
+ * @param catalogDir - Directory the caller passed, or the default `.okm`
+ * @returns The directory, without a trailing slash
+ */
+export function artifactDir(catalogDir: string | undefined): string {
+  if (catalogDir !== undefined) return catalogDir.replace(/[/\\]+$/, "");
   const cwd = globalThis.process?.cwd?.() ?? ".";
   return `${cwd}/.okm`;
 }

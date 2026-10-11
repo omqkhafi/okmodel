@@ -15,7 +15,8 @@ import type { Catalog, ColumnObject } from "../../contracts/catalog/types.js";
 import { OkmError } from "../../contracts/error.js";
 import { errorDoc } from "../errors/registry.js";
 import { COLUMN_RULES, STEP_RULES, type LintSeverity } from "./lint-rules.js";
-import { parsePlan, type MigrationPlan, type PlanStep } from "./plan.js";
+import { readMigrationPlan } from "./files.js";
+import type { MigrationPlan, PlanStep } from "./plan.js";
 import { sqlStatements } from "./sql-lex.js";
 
 /** One finding. `place` is `step N`, `step N statement M`, or `table.column`. */
@@ -97,7 +98,7 @@ export function lintMigrationDirectory(
   const findings: Finding[] = [];
   for (const file of names) {
     const id = file.slice(0, -".sql".length);
-    const plan = parsePlan(readFileSync(join(directory, file), "utf8"));
+    const plan = readMigrationPlan(join(directory, file));
     const after = parseCatalog(readFileSync(join(directory, `${id}.catalog.json`), "utf8"));
     if (pending === undefined || pending.has(id)) {
       for (const item of lintPlan(plan, before, after)) {
