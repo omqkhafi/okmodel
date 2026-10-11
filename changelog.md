@@ -53,6 +53,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The hidden `where` and `orderBy` check was measured in three forms. The smallest reuses `fail()` and fits under the current gates: the featureless app would be 90,718 / 30,143 (D225).
 - A pull request labelled `needs: postgres` runs the Postgres suite as four shards per version, each with its own database, and proves the pooler beside those shards. `gate / check` waits for the suite and the tarball. A skipped Postgres slice fails that gate while the label is present (D230).
 - Known limits name the driver reasons `undefined_table`, `undefined_column`, `tls`, `not_populated`, `no_unique_index`, and `not_owner`. The handbook covers composite, path, and row-level tenancy, the reporting role, and the constraint-name upgrade from 0.5.1. A production database that is behind the app is OKM1520 until `okm migrate apply`.
+- The 0.6 gate remeasured the six startup graphs. Minified and gzip bytes match the previous sample, so the gates stay. The featureless app has 138 minified and 31 gzip left under 90,900 / 30,170. The same ten tables with column tenancy are 97,735 / 32,468 (D235).
 
 ### 🐛 Fixed
 
