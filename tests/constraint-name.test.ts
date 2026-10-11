@@ -129,6 +129,22 @@ test("an older catalog plans only constraint renames, and the next plan is empty
   );
 });
 
+test("introspection's SQL name key does not rebuild a constraint", () => {
+  const replayed = catalog(
+    app.catalog.objects.map((object) => {
+      if (object.kind !== "constraint") return object;
+      const kind = object.definition.constraintKind;
+      if (kind !== "unique" && kind !== "foreignKey") return object;
+      return {
+        ...object,
+        definition: { ...object.definition, nameKey: object.definition.columns.join("_") },
+      };
+    }),
+  );
+  const plan = planMigration({ before: replayed, after: app.catalog, name: "replay" });
+  expect(plan.steps).toEqual([]);
+});
+
 function wide(piece: string, mark: string): string {
   const built = schema({
     tables: [

@@ -185,7 +185,10 @@ export function projectAt(count: number): string {
   mkdirSync(join(dir, "migrations"));
   cpSync(join(appDir, "src"), join(dir, "src"), { recursive: true });
   cpSync(join(appDir, "okmodel.config.ts"), join(dir, "okmodel.config.ts"));
-  const names = ["0001_init", "0002_public_id", "0003_drop_share_token"].slice(0, count);
+  const names = ["0001_init", "0002_public_id", "0003_drop_share_token", "0004_sql_names"].slice(
+    0,
+    count,
+  );
   for (const name of names) {
     for (const suffix of [".sql", ".catalog.json"]) {
       cpSync(join(appDir, "migrations", name + suffix), join(dir, "migrations", name + suffix));

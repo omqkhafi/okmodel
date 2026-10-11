@@ -8,7 +8,7 @@
 - Tables: `members`, `projects`, `tasks`, `comments`. Every table has `timestamps()`. `projects` and `tasks` are `archivable()`, and archiving a project archives its tasks.
 - A `task_status` enum, the `task_is_open` SQL function, and two views: `active_projects` and `open_tasks` (which calls the function).
 - The managed application role `ref_app` with the default grants. The migration role is `okm`.
-- Three migrations from `okm generate`: `0001_init`, `0002_public_id` (expand: a new column filled by a batched backfill), and `0003_drop_share_token` (contract).
+- Four migrations from `okm generate`: `0001_init`, `0002_public_id` (expand: a new column filled by a batched backfill), `0003_drop_share_token` (contract), and `0004_sql_names` (renames constraints to SQL column names).
 
 The use cases are plain functions in `src/use-cases.ts`: create a workspace, add a project and tasks, comment, move a task, archive and restore a project, page through a board with includes, and a report read from a replica (`route: "replica"`).
 

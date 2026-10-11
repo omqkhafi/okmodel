@@ -129,5 +129,6 @@ test("reference-app migrations keep their step counts", () => {
     "0001_init.sql": 58,
     "0002_public_id.sql": 7,
     "0003_drop_share_token.sql": 1,
+    "0004_sql_names.sql": 8,
   });
 });

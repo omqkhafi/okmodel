@@ -55,6 +55,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### 🐛 Fixed
 
+- `okm migrate check` keeps a constraint whose only difference is the stored name key. Postgres does not store that key, so a replay no longer drops and recreates it. The reference app migration `0004_sql_names` renames the constraints whose SQL names changed (D234).
 - `onConflict: { on: "title" }` on a tenant unique of (tenant key, title) updates that tenant's row. The conflict target includes the tenant key. Naming the tenant key is still OKM1104. Two tenants can keep the same title (D221).
 - The handbook names draft 26, and the opening size table is the current sample.
 

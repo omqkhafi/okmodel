@@ -1738,8 +1738,9 @@ function sameDefinition(left: CatalogObject, right: CatalogObject): boolean {
  * default drops one trailing cast to that column's base type, so `'x'` matches
  * `'x'::text`, `'x'::character varying` on `varchar(n)`, and `'x'::bpchar` on
  * `char(n)`. The catalog stores the text
- * that was written. Everything else is compared as stored. A materialized
- * view's `refresh` is not here:
+ * that was written. Everything else is compared as stored. A constraint or
+ * index `nameKey` is not here: Postgres does not store it, and introspection
+ * reprints the SQL column list. A materialized view's `refresh` is not here:
  * Postgres does not store it, so {@link sameDefinition} ignores it.
  *
  * @param object - One side of the diff
@@ -1777,6 +1778,9 @@ function forComparison(object: CatalogObject): unknown {
     case "type":
       if (!isDomain(object.definition)) return object.definition;
       return { ...object.definition, base: canonicalTypeName(object.definition.base) };
+    case "constraint":
+    case "index":
+      return withoutNameKey(object.definition);
     default:
       return object.definition;
   }
