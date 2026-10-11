@@ -27,7 +27,12 @@ import { omitManagedObjects } from "./managed.js";
 import { planMigration } from "./plan.js";
 import type { ReferenceTable } from "./reference.js";
 import { referenceInserts } from "./reference.js";
-import { assumeRole, grantSchema, statementOutsideTransaction } from "./runner.js";
+import {
+  assertSchemaUsageLanded,
+  assumeRole,
+  grantSchema,
+  statementOutsideTransaction,
+} from "./runner.js";
 import { canonicalTypeName } from "./type-name.js";
 
 /** History id prefix for a target installed from the head snapshot. */
@@ -132,7 +137,10 @@ export async function installSnapshot(
     if (batch.length === 0) return;
     await connection.execute("begin");
     began = true;
-    for (const sql of batch) await connection.execute(sql);
+    for (const sql of batch) {
+      await connection.execute(sql);
+      await assertSchemaUsageLanded(connection, sql);
+    }
     await connection.execute("commit");
     began = false;
     batch.length = 0;
@@ -152,6 +160,7 @@ export async function installSnapshot(
       } else {
         await flush();
         await connection.execute(sql);
+        await assertSchemaUsageLanded(connection, sql);
       }
       if (created !== undefined && created === migrationRole) {
         await flush();

@@ -343,7 +343,7 @@ function ownershipMarks(built: Built): ReadonlyMap<string, "external" | "ignored
   for (const table of built.tables) {
     const owner = tableOwner(table);
     if (owner === undefined) continue;
-    const model = models[table["~name"]];
+    const model = models[table.name];
     if (model === undefined) continue;
     marks.set(model.sql, owner);
   }

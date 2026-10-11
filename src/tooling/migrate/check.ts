@@ -386,6 +386,18 @@ async function replayHistory(
       return rows[0]?.pid ?? "";
     }, allowPooler);
     await sql.unsafe(`create schema ${quoteIdent(scratch)}`);
+    const migrationRole = config.roles?.migration;
+    if (migrationRole !== undefined) {
+      const exists = await sql<{ ok: boolean | string }[]>`
+        select exists (select 1 from pg_roles where rolname = ${migrationRole}) as ok
+      `;
+      const present = exists[0]?.ok;
+      if (present === true || present === "t" || present === "true") {
+        await sql.unsafe(
+          `alter schema ${quoteIdent(scratch)} owner to ${quoteIdent(migrationRole)}`,
+        );
+      }
+    }
     const runner = catalogQuery(sql);
     for (let index = 0; index < history.length; index += 1) {
       const migration = history[index];
@@ -510,9 +522,14 @@ function retargetSteps(steps: readonly PlanStep[], schema: string): readonly Pla
   const to = `${quoteIdent(schema)}.`;
   const fromDefaults = `in schema ${quoteIdent("public")} `;
   const toDefaults = `in schema ${quoteIdent(schema)} `;
+  const fromSchema = `on schema ${quoteIdent("public")}`;
+  const toSchema = `on schema ${quoteIdent(schema)}`;
   return steps.map((step) => ({
     ...step,
-    sql: step.sql.replaceAll(from, to).replaceAll(fromDefaults, toDefaults),
+    sql: step.sql
+      .replaceAll(from, to)
+      .replaceAll(fromDefaults, toDefaults)
+      .replaceAll(fromSchema, toSchema),
     ...(step.backfill === undefined
       ? {}
       : { backfill: { ...step.backfill, table: step.backfill.table.replaceAll(from, to) } }),

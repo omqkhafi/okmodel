@@ -14,6 +14,16 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+### 🐛 Fixed
+
+- `rlsTenancy` stores the policy text Postgres prints. A lowercase unreserved column stays bare, so a snake-case `tenant_id` catalog hash does not change. `tenantId`, `TenantId`, and a reserved word are double-quoted. Apply of a default-casing key no longer fails with `column "tenantid" does not exist`, and `okm check` reports no drift (D236).
+- A materialized view no longer keeps the application role's table default privileges. The plan revokes `INSERT`, `UPDATE`, and `DELETE` after `SELECT`. The catalog stays select only (D236).
+- A path foreign key is planned after the unique it references. Table names no longer decide that order. Drops reverse it (D236).
+- `okm generate` then apply accepts an index on a materialized view. The stored document depends on the view, not on a column, for one column or several, unique or not (D236).
+- `GRANT USAGE ON SCHEMA` that does not land fails with OKM1825. The migration role has to own the schema (`ALTER SCHEMA … OWNER TO`). `okm migrate check` gives that role its scratch schema and replays the grant there (D236).
+- `withOwner(..., "ignored" | "external")` is omitted from generated SQL and from provisioning. `okm check` still ignores both (D236).
+- A superuser passes the managed-role `CREATEROLE` preflight when `rolcreaterole` is false (D236).
+
 ## v0.6.0 — 2026-10-11
 
 ### 💥 Breaking Changes

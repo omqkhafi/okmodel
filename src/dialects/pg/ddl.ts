@@ -110,12 +110,15 @@ export function renderCatalog(source: Catalog, schema: string): readonly string[
  *
  * The primary key is created with the table. A foreign key aimed at another
  * unique has to wait for that unique. Create order ties those two by name, so
- * the foreign key can otherwise come first.
+ * the foreign key can otherwise come first. The planner uses this for creates
+ * and for the list it reverses when it drops.
  *
  * @param objects - Create order
  * @returns The same objects, with those uniques moved forward
  */
-function uniqueBeforeForeignKey(objects: readonly CatalogObject[]): readonly CatalogObject[] {
+export function uniqueBeforeForeignKey(
+  objects: readonly CatalogObject[],
+): readonly CatalogObject[] {
   const uniques = objects.filter(
     (object): object is ConstraintObject =>
       object.kind === "constraint" && object.definition.constraintKind === "unique",

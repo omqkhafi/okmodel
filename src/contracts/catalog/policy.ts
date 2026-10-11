@@ -6,7 +6,12 @@
  */
 
 import { catalogError } from "../error.js";
-import { assertIdentifier, assertStoredText, fitIdentifier } from "./identifier.js";
+import {
+  assertIdentifier,
+  assertStoredText,
+  fitIdentifier,
+  isReservedIdentifier,
+} from "./identifier.js";
 import { assertNamespace } from "./identity.js";
 import { assertProvenance, normaliseEdges } from "./object.js";
 import type {
@@ -33,6 +38,22 @@ export type PolicyInput = {
   readonly dependencies?: readonly ObjectIdentity[];
 };
 
+const BARE_IDENT = /^[a-z_][a-z0-9_$]*$/;
+
+/**
+ * Quotes a policy identifier the way `pg_get_expr` does.
+ *
+ * A lowercase unreserved name stays bare, so `tenant_id` does not move a
+ * stored catalog. Anything else, including a reserved word, is double-quoted.
+ *
+ * @param name - SQL name of the tenant column
+ * @returns The identifier as it appears in the expression
+ */
+function policyIdent(name: string): string {
+  if (BARE_IDENT.test(name) && !isReservedIdentifier(name)) return name;
+  return `"${name.replaceAll('"', '""')}"`;
+}
+
 /**
  * Predicate stored for `{table}_tenant`.
  *
@@ -44,7 +65,7 @@ export type PolicyInput = {
  * @returns The `USING` and `WITH CHECK` expression
  */
 export function tenantPolicyExpression(column: string, dataType: string): string {
-  return `(${column} = (NULLIF(current_setting('app.tenant'::text, true), ''::text))::${dataType})`;
+  return `(${policyIdent(column)} = (NULLIF(current_setting('app.tenant'::text, true), ''::text))::${dataType})`;
 }
 
 /**

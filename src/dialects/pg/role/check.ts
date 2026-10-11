@@ -54,13 +54,17 @@ export async function assertRoleHealth(
 /**
  * Refuses to apply role changes when the acting role lacks `CREATEROLE`.
  *
+ * A superuser can create roles when `rolcreaterole` is false, so `rolsuper`
+ * satisfies the same check.
+ *
  * @param runner - Database connection
  * @param role - The role that will run `CREATE ROLE` or `ALTER ROLE`
  */
 export async function assertCreateRole(runner: Runner, role: string): Promise<void> {
-  const result = await runner.execute("select rolcreaterole from pg_roles where rolname = $1", [
-    role,
-  ]);
+  const result = await runner.execute(
+    "select rolsuper or rolcreaterole from pg_roles where rolname = $1",
+    [role],
+  );
   if (!truthy(result.rows[0]?.[0])) {
     throw new OkmError("forbidden", `Role ${role} lacks CREATEROLE. Nothing was changed.`, {
       kind: "forbidden",

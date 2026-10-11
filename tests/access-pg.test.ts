@@ -62,6 +62,8 @@ postgresTest(
       exposure,
     );
     try {
+      await sql.unsafe(`create role ${quoteIdent(mig)} nosuperuser nocreatedb nocreaterole`);
+      await sql.unsafe(`alter schema public owner to ${quoteIdent(mig)}`);
       await sql.unsafe(
         `create role ${quoteIdent(app)} login password 'secret' nosuperuser nocreatedb nocreaterole`,
       );
