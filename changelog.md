@@ -14,6 +14,14 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+## v0.6.0 — 2026-10-11
+
+### 💥 Breaking Changes
+
+- Generated unique and foreign-key names use every SQL column after `casing` and `sqlName`. A primary key stays `{table}_pkey`. A picklist check stays the SQL column. A named check keeps the author's name. Indexes are unchanged. A catalog with a multi-column unique or foreign key changes `catalogHash`. Upgrade with `okm migrate apply` once. The plan is `RENAME CONSTRAINT` and does not drop the object or the rows. A protected target needs `--allow-protected` on that invocation. `ALTER INDEX … RENAME` is `SHARE UPDATE EXCLUSIVE`. A database created before this spelling plans only those renames, and the next plan is empty. `connect()` on the old catalog is OKM1520 until apply. A violation through `connect()` still reasons the stored name key. The column-tenancy fixture hash is now `df7f8549fea5cde8e35a21e84541900abfe30fd605f4af0e7e98792f66aab32b`. The small tasks schema is `d029ad2cc216ec1b89062614a881d81841e7dbb1fc33602f9fd33203a1bc8461` (D234, supersedes the TypeScript-name formula in D223).
+- `columnTenancy()` takes one key. A key list is `compositeTenancy()`. `tenancy: { via: "..." }` is not a strategy. Use `via()` from `okmodel/tenancy`. A handwritten object is rejected when the schema is built (D229, pre-v1).
+- `filters({ allow })` accepts only the operators `parse` applies. `path`, `matches`, `similar`, `wordSimilar`, `or`, `and`, `none`, `every`, and the write operators are a type error (D233, pre-v1).
+
 ### ✨ Added
 
 #### dialects
@@ -36,12 +44,6 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The startup budget audit for train 0.6 records where the bytes in each gated graph go, the headroom under the current gates, and the measured cost of the smallest hook for each 0.6 feature. It does not move a gate (D218).
 - The docs site in `site/` publishes the handbook from the repository markdown, with search, per-page markdown, and a changelog page. The home page links install, the first query, schema, and migrations.
 - Learning pages for install, the first query, schema, queries, safety, migrations, and drivers are written in the site handbook. Repository docs stay under Reference. A public fence that names a shipped API is type-checked against the built package.
-
-### 💥 Breaking Changes
-
-- `columnTenancy()` takes one key. A key list is `compositeTenancy()`. `tenancy: { via: "..." }` is not a strategy. Use `via()` from `okmodel/tenancy`. A handwritten object is rejected when the schema is built (D229, pre-v1).
-- `filters({ allow })` accepts only the operators `parse` applies. `path`, `matches`, `similar`, `wordSimilar`, `or`, `and`, `none`, `every`, and the write operators are a type error (D233, pre-v1).
-- Generated unique and foreign-key names use every SQL column after `casing` and `sqlName`. A primary key stays `{table}_pkey`. A picklist check stays the SQL column. A named check keeps the author's name. Indexes are unchanged. A catalog with a multi-column unique or foreign key changes `catalogHash`. `okm migrate` plans `RENAME CONSTRAINT` and does not drop the object. `ALTER INDEX … RENAME` is `SHARE UPDATE EXCLUSIVE`. A database created before this spelling plans only those renames, and the next plan is empty. `connect()` on the old catalog is OKM1520 until apply. A violation through `connect()` still reasons the stored name key. The column-tenancy fixture hash is now `df7f8549fea5cde8e35a21e84541900abfe30fd605f4af0e7e98792f66aab32b`. The small tasks schema is `d029ad2cc216ec1b89062614a881d81841e7dbb1fc33602f9fd33203a1bc8461` (D234, supersedes the TypeScript-name formula in D223).
 
 ### ♻️ Changed
 

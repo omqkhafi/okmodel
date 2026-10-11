@@ -1160,7 +1160,8 @@ Status is on the [board](https://github.com/users/omqkhafi/projects/1). Each rel
 - [x] [0.3](https://github.com/omqkhafi/okmodel/milestone/3) — Extensions, domains, functions, triggers, views, roles, and grants.
 - [x] [0.4](https://github.com/omqkhafi/okmodel/milestone/4) — Safer migration plans, backfill, drift checks, provisioning, reference data, and a testing package.
 - [x] [0.5](https://github.com/omqkhafi/okmodel/milestone/5) — A primary with replicas, read routing, and a reference app.
-- [ ] [0.5.1](https://github.com/omqkhafi/okmodel/milestone/7) — QA fixes for 0.5.0.
+- [x] [0.5.1](https://github.com/omqkhafi/okmodel/milestone/7) — QA fixes for 0.5.0.
+- [x] [0.6](https://github.com/omqkhafi/okmodel/milestone/8) — Composite, path, and row-level tenancy, column grants, a reporting role, and SQL constraint names.
 
 `okmodel/internal` has no stability promise. Names on that subpath can change or disappear in any release.
 
@@ -1172,11 +1173,11 @@ Measured on this release.
 
 |                                              | Minified |   Gzip | Cold import |
 | -------------------------------------------- | -------: | -----: | ----------: |
-| Runtime entry                                |    5,288 |  2,026 |    2.347 ms |
-| App startup (10 tables, one find)            |   89,751 | 29,801 |   15.061 ms |
-| App startup, every 0.2 feature in use (full) |  120,132 | 39,162 |   15.956 ms |
+| Runtime entry                                |    5,288 |  2,026 |    1.790 ms |
+| App startup (10 tables, one find)            |   90,762 | 30,139 |   10.490 ms |
+| App startup, every 0.2 feature in use (full) |  121,506 | 39,741 |   12.455 ms |
 
-The full app has column tenancy, `archivable()`, `timestamps()`, validation rules, `one`, `many` and `manyThrough` relations, presets, and calls `include`, `page`, `aggregate`, `tx` and `batch`. A feature costs bytes only in an app that uses it: the full app is 30,381 minified and 9,361 gzip bytes above the plain one. The runtime entry and the plain app are gated. The full app is printed, not gated. The plain app's cold import on this sample is above the 15 ms local reference. That figure is printed and is not a gate.
+The full app has column tenancy, `archivable()`, `timestamps()`, validation rules, `one`, `many` and `manyThrough` relations, presets, and calls `include`, `page`, `aggregate`, `tx` and `batch`. A feature costs bytes only in an app that uses it: the full app is 30,744 minified and 9,602 gzip bytes above the plain one. The runtime entry and the plain app are gated. The full app is printed, not gated. The plain app's cold import on this sample is under the 15 ms local reference. That figure is printed and is not a gate.
 
 The rest of the measurements are in [size](https://github.com/omqkhafi/okmodel/blob/main/docs/size.md).
 
