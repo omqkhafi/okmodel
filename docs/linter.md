@@ -65,6 +65,8 @@ Each statement is linted. The place stays `step N` when the step has one stateme
 
 OKM1550 flags a statement that weakens `rlsTenancy`: `DISABLE ROW LEVEL SECURITY`, `NO FORCE ROW LEVEL SECURITY`, `DROP POLICY`, `CREATE POLICY` or `ALTER POLICY` on a tenant table whose expression is not the one okm emits (`USING (true)`, `USING (1=1)`, `USING ((true))`, `USING (true OR false)`, `ALTER POLICY … TO public USING (1=1)`, an extra permissive policy, or `AS RESTRICTIVE`), `ALTER ROLE` or `CREATE ROLE` that grants `BYPASSRLS`, and `ALTER TABLE … OWNER TO` when that table has a policy in the catalog. `USING (true)` and `WITH CHECK (true)` keep their own reasons. A policy named `{table}_tenant` or `{table}_unscoped_select` with the emitted expression is clean, and `WITH CHECK` may be omitted. `NOBYPASSRLS` does not match. A line break of `\n`, `\r\n`, or `\r` is the same statement. `-- okm-allow OKM1550: reason` is the only bypass, and the reason must not be empty.
 
+OKM1551 flags transaction control in a step: `COMMIT`, `COMMIT PREPARED`, `END`, `END WORK`, `END TRANSACTION`, `ABORT`, `ROLLBACK`, `ROLLBACK PREPARED`, `BEGIN`, `BEGIN WORK`, `BEGIN TRANSACTION`, `START TRANSACTION`, and `PREPARE TRANSACTION`, including when it follows another statement and including a `COMMIT` inside a `DO` body. A bare `BEGIN` or `END` inside plpgsql is not this rule. `END IF`, `END LOOP`, `END CASE`, and `ROLLBACK TO` are not this rule. `-- okm-allow OKM1551: reason` lets apply run the step. `okm migrate check` still refuses it, because the replay is one transaction that always rolls back.
+
 A blank line ends a step. A blank line inside a quote, a dollar quote, or a block comment stays in the step, including a `--` line while that quote is still open.
 
 `okm migrate plan`, `okm migrate apply`, and `okm migrate check` use this linter. Check and apply read the migration files. Plan lints the plan it generates. An error finding is OKM1510 in each command. The planner still writes one statement per step, so a generated migration lints as before.
@@ -119,6 +121,7 @@ OKM1706 and OKM1823 are not rules in this table. A tenant index that does not le
 | OKM1540 | type-preference | warning | `varchar(n)` where `text` would do |
 | OKM1542 | data-dependent | error | `insert`, `update`, `delete`, `merge`, `truncate`, or a `with` that writes, outside a backfill step. `DO` and `CALL` too: the body is not analysed |
 | OKM1550 | destructive | error | `DISABLE ROW LEVEL SECURITY`, `NO FORCE ROW LEVEL SECURITY`, `DROP POLICY`, `CREATE` or `ALTER POLICY` on a tenant table that is not the emitted predicate, `BYPASSRLS` on a role, or `OWNER TO` on a tenant table |
+| OKM1551 | destructive | error | `COMMIT`, `END`, `ABORT`, `ROLLBACK`, `BEGIN`, `START TRANSACTION`, `PREPARE TRANSACTION`, or `COMMIT PREPARED` inside a step. `ROLLBACK TO` is not this. `-- okm-allow OKM1551: reason` lets apply run it. `okm migrate check` still refuses it |
 | OKM1543 | type-preference | warning | `serial` or a `nextval` default |
 | OKM1544 | type-preference | warning | `json` where `jsonb` is available |
 | OKM1545 | type-preference | warning | Identity that is not generated always |

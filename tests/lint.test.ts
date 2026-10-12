@@ -750,6 +750,29 @@ type Built = {
   readonly casing: "snake" | undefined;
 };
 
+test("OKM1551 flags transaction control and an allow needs a reason", () => {
+  expect(codesOfHand("commit")).toContain("OKM1551");
+  expect(codesOfHand("COMMIT WORK")).toContain("OKM1551");
+  expect(codesOfHand("end")).toContain("OKM1551");
+  expect(codesOfHand("rollback")).toContain("OKM1551");
+  expect(codesOfHand("begin")).toContain("OKM1551");
+  expect(codesOfHand("start transaction")).toContain("OKM1551");
+  expect(codesOfHand("prepare transaction 'x'")).toContain("OKM1551");
+  expect(codesOfHand("commit prepared 'x'")).toContain("OKM1551");
+  expect(codesOfHand("select 1;\ncommit")).toContain("OKM1551");
+  expect(codesOfHand("select 1;\r\ncommit")).toContain("OKM1551");
+  expect(codesOfHand("do $$ begin commit; end $$")).toContain("OKM1551");
+  expect(
+    codesOfHand(
+      "create function public.f() returns int language plpgsql as $$ begin return 1; end $$",
+    ),
+  ).not.toContain("OKM1551");
+  expect(codesOfHand("rollback to savepoint s")).not.toContain("OKM1551");
+  expect(codesOfHand("end if")).not.toContain("OKM1551");
+  expect(codesOfHand("-- okm-allow OKM1551: reviewed\ncommit")).not.toContain("OKM1551");
+  expect(codesOfHand("-- okm-allow OKM1551:\ncommit")).toContain("OKM1551");
+});
+
 function hand(sql: string): readonly Finding[] {
   const empty = schema({ tables: [] }).catalog;
   return lintPlan(parsePlan(`-- name: hand\n\n${sql}\n`), empty, empty);

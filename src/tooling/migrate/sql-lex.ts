@@ -115,6 +115,90 @@ function scan(sql: string): Scan {
   return { statements, open };
 }
 
+/**
+ * Transaction control in a migration step, including a `DO` or function body.
+ *
+ * A bare `BEGIN` or `END` inside a dollar quote is plpgsql and is ignored.
+ * `ROLLBACK TO` does not end the outer transaction.
+ *
+ * @param sql - Step text
+ * @returns The command, or `undefined` when the step stays in one transaction
+ */
+export function transactionControl(sql: string): string | undefined {
+  for (const statement of sqlStatements(sql)) {
+    const top = controlWord(statement, false);
+    if (top !== undefined) return top;
+    for (const body of dollarBodies(statement)) {
+      for (const inner of sqlStatements(body)) {
+        const hit = controlWord(inner, true);
+        if (hit !== undefined) return hit;
+      }
+    }
+  }
+  return undefined;
+}
+
+function controlWord(statement: string, insideBody: boolean): string | undefined {
+  let text = statement.trim().replace(/\s+/g, " ").toLowerCase();
+  if (insideBody && /^begin(?:\s|$)/.test(text) && !/^begin\s+(?:work|transaction)\b/.test(text)) {
+    text = text.replace(/^begin\s+/, "").trim();
+    if (text.length === 0) return undefined;
+  }
+  if (/^commit(?:\s+(?:work|transaction|prepared\b.*))?$/.test(text)) return "commit";
+  if (text === "abort") return "abort";
+  if (/^rollback(?:\s+(?:work|transaction|prepared\b.*))?$/.test(text)) return "rollback";
+  if (/^prepare\s+transaction\b/.test(text)) return "prepare transaction";
+  if (/^start\s+transaction\b/.test(text)) return "start transaction";
+  if (/^begin(?:\s+(?:work|transaction)\b.*)?$/.test(text) || /^begin\s+\S/.test(text)) {
+    if (insideBody && !/^begin\s+(?:work|transaction)\b/.test(text)) return undefined;
+    return "begin";
+  }
+  if (/^end(?:\s+(?:work|transaction))?$/.test(text)) {
+    if (insideBody && text === "end") return undefined;
+    return "end";
+  }
+  return undefined;
+}
+
+function dollarBodies(sql: string): readonly string[] {
+  const bodies: string[] = [];
+  let index = 0;
+  while (index < sql.length) {
+    if (sql.startsWith("--", index)) {
+      index = lineCommentEnd(sql, index + 2);
+      continue;
+    }
+    if (sql.startsWith("/*", index)) {
+      index = blockComment(sql, index + 2).index;
+      continue;
+    }
+    if (isEscapeString(sql, index)) {
+      index = takeQuoted(sql, index + 2, true).index;
+      continue;
+    }
+    if (sql[index] === "'") {
+      index = takeQuoted(sql, index + 1, false).index;
+      continue;
+    }
+    if (sql[index] === '"') {
+      index = takeIdent(sql, index + 1).index;
+      continue;
+    }
+    const dollar = dollarAt(sql, index);
+    if (dollar !== undefined) {
+      const closed = takeDollar(sql, dollar);
+      if (!closed.open) {
+        const closer = `$${dollar.tag}$`.length;
+        bodies.push(sql.slice(dollar.end, closed.index - closer));
+      }
+      index = closed.index;
+      continue;
+    }
+    index += 1;
+  }
+  return bodies;
+}
+
 function lineCommentEnd(sql: string, index: number): number {
   while (index < sql.length && sql.charCodeAt(index) !== 10) index += 1;
   return index;

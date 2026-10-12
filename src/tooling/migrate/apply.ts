@@ -18,7 +18,6 @@ import { OkmError } from "../../contracts/error.js";
 import { assertCreateRole, currentUser, roleExists } from "../../dialects/pg/role/check.js";
 import { changesRole } from "../../dialects/pg/role/sql.js";
 import { batchSizeField } from "./backfill.js";
-import { isolatePublic } from "./isolate.js";
 import {
   assumeRole,
   grantAppMeta,
@@ -111,13 +110,6 @@ export type ApplyRequest = {
    */
   readonly lintDirectory?: string;
   /**
-   * Scratch schema a check replay may change.
-   *
-   * When set, a commit that would change `public` is rolled back. Apply leaves
-   * this unset.
-   */
-  readonly sandbox?: string;
-  /**
    * Head snapshot.
    *
    * Set by `okm migrate apply` and `provision()`. An empty target installs
@@ -172,6 +164,19 @@ const BACKFILL = `create table if not exists okm_backfill (
   updated_at timestamptz not null default now(),
   primary key (migration_id, step_index)
 )`;
+
+/**
+ * Creates `okm_meta`, `okm_history`, and `okm_backfill` when they are absent.
+ *
+ * @param execute - Runs one statement on the apply or check connection
+ */
+export async function ensureMigrationTables(
+  execute: (sql: string) => Promise<unknown>,
+): Promise<void> {
+  await execute(META);
+  await execute(HISTORY);
+  await execute(BACKFILL);
+}
 
 /**
  * Groups pending steps into the transactions apply will run.
@@ -254,8 +259,7 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
     });
   }
   const reserved = await pool.reserve();
-  const connection =
-    request.sandbox === undefined ? reserved : await isolatePublic(reserved, request.sandbox);
+  const connection = reserved;
   let locked = false;
   try {
     await assertStableBackend(() => backendPid(connection), request.allowPooler === true);
@@ -281,9 +285,7 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
         throw notEmpty(request.target, state.kind === "occupied" ? state.object : "okm_meta");
       }
     }
-    await connection.execute(META);
-    await connection.execute(HISTORY);
-    await connection.execute(BACKFILL);
+    await ensureMigrationTables((sql) => connection.execute(sql));
     const restamped = await restampLegacy(connection, request);
     const history = await readHistory(connection);
     const done = expandProvisioned(request.migrations, history.done, history.ids);
@@ -661,9 +663,7 @@ async function provisionEmpty(
     );
   }
   const schema = concreteSchema(request);
-  await connection.execute(META);
-  await connection.execute(HISTORY);
-  await connection.execute(BACKFILL);
+  await ensureMigrationTables((sql) => connection.execute(sql));
   await installSnapshot(
     connection,
     snapshot.catalog,

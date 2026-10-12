@@ -498,6 +498,13 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     fix: "Remove the statement, or allow OKM1550 with a reason when the change is reviewed.",
   },
   {
+    code: "OKM1551",
+    title: "Transaction control in a step",
+    summary:
+      "A step contains COMMIT, ROLLBACK, or other transaction control. That leaves the migration transaction.",
+    fix: "Remove the transaction control. okm migrate check replays one transaction and rolls it back. Apply accepts the step only with -- okm-allow OKM1551: reason.",
+  },
+  {
     code: "OKM1601",
     title: "Stale typed SQL",
     summary: "A typed SQL signature no longer matches the database.",

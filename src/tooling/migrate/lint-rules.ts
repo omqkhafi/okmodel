@@ -12,6 +12,7 @@ import type {
   TypeObject,
 } from "../../contracts/catalog/types.js";
 import type { PlanStep, StepKind } from "./plan.js";
+import { transactionControl } from "./sql-lex.js";
 import { canonicalTypeName } from "./type-name.js";
 
 /** Destructive, compatibility, data, locking, or a schema type preference. */
@@ -261,6 +262,16 @@ export const STEP_RULES: readonly StepRule[] = [
     "error",
     "Disabling row-level security, dropping a policy, creating or altering one that is not the emitted tenant predicate, granting BYPASSRLS, or changing the owner of a tenant table removes the rlsTenancy backstop.",
     (input) => weakensRls(input),
+  ),
+  rule(
+    "OKM1551",
+    "destructive",
+    "error",
+    "Transaction control inside a step commits or leaves the migration transaction.",
+    (input) => {
+      const word = transactionControl(input.step.sql);
+      return word === undefined ? [] : [`contains ${word}`];
+    },
   ),
 ];
 

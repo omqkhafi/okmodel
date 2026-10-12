@@ -11,7 +11,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
-import { createIsolatedDatabase, openPostgres } from "../packages/harness/src/postgres.js";
+import {
+  createIsolatedDatabase,
+  giveDatabaseToOwner,
+  openPostgres,
+  SCHEMA_OWNER,
+} from "../packages/harness/src/postgres.js";
 import { quoteIdent } from "../src/dialects/pg/ddl.js";
 import { repoRoot } from "../scripts/root.js";
 import { run } from "../src/tooling/migrate/commands.js";
@@ -28,12 +33,16 @@ postgresTest(
     const report = roleName("report");
     const reader = roleName("reader");
     const database = await createIsolatedDatabase();
+    const url = await giveDatabaseToOwner(database.url);
     const sql = openPostgres(database.url);
     const cwd = mkdtempSync(join(tmpdir(), "okm-grant-case-"));
     try {
-      await sql.unsafe(`create role ${quoteIdent(mig)} nosuperuser nocreatedb createrole`);
+      await sql.unsafe(
+        `create role ${quoteIdent(mig)} nosuperuser nobypassrls nocreatedb createrole`,
+      );
+      await sql.unsafe(`grant ${quoteIdent(mig)} to ${SCHEMA_OWNER}`);
       await sql.unsafe(`alter schema public owner to ${quoteIdent(mig)}`);
-      writeProject(cwd, database.url, "rls", { mig, app, report, reader });
+      writeProject(cwd, url, "rls", { mig, app, report, reader });
       const lines = await cycle(cwd);
       const sqlText = readFileSync(migration(cwd), "utf8");
       expect(sqlText).toContain('"tenantId"');
@@ -59,9 +68,10 @@ postgresTest(
   "a path project with permuted table names applies and checks clean",
   async () => {
     const database = await createIsolatedDatabase();
+    const url = await giveDatabaseToOwner(database.url);
     const cwd = mkdtempSync(join(tmpdir(), "okm-path-order-"));
     try {
-      writeProject(cwd, database.url, "path");
+      writeProject(cwd, url, "path");
       const lines = await cycle(cwd);
       expect(lines).toContain("applied");
       expect(lines).toContain("ok 1 migrations\n");
