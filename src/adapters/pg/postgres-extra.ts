@@ -56,15 +56,15 @@ export async function checkout(pool: HeldPool): Promise<DriverConnection> {
   let released = false;
   // postgres.js queues a small write with setImmediate. nextWrite then calls
   // socket.write. After closed() sets the socket to null, that timer throws
-  // outside the query promise. Once this connection is lost, nothing more is
-  // sent on it, so that timer is never scheduled and setImmediate stays the
-  // process's own function.
-  let lost = false;
+  // outside the query promise. The close handler sets `lost` before the next
+  // statement, savepoint, or COMMIT, so that write is never scheduled.
+  const lost = { on: false };
+  arm(reserved, lost);
   const guard = <T>(run: () => Promise<T>): Promise<T> =>
-    lost
-      ? rejectClosed("lost")
+    lost.on
+      ? rejectClosed("CONNECTION_CLOSED")
       : run().catch((error: unknown) => {
-          if (isConnectionLost(error)) lost = true;
+          if (isConnectionLost(error)) lost.on = true;
           throw error;
         });
   return {
@@ -84,14 +84,14 @@ export async function checkout(pool: HeldPool): Promise<DriverConnection> {
       if (released) return;
       released = true;
       try {
-        if (!lost) await resetConnection(reserved, session.depth());
+        if (!lost.on) await resetConnection(reserved, session.depth());
       } finally {
         pool.counters.reserved = Math.max(0, pool.counters.reserved - 1);
         // A closed connection is already back in the driver's closed list. Releasing it would put it
         // in the open list, and the next statement would write to a socket that is gone.
         // The fatal ErrorResponse can still be sitting on that connection and is delivered to the
         // next query. A discarded statement consumes it.
-        if (lost) await pool.sql.unsafe("select 1").catch(() => undefined);
+        if (lost.on) await pool.sql.unsafe("select 1").catch(() => undefined);
         else reserved.release();
       }
     },
@@ -197,6 +197,34 @@ async function resetConnection(sql: Sql, depth: number): Promise<void> {
 function asParams(params: readonly WireValue[] | undefined): string[] {
   if (params === undefined) return [];
   return params as unknown as string[];
+}
+
+type Lost = { on: boolean };
+
+/**
+ * Rejects later writes once postgres.js reports the reserved socket closed.
+ *
+ * The first statement installs `onclose`. The checkout guard then refuses
+ * the next statement, savepoint, or COMMIT before `socket.write`.
+ *
+ * @param sql - Reserved connection
+ * @param lost - Set when that socket closes
+ */
+function arm(sql: Sql, lost: Lost): void {
+  const unsafe = sql.unsafe.bind(sql);
+  sql.unsafe = ((text: string, params?: unknown, options?: object) =>
+    unsafe(
+      text,
+      params as never,
+      {
+        ...options,
+        onexecute(connection: { onclose: (() => void) | null }) {
+          connection.onclose = () => {
+            lost.on = true;
+          };
+        },
+      } as never,
+    )) as Sql["unsafe"];
 }
 
 /** Refcount a checkout or a listener borrows from the pool. */

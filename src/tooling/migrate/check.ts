@@ -1,16 +1,13 @@
 /**
  * `okm migrate check` proves a migration history is sound (D196).
  *
- * The command replays every file into a scratch schema through
- * {@link applyTarget}, then plans the introspected schema back to that
- * file's catalog. It also checks the previous catalog, the head, and the
- * linter. Nothing here changes apply.
+ * The command replays every file into a scratch schema inside one transaction
+ * and rolls that transaction back. It also checks the previous catalog, the
+ * head, and the linter. Nothing here changes apply.
  */
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-
-import postgres from "postgres";
 
 import { catalog } from "../../contracts/catalog/build.js";
 import { parseCatalog } from "../../contracts/catalog/document.js";
@@ -23,27 +20,18 @@ import type {
   TypeDefinition,
 } from "../../contracts/catalog/types.js";
 import { OkmError } from "../../contracts/error.js";
-import { quoteIdent } from "../../dialects/pg/ddl.js";
-import { introspectSchema } from "../../dialects/pg/introspect.js";
-import { sealViews } from "../../dialects/pg/view/scratch.js";
-import { applyTarget, backfillTiming } from "./apply.js";
-import { snapshotDifference } from "./snapshot.js";
 import { canonicalTypeName } from "./type-name.js";
 import { classOf, strictestClass, type MigrationClass } from "./classify.js";
 import type { MigrateConfig } from "./config.js";
-import { catalogQuery, managedRoleOptions } from "./drift.js";
 import { catalogsEqual } from "./equal.js";
 import { loadMigrations, readMigrationPlan } from "./files.js";
 import { projectPath } from "./paths.js";
 import { hasError, lintMigrationDirectory, lintRefusal } from "./lint.js";
 import { planMigration, type MigrationPlan, type PlanStep } from "./plan.js";
-import {
-  assertDirectConnection,
-  assertStableBackend,
-  selectTarget,
-  type InvokeFlags,
-} from "./policy.js";
+import { assertDirectConnection, selectTarget, type InvokeFlags } from "./policy.js";
 import { openProject } from "./project.js";
+import { proveCheckSnapshot, replayCheckHistory } from "./sandbox.js";
+import { transactionControl } from "./sql-lex.js";
 
 /** Prefix of the scratch schema. The random suffix makes the name unique. */
 export const CHECK_SCHEMA_PREFIX = "okm_check_";
@@ -114,14 +102,17 @@ export async function checkMigrations(
   const stale = staleFailure(history, opened.built.catalog);
   const lint = lintFailure(directory, history, opened.config.lintFrom);
   if (lint.length > 0) throwFailure([...previous, ...stale, ...lint]);
+  refuseTransactionControl(history);
   if (options?.provision === true) {
-    const equivalence = await proveSnapshot(opened.config, target.url, target.name, flags, history);
+    const equivalence = await proveSnapshot(opened.config, target.url, flags, history);
     if (equivalence !== undefined) throwFailure([equivalence]);
   }
-  const replayed = await replayHistory(opened.config, target.url, target.name, flags, history);
-  const failures = [...replayed, ...previous, ...stale, ...lint];
+  const replayed = await replayHistory(opened.config, target.url, flags, history);
+  const failures = [...replayed.failures, ...previous, ...stale, ...lint];
   if (failures.length > 0) throwFailure(failures);
-  return `ok ${String(history.length)} migrations\n`;
+  const summary = `ok ${String(history.length)} migrations\n`;
+  if (replayed.skips.length === 0) return summary;
+  return `${summary}${replayed.skips.join("\n")}\n`;
 }
 
 /**
@@ -269,211 +260,65 @@ function lintIds(
 async function proveSnapshot(
   config: MigrateConfig,
   url: string,
-  target: string,
   flags: InvokeFlags,
   history: readonly HistoryEntry[],
 ): Promise<CheckFailure | undefined> {
-  const head = history.at(-1);
-  if (head === undefined) return undefined;
-  const sql = postgres(url, {
-    max: 1,
-    connect_timeout: 5,
-    idle_timeout: 1,
-    onnotice: () => {},
-  });
-  const allowPooler = flags.allowPooler || config.allowPooler === true;
   const provided = `${CHECK_SCHEMA_PREFIX}p${crypto.randomUUID().replaceAll("-", "")}`;
   const replayed = `${CHECK_SCHEMA_PREFIX}r${crypto.randomUUID().replaceAll("-", "")}`;
-  const timing = {
-    ...(flags.lockTimeoutMs !== undefined
-      ? { lockTimeoutMs: flags.lockTimeoutMs }
-      : config.timeouts?.lock !== undefined
-        ? { lockTimeoutMs: config.timeouts.lock }
-        : {}),
-    ...(flags.statementTimeoutMs !== undefined
-      ? { statementTimeoutMs: flags.statementTimeoutMs }
-      : config.timeouts?.statement !== undefined
-        ? { statementTimeoutMs: config.timeouts.statement }
-        : {}),
-    ...backfillTiming(config.backfill),
+  const difference = await proveCheckSnapshot(
+    url,
+    provided,
+    replayed,
+    config,
+    flags.allowPooler || config.allowPooler === true,
+    history,
+  );
+  if (difference === undefined) return undefined;
+  return {
+    code: "OKM1521",
+    message: `Provisioning from the snapshot does not match the replayed history.\n${difference}`,
+    fix: "Regenerate the snapshot from the history. okm migrate check --provision is the command that reports this.",
   };
-  try {
-    await assertStableBackend(async () => {
-      const rows = await sql<{ pid: string }[]>`select pg_backend_pid()::text as pid`;
-      return rows[0]?.pid ?? "";
-    }, allowPooler);
-    await sql.unsafe(`create schema ${quoteIdent(provided)}`);
-    await sql.unsafe(`create schema ${quoteIdent(replayed)}`);
-    const role =
-      config.roles === undefined ? {} : { migrationRole: config.roles.migration, schema: provided };
-    await applyTarget({
-      url,
-      target,
-      protected: false,
-      allowProtected: false,
-      allowPooler: flags.allowPooler || config.allowPooler === true,
-      searchPath: provided,
-      sandbox: provided,
-      ...timing,
-      migrations: history.map((migration) => ({
-        id: migration.id,
-        catalogHash: migration.catalogHash,
-        steps: migration.steps,
-      })),
-      snapshot: {
-        catalog: head.catalog,
-        migrationId: head.id,
-        catalogHash: head.catalogHash,
-        reference: [],
-        only: true,
-      },
-      ...role,
-    });
-    await applyTarget({
-      url,
-      target,
-      protected: false,
-      allowProtected: false,
-      allowPooler: flags.allowPooler || config.allowPooler === true,
-      searchPath: replayed,
-      sandbox: replayed,
-      ...timing,
-      migrations: history.map((migration) => ({
-        id: migration.id,
-        catalogHash: migration.catalogHash,
-        steps: retargetSteps(migration.steps, replayed),
-      })),
-      ...(config.roles !== undefined
-        ? { migrationRole: config.roles.migration, schema: replayed }
-        : {}),
-    });
-    const liveProvided = await introspectScratch(sql, provided, config);
-    const liveReplayed = await introspectScratch(sql, replayed, config);
-    const difference = snapshotDifference(liveProvided, liveReplayed);
-    if (difference === undefined) return undefined;
-    return {
-      code: "OKM1521",
-      message: `Provisioning from the snapshot does not match the replayed history.\n${difference}`,
-      fix: "Regenerate the snapshot from the history. okm migrate check --provision is the command that reports this.",
-    };
-  } finally {
-    await sql
-      .unsafe(`drop schema if exists ${quoteIdent(provided)} cascade`)
-      .catch(() => undefined);
-    await sql
-      .unsafe(`drop schema if exists ${quoteIdent(replayed)} cascade`)
-      .catch(() => undefined);
-    await sql.end({ timeout: 5 });
-  }
 }
 
 async function replayHistory(
   config: MigrateConfig,
   url: string,
-  target: string,
   flags: InvokeFlags,
   history: readonly HistoryEntry[],
-): Promise<readonly CheckFailure[]> {
-  if (history.length === 0) return [];
-  const sql = postgres(url, {
-    max: 1,
-    connect_timeout: 5,
-    idle_timeout: 1,
-    onnotice: () => {},
-  });
-  const allowPooler = flags.allowPooler || config.allowPooler === true;
+): Promise<{ readonly failures: readonly CheckFailure[]; readonly skips: readonly string[] }> {
+  if (history.length === 0) return { failures: [], skips: [] };
   const scratch = `${CHECK_SCHEMA_PREFIX}${crypto.randomUUID().replaceAll("-", "")}`;
-  const failures: CheckFailure[] = [];
-  try {
-    await assertStableBackend(async () => {
-      const rows = await sql<{ pid: string }[]>`select pg_backend_pid()::text as pid`;
-      return rows[0]?.pid ?? "";
-    }, allowPooler);
-    await sql.unsafe(`create schema ${quoteIdent(scratch)}`);
-    const migrationRole = config.roles?.migration;
-    if (migrationRole !== undefined) {
-      const exists = await sql<{ ok: boolean | string }[]>`
-        select exists (select 1 from pg_roles where rolname = ${migrationRole}) as ok
-      `;
-      const present = exists[0]?.ok;
-      if (present === true || present === "t" || present === "true") {
-        await sql.unsafe(
-          `alter schema ${quoteIdent(scratch)} owner to ${quoteIdent(migrationRole)}`,
-        );
-      }
-    }
-    const runner = catalogQuery(sql);
-    for (let index = 0; index < history.length; index += 1) {
-      const migration = history[index];
-      if (migration === undefined) continue;
-      await applyTarget({
-        url,
-        target,
-        protected: false,
-        allowProtected: false,
-        allowPooler: flags.allowPooler || config.allowPooler === true,
-        searchPath: scratch,
-        sandbox: scratch,
-        ...(flags.lockTimeoutMs !== undefined
-          ? { lockTimeoutMs: flags.lockTimeoutMs }
-          : config.timeouts?.lock !== undefined
-            ? { lockTimeoutMs: config.timeouts.lock }
-            : {}),
-        ...(flags.statementTimeoutMs !== undefined
-          ? { statementTimeoutMs: flags.statementTimeoutMs }
-          : config.timeouts?.statement !== undefined
-            ? { statementTimeoutMs: config.timeouts.statement }
-            : {}),
-        ...backfillTiming(config.backfill),
-        migrations: [
-          {
-            id: migration.id,
-            catalogHash: migration.catalogHash,
-            steps: retargetSteps(migration.steps, scratch),
-          },
-        ],
-        ...(config.roles !== undefined
-          ? { migrationRole: config.roles.migration, schema: scratch }
-          : {}),
-      });
-      const live = await introspectScratch(sql, scratch, config);
-      const sealed = await sealViews(runner, migration.catalog);
-      const back = planMigration({ before: live, after: sealed, name: migration.id });
-      if (back.steps.length === 0) continue;
-      failures.push(historyFailure(history, index, back));
-      break;
-    }
-  } finally {
-    await sql.unsafe(`drop schema if exists ${quoteIdent(scratch)} cascade`).catch(() => undefined);
-    await sql.end({ timeout: 5 });
-  }
-  return failures;
+  const outcome = await replayCheckHistory(
+    url,
+    scratch,
+    config,
+    flags.allowPooler || config.allowPooler === true,
+    history,
+  );
+  if (outcome.stop === undefined) return { failures: [], skips: outcome.skips };
+  return {
+    failures: [historyFailure(history, outcome.stop.index, outcome.stop.back)],
+    skips: outcome.skips,
+  };
 }
 
-/**
- * Introspects one scratch schema as if it were `public`.
- *
- * `pg_get_viewdef` and `format_type` qualify every name that is not on the
- * search path, so the scratch schema has to be the search path while it is
- * read. The connection has one session, so the setting holds.
- */
-async function introspectScratch(
-  sql: postgres.Sql,
-  schema: string,
-  config: MigrateConfig,
-): Promise<Catalog> {
-  const previous = await sql<{ path: string }[]>`select current_setting('search_path') as path`;
-  const saved = previous[0]?.path ?? "public";
-  try {
-    await sql.unsafe(`set search_path to ${quoteIdent(schema)}`);
-    return await introspectSchema(
-      catalogQuery(sql),
-      schema,
-      "public",
-      managedRoleOptions(config.roles),
-    );
-  } finally {
-    await sql`select set_config('search_path', ${saved}, false)`.catch(() => undefined);
+function refuseTransactionControl(history: readonly HistoryEntry[]): void {
+  for (const migration of history) {
+    migration.steps.forEach((step, index) => {
+      const word = transactionControl(step.sql);
+      if (word === undefined) return;
+      throw new OkmError(
+        "OKM1551",
+        `Migration ${migration.id} step ${String(index + 1)} contains ${word}.`,
+        {
+          fix: {
+            summary:
+              "Remove transaction control from the step. okm migrate check replays one transaction and rolls it back.",
+          },
+        },
+      );
+    });
   }
 }
 
@@ -520,25 +365,6 @@ function samePlan(before: Catalog, after: Catalog, file: MigrationPlan): boolean
 function sameSql(planned: MigrationPlan, file: MigrationPlan): boolean {
   if (planned.steps.length !== file.steps.length) return false;
   return planned.steps.every((step, index) => step.sql === file.steps[index]?.sql);
-}
-
-function retargetSteps(steps: readonly PlanStep[], schema: string): readonly PlanStep[] {
-  const from = `${quoteIdent("public")}.`;
-  const to = `${quoteIdent(schema)}.`;
-  const fromDefaults = `in schema ${quoteIdent("public")} `;
-  const toDefaults = `in schema ${quoteIdent(schema)} `;
-  const fromSchema = `on schema ${quoteIdent("public")}`;
-  const toSchema = `on schema ${quoteIdent(schema)}`;
-  return steps.map((step) => ({
-    ...step,
-    sql: step.sql
-      .replaceAll(from, to)
-      .replaceAll(fromDefaults, toDefaults)
-      .replaceAll(fromSchema, toSchema),
-    ...(step.backfill === undefined
-      ? {}
-      : { backfill: { ...step.backfill, table: step.backfill.table.replaceAll(from, to) } }),
-  }));
 }
 
 function readHistory(directory: string): readonly HistoryEntry[] {

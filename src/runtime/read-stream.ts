@@ -7,6 +7,7 @@
 
 import type { DriverPool, WireValue } from "../contracts/driver.js";
 import { OkmError, type ErrorStatuses } from "../contracts/error.js";
+import { mapPostgresError } from "../dialects/pg/errors.js";
 import { withHttp } from "./client.js";
 import { decodeResult, type Plan, type ReadCall } from "./plan.js";
 
@@ -46,9 +47,17 @@ export async function* streamRows(
     plan.outputs.includes.length === 0
       ? decodeResult
       : (await import("./include.js")).decodeIncluded;
-  for await (const chunk of session.pool.stream(plan.text, params as readonly WireValue[])) {
-    const decoded = decode(plan, chunk, call.table);
-    if (!Array.isArray(decoded)) continue;
-    for (const row of decoded) yield row;
+  try {
+    for await (const chunk of session.pool.stream(plan.text, params as readonly WireValue[])) {
+      const decoded = decode(plan, chunk, call.table);
+      if (!Array.isArray(decoded)) continue;
+      for (const row of decoded) yield row;
+    }
+  } catch (error) {
+    throw log(
+      session.http === undefined
+        ? mapPostgresError(error)
+        : mapPostgresError(error, { http: session.http }),
+    );
   }
 }

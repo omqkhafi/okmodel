@@ -1,8 +1,7 @@
 /**
- * `okm migrate check` must not change the real schema.
+ * `okm migrate check` must not change the real database.
  *
- * A hand-written statement that names `public` used to run there before
- * OKM1550 was reported. The catalog hash of `public` stays the same.
+ * Each case runs as a superuser and as a NOSUPERUSER owner of the schema.
  */
 
 import { expect } from "bun:test";
@@ -11,60 +10,92 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
-import { createIsolatedDatabase, openPostgres } from "../packages/harness/src/postgres.js";
+import {
+  createIsolatedDatabase,
+  giveDatabaseToOwner,
+  openPostgres,
+} from "../packages/harness/src/postgres.js";
 import { repoRoot } from "../scripts/root.js";
 
 const gate = await loadPostgresGate();
 const root = repoRoot();
 
-const FORMS = [
-  "alter table public.t add column extra_plain int",
-  'alter table "public"."t" add column extra_quoted int',
-  "alter table PUBLIC.t add column extra_upper int",
-  "alter table public . t add column extra_space int",
-  "do $$ begin execute 'alter table public.t add column extra_do int'; end $$",
+const REFUSED = [
+  "commit; alter table public.t add column zz int",
+  "commit; create table public.evil(a int)",
+  "end; begin; alter table public.t add column ee int",
+  "rollback; alter table public.t add column rr int",
 ] as const;
 
-postgresTest(
-  gate,
-  "migrate check leaves public byte identical for every public qualifier",
-  async () => {
-    for (const form of FORMS) {
-      const database = await createIsolatedDatabase();
-      const sql = openPostgres(database.url);
-      const cwd = mkdtempSync(join(tmpdir(), "okm-check-sandbox-"));
-      try {
-        await sql.unsafe("create table public.t (id int primary key)");
-        const before = await fingerprint(sql);
-        writeProject(cwd, database.url);
-        await cli(cwd, ["generate", "init"]);
-        appendFileSync(migration(cwd), `\n\n${form};\n`);
-        let failed = false;
+const REPLAYED = [
+  "alter table public.t add column extra_plain int",
+  'create table "public"."t" (id int primary key); alter table "public"."t" add column extra_quoted int',
+  "alter table PUBLIC.t add column extra_upper int",
+  "alter table public . t add column extra_space int",
+  "-- okm-allow OKM1542: replay the body inside the check transaction\ndo $$ begin execute 'alter table public.t add column extra_do int'; end $$",
+  "create function public.f() returns int language sql as $$ select 1 $$",
+  "comment on schema public is 'leaked'",
+] as const;
+
+for (const who of ["superuser", "owner"] as const) {
+  postgresTest(
+    gate,
+    `migrate check as ${who} leaves the real database unchanged`,
+    async () => {
+      for (const form of [...REFUSED, ...REPLAYED]) {
+        const database = await createIsolatedDatabase();
+        const admin = openPostgres(database.url);
+        const url = who === "owner" ? await giveDatabaseToOwner(database.url) : database.url;
+        const sql = who === "owner" ? openPostgres(url) : admin;
+        const cwd = mkdtempSync(join(tmpdir(), "okm-check-sandbox-"));
         try {
-          await cli(cwd, ["migrate", "check"]);
-        } catch {
-          failed = true;
+          await sql.unsafe("create table public.t (id int primary key)");
+          const before = await fingerprint(admin);
+          const acl = await publicAcl(admin);
+          writeProject(cwd, url);
+          await cli(cwd, ["generate", "init"]);
+          appendFileSync(migration(cwd), `\n\n${form};\n`);
+          const refused = REFUSED.some((item) => item === form);
+          const quoted = form.includes('"public"');
+          if (refused) {
+            await expectCheckCode(cwd, "OKM1551");
+          } else if (quoted) {
+            await expectCheckCode(cwd, "OKM1547");
+          } else {
+            expect(await cli(cwd, ["migrate", "check"])).toBe("ok 1 migrations\n");
+          }
+          expect(await fingerprint(admin)).toBe(before);
+          expect(await publicAcl(admin)).toBe(acl);
+        } finally {
+          if (sql !== admin) await sql.end({ timeout: 5 });
+          await admin.end({ timeout: 5 });
+          rmSync(cwd, { recursive: true, force: true });
+          await database.close();
         }
-        expect(failed).toBe(true);
-        expect(await fingerprint(sql)).toBe(before);
-        const columns = await sql<{ attname: string }[]>`
-          select a.attname
-          from pg_attribute a
-          join pg_class c on c.oid = a.attrelid
-          join pg_namespace n on n.oid = c.relnamespace
-          where n.nspname = 'public' and c.relname = 't' and a.attnum > 0 and not a.attisdropped
-          order by a.attnum
-        `;
-        expect(columns.map((row) => row.attname)).toEqual(["id"]);
+      }
+    },
+    180_000,
+  );
+
+  postgresTest(
+    gate,
+    `a one-table project passes migrate check as ${who}`,
+    async () => {
+      const database = await createIsolatedDatabase();
+      const url = who === "owner" ? await giveDatabaseToOwner(database.url) : database.url;
+      const cwd = mkdtempSync(join(tmpdir(), "okm-check-plain-"));
+      try {
+        writeProject(cwd, url);
+        await cli(cwd, ["generate", "init"]);
+        expect(await cli(cwd, ["migrate", "check"])).toBe("ok 1 migrations\n");
       } finally {
-        await sql.end({ timeout: 5 });
         rmSync(cwd, { recursive: true, force: true });
         await database.close();
       }
-    }
-  },
-  180_000,
-);
+    },
+    60_000,
+  );
+}
 
 type Sql = ReturnType<typeof openPostgres>;
 
@@ -72,11 +103,12 @@ async function fingerprint(sql: Sql): Promise<string> {
   const rows = await sql<{ hash: string }[]>`
     select md5(coalesce(string_agg(line, E'\n' order by line), '')) as hash
     from (
-      select 'ns|' || n.nspowner::text as line
+      select 'ns|' || n.nspowner::text || '|' || coalesce(n.nspacl::text, '') as line
       from pg_namespace n
       where n.nspname = 'public'
       union all
-      select 'rel|' || c.relname || '|' || c.relkind::text || '|' || c.relrowsecurity::text || '|' || c.relforcerowsecurity::text
+      select 'rel|' || c.relname || '|' || c.relkind::text || '|' || c.relrowsecurity::text
+        || '|' || c.relforcerowsecurity::text || '|' || coalesce(c.relacl::text, '')
         || '|' || coalesce((
           select string_agg(a.attname || ':' || a.atttypid::text || ':' || a.attnum::text || ':' || a.attnotnull::text, ',' order by a.attnum)
           from pg_attribute a
@@ -86,15 +118,44 @@ async function fingerprint(sql: Sql): Promise<string> {
       join pg_namespace n on n.oid = c.relnamespace
       where n.nspname = 'public' and c.relkind in ('r', 'p', 'v', 'm', 'i', 'S', 'f')
       union all
-      select 'pol|' || c.relname || '|' || p.polname || '|' || p.polcmd::text || '|' || coalesce(pg_get_expr(p.polqual, p.polrelid), '')
+      select 'pol|' || c.relname || '|' || p.polname || '|' || p.polcmd::text
+        || '|' || coalesce(pg_get_expr(p.polqual, p.polrelid), '')
         || '|' || coalesce(pg_get_expr(p.polwithcheck, p.polrelid), '')
       from pg_policy p
       join pg_class c on c.oid = p.polrelid
       join pg_namespace n on n.oid = c.relnamespace
       where n.nspname = 'public'
+      union all
+      select 'fn|' || p.proname || '|' || pg_get_function_identity_arguments(p.oid)
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public'
+      union all
+      select 'ty|' || t.typname || '|' || t.typtype::text
+      from pg_type t
+      join pg_namespace n on n.oid = t.typnamespace
+      where n.nspname = 'public'
+      union all
+      select 'cmt|' || coalesce(d.description, '')
+      from pg_namespace n
+      left join pg_description d on d.objoid = n.oid and d.classoid = 'pg_namespace'::regclass
+      where n.nspname = 'public'
+      union all
+      select 'objcmt|' || d.objoid::text || '|' || d.objsubid::text || '|' || d.description
+      from pg_description d
+      join pg_class c on c.oid = d.objoid
+      join pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'public'
     ) s
   `;
   return rows[0]?.hash ?? "";
+}
+
+async function publicAcl(sql: Sql): Promise<string> {
+  const rows = await sql<{ acl: string }[]>`
+    select coalesce(nspacl::text, '') as acl from pg_namespace where nspname = 'public'
+  `;
+  return rows[0]?.acl ?? "";
 }
 
 function writeProject(cwd: string, url: string): void {
@@ -125,6 +186,16 @@ function migration(cwd: string): string {
   const name = readdirSync(join(cwd, "migrations")).find((item) => item.endsWith(".sql"));
   if (name === undefined) throw new Error("generate wrote no migration");
   return join(cwd, "migrations", name);
+}
+
+async function expectCheckCode(cwd: string, code: string): Promise<void> {
+  let message = "";
+  try {
+    await cli(cwd, ["migrate", "check"]);
+  } catch (error) {
+    message = error instanceof Error ? error.message : "";
+  }
+  expect(message).toContain(code);
 }
 
 async function cli(cwd: string, argv: readonly string[]): Promise<string> {

@@ -108,6 +108,75 @@ export async function createIsolatedDatabase(
   };
 }
 
+/** Cluster role used as a non-superuser schema owner in check tests. */
+export const SCHEMA_OWNER = "okm_owner";
+
+/**
+ * Ensures {@link SCHEMA_OWNER} exists: `NOSUPERUSER`, `NOBYPASSRLS`, `CREATEROLE`, login.
+ *
+ * The role is cluster-wide. A later test alters it to the same shape.
+ *
+ * @param base - Admin URL. Defaults to the topology primary
+ */
+export async function ensureSchemaOwner(base: string = primaryUrl()): Promise<void> {
+  const admin = openPostgres(base);
+  try {
+    await admin.unsafe(
+      `do $$ begin
+        if not exists (select 1 from pg_roles where rolname = 'okm_owner') then
+          create role okm_owner nosuperuser nobypassrls createrole login password 'okm';
+        else
+          alter role okm_owner nosuperuser nobypassrls createrole login password 'okm';
+        end if;
+      end $$`,
+    );
+  } finally {
+    await admin.end({ timeout: 5 });
+  }
+}
+
+/**
+ * Connection URL for {@link SCHEMA_OWNER} on the same database.
+ *
+ * @param databaseUrl - A superuser URL whose path is the database
+ * @returns The owner URL
+ */
+export function ownerUrl(databaseUrl: string): string {
+  const url = new URL(databaseUrl);
+  url.username = SCHEMA_OWNER;
+  url.password = "okm";
+  return url.href.replace(/\/$/, "");
+}
+
+/**
+ * Makes {@link SCHEMA_OWNER} the owner of the database and of `public`.
+ *
+ * @param databaseUrl - Superuser URL of the isolated database
+ * @param base - Admin URL. Defaults to the topology primary
+ * @returns The owner URL
+ */
+export async function giveDatabaseToOwner(
+  databaseUrl: string,
+  base: string = primaryUrl(),
+): Promise<string> {
+  await ensureSchemaOwner(base);
+  const name = decodeURIComponent(new URL(databaseUrl).pathname.replace(/^\//, ""));
+  if (!/^[a-z0-9_]+$/.test(name)) throw new Error(`unexpected database name ${name}`);
+  const admin = openPostgres(base);
+  try {
+    await admin.unsafe(`alter database ${name} owner to ${SCHEMA_OWNER}`);
+  } finally {
+    await admin.end({ timeout: 5 });
+  }
+  const db = openPostgres(databaseUrl);
+  try {
+    await db.unsafe(`alter schema public owner to ${SCHEMA_OWNER}`);
+  } finally {
+    await db.end({ timeout: 5 });
+  }
+  return ownerUrl(databaseUrl);
+}
+
 /**
  * Returns whether a connection can run `select 1`.
  *

@@ -1296,7 +1296,7 @@ The startup hash leaves out roles, grants, and default privileges (D208). They c
 
 `okm migrate check` is the CI command for a migration history (D196). It does not prompt and it does not depend on colour. Exit zero prints `ok N migrations`. Any failure exits non-zero. One failure prints its code, message, and fix. Several failures print one greppable line per failure, each prefixed with its code.
 
-The command creates a scratch schema on the selected target, named `okm_check_` plus a random suffix, applies every migration in order through the same path as `okm migrate apply`, and drops that schema when it returns, including after a failure. After each migration it introspects the scratch schema and plans back to that migration's stored catalog. A remaining step is OKM1547. The message names the migration and prints the steps. Two migrations generated from the same parent are that failure: `migration X was generated from a different parent than Y`. There is no separate commutativity check.
+The command creates a scratch schema on the selected target, named `okm_check_` plus a random suffix, inside one transaction. It replays every migration in order with `search_path` set to that schema and ends the transaction with `ROLLBACK`. The schema is dropped when the command returns, including after a failure. The replay does not edit a system catalog or a real ACL. After each migration it introspects the scratch schema and plans back to that migration's stored catalog. A remaining step is OKM1547. The message names the migration and prints the steps. Two migrations generated from the same parent are that failure: `migration X was generated from a different parent than Y`. There is no separate commutativity check. Transaction control in a step (`COMMIT`, `END`, `ABORT`, `ROLLBACK`, `BEGIN`, `START TRANSACTION`, `PREPARE TRANSACTION`, `COMMIT PREPARED`) is OKM1551 before any replay. `-- okm-allow OKM1551: reason` does not let check run it. Apply does honor that allow. `VACUUM`, `CREATE DATABASE`, `DROP DATABASE`, and `ALTER SYSTEM` are skipped and named after `ok N migrations`. A concurrent index runs without `CONCURRENTLY`.
 
 For migration N, catalog N−1 is the previous release. Every table, column, constraint, and type in N−1 must still exist in N with the same type, and nullability must not be tightened without a default. A gap is OKM1548 unless the migration's recomputed class is `contract`. The class is recomputed from the SQL steps' kinds. A step with no kind is classified by planning N−1 to N again. A hand-edited `-- class:` line is not trusted: changing it to `expand` fails this check even when the kinds are contract. The check is schema-level. It does not prove application behaviour.
 
@@ -1306,7 +1306,7 @@ The history is linted with the same linter as apply. An error fails. An override
 
 The scratch schema is a write, so a protected target is refused (OKM1850). The message says to point the command at a throwaway Postgres. `--allow-protected` does not lift it.
 
-`--provision` also installs the head snapshot into a second scratch schema and compares it with the replay. A difference is OKM1521 and names the object. The default command does not provision (D198).
+`--provision` also installs the head snapshot into a second scratch schema and compares it with the replay. Each side is one transaction that ends with `ROLLBACK`. A difference is OKM1521 and names the object. The default command does not provision (D198).
 
 The startup compatibility check allows the database to be ahead of the app by `expand` migrations. Ahead by a `contract` migration, or behind the app, fails with OKM1520. The message names the migration. The fix says to apply that migration or change the deploy order. A database with no recorded catalog hash skips the check, so an existing database can adopt OKModel. `connect({ requireMeta: true })` makes that missing hash OKM1520. The option is explicit: the target name and `NODE_ENV` do not turn it on. A production connection sets `requireMeta`.
 
@@ -1514,6 +1514,7 @@ test("today view runs one query", async () => {
 | Previous catalog is not satisfied by an expand migration | `okm migrate check` | OKM1548 |
 | Last migration catalog does not match the schema | `okm migrate check` | OKM1549 |
 | Disabling row-level security, dropping a policy, creating or altering one that is not the emitted predicate, granting `BYPASSRLS`, or changing the owner of a tenant table | lint | OKM1550 |
+| `COMMIT`, `ROLLBACK`, or other transaction control inside a migration step | lint | OKM1551 |
 | Stale typed-SQL signature | CI | OKM1601 |
 | Commit or batch outcome unknown (result never received) | runtime | OKM1401 |
 | Tenant table without context | types | OKM1701 |
