@@ -303,6 +303,7 @@ postgresTest(
         await admin.unsafe(`drop policy if exists notes_tenant on ${schemaName}.notes`);
         await admin.unsafe(`drop policy if exists notes_unscoped_select on ${schemaName}.notes`);
         await admin.unsafe(`alter table ${schemaName}.notes disable row level security`);
+        await waitForReplicaRlsOff(schemaName);
         const broken = await testing(built, {
           driver: open({ url: appUrl, max: 2, searchPath: schemaName }),
           migrate: false,
@@ -523,6 +524,26 @@ async function provePooler(appUrl: string, appRole: string, schemaName: string):
     await child.exited;
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+/** Waits until replica `a` has replayed `DISABLE ROW LEVEL SECURITY` on `notes`. */
+async function waitForReplicaRlsOff(schemaName: string): Promise<void> {
+  const replica = postgres(replicaUrl("a"), { max: 1, connect_timeout: 5, onnotice() {} });
+  try {
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const rows = await replica<{ on: string }[]>`
+        select c.relrowsecurity::text as on
+        from pg_class c
+        join pg_namespace n on n.oid = c.relnamespace
+        where n.nspname = ${schemaName} and c.relname = 'notes'
+      `;
+      if (rows[0]?.on === "false") return;
+      await Bun.sleep(100);
+    }
+  } finally {
+    await replica.end({ timeout: 5 });
+  }
+  throw new Error(`replica a did not disable row level security on ${schemaName}.notes`);
 }
 
 async function waitForPort(port: number): Promise<void> {

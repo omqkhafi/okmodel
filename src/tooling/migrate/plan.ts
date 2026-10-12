@@ -593,9 +593,9 @@ export function formatPlan(plan: MigrationPlan, lockText?: (step: PlanStep) => s
 /**
  * Reads a plan written by {@link formatPlan}.
  *
- * A blank line ends a step. A blank line inside a quote, a dollar quote, or
- * a block comment stays in that step, and so does a `--` line while the
- * quote is still open.
+ * A blank line ends a step. A blank line inside a quote, a dollar quote, a
+ * block comment, or a `BEGIN ATOMIC` routine body stays in that step, and so
+ * does a `--` line while that quote or body is still open.
  *
  * `\r\n` and a lone `\r` are read as `\n`. A leading UTF-8 BOM is stripped.
  * UTF-16 is refused.

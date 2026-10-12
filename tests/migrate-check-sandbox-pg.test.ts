@@ -5,7 +5,14 @@
  */
 
 import { expect } from "bun:test";
-import { appendFileSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  copyFileSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -20,6 +27,14 @@ import { repoRoot } from "../scripts/root.js";
 
 const gate = await loadPostgresGate();
 const root = repoRoot();
+const CLI_TIMEOUT_MS = 60_000;
+
+const ATOMIC_BODIES = [
+  "create function public.f() returns int language sql begin atomic select 1; end",
+  "create function public.g() returns int language sql begin atomic select 1; select 2; end",
+  "create function public.h() returns int language sql begin atomic select case when true then 1 else 2 end; end",
+  "create procedure public.p() language sql begin atomic select 1; end",
+].join(";\n");
 
 const REFUSED = [
   "commit; alter table public.t add column zz int",
@@ -97,6 +112,99 @@ for (const who of ["superuser", "owner"] as const) {
     60_000,
   );
 }
+
+postgresTest(
+  gate,
+  "BEGIN ATOMIC function and procedure bodies pass check and apply",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const admin = openPostgres(database.url);
+    const cwd = mkdtempSync(join(tmpdir(), "okm-check-atomic-"));
+    try {
+      writeProject(cwd, database.url);
+      await cli(cwd, ["generate", "init"]);
+      expect(await cli(cwd, ["migrate", "apply"])).toContain("applied ");
+      const afterProvision = await fingerprint(admin);
+      writeAtomicMigration(cwd);
+      expect(await cli(cwd, ["migrate", "check"])).toBe("ok 2 migrations\n");
+      expect(await fingerprint(admin)).toBe(afterProvision);
+      expect(await cli(cwd, ["migrate", "apply"])).toContain("applied 0002_atomic");
+      const defs = await admin<{ def: string }[]>`
+        select pg_get_functiondef(p.oid) as def
+        from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public' and p.proname in ('f', 'g', 'h', 'p')
+        order by p.proname
+      `;
+      expect(defs).toHaveLength(4);
+      expect(defs.every((row) => row.def.toLowerCase().includes("begin atomic"))).toBe(true);
+    } finally {
+      await admin.end({ timeout: 5 });
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  90_000,
+);
+
+postgresTest(
+  gate,
+  "a commit after a BEGIN ATOMIC body is still OKM1551",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const admin = openPostgres(database.url);
+    const cwd = mkdtempSync(join(tmpdir(), "okm-check-atomic-commit-"));
+    try {
+      const before = await fingerprint(admin);
+      writeProject(cwd, database.url);
+      await cli(cwd, ["generate", "init"]);
+      appendFileSync(
+        migration(cwd),
+        "\n\ncreate function public.f() returns int language sql begin atomic select 1; end;\ncommit;\n",
+      );
+      await expectCheckCode(cwd, "OKM1551");
+      expect(await fingerprint(admin)).toBe(before);
+    } finally {
+      await admin.end({ timeout: 5 });
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  60_000,
+);
+
+postgresTest(
+  gate,
+  "a rollback after a BEGIN ATOMIC body is still OKM1551",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const admin = openPostgres(database.url);
+    const cwd = mkdtempSync(join(tmpdir(), "okm-check-atomic-rollback-"));
+    try {
+      const before = await fingerprint(admin);
+      writeProject(cwd, database.url);
+      await cli(cwd, ["generate", "init"]);
+      appendFileSync(
+        migration(cwd),
+        "\n\ncreate function public.f() returns int language sql begin atomic select 1; end;\nrollback;\n",
+      );
+      let message = "";
+      try {
+        await cli(cwd, ["migrate", "check"]);
+      } catch (error) {
+        message = error instanceof Error ? error.message : "";
+      }
+      expect(message).toContain("OKM1551");
+      expect(message).toContain("rollback");
+      expect(await fingerprint(admin)).toBe(before);
+    } finally {
+      await admin.end({ timeout: 5 });
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  60_000,
+);
 
 postgresTest(
   gate,
@@ -202,6 +310,15 @@ function writeProject(cwd: string, url: string): void {
   );
 }
 
+function writeAtomicMigration(cwd: string): void {
+  const dir = join(cwd, "migrations");
+  const sqlName = readdirSync(dir).find((item) => item.endsWith(".sql"));
+  if (sqlName === undefined) throw new Error("generate wrote no migration");
+  const id = sqlName.slice(0, -".sql".length);
+  copyFileSync(join(dir, `${id}.catalog.json`), join(dir, "0002_atomic.catalog.json"));
+  writeFileSync(join(dir, "0002_atomic.sql"), `-- name: atomic\n\n${ATOMIC_BODIES};\n`);
+}
+
 function migration(cwd: string): string {
   const name = readdirSync(join(cwd, "migrations")).find((item) => item.endsWith(".sql"));
   if (name === undefined) throw new Error("generate wrote no migration");
@@ -226,9 +343,18 @@ async function cli(cwd: string, argv: readonly string[]): Promise<string> {
     "process.stdout.write(lines.join(''));",
   ].join("\n");
   const proc = Bun.spawn(["bun", "-e", script], { stdout: "pipe", stderr: "pipe" });
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    proc.kill();
+  }, CLI_TIMEOUT_MS);
   const stdout = await new Response(proc.stdout).text();
   const stderr = await new Response(proc.stderr).text();
   const code = await proc.exited;
+  clearTimeout(timer);
+  if (timedOut) {
+    throw new Error(`okm ${argv.join(" ")} timed out after ${String(CLI_TIMEOUT_MS)}ms`);
+  }
   if (code !== 0) throw new Error(stderr.length > 0 ? stderr : stdout);
   return stdout;
 }
