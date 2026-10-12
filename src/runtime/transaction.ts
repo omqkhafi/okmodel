@@ -20,6 +20,7 @@ import type {
 } from "../contracts/driver.js";
 import { OkmError } from "../contracts/error.js";
 import { openClient, settleCall, withHttp, type Session } from "./client.js";
+import { refuseUncancellableTimeout } from "./inflight.js";
 import { fail, isRecord, rejectKeys } from "./plan.js";
 import type { CallOptions, TxOptions } from "./types.js";
 
@@ -154,6 +155,7 @@ export async function tx(session: Session, args: readonly unknown[]): Promise<un
     rejectKeys(given, ["isolation", "retry", "signal", "timeout"], "tx");
     const options = given as TxOptions;
     check(options);
+    await refuseUncancellableTimeout(session.pool, options.timeout);
     const call = fn as (t: unknown) => Promise<unknown>;
     return session.tx === undefined
       ? await outer(session, call, options)

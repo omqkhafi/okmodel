@@ -69,6 +69,24 @@ test("OKM1550 flags every way to weaken row-level security", () => {
   expect(reasons('alter table "public"."notes" owner to app')).toEqual([
     "changes the owner of a tenant table",
   ]);
+  expect(reasons("create policy extra on notes using (1=1)")).toEqual([
+    "creates a policy that is not the tenant predicate",
+  ]);
+  expect(reasons("create policy extra on notes using ((true))")).toEqual([
+    "creates a policy that is not the tenant predicate",
+  ]);
+  expect(reasons("create policy extra on notes using (true or false)")).toEqual([
+    "creates a policy that is not the tenant predicate",
+  ]);
+  expect(reasons("alter policy notes_tenant on notes to public using (1=1)")).toEqual([
+    "widens a policy away from the tenant predicate",
+  ]);
+  expect(
+    reasons(
+      "create policy extra on notes using (tenant_id = (nullif(current_setting('app.tenant'::text, true), ''::text))::uuid)",
+    ),
+  ).toEqual(["creates a policy that is not the tenant predicate"]);
+  expect(reasons("create policy extra on other using (1=1)")).toEqual([]);
 });
 
 test("enable, force, and NOBYPASSRLS are not OKM1550", () => {

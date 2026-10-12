@@ -104,6 +104,8 @@ type ScopeState = {
   last: string | undefined;
   pending: Promise<void> | undefined;
   epoch: number;
+  /** Statements of different scopes on this connection run one at a time. */
+  chain: Promise<void>;
 };
 
 type HookSession = {
@@ -444,6 +446,16 @@ function innerPool(pool: DriverPool): DriverPool {
   return inner ?? pool;
 }
 
+/** The pool a wrapper chain reserves: one chain for every scope on that connection. */
+function rootPool(pool: DriverPool): DriverPool {
+  let current = pool;
+  for (;;) {
+    const inner = (current as { [INNER]?: DriverPool })[INNER];
+    if (inner === undefined) return current;
+    current = inner;
+  }
+}
+
 function wrapPool(
   inner: DriverPool,
   scope: Scope,
@@ -457,7 +469,7 @@ function wrapPool(
     (inner as RoutedPool).okmGuardInstalled === true
       ? Promise.resolve()
       : checkEndpoint(inner, "primary", 0, tables);
-  const state = inside ? scopeState(inner) : undefined;
+  const state = inside ? scopeState(rootPool(inner)) : undefined;
   if (state !== undefined) queueScope(inner, scope, state);
   const arm = (): Promise<void> =>
     state === undefined ? Promise.resolve() : ensureScope(inner, scope, state);
@@ -467,8 +479,17 @@ function wrapPool(
       await ensure();
       if (unscoped && isWriteSql(text)) unscopedWrite();
       if (inside) {
-        await arm();
-        return inner.execute(text, params, options);
+        if (state === undefined) {
+          await arm();
+          return inner.execute(text, params, options);
+        }
+        const release = await acquire(state);
+        try {
+          await ensureScope(inner, scope, state);
+          return await inner.execute(text, params, options);
+        } finally {
+          release();
+        }
       }
       if (isReadSql(text)) return runScopedRead(inner, text, params, setting, options);
       const results = await inner.batch([setting, statementOf(text, params)], options);
@@ -484,8 +505,17 @@ function wrapPool(
       await ensure();
       if (unscoped && statements.some((statement) => isWriteSql(statement.text))) unscopedWrite();
       if (inside) {
-        await arm();
-        return inner.batch(statements, options);
+        if (state === undefined) {
+          await arm();
+          return inner.batch(statements, options);
+        }
+        const release = await acquire(state);
+        try {
+          await ensureScope(inner, scope, state);
+          return await inner.batch(statements, options);
+        } finally {
+          release();
+        }
       }
       if (statements.length > 0 && statements.every((statement) => isReadSql(statement.text))) {
         const results: ExecuteResult[] = [];
@@ -515,7 +545,7 @@ function wrapPool(
   if (inner.cancel !== undefined) wrapped.cancel = () => inner.cancel!();
   if (inner.stream !== undefined || (inner as RoutedPool).okmReadOnlyStream !== undefined) {
     wrapped.stream = (text, params) =>
-      streamScoped(inner, text, params, setting, inside, unscoped, ensure, arm);
+      streamScoped(inner, text, params, setting, scope, inside, unscoped, ensure, arm, state);
   }
   Object.defineProperty(wrapped, WRAPPED, { value: true });
   Object.defineProperty(wrapped, INNER, { value: inner });
@@ -558,10 +588,12 @@ function streamScoped(
   text: string,
   params: readonly WireValue[] | undefined,
   setting: Statement,
+  scope: Scope,
   inside: boolean,
   unscoped: boolean,
   ensure: () => Promise<void>,
   arm: () => Promise<void>,
+  state: ScopeState | undefined,
 ): AsyncIterable<readonly (readonly WireValue[])[]> {
   return (async function* () {
     await ensure();
@@ -572,13 +604,23 @@ function streamScoped(
       return;
     }
     if (inside) {
-      await arm();
       if (inner.stream === undefined) {
         throw new OkmError("OKM1111", "stream() inside tx() needs a driver stream.", {
           fix: { summary: "Stream outside the transaction, or read with find()." },
         });
       }
-      yield* inner.stream(text, params);
+      if (state === undefined) {
+        await arm();
+        yield* inner.stream(text, params);
+        return;
+      }
+      const release = await acquire(state);
+      try {
+        await ensureScope(inner, scope, state);
+        yield* inner.stream(text, params);
+      } finally {
+        release();
+      }
       return;
     }
     if (inner.reserve === undefined) {
@@ -602,10 +644,32 @@ function streamScoped(
 function scopeState(pool: object): ScopeState {
   let state = scopeStates.get(pool);
   if (state === undefined) {
-    state = { last: undefined, pending: undefined, epoch: 0 };
+    state = { last: undefined, pending: undefined, epoch: 0, chain: Promise.resolve() };
     scopeStates.set(pool, state);
   }
   return state;
+}
+
+/**
+ * Runs `run` after every earlier statement on this connection.
+ *
+ * The caller holds the returned release until its own statement has finished,
+ * so a second scope cannot read the first scope's `set_config`.
+ */
+function acquire(state: ScopeState): Promise<() => void> {
+  const previous = state.chain;
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  state.chain = previous.then(
+    () => gate,
+    () => gate,
+  );
+  return previous.then(
+    () => release,
+    () => release,
+  );
 }
 
 function scopeKey(scope: Scope): string {
@@ -621,12 +685,11 @@ function scopeKey(scope: Scope): string {
 function queueScope(inner: DriverPool, scope: Scope, state: ScopeState): void {
   const key = scopeKey(scope);
   if (state.last === key || state.pending !== undefined) return;
-  const epoch = state.epoch;
   const setting = settingOf(scope);
   const run = inner.execute(setting.text, setting.params).then(() => {
-    if (state.epoch !== epoch) return;
-    state.last = key;
-    state.pending = undefined;
+    // `last` is updated only while a statement holds the chain. This write can
+    // finish after another scope has moved the session.
+    if (state.pending === run) state.pending = undefined;
   });
   state.pending = run;
   void run.catch(() => {
@@ -653,6 +716,7 @@ function bindScopeHooks(inner: DriverPool, wrapped: DriverPool, state: ScopeStat
       state.epoch += 1;
       state.last = undefined;
       state.pending = undefined;
+      state.chain = Promise.resolve();
     },
     okmScopePending() {
       return state.pending;
@@ -711,27 +775,29 @@ async function verifyEndpoint(
   endpoint: string,
   tables: readonly TenantGuard[],
 ): Promise<void> {
-  const listed =
-    tables.length === 0 ? "" : tables.map((table) => quoteLiteral(table.name)).join(", ");
-  const owns =
+  const idents =
     tables.length === 0
+      ? ""
+      : tables.map((table) => quoteLiteral(quotedIdent(table.name))).join(", ");
+  const names = idents.length === 0 ? "" : `array[${idents}]::text[]`;
+  const owns =
+    names.length === 0
       ? "false"
       : `exists (
-          select 1 from pg_class owned
-          join pg_namespace ns on ns.oid = owned.relnamespace
-          where ns.nspname = current_schema()
-            and owned.relkind = 'r'
-            and owned.relname in (${listed})
+          select 1
+          from unnest(${names}) as owned_name(relname)
+          join pg_class owned on owned.oid = to_regclass(owned_name.relname)
+          where owned.relkind = 'r'
             and owned.relowner = r.oid
         )`;
   const policies =
-    tables.length === 0
+    names.length === 0
       ? ""
       : `, c.relname, c.relrowsecurity::text, c.relforcerowsecurity::text, p.polname, coalesce(pg_get_expr(p.polqual, p.polrelid), ''), coalesce(pg_get_expr(p.polwithcheck, p.polrelid), '')`;
   const join =
-    tables.length === 0
+    names.length === 0
       ? ""
-      : ` left join pg_namespace n on n.nspname = current_schema() left join pg_class c on c.relnamespace = n.oid and c.relkind = 'r' and c.relname in (${listed}) left join pg_policy p on p.polrelid = c.oid`;
+      : ` left join unnest(${names}) as listed(relname) on true left join pg_class c on c.oid = to_regclass(listed.relname) and c.relkind = 'r' left join pg_policy p on p.polrelid = c.oid`;
   const result = await pool.execute(
     `select r.rolsuper::text, r.rolbypassrls::text, (${owns})::text${policies} from pg_roles r${join} where r.rolname = current_user`,
   );
@@ -826,10 +892,15 @@ function assertPolicyRows(
 }
 
 function policyError(table: string, detail: string, endpoint: string): never {
-  throw new OkmError("invalid", `Table ${table} ${detail} Endpoint ${endpoint}.`, {
+  throw new OkmError("OKM1708", `Table ${table} ${detail} Endpoint ${endpoint}.`, {
     table,
     fix: { summary: "Restore the policies okm generate emits for this rls schema." },
   });
+}
+
+/** Double-quoted identifier text for `to_regclass`. */
+function quotedIdent(name: string): string {
+  return `"${name.replaceAll('"', '""')}"`;
 }
 
 function unscopedWrite(): never {

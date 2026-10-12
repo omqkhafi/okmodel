@@ -18,6 +18,7 @@ import { OkmError } from "../../contracts/error.js";
 import { assertCreateRole, currentUser, roleExists } from "../../dialects/pg/role/check.js";
 import { changesRole } from "../../dialects/pg/role/sql.js";
 import { batchSizeField } from "./backfill.js";
+import { isolatePublic } from "./isolate.js";
 import {
   assumeRole,
   grantAppMeta,
@@ -109,6 +110,13 @@ export type ApplyRequest = {
    * `push` omits this: its steps are not files.
    */
   readonly lintDirectory?: string;
+  /**
+   * Scratch schema a check replay may change.
+   *
+   * When set, a commit that would change `public` is rolled back. Apply leaves
+   * this unset.
+   */
+  readonly sandbox?: string;
   /**
    * Head snapshot.
    *
@@ -245,7 +253,9 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
       fix: { summary: "Apply needs a driver with interactive transactions." },
     });
   }
-  const connection = await pool.reserve();
+  const reserved = await pool.reserve();
+  const connection =
+    request.sandbox === undefined ? reserved : await isolatePublic(reserved, request.sandbox);
   let locked = false;
   try {
     await assertStableBackend(() => backendPid(connection), request.allowPooler === true);

@@ -541,6 +541,13 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     fix: "Connect as a role that is not the table owner, a superuser, or BYPASSRLS. okm seed under rlsTenancy runs as the application role. The owner gets this error.",
   },
   {
+    code: "OKM1708",
+    title: "RLS policy",
+    summary:
+      "A scoped call under rls found a tenant table whose row-level security is missing, not forced, or whose policies are not the ones okm generate emits. The message names the table and the endpoint.",
+    fix: "Restore the policies okm generate emits for this rls schema.",
+  },
+  {
     code: "OKM1801",
     title: "Dialect mismatch",
     summary: "The schema dialect and the driver dialect are not the same.",

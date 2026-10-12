@@ -110,13 +110,14 @@ export async function checkMigrations(
   }
   const directory = projectPath(cwd, opened.config.migrations ?? "migrations");
   const history = readHistory(directory);
+  const previous = previousFailures(history);
+  const stale = staleFailure(history, opened.built.catalog);
+  const lint = lintFailure(directory, history, opened.config.lintFrom);
+  if (lint.length > 0) throwFailure([...previous, ...stale, ...lint]);
   if (options?.provision === true) {
     const equivalence = await proveSnapshot(opened.config, target.url, target.name, flags, history);
     if (equivalence !== undefined) throwFailure([equivalence]);
   }
-  const previous = previousFailures(history);
-  const stale = staleFailure(history, opened.built.catalog);
-  const lint = lintFailure(directory, history, opened.config.lintFrom);
   const replayed = await replayHistory(opened.config, target.url, target.name, flags, history);
   const failures = [...replayed, ...previous, ...stale, ...lint];
   if (failures.length > 0) throwFailure(failures);
@@ -312,6 +313,7 @@ async function proveSnapshot(
       allowProtected: false,
       allowPooler: flags.allowPooler || config.allowPooler === true,
       searchPath: provided,
+      sandbox: provided,
       ...timing,
       migrations: history.map((migration) => ({
         id: migration.id,
@@ -334,6 +336,7 @@ async function proveSnapshot(
       allowProtected: false,
       allowPooler: flags.allowPooler || config.allowPooler === true,
       searchPath: replayed,
+      sandbox: replayed,
       ...timing,
       migrations: history.map((migration) => ({
         id: migration.id,
@@ -410,6 +413,7 @@ async function replayHistory(
         allowProtected: false,
         allowPooler: flags.allowPooler || config.allowPooler === true,
         searchPath: scratch,
+        sandbox: scratch,
         ...(flags.lockTimeoutMs !== undefined
           ? { lockTimeoutMs: flags.lockTimeoutMs }
           : config.timeouts?.lock !== undefined

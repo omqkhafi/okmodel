@@ -8,6 +8,7 @@ import type { PoolClient } from "pg";
 
 import { isConnectionLost } from "../../contracts/connection.js";
 import type { DriverConnection } from "../../contracts/driver.js";
+import { DriverError } from "../error.js";
 import { rejectClosed } from "../failure.js";
 import { runCall, type Watch } from "./call.js";
 import { connectClient, send, type HeldPool } from "./nodepostgres.js";
@@ -56,9 +57,15 @@ export async function checkout(held: HeldPool): Promise<DriverConnection> {
   );
   const guard = <T>(run: () => Promise<T>): Promise<T> =>
     lost
-      ? rejectClosed("The connection was lost.")
+      ? rejectClosed("CONNECTION_CLOSED")
       : run().catch((error: unknown) => {
           if (isConnectionLost(error)) lost = true;
+          // node-postgres says "Connection terminated unexpectedly" with no
+          // SQLSTATE. The shared mapper already treats CONNECTION_CLOSED as
+          // unavailable. Rewriting here stays out of contracts.
+          if (error instanceof Error && error.message.includes("Connection terminated")) {
+            throw new DriverError("CONNECTION_CLOSED", { cause: error });
+          }
           throw error;
         });
   let released = false;

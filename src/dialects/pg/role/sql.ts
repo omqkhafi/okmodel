@@ -39,7 +39,8 @@ export type PrivilegeStatement = {
 };
 
 const PRIVILEGE = /^(select|insert|update|delete|execute|usage)$/;
-const COLUMN_PRIVILEGE = /^(select|update)\(([^)]*)\)$/;
+/** Privilege keyword, then the column list with its original bytes. */
+const COLUMN_PRIVILEGE = /^(select|update)\(([^)]*)\)$/i;
 
 /**
  * Privilege name for a column grant.
@@ -236,7 +237,7 @@ function revokeMatviewWrites(
 }
 
 function grantStatement(object: GrantObject, schema: string, revoke: boolean): string {
-  const privilege = object.identity.privilege.toLowerCase();
+  const privilege = object.identity.privilege;
   const column = COLUMN_PRIVILEGE.exec(privilege);
   const verb = revoke ? "revoke" : "grant";
   const direction = revoke ? "from" : "to";
@@ -250,10 +251,11 @@ function grantStatement(object: GrantObject, schema: string, revoke: boolean): s
       .filter((name) => name.length > 0)
       .map((name) => quoteIdent(name))
       .join(", ");
-    return `${verb} ${base} (${names}) on ${target} ${direction} ${role}`;
+    return `${verb} ${base.toLowerCase()} (${names}) on ${target} ${direction} ${role}`;
   }
-  assertPrivilege(privilege);
-  return `${verb} ${privilege} on ${target} ${direction} ${role}`;
+  const keyword = privilege.toLowerCase();
+  assertPrivilege(keyword);
+  return `${verb} ${keyword} on ${target} ${direction} ${role}`;
 }
 
 function defaultStatement(object: DefaultPrivilegeObject, schema: string, revoke: boolean): string {

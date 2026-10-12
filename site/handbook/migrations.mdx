@@ -10,7 +10,7 @@ bunx okm migrate apply
 
 ## The files check themselves
 
-`okm migrate check` replays the history on a throwaway database. It fails if the files do not match the schema, or if the linter reports an error. Do not point it at a database you need to keep.
+`okm migrate check` replays the history in a scratch schema and rolls that replay back when it would touch anything else. Lint runs first. A hand-written `public.t` does not change the real table. It fails if the files do not match the schema, or if the linter reports an error. Do not point it at a database you need to keep.
 
 The [linter](/docs/reference/linter) reads the plan and does not connect. [Check](/docs/reference/check) is the command for a pipeline. A [backfill](/docs/reference/backfill) is a step inside a migration file. There is no separate backfill command.
 
@@ -22,7 +22,7 @@ A unique or a foreign key is named from every SQL column, after `casing` and `sq
 
 ## Windows
 
-Git on Windows checks SQL out as CRLF unless `.gitattributes` says otherwise. `okm` reads those files as LF, so apply, check, and the linter see the same steps. A file that still parses to no steps, and does not say `-- no steps`, fails instead of printing `nothing to apply`.
+Git on Windows checks SQL out as CRLF unless `.gitattributes` says otherwise. `okm` reads those files as LF, including a `\r\n` inside a SQL string literal, so apply, check, and the linter see the same steps. A file that still parses to no steps, and does not say `-- no steps`, fails instead of printing `nothing to apply`.
 
 `okm generate init` writes this `.gitattributes` when the project does not have one. An existing file is not edited.
 

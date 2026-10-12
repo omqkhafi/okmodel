@@ -54,12 +54,15 @@ export async function checkout(pool: HeldPool): Promise<DriverConnection> {
     pool.named,
   );
   let released = false;
-  // A reserved postgres.js connection that lost its socket crashes on the next write. Once a
-  // statement fails because the connection is gone, nothing more is sent to it.
+  // postgres.js queues a small write with setImmediate. nextWrite then calls
+  // socket.write. After closed() sets the socket to null, that timer throws
+  // outside the query promise. Once this connection is lost, nothing more is
+  // sent on it, so that timer is never scheduled and setImmediate stays the
+  // process's own function.
   let lost = false;
   const guard = <T>(run: () => Promise<T>): Promise<T> =>
     lost
-      ? rejectClosed("The connection was lost.")
+      ? rejectClosed("lost")
       : run().catch((error: unknown) => {
           if (isConnectionLost(error)) lost = true;
           throw error;
@@ -86,7 +89,10 @@ export async function checkout(pool: HeldPool): Promise<DriverConnection> {
         pool.counters.reserved = Math.max(0, pool.counters.reserved - 1);
         // A closed connection is already back in the driver's closed list. Releasing it would put it
         // in the open list, and the next statement would write to a socket that is gone.
-        if (!lost) reserved.release();
+        // The fatal ErrorResponse can still be sitting on that connection and is delivered to the
+        // next query. A discarded statement consumes it.
+        if (lost) await pool.sql.unsafe("select 1").catch(() => undefined);
+        else reserved.release();
       }
     },
   };
