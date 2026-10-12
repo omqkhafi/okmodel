@@ -188,7 +188,7 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   expect(suite).toContain("bun ./scripts/postgres-suite.ts --shard");
   expect(suite).toContain("bun ./scripts/pooler-proof.ts");
   expect(suite).toContain("docker pull");
-  expect(suite).toContain("actions/cache@5a3ec84eff668545956fd18022155c47e93e2684");
+  expect(suite).toContain("actions/cache@caa296126883cff596d87d8935842f9db880ef25");
   for (const shard of ["isolation", "selection", "consistency", "tx"]) {
     expect(suite).toContain(`- ${shard}\n`);
   }

@@ -107,8 +107,6 @@ Also not in this version:
 
 ## Drivers
 
-- **postgres.js prints `MaxListenersExceededWarning` after a connection is lost** (D241). Reconnecting adds another `connect` listener on the driver's socket. Node prints the warning once that socket has 11. The statement still rejects with `unavailable`, or OKM1401 when a commit may have happened, and the next call runs. The listener cap stays at the default.
-
 A postgres.js pool opened with `ssl` still uses the driver's socket and its 30 s idle timer (D152). Measured on Postgres 17 with TLS 1.3, one query, and no `close()`: the process exited in 30.10 s on Bun and 30.07 s on Node 26. A plain pool (no `ssl`) exits on its own. `close()` or `await using` releases a TLS pool without waiting. A missing table is reason `undefined_table` and a missing column is reason `undefined_column`. The fix names `okm migrate apply` and `okm migrate status`. A TLS or certificate failure is kind `unavailable` with reason `tls`, and the fix names `sslmode`.
 
 node-postgres sets `allowExitOnIdle` and `idleTimeoutMillis: 0`. A plain pool exits after the last query, and an idle connection stays open while the process is alive. The same unref applies to the TLS stream `pg` uses after the handshake. This tree has no TLS server, so that path is unread. `pg` cannot describe a statement without running it. That conformance case is skipped.

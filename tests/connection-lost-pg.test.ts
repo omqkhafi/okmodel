@@ -62,6 +62,11 @@ for (const driver of ["postgresjs", "pg", "bun"] as const) {
       };
       process.on("uncaughtException", onUncaught);
       process.on("unhandledRejection", onRejection);
+      const warnings: string[] = [];
+      const onWarning = (warning: Error): void => {
+        warnings.push(warning.name);
+      };
+      process.on("warning", onWarning);
       try {
         await admin.unsafe("create table notes (id int primary key, title text not null)");
         await admin.unsafe(
@@ -109,7 +114,9 @@ for (const driver of ["postgresjs", "pg", "bun"] as const) {
         if (driver === "postgresjs") expect(globalThis.setImmediate).toBe(schedule);
         await Bun.sleep(50);
         expect(crashes).toEqual([]);
+        expect(warnings).not.toContain("MaxListenersExceededWarning");
       } finally {
+        process.off("warning", onWarning);
         process.off("uncaughtException", onUncaught);
         process.off("unhandledRejection", onRejection);
         await admin.unsafe("rollback").catch(() => undefined);

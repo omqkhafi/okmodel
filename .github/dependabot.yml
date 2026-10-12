@@ -14,7 +14,7 @@ updates:
       github-actions:
         patterns:
           - "*"
-    # The release-gate test pins actions/cache v4.2.3, and v6 does not run in pull-request CI.
+    # The release-gate test pins actions/cache v5.1.0 (Node 24). v6 does not run in pull-request CI.
     ignore:
       - dependency-name: actions/cache
         update-types:
