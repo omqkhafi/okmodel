@@ -73,6 +73,7 @@ export async function replayCheckHistory(
       const migration = history[index];
       if (migration === undefined) continue;
       await replayMigration(sql, connection, scratch, config, migration, session, skips);
+      await restoreSession(sql, session);
       const runner = catalogQuery(sql);
       const live = await introspectSchema(
         runner,
@@ -133,6 +134,7 @@ export async function proveCheckSnapshot(
       session,
       [],
     );
+    await restoreSession(sql, session);
     return introspectSchema(
       catalogQuery(sql),
       provided,
@@ -146,6 +148,7 @@ export async function proveCheckSnapshot(
     for (const migration of history) {
       await replayMigration(sql, connection, replayed, config, migration, session, []);
     }
+    await restoreSession(sql, session);
     return introspectSchema(
       catalogQuery(sql),
       replayed,
@@ -219,10 +222,17 @@ async function inCheckTransaction<T>(
     return value;
   } finally {
     if (open) await reserved.unsafe("rollback").catch(() => undefined);
+    await reserved.unsafe("reset role").catch(() => undefined);
     reserved.release();
     await sql.unsafe(`drop schema if exists ${quoteIdent(scratch)} cascade`).catch(() => undefined);
     await sql.end({ timeout: 5 });
   }
+}
+
+async function restoreSession(sql: Sql, session: Session): Promise<void> {
+  if (session.setRole === undefined) return;
+  await sql.unsafe("reset role");
+  delete session.setRole;
 }
 
 async function replayMigration(
