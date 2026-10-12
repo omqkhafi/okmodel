@@ -12,6 +12,7 @@ import { compareExtensionVersions, isExactVersion } from "../../contracts/catalo
 import type { DriverPool, WireValue } from "../../contracts/driver.js";
 import type { CatalogObject, ExtensionObject } from "../../contracts/catalog/types.js";
 import { assertTargetPolicy, selectTarget, type InvokeFlags } from "./policy.js";
+import { finishQuiet, sessionFailure } from "./lost.js";
 import { openProject } from "./project.js";
 
 /**
@@ -34,8 +35,10 @@ export async function extProject(
   try {
     if (command === "list") return formatList(await readExtensions(pool));
     return formatCheck(opened.built.catalog.objects, await readExtensions(pool));
+  } catch (error) {
+    throw sessionFailure(error) ?? error;
   } finally {
-    await pool.close();
+    await finishQuiet(() => pool.close());
   }
 }
 

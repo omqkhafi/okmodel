@@ -112,6 +112,13 @@ export async function createIsolatedDatabase(
 export const SCHEMA_OWNER = "okm_owner";
 
 /**
+ * `okm_owner` without `CREATEROLE`.
+ *
+ * Check replay only needs to create a schema. It does not need to create roles.
+ */
+export const LIMITED_SCHEMA_OWNER = "okm_owner_limited";
+
+/**
  * Ensures {@link SCHEMA_OWNER} exists: `NOSUPERUSER`, `NOBYPASSRLS`, `CREATEROLE`, login.
  *
  * The role is cluster-wide. A later test alters it to the same shape.
@@ -141,11 +148,33 @@ export async function ensureSchemaOwner(base: string = primaryUrl()): Promise<vo
  * @param databaseUrl - A superuser URL whose path is the database
  * @returns The owner URL
  */
-export function ownerUrl(databaseUrl: string): string {
+export function ownerUrl(databaseUrl: string, role: string = SCHEMA_OWNER): string {
   const url = new URL(databaseUrl);
-  url.username = SCHEMA_OWNER;
+  url.username = role;
   url.password = "okm";
   return url.href.replace(/\/$/, "");
+}
+
+/**
+ * Ensures {@link LIMITED_SCHEMA_OWNER} exists: `NOSUPERUSER`, `NOBYPASSRLS`, `NOCREATEROLE`, login.
+ *
+ * @param base - Admin URL. Defaults to the topology primary
+ */
+export async function ensureLimitedSchemaOwner(base: string = primaryUrl()): Promise<void> {
+  const admin = openPostgres(base);
+  try {
+    await admin.unsafe(
+      `do $$ begin
+        if not exists (select 1 from pg_roles where rolname = 'okm_owner_limited') then
+          create role okm_owner_limited nosuperuser nobypassrls nocreaterole login password 'okm';
+        else
+          alter role okm_owner_limited nosuperuser nobypassrls nocreaterole login password 'okm';
+        end if;
+      end $$`,
+    );
+  } finally {
+    await admin.end({ timeout: 5 });
+  }
 }
 
 /**
@@ -158,23 +187,25 @@ export function ownerUrl(databaseUrl: string): string {
 export async function giveDatabaseToOwner(
   databaseUrl: string,
   base: string = primaryUrl(),
+  role: string = SCHEMA_OWNER,
 ): Promise<string> {
-  await ensureSchemaOwner(base);
+  if (role === LIMITED_SCHEMA_OWNER) await ensureLimitedSchemaOwner(base);
+  else await ensureSchemaOwner(base);
   const name = decodeURIComponent(new URL(databaseUrl).pathname.replace(/^\//, ""));
   if (!/^[a-z0-9_]+$/.test(name)) throw new Error(`unexpected database name ${name}`);
   const admin = openPostgres(base);
   try {
-    await admin.unsafe(`alter database ${name} owner to ${SCHEMA_OWNER}`);
+    await admin.unsafe(`alter database ${name} owner to ${role}`);
   } finally {
     await admin.end({ timeout: 5 });
   }
   const db = openPostgres(databaseUrl);
   try {
-    await db.unsafe(`alter schema public owner to ${SCHEMA_OWNER}`);
+    await db.unsafe(`alter schema public owner to ${role}`);
   } finally {
     await db.end({ timeout: 5 });
   }
-  return ownerUrl(databaseUrl);
+  return ownerUrl(databaseUrl, role);
 }
 
 /**

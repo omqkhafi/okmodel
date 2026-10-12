@@ -69,6 +69,21 @@ const CANCEL_CODE = 80877102;
 
 const identity = (value: string): string => value;
 
+/**
+ * Attaches the one error listener a pool or a checked-out client can use.
+ *
+ * node-postgres types list `connect` and `notification` only. An idle pool
+ * client and a `LISTEN` client both emit `error` with no listener, and that
+ * is an uncaught exception. The default handler ignores it. The pool has
+ * already removed an idle client.
+ *
+ * @param source - Pool or client
+ * @param handle - What to do with the error
+ */
+function armDriverError(source: object, handle: () => void = () => {}): void {
+  (source as { on(event: "error", listener: () => void): void }).on("error", handle);
+}
+
 /** Text values stay text. The dialect owns parsing. */
 const WIRE = {
   getTypeParser(): (value: string) => string {
@@ -103,6 +118,8 @@ export function open(config: NodePostgresConfig): DriverPool {
     ...(config.ssl !== undefined ? { ssl: config.ssl } : {}),
     ...(config.searchPath !== undefined ? { options: `-c search_path=${config.searchPath}` } : {}),
   });
+  // The pool has already removed the idle client before this runs.
+  armDriverError(pool);
   pool.on("connect", (client) => {
     client.on("notice", (notice) => {
       notices.push(notice);
@@ -206,23 +223,30 @@ export function open(config: NodePostgresConfig): DriverPool {
       if (message.channel === channel) onNotify(message.payload ?? "");
     };
     client.on("notification", onNotification);
+    let released = false;
+    const release = (dead?: unknown): void => {
+      if (released) return;
+      released = true;
+      client.removeListener("notification", onNotification);
+      (
+        client as unknown as { removeListener(event: "error", listener: typeof release): void }
+      ).removeListener("error", release);
+      counters.reserved = Math.max(0, counters.reserved - 1);
+      client.release(Boolean(dead));
+    };
+    armDriverError(client, release);
     try {
       await client.query(`LISTEN ${quoted}`);
     } catch (error) {
-      counters.reserved = Math.max(0, counters.reserved - 1);
-      client.release();
+      release(false);
       throw error;
     }
-    let stopped = false;
     return async () => {
-      if (stopped) return;
-      stopped = true;
+      if (released) return;
       try {
         await client.query(`UNLISTEN ${quoted}`);
       } finally {
-        client.removeListener("notification", onNotification);
-        counters.reserved = Math.max(0, counters.reserved - 1);
-        client.release();
+        release(false);
       }
     };
   }

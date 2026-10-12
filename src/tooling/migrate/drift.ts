@@ -20,6 +20,7 @@ import {
 import { sealViews } from "../../dialects/pg/view/scratch.js";
 import type { RolesInput } from "../../dialects/pg/role/index.js";
 import { planMigration } from "./plan.js";
+import { finishQuiet, sessionFailure } from "./lost.js";
 import { assertDirectConnection, assertStableBackend } from "./policy.js";
 
 /**
@@ -65,8 +66,10 @@ export async function assertAuthorDrift(
         },
       },
     );
+  } catch (error) {
+    throw sessionFailure(error) ?? error;
   } finally {
-    await sql.end({ timeout: 5 });
+    await finishQuiet(() => sql.end({ timeout: 5 }));
   }
 }
 

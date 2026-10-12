@@ -8,8 +8,10 @@
 
 import postgres, { type Sql } from "postgres";
 
+import { watchReserved } from "../../adapters/pg/postgres-extra.js";
 import { catalog } from "../../contracts/catalog/build.js";
 import type { Catalog } from "../../contracts/catalog/types.js";
+import { isConnectionLost } from "../../contracts/connection.js";
 import type { DriverConnection, ExecuteResult, WireValue } from "../../contracts/driver.js";
 import { OkmError } from "../../contracts/error.js";
 import { quoteIdent } from "../../dialects/pg/ddl.js";
@@ -20,6 +22,7 @@ import { sealViews } from "../../dialects/pg/view/scratch.js";
 import { ensureMigrationTables } from "./apply.js";
 import type { MigrateConfig } from "./config.js";
 import { catalogQuery, managedRoleOptions } from "./drift.js";
+import { finishQuiet, sessionFailure } from "./lost.js";
 import { planMigration, type MigrationPlan, type PlanStep } from "./plan.js";
 import { assertStableBackend } from "./policy.js";
 import { assumeRole, assertSchemaUsageLanded, grantSchema } from "./runner.js";
@@ -199,11 +202,17 @@ async function inCheckTransaction<T>(
     onnotice: () => {},
   });
   const reserved = await sql.reserve();
+  const lost = { on: false };
+  watchReserved(reserved, lost);
+  refuseWhenLost(reserved, lost);
   let open = false;
+  let failure: unknown;
+  let value: T | undefined;
   try {
     await assertStableBackend(async () => {
-      const rows = await reserved<{ pid: string }[]>`select pg_backend_pid()::text as pid`;
-      return rows[0]?.pid ?? "";
+      const rows = await reserved.unsafe("select pg_backend_pid()::text as pid");
+      const pid = cell(rows[0], "pid");
+      return pid ?? "";
     }, allowPooler);
     await reserved.unsafe("begin");
     open = true;
@@ -214,19 +223,119 @@ async function inCheckTransaction<T>(
     await setLocalTimeout(reserved, "statement_timeout", config.timeouts?.statement);
     await ownScratch(reserved, scratch, config.roles?.migration);
     await ensureMigrationTables((text) => reserved.unsafe(text));
-    const value = await run(reserved);
-    const after = await readXid(reserved).catch(() => undefined);
-    if (after !== xid) throw xidChanged();
-    await reserved.unsafe("rollback");
+    value = await run(reserved);
+    const after = await readXid(reserved).catch((error: unknown) => {
+      if (isConnectionLost(error)) lost.on = true;
+      return undefined;
+    });
+    if (!lost.on && after !== xid) throw xidChanged();
+    if (!lost.on) await reserved.unsafe("rollback");
     open = false;
-    return value;
+  } catch (error) {
+    if (isConnectionLost(error)) lost.on = true;
+    failure = error;
   } finally {
-    if (open) await reserved.unsafe("rollback").catch(() => undefined);
-    await reserved.unsafe("reset role").catch(() => undefined);
-    reserved.release();
-    await sql.unsafe(`drop schema if exists ${quoteIdent(scratch)} cascade`).catch(() => undefined);
-    await sql.end({ timeout: 5 });
+    if (open && !lost.on) {
+      await reserved.unsafe("rollback").catch((error: unknown) => {
+        if (isConnectionLost(error)) lost.on = true;
+      });
+    }
+    if (!lost.on) await reserved.unsafe("reset role").catch(() => undefined);
+    if (!lost.on) {
+      try {
+        reserved.release();
+      } catch {
+        lost.on = true;
+      }
+    }
+    await finishQuiet(() => sql.end({ timeout: 5 }));
   }
+  const left = await dropScratch(url, scratch);
+  if (left !== undefined) {
+    const note = `Scratch schema ${left} is still present.`;
+    failure =
+      failure === undefined
+        ? new OkmError("unavailable", note, { kind: "unavailable", fix: UNAVAILABLE_FIX })
+        : noteOn(failure, note);
+  }
+  if (failure !== undefined) throw sessionFailure(failure) ?? failure;
+  return value as T;
+}
+
+const UNAVAILABLE_FIX = {
+  summary:
+    "The connection to Postgres closed. Run the command again when the database is reachable.",
+};
+
+/**
+ * Stops a later statement from writing after the reserved socket has closed.
+ *
+ * `watchReserved` records the close. This wrapper reads that flag before
+ * `socket.write`, including the `setImmediate` write postgres.js queues.
+ *
+ * @param sql - Reserved connection
+ * @param lost - Set when that socket closes
+ */
+function refuseWhenLost(sql: Sql, lost: { on: boolean }): void {
+  const unsafe = sql.unsafe.bind(sql);
+  sql.unsafe = ((text: string, params?: unknown, options?: object) => {
+    if (lost.on) return Promise.reject(closedError());
+    const pending =
+      options !== undefined
+        ? unsafe(text, params as never, options as never)
+        : params !== undefined
+          ? unsafe(text, params as never)
+          : unsafe(text);
+    return pending.catch((error: unknown) => {
+      if (isConnectionLost(error)) lost.on = true;
+      throw error;
+    });
+  }) as Sql["unsafe"];
+}
+
+function closedError(): Error {
+  return Object.assign(new Error("CONNECTION_CLOSED"), { code: "CONNECTION_CLOSED" });
+}
+
+/**
+ * Drops a scratch schema on a new connection.
+ *
+ * The replay connection may already be gone. The schema was created inside
+ * the transaction, so a killed backend has already aborted it.
+ *
+ * @param url - Target URL
+ * @param scratch - Schema name
+ * @returns The name when it is still present, or when the drop could not be confirmed
+ */
+async function dropScratch(url: string, scratch: string): Promise<string | undefined> {
+  const sql = postgres(url, {
+    max: 1,
+    connect_timeout: 5,
+    idle_timeout: 1,
+    onnotice: () => {},
+  });
+  try {
+    await sql.unsafe(`drop schema if exists ${quoteIdent(scratch)} cascade`);
+    const rows = await sql<{ nspname: string }[]>`
+      select nspname from pg_namespace where nspname = ${scratch}
+    `;
+    return rows.length > 0 ? scratch : undefined;
+  } catch {
+    return scratch;
+  } finally {
+    await finishQuiet(() => sql.end({ timeout: 5 }));
+  }
+}
+
+function noteOn(error: unknown, note: string): unknown {
+  if (error instanceof Error) {
+    return new OkmError("unavailable", `${error.message} ${note}`, {
+      kind: "unavailable",
+      cause: error,
+      fix: UNAVAILABLE_FIX,
+    });
+  }
+  return new OkmError("unavailable", note, { kind: "unavailable", fix: UNAVAILABLE_FIX });
 }
 
 async function restoreSession(sql: Sql, session: Session): Promise<void> {
@@ -342,11 +451,12 @@ function rewriteConcurrent(sql: string): string {
 
 async function ownScratch(sql: Sql, scratch: string, role: string | undefined): Promise<void> {
   if (role === undefined) return;
-  const exists = await sql<{ ok: boolean | string }[]>`
-    select exists (select 1 from pg_roles where rolname = ${role}) as ok
-  `;
-  const present = exists[0]?.ok;
-  if (present === true || present === "t" || present === "true") {
+  const exists = await sql.unsafe(
+    "select exists (select 1 from pg_roles where rolname = $1) as ok",
+    [role],
+  );
+  const present = cell(exists[0], "ok");
+  if (present === "t" || present === "true") {
     await sql.unsafe(`alter schema ${quoteIdent(scratch)} owner to ${quoteIdent(role)}`);
   }
 }
@@ -357,8 +467,16 @@ async function setLocalTimeout(sql: Sql, name: string, ms: number | undefined): 
 }
 
 async function readXid(sql: Sql): Promise<string> {
-  const rows = await sql<{ xid: string }[]>`select pg_current_xact_id()::text as xid`;
-  return rows[0]?.xid ?? "";
+  const rows = await sql.unsafe("select pg_current_xact_id()::text as xid");
+  return cell(rows[0], "xid") ?? "";
+}
+
+function cell(row: unknown, key: string): string | undefined {
+  if (typeof row !== "object" || row === null || !(key in row)) return undefined;
+  const value: unknown = Reflect.get(row, key);
+  if (typeof value === "string") return value;
+  if (typeof value === "boolean") return value ? "true" : "false";
+  return undefined;
 }
 
 function xidChanged(): OkmError {
@@ -376,6 +494,14 @@ function xidChanged(): OkmError {
 }
 
 function failStep(id: string, index: number, error: unknown): OkmError {
+  const lost = sessionFailure(error);
+  if (lost !== undefined) {
+    return new OkmError(
+      lost.code,
+      `Migration ${id} failed at step ${String(index + 1)}: ${lost.message}`,
+      { kind: lost.kind, cause: error, fix: lost.fix },
+    );
+  }
   if (error instanceof OkmError) return error;
   const message = error instanceof Error ? error.message : "The step failed.";
   return new OkmError(

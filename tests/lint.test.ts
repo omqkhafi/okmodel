@@ -762,6 +762,24 @@ test("OKM1551 flags transaction control and an allow needs a reason", () => {
   expect(codesOfHand("select 1;\ncommit")).toContain("OKM1551");
   expect(codesOfHand("select 1;\r\ncommit")).toContain("OKM1551");
   expect(codesOfHand("do $$ begin commit; end $$")).toContain("OKM1551");
+  expect(codesOfHand("do $$ begin rollback; end $$")).toContain("OKM1551");
+  expect(codesOfHand("do language plpgsql $$ begin commit; end $$")).toContain("OKM1551");
+  expect(
+    codesOfHand(
+      "create function public.f() returns void language plpgsql as $$ begin commit; end $$",
+    ),
+  ).not.toContain("OKM1551");
+  expect(
+    codesOfHand(
+      "create function public.f() returns void language plpgsql as $$ begin rollback; end $$",
+    ),
+  ).not.toContain("OKM1551");
+  expect(
+    codesOfHand("create procedure public.p() language plpgsql as $$ begin commit; end $$"),
+  ).not.toContain("OKM1551");
+  expect(
+    codesOfHand("create procedure public.p() language plpgsql as $$ begin rollback; end $$"),
+  ).not.toContain("OKM1551");
   expect(
     codesOfHand(
       "create function public.f() returns int language plpgsql as $$ begin return 1; end $$",

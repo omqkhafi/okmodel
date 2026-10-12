@@ -7,6 +7,7 @@
 
 import { OkmError } from "../../contracts/error.js";
 import { formatFindings, hasError, lintRefusal } from "./lint.js";
+import { sessionFailure } from "./lost.js";
 import type { InvokeFlags } from "./policy.js";
 import { buildProject, checkProject, generateProject, planProject } from "./project.js";
 
@@ -25,7 +26,7 @@ export type CommandIo = {
  * @returns The stderr text, including the trailing newline
  */
 export function formatFailure(error: unknown, verbose = false): string {
-  const mapped = OkmError.from(error);
+  const mapped = sessionFailure(error) ?? OkmError.from(error);
   let text = `error ${mapped.code}: ${mapped.message}\n${mapped.fix.summary}\n`;
   if (verbose && error instanceof Error && error.stack !== undefined) {
     text += `${error.stack}\n`;

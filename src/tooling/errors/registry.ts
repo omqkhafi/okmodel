@@ -501,7 +501,7 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     code: "OKM1551",
     title: "Transaction control in a step",
     summary:
-      "A step contains COMMIT, ROLLBACK, or other transaction control. That leaves the migration transaction.",
+      "A step contains COMMIT, ROLLBACK, or other transaction control, including inside a DO body. A function or procedure body is not this.",
     fix: "Remove the transaction control. okm migrate check replays one transaction and rolls it back. Apply accepts the step only with -- okm-allow OKM1551: reason.",
   },
   {

@@ -34,6 +34,7 @@ import { readReference, referenceInserts, type ReferenceTable } from "./referenc
 import { expandProvisioned, installSnapshot, provisionMark } from "./snapshot.js";
 import { planMigration, type PlanStep } from "./plan.js";
 import type { StoredMigration } from "./files.js";
+import { finishQuiet } from "./lost.js";
 import {
   assertDirectConnection,
   assertStableBackend,
@@ -316,12 +317,13 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
     await grantAppMeta(connection, request.appRole, session);
     return restamped.length === 0 ? report : { ...report, restamped };
   } finally {
-    if (locked)
-      await connection.execute("select pg_advisory_unlock(hashtext($1))", [
-        lockKey(request.target),
-      ]);
-    await connection.release();
-    await pool.close();
+    if (locked) {
+      await finishQuiet(() =>
+        connection.execute("select pg_advisory_unlock(hashtext($1))", [lockKey(request.target)]),
+      );
+    }
+    await finishQuiet(() => connection.release());
+    await finishQuiet(() => pool.close());
   }
 }
 
