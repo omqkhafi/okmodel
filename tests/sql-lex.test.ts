@@ -85,6 +85,43 @@ test("random input never throws", () => {
   );
 });
 
+test("a BEGIN ATOMIC routine body is one statement, and a bare one still splits", () => {
+  const body = "create function f() returns int language sql begin atomic select 1; select 2; end";
+  expect(sqlStatements(body)).toEqual([body]);
+  expect(
+    sqlStatements(
+      "create function f() returns int language sql begin atomic select case when true then 1 else case when false then 2 else 3 end end; end",
+    ),
+  ).toHaveLength(1);
+  expect(
+    sqlStatements("create procedure p() language sql begin atomic select 1; end; commit"),
+  ).toEqual(["create procedure p() language sql begin atomic select 1; end", "commit"]);
+  expect(sqlStatements("begin atomic select 1; end")).toEqual(["begin atomic select 1", "end"]);
+  expect(sqlStatements("begin; commit")).toEqual(["begin", "commit"]);
+  expect(
+    sqlStatements(
+      "create function f() returns int language sql begin atomic select 'end'; select 1; -- end\n end",
+    ),
+  ).toHaveLength(1);
+
+  const kept = parsePlan(
+    [
+      "-- name: hand",
+      "",
+      "create function f() returns int language sql",
+      "begin atomic",
+      "  select 1;",
+      "",
+      "  select 2;",
+      "end;",
+      "",
+    ].join("\n"),
+  );
+  expect(kept.steps).toHaveLength(1);
+  expect(kept.steps[0]?.sql).toContain("select 1;");
+  expect(kept.steps[0]?.sql).toContain("select 2;");
+});
+
 test("a blank line inside a quote stays in the step, and one outside still splits", () => {
   const dollar = parsePlan(
     [

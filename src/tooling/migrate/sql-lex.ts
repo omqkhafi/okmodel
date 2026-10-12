@@ -6,8 +6,11 @@
  * quote, and `''` is one quote inside it. `E'...'` still treats a backslash
  * as an escape. A dollar quote runs until the same tag; a different tag
  * inside it is text, so `$outer$ ... $inner$ ... $inner$ ... $outer$` stays
- * one span. An unterminated string, quoted identifier, block comment, or
- * dollar quote is one opaque tail. This function does not throw.
+ * one span. A `BEGIN ATOMIC` body of `CREATE FUNCTION` or `CREATE PROCEDURE`
+ * stays in that statement: a semicolon inside it does not split, and
+ * `CASE ... END` does not close the body. `BEGIN ATOMIC` elsewhere still
+ * splits. An unterminated string, quoted identifier, block comment, dollar
+ * quote, or atomic body is one opaque tail. This function does not throw.
  */
 
 /** Statements of `sql`, comments removed, with no trailing semicolon. */
@@ -19,9 +22,10 @@ export function sqlStatements(sql: string): readonly string[] {
  * Whether `sql` still has an open quote or block comment.
  *
  * A line comment does not count: it ends at the newline or at the end.
+ * An unclosed `BEGIN ATOMIC` routine body counts too.
  *
  * @param sql - Step text accumulated so far
- * @returns `true` when a later blank line is still inside that quote
+ * @returns `true` when a later blank line is still inside that quote or body
  */
 export function sqlQuoteOpen(sql: string): boolean {
   return scan(sql).open;
@@ -37,6 +41,7 @@ function scan(sql: string): Scan {
   const parts: string[] = [];
   let index = 0;
   let open = false;
+  let atomic = 0;
 
   const flush = (): void => {
     const text = parts.join("").trim();
@@ -103,8 +108,21 @@ function scan(sql: string): Scan {
       continue;
     }
     if (char === ";") {
-      flush();
+      if (atomic === 0) flush();
+      else parts.push(";");
       index += 1;
+      continue;
+    }
+    if (isIdentStart(sql.charCodeAt(index))) {
+      const word = readWord(sql, index);
+      const lower = word.toLowerCase();
+      if (atomic > 0 && lower === "case") atomic += 1;
+      else if (atomic > 0 && lower === "end") atomic -= 1;
+      else if (lower === "begin" && nextWordIs(sql, index + word.length, "atomic")) {
+        if (atomic > 0 || isRoutineHead(parts.join(""))) atomic += 1;
+      }
+      parts.push(word);
+      index += word.length;
       continue;
     }
     parts.push(char ?? "");
@@ -112,16 +130,17 @@ function scan(sql: string): Scan {
   }
 
   flush();
-  return { statements, open };
+  return { statements, open: open || atomic > 0 };
 }
 
 /**
  * Transaction control in a migration step.
  *
  * Dollar-quoted bodies are scanned only for a `DO` block. `CREATE FUNCTION`
- * and `CREATE PROCEDURE` may commit inside their own body. A bare `BEGIN` or
- * `END` inside a `DO` body is plpgsql and is ignored. `ROLLBACK TO` does not
- * end the outer transaction.
+ * and `CREATE PROCEDURE` may commit inside their own body. A `BEGIN ATOMIC`
+ * body stays one statement, so its `END` is not transaction control. A bare
+ * `BEGIN` or `END` inside a `DO` body is plpgsql and is ignored. `ROLLBACK TO`
+ * does not end the outer transaction.
  *
  * @param sql - Step text
  * @returns The command, or `undefined` when the step stays in one transaction
@@ -204,6 +223,46 @@ function dollarBodies(sql: string): readonly string[] {
     index += 1;
   }
   return bodies;
+}
+
+function readWord(sql: string, index: number): string {
+  let cursor = index + 1;
+  while (isIdentCont(sql.charCodeAt(cursor))) cursor += 1;
+  return sql.slice(index, cursor);
+}
+
+function nextWordIs(sql: string, index: number, expected: string): boolean {
+  const at = skipTrivia(sql, index);
+  if (!isIdentStart(sql.charCodeAt(at))) return false;
+  return readWord(sql, at).toLowerCase() === expected;
+}
+
+function skipTrivia(sql: string, index: number): number {
+  while (index < sql.length) {
+    const code = sql.charCodeAt(index);
+    if (code === 32 || code === 9 || code === 10 || code === 13) {
+      index += 1;
+      continue;
+    }
+    if (sql.startsWith("--", index)) {
+      index = lineCommentEnd(sql, index + 2);
+      continue;
+    }
+    if (sql.startsWith("/*", index)) {
+      const block = blockComment(sql, index + 2);
+      if (block.open) return sql.length;
+      index = block.index;
+      continue;
+    }
+    return index;
+  }
+  return index;
+}
+
+function isRoutineHead(text: string): boolean {
+  return /^create(?:\s+or\s+replace)?\s+(?:function|procedure)\b/i.test(
+    text.replace(/\s+/g, " ").trim(),
+  );
 }
 
 function lineCommentEnd(sql: string, index: number): number {

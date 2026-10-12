@@ -791,6 +791,35 @@ test("OKM1551 flags transaction control and an allow needs a reason", () => {
   expect(codesOfHand("-- okm-allow OKM1551:\ncommit")).toContain("OKM1551");
 });
 
+test("BEGIN ATOMIC in create function or procedure stays one statement", () => {
+  expect(
+    codesOfHand("create function f() returns int language sql begin atomic select 1; end"),
+  ).not.toContain("OKM1551");
+  expect(
+    codesOfHand(
+      "create function f() returns int language sql begin atomic select 1; select 2; end",
+    ),
+  ).not.toContain("OKM1551");
+  expect(
+    codesOfHand(
+      "create function f() returns int language sql begin atomic select case when true then 1 else case when false then 2 else 3 end end; end",
+    ),
+  ).not.toContain("OKM1551");
+  expect(codesOfHand("create procedure p() language sql begin atomic select 1; end")).not.toContain(
+    "OKM1551",
+  );
+  expect(
+    codesOfHand(
+      "create or replace function public.f() returns int language sql begin atomic select 1; end",
+    ),
+  ).not.toContain("OKM1551");
+  expect(
+    codesOfHand("create function f() returns int language sql begin atomic select 1; end;\ncommit"),
+  ).toContain("OKM1551");
+  expect(codesOfHand("begin atomic select 1; end")).toContain("OKM1551");
+  expect(codesOfHand("begin atomic select 1; end;\ncommit")).toContain("OKM1551");
+});
+
 function hand(sql: string): readonly Finding[] {
   const empty = schema({ tables: [] }).catalog;
   return lintPlan(parsePlan(`-- name: hand\n\n${sql}\n`), empty, empty);
