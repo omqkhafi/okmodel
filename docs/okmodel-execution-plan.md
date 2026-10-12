@@ -160,7 +160,7 @@ M2 Depth ships as four trains, in this order (D217). Access is first: tenancy an
 
 Startup room after 0.5.1 (D216): the featureless app is 90,851 / 30,157 against a gate of 90,900 / 30,170 (49 minified bytes and 13 gzip left). The connect entries have about 20 gzip left (postgres.js 22, PGlite 23, node-postgres 22, Bun.sql 28). Every M2 feature loads lazily, or the step stops with the numbers first and does not move a gate (the D201 rule, for all of M2). P80 is the report that says which 0.6 features can be lazy. Ali approves that proposal before P81.
 
-Ranges reserved, prompts written when reached except for 0.6: 0.6 is P80–P89, 0.7 is P90–P99, 0.8 is P100–P109, 0.9 is P110–P119. Each train ends with a gate step and a release commit, like P66. P88 shipped as generate and apply matching what Postgres stores (D236). P88W is the Windows read fix (D237). P89 and P89B shipped the remaining QA fixes (D238, D239). P86R re-cuts 0.6.0 because that version was never tagged or published (D240).
+Ranges reserved, prompts written when reached except for 0.6 and 0.7: 0.6 is P80–P89, 0.7 is P90–P99 (D243), 0.8 is P100–P109, 0.9 is P110–P119. Each train ends with a gate step and a release commit, like P66. P88 shipped as generate and apply matching what Postgres stores (D236). P88W is the Windows read fix (D237). P89 and P89B shipped the remaining QA fixes (D238, D239). P86R re-cuts 0.6.0 because that version was never tagged or published (D240).
 
 #### Train 0.6 Access
 
@@ -176,6 +176,23 @@ Ranges reserved, prompts written when reached except for 0.6: 0.6 is P80–P89, 
 | P87 | `p87-constraint-names` | Constraint and index names from SQL names (QA-L4, §5.7, §9.2, D234). Unique and foreign-key names use every SQL column. The stored name key stays. `okm migrate` renames. No gate move |
 | P88W | `p88w-crlf-safety` | CRLF and lone-CR migration files, a zero-step guard, catalog hash over text with `\r` removed, UTF-8 BOM, resolved config paths, and Node `>=22.18` (D237). No new error kind. No gate move |
 | P86R | `p86r-release-0.6.0` | Re-cut 0.6.0 after the QA fixes. `bun run bump --set 0.6.0` folds Unreleased into the existing v0.6.0 section. The gates stay (D240) |
+
+#### Train 0.7 Query depth
+
+P90 reclaims bytes first. Each feature loads lazily, or the step stops with the numbers and does not move a gate (D201, D243). The order of P92 to P97 may change by measured bytes.
+
+| ID | Branch | Delivers |
+|---|---|---|
+| P90 | `p90-byte-reclaim` | [#208](https://github.com/omqkhafi/okmodel/issues/208). PGlite and node-postgres gzip headroom, the OKM1120 timeout message in the lazy registry, one copy of `refuseWhenLost` and `arm` in `postgres-extra.ts`, and featureless-app headroom. No feature section. No gate move |
+| P91 | `p91-stream-missing-table` | [#209](https://github.com/omqkhafi/okmodel/issues/209). The postgres.js `stream()` page gap on connection loss (D242, §10), a dedicated missing-table reason (B15, §14), and dropping the extra connection in migrate check cleanup when no scratch schema remains. After the byte reclaim. No gate move |
+| P92 | `p92-first-or-create` | [#210](https://github.com/omqkhafi/okmodel/issues/210). Tools 7 and 8 (§13): first-or-create and the per-row update list. §5.3 and §11 already specify them. Audit what exists, then build only the gap. Lazy. No gate move |
+| P93 | `p93-atomic-claim` | [#211](https://github.com/omqkhafi/okmodel/issues/211). Tools 9 and 14 (§13): atomic operators and row claiming with `lock: "skip"` (§5.3, §11). Lazy. No gate move |
+| P94 | `p94-top-n-windows` | [#212](https://github.com/omqkhafi/okmodel/issues/212). Tools 2 and 12 (§13): top-N per group in `include`, and window helpers. Lazy. No gate move |
+| P95 | `p95-buckets-tz` | [#213](https://github.com/omqkhafi/okmodel/issues/213). Tools 4 and 5 (§13): aggregate buckets and time-zone date helpers (§10). Lazy. No gate move |
+| P96 | `p96-descendants-sync` | [#214](https://github.com/omqkhafi/okmodel/issues/214). Tools 11 and 10 (§13): `descendants` / `ancestors`, and `sync` (§11). Lazy. No gate move |
+| P97 | `p97-search-queries` | [#215](https://github.com/omqkhafi/okmodel/issues/215). Tools 13 and 15 (§13): full-text search and named composable queries. Lazy. No gate move |
+| P98 | `p98-versioned-stream` | [#216](https://github.com/omqkhafi/okmodel/issues/216). `versioned` and `sortable` (§8), `morph` (§6.2), and `.stream()` (§10). `.stream()` already has a lazy chunk. Lazy. No gate move |
+| P99 | `p99-gate-0.7` | [#217](https://github.com/omqkhafi/okmodel/issues/217). Gate and release 0.7.0, like P66. Hygiene before `bun run bump release` (D115). No new API in the gate step |
 
 #### Later trains (prompts written when reached)
 

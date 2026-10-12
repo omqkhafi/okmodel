@@ -14,6 +14,12 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+### ♻️ Changed
+
+#### docs
+
+- The execution plan lists the 0.7 steps P90–P99. Byte reclaim is first, each feature loads lazily, and the order of P92 to P97 may change by measured bytes (D243).
+
 ## v0.6.0 — 2026-10-11
 
 ### 💥 Breaking Changes
