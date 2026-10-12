@@ -302,3 +302,119 @@ function expectIdle(proc: ReturnType<typeof Bun.spawnSync>): void {
   expect(out).toContain("next ok");
   expect(out).toContain("crashes 0");
 }
+
+for (const driver of ["pg", "postgresjs"] as const) {
+  postgresTest(
+    gate,
+    `${driver} keeps the process up when an idle pooled backend is terminated`,
+    async () => {
+      const database = await createIsolatedDatabase();
+      try {
+        expectPool(
+          Bun.spawnSync(["bun", "tests/connection-lost-pool.worker.ts", database.url, driver]),
+        );
+        const node = node24();
+        if (node !== undefined) {
+          const dir = mkdtempSync(join(tmpdir(), "okm-pool-"));
+          const outfile = join(dir, "pool.mjs");
+          const built = Bun.spawnSync(
+            [
+              "bun",
+              "build",
+              "tests/connection-lost-pool.worker.ts",
+              "--target",
+              "node",
+              "--outfile",
+              outfile,
+            ],
+            { cwd: process.cwd() },
+          );
+          expect(built.exitCode).toBe(0);
+          const nodeChild = Bun.spawnSync([node, outfile, database.url, driver], {
+            timeout: 20_000,
+          });
+          if (nodeChild.exitCode !== 0) {
+            throw new Error(
+              `node pool ${driver} ${String(nodeChild.exitCode)} ${String(nodeChild.signalCode)}\n${nodeChild.stdout?.toString() ?? ""}\n${nodeChild.stderr?.toString() ?? ""}`,
+            );
+          }
+          expectPool(nodeChild);
+        }
+      } finally {
+        await database.close();
+      }
+    },
+    90_000,
+  );
+}
+
+postgresTest(
+  gate,
+  "Bun.sql keeps the process up when an idle pooled backend is terminated",
+  async () => {
+    const database = await createIsolatedDatabase();
+    try {
+      expectPool(
+        Bun.spawnSync(["bun", "tests/connection-lost-pool-bun.worker.ts", database.url], {
+          timeout: 20_000,
+        }),
+      );
+    } finally {
+      await database.close();
+    }
+  },
+  60_000,
+);
+
+for (const driver of ["pg", "postgresjs"] as const) {
+  postgresTest(
+    gate,
+    `${driver} listen does not crash when the server closes that backend`,
+    async () => {
+      const database = await createIsolatedDatabase();
+      try {
+        expectPool(
+          Bun.spawnSync(["bun", "tests/connection-lost-listen.worker.ts", database.url, driver], {
+            timeout: 20_000,
+          }),
+        );
+        const node = node24();
+        if (node !== undefined) expectPool(nodeListen(node, database.url, driver));
+      } finally {
+        await database.close();
+      }
+    },
+    60_000,
+  );
+}
+
+function expectPool(proc: ReturnType<typeof Bun.spawnSync>): void {
+  const out = proc.stdout?.toString() ?? "";
+  const err = proc.stderr?.toString() ?? "";
+  if (proc.exitCode !== 0) {
+    throw new Error(
+      `pool child ${String(proc.exitCode)} ${String(proc.signalCode)}\n${out}\n${err}`,
+    );
+  }
+  expect(out).toContain("next ok");
+  expect(out).toContain("crashes 0");
+}
+
+function nodeListen(node: string, url: string, driver: string): ReturnType<typeof Bun.spawnSync> {
+  const dir = mkdtempSync(join(tmpdir(), "okm-listen-"));
+  const outfile = join(dir, "listen.mjs");
+  const built = Bun.spawnSync(
+    [
+      "bun",
+      "build",
+      "tests/connection-lost-listen.worker.ts",
+      "--target",
+      "node",
+      "--outfile",
+      outfile,
+    ],
+    { cwd: process.cwd() },
+  );
+  expect(built.exitCode).toBe(0);
+  return Bun.spawnSync([node, outfile, url, driver], { timeout: 20_000 });
+}

@@ -210,6 +210,19 @@ type Lost = { on: boolean };
  * @param sql - Reserved connection
  * @param lost - Set when that socket closes
  */
+/**
+ * Sets `lost` when the reserved socket closes.
+ *
+ * The first statement installs `onclose`. Later statements see the flag
+ * before they write.
+ *
+ * @param sql - Reserved connection
+ * @param lost - Set when that socket closes
+ */
+export function watchReserved(sql: Sql, lost: Lost): void {
+  arm(sql, lost);
+}
+
 function arm(sql: Sql, lost: Lost): void {
   const unsafe = sql.unsafe.bind(sql);
   sql.unsafe = ((text: string, params?: unknown, options?: object) =>

@@ -8,6 +8,7 @@
 
 import { open } from "../../adapters/pg/postgresjs.js";
 import { aboutBatchCount } from "./backfill.js";
+import { finishQuiet, sessionFailure } from "./lost.js";
 import type { PlanStep } from "./plan.js";
 
 /**
@@ -74,13 +75,13 @@ export async function readRowEstimates(
       began = false;
       return map;
     } catch (error) {
-      if (began) await connection.execute("rollback").catch(() => undefined);
-      throw error;
+      if (began) await finishQuiet(() => connection.execute("rollback"));
+      throw sessionFailure(error) ?? error;
     } finally {
-      await connection.release();
+      await finishQuiet(() => connection.release());
     }
   } finally {
-    await pool.close();
+    await finishQuiet(() => pool.close());
   }
 }
 

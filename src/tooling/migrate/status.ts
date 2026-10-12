@@ -24,6 +24,7 @@ import { loadMigrations } from "./files.js";
 import { projectPath } from "./paths.js";
 import { assertTargetPolicy, listTargets, type InvokeFlags, type TargetRecord } from "./policy.js";
 import { loadConfig } from "./project.js";
+import { finishQuiet, sessionFailure } from "./lost.js";
 import { expandProvisioned, provisionHistoryIsKnown } from "./snapshot.js";
 
 /** One status row. `protected` is its own column, not a state. */
@@ -160,8 +161,10 @@ export async function readTargetStatus(input: {
       protected: input.protected,
       backfills: await readBackfills(pool),
     };
+  } catch (error) {
+    throw sessionFailure(error) ?? error;
   } finally {
-    await pool.close();
+    await finishQuiet(() => pool.close());
   }
 }
 

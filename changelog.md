@@ -100,6 +100,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Statements of different scopes on one transaction connection run one at a time. Each sets its own `app.tenant` before the statement, so one scope cannot return the other's rows (D241).
 - `tx({ timeout })` and `batch({ timeout })` on Bun.sql and PGlite are OKM1120, the same refusal as a per-call timeout. A `signal` is not refused (D241).
 - postgres.js no longer crashes the process when the backend dies inside `tx()`, including while the transaction is idle between statements, inside a savepoint, or just before `COMMIT`. The pending statement and the transaction reject with `unavailable`, or OKM1401 when a `COMMIT` may have happened, and the next call still runs. A lost reserved connection is not written again, so the driver never schedules the null-socket `setImmediate` write, and the process `setImmediate` stays the one the application installed. A node-postgres or Bun.sql stream interrupted by a lost connection is `unavailable`. A postgres.js stream can still end a page early with no error (D242).
+- A node-postgres idle client that the server closes no longer crashes the process. The pool drops that client and the next query opens a new one. A `LISTEN` connection that the server closes is the same: one error handler covers the pool and that client, the client is released, and a later query still runs. The connect entry measures 42,661 minified and 15,066 gzip. The gate stays 42,850 / 15,070.
 - OKM1707 says `okm seed` under `rlsTenancy` runs as the application role. The owner gets this error (D239).
 - A trailing backslash on the catalog directory is ignored, and a Windows stack frame still records `file.ts:line` (D237).
 - `onConflict: { on: "title" }` on a tenant unique of (tenant key, title) updates that tenant's row. The conflict target includes the tenant key. Naming the tenant key is still OKM1104. Two tenants can keep the same title (D221).
@@ -109,6 +110,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - A hand-written step that disables row-level security, stops forcing it, drops a policy, widens one with `using (true)` or `with check (true)`, grants `BYPASSRLS`, or changes the owner of a tenant table is OKM1550. `okm migrate check` and apply refuse it unless the step has `-- okm-allow OKM1550: reason` (D238).
 - OKM1550 also flags a create or alter policy on a tenant table that is not the emitted expression: `using (1=1)`, `using ((true))`, `using (true or false)`, `alter policy … to public using (1=1)`, and an extra permissive policy (D241).
 - `okm migrate check` lints before it replays. The replay creates its scratch schema inside one transaction, sets the search path there, and always ends with `ROLLBACK`. It does not edit system catalogs or real ACLs. `COMMIT`, `ROLLBACK`, and other transaction control in a step is OKM1551. Apply accepts that step only with `-- okm-allow OKM1551: reason`. `VACUUM`, `CREATE DATABASE`, `DROP DATABASE`, and `ALTER SYSTEM` are skipped and named. A concurrent index runs without `CONCURRENTLY`. A plain owner passes check (D242).
+- A step that kills its own backend during `okm migrate check` or `okm migrate apply` exits non-zero with `unavailable` or OKM1401. The process does not hang. Check drops the scratch schema, or the error names it when the drop cannot be confirmed.
+- OKM1551 reads a dollar-quoted body only when the statement is `DO`. `CREATE FUNCTION` and `CREATE PROCEDURE` may contain `COMMIT` or `ROLLBACK`. Top-level transaction control and a `DO` body stay refused.
 - Reprinting a view during `okm migrate check` runs as the login user. `SET ROLE` does not stay in effect for that schema, so a migration role can own `public` and the check still creates the reprint schema (D242).
 - A path foreign key is planned after the unique it references. Table names no longer decide that order. Drops reverse it (D236).
 - `okm generate` then apply accepts an index on a materialized view. The stored document depends on the view, not on a column, for one column or several, unique or not (D236).
@@ -124,6 +127,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 #### docs
 
 - Known limits and the migrations page describe a Windows checkout: CRLF, a BOM, resolved paths, a TCP URL, and case-sensitive file names (D237).
+- `okm migrate check` should run as a non-superuser. A superuser replay can execute `COPY ... PROGRAM` and `lo_import`. `CREATEROLE` is not required for the replay.
 - Known limits record the postgres.js stream gap: a lost connection can end a page early with no error, and a later `cursor.next()` on a dead socket can throw outside the promise. node-postgres or Bun.sql is the stream to use when failover matters. The 0.7 backlog reclaims adapter and featureless-app bytes before adding that loop (D242).
 - The handbook names draft 26, and the opening size table is the current sample.
 

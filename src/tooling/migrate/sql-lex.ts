@@ -116,10 +116,12 @@ function scan(sql: string): Scan {
 }
 
 /**
- * Transaction control in a migration step, including a `DO` or function body.
+ * Transaction control in a migration step.
  *
- * A bare `BEGIN` or `END` inside a dollar quote is plpgsql and is ignored.
- * `ROLLBACK TO` does not end the outer transaction.
+ * Dollar-quoted bodies are scanned only for a `DO` block. `CREATE FUNCTION`
+ * and `CREATE PROCEDURE` may commit inside their own body. A bare `BEGIN` or
+ * `END` inside a `DO` body is plpgsql and is ignored. `ROLLBACK TO` does not
+ * end the outer transaction.
  *
  * @param sql - Step text
  * @returns The command, or `undefined` when the step stays in one transaction
@@ -128,6 +130,7 @@ export function transactionControl(sql: string): string | undefined {
   for (const statement of sqlStatements(sql)) {
     const top = controlWord(statement, false);
     if (top !== undefined) return top;
+    if (!isDo(statement)) continue;
     for (const body of dollarBodies(statement)) {
       for (const inner of sqlStatements(body)) {
         const hit = controlWord(inner, true);
@@ -136,6 +139,10 @@ export function transactionControl(sql: string): string | undefined {
     }
   }
   return undefined;
+}
+
+function isDo(statement: string): boolean {
+  return /^do(?:\s|$)/i.test(statement.trim());
 }
 
 function controlWord(statement: string, insideBody: boolean): string | undefined {

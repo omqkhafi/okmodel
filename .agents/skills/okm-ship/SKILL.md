@@ -7,6 +7,8 @@ description: >-
   runtime change, or any user-visible work — before saying the work is done,
   before commit, or when the user asks to ship, close out, or sync the
   changelog. A gate prompt that releases runs `bun run bump release` instead.
+  For an untagged release named in the prompt (for example v0.6.0), notes go
+  under that existing ## vX.Y.Z and there is no bump.
 ---
 
 # OKM Ship — changelog, then the pre-release bump
@@ -24,8 +26,8 @@ After any implementation that changes behavior, API surface, CLI, dialects, adap
 ```
 Task:
 - [ ] 1. Diff the change — list user-visible impact
-- [ ] 2. Changelog — append under ## Unreleased → ### group + #### area
-- [ ] 3. Version — bun run bump next (a release prompt: bun run bump release)
+- [ ] 2. Changelog — append under ## Unreleased → ### group + #### area (untagged release: under its ## vX.Y.Z)
+- [ ] 3. Version — bun run bump next (a release prompt: bun run bump release; untagged release: no bump)
 ```
 
 ### 1. Inventory impact
@@ -46,7 +48,7 @@ If a note would invent an API the source does not support, stop and ask.
 
 ### 2. Changelog (`changelog.md`)
 
-**Upcoming work → `## Unreleased`.** Never append to an already-shipped `## vX.Y.Z` section.
+**Upcoming work → `## Unreleased`.** Never append to an already-tagged `## vX.Y.Z` section.
 
 ```text
 If ## Unreleased is missing (right after the preamble, before the newest ## v…):
@@ -86,6 +88,8 @@ bun run bump next
 # → changelog is left untouched
 ```
 
+**Untagged release exception.** If the prompt names a release version that is not yet tagged (for example `v0.6.0`), do not run `bun run bump`. Add the notes under that existing `## vX.Y.Z` heading and leave `package.json` as it is. `bun run release-check` allows this until the tag exists.
+
 D115: hygiene finishes before a release bump. P09A is the cleanup after the M0 gate (spike leftovers, duplicated helpers, flaky tests, doc sync, dependency audit, D127 budgets). A hygiene prompt that is not itself the release runs `bun run bump next`. P17 is that prompt for 0.1; P17B is the release. The release prompt of a train runs:
 
 ```bash
@@ -108,11 +112,13 @@ Before the execution report, review the change against these rules. The report s
 - No duplicated logic: one helper, one place.
 - Small, obvious public API. Clear names. Precise types. Actionable errors.
 - No avoidable allocation or repeated work on hot paths.
-- Report runtime entry size (minified and gzip), cold import, and any type-cost change. Also report the app startup graph, the total graph, and connect-entry cold imports. A measurement within 3% of a type ceiling is called out. Connect-entry cold import is reported, not gated; the 15 ms local reference is our own code with the driver stubbed.
+- Report runtime entry size (minified and gzip), cold import, and any type-cost change. Also report the app startup graph, the total graph, and connect-entry cold imports. A measurement within 3% of a type ceiling is called out. Connect-entry cold import is reported, not gated; the 15 ms local reference is our own code with the driver stubbed. Report each connect entry's minified and gzip size against its gate.
 
 ## Done
 
 - [ ] Notes under `## Unreleased` → matching `###` group and `####` area when the group is large
-- [ ] Nothing appended under a released `## v…` section
+- [ ] Nothing appended under a tagged `## v…` section
 - [ ] `bun run bump next` has run, or `bun run bump release` on a release prompt
 - [ ] Self-review against the engineering standards, with runtime entry size, cold import, and type-cost change in the report
+- [ ] Untagged release prompt: notes under its `## vX.Y.Z`, no bump
+- [ ] Any path listed in `.cursor/rules/project-map.mdc` that you moved is updated there

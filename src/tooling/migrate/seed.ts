@@ -22,6 +22,7 @@ import {
   selectTarget,
   type InvokeFlags,
 } from "./policy.js";
+import { finishQuiet, sessionFailure } from "./lost.js";
 import { loadConfig, loadSchema } from "./project.js";
 
 /**
@@ -49,20 +50,21 @@ export async function seedProject(cwd: string, file: string, flags: InvokeFlags)
   assertDirectConnection(target.url, allowPooler);
   const schema = await loadSchema(cwd, config.schema);
   const pool = open({ url: target.url, max: 1 });
-  const held = await pool.reserve?.();
-  if (held !== undefined) {
-    try {
-      await assertStableBackend(async () => {
-        const result = await held.execute("select pg_backend_pid()::text");
-        const cell = result.rows[0]?.[0];
-        return cell === null || cell === undefined ? "" : String(cell);
-      }, allowPooler);
-    } finally {
-      await held.release();
-    }
-  }
-  const harness = await testing(schema, { driver: pool, migrate: false });
+  let harness: Awaited<ReturnType<typeof testing>> | undefined;
   try {
+    const held = await pool.reserve?.();
+    if (held !== undefined) {
+      try {
+        await assertStableBackend(async () => {
+          const result = await held.execute("select pg_backend_pid()::text");
+          const cell = result.rows[0]?.[0];
+          return cell === null || cell === undefined ? "" : String(cell);
+        }, allowPooler);
+      } finally {
+        await finishQuiet(() => held.release());
+      }
+    }
+    harness = await testing(schema, { driver: pool, migrate: false });
     const imported: unknown = await import(`${pathToFileURL(path).href}?okm=${Date.now()}`);
     const seed = isRecord(imported) ? imported.default : undefined;
     if (typeof seed !== "function") {
@@ -72,8 +74,12 @@ export async function seedProject(cwd: string, file: string, flags: InvokeFlags)
     }
     await seed(harness);
     return formatCreated(target.name, createdOf(harness));
+  } catch (error) {
+    throw sessionFailure(error) ?? error;
   } finally {
-    await harness.close();
+    const opened = harness;
+    if (opened !== undefined) await finishQuiet(() => opened.close());
+    else await finishQuiet(() => pool.close());
   }
 }
 

@@ -2,7 +2,7 @@
 
 `okm migrate check` proves a migration history is sound. It is a CI command: no prompts, and the result does not depend on colour. Exit zero prints one line, `ok N migrations`. Any failure exits non-zero. One failure prints its code, the message, and the fix. Several failures print one greppable line per failure.
 
-The command writes a scratch schema, so point it at a throwaway Postgres. A protected target is refused. `--allow-protected` does not apply.
+The command writes a scratch schema, so point it at a throwaway Postgres. Run it as a non-superuser. A superuser replay executes each step as written, and a step can reach `COPY ... PROGRAM` and `lo_import`. A `NOSUPERUSER` owner of the database cannot. `CREATEROLE` is not required. A protected target is refused. `--allow-protected` does not apply.
 
 ## What it checks
 

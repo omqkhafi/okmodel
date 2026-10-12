@@ -11,6 +11,7 @@ import { join } from "node:path";
 
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
 import {
+  LIMITED_SCHEMA_OWNER,
   createIsolatedDatabase,
   giveDatabaseToOwner,
   openPostgres,
@@ -96,6 +97,25 @@ for (const who of ["superuser", "owner"] as const) {
     60_000,
   );
 }
+
+postgresTest(
+  gate,
+  "migrate check passes as okm_owner without CREATEROLE",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const url = await giveDatabaseToOwner(database.url, undefined, LIMITED_SCHEMA_OWNER);
+    const cwd = mkdtempSync(join(tmpdir(), "okm-check-limited-"));
+    try {
+      writeProject(cwd, url);
+      await cli(cwd, ["generate", "init"]);
+      expect(await cli(cwd, ["migrate", "check"])).toBe("ok 1 migrations\n");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  60_000,
+);
 
 type Sql = ReturnType<typeof openPostgres>;
 

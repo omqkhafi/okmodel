@@ -21,6 +21,7 @@ import {
   type BackfillSpec,
 } from "./backfill.js";
 import type { PlanStep } from "./plan.js";
+import { sessionFailure } from "./lost.js";
 import { assertTargetPolicy, type PolicyOperation } from "./policy.js";
 
 /** One step with its index in the migration file. */
@@ -532,6 +533,14 @@ export async function assertSchemaUsageLanded(
 }
 
 function failStep(unit: RunnableUnit, index: number, error: unknown): OkmError {
+  const lost = sessionFailure(error);
+  if (lost !== undefined) {
+    return new OkmError(
+      lost.code,
+      `Migration ${unit.migrationId} failed at step ${String(index + 1)}: ${lost.message}`,
+      { kind: lost.kind, cause: error, fix: lost.fix },
+    );
+  }
   if (error instanceof OkmError) return error;
   const message = error instanceof Error ? error.message : "The step failed.";
   return new OkmError(

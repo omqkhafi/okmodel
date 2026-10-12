@@ -14,6 +14,7 @@ import { assertRoleHealth } from "../../dialects/pg/role/check.js";
 import { errorDoc } from "../errors/registry.js";
 import { omitManagedObjects } from "./managed.js";
 import { assertTargetPolicy, selectTarget, type InvokeFlags } from "./policy.js";
+import { finishQuiet, sessionFailure } from "./lost.js";
 import { openProject } from "./project.js";
 
 /**
@@ -48,8 +49,10 @@ export async function doctorProject(
     const pool = open({ url: target.url, max: 1 });
     try {
       await assertRoleHealth(pool, opened.config.roles, objects);
+    } catch (error) {
+      throw sessionFailure(error) ?? error;
     } finally {
-      await pool.close();
+      await finishQuiet(() => pool.close());
     }
   }
   return formatTriggers(objects);
