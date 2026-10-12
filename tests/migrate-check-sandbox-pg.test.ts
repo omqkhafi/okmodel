@@ -175,6 +175,39 @@ postgresTest(
 
 postgresTest(
   gate,
+  "a rollback after a BEGIN ATOMIC body is still OKM1551",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const admin = openPostgres(database.url);
+    const cwd = mkdtempSync(join(tmpdir(), "okm-check-atomic-rollback-"));
+    try {
+      const before = await fingerprint(admin);
+      writeProject(cwd, database.url);
+      await cli(cwd, ["generate", "init"]);
+      appendFileSync(
+        migration(cwd),
+        "\n\ncreate function public.f() returns int language sql begin atomic select 1; end;\nrollback;\n",
+      );
+      let message = "";
+      try {
+        await cli(cwd, ["migrate", "check"]);
+      } catch (error) {
+        message = error instanceof Error ? error.message : "";
+      }
+      expect(message).toContain("OKM1551");
+      expect(message).toContain("rollback");
+      expect(await fingerprint(admin)).toBe(before);
+    } finally {
+      await admin.end({ timeout: 5 });
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  60_000,
+);
+
+postgresTest(
+  gate,
   "migrate check passes as okm_owner without CREATEROLE",
   async () => {
     const database = await createIsolatedDatabase();

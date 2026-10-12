@@ -816,6 +816,12 @@ test("BEGIN ATOMIC in create function or procedure stays one statement", () => {
   expect(
     codesOfHand("create function f() returns int language sql begin atomic select 1; end;\ncommit"),
   ).toContain("OKM1551");
+  const rollback = hand(
+    "create function public.f() returns int language sql begin atomic select 1; end; rollback",
+  );
+  expect(rollback.some((item) => item.code === "OKM1551" && item.reason.includes("rollback"))).toBe(
+    true,
+  );
   expect(codesOfHand("begin atomic select 1; end")).toContain("OKM1551");
   expect(codesOfHand("begin atomic select 1; end;\ncommit")).toContain("OKM1551");
 });

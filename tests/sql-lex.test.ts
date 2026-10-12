@@ -122,6 +122,22 @@ test("a BEGIN ATOMIC routine body is one statement, and a bare one still splits"
   expect(kept.steps[0]?.sql).toContain("select 2;");
 });
 
+test("BEGIN ATOMIC closes on END in any case, and a quoted or commented END does not", () => {
+  const upper =
+    "create function f() returns int language sql BEGIN ATOMIC select CASE WHEN true THEN 1 ELSE 2 END; END";
+  expect(sqlStatements(upper)).toEqual([upper]);
+  expect(sqlStatements(`${upper}; commit`)).toEqual([upper, "commit"]);
+  const mixed = "create function f() returns int language sql begin atomic select 1; EnD";
+  expect(sqlStatements(mixed)).toEqual([mixed]);
+  const hidden = sqlStatements(
+    "create function f() returns int language sql BEGIN ATOMIC select 'END'; -- END\n/* END */ select 1; EnD; rollback",
+  );
+  expect(hidden).toHaveLength(2);
+  expect(hidden[0]).toContain("'END'");
+  expect(hidden[0]?.endsWith("EnD")).toBe(true);
+  expect(hidden[1]).toBe("rollback");
+});
+
 test("a blank line inside a quote stays in the step, and one outside still splits", () => {
   const dollar = parsePlan(
     [
