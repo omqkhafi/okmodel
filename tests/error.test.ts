@@ -313,6 +313,9 @@ test("mapPostgresError reads SQLSTATE, constraint names, and batchIndex", () => 
   expect(mapPostgresError(new DriverError("timeout", { sqlstate: "57014" })).kind).toBe("timeout");
   expect(mapPostgresError(new DriverError("closed", {})).kind).toBe("driver");
   expect(mapPostgresError(new DriverError("The pool is closed.")).kind).toBe("unavailable");
+  expect(mapPostgresError(new DriverError("write CONNECT_TIMEOUT 127.0.0.1:1")).kind).toBe(
+    "unavailable",
+  );
   expect(mapPostgresError(unique)).toBe(unique);
 });
 

@@ -159,12 +159,13 @@ class PoolSockets {
   }
 
   private wake(): void {
-    for (const socket of this.held) socket.ref();
+    // Not writable: still connecting, or already closed. ref/unref would add a connect listener.
+    for (const socket of this.held) if (socket.writable) socket.ref();
   }
 
   private park(): void {
     if (this.busy > 0 || this.listeners > 0) return;
-    for (const socket of this.held) socket.unref();
+    for (const socket of this.held) if (socket.writable) socket.unref();
   }
 }
 

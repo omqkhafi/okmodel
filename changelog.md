@@ -82,6 +82,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 #### contracts
 
 - `.okm/catalog.json` and `catalog.hash` are checked after a UTF-8 BOM is stripped and every carriage return is removed. An LF catalog keeps the hash `okm build` wrote (D237).
+- A postgres.js connect that does not finish (`CONNECT_TIMEOUT`) is kind `unavailable`.
 
 #### dialects
 
@@ -92,6 +93,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - A superuser passes the managed-role `CREATEROLE` preflight when `rolcreaterole` is false (D236).
 - `refresh()` waits until it is awaited. `batch([view.refresh()])` is OKM1121 and runs no statement. An unawaited failure is not an unhandled rejection. The refresh sets `app.unscoped` on a reserved primary connection, so the owner sees rows under `FORCE ROW LEVEL SECURITY`. The application role is `not_owner`, and the error names the migration role. A plain view has no `refresh` at runtime. `refresh: "blocking"` and any other value is OKM1120 (D239).
 - `okm build` keeps `t.jsonb<{ published?: boolean }>()` and `t.json<T>()` in `.okm/types.d.ts`. A bare `t.jsonb()` stays `jsonb<unknown>` (D215, D239).
+
+#### adapters
+
+- postgres.js does not `ref` or `unref` a socket that is not writable. A closed socket no longer stacks `connect` listeners, so Node does not print `MaxListenersExceededWarning`. A connect that does not finish rejects the statement.
 
 #### runtime
 
@@ -124,6 +129,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okm` on Node older than 22.18 stops and names `bun --bun okm`. `engines.node` is `>=22.18` (D237).
 - `okm migrate check` keeps a constraint whose only difference is the stored name key. Postgres does not store that key, so a replay no longer drops and recreates it. The reference app migration `0004_sql_names` renames the constraints whose SQL names changed (D234).
 - A `CREATE FUNCTION` or `CREATE PROCEDURE` with a SQL-standard `BEGIN ATOMIC` body stays one statement. Semicolons in the body do not split it, and the closing `END` is not OKM1551. A nested `CASE ... END` does not close the body. Top-level transaction control, a `DO` body, and `BEGIN ATOMIC` outside those statements stay refused.
+- The Postgres workflow caches with `actions/cache` v5.1.0, which runs on Node.js 24.
 
 #### docs
 
@@ -131,6 +137,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okm migrate check` should run as a non-superuser. A superuser replay can execute `COPY ... PROGRAM` and `lo_import`. `CREATEROLE` is not required for the replay.
 - Known limits record the postgres.js stream gap: a lost connection can end a page early with no error, and a later `cursor.next()` on a dead socket can throw outside the promise. node-postgres or Bun.sql is the stream to use when failover matters. The 0.7 backlog reclaims adapter and featureless-app bytes before adding that loop (D242).
 - The handbook names draft 26, and the opening size table is the current sample.
+- Known limits and the drivers page no longer say postgres.js prints `MaxListenersExceededWarning` after a lost connection.
 
 ### 🔒 Security
 

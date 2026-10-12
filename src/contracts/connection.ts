@@ -68,7 +68,8 @@ export function isConnectionFailure(error: unknown): boolean {
   return (
     message.includes("ECONNREFUSED") ||
     message.includes("ECONNRESET") ||
-    message.includes("CONNECTION_CLOSED") ||
+    // CONNECT covers CONNECTION_CLOSED and CONNECT_TIMEOUT.
+    message.includes("CONNECT") ||
     message.includes("terminating connection") ||
     message.includes("The pool is closed")
   );
