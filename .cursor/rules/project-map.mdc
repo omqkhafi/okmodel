@@ -1,0 +1,67 @@
+---
+description: okmodel project map — where things live, focused test commands, gates, PR and workflow rules. Read this before exploring the repo.
+alwaysApply: true
+---
+
+# okmodel project map
+
+Use this map instead of re-exploring. Full rules: `AGENTS.md`. Normative docs: `docs/` (spec `docs/okmodel-api-design.md`, decisions `docs/okmodel-decisions.md`, plan `docs/okmodel-execution-plan.md`, limits `docs/known-limits.md`, GitHub setup `docs/github.md`). If you move or rename a path listed here, update this file in the same change.
+
+## Layers (imports only go down; `bun run layers-check`, rank map in `scripts/layers.ts`)
+contracts → dialects → adapters → runtime → tooling. Adapters import contracts or other adapter files, not dialects.
+
+## Folders
+- `src/contracts/` — lowest layer, runtime entry `src/contracts/index.ts`; `OkmError`, `ErrorKind` (`error.ts`), pure-TS SHA-256 (`sha256.ts`), no `node:*`.
+- `src/contracts/catalog/` — catalog model (tables, policy, privilege, view, routine…); `catalogHash` in `document.ts`.
+- `src/dialects/pg/` — Postgres schema DSL, compile/emit, DDL (`ddl.ts`), introspect, quoting, roles (`role/`), `ext/`, `fn/`, `ops/`.
+- `src/adapters/pg/` — one file per driver: `postgresjs.ts`, `nodepostgres.ts`, `bunsql.ts`, `pglite.ts` (+ `*-extra.ts`, `batch.ts`, `session.ts`).
+- `src/adapters/` — `error.ts`, `failure.ts` (driver error mapping), `capabilities.ts`.
+- `src/runtime/` — client, planner (`plan.ts`), predicates, include, write, archive, batch, drift; `pg/` connect entries per driver; `ids/`, `safety/`, `tenancy/`, `traits/`, `validate/`.
+- `src/tooling/migrate/` — apply, check (sandbox), lint (`lint-rules.ts`), SQL lexer `sql-lex.ts`, files, status, provision, runner.
+- `src/tooling/cli.ts` — `okm` CLI; `src/tooling/errors/registry.ts` — doctor text for every OKM code; `src/tooling/testing/`.
+- `tests/` — flat: `*.test.ts`, `*-pg.test.ts` (real Postgres), `*.test-d.ts` (expect-type), `*.property.test.ts`, `*.worker.ts` (spawned by a test).
+- `packages/harness/src/` — Docker topology (`docker-cli.ts`, `topology.ts`), `postgres-test.ts`, driver/error/tx suites. Others: `packages/bench`, `attest`, `spikes`, `reference-app`.
+- `scripts/` — every check script (size, type-cost, postgres-suite, verify, bump, release-check…).
+- `site/` — docs site (Next); handbook pages in `site/handbook/*.mdx`. User-visible behavior changes update the site docs too.
+
+## Where each concern lives
+- Error kinds: `ERROR_KINDS` / `ErrorKind` in `src/contracts/error.ts`. SQLSTATE mapping: `src/dialects/pg/errors.ts`; driver errors: `src/adapters/error.ts`, `src/adapters/failure.ts`.
+- OKM codes: `OKM1xxx`, raised via `OkmError`; doctor text in `src/tooling/errors/registry.ts` (spec §21).
+- Catalog hash: `catalogHash` in `src/contracts/catalog/document.ts`.
+- Migration SQL lexing / statement split: `src/tooling/migrate/sql-lex.ts`; lint codes in `lint-rules.ts`; check sandbox in `check.ts`.
+
+## Commands (Bun only, never npm/pnpm/yarn)
+- Single file: `bun test tests/<name>.test.ts`
+- Postgres: `bun run db:up` (`POSTGRES_VERSION=15|16|17|18`, default 17), then `REQUIRE_DOCKER=1 bun test tests/<name>-pg.test.ts`; `bun run db:down` after.
+- Worker tests: run the parent test (e.g. `bun test tests/connection-lost-pg.test.ts`); it spawns `bun tests/<name>.worker.ts`. A Node run of a worker needs a bundle first: `bun build <worker> --target node --outfile <out>` (keep `pg`/`postgres` external), then `node <out>`.
+- Types: `bun run typecheck`; type cost: `bun run type-cost`; size: `bun run size`.
+- Full: `bun run check`; all files on Postgres: `bun run test:postgres`; tarball: `bun run test:tarball`; Docker locally: `bun run verify` (`--all` for 15–18).
+
+## Working order
+1. Core work with a focused test per item, then commit locally.
+2. Focused tests for touched files; when they pass, push the branch (so work is never only in a worktree, and CI never sees code that fails its own tests). If the change touches an adapter, an entry point or anything under a size gate, run `bun run size` now.
+3. Secondary work: audits, docs, site, cleanup.
+4. `bun run check` once at the end (one foreground command), then the self-review.
+- A fix needs a reproduction (with a timeout when it can hang) and proof its test fails without the fix.
+- Any object a driver can make emit `error` (pool, client, listener, reserved connection, stream, cancel socket) needs an error path that cannot become `uncaughtException` or `unhandledRejection`.
+
+## Gates that must not regress
+- Runtime entry size (D144): ≤ 6,100 bytes min / 2,250 gzip; cold import ≤ 25 ms in CI (local > 15 ms is a finding). App startup budget and adapter gates live in `scripts/size.ts`; see `docs/size.md`. Do not copy gate numbers into prompts or reports from memory; read them from the script output.
+- Type cost (D133): ceilings enforced by `bun run type-cost` (listed in `AGENTS.md`).
+- `layers-check`, `core-purity`, `bundle-purity`, `okid-drift`, `docs:check`, `readme:check`, `compiler-api`, `publint`, `attw`.
+- D129: nothing new in the runtime entry without need, lazy work, no module-level computation, no duplicated logic, no hot-path allocation. Every report states runtime entry size (min + gzip), cold import and type-cost change, and ends with a self-review against D129.
+- Hitting a gate: stop and report the exact numbers. First try to save bytes in the code you added; never raise a gate without a cap given in the prompt.
+
+## Pull requests
+- Title `type(scope): summary`. Body ends with the line `Closes #N` (the PR lint accepts nothing else last).
+- Labels: one `type:` and at least one `area:`. Milestone of the release train. Project fields in sync.
+- Add the label `needs: postgres` when the change has Postgres-backed tests; without it `suite` and `tarball` are skipped. Required status on `main`: `gate / check`.
+- Never create an issue unless Ali approved one by name; if the issue is missing, stop and say so.
+- Open the PR, wait for the full CI run, then report.
+- Report: max 40 lines. A table (item | file | test | status done / N/A / deferred + reason), commands with pass/fail, measured budgets from the scripts' output, PR link.
+
+## Hard rules
+- No public API, `ErrorKind`, or catalog hash changes without Ali's explicit approval. Prefer adding a field over a new `ErrorKind`.
+- You may push branches, open PRs and set labels/milestones. Never merge, tag, publish or release (`bun publish`, `bun run bump release`) unless the prompt says so; Ali does those.
+- Changelog and version: follow `.cursor/rules/changelog.mdc` and `.agents/skills/okm-ship/SKILL.md`. Exception: when the prompt says the release version is untagged (for example `v0.6.0`), do not bump and add notes under that existing `## vX.Y.Z` heading.
+- Commit trailers: see `AGENTS.md` § Commits.
