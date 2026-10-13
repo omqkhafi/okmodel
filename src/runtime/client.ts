@@ -275,6 +275,21 @@ function tableApi(
       return writeHandle(session, "delete", table, target, options, mods);
     },
   };
+  // One arrow for both walks. `sync` is the same loader with `expect` instead of `all`.
+  for (const walk of ["descendants", "ancestors"]) {
+    api[walk] = (id: unknown, options?: object) =>
+      lazyRead(session, () => import("./tree.js"), table, { id, walk, options }, base, view);
+  }
+  api.sync = (id: unknown, relation: unknown, ids: unknown, options?: object) =>
+    lazyRead(
+      session,
+      () => import("./sync.js"),
+      table,
+      { id, relation, ids, options },
+      base,
+      view,
+      true,
+    );
   const hooks = session.schema.hooks;
   if (hooks !== undefined) {
     for (const hook of hooks) {
@@ -495,11 +510,14 @@ type LazyRead = {
 };
 
 /**
- * `page` and `aggregate` plan in their own chunks.
+ * `page`, `aggregate`, and a tree walk plan in their own chunks. `sync` uses
+ * the same loader: `expect` instead of `inspect` and `all`.
  *
  * The chunk loads on the first await, `sql()`, or `inspect()`. A failed import
  * fails the call. The tenant and active-set predicates live in the planner, so
  * a call that cannot load never runs without them.
+ *
+ * @param sync - When true, the handle has `expect` and not `inspect` or `all`
  */
 function lazyRead(
   session: Session,
@@ -508,15 +526,22 @@ function lazyRead(
   options: object,
   mods: Mods,
   view: ArchiveView | undefined,
+  sync?: true,
 ): Promise<unknown> & Record<string, unknown> {
   // The handle is a thenable, so it travels inside an object to stay a handle.
   const read = () => load().then((mod) => ({ it: mod.build(session, table, options, mods, view) }));
-  return queryHandle(() => read().then((box) => box.it), {
-    inspect: () => read().then((box) => (box.it.inspect as () => unknown)()),
-    sql: () => read().then((box) => (box.it.sql as () => unknown)()),
-    all: (reason: string) =>
-      lazyRead(session, load, table, options, { ...mods, all: reason }, view),
-  }) as unknown as Promise<unknown> & Record<string, unknown>;
+  const sql = () => read().then((box) => (box.it.sql as () => unknown)());
+  const extra: Record<string, unknown> = { sql };
+  if (sync) {
+    extra.expect = (count: number) =>
+      lazyRead(session, load, table, options, { ...mods, expect: count } as Mods, view, true);
+  } else {
+    extra.inspect = () => read().then((box) => (box.it.inspect as () => unknown)());
+    extra.all = (reason: string) =>
+      lazyRead(session, load, table, options, { ...mods, all: reason }, view);
+  }
+  return queryHandle(() => read().then((box) => box.it), extra) as unknown as Promise<unknown> &
+    Record<string, unknown>;
 }
 
 /** A bound plan and its wire parameters. */

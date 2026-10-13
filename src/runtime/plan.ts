@@ -22,7 +22,14 @@ import {
 } from "../dialects/pg/model.js";
 
 /** A read the caller asked for. */
-export type ReadOp = "find" | "one" | "count" | "exists" | "aggregate";
+export type ReadOp =
+  | "find"
+  | "one"
+  | "count"
+  | "exists"
+  | "aggregate"
+  | "descendants"
+  | "ancestors";
 
 /** Routing constraint chosen before execute. */
 export type RouteConstraint = "auto" | "primary" | "replica";

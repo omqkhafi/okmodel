@@ -309,7 +309,7 @@ find({ where: { name: pgTrgm.similar(q) }, limit: 20 })
 |---|---|---|
 | `citext` | case-insensitive text type | M1 |
 | `pg_trgm` | similarity operators, GIN/GiST indexes, `ILIKE` acceleration | M1 |
-| `unaccent`, `hstore`, `ltree`, `btree_gist`, `btree_gin`, `fuzzystrmatch`, `pgcrypto` | types, operators, functions; `btree_gist` enables `exclude` constraints; `ltree` backs `descendants` / `ancestors` | M2 |
+| `unaccent`, `hstore`, `ltree`, `btree_gist`, `btree_gin`, `fuzzystrmatch`, `pgcrypto` | types, operators, functions; `btree_gist` enables `exclude` constraints. `descendants` and `ancestors` walk the parent column (D252). `ltree` is a later index, not that walk | M2 |
 | `uuid-ossp` | compatibility only (core provides uuid functions) | declare-only |
 | `vector` (pgvector) | `vector`, `halfvec`, `sparsevec`, distance operators, `hnsw` / `ivfflat` indexes, per-query `efSearch` / `probes` | M2 |
 | PostGIS | `geometry`, `geography`, GiST indexes, basic spatial operators; separate `okmodel/pg/postgis` | M3 |
@@ -605,7 +605,7 @@ export const tasks = table("tasks", {
 A preset is `(q, ...args) => q`. The builder `q` has one method, `where`, which adds a predicate; there is no method that removes or replaces one, and the tenant predicate and the active set are not in the builder at all (D125, D126, D180). A table's `presets` and the `presets` of each of its traits (`trait(name, { fields, presets })`) form one set. A trait's presets see the trait's columns; a table's see the table's declared columns.
 
 - **Calling.** `tasks.ownedBy(userId)` returns the table handle with the preset applied, so calls chain: `tasks.pending().ownedBy(userId).find({ limit: 20 })`. Chaining allocates a small list and runs nothing. The preset functions run, in call order, when the statement is planned.
-- **Where it applies.** `find`, `one`, `count`, `exists`, `aggregate` and `page` read through the chain. `update`, `delete`, `archive` and `restore` act only on rows the chain selects, including each item of a list `update`. `insert` ignores the chain.
+- **Where it applies.** `find`, `one`, `count`, `exists`, `aggregate`, `page`, `descendants` and `ancestors` read through the chain. On a tree read the preset filters the rows that come back and does not cut the walk short. `update`, `delete`, `archive` and `restore` act only on rows the chain selects, including each item of a list `update`. `sync` applies the chain to the parent row only. `insert` ignores the chain.
 - **Order.** The planner writes the tenant predicate, then the active set, then the caller's `where`, then each preset's predicates in call order, all joined with AND. A preset cannot see or change what was written before it. A caller's `where` and a preset on the same field both hold.
 - **Writes still need a filter.** A preset does not count as the `where` that `update` and `delete` require (OKM1102): pass a `where` or `.all(reason)`. `archive` and `restore` follow the same rule.
 - **Names.** A name that is a client method or on the reserved list is a type error in `table()` and `trait()`, and OKM1040 at runtime: in `trait()` when the trait is built, for a table at `connect()` before the first query. A name defined by a table and a trait, or by two traits, is OKM1040 from `schema()`, and its fix names both sources (`table tasks`, `trait flagged`).
@@ -931,7 +931,7 @@ Relations are filterable only when listed with the exact fields allowed (`relati
 | `delete({ where }, opts)` | permanent deletion of the matched records. On `archivable` tables it targets the active set unless `withArchived()` / `onlyArchived()` is used |
 | `archive({ where }, opts)` | `archivable` tables only; returns `{ count, archiveId }` |
 | `restore({ where } \| { archiveId }, opts)` | `archivable` tables only; targets the archived set |
-| `sync(id, relation, ids)` | relationship operation: set a to-many relation exactly |
+| `sync(id, relation, ids)` | sets a to-many relation to exactly `ids`, in one transaction. Returns `{ added, removed }`. `expect(n)` throws `not_found` when that is not the number of links changed (D252) |
 
 ```ts no-check="write illustration; scoped, rows, and order are defined in other sections"
 await scoped.tags.insert({ name }, { onConflict: { on: "name", return: true } });          // first-or-create
@@ -994,6 +994,10 @@ Specified before M1 and tested on every driver through the conformance suite:
 | 16 | Views and materialized views, section 5.7 | ✓ | views | views | M1 |
 
 Tool 2 is a to-many `include` with `orderBy` and `limit`: the first N related rows for each parent, one lateral join, with the primary key as the tie-break (D251, section 10). Tool 12 is `rowNumber`, `rank`, `denseRank`, and `runningTotal` in `select` on `find` or `one` (D251, section 10). Tool 13 is `find({ search })` and `count({ search })` (D250, section 10). Tool 15 adds no call: a named query is a preset (section 6.2.1) or a function that returns `find` options.
+
+Tool 11 is `descendants(id, options)` and `ancestors(id, options)` (D252). One recursive statement walks a self-relation. `depth` is how many steps from the starting row. Omit it to walk the whole tree. `self` includes that row. `relation` is required when the table has more than one self-relation. `where`, `select`, and `orderBy` match `find`. A row already on the path is not entered again, so a cycle returns. A missing id returns no rows, including with `self`. The root has no ancestors. `where` and a preset filter the rows that come back. Tenancy and the active set apply on the start row, on every step, and on the result. There is no `include`. The statement starts with `WITH`, so it runs on the primary.
+
+Tool 10 is `sync(id, relation, ids)` (D252, section 11). One transaction. The first statement locks the parent row. The second adds the missing links and removes the extra ones, and sees links a sync that just committed. A join table gains and loses link rows. A one-to-many sets or clears a nullable foreign key and leaves the related row in place. A link that would have to delete that row is refused (OKM1120). Duplicate ids count once. An id that is not in the related table, or a parent that is not in this table, writes nothing and throws `not_found`. The missing-id message gives the count, not the values. `{ added, removed }` are the related ids whose links changed. `expect(n)` throws `not_found` when `added` plus `removed` is not `n`, after the statements, the same as `update`. Inside `tx()` that throw rolls the transaction back. `sync` is not a batch member.
 
 ## 14. Errors
 

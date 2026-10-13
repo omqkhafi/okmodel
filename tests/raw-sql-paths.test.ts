@@ -72,7 +72,8 @@ function names(value: object): string[] {
  * - Transaction client: the same, plus `advisoryLock(key)` (a key, bound as a parameter),
  *   and `afterCommit(fn)`.
  * - Table: the query and write methods, the archive views, and the presets. They take
- *   objects of field names and values.
+ *   objects of field names and values. `descendants`, `ancestors`, and `sync` take an
+ *   id and options, not SQL text.
  * - Query handle: `sql()` and `inspect()` return the statement; they take nothing.
  */
 const CLIENT = ["batch", "close", "connected", "for", "table", "tx", "unscoped"];
@@ -80,9 +81,11 @@ const SCOPED_EXTRA = ["batch", "close", "connected", "table", "tx"];
 const TX_EXTRA = ["advisoryLock", "afterCommit"];
 const TABLE_BASE = [
   "aggregate",
+  "ancestors",
   "archive",
   "count",
   "delete",
+  "descendants",
   "exists",
   "find",
   "insert",
@@ -90,6 +93,7 @@ const TABLE_BASE = [
   "one",
   "page",
   "restore",
+  "sync",
   "update",
   "withArchived",
 ];
