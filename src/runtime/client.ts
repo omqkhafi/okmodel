@@ -274,6 +274,15 @@ function tableApi(
     delete(target: unknown, options: object = {}) {
       return writeHandle(session, "delete", table, target, options, mods);
     },
+    descendants(id: unknown, options?: object) {
+      return lazyRead(session, loadTree, table, { id, walk: "descendants", options }, base, view);
+    },
+    ancestors(id: unknown, options?: object) {
+      return lazyRead(session, loadTree, table, { id, walk: "ancestors", options }, base, view);
+    },
+    sync(id: unknown, relation: unknown, ids: unknown, options?: object) {
+      return syncHandle(session, table, id, relation, ids, options, mods);
+    },
   };
   const hooks = session.schema.hooks;
   if (hooks !== undefined) {
@@ -317,6 +326,32 @@ type WriteMods = {
   readonly archive?: ArchiveView | undefined;
   readonly uses?: PresetUse | undefined;
 };
+
+function loadTree(): Promise<typeof import("./tree.js")> {
+  return import("./tree.js");
+}
+
+function syncHandle(
+  session: Session,
+  table: string,
+  id: unknown,
+  relation: unknown,
+  ids: unknown,
+  options: object | undefined,
+  mods: WriteMods,
+): Promise<unknown> & Record<string, unknown> {
+  const load = (): Promise<typeof import("./sync.js")> => import("./sync.js");
+  return queryHandle(
+    () => load().then((mod) => mod.execute(session, table, id, relation, ids, options, mods)),
+    {
+      sql: () =>
+        load().then((mod) => mod.explain(session, table, id, relation, ids, options, mods)),
+      expect(count: number) {
+        return syncHandle(session, table, id, relation, ids, options, { ...mods, expect: count });
+      },
+    },
+  ) as unknown as Promise<unknown> & Record<string, unknown>;
+}
 
 let writers: Promise<typeof import("./write.js")> | undefined;
 

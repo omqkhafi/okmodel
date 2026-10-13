@@ -134,6 +134,32 @@ export async function read(url: string): Promise<void> {
 
 A named query is a preset, or a function that returns the `find` options, as `titled` and `deployNotes` do above. There is no separate call for one.
 
+## Rows under a row
+
+`descendants(id)` reads every row below `id` in one statement. `ancestors(id)` reads the rows above it. Declare a relation from the table to itself. Pass `relation` when there is more than one. `depth` stops after that many steps. A cycle comes back as rows, because a row already seen is not entered again. `sync(id, relation, ids)` makes a to-many relation hold exactly those ids.
+
+```ts title="tree.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { many, schema, table, t } from "okmodel/pg";
+
+const nodes = table(
+  "nodes",
+  {
+    id: t.identity(),
+    parentId: t.bigint().nullable().references("nodes"),
+    name: t.text(),
+  },
+  { relations: { children: many("nodes", "parentId") } },
+);
+const app = schema({ tables: [nodes] });
+
+export async function below(url: string, id: bigint): Promise<void> {
+  await using db = connect(url, { schema: app });
+  const rows = await db.nodes.descendants(id, { depth: 2, select: ["id", "name"] });
+  if (rows.length < 0) throw new Error("the walk did not run");
+}
+```
+
 ## How it works
 
 The column is a `tsvector`: the document Postgres matches, not the plain text. You fill it when you write, often with `to_tsvector` in `.generated(...)`. `natural` compiles to `websearch_to_tsquery`. `all-words` is `plainto_tsquery`, `phrase` is `phraseto_tsquery`, and `advanced` is `to_tsquery`. Ranking is `ts_rank`, highest first. `find({ search })` emits that same match and that same rank. A highlighted snippet, a search of a plain text column, a helper that writes the `to_tsvector` expression, and a ranked `page()` are not in this version.

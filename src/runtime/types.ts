@@ -239,6 +239,50 @@ export type FindOptions<S extends QuerySchema, K extends keyof S["~byName"]> = R
   readonly search?: TextSearch<RowOf<S, K>>;
 };
 
+/**
+ * Options for `descendants` and `ancestors`.
+ *
+ * `depth` is how many steps from the starting row. Omit it to walk the whole
+ * tree. `self` includes that row. `relation` names which self-relation when
+ * the table has more than one.
+ */
+export type TreeOptions<S extends QuerySchema, K extends keyof S["~byName"]> = CallOptions & {
+  readonly where?: WhereOf<S, K>;
+  readonly select?: readonly (keyof RowOf<S, K> & string)[];
+  readonly orderBy?: OrderBy<RowOf<S, K>>;
+  readonly depth?: number;
+  /** Include the starting row. Omitted leaves it out. */
+  readonly self?: boolean;
+  /** Which self-relation. Required when the table has more than one. */
+  readonly relation?: string;
+};
+
+/** Links `sync` added and removed. Values are the related row's primary key. */
+export type SyncResult = {
+  readonly added: readonly unknown[];
+  readonly removed: readonly unknown[];
+};
+
+/** Options for `sync`. `expect` matches an update: the count is links added plus links removed. */
+export type SyncOptions = CallOptions & {
+  readonly expect?: number;
+};
+
+/** The handle `sync` returns. */
+export type SyncHandle = Promise<SyncResult> & {
+  /** The statement, before it runs. */
+  sql(): Promise<{
+    readonly statements: readonly {
+      readonly text: string;
+      readonly params?: readonly (string | null)[];
+    }[];
+  }>;
+  /** `{ ok, value }` or `{ ok, error }`. */
+  safe(): Promise<SafeResult<SyncResult>>;
+  /** Throws `not_found` when the number of added and removed links is not `count`. */
+  expect(count: number): SyncHandle;
+};
+
 /** A query handle. Await it, or inspect it before it runs. */
 export type Query<T> = Promise<T> & {
   /** Logical intent, rules, plan, SQL, parameters, and the routing decision. */
@@ -701,6 +745,31 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
     target: { readonly where?: WhereOf<S, K> },
     options?: WriteOptions<S, K>,
   ): Write<WriteCount>;
+  /**
+   * Rows below `id`, walking the table's self-relation.
+   *
+   * One statement. A row already seen is not entered again, so a cycle in the
+   * data returns. A missing id returns no rows. `where` and a preset filter
+   * the rows that come back. Tenancy and the active set apply at every step.
+   */
+  descendants<const O extends TreeOptions<S, K>>(
+    id: unknown,
+    options?: O,
+  ): Query<readonly ResultRow<S, K, O>[]>;
+  /** Rows above `id`. The options match {@link TableApi.descendants}. */
+  ancestors<const O extends TreeOptions<S, K>>(
+    id: unknown,
+    options?: O,
+  ): Query<readonly ResultRow<S, K, O>[]>;
+  /**
+   * Sets a to-many relation to exactly `ids`.
+   *
+   * One statement. A join table gains and loses link rows. A nullable foreign
+   * key is set or cleared, and the related row stays. A link that would have
+   * to delete a row is refused. Duplicate ids count once. An id that is not
+   * in the related table is `not_found`, and nothing is written.
+   */
+  sync(id: unknown, relation: string, ids: readonly unknown[], options?: SyncOptions): SyncHandle;
 } & (S["~byName"][K] extends { readonly "~archive": true } ? ArchiveOps<S, K, L> : unknown) &
   PresetApi<S, K, L> &
   TableExtras<S, K>;

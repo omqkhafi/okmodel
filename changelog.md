@@ -22,6 +22,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `relevance(query, { match, language })` orders a search column by how well it matches. `find({ search })` compiles to the same SQL as `matches` plus `relevance`.
 - A to-many `include` with `orderBy` and `limit` returns the first N related rows for each parent, in one lateral join. The primary key breaks ties (D251).
 - `rowNumber`, `rank`, `denseRank`, and `runningTotal` go in `select` on `find` or `one`. `page()` refuses a window when the call runs (D251).
+- `descendants(id)` and `ancestors(id)` read the rows below or above a row in one statement. A cycle returns. `depth`, `where`, `select`, `orderBy`, and `self` are optional. `ltree` is not required (D252).
+- `sync(id, relation, ids)` sets a to-many relation to exactly those ids and reports the links it added and removed. A join table changes link rows. A nullable foreign key is set or cleared and the related row stays (D252).
 
 ### 💥 Breaking Changes
 

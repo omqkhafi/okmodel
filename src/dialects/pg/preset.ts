@@ -59,6 +59,9 @@ export type ReservedPreset =
   | "insert"
   | "update"
   | "delete"
+  | "descendants"
+  | "ancestors"
+  | "sync"
   | "archive"
   | "restore"
   | "withArchived"
@@ -97,6 +100,9 @@ export const RESERVED_PRESETS: ReadonlySet<string> = new Set<ReservedPreset>([
   "insert",
   "update",
   "delete",
+  "descendants",
+  "ancestors",
+  "sync",
   "archive",
   "restore",
   "withArchived",
