@@ -16,6 +16,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### ✨ Added
 
+- The docs site starts with `bun dev` from the repository root.
 - Define is three pages, `/docs/define/config`, `/docs/define/schema`, and `/docs/define/table`. Each page holds the options that object accepts. Config, Schema, and Table are sections. Each section is one option. The code block focuses the line that option names, and the section lists that option's own values. A note that is not itself a value is a dashed card. The edge and icon follow info, warning, or error. `/docs/config`, `/docs/schema/*`, and `/docs/table/*` redirect there.
 - Let's start is `/docs/start`. `/docs/start/query` and `/docs/start/install` redirect there.
 - `/docs/config/file` redirects to Config.

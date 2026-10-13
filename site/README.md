@@ -3,7 +3,7 @@
 The documentation site. It is a private Next.js app, not part of the published `okmodel` package.
 
 ```sh
-bun run site:dev
+bun dev
 bun run site:check
 bun run site:build
 ```
