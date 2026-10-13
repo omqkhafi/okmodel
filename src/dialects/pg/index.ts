@@ -104,9 +104,14 @@ export { startsWith } from "./ops/startsWith.js";
 export {
   many,
   manyThrough,
+  morph,
+  morphMany,
+  morphTo,
   one,
   type ManyRelation,
   type ManyThroughRelation,
+  type MorphManyRelation,
+  type MorphRelation,
   type OneRelation,
   type RelationCall,
 } from "./relations.js";

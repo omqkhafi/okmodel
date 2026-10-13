@@ -167,6 +167,12 @@ export type ScalarOut = {
   readonly decode: ((wire: string) => unknown) | undefined;
 };
 
+/** One target inside a morph include's JSON value. */
+export type MorphOut = {
+  readonly type: string;
+  readonly fields: readonly ScalarOut[];
+};
+
 /** A nested include. `at` is a root column for `one` and the JSON column for `many`. */
 export type IncludeOut = {
   readonly name: string;
@@ -174,6 +180,15 @@ export type IncludeOut = {
   readonly at: number;
   readonly fields: readonly ScalarOut[];
   readonly nested: readonly IncludeOut[];
+  /**
+   * Set when the include is a morph.
+   *
+   * The column at `at` is one JSON array, `[type, ...fields]`, or null.
+   */
+  readonly morph?: {
+    readonly typeKey: string;
+    readonly targets: readonly MorphOut[];
+  };
 };
 
 /** Columns and includes in statement order. */
@@ -1195,6 +1210,15 @@ export function emitLimit(call: ReadCall, sink: Sink): void {
   sink.mark(`l:${String(limit)}`);
 }
 
+/** One target branch of a morph include. */
+export type ParsedMorphTarget = {
+  readonly type: string;
+  readonly table: string;
+  readonly sql: string;
+  readonly keySql: string;
+  readonly columns: readonly ColumnModel[];
+};
+
 export type ParsedInclude = {
   readonly name: string;
   readonly relation: RelationModel;
@@ -1206,6 +1230,17 @@ export type ParsedInclude = {
   /** Index in the projected list that is null when the related row is missing. */
   readonly anchor: number;
   readonly nested: readonly ParsedInclude[];
+  /**
+   * Set when the include is a morph.
+   *
+   * Absent on every other include, so a normal include does not carry it.
+   */
+  readonly morphTo?: {
+    readonly typeKey: string;
+    readonly typeSql: string;
+    readonly idSql: string;
+    readonly targets: readonly ParsedMorphTarget[];
+  };
 };
 
 export function selectedColumns(table: Indexed, select: unknown): readonly ColumnModel[] {

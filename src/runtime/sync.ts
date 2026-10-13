@@ -178,6 +178,12 @@ async function prepare(
   const owner = indexes(session.schema).get(table);
   if (owner === undefined) fail("OKM1120", `Table ${table} is not in the schema.`);
   const relation = requireRelation(owner, relationName);
+  if (relation.morph !== undefined) {
+    fail(
+      "OKM1120",
+      `sync does not follow ${relation.name}. Set ${relation.morph.typeField} and ${relation.morph.idField} with morphTo.`,
+    );
+  }
   const related = indexes(session.schema).get(relation.table);
   if (related === undefined) {
     fail(

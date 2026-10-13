@@ -10,7 +10,6 @@ An option or builder that is not in this version throws OKM1061 and names the pr
 
 | Item | Version | Prompt |
 | --- | --- | --- |
-| `morph` | later | M2 |
 | `computed` | later | no 0.x prompt |
 | `policies` | later | no 0.x prompt |
 
@@ -24,6 +23,7 @@ Also not in this version:
 - **A path ends on a unique declared key.** The table a path points at gains `UNIQUE` on its declared primary key only. That unique does not include a tenant column. Two tenants cannot share that id. Column or composite tenancy is the choice when they must. A path table's own primary key is not widened. `onConflict` on a path table is OKM1120. An insert or an update that sets the path column checks the new parent in that same statement and throws OKM1705 when the parent is outside the tenant. `batch()` refuses that update.
 - **`archivable()` and a path target do not combine.** The table a path ends on is refused when the schema is built (OKM1705). The fix names that table. A path child can still be archivable: archive and restore leave its foreign key unchanged.
 - **Three registered codes are not thrown in this version** (D183). OKM1110 (a feature needs a newer engine than `requires`): the one engine-dependent feature, `uuidv7()`, fails as OKM1812 when the schema is built with `requires` below 18, and `okm migrate apply` raises it before any statement when the server is older than 18 (D184). OKM1191 (no snapshot plan inside READ COMMITTED): every read is one statement, so a plan always exists. OKM1702 (unverifiable raw SQL on a tenant table): no public call takes raw SQL; typed raw SQL is M2.
+- **A morph include is the matching target, or null.** `morph("commentable", ["tasks", "lists"])` and `morphMany` are in this version (D255). `has`, `none`, and `every` on the morph itself, `select`, `where`, `orderBy`, and `limit` on that include, a nested morph include, `sync` of a morph, and `descendants` through a morph are OKM1120. A preset on the target table does not filter the include. A preset on the query does. The reverse many takes a limit, an order, and `has` / `none` / `every`.
 - **`okm ext test` and `okm ext scaffold` are not built.** `okm ext list` prints the extensions the connected server can install and the version that is installed. `okm ext check` compares those versions with the schema. The conformance suite and the scaffold are later.
 - **JSON Schema export is absent.** `insert` and `update` are Standard Schemas; they do not emit JSON Schema.
 - **`onRead` is stored and not applied.** `validation: { onRead: true }` is accepted and read values are not validated.
@@ -156,4 +156,4 @@ Bun.sql keeps `idleTimeout` at 0, which is Bun's default (no idle timer). A fini
 
 ## What works
 
-`.hidden()` stays out of default selects and includes. `.sensitive()` redacts values in logs, errors, and `inspect()`. `one()`, `many()` and `manyThrough()` work; a relation value that is not one of those throws OKM1061.
+`.hidden()` stays out of default selects and includes. `.sensitive()` redacts values in logs, errors, and `inspect()`. `one()`, `many()`, `manyThrough()`, `morph()`, and `morphMany()` work. A relation value that is not one of those throws OKM1061.
