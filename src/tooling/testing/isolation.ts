@@ -133,7 +133,11 @@ async function readTenant(
         if (isRow(item)) leak(facts.name, "stream", item);
       }
     } catch (error) {
-      if (!(error instanceof OkmError) || error.code !== "OKM1111") throw error;
+      if (!(error instanceof OkmError)) throw error;
+      const refused =
+        error.code === "OKM1111" ||
+        (error.code === "OKM1120" && error.message.includes("primary key"));
+      if (!refused) throw error;
     }
   }
 
@@ -532,7 +536,11 @@ async function readFiltered(
         if (isRow(item)) leak(name, "stream", item);
       }
     } catch (error) {
-      if (!(error instanceof OkmError) || error.code !== "OKM1111") throw error;
+      if (!(error instanceof OkmError)) throw error;
+      const refused =
+        error.code === "OKM1111" ||
+        (error.code === "OKM1120" && error.message.includes("primary key"));
+      if (!refused) throw error;
     }
   }
   const one: unknown = await handle.one({ where });

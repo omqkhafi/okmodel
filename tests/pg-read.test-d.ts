@@ -54,6 +54,15 @@ async function shapes(url: string): Promise<void> {
 
   // @ts-expect-error unknown fields are not in the where type
   void db.users.find({ where: { missing: true }, limit: 1 });
+
+  const streamed = db.users.find({ limit: 2 }).stream({ batch: 10 });
+  for await (const row of streamed) {
+    expectTypeOf(row).toMatchTypeOf<{ readonly id: string; readonly email: string }>();
+  }
+  db.users.find({ limit: 1 }).stream({
+    // @ts-expect-error batch is a number of rows
+    batch: "10",
+  });
 }
 
 void shapes;

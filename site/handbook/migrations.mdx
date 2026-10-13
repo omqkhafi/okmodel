@@ -10,8 +10,7 @@ bunx okm migrate apply
 
 ## The files check themselves
 
-`okm migrate check` replays the history in a scratch schema inside one transaction and rolls that transaction back. It does not edit system catalogs or real ACLs. Run it as a non-superuser. A superuser step can reach `COPY ... PROGRAM` and `lo_import` during that replay. Lint runs first. Transaction control in a step is refused, including a `COMMIT` inside `DO`. A `COMMIT` inside `CREATE FUNCTION` or `CREATE PROCEDURE` is not that refusal. A hand-written `public.t` does not change the real table. It fails if the files do not match the schema, or if the linter reports an error. Do not point it at a database you need to keep. A postgres.js `stream()` can end early when the connection drops; node-postgres and Bun.sql report that as unavailable.
-
+`okm migrate check` replays the history in a scratch schema inside one transaction and rolls that transaction back. It does not edit system catalogs or real ACLs. Run it as a non-superuser. A superuser step can reach `COPY ... PROGRAM` and `lo_import` during that replay. Lint runs first. Transaction control in a step is refused, including a `COMMIT` inside `DO`. A `COMMIT` inside `CREATE FUNCTION` or `CREATE PROCEDURE` is not that refusal. A hand-written `public.t` does not change the real table. It fails if the files do not match the schema, or if the linter reports an error. Do not point it at a database you need to keep.
 The [linter](/docs/reference/linter) reads the plan and does not connect. [Check](/docs/reference/check) is the command for a pipeline. A [backfill](/docs/reference/backfill) is a step inside a migration file. There is no separate backfill command.
 
 [Production](/docs/reference/production) is how a target is marked protected, and how connect refuses a database whose catalog is missing.

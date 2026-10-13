@@ -160,6 +160,27 @@ export async function below(url: string, id: bigint): Promise<void> {
 }
 ```
 
-## How it works
+## A lot of rows
+
+`stream()` walks the rows in batches. The default batch is 1000. Pass `batch` to change it. Each batch is a normal query, so leaving the loop does not hold a connection. The order is `orderBy`, then the primary key. Leave `orderBy` out and the rows follow the primary key. A table with no primary key cannot stream. `limit` is how many rows you want in total. `.all("export")` with no `limit` streams the set. `select`, `include`, a preset, and the archive set work the same way they do on `page()`.
+
+A row that changes while the stream runs can show up, or not. For one snapshot, run it inside `tx({ isolation: "repeatable read" })`. `signal` stops the stream. `timeout` is the time for the whole stream, not a fresh budget on every batch.
+
+```ts title="stream.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", { id: t.identity(), title: t.text() });
+const app = schema({ tables: [notes] });
+
+export async function each(url: string): Promise<void> {
+  await using db = connect(url, { schema: app });
+  for await (const row of db.notes.find().all("export").stream({ batch: 500 })) {
+    if (row.title === "") break;
+  }
+}
+```
+
+## How a search column works
 
 The column is a `tsvector`: the document Postgres matches, not the plain text. You fill it when you write, often with `to_tsvector` in `.generated(...)`. `natural` compiles to `websearch_to_tsquery`. `all-words` is `plainto_tsquery`, `phrase` is `phraseto_tsquery`, and `advanced` is `to_tsquery`. Ranking is `ts_rank`, highest first. `find({ search })` emits that same match and that same rank. A highlighted snippet, a search of a plain text column, a helper that writes the `to_tsvector` expression, and a ranked `page()` are not in this version.

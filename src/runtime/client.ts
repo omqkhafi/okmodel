@@ -485,15 +485,15 @@ function start(
       }
       return value;
     },
-    (prepare) => ({
+    () => ({
       all(reason: string) {
         return start(session, op, table, options, { ...mods, all: reason }, view);
       },
       required() {
         return start(session, op, table, options, { ...mods, required: true }, view);
       },
-      stream() {
-        return streamLazy(session, call, prepare);
+      stream(batch?: object) {
+        return streamLazy(session, call, mods, view, batch);
       },
     }),
   );
@@ -679,11 +679,13 @@ export function readHandle(
 function streamLazy(
   session: Session,
   call: ReadCall,
-  prepare: () => Promise<Prepared>,
+  mods: Mods,
+  view: ArchiveView | undefined,
+  batch: object | undefined,
 ): AsyncIterable<unknown> {
   return (async function* () {
     const { streamRows } = await import("./read-stream.js");
-    yield* streamRows(session, call, prepare, (error) => logged(session, error));
+    yield* streamRows(session, call, mods, view, batch, (error) => logged(session, error));
   })();
 }
 
