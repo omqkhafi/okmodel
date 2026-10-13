@@ -101,6 +101,13 @@ export type PreparedWrite = {
   /** Set when `finish` can refuse a statement that already ran. `batch` refuses such a write (D183). */
   readonly checked?: "restore" | "expect" | "parent";
   finish(results: readonly ExecuteResult[]): unknown;
+  /**
+   * More statements once the planned ones have run.
+   *
+   * First-or-create uses this when the insert returned fewer rows than it was
+   * given. Empty means the insert already returned every row.
+   */
+  follow?(results: readonly ExecuteResult[]): readonly Statement[];
 };
 
 type Cell =
@@ -114,11 +121,19 @@ type Planned = {
   readonly shape: "row" | "rows" | "count";
   readonly expect: number | undefined;
   readonly keys: readonly (readonly (string | null)[])[] | undefined;
-  readonly keyFields: readonly string[] | undefined;
+  /** Conflict columns, in key order. Used to match a returned row to its input. */
+  readonly keyColumns: readonly ColumnModel[] | undefined;
   /** Rows a path insert must return. Fewer means the parent is not in this tenant. */
   readonly parent?: number;
   /** The statement returns matched and updated counts. A shortfall is OKM1705. */
   readonly parentGuard?: boolean;
+  /**
+   * Statements to run when the insert did not return every input row.
+   *
+   * First-or-create only. The lookup is a new statement so it sees a row
+   * committed while the insert waited (D246).
+   */
+  readonly recover?: (rows: readonly Record<string, unknown>[]) => readonly Statement[];
 };
 
 type StoredSchema = QuerySchema & {
@@ -203,7 +218,10 @@ export async function executeWrite(
   if (plan !== undefined) return prepared;
   if (prepared.statements.length === 0) return prepared.finish([]);
   const results = await runWrite(host, prepared.statements, prepared.options);
-  return prepared.finish(results);
+  const more = prepared.follow?.(results);
+  if (more === undefined || more.length === 0) return prepared.finish(results);
+  const extra = await runWrite(host, more, prepared.options);
+  return prepared.finish(results.concat(extra));
 }
 
 /**
@@ -246,6 +264,12 @@ async function prepareWrite(
         : planned.expect !== undefined
           ? { checked: "expect" as const }
           : {}),
+      ...(planned.recover === undefined
+        ? {}
+        : {
+            follow: (results: readonly ExecuteResult[]) =>
+              planned.recover?.(decodePlanned(results, planned.outputs)) ?? [],
+          }),
       finish: (results) => finish(results, planned, table),
     };
   } catch (error) {
@@ -355,7 +379,7 @@ async function planInsert(
       shape,
       expect,
       keys: undefined,
-      keyFields: undefined,
+      keyColumns: undefined,
     };
   }
   const conflictMod =
@@ -382,30 +406,34 @@ async function planInsert(
       statements.push(withParams(`${built.text}${clause}`, built.params));
       continue;
     }
-    const keyRows =
-      conflict.kind === "return" ? slice.map((row) => keyWire(conflict.columns, row)) : [];
-    for (const row of keyRows) keys.push([...row]);
+    if (conflict.kind === "return") {
+      for (const row of slice) keys.push(keyWire(conflict.columns, row));
+    }
     statements.push(
-      conflictMod.finishInsert(
-        built.text,
-        clause,
-        built.params ?? [],
-        conflict,
-        table,
-        returning,
-        keyRows,
-      ),
+      conflictMod.finishInsert(built.text, clause, built.params ?? [], conflict, table),
     );
   }
+  const conflictColumns = conflict?.kind === "return" ? conflict.columns : undefined;
   return {
     statements,
     outputs,
     shape,
     expect,
-    keys: conflict?.kind === "return" ? keys : undefined,
-    keyFields:
-      conflict?.kind === "return" ? conflict.columns.map((column) => column.field) : undefined,
+    keys: conflictColumns === undefined ? undefined : keys,
+    keyColumns: conflictColumns,
     ...(path ? { parent: rows.length } : {}),
+    ...(conflictColumns === undefined || conflictMod === undefined
+      ? {}
+      : {
+          recover: (found: readonly Record<string, unknown>[]) =>
+            lookupStatements(
+              conflictMod,
+              table,
+              conflictColumns,
+              returning,
+              missingKeys(found, conflictColumns, keys),
+            ),
+        }),
   };
 }
 
@@ -429,6 +457,7 @@ function planUpdate(
       pathAssignment(schema.tenancy, table.model.name, row.set, scope);
       return { ...row, where: stack(row.where, mods.presets) };
     });
+    rejectDuplicateTargets(table, rows);
     const moves = rows.some(
       (row) => pathField(schema.tenancy, table.model.name, row.set) !== undefined,
     );
@@ -439,7 +468,7 @@ function planUpdate(
         shape: returning === undefined ? "count" : "rows",
         expect,
         keys: undefined,
-        keyFields: undefined,
+        keyColumns: undefined,
         parentGuard: true,
       };
     }
@@ -449,7 +478,7 @@ function planUpdate(
       shape: returning === undefined ? "count" : "rows",
       expect,
       keys: undefined,
-      keyFields: undefined,
+      keyColumns: undefined,
     };
   }
   if (!isRecord(input)) fail("OKM1121", "update expects { where, set } or a list of rows.");
@@ -465,7 +494,7 @@ function planUpdate(
       shape: returning === undefined ? "count" : "rows",
       expect,
       keys: undefined,
-      keyFields: undefined,
+      keyColumns: undefined,
       parentGuard: true,
     };
   }
@@ -489,7 +518,7 @@ function planUpdate(
     shape: returning === undefined ? "count" : "rows",
     expect,
     keys: undefined,
-    keyFields: undefined,
+    keyColumns: undefined,
   };
 }
 
@@ -516,7 +545,7 @@ function planDelete(
     shape: returning === undefined ? "count" : "rows",
     expect: expectOf(options, mods),
     keys: undefined,
-    keyFields: undefined,
+    keyColumns: undefined,
   };
 }
 
@@ -528,14 +557,11 @@ function finish(results: readonly ExecuteResult[], planned: Planned, table: stri
     checkExpect(count, planned.expect, table, "write");
     return { count };
   }
-  const decoded: Record<string, unknown>[] = [];
-  for (const result of results) {
-    for (const row of result.rows) decoded.push(decodeRow(planned.outputs, row));
-  }
+  const decoded = decodePlanned(results, planned.outputs);
   const rows =
-    planned.keys === undefined || planned.keyFields === undefined
+    planned.keys === undefined || planned.keyColumns === undefined
       ? decoded
-      : orderByKeys(decoded, planned.keyFields, planned.keys);
+      : orderByKeys(decoded, planned.keyColumns, planned.keys);
   checkExpect(rows.length, planned.expect, table, "insert");
   if (planned.parent !== undefined && rows.length < planned.parent) {
     throw new OkmError("OKM1705", `Insert on ${table} did not find a parent in this tenant.`, {
@@ -788,13 +814,134 @@ function updateSliceBody(
   if (wrapWhere) sql.text(")");
 }
 
+function decodePlanned(
+  results: readonly ExecuteResult[],
+  outputs: Outputs,
+): Record<string, unknown>[] {
+  const decoded: Record<string, unknown>[] = [];
+  for (const result of results) {
+    for (const row of result.rows) decoded.push(decodeRow(outputs, row));
+  }
+  return decoded;
+}
+
+function lookupStatements(
+  mod: typeof import("./conflict.js"),
+  table: Indexed,
+  columns: readonly ColumnModel[],
+  returning: readonly ColumnModel[],
+  keyRows: readonly (readonly (string | null)[])[],
+): readonly Statement[] {
+  if (keyRows.length === 0 || returning.length === 0) return [];
+  const width = Math.max(1, columns.length);
+  const size = Math.max(1, Math.floor(WRITE_PARAM_BUDGET / width));
+  const statements: Statement[] = [];
+  for (let index = 0; index < keyRows.length; index += size) {
+    statements.push(
+      mod.lookupExisting(table, columns, returning, keyRows.slice(index, index + size)),
+    );
+  }
+  return statements;
+}
+
+function missingKeys(
+  rows: readonly Record<string, unknown>[],
+  columns: readonly ColumnModel[],
+  keys: readonly (readonly (string | null)[])[],
+): (readonly (string | null)[])[] {
+  const have = new Set(rows.map((row) => rowKey(columns, row)));
+  const missing: (readonly (string | null)[])[] = [];
+  const seen = new Set<string>();
+  for (const key of keys) {
+    const id = key.map((value) => value ?? "").join("\0");
+    if (have.has(id) || seen.has(id)) continue;
+    seen.add(id);
+    missing.push(key);
+  }
+  return missing;
+}
+
+function rejectDuplicateTargets(
+  table: Indexed,
+  rows: readonly { readonly where: unknown }[],
+): void {
+  if (rows.length < 2) return;
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const key = canonical(row.where);
+    if (seen.has(key)) {
+      fail(
+        "OKM1120",
+        `update on ${table.model.name} lists the same target twice.`,
+        "List each row once.",
+      );
+    }
+    seen.add(key);
+  }
+}
+
+/** Distinguishes values that have no stable text. A repeat is not reported as a duplicate. */
+let unresolved = 0;
+
+function canonical(value: unknown): string {
+  if (isOperator(value)) return `op:${operatorName(value)}:${canonical(operatorValue(value))}`;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return JSON.stringify(value);
+  }
+  if (value === null) return "null";
+  if (value === undefined) return "undefined";
+  if (typeof value === "bigint") return JSON.stringify(value.toString());
+  if (Array.isArray(value)) return `[${value.map((item) => canonical(item)).join(",")}]`;
+  if (isRecord(value)) {
+    if (plainRecord(value)) {
+      const keys = Object.keys(value).sort();
+      return `{${keys.map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`;
+    }
+    return boxed(value);
+  }
+  return fresh();
+}
+
+function plainRecord(value: object): boolean {
+  const proto: unknown = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+function boxed(value: object): string {
+  if (value instanceof Uint8Array) return `bytes:${hexBytes(value)}`;
+  if (value instanceof Date) {
+    const time = value.getTime();
+    if (Number.isNaN(time)) return fresh();
+    return `date:${value.toISOString()}`;
+  }
+  const read = (value as { readonly toString: () => string }).toString;
+  if (read === Object.prototype.toString) return fresh();
+  const text = read.call(value);
+  if (text.length > 0 && text !== "[object Object]") return `text:${text}`;
+  return fresh();
+}
+
+function hexBytes(value: Uint8Array): string {
+  let hex = "";
+  for (const byte of value) hex += byte.toString(16).padStart(2, "0");
+  return hex;
+}
+
+function fresh(): string {
+  unresolved += 1;
+  return `~${String(unresolved)}`;
+}
+
 function orderByKeys(
   rows: readonly Record<string, unknown>[],
-  fields: readonly string[],
+  columns: readonly ColumnModel[],
   keys: readonly (readonly (string | null)[])[],
 ): Record<string, unknown>[] {
   const found = new Map<string, Record<string, unknown>>();
-  for (const row of rows) found.set(fields.map((field) => wireKey(row[field])).join("\0"), row);
+  for (const row of rows) {
+    const id = rowKey(columns, row);
+    if (!found.has(id)) found.set(id, row);
+  }
   const ordered: Record<string, unknown>[] = [];
   for (const key of keys) {
     const row = found.get(key.map((value) => value ?? "").join("\0"));
@@ -803,12 +950,33 @@ function orderByKeys(
   return ordered;
 }
 
-function wireKey(value: unknown): string {
-  if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
-    return String(value);
+function rowKey(columns: readonly ColumnModel[], row: Record<string, unknown>): string {
+  let id = "";
+  for (let index = 0; index < columns.length; index += 1) {
+    const column = columns[index];
+    if (column === undefined) continue;
+    if (index > 0) id += "\0";
+    id += valueKey(column, row[column.field]);
   }
-  return "";
+  return id;
+}
+
+function valueKey(column: ColumnModel, value: unknown): string {
+  if (value === undefined || value === null) return "";
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    typeof value === "bigint"
+  ) {
+    return wireKey(value);
+  }
+  return column.encode(value);
+}
+
+function wireKey(value: string | number | boolean | bigint): string {
+  if (typeof value === "string") return value;
+  return String(value);
 }
 
 function insertHead(
@@ -1201,6 +1369,7 @@ function updateItem(
   if (!isRecord(value)) fail("OKM1121", "update expects { where, set } or a list of rows.");
   rejectUpdateKeys(value, true);
   const set = writeSet(table, value.set, allow, tenancy);
+  if (Object.keys(set).length === 0) fail("OKM1120", "update set is empty.");
   if (value.where !== undefined) return { where: value.where, set };
   if (value.id !== undefined) return { where: { id: value.id }, set };
   fail("OKM1102", `update on ${table.model.name} needs id or where for each row.`);

@@ -8,7 +8,7 @@
  * the transaction survives. Loaded the first time a batch is awaited.
  */
 
-import type { ExecuteOptions, Statement } from "../contracts/driver.js";
+import type { ExecuteOptions, ExecuteResult, Statement } from "../contracts/driver.js";
 import { OkmError } from "../contracts/error.js";
 import { settleCall, withHttp, type Session } from "./client.js";
 import { fail, isRecord, rejectKeys } from "./plan.js";
@@ -112,10 +112,66 @@ async function run(
   } catch (error) {
     throw at(error, starts);
   }
+  const extra = await recover(session, prepared, results, starts, options);
   return prepared.map((item, index) => {
     const from = starts[index] ?? 0;
-    return item.finish(results.slice(from, from + item.statements.length));
+    const slice = results.slice(from, from + item.statements.length);
+    const more = extra.get(index);
+    return item.finish(more === undefined ? slice : slice.concat(more));
   });
+}
+
+async function recover(
+  session: Session,
+  prepared: readonly PreparedWrite[],
+  results: readonly ExecuteResult[],
+  starts: readonly number[],
+  options: Record<string, unknown>,
+): Promise<Map<number, readonly ExecuteResult[]>> {
+  const pending: { readonly index: number; readonly statements: readonly Statement[] }[] = [];
+  for (let index = 0; index < prepared.length; index += 1) {
+    const item = prepared[index];
+    if (item?.follow === undefined) continue;
+    const from = starts[index] ?? 0;
+    const more = item.follow(results.slice(from, from + item.statements.length));
+    if (more.length === 0) continue;
+    pending.push({ index, statements: more });
+  }
+  const found = new Map<number, readonly ExecuteResult[]>();
+  if (pending.length === 0) return found;
+  const flat: Statement[] = [];
+  const extraStarts: number[] = [];
+  for (const item of pending) {
+    extraStarts.push(flat.length);
+    flat.push(...item.statements);
+  }
+  let ran: readonly ExecuteResult[];
+  try {
+    ran = await runWrite(session, flat, call(options), true);
+  } catch (error) {
+    throw mapExtra(error, pending, extraStarts);
+  }
+  for (let index = 0; index < pending.length; index += 1) {
+    const item = pending[index];
+    if (item === undefined) continue;
+    const from = extraStarts[index] ?? 0;
+    found.set(item.index, ran.slice(from, extraStarts[index + 1] ?? ran.length));
+  }
+  return found;
+}
+
+function mapExtra(
+  error: unknown,
+  pending: readonly { readonly index: number }[],
+  extraStarts: readonly number[],
+): unknown {
+  const failed = (error as { readonly batchIndex?: unknown } | null)?.batchIndex;
+  const move = (error as { readonly at?: (index: number | null) => unknown } | null)?.at;
+  if (typeof failed !== "number" || typeof move !== "function") return error;
+  let slot = 0;
+  while (slot + 1 < extraStarts.length && (extraStarts[slot + 1] ?? Infinity) <= failed) slot += 1;
+  const op = pending[slot]?.index ?? slot;
+  return op === failed ? error : move.call(error, op);
 }
 
 function call(options: Record<string, unknown>): ExecuteOptions | undefined {

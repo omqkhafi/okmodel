@@ -434,8 +434,8 @@ M1 ships one physical strategy per dialect (Postgres: single statement with `LAT
 | `find` with includes | one snapshot | 1 in M1 | — |
 | `insert([...])` | all or nothing | 1 per chunk, chunks in one transaction | — |
 | `insert` with `onConflict: { update }` | per row | 1 | safe on the named unique |
-| `insert` with `onConflict: "return"` | per row | 1–2 | safe on the named unique; returns the existing row |
-| `update([...])` per-row list | all or nothing | 1 | — |
+| `insert` with `onConflict: "return"` | per row | 1–2 | safe on the named unique; returns the existing row. The second statement runs only when the insert returned nothing, so a concurrent insert is visible (D246) |
+| `update([...])` per-row list | all or nothing | 1 per chunk | a repeated target is OKM1120; a miss is not an error (D246) |
 | `update` with `lock: "skip"` | per statement | 1 | rows locked by others are skipped (job queues) |
 | `archive` / `restore` | all or nothing | 1 per table in the cascade chain | `restore` fails on unique conflicts |
 | `sync` | all or nothing | 2–3 in one transaction | — |
@@ -919,8 +919,8 @@ Relations are filterable only when listed with the exact fields allowed (`relati
 
 | Method | Rule |
 |---|---|
-| `insert(data \| data[], opts)` | unknown keys dropped; guarded fields refused; auto-chunked. `onConflict`: `"error"` (default), `"ignore"`, `{ on, update }` (upsert), `{ on, return: true }` (first-or-create). `on` must name a unique constraint (OKM1104). On a tenant table, name it without the tenant key; the target includes the key (D221) |
-| `update(target, opts)` | target is `{ where, set }` or a list `[{ id \| where, set }]` (per-row values in one statement). `where` required or `.all("reason")`. `lock: "skip"` with `limit` claims rows (job queues) |
+| `insert(data \| data[], opts)` | unknown keys dropped; guarded fields refused; auto-chunked. `onConflict`: `"error"` (default), `"ignore"`, `{ on, update }` (upsert), `{ on, return: true }` (first-or-create). `on` must name a unique constraint (OKM1104). On a tenant table, name it without the tenant key; the target includes the key (D221). A match does not change the existing row. When the insert returns nothing, a second statement reads that row (D246) |
+| `update(target, opts)` | target is `{ where, set }` or a list `[{ id \| where, set }]` (per-row values in one statement, chunked like insert). `where` required or `.all("reason")`. The same target twice in one list is OKM1120. A target that matches nothing is not an error; `count` is the rows changed. `lock: "skip"` with `limit` claims rows (job queues) |
 | `delete({ where }, opts)` | permanent deletion of the matched records. On `archivable` tables it targets the active set unless `withArchived()` / `onlyArchived()` is used |
 | `archive({ where }, opts)` | `archivable` tables only; returns `{ count, archiveId }` |
 | `restore({ where } \| { archiveId }, opts)` | `archivable` tables only; targets the archived set |
