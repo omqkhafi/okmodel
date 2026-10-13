@@ -46,6 +46,7 @@ export type ReadBuild = (
   sink: Sink,
   outputs: Built | undefined,
   call: ReadCall,
+  hooks?: IncludeHooks,
 ) => void;
 
 /** One read call. `all` is the `.all(reason)` escape for an unbounded read. */
@@ -198,6 +199,13 @@ export type IncludeHooks = {
     alias: string,
     depth: number,
   ): void;
+  /**
+   * Reports whether an include's `where` or `orderBy` needs the operator compiler.
+   *
+   * The root check does not walk includes. This does, and only after the
+   * include planner has loaded.
+   */
+  needsOperator(schema: QuerySchema, call: ReadCall): boolean;
 };
 
 export type Built = {
@@ -326,12 +334,13 @@ export function readNeedsOperatorSql(schema: QuerySchema, call: ReadCall): boole
 /**
  * Reports whether `orderBy` holds a `relevance` value.
  *
- * Called only before the operator compiler has loaded. A later read skips it.
+ * Called before the operator compiler has loaded. The include planner uses it
+ * for a related table.
  *
  * @param orderBy - The caller's order
  * @returns `true` when a value is `relevance`
  */
-function orderHasRelevance(orderBy: unknown): boolean {
+export function orderHasRelevance(orderBy: unknown): boolean {
   if (!isRecord(orderBy)) return false;
   for (const key of Object.keys(orderBy)) {
     const value = orderBy[key];
@@ -370,7 +379,18 @@ export function emitRelationFrom(
 const SYNC_OPERATORS = ",lt,lte,gt,gte,between,inList,notIn,";
 const TEXT_OPERATORS = ",startsWith,endsWith,contains,like,ilike,";
 
-function needsOperatorSql(table: Indexed, value: unknown, key?: string): boolean {
+/**
+ * Reports whether a filter needs the operator compiler.
+ *
+ * Equality and text patterns do not. The include planner calls this for a
+ * related table.
+ *
+ * @param table - The table the filter reads
+ * @param value - A `where` value
+ * @param key - The field, when `value` is that field's operand
+ * @returns `true` when the operator compiler has to load
+ */
+export function needsOperatorSql(table: Indexed, value: unknown, key?: string): boolean {
   if (isOperator(value)) {
     const name = operatorName(value);
     if (name === "or" || name === "and") {
@@ -636,7 +656,7 @@ function emitRead(
     );
   }
   if (call.build !== undefined) {
-    call.build(schema, table, sink, outputs, call);
+    call.build(schema, table, sink, outputs, call, hooks);
     return;
   }
   rejectOptions(call);
@@ -1129,7 +1149,7 @@ export function refuseHidden(column: ColumnModel): void {
   fail("OKM1120", `Field ${column.field} is hidden.`, "Call hidden({ filterable: true }).");
 }
 
-function emitLimit(call: ReadCall, sink: Sink): void {
+export function emitLimit(call: ReadCall, sink: Sink): void {
   if (call.op === "one") {
     const ordered =
       call.orderBy !== undefined && isRecord(call.orderBy) && Object.keys(call.orderBy).length > 0;

@@ -849,6 +849,8 @@ Aggregates decode with the source column's codec. `count` is a number. `min` and
 
 `bucket(column, unit, { tz, as, weekStart? })` groups a `timestamptz` or `date` column (D247). Units are `second`, `minute`, `hour`, `day`, `week`, `month`, `quarter`, and `year`. `as` names the result key. Day, week, month, quarter, and year return `Temporal.PlainDate` (the local date the period starts). Second, minute, and hour return `Temporal.Instant`. A nullable column includes null. A NULL timestamp is one group: the `as` key is present and the value is null. `tz` is an IANA name, required on `timestamptz` and refused on `date`. `timestamp` without a zone is refused. `weekStart` is `monday` (the default), `sunday`, or `saturday`, and only with unit `week`. A bad unit, zone, or name is OKM1120 before any SQL. There is still no `having` and no gap filling. Time-zone date helpers (`onDay` and the rest of tool 5) are deferred.
 
+`rowNumber`, `rank`, `denseRank`, and `runningTotal` go in `select` on `find` or `one` (D251). `partitionBy` is the group. Omit it to number the whole result. `orderBy` is required and is the order inside the group. `as` is the result key and must not be a column name. `rowNumber` starts at 1 and gives ties distinct numbers: the primary key is appended inside the window, ascending, for every primary-key field you did not name. `runningTotal` uses that same tie-break, so the running total is stable, and it follows the column's value type the way `sum` does (an integer is a number, a `numeric` column is the decimal string, and a text column is OKM1124). `rank` leaves a tie tied and the next rank skips. `denseRank` leaves a tie tied and the next rank is the next number. Neither appends the primary key, because that would split the tie. A window in `page` is OKM1120 when the call runs. The keyset cursor has no window value to encode. `lag`, `lead`, a frame (`ROWS` or `RANGE`), and the other window functions are not in this version.
+
 Query modifiers apply to any read: `.stream()` (async iteration over a server-side cursor, driver capability), `.required()`, `.safe()`, `.inspect()`, `.sql()`, `.explain()`.
 
 ```ts no-check="read illustration; scoped is defined in the surrounding section"
@@ -885,7 +887,7 @@ const today = await scoped.tasks.pending().ownedBy(userId).find({
 - Field names in `where`, `select`, `orderBy` and `include` are checked against the catalog at runtime (OKM1120). A hidden field in `where` or `orderBy` is the same code. `hidden({ filterable: true })` allows those two.
 - `undefined` in a `find` filter means no filter. In `update`, `delete`, `archive`, and `restore`, a where with no effective predicate, including undefined values, is OKM1102. An empty `or()` branch is OKM1121. A field value is a leaf (D210).
 - One logical operation per call (section 5.3). Reads and relation loading: the statement count depends on query shape, never on result cardinality; no lazy loading. Writes may be split by input size or driver limits, within the operation's declared atomicity.
-- To-many `include` requires `limit` or `.all("reason")` (OKM1105); hidden fields and archived rows are excluded from includes.
+- To-many `include` requires `limit` or `.all("reason")` (OKM1105); hidden fields and archived rows are excluded from includes. `limit` is the first N related rows for each parent, in one lateral join, not N rows in total (D251). `orderBy` is that order. The primary key is appended ascending for every primary-key field you did not name, so a tie stays stable. With no `orderBy`, the related rows follow the primary key. `select`, a nested `include`, and a preset apply. `matches` and `relevance` work in the include's `where` and `orderBy`. `search` stays on `find` and `count`.
 
 #### Operators by column type (0.2)
 
@@ -975,7 +977,7 @@ Specified before M1 and tested on every driver through the conformance suite:
 | # | Tool | pg | sqlite | mysql | Milestone |
 |---|---|---|---|---|---|
 | 1 | Computed fields | ✓ | ✓ | ✓ | M1 |
-| 2 | Top-N per group in `include` | ✓ | ✓ | ✓ | M2 |
+| 2 | Top-N per group in `include` | ✓ | ✓ | ✓ | 0.7 |
 | 3 | `has` / `none` / `every` relation filters | ✓ | ✓ | ✓ | M1 |
 | 4 | `aggregate` with `bucket(col, unit, { tz, as })` | ✓ | no tz | ✓ | 0.7 |
 | 5 | Time-zone date helpers | deferred | partial | ✓ | later |
@@ -985,13 +987,13 @@ Specified before M1 and tested on every driver through the conformance suite:
 | 9 | Atomic operators | ✓ | no arrays | no arrays | M2 |
 | 10 | `sync` | ✓ | ✓ | ✓ | M2 |
 | 11 | `descendants` / `ancestors` | ✓ | ✓ | ✓ (8+) | M2 |
-| 12 | Window helpers | ✓ | ✓ | ✓ | M2 |
+| 12 | Window helpers | ✓ | ✓ | ✓ | 0.7 |
 | 13 | Full-text search | ✓ | ✓ | ✓ | M2 |
 | 14 | Row claiming (`update` with `lock: "skip"`) | ✓ | — | ✓ (8+) | M2 |
 | 15 | Named composable queries | ✓ | ✓ | ✓ | M2 |
 | 16 | Views and materialized views, section 5.7 | ✓ | views | views | M1 |
 
-Tool 13 is `find({ search })` and `count({ search })` (D250, section 10). Tool 15 adds no call: a named query is a preset (section 6.2.1) or a function that returns `find` options.
+Tool 2 is a to-many `include` with `orderBy` and `limit`: the first N related rows for each parent, one lateral join, with the primary key as the tie-break (D251, section 10). Tool 12 is `rowNumber`, `rank`, `denseRank`, and `runningTotal` in `select` on `find` or `one` (D251, section 10). Tool 13 is `find({ search })` and `count({ search })` (D250, section 10). Tool 15 adds no call: a named query is a preset (section 6.2.1) or a function that returns `find` options.
 
 ## 14. Errors
 

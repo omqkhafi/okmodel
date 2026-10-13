@@ -572,8 +572,13 @@ export function readHandle(
     if (call.search !== undefined) {
       call = (await import("./text-search.js")).applyTextSearch(session.schema, call);
     }
-    if (readNeedsOperatorSql(session.schema, call)) await loadOperatorSql();
     const hooks = await hooksFor(call);
+    if (readNeedsOperatorSql(session.schema, call) || hooks?.needsOperator(session.schema, call)) {
+      await loadOperatorSql();
+    }
+    if (call.build === undefined && selectHasWindow(call.select)) {
+      call = (await import("./window.js")).attach(session.schema, call);
+    }
     const bound = bindCall(session.schema, call, hooks);
     let plan = session.cache.get(bound.key);
     if (plan === undefined) {
@@ -592,6 +597,7 @@ export function readHandle(
     call.search === undefined &&
     call.include === undefined &&
     mods.uses === undefined &&
+    !selectHasWindow(call.select) &&
     !readNeedsOperatorSql(session.schema, call);
   const run = async (): Promise<unknown> => {
     await session.connected;
@@ -773,6 +779,11 @@ let operatorSql: Promise<void> | undefined;
 function loadOperatorSql(): Promise<void> {
   operatorSql ??= import("./operator-sql.js").then(() => undefined);
   return operatorSql;
+}
+
+/** A non-string `select` entry is a window helper. Field names stay on the plain path. */
+function selectHasWindow(select: unknown): boolean {
+  return Array.isArray(select) && select.some((item) => typeof item !== "string");
 }
 
 function hooksFor(call: ReadCall): Promise<IncludeHooks | undefined> {

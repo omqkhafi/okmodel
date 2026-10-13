@@ -22,6 +22,72 @@ export async function read(url: string): Promise<void> {
 
 [Safety](/docs/model/safety) covers fields that are stored but not returned, and writes that need an explicit allow.
 
+## The first rows of a relation
+
+A to-many include takes `limit`. That limit is the first N related rows of each parent, not N rows in total. The read is still one statement: a lateral join. Pass `orderBy` for the order inside that parent. The primary key follows it, ascending, for any key you did not name, so two rows with the same score stay in the same order. Leave `orderBy` out and the related rows follow the primary key. A parent with no related rows comes back with an empty list. `select`, a nested include, and a preset still apply. `matches` and `relevance` work inside the include. `search` stays on `find` and `count`.
+
+```ts title="include.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { many, schema, table, t } from "okmodel/pg";
+
+const posts = table(
+  "posts",
+  { id: t.identity(), title: t.text() },
+  { relations: { comments: many("comments", "postId") } },
+);
+const comments = table("comments", {
+  id: t.identity(),
+  postId: t.bigint().references("posts"),
+  body: t.text(),
+  score: t.integer(),
+});
+const app = schema({ tables: [posts, comments] });
+
+export async function read(url: string): Promise<void> {
+  await using db = connect(url, { schema: app });
+  const latest = await db.posts.find({
+    limit: 20,
+    include: {
+      comments: { orderBy: { score: "desc" }, limit: 3, select: ["id", "body"] },
+    },
+  });
+  if (latest.length < 0) throw new Error("the include did not run");
+}
+```
+
+## Number the rows
+
+`rowNumber`, `rank`, `denseRank`, and `runningTotal` go in `select` on `find` or `one`. `partitionBy` is the group. Leave it out to number the whole result. `orderBy` is the order inside the group, and `as` is the name on the row. `rowNumber` and `runningTotal` append the primary key, so a tie stays stable. `rank` and `denseRank` leave a tie tied: two equal amounts share a rank, and `rank` skips the next number. A running total uses the column's type. An integer is a number. A `numeric` column is the decimal string. `page()` refuses a window when the call runs.
+
+```ts title="windows.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { rank, rowNumber, runningTotal, schema, table, t } from "okmodel/pg";
+
+const tasks = table("tasks", {
+  id: t.identity(),
+  status: t.text(),
+  amount: t.integer(),
+});
+const app = schema({ tables: [tasks] });
+
+export async function read(url: string): Promise<void> {
+  await using db = connect(url, { schema: app });
+  const numbered = await db.tasks.find({
+    select: [
+      "id",
+      "status",
+      rowNumber({ partitionBy: ["status"], orderBy: { amount: "desc" }, as: "n" }),
+      rank({ partitionBy: ["status"], orderBy: { amount: "desc" }, as: "r" }),
+      runningTotal("amount", { partitionBy: ["status"], orderBy: { id: "asc" }, as: "soFar" }),
+    ],
+    limit: 20,
+  });
+  if (numbered.length < 0 || numbered[0]?.n === undefined) {
+    throw new Error("the window did not run");
+  }
+}
+```
+
 ## Search your text
 
 Pass the words. When the table has one column built for search, that is the column. The closest rows come back first, then the primary key, so the order stays put. `count({ search })` uses the same match and does not order. An `orderBy` you pass replaces the ranking. `where`, `select`, `include`, and a preset still apply. `page()` does not take `search` in this version: use `find({ search, limit })` for one ranked list.

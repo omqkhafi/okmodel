@@ -20,6 +20,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `update` with `lock: "skip"` and `limit` claims up to that many rows in one statement and leaves rows another transaction already holds. A read still uses `lock: "update"` and `wait: "skip"` inside `tx()` (D249).
 - `find({ search })` and `count({ search })` look through a column built for search. A string is enough when the table has one. `{ for, in, match, language }` names the text, the column, how to match, and the language. Rows come back closest first, then by primary key, unless you pass `orderBy`. `search` combines with `where`, `select`, `include`, and presets. `page()` does not take `search` in this version (D250).
 - `relevance(query, { match, language })` orders a search column by how well it matches. `find({ search })` compiles to the same SQL as `matches` plus `relevance`.
+- A to-many `include` with `orderBy` and `limit` returns the first N related rows for each parent, in one lateral join. The primary key breaks ties (D251).
+- `rowNumber`, `rank`, `denseRank`, and `runningTotal` go in `select` on `find` or `one`. `page()` refuses a window when the call runs (D251).
 
 ### 💥 Breaking Changes
 
