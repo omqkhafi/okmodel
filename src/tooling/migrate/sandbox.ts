@@ -208,6 +208,12 @@ async function inCheckTransaction<T>(
   let open = false;
   let failure: unknown;
   let value: T | undefined;
+  let created = false;
+  let sawCommit = false;
+  // Set when ROLLBACK landed and the transaction id never changed. The schema
+  // was created in that transaction, so nothing remains to drop.
+  let rolledBack = false;
+  let xid = "";
   try {
     await assertStableBackend(async () => {
       const rows = await reserved.unsafe("select pg_backend_pid()::text as pid");
@@ -216,8 +222,9 @@ async function inCheckTransaction<T>(
     }, allowPooler);
     await reserved.unsafe("begin");
     open = true;
-    const xid = await readXid(reserved);
+    xid = await readXid(reserved);
     await reserved.unsafe(`create schema ${quoteIdent(scratch)}`);
+    created = true;
     await reserved.unsafe(`set local search_path to ${quoteIdent(scratch)}`);
     await setLocalTimeout(reserved, "lock_timeout", config.timeouts?.lock);
     await setLocalTimeout(reserved, "statement_timeout", config.timeouts?.statement);
@@ -228,17 +235,31 @@ async function inCheckTransaction<T>(
       if (isConnectionLost(error)) lost.on = true;
       return undefined;
     });
-    if (!lost.on && after !== xid) throw xidChanged();
-    if (!lost.on) await reserved.unsafe("rollback");
+    if (!lost.on && after !== xid) {
+      sawCommit = true;
+      throw xidChanged();
+    }
+    if (!lost.on) {
+      await reserved.unsafe("rollback");
+      rolledBack = true;
+    }
     open = false;
   } catch (error) {
     if (isConnectionLost(error)) lost.on = true;
     failure = error;
   } finally {
+    if (open && !lost.on && !sawCommit) {
+      const after = await readXid(reserved).catch((error: unknown) => {
+        if (isConnectionLost(error)) lost.on = true;
+        return undefined;
+      });
+      if (!lost.on && after !== xid) sawCommit = true;
+    }
     if (open && !lost.on) {
       await reserved.unsafe("rollback").catch((error: unknown) => {
         if (isConnectionLost(error)) lost.on = true;
       });
+      if (!lost.on && !sawCommit) rolledBack = true;
     }
     if (!lost.on) await reserved.unsafe("reset role").catch(() => undefined);
     if (!lost.on) {
@@ -249,6 +270,10 @@ async function inCheckTransaction<T>(
       }
     }
     await finishQuiet(() => sql.end({ timeout: 5 }));
+  }
+  if (!created || rolledBack) {
+    if (failure !== undefined) throw sessionFailure(failure) ?? failure;
+    return value as T;
   }
   const left = await dropScratch(url, scratch);
   if (left !== undefined) {
@@ -300,8 +325,8 @@ function closedError(): Error {
 /**
  * Drops a scratch schema on a new connection.
  *
- * The replay connection may already be gone. The schema was created inside
- * the transaction, so a killed backend has already aborted it.
+ * Called only when the replay did not roll back. A killed backend has already
+ * aborted an uncommitted schema. A step that committed can leave it behind.
  *
  * @param url - Target URL
  * @param scratch - Schema name
