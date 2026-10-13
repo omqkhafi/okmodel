@@ -32,6 +32,9 @@ const config: NextConfig = {
   typescript: {
     tsconfigPath: "tsconfig.build.json",
   },
+  async redirects() {
+    return [{ source: "/docs/start/install", destination: "/docs/start/query", permanent: true }];
+  },
   // Own lockfile: keep Turbopack rooted here so `next` resolves from site/node_modules.
   turbopack: {
     root: siteDir,

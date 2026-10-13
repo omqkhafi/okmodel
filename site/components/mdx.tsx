@@ -1,6 +1,7 @@
 import { TerminalSnippet } from "@/components/terminal-snippet";
 import { installDriverForFence, translatePackageScript } from "@/lib/package-managers";
 import { CodeBlock, Pre } from "@fumadocs/base-ui/components/codeblock";
+import { Step, Steps } from "@fumadocs/base-ui/components/steps";
 import { Tab, Tabs } from "@fumadocs/base-ui/components/tabs";
 import defaultMdxComponents from "@fumadocs/base-ui/mdx";
 import type { MDXComponents } from "mdx/types";
@@ -8,7 +9,7 @@ import { isValidElement, type ComponentProps, type ReactNode } from "react";
 
 /**
  * MDX component map. `bun add` and `bunx` fences render as a terminal.
- * Every other fence keeps the Fumadocs code block. `Tabs` switches variants.
+ * Every other fence keeps the Fumadocs code block. `Steps` numbers a walkthrough. `Tabs` switches variants.
  *
  * @param components - Extra overrides from the page renderer
  */
@@ -16,6 +17,8 @@ export function getMDXComponents(components?: MDXComponents): MDXComponents {
   return {
     ...defaultMdxComponents,
     pre: DocsPre,
+    Step,
+    Steps,
     Tab,
     Tabs,
     ...components,

@@ -1,29 +1,93 @@
-Define the table, then the schema, then point `okmodel.config.ts` at that file. Build, generate, and apply read the config. The insert omits `id`, and the row that comes back carries it as a string.
+<Steps>
 
-| Step | Command | Connects | Result |
-| --- | --- | --- | --- |
-| Define table | `table()` | no | `notes`. `id` is the primary key. |
-| Define schema | `schema()` | no | One catalog, default-exported. |
-| Define config | `okmodel.config.ts` | no | `schema` is `./schema.ts`. |
-| Build | `okm build` | no | Writes `.okm/`. |
-| Generate | `okm generate init` | no | `migrations/0001_init.sql` and its catalog. |
-| Apply | `okm migrate apply` | yes | An empty database installs the head snapshot. |
-| Read it back | `insert`, then `find` | yes | The row. `id` is a string. |
+<Step>
+### Install
 
-## Define table
+`okmodel` has no runtime dependencies. Each driver is an optional peer. Pick the one the runtime already has.
 
-`table()` stores the columns. `t.identity()` is a `bigint`, generated always. `.primaryKey()` makes `id` the primary key. Insert omits it. The default codec is a string. A key of more than one column is the `primaryKey` option. [Keys](/docs/table/keys).
+<Tabs items={["postgres.js", "node-postgres", "PGlite", "Bun.sql"]}>
+
+<Tab value="postgres.js">
+
+The default on Node and Bun. It connects to a Postgres server.
+
+```sh title="postgres.js"
+bun add okmodel postgres
+```
+
+```ts title="db.ts"
+import { connect } from "okmodel/pg/postgresjs";
+```
+
+</Tab>
+
+<Tab value="node-postgres">
+
+The other server driver on Node and Bun, when `pg` is already installed. `pg` ships no types, so `@types/pg` is a dev dependency.
+
+```sh title="node-postgres"
+bun add okmodel pg
+bun add -D @types/pg
+```
+
+```ts title="db.ts"
+import { connect } from "okmodel/pg/pg";
+```
+
+</Tab>
+
+<Tab value="PGlite">
+
+Postgres runs in the process, on Node or Bun. There is no server to start. The connect target is a data directory, or omit it for memory.
+
+```sh title="PGlite"
+bun add okmodel @electric-sql/pglite
+```
+
+```ts title="db.ts"
+import { connect } from "okmodel/pg/pglite";
+```
+
+</Tab>
+
+<Tab value="Bun.sql">
+
+Built into Bun. No extra package. This entry does not run on Node. `bunx okm` still uses Node. `bun --bun okm` is the Bun runtime.
+
+```sh title="Bun.sql"
+bun add okmodel
+```
+
+```ts title="db.ts"
+import { connect } from "okmodel/pg/bun";
+```
+
+</Tab>
+
+</Tabs>
+
+</Step>
+
+<Step>
+### Define the table
+
+`table()` stores the columns. `t.identity().primaryKey()` makes `id` the primary key.
 
 ```ts title="schema.ts"
 import { table, t } from "okmodel/pg";
 
 export const notes = table("notes", {
-  id: t.identity().primaryKey(), // [!code focus]
+  id: t.identity().primaryKey(),
   title: t.text(),
 });
 ```
 
-## Define schema
+`t.identity()` is a `bigint`, generated always. Insert omits `id`. The default codec is a string. A key of more than one column is the `primaryKey` option. [Keys](/docs/table/keys).
+
+</Step>
+
+<Step>
+### Define the schema
 
 `schema()` compiles the tables into one catalog. The module default-exports that result.
 
@@ -38,20 +102,28 @@ export const notes = table("notes", {
 export default schema({ tables: [notes] }); // [!code focus]
 ```
 
-## Define config
+</Step>
 
-`okm build`, `okm generate`, and `okm migrate apply` load `okmodel.config.ts` from the project directory. The file default-exports `defineConfig`. A file that does not is refused. A module that is not a `schema()` is refused: `<path> must export a schema().` `schema` is the file from the previous step. `database` is the direct URL apply connects to. Build and generate do not connect. Other options are on [Config](/docs/config/file).
+<Step>
+### Define the config
+
+Point `schema` at the file from the previous step. `database` is the URL apply connects to.
 
 ```ts title="okmodel.config.ts"
 import { defineConfig } from "okmodel/migrate";
 
 export default defineConfig({
   schema: "./schema.ts", // [!code focus]
-  database: process.env.DATABASE_URL!,
+  database: process.env.DATABASE_URL!, // [!code focus]
 });
 ```
 
-## Build
+`okm build`, `okm generate`, and `okm migrate apply` load `okmodel.config.ts` from the project directory. The file default-exports `defineConfig`. A file that does not is refused. A module that is not a `schema()` is refused: `<path> must export a schema().` Build and generate do not connect. Other options are on [Config](/docs/config/file).
+
+</Step>
+
+<Step>
+### Build
 
 `okm build` checks the schema and writes `.okm/`. It does not connect.
 
@@ -59,25 +131,36 @@ export default defineConfig({
 bunx okm build
 ```
 
-## Generate
+</Step>
 
-`okm generate init` writes `migrations/0001_init.sql` and `migrations/0001_init.catalog.json`. The name is the part after the number. If the project has no `.gitattributes`, generate writes one. Git then stores the migration SQL, the catalog JSON, and `.okm` with Unix line endings, so a Windows checkout does not rewrite them. An existing `.gitattributes` is left as it is. A later schema change is `okm generate`. With no name, that file is called `migration`. A name is letters, digits, `_`, or `-`. No schema change prints `no changes` and writes no SQL.
+<Step>
+### Generate
+
+`okm generate init` writes `migrations/0001_init.sql` and `migrations/0001_init.catalog.json`.
 
 ```sh
 bunx okm generate init
 ```
 
-## Apply
+The name is the part after the number. If the project has no `.gitattributes`, generate writes one. Git then stores the migration SQL, the catalog JSON, and `.okm` with Unix line endings, so a Windows checkout does not rewrite them. An existing `.gitattributes` is left as it is. A later schema change is `okm generate`. With no name, that file is called `migration`. A name is letters, digits, `_`, or `-`. No schema change prints `no changes` and writes no SQL.
 
-`okm migrate apply` connects. An empty database installs the head snapshot, which creates the tables. It does not replay the files. A database that already has history runs only the SQL not yet in `okm_history`. A database that is not empty and has no history is OKM1851.
+</Step>
+
+<Step>
+### Apply
+
+`okm migrate apply` connects. An empty database installs the head snapshot, which creates the tables.
 
 ```sh
 bunx okm migrate apply
 ```
 
-`bunx okm` runs with Node. `bun --bun okm` uses the Bun runtime.
+It does not replay the files. A database that already has history runs only the SQL not yet in `okm_history`. A database that is not empty and has no history is OKM1851. `bunx okm` runs with Node. `bun --bun okm` uses the Bun runtime.
 
-## Read it back
+</Step>
+
+<Step>
+### Connect
 
 `connect` takes the direct URL and the schema. The process keeps `db`. Direct asserts the URL. Safe refuses an empty `DATABASE_URL`.
 
@@ -112,26 +195,8 @@ export const db = connect(url, { schema });
 
 </Tabs>
 
-Insert passes `title` and omits `id`. The row that comes back has `id`.
+</Step>
 
-```ts title="notes.ts"
-import { db } from "./db.ts";
+</Steps>
 
-export async function createNote(title: string) {
-  const note = await db.notes.insert({ title }); // [!code focus]
-  return note;
-}
-```
-
-`find` returns a list. `limit: 1` asks for one row. Omit the limit and the call is OKM1101. The row is `[0]`, or `undefined` when nothing matched. `.all(reason)` is how you ask for the full set.
-
-```ts title="notes.ts"
-import { db } from "./db.ts";
-
-export async function readNote(id: string) {
-  const found = await db.notes.find({ where: { id }, limit: 1 }); // [!code focus]
-  return found[0];
-}
-```
-
-Put those two calls in the server you already run.
+Insert, find, update, and delete are on [Basic Usage](/docs/start/basic-usage).

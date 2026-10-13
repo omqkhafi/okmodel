@@ -1,26 +1,26 @@
 "use client";
 
 /**
- * Docs page toolbar. GitHub and npm sit on the left. Copy page sits on the right.
+ * Copy page control. It sits at the end of the docs title row.
  */
 
-import { CheckIcon, ChevronIcon, GithubMark, NpmMark } from "@/components/chrome/icons";
+import { CheckIcon, ChevronIcon } from "@/components/chrome/icons";
+import { cn } from "@/lib/cn";
 import { SITE_ORIGIN } from "@/lib/site-identity";
 import { Popover, PopoverContent, PopoverTrigger } from "@fumadocs/base-ui/components/ui/popover";
 import { useMemo, useState, type ReactNode } from "react";
 
-/** Props for the docs page toolbar. */
+/** Props for the docs page Copy control. */
 export interface DocsPageActionsProps {
   /** Absolute or site-relative markdown URL for this page. */
   readonly markdownUrl: string;
-  /** GitHub blob URL for the canonical source file. */
-  readonly githubUrl?: string;
-  /** npm page for the package. */
-  readonly npmUrl: string;
+  /** Classes on the control. `ms-auto` parks it at the end of the title row. */
+  readonly className?: string;
 }
 
-const ITEM =
-  "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-fd-muted-foreground hover:bg-fd-accent hover:text-fd-foreground";
+/** Same pill as the database chip: height, radius, and type size. */
+const TRIGGER =
+  "inline-flex min-h-6.5 cursor-pointer items-center gap-1 rounded-full border border-fd-border px-2.5 py-1.5 text-sm font-normal leading-none text-fd-foreground hover:bg-fd-accent data-[popup-open]:bg-fd-accent";
 
 const MENU_ITEM =
   "text-sm p-2 rounded-lg inline-flex items-center gap-2 hover:text-fd-accent-foreground hover:bg-fd-accent";
@@ -50,29 +50,15 @@ function assistantHref(base: string, key: string, value: string): string {
 }
 
 /**
- * Source, package, and Copy page.
+ * Copy page, for the end of the title row.
  *
- * @param props - Links for this page
+ * @param props - Markdown URL and optional layout classes
  */
-export function DocsPageActions({ markdownUrl, githubUrl, npmUrl }: DocsPageActionsProps): ReactNode {
+export function DocsPageActions({ markdownUrl, className }: DocsPageActionsProps): ReactNode {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-fd-border pb-4">
-      <div className="flex flex-wrap items-center gap-1">
-        {githubUrl ? (
-          <a href={githubUrl} rel="noreferrer noopener" target="_blank" className={ITEM}>
-            <GithubMark className="size-3.5" />
-            GitHub
-          </a>
-        ) : null}
-        <a href={npmUrl} rel="noreferrer noopener" target="_blank" className={ITEM}>
-          <NpmMark className="size-3.5" />
-          npm
-        </a>
-      </div>
-      <div className="ml-auto flex flex-wrap items-center gap-2">
-        <CopyPageMenu markdownUrl={markdownUrl} />
-      </div>
-    </div>
+    <span className={cn("inline-flex items-center", className)}>
+      <CopyPageMenu markdownUrl={markdownUrl} />
+    </span>
   );
 }
 
@@ -81,9 +67,9 @@ function CopyPageMenu({ markdownUrl }: { readonly markdownUrl: string }): ReactN
 
   return (
     <Popover>
-      <PopoverTrigger className="inline-flex items-center gap-1.5 rounded-lg border border-fd-border px-2.5 py-1 text-xs text-fd-foreground data-[popup-open]:bg-fd-accent">
+      <PopoverTrigger className={TRIGGER}>
         Copy page
-        <ChevronIcon className="size-3.5 text-fd-muted-foreground" />
+        <ChevronIcon className="size-3.5" />
       </PopoverTrigger>
       <PopoverContent className="flex min-w-56 flex-col gap-1">
         <CopyItem

@@ -1,0 +1,89 @@
+`db` is the client from [Let's start](/docs/start/query). Each section is one call.
+
+## Insert
+
+Insert passes `title` and omits `id`. The row that comes back has `id`.
+
+```ts title="notes.ts"
+import { db } from "./db.ts";
+
+export async function createNote(title: string) {
+  const note = await db.notes.insert({ title }); // [!code focus]
+  return note;
+}
+```
+
+## Find
+
+`find` returns a list. `limit: 1` asks for one row. The row is `[0]`.
+
+```ts title="notes.ts"
+import { db } from "./db.ts";
+
+export async function readNote(id: string) {
+  const found = await db.notes.find({ where: { id }, limit: 1 }); // [!code focus]
+  return found[0]; // [!code focus]
+}
+```
+
+Omit the limit and the call is OKM1101. `[0]` is `undefined` when nothing matched. `.all(reason)` is how you ask for the full set.
+
+## One
+
+`one` returns that row, or `null` when nothing matched. More than one match throws `not_unique`.
+
+```ts title="notes.ts"
+import { db } from "./db.ts";
+
+export async function readOne(id: string) {
+  return db.notes.one({ where: { id } }); // [!code focus]
+}
+```
+
+## Count
+
+`count` returns how many rows match. It does not return the rows.
+
+```ts title="notes.ts"
+import { db } from "./db.ts";
+
+export async function countNotes() {
+  return db.notes.count(); // [!code focus]
+}
+```
+
+## Exists
+
+`exists` returns true when a row matches. It does not return the row.
+
+```ts title="notes.ts"
+import { db } from "./db.ts";
+
+export async function hasNote(id: string) {
+  return db.notes.exists({ where: { id } }); // [!code focus]
+}
+```
+
+## Update
+
+`where` picks the row. `set` names the new title. A write with no `where` is OKM1102.
+
+```ts title="notes.ts"
+import { db } from "./db.ts";
+
+export async function renameNote(id: string, title: string) {
+  await db.notes.update({ where: { id }, set: { title } }); // [!code focus]
+}
+```
+
+## Delete
+
+`where` picks the row. A write with no `where` is OKM1102.
+
+```ts title="notes.ts"
+import { db } from "./db.ts";
+
+export async function removeNote(id: string) {
+  await db.notes.delete({ where: { id } }); // [!code focus]
+}
+```

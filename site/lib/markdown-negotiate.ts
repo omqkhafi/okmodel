@@ -24,6 +24,7 @@ export function markdownTwinPath(pathname: string): string | undefined {
   if (path === "/") return "/llms.mdx/home";
 
   if (path === "/docs") return "/llms.mdx/docs/index.md";
+  if (path === "/docs/start/install") return "/llms.mdx/docs/start/query.md";
   if (path.startsWith("/docs/")) {
     const rest = path.slice("/docs/".length);
     if (rest.length === 0) return "/llms.mdx/docs/index.md";

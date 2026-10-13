@@ -14,7 +14,6 @@ import {
   Clock,
   Columns3,
   Database,
-  Download,
   Eye,
   EyeOff,
   FileText,
@@ -27,6 +26,7 @@ import {
   Link2,
   List,
   ListChecks,
+  Play,
   Puzzle,
   Rows3,
   Server,
@@ -47,8 +47,8 @@ import { createElement, type ReactNode } from "react";
 
 /** Docs path → Lucide component. `/docs` is the landing and is not a sidebar row. */
 const PATH_ICONS: Readonly<Record<string, LucideIcon>> = {
-  "/docs/start/install": Download,
   "/docs/start/query": Terminal,
+  "/docs/start/basic-usage": Play,
   "/docs/config/file": FileText,
   "/docs/config/targets": Database,
   "/docs/config/paths": Folder,

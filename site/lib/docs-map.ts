@@ -95,22 +95,22 @@ export const mappedPages: readonly MappedPage[] = [
     handbook: "handbook/index.mdx",
   },
   {
-    slug: "install",
-    title: "Install",
-    description: "Add okmodel and one Postgres driver.",
-    group: "start",
-    order: 0,
-    source: "site/handbook/install.mdx",
-    handbook: "handbook/install.mdx",
-  },
-  {
     slug: "query",
     title: "Let's start",
-    description: "Define the table, the schema, and okmodel.config.ts. Then build, generate, and apply.",
+    description: "Install a driver, define the table, then build, generate, and apply.",
     group: "start",
-    order: 1,
+    order: 0,
     source: "site/handbook/query.mdx",
     handbook: "handbook/query.mdx",
+  },
+  {
+    slug: "basic-usage",
+    title: "Basic Usage",
+    description: "Each call on the client: insert, find, one, count, exists, update, and delete.",
+    group: "start",
+    order: 1,
+    source: "site/handbook/basic-usage.mdx",
+    handbook: "handbook/basic-usage.mdx",
   },
   ...definePages(),
 ];
@@ -137,7 +137,7 @@ function definePages(): readonly MappedPage[] {
     handbook: `handbook/${group}/${slug}.mdx`,
   });
   return [
-    page("config", 0, "file", "Config file", "defineConfig in okmodel.config.ts. schema is required. Set database or targets."),
+    page("config", 0, "file", "Overview", "defineConfig in okmodel.config.ts. schema is required. Set database or targets."),
     page("config", 1, "targets", "Targets", "Any key is a name. Protection is the protected flag, not the target name."),
     page("config", 2, "paths", "Paths", "schema, tables, migrations, and out. Each path resolves from the project directory."),
     page("config", 3, "pooler", "Pooler", "Migration commands refuse a pooler host unless allowPooler is set."),
