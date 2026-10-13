@@ -165,3 +165,18 @@ html {
   background: color-mix(in oklch, var(--color-fd-primary) 14%, transparent);
   box-shadow: inset 2px 0 0 var(--color-fd-primary);
 }
+
+/*
+ * Hovering a place in a Define anatomy lights that place in the sample and
+ * in the notes. A new `data-slot` needs a row in this rule.
+ */
+.anatomy:is(:has([data-slot="name"]:hover), :has([data-slot="name"]:focus-within)) [data-slot="name"],
+.anatomy:is(:has([data-slot="columns"]:hover), :has([data-slot="columns"]:focus-within)) [data-slot="columns"],
+.anatomy:is(:has([data-slot="options"]:hover), :has([data-slot="options"]:focus-within)) [data-slot="options"],
+.anatomy:is(:has([data-slot="tables"]:hover), :has([data-slot="tables"]:focus-within)) [data-slot="tables"],
+.anatomy:is(:has([data-slot="sections"]:hover), :has([data-slot="sections"]:focus-within)) [data-slot="sections"],
+.anatomy:is(:has([data-slot="schema"]:hover), :has([data-slot="schema"]:focus-within)) [data-slot="schema"],
+.anatomy:is(:has([data-slot="database"]:hover), :has([data-slot="database"]:focus-within)) [data-slot="database"] {
+  background: color-mix(in oklch, var(--color-fd-primary) 14%, transparent);
+  box-shadow: inset 2px 0 0 var(--color-fd-primary);
+}

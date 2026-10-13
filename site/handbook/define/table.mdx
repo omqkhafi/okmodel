@@ -1,16 +1,19 @@
-`table()` takes a name and a column map. The third argument is options: keys, indexes, checks, and the rest of this page. `schema()` builds the catalog. An empty name is refused.
-
-The [key](#keys) comes first. Each other field is a [data type](#columns). Defaults, names, and checks come after the type.
-
-```ts title="notes.ts"
-import { table, t } from "okmodel/pg";
-
-export const notes = table("notes", {
-  id: t.identity(), // [!code focus]
-  title: t.text(), // [!code focus]
-  published: t.boolean().default(false), // [!code focus]
-});
-```
+<Anatomy call="table" shape="args" exported="notes">
+  <AnatomyPart slot="name" label="Name" code='"notes",' mark="name">
+    An empty name is refused.
+  </AnatomyPart>
+  <AnatomyPart slot="columns" label="Columns">
+    <AnatomyLine code="{" />
+    <AnatomyLine code="id: t.identity()," mark="key" indent={2} />
+    <AnatomyLine code="title: t.text()," mark="type" indent={2} />
+    <AnatomyLine code="published: t.boolean().default(false)," mark="after the type" indent={2} />
+    <AnatomyLine code="}," />
+    The [key](#keys) comes first. Each other field is a [data type](#columns). Defaults, names, and checks come after the type.
+  </AnatomyPart>
+  <AnatomyPart slot="options" label="Options" code="{ … }," mark="options">
+    Keys, indexes, checks, and the rest of this page. [`schema()`](/docs/define/schema) builds the catalog.
+  </AnatomyPart>
+</Anatomy>
 
 <Callout type="info" title="One builder">
 `t` is every builder. Import one builder when a file uses only that type.

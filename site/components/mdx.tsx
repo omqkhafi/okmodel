@@ -1,3 +1,4 @@
+import { Anatomy, AnatomyLine, AnatomyPart } from "@/components/anatomy";
 import { Callout } from "@/components/callout";
 import { TerminalSnippet } from "@/components/terminal-snippet";
 import { installDriverForFence, translatePackageScript } from "@/lib/package-managers";
@@ -12,6 +13,7 @@ import { isValidElement, type ComponentProps, type ReactNode } from "react";
  * MDX component map. `bun add` and `bunx` fences render as a terminal.
  * Every other fence keeps the Fumadocs code block. `Steps` numbers a walkthrough. `Tabs` switches variants.
  * `Callout` is a dashed note: info, warning, error, or success.
+ * `Anatomy` labels the call that opens a Define page.
  *
  * @param components - Extra overrides from the page renderer
  */
@@ -24,6 +26,9 @@ export function getMDXComponents(components?: MDXComponents): MDXComponents {
     Tab,
     Tabs,
     Callout,
+    Anatomy,
+    AnatomyLine,
+    AnatomyPart,
     ...components,
   };
 }

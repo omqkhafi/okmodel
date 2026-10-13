@@ -1,6 +1,13 @@
-## Tables
+<Anatomy call="schema" shape="object" exported>
+  <AnatomyPart slot="tables" label="Tables" code="tables: [notes]," mark="required">
+    Declaration order. A later table can reference an earlier one. [`table()`](/docs/define/table) only stores the columns. Names, dependencies, and the catalog hash are fixed here. Calling `schema()` twice on the same tables returns equal catalog bytes.
+  </AnatomyPart>
+  <AnatomyPart slot="sections" label="Sections" code="…," mark="sections">
+    Each other field is a section on this page.
+  </AnatomyPart>
+</Anatomy>
 
-`schema()` compiles tables into one catalog. `table()` only stores the columns. Names, dependencies, and the catalog hash are fixed here. Calling `schema()` twice on the same tables returns equal catalog bytes.
+## Tables
 
 | Field | Required | Default | Role |
 | --- | --- | --- | --- |

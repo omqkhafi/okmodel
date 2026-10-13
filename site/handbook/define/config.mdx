@@ -1,3 +1,15 @@
+<Anatomy call="defineConfig" shape="object" exported>
+  <AnatomyPart slot="schema" label="Schema" code='schema: "./schema.ts",' mark="required">
+    Required. `okm` loads this file. `okm build` reads it and does not connect.
+  </AnatomyPart>
+  <AnatomyPart slot="database" label="Database" code="database: process.env.DATABASE_URL!," mark="or targets">
+    One target named `default`. `targets` replaces it. Set `database` or `targets`. Both is refused.
+  </AnatomyPart>
+  <AnatomyPart slot="sections" label="Sections" code="…," mark="sections">
+    Each other field is a section on this page.
+  </AnatomyPart>
+</Anatomy>
+
 ## Write the file
 
 `okm` reads `okmodel.config.ts` from the project directory. The file default-exports `defineConfig` from `okmodel/migrate`.
@@ -9,15 +21,6 @@ A file that does not default-export `defineConfig` is refused.
 <Callout type="info" title="Runtime">
 Node.js 22.18 or newer loads the config. `bunx okm` uses Node. `bun --bun okm` uses Bun.
 </Callout>
-
-```ts title="okmodel.config.ts"
-import { defineConfig } from "okmodel/migrate";
-
-export default defineConfig({
-  schema: "./schema.ts",
-  database: process.env.DATABASE_URL!,
-});
-```
 
 ## Schema
 
