@@ -62,7 +62,7 @@ export async function checkout(pool: HeldPool): Promise<DriverConnection> {
   arm(reserved, lost);
   const guard = <T>(run: () => Promise<T>): Promise<T> =>
     lost.on
-      ? rejectClosed("CONNECTION_CLOSED")
+      ? rejectClosed()
       : run().catch((error: unknown) => {
           if (isConnectionLost(error)) lost.on = true;
           throw error;

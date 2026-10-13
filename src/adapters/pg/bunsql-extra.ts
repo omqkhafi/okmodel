@@ -44,15 +44,15 @@ export async function checkout(held: HeldPool): Promise<DriverConnection> {
   let lost = false;
   const guard = <T>(run: () => Promise<T>): Promise<T> =>
     lost
-      ? rejectClosed("CONNECTION_CLOSED")
+      ? rejectClosed()
       : run().catch((error: unknown) => {
           if (isConnectionLost(error)) lost = true;
-          // Bun.sql says "Connection closed", or, after the handle is already
-          // gone, "connection must be a PostgresSQLConnection". The shared
-          // mapper treats CONNECTION_CLOSED as unavailable.
-          if (error instanceof Error && bunClosed(error.message)) {
+          // Bun.sql sends no code for a handle that is already gone. These two
+          // texts are the whole signal. The stamp is a SQLSTATE, which is what
+          // the classifier reads.
+          else if (error instanceof Error && bunClosed(error.message)) {
             lost = true;
-            throw new DriverError("CONNECTION_CLOSED", { cause: error });
+            throw new DriverError(error.message, { cause: error, sqlstate: "08006" });
           }
           throw error;
         });

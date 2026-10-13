@@ -21,11 +21,16 @@ export function driverErrors(): Promise<ErrorModule> {
 /**
  * Rejects with a closed-pool {@link import("./error.js").DriverError}.
  *
- * @param message - Error text
+ * The SQLSTATE is `08006` so the failure is classified as a lost connection
+ * from structured data. The message is not read.
+ *
+ * @param message - Error text. Defaults to that SQLSTATE
  * @returns A rejected promise
  */
-export function rejectClosed(message = "The pool is closed."): Promise<never> {
-  return driverErrors().then((mod) => Promise.reject(new mod.DriverError(message)));
+export function rejectClosed(message = "08006"): Promise<never> {
+  return driverErrors().then((mod) =>
+    Promise.reject(new mod.DriverError(message, { sqlstate: message })),
+  );
 }
 
 /**

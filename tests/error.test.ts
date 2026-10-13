@@ -312,10 +312,32 @@ test("mapPostgresError reads SQLSTATE, constraint names, and batchIndex", () => 
   ).toBe("cancelled");
   expect(mapPostgresError(new DriverError("timeout", { sqlstate: "57014" })).kind).toBe("timeout");
   expect(mapPostgresError(new DriverError("closed", {})).kind).toBe("driver");
-  expect(mapPostgresError(new DriverError("The pool is closed.")).kind).toBe("unavailable");
+  expect(mapPostgresError(new DriverError("The pool is closed.")).kind).toBe("driver");
+  expect(
+    mapPostgresError(
+      Object.assign(new DriverError("The pool is closed."), { code: "CONNECTION_CLOSED" }),
+    ).kind,
+  ).toBe("unavailable");
   expect(mapPostgresError(new DriverError("write CONNECT_TIMEOUT 127.0.0.1:1")).kind).toBe(
-    "unavailable",
+    "driver",
   );
+  expect(
+    mapPostgresError(
+      new DriverError("write CONNECT_TIMEOUT 127.0.0.1:1", {
+        cause: Object.assign(new Error("write CONNECT_TIMEOUT 127.0.0.1:1"), {
+          code: "CONNECT_TIMEOUT",
+        }),
+      }),
+    ).kind,
+  ).toBe("unavailable");
+  expect(
+    mapPostgresError(
+      new DriverError('new row violates check constraint "no_CONNECT_zz"', {
+        sqlstate: "23514",
+        constraint: "no_CONNECT_zz",
+      }),
+    ).kind,
+  ).toBe("check");
   expect(mapPostgresError(unique)).toBe(unique);
 });
 

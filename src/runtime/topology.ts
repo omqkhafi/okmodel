@@ -1432,7 +1432,7 @@ function isUnreachable(error: unknown): boolean {
  * Reports whether one node of the chain is an unreachable connection by its own fields.
  *
  * @param node - One error in the chain
- * @returns True for a connection SQLSTATE, errno or code, a Bun.sql connection code, or a connection message
+ * @returns True for a connection SQLSTATE, errno or code, or a Bun.sql connection code
  */
 function unreachableNode(node: object): boolean {
   for (const key of ["sqlstate", "code", "errno"] as const) {
@@ -1444,14 +1444,7 @@ function unreachableNode(node: object): boolean {
       return true;
     }
   }
-  if (!(node instanceof Error)) return false;
-  return (
-    node.message.includes("ECONNREFUSED") ||
-    node.message.includes("ECONNRESET") ||
-    node.message.includes("CONNECTION_CLOSED") ||
-    node.message.includes("terminating connection") ||
-    node.message.includes("The pool is closed")
-  );
+  return false;
 }
 
 /**

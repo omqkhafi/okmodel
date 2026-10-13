@@ -14,6 +14,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+### 🐛 Fixed
+
+- A server error whose text contains `CONNECT` is no longer treated as a lost connection. Classification uses the driver `code` and SQLSTATE (`08` and `57P01`–`57P03`) only. `grant CONNECT` and a check named `no_CONNECT_zz` fail with the database error, and the connection can be used again. A closed pool is SQLSTATE `08006` (D244).
+
 ### ♻️ Changed
 
 #### docs
