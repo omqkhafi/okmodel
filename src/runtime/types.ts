@@ -8,6 +8,7 @@
 import type { DriverTimeouts, Notice } from "../contracts/driver.js";
 import type { SafeResult } from "../contracts/error.js";
 import type { QuerySchema } from "../dialects/pg/model.js";
+import type { Bucket } from "../dialects/pg/ops/bucket.js";
 import type { Inc } from "../dialects/pg/ops/inc.js";
 import type {
   ArrAppend,
@@ -229,25 +230,63 @@ type NumericKeys<Row> = {
 }[keyof Row] &
   string;
 
+/** One `orderBy` value. `asc` is nulls last and `desc` is nulls first unless `nulls` is set. */
+type SortDir = "asc" | "desc" | { readonly dir: "asc" | "desc"; readonly nulls?: "first" | "last" };
+
 /** `aggregate` options. A hidden field is refused at runtime. */
 export type AggregateOptions<S extends QuerySchema, K extends keyof S["~byName"]> = CallOptions & {
   readonly where?: WhereOf<S, K>;
   /** One result row per distinct combination. Needs `limit`, or `.all(reason)`. */
-  readonly groupBy?: readonly (keyof RowOf<S, K> & string)[];
+  readonly groupBy?: readonly ((keyof RowOf<S, K> & string) | Bucket<string, string, string>)[];
   /** Adds `count`, the number of rows in the group. */
   readonly count?: true;
   readonly sum?: readonly NumericKeys<RowOf<S, K>>[];
   readonly avg?: readonly NumericKeys<RowOf<S, K>>[];
   readonly min?: readonly (keyof RowOf<S, K> & string)[];
   readonly max?: readonly (keyof RowOf<S, K> & string)[];
-  /** Orders the groups. Only `groupBy` fields. Without it, groups come in `groupBy` order. */
-  readonly orderBy?: OrderBy<RowOf<S, K>>;
+  /**
+   * Orders the groups. A `groupBy` field or a bucket `as`.
+   * Without it, groups come in `groupBy` order.
+   */
+  readonly orderBy?: OrderBy<RowOf<S, K>> | { readonly [key: string]: SortDir | undefined };
   readonly limit?: number;
 };
 
+/** `true` when a group entry is a bucket. A mix of fields and buckets is `boolean`. */
+type HasBucket<G> = G extends Bucket<string, string, string> ? true : false;
+
+/** One bucket key. A string group contributes nothing. */
+type BucketPiece<Row, G> =
+  G extends Bucket<infer C, infer U, infer A>
+    ? {
+        readonly [K in A]:
+          | (U extends "second" | "minute" | "hour" ? Temporal.Instant : Temporal.PlainDate)
+          | (C extends keyof Row ? (null extends Row[C] ? null : never) : null);
+      }
+    : {};
+
+/** Intersection of a union of group pieces. */
+type Intersect<U> = (U extends unknown ? (arg: U) => void : never) extends (arg: infer I) => void
+  ? I
+  : unknown;
+
+/**
+ * Group keys on an aggregate row.
+ *
+ * A plain field list stays `Pick`. A bucket list adds each `as` key. The value
+ * is `Temporal.PlainDate` for a calendar unit and `Temporal.Instant` for a
+ * clock unit, and includes `null` when the column does.
+ */
+type GroupOf<Row, G> =
+  boolean extends HasBucket<G>
+    ? Pick<Row, Extract<G, keyof Row>> & Intersect<BucketPiece<Row, G>>
+    : [G] extends [Bucket<string, string, string>]
+      ? Intersect<BucketPiece<Row, G>>
+      : Pick<Row, G & keyof Row>;
+
 /** A group: its fields, and the aggregates the call named. */
 export type AggregateRow<Row, O> = Show<
-  (O extends { readonly groupBy: readonly (infer G)[] } ? Pick<Row, G & keyof Row> : unknown) &
+  (O extends { readonly groupBy: readonly (infer G)[] } ? GroupOf<Row, G> : unknown) &
     (O extends { readonly count: true } ? { readonly count: number } : unknown) &
     (O extends { readonly sum: readonly (infer F)[] }
       ? { readonly sum: { readonly [P in F & keyof Row]: NonNullable<Row[P]> | null } }

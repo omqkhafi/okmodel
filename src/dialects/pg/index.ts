@@ -65,6 +65,7 @@ export { domain, enumColumn as enum } from "./enum.js";
 export { t } from "./namespace.js";
 export * as arr from "./ops/arr-ns.js";
 export * as json from "./ops/json-ns.js";
+export { bucket, type Bucket, type BucketUnit, type WeekStart } from "./ops/bucket.js";
 export { between } from "./ops/between.js";
 export { containedBy } from "./ops/containedBy.js";
 export { contains } from "./ops/contains.js";
