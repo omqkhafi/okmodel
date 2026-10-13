@@ -598,11 +598,16 @@ type AllowedUpdate<
   K extends keyof S["~byName"],
   Allow extends readonly (keyof RowOf<S, K> & string)[],
 > =
-  | { readonly where?: WhereOf<S, K>; readonly set: AllowedSet<S, K, Allow> }
+  | {
+      readonly where?: WhereOf<S, K>;
+      readonly set: AllowedSet<S, K, Allow>;
+      readonly version?: number;
+    }
   | readonly {
       readonly id?: unknown;
       readonly where?: WhereOf<S, K>;
       readonly set: AllowedSet<S, K, Allow>;
+      readonly version?: number;
     }[];
 
 /**
@@ -617,11 +622,15 @@ export type UpdateTarget<S extends QuerySchema, K extends keyof S["~byName"]> =
       readonly set: UpdateSet<S, K>;
       readonly limit?: number;
       readonly lock?: "skip";
+      /** Version read from the row. Required at runtime when the table is `versioned()`. */
+      readonly version?: number;
     }
   | readonly {
       readonly id?: unknown;
       readonly where?: WhereOf<S, K>;
       readonly set: UpdateSet<S, K>;
+      /** Version read from the row. Required at runtime when the table is `versioned()`. */
+      readonly version?: number;
     }[];
 
 /** `{ count, archiveId }` from one `archive()` call. */

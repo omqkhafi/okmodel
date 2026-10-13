@@ -289,6 +289,7 @@ function rewriteTenant(
       ...(primaryKey !== undefined ? { primaryKey } : {}),
       ...(Object.keys(unique).length > 0 ? { unique } : {}),
       ...(indexes !== undefined ? { indexes } : {}),
+      tenantKeys: [key],
     },
   };
   return noted !== undefined && noted.length > 0 ? markPathEndpoint(rewritten) : rewritten;

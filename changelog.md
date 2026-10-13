@@ -16,6 +16,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### ✨ Added
 
+#### runtime
+
 - `bucket(column, unit, { tz, as })` groups an aggregate by a calendar or clock unit. A day or longer unit returns `Temporal.PlainDate`. A second, minute, or hour returns `Temporal.Instant`. A NULL timestamp is one group: the result key is present and the value is null. There is still no `having`. Time-zone date helpers stay deferred (D247).
 - `update` with `lock: "skip"` and `limit` claims up to that many rows in one statement and leaves rows another transaction already holds. A read still uses `lock: "update"` and `wait: "skip"` inside `tx()` (D249).
 - `find({ search })` and `count({ search })` look through a column built for search. A string is enough when the table has one. `{ for, in, match, language }` names the text, the column, how to match, and the language. Rows come back closest first, then by primary key, unless you pass `orderBy`. `search` combines with `where`, `select`, `include`, and presets. `page()` does not take `search` in this version (D250).
@@ -24,6 +26,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `rowNumber`, `rank`, `denseRank`, and `runningTotal` go in `select` on `find` or `one`. `page()` refuses a window when the call runs (D251).
 - `descendants(id)` and `ancestors(id)` read the rows below or above a row in one statement. A cycle returns. `depth`, `where`, `select`, `orderBy`, and `self` are optional. `ltree` is not required (D252).
 - `sync(id, relation, ids)` sets a to-many relation to exactly those ids and reports the links it added and removed. A join table changes link rows. A nullable foreign key is set or cleared and the related row stays (D252).
+- `versioned()` adds `version`. An update passes the version you read and the write bumps it. A stale write is a conflict and changes nothing. `inc` still bumps `version` (D254).
+- `sortable(groupBy?)` adds `position` and `move(id, { before })` or `{ after }`. New rows go at the end of the group. `find` and `page` order by `position` when you omit `orderBy` (D254).
 
 ### 💥 Breaking Changes
 

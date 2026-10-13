@@ -12,9 +12,15 @@ import { definition, unavailable } from "../../dialects/pg/misuse.js";
 import { checkPresetNames, duplicatePreset, type PresetMap } from "../../dialects/pg/preset.js";
 import { timestampRecords } from "../../dialects/pg/fn/touch.js";
 import { timestamptz } from "../../dialects/pg/time.js";
+import { integer } from "../../dialects/pg/integer.js";
+import type { DriverPool } from "../../contracts/driver.js";
+import type { QuerySchema, SchemaHookCtx } from "../../dialects/pg/model.js";
 import type { AnyTable, RowFrom } from "../../dialects/pg/table.js";
 import { installArchiveContributions } from "../archive-rules.js";
 import { attachArchive } from "../archive-handle.js";
+import { indexes, isRecord, type ArchiveView, type CallScope } from "../plan.js";
+import type { Hookm, Timeouts } from "../types.js";
+import { rewriteSortable } from "../sort-bind.js";
 import {
   checkTrait,
   type Trait,
@@ -256,6 +262,147 @@ export function archivable(options?: ArchivableOptions) {
     hook: attachArchive,
   };
   return self;
+}
+
+/**
+ * Adds `version` and checks it on every update.
+ *
+ * The column starts at 1. An update passes the version it read and the write
+ * bumps it. A stale version is category `conflict` and changes nothing.
+ * Input cannot set `version`.
+ *
+ * @returns The versioned trait
+ */
+export function versioned() {
+  return trait("versioned", {
+    fields: {
+      version: integer().defaultSql("1").guarded(),
+    },
+    sealed: ["version"],
+  });
+}
+
+/**
+ * Adds `position` and `move`.
+ *
+ * New rows go at the end of the group. `move` places a row before or after
+ * another in that group. `find` and `page` order by `position` when the
+ * caller does not pass `orderBy`. Input cannot set `position`.
+ *
+ * @param groupBy - Column that splits the order. Omit it for one list
+ * @returns The sortable trait
+ */
+export function sortable(groupBy?: string) {
+  if (groupBy !== undefined && groupBy.length === 0) {
+    definition("sortable() groupBy must be a column name.");
+  }
+  if (groupBy === "position") definition("sortable() cannot group by position.");
+  const base = trait("sortable", {
+    fields: {
+      position: integer().guarded(),
+    },
+    sealed: ["position"],
+  });
+  const self = {
+    ...base,
+    ...(groupBy !== undefined ? { group: groupBy } : {}),
+    "~sort": true as const,
+    apply(model: TraitModel, ctx: TraitContext) {
+      if (groupBy !== undefined && !Object.hasOwn(model.columns, groupBy)) {
+        definition(`sortable() on ${ctx.table} needs a column named ${groupBy}.`);
+      }
+      base.apply(model, ctx);
+    },
+    /**
+     * Adds the unique position index after tenancy has widened uniques.
+     *
+     * @param tables - Tables after the tenancy rewrite
+     * @param casing - Schema casing
+     * @param schemaTraits - Traits from `schema()`, when any were passed
+     * @returns The rewritten tables
+     */
+    rewrite(
+      tables: readonly AnyTable[],
+      casing: "snake" | undefined,
+      schemaTraits: readonly object[] | undefined,
+    ) {
+      return rewriteSortable(self, tables, casing, schemaTraits, groupBy);
+    },
+    hook: attachSort,
+  };
+  return self;
+}
+
+type SortHost = {
+  readonly schema: QuerySchema;
+  readonly pool: DriverPool;
+  readonly timeouts?: Timeouts | undefined;
+  readonly hookm?: readonly Hookm[] | undefined;
+  readonly tx?: object | undefined;
+  readonly scope?: CallScope;
+  readonly connected?: Promise<void>;
+};
+
+/**
+ * Adds `move` and the default position order on a sortable table.
+ *
+ * @param target - The table handle being built
+ * @param ctx - Table name and the session
+ */
+function attachSort(target: Record<string, unknown>, ctx: SchemaHookCtx): void {
+  const tableName = ctx.table;
+  const session = ctx.session;
+  if (tableName === undefined || session === undefined) return;
+  const host = session as SortHost;
+  const table = indexes(host.schema).get(tableName);
+  if (table === undefined) return;
+  let sortableTable = false;
+  for (const item of table.model.traits ?? []) {
+    if (item.name === "sortable") sortableTable = true;
+  }
+  if (!sortableTable) return;
+  const order: Record<string, "asc"> = { position: "asc" };
+  for (const field of table.model.primary) {
+    if (field !== "position") order[field] = "asc";
+  }
+  wrapOrder(target, "find", order);
+  wrapOrder(target, "page", order);
+  const view = ctx.view as ArchiveView | undefined;
+  target.move = (id: unknown, place: unknown) =>
+    import("../sort.js").then((mod) => mod.move(host, tableName, id, place, view));
+}
+
+function wrapOrder(
+  target: Record<string, unknown>,
+  key: string,
+  order: Record<string, "asc">,
+): void {
+  const previous = target[key];
+  if (typeof previous !== "function") return;
+  target[key] = (options: object = {}) => {
+    const next =
+      isRecord(options) && options.orderBy !== undefined ? options : { ...options, orderBy: order };
+    return (previous as (options: object) => unknown).call(target, next);
+  };
+}
+
+declare module "../types.js" {
+  interface TableExtras<S extends QuerySchema, K extends keyof S["~byName"] & string> {
+    /**
+     * Moves one row before or after another in the same group.
+     *
+     * The result is the row's position after the move. A missing id is
+     * `not_found`. An anchor in another group is OKM1120.
+     *
+     * @param id - Primary key of the row to move, without the tenant key
+     * @param place - `{ before }` or `{ after }`, the anchor's primary key
+     * @returns The position after the move
+     */
+    move(
+      id: unknown,
+      place: { readonly before: unknown } | { readonly after: unknown },
+    ): Promise<{ readonly position: number }>;
+  }
 }
 
 function readCascade(options: ArchivableOptions | undefined): readonly string[] {

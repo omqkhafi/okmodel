@@ -1333,11 +1333,19 @@
       "kind": "stable"
     },
     {
+      "name": "sortable",
+      "kind": "stable"
+    },
+    {
       "name": "timestamps",
       "kind": "stable"
     },
     {
       "name": "trait",
+      "kind": "stable"
+    },
+    {
+      "name": "versioned",
       "kind": "stable"
     }
   ],
