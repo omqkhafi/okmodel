@@ -35,6 +35,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - `update` of a list refuses the same target twice (OKM1120). A target that matches nothing is not an error: `count` is the rows changed. An empty `set` is OKM1120 (`update set is empty.`). An empty list runs no statement (D246).
 
+#### tooling
+
+- The size gates for the featureless app and the connect entries measure the static startup graph. Dynamic import targets are empty modules in that build, so a new lazy chunk does not move the number. The full build is printed and is not a gate (D248).
+
 #### docs
 
 - The npm README covers the 0.6 access features: tenancy strategies including row-level security, roles and column grants, ownership, tenant views, and `okm migrate check`.

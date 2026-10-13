@@ -15,7 +15,7 @@ This file is the single source of rules for this repository. `CLAUDE.md` imports
 
 - The published package is `okmodel` at the repository root: ESM only, Apache-2.0, `sideEffects: false`.
 - Other packages live under `packages/*` as Bun workspaces. Their dependencies never go into the root `package.json`.
-- Normative docs are draft 26 (`docs/okmodel-api-design.md`) and decisions D1–D233. The M0 spike implementations are on the `m0-spikes` tag. `packages/spikes` keeps the row-type and operator fixtures the type ceilings measure. Findings stay in `docs/m0-findings.md`.
+- Normative docs are draft 26 (`docs/okmodel-api-design.md`) and decisions D1–D248. The M0 spike implementations are on the `m0-spikes` tag. `packages/spikes` keeps the row-type and operator fixtures the type ceilings measure. Findings stay in `docs/m0-findings.md`.
 
 ## Errors
 
@@ -51,14 +51,14 @@ A layer may import layers below it. It must not import a layer above it. Adapter
 - `bun run verify` runs that suite in Docker on this machine. One version by default (`POSTGRES_VERSION`, or 17). `--all` runs every supported major. CI stays the authority for a release. A pull request skips real Postgres unless it has the label `needs: postgres`, which runs the suite on 15 and 18 and the tarball job on 18. The release and a weekly run cover 15 through 18 for both.
 - `bun run type-cost` writes TypeScript 7 extended diagnostics as JSON and fails when a D127 ceiling is exceeded.
 - `bun run bundle-purity` fails when a runtime bundle contains an npm package, or when `src/` imports the `@okmodel/harness` barrel.
-- The size check reports `dist/` and does not gate it. The runtime entry (`src/contracts/index.ts`) gate is measured +10% (D144): 6,100 bytes minified and 2,250 gzip. CI fails a runtime-entry cold import above 25 ms. A local sample above 15 ms is a finding. The app startup budget is the 0.1 gate in `scripts/size.ts` (startup graph, static imports). Connect-entry cold imports are printed, not gated; the 15 ms local reference is our own code with the driver stubbed. `okmodel/pg` is printed, not gated. Adapter entries are gated on minified bytes over the runtime entry.
+- The size check reports `dist/` and does not gate it. The runtime entry (`src/contracts/index.ts`) gate is measured +10% (D144): 6,100 bytes minified and 2,250 gzip. CI fails a runtime-entry cold import above 25 ms. A local sample above 15 ms is a finding. The app and connect gates in `scripts/size.ts` measure the static startup graph with every relative dynamic import stubbed (D248). The full build is printed as a reference and is not gated. Connect-entry cold imports are that reference, printed, not gated; the 15 ms local reference is our own code with the driver stubbed. `okmodel/pg` is printed, not gated. Adapter entries are gated on minified bytes over the runtime entry, and lazy adapter chunks still count (D245).
 - `bun run attest` measures a trivial type with `@ark/attest` on TypeScript 6, outside `bun run check`.
 - `bun run bench` writes a JSON timing for the 200-table fixture. Baselines live in `packages/bench/baselines` and are not enforced.
 - `bun run catalog-bench` times hash, canonical form, and topological order on the 200-table fixture. It prints the sample and does not enforce a ceiling.
 
 ## Docs
 
-Documents in `docs/` are normative. The spec is draft 26. Decisions run D1–D233. GitHub organization is [docs/github.md](docs/github.md) (D206).
+Documents in `docs/` are normative. The spec is draft 26. Decisions run D1–D248. GitHub organization is [docs/github.md](docs/github.md) (D206).
 
 ## Engineering standards
 
