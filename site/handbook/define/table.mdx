@@ -81,7 +81,7 @@ On a tenant table the key is included, unless you pass `{ global: "reason" }`. A
 
 Each field is a data type. The builder name is that type. Postgres is the only database today. A cell is `yes` when that database has the type built in, and `extension` when the schema must list that extension. Another database is another column on the same row. A missing extension declaration is OKM1020. See [extensions](/docs/define/schema#extensions).
 
-An array is [`.array()`](#arrays-and-picklists) on a scalar. A fixed set of strings on a text column is a [picklist](#arrays-and-picklists). A named Postgres enum is its own type, under [named types](#named-types).
+An array is [`.array()`](#array) on a scalar. A fixed set of strings on a text column is a [picklist](#picklist). A named Postgres enum is its own type, under [enum](#enum).
 
 | You store | Builder |
 | --- | --- |
@@ -108,26 +108,71 @@ An array is [`.array()`](#arrays-and-picklists) on a scalar. A fixed set of stri
 
 Postgres stores `text`, `varchar`, and `char` with the same representation. The length is a check, counted in characters. A value up to 126 bytes is 1 byte plus the string. A longer value is 4 bytes plus the string. `char` includes its padding in that string. `citext` uses the same size.
 
-| Builder | SQL | TypeScript | Bytes | Postgres |
-| --- | --- | --- | --- | --- |
-| `t.text()` | `text` | `string` | 1 or 4 + string | yes |
-| `t.varchar(n)` | `varchar(n)` | `string` | 1 or 4 + string | yes |
-| `t.char(n)` | `char(n)` | `string` | 1 or 4 + string | yes |
-| `t.citext()` | `citext` | `string` | 1 or 4 + string | extension |
+#### Unbounded
 
-`t.text()` is the usual string: a title, a body, a name. `t.varchar(n)` and `t.char(n)` refuse a longer value when it is encoded. `n` is an integer from 1 to 10485760. `t.char(n)` does not pad.
+`t.text()` is `text`. The TypeScript value is a string. A title, a body, or a name uses it.
 
-`t.citext()` compares without case. The schema lists `citext()` from `okmodel/pg/citext`. See [extensions](/docs/define/schema#extensions).
+```ts title="unbounded.ts"
+import { table, t } from "okmodel/pg";
 
-```ts title="people.ts"
+export const people = table("people", {
+  id: t.identity(),
+  name: t.text(), // [!code focus]
+});
+```
+
+#### Varchar
+
+`t.varchar(n)` is `varchar(n)`. The TypeScript value is a string. `n` is an integer from 1 to 10485760.
+
+```ts title="varchar.ts"
+import { table, t } from "okmodel/pg";
+
+export const people = table("people", {
+  id: t.identity(),
+  code: t.varchar(16), // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1060">
+A length outside 1 to 10485760 is refused.
+</Callout>
+
+<Callout type="error" title="OKM1210">
+A longer value is refused when it is encoded.
+</Callout>
+
+#### Char
+
+`t.char(n)` is `char(n)`. The TypeScript value is a string. `n` is an integer from 1 to 10485760. Encode stores the characters you pass.
+
+```ts title="char.ts"
+import { table, t } from "okmodel/pg";
+
+export const people = table("people", {
+  id: t.identity(),
+  region: t.char(2), // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1060">
+A length outside 1 to 10485760 is refused.
+</Callout>
+
+<Callout type="error" title="OKM1210">
+A longer value is refused when it is encoded.
+</Callout>
+
+#### Citext
+
+`t.citext()` is `citext`. The TypeScript value is a string. Comparison ignores case. The schema lists `citext()` from `okmodel/pg/citext`. See [extensions](/docs/define/schema#extensions).
+
+```ts title="citext.ts"
 import { citext } from "okmodel/pg/citext";
 import { schema, table, t } from "okmodel/pg";
 
 const people = table("people", {
   id: t.identity(),
-  name: t.text(), // [!code focus]
-  code: t.varchar(16), // [!code focus]
-  region: t.char(2), // [!code focus]
   email: t.citext(), // [!code focus]
 });
 
@@ -138,49 +183,153 @@ export default schema({
 ```
 
 <Callout type="error" title="OKM1020">
-`t.citext()` with no `citext` extension on the schema is refused when the catalog is built.
+`t.citext()` is refused when `extensions` is omitted or empty.
+</Callout>
+
+<Callout type="error" title="OKM1810">
+`t.citext()` is refused when `extensions` is a list that does not contain `citext`.
 </Callout>
 
 ### Integers
 
 The value is a whole number inside that range.
 
-| Builder | SQL | Range | TypeScript | Bytes | Postgres |
-| --- | --- | --- | --- | --- | --- |
-| `t.smallint()` | `smallint` | -32768 to 32767 | `number` | 2 | yes |
-| `t.integer()` | `integer` | -2147483648 to 2147483647 | `number` | 4 | yes |
-| `t.bigint()` | `bigint` | -9223372036854775808 to 9223372036854775807 | `string` | 8 | yes |
-| `t.identity()` | `bigint` identity | the same as `bigint` | `string` | 8 | yes |
+#### Smallint
 
-`t.integer()` is the usual count. `t.smallint()` is the tight range. `t.bigint()` is the 64-bit integer. The default TypeScript value is a decimal string, so a value past a safe integer stays exact. `{ as: "number" }` accepts a safe integer only. `{ as: "bigint" }` is a JavaScript bigint. Any other `as` is refused. The schema [bigint codec](/docs/define/schema#codecs) is the default when `as` is omitted.
+`t.smallint()` is `smallint`. The range is -32768 to 32767. The TypeScript value is a number. Storage is 2 bytes.
 
-`t.identity()` is `GENERATED ALWAYS AS IDENTITY` and a primary key. Insert and update omit it. The same `as` modes apply. Postgres `serial`, `smallserial`, and `bigserial` have no builder.
-
-```ts title="counts.ts"
+```ts title="smallint.ts"
 import { table, t } from "okmodel/pg";
 
 export const counts = table("counts", {
-  id: t.identity({ as: "number" }), // [!code focus]
+  id: t.identity(),
   flag: t.smallint(), // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1210">
+A value that is not an integer in that range is refused when it is encoded.
+</Callout>
+
+#### Integer
+
+`t.integer()` is `integer`. The range is -2147483648 to 2147483647. The TypeScript value is a number. Storage is 4 bytes. This is the usual count.
+
+```ts title="integer.ts"
+import { table, t } from "okmodel/pg";
+
+export const counts = table("counts", {
+  id: t.identity(),
   total: t.integer(), // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1210">
+A value that is not an integer in that range is refused when it is encoded.
+</Callout>
+
+#### Bigint
+
+`t.bigint()` is `bigint`. The range is -9223372036854775808 to 9223372036854775807. The TypeScript value is a decimal string, so a value past a safe integer stays exact. Storage is 8 bytes. The schema [bigint codec](/docs/define/schema#codecs) is the default when `as` is omitted. A [safe integer](#safe-integer) or a [JavaScript bigint](#javascript-bigint) selects the other modes.
+
+```ts title="bigint.ts"
+import { table, t } from "okmodel/pg";
+
+export const counts = table("counts", {
+  id: t.identity(),
   sequence: t.bigint(), // [!code focus]
 });
 ```
 
-### Exact numbers
+<Callout type="error" title="OKM1210">
+A string that is not a canonical integer is refused when it is encoded. The spelling has no leading zeros, for example `0` or `-12`.
+</Callout>
 
-`t.numeric()` is exact. Money, rates, and quantities use it. Postgres `decimal` is this same type. The builder is `t.numeric()`.
+#### Safe integer
 
-| Call | SQL | TypeScript | Bytes | Postgres |
-| --- | --- | --- | --- | --- |
-| `t.numeric()` | `numeric` | `string` | variable | yes |
-| `t.numeric(precision)` | `numeric(precision)` | `string` | variable | yes |
-| `t.numeric(precision, scale)` | `numeric(precision, scale)` | `string` | variable | yes |
-| `t.numeric(precision, scale, { as: "number" })` | the same SQL | `number` | variable | yes |
+`{ as: "number" }` on `t.bigint()` or `t.identity()` makes the TypeScript value a number. It accepts a safe integer only.
 
-The size is two bytes for each group of four decimal digits, plus 3 to 8 bytes. Leading and trailing zeros are not stored. Precision is an integer from 1 to 1000. Scale is an integer from 0 to that precision. Omit both for an unconstrained `numeric`. The string keeps every digit. `{ as: "number" }` can lose digits past a JavaScript number. Any other `as` is refused. The schema [numeric codec](/docs/define/schema#codecs) is the default when `as` is omitted.
+```ts title="safe-integer.ts"
+import { table, t } from "okmodel/pg";
 
-```ts title="payments.ts"
+export const counts = table("counts", {
+  id: t.identity(),
+  sequence: t.bigint({ as: "number" }), // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1210">
+A value outside the safe integer range is refused when it is encoded.
+</Callout>
+
+#### JavaScript bigint
+
+`{ as: "bigint" }` on `t.bigint()` or `t.identity()` makes the TypeScript value a JavaScript bigint.
+
+```ts title="javascript-bigint.ts"
+import { table, t } from "okmodel/pg";
+
+export const counts = table("counts", {
+  id: t.identity(),
+  sequence: t.bigint({ as: "bigint" }), // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1060">
+Any other `as` on `t.bigint()` or `t.identity()` is refused.
+</Callout>
+
+#### Identity
+
+`t.identity()` is `bigint` `GENERATED ALWAYS AS IDENTITY` and a primary key. Insert and update omit it. The range and the `as` modes match [bigint](#bigint). A generated integer key uses this builder.
+
+```ts title="identity.ts"
+import { table, t } from "okmodel/pg";
+
+export const counts = table("counts", {
+  id: t.identity(), // [!code focus]
+});
+```
+
+### Numbers
+
+`t.numeric()` is exact. Money, rates, and quantities use it. Postgres `decimal` is this same type. The size is two bytes for each group of four decimal digits, plus 3 to 8 bytes. Leading and trailing zeros are not stored. The schema [numeric codec](/docs/define/schema#codecs) is the default when `as` is omitted.
+
+#### Unconstrained
+
+`t.numeric()` is `numeric`. The TypeScript value is a string. Omit precision and scale for an unconstrained numeric. The string keeps every digit.
+
+```ts title="unconstrained.ts"
+import { table, t } from "okmodel/pg";
+
+export const payments = table("payments", {
+  id: t.identity(),
+  amount: t.numeric(), // [!code focus]
+});
+```
+
+#### Precision
+
+`t.numeric(precision)` is `numeric(precision)`. Precision is an integer from 1 to 1000.
+
+```ts title="precision.ts"
+import { table, t } from "okmodel/pg";
+
+export const payments = table("payments", {
+  id: t.identity(),
+  amount: t.numeric(12), // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1060">
+A precision outside 1 to 1000 is refused.
+</Callout>
+
+#### Scale
+
+`t.numeric(precision, scale)` is `numeric(precision, scale)`. Scale is an integer from 0 to that precision.
+
+```ts title="scale.ts"
 import { table, t } from "okmodel/pg";
 
 export const payments = table("payments", {
@@ -189,18 +338,53 @@ export const payments = table("payments", {
 });
 ```
 
+<Callout type="error" title="OKM1060">
+A scale outside 0 to the precision is refused.
+</Callout>
+
+#### Number
+
+`{ as: "number" }` makes the TypeScript value a `number`. The SQL type stays the same. It can lose digits past a JavaScript number. Any other `as` is refused.
+
+```ts title="number.ts"
+import { table, t } from "okmodel/pg";
+
+export const payments = table("payments", {
+  id: t.identity(),
+  amount: t.numeric(12, 2, { as: "number" }), // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1060">
+`as` must be `"string"` or `"number"`.
+</Callout>
+
 ### Floats
 
-`t.real()` and `t.double()` are binary floating point. A sum of them is not exact. An exact quantity uses [numeric](#exact-numbers).
+`t.real()` and `t.double()` are binary floating point. A sum of them is not exact. An exact quantity uses [numeric](#numbers). Postgres `float` is this family.
 
-| Builder | SQL | TypeScript | Bytes | Postgres |
-| --- | --- | --- | --- | --- |
-| `t.real()` | `real` | `number` | 4 | yes |
-| `t.double()` | `double precision` | `number` | 8 | yes |
+#### Real
 
-`real` is about 6 decimal digits. `double` is about 15. Both refuse a value that is not finite. Postgres `float` is this family: `t.real()` is single precision, `t.double()` is double precision.
+`t.real()` is `real`, single precision, about 6 decimal digits. The TypeScript value is a number. Storage is 4 bytes.
 
-```ts title="samples.ts"
+```ts title="real.ts"
+import { table, t } from "okmodel/pg";
+
+export const samples = table("samples", {
+  id: t.identity(),
+  reading: t.real(), // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1210">
+Infinity and NaN are refused when the value is encoded.
+</Callout>
+
+#### Double
+
+`t.double()` is `double precision`, about 15 decimal digits. The TypeScript value is a number. Storage is 8 bytes.
+
+```ts title="double.ts"
 import { table, t } from "okmodel/pg";
 
 export const samples = table("samples", {
@@ -209,38 +393,116 @@ export const samples = table("samples", {
 });
 ```
 
+<Callout type="error" title="OKM1210">
+Infinity and NaN are refused when the value is encoded.
+</Callout>
+
 ### Time
 
-The value is a `Temporal` object. The schema [timestamps codec](/docs/define/schema#codecs) is `"temporal"`.
+The value is a `Temporal` object. The schema [timestamps codec](/docs/define/schema#codecs) is `"temporal"`. [Fractional seconds](#fractional-seconds) apply to `timestamptz`, `timestamp`, `time`, and `timetz`.
 
-| Builder | SQL | TypeScript | Stores | Bytes | Postgres |
-| --- | --- | --- | --- | --- | --- |
-| `t.timestamptz(precision?)` | `timestamptz` | `Temporal.Instant` | An instant. Postgres stores it in UTC. | 8 | yes |
-| `t.timestamp(precision?)` | `timestamp` | `Temporal.PlainDateTime` | A date and time with no zone. | 8 | yes |
-| `t.date()` | `date` | `Temporal.PlainDate` | A calendar day. | 4 | yes |
-| `t.time(precision?)` | `time` | `Temporal.PlainTime` | A time of day, no zone. | 8 | yes |
-| `t.timetz(precision?)` | `timetz` | `{ time, offset }` | A time of day plus a numeric offset. | 12 | yes |
-| `t.interval(fields?)` | `interval` | `Temporal.Duration` | A span. | 16 | yes |
+#### Instant
 
-`precision` is fractional seconds, an integer from 0 to 6. Omit it for full precision.
+`t.timestamptz()` is `timestamptz`. The TypeScript value is `Temporal.Instant`. Postgres stores it in UTC. Storage is 8 bytes. A created time or an event uses it.
 
-`t.timestamptz()` is the one for "when it happened": a created time, an event. `t.timestamp()` is a civil date-time that is not an instant. A calendar day is `t.date()`. A repeating clock is `t.time()`, with the zone stored in its own column. `t.timetz()` keeps one offset, `+HH:MM` or `-HH:MM`. That offset does not follow a named zone through a daylight-saving change.
-
-`fields` is one of `year`, `month`, `day`, `hour`, `minute`, `second`, `year to month`, `day to hour`, `day to minute`, `day to second`, `hour to minute`, `hour to second`, `minute to second`. Any other value is refused.
-
-```ts title="notes.ts"
+```ts title="instant.ts"
 import { table, t } from "okmodel/pg";
 
 export const notes = table("notes", {
   id: t.identity(),
   publishedAt: t.timestamptz(), // [!code focus]
-  editedAt: t.timestamp(0), // [!code focus]
+});
+```
+
+#### Timestamp
+
+`t.timestamp()` is `timestamp`. The TypeScript value is `Temporal.PlainDateTime`. It stores a civil date and time. Storage is 8 bytes.
+
+```ts title="timestamp.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  editedAt: t.timestamp(), // [!code focus]
+});
+```
+
+#### Date
+
+`t.date()` is `date`. The TypeScript value is `Temporal.PlainDate`. It stores a calendar day. Storage is 4 bytes.
+
+```ts title="date.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
   day: t.date(), // [!code focus]
+});
+```
+
+#### Time of day
+
+`t.time()` is `time`. The TypeScript value is `Temporal.PlainTime`. It stores a clock time. The zone is its own column. Storage is 8 bytes.
+
+```ts title="time-of-day.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
   opens: t.time(), // [!code focus]
+});
+```
+
+#### Offset
+
+`t.timetz()` is `timetz`. The TypeScript value is `{ time, offset }`. `time` is a `Temporal.PlainTime`. `offset` is `+HH:MM` or `-HH:MM`. A daylight-saving change needs the zone in its own column. Storage is 12 bytes.
+
+```ts title="offset.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
   shift: t.timetz(), // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1210">
+An offset other than `±HH:MM` is refused when the value is encoded.
+</Callout>
+
+#### Interval
+
+`t.interval()` is `interval`. The TypeScript value is `Temporal.Duration`. It stores a span. Storage is 16 bytes. `fields` is one of `year`, `month`, `day`, `hour`, `minute`, `second`, `year to month`, `day to hour`, `day to minute`, `day to second`, `hour to minute`, `hour to second`, `minute to second`.
+
+```ts title="interval.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
   length: t.interval("day to second"), // [!code focus]
 });
 ```
+
+<Callout type="error" title="OKM1060">
+Any other `fields` value is refused.
+</Callout>
+
+#### Fractional seconds
+
+`precision` is fractional seconds, an integer from 0 to 6. Omit it for full precision. It applies to `t.timestamptz()`, `t.timestamp()`, `t.time()`, and `t.timetz()`.
+
+```ts title="fractional-seconds.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  editedAt: t.timestamp(0), // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1060">
+A precision outside 0 to 6 is refused.
+</Callout>
 
 ### Boolean and binary
 
@@ -434,7 +696,7 @@ export default schema({
 | `t.domain(name, base, check)` | the domain name | the base column's type | the base type | yes |
 | `t.custom({ sqlType, encode, decode })` | `sqlType` | the type `encode` accepts | the SQL type | yes |
 
-`t.enum("note_status", ["open", "done"])` creates the type `note_status`. Labels are stored in that order. An empty name, an empty list, an empty label, or a repeated label is refused. A [picklist](#arrays-and-picklists) stays a string column and adds a CHECK. An enum is its own type, so adding a label is a type change.
+An [enum](#enum) is its own type. A [picklist](#picklist) stays a string column and adds a CHECK.
 
 `t.domain("email", t.text(), "VALUE LIKE '%@%'")` stores the check as written. The name and the check must be non-empty. An enum cannot be the base. Changing the base type of an existing domain is OKM1020.
 
@@ -445,7 +707,6 @@ import { table, t } from "okmodel/pg";
 
 export const notes = table("notes", {
   id: t.identity(),
-  status: t.enum("note_status", ["open", "done"]), // [!code focus]
   email: t.domain("email", t.text(), "VALUE LIKE '%@%'"), // [!code focus]
   label: t.custom({
     sqlType: "text",
@@ -478,26 +739,44 @@ Postgres has these types. This dialect has no builder under that name. The Postg
 
 ## Defaults
 
-| Call | Result |
-| --- | --- |
-| omitted | The column is required and not null. |
-| `.nullable()` | SQL NULL is allowed. |
-| `.default(literal)` | The literal is stored in the catalog. |
-| `.default(generator)` | Filled on insert. The catalog stores no default. |
-| `.default(null)` | Accepted only after `.nullable()`. |
-| `.defaultSql(expression)` | The SQL expression is stored as written. An empty expression is refused. |
-| `.generated(expression)` | Insert and update omit the column. `stored` defaults to true. An empty expression is refused. |
-| a default outside a [picklist](#arrays-and-picklists) | Refused. |
+Omitted, the column is required and not null.
 
-```ts title="notes.ts"
+### Nullable
+
+`.nullable()` allows SQL NULL.
+
+```ts title="nullable.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  publishedAt: t.timestamptz().nullable(), // [!code focus]
+});
+```
+
+### Literal
+
+`.default(literal)` stores the literal in the catalog. A default outside a [picklist](#picklist) is refused.
+
+```ts title="literal.ts"
 import { table, t } from "okmodel/pg";
 
 export const notes = table("notes", {
   id: t.identity(),
   title: t.text().default(""), // [!code focus]
-  publishedAt: t.timestamptz().nullable(), // [!code focus]
-  createdAt: t.timestamptz().defaultSql("now()"), // [!code focus]
-  search: t.tsvector().generated("to_tsvector('simple', title)"), // [!code focus]
+});
+```
+
+### Generator
+
+`.default(generator)` is filled on insert. The catalog stores no default.
+
+```ts title="generator.ts"
+import { table, t } from "okmodel/pg";
+import { uuidv7 } from "okmodel/ids";
+
+export const notes = table("notes", {
+  id: t.uuid().default(uuidv7), // [!code focus]
 });
 ```
 
@@ -505,51 +784,125 @@ export const notes = table("notes", {
 A generator is `uuidv4`, `uuidv7`, [OKID](#okid) (`okid(...)` from `okmodel/ids`), or any function. `t.id()` and `t.identity()` already carry a default. The schema [id default](/docs/define/schema#id-default) changes what a bare `t.id()` means. A column option wins.
 </Callout>
 
+### Null
+
+`.default(null)` is accepted only after `.nullable()`.
+
+```ts title="null-default.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  closedAt: t.timestamptz().nullable().default(null), // [!code focus]
+});
+```
+
 <Callout type="warning" title="Null">
 A null default is accepted only after `.nullable()`.
 </Callout>
 
-## Arrays and picklists
+### SQL
 
-| Call | Result |
-| --- | --- |
-| `.array()` | Wraps a scalar. `dims` defaults to 1. |
-| `dims` | An integer from 1 to 6. Anything else is refused. |
-| `.array()` on an array | Refused. |
-| `.picklist(values)` | Narrows a string column to a literal union. The catalog gets a CHECK. |
-| `{ check: false }` | The list stays in the type. There is no catalog CHECK. |
-| an empty list, an empty value, or a repeated value | OKM1060. |
-| a default outside the list | Refused. |
-| a value outside the list | Rejected when it is encoded. |
+`.defaultSql(expression)` stores the SQL expression as written. An empty expression is refused.
 
-```ts title="notes.ts"
+```ts title="default-sql.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  createdAt: t.timestamptz().defaultSql("now()"), // [!code focus]
+});
+```
+
+### Generated
+
+`.generated(expression)` omits the column from insert and update. `stored` defaults to true. An empty expression is refused.
+
+```ts title="generated.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+  search: t.tsvector().generated("to_tsvector('simple', title)"), // [!code focus]
+});
+```
+
+## Shape
+
+`.array()` wraps a scalar. `.picklist()` narrows a string column. `t.enum()` creates a Postgres type.
+
+### Array
+
+`.array()` wraps a scalar. `dims` defaults to 1. It is an integer from 1 to 6. `array({ dims: 2 })` is a matrix. There is no second `.array()` call to add a dimension.
+
+```ts title="array.ts"
 import { table, t } from "okmodel/pg";
 
 export const notes = table("notes", {
   id: t.identity(),
   tags: t.text().array(), // [!code focus]
+  grid: t.integer().array({ dims: 2 }), // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1060">
+A rank outside 1 to 6 is refused. Calling `.array()` on a column that is already an array is refused.
+</Callout>
+
+### Picklist
+
+`.picklist(values)` narrows a string column to a literal union. The catalog gets a CHECK. `{ check: false }` keeps the list in the type and skips that CHECK.
+
+```ts title="picklist.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
   status: t.text().picklist(["open", "done"]).default("open"), // [!code focus]
 });
 ```
 
-<Callout type="warning" title="Rank">
-`array({ dims: 2 })` is a matrix. The rank starts at 1. There is no second `.array()` call to add a dimension. Calling `.array()` on a column that is already an array is refused.
+<Callout type="error" title="OKM1060">
+An empty list, an empty value, or a repeated value is refused. A default outside the list is refused.
 </Callout>
 
+<Callout type="error" title="OKM1210">
+A value outside the list is rejected when it is encoded.
+</Callout>
+
+### Enum
+
+`t.enum(name, labels)` creates a Postgres enum. The column type is that name. Labels are stored in that order. The TypeScript type is the union of the labels. A [picklist](#picklist) stays a string column and adds a CHECK. An enum is its own type, so adding a label is a type change.
+
+```ts title="enum.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  status: t.enum("note_status", ["open", "done"]), // [!code focus]
+});
+```
+
 <Callout type="error" title="OKM1060">
-An empty list, an empty value, or a repeated value is refused. A default outside the list is refused. A value outside the list is rejected when it is encoded.
+An empty name, an empty list, an empty label, or a repeated label is refused.
+</Callout>
+
+<Callout type="error" title="OKM1210">
+A value outside the labels is rejected when it is encoded.
+</Callout>
+
+<Callout type="error" title="OKM1020">
+The same enum name with a different label list is refused.
 </Callout>
 
 ## Names
 
 The field name is the TypeScript name.
 
-| Name | Default | Empty value |
-| --- | --- | --- |
-| SQL name | The field name, or snake_case when the schema sets [casing](/docs/define/schema#casing). | `sqlName` replaces it. An empty `sqlName` is refused. |
-| `renamedFrom` | omitted | The previous SQL name migrations read. An empty value is refused. |
-| column `comment` | omitted | The text you pass is stored. Omit the call to leave it off. |
-| table `comment` | omitted | Stored beside the table. An empty comment is refused. |
+### SQL name
+
+The SQL name is the field name. When the schema sets [casing](/docs/define/schema#casing) to `"snake"`, a camelCase field is stored as snake_case. `.sqlName()` replaces the column name. `sqlName` on the table replaces the table name. Casing does not rewrite a name you set. An empty name is refused.
 
 ```ts title="notes.ts"
 import { table, t } from "okmodel/pg";
@@ -558,30 +911,78 @@ export const notes = table(
   "notes",
   {
     id: t.identity(),
-    title: t.text().sqlName("headline").comment("Shown in the list"), // [!code focus]
+    title: t.text().sqlName("headline"), // [!code focus]
   },
-  {
-    sqlName: "note", // [!code focus]
-    renamedFrom: "posts", // [!code focus]
-    comment: "One row per note", // [!code focus]
-  },
+  { sqlName: "note" }, // [!code focus]
 );
 ```
 
 <Callout type="warning" title="Empty">
-An empty `sqlName`, `renamedFrom`, or table `comment` is refused. A column comment stores the text you pass. Omit the call to leave it off.
+An empty column or table `sqlName` is refused.
+</Callout>
+
+### Previous name
+
+Omitted until you set it. Migrations read the previous SQL name. `.renamedFrom()` is the previous column name. `renamedFrom` on the table is the previous table name. An empty value is refused.
+
+```ts title="posts.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text().renamedFrom("headline"), // [!code focus]
+  },
+  { renamedFrom: "posts" }, // [!code focus]
+);
+```
+
+<Callout type="warning" title="Empty">
+An empty column or table `renamedFrom` is refused.
+</Callout>
+
+<Callout type="error" title="OKM1020">
+A previous name that the last snapshot does not contain is refused. Remove `renamedFrom` once the migration that used it has been applied.
+</Callout>
+
+### Comment
+
+`.comment()` stores the text you pass on the column. Omit the call to leave it off. `comment` on the table is stored beside the table. An empty table comment is refused. An empty column comment is stored.
+
+```ts title="labels.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text().comment("Shown in the list"), // [!code focus]
+  },
+  { comment: "One row per note" }, // [!code focus]
+);
+```
+
+<Callout type="warning" title="Empty">
+An empty table `comment` is refused. A column comment stores the text you pass, including an empty one. Omit `.comment()` to leave it off.
 </Callout>
 
 ## Visibility
 
 Three flags. They do not change the SQL type.
 
-| Flag | Result |
+### Hidden
+
+`.hidden()` leaves the column out of the default row. A root `select` that names it returns it. An include omits it, including when that `select` names it.
+
+| Call | Result |
 | --- | --- |
-| `.hidden()` | Out of the default row. A named `select` still returns it. Includes never do. |
-| `.hidden({ filterable: true })` | `where` and `orderBy` accept it. `filters()` still refuses it. |
-| `.sensitive()` | Redacted in logs, errors, and `inspect()`. A selected read still returns it. |
-| `.guarded()` | Omitted from insert and update input. The client fills it, or the database does. |
+| `.hidden()` | Out of the default row. `where` and `orderBy` refuse it. |
+| `.hidden({ filterable: true })` | `where` and `orderBy` accept it. The default row still omits it. |
+| `select` | The root read returns it when the list names it. |
+| `include` | Omits it. |
+| `filters()` | Refuses it in `allow`, `sort`, and `relations`. |
+| `groupBy`, `sum`, `avg`, `min`, `max` | Refuse it. |
 
 ```ts title="users.ts"
 import { table, t } from "okmodel/pg";
@@ -590,70 +991,261 @@ export const users = table("users", {
   id: t.identity(),
   email: t.text(),
   passwordHash: t.text().hidden(), // [!code focus]
-  token: t.text().sensitive(), // [!code focus]
+  resetCode: t.text().hidden({ filterable: true }), // [!code focus]
 });
 ```
 
 <Callout type="error" title="OKM1120">
-`where` and `orderBy` refuse a hidden column unless `filterable` is set. `filters()` still refuses it.
+`where` and `orderBy` refuse a hidden column unless `filterable` is set. `groupBy`, `sum`, `avg`, `min`, and `max` refuse it either way.
 </Callout>
 
-<Callout type="info" title="Hash">
-The catalog hash does not include `.sensitive()`. A read that selects the column still returns it.
+<Callout type="error" title="OKM1123">
+`filters()` refuses a hidden field in `allow`, `sort`, or `relations`. `filterable` does not change that. See [filters](#filters).
 </Callout>
 
 <Callout type="info" title="Roles">
-A hidden column stays out of a reporting role's select unless [roles.columns](/docs/define/config#roles) names it.
+A hidden column stays out of a reporting role's select unless [roles.columns](/docs/define/config#roles) names it. `filterable` does not add it.
 </Callout>
 
-## Column validation
+### Sensitive
+
+`.sensitive()` redacts the value in logs, errors, and `inspect()`. The placeholder is `[redacted]`. The stored value is unchanged. A read that selects the column still returns it. The same column can also be [hidden](#hidden).
+
+```ts title="sessions.ts"
+import { table, t } from "okmodel/pg";
+
+export const sessions = table("sessions", {
+  id: t.identity(),
+  token: t.text().sensitive(), // [!code focus]
+});
+```
+
+<Callout type="info" title="Hash">
+The catalog hash does not include `.sensitive()`.
+</Callout>
+
+### Guarded
+
+`.guarded()` omits the column from insert and update input. A write that sets it is OKM1190. `{ allow: ["role"] }` opens that field for that call.
+
+| Call | Result |
+| --- | --- |
+| insert or update sets the field | OKM1190. |
+| `{ allow: ["role"] }` | That call may set `role`. |
+| a sealed trait field | OKM1190. `allow` does not open it. |
+| the tenant key | OKM1190. `allow` does not open it. |
+
+```ts title="accounts.ts"
+import { table, t } from "okmodel/pg";
+
+export const accounts = table("accounts", {
+  id: t.identity(),
+  email: t.text(),
+  role: t.text().guarded(), // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1190">
+Input cannot set a guarded field. Pass `{ allow }` with the field name, or leave it out.
+</Callout>
+
+<Callout type="info" title="Filled elsewhere">
+A [tenant key](/docs/define/schema#tenancy) is guarded. The client fills it from the scope. [`timestamps()`](/docs/define/schema#traits) and [`archivable()`](#archive) mark their columns guarded and sealed. Input cannot set those columns. `allow` does not open a tenant key or a sealed field.
+</Callout>
+
+## Validation
+
+A field's rules live in one place. They run when validation is enabled and the engine has loaded.
+
+### Inline
+
+`.validate()` stores a list of [built-in](#rules) rules on the column, or one [Standard Schema](#standard-schema).
+
+```ts title="notes.ts"
+import { table, t } from "okmodel/pg";
+import { v } from "okmodel/validate";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  title: t.varchar(200).validate([v.trim(), v.min(1, "title_required")]), // [!code focus]
+  email: t.text().validate([v.lowercase(), v.email("email_invalid")]), // [!code focus]
+});
+```
+
+### Section
+
+`validate` is the section. Each key is a field, and `$row` is the whole row. Every value is a list of rules. A key that is not a column is refused. A `$row` rule sees the row after the field transforms.
+
+```ts title="rows.ts"
+import { table, t } from "okmodel/pg";
+import { v } from "okmodel/validate";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text(),
+    status: t.text().picklist(["draft", "active"]),
+    qty: t.integer(),
+  },
+  {
+    validate: { // [!code focus]
+      title: [v.min(1, "title_required")], // [!code focus]
+      $row: [ // [!code focus]
+        v.rule( // [!code focus]
+          (row: { readonly status?: string; readonly qty?: number }) => // [!code focus]
+            row.status !== "active" || (row.qty ?? 0) > 0, // [!code focus]
+          "qty", // [!code focus]
+          "qty_required", // [!code focus]
+        ), // [!code focus]
+      ], // [!code focus]
+    }, // [!code focus]
+  },
+);
+```
 
 <Callout type="error" title="OKM1030">
-Rules live in one place per field. The same field in `.validate()` and in the `validate` section is refused. `okm check` reports it.
+The same field in `.validate()` and in this section is refused. `okm check` reports it.
 </Callout>
 
-<Callout type="info" title="One style">
-Inline rules are `.validate()`. Section rules are the `validate` option. Pick one style and keep a field in one place.
+### Built-in
+
+`v` comes from `okmodel/validate`. Importing it loads the engine.
+
+#### Rules
+
+`trim` and `lowercase` run before the checks. A string is changed. Any other value is left as it is.
+
+| Call | Options | Result |
+| --- | --- | --- |
+| `v.trim()` | — | Removes leading and trailing whitespace. |
+| `v.lowercase()` | — | Lowercases the string. |
+| `v.email(key)` | the issue message | Rejects a string that is not an email. |
+| `v.min(n, key)` | the minimum, the issue message | A string shorter than `n` characters, or a number below `n`. |
+| `v.rule(fn, path, key)` | the predicate, the issue path, the issue message | `false` records `key` at `path`. On a field, `fn` receives that value. |
+| `v.onInsert()` | none, or one rule | Limits the following rules, or that one rule, to insert. |
+| `v.onUpdate()` | none, or one rule | Limits the following rules, or that one rule, to update. |
+
+```ts title="phases.ts"
+import { table, t } from "okmodel/pg";
+import { v } from "okmodel/validate";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  title: t.text().validate([ // [!code focus]
+    v.onInsert(), // [!code focus]
+    v.min(2, "insert_min"), // [!code focus]
+    v.onUpdate(), // [!code focus]
+    v.min(4, "update_min"), // [!code focus]
+  ]), // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1201">
+A write that validates without `okmodel/validate` imported is refused. `okm check` reports it.
 </Callout>
 
-| Place | Result |
+#### Column checks
+
+The column type adds a check when validation is on. You do not pass a rule for it.
+
+| Column | Option | Issue |
+| --- | --- | --- |
+| required on insert, or null | not nullable, and the column is written. A default lets insert omit it | `required` |
+| `t.varchar(n)`, `t.char(n)` | `n`, counted in characters | `too_long` |
+| `.picklist(values)` | the values. `{ check: false }` skips the database CHECK and this check still runs | `picklist` |
+| `t.smallint()`, `t.integer()`, `t.bigint()` | that type's range | `integer_range` |
+| `t.numeric(precision, scale)` | precision and scale. A bare `t.numeric()` accepts a decimal | `precision` |
+| `t.real()`, `t.double()` | a finite number | `precision` |
+| `t.uuid()` | a uuid string | `uuid` |
+| `t.json()`, `t.jsonb()` | a value JSON can store | `json` |
+
+<Callout type="error" title="OKM1200">
+A failed check throws. `issues` lists `{ path, message }` in column order, then `$row`. A hidden or sensitive value stays out of the issue.
+</Callout>
+
+### Standard Schema
+
+`.validate()` takes one Standard Schema instead of a list. `~standard.version` is 1, and `~standard.validate` checks the value. Zod, Valibot, and any other library with that shape work. A result of `{ value }` replaces the field. Each issue message is kept, and a path on the issue is added after the field.
+
+In the [section](#section) the schema sits inside that field's list.
+
+```ts title="zod.ts" no-check="zod is installed by the application"
+import { z } from "zod";
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  title: t.text().validate(z.string().trim().min(1)), // [!code focus]
+});
+```
+
+```ts title="valibot.ts" no-check="valibot is installed by the application"
+import * as v from "valibot";
+import { table, t } from "okmodel/pg";
+
+export const people = table("people", {
+  id: t.identity(),
+  email: t.text().validate(v.pipe(v.string(), v.email())), // [!code focus]
+});
+```
+
+### Flag
+
+`validation` overrides the [schema](/docs/define/schema#validation) for this table.
+
+| Value | Result |
 | --- | --- |
-| `.validate()` | Rules on the column, or one Standard Schema. They run only when validation is enabled and the engine has loaded. |
-| `validate` | The section. Each key is a field, and `$row` is the whole row. Every value is a list of rules. A key that is not a column is refused. |
-| the same field in both | OKM1030, reported by `okm check`. |
-| `validation` omitted | The table follows the [schema](/docs/define/schema#validation). |
+| omitted | The table follows the schema. |
 | `true` | On for this table. |
 | `false` | Off for this table. |
 | `{ enabled, onRead, style }` | The same fields as the schema flag. |
 | `style` | `"inline"` or `"section"`. |
 
-```ts title="notes.ts"
+```ts title="switch.ts"
 import { table, t } from "okmodel/pg";
 
 export const notes = table(
   "notes",
   {
     id: t.identity(),
-    title: t.text().validate([]), // [!code focus]
+    title: t.text(),
   },
-  {
-    validation: true, // [!code focus]
-  },
+  { validation: true }, // [!code focus]
 );
 ```
+
+<Callout type="info" title="One style">
+`"inline"` is [`.validate()`](#inline). `"section"` is the [`validate` option](#section). A column rule under `"section"`, or a section rule under `"inline"`, is OKM1030.
+</Callout>
 
 ## References
 
 `.references()` points a column at another table. The argument is the table name, so the column type does not cycle.
 
-| Option | Required | Values |
-| --- | --- | --- |
-| table | yes | The target table name. An empty name is refused. A missing table is OKM1020. |
-| `onDelete` | no | `"cascade"`, `"no action"`, `"restrict"`, `"set default"`, `"set null"`. Anything else is refused. |
-| `onUpdate` | no | The same list. Anything else is refused. |
-| `columns` | no | Target columns when the key is not the primary key. At least one name. Empty names are refused. |
+### Target table
 
-```ts title="comments.ts"
+The first argument is the target table name. An empty name is refused.
+
+```ts title="target.ts"
+import { table, t } from "okmodel/pg";
+
+export const comments = table("comments", {
+  id: t.identity(),
+  noteId: t.bigint().references("notes"), // [!code focus]
+  body: t.text(),
+});
+```
+
+<Callout type="error" title="OKM1020">
+`schema()` checks that the target table exists. A missing table is refused.
+</Callout>
+
+### On delete
+
+`onDelete` is `"cascade"`, `"no action"`, `"restrict"`, `"set default"`, or `"set null"`. Anything else is refused. Omitted leaves the clause off. `set null` needs a nullable column.
+
+```ts title="on-delete.ts"
 import { table, t } from "okmodel/pg";
 
 export const comments = table("comments", {
@@ -663,8 +1255,40 @@ export const comments = table("comments", {
 });
 ```
 
-<Callout type="error" title="OKM1020">
-`schema()` checks that the target table exists. A missing table is refused.
+### On update
+
+`onUpdate` takes the same actions. Anything else is refused. Omitted leaves the clause off. `set null` needs a nullable column.
+
+```ts title="on-update.ts"
+import { table, t } from "okmodel/pg";
+
+export const comments = table("comments", {
+  id: t.identity(),
+  noteId: t.bigint().nullable().references("notes", { onUpdate: "set null" }), // [!code focus]
+  body: t.text(),
+});
+```
+
+### Target columns
+
+`columns` names the target column when it is not the primary key. The list needs one name. An empty name is refused. Omitted, `schema()` uses that table's primary key.
+
+```ts title="target-columns.ts"
+import { table, t } from "okmodel/pg";
+
+export const comments = table("comments", {
+  id: t.identity(),
+  authorId: t.uuid().references("users", { columns: ["id"] }), // [!code focus]
+  body: t.text(),
+});
+```
+
+<Callout type="error" title="OKM1021">
+A missing column, no primary key, or more than one name is refused.
+</Callout>
+
+<Callout type="error" title="OKM1022">
+The column type and the target type must match.
 </Callout>
 
 <Callout type="info" title="Both">
@@ -675,18 +1299,16 @@ A [relation](#relations) is the name you query. The reference is the foreign key
 
 `relations` names edges. `schema()` resolves the foreign key.
 
-<Callout type="error" title="OKM1021">
-An ambiguous key is refused. Pass `field` when more than one key points at the same table.
+<Callout type="error" title="OKM1020">
+A missing table is refused. For a join, that includes the join table.
 </Callout>
 
-| Call | `field` |
-| --- | --- |
-| `one(table)` | The local foreign key, when the table has several. |
-| `many(table)` | The foreign key on the other table. |
-| `manyThrough(table, { through })` | The join table. Name `from` and `to` when a table has more than one. |
+### To-one
 
-```ts title="notes.ts"
-import { many, one, table, t } from "okmodel/pg";
+`one(table, field)` is to-one. `field` is the local foreign key when this table has several keys to that table.
+
+```ts title="to-one.ts"
+import { one, table, t } from "okmodel/pg";
 
 export const notes = table(
   "notes",
@@ -695,16 +1317,37 @@ export const notes = table(
     authorId: t.bigint().references("users"),
     title: t.text(),
   },
-  {
-    relations: {
-      author: one("users"), // [!code focus]
-      comments: many("comments"), // [!code focus]
-    },
-  },
+  { relations: { author: one("users") } }, // [!code focus]
 );
 ```
 
-```ts title="users.ts"
+<Callout type="error" title="OKM1021">
+An ambiguous key is refused. Pass `field` when more than one key points at that table.
+</Callout>
+
+### To-many
+
+`many(table, field)` is to-many. `field` is the foreign key on the other table when that table has several keys here.
+
+```ts title="to-many.ts"
+import { many, table, t } from "okmodel/pg";
+
+export const notes = table(
+  "notes",
+  { id: t.identity(), title: t.text() },
+  { relations: { comments: many("comments") } }, // [!code focus]
+);
+```
+
+<Callout type="error" title="OKM1021">
+An ambiguous key is refused. Pass `field` when more than one key points here.
+</Callout>
+
+### Join table
+
+`manyThrough(table, { through })` is to-many through a join table. The join table has one foreign key to this table and one to the related table. Name `from` and `to` when a table has more than one.
+
+```ts title="through.ts"
 import { manyThrough, table, t } from "okmodel/pg";
 
 export const users = table(
@@ -714,20 +1357,40 @@ export const users = table(
 );
 ```
 
-<Callout type="info" title="Join">
-`one` is to-one. `many` is to-many. `manyThrough` is to-many through a join table. The join table has one foreign key to this table and one to the related table.
+<Callout type="error" title="OKM1021">
+An ambiguous key is refused. Pass `from` and `to` when the join table has more than one foreign key to an end. The same field for both ends is refused.
 </Callout>
 
 ## Indexes
 
-`indexes` receives column handles and returns index calls.
+`indexes` receives column handles and returns an array of index calls.
 
-| Call | Result |
-| --- | --- |
-| `index(...)` | One index, in column order. |
-| `.unique()` | Marks that index unique. |
+<Callout type="info" title="SQL name">
+The handle's `name` is the SQL name `schema()` will store. A [casing](/docs/define/schema#casing) of `"snake"` has already been applied by the time the catalog is written.
+</Callout>
 
-```ts title="notes.ts"
+### Index
+
+`index(...)` is one index, in column order. It needs a column.
+
+```ts title="index.ts"
+import { index, table, t } from "okmodel/pg";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text(),
+  },
+  { indexes: (columns) => [index(columns.title)] }, // [!code focus]
+);
+```
+
+### Unique
+
+`.unique()` marks that index unique.
+
+```ts title="unique-index.ts"
 import { index, table, t } from "okmodel/pg";
 
 export const notes = table(
@@ -737,15 +1400,9 @@ export const notes = table(
     title: t.text(),
     published: t.boolean().default(false),
   },
-  {
-    indexes: (columns) => [index(columns.title), index(columns.published, columns.title).unique()], // [!code focus]
-  },
+  { indexes: (columns) => [index(columns.published, columns.title).unique()] }, // [!code focus]
 );
 ```
-
-<Callout type="info" title="SQL name">
-The handle's `name` is the SQL name `schema()` will store. A [casing](/docs/define/schema#casing) of `"snake"` has already been applied by the time the catalog is written.
-</Callout>
 
 <Callout type="warning" title="Not a constraint">
 A unique constraint and a unique index are different objects. A constraint belongs on [keys](#keys). An index belongs here.
@@ -783,20 +1440,37 @@ A handle becomes the SQL name `schema()` stores, including [casing](/docs/define
 
 ## Filters
 
-`filters()` allowlists what a caller may send. `parse` loads the parser on first use. An operator outside the list is not assignable.
+`filters()` allowlists what a caller may send. `parse` loads the parser on first use.
 
-| Field | Required | Values |
-| --- | --- | --- |
-| `allow` | no | A field mapped to operators. |
-| `sort` | no | Field names the caller may sort. |
-| `relations` | no | Fields of a related table, when the table declared that [relation](#relations). |
+<Callout type="error" title="OKM1123">
+A hidden field in `allow`, `sort`, or `relations` is refused here. `filterable` does not change that. See [hidden](#hidden).
+</Callout>
 
-| Set | Operators |
+<Callout type="error" title="OKM1121">
+`parse` expects an object of fields.
+</Callout>
+
+### Allow
+
+`allow` maps a field to operators. An operator outside the list is not assignable. A scalar is `eq` when that field allows `eq`. Several fields, or several operators on one field, are combined.
+
+#### Accepted
+
+| Operator | Value |
 | --- | --- |
-| accepted | `eq`, `in`, `inList`, `notIn`, `lt`, `lte`, `gt`, `gte`, `between`, `startsWith`, `endsWith`, `contains`, `like`, `ilike`, `not`, `containedBy`, `overlaps`, `hasKey`, `hasAnyKey` |
-| refused | `path`, `matches`, `similar`, `wordSimilar`, boolean trees, relation quantifiers, and write operators |
+| `eq` | A scalar, or an object. |
+| `in`, `inList` | An array. `in` in the list also accepts `inList`. |
+| `notIn` | An array. |
+| `lt`, `lte`, `gt`, `gte` | The bound. |
+| `between` | `[from, to]`. |
+| `startsWith`, `endsWith`, `like`, `ilike` | A string. |
+| `contains` | The value. |
+| `not` | A scalar or null. |
+| `containedBy`, `overlaps` | The value. |
+| `hasKey` | A string. |
+| `hasAnyKey` | An array of strings. |
 
-```ts title="notes.ts"
+```ts title="allow.ts"
 import { table, t } from "okmodel/pg";
 
 export const notes = table("notes", {
@@ -807,22 +1481,70 @@ export const notes = table("notes", {
 
 export const noteFilters = notes.filters({
   allow: { title: ["eq", "startsWith"], status: ["eq", "in"] }, // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1120">
+An operator the field does not list is refused. So is a value that operator does not take.
+</Callout>
+
+#### Refused
+
+`path`, `matches`, `similar`, `wordSimilar`, boolean trees, relation quantifiers, and write operators. A caller cannot name them in `allow`.
+
+### Sort
+
+`sort` names the fields a caller may sort. The request key `sort` is one of those names. `parse` orders that field ascending.
+
+```ts title="sort.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+export const noteFilters = notes.filters({
+  allow: { title: ["eq"] },
   sort: ["title"], // [!code focus]
 });
 ```
 
+### Related fields
+
+`relations` maps a [relation](#relations) name to fields of that table. `parse` turns `{ author: { name: { startsWith: "a" } } }` into `has`. Those fields accept the [operators](#accepted) above. A name in `allow` is the column when that name is also a relation.
+
+```ts title="related.ts"
+import { one, table, t } from "okmodel/pg";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text(),
+    authorId: t.bigint().references("users"),
+  },
+  { relations: { author: one("users") } },
+);
+
+export const noteFilters = notes.filters({
+  relations: { author: ["name"] }, // [!code focus]
+});
+```
+
 <Callout type="error" title="OKM1123">
-A hidden field in `allow`, `sort`, or `relations` is refused here. See [visibility](#visibility).
+A field that is not in that relation's list is refused.
 </Callout>
 
-## Table traits
+## Traits
 
-| Field | Required | Default | Role |
-| --- | --- | --- | --- |
-| `traits` | no | the schema list | Added on top of the schema defaults. |
-| `omitDefaults` | no | the schema list stays | The reason. Skips those defaults. An empty reason is rejected when the schema is built. |
+Schema [traits](/docs/define/schema#traits) are the defaults. A table adds its own, or opts out.
 
-```ts title="notes.ts"
+### Added
+
+`traits` is a list, added on top of those defaults. A value that is not a list is refused.
+
+```ts title="added.ts"
 import { table, t } from "okmodel/pg";
 import { archivable } from "okmodel/traits";
 
@@ -834,6 +1556,14 @@ export const notes = table(
   },
   { traits: [archivable()] }, // [!code focus]
 );
+```
+
+### Omit defaults
+
+`omitDefaults` is the reason. It drops the schema list and keeps this table's `traits`.
+
+```ts title="omit-defaults.ts"
+import { table, t } from "okmodel/pg";
 
 export const sessions = table(
   "sessions",
@@ -845,37 +1575,111 @@ export const sessions = table(
 );
 ```
 
-<Callout type="info" title="Own list">
-Schema [traits](/docs/define/schema#traits) are the defaults. A table with `omitDefaults` keeps its own `traits` and drops the schema list.
-</Callout>
-
 <Callout type="warning" title="Reason">
 `omitDefaults` needs a reason. An empty reason is rejected when the schema is built.
 </Callout>
 
-<Callout type="info" title="archivable">
-`archivable()` adds the archive columns. Uniques on that table become partial. `cascade` names child tables archived and restored with the row.
+### Built-in traits
+
+`timestamps` and `archivable` come from `okmodel/traits`.
+
+| Trait | Columns | Options |
+| --- | --- | --- |
+| `timestamps()` | `createdAt`, `updatedAt` | `{ enforce: "trigger" }` |
+| `archivable()` | `archivedAt`, `archiveId` | `cascade`, `strategy` |
+
+<Callout type="error" title="OKM1012">
+A column the table already has, or that another trait adds, is refused.
 </Callout>
 
-## Table tenancy
+#### Timestamps
 
-Schema [tenancy](/docs/define/schema#tenancy) adds the key to every table. Two opt-outs live on the table.
+`timestamps()` adds `createdAt` and `updatedAt`. Both are `timestamptz`, not null, default `now()`, guarded and sealed. Insert leaves them to the default. Update sets `updatedAt` and leaves `createdAt`. `{ enforce: "trigger" }` also writes `updatedAt` in the database. Any other option is refused.
 
-| Value | Result |
-| --- | --- |
-| omitted | The schema key is added. |
-| `global("reason")` | The tenant column stays off this table. The reason is required. |
-| `via("a.b")` | Isolates through relations. Steps are separated by `.`, up to three. |
-
-```ts title="audit.ts"
+```ts title="timestamps.ts"
 import { table, t } from "okmodel/pg";
-import { global, via } from "okmodel/tenancy";
+import { timestamps } from "okmodel/traits";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text(),
+  },
+  { traits: [timestamps({ enforce: "trigger" })] }, // [!code focus]
+);
+```
+
+#### Archive
+
+`archivable()` adds `archivedAt` and `archiveId`. `archivedAt` is `timestamptz` and nullable. `archiveId` is `uuid` and nullable. Both are guarded and sealed. Uniques on that table become partial. `cascade` names child tables archived and restored with the row. An empty name is refused. `strategy: "column"` keeps archived rows in the table.
+
+```ts title="archive.ts"
+import { table, t } from "okmodel/pg";
+import { archivable } from "okmodel/traits";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text(),
+  },
+  { traits: [archivable({ cascade: ["comments"] })] }, // [!code focus]
+);
+```
+
+<Callout type="error" title="OKM1061">
+`strategy: "table"` is not available yet.
+</Callout>
+
+## Tenancy
+
+Schema [tenancy](/docs/define/schema#tenancy) adds the key to every table. `global` and `via` come from `okmodel/tenancy`. Anything else is refused.
+
+### Schema key
+
+Omitted, the schema key is added.
+
+```ts title="schema-key.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  email: t.text().unique({ global: "login email" }), // [!code focus]
+  title: t.text(),
+});
+```
+
+<Callout type="info" title="Unique">
+A unique on a tenant table includes the key unless `.unique({ global: "reason" })` says otherwise.
+</Callout>
+
+### Global
+
+`global("reason")` leaves the tenant column off this table. The reason is required.
+
+```ts title="global.ts"
+import { table, t } from "okmodel/pg";
+import { global } from "okmodel/tenancy";
 
 export const plans = table(
   "plans",
   { id: t.identity(), code: t.text() },
   { tenancy: global("plans are shared") }, // [!code focus]
 );
+```
+
+<Callout type="error" title="OKM1705">
+A global table that references a tenant table is refused.
+</Callout>
+
+### Path
+
+`via("a.b")` isolates through relations. Steps are separated by `.`, up to three. An empty path is refused.
+
+```ts title="path.ts"
+import { table, t } from "okmodel/pg";
+import { via } from "okmodel/tenancy";
 
 export const tasks = table(
   "tasks",
@@ -888,8 +1692,8 @@ export const tasks = table(
 );
 ```
 
-<Callout type="info" title="Unique">
-`global` and `via` come from `okmodel/tenancy`. A unique on a tenant table includes the key unless `.unique({ global: "reason" })` says otherwise.
+<Callout type="error" title="OKM1705">
+A path that does not end at a tenant table, a missing relation, a cycle, or more than three steps is refused.
 </Callout>
 
 ## Presets

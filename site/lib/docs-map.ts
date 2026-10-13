@@ -109,7 +109,8 @@ export const mappedPages: readonly MappedPage[] = [
   },
   definePage(0, "table", "Table", "table() stores the columns. The key comes first, then each data type, then the options."),
   definePage(1, "schema", "Schema", "schema() compiles the tables into one catalog. Each section is one option."),
-  definePage(2, "config", "Config", "defineConfig is the file okm reads. Each section is one option."),
+  definePage(2, "connect", "Connect", "connect() opens the client. The first argument is the target. schema is required."),
+  definePage(3, "config", "Config", "defineConfig is the file okm reads. Each section is one option."),
 ];
 
 /**

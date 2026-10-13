@@ -5,7 +5,7 @@
  */
 
 import type { LoaderPlugin } from "fumadocs-core/source";
-import { Braces, FileText, Play, Table2, Terminal, type LucideIcon } from "lucide-react";
+import { Braces, Cable, FileText, Play, Table2, Terminal, type LucideIcon } from "lucide-react";
 import { createElement, type ReactNode } from "react";
 
 /** Docs path → Lucide component. `/docs` is the landing and is not a sidebar row. */
@@ -13,6 +13,7 @@ const PATH_ICONS: Readonly<Record<string, LucideIcon>> = {
   "/docs/start": Terminal,
   "/docs/start/basic-usage": Play,
   "/docs/define/config": FileText,
+  "/docs/define/connect": Cable,
   "/docs/define/schema": Braces,
   "/docs/define/table": Table2,
 };

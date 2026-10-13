@@ -69,13 +69,13 @@ const config: NextConfig = {
       { source: "/docs/table/relations", destination: "/docs/define/table#relations", permanent: true },
       { source: "/docs/table/visibility", destination: "/docs/define/table#visibility", permanent: true },
       { source: "/docs/table/names", destination: "/docs/define/table#names", permanent: true },
-      { source: "/docs/table/traits", destination: "/docs/define/table#table-traits", permanent: true },
-      { source: "/docs/table/tenancy", destination: "/docs/define/table#table-tenancy", permanent: true },
+      { source: "/docs/table/traits", destination: "/docs/define/table#traits", permanent: true },
+      { source: "/docs/table/tenancy", destination: "/docs/define/table#tenancy", permanent: true },
       { source: "/docs/table/presets", destination: "/docs/define/table#presets", permanent: true },
       { source: "/docs/table/reference", destination: "/docs/define/table#reference-rows", permanent: true },
       { source: "/docs/table/filters", destination: "/docs/define/table#filters", permanent: true },
-      { source: "/docs/table/validation", destination: "/docs/define/table#column-validation", permanent: true },
-      { source: "/docs/table/shape", destination: "/docs/define/table#arrays-and-picklists", permanent: true },
+      { source: "/docs/table/validation", destination: "/docs/define/table#validation", permanent: true },
+      { source: "/docs/table/shape", destination: "/docs/define/table#shape", permanent: true },
     ];
   },
   // Own lockfile: keep Turbopack rooted here so `next` resolves from site/node_modules.
