@@ -9,6 +9,7 @@ import type { DriverTimeouts, Notice } from "../contracts/driver.js";
 import type { SafeResult } from "../contracts/error.js";
 import type { QuerySchema } from "../dialects/pg/model.js";
 import type { Bucket } from "../dialects/pg/ops/bucket.js";
+import type { Window } from "../dialects/pg/ops/window.js";
 import type { Inc } from "../dialects/pg/ops/inc.js";
 import type {
   ArrAppend,
@@ -147,8 +148,22 @@ export type IncludeOf<S extends QuerySchema, K extends keyof S["~byName"]> = {
 export type Selected<Row, Sel> = [Sel] extends [readonly (infer P)[]]
   ? [P] extends [keyof Row]
     ? { readonly [K in P & keyof Row]: Row[K] }
-    : Row
+    : boolean extends HasWindow<P>
+      ? Pick<Row, Extract<P, keyof Row>> & WindowFields<Row, P>
+      : [P] extends [Window<string, string | number>]
+        ? WindowFields<Row, P>
+        : Row
   : Row;
+
+/** `true` when a select entry is a window. A mix of fields and windows is `boolean`. */
+type HasWindow<P> = P extends Window<string, string | number> ? true : false;
+
+/** Result keys a window helper adds. A field name contributes nothing. */
+type WindowFields<Row, P> = Intersect<
+  P extends Window<infer A, infer V>
+    ? { readonly [K in A]: V extends keyof Row ? NonNullable<Row[V]> | null : number }
+    : {}
+>;
 
 type IncludeRows<S extends QuerySchema, K extends keyof S["~byName"], Inc> = [Inc] extends [
   Record<string, unknown>,
@@ -199,7 +214,8 @@ export type CallOptions = {
 /** Options shared by reads. */
 export type ReadOptions<S extends QuerySchema, K extends keyof S["~byName"]> = CallOptions & {
   readonly where?: WhereOf<S, K>;
-  readonly select?: readonly (keyof RowOf<S, K> & string)[];
+  /** Field names, or a window helper (`rowNumber`, `rank`, `denseRank`, `runningTotal`). */
+  readonly select?: readonly ((keyof RowOf<S, K> & string) | Window<string, string | number>)[];
   readonly orderBy?: OrderBy<RowOf<S, K>>;
   readonly include?: IncludeOf<S, K>;
 };
@@ -251,7 +267,12 @@ export type Page<Row> = {
   readonly next: string | null;
 };
 
-/** `page` options. `after` is the `next` of the page before. */
+/**
+ * `page` options. `after` is the `next` of the page before.
+ *
+ * `page` refuses a window helper when the call runs (OKM1120). The keyset
+ * cursor has no window value to encode.
+ */
 export type PageOptions<S extends QuerySchema, K extends keyof S["~byName"]> = ReadOptions<S, K> & {
   /** Rows in the page. At least 1. */
   readonly limit: number;

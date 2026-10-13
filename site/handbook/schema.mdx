@@ -22,7 +22,7 @@ export const app = schema({ tables: [authors] });
 
 <Tab value="Relation">
 
-`authorId` points at `authors`. `one` and `many` name the two directions. A query can then include the author on a note.
+`authorId` points at `authors`. `one` and `many` name the two directions. A query can then include the author on a note. A to-many include takes a limit, and that limit is the first related rows of each parent.
 
 ```ts title="schema.ts"
 import { many, one, schema, table, t } from "okmodel/pg";

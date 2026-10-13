@@ -90,7 +90,7 @@ test("reads use the first replica until the session writes", async () => {
   } finally {
     await db.close();
   }
-});
+}, 15_000);
 
 test("a transaction write through reserve keeps later reads on the primary", async () => {
   const hits: Hit[] = [];

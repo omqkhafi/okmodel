@@ -14,6 +14,8 @@ import {
   registerFailFix,
   indexes,
   isRecord,
+  needsOperatorSql,
+  orderHasRelevance,
   jsonExpr,
   list,
   projectExpr,
@@ -30,6 +32,7 @@ import {
   type Plan,
   type Indexed,
   type ParsedInclude,
+  type ReadCall,
   type Sink,
 } from "./plan.js";
 
@@ -170,10 +173,7 @@ function emitIncludeJoin(
     sink.text(") as item from ");
     emitRelationFrom(schema, include.relation, child, sink, parentAlias, childAlias, depth + 1);
     emitWhere(schema, child, include.where, sink, childAlias, depth + 1, true);
-    emitOrder(child, include.orderBy, sink, childAlias);
-    if (include.orderBy === undefined && child.model.primary.length > 0) {
-      emitPrimaryOrder(child, sink, childAlias);
-    }
+    emitIncludeOrder(child, include.orderBy, sink, childAlias);
     if (include.limit !== undefined) {
       sink.text(" limit ");
       sink.param(String(include.limit));
@@ -266,10 +266,7 @@ function emitNestedAggregate(
   sink.text(") as item from ");
   emitRelationFrom(schema, include.relation, child, sink, alias, childAlias, depth);
   emitWhere(schema, child, include.where, sink, childAlias, depth, true);
-  emitOrder(child, include.orderBy, sink, childAlias);
-  if (include.orderBy === undefined && child.model.primary.length > 0) {
-    emitPrimaryOrder(child, sink, childAlias);
-  }
+  emitIncludeOrder(child, include.orderBy, sink, childAlias);
   if (include.limit !== undefined) {
     sink.text(" limit ");
     sink.param(String(include.limit));
@@ -474,9 +471,70 @@ function jsonCell(value: unknown, decode: ((wire: string) => unknown) | undefine
   return decode === undefined ? wire : decode(wire);
 }
 
+/**
+ * Orders a to-many include, then breaks ties on the primary key.
+ *
+ * A limit without that tie-break can return a different row when two related
+ * rows share the sort value. Keys the caller already named stay in their order.
+ *
+ * @param child - The related table
+ * @param orderBy - The include's order, when one was passed
+ * @param sink - Statement buffer
+ * @param alias - The related table's alias
+ */
+function emitIncludeOrder(child: Indexed, orderBy: unknown, sink: Sink, alias: string): void {
+  emitOrder(child, orderBy, sink, alias);
+  const named = isRecord(orderBy) ? Object.keys(orderBy) : [];
+  if (named.length === 0) {
+    if (child.model.primary.length > 0) emitPrimaryOrder(child, sink, alias);
+    return;
+  }
+  for (const field of child.model.primary) {
+    if (named.includes(field)) continue;
+    const column = child.columns.get(field);
+    if (column === undefined) continue;
+    sink.text(", ");
+    sink.text(alias);
+    sink.text(".");
+    sink.text(quote(column.sql));
+    sink.text(" asc");
+  }
+}
+
+/**
+ * Reports whether an include filter needs the operator compiler.
+ *
+ * `matches` and `relevance` compile with that compiler. A text pattern does not.
+ *
+ * @param schema - Connected schema
+ * @param call - The read
+ * @returns `true` when an include clause needs the compiler and it is not loaded
+ */
+function needsOperator(schema: QuerySchema, call: ReadCall): boolean {
+  const table = indexes(schema).get(call.table);
+  if (table === undefined) return false;
+  return walkOperators(schema, table, call.include);
+}
+
+function walkOperators(schema: QuerySchema, table: Indexed, include: unknown): boolean {
+  if (!isRecord(include)) return false;
+  for (const name of Object.keys(include)) {
+    const value = include[name];
+    if (!isRecord(value)) continue;
+    const relation = table.relations.get(name);
+    if (relation === undefined) continue;
+    const child = indexes(schema).get(relation.table);
+    if (child === undefined) continue;
+    if (needsOperatorSql(child, value.where) || orderHasRelevance(value.orderBy)) return true;
+    if (walkOperators(schema, child, value.include)) return true;
+  }
+  return false;
+}
+
 /** Hooks the read planner calls after this module has loaded. */
 export const includeHooks: IncludeHooks = {
   read: readIncludes,
   select: emitIncludeSelect,
   join: emitIncludeJoin,
+  needsOperator,
 };
