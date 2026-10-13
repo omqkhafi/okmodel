@@ -107,7 +107,7 @@ export default schema({ tables: [notes] }); // [!code focus]
 <Step>
 ### Define the config
 
-Point `schema` at the file from the previous step. `database` is the URL apply connects to.
+Point `schema` at the file from the previous step. `database` is the URL push connects to.
 
 ```ts title="okmodel.config.ts"
 import { defineConfig } from "okmodel/migrate";
@@ -118,44 +118,20 @@ export default defineConfig({
 });
 ```
 
-`okm build`, `okm generate`, and `okm migrate apply` load `okmodel.config.ts` from the project directory. The file default-exports `defineConfig`. A file that does not is refused. A module that is not a `schema()` is refused: `<path> must export a schema().` Build and generate do not connect. Other options are on [Config](/docs/define/config).
+`okm push` loads `okmodel.config.ts` from the project directory. The file default-exports `defineConfig`. A file that does not is refused. A module that is not a `schema()` is refused: `<path> must export a schema().` Other options are on [Config](/docs/define/config).
 
 </Step>
 
 <Step>
-### Build
+### Push
 
-`okm build` checks the schema and writes `.okm/`. It does not connect.
-
-```sh
-bunx okm build
-```
-
-</Step>
-
-<Step>
-### Generate
-
-`okm generate init` writes `migrations/0001_init.sql` and `migrations/0001_init.catalog.json`.
+`okm push` connects and creates the tables. It does not write a SQL file.
 
 ```sh
-bunx okm generate init
+bunx okm push
 ```
 
-The name is the part after the number. If the project has no `.gitattributes`, generate writes one. Git then stores the migration SQL, the catalog JSON, and `.okm` with Unix line endings, so a Windows checkout does not rewrite them. An existing `.gitattributes` is left as it is. A later schema change is `okm generate`. With no name, that file is called `migration`. A name is letters, digits, `_`, or `-`. No schema change prints `no changes` and writes no SQL.
-
-</Step>
-
-<Step>
-### Apply
-
-`okm migrate apply` connects. An empty database installs the head snapshot, which creates the tables.
-
-```sh
-bunx okm migrate apply
-```
-
-It does not replay the files. A database that already has history runs only the SQL not yet in `okm_history`. A database that is not empty and has no history is OKM1851. `bunx okm` runs with Node. `bun --bun okm` uses the Bun runtime.
+A protected target refuses push (OKM1850). No schema change prints `no changes`. `bunx okm` runs with Node. `bun --bun okm` uses the Bun runtime.
 
 </Step>
 

@@ -92,7 +92,7 @@ export const mappedPages: readonly MappedPage[] = [
   {
     slug: "index",
     title: "Let's start",
-    description: "Install a driver, define the table, then build, generate, and apply.",
+    description: "Install a driver, define the table, then push and connect.",
     group: "start",
     order: 0,
     source: "site/handbook/query.mdx",

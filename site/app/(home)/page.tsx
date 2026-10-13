@@ -17,7 +17,7 @@ const STEPS = [
     href: "/docs/start",
     kicker: "01",
     title: "Let's start",
-    text: "Install a driver, define the table, then build, generate, and apply.",
+    text: "Install a driver, define the table, then push and connect.",
   },
   {
     href: "/docs/start/basic-usage",
