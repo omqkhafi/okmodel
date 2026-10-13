@@ -1,0 +1,24 @@
+Codecs choose the TypeScript value. The SQL type stays the same. Defaults are `string` for `bigint` and `numeric`, and `temporal` for timestamps.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const payments = table("payments", {
+  id: t.identity(),
+  amount: t.numeric(),
+  cents: t.bigint(),
+});
+
+export default schema({
+  tables: [payments],
+  codecs: {
+    bigint: "string",
+    numeric: "string",
+    timestamps: "temporal",
+  },
+});
+```
+
+`bigint` is `"string"`, `"number"`, or `"bigint"`. `numeric` is `"string"` or `"number"`. `timestamps` is `"temporal"`. Anything else is refused when the schema is built.
+
+A column can still name its own `as` where that builder accepts one. The schema codec is the default for builders that do not.

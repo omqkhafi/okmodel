@@ -1,0 +1,36 @@
+`relations` names edges. `schema()` resolves the foreign key. An ambiguous key is OKM1021. Pass `field` when more than one key points at the same table.
+
+```ts title="notes.ts"
+import { many, one, table, t } from "okmodel/pg";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    authorId: t.bigint().references("users"),
+    title: t.text(),
+  },
+  {
+    relations: {
+      author: one("users"),
+      comments: many("comments"),
+    },
+  },
+);
+```
+
+`one` is to-one. `field` is the local foreign key when the table has several.
+
+`many` is to-many. `field` is the foreign key on the other table.
+
+`manyThrough` is to-many through a join table. The join table has one foreign key to this table and one to the related table. Name `from` and `to` when a table has more than one.
+
+```ts title="users.ts"
+import { manyThrough, table, t } from "okmodel/pg";
+
+export const users = table(
+  "users",
+  { id: t.identity(), name: t.text() },
+  { relations: { teams: manyThrough("teams", { through: "memberships" }) } },
+);
+```

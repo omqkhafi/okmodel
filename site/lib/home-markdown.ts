@@ -22,7 +22,7 @@ ${install}
 \`\`\`
 
 - [Install](/docs/start/install)
-- [First query](/docs/start/query)
+- [Let's start](/docs/start/query)
 - [Documentation](/docs)
 - [llms.txt](/llms.txt)
 - [Changelog](/changelog)

@@ -4,7 +4,7 @@
 
 import { expect, test } from "bun:test";
 
-import { INSTALL_DRIVERS, PACKAGE_MANAGERS, installCommand, installDriverChoice, translatePackageScript } from "./package-managers";
+import { INSTALL_DRIVERS, PACKAGE_MANAGERS, installCommand, installDriverChoice, installDriverForFence, translatePackageScript } from "./package-managers";
 
 test("bun add becomes install commands for each manager", () => {
   expect(translatePackageScript("bun add okmodel postgres")).toEqual({
@@ -47,6 +47,11 @@ test("an okmodel install names the driver package", () => {
   expect(installCommand("pg", "npm")).toBe("npm install okmodel pg\nnpm install -D @types/pg");
   expect(installCommand("pg", "yarn")).toBe("yarn add okmodel pg\nyarn add -D @types/pg");
   expect(installCommand("pg", "pnpm")).toBe("pnpm add okmodel pg\npnpm add -D @types/pg");
+});
+
+test("a titled install fence does not switch drivers", () => {
+  expect(installDriverForFence("bun add okmodel postgres", "postgres.js")).toBeNull();
+  expect(installDriverForFence("bun add okmodel postgres")).toBe("postgresjs");
 });
 
 test("a shell command that is not an install stays a normal block", () => {

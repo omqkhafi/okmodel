@@ -1,0 +1,19 @@
+`table()` takes a name and a column map. The third argument is options: keys, indexes, checks, and the rest of this group. The catalog objects are built in `schema()`, not here.
+
+```ts title="notes.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+  published: t.boolean().default(false),
+});
+```
+
+`t` is every builder. Import one builder when a file uses only that type.
+
+Text is `text`, `varchar(n)`, `char(n)`, and `citext`. Integers are `smallint`, `integer`, `bigint`, and `identity`. Exact numbers are `numeric`. Floats are `real` and `double`. Time is `timestamptz`, `timestamp`, `date`, `time`, `timetz`, and `interval`. Also `boolean`, `bytea`, `json`, `jsonb`, `uuid`, ranges, network types, `point`, `line`, `tsvector`, `ltree`, `enum`, `domain`, and `custom`.
+
+`t.id()` is a uuid primary key. `t.identity()` is a generated integer. Both are covered with [keys](/docs/table/keys) and [defaults](/docs/table/defaults).
+
+An empty name is refused.

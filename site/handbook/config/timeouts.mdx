@@ -1,0 +1,62 @@
+`timeouts` sets `lock_timeout` and `statement_timeout` for apply. Both values are milliseconds. A flag overrides the config for that invocation.
+
+| Field | Required | Default | Role |
+| --- | --- | --- | --- |
+| `lock` | no | `5000` | `lock_timeout`. Apply stops waiting for a lock. |
+| `statement` | no | `30000` | `statement_timeout`. A longer statement is cancelled. |
+
+## lock
+
+`--lock-timeout` overrides `timeouts.lock`. Omit both and apply uses `5000`. `0` disables the timeout. A missing or negative number is refused.
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: process.env.DATABASE_URL!,
+  timeouts: {
+    lock: 2000, // [!code focus]
+    statement: 15000,
+  },
+});
+```
+
+```sh
+okm migrate apply --lock-timeout 2000 # [!code focus]
+```
+
+## statement
+
+`--statement-timeout` overrides `timeouts.statement`. Omit both and apply uses `30000`. `0` disables the timeout.
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: process.env.DATABASE_URL!,
+  timeouts: {
+    lock: 2000,
+    statement: 15000, // [!code focus]
+  },
+});
+```
+
+```sh
+okm migrate apply --statement-timeout 15000 # [!code focus]
+```
+
+## Where they apply
+
+| Command | `timeouts` | Flag |
+| --- | --- | --- |
+| `okm migrate apply` | Used when the flag is omitted. | `--lock-timeout`, `--statement-timeout`. |
+| `okm migrate check` | Sets a field only when the config has it. Omit a field and that timeout stays unset. | Not read. |
+| `okm push`, `provision()` | Not read. Both stay `5000` and `30000`. | Not read. |
+
+Apply sets the two values on the session. `okm migrate check` sets them for its transaction.
+
+## A backfill batch
+
+Each batch sets `statement_timeout` for that transaction. [backfill.statementTimeoutMs](/docs/config/backfill) wins. Omit it and the batch uses the apply `statement` timeout. The batch `lock_timeout` is the apply lock timeout.

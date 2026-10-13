@@ -27,7 +27,7 @@ test("sitemap and robots advertise the handbook", () => {
   expect(urls).toContain(`${SITE_ORIGIN}/changelog`);
   expect(urls).toContain(`${SITE_ORIGIN}/llms.txt`);
   expect(urls).toContain(`${SITE_ORIGIN}/llms-full.txt`);
-  expect(urls.some((url) => url.includes("/docs/reference/specification"))).toBe(true);
+  expect(urls.some((url) => url.includes("/docs/reference/"))).toBe(false);
 
   const robotsDoc = robots();
   expect(robotsDoc.sitemap).toBe(`${SITE_ORIGIN}/sitemap.xml`);

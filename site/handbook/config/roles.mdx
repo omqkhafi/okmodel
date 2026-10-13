@@ -1,0 +1,114 @@
+`roles` names who migrates, who the application connects as, and an optional read-only role. A name is external unless it is listed in `managed`.
+
+| Field | Required | Default | Role |
+| --- | --- | --- | --- |
+| `migration` | yes | — | Runs the files. Apply issues `SET ROLE`. |
+| `app` | yes | — | Receives the grants. |
+| `reporting` | no | — | Select only. |
+| `managed` | no | — | Roles the plan creates. Never dropped. |
+| `columns` | no | — | `SELECT` or `UPDATE` on named columns. |
+
+## migration
+
+Apply issues `SET ROLE` to this name before the statements. Default privileges are granted as this role.
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: process.env.DATABASE_URL!,
+  roles: {
+    migration: "okm_migrate", // [!code focus]
+    app: "okm_app",
+  },
+});
+```
+
+## app
+
+Tables and views receive `SELECT`, `INSERT`, `UPDATE`, and `DELETE`. A materialized view receives `SELECT`. Sequences receive `USAGE` and `SELECT`. Functions receive `EXECUTE`. Default privileges repeat those grants on later objects. `okm_meta` receives `SELECT` only.
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: process.env.DATABASE_URL!,
+  roles: {
+    migration: "okm_migrate",
+    app: "okm_app", // [!code focus]
+  },
+});
+```
+
+## reporting
+
+Select on tables, views, and materialized views. `USAGE` on schemas. Default `SELECT` on later tables. No write and no `EXECUTE`.
+
+The name cannot be `migration` or `app`. An `update` grant on it is refused. A hidden column stays out of that select unless `columns` names it.
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: process.env.DATABASE_URL!,
+  roles: {
+    migration: "okm_migrate",
+    app: "okm_app",
+    reporting: "okm_read", // [!code focus]
+  },
+});
+```
+
+## managed
+
+A name that is not listed here must already exist. A missing external role fails the preflight. A listed name is created when `pg_roles` does not have it, and it is never dropped. `CREATE ROLE` is `NOSUPERUSER NOCREATEDB NOCREATEROLE`.
+
+`login` defaults to `NOLOGIN`. `login: true` is `LOGIN`. `inherit` defaults to `INHERIT`. `inherit: false` is `NOINHERIT`.
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: process.env.DATABASE_URL!,
+  roles: {
+    migration: "okm_migrate",
+    app: "okm_app",
+    managed: [{ name: "okm_app", login: true }], // [!code focus]
+  },
+});
+```
+
+## columns
+
+`select` and `update` name columns. `on` is the SQL name of a table, view, or materialized view. A name that is not in the schema is OKM1020.
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: process.env.DATABASE_URL!,
+  roles: {
+    migration: "okm_migrate",
+    app: "okm_app",
+    columns: [{ role: "okm_app", on: "users", select: ["email"] }], // [!code focus]
+  },
+});
+```
+
+## Refusals
+
+| Case | Result |
+| --- | --- |
+| An empty `migration`, `app`, or `reporting` name | Refused. The field needs a name. |
+| `reporting` is `migration` or `app` | Refused. Give it its own name. |
+| `update` on the reporting role | Refused. Grant select, or use `app` for writes. |
+| An external role does not exist | The preflight refuses. Create it, or list it in `managed`. |
+| A managed role does not exist | The plan creates it. |
+| `on` or a column is not in the schema | OKM1020. |
+| A privilege is missing on an object that exists | OKM1825. `okm doctor` names the object. |
+| `connect()` | Does not run the role check. |

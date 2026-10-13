@@ -1,0 +1,22 @@
+`filters()` allowlists what a caller may send. `parse` loads the parser on first use. An operator outside the list is not assignable.
+
+```ts title="notes.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+  status: t.text(),
+});
+
+export const noteFilters = notes.filters({
+  allow: { title: ["eq", "startsWith"], status: ["eq", "in"] },
+  sort: ["title"],
+});
+```
+
+`allow` maps a field to operators: `eq`, `in`, `inList`, `notIn`, `lt`, `lte`, `gt`, `gte`, `between`, `startsWith`, `endsWith`, `contains`, and the rest of `FilterOperator`. `path`, `matches`, `similar`, `wordSimilar`, boolean trees, relation quantifiers, and write operators are not in that list.
+
+A hidden field in `allow`, `sort`, or `relations` throws OKM1123 here. See [visibility](/docs/table/visibility).
+
+`relations` names fields of a related table the caller may filter, when the table declared that [relation](/docs/table/relations).

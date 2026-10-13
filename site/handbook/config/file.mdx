@@ -1,0 +1,183 @@
+`okm` reads `okmodel.config.ts` from the project directory. The file default-exports `defineConfig` from `okmodel/migrate`.
+
+Node.js 22.18 or newer loads the config (type stripping). `bunx okm` uses Node. `bun --bun okm` uses Bun.
+
+`schema` is required. Set `database` or `targets`. Both is refused. `okm build` reads the schema and does not connect.
+
+| Option | Required | Default | Role |
+| --- | --- | --- | --- |
+| `schema` | yes | — | The module that exports the schema. |
+| `database` | one of | — | One target. Its name is `default`. |
+| `targets` | one of | — | Named targets. Replaces `database`. |
+| `tables` | no | — | A directory of table files. |
+| `migrations` | no | `migrations` | Generated SQL. |
+| `out` | no | `.okm` | Build output. |
+| `allowPooler` | no | `false` | Allow a pooler host. |
+| `timeouts` | no | `5000`, `30000` | `lock` and `statement` during apply. |
+| `lintFrom` | no | every file | First migration id that check lints. |
+| `backfill` | no | 1000 rows | `batchSize` on a new plan. Pause and the batch timeout at apply. |
+| `roles` | no | — | migration, app, and reporting. |
+
+## schema
+
+`okm` loads this module. [Paths](/docs/config/paths) resolves the file.
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts", // [!code focus]
+  database: process.env.DATABASE_URL!,
+});
+```
+
+## database
+
+One target. A string is the URL. [Targets](/docs/config/targets) covers the URL and `protected`.
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: process.env.DATABASE_URL!, // [!code focus]
+});
+```
+
+## targets
+
+Named databases. This replaces `database`. [Targets](/docs/config/targets).
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  targets: { // [!code focus]
+    dev: process.env.DATABASE_URL!,
+    prod: { url: process.env.PROD_URL!, protected: true },
+  },
+});
+```
+
+## tables
+
+`okm check` reports a `.ts` file in this directory that the schema does not import. Omit it when every table lives in the schema module. [Paths](/docs/config/paths).
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  tables: "./tables", // [!code focus]
+  database: process.env.DATABASE_URL!,
+});
+```
+
+## migrations
+
+`okm generate` writes SQL here. The default is `migrations`. [Paths](/docs/config/paths).
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  migrations: "./migrations", // [!code focus]
+  database: process.env.DATABASE_URL!,
+});
+```
+
+## out
+
+`okm build` writes `catalog.json`, `catalog.hash`, and `types.d.ts` here. The default is `.okm`. [Paths](/docs/config/paths).
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  out: "./.okm", // [!code focus]
+  database: process.env.DATABASE_URL!,
+});
+```
+
+## allowPooler
+
+Migration commands refuse a pooler host. Set this only when the URL is a pooler you mean to use. [Pooler](/docs/config/pooler).
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: process.env.DATABASE_URL!,
+  allowPooler: true, // [!code focus]
+});
+```
+
+## timeouts
+
+Milliseconds for `lock_timeout` and `statement_timeout` during apply. Omit a field and apply uses `5000` and `30000`. [Timeouts](/docs/config/timeouts).
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: process.env.DATABASE_URL!,
+  timeouts: { // [!code focus]
+    lock: 2000,
+    statement: 15000,
+  },
+});
+```
+
+## lintFrom
+
+The first migration id that `okm migrate check` lints. Files before it are the adoption baseline. Omit it and check lints every file. [Lint baseline](/docs/config/lint).
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: process.env.DATABASE_URL!,
+  lintFrom: "20260301000000_init", // [!code focus]
+});
+```
+
+## backfill
+
+`batchSize` is what a new plan writes as `batch=`. A step header overrides it. `pauseMs` and `statementTimeoutMs` apply when the batches run. [Backfill](/docs/config/backfill).
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: process.env.DATABASE_URL!,
+  backfill: { // [!code focus]
+    batchSize: 1000,
+    pauseMs: 50,
+    statementTimeoutMs: 30_000,
+  },
+});
+```
+
+## roles
+
+Who migrates, who the application connects as, and an optional reporting role. [Roles](/docs/config/roles).
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: process.env.DATABASE_URL!,
+  roles: { // [!code focus]
+    migration: "okm_migrate",
+    app: "okm_app",
+  },
+});
+```

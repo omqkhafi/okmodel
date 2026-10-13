@@ -1,0 +1,22 @@
+`extensions` lists Postgres extensions the catalog installs. `extension()` comes from `okmodel/ext`.
+
+```ts title="schema.ts"
+import { extension } from "okmodel/ext";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+export default schema({
+  tables: [notes],
+  extensions: [extension("pg_trgm", { version: "1.6", schema: "public" })],
+});
+```
+
+`version` is an exact pin (`1.6`) or a floor (`>=0.7`). Omit it to leave the extension unpinned.
+
+`schema` is the install schema. The default is `public`.
+
+`relocatable` defaults to `true`. A move of a non-relocatable extension is OKM1814.

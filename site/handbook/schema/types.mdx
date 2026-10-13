@@ -1,0 +1,17 @@
+`types` is how row types are produced. The default is `"emitted"`.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+export default schema({
+  tables: [notes],
+  types: "inferred",
+});
+```
+
+`"emitted"` writes the row types out. `"inferred"` keeps them in the checker. The value must be one of those two.

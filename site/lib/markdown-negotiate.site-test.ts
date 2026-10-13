@@ -9,7 +9,7 @@ import { markdownNegotiation, markdownTwinPath } from "./markdown-negotiate";
 test("a docs path negotiates to its markdown twin", () => {
   expect(markdownTwinPath("/docs/start/query")).toBe("/llms.mdx/docs/start/query.md");
   expect(markdownTwinPath("/docs")).toBe("/llms.mdx/docs/index.md");
-  expect(markdownTwinPath("/docs/model/schema")).toBe("/llms.mdx/docs/model/schema.md");
+  expect(markdownTwinPath("/docs/start/install")).toBe("/llms.mdx/docs/start/install.md");
   expect(markdownTwinPath("/")).toBe("/llms.mdx/home");
   expect(markdownTwinPath("/changelog")).toBe("/llms.mdx/releases");
 

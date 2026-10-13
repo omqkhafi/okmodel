@@ -1,5 +1,5 @@
 import { TerminalSnippet } from "@/components/terminal-snippet";
-import { installDriverChoice, translatePackageScript } from "@/lib/package-managers";
+import { installDriverForFence, translatePackageScript } from "@/lib/package-managers";
 import { CodeBlock, Pre } from "@fumadocs/base-ui/components/codeblock";
 import { Tab, Tabs } from "@fumadocs/base-ui/components/tabs";
 import defaultMdxComponents from "@fumadocs/base-ui/mdx";
@@ -27,14 +27,14 @@ export function getMDXComponents(components?: MDXComponents): MDXComponents {
  *
  * @param props - Compiled `pre` props
  */
-function DocsPre({ children, ...props }: ComponentProps<"pre">) {
+function DocsPre({ children, title, ...props }: ComponentProps<"pre"> & { readonly title?: string }) {
   const source = fenceText(children);
   const commands = translatePackageScript(source);
-  const driver = installDriverChoice(source);
+  const driver = installDriverForFence(source, title);
   if (commands && driver) return <TerminalSnippet commands={commands} driver={driver} />;
   if (commands) return <TerminalSnippet commands={commands} />;
   return (
-    <CodeBlock {...props}>
+    <CodeBlock {...props} title={title}>
       <Pre>{children}</Pre>
     </CodeBlock>
   );

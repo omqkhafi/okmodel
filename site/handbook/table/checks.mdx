@@ -1,0 +1,20 @@
+A check is named SQL. The function receives column handles. `sql` interpolates a handle as its SQL name. This is not a query builder. The database normalises the expression later.
+
+```ts title="notes.ts"
+import { sql, table, t } from "okmodel/pg";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text(),
+  },
+  {
+    checks: {
+      title_present: (columns) => sql`${columns.title} <> ''`,
+    },
+  },
+);
+```
+
+The name is the constraint name. A handle becomes the SQL name `schema()` stores, including [casing](/docs/schema/casing).

@@ -1,0 +1,22 @@
+`tenancy` adds one tenant key to every table. Import it from `okmodel/tenancy`. The key is a guarded uuid. Insert and update omit it. The client fills it from the scope.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+import { columnTenancy } from "okmodel/tenancy";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+export default schema({
+  tables: [notes],
+  tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
+});
+```
+
+`columnTenancy()` takes one key. Several keys are `compositeTenancy()`. `type` must be `"uuid"`.
+
+A table opts out with `global("reason")`. A table that follows a relation instead of storing the key uses `via`. Both live on the [table](/docs/table/tenancy).
+
+A unique on a tenant table includes the key, unless the column calls `.unique({ global: "reason" })`.

@@ -14,6 +14,27 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+### ✨ Added
+
+- The handbook section Define holds Config, Schema, and Table. Each folder lists the options that object accepts.
+- The Targets page lists each shape and the cases a command hits: the URL, which target is chosen, what `protected` blocks, and an empty database. A `targets` key is any name. `database` is named `default`. `okm dev` uses a key named `dev`, or PGlite at `<out>/dev-db`. Each config block focuses that line. The name and `NODE_ENV` do not set protection.
+- The Paths page lists `schema`, `tables`, `migrations`, and `out` separately. Each block focuses that line.
+- The Config file page lists every `defineConfig` option. Each block focuses that line.
+- The Pooler page lists the host shapes that are refused, the `allowPooler` and `--allow-pooler` opt-in, and which commands connect without that check. A changing backend pid is OKM1854.
+- The Timeouts page lists `lock` and `statement`. Apply defaults are 5000 and 30000. A flag overrides the config. `okm migrate check` sets only a configured field. `okm push` and `provision()` keep the defaults. A backfill batch uses `statementTimeoutMs`, or the apply statement timeout.
+- The Roles page lists `migration`, `app`, `reporting`, `managed`, and `columns`. A name is external unless `managed` lists it. The plan creates a managed role and never drops one. `reporting` is select only.
+- The Lint baseline page lists `lintFrom`. `okm migrate check` lints that id and every later file. Files before it are not linted. `okm migrate apply` does not read it and still lints every pending migration. An unknown id is refused. An error finding is OKM1510.
+- The Backfill page lists `batchSize`, `pauseMs`, and `statementTimeoutMs`. `batchSize` is written into a new plan as `batch=`. The step header overrides it. The pause and the batch statement timeout are read at apply time. A failed batch keeps the previous checkpoint.
+- Let's start defines the table, then the schema, then `okmodel.config.ts`. `schema` points at that file, which is what build, generate, and apply load. `t.identity().primaryKey()` makes `id` the primary key. An empty database installs the head snapshot. Insert omits `id`, and `find` returns a list. The client and Install both show Direct and Safe for `DATABASE_URL`. Direct asserts the URL. Safe refuses an empty one.
+- Install lists the Postgres drivers: postgres.js, node-postgres, PGlite, and Bun.sql. Each section is that driver. The config file stays on Let's start. A titled install command does not open the driver switcher.
+- Install no longer ends with What you install, and Let's start no longer ends with What you get.
+- Docs pages drop the breadcrumb. The page toolbar is GitHub, npm, and Copy page, with a rule under the row and the same gap above it as the description. Copy page opens Copy Markdown, View Markdown, and Open in ChatGPT, Codex, Claude, Claude Code, and Cursor. Let's start puts a bordered Postgres chip at the far end of the title row. The mark uses the chip's text color.
+
+### 🔥 Removed
+
+- The public handbook keeps Install and Let's start. Schema, Queries, Safety, Migrations, Drivers, and the reference pages are no longer published.
+- Handbook pages no longer end with a Next link. The page footer is the previous and next page.
+
 ## v0.6.0 — 2026-10-11
 
 ### 💥 Breaking Changes

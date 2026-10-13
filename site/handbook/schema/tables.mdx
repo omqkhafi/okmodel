@@ -1,0 +1,14 @@
+`schema()` compiles tables into one catalog. `table()` only stores the columns. Names, dependencies, and the catalog hash are fixed here. Calling `schema()` twice on the same tables returns equal catalog bytes.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+export default schema({ tables: [notes] });
+```
+
+`tables` is declaration order. A later table can reference an earlier one. The module default-exports the result. [Config](/docs/config/file) points `schema` at this file.

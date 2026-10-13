@@ -1,0 +1,24 @@
+Rules live in one place per field. Two places are OKM1030, reported by `okm check`.
+
+`.validate()` stores rules on the column, or one Standard Schema. The rules run only when validation is enabled and the engine has loaded.
+
+`validate` on the table is the section: each key is a field, and `$row` is the whole row. Every value is a list of rules. A key that is not a column is refused.
+
+`validation` on the table turns the schema flag on or off for this table. `true`, `false`, or `{ enabled, onRead, style }`. Omitted, the table follows the [schema](/docs/schema/validation).
+
+```ts title="notes.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text().validate([]),
+  },
+  {
+    validation: true,
+  },
+);
+```
+
+`style` is `"inline"` or `"section"`. Inline rules are `.validate()`. Section rules are the `validate` option. Pick one style and keep a field in one place.

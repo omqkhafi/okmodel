@@ -1,0 +1,20 @@
+`traits` apply to every table. Importing `okmodel/traits` is what loads them. A schema that never imports a trait does not carry that code.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+import { timestamps } from "okmodel/traits";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+export default schema({
+  tables: [notes],
+  traits: [timestamps()],
+});
+```
+
+`timestamps()` adds `createdAt` and `updatedAt`. Both are sealed. `updatedAt` is set on update. `{ enforce: "trigger" }` also writes `updatedAt` in the database.
+
+A table opts out with `omitDefaults` and a reason. An empty reason is rejected when the schema is built. The table can still pass its own `traits`. See [table traits](/docs/table/traits).

@@ -1,0 +1,139 @@
+A target is a named database. Set `database` or `targets`. Both is refused. Protection is the `protected` flag. The name does not set it. `NODE_ENV` is not read.
+
+| Field | Required | Default | Role |
+| --- | --- | --- | --- |
+| `database` | one of | — | One target. Its name is `default`. |
+| `targets` | one of | — | Named targets. Replaces `database`. |
+| `url` | yes | — | A `postgres://` URL. |
+| `protected` | no | `false` | Blocks contract work on that target. |
+
+## database
+
+A string is the URL. `protected` is false.
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: process.env.DATABASE_URL!, // [!code focus]
+});
+```
+
+An object is `{ url, protected }`.
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: {
+    url: process.env.DATABASE_URL!,
+    protected: true, // [!code focus]
+  },
+});
+```
+
+## targets
+
+The key is any name you choose. `prod`, `dev`, `test`, and `stg` are examples. The name does not set protection. Names are listed in sorted order. `--target` must match the key. `Dev` is not `dev`.
+
+| Name | Result |
+| --- | --- |
+| Any key | That string is the target name. |
+| `database` | The name is `default`. You do not choose it. |
+| `prod`, `production`, `stg` | Unprotected until `protected: true`. |
+| A key named `dev` | `okm dev` uses that target. |
+| No key named `dev` | `okm dev` opens PGlite at `<out>/dev-db`. The default `out` is `.okm`. |
+| A string value | `protected` is false. |
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  targets: {
+    dev: process.env.DEV_URL!,
+    test: process.env.TEST_URL!,
+    stg: process.env.STG_URL!,
+    prod: { url: process.env.PROD_URL!, protected: true }, // [!code focus]
+  },
+});
+```
+
+## URL
+
+| Case | Result |
+| --- | --- |
+| Empty or missing | OKM1845. The URL is not filled in from the environment. |
+| Not a `postgres://` URL | OKM1845. |
+| Host | Lowercased. |
+| Port omitted | `5432`. |
+| Path | The database name. |
+| `primary`, `replicas`, `weight`, or `pool` | OKM1845. Migrations run on the primary. Point the target at that URL. |
+| Pooler host | Refused. Set [allowPooler](/docs/config/pooler), or pass `--allow-pooler`. |
+
+## Choosing a target
+
+| Situation | Result |
+| --- | --- |
+| One target | `--target` is optional. |
+| Several targets, no `--target` | OKM1853. The command does not guess. |
+| `--target` with no name | OKM1853. |
+| A name that is not configured | OKM1845. |
+| No `database` and no `targets` | OKM1845. |
+| `okm migrate status` | Prints every target. `protected` is its own column. `--target` filters to one name. |
+| `okm check`, several targets, no `--target` | Skips the database comparison. An unknown name still fails. Protection still fails. |
+
+```sh
+okm migrate apply --target prod # [!code focus]
+```
+
+## Protection
+
+`--allow-protected` is this invocation only. It does not change the config. `connect()` does not read the flag.
+
+| Work | Protected target |
+| --- | --- |
+| plan, status, `okm check`, drift, verify, pull, catalog export, inspect | Allowed. |
+| Expand: a table, a nullable column, an index, a default, a constraint | Allowed. |
+| Reference rows. Provision an empty database | Allowed. |
+| Contract: drop a table or column, `SET NOT NULL`, drop a default, drop a constraint or index | OKM1850 until `--allow-protected`. |
+| Unclassified SQL, `okm push`, a backfill, `okm seed`, a history repair | OKM1850 until `--allow-protected`. |
+| `okm migrate check` | OKM1850. `--allow-protected` does not lift it. Point it at a throwaway database. |
+| `drop`, `rollback` | Refused. There is no down migration. Recovery is a new forward migration. |
+
+```sh
+okm migrate apply --target prod --allow-protected # [!code focus]
+```
+
+## The same database
+
+The comparison is host, port, and database name. The schema name is ignored. `okm check` and `okm doctor` both report a mismatch.
+
+| Pair | Result |
+| --- | --- |
+| One `protected`, one not | OKM1852. |
+| Both unprotected | Allowed. They may share a database. |
+| Both protected | Allowed. |
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  targets: {
+    app: { url: process.env.DATABASE_URL!, protected: true },
+    jobs: { url: process.env.DATABASE_URL!, protected: false }, // [!code focus]
+  },
+});
+```
+
+## An empty database
+
+| State | `okm migrate apply` |
+| --- | --- |
+| Empty | Installs the head snapshot and the [reference](/docs/table/reference) rows. |
+| History already present | Replays the pending files. |
+| Objects present, no history | OKM1851. |
+| Provision asked to fill a target that already has objects | OKM1851. |

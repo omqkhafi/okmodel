@@ -1,0 +1,20 @@
+Three flags. They do not change the SQL type.
+
+`.hidden()` excludes the column from the default row. A named `select` still returns it. Includes never do. `where` and `orderBy` refuse it (OKM1120) unless `filterable` is set. `filters()` still refuses it.
+
+`.sensitive()` redacts the value in logs, errors, and `inspect()`. A read that selects the column still returns it. The catalog hash does not include this flag.
+
+`.guarded()` omits the column from insert and update input. The client fills it, or the database does.
+
+```ts title="users.ts"
+import { table, t } from "okmodel/pg";
+
+export const users = table("users", {
+  id: t.identity(),
+  email: t.text(),
+  passwordHash: t.text().hidden(),
+  token: t.text().sensitive(),
+});
+```
+
+A hidden column stays out of a reporting role's select unless [roles.columns](/docs/config/roles) names it.

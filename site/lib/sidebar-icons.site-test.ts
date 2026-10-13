@@ -21,15 +21,8 @@ test("section folders become the routes under their label", () => {
         $id: "start",
         children: [
           { type: "page", name: "Install", url: "/docs/start/install" },
-          { type: "page", name: "First query", url: "/docs/start/query" },
+          { type: "page", name: "Let's start", url: "/docs/start/query" },
         ],
-      },
-      { type: "separator", name: "04 Reference" },
-      {
-        type: "folder",
-        name: "Reference",
-        $id: "reference",
-        children: [{ type: "page", name: "Production", url: "/docs/reference/production" }],
       },
     ],
   } as PageTree.Root;
@@ -40,8 +33,6 @@ test("section folders become the routes under their label", () => {
     "01 Start",
     "/docs/start/install",
     "/docs/start/query",
-    "04 Reference",
-    "/docs/reference/production",
   ]);
 });
 

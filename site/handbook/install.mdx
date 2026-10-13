@@ -1,52 +1,62 @@
-Install the package and one Postgres driver. The next page defines a table and reads a row.
+Add `okmodel` and one Postgres driver. Another database is a later section on this page. The next page defines a table.
 
-<Callout title="Use a direct database URL">
-  `DATABASE_URL` is a direct Postgres connection, not a pooler. Migration commands refuse a pooler host.
-</Callout>
+| Driver | Package | Runs on | Server |
+| --- | --- | --- | --- |
+| postgres.js | `postgres` | Node and Bun | A Postgres server. The default. |
+| node-postgres | `pg` | Node and Bun | A Postgres server, when `pg` is already installed. |
+| PGlite | `@electric-sql/pglite` | Node and Bun | In the process. No server to start. |
+| Bun.sql | none | Bun | A Postgres server. Node cannot load it. |
 
-## Add the package
+## Postgres
 
-```sh
+`okmodel` has no runtime dependencies. Each driver is an optional peer. Pick the one the runtime already has.
+
+### postgres.js
+
+The default on Node and Bun. It connects to a Postgres server.
+
+```sh title="postgres.js"
 bun add okmodel postgres
 ```
 
-## Point the config at the schema
-
-<Tabs items={["Direct", "Safe"]}>
-
-<Tab value="Direct">
-
-```ts title="okmodel.config.ts"
-import { defineConfig } from "okmodel/migrate";
-
-export default defineConfig({
-  schema: "./schema.ts",
-  database: process.env.DATABASE_URL!,
-});
+```ts title="db.ts"
+import { connect } from "okmodel/pg/postgresjs"; // [!code focus]
 ```
 
-</Tab>
+### node-postgres
 
-<Tab value="Safe">
+The other server driver on Node and Bun, when `pg` is already installed. `pg` ships no types, so `@types/pg` is a dev dependency.
 
-```ts title="okmodel.config.ts"
-import { defineConfig } from "okmodel/migrate";
-
-const url = process.env.DATABASE_URL;
-if (url === undefined || url.length === 0) {
-  throw new Error("DATABASE_URL is not set");
-}
-
-export default defineConfig({
-  schema: "./schema.ts",
-  database: url,
-});
+```sh title="node-postgres"
+bun add okmodel pg
+bun add -D @types/pg
 ```
 
-</Tab>
+```ts title="db.ts"
+import { connect } from "okmodel/pg/pg"; // [!code focus]
+```
 
-</Tabs>
+### PGlite
 
-`schema` is the file you are about to write. `database` is the one target those commands use. Direct asserts the URL. Safe refuses an empty `DATABASE_URL`.
+Postgres runs in the process, on Node or Bun. There is no server to start. The connect target is a data directory, or omit it for memory.
 
-Node.js 22.18 or newer loads `okmodel.config.ts` (type stripping). Older Node prints that and stops. `bunx okm` uses Node. `bun --bun okm` uses Bun. On Windows, use a `postgres://` URL. `okm generate init` adds a `.gitattributes` so migration SQL stays LF. The [migrations](/docs/ship/migrations) page has the lines.
+```sh title="PGlite"
+bun add okmodel @electric-sql/pglite
+```
+
+```ts title="db.ts"
+import { connect } from "okmodel/pg/pglite"; // [!code focus]
+```
+
+### Bun.sql
+
+Built into Bun. No extra package. This entry does not run on Node. `bunx okm` still uses Node. `bun --bun okm` is the Bun runtime.
+
+```sh title="Bun.sql"
+bun add okmodel
+```
+
+```ts title="db.ts"
+import { connect } from "okmodel/pg/bun"; // [!code focus]
+```
+

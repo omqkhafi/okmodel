@@ -20,51 +20,34 @@ One table, then a query that reads the row back.
 <Cards>
   <Card
     title="Install"
-    description="Add the package and point the config at your schema."
+    description="Add okmodel and one Postgres driver."
     href="/docs/start/install"
   />
   <Card
-    title="First query"
-    description="Define one table, apply it, and read the row back."
+    title="Let's start"
+    description="Define the table, the schema, and okmodel.config.ts. Then build, generate, and apply."
     href="/docs/start/query"
   />
 </Cards>
 
-## 02 Model
+## 02 Define
 
-Keys, relations, and the writes you allow.
+The config file, the schema, and each table. Open a group for the option you are setting.
 
 <Cards>
+  <Card
+    title="Config"
+    description="The file okm reads. Targets, paths, timeouts, and roles."
+    href="/docs/config/file"
+  />
   <Card
     title="Schema"
-    description="Keys and relations. The client is typed from the tables you declare."
-    href="/docs/model/schema"
+    description="schema() compiles the tables into one catalog."
+    href="/docs/schema/tables"
   />
   <Card
-    title="Queries"
-    description="Insert a row, then find it."
-    href="/docs/model/queries"
-  />
-  <Card
-    title="Safety"
-    description="Hidden fields, guarded writes, and tenancy declared once."
-    href="/docs/model/safety"
-  />
-</Cards>
-
-## 03 Ship
-
-The migration files are generated from the schema. They lint and check themselves.
-
-<Cards>
-  <Card
-    title="Migrations"
-    description="Generate SQL from the schema. The files lint and check themselves."
-    href="/docs/ship/migrations"
-  />
-  <Card
-    title="Drivers"
-    description="postgres.js, node-postgres, PGlite, and Bun.sql."
-    href="/docs/ship/drivers"
+    title="Table"
+    description="table() stores the columns. Keys, relations, and the writes you allow."
+    href="/docs/table/columns"
   />
 </Cards>

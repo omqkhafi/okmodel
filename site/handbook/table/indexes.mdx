@@ -1,0 +1,21 @@
+`indexes` receives column handles and returns index calls. `index()` is the call. `.unique()` marks that index unique.
+
+```ts title="notes.ts"
+import { index, table, t } from "okmodel/pg";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text(),
+    published: t.boolean().default(false),
+  },
+  {
+    indexes: (columns) => [index(columns.title), index(columns.published, columns.title).unique()],
+  },
+);
+```
+
+The handle's `name` is the SQL name `schema()` will store. A [casing](/docs/schema/casing) of `"snake"` has already been applied by the time the catalog is written.
+
+A unique constraint and a unique index are different objects. A constraint belongs on [keys](/docs/table/keys). An index belongs here.

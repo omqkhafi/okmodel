@@ -1,0 +1,17 @@
+`casing: "snake"` writes a camelCase field as a snake_case SQL name. Omit it and the SQL name is the field name.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  publishedAt: t.timestamptz().nullable(),
+});
+
+export default schema({
+  tables: [notes],
+  casing: "snake",
+});
+```
+
+`publishedAt` is stored as `published_at`. A column [sqlName](/docs/table/names) still wins for that column. `"snake"` is the only casing.

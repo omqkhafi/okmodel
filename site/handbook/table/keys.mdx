@@ -1,0 +1,41 @@
+One table has one primary key. Put it on the column, or pass a list when the key is more than one column.
+
+```ts title="notes.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.uuid().primaryKey(),
+    title: t.text(),
+  },
+);
+
+export const memberships = table(
+  "memberships",
+  {
+    organizationId: t.uuid(),
+    userId: t.uuid(),
+  },
+  { primaryKey: ["organizationId", "userId"] },
+);
+```
+
+`.primaryKey()` omits the column from update. Insert still accepts the value, unless the column is generated or guarded. A second `.primaryKey()` is not a composite key. Use the `primaryKey` option.
+
+`unique` names a constraint. The value is the field list, in column order.
+
+```ts title="users.ts"
+import { table, t } from "okmodel/pg";
+
+export const users = table(
+  "users",
+  {
+    id: t.identity(),
+    email: t.text(),
+  },
+  { unique: { email: ["email"] } },
+);
+```
+
+`.unique()` on the column is the same constraint for one field. On a tenant table the key is included, unless you pass `{ global: "reason" }`. An empty reason is refused.

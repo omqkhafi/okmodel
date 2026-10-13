@@ -1,0 +1,40 @@
+`triggers` lists triggers. `trigger()` comes from `okmodel/fn`. Identity is the table plus the name.
+
+```ts title="schema.ts"
+import { fn, trigger } from "okmodel/fn";
+import { schema, sql, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+  updatedAt: t.timestamptz().defaultSql("now()"),
+});
+
+const touch = fn("touch_notes", {
+  returns: "trigger",
+  language: "plpgsql",
+  body: sql`begin new.updated_at = now(); return new; end`,
+  dependsOn: [{ table: notes, column: "updated_at" }],
+});
+
+export default schema({
+  tables: [notes],
+  casing: "snake",
+  functions: [touch],
+  triggers: [
+    trigger("notes_touch", {
+      on: notes,
+      timing: "before",
+      events: ["update"],
+      level: "row",
+      calls: touch,
+    }),
+  ],
+});
+```
+
+`timing` is `"before"`, `"after"`, or `"instead"`. `events` are `"insert"`, `"update"`, `"delete"`, and `"truncate"`. `level` is `"row"` or `"statement"`.
+
+`updateOf` names SQL columns for `UPDATE OF`. Each one is a column dependency. `when` is optional SQL.
+
+`dependsOn` column is the SQL name, not the field name. With [casing](/docs/schema/casing) `updatedAt` is `updated_at`.

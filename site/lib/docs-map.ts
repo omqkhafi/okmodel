@@ -4,7 +4,7 @@
  */
 
 /** Sidebar group. `root` pages sit above the folders. */
-export type DocGroupId = "root" | "start" | "model" | "ship" | "reference";
+export type DocGroupId = "root" | "start" | "config" | "schema" | "table";
 
 /** One public page. */
 export interface MappedPage {
@@ -38,26 +38,51 @@ export interface ExcludedDoc {
   readonly reason: string;
 }
 
-/** Sidebar folder. */
+/** Sidebar folder. A separator is the numbered label above a flat folder. */
 export interface DocGroup {
   readonly id: Exclude<DocGroupId, "root">;
   readonly title: string;
-  /** Root-sidebar label, including the learning-path number. */
+  /**
+   * Root-sidebar label, including the learning-path number.
+   *
+   * Absent when the folder sits inside a {@link DocSection}.
+   */
+  readonly separator?: string;
+  readonly order: number;
+}
+
+/**
+ * Numbered label that holds several folders.
+ *
+ * Start stays one flat folder. Define holds Config, Schema, and Table.
+ */
+export interface DocSection {
+  readonly id: string;
   readonly separator: string;
   readonly order: number;
+  readonly groups: readonly Exclude<DocGroupId, "root">[];
 }
 
 /** Folder order in the sidebar. The number is the learning path, not a spec section. */
 export const docGroups: readonly DocGroup[] = [
   { id: "start", title: "Start", separator: "01 Start", order: 10 },
-  { id: "model", title: "Model", separator: "02 Model", order: 20 },
-  { id: "ship", title: "Ship", separator: "03 Ship", order: 30 },
-  { id: "reference", title: "Reference", separator: "04 Reference", order: 40 },
+  { id: "config", title: "Config", order: 0 },
+  { id: "schema", title: "Schema", order: 1 },
+  { id: "table", title: "Table", order: 2 },
+];
+
+/** Sections whose folders stay collapsed in the sidebar. */
+export const docSections: readonly DocSection[] = [
+  {
+    id: "define",
+    separator: "02 Define",
+    order: 20,
+    groups: ["config", "schema", "table"],
+  },
 ];
 
 /**
  * Public pages. The learning path is authored under `site/handbook`.
- * Repository docs stay in Reference, with descriptions written for a reader.
  */
 export const mappedPages: readonly MappedPage[] = [
   {
@@ -72,7 +97,7 @@ export const mappedPages: readonly MappedPage[] = [
   {
     slug: "install",
     title: "Install",
-    description: "Add the package and point the config at your schema.",
+    description: "Add okmodel and one Postgres driver.",
     group: "start",
     order: 0,
     source: "site/handbook/install.mdx",
@@ -80,179 +105,77 @@ export const mappedPages: readonly MappedPage[] = [
   },
   {
     slug: "query",
-    title: "First query",
-    description: "Define one table, apply it, and read the row back.",
+    title: "Let's start",
+    description: "Define the table, the schema, and okmodel.config.ts. Then build, generate, and apply.",
     group: "start",
     order: 1,
     source: "site/handbook/query.mdx",
     handbook: "handbook/query.mdx",
   },
-  {
-    slug: "schema",
-    title: "Schema",
-    description: "Tables, keys, and relations. The schema is the catalog.",
-    group: "model",
-    order: 0,
-    source: "site/handbook/schema.mdx",
-    handbook: "handbook/schema.mdx",
-  },
-  {
-    slug: "queries",
-    title: "Queries",
-    description: "Insert a row, then find it. The result follows the table.",
-    group: "model",
-    order: 1,
-    source: "site/handbook/queries.mdx",
-    handbook: "handbook/queries.mdx",
-  },
-  {
-    slug: "safety",
-    title: "Safety",
-    description: "Hidden fields, guarded writes, and tenancy declared once.",
-    group: "model",
-    order: 2,
-    source: "site/handbook/safety.mdx",
-    handbook: "handbook/safety.mdx",
-  },
-  {
-    slug: "migrations",
-    title: "Migrations",
-    description: "Generate SQL from the schema. The files lint and check themselves.",
-    group: "ship",
-    order: 0,
-    source: "site/handbook/migrations.mdx",
-    handbook: "handbook/migrations.mdx",
-  },
-  {
-    slug: "drivers",
-    title: "Drivers",
-    description: "postgres.js, node-postgres, PGlite, and Bun.sql. Postgres 15 to 18.",
-    group: "ship",
-    order: 1,
-    source: "site/handbook/drivers.mdx",
-    handbook: "handbook/drivers.mdx",
-  },
-  {
-    slug: "production",
-    title: "Production",
-    description: "Protect the production database, and require its catalog before connecting.",
-    group: "reference",
-    order: 0,
-    source: "docs/production.md",
-  },
-  {
-    slug: "environments",
-    title: "Environments",
-    description: "An environment is a named database target.",
-    group: "reference",
-    order: 1,
-    source: "docs/environments.md",
-  },
-  {
-    slug: "testing",
-    title: "Testing",
-    description: "Open a real database. There is no mock.",
-    group: "reference",
-    order: 2,
-    source: "docs/testing.md",
-  },
-  {
-    slug: "topology",
-    title: "Topology",
-    description: "One primary and any number of replicas, each with its own pool.",
-    group: "reference",
-    order: 3,
-    source: "docs/topology.md",
-  },
-  {
-    slug: "provisioning",
-    title: "Provisioning",
-    description: "Rows the application needs are declared on the table and inserted when missing.",
-    group: "reference",
-    order: 4,
-    source: "docs/provisioning.md",
-  },
-  {
-    slug: "check",
-    title: "Check migrations",
-    description: "Replay a migration history on a throwaway database and fail the pipeline if it is wrong.",
-    group: "reference",
-    order: 5,
-    source: "docs/migrate-check.md",
-  },
-  {
-    slug: "backfill",
-    title: "Backfill",
-    description: "A backfill is a step in a migration file. There is no separate backfill command.",
-    group: "reference",
-    order: 6,
-    source: "docs/backfill.md",
-  },
-  {
-    slug: "linter",
-    title: "Linter",
-    description: "The linter reads a migration plan. It does not connect to the database.",
-    group: "reference",
-    order: 7,
-    source: "docs/linter.md",
-  },
-  {
-    slug: "compatibility",
-    title: "Driver compatibility",
-    description: "What each driver does, from the conformance run.",
-    group: "reference",
-    order: 8,
-    source: "docs/compatibility.md",
-  },
-  {
-    slug: "size",
-    title: "Size",
-    description: "Measured size of the runtime and a small application.",
-    group: "reference",
-    order: 9,
-    source: "docs/size.md",
-  },
-  {
-    slug: "known-limits",
-    title: "Known limits",
-    description: "What this version does not do.",
-    group: "reference",
-    order: 10,
-    source: "docs/known-limits.md",
-  },
-  {
-    slug: "api",
-    title: "API",
-    description: "Which exports are stable, which are experimental, and which stay internal.",
-    group: "reference",
-    order: 11,
-    source: "docs/api.md",
-  },
-  {
-    slug: "specification",
-    title: "Specification",
-    description: "The contract for the catalog, queries, and migrations.",
-    group: "reference",
-    order: 12,
-    source: "docs/okmodel-api-design.md",
-  },
-  {
-    slug: "editor-check",
-    title: "Editor check",
-    description: "Hover, completions, and diagnostics for the editor.",
-    group: "reference",
-    order: 13,
-    source: "docs/editor-check.md",
-  },
-  {
-    slug: "example-app",
-    title: "Example application",
-    description: "A small project tracker that uses only the public entry points.",
-    group: "reference",
-    order: 14,
-    source: "docs/example-app.md",
-  },
+  ...definePages(),
 ];
+
+/**
+ * Authored pages under Config, Schema, and Table.
+ *
+ * The path is `site/handbook/<group>/<slug>.mdx`.
+ */
+function definePages(): readonly MappedPage[] {
+  const page = (
+    group: "config" | "schema" | "table",
+    order: number,
+    slug: string,
+    title: string,
+    description: string,
+  ): MappedPage => ({
+    slug,
+    title,
+    description,
+    group,
+    order,
+    source: `site/handbook/${group}/${slug}.mdx`,
+    handbook: `handbook/${group}/${slug}.mdx`,
+  });
+  return [
+    page("config", 0, "file", "Config file", "defineConfig in okmodel.config.ts. schema is required. Set database or targets."),
+    page("config", 1, "targets", "Targets", "Any key is a name. Protection is the protected flag, not the target name."),
+    page("config", 2, "paths", "Paths", "schema, tables, migrations, and out. Each path resolves from the project directory."),
+    page("config", 3, "pooler", "Pooler", "Migration commands refuse a pooler host unless allowPooler is set."),
+    page("config", 4, "timeouts", "Timeouts", "lock defaults to 5000. statement defaults to 30000. A flag overrides the config."),
+    page("config", 5, "lint", "Lint baseline", "lintFrom is the first migration id check lints. Apply does not read it. Files before it are the adoption baseline."),
+    page("config", 6, "backfill", "Backfill", "batchSize is written into a new plan. pauseMs and statementTimeoutMs apply when the batches run. A step header overrides the batch."),
+    page("config", 7, "roles", "Roles", "migration runs the files. app receives the grants. reporting is select only. managed roles are created and never dropped."),
+    page("schema", 0, "tables", "Tables", "schema() compiles the tables array into one catalog. table() only stores the columns."),
+    page("schema", 1, "casing", "Casing", "casing: snake writes field names as snake_case SQL names."),
+    page("schema", 2, "codecs", "Codecs", "bigint, numeric, and timestamps choose how a value is typed in TypeScript."),
+    page("schema", 3, "types", "Row types", "types is emitted or inferred. Emitted is the default."),
+    page("schema", 4, "defaults", "Id default", "defaults.id is what a bare t.id() means. A column option wins."),
+    page("schema", 5, "requires", "Postgres version", "requires.postgres is the engine connect records."),
+    page("schema", 6, "traits", "Traits", "traits apply to every table. A table opts out with omitDefaults and a reason."),
+    page("schema", 7, "tenancy", "Tenancy", "columnTenancy adds one key to every table. global(reason) opts a table out."),
+    page("schema", 8, "validation", "Validation", "validation turns rules on for the schema. A table can turn them off."),
+    page("schema", 9, "extensions", "Extensions", "extension() declares a Postgres extension. version pins it. schema is where it installs."),
+    page("schema", 10, "functions", "Functions", "fn() declares a function. plpgsql needs dependsOn. security definer needs searchPath."),
+    page("schema", 11, "triggers", "Triggers", "trigger() names the table, the timing, the events, and the function it calls."),
+    page("schema", 12, "views", "Views", "view() and materializedView() declare a query and its output columns."),
+    page("table", 0, "columns", "Columns", "table() takes a name and a column map. t is every builder."),
+    page("table", 1, "keys", "Keys", "One primary key, on the column or as a list. unique names a constraint."),
+    page("table", 2, "indexes", "Indexes", "indexes returns index calls. unique() marks one unique."),
+    page("table", 3, "checks", "Checks", "A check is named SQL. sql interpolates a column handle as its SQL name."),
+    page("table", 4, "defaults", "Defaults", "nullable allows NULL. default stores a literal or a client generator. generated omits the column from writes."),
+    page("table", 5, "references", "References", "references() points a column at another table. schema() checks that the table exists."),
+    page("table", 6, "relations", "Relations", "one and many name a table. manyThrough names the join table."),
+    page("table", 7, "visibility", "Visibility", "hidden leaves a column out of the default row. sensitive redacts logs. guarded omits the column from writes."),
+    page("table", 8, "names", "Names", "sqlName is the catalog name. renamedFrom is the previous name. comment is stored beside the object."),
+    page("table", 9, "traits", "Table traits", "traits on a table are added with the schema defaults. omitDefaults skips the defaults."),
+    page("table", 10, "tenancy", "Table tenancy", "global(reason) keeps the tenant key off this table. via isolates through a relation."),
+    page("table", 11, "presets", "Presets", "A preset is a named refinement. It can only add a predicate."),
+    page("table", 12, "reference", "Reference rows", "reference rows are inserted when the key is missing. Apply does not update or delete them."),
+    page("table", 13, "filters", "Filters", "filters() allowlists the operators a caller may send. A hidden field in allow throws."),
+    page("table", 14, "validation", "Column validation", "validate stores rules. The same field on the column and the table is OKM1030."),
+    page("table", 15, "shape", "Arrays and picklists", "array() wraps a scalar. picklist() narrows a string column to a literal union."),
+  ];
+}
 
 /**
  * `docs/` files that stay in the repository and are not handbook pages.
@@ -290,6 +213,66 @@ export const excludedDocs: readonly ExcludedDoc[] = [
   {
     path: "docs/quickstart.md",
     reason: "The tarball test script. The handbook Start pages are the public quickstart.",
+  },
+  {
+    path: "docs/production.md",
+    reason: "Removed from the public handbook.",
+  },
+  {
+    path: "docs/environments.md",
+    reason: "Removed from the public handbook.",
+  },
+  {
+    path: "docs/testing.md",
+    reason: "Removed from the public handbook.",
+  },
+  {
+    path: "docs/topology.md",
+    reason: "Removed from the public handbook.",
+  },
+  {
+    path: "docs/provisioning.md",
+    reason: "Removed from the public handbook.",
+  },
+  {
+    path: "docs/migrate-check.md",
+    reason: "Removed from the public handbook.",
+  },
+  {
+    path: "docs/backfill.md",
+    reason: "Removed from the public handbook.",
+  },
+  {
+    path: "docs/linter.md",
+    reason: "Removed from the public handbook.",
+  },
+  {
+    path: "docs/compatibility.md",
+    reason: "Removed from the public handbook.",
+  },
+  {
+    path: "docs/size.md",
+    reason: "Removed from the public handbook.",
+  },
+  {
+    path: "docs/known-limits.md",
+    reason: "Removed from the public handbook.",
+  },
+  {
+    path: "docs/api.md",
+    reason: "Removed from the public handbook.",
+  },
+  {
+    path: "docs/okmodel-api-design.md",
+    reason: "Removed from the public handbook.",
+  },
+  {
+    path: "docs/editor-check.md",
+    reason: "Removed from the public handbook.",
+  },
+  {
+    path: "docs/example-app.md",
+    reason: "Removed from the public handbook.",
   },
 ];
 

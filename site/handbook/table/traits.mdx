@@ -1,0 +1,28 @@
+`traits` on a table are added on top of the schema defaults. `omitDefaults` skips those defaults. The value is the reason. An empty reason is rejected when the schema is built.
+
+```ts title="notes.ts"
+import { table, t } from "okmodel/pg";
+import { archivable } from "okmodel/traits";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text(),
+  },
+  { traits: [archivable()] },
+);
+
+export const sessions = table(
+  "sessions",
+  {
+    id: t.identity(),
+    token: t.text(),
+  },
+  { omitDefaults: "sessions are not stamped" },
+);
+```
+
+Schema [traits](/docs/schema/traits) are the defaults. A table with `omitDefaults` keeps its own `traits` and drops the schema list.
+
+`archivable()` adds the archive columns. Uniques on that table become partial. `cascade` names child tables archived and restored with the row.

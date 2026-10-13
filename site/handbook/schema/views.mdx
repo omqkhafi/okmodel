@@ -1,0 +1,30 @@
+`views` lists views and materialized views. Both come from `okmodel/view`. You declare the output columns and the query. `schema()` stores the record.
+
+```ts title="schema.ts"
+import { schema, sql, table, t } from "okmodel/pg";
+import { materializedView, view } from "okmodel/view";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const openNotes = view("open_notes", {
+  columns: [{ name: "id", type: "bigint" }, { name: "title", type: "text" }],
+  query: sql`select id, title from notes`,
+});
+
+const noteCounts = materializedView("note_counts", {
+  columns: [{ name: "n", type: "bigint" }],
+  query: sql`select count(*) as n from notes`,
+});
+
+export default schema({
+  tables: [notes],
+  views: [openNotes, noteCounts],
+});
+```
+
+`schema` on the view defaults to `public`. A view that reads a tenant table and does not expose the tenant key is OKM1820 unless it opts out with `global("reason")`.
+
+A materialized view can declare indexes. `db.views.name.refresh()` runs `REFRESH MATERIALIZED VIEW`, with `CONCURRENTLY` when the view declares it.

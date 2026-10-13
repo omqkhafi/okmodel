@@ -13,10 +13,8 @@ export const metadata: Metadata = {
 };
 
 const STEPS = [
-  { href: "/docs/start/install", kicker: "01", title: "Install", text: "Add the package and point the config at your schema." },
-  { href: "/docs/start/query", kicker: "01", title: "First query", text: "One table, three commands, and the row comes back." },
-  { href: "/docs/model/schema", kicker: "02", title: "Schema", text: "Keys and relations. The client is typed from the tables." },
-  { href: "/docs/ship/migrations", kicker: "03", title: "Migrations", text: "The SQL is generated. The files lint and check themselves." },
+  { href: "/docs/start/install", kicker: "01", title: "Install", text: "Add okmodel and one Postgres driver." },
+  { href: "/docs/start/query", kicker: "01", title: "Let's start", text: "Define the table, the schema, and the config, then read the row back." },
 ] as const;
 
 /**
