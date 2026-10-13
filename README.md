@@ -715,13 +715,13 @@ export async function hide(url: string, id: string): Promise<void> {
 
 Pick one strategy from `okmodel/tenancy`. Row-level security is the Postgres mechanism. In okmodel it is the fourth strategy: the column predicate stays on every statement, and the policies are the backstop when a statement drops that predicate. Schema-per-tenant and database-per-tenant are not built yet. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
 
-| Strategy | Isolation | When to use |
-| --- | --- | --- |
-| column | one key on each tenant table; `for()` fills and filters it | each row belongs to one tenant |
-| composite | every key together, in that order | a row belongs to an organization and a workspace |
-| path | `EXISTS` along `via()`, at most three relations, on that table | the row has no tenant column; it belongs through a parent |
-| rls | the column predicate, plus forced row-level security | the database must refuse a query that omits the predicate |
-| schema-per-tenant, database-per-tenant | a schema or a database per tenant | not built yet |
+| Strategy                               | Isolation                                                      | When to use                                               |
+| -------------------------------------- | -------------------------------------------------------------- | --------------------------------------------------------- |
+| column                                 | one key on each tenant table; `for()` fills and filters it     | each row belongs to one tenant                            |
+| composite                              | every key together, in that order                              | a row belongs to an organization and a workspace          |
+| path                                   | `EXISTS` along `via()`, at most three relations, on that table | the row has no tenant column; it belongs through a parent |
+| rls                                    | the column predicate, plus forced row-level security           | the database must refuse a query that omits the predicate |
+| schema-per-tenant, database-per-tenant | a schema or a database per tenant                              | not built yet                                             |
 
 `rlsTenancy({ key, type: "uuid" })` takes one key. Combining it with `compositeTenancy()` or `via()` is refused when the schema is built. Policies are enabled and forced (`FORCE ROW LEVEL SECURITY`). The application role must not own the tables, be a superuser, or have `BYPASSRLS`. The first scoped call refuses otherwise (OKM1707). A scoped read is about 0.3 ms. The same read with column tenancy is about 0.06 ms. That sample is not a gate. `unscoped()` under row-level security is read-only. A write is OKM1701.
 
@@ -801,7 +801,11 @@ import { open } from "okmodel/pg/pglite";
 import { columnTenancy, global } from "okmodel/tenancy";
 import { testing } from "okmodel/testing";
 
-const countries = table("countries", { id: t.identity() }, { tenancy: global("shared reference data") });
+const countries = table(
+  "countries",
+  { id: t.identity() },
+  { tenancy: global("shared reference data") },
+);
 const app = schema({
   tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
   tables: [countries],
