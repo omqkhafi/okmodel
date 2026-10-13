@@ -675,6 +675,14 @@
       "kind": "stable"
     },
     {
+      "name": "Window",
+      "kind": "stable"
+    },
+    {
+      "name": "WindowOrder",
+      "kind": "stable"
+    },
+    {
       "name": "WithGenerated",
       "kind": "stable"
     },
@@ -732,6 +740,10 @@
     },
     {
       "name": "daterange",
+      "kind": "stable"
+    },
+    {
+      "name": "denseRank",
       "kind": "stable"
     },
     {
@@ -915,11 +927,23 @@
       "kind": "stable"
     },
     {
+      "name": "rank",
+      "kind": "stable"
+    },
+    {
       "name": "real",
       "kind": "stable"
     },
     {
       "name": "relevance",
+      "kind": "stable"
+    },
+    {
+      "name": "rowNumber",
+      "kind": "stable"
+    },
+    {
+      "name": "runningTotal",
       "kind": "stable"
     },
     {
