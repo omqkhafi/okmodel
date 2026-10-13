@@ -82,6 +82,8 @@ export { ilike } from "./ops/ilike.js";
 export { inList } from "./ops/inList.js";
 export { like } from "./ops/like.js";
 export { matches } from "./ops/matches.js";
+export { relevance } from "./ops/relevance.js";
+export type { SearchMatch } from "./operators.js";
 export { lt } from "./ops/lt.js";
 export { lte } from "./ops/lte.js";
 export { none } from "./ops/none.js";

@@ -189,7 +189,7 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     code: "OKM1124",
     title: "Operator mismatch",
     summary: "An operator does not apply to the column type.",
-    fix: "Use an operator the error lists for that column type. Text search needs a tsvector column.",
+    fix: "Use an operator the error lists for that column type. Search needs a column built for search, not a plain text column.",
   },
   {
     code: "OKM1130",

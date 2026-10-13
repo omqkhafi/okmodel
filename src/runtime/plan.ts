@@ -57,6 +57,8 @@ export type ReadCall = {
   readonly orderBy?: unknown;
   readonly limit?: unknown;
   readonly include?: unknown;
+  /** `find` and `count`. Rewritten to `matches` and `relevance` before SQL. */
+  readonly search?: unknown;
   readonly all?: string;
   /** The `after` cursor of a `page`. The condition joins the others with `and`. */
   readonly after?: Keyset;
@@ -243,6 +245,7 @@ const FIND_OPTIONS = [
   "include",
   "limit",
   "orderBy",
+  "search",
   "select",
   "route",
   "signal",
@@ -258,6 +261,7 @@ const ONE_OPTIONS = [
   "timeout",
   "where",
 ] as const;
+const COUNT_OPTIONS = ["route", "search", "signal", "timeout", "where"] as const;
 const FILTER_OPTIONS = ["route", "signal", "timeout", "where"] as const;
 
 /**
@@ -269,6 +273,7 @@ const FILTER_OPTIONS = ["route", "signal", "timeout", "where"] as const;
 export function readOptionNames(op: ReadOp): readonly string[] {
   if (op === "find") return FIND_OPTIONS;
   if (op === "one") return ONE_OPTIONS;
+  if (op === "count") return COUNT_OPTIONS;
   return FILTER_OPTIONS;
 }
 
@@ -314,7 +319,25 @@ export function installOperatorSql(emit: OperatorEmit): void {
 export function readNeedsOperatorSql(schema: QuerySchema, call: ReadCall): boolean {
   if (operatorEmit !== undefined) return false;
   const table = indexes(schema).get(call.table);
-  return table !== undefined && needsOperatorSql(table, call.where);
+  if (table === undefined) return false;
+  return needsOperatorSql(table, call.where) || orderHasRelevance(call.orderBy);
+}
+
+/**
+ * Reports whether `orderBy` holds a `relevance` value.
+ *
+ * Called only before the operator compiler has loaded. A later read skips it.
+ *
+ * @param orderBy - The caller's order
+ * @returns `true` when a value is `relevance`
+ */
+function orderHasRelevance(orderBy: unknown): boolean {
+  if (!isRecord(orderBy)) return false;
+  for (const key of Object.keys(orderBy)) {
+    const value = orderBy[key];
+    if (isOperator(value) && operatorName(value) === "relevance") return true;
+  }
+  return false;
 }
 
 /**
@@ -533,7 +556,7 @@ export function logicalIntent(call: ReadCall): {
     table: call.table,
     where: plain(call.where),
     select: call.select,
-    orderBy: call.orderBy,
+    orderBy: plain(call.orderBy),
     limit: call.limit,
     include: plain(call.include),
     all: call.all,
@@ -885,6 +908,9 @@ function emitOperator(
     emitIn(column, ref, name, value, sink);
     return;
   }
+  if (name === "relevance") {
+    fail("OKM1121", `relevance on ${column.field} belongs in orderBy.`);
+  }
   if (TEXT_OPERATORS.includes(`,${name},`) && isTextColumn(column.dataType)) {
     if (typeof value !== "string") {
       fail("OKM1121", `${name} on ${column.field} needs a string.`);
@@ -1056,7 +1082,15 @@ export function emitOrder(table: Indexed, orderBy: unknown, sink: Sink, alias: s
       );
     }
     refuseHidden(column);
-    const parsed = parseOrder(key, orderBy[key]);
+    const value = orderBy[key];
+    if (isOperator(value) && operatorName(value) === "relevance") {
+      if (index > 0) sink.text(", ");
+      emitLazy(column, `${alias}.${quote(column.sql)}`, "relevance", operatorValue(value), sink);
+      sink.text(" desc");
+      sink.mark(`o:${key}:relevance`);
+      continue;
+    }
+    const parsed = parseOrder(key, value);
     if (index > 0) sink.text(", ");
     sink.text(alias);
     sink.text(".");

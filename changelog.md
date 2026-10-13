@@ -18,6 +18,12 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - `bucket(column, unit, { tz, as })` groups an aggregate by a calendar or clock unit. A day or longer unit returns `Temporal.PlainDate`. A second, minute, or hour returns `Temporal.Instant`. A NULL timestamp is one group: the result key is present and the value is null. There is still no `having`. Time-zone date helpers stay deferred (D247).
 - `update` with `lock: "skip"` and `limit` claims up to that many rows in one statement and leaves rows another transaction already holds. A read still uses `lock: "update"` and `wait: "skip"` inside `tx()` (D249).
+- `find({ search })` and `count({ search })` look through a column built for search. A string is enough when the table has one. `{ for, in, match, language }` names the text, the column, how to match, and the language. Rows come back closest first, then by primary key, unless you pass `orderBy`. `search` combines with `where`, `select`, `include`, and presets. `page()` does not take `search` in this version (D250).
+- `relevance(query, { match, language })` orders a search column by how well it matches. `find({ search })` compiles to the same SQL as `matches` plus `relevance`.
+
+### 💥 Breaking Changes
+
+- `matches` takes `{ match, language }`. `match` is `natural` (the default), `all-words`, `phrase`, or `advanced`. `language` is a text search language such as `english`. `{ mode, config }` is not accepted (D250).
 
 ### 🐛 Fixed
 

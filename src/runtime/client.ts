@@ -569,6 +569,9 @@ export function readHandle(
     if (mods.uses !== undefined) {
       call = (await import("./presets.js")).refine(session.schema, origin, mods.uses);
     }
+    if (call.search !== undefined) {
+      call = (await import("./text-search.js")).applyTextSearch(session.schema, call);
+    }
     if (readNeedsOperatorSql(session.schema, call)) await loadOperatorSql();
     const hooks = await hooksFor(call);
     const bound = bindCall(session.schema, call, hooks);
@@ -586,6 +589,7 @@ export function readHandle(
   };
   // True when the statement can be planned now: no include, no preset, no operator SQL to load.
   const sync = (): boolean =>
+    call.search === undefined &&
     call.include === undefined &&
     mods.uses === undefined &&
     !readNeedsOperatorSql(session.schema, call);
@@ -692,7 +696,9 @@ export function readCall(
         "OKM1120",
         key,
         accepted,
-        `Option ${key} is not accepted by ${op}. Accepted options: ${accepted.join(", ")}.`,
+        key === "search"
+          ? `${op}() does not take search. Pass search to find or count.`
+          : `Option ${key} is not accepted by ${op}. Accepted options: ${accepted.join(", ")}.`,
       );
     }
   }
@@ -704,6 +710,7 @@ export function readCall(
     ...(record.orderBy !== undefined ? { orderBy: record.orderBy } : {}),
     ...(record.limit !== undefined ? { limit: record.limit } : {}),
     ...(record.include !== undefined ? { include: record.include } : {}),
+    ...(record.search !== undefined ? { search: record.search } : {}),
     ...callOptions(record),
     ...(all !== undefined ? { all } : {}),
     ...(scope !== undefined ? { scope } : {}),

@@ -845,6 +845,8 @@ The reporting role from section 5.7 is not tenant-safe against its own SQL. It i
 
 Aggregates decode with the source column's codec. `count` is a number. `min` and `max` follow the column. `sum` and `avg` keep the value type of the column: a `numeric` column gives the exact decimal string (the default codec) or a number when the column is `as: "number"`, an `integer` or `double` column gives a number, and a column whose value is neither a string nor a number (`bigint` as `bigint`) is refused with OKM1124. `sum` and `avg` over a `text` column pass the types and fail at runtime with OKM1124.
 
+`find` and `count` take `search` (D250). A string looks in the table's one search column. `{ for, in, match, language }` names the text, the column, how to match, and the language. `in` is required when the table has more than one search column, and the error lists those columns by name. `match` is `natural` (the default), `all-words`, `phrase`, or `advanced`. An omitted `language` uses the database default. `find` returns the closest rows first, then the primary key. An `orderBy` you pass replaces that order. `search` combines with `where`, `select`, `include`, and presets. `page` refuses `search` (OKM1120). `one` and `exists` do not take it. The same call written out is `where: { column: matches(q, opts) }` and `orderBy: { column: relevance(q, opts), ...primaryKey }`. Both forms compile to the same SQL.
+
 `bucket(column, unit, { tz, as, weekStart? })` groups a `timestamptz` or `date` column (D247). Units are `second`, `minute`, `hour`, `day`, `week`, `month`, `quarter`, and `year`. `as` names the result key. Day, week, month, quarter, and year return `Temporal.PlainDate` (the local date the period starts). Second, minute, and hour return `Temporal.Instant`. A nullable column includes null. A NULL timestamp is one group: the `as` key is present and the value is null. `tz` is an IANA name, required on `timestamptz` and refused on `date`. `timestamp` without a zone is refused. `weekStart` is `monday` (the default), `sunday`, or `saturday`, and only with unit `week`. A bad unit, zone, or name is OKM1120 before any SQL. There is still no `having` and no gap filling. Time-zone date helpers (`onDay` and the rest of tool 5) are deferred.
 
 Query modifiers apply to any read: `.stream()` (async iteration over a server-side cursor, driver capability), `.required()`, `.safe()`, `.inspect()`, `.sql()`, `.explain()`.
@@ -896,9 +898,10 @@ All are tagged helpers from `okmodel/pg`. The planner picks the SQL from the col
 | `overlaps(x)` | array, range | `&&` |
 | `hasKey(k)`, `hasAnyKey(ks)` | jsonb | `jsonb_exists`, `jsonb_exists_any` (function forms, so a `?` never appears in SQL text) |
 | `path(segments, op)` | json, jsonb | `col #>> $1::text[]` compared with `op`; the operand type of `op` picks the cast (number to numeric, boolean to boolean, string to text) |
-| `matches(q, { mode?, config? })` | tsvector | `@@` with `websearch_to_tsquery` (default, never throws on user input), `plainto_tsquery` (`"plain"`) or `phraseto_tsquery` (`"phrase"`) |
+| `matches(q, { match?, language? })` | a column built for search | `@@` with `websearch_to_tsquery` (`natural`, the default; does not throw on ordinary text), `plainto_tsquery` (`all-words`), `phraseto_tsquery` (`phrase`), or `to_tsquery` (`advanced`, raw syntax) |
+| `relevance(q, { match?, language? })` | the same column, in `orderBy` | `ts_rank` of that same query, closest first |
 
-Atomic write operators (section 11) are `json.set(path, v)`, `arr.append(v)`, `arr.remove(v)`, exported as namespaces (`export * as json`) so each member tree-shakes. Trigram where-operators ship on `okmodel/pg/pg_trgm` (`similar`, `wordSimilar`). Citext comparison is ordinary equality on a `citext` column once `citext()` from `okmodel/pg/citext` is declared. Text search on a plain `text` column is not supported (it needs an expression index) and fails with a clear error.
+Atomic write operators (section 11) are `json.set(path, v)`, `arr.append(v)`, `arr.remove(v)`, exported as namespaces (`export * as json`) so each member tree-shakes. Trigram where-operators ship on `okmodel/pg/pg_trgm` (`similar`, `wordSimilar`). Citext comparison is ordinary equality on a `citext` column once `citext()` from `okmodel/pg/citext` is declared. A plain text column is not searched. `matches`, `relevance`, and `search` refuse it and name the columns you can search. Highlighted snippets, a helper that fills a search column from text, and keyset pages ordered by relevance are not in this version.
 
 ### 10.2 User-driven filtering
 
@@ -987,6 +990,8 @@ Specified before M1 and tested on every driver through the conformance suite:
 | 14 | Row claiming (`update` with `lock: "skip"`) | ✓ | — | ✓ (8+) | M2 |
 | 15 | Named composable queries | ✓ | ✓ | ✓ | M2 |
 | 16 | Views and materialized views, section 5.7 | ✓ | views | views | M1 |
+
+Tool 13 is `find({ search })` and `count({ search })` (D250, section 10). Tool 15 adds no call: a named query is a preset (section 6.2.1) or a function that returns `find` options.
 
 ## 14. Errors
 
