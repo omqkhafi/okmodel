@@ -22,6 +22,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### docs
 
+- The npm README covers the 0.6 access features: tenancy strategies including row-level security, roles and column grants, ownership, tenant views, and `okm migrate check`.
 - The execution plan lists the 0.7 steps P90–P99. Byte reclaim is first, each feature loads lazily, and the order of P92 to P97 may change by measured bytes (D243).
 
 ## v0.6.0 — 2026-10-11
