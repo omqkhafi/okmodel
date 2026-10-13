@@ -21,7 +21,7 @@ import type {
 import { NODE_POSTGRES_CAPABILITIES } from "../capabilities.js";
 import { driverErrors, mapFailure, rejectClosed } from "../failure.js";
 import { runCall } from "./call.js";
-import { cursorStream, noticeBuffer, quoteIdent, WireSession, type WireQuery } from "./session.js";
+import { noticeBuffer, WireSession, type WireQuery } from "./session.js";
 
 export {
   hasCapability,
@@ -80,7 +80,7 @@ const identity = (value: string): string => value;
  * @param source - Pool or client
  * @param handle - What to do with the error
  */
-function armDriverError(source: object, handle: () => void = () => {}): void {
+export function armDriverError(source: object, handle: () => void = () => {}): void {
   (source as { on(event: "error", listener: () => void): void }).on("error", handle);
 }
 
@@ -178,10 +178,14 @@ export function open(config: NodePostgresConfig): DriverPool {
     },
     reserve: () => checkout(),
     stream(text, params) {
-      return stream(text, params);
+      return (async function* () {
+        const { streamRows } = await import("./nodepostgres-extra.js");
+        yield* streamRows(checkout, text, params);
+      })();
     },
     listen(channel, onNotify) {
-      return listen(channel, onNotify);
+      if (closed) return rejectClosed();
+      return import("./nodepostgres-extra.js").then((mod) => mod.listen(held, channel, onNotify));
     },
     cancel() {
       for (const pending of inflight) pending.cancel?.();
@@ -192,64 +196,6 @@ export function open(config: NodePostgresConfig): DriverPool {
       await pool.end();
     },
   };
-
-  function stream(
-    text: string,
-    params?: readonly WireValue[],
-  ): AsyncIterable<readonly (readonly WireValue[])[]> {
-    return (async function* () {
-      const connection = await checkout();
-      try {
-        yield* cursorStream(
-          (statement, values) => connection.execute(statement, values),
-          text,
-          params,
-        );
-      } finally {
-        await connection.release();
-      }
-    })();
-  }
-
-  async function listen(
-    channel: string,
-    onNotify: (payload: string) => void,
-  ): Promise<() => Promise<void>> {
-    if (closed) return rejectClosed();
-    const client = await connectClient(pool, acquireMs, counters);
-    counters.reserved += 1;
-    const quoted = quoteIdent(channel);
-    const onNotification = (message: { channel: string; payload?: string }): void => {
-      if (message.channel === channel) onNotify(message.payload ?? "");
-    };
-    client.on("notification", onNotification);
-    let released = false;
-    const release = (dead?: unknown): void => {
-      if (released) return;
-      released = true;
-      client.removeListener("notification", onNotification);
-      (
-        client as unknown as { removeListener(event: "error", listener: typeof release): void }
-      ).removeListener("error", release);
-      counters.reserved = Math.max(0, counters.reserved - 1);
-      client.release(Boolean(dead));
-    };
-    armDriverError(client, release);
-    try {
-      await client.query(`LISTEN ${quoted}`);
-    } catch (error) {
-      release(false);
-      throw error;
-    }
-    return async () => {
-      if (released) return;
-      try {
-        await client.query(`UNLISTEN ${quoted}`);
-      } finally {
-        release(false);
-      }
-    };
-  }
 }
 
 export function send(

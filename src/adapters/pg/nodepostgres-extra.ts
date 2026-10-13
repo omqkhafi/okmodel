@@ -7,15 +7,14 @@
 import type { PoolClient } from "pg";
 
 import { isConnectionLost } from "../../contracts/connection.js";
-import type { DriverConnection } from "../../contracts/driver.js";
+import type { DriverConnection, WireValue } from "../../contracts/driver.js";
 import { DriverError } from "../error.js";
 import { rejectClosed } from "../failure.js";
 import { runCall, type Watch } from "./call.js";
-import { connectClient, send, type HeldPool } from "./nodepostgres.js";
+import { armDriverError, connectClient, send, type HeldPool } from "./nodepostgres.js";
+import { resetSession } from "./reserved.js";
+import { cursorStream } from "./cursor.js";
 import { WireSession, type WireQuery } from "./session.js";
-
-const RESET_ALL = "RESET ALL";
-const UNLOCK = "SELECT pg_advisory_unlock_all()";
 
 /**
  * Checks out one client and clears it on release.
@@ -103,14 +102,88 @@ export async function checkout(held: HeldPool): Promise<DriverConnection> {
 }
 
 async function reset(session: WireSession, client: PoolClient): Promise<void> {
-  const run = (text: string): Promise<unknown> => client.query(text);
-  if (session.depth() > 0) await run("ROLLBACK").catch(() => undefined);
+  await resetSession(session.depth(), (text) => client.query(text));
+}
+
+/**
+ * Listens on one checked-out client.
+ *
+ * The client has no pool error listener. One is set here so a dropped socket
+ * is not an uncaught `error` event.
+ *
+ * @param held - The pool and its counters
+ * @param channel - Notification channel
+ * @param onNotify - Called with each payload
+ * @returns Stops the listener
+ */
+export async function listen(
+  held: HeldPool,
+  channel: string,
+  onNotify: (payload: string) => void,
+): Promise<() => Promise<void>> {
+  const { pool, counters } = held;
+  const client = await connectClient(pool, held.acquireMs, counters);
+  counters.reserved += 1;
+  const quoted = quoteIdent(channel);
+  const onNotification = (message: { channel: string; payload?: string }): void => {
+    if (message.channel === channel) onNotify(message.payload ?? "");
+  };
+  client.on("notification", onNotification);
+  let released = false;
+  const release = (dead?: unknown): void => {
+    if (released) return;
+    released = true;
+    client.removeListener("notification", onNotification);
+    (
+      client as unknown as { removeListener(event: "error", listener: typeof release): void }
+    ).removeListener("error", release);
+    counters.reserved = Math.max(0, counters.reserved - 1);
+    client.release(Boolean(dead));
+  };
+  armDriverError(client, release);
   try {
-    await run(RESET_ALL);
-    await run(UNLOCK);
-  } catch {
-    await run("ROLLBACK").catch(() => undefined);
-    await run(RESET_ALL);
-    await run(UNLOCK);
+    await client.query(`LISTEN ${quoted}`);
+  } catch (error) {
+    release(false);
+    throw error;
   }
+  return async () => {
+    if (released) return;
+    try {
+      await client.query(`UNLISTEN ${quoted}`);
+    } finally {
+      release(false);
+    }
+  };
+}
+
+/**
+ * Yields cursor chunks from one checked-out client.
+ *
+ * @param checkout - Reserves the connection
+ * @param text - Query to stream
+ * @param params - Wire parameters
+ * @returns Chunks of wire rows
+ */
+export function streamRows(
+  checkout: () => Promise<DriverConnection>,
+  text: string,
+  params: readonly WireValue[] | undefined,
+): AsyncIterable<readonly (readonly WireValue[])[]> {
+  return (async function* () {
+    const connection = await checkout();
+    try {
+      yield* cursorStream(
+        (statement, values) => connection.execute(statement, values),
+        text,
+        params,
+      );
+    } finally {
+      await connection.release();
+    }
+  })();
+}
+
+function quoteIdent(name: string): string {
+  return `"${name.replaceAll('"', '""')}"`;
 }

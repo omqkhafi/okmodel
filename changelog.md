@@ -20,6 +20,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### ♻️ Changed
 
+#### adapters
+
+- Reclaimed startup bytes. A closed pool reports SQLSTATE `08006` with the message `The pool is closed.` Queries are unchanged.
+
 #### docs
 
 - The npm README covers the 0.6 access features: tenancy strategies including row-level security, roles and column grants, ownership, tenant views, and `okm migrate check`.
