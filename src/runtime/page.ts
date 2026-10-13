@@ -86,6 +86,13 @@ function plan(
   view: ArchiveView | undefined,
 ): Promise<unknown> & Record<string, unknown> {
   const record: Record<string, unknown> = isRecord(options) ? options : {};
+  if (Object.hasOwn(record, "search")) {
+    fail(
+      "OKM1120",
+      "page() does not take search in this version. Use find({ search, limit }) for a ranked list.",
+      "Ranked pages are later. find({ search, limit }) returns one ranked list.",
+    );
+  }
   rejectKeys(record, OPTIONS, "page");
   const indexed = indexes(session.schema).get(table);
   if (indexed === undefined) fail("OKM1120", `Table ${table} is not in the schema.`);

@@ -158,6 +158,7 @@ const SHAKEN_OPERATORS = [
   "hasAnyKey",
   "path",
   "matches",
+  "relevance",
   "json-set",
   "json-ns",
   "arr-append",

@@ -639,6 +639,10 @@
       "kind": "stable"
     },
     {
+      "name": "SearchMatch",
+      "kind": "stable"
+    },
+    {
       "name": "SqlForm",
       "kind": "stable"
     },
@@ -912,6 +916,10 @@
     },
     {
       "name": "real",
+      "kind": "stable"
+    },
+    {
+      "name": "relevance",
       "kind": "stable"
     },
     {

@@ -21,3 +21,53 @@ export async function read(url: string): Promise<void> {
 `where` is the columns of the table. A field you did not declare is not a valid filter. A request from the client goes through `filters({ allow, sort, relations })`. `parse` applies `eq`, `in`, `notIn`, `lt`, `lte`, `gt`, `gte`, `between`, `startsWith`, `endsWith`, `contains`, `like`, `ilike`, `not`, `containedBy`, `overlaps`, `hasKey`, and `hasAnyKey`. A listed relation becomes `has`. A hidden field is refused.
 
 [Safety](/docs/model/safety) covers fields that are stored but not returned, and writes that need an explicit allow.
+
+## Search your text
+
+Pass the words. When the table has one column built for search, that is the column. The closest rows come back first, then the primary key, so the order stays put. `count({ search })` uses the same match and does not order. An `orderBy` you pass replaces the ranking. `where`, `select`, `include`, and a preset still apply. `page()` does not take `search` in this version: use `find({ search, limit })` for one ranked list.
+
+```ts title="search.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { matches, relevance, schema, table, t } from "okmodel/pg";
+
+const pages = table(
+  "pages",
+  { id: t.identity(), title: t.text(), body: t.tsvector() },
+  { presets: { titled: (q, title: string) => q.where({ title }) } },
+);
+const app = schema({ tables: [pages] });
+
+function deployNotes(title: string) {
+  return { search: "deploy rollback", where: { title }, limit: 20 };
+}
+
+export async function read(url: string): Promise<void> {
+  await using db = connect(url, { schema: app });
+  const ranked = await db.pages.find({ search: "deploy rollback", limit: 20 });
+  const phrase = await db.pages.find({
+    search: { for: "deploy rollback", match: "phrase", language: "english" },
+    limit: 20,
+  });
+  const scoped = await db.pages.titled("ship").find({ search: "deploy", limit: 20 });
+  const named = await db.pages.find(deployNotes("ship"));
+  const same = await db.pages.find({
+    where: { body: matches("deploy rollback", { match: "phrase", language: "english" }) },
+    orderBy: {
+      body: relevance("deploy rollback", { match: "phrase", language: "english" }),
+      id: "asc",
+    },
+    limit: 20,
+  });
+  if (ranked.length + phrase.length + scoped.length + named.length + same.length < 0) {
+    throw new Error("the search did not run");
+  }
+}
+```
+
+`match` is `natural` (the default, the same kind of text a search box accepts), `all-words`, `phrase`, or `advanced`. `advanced` is the database's own query syntax. `language` is a text search language such as `english`. Leave it out to use the database default. When the table has more than one search column, name it: `search: { for: "deploy", in: "body" }`. The error lists the names when you do not.
+
+A named query is a preset, or a function that returns the `find` options, as `titled` and `deployNotes` do above. There is no separate call for one.
+
+## How it works
+
+The column is a `tsvector`: the document Postgres matches, not the plain text. You fill it when you write, often with `to_tsvector` in `.generated(...)`. `natural` compiles to `websearch_to_tsquery`. `all-words` is `plainto_tsquery`, `phrase` is `phraseto_tsquery`, and `advanced` is `to_tsquery`. Ranking is `ts_rank`, highest first. `find({ search })` emits that same match and that same rank. A highlighted snippet, a search of a plain text column, a helper that writes the `to_tsvector` expression, and a ranked `page()` are not in this version.

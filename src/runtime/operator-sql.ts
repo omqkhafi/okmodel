@@ -55,6 +55,10 @@ function emitStructured(
     emitMatches(column, ref, value, sink);
     return;
   }
+  if (name === "relevance") {
+    emitRelevance(column, ref, value, sink);
+    return;
+  }
   if (name === "similar" || name === "wordSimilar") {
     emitTrigram(column, ref, name, value, sink);
     return;
@@ -165,34 +169,84 @@ function pathParam(operand: unknown): string {
   return "";
 }
 
-function emitMatches(column: ColumnModel, ref: string, value: unknown, sink: Sink): void {
-  assertOperatorFits(column, "matches");
-  if (!isRecord(value) || typeof value.query !== "string") {
-    fail("OKM1121", `matches on ${column.field} needs search text.`);
+const MATCH_FN: Readonly<Record<string, string>> = {
+  natural: "websearch_to_tsquery",
+  "all-words": "plainto_tsquery",
+  phrase: "phraseto_tsquery",
+  advanced: "to_tsquery",
+};
+
+type BoundQuery = {
+  readonly fn: string;
+  readonly language: string | undefined;
+  readonly query: string;
+};
+
+/**
+ * Reads the operand `matches` and `relevance` store.
+ *
+ * One reader, so both helpers and `search` emit the same function.
+ *
+ * @param column - Field being searched
+ * @param value - Operand the helper stored
+ * @param label - `matches` or `relevance`, for the error
+ * @returns The SQL function, the language, and the text
+ */
+function readMatch(column: ColumnModel, value: unknown, label: string): BoundQuery {
+  if (!isRecord(value) || typeof value.query !== "string" || value.query.length === 0) {
+    fail("OKM1121", `${label} on ${column.field} needs text to look for.`);
   }
-  assertNoControl(value.query, `matches on ${column.field}`);
-  const mode = value.mode ?? "websearch";
-  const fn =
-    mode === "websearch"
-      ? "websearch_to_tsquery"
-      : mode === "plain"
-        ? "plainto_tsquery"
-        : mode === "phrase"
-          ? "phraseto_tsquery"
-          : undefined;
+  assertNoControl(value.query, `${label} on ${column.field}`);
+  const match = value.match ?? "natural";
+  const fn = typeof match === "string" ? MATCH_FN[match] : undefined;
   if (fn === undefined) {
-    fail("OKM1121", `matches on ${column.field} mode must be websearch, plain, or phrase.`);
+    fail(
+      "OKM1121",
+      `${label} on ${column.field} match must be natural, all-words, phrase, or advanced.`,
+    );
   }
-  sink.text(ref);
-  sink.text(" @@ ");
-  sink.text(fn);
+  if (value.language === undefined) return { fn, language: undefined, query: value.query };
+  if (typeof value.language !== "string") {
+    fail("OKM1121", `${label} on ${column.field} language must be a name such as english.`);
+  }
+  assertRegconfig(value.language);
+  return { fn, language: value.language, query: value.query };
+}
+
+/**
+ * Writes the query function `matches` and `relevance` share.
+ *
+ * The mark includes the function and whether a language was passed, so two
+ * matches do not share a cached statement.
+ *
+ * @param sink - Statement builder
+ * @param query - Function, language, and text
+ */
+function emitTsquery(sink: Sink, query: BoundQuery): void {
+  sink.mark(query.language === undefined ? `:${query.fn}` : `:${query.fn}:lang`);
+  sink.text(query.fn);
   sink.text("(");
-  if (typeof value.config === "string") {
-    assertRegconfig(value.config);
-    sink.param(value.config);
+  if (query.language !== undefined) {
+    sink.param(query.language);
     sink.text("::regconfig, ");
   }
-  sink.param(value.query);
+  sink.param(query.query);
+  sink.text(")");
+}
+
+function emitMatches(column: ColumnModel, ref: string, value: unknown, sink: Sink): void {
+  assertOperatorFits(column, "matches");
+  sink.text(ref);
+  sink.text(" @@ ");
+  emitTsquery(sink, readMatch(column, value, "matches"));
+}
+
+function emitRelevance(column: ColumnModel, ref: string, value: unknown, sink: Sink): void {
+  assertOperatorFits(column, "relevance");
+  sink.text("ts_rank(");
+  sink.text(ref);
+  sink.text(", ");
+  emitTsquery(sink, readMatch(column, value, "relevance"));
   sink.text(")");
 }
 

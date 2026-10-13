@@ -24,6 +24,7 @@ const FAMILIES: Readonly<Record<string, readonly OperatorFamily[]>> = {
   hasAnyKey: ["jsonb"],
   path: ["json", "jsonb"],
   matches: ["tsvector"],
+  relevance: ["tsvector"],
   "json.set": ["json", "jsonb"],
   "arr.append": ["array"],
   "arr.remove": ["array"],
@@ -60,7 +61,7 @@ const ACCEPTED: Readonly<Record<OperatorFamily, readonly string[]>> = {
   jsonb: ["eq", "not", "contains", "containedBy", "hasKey", "hasAnyKey", "path", "json.set"],
   json: ["eq", "not", "path", "json.set"],
   range: ["eq", "not", "lt", "lte", "gt", "gte", "contains", "containedBy", "overlaps"],
-  tsvector: ["eq", "not", "matches"],
+  tsvector: ["eq", "not", "matches", "relevance"],
   scalar: ["eq", "not", "lt", "lte", "gt", "gte", "between", "inList", "notIn", "inc"],
 };
 
@@ -111,8 +112,8 @@ export function assertOperatorFits(
   if (families.includes(columnFamily(column.dataType))) return;
   const accepted = ACCEPTED[columnFamily(column.dataType)];
   const search =
-    name === "matches" && columnFamily(column.dataType) === "text"
-      ? " Text search needs a tsvector column."
+    (name === "matches" || name === "relevance") && columnFamily(column.dataType) === "text"
+      ? " Search needs a column built for search, not a plain text column."
       : "";
   throw new OkmError(
     "OKM1124",
@@ -179,16 +180,16 @@ export function assertBoundText(value: string, role: string): void {
 }
 
 /**
- * Rejects a regconfig name that is not an identifier.
+ * Rejects a text search language that is not an identifier.
  *
- * @param config - Text search configuration
+ * @param config - Language name, such as `english`
  */
 export function assertRegconfig(config: string): void {
   if (!REGCONFIG.test(config)) {
     throw new OkmError(
       "OKM1122",
-      `Text search config ${config} must be a regconfig name such as english or pg_catalog.simple.`,
-      { fix: { summary: "Pass a regconfig name. Quotes and extra clauses are not accepted." } },
+      `Language ${config} is not a text search language. Pass a name such as english.`,
+      { fix: { summary: "Pass a language name such as english." } },
     );
   }
 }

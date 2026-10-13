@@ -37,6 +37,7 @@ export type OperatorName =
   | "hasAnyKey"
   | "path"
   | "matches"
+  | "relevance"
   | "similar"
   | "wordSimilar"
   | "json.set"
@@ -85,18 +86,26 @@ export type PathValue<V> = {
 /** `col #>> segments` compared with `op`. */
 export type Path<V extends string | number | boolean> = Tagged<"path", PathValue<V>>;
 
-/** How `matches` turns query text into a tsquery. */
-export type MatchMode = "websearch" | "plain" | "phrase";
+/**
+ * How search text is matched.
+ *
+ * `natural` is web-search style. `all-words` requires every word. `phrase`
+ * keeps the words in order. `advanced` is PostgreSQL query syntax.
+ */
+export type SearchMatch = "natural" | "all-words" | "phrase" | "advanced";
 
-/** Full-text query. `config` is a regconfig name when set. */
+/** Text to look for, how to match it, and the text search language when one was passed. */
 export type MatchValue = {
   readonly query: string;
-  readonly mode: MatchMode;
-  readonly config: string | undefined;
+  readonly match: SearchMatch;
+  readonly language: string | undefined;
 };
 
-/** `@@` against a tsvector column. */
+/** `@@` against a search column. */
 export type Matches = Tagged<"matches", MatchValue>;
+
+/** Order by how well a search column matches. Most relevant first. */
+export type Relevance = Tagged<"relevance", MatchValue>;
 
 /** Text stored on a `pg_trgm` operator. `schema` is the extension's install schema. */
 export type TrigramQuery = {

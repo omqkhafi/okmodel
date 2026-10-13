@@ -16,6 +16,8 @@ import type {
   JsonSet,
   Or,
   RelationFilter,
+  Relevance,
+  SearchMatch,
 } from "../dialects/pg/operators.js";
 import type { FieldWhere, IsJsonObject } from "../dialects/pg/where.js";
 import type { AppliedRule, ReadOp } from "./plan.js";
@@ -85,8 +87,28 @@ export type OrderBy<Row> = {
     | "asc"
     | "desc"
     | { readonly dir: "asc" | "desc"; readonly nulls?: "first" | "last" }
+    | Relevance
     | undefined;
 };
+
+/**
+ * Text to look for.
+ *
+ * A string is enough when the table has one column built for search. `in`
+ * names the column when it has more than one.
+ */
+export type TextSearch<Row> =
+  | string
+  | {
+      /** Text to look for. */
+      readonly for: string;
+      /** Column to search. Required when the table has more than one. */
+      readonly in?: keyof Row & string;
+      /** How to match. Omitted means `natural`. */
+      readonly match?: SearchMatch;
+      /** Text search language, such as `english`. Omitted uses the database default. */
+      readonly language?: string;
+    };
 
 type Related<S extends QuerySchema, T extends keyof S["~byName"], Opt> = Opt extends {
   readonly select: infer Sel;
@@ -197,6 +219,8 @@ export type LockOptions = {
 /** `find` options. `limit` is required unless the caller uses `.all(reason)`. */
 export type FindOptions<S extends QuerySchema, K extends keyof S["~byName"]> = ReadOptions<S, K> & {
   readonly limit?: number;
+  /** Text to look for. The closest matches come first unless `orderBy` is set. */
+  readonly search?: TextSearch<RowOf<S, K>>;
 };
 
 /** A query handle. Await it, or inspect it before it runs. */
@@ -613,7 +637,12 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   aggregate<const O extends AggregateOptions<S, K>>(
     options: O,
   ): { all(reason: string): Query<readonly AggregateRow<RowOf<S, K>, O>[]> };
-  count(options?: CallOptions & { readonly where?: WhereOf<S, K> }): Read<number>;
+  count(
+    options?: CallOptions & {
+      readonly where?: WhereOf<S, K>;
+      readonly search?: TextSearch<RowOf<S, K>>;
+    },
+  ): Read<number>;
   exists(options?: CallOptions & { readonly where?: WhereOf<S, K> }): Read<boolean>;
   /**
    * Inserts one row. Unknown keys are dropped. `{ allow }` may set guarded fields.

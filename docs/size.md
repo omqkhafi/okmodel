@@ -1,6 +1,6 @@
 # Size and cold start
 
-The opening table is the current sample (D248). The gated bytes are the static startup graph: every relative dynamic `import()` is an empty module, so a new lazy chunk does not spend short names on that number. The reference rows are the full `bun build`, printed and not gated. Cold import is the reference, on this machine. The 0.5.0 release sample is [history](#history-the-050-release).
+The opening table is the current sample (D250). The gated bytes are the static startup graph: every relative dynamic `import()` is an empty module, so a new lazy chunk does not spend short names on that number. The reference rows are the full `bun build`, printed and not gated. Cold import is the reference, on this machine. The 0.5.0 release sample is [history](#history-the-050-release).
 
 Numbers are from `bun run size` ([`scripts/size.ts`](../scripts/size.ts)). CI job `check` in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs `bun run check`, which runs that script. Cold import is the median of five fresh Node processes (D134). The failing cold-import gate is 25 ms, and it applies to the runtime entry only. A local sample above 15 ms is printed and does not fail the script.
 
@@ -10,19 +10,19 @@ Byte gates fail in that CI job. Install size is the unminified `dist/` and is pr
 
 | Graph | Minified | Gzip | Cold import | Gate |
 | --- | ---: | ---: | ---: | --- |
-| Runtime entry `okmodel` | 5,288 | 2,026 | 1.682 ms | 6,100 / 2,250 bytes, CI cold import 25 ms. No dynamic import |
-| App startup (10 tables, one find) | 89,476 | 28,972 | | 90,900 / 30,170 bytes. Dynamic imports stubbed |
-| App startup, full build (reference) | 90,715 | 30,141 | 9.917 ms | not gated. Driver stubbed cold import 5.196 ms |
-| Connect `okmodel/pg/postgresjs` startup | 39,533 | 13,770 | | 42,450 / 14,920. Dynamic imports stubbed |
-| Connect postgres.js, full build (reference) | 42,212 | 14,882 | 8.152 ms | not gated. Driver stubbed cold import 2.700 ms |
-| Connect `okmodel/pg/pglite` startup | 37,774 | 13,152 | | 40,450 / 14,280. Dynamic imports stubbed |
-| Connect PGlite, full build (reference) | 40,204 | 14,215 | 10.782 ms | not gated. Driver stubbed cold import 2.868 ms |
-| Connect `okmodel/pg/pg` startup | 39,304 | 13,670 | | 42,850 / 15,070. Dynamic imports stubbed |
-| Connect `okmodel/pg/pg`, full build (reference) | 41,938 | 14,759 | 10.753 ms | not gated. Driver stubbed cold import 2.650 ms |
-| Connect `okmodel/pg/bun` startup | 38,275 | 13,264 | | 41,700 / 14,620. Dynamic imports stubbed. Node cold import skipped: Bun.sql runs only on Bun |
-| Connect Bun.sql, full build (reference) | 41,429 | 14,493 | | not gated. Driver stubbed cold import 2.529 ms |
+| Runtime entry `okmodel` | 5,288 | 2,026 | 2.398 ms | 6,100 / 2,250 bytes, CI cold import 25 ms. No dynamic import |
+| App startup (10 tables, one find) | 90,159 | 29,163 | | 90,900 / 30,170 bytes. Dynamic imports stubbed |
+| App startup, full build (reference) | 91,412 | 30,368 | 10.833 ms | not gated. Driver stubbed cold import 5.512 ms |
+| Connect `okmodel/pg/postgresjs` startup | 40,219 | 13,972 | | 42,450 / 14,920. Dynamic imports stubbed |
+| Connect postgres.js, full build (reference) | 42,905 | 15,093 | 8.193 ms | not gated. Driver stubbed cold import 2.868 ms |
+| Connect `okmodel/pg/pglite` startup | 38,460 | 13,359 | | 40,450 / 14,280. Dynamic imports stubbed |
+| Connect PGlite, full build (reference) | 40,912 | 14,427 | 10.800 ms | not gated. Driver stubbed cold import 2.849 ms |
+| Connect `okmodel/pg/pg` startup | 39,990 | 13,869 | | 42,850 / 15,070. Dynamic imports stubbed |
+| Connect `okmodel/pg/pg`, full build (reference) | 42,631 | 14,974 | 11.489 ms | not gated. Driver stubbed cold import 2.719 ms |
+| Connect `okmodel/pg/bun` startup | 38,961 | 13,467 | | 41,700 / 14,620. Dynamic imports stubbed. Node cold import skipped: Bun.sql runs only on Bun |
+| Connect Bun.sql, full build (reference) | 42,098 | 14,701 | | not gated. Driver stubbed cold import 2.698 ms |
 
-Left under those gates, minified / gzip: runtime entry 812 / 224, featureless app 1,424 / 1,198, postgres.js 2,917 / 1,150, PGlite 2,676 / 1,128, node-postgres 3,546 / 1,400, Bun.sql 3,425 / 1,356. Adapter incremental: postgres.js 15,069 of 15,093, PGlite 10,931 of 12,010. The sections below record the 0.5.0 release and each later measurement. They are not a second current sample.
+Left under those gates, minified / gzip: runtime entry 812 / 224, featureless app 741 / 1,007, postgres.js 2,231 / 948, PGlite 1,990 / 921, node-postgres 2,860 / 1,201, Bun.sql 2,739 / 1,153. Adapter incremental: postgres.js 15,069 of 15,093, PGlite 10,931 of 12,010. Against the post-P93 sample (D249 left the stubbed gates on the D248 numbers) the stubbed app grew 683 / 191 and each connect entry grew 686 minified and 199–207 gzip. That is the `search` hook on the planner. The rewrite loads on the first call. The sections below record the 0.5.0 release and each later measurement. They are not a second current sample.
 
 ## History: the 0.5.0 release
 
