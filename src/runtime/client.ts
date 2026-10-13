@@ -25,6 +25,7 @@ import {
   logicalIntent,
   readNeedsOperatorSql,
   readOptionNames,
+  rejectKeys,
   type AppliedRule,
   type ArchiveView,
   type IncludeHooks,
@@ -720,19 +721,7 @@ export function readCall(
   view?: ArchiveView,
 ): ReadCall {
   const record = options as Record<string, unknown>;
-  const accepted = readOptionNames(op);
-  for (const key of Object.keys(record)) {
-    if (!accepted.includes(key)) {
-      throwNamed(
-        "OKM1120",
-        key,
-        accepted,
-        key === "search"
-          ? `${op}() does not take search. Pass search to find or count.`
-          : `Option ${key} is not accepted by ${op}. Accepted options: ${accepted.join(", ")}.`,
-      );
-    }
-  }
+  rejectKeys(record, readOptionNames(op), op, true);
   return {
     op,
     table,

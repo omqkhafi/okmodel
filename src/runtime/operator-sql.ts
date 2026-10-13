@@ -31,6 +31,8 @@ import { fail, installOperatorSql, isRecord, quote, type Sink } from "./plan.js"
  * @param name - Operator name
  * @param value - Operand the helper stored
  * @param sink - Statement builder
+ * @param order - Set when the operator is an `orderBy` value. `relevance` then
+ *   sorts descending. The same operator in a filter is refused.
  */
 function emitStructured(
   column: ColumnModel,
@@ -38,6 +40,7 @@ function emitStructured(
   name: OperatorName,
   value: unknown,
   sink: Sink,
+  order?: true,
 ): void {
   if (name === "contains" || name === "containedBy" || name === "overlaps") {
     emitContainment(column, ref, name, value, sink);
@@ -56,7 +59,10 @@ function emitStructured(
     return;
   }
   if (name === "relevance") {
+    if (order !== true) fail("OKM1121", `relevance on ${column.field} belongs in orderBy.`);
     emitRelevance(column, ref, value, sink);
+    sink.text(" desc");
+    sink.mark(`o:${column.field}:relevance`);
     return;
   }
   if (name === "similar" || name === "wordSimilar") {

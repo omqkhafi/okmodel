@@ -300,13 +300,19 @@ const BASE_RULES: readonly AppliedRule[] = [
 
 const indexesOf = new WeakMap<object, ReadonlyMap<string, Indexed>>();
 
-/** 0.2 operator SQL. Absent until that module has been imported. */
+/**
+ * 0.2 operator SQL. Absent until that module has been imported.
+ *
+ * `order` is set when the operator is an `orderBy` value. `relevance` writes
+ * its direction there; the same operator in `where` is refused by that module.
+ */
 type OperatorEmit = (
   column: ColumnModel,
   ref: string,
   name: OperatorName,
   value: unknown,
   sink: Sink,
+  order?: true,
 ) => void;
 
 let operatorEmit: OperatorEmit | undefined;
@@ -435,12 +441,13 @@ function emitLazy(
   name: OperatorName,
   value: unknown,
   sink: Sink,
+  order?: true,
 ): void {
   const emit = operatorEmit;
   if (emit === undefined) {
     fail("OKM1121", `Operator ${name} on ${column.field} is not loaded.`);
   }
-  emit(column, ref, name, value, sink);
+  emit(column, ref, name, value, sink, order);
 }
 
 /**
@@ -935,9 +942,6 @@ function emitOperator(
     emitIn(column, ref, name, value, sink);
     return;
   }
-  if (name === "relevance") {
-    fail("OKM1121", `relevance on ${column.field} belongs in orderBy.`);
-  }
   if (TEXT_OPERATORS.includes(`,${name},`) && isTextColumn(column.dataType)) {
     if (typeof value !== "string") {
       fail("OKM1121", `${name} on ${column.field} needs a string.`);
@@ -1110,15 +1114,19 @@ export function emitOrder(table: Indexed, orderBy: unknown, sink: Sink, alias: s
     }
     refuseHidden(column);
     const value = orderBy[key];
+    if (index > 0) sink.text(", ");
     if (isOperator(value) && operatorName(value) === "relevance") {
-      if (index > 0) sink.text(", ");
-      emitLazy(column, `${alias}.${quote(column.sql)}`, "relevance", operatorValue(value), sink);
-      sink.text(" desc");
-      sink.mark(`o:${key}:relevance`);
+      emitLazy(
+        column,
+        `${alias}.${quote(column.sql)}`,
+        "relevance",
+        operatorValue(value),
+        sink,
+        true,
+      );
       continue;
     }
     const parsed = parseOrder(key, value);
-    if (index > 0) sink.text(", ");
     sink.text(alias);
     sink.text(".");
     sink.text(quote(column.sql));
@@ -1262,10 +1270,22 @@ function rejectOptions(call: ReadCall): void {
   rejectKeys(present, accepted, call.op);
 }
 
+/**
+ * Refuses a key that `accepted` does not list.
+ *
+ * A read passes `search`. `one` and `exists` then say to use `find` or
+ * `count`, instead of the generic option list.
+ *
+ * @param value - Caller options
+ * @param accepted - Names this call allows
+ * @param where - The call, named in the error
+ * @param search - When set, a rejected `search` key uses the read message
+ */
 export function rejectKeys(
   value: Readonly<Record<string, unknown>>,
   accepted: readonly string[],
   where: string,
+  search?: true,
 ): void {
   for (const key of Object.keys(value)) {
     if (accepted.includes(key)) continue;
@@ -1273,7 +1293,9 @@ export function rejectKeys(
       "OKM1120",
       key,
       accepted,
-      `Option ${key} is not accepted by ${where}. Accepted options: ${list(accepted)}.`,
+      key === "search" && search === true
+        ? `${where}() does not take search. Pass search to find or count.`
+        : `Option ${key} is not accepted by ${where}. Accepted options: ${list(accepted)}.`,
     );
   }
 }
