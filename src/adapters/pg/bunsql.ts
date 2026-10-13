@@ -23,7 +23,7 @@ import { BUNSQL_CAPABILITIES } from "../capabilities.js";
 import { driverErrors, mapFailure, rejectClosed } from "../failure.js";
 import { runCall } from "./call.js";
 import { noTimeout } from "./no-inflight-timeout.js";
-import { cursorStream, noticeBuffer, WireSession, type WireQuery } from "./session.js";
+import { noticeBuffer, WireSession, type WireQuery } from "./session.js";
 
 export {
   BUNSQL_CAPABILITIES as capabilities,
@@ -131,14 +131,16 @@ export function open(config: BunSqlConfig): DriverPool {
   return {
     capabilities: BUNSQL_CAPABILITIES,
     execute(text, params, options) {
-      noTimeout(options);
+      const refused = noTimeout(options);
+      if (refused !== undefined) return refused;
       return runCall(closed, options, async (watch) => {
         await releaseParked(parked);
         return root.query(text, params, watch);
       });
     },
     async batch(statements, options) {
-      noTimeout(options);
+      const refused = noTimeout(options);
+      if (refused !== undefined) return refused;
       const connection = await checkout();
       try {
         return await connection.batch(statements, options);
@@ -166,16 +168,8 @@ export function open(config: BunSqlConfig): DriverPool {
     params?: readonly WireValue[],
   ): AsyncIterable<readonly (readonly WireValue[])[]> {
     return (async function* () {
-      const connection = await checkout();
-      try {
-        yield* cursorStream(
-          (statement, values) => connection.execute(statement, values),
-          text,
-          params,
-        );
-      } finally {
-        await connection.release();
-      }
+      const { streamRows } = await import("./bunsql-extra.js");
+      yield* streamRows(checkout, text, params);
     })();
   }
 

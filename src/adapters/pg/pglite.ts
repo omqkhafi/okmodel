@@ -43,9 +43,6 @@ export type PgliteConfig = DriverPoolConfig & {
   readonly dataDir?: string;
 };
 
-const RESET_ALL = "RESET ALL";
-const UNLOCK = "SELECT pg_advisory_unlock_all()";
-
 /**
  * Opens a PGlite pool of one.
  *
@@ -90,11 +87,13 @@ export async function open(config: PgliteConfig = {}): Promise<DriverPool> {
     let released = false;
     return {
       execute: (text, params, options) => {
-        noTimeout(options);
+        const refused = noTimeout(options);
+        if (refused !== undefined) return refused;
         return runCall(closed, options, (watch) => session.query(text, params, watch));
       },
       batch: (statements, options) => {
-        noTimeout(options);
+        const refused = noTimeout(options);
+        if (refused !== undefined) return refused;
         return runCall(closed, options, async (watch) => {
           const { runAtomicBatch } = await import("./batch.js");
           return runAtomicBatch(session, statements, watch);
@@ -104,7 +103,8 @@ export async function open(config: PgliteConfig = {}): Promise<DriverPool> {
         if (released) return;
         released = true;
         try {
-          await reset(session);
+          const { resetQueried } = await import("./reserved.js");
+          await resetQueried(session);
         } finally {
           slot.release();
         }
@@ -115,7 +115,8 @@ export async function open(config: PgliteConfig = {}): Promise<DriverPool> {
   return {
     capabilities: PGLITE_CAPABILITIES,
     execute(text, params, options) {
-      noTimeout(options);
+      const refused = noTimeout(options);
+      if (refused !== undefined) return refused;
       return runCall(closed, options, async (watch) => {
         await slot.acquire(acquireMs);
         try {
@@ -126,7 +127,8 @@ export async function open(config: PgliteConfig = {}): Promise<DriverPool> {
       });
     },
     async batch(statements, options) {
-      noTimeout(options);
+      const refused = noTimeout(options);
+      if (refused !== undefined) return refused;
       const connection = await lease();
       try {
         return await connection.batch(statements, options);
@@ -333,18 +335,6 @@ class Slot {
   /** Callers waiting for the connection. */
   get waiting(): number {
     return this.waiters.length;
-  }
-}
-
-async function reset(session: PgliteSession): Promise<void> {
-  if (session.inTransaction()) await session.rollback().catch(() => undefined);
-  try {
-    await session.query(RESET_ALL, undefined, undefined);
-    await session.query(UNLOCK, undefined, undefined);
-  } catch {
-    await session.rollback().catch(() => undefined);
-    await session.query(RESET_ALL, undefined, undefined);
-    await session.query(UNLOCK, undefined, undefined);
   }
 }
 

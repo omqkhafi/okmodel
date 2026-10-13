@@ -21,11 +21,25 @@ export function driverErrors(): Promise<ErrorModule> {
 /**
  * Rejects with a closed-pool {@link import("./error.js").DriverError}.
  *
- * @param message - Error text
+ * The text and SQLSTATE `08006` load with the lazy error module. Classification
+ * reads the SQLSTATE. The message is "The pool is closed."
+ *
  * @returns A rejected promise
  */
-export function rejectClosed(message = "The pool is closed."): Promise<never> {
-  return driverErrors().then((mod) => Promise.reject(new mod.DriverError(message)));
+export function rejectClosed(): Promise<never> {
+  return import("./lazy-errors.js").then((mod) => mod.closed());
+}
+
+/**
+ * Rejects with OKM1120 when a driver cannot cancel a positive timeout.
+ *
+ * The message stays `timeout`. Kind stays `invalid`. Bun.sql and PGlite call
+ * this. Other drivers do not, so their connect graphs omit it.
+ *
+ * @returns A rejected promise
+ */
+export function rejectUncancellable(): Promise<never> {
+  return import("./lazy-errors.js").then((mod) => mod.refused());
 }
 
 /**

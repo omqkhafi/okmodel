@@ -21,6 +21,8 @@ import { resultFrom, rowsFrom } from "./result.js";
 const RESET_ALL = "RESET ALL";
 const UNLOCK = "SELECT pg_advisory_unlock_all()";
 
+type Lost = { on: boolean };
+
 /** State `open` shares with a checkout. */
 export type HeldPool = {
   readonly sql: Sql;
@@ -62,7 +64,7 @@ export async function checkout(pool: HeldPool): Promise<DriverConnection> {
   arm(reserved, lost);
   const guard = <T>(run: () => Promise<T>): Promise<T> =>
     lost.on
-      ? rejectClosed("CONNECTION_CLOSED")
+      ? rejectClosed()
       : run().catch((error: unknown) => {
           if (isConnectionLost(error)) lost.on = true;
           throw error;
@@ -199,17 +201,6 @@ function asParams(params: readonly WireValue[] | undefined): string[] {
   return params as unknown as string[];
 }
 
-type Lost = { on: boolean };
-
-/**
- * Rejects later writes once postgres.js reports the reserved socket closed.
- *
- * The first statement installs `onclose`. The checkout guard then refuses
- * the next statement, savepoint, or COMMIT before `socket.write`.
- *
- * @param sql - Reserved connection
- * @param lost - Set when that socket closes
- */
 /**
  * Sets `lost` when the reserved socket closes.
  *
@@ -240,7 +231,6 @@ function arm(sql: Sql, lost: Lost): void {
     )) as Sql["unsafe"];
 }
 
-/** Refcount a checkout or a listener borrows from the pool. */
 type Gate = {
   enter(): void;
   leave(): void;

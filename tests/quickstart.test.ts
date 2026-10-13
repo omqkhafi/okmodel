@@ -30,6 +30,17 @@ import {
 
 const DOCS_FILES = ["okmodel.config.ts", "schema.ts", "run.ts"] as const;
 const README_FILES = ["okmodel.config.ts", "schema.ts", "db.ts"] as const;
+/** Labeled README modules the quickstart project can run without the notes database. */
+const README_EXAMPLES = [
+  "column-tenancy.ts",
+  "composite-tenancy.ts",
+  "path-tenancy.ts",
+  "global-tenancy.ts",
+  "rls-tenancy.ts",
+  "tenant-views.ts",
+  "owner.ts",
+  "roles.ts",
+] as const;
 const UUID_LITERAL = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
 const root = repoRoot();
@@ -276,6 +287,9 @@ async function runReadme(
     const checked = await command(dir, ["bunx", "okm", "check"], { DATABASE_URL: pushUrl });
     expect(checked.trim()).toBe("ok");
     await command(dir, ["bun", "factory.ts"]);
+    for (const file of README_EXAMPLES) {
+      await command(dir, ["bun", file], { DATABASE_URL: pushUrl });
+    }
     for (const line of push) await command(dir, line.split(/\s+/), { DATABASE_URL: pushUrl });
     if (replay) {
       await waitForReplicas(pushUrl);
