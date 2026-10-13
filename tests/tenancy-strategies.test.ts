@@ -179,6 +179,7 @@ test("a path ends at the tenant table and stores a unique on its declared key", 
     .sql();
   const update = moved.statements[0]?.text ?? "";
   expect(update).toContain("with matched as");
+  expect(update).toContain("(t.tableoid, t.ctid)");
   expect(update).toContain("for share");
   const renamed = await scoped.projects
     .update({ where: { id: PROJECT }, set: { name: "Road" } })

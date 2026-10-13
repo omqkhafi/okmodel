@@ -42,6 +42,21 @@ type WriteOp<V> = [unknown] extends [V]
       | (V extends readonly (infer E)[] ? ArrAppend<E> | ArrRemove<E> : never)
       | (IsJsonObject<V> extends true ? JsonSet<unknown> : never);
 
+/**
+ * `inc` on a number or bigint column.
+ *
+ * A `string` column is not included. `text` is a string, and so is `numeric`
+ * or `bigint` when the codec keeps the decimal text. The statement still
+ * accepts `inc` on a numeric database type.
+ */
+type IncOf<V> = [unknown] extends [V]
+  ? Inc<number> | Inc<bigint>
+  : [NonNullable<V>] extends [number]
+    ? Inc<number>
+    : [NonNullable<V>] extends [bigint]
+      ? Inc<bigint>
+      : never;
+
 /** `has`, `none`, and `every` against the related row. */
 export type RelFilter<S extends QuerySchema, Rel> = Rel extends {
   readonly table: infer T extends string;
@@ -172,6 +187,7 @@ export type ReadOptions<S extends QuerySchema, K extends keyof S["~byName"]> = C
  *
  * `wait` says what happens when a row is locked by another transaction: `nowait`
  * fails at once (kind `lock_timeout`) and `skip` leaves that row out.
+ * `lock: "skip"` is not a read lock. It claims rows on `update`.
  */
 export type LockOptions = {
   readonly lock?: "update" | "share";
@@ -411,11 +427,17 @@ export type UpdateOf<
   ? U
   : never;
 
-/** `set` values. `undefined` leaves the field unchanged. `inc` adds to it. `set` and `arr` write json and arrays. */
+/**
+ * `set` values.
+ *
+ * `undefined` leaves the field unchanged. `null` sets null, and only on a
+ * nullable column. `inc` adds to a number or bigint column. A null number
+ * stays null. `json.set` and `arr` write json and arrays.
+ */
 export type UpdateSet<S extends QuerySchema, K extends keyof S["~byName"]> = {
   readonly [F in keyof UpdateOf<S, K>]?:
     | UpdateOf<S, K>[F]
-    | Inc<NonNullable<UpdateOf<S, K>[F]>>
+    | IncOf<UpdateOf<S, K>[F]>
     | WriteOp<NonNullable<UpdateOf<S, K>[F]>>;
 };
 
@@ -494,9 +516,19 @@ type AllowedUpdate<
       readonly set: AllowedSet<S, K, Allow>;
     }[];
 
-/** One update, or a per-row list in one statement. */
+/**
+ * One update, or a per-row list in one statement.
+ *
+ * `lock: "skip"` with `limit` claims that many matching rows and leaves rows
+ * another transaction already holds. It is not valid on a list.
+ */
 export type UpdateTarget<S extends QuerySchema, K extends keyof S["~byName"]> =
-  | { readonly where?: WhereOf<S, K>; readonly set: UpdateSet<S, K> }
+  | {
+      readonly where?: WhereOf<S, K>;
+      readonly set: UpdateSet<S, K>;
+      readonly limit?: number;
+      readonly lock?: "skip";
+    }
   | readonly {
       readonly id?: unknown;
       readonly where?: WhereOf<S, K>;

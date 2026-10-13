@@ -17,6 +17,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 ### ✨ Added
 
 - `bucket(column, unit, { tz, as })` groups an aggregate by a calendar or clock unit. A day or longer unit returns `Temporal.PlainDate`. A second, minute, or hour returns `Temporal.Instant`. A NULL timestamp is one group: the result key is present and the value is null. There is still no `having`. Time-zone date helpers stay deferred (D247).
+- `update` with `lock: "skip"` and `limit` claims up to that many rows in one statement and leaves rows another transaction already holds. A read still uses `lock: "update"` and `wait: "skip"` inside `tx()` (D249).
 
 ### 🐛 Fixed
 
@@ -24,6 +25,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - A server error whose text contains `CONNECT` is no longer treated as a lost connection. Classification uses the driver `code` and SQLSTATE (`08` and `57P01`–`57P03`) only. `grant CONNECT` and a check named `no_CONNECT_zz` fail with the database error, and the connection can be used again. A closed pool is SQLSTATE `08006` (D244).
 - `insert` with `onConflict: { on, return: true }` returns the existing row when another transaction inserts it first. The second statement runs only when the insert returned nothing, and the existing row is not changed (D246).
 - An update list of two different timestamps, dates, or byte values is not the same target. First-or-create on a timestamptz or date unique still returns that row (D246).
+- `update` with `lock: "skip"` matches the physical row by `tableoid` and `ctid`. A claim of one row no longer changes a row in another partition, or an inheritance child, that happens to share the `ctid`. A path-parent update uses the same pair (D249).
 
 ### ♻️ Changed
 
@@ -34,6 +36,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 #### runtime
 
 - `update` of a list refuses the same target twice (OKM1120). A target that matches nothing is not an error: `count` is the rows changed. An empty `set` is OKM1120 (`update set is empty.`). An empty list runs no statement (D246).
+- `inc` is a number or bigint column. A text column is OKM1124. A list that sets one field with `inc` in one row and a plain value in another is OKM1120. A null number stays null (D249).
 
 #### tooling
 
