@@ -280,6 +280,131 @@ postgresTest(
   30_000,
 );
 
+const parts = table("p93Parts", {
+  id: integer(),
+  k: integer(),
+  status: text(),
+});
+
+const heirs = table("p93Heirs", {
+  id: integer(),
+  status: text(),
+});
+
+const partApp = schema({ casing: "snake", tables: [parts, heirs] });
+
+type PartDb = Testing<typeof partApp>["db"];
+
+async function createPartitions(sql: Sql): Promise<void> {
+  await sql.unsafe(
+    `create table p93_parts (id integer, k integer not null, status text not null) partition by list (k)`,
+  );
+  await sql.unsafe(`create table p93_parts_1 partition of p93_parts for values in (1)`);
+  await sql.unsafe(`create table p93_parts_2 partition of p93_parts for values in (2)`);
+  await sql.unsafe(
+    `insert into p93_parts (id, k, status) values (1, 1, 'pending'), (2, 2, 'pending'), (3, 2, 'pending')`,
+  );
+  await sql.unsafe(`create table p93_heirs (id integer, status text not null)`);
+  await sql.unsafe(`create table p93_heirs_a () inherits (p93_heirs)`);
+  await sql.unsafe(`create table p93_heirs_b () inherits (p93_heirs)`);
+  await sql.unsafe(`insert into p93_heirs_a (id, status) values (1, 'pending')`);
+  await sql.unsafe(`insert into p93_heirs_b (id, status) values (2, 'pending')`);
+}
+
+async function claimPartitions(owner: PartDb, other: PartDb): Promise<void> {
+  const claimed = await owner.p93Parts.update(
+    { where: { k: 1 }, set: { status: "claimed" }, limit: 1, lock: "skip" },
+    { returning: ["id"] },
+  );
+  expect(value(claimed)).toEqual([{ id: 1 }]);
+  expect(await owner.p93Parts.find({ orderBy: { id: "asc" }, limit: 10 })).toEqual([
+    { id: 1, k: 1, status: "claimed" },
+    { id: 2, k: 2, status: "pending" },
+    { id: 3, k: 2, status: "pending" },
+  ]);
+
+  const heir = await owner.p93Heirs.update(
+    { where: { id: 1 }, set: { status: "claimed" }, limit: 1, lock: "skip" },
+    { returning: ["id"] },
+  );
+  expect(value(heir)).toEqual([{ id: 1 }]);
+  expect(await owner.p93Heirs.find({ orderBy: { id: "asc" }, limit: 10 })).toEqual([
+    { id: 1, status: "claimed" },
+    { id: 2, status: "pending" },
+  ]);
+
+  await owner.p93Parts.update({
+    where: { id: 1 },
+    set: { status: "pending" },
+  });
+  let release = (): void => undefined;
+  const hold = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let ready: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => {
+    ready = resolve;
+  });
+  const first = owner.tx(async (tx) => {
+    const rows = await tx.p93Parts.update(
+      { where: { k: 1 }, set: { status: "held" }, limit: 1, lock: "skip" },
+      { returning: ["id"] },
+    );
+    ready();
+    await hold;
+    return rows;
+  });
+  try {
+    await held;
+    const missed = await Promise.race([
+      other.p93Parts.update({
+        where: { k: 1 },
+        set: { status: "stolen" },
+        limit: 1,
+        lock: "skip",
+      }),
+      refuse("the second claim waited on the locked partition row"),
+    ]);
+    expect(missed).toEqual({ count: 0 });
+  } finally {
+    release();
+  }
+  expect(value(await first)).toEqual([{ id: 1 }]);
+  expect(await other.p93Parts.find({ orderBy: { id: "asc" }, limit: 10 })).toEqual([
+    { id: 1, k: 1, status: "held" },
+    { id: 2, k: 2, status: "pending" },
+    { id: 3, k: 2, status: "pending" },
+  ]);
+  const took = await other.p93Parts.update(
+    { where: { status: "pending" }, set: { status: "running" }, limit: 1, lock: "skip" },
+    { returning: ["id", "k"] },
+  );
+  expect(value(took)).toEqual([expect.objectContaining({ k: 2 })]);
+  expect(await other.p93Parts.count({ where: { status: "pending" } })).toBe(1);
+  expect(await other.p93Parts.count({ where: { k: 1, status: "held" } })).toBe(1);
+}
+
+postgresTest(
+  gate,
+  "a partitioned claim changes only the selected partition",
+  async () => {
+    await withPostgresSchema(async (sql, schemaName) => {
+      await createPartitions(sql);
+      const open = (): ReturnType<typeof openPostgres> =>
+        openPostgres({ url: primaryUrl(), searchPath: schemaName, max: 1 });
+      const harness = await testing(partApp, { driver: open(), migrate: false });
+      const second = await testing(partApp, { driver: open(), migrate: false });
+      try {
+        await claimPartitions(harness.db, second.db);
+      } finally {
+        await second.close();
+        await harness.close();
+      }
+    });
+  },
+  30_000,
+);
+
 postgresTest(
   gate,
   "node-postgres two connections skip a row the other holds",

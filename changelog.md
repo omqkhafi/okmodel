@@ -25,6 +25,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - A server error whose text contains `CONNECT` is no longer treated as a lost connection. Classification uses the driver `code` and SQLSTATE (`08` and `57P01`–`57P03`) only. `grant CONNECT` and a check named `no_CONNECT_zz` fail with the database error, and the connection can be used again. A closed pool is SQLSTATE `08006` (D244).
 - `insert` with `onConflict: { on, return: true }` returns the existing row when another transaction inserts it first. The second statement runs only when the insert returned nothing, and the existing row is not changed (D246).
 - An update list of two different timestamps, dates, or byte values is not the same target. First-or-create on a timestamptz or date unique still returns that row (D246).
+- `update` with `lock: "skip"` matches the physical row by `tableoid` and `ctid`. A claim of one row no longer changes a row in another partition, or an inheritance child, that happens to share the `ctid`. A path-parent update uses the same pair (D249).
 
 ### ♻️ Changed
 

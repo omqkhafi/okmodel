@@ -54,7 +54,7 @@ test("a plain update does not claim, and lock: skip is one statement", async () 
   expect(claimed).toContain('t."qty" + $2::integer');
   expect(claimed).not.toContain("coalesce");
   expect(claimed).toContain(
-    'where t.ctid in (select s.ctid from "jobs" as s where s."status" = $3 for update of s skip locked limit $4::integer)',
+    'where (t.tableoid, t.ctid) in (select s.tableoid, s.ctid from "jobs" as s where s."status" = $3 for update of s skip locked limit $4::integer)',
   );
   expect(claimed.startsWith('update "jobs" as t set ')).toBe(true);
 

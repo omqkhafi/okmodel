@@ -667,6 +667,19 @@ function parentOutputs(returning: readonly ColumnModel[] | undefined): Outputs {
   };
 }
 
+/**
+ * Physical row identity for one alias.
+ *
+ * `ctid` repeats on another partition and on an inheritance child.
+ * `tableoid` names the relation that holds the row.
+ *
+ * @param alias - Table alias in the statement
+ * @returns `alias.tableoid, alias.ctid`
+ */
+function rowId(alias: string): string {
+  return `${alias}.tableoid, ${alias}.ctid`;
+}
+
 function pathSetUpdate(
   schema: QuerySchema,
   table: Indexed,
@@ -676,7 +689,9 @@ function pathSetUpdate(
   returning: readonly ColumnModel[] | undefined,
 ): Statement {
   const sql = new Sql();
-  sql.text("with matched as (select t.ctid as tid from ");
+  sql.text("with matched as (select ");
+  sql.text(rowId("t"));
+  sql.text(" from ");
   sql.text(quote(table.model.sql));
   sql.text(" as t");
   emitFilter(schema, table, where, sql, "t");
@@ -684,7 +699,9 @@ function pathSetUpdate(
   sql.text(quote(table.model.sql));
   sql.text(" as t set ");
   emitSet(sql, table, set, "t");
-  sql.text(" where t.ctid in (select tid from matched)");
+  sql.text(" where (");
+  sql.text(rowId("t"));
+  sql.text(") in (select tableoid, ctid from matched)");
   schema.tenancy?.noteParent?.(
     table.model.name,
     set,
@@ -1059,7 +1076,9 @@ function updateSlice(
  *
  * The write is the statement, so it does not need an outer `tx()`. Inside
  * `tx()` the claim lasts until that transaction ends. The inner read names
- * the physical row, then the update changes it. `limit` is bound.
+ * the physical row, then the update changes that row only. `ctid` repeats on
+ * another partition and on an inheritance child, so the match includes
+ * `tableoid`. `limit` is bound.
  */
 function emitClaim(
   schema: QuerySchema,
@@ -1074,7 +1093,11 @@ function emitClaim(
   sql.text(quote(table.model.sql));
   sql.text(" as t set ");
   emitSet(sql, table, set, "t");
-  sql.text(" where t.ctid in (select s.ctid from ");
+  sql.text(" where (");
+  sql.text(rowId("t"));
+  sql.text(") in (select ");
+  sql.text(rowId("s"));
+  sql.text(" from ");
   sql.text(quote(table.model.sql));
   sql.text(" as s");
   emitFilter(schema, table, where, sql, "s");
