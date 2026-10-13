@@ -18,7 +18,7 @@ import { OkmError, throwNamed } from "../contracts/error.js";
 import type { Catalog, ColumnDefinition } from "../contracts/catalog/types.js";
 import type { ExecuteOptions, Statement } from "../contracts/driver.js";
 import type { ColumnModel, PresetUse, QuerySchema, RelationModel } from "../dialects/pg/model.js";
-import { settleCall, type Session } from "./client.js";
+import { queryHandle, settleCall, type Mods as ReadMods, type Session } from "./client.js";
 import {
   archiveRules,
   emitWhere,
@@ -108,6 +108,47 @@ export async function explain(
   } catch (error) {
     return settleCall(session, error);
   }
+}
+
+/**
+ * The handle for one `sync`.
+ *
+ * Await runs the change. `sql` shows the lock and the write. `expect` lives on
+ * the outer handle, which calls this again with `mods.expect` set.
+ *
+ * @param session - Client session
+ * @param table - Table that owns the relation
+ * @param input - `id`, `relation`, `ids`, and `options`
+ * @param mods - Presets, plus `expect` when the outer handle chained it
+ * @param view - Archive view. The same value a read on this handle uses
+ * @returns A handle. The value is `{ added, removed }`
+ */
+export function build(
+  session: Session,
+  table: string,
+  input: object,
+  mods: ReadMods,
+  view: ArchiveView | undefined,
+): Promise<unknown> & Record<string, unknown> {
+  const packed = input as {
+    readonly id: unknown;
+    readonly relation: unknown;
+    readonly ids: unknown;
+    readonly options?: object;
+  };
+  const expect = (mods as { readonly expect?: number }).expect;
+  const applied: Mods = {
+    ...(typeof expect === "number" ? { expect } : {}),
+    archive: view,
+    uses: mods.uses,
+  };
+  return queryHandle(
+    () => execute(session, table, packed.id, packed.relation, packed.ids, packed.options, applied),
+    {
+      sql: () =>
+        explain(session, table, packed.id, packed.relation, packed.ids, packed.options, applied),
+    },
+  ) as unknown as Promise<unknown> & Record<string, unknown>;
 }
 
 type Planned = {
