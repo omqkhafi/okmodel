@@ -713,22 +713,121 @@ export async function hide(url: string, id: string): Promise<void> {
 
 ### Tenancy
 
-Every note belongs to one tenant. Column tenancy adds `tenantId` and puts that tenant on every read and write. `db.for({ tenantId }).notes.find({ limit: 20 })` reads one tenant. Composite tenancy passes every key, `compositeTenancy({ key: ["organizationId", "workspaceId"], type: "uuid" })` and `db.for({ organizationId, workspaceId })`. A table without its own key uses `tenancy: via("project.organization")`, up to three relations, and reads and writes follow that path. `global("shared")` marks a table every tenant can read, such as a list of countries. `rlsTenancy({ key: "tenantId", type: "uuid" })` keeps that predicate and adds row-level security policies. A role that owns the tables, a superuser, or `BYPASSRLS` is refused on the first scoped call. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
+Pick one strategy from `okmodel/tenancy`. Row-level security is the Postgres mechanism. In okmodel it is the fourth strategy: the column predicate stays on every statement, and the policies are the backstop when a statement drops that predicate. Schema-per-tenant and database-per-tenant are not built yet. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
 
-`tenancy.ts`:
+| Strategy | Isolation | When to use |
+| --- | --- | --- |
+| column | one key on each tenant table; `for()` fills and filters it | each row belongs to one tenant |
+| composite | every key together, in that order | a row belongs to an organization and a workspace |
+| path | `EXISTS` along `via()`, at most three relations, on that table | the row has no tenant column; it belongs through a parent |
+| rls | the column predicate, plus forced row-level security | the database must refuse a query that omits the predicate |
+| schema-per-tenant, database-per-tenant | a schema or a database per tenant | not built yet |
+
+`rlsTenancy({ key, type: "uuid" })` takes one key. Combining it with `compositeTenancy()` or `via()` is refused when the schema is built. Policies are enabled and forced (`FORCE ROW LEVEL SECURITY`). The application role must not own the tables, be a superuser, or have `BYPASSRLS`. The first scoped call refuses otherwise (OKM1707). A scoped read is about 0.3 ms. The same read with column tenancy is about 0.06 ms. That sample is not a gate. `unscoped()` under row-level security is read-only. A write is OKM1701.
+
+`column-tenancy.ts`:
+
+```ts
+import { uuidv4 } from "okmodel/ids";
+import { schema, table, t } from "okmodel/pg";
+import { open } from "okmodel/pg/pglite";
+import { columnTenancy } from "okmodel/tenancy";
+import { testing } from "okmodel/testing";
+
+const notes = table("notes", { id: t.identity(), title: t.text() });
+const app = schema({
+  tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
+  tables: [notes],
+});
+const harness = await testing(app, { driver: open() });
+await harness.db.for({ tenantId: uuidv4() }).notes.find({ limit: 20 });
+await harness.close();
+```
+
+`composite-tenancy.ts`:
+
+```ts
+import { uuidv4 } from "okmodel/ids";
+import { schema, table, t } from "okmodel/pg";
+import { open } from "okmodel/pg/pglite";
+import { compositeTenancy } from "okmodel/tenancy";
+import { testing } from "okmodel/testing";
+
+const notes = table("notes", { id: t.identity(), title: t.text() });
+const app = schema({
+  tenancy: compositeTenancy({ key: ["organizationId", "workspaceId"], type: "uuid" }),
+  tables: [notes],
+});
+const harness = await testing(app, { driver: open() });
+const scope = { organizationId: uuidv4(), workspaceId: uuidv4() };
+await harness.db.for(scope).notes.find({ limit: 20 });
+await harness.close();
+```
+
+`path-tenancy.ts`:
+
+```ts
+import { uuidv4 } from "okmodel/ids";
+import { one, schema, table, t } from "okmodel/pg";
+import { open } from "okmodel/pg/pglite";
+import { columnTenancy, via } from "okmodel/tenancy";
+import { testing } from "okmodel/testing";
+
+const organizations = table("organizations", { id: t.identity() });
+const projects = table(
+  "projects",
+  { id: t.identity(), organizationId: t.bigint().references("organizations") },
+  { tenancy: via("organization"), relations: { organization: one("organizations") } },
+);
+const tasks = table(
+  "tasks",
+  { id: t.identity(), projectId: t.bigint().references("projects") },
+  { tenancy: via("project.organization"), relations: { project: one("projects") } },
+);
+const app = schema({
+  tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
+  tables: [organizations, projects, tasks],
+});
+const harness = await testing(app, { driver: open() });
+await harness.db.for({ tenantId: uuidv4() }).tasks.find({ limit: 20 });
+await harness.close();
+```
+
+`global-tenancy.ts`:
 
 ```ts
 import { schema, table, t } from "okmodel/pg";
+import { open } from "okmodel/pg/pglite";
 import { columnTenancy, global } from "okmodel/tenancy";
+import { testing } from "okmodel/testing";
 
-// Every read and write adds tenantId.
-const notes = table("notes", { id: t.identity(), title: t.text() });
-// Shared by every tenant. The reason is recorded on the table.
-const countries = table("countries", { id: t.identity() }, { tenancy: global("shared") });
-export const app = schema({
+const countries = table("countries", { id: t.identity() }, { tenancy: global("shared reference data") });
+const app = schema({
   tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
-  tables: [notes, countries],
+  tables: [countries],
 });
+const harness = await testing(app, { driver: open() });
+await harness.db.countries.find({ limit: 20 });
+await harness.close();
+```
+
+`rls-tenancy.ts`:
+
+```ts
+import { schema, table, t } from "okmodel/pg";
+import { connect } from "okmodel/pg/postgresjs";
+import { rlsTenancy } from "okmodel/tenancy";
+
+const notes = table("notes", { id: t.identity(), title: t.text() });
+const app = schema({
+  tenancy: rlsTenancy({ key: "tenantId", type: "uuid" }),
+  tables: [notes],
+});
+export async function list(url: string, tenantId: string): Promise<void> {
+  await using db = connect(url, { schema: app });
+  await db.for({ tenantId }).notes.find({ limit: 20 });
+  await db.unscoped("nightly report").notes.find({ limit: 20 });
+}
 ```
 
 ### Extensions
@@ -832,7 +931,7 @@ export const app = schema({
 
 ### Views
 
-A view is a saved query. You give it the SQL and the columns that query returns. `db.views.active.find({ limit: 20 })` reads `active`. That handle has no insert or update. View handles are camelCased: a view named `active_projects` reads as `db.views.activeProjects`. There is no query-builder form yet. `okm check` reprints the query on the connected server before it compares, so a difference that is only how that server prints the query is not drift. A materialized view refreshes with `REFRESH MATERIALIZED VIEW`: the plan populates it with a plain refresh first (Postgres rejects `CONCURRENTLY` on an empty view), then refreshes concurrently when the declaration sets `refresh: "concurrently"`. A materialized view that refreshes while people are reading it needs a unique index, or the declaration is OKM1822. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
+A view is a saved query. You give it the SQL and the columns that query returns. `db.views.active.find({ limit: 20 })` reads `active`. That handle has no insert or update. View handles are camelCased: a view named `active_projects` reads as `db.views.activeProjects`. There is no query-builder form yet. `okm check` reprints the query on the connected server before it compares, so a difference that is only how that server prints the query is not drift. A materialized view refreshes with `db.views.name.refresh()`, which runs `REFRESH MATERIALIZED VIEW` and returns void. The plan populates it with a plain refresh first (Postgres rejects `CONCURRENTLY` on an empty view), then refreshes concurrently when the declaration sets `refresh: "concurrently"`. A materialized view that refreshes while people are reading it needs a unique index, or the declaration is OKM1822. A view over a tenant table must expose the tenant key, or be `global("reason")`, or schema build fails with OKM1820. `isolation()` reads a tenant view and a materialized view after seeding the underlying tables. It does not insert into the view. A global view is skipped and listed with its reason. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
 
 `views.ts`:
 
@@ -864,11 +963,49 @@ export const app = schema({
 });
 ```
 
+`tenant-views.ts`:
+
+```ts
+import { schema, table, t } from "okmodel/pg";
+import { open } from "okmodel/pg/pglite";
+import { columnTenancy } from "okmodel/tenancy";
+import { testing } from "okmodel/testing";
+import { materializedView, view } from "okmodel/view";
+
+const tasks = table("tasks", { id: t.identity(), title: t.text() });
+const app = schema({
+  casing: "snake",
+  tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
+  tables: [tasks],
+  views: [
+    view("open_tasks", {
+      columns: [
+        { name: "tenant_id", type: "uuid" },
+        { name: "title", type: "text" },
+      ],
+      query: " SELECT tenant_id,\n    title\n   FROM tasks;",
+    }),
+    materializedView("task_titles", {
+      columns: [
+        { name: "tenant_id", type: "uuid" },
+        { name: "title", type: "text" },
+      ],
+      query: " SELECT tenant_id,\n    title\n   FROM tasks;",
+      indexes: [{ columns: ["title"], unique: true }],
+    }),
+  ],
+});
+const harness = await testing(app, { driver: open() });
+await harness.db.views.taskTitles.refresh();
+await harness.isolation();
+await harness.close();
+```
+
 ### Roles and grants
 
-The migration connects as one role and the app connects as another. `roles` names both. The app role receives select, insert, update, and delete on tables and views, select on materialized views, execute on functions, and usage plus select on sequences. Apply also grants that role select on `okm_meta`, and nothing else there, so `connect()` can read the stored hash. Apply runs as the migration role, and switches to it with `SET ROLE` when the connection is someone else. A role you already created is external, unless you list it in `managed`.
+The migration connects as one role and the app connects as another. `roles` names both, and `roles.reporting` is the optional third. The app role receives select, insert, update, and delete on tables and views, select on materialized views, execute on functions, and usage plus select on sequences. Default privileges grant the same on objects created later. Apply also grants that role select on `okm_meta`, and nothing else there, so `connect()` can read the stored hash. Apply runs as the migration role, and switches to it with `SET ROLE` when the connection is someone else. A role you already created is external, unless you list it in `managed`.
 
-`roles.reporting` is a third role that can only select. It gets select on tables, views, and materialized views, usage on schemas, and the same select on tables created later. It does not get insert, update, delete, or execute. A hidden column is left out unless `roles.columns` names it. Under `rlsTenancy()` this role is not `BYPASSRLS` and it is not tenant-safe against its own SQL: it sees no tenant rows until the session sets `app.tenant`, and it can set `app.unscoped` itself and then read every tenant. `unscoped()` is the application client's read escape and is not given to this role.
+`roles.reporting` can only select. It gets select on tables, views, and materialized views, usage on schemas, and default privileges for select on tables created later. It does not get insert, update, delete, or execute. A hidden column is left out of that select unless `roles.columns` lists it. Under `rlsTenancy()` this role is not `BYPASSRLS` and it is not tenant-safe against its own SQL: it sees no tenant rows until the session sets `app.tenant`, and it can set `app.unscoped` itself and then read every tenant. `unscoped()` is the application client's read escape and is not given to this role.
 
 `roles.columns` grants select or update on named columns: `{ role, on, select, update }`. `on` is the table or view. A listed column grant on a view replaces select on the whole view for the reporting role.
 
@@ -894,6 +1031,16 @@ export default defineConfig({
     columns: [{ role: "okm_report", on: "tasks", select: ["title"] }],
   },
 });
+```
+
+`owner.ts`:
+
+```ts
+import { schema, table, t, withOwner } from "okmodel/pg";
+
+const legacy = withOwner(table("legacy", { id: t.identity() }), "external");
+const scratch = withOwner(table("scratch", { id: t.identity() }), "ignored");
+export const app = schema({ tables: [legacy, scratch] });
 ```
 
 ### okm ext and okm doctor
@@ -1118,9 +1265,13 @@ The worked example is a project tracker: workspaces as tenants, archive, a funct
 
 `okm migrate check` is the command for a pipeline. It applies every migration into a scratch schema, plans each result back to that file's catalog, checks the previous catalog, requires the last catalog to match the schema, and lints the history. Success prints `ok N migrations`. A failure exits non-zero.
 
-Point it at a throwaway Postgres. A protected target is refused, and `--allow-protected` does not apply. `defineConfig({ lintFrom: "<migration id>" })` skips lint for files before that id, which is how a project adopts the linter without failing on old migrations. Apply still lints pending migrations only.
+Point it at a throwaway Postgres. A protected target is refused, and `--allow-protected` does not apply. Run it as a non-superuser. A superuser replay can execute `COPY ... PROGRAM` and `lo_import`. `defineConfig({ lintFrom: "<migration id>" })` skips lint for files before that id, which is how a project adopts the linter without failing on old migrations. Apply still lints pending migrations only.
+
+`--provision` installs the head snapshot into a second scratch schema and compares it with the replay. A difference is OKM1521. The default command does not provision. A protected target is still refused. See [check migrations](https://github.com/omqkhafi/okmodel/blob/main/docs/migrate-check.md).
 
 The previous-catalog check is schema-level. It does not prove application behaviour. Tenant targets are not checked.
+
+A unique constraint is named from the SQL table and the SQL columns: `{table}_{columns}_key`. With casing `snake`, table `tasks`, field `id`, and tenant field `tenantId`, that name is `tasks_id_tenant_id_key`. A foreign key is `{table}_{every referencing column}_fkey`. A primary key stays `{table}_pkey`. A picklist check uses the SQL column. A named check keeps the author's name.
 
 ```yaml
 name: migrate
@@ -1190,5 +1341,6 @@ The rest of the measurements are in [size](https://github.com/omqkhafi/okmodel/b
 - [Provisioning](https://github.com/omqkhafi/okmodel/blob/main/docs/provisioning.md)
 - [Testing](https://github.com/omqkhafi/okmodel/blob/main/docs/testing.md)
 - [Topology](https://github.com/omqkhafi/okmodel/blob/main/docs/topology.md)
+- [Check migrations](https://github.com/omqkhafi/okmodel/blob/main/docs/migrate-check.md)
 - [Known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md)
 - [Changelog](https://github.com/omqkhafi/okmodel/blob/main/changelog.md)
