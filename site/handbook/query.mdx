@@ -61,13 +61,7 @@ bunx okm build
 
 ## Generate
 
-`okm generate init` writes `migrations/0001_init.sql` and `migrations/0001_init.catalog.json`. The name is the part after the number. It also adds `.gitattributes` when the project has none, so the SQL stays LF. An existing file is left as it is. A later schema change is `okm generate`. With no name, that file is called `migration`. A name is letters, digits, `_`, or `-`. No schema change prints `no changes` and writes no SQL.
-
-```text
-migrations/*.sql text eol=lf
-*.catalog.json text eol=lf
-.okm/** text eol=lf
-```
+`okm generate init` writes `migrations/0001_init.sql` and `migrations/0001_init.catalog.json`. The name is the part after the number. If the project has no `.gitattributes`, generate writes one. Git then stores the migration SQL, the catalog JSON, and `.okm` with Unix line endings, so a Windows checkout does not rewrite them. An existing `.gitattributes` is left as it is. A later schema change is `okm generate`. With no name, that file is called `migration`. A name is letters, digits, `_`, or `-`. No schema change prints `no changes` and writes no SQL.
 
 ```sh
 bunx okm generate init
