@@ -47,6 +47,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - `update` of a list refuses the same target twice (OKM1120). A target that matches nothing is not an error: `count` is the rows changed. An empty `set` is OKM1120 (`update set is empty.`). An empty list runs no statement (D246).
 - `inc` is a number or bigint column. A text column is OKM1124. A list that sets one field with `inc` in one row and a plain value in another is OKM1120. A null number stays null (D249).
+- The featureless startup graph is 251 minified bytes smaller. `relevance` writes its sort direction from the operator chunk, which already loads for that query. Queries are unchanged (D253).
 
 #### tooling
 
