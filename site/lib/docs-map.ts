@@ -4,11 +4,11 @@
  */
 
 /** Sidebar group. `root` pages sit above the folders. */
-export type DocGroupId = "root" | "start" | "config" | "schema" | "table";
+export type DocGroupId = "root" | "start" | "define";
 
 /** One public page. */
 export interface MappedPage {
-  /** File slug inside the group. `index` is `/docs`. */
+  /** File slug inside the group. `index` is the folder URL: `/docs`, or `/docs/<group>`. */
   readonly slug: string;
   readonly title: string;
   /** First sentence of the source, kept here so the sidebar text is reviewed. */
@@ -54,7 +54,7 @@ export interface DocGroup {
 /**
  * Numbered label that holds several folders.
  *
- * Start stays one flat folder. Define holds Config, Schema, and Table.
+ * Start and Define are both unwrapped in the sidebar, so their pages are rows.
  */
 export interface DocSection {
   readonly id: string;
@@ -66,20 +66,15 @@ export interface DocSection {
 /** Folder order in the sidebar. The number is the learning path, not a spec section. */
 export const docGroups: readonly DocGroup[] = [
   { id: "start", title: "Start", separator: "01 Start", order: 10 },
-  { id: "config", title: "Config", order: 0 },
-  { id: "schema", title: "Schema", order: 1 },
-  { id: "table", title: "Table", order: 2 },
+  { id: "define", title: "Define", separator: "02 Define", order: 20 },
 ];
 
-/** Sections whose folders stay collapsed in the sidebar. */
-export const docSections: readonly DocSection[] = [
-  {
-    id: "define",
-    separator: "02 Define",
-    order: 20,
-    groups: ["config", "schema", "table"],
-  },
-];
+/**
+ * Nested folders under a numbered label.
+ *
+ * Empty: Start and Define are flat groups, unwrapped by the sidebar.
+ */
+export const docSections: readonly DocSection[] = [];
 
 /**
  * Public pages. The learning path is authored under `site/handbook`.
@@ -95,7 +90,7 @@ export const mappedPages: readonly MappedPage[] = [
     handbook: "handbook/index.mdx",
   },
   {
-    slug: "query",
+    slug: "index",
     title: "Let's start",
     description: "Install a driver, define the table, then build, generate, and apply.",
     group: "start",
@@ -112,69 +107,29 @@ export const mappedPages: readonly MappedPage[] = [
     source: "site/handbook/basic-usage.mdx",
     handbook: "handbook/basic-usage.mdx",
   },
-  ...definePages(),
+  definePage(0, "table", "Table", "table() stores the columns. The key comes first, then each data type, then the options."),
+  definePage(1, "schema", "Schema", "schema() compiles the tables into one catalog. Each section is one option."),
+  definePage(2, "config", "Config", "defineConfig is the file okm reads. Each section is one option."),
 ];
 
 /**
- * Authored pages under Config, Schema, and Table.
+ * One page under Define. The public URL is `/docs/define/<slug>`.
  *
- * The path is `site/handbook/<group>/<slug>.mdx`.
+ * @param order - Order inside Define
+ * @param slug - File slug and URL segment
+ * @param title - Sidebar and page title
+ * @param description - Sentence under the title
  */
-function definePages(): readonly MappedPage[] {
-  const page = (
-    group: "config" | "schema" | "table",
-    order: number,
-    slug: string,
-    title: string,
-    description: string,
-  ): MappedPage => ({
+function definePage(order: number, slug: string, title: string, description: string): MappedPage {
+  return {
     slug,
     title,
     description,
-    group,
+    group: "define",
     order,
-    source: `site/handbook/${group}/${slug}.mdx`,
-    handbook: `handbook/${group}/${slug}.mdx`,
-  });
-  return [
-    page("config", 0, "file", "Overview", "defineConfig in okmodel.config.ts. schema is required. Set database or targets."),
-    page("config", 1, "targets", "Targets", "Any key is a name. Protection is the protected flag, not the target name."),
-    page("config", 2, "paths", "Paths", "schema, tables, migrations, and out. Each path resolves from the project directory."),
-    page("config", 3, "pooler", "Pooler", "Migration commands refuse a pooler host unless allowPooler is set."),
-    page("config", 4, "timeouts", "Timeouts", "lock defaults to 5000. statement defaults to 30000. A flag overrides the config."),
-    page("config", 5, "lint", "Lint baseline", "lintFrom is the first migration id check lints. Apply does not read it. Files before it are the adoption baseline."),
-    page("config", 6, "backfill", "Backfill", "batchSize is written into a new plan. pauseMs and statementTimeoutMs apply when the batches run. A step header overrides the batch."),
-    page("config", 7, "roles", "Roles", "migration runs the files. app receives the grants. reporting is select only. managed roles are created and never dropped."),
-    page("schema", 0, "tables", "Tables", "schema() compiles the tables array into one catalog. table() only stores the columns."),
-    page("schema", 1, "casing", "Casing", "casing: snake writes field names as snake_case SQL names."),
-    page("schema", 2, "codecs", "Codecs", "bigint, numeric, and timestamps choose how a value is typed in TypeScript."),
-    page("schema", 3, "types", "Row types", "types is emitted or inferred. Emitted is the default."),
-    page("schema", 4, "defaults", "Id default", "defaults.id is what a bare t.id() means. A column option wins."),
-    page("schema", 5, "requires", "Postgres version", "requires.postgres is the engine connect records."),
-    page("schema", 6, "traits", "Traits", "traits apply to every table. A table opts out with omitDefaults and a reason."),
-    page("schema", 7, "tenancy", "Tenancy", "columnTenancy adds one key to every table. global(reason) opts a table out."),
-    page("schema", 8, "validation", "Validation", "validation turns rules on for the schema. A table can turn them off."),
-    page("schema", 9, "extensions", "Extensions", "extension() declares a Postgres extension. version pins it. schema is where it installs."),
-    page("schema", 10, "functions", "Functions", "fn() declares a function. plpgsql needs dependsOn. security definer needs searchPath."),
-    page("schema", 11, "triggers", "Triggers", "trigger() names the table, the timing, the events, and the function it calls."),
-    page("schema", 12, "views", "Views", "view() and materializedView() declare a query and its output columns."),
-    page("table", 0, "columns", "Columns", "table() takes a name and a column map. t is every builder."),
-    page("table", 1, "keys", "Keys", "One primary key, on the column or as a list. unique names a constraint."),
-    page("table", 2, "indexes", "Indexes", "indexes returns index calls. unique() marks one unique."),
-    page("table", 3, "checks", "Checks", "A check is named SQL. sql interpolates a column handle as its SQL name."),
-    page("table", 4, "defaults", "Defaults", "nullable allows NULL. default stores a literal or a client generator. generated omits the column from writes."),
-    page("table", 5, "references", "References", "references() points a column at another table. schema() checks that the table exists."),
-    page("table", 6, "relations", "Relations", "one and many name a table. manyThrough names the join table."),
-    page("table", 7, "visibility", "Visibility", "hidden leaves a column out of the default row. sensitive redacts logs. guarded omits the column from writes."),
-    page("table", 8, "names", "Names", "sqlName is the catalog name. renamedFrom is the previous name. comment is stored beside the object."),
-    page("table", 9, "traits", "Table traits", "traits on a table are added with the schema defaults. omitDefaults skips the defaults."),
-    page("table", 10, "tenancy", "Table tenancy", "global(reason) keeps the tenant key off this table. via isolates through a relation."),
-    page("table", 11, "presets", "Presets", "A preset is a named refinement. It can only add a predicate."),
-    page("table", 12, "reference", "Reference rows", "reference rows are inserted when the key is missing. Apply does not update or delete them."),
-    page("table", 13, "filters", "Filters", "filters() allowlists the operators a caller may send. A hidden field in allow throws."),
-    page("table", 14, "validation", "Column validation", "validate stores rules. The same field on the column and the table is OKM1030."),
-    page("table", 15, "shape", "Arrays and picklists", "array() wraps a scalar. picklist() narrows a string column to a literal union."),
-  ];
+    source: `site/handbook/define/${slug}.mdx`,
+    handbook: `handbook/define/${slug}.mdx`,
+  };
 }
 
 /**
@@ -282,10 +237,9 @@ export const excludedDocs: readonly ExcludedDoc[] = [
  * @param page - Mapped page
  */
 export function pageHref(page: MappedPage): string {
-  if (page.group === "root") {
-    return page.slug === "index" ? "/docs" : `/docs/${page.slug}`;
-  }
-  return `/docs/${page.group}/${page.slug}`;
+  const segments = page.group === "root" ? [] : [page.group];
+  if (page.slug !== "index") segments.push(page.slug);
+  return segments.length === 0 ? "/docs" : `/docs/${segments.join("/")}`;
 }
 
 /**

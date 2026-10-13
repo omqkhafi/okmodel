@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 
 const STEPS = [
   {
-    href: "/docs/start/query",
+    href: "/docs/start",
     kicker: "01",
     title: "Let's start",
     text: "Install a driver, define the table, then build, generate, and apply.",
@@ -42,7 +42,7 @@ export default function HomePage() {
       <p className="mt-5 max-w-lg text-lg leading-relaxed text-fd-muted-foreground">{readTagline()}</p>
       <div className="mt-8 flex flex-wrap justify-center gap-3">
         <Link
-          href="/docs/start/query"
+          href="/docs/start"
           className="inline-flex bg-fd-foreground px-4 py-2 text-sm text-fd-background"
         >
           Start

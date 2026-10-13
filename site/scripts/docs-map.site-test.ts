@@ -58,9 +58,10 @@ test("generated pages have frontmatter, resolved links, and fenced languages", (
       .map((entry) => entry.name),
   );
   expect(groups.has("start")).toBe(true);
-  expect(groups.has("config")).toBe(true);
-  expect(groups.has("schema")).toBe(true);
-  expect(groups.has("table")).toBe(true);
+  expect(groups.has("define")).toBe(true);
+  expect(groups.has("config")).toBe(false);
+  expect(groups.has("schema")).toBe(false);
+  expect(groups.has("table")).toBe(false);
   expect(groups.has("model")).toBe(false);
   expect(groups.has("ship")).toBe(false);
   expect(groups.has("reference")).toBe(false);

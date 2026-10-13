@@ -82,7 +82,7 @@ export const notes = table("notes", {
 });
 ```
 
-`t.identity()` is a `bigint`, generated always. Insert omits `id`. The default codec is a string. A key of more than one column is the `primaryKey` option. [Keys](/docs/table/keys).
+`t.identity()` is a `bigint`, generated always. Insert omits `id`. The default codec is a string. A key of more than one column is the `primaryKey` option. [Keys](/docs/define/table#keys).
 
 </Step>
 
@@ -118,7 +118,7 @@ export default defineConfig({
 });
 ```
 
-`okm build`, `okm generate`, and `okm migrate apply` load `okmodel.config.ts` from the project directory. The file default-exports `defineConfig`. A file that does not is refused. A module that is not a `schema()` is refused: `<path> must export a schema().` Build and generate do not connect. Other options are on [Config](/docs/config/file).
+`okm build`, `okm generate`, and `okm migrate apply` load `okmodel.config.ts` from the project directory. The file default-exports `defineConfig`. A file that does not is refused. A module that is not a `schema()` is refused: `<path> must export a schema().` Build and generate do not connect. Other options are on [Config](/docs/define/config).
 
 </Step>
 
@@ -197,6 +197,10 @@ export const db = connect(url, { schema });
 
 </Step>
 
-</Steps>
+<Step>
+### 🎉 That's it!
 
-Insert, find, update, and delete are on [Basic Usage](/docs/start/basic-usage).
+That's it! You're now ready to use okmodel in your application. Continue to [Basic Usage](/docs/start/basic-usage) to learn how to insert, find, update, and delete.
+</Step>
+
+</Steps>

@@ -27,7 +27,7 @@ const CHIP =
  * @param url - Docs page URL
  */
 export function databaseSupportFor(url: string): readonly DatabaseId[] | undefined {
-  if (url === "/docs/start/query") return ["postgres"];
+  if (url === "/docs/start") return ["postgres"];
   return undefined;
 }
 

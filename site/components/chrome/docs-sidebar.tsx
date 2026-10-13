@@ -1,8 +1,7 @@
 /**
- * Docs sidebar. The tree comes from `meta.json`. The Start folder is
- * unwrapped, so each page is a row under its numbered label. Define keeps
- * Config, Schema, and Table as folders. `/docs` itself is omitted; the
- * header tab already opens it.
+ * Docs sidebar. The tree comes from `meta.json`. Start and Define are
+ * unwrapped, so each page is a row under its numbered label. `/docs` itself
+ * is omitted; the header tab already opens it.
  */
 
 "use client";
@@ -18,7 +17,7 @@ import { usePathname } from "next/navigation";
 import { useMemo, useState, type ReactNode } from "react";
 
 /** Section folders whose children belong directly under the numbered label. */
-const FLAT_SECTIONS = new Set(["start", "Start"]);
+const FLAT_SECTIONS = new Set(["start", "Start", "define", "Define"]);
 
 /**
  * Whether a node is a folder.

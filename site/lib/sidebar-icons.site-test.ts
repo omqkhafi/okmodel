@@ -19,7 +19,7 @@ test("section folders become the routes under their label", () => {
         type: "folder",
         name: "Start",
         $id: "start",
-        children: [{ type: "page", name: "Let's start", url: "/docs/start/query" }],
+        children: [{ type: "page", name: "Let's start", url: "/docs/start" }],
       },
     ],
   } as PageTree.Root;
@@ -28,7 +28,7 @@ test("section folders become the routes under their label", () => {
   expect(flat.children.map((node) => (node.type === "page" ? node.url : node.type === "separator" ? node.name : node.type))).toEqual([
     "/docs",
     "01 Start",
-    "/docs/start/query",
+    "/docs/start",
   ]);
 });
 

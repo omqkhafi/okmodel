@@ -23,7 +23,7 @@ test("llms.txt lists every public page", () => {
 test("sitemap and robots advertise the handbook", () => {
   const urls = sitemap().map((entry) => entry.url);
   expect(urls).toContain(SITE_ORIGIN);
-  expect(urls).toContain(`${SITE_ORIGIN}/docs/start/query`);
+  expect(urls).toContain(`${SITE_ORIGIN}/docs/start`);
   expect(urls).toContain(`${SITE_ORIGIN}/changelog`);
   expect(urls).toContain(`${SITE_ORIGIN}/llms.txt`);
   expect(urls).toContain(`${SITE_ORIGIN}/llms-full.txt`);
