@@ -10,7 +10,17 @@ import type { Sql } from "postgres";
 
 import { OkmError } from "../src/contracts/error.js";
 import { renderCatalog } from "../src/dialects/pg/ddl.js";
-import { integer, schema, table, text, uuid } from "../src/dialects/pg/index.js";
+import {
+  bytea,
+  date,
+  eq,
+  integer,
+  schema,
+  table,
+  text,
+  timestamptz,
+  uuid,
+} from "../src/dialects/pg/index.js";
 import { open as openNodePostgres } from "../src/adapters/pg/nodepostgres.js";
 import { open as openPglite } from "../src/adapters/pg/pglite.js";
 import { open as openPostgres } from "../src/adapters/pg/postgresjs.js";
@@ -52,10 +62,49 @@ const items = table("p92Items", {
   code: text(),
 });
 
+const moments = table(
+  "p92Moments",
+  {
+    id: uuid().primaryKey(),
+    at: timestamptz().unique(),
+    n: integer(),
+  },
+  { tenancy: global("shared moments") },
+);
+
+const days = table(
+  "p92Days",
+  {
+    id: uuid().primaryKey(),
+    day: date().unique(),
+    n: integer(),
+  },
+  { tenancy: global("shared days") },
+);
+
+const blobs = table(
+  "p92Blobs",
+  {
+    id: uuid().primaryKey(),
+    body: bytea().unique(),
+    n: integer(),
+  },
+  { tenancy: global("shared blobs") },
+);
+
+const slots = table(
+  "p92Slots",
+  {
+    id: integer().primaryKey(),
+    n: integer(),
+  },
+  { tenancy: global("shared slots") },
+);
+
 const app = schema({
   casing: "snake",
   tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
-  tables: [tags, tasks, items],
+  tables: [tags, tasks, items, moments, days, blobs, slots],
 });
 
 type Harness = Testing<typeof app>;
@@ -75,14 +124,15 @@ async function expectCode(pending: Promise<unknown>, code: string): Promise<void
   throw new Error(`expected ${code}`);
 }
 
-async function waitForLock(sql: Sql): Promise<void> {
+async function waitForLock(sql: Sql, table = "p92_tags"): Promise<void> {
+  const pattern = `%"${table}"%`;
   const deadline = Date.now() + 8_000;
   for (;;) {
     const rows = await sql<{ n: string }[]>`
       select count(*)::text as n from pg_stat_activity
       where pid <> pg_backend_pid()
         and wait_event_type = 'Lock'
-        and query like '%"p92_tags"%'
+        and query like ${pattern}
     `;
     if (Number(rows[0]?.n ?? 0) > 0) return;
     if (Date.now() >= deadline) throw new Error("the second insert did not wait on the lock");
@@ -218,6 +268,94 @@ async function run(harness: Harness, sql?: Sql): Promise<void> {
   );
   expect((await db.p92Tasks.one({ where: { id: rowId(20) } }))?.position).toBe(3);
 
+  const atA = Temporal.Instant.from("2020-01-02T03:04:05Z");
+  const atB = Temporal.Instant.from("2021-06-07T08:09:10Z");
+  await db.p92Moments.insert([
+    { id: rowId(50), at: atA, n: 1 },
+    { id: rowId(51), at: atB, n: 1 },
+  ]);
+  expect(
+    await db.p92Moments.update([
+      { where: { at: eq(atA) }, set: { n: 10 } },
+      { where: { at: eq(atB) }, set: { n: 20 } },
+    ]),
+  ).toEqual({ count: 2 });
+  expect((await db.p92Moments.one({ where: { at: eq(atA) } }))?.n).toBe(10);
+  expect((await db.p92Moments.one({ where: { at: eq(atB) } }))?.n).toBe(20);
+  await expectCode(
+    db.p92Moments.update([
+      { where: { at: eq(atA) }, set: { n: 1 } },
+      { where: { at: eq(atA) }, set: { n: 2 } },
+    ]),
+    "OKM1120",
+  );
+  await expectCode(
+    db.p92Moments.update([
+      { where: { at: atA }, set: { n: 10 } },
+      { where: { at: atB }, set: { n: 20 } },
+    ] as never),
+    "OKM1121",
+  );
+
+  // date() accepts PlainDate. A JavaScript Date is not a column value.
+  const dayA = Temporal.PlainDate.from("2020-01-02");
+  const dayB = Temporal.PlainDate.from("2021-06-07");
+  await db.p92Days.insert([
+    { id: rowId(52), day: dayA, n: 1 },
+    { id: rowId(53), day: dayB, n: 1 },
+  ]);
+  expect(
+    await db.p92Days.update([
+      { where: { day: eq(dayA) }, set: { n: 10 } },
+      { where: { day: eq(dayB) }, set: { n: 20 } },
+    ]),
+  ).toEqual({ count: 2 });
+  expect((await db.p92Days.one({ where: { day: eq(dayA) } }))?.n).toBe(10);
+
+  const bytesA = new Uint8Array([1, 2, 3]);
+  const bytesB = new Uint8Array([4, 5, 6]);
+  await db.p92Blobs.insert([
+    { id: rowId(54), body: bytesA, n: 1 },
+    { id: rowId(55), body: bytesB, n: 1 },
+  ]);
+  expect(
+    await db.p92Blobs.update([
+      { where: { body: eq(bytesA) }, set: { n: 10 } },
+      { where: { body: eq(bytesB) }, set: { n: 20 } },
+    ]),
+  ).toEqual({ count: 2 });
+  expect((await db.p92Blobs.one({ where: { body: eq(bytesA) } }))?.n).toBe(10);
+
+  await db.p92Slots.insert({ id: 1, n: 0 });
+  expect(
+    await db.p92Slots.update([
+      { id: 1, set: { n: 4 } },
+      { id: eq(1), set: { n: 5 } },
+    ]),
+  ).toEqual({ count: 1 });
+
+  try {
+    await db.p92Tasks.update([{ id: rowId(20), set: {} }]);
+    throw new Error("expected OKM1120");
+  } catch (error) {
+    expect(error).toBeInstanceOf(OkmError);
+    if (error instanceof OkmError) {
+      expect(error.code).toBe("OKM1120");
+      expect(error.message).toBe("update set is empty.");
+    }
+  }
+
+  const moment = await db.p92Moments.insert(
+    { id: rowId(56), at: atA, n: 99 },
+    { onConflict: { on: "at", return: true } },
+  );
+  expect(moment).toMatchObject({ id: rowId(50), n: 10 });
+  const day = await db.p92Days.insert(
+    { id: rowId(57), day: dayA, n: 99 },
+    { onConflict: { on: "day", return: true } },
+  );
+  expect(day).toMatchObject({ id: rowId(52), n: 10 });
+
   await expectCode(
     db.p92Tags.update([{ id: rowId(1), set: { role: "admin" } }] as never),
     "OKM1190",
@@ -311,6 +449,64 @@ async function run(harness: Harness, sql?: Sql): Promise<void> {
   expect(left).toMatchObject({ id: rowId(40), name: "race", note: "kept" });
   expect(right).toMatchObject({ id: rowId(40), name: "race", note: "kept" });
   expect(await db.p92Tags.count({ where: { name: "race" } })).toBe(1);
+
+  const racedAt = Temporal.Instant.from("2030-01-02T03:04:05Z");
+  let releaseAt: () => void = () => undefined;
+  const holdAt = new Promise<void>((resolve) => {
+    releaseAt = resolve;
+  });
+  let insertedAt: () => void = () => undefined;
+  const readyAt = new Promise<void>((resolve) => {
+    insertedAt = resolve;
+  });
+  const momentOwner = db.tx(async (tx) => {
+    const row = await tx.p92Moments.insert(
+      { id: rowId(60), at: racedAt, n: 7 },
+      { onConflict: { on: "at", return: true } },
+    );
+    insertedAt();
+    await holdAt;
+    return row;
+  });
+  await readyAt;
+  const momentOther = db.p92Moments
+    .insert({ id: rowId(61), at: racedAt, n: 8 }, { onConflict: { on: "at", return: true } })
+    .then((row) => row);
+  await waitForLock(sql, "p92_moments");
+  releaseAt();
+  const [momentLeft, momentRight] = await Promise.all([momentOwner, momentOther]);
+  expect(momentLeft).toMatchObject({ id: rowId(60), n: 7 });
+  expect(momentRight).toMatchObject({ id: rowId(60), n: 7 });
+  expect(await db.p92Moments.count({ where: { at: eq(racedAt) } })).toBe(1);
+
+  const racedDay = Temporal.PlainDate.from("2030-04-05");
+  let releaseDay: () => void = () => undefined;
+  const holdDay = new Promise<void>((resolve) => {
+    releaseDay = resolve;
+  });
+  let insertedDay: () => void = () => undefined;
+  const readyDay = new Promise<void>((resolve) => {
+    insertedDay = resolve;
+  });
+  const dayOwner = db.tx(async (tx) => {
+    const row = await tx.p92Days.insert(
+      { id: rowId(62), day: racedDay, n: 7 },
+      { onConflict: { on: "day", return: true } },
+    );
+    insertedDay();
+    await holdDay;
+    return row;
+  });
+  await readyDay;
+  const dayOther = db.p92Days
+    .insert({ id: rowId(63), day: racedDay, n: 8 }, { onConflict: { on: "day", return: true } })
+    .then((row) => row);
+  await waitForLock(sql, "p92_days");
+  releaseDay();
+  const [dayLeft, dayRight] = await Promise.all([dayOwner, dayOther]);
+  expect(dayLeft).toMatchObject({ id: rowId(62), n: 7 });
+  expect(dayRight).toMatchObject({ id: rowId(62), n: 7 });
+  expect(await db.p92Days.count({ where: { day: eq(racedDay) } })).toBe(1);
 }
 
 async function apply(sql: Sql, schemaName: string): Promise<void> {
@@ -335,7 +531,7 @@ async function onPostgres(
   }
 }
 
-test("pglite first-or-create and per-row update", async () => {
+test("pglite first-or-create and per-row update; { id: 1 } vs { id: eq(1) } stays accepted", async () => {
   const harness = await testing(app, { driver: openPglite() });
   try {
     await run(harness);
@@ -348,7 +544,7 @@ const gate = await loadPostgresGate();
 
 postgresTest(
   gate,
-  "postgres.js first-or-create and per-row update",
+  "postgres.js first-or-create and per-row update; { id: 1 } vs { id: eq(1) } stays accepted",
   async () => {
     await withPostgresSchema(async (sql, schemaName) => {
       await onPostgres(

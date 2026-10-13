@@ -19,6 +19,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okm migrate check` does not open a second connection to drop the scratch schema when the replay rolls back. A step that commits still drops that schema on a new connection (D245).
 - A server error whose text contains `CONNECT` is no longer treated as a lost connection. Classification uses the driver `code` and SQLSTATE (`08` and `57P01`–`57P03`) only. `grant CONNECT` and a check named `no_CONNECT_zz` fail with the database error, and the connection can be used again. A closed pool is SQLSTATE `08006` (D244).
 - `insert` with `onConflict: { on, return: true }` returns the existing row when another transaction inserts it first. The second statement runs only when the insert returned nothing, and the existing row is not changed (D246).
+- An update list of two different timestamps, dates, or byte values is not the same target. First-or-create on a timestamptz or date unique still returns that row (D246).
 
 ### ♻️ Changed
 
@@ -28,7 +29,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### runtime
 
-- `update` of a list refuses the same target twice (OKM1120). A target that matches nothing is not an error: `count` is the rows changed. An empty list runs no statement (D246).
+- `update` of a list refuses the same target twice (OKM1120). A target that matches nothing is not an error: `count` is the rows changed. An empty `set` is OKM1120 (`update set is empty.`). An empty list runs no statement (D246).
 
 #### docs
 
