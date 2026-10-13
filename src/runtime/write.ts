@@ -187,7 +187,7 @@ const INSERT_OPTIONS = [
   "validate",
 ] as const;
 const FILTER_OPTIONS = ["allow", "expect", "returning", "signal", "timeout", "validate"] as const;
-const UPDATE_KEYS = ["set", "where"] as const;
+const UPDATE_KEYS = ["set", "where", "limit", "lock"] as const;
 const UPDATE_ROW_KEYS = ["id", "set", "where"] as const;
 const NO_ALLOW: ReadonlySet<string> = new Set();
 
@@ -458,6 +458,7 @@ function planUpdate(
       return { ...row, where: stack(row.where, mods.presets) };
     });
     rejectDuplicateTargets(table, rows);
+    rejectMixedSets(rows);
     const moves = rows.some(
       (row) => pathField(schema.tenancy, table.model.name, row.set) !== undefined,
     );
@@ -482,12 +483,21 @@ function planUpdate(
     };
   }
   if (!isRecord(input)) fail("OKM1121", "update expects { where, set } or a list of rows.");
+  const claim = readClaim(input);
   rejectUpdateKeys(input, false);
   const set = writeSet(table, input.set, allow, schema.tenancy);
   requireFilter(table, input.where, mods, "update");
   if (Object.keys(set).length === 0) fail("OKM1120", "update set is empty.");
   const where = stack(input.where, mods.presets);
-  if (pathAssignment(schema.tenancy, table.model.name, set, scope) !== undefined) {
+  const moved = pathAssignment(schema.tenancy, table.model.name, set, scope);
+  if (moved !== undefined && claim !== undefined) {
+    fail(
+      "OKM1120",
+      `lock: "skip" on ${table.model.name} cannot change ${moved} in the same claim.`,
+      "Claim the row first. Point it at a parent in a later update.",
+    );
+  }
+  if (moved !== undefined) {
     return {
       statements: [pathSetUpdate(schema, table, where, set, scope, returning)],
       outputs: parentOutputs(returning),
@@ -496,6 +506,16 @@ function planUpdate(
       keys: undefined,
       keyColumns: undefined,
       parentGuard: true,
+    };
+  }
+  if (claim !== undefined) {
+    return {
+      statements: [emitClaim(schema, table, where, set, claim, returning)],
+      outputs,
+      shape: returning === undefined ? "count" : "rows",
+      expect,
+      keys: undefined,
+      keyColumns: undefined,
     };
   }
   const sql = new Sql();
@@ -1033,6 +1053,38 @@ function updateSlice(
   return sql.statement();
 }
 
+/**
+ * One update that claims up to `limit` rows and leaves rows another
+ * transaction already holds.
+ *
+ * The write is the statement, so it does not need an outer `tx()`. Inside
+ * `tx()` the claim lasts until that transaction ends. The inner read names
+ * the physical row, then the update changes it. `limit` is bound.
+ */
+function emitClaim(
+  schema: QuerySchema,
+  table: Indexed,
+  where: unknown,
+  set: Record<string, unknown>,
+  limit: number,
+  returning: readonly ColumnModel[] | undefined,
+): Statement {
+  const sql = new Sql();
+  sql.text("update ");
+  sql.text(quote(table.model.sql));
+  sql.text(" as t set ");
+  emitSet(sql, table, set, "t");
+  sql.text(" where t.ctid in (select s.ctid from ");
+  sql.text(quote(table.model.sql));
+  sql.text(" as s");
+  emitFilter(schema, table, where, sql, "s");
+  sql.text(" for update of s skip locked limit ");
+  sql.param(String(limit), "integer");
+  sql.text(")");
+  sql.text(returningClause(returning, "t"));
+  return sql.statement();
+}
+
 function emitSet(sql: Sql, table: Indexed, set: Record<string, unknown>, alias: string): void {
   const keys = Object.keys(set);
   let wrote = false;
@@ -1066,12 +1118,7 @@ function emitValue(sql: Sql, column: ColumnModel, value: unknown, alias: string)
   if (isOperator(value)) {
     const name = operatorName(value);
     if (name === "inc") {
-      const amount = operatorValue(value);
-      if (typeof amount === "object" && amount !== null) {
-        fail("OKM1121", `inc on ${column.field} needs a value.`);
-      }
-      sql.text(`${alias}.${quote(column.sql)} + `);
-      sql.param(encodeColumn(column, amount), column.dataType);
+      emitIncrement(sql, column, value, alias);
       return;
     }
     if (name === "json.set") {
@@ -1084,7 +1131,7 @@ function emitValue(sql: Sql, column: ColumnModel, value: unknown, alias: string)
     }
     fail(
       "OKM1121",
-      `Field ${column.field} received an operator. set accepts a value, inc, set, or arr.`,
+      `Field ${column.field} received an operator. set accepts a value, inc, json.set, arr.append, or arr.remove.`,
     );
   }
   if (value === null) {
@@ -1093,6 +1140,31 @@ function emitValue(sql: Sql, column: ColumnModel, value: unknown, alias: string)
   }
   if (typeof value === "object") takeObject(column, value);
   sql.param(encodeColumn(column, value), column.dataType);
+}
+
+/** Number columns `inc` can add to. Array types are not included. */
+const NUMBER_TYPE =
+  /^(?:smallint|integer|bigint|real|double precision|numeric|decimal)(?:\(\d+(?:,\d+)?\))?$/;
+
+function emitIncrement(sql: Sql, column: ColumnModel, value: unknown, alias: string): void {
+  if (!NUMBER_TYPE.test(column.dataType)) {
+    fail(
+      "OKM1124",
+      `inc adds to a number. ${column.field} is a ${column.dataType} column.`,
+      "Use inc on an integer, bigint, numeric, or float column.",
+    );
+  }
+  if (!isOperator(value)) fail("OKM1121", `inc on ${column.field} needs a number.`);
+  const amount = operatorValue(value);
+  if (typeof amount !== "number" && typeof amount !== "bigint" && typeof amount !== "string") {
+    fail(
+      "OKM1121",
+      `inc on ${column.field} needs a number.`,
+      "Pass the amount to add. null stores null; it is not an amount.",
+    );
+  }
+  sql.text(`${alias}.${quote(column.sql)} + `);
+  sql.param(encodeColumn(column, amount), column.dataType);
 }
 
 function emitJsonSet(sql: Sql, column: ColumnModel, value: unknown, alias: string): void {
@@ -1373,6 +1445,79 @@ function updateItem(
   if (value.where !== undefined) return { where: value.where, set };
   if (value.id !== undefined) return { where: { id: value.id }, set };
   fail("OKM1102", `update on ${table.model.name} needs id or where for each row.`);
+}
+
+/**
+ * A list that sets one field with an operator in one row and a plain value,
+ * or a different operator, in another.
+ */
+function rejectMixedSets(rows: readonly { readonly set: Record<string, unknown> }[]): void {
+  const kind = new Map<string, string>();
+  for (const row of rows) {
+    for (const key of Object.keys(row.set)) {
+      const value = row.set[key];
+      if (value === undefined) continue;
+      const next = isOperator(value) ? operatorName(value) : "value";
+      const previous = kind.get(key);
+      if (previous === undefined) {
+        kind.set(key, next);
+        continue;
+      }
+      if (previous === next) continue;
+      const left = previous === "value" ? "a value" : previous;
+      const right = next === "value" ? "a value" : next;
+      fail(
+        "OKM1120",
+        `${key} is both ${left} and ${right} in this update.`,
+        `Use one value or one operator for ${key} in every row.`,
+      );
+    }
+  }
+}
+
+/**
+ * `lock: "skip"` with `limit` on one update. Absent when the caller named neither.
+ *
+ * @param input - The update target
+ * @returns The row cap, or `undefined` when this update does not claim
+ */
+function readClaim(input: Record<string, unknown>): number | undefined {
+  if (Object.hasOwn(input, "wait")) {
+    fail(
+      "OKM1120",
+      'wait belongs on a read. An update claims rows with lock: "skip".',
+      'Use lock: "skip" and limit. A read uses wait: "nowait" or "skip" inside tx().',
+    );
+  }
+  const lock = input.lock;
+  const limit = input.limit;
+  if (lock === undefined && limit === undefined) return undefined;
+  if (lock === undefined) {
+    fail(
+      "OKM1120",
+      'limit on an update needs lock: "skip".',
+      'Pass lock: "skip" to claim up to limit rows, or remove limit.',
+    );
+  }
+  if (lock !== "skip") {
+    const shown = typeof lock === "string" ? lock : (JSON.stringify(lock) ?? "undefined");
+    fail(
+      "OKM1120",
+      `lock on an update must be "skip". ${shown} is not a claim.`,
+      'Pass lock: "skip". A read uses lock: "update" or "share", and wait: "nowait" or "skip", inside tx().',
+    );
+  }
+  if (limit === undefined) {
+    fail(
+      "OKM1120",
+      'lock: "skip" needs a limit.',
+      "Pass limit so the claim takes a fixed number of rows.",
+    );
+  }
+  if (typeof limit !== "number" || !Number.isInteger(limit) || limit < 1 || limit > 2_147_483_647) {
+    fail("OKM1121", "limit must be a whole number from 1 to 2147483647.");
+  }
+  return limit;
 }
 
 function rejectUpdateKeys(input: Record<string, unknown>, row: boolean): void {

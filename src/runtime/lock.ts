@@ -61,6 +61,13 @@ function plan(
       },
     });
   }
+  if (lock === "skip") {
+    fail(
+      "OKM1120",
+      'lock: "skip" claims rows on update. A read uses lock: "update" and wait: "skip".',
+      'Pass lock: "update" and wait: "skip" inside tx(). An update can claim rows on its own.',
+    );
+  }
   if (session.tx === undefined) {
     throw new OkmError("OKM1830", "A row lock needs a transaction. find was called outside tx().", {
       fix: { summary: "Move the find into tx(): the lock lasts until the transaction ends." },

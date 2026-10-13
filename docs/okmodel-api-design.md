@@ -938,7 +938,7 @@ await scoped.tasks.restore({ archiveId });
 await scoped.tasks.onlyArchived().delete({ where: { archivedAt: lt(retentionCutoff) } });   // purge
 ```
 
-Atomic operators: `inc(n)`, `json.set(path, v)`, `arr.append(v)`, `arr.remove(v)`.
+Atomic operators: `inc(n)`, `json.set(path, v)`, `arr.append(v)`, `arr.remove(v)`. `inc` adds to a number column (`smallint`, `integer`, `bigint`, `numeric`, `real`, `double precision`). A null number stays null. A column that is not a number is OKM1124. A per-row list that sets one field with an operator in one row and a plain value, or a different operator, in another is OKM1120. `dec` and `mul` are not in this version. `lock: "skip"` needs `limit`. That update changes up to that many matching rows and leaves rows another transaction already holds. The statement is the claim, so it runs inside `tx()` or on its own. `wait` is not an update option. A read uses `lock: "update" | "share"` and `wait: "nowait" | "skip"` inside `tx()` (section 15). There is no `findMany`; `find` returns the list.
 
 ## 12. Semantics of small APIs
 
@@ -1046,7 +1046,7 @@ await scoped.batch([
 ```
 
 - Every `timeout` is a number of milliseconds, in `tx()` options, in a call, and in `connect({ timeouts })` (D181). The `tx()` timeout covers the whole transaction, retries included. A nested `tx()` takes no options (OKM1121): isolation, retry, timeout and signal belong to the outermost one.
-- Row locks on reads: `find({ lock: "update" | "share", wait: "nowait" | "skip" })` inside `tx()` only (OKM1830 outside one). `t.advisoryLock(key)` takes a transaction-level advisory lock.
+- Row locks on reads: `find({ lock: "update" | "share", wait: "nowait" | "skip" })` inside `tx()` only (OKM1830 outside one). `wait: "skip"` leaves out rows another transaction holds. `lock: "skip"` is not a read lock; it claims rows on `update` (section 11). `t.advisoryLock(key)` takes a transaction-level advisory lock.
 - `connect({ timeouts })` keys: `acquire` (waiting for a connection), `statement`, `transaction`, `idleInTransaction`. Cancelling a call inside `tx()` fails the transaction and rolls it back; cancelling after completion has no effect. Server notices reach `hookm.onNotice`.
 - Every timeout (statement, transaction, batch) is kind `timeout`; `cancelled` arises only from the caller's `signal` and is never retried (D124).
 - Cancellation and timeouts: every operation accepts `{ signal, timeout }`; an aborted call cancels the statement where the driver has `cancel`, and fails as kind `cancelled` (category `transient`, never retried). `connect({ timeouts })` sets ceilings. Bun.sql and PGlite throw OKM1120 (kind `invalid`, message `timeout`) when a positive `timeout` is passed. They cannot cancel a statement that is already running (D224, D239).

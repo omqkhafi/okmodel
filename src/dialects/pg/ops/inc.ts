@@ -4,9 +4,9 @@ import { tag, type Tagged } from "../operators.js";
 export type Inc<V> = Tagged<"inc", V>;
 
 /**
- * Atomic increment used in `update` `set` (spec §11).
+ * Adds to a stored number in `update` `set` (spec §11).
  *
- * JSON and array operators are not this helper.
+ * A null number stays null. JSON and array operators are not this helper.
  *
  * @typeParam V - Amount
  * @param value - Amount to add
