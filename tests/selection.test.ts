@@ -606,7 +606,9 @@ function wrap(
       return;
     }
     onUser?.(name);
-    if (replica.fail?.() === true) throw new Error("ECONNREFUSED");
+    if (replica.fail?.() === true) {
+      throw Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" });
+    }
     if (replica.delayMs !== undefined) await pause(replica.delayMs());
   };
   return {

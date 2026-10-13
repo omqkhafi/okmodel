@@ -183,6 +183,11 @@ P90 reclaims bytes first. Each feature loads lazily, or the step stops with the 
 
 | ID | Branch | Delivers |
 |---|---|---|
+| P89C | `p89c-lost-classification` | [#222](https://github.com/omqkhafi/okmodel/issues/222). A lost connection is classified by driver `code` and SQLSTATE (`08`, `57P01`–`57P03`), not by message text (D244). No gate move |
+| — | after P89C | [#223](https://github.com/omqkhafi/okmodel/issues/223). README covers the 0.6 access features: tenancy strategies including RLS, roles, policies, and migrate check |
+| — | after P89C | [#224](https://github.com/omqkhafi/okmodel/issues/224). A `.d.ts` shim for `okmodel/pg/bun` so consumers need no `bun-types` |
+| — | after P89C | [#225](https://github.com/omqkhafi/okmodel/issues/225). `BEGIN ATOMIC` reprint-form qualifier miscount (OKM1547) |
+| — | after P89C | [#226](https://github.com/omqkhafi/okmodel/issues/226). Tag only the QA'd commit, and check `gitHead` in the tarball |
 | P90 | `p90-byte-reclaim` | [#208](https://github.com/omqkhafi/okmodel/issues/208). PGlite and node-postgres gzip headroom, the OKM1120 timeout message in the lazy registry, one copy of `refuseWhenLost` and `arm` in `postgres-extra.ts`, and featureless-app headroom. No feature section. No gate move |
 | P91 | `p91-stream-missing-table` | [#209](https://github.com/omqkhafi/okmodel/issues/209). The postgres.js `stream()` page gap on connection loss (D242, §10), a dedicated missing-table reason (B15, §14), and dropping the extra connection in migrate check cleanup when no scratch schema remains. After the byte reclaim. No gate move |
 | P92 | `p92-first-or-create` | [#210](https://github.com/omqkhafi/okmodel/issues/210). Tools 7 and 8 (§13): first-or-create and the per-row update list. §5.3 and §11 already specify them. Audit what exists, then build only the gap. Lazy. No gate move |

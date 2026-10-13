@@ -43,7 +43,25 @@ export async function checkout(held: HeldPool): Promise<DriverConnection> {
   events.on("error", onError);
   const local = new Set<WireQuery>();
   const session = new WireSession(
-    (text, params) => send(client, text, params, named, client),
+    (text, params) => {
+      const pending = send(client, text, params, named, client);
+      // node-postgres rejects a cut socket with a plain Error and no code.
+      // The client's `error` event has already set `lost`. The message is not read.
+      const guarded = pending.catch((error: unknown) => {
+        if (isConnectionLost(error) || lost) {
+          lost = true;
+          if (isConnectionLost(error)) throw error;
+          throw Object.assign(new DriverError("CONNECTION_CLOSED", { cause: error }), {
+            code: "CONNECTION_CLOSED",
+          });
+        }
+        throw error;
+      }) as WireQuery;
+      guarded.cancel = () => {
+        pending.cancel?.();
+      };
+      return guarded;
+    },
     held.notices,
     isClosed,
     true,
@@ -55,19 +73,7 @@ export async function checkout(held: HeldPool): Promise<DriverConnection> {
     },
     local,
   );
-  const guard = <T>(run: () => Promise<T>): Promise<T> =>
-    lost
-      ? rejectClosed("CONNECTION_CLOSED")
-      : run().catch((error: unknown) => {
-          if (isConnectionLost(error)) lost = true;
-          // node-postgres says "Connection terminated unexpectedly" with no
-          // SQLSTATE. The shared mapper already treats CONNECTION_CLOSED as
-          // unavailable. Rewriting here stays out of contracts.
-          if (error instanceof Error && error.message.includes("Connection terminated")) {
-            throw new DriverError("CONNECTION_CLOSED", { cause: error });
-          }
-          throw error;
-        });
+  const guard = <T>(run: () => Promise<T>): Promise<T> => (lost ? rejectClosed() : run());
   let released = false;
   return {
     execute: (text, params, options) =>

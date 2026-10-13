@@ -37,6 +37,7 @@ export function isConnectionErrno(code: string): boolean {
     case "EPIPE":
     case "ENOTFOUND":
     case "ETIMEDOUT":
+    case "CONNECT_TIMEOUT":
     case "EHOSTUNREACH":
     case "ENETUNREACH":
     case "EAI_AGAIN":
@@ -52,49 +53,59 @@ export function isConnectionErrno(code: string): boolean {
 /**
  * Reports whether `error` is a dropped or refused connection.
  *
- * Constraint failures are not connection failures. `23505` stays a unique
- * violation even when it is raised at commit.
+ * The decision is a driver `code` ({@link isConnectionErrno}, including
+ * `CONNECT_TIMEOUT`, or `ERR_POSTGRES_CONNECTION_CLOSED`) or a SQLSTATE in
+ * class `08` or `57P01`–`57P03`. A server SQLSTATE outside that set is never
+ * a lost connection. Message text is not read.
  *
  * @param error - Caught value
  * @returns `true` when no session remains
  */
 export function isConnectionFailure(error: unknown): boolean {
-  const sqlstate = readCode(error, "sqlstate") ?? readCode(error, "code");
-  if (sqlstate !== undefined && (isConnectionSqlstate(sqlstate) || isConnectionErrno(sqlstate))) {
-    return true;
-  }
-  if (!(error instanceof Error)) return false;
-  const message = error.message;
-  return (
-    message.includes("ECONNREFUSED") ||
-    message.includes("ECONNRESET") ||
-    // CONNECT covers CONNECTION_CLOSED and CONNECT_TIMEOUT.
-    message.includes("CONNECT") ||
-    message.includes("terminating connection") ||
-    message.includes("The pool is closed")
-  );
+  return at(error, true);
 }
 
 /**
  * Reports whether the connection is gone after `error`, or the outcome of a
  * statement on it is unknown (`outcome_unknown`).
  *
- * It reads what {@link isConnectionFailure} reads, plus the messages node-postgres
- * ("Connection terminated unexpectedly") and Bun.sql (`ERR_POSTGRES_CONNECTION_CLOSED`)
- * give, and the error's `cause`. Nothing more should be sent to such a connection:
- * not a rollback, not a reset. Loaded with the code that reserves a connection.
+ * It reads what {@link isConnectionFailure} reads, and the error's `cause`.
+ * Nothing more should be sent to such a connection: not a rollback, not a
+ * reset. Loaded with the code that reserves a connection.
  *
  * @param error - Caught value
  * @returns `true` when the session cannot be used again
  */
 export function isConnectionLost(error: unknown): boolean {
-  if (isConnectionFailure(error)) return true;
+  return at(error, false);
+}
+
+function at(error: unknown, failure: boolean): boolean {
   if (typeof error !== "object" || error === null) return false;
-  if (Reflect.get(error, "kind") === "outcome_unknown") return true;
-  if (readCode(error, "code") === "ERR_POSTGRES_CONNECTION_CLOSED") return true;
-  if (error instanceof Error && error.message.includes("Connection terminated")) return true;
+  const named = readCode(error, "sqlstate");
+  if (isState(named)) return lostState(named);
+  const code = readCode(error, "code");
+  const errno = readCode(error, "errno");
+  if (
+    code !== undefined &&
+    (isConnectionErrno(code) || code === "ERR_POSTGRES_CONNECTION_CLOSED")
+  ) {
+    return true;
+  }
+  if (errno !== undefined && isConnectionErrno(errno)) return true;
+  if (isState(code)) return lostState(code);
+  if (isState(errno)) return lostState(errno);
+  if (!failure && Reflect.get(error, "kind") === "outcome_unknown") return true;
   const cause: unknown = Reflect.get(error, "cause");
-  return cause !== undefined && cause !== error && isConnectionLost(cause);
+  return cause !== undefined && cause !== error && at(cause, failure);
+}
+
+function lostState(state: string): boolean {
+  return isConnectionSqlstate(state) && state !== "53300";
+}
+
+function isState(value: string | undefined): value is string {
+  return value !== undefined && /^[0-9A-Z]{5}$/.test(value);
 }
 
 function readCode(error: unknown, key: string): string | undefined {
