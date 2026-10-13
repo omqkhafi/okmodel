@@ -2,7 +2,7 @@
  * Refuses a positive timeout on a driver that cannot cancel.
  *
  * `tx({ timeout })` and `batch({ timeout })` load this with the call. The
- * connect graph does not. The message stays the one {@link noTimeout} throws.
+ * connect graph does not. The OKM1120 text loads with the lazy error module.
  */
 
 import type { DriverPool } from "../contracts/driver.js";
@@ -18,6 +18,6 @@ export async function refuseUncancellableTimeout(
   timeout: number | undefined,
 ): Promise<void> {
   if (pool.capabilities.cancel === true || timeout === undefined || !(timeout > 0)) return;
-  const { noTimeout } = await import("../adapters/pg/no-inflight-timeout.js");
-  noTimeout({ timeout });
+  const { refused } = await import("../adapters/lazy-errors.js");
+  await refused();
 }

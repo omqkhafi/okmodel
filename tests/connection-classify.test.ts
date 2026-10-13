@@ -7,6 +7,7 @@
 
 import { expect, test } from "bun:test";
 
+import { DriverError } from "../src/adapters/error.js";
 import { open as openPglite } from "../src/adapters/pg/pglite.js";
 import { isConnectionFailure, isConnectionLost } from "../src/contracts/connection.js";
 import { OkmError } from "../src/contracts/error.js";
@@ -128,6 +129,18 @@ test("PGlite rejects a CONNECT server error from batch, tx, and a grant", async 
     await pool.close();
   }
 }, 10_000);
+
+test("a closed pool is lost and says the pool is closed", async () => {
+  const pool = await openPglite();
+  await pool.close();
+  const error = await rejected(pool.execute("select 1"));
+  expect(error).toBeInstanceOf(DriverError);
+  if (error instanceof DriverError) {
+    expect(error.message).toBe("The pool is closed.");
+    expect(error.sqlstate).toBe("08006");
+  }
+  expect(isConnectionLost(error)).toBe(true);
+});
 
 async function expectCheck(pending: Promise<unknown>): Promise<void> {
   const error = await rejected(pending);

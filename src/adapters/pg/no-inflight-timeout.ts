@@ -1,21 +1,26 @@
 /**
  * Refusal for a driver that cannot cancel an in-flight statement (D224).
  *
- * Bun.sql and PGlite throw OKM1120 for a positive `timeout`. The message
- * stays `timeout` because the PGlite connect graph has two gzip bytes left.
- * Kind is `invalid`, which separates it from kind `timeout`. `timeout: 0`
- * still fails immediately as kind `timeout`. `signal` is unchanged.
- * postgres.js and node-postgres do not import this.
+ * Bun.sql and PGlite refuse a positive `timeout`. The OKM1120 text loads with
+ * the lazy error module, so a connect entry does not carry it. Kind is
+ * `invalid`, which separates it from kind `timeout`. `timeout: 0` still fails
+ * immediately as kind `timeout`. `signal` is unchanged. postgres.js and
+ * node-postgres do not import this.
  */
 
-import { OkmError } from "../../contracts/error.js";
+import { rejectUncancellable } from "../failure.js";
 
 /**
- * Throws OKM1120 when `timeout` is a positive number.
+ * Returns a rejected OKM1120 when `timeout` is a positive number.
  *
- * @param options - Per-call options. Absent, and a non-positive timeout, pass through
+ * Absent, and a non-positive timeout, return `undefined` so the caller runs.
+ *
+ * @param options - Per-call options
+ * @returns A rejected promise, or `undefined` when the call may run
  */
-export function noTimeout(options: { readonly timeout?: number } | undefined): void {
+export function noTimeout(
+  options: { readonly timeout?: number } | undefined,
+): Promise<never> | undefined {
   if ((options?.timeout ?? 0) <= 0) return;
-  throw new OkmError("OKM1120", "timeout");
+  return rejectUncancellable();
 }
