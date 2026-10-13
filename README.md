@@ -324,6 +324,14 @@ The name is unique, so inserting Ada again would fail. `onConflict: "ignore"` sk
 ```ts
 // Ada is already there. ignore skips this insert.
 await db.authors.insert({ name: "Ada" }, { onConflict: "ignore" });
+// return: true gives that row back and does not change it.
+const existing = await db.authors.insert(
+  { name: "Ada" },
+  { onConflict: { on: "name", return: true } },
+);
+if (existing.id !== author.id || existing.name !== "Ada") {
+  throw new Error("first-or-create did not return the existing author");
+}
 ```
 
 ### Find
@@ -380,6 +388,8 @@ if (!(await db.notes.exists({ where: { id: note.id } }))) {
 ```ts
 // where picks the row. set names the new title.
 await db.notes.update({ where: { id: note.id }, set: { title: "next" } });
+// A list sets each row in one statement. A missing id is not an error.
+await db.notes.update([{ id: note.id, set: { title: "listed" } }]);
 ```
 
 ### Delete
