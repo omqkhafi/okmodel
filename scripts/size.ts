@@ -1,6 +1,14 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { gzipSync } from "node:zlib";
 
@@ -86,11 +94,12 @@ export const APP_MAX_GZIP_BYTES = 30_170;
 /**
  * Public connect entries, driver left external (D142, D143, D156).
  *
- * The startup graph excludes chunks loaded on first failure, include, or the
- * mismatch path of the catalog check. Each ceiling is the measurement
- * plus 3 percent, rounded down (D160). Moved in P27. Cold import is printed,
- * including a driver-stubbed sample, and is not gated. Bun.sql has no Node
- * cold import.
+ * The gate is the static startup graph with every relative dynamic import
+ * stubbed (D248), so a new lazy chunk cannot spend short names here. The full
+ * build is printed as a reference and is not gated. Cold import is that
+ * reference, including a driver-stubbed sample, and is not gated. Bun.sql has
+ * no Node cold import. Each ceiling is the measurement plus 3 percent, rounded
+ * down (D160). Moved in P27.
  */
 export const CONNECT_ENTRIES = [
   {
@@ -495,8 +504,10 @@ const sideEffectImport = /import\s*"(\.\/[^"]+)"/g;
 /**
  * Minifies an entry with splitting and counts only the static-import graph.
  *
- * `import()` chunks load later (first failure, first include, first checkout).
- * They are not part of cold start. Gzip is the concatenation of the startup chunks.
+ * This is the full build. Lazy chunks are not added into the byte total, but
+ * they still share the minifier, so their names change this number (D247).
+ * The gate uses {@link measureStubbedStartup}. This result is the reference.
+ * Gzip is the concatenation of the startup chunks.
  *
  * @param root - Repository root
  * @param entry - Source entry, relative to `root`
@@ -537,38 +548,15 @@ export function measureStartup(
         `bun build ${entry} exited ${String(proc.exitCode)}\n${proc.stderr.toString()}`,
       );
     }
-    const startup = new Set<string>();
-    const lazy = new Set<string>();
-    walkStartup(dir, file, startup, lazy);
-    for (const name of lazy) startup.delete(name);
-    const parts: Buffer[] = [];
-    let minBytes = 0;
-    for (const name of startup) {
-      const bytes = readFileSync(join(dir, name));
-      minBytes += bytes.byteLength;
-      parts.push(bytes);
-    }
-    const all = new Set<string>();
-    walkAll(dir, file, all);
-    const totalParts: Buffer[] = [];
-    let totalMinBytes = 0;
-    for (const name of [...all].sort()) {
-      const bytes = readFileSync(join(dir, name));
-      totalMinBytes += bytes.byteLength;
-      totalParts.push(bytes);
-    }
+    const sizes = readStartupBytes(dir, file);
     const outfile = join(dir, file);
     const coldImportMs = nodeImport ? coldImportMsOnNode(outfile) : 0;
     const stubbedColdImportMs =
       stubSpecifier === undefined ? undefined : stubbedImport(dir, outfile, stubSpecifier);
     return {
       entry,
-      minBytes,
-      gzipBytes: gzipSync(normaliseChunkIds(dir, Buffer.concat(parts)), { level: 9 }).byteLength,
+      ...sizes,
       coldImportMs,
-      totalMinBytes,
-      totalGzipBytes: gzipSync(normaliseChunkIds(dir, Buffer.concat(totalParts)), { level: 9 })
-        .byteLength,
       ...(stubbedColdImportMs !== undefined ? { stubbedColdImportMs } : {}),
     };
   } finally {
@@ -603,6 +591,275 @@ function walkStartup(dir: string, file: string, seen: Set<string>, lazy: Set<str
   for (const match of text.matchAll(sideEffectImport)) {
     const name = match[1]?.replace("./", "");
     if (name !== undefined && !lazy.has(name)) walkStartup(dir, name, seen, lazy);
+  }
+}
+
+/** Minified and gzip bytes of one splitting build. */
+type GraphBytes = {
+  readonly minBytes: number;
+  readonly gzipBytes: number;
+  readonly totalMinBytes: number;
+  readonly totalGzipBytes: number;
+};
+
+/**
+ * Chunk files a cold import of `file` loads.
+ *
+ * Dynamic `import()` targets are not included. `file` is the built entry name.
+ *
+ * The order is the walk order. Gzip concatenates these chunks, so sorting them
+ * would change the gated number without a source change.
+ *
+ * @param dir - Build output
+ * @param file - Built entry filename
+ * @returns Startup chunk names, entry first
+ */
+export function startupChunkNames(dir: string, file: string): readonly string[] {
+  const startup = new Set<string>();
+  const lazy = new Set<string>();
+  walkStartup(dir, file, startup, lazy);
+  for (const name of lazy) startup.delete(name);
+  return [...startup];
+}
+
+/**
+ * Byte size of the startup chunks and of the whole build.
+ *
+ * @param dir - Build output
+ * @param file - Built entry filename
+ * @returns Startup bytes and the total graph, lazy chunks included in the total only
+ */
+function readStartupBytes(
+  dir: string,
+  file: string,
+  startup: readonly string[] = startupChunkNames(dir, file),
+): GraphBytes {
+  const parts: Buffer[] = [];
+  let minBytes = 0;
+  for (const name of startup) {
+    const bytes = readFileSync(join(dir, name));
+    minBytes += bytes.byteLength;
+    parts.push(bytes);
+  }
+  const all = new Set<string>();
+  walkAll(dir, file, all);
+  const totalParts: Buffer[] = [];
+  let totalMinBytes = 0;
+  for (const name of [...all].sort()) {
+    const bytes = readFileSync(join(dir, name));
+    totalMinBytes += bytes.byteLength;
+    totalParts.push(bytes);
+  }
+  return {
+    minBytes,
+    gzipBytes: gzipSync(normaliseChunkIds(dir, Buffer.concat(parts)), { level: 9 }).byteLength,
+    totalMinBytes,
+    totalGzipBytes: gzipSync(normaliseChunkIds(dir, Buffer.concat(totalParts)), { level: 9 })
+      .byteLength,
+  };
+}
+
+/**
+ * Static startup graph with every relative dynamic import replaced by an empty module.
+ *
+ * Cold import is not measured. {@link measureStartup} times the full build.
+ */
+export type StubbedStartup = RuntimeSize & {
+  /** Source files in the stubbed graph, relative to the repository root. */
+  readonly sources: readonly string[];
+};
+
+const LAZY_STUB = "lazy-stub";
+
+/**
+ * Empties every relative dynamic `import()` during a build.
+ *
+ * One plugin covers every target. A stub file per target would need a list of
+ * those targets first. `bun build` has no plugin flag, so the gated build uses
+ * `Bun.build`. The stub key is the importer plus the specifier: `build.resolve`
+ * is not implemented, and the specifier alone would merge `./batch.js` from two
+ * directories into one chunk.
+ *
+ * @returns The plugin passed to `Bun.build`
+ */
+function stubDynamicPlugin(): Bun.BunPlugin {
+  return {
+    name: "stub-dynamic-imports",
+    setup(build) {
+      build.onResolve({ filter: /^\.\.?\// }, (args) => {
+        if (args.kind !== "dynamic-import" || args.namespace === LAZY_STUB) return;
+        return { path: `${args.importer}\0${args.path}`, namespace: LAZY_STUB };
+      });
+      build.onLoad({ filter: /.*/, namespace: LAZY_STUB }, () => ({
+        contents: "",
+        loader: "js",
+      }));
+    },
+  };
+}
+
+/** One bundler metafile, the fields this script reads. */
+type SizeMetafile = {
+  readonly outputs: Readonly<
+    Record<string, { readonly inputs?: Readonly<Record<string, unknown>> }>
+  >;
+};
+
+/**
+ * A metafile input as a path relative to `root`.
+ *
+ * The bundler writes paths relative to its cwd. `Bun.build` uses this process.
+ * `bun build` uses `root`.
+ *
+ * @param input - Metafile input path
+ * @param root - Directory the entry was built from
+ * @returns A path under `root`, or the absolute path when it is outside
+ */
+function sourcePath(input: string, root: string): string {
+  const base = realpathSync(root);
+  const candidates = isAbsolute(input) ? [input] : [resolve(input), resolve(base, input)];
+  for (const candidate of candidates) {
+    let target = candidate;
+    try {
+      target = realpathSync(candidate);
+    } catch {
+      continue;
+    }
+    const rel = relative(base, target);
+    if (!rel.startsWith("..")) return rel;
+  }
+  return input;
+}
+
+/**
+ * Source files that contributed to the startup chunks.
+ *
+ * @param meta - Bundler metafile
+ * @param root - Repository root
+ * @param dir - Build output
+ * @param startup - Chunk names from {@link startupChunkNames}
+ * @returns Paths relative to `root`, sorted
+ */
+function sourcesInStartup(
+  meta: SizeMetafile,
+  root: string,
+  dir: string,
+  startup: ReadonlySet<string>,
+): readonly string[] {
+  const dirPrefix = dir.endsWith("/") ? dir : `${dir}/`;
+  const sources = new Set<string>();
+  for (const [outPath, output] of Object.entries(meta.outputs)) {
+    const name = outPath.startsWith(dirPrefix)
+      ? outPath.slice(dirPrefix.length)
+      : outPath.slice(outPath.lastIndexOf("/") + 1);
+    if (!startup.has(name)) continue;
+    for (const input of Object.keys(output.inputs ?? {})) {
+      if (input.includes("\0")) continue;
+      sources.add(sourcePath(input, root));
+    }
+  }
+  return [...sources].sort();
+}
+
+/**
+ * Minifies the static startup graph with every relative dynamic import stubbed.
+ *
+ * The modules are the ones a cold start loads. The bytes are one file: empty
+ * lazy targets share nothing, so the shared startup chunk is inlined. Adding
+ * or removing a lazy chunk does not move the number (D248). The runtime entry
+ * has no dynamic import, and an `onResolve` hook changes mangling even when it
+ * stubs nothing, so that entry stays on {@link measureEntry}.
+ *
+ * @param root - Repository root
+ * @param entry - Source entry, relative to `root`
+ * @param file - Built entry filename
+ * @param external - Packages left outside the bundle
+ * @returns Gated bytes. `coldImportMs` is 0; time the full build instead
+ */
+export async function measureStubbedStartup(
+  root: string,
+  entry: string,
+  file: string,
+  external: readonly string[] = [],
+): Promise<StubbedStartup> {
+  const parent = external.length > 0 ? join(root, "node_modules") : tmpdir();
+  const dir = mkdtempSync(join(parent, external.length > 0 ? ".okm-size-" : "okm-size-"));
+  try {
+    const result = await Bun.build({
+      entrypoints: [join(root, entry)],
+      target: "node",
+      minify: true,
+      splitting: true,
+      outdir: dir,
+      external: [...external],
+      metafile: true,
+      plugins: [stubDynamicPlugin()],
+    });
+    if (!result.success) {
+      const message = result.logs.map((log) => log.message).join("\n");
+      throw new Error(`bun build ${entry} exited\n${message}`);
+    }
+    const startup = startupChunkNames(dir, file);
+    const sizes = readStartupBytes(dir, file, startup);
+    const sources = sourcesInStartup(result.metafile as SizeMetafile, root, dir, new Set(startup));
+    return { entry, ...sizes, coldImportMs: 0, sources };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Source files in the static startup graph, relative to `root`, sorted.
+ *
+ * The full build is the `bun build` the cold import loads. The stubbed build
+ * is {@link measureStubbedStartup}. Dynamic import targets are omitted from both.
+ *
+ * @param root - Repository root
+ * @param entry - Source entry, relative to `root`
+ * @param file - Built entry filename
+ * @param external - Packages left outside the bundle
+ * @param stubDynamic - When true, replace relative dynamic imports with empty modules
+ * @returns Source paths in the startup chunks
+ */
+export async function startupGraphSources(
+  root: string,
+  entry: string,
+  file: string,
+  external: readonly string[] = [],
+  stubDynamic = false,
+): Promise<readonly string[]> {
+  if (stubDynamic) {
+    return (await measureStubbedStartup(root, entry, file, external)).sources;
+  }
+  const parent = external.length > 0 ? join(root, "node_modules") : tmpdir();
+  const dir = mkdtempSync(join(parent, external.length > 0 ? ".okm-size-" : "okm-size-"));
+  const meta = join(dir, "meta.json");
+  try {
+    const proc = Bun.spawnSync(
+      [
+        "bun",
+        "build",
+        join(root, entry),
+        "--target",
+        "node",
+        "--minify",
+        "--splitting",
+        "--outdir",
+        dir,
+        `--metafile=${meta}`,
+        ...external.flatMap((name) => ["--external", name]),
+      ],
+      { cwd: root, stdout: "pipe", stderr: "pipe" },
+    );
+    if (proc.exitCode !== 0) {
+      throw new Error(
+        `bun build ${entry} exited ${String(proc.exitCode)}\n${proc.stderr.toString()}`,
+      );
+    }
+    const graph = JSON.parse(readFileSync(meta, "utf8")) as SizeMetafile;
+    return sourcesInStartup(graph, root, dir, new Set(startupChunkNames(dir, file)));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 }
 
@@ -904,6 +1161,20 @@ function rewriteSpecifier(dir: string, specifier: string, href: string): void {
   }
 }
 
+function formatGated(measured: RuntimeSize): string {
+  return `size: ${measured.entry} min ${String(measured.minBytes)} bytes, gzip ${String(measured.gzipBytes)} bytes (startup graph, dynamic imports stubbed)`;
+}
+
+function formatReference(measured: RuntimeSize, ci: boolean, nodeImport: boolean): string {
+  if (!nodeImport) {
+    return `size: ${measured.entry} reference min ${String(measured.minBytes)} bytes, gzip ${String(measured.gzipBytes)} bytes (full build, not gated; Node cold import skipped: Bun.sql runs only on Bun)`;
+  }
+  const gate = ci
+    ? `CI gate ${String(CI_COLD_IMPORT_MS)} ms`
+    : `local reference ${String(LOCAL_COLD_IMPORT_MS)} ms`;
+  return `size: ${measured.entry} reference min ${String(measured.minBytes)} bytes, gzip ${String(measured.gzipBytes)} bytes, cold import ${measured.coldImportMs.toFixed(3)} ms (${gate}, full build, not gated)`;
+}
+
 function formatTotal(measured: StartupMeasurement): string {
   return `size: ${measured.entry} total graph min ${String(measured.totalMinBytes)} bytes, gzip ${String(measured.totalGzipBytes)} bytes (lazy chunks included, not gated)`;
 }
@@ -931,7 +1202,7 @@ function printColdImportFinding(measured: RuntimeSize, ci: boolean): void {
   if (finding !== undefined) console.log(`size: finding: ${measured.entry} ${finding}`);
 }
 
-if (import.meta.main) {
+async function reportSize(): Promise<void> {
   const root = repoRoot();
   const dir = join(root, "dist");
   const problems: string[] = [];
@@ -966,7 +1237,9 @@ if (import.meta.main) {
       );
     }
     const app = measureStartup(root, APP_ENTRY, "app-startup.js", ["postgres"], "postgres");
-    console.log(formatEntry(app, ci));
+    const appGated = await measureStubbedStartup(root, APP_ENTRY, "app-startup.js", ["postgres"]);
+    console.log(formatGated(appGated));
+    console.log(formatReference(app, ci, true));
     console.log(formatTotal(app));
     const archivable = measureStartup(
       root,
@@ -1001,7 +1274,7 @@ if (import.meta.main) {
     const testingEntry = measureEntry(root, "src/tooling/testing/index.ts");
     console.log(`${formatEntry(testingEntry, ci)} (okmodel/testing, reported, not gated)`);
     printStubbed(app, ci);
-    problems.push(...appBudgetProblems(app));
+    problems.push(...appBudgetProblems(appGated));
     printColdImportFinding(app, ci);
     problems.push(...shakenOperatorProblems(root));
     problems.push(...exportShakeProblems(root));
@@ -1016,17 +1289,14 @@ if (import.meta.main) {
         entry.external[0],
         nodeImport,
       );
-      if (nodeImport) console.log(formatEntry(measured, ci));
-      else {
-        console.log(
-          `size: ${measured.entry} min ${String(measured.minBytes)} bytes, gzip ${String(measured.gzipBytes)} bytes (Node cold import skipped: Bun.sql runs only on Bun)`,
-        );
-      }
+      const gated = await measureStubbedStartup(root, entry.entry, entry.file, entry.external);
+      console.log(formatGated(gated));
+      console.log(formatReference(measured, ci, nodeImport));
       console.log(formatTotal(measured));
       printStubbed(measured, ci);
       if ("maxMinBytes" in entry && "maxGzipBytes" in entry) {
         problems.push(
-          ...entryBudgetProblems(measured, {
+          ...entryBudgetProblems(gated, {
             maxMinBytes: entry.maxMinBytes,
             maxGzipBytes: entry.maxGzipBytes,
             maxColdImportMs: Number.POSITIVE_INFINITY,
@@ -1038,4 +1308,8 @@ if (import.meta.main) {
     problems.push(`size: ${error instanceof Error ? error.message : String(error)}`);
   }
   exitOnProblems(problems);
+}
+
+if (import.meta.main) {
+  await reportSize();
 }
