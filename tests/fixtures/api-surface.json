@@ -503,6 +503,14 @@
       "kind": "stable"
     },
     {
+      "name": "Bucket",
+      "kind": "stable"
+    },
+    {
+      "name": "BucketUnit",
+      "kind": "stable"
+    },
+    {
       "name": "BuiltSchema",
       "kind": "stable"
     },
@@ -659,6 +667,10 @@
       "kind": "stable"
     },
     {
+      "name": "WeekStart",
+      "kind": "stable"
+    },
+    {
       "name": "WithGenerated",
       "kind": "stable"
     },
@@ -676,6 +688,10 @@
     },
     {
       "name": "boolean",
+      "kind": "stable"
+    },
+    {
+      "name": "bucket",
       "kind": "stable"
     },
     {

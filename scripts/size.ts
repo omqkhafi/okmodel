@@ -208,7 +208,12 @@ const EXPORT_SHAKES: readonly ExportShake[] = [
     from: "src/dialects/pg/index.ts",
     name: "eq",
     keep: "src/dialects/pg/ops/eq.ts",
-    drop: ["src/dialects/pg/ops/lt.ts", "src/dialects/pg/ops/gt.ts", "src/dialects/pg/ops/like.ts"],
+    drop: [
+      "src/dialects/pg/ops/lt.ts",
+      "src/dialects/pg/ops/gt.ts",
+      "src/dialects/pg/ops/like.ts",
+      "src/dialects/pg/ops/bucket.ts",
+    ],
   },
   {
     from: "src/dialects/pg/index.ts",

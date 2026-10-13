@@ -7,13 +7,27 @@
  * every aggregate exactly as they apply to a `find`. This module loads on the
  * first `aggregate()`.
  *
- * Not here: `having`, `bucket`, and ordering by an aggregate. A hidden column
- * cannot be grouped or aggregated, so an aggregate never shows what a read hides.
+ * Not here: `having`, ordering by an aggregate, and the time-zone date helpers
+ * (tool 5). A hidden column cannot be grouped or aggregated, so an aggregate
+ * never shows what a read hides.
+ *
+ * `bucket()` is a tagged helper. Its validation and SQL load in their own
+ * chunk, and only when `groupBy` contains one. A request object cannot create
+ * one. A NULL timestamp is one group: the result key is present and the value
+ * is null.
  */
 
 import { OkmError, throwNamed } from "../contracts/error.js";
 import type { ColumnModel } from "../dialects/pg/model.js";
-import { attachHttp, readCall, readHandle, type Mods, type Session } from "./client.js";
+import {
+  attachHttp,
+  queryHandle,
+  readCall,
+  readHandle,
+  type Mods,
+  type Session,
+} from "./client.js";
+import type { BucketChunk, BucketGroup } from "./bucket-group.js";
 import {
   cell,
   emitOrder,
@@ -34,6 +48,19 @@ import {
   type ReadBuild,
   type Sink,
 } from "./plan.js";
+
+/**
+ * Same symbol `bucket()` registers.
+ *
+ * Testing it here avoids importing the helper module into this chunk.
+ */
+const BUCKET = Symbol.for("okmodel.bucket");
+
+let bucketChunk: Promise<BucketChunk> | undefined;
+
+function loadBucketGroup(): Promise<BucketChunk> {
+  return (bucketChunk ??= import("./bucket-group.js"));
+}
 
 const OPTIONS = [
   "where",
@@ -67,8 +94,13 @@ const FUNCTIONS = [
   { option: "max", tag: "x", numeric: false },
 ] as const;
 
+type FieldGroup = { readonly kind: "field"; readonly column: ColumnModel };
+
+type Group = FieldGroup | BucketGroup;
+
 type Spec = {
-  readonly groups: readonly ColumnModel[];
+  readonly groups: readonly Group[];
+  readonly bucketed: boolean;
   readonly count: boolean;
   readonly calls: readonly {
     readonly option: "sum" | "avg" | "min" | "max";
@@ -97,10 +129,49 @@ export function build(
   view: ArchiveView | undefined,
 ): Promise<unknown> & Record<string, unknown> {
   try {
+    if (seesBucket(options)) return bucketHandle(session, table, options, mods, view);
     return plan(session, table, options, mods, view);
   } catch (error) {
     throw error instanceof OkmError ? attachHttp(session.http, error) : error;
   }
+}
+
+/**
+ * Plans an aggregate that contains a bucket, after the bucket chunk loads.
+ *
+ * `await`, `sql()`, and `inspect()` each load that chunk. A plain aggregate
+ * never calls this.
+ */
+function bucketHandle(
+  session: Session,
+  table: string,
+  options: object,
+  mods: Mods,
+  view: ArchiveView | undefined,
+): Promise<unknown> & Record<string, unknown> {
+  const open = (): Promise<{ it: Promise<unknown> & Record<string, unknown> }> =>
+    loadBucketGroup().then((mod) => {
+      try {
+        return { it: plan(session, table, options, mods, view, mod) };
+      } catch (error) {
+        throw error instanceof OkmError ? attachHttp(session.http, error) : error;
+      }
+    });
+  return queryHandle(() => open().then((box) => box.it), {
+    inspect: () => open().then((box) => (box.it.inspect as () => unknown)()),
+    sql: () => open().then((box) => (box.it.sql as () => unknown)()),
+    all: (reason: string) => build(session, table, options, { ...mods, all: reason }, view),
+  }) as unknown as Promise<unknown> & Record<string, unknown>;
+}
+
+function seesBucket(options: object): boolean {
+  if (!isRecord(options)) return false;
+  const groupBy = options.groupBy;
+  if (!Array.isArray(groupBy)) return false;
+  for (const item of groupBy) {
+    if (typeof item === "object" && item !== null && BUCKET in item) return true;
+  }
+  return false;
 }
 
 function plan(
@@ -109,27 +180,29 @@ function plan(
   options: object,
   mods: Mods,
   view: ArchiveView | undefined,
+  buckets?: BucketChunk,
 ): Promise<unknown> & Record<string, unknown> {
   const record: Record<string, unknown> = isRecord(options) ? options : {};
   rejectKeys(record, OPTIONS, "aggregate");
   const indexed = indexes(session.schema).get(table);
   if (indexed === undefined) fail("OKM1120", `Table ${table} is not in the schema.`);
-  const spec = parse(indexed, record);
+  const spec = parse(indexed, record, buckets);
   if (spec.groups.length > 0 && record.limit === undefined && mods.all === undefined) {
     fail("OKM1101", "aggregate() with groupBy needs a limit, or .all(reason) for every group.");
   }
+  const names = groupNames(spec.groups);
   const orderBy = record.orderBy;
   if (orderBy !== undefined) {
     if (!isRecord(orderBy)) fail("OKM1120", "orderBy must be an object of fields.");
     for (const field of Object.keys(orderBy)) {
-      const column = indexed.columns.get(field);
-      if (column !== undefined) refuseHidden(column);
-      if (!spec.groups.some((group) => group.field === field)) {
+      if (!names.includes(field)) {
+        const column = indexed.columns.get(field);
+        if (column !== undefined) refuseHidden(column);
         throwNamed(
           "OKM1120",
           field,
-          spec.groups.map((group) => group.field),
-          `aggregate() orders by a groupBy field. Accepted names: ${list(spec.groups.map((group) => group.field))}.`,
+          names,
+          `aggregate() orders by a groupBy field. Accepted names: ${list(names)}.`,
         );
       }
     }
@@ -152,12 +225,12 @@ function plan(
     session.schema,
     view,
   );
-  const call = { ...base, op: "aggregate" as const, build: statement(spec) };
+  const call = { ...base, op: "aggregate" as const, build: statement(spec, buckets) };
   return readHandle(session, table, call, mods, (compiled, rows) => decode(compiled, rows));
 }
 
-function parse(table: Indexed, record: Record<string, unknown>): Spec {
-  const groups = columns(table, record.groupBy, "groupBy");
+function parse(table: Indexed, record: Record<string, unknown>, buckets?: BucketChunk): Spec {
+  const grouped = readGroups(table, record.groupBy, buckets);
   const count = record.count === true;
   if (record.count !== undefined && typeof record.count !== "boolean") {
     fail("OKM1120", "count is true when you want a row count.");
@@ -179,10 +252,10 @@ function parse(table: Indexed, record: Record<string, unknown>): Spec {
       calls.push({ option, tag, column, decode: numeric ? sumDecode(column) : column.decode });
     }
   }
-  if (!count && calls.length === 0 && groups.length === 0) {
+  if (!count && calls.length === 0 && grouped.groups.length === 0) {
     fail("OKM1120", "aggregate() needs count, sum, avg, min, max, or groupBy.");
   }
-  return { groups, count, calls };
+  return { groups: grouped.groups, bucketed: grouped.bucketed, count, calls };
 }
 
 /**
@@ -224,21 +297,77 @@ function columns(table: Indexed, value: unknown, option: string): readonly Colum
   return out;
 }
 
+function groupNames(groups: readonly Group[]): readonly string[] {
+  const names: string[] = [];
+  for (const group of groups) names.push(group.kind === "field" ? group.column.field : group.as);
+  return names;
+}
+
+function readGroups(
+  table: Indexed,
+  value: unknown,
+  buckets: BucketChunk | undefined,
+): { readonly groups: readonly Group[]; readonly bucketed: boolean } {
+  if (value === undefined) return { groups: [], bucketed: false };
+  if (!Array.isArray(value)) fail("OKM1120", "groupBy must be a list of field names.");
+  const fields = new Set<string>();
+  const aliases = new Set<string>();
+  const groups: Group[] = [];
+  let bucketed = false;
+  for (const item of value) {
+    if (typeof item === "object" && item !== null && BUCKET in item) {
+      if (buckets === undefined) fail("OKM1120", "bucket group");
+      groups.push(buckets.readBucket(table, item, fields, aliases));
+      bucketed = true;
+      continue;
+    }
+    const column = typeof item === "string" ? table.columns.get(item) : undefined;
+    if (typeof item !== "string" || column === undefined) {
+      throwNamed(
+        "OKM1120",
+        String(item),
+        table.names,
+        `Field ${String(item)} is not on ${table.model.name}. Accepted names: ${list(table.names)}.`,
+      );
+    }
+    if (column.hidden) {
+      fail("OKM1120", `Field ${column.field} is hidden, so groupBy cannot read it.`);
+    }
+    if (aliases.has(column.field)) {
+      fail("OKM1120", `group field ${column.field} clashes with a bucket as.`);
+    }
+    fields.add(column.field);
+    groups.push({ kind: "field", column });
+  }
+  return { groups, bucketed };
+}
+
 /** Writes `select ... from ... where ... group by ... order by ... limit`. */
-function statement(spec: Spec): ReadBuild {
+function statement(spec: Spec, buckets: BucketChunk | undefined): ReadBuild {
   return (schema, table, sink, outputs, call) => {
     sink.mark(
-      `aggregate|${table.model.name}|g:${spec.groups.map((column) => column.field).join(",")}|c:${String(spec.count)}|${spec.calls
+      `aggregate|${table.model.name}|g:${groupMark(spec.groups)}|c:${String(spec.count)}|${spec.calls
         .map((item) => `${item.tag}:${item.column.field}`)
         .join(",")}|`,
     );
     sink.text("select ");
     const wrote = { at: 0 };
-    for (const column of spec.groups) {
-      put(sink, outputs, wrote, projectExpr(`t.${quote(column.sql)}`, column.dataType), {
-        key: `g:${column.field}`,
-        decode: column.decode,
-      });
+    for (const group of spec.groups) {
+      if (group.kind === "field") {
+        put(
+          sink,
+          outputs,
+          wrote,
+          projectExpr(`t.${quote(group.column.sql)}`, group.column.dataType),
+          {
+            key: `g:${group.column.field}`,
+            decode: group.column.decode,
+          },
+        );
+      } else {
+        if (buckets === undefined) fail("OKM1120", "bucket group");
+        buckets.writeBucket(sink, outputs, wrote, group);
+      }
     }
     if (spec.count) put(sink, outputs, wrote, "count(*)::text", { key: "c:", decode: undefined });
     for (const item of spec.calls) {
@@ -258,12 +387,17 @@ function statement(spec: Spec): ReadBuild {
     emitWhere(schema, table, call.where, sink, "t", 0);
     if (spec.groups.length > 0) {
       sink.text(" group by ");
-      sink.text(spec.groups.map((column) => `t.${quote(column.sql)}`).join(", "));
-      if (isRecord(call.orderBy) && Object.keys(call.orderBy).length > 0) {
-        emitOrder(table, call.orderBy, sink, "t");
+      if (spec.bucketed) {
+        if (buckets === undefined) fail("OKM1120", "bucket group");
+        buckets.writeGrouped(sink, groupNames(spec.groups), call.orderBy);
       } else {
-        sink.text(" order by ");
-        sink.text(spec.groups.map((column) => `t.${quote(column.sql)} asc nulls last`).join(", "));
+        sink.text(spec.groups.map((group) => fieldRef(group)).join(", "));
+        if (isRecord(call.orderBy) && Object.keys(call.orderBy).length > 0) {
+          emitOrder(table, call.orderBy, sink, "t");
+        } else {
+          sink.text(" order by ");
+          sink.text(spec.groups.map((group) => `${fieldRef(group)} asc nulls last`).join(", "));
+        }
       }
     }
     if (call.limit !== undefined) {
@@ -274,6 +408,24 @@ function statement(spec: Spec): ReadBuild {
     }
     if (typeof call.all === "string") sink.mark(`all:${call.all}`);
   };
+}
+
+/** Field-only marks stay the column names, so an existing plan key does not move. */
+function groupMark(groups: readonly Group[]): string {
+  const parts: string[] = [];
+  for (const group of groups) {
+    parts.push(
+      group.kind === "field"
+        ? group.column.field
+        : `b:${group.column.field}:${group.as}:${group.unit}:${String(group.shift)}`,
+    );
+  }
+  return parts.join(",");
+}
+
+function fieldRef(group: Group): string {
+  if (group.kind !== "field") return fail("OKM1120", "bucket group");
+  return `t.${quote(group.column.sql)}`;
 }
 
 function put(

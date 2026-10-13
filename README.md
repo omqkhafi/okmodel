@@ -550,24 +550,34 @@ export const set = { n: inc(1), meta: json.set(["published"], true), tags: arr.a
 
 ### Page and aggregate
 
-`page` returns one page of rows and a `next` cursor for the page after it. Pass that cursor back as `after`, with the same `orderBy`. A cursor from a different `orderBy` is OKM1130. `aggregate` counts or groups rows instead of returning them. A group needs a `limit`, or `.all(reason)`. There is no `having`.
+`page` returns one page of rows and a `next` cursor for the page after it. Pass that cursor back as `after`, with the same `orderBy`. A cursor from a different `orderBy` is OKM1130. `aggregate` counts or groups rows instead of returning them. A group needs a `limit`, or `.all(reason)`. `bucket()` groups a `timestamptz` or `date` by a unit. A day or longer unit comes back as `Temporal.PlainDate`. A second, minute, or hour comes back as `Temporal.Instant`. A NULL timestamp is one group: the result key is present and the value is null. There is still no `having`.
 
 `page.ts`:
 
 ```ts
-import { schema, table, t } from "okmodel/pg";
+import { bucket, schema, table, t } from "okmodel/pg";
 import { connect } from "okmodel/pg/postgresjs";
 
-const notes = table("notes", { id: t.identity(), title: t.text() });
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+  createdAt: t.timestamptz().nullable(),
+});
 const app = schema({ tables: [notes] });
 
 export async function report(url: string): Promise<void> {
   await using db = connect(url, { schema: app });
   // next is the cursor for the following page. Pass it back as after.
   const page = await db.notes.page({ orderBy: { title: "asc" }, limit: 20 });
-  // One row per title, with a count. groupBy needs a limit.
-  await db.notes.aggregate({ count: true, groupBy: ["title"], limit: 10 });
+  // day is a Temporal.PlainDate. A NULL createdAt is one group, and day is null.
+  const days = await db.notes.aggregate({
+    groupBy: [bucket("createdAt", "day", { tz: "Asia/Riyadh", as: "day" })],
+    count: true,
+    orderBy: { day: "desc" },
+    limit: 10,
+  });
   void page.next;
+  void days;
 }
 ```
 

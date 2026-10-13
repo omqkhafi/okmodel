@@ -40,6 +40,7 @@ const README_EXAMPLES = [
   "tenant-views.ts",
   "owner.ts",
   "roles.ts",
+  "page.ts",
 ] as const;
 const UUID_LITERAL = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 

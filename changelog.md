@@ -14,6 +14,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+### ✨ Added
+
+- `bucket(column, unit, { tz, as })` groups an aggregate by a calendar or clock unit. A day or longer unit returns `Temporal.PlainDate`. A second, minute, or hour returns `Temporal.Instant`. A NULL timestamp is one group: the result key is present and the value is null. There is still no `having`. Time-zone date helpers stay deferred (D247).
+
 ### 🐛 Fixed
 
 - `okm migrate check` does not open a second connection to drop the scratch schema when the replay rolls back. A step that commits still drops that schema on a new connection (D245).
@@ -35,6 +39,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - The npm README covers the 0.6 access features: tenancy strategies including row-level security, roles and column grants, ownership, tenant views, and `okm migrate check`.
 - The execution plan lists the 0.7 steps P90–P99. Byte reclaim is first, each feature loads lazily, and the order of P92 to P97 may change by measured bytes (D243).
+- Aggregate buckets ship on Postgres. Time-zone date helpers stay deferred (D247).
 
 ## v0.6.0 — 2026-10-11
 
