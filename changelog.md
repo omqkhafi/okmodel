@@ -48,6 +48,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Tenancy adds a guarded uuid. `for()` sets it. Input cannot. A unique includes the key unless `.unique({ global })`. `global("reason")` leaves the column off. `via()` follows up to three to-one relations and does not store the key. A global table cannot reference a tenant table.
 - A preset is a `where` you call on the table. A field, an argument, a list, a bound, `or`, and two `where` calls are separate sections. A chain keeps the caller's `where` first. Update and delete still need their own `where`. Insert does not use the preset. A reserved name is OKM1040. A trait preset sees the trait's columns.
 - Required rows are the `reference` option. They are rows the application expects, such as statuses. Apply inserts a missing key and does not update or delete. They are not a foreign key and not a migration insert.
+- Queries add `page`, a grouped `aggregate`, a string `search`, both tree walks, a list `update`, and `inc`. A window `as` that clashes with a column is OKM1120. `page()` still reads `select` as field names.
+- The Table sidebar leads with columns, keys, defaults, references, relations, and queries. Names, visibility, checks, and required rows come last.
 - Docs pages drop the breadcrumb. Copy page sits on the title row and opens Markdown and chat actions. A code block focuses the line the paragraph names.
 
 ### 💥 Breaking Changes

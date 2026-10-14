@@ -21,24 +21,24 @@
 
 ## The declaration
 
-Read `table()` in this order. Each page is one part of the call.
+The list is how often you reach for each part while building. Columns, keys, and the calls come first.
 
-| Order | Page | You set |
+| Order | Page | You use it for |
 | --- | --- | --- |
-| 1 | [Keys](/docs/define/table/keys) | The primary key, and a unique. |
-| 2 | [Columns](/docs/define/table/columns) | The builder for each value. |
+| 1 | [Columns](/docs/define/table/columns) | The builder for each value. |
+| 2 | [Keys](/docs/define/table/keys) | The primary key, and a unique. |
 | 3 | [Defaults](/docs/define/table/defaults) | What fills a column you omit. |
-| 4 | [Shape](/docs/define/table/shape) | An array, a picklist, or an enum. |
-| 5 | [Names](/docs/define/table/names) | The SQL name, a previous name, and a comment. |
-| 6 | [Visibility](/docs/define/table/visibility) | Hidden, sensitive, and guarded. |
-| 7 | [Validation](/docs/define/table/validation) | The rule that rejects a bad value. |
-| 8 | [References](/docs/define/table/references) | A foreign key. |
-| 9 | [Relations](/docs/define/table/relations) | The edge you query. |
-| 10 | [Indexes](/docs/define/table/indexes) | An extra index. |
-| 11 | [Checks](/docs/define/table/checks) | SQL the row must pass. |
-| 12 | [Filters](/docs/define/table/filters) | What a caller may send. |
-| 13 | [Traits](/docs/define/table/traits) | A trait on this table, including versioned and sortable. |
-| 14 | [Tenancy](/docs/define/table/tenancy) | The schema key, global, or a path. |
-| 15 | [Presets](/docs/define/table/presets) | A named `where`. |
-| 16 | [Required rows](/docs/define/table/reference-rows) | Rows the application expects, inserted when the key is missing. |
-| 17 | [Queries](/docs/define/table/queries) | The calls on the table. |
+| 4 | [References](/docs/define/table/references) | A foreign key. |
+| 5 | [Relations](/docs/define/table/relations) | The edge you query. |
+| 6 | [Queries](/docs/define/table/queries) | The calls on the table. |
+| 7 | [Traits](/docs/define/table/traits) | Shared columns, including timestamps and archive. |
+| 8 | [Indexes](/docs/define/table/indexes) | An extra index. |
+| 9 | [Validation](/docs/define/table/validation) | The rule that rejects a bad value. |
+| 10 | [Shape](/docs/define/table/shape) | An array, a picklist, or an enum. |
+| 11 | [Filters](/docs/define/table/filters) | What a caller may send. |
+| 12 | [Presets](/docs/define/table/presets) | A named `where`. |
+| 13 | [Tenancy](/docs/define/table/tenancy) | The schema key, global, or a path. |
+| 14 | [Names](/docs/define/table/names) | The SQL name, a previous name, and a comment. |
+| 15 | [Visibility](/docs/define/table/visibility) | Hidden, sensitive, and guarded. |
+| 16 | [Checks](/docs/define/table/checks) | SQL the row must pass. |
+| 17 | [Required rows](/docs/define/table/reference-rows) | Rows the application expects, inserted when the key is missing. |

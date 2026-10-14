@@ -2,7 +2,56 @@
 The table is declared. This page is each call, in the order you meet it: the first rows of a relation, a window, search, a tree, a stream, then the writes.
 </Callout>
 
-`find` returns a list and needs a `limit`, or `.all(reason)` (OKM1101). `one` returns the row or `null`. More than one match throws. [Basic Usage](/docs/start/basic-usage) is one example of each call. A client request goes through [filters](/docs/define/table/filters).
+`one` returns the row or `null`. More than one match is `not_unique`: `one() on notes matched more than one row. Pass orderBy to take the first, or narrow where.` [Basic Usage](/docs/start/basic-usage) is insert, find, one, count, exists, update, and delete. A caller-supplied filter goes through [filters](/docs/define/table/filters).
+
+### Page
+
+`page` returns `{ items, next }`. `next` is `null` on the last page. Pass it back as `after` with the same `orderBy`. The cursor is the order plus the primary key, so a page stays stable while rows are inserted. `limit` is required. Omitting it is OKM1101: `page() needs a limit.` A cursor this call did not return is OKM1130: `after is not a cursor that page() returned.`
+
+```ts title="page.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", { id: t.identity(), title: t.text() });
+const app = schema({ tables: [notes] });
+
+export async function next(url: string, after: string | null) {
+  await using db = connect(url, { schema: app });
+  return db.notes.page({ orderBy: { title: "asc" }, limit: 20, after }); // [!code focus]
+}
+```
+
+### Aggregate
+
+`aggregate` counts, sums, averages, and finds extremes. With no `groupBy` it returns one row. With `groupBy` it needs `limit`, or `.all(reason)`. There is no `having`.
+
+```ts title="aggregate.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const tasks = table("tasks", {
+  id: t.identity(),
+  status: t.text(),
+  amount: t.integer(),
+});
+const app = schema({ tables: [tasks] });
+
+export async function totals(url: string) {
+  await using db = connect(url, { schema: app });
+  const all = await db.tasks.aggregate({ count: true }); // [!code focus]
+  const byStatus = await db.tasks.aggregate({
+    groupBy: ["status"],
+    count: true,
+    sum: ["amount"], // [!code focus]
+    limit: 20,
+  });
+  return { all, byStatus };
+}
+```
+
+<Callout type="error" title="OKM1101">
+`aggregate() with groupBy needs a limit, or .all(reason) for every group.`
+</Callout>
 
 ### Include
 
@@ -66,7 +115,7 @@ export async function latest(url: string) {
 
 ```ts title="windows.ts"
 import { connect } from "okmodel/pg/postgresjs";
-import { rank, rowNumber, runningTotal, schema, table, t } from "okmodel/pg";
+import { denseRank, rank, rowNumber, runningTotal, schema, table, t } from "okmodel/pg";
 
 const tasks = table("tasks", {
   id: t.identity(),
@@ -83,6 +132,7 @@ export async function numbered(url: string) {
       "status",
       rowNumber({ partitionBy: ["status"], orderBy: { amount: "desc" }, as: "n" }), // [!code focus]
       rank({ partitionBy: ["status"], orderBy: { amount: "desc" }, as: "r" }),
+      denseRank({ partitionBy: ["status"], orderBy: { amount: "desc" }, as: "d" }),
       runningTotal("amount", { partitionBy: ["status"], orderBy: { id: "asc" }, as: "soFar" }),
     ],
     limit: 20,
@@ -91,7 +141,7 @@ export async function numbered(url: string) {
 ```
 
 <Callout type="error" title="OKM1120">
-`page()` refuses a window when the call runs. An `as` that is a column name, empty, or a control character is refused. `lag`, `lead`, and a frame are not in this version.
+`page()` reads `select` as field names, so a window there is OKM1120: `select must be a list of field names.` An `as` that is a column name is `rowNumber as id clashes with a column of tasks.` An empty `as` is `rowNumber needs as, the name of the result key.` A control character is `rowNumber as has a control character.` `orderBy` is required: `rowNumber needs orderBy, the order inside the group.` `lag`, `lead`, and a frame are not in this version.
 </Callout>
 
 <Callout type="error" title="OKM1124">
@@ -110,6 +160,31 @@ export async function numbered(url: string) {
 | `advanced` | `to_tsquery`. |
 
 `language` is a text search language such as `english`. Leave it out for the database default. When the table has more than one search column, name it with `in`. The error lists the names. `{ mode, config }` is not accepted. Ranking is `ts_rank`. `matches` and `relevance` take the same `{ match, language }`.
+
+#### simple
+
+A string is enough when the table has one search column. Rows come back closest first.
+
+```ts title="simple-search.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const pages = table("pages", {
+  id: t.identity(),
+  title: t.text(),
+  body: t.tsvector(),
+});
+const app = schema({ tables: [pages] });
+
+export async function found(url: string) {
+  await using db = connect(url, { schema: app });
+  return db.pages.find({ search: "deploy rollback", limit: 20 }); // [!code focus]
+}
+```
+
+#### complex
+
+`match` and `language` name the query. `where` and `orderBy` use the same text, so the filter and the rank agree.
 
 ```ts title="search.ts"
 import { connect } from "okmodel/pg/postgresjs";
@@ -174,17 +249,21 @@ const app = schema({ tables: [nodes] });
 
 export async function below(url: string, id: string) {
   await using db = connect(url, { schema: app });
-  return db.nodes.descendants(id, { depth: 2, select: ["id", "name"] }); // [!code focus]
+  const children = await db.nodes.descendants(id, { depth: 2, select: ["id", "name"] }); // [!code focus]
+  const parents = await db.nodes.ancestors(id, { select: ["id", "name"] }); // [!code focus]
+  return { children, parents };
 }
 ```
 
 <Callout type="error" title="OKM1120">
-A primary key that is not exactly one column besides the tenant key is refused.
+No self-relation is `nodes has no relation to itself.` More than one, and no `relation`, is `nodes has more than one relation to itself. Pass relation.` A primary key that is not exactly one column besides the tenant key is `nodes needs one primary key column besides the tenant key.` `depth` must be an integer from 0 up.
 </Callout>
 
 ### Sync
 
-`sync(id, relation, ids)` makes a to-many relation hold exactly those ids. It locks, then writes, and returns `{ added, removed }`. A join table gains and loses link rows. A nullable foreign key is set or cleared, and the related row stays.
+`sync(id, relation, ids)` makes a to-many relation hold exactly those ids. It locks the parent, then writes, and returns `{ added, removed }`. Duplicate ids count once. A join table gains and loses link rows. A nullable foreign key is set or cleared, and the related row stays. A link that would have to delete a row is refused.
+
+A missing parent is `not_found`: `sync on nodes did not find that id.` An id that is not on the related table is `not_found`: `sync on nodes.children is missing 1 ids.` The relation must be `many` or `manyThrough`: `sync on nodes.children is not a to-many relation.`
 
 ```ts title="sync.ts"
 import { connect } from "okmodel/pg/postgresjs";
@@ -201,9 +280,11 @@ const nodes = table(
 );
 const app = schema({ tables: [nodes] });
 
-export async function links(url: string, id: string) {
+export async function links(url: string, id: string, child: string) {
   await using db = connect(url, { schema: app });
-  return db.nodes.sync(id, "children", []); // [!code focus]
+  const cleared = await db.nodes.sync(id, "children", []); // [!code focus]
+  const set = await db.nodes.sync(id, "children", [child]); // [!code focus]
+  return { cleared, set };
 }
 ```
 
@@ -274,7 +355,7 @@ The lookup is a second statement and does not set isolation. A second request th
 
 ### List
 
-`update` of a list writes one statement per row.
+`update` of a list writes those rows in one statement. A long list is split so the parameters stay inside the budget.
 
 | Input | Result |
 | --- | --- |
@@ -282,6 +363,47 @@ The lookup is a second statement and does not set isolation. A second request th
 | a target that matches nothing | Not an error. `count` is the rows changed. |
 | an empty `set` | OKM1120. |
 | an empty list | No statement. |
+
+```ts title="list.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", { id: t.identity(), title: t.text() });
+const app = schema({ tables: [notes] });
+
+export async function rename(url: string, first: string, second: string) {
+  await using db = connect(url, { schema: app });
+  return db.notes.update([
+    { where: { id: first }, set: { title: "A" } }, // [!code focus]
+    { where: { id: second }, set: { title: "B" } },
+  ]);
+}
+```
+
+<Callout type="error" title="OKM1120">
+The same target twice is `update on notes lists the same target twice.` An empty `set` is `update set is empty.`
+</Callout>
+
+### Increment
+
+`inc` adds to a number or bigint column inside `set`. A null number stays null. `undefined` in `set` leaves the field unchanged.
+
+```ts title="inc.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { inc, schema, table, t } from "okmodel/pg";
+
+const tasks = table("tasks", { id: t.identity(), amount: t.integer() });
+const app = schema({ tables: [tasks] });
+
+export async function add(url: string, id: string) {
+  await using db = connect(url, { schema: app });
+  return db.tasks.update({ where: { id }, set: { amount: inc(1) } }); // [!code focus]
+}
+```
+
+<Callout type="error" title="OKM1124">
+A text column is `inc adds to a number. title is a text column.`
+</Callout>
 
 ### Claim
 
@@ -317,15 +439,11 @@ export async function take(url: string) {
 ```
 
 <Callout type="error" title="OKM1120">
-`limit` without `lock: "skip"`, `lock: "skip"` without `limit`, `wait`, and `orderBy` are refused. `lock: "skip"` on a read is refused. A path-tenancy parent cannot change in the same claim.
+`limit` without the lock is `limit on an update needs lock: "skip".` The lock without `limit` is `lock: "skip" needs a limit.` `wait` is `wait belongs on a read. An update claims rows with lock: "skip".` A path column in the same claim is `lock: "skip" on tasks cannot change projectId in the same claim.`
 </Callout>
 
 <Callout type="error" title="OKM1121">
 `limit` must be a whole number from 1 to 2147483647.
-</Callout>
-
-<Callout type="error" title="OKM1124">
-`inc` adds to a number or bigint column. A text column is refused. A null number stays null.
 </Callout>
 
 ### Period
@@ -338,6 +456,10 @@ export async function take(url: string) {
 | `day`, `week`, `month`, `quarter`, `year` | `Temporal.PlainDate`, the local date the period starts. | The same date. |
 
 `tz` is required for `timestamptz` and refused for `date`. A `timestamp` without a zone is refused. `weekStart` applies only to `week` and is `monday` (the default), `sunday`, or `saturday`. A NULL timestamp is one group: the key is present and the value is null.
+
+#### simple
+
+One day bucket on `timestamptz`. `tz` is required. A `date` column omits `tz`.
 
 ```ts title="buckets.ts"
 import { connect } from "okmodel/pg/postgresjs";
@@ -352,6 +474,32 @@ export async function perDay(url: string) {
     groupBy: [bucket("at", "day", { tz: "UTC", as: "day" })], // [!code focus]
     count: true,
     limit: 31,
+  });
+}
+```
+
+#### complex
+
+A week starts on Monday unless `weekStart` says otherwise. `sum` is the total `amount` in that week.
+
+```ts title="weeks.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { bucket, schema, table, t } from "okmodel/pg";
+
+const events = table("events", {
+  id: t.identity(),
+  at: t.timestamptz(),
+  amount: t.integer(),
+});
+const app = schema({ tables: [events] });
+
+export async function perWeek(url: string) {
+  await using db = connect(url, { schema: app });
+  return db.events.aggregate({
+    groupBy: [bucket("at", "week", { tz: "UTC", weekStart: "sunday", as: "week" })], // [!code focus]
+    count: true,
+    sum: ["amount"],
+    limit: 12,
   });
 }
 ```
