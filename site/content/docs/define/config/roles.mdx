@@ -1,0 +1,122 @@
+---
+title: "Roles"
+description: "roles names migration, app, and optional reporting grants."
+---
+`roles` names migration, app, and optional reporting grants.
+
+A name in `managed` is a role the plan creates. A name outside that list is external and has to exist already. `schema()` has no `roles` field. The grants are added when the config sets `roles`.
+
+| Field | Required | What it sets |
+| --- | --- | --- |
+| `migration` | yes | Runs the files. When this role already exists and is not the session user, apply issues `SET ROLE` before the statements. Default privileges are for this role. |
+| `app` | yes | Receives the grants in the first table. After the plan, `SELECT` on `okm_meta`. |
+| `reporting` | no | The grants in the second table. |
+| `managed` | no | Roles the plan creates. See [managed](#managed). |
+| `columns` | no | Column `SELECT` or `UPDATE`. See [columns](#columns). |
+
+Grants are on managed objects.
+
+| Object | `app` |
+| --- | --- |
+| table | `SELECT`, `INSERT`, `UPDATE`, `DELETE` |
+| view | `SELECT`, `INSERT`, `UPDATE`, `DELETE` |
+| materialized view | `SELECT` |
+| sequence | `USAGE`, `SELECT` |
+| function | `EXECUTE` |
+
+Default privileges are `ALTER DEFAULT PRIVILEGES` for the migration role, in each schema those objects use. With no such schema, they are issued in `public`.
+
+| Object | Privileges |
+| --- | --- |
+| tables | `SELECT`, `INSERT`, `UPDATE`, `DELETE` |
+| functions | `EXECUTE` |
+| sequences | `USAGE`, `SELECT` |
+
+The plan revokes `INSERT`, `UPDATE`, and `DELETE` on a materialized view granted to `app`. After the plan, `app` receives `SELECT` on `okm_meta`. When this run creates the migration role, that role receives `USAGE` and `CREATE` on the schema, and `SELECT`, `INSERT`, and `UPDATE` on `okm_meta`, `okm_history`, and `okm_backfill`. Apply then issues `SET ROLE`.
+
+| Object | `reporting` |
+| --- | --- |
+| table | `SELECT` |
+| view | `SELECT` |
+| materialized view | `SELECT` |
+| schema | `USAGE` |
+
+`reporting` also receives a default `SELECT` on later tables, for the migration role.
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: process.env.DATABASE_URL!,
+  roles: {
+    migration: "okm_migrate", // [!code focus]
+    app: "okm_app", // [!code focus]
+    reporting: "okm_read", // [!code focus]
+  },
+});
+```
+
+### Managed
+
+`managed` lists roles the plan creates and alters. A role is never dropped. The statement is `NOSUPERUSER NOCREATEDB NOCREATEROLE`. An external role emits no `CREATE ROLE` and no `ALTER ROLE`. `login` and `inherit` are altered only when the role is already managed.
+
+| Field | Default | Result |
+| --- | --- | --- |
+| `name` | — | The role name. |
+| `login` | `NOLOGIN` | `LOGIN` when `true`. |
+| `inherit` | `INHERIT` | `NOINHERIT` when `false`. |
+
+A managed role that `pg_roles` does not have is created. `okm doctor` skips that absence. The role that applies a `CREATE ROLE` or `ALTER ROLE` needs `CREATEROLE`. A superuser passes the same check. The message names that role: `Role postgres lacks CREATEROLE. Nothing was changed.` A role another session created first does not fail the create.
+
+### Columns
+
+`columns` grants `SELECT` or `UPDATE` on named columns. `on` is the SQL name of one table, view, or materialized view. A column may be the field name or the SQL name. An empty list adds no grant. A role named only here receives those column grants.
+
+| Field | Required | What it sets |
+| --- | --- | --- |
+| `role` | yes | The role that receives the privilege. |
+| `on` | yes | The table, view, or materialized view. |
+| `select` | no | Columns granted `SELECT`. |
+| `update` | no | Columns granted `UPDATE`. |
+
+On a table with a [hidden](/docs/define/table/visibility#hidden) column, `reporting` receives `SELECT` on the visible columns. `hidden({ filterable: true })` stays in that hidden set. A `select` list for `reporting` adds those columns, including a hidden one. On a table with no hidden column, `reporting` receives `SELECT` on the table. On a view or a materialized view, a `select` list for `reporting` is the `SELECT` grant for those columns.
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: process.env.DATABASE_URL!,
+  roles: {
+    migration: "okm_migrate",
+    app: "okm_app",
+    reporting: "okm_read",
+    managed: [{ name: "okm_app", login: true }], // [!code focus]
+    columns: [{ role: "okm_app", on: "users", select: ["email"] }], // [!code focus]
+  },
+});
+```
+
+| Case | Result |
+| --- | --- |
+| An empty `migration`, `app`, `reporting`, managed `name`, or column `role` | Refused. `roles.migration needs a name.` The label is `migration`, `app`, `reporting`, `managed role`, or `column grant role`. |
+| `reporting` is `migration` or `app` | Refused. `Role okm_app cannot be the reporting role and also migration or app.` |
+| `update` on the reporting role | Refused. `Role okm_read is the reporting role and cannot be granted update.` |
+| `on` names an ignored table | Refused. `Column grant on users targets an ignored table.` |
+| An external `migration`, `app`, or `reporting` role is absent | `okm doctor` refuses. `Role okm_app is named in roles and does not exist.` |
+| `on` or a column is missing, or `on` matches more than one object | OKM1020. |
+| A privilege is missing on an object that exists | OKM1825. An object absent from the database is skipped. |
+| `connect()` | Leaves roles unchecked. |
+
+<Callout type="error" title="OKM1020">
+`Column grant names missing, which is not in the schema.` `Column users.missing is not in the schema.` `Column grant on users matches more than one object.`
+</Callout>
+
+<Callout type="error" title="OKM1825">
+`Role okm_read lacks SELECT(email) on public.users.email.` `okm doctor` names the role, the privilege, and the object.
+</Callout>
+
+<Callout type="error" title="OKM1122">
+A reserved word is `role user is a reserved word.` A name past 63 bytes includes the count, as in `is 64 bytes. The limit is 63.`
+</Callout>

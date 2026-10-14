@@ -1,0 +1,230 @@
+---
+title: "Views"
+description: "Views and materialized views."
+---
+`views` is a list of `view()` and `materializedView()` from `okmodel/view`. You declare the output columns and the query. The query is stored as written. `schema()` does not check it against the tables, except for tenancy. An omitted list, an empty list, and a value that is not a list add no view.
+
+`db.views` is the read handle. The client name is the camelCase of the view name, so `open_notes` is `openNotes`. Every output column is decoded as text. Each field is `string | null`. A plain view has `find`, `one`, `count`, and `exists`. A materialized view also has `refresh()`.
+
+`columns`, `query` are required. `schema` defaults to `public`. `tenancy` opts a view out with `global("reason")`.
+
+### view
+
+`view()` stores the query. `find` needs a `limit`, or `.all(reason)`.
+
+```ts title="view.ts"
+import { schema, sql, table, t } from "okmodel/pg";
+import { view } from "okmodel/view";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const openNotes = view("openNotes", {
+  columns: [
+    { name: "id", type: "bigint" }, // [!code focus]
+    { name: "title", type: "text" }, // [!code focus]
+  ],
+  query: sql`select id, title from notes`, // [!code focus]
+});
+
+export default schema({
+  tables: [notes],
+  views: [openNotes], // [!code focus]
+});
+```
+
+### materialized
+
+`materializedView()` is created `with no data`. Populate is a later plan step. Omitted `refresh` still populates, without `concurrently`. `db.views.noteCounts.refresh()` runs `refresh materialized view "noteCounts"`. The call sets `app.unscoped` for that statement and is not tenant-scoped.
+
+```ts title="materialized.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, sql, table, t } from "okmodel/pg";
+import { materializedView } from "okmodel/view";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const noteCounts = materializedView("noteCounts", {
+  columns: [{ name: "n", type: "bigint" }],
+  query: sql`select count(*)::bigint as n from notes`,
+});
+
+const app = schema({
+  tables: [notes],
+  views: [noteCounts],
+});
+
+export async function reload(url: string) {
+  await using db = connect(url, { schema: app });
+  await db.views.noteCounts.refresh(); // [!code focus]
+  return db.views.noteCounts.find({ limit: 1 });
+}
+```
+
+<Callout type="error" title="OKM1111">
+A driver that cannot reserve a connection is `Refresh needs a driver that can reserve a connection.`
+</Callout>
+
+### concurrently
+
+`refresh: "concurrently"` plans `refresh materialized view concurrently` once the view has been populated. The first populate is not concurrent. Postgres rejects `concurrently` until a unique index exists, so the declaration needs one. Any other refresh value is refused.
+
+```ts title="concurrently.ts"
+import { schema, sql, table, t } from "okmodel/pg";
+import { materializedView } from "okmodel/view";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const noteCounts = materializedView("noteCounts", {
+  columns: [{ name: "title", type: "text" }],
+  query: sql`select title from notes`,
+  indexes: [{ columns: ["title"], unique: true }], // [!code focus]
+  refresh: "concurrently", // [!code focus]
+});
+
+export default schema({
+  tables: [notes],
+  views: [noteCounts],
+});
+```
+
+<Callout type="error" title="OKM1822">
+`Materialized view noteCounts refreshes concurrently and has no unique index.`
+</Callout>
+
+<Callout type="error" title="OKM1120">
+Another refresh value is `Materialized view noteCounts refresh must be "concurrently".`
+</Callout>
+
+<Callout type="error" title="OKM1020">
+An index column the view does not declare is `Index on noteCounts names column missing, which the materialized view does not have.`
+</Callout>
+
+### tenancy
+
+A view that reads a tenant table has to expose the tenant key, or pass `global("reason")`. The reason is stored for `inspect()` and is not part of the catalog hash. Under `rlsTenancy`, a view that exposes the key is created `with (security_invoker = true)`.
+
+```ts title="tenancy.ts"
+import { columnTenancy, global } from "okmodel/tenancy";
+import { schema, sql, table, t } from "okmodel/pg";
+import { view } from "okmodel/view";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const openNotes = view("openNotes", {
+  columns: [
+    { name: "id", type: "bigint" },
+    { name: "title", type: "text" },
+    { name: "tenantId", type: "uuid" }, // [!code focus]
+  ],
+  query: sql`select id, title, "tenantId" from notes`,
+});
+
+const shared = view("shared", {
+  columns: [{ name: "n", type: "bigint" }],
+  query: sql`select count(*)::bigint as n from notes`,
+  tenancy: global("counts are shared"), // [!code focus]
+});
+
+export default schema({
+  tables: [notes],
+  tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
+  views: [openNotes, shared],
+});
+```
+
+<Callout type="error" title="OKM1820">
+A tenant view that hides the key is `View openNotes reads a tenant table and does not expose tenantId.`
+</Callout>
+
+<Callout type="error" title="OKM1020">
+Anything other than `global("reason")` is `View openNotes tenancy must be global("reason").` Two output columns that camelCase to one field are `View column tenant_id repeats tenantId.`
+</Callout>
+
+<Callout type="error" title="OKM1023">
+The same client name as a table is `View notes uses the client name notes.` The same SQL name as a table is `View notes uses the name of a table.`
+</Callout>
+
+### schema
+
+`schema` is the install schema. The default is `public`.
+
+```ts title="install.ts"
+import { schema, sql, table, t } from "okmodel/pg";
+import { view } from "okmodel/view";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const openNotes = view("openNotes", {
+  schema: "app", // [!code focus]
+  columns: [
+    { name: "id", type: "bigint" },
+    { name: "title", type: "text" },
+  ],
+  query: sql`select id, title from notes`,
+});
+
+export default schema({
+  tables: [notes],
+  views: [openNotes],
+});
+```
+
+### together
+
+A tenant view exposes `tenantId`. A materialized view opts out, refreshes concurrently, and is read after `refresh()`.
+
+```ts title="together.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { columnTenancy, global } from "okmodel/tenancy";
+import { schema, sql, table, t } from "okmodel/pg";
+import { materializedView, view } from "okmodel/view";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const openNotes = view("openNotes", {
+  columns: [
+    { name: "id", type: "bigint" },
+    { name: "title", type: "text" },
+    { name: "tenantId", type: "uuid" },
+  ],
+  query: sql`select id, title, "tenantId" from notes`,
+});
+
+const noteCounts = materializedView("noteCounts", {
+  columns: [{ name: "title", type: "text" }],
+  query: sql`select title from notes`,
+  indexes: [{ columns: ["title"], unique: true }],
+  refresh: "concurrently",
+  tenancy: global("counts are shared"),
+});
+
+const app = schema({
+  tables: [notes],
+  tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
+  views: [openNotes, noteCounts],
+});
+
+export async function reload(url: string, tenantId: string) {
+  await using db = connect(url, { schema: app });
+  await db.views.noteCounts.refresh();
+  return db.for({ tenantId }).views.openNotes.find({ limit: 1 }); // [!code focus]
+}
+```

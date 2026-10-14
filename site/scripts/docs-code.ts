@@ -9,9 +9,8 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 
-import { pageContentPath, type MappedPage } from "../lib/docs-map";
+import { DOCS_CONTENT_DIR as contentDir } from "../lib/markdown-source";
 import { repoRoot } from "../lib/repo";
-import { contentDir, syncDocs } from "./sync-docs";
 
 /** Languages this gate type-checks. */
 const CHECKED_LANGS = new Set(["ts", "tsx", "typescript"]);
@@ -61,7 +60,6 @@ interface VirtualFile {
  */
 export function checkDocsCode(): DocsCodeReport {
   ensureBuilt();
-  syncDocs();
   const examples = exampleBodies();
   const optedOut: DocsCodeOptOut[] = [];
   const failures: DocsCodeFailure[] = [];
@@ -80,9 +78,9 @@ export function checkDocsCode(): DocsCodeReport {
       const raw = readFileSync(file, "utf8");
       const page = relative(contentDir, file);
       const body = stripFrontmatter(raw);
-      // Fences from one repository file share a directory, so `./schema.ts`
-      // resolves to the last fence with that name in the file.
-      const dir = join(scratch, projectDir(frontmatterField(raw, "source")));
+      // Fences from one page share a directory, so `./schema.ts`
+      // resolves to the last fence with that name in the page.
+      const dir = join(scratch, projectDir(page));
       let anonymous = 0;
       let continuation: { readonly disk: string } | undefined;
 
@@ -159,8 +157,10 @@ interface QueuedFence {
 /**
  * Write titled fences. The last fence with a name is the file `./` imports
  * see. Earlier fences with that name sit in `also-*` beside those files.
- * A `./db.ts` import with no fence in this file copies the one handbook file
- * that does define it, so Basic Usage can use the client from Let's start.
+ * A `./db.ts` import with no fence in this file copies the handbook file that
+ * defines it, so Basic Usage can use the client from Let's start. One
+ * self-contained file wins. Several self-contained files leave the single
+ * file that imports `./schema.ts`.
  *
  * @param queued - Titled fences, in page order
  * @param virtual - Files the typecheck reports against
@@ -204,12 +204,13 @@ function writeQueuedFences(queued: readonly QueuedFence[], virtual: VirtualFile[
  * @param disk - Fence already written
  * @param canonical - File name to the last fence of that name, per source
  * @param seen - Targets already copied
- * @param origin - Directory the current file was copied from, when it was
+ * @param origin - Source file this one was copied from, when it was copied
  */
 function copyMissingImports(
   disk: string,
   canonical: ReadonlyMap<string, readonly string[]>,
   seen: Set<string>,
+  origin?: string,
 ): void {
   const folder = join(disk, "..");
   const folderName = basename(folder);
@@ -217,18 +218,29 @@ function copyMissingImports(
     const name = spec.replace(/^\.\//, "");
     const target = join(folder, name);
     if (existsSync(target) || seen.has(target)) continue;
+    const besideOrigin = origin === undefined ? undefined : join(origin, "..", name);
     const parentFile = folderName.startsWith("also-") ? join(folder, "..", name) : undefined;
     const sources = canonical.get(name) ?? [];
-    const selfContained = sources.filter((path) => relativeImports(readFileSync(path, "utf8")).length === 0);
-    const pool = selfContained.length > 0 ? selfContained : sources;
+    const importsOf = (path: string): readonly string[] => relativeImports(readFileSync(path, "utf8"));
+    const selfContained = sources.filter((path) => importsOf(path).length === 0);
+    const withSchema = sources.filter((path) => importsOf(path).includes("./schema.ts"));
+    const pool =
+      selfContained.length === 1
+        ? selfContained
+        : withSchema.length === 1
+          ? withSchema
+          : selfContained.length > 0
+            ? selfContained
+            : sources;
     let source: string | undefined;
-    if (parentFile !== undefined && existsSync(parentFile)) source = parentFile;
+    if (besideOrigin !== undefined && existsSync(besideOrigin) && besideOrigin !== target) source = besideOrigin;
+    else if (parentFile !== undefined && existsSync(parentFile)) source = parentFile;
     else if (pool.length === 1) source = pool[0];
     if (source === undefined || source === target) continue;
     seen.add(target);
     mkdirSync(folder, { recursive: true });
     writeFileSync(target, readFileSync(source, "utf8"));
-    copyMissingImports(target, canonical, seen);
+    copyMissingImports(target, canonical, seen, source);
   }
 }
 
@@ -371,22 +383,8 @@ function optOutReason(meta: string): string | undefined {
   return match[1]?.trim() ?? "";
 }
 
-function frontmatterField(raw: string, key: string): string {
-  if (!raw.startsWith("---\n")) return "page";
-  const end = raw.indexOf("\n---\n");
-  if (end < 0) return "page";
-  const block = raw.slice(4, end);
-  const prefix = `${key}: `;
-  for (const line of block.split("\n")) {
-    if (!line.startsWith(prefix)) continue;
-    const value: unknown = JSON.parse(line.slice(prefix.length));
-    if (typeof value === "string" && value.length > 0) return value;
-  }
-  return "page";
-}
-
-function projectDir(source: string): string {
-  return source.replace(/[^\w.-]+/g, "-");
+function projectDir(page: string): string {
+  return page.replace(/[^\w.-]+/g, "-");
 }
 
 function stripFrontmatter(raw: string): string {
@@ -470,7 +468,12 @@ function typecheck(scratch: string, files: readonly VirtualFile[]): DocsCodeFail
   return failures;
 }
 
-function markdownFiles(dir: string): string[] {
+/**
+ * Every `.md` and `.mdx` file under a directory.
+ *
+ * @param dir - Directory to walk
+ */
+export function markdownFiles(dir: string): string[] {
   if (!existsSync(dir)) return [];
   const files: string[] = [];
   const walk = (current: string): void => {
@@ -485,9 +488,4 @@ function markdownFiles(dir: string): string[] {
   };
   walk(dir);
   return files;
-}
-
-/** Page paths the gate reads. Present so a map change cannot drop a page silently. */
-export function docsCodePages(pages: readonly MappedPage[]): readonly string[] {
-  return pages.map((page) => pageContentPath(page));
 }

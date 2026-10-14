@@ -6,8 +6,8 @@ import { expect, test } from "bun:test";
 import type * as PageTree from "fumadocs-core/page-tree";
 
 import { flattenSectionFolders } from "../components/chrome/docs-sidebar";
-import { mappedPages, pageHref } from "./docs-map";
 import { hasSidebarIcon } from "./sidebar-icons";
+import { source } from "./source";
 
 test("section folders become the routes under their label", () => {
   const tree = {
@@ -33,8 +33,9 @@ test("section folders become the routes under their label", () => {
 });
 
 test("every public page except the landing has a sidebar icon", () => {
-  const missing = mappedPages
-    .map((page) => pageHref(page))
+  const missing = source
+    .getPages()
+    .map((page) => page.url)
     .filter((href) => href !== "/docs" && !hasSidebarIcon(href));
   expect(missing).toEqual([]);
 });

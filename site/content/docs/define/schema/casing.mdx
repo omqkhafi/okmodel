@@ -1,0 +1,55 @@
+---
+title: "Casing"
+description: "The SQL name of a camelCase field."
+---
+`casing` is the SQL spelling of a name you did not set. Insert, update, and `where` still use the field name. The client name stays the name you passed to [`table()`](/docs/define/table).
+
+| Value | Result |
+| --- | --- |
+| omitted | The SQL name is the field name, and the table name. |
+| `"snake"` | An uppercase letter inserts `_`, then the letter is lowercased. |
+| any other value | Refused. |
+
+### omitted
+
+Leave `casing` out and Postgres stores the name you wrote.
+
+```ts title="omitted.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  publishedAt: t.timestamptz().nullable(), // [!code focus]
+});
+
+export default schema({ tables: [notes] });
+```
+
+### snake
+
+`"snake"` rewrites a camelCase table name and a camelCase field. The first character never gains a leading `_`. `publishedAt` is `published_at`. `userID` is `user_i_d`. `PublishedAt` is `published_at`. A digit does not insert `_`, so `iso8601Date` is `iso8601_date`. An uppercase letter that already follows `_` does not add a second one: `user_ID` is `user_i_d`.
+
+[sqlName](/docs/define/table/names#sql-name) and `renamedFrom` are stored as you wrote them. Indexes, checks, and foreign keys then use that SQL name.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("publishedNotes", {
+  id: t.identity(),
+  publishedAt: t.timestamptz().nullable(), // [!code focus]
+  headline: t.text().sqlName("title"), // [!code focus]
+});
+
+export default schema({
+  tables: [notes],
+  casing: "snake", // [!code focus]
+});
+```
+
+<Callout type="info" title="Stored names">
+The table is `published_notes`. `publishedAt` is `published_at`. `headline` is `title`, because `sqlName` wins.
+</Callout>
+
+<Callout type="error" title="OKM1060">
+Anything other than `"snake"` is `schema() casing camel must be snake.`
+</Callout>

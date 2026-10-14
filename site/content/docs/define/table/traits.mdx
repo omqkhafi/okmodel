@@ -1,0 +1,321 @@
+---
+title: "Traits"
+description: "trait() adds columns. The schema list is the default. A table adds its own, or opts out."
+---
+<Callout type="info" title="Where this fits">
+[Schema traits](/docs/define/schema/traits) apply to every table. This page is a trait you write, then the four that ship.
+</Callout>
+
+### Create
+
+`trait(name, definition)` builds a trait. Import it from `okmodel/traits`. The name is stored on each column it adds. `schema()` copies those columns onto the table. Schema traits apply first. This table's list applies after them.
+
+#### fields
+
+Required. Column builders, the same ones a table uses. An empty object is allowed. A missing object is OKM1060: `Trait labeled needs a fields object.` An empty name is OKM1060: `trait() trait needs a name.`
+
+```ts title="fields.ts"
+import { t } from "okmodel/pg";
+import { trait } from "okmodel/traits";
+
+export const labeled = trait("labeled", {
+  fields: { label: t.text() }, // [!code focus]
+});
+```
+
+#### touch
+
+Field names set to `now()` on update. Each one is sealed. A name that is not a field of this trait is OKM1060: `Trait labeled touch names nope, which is not one of its fields. Accepted fields: label, labeledAt.` A value that is not a list is `Trait labeled touch must be a list of field names.`
+
+```ts title="touch.ts"
+import { t } from "okmodel/pg";
+import { trait } from "okmodel/traits";
+
+export const labeled = trait("labeled", {
+  fields: {
+    label: t.text(),
+    labeledAt: t.timestamptz().defaultSql("now()"),
+  },
+  touch: ["labeledAt"], // [!code focus]
+});
+```
+
+#### sealed
+
+Field names input cannot set, including `{ allow }`. A touched field is sealed even when this list omits it. A name outside `fields` uses the same OKM1060 as `touch`.
+
+```ts title="sealed.ts"
+import { t } from "okmodel/pg";
+import { trait } from "okmodel/traits";
+
+export const labeled = trait("labeled", {
+  fields: { label: t.text().default("x") },
+  sealed: ["label"], // [!code focus]
+});
+```
+
+#### presets
+
+A named `where` on every table that uses the trait. The preset sees these columns, not the table's. A client method is OKM1040: `Preset find on trait labeled is a client method or a reserved name.` A name a table or another trait already uses is OKM1040: `Preset marked on notes is defined by table notes and by trait labeled.`
+
+```ts title="presets.ts"
+import { t } from "okmodel/pg";
+import { trait } from "okmodel/traits";
+
+export const labeled = trait("labeled", {
+  fields: { label: t.text().default("x") },
+  presets: {
+    marked: (q) => q.where({ label: "x" }), // [!code focus]
+  },
+});
+```
+
+<Callout type="error" title="OKM1061">
+`methods` and `requires` are refused: `Trait option methods is not available yet. It arrives in 0.2.`
+</Callout>
+
+### On a table
+
+`traits` is a list. A value that is not a list is OKM1060: `Table notes traits must be a list of traits.`
+
+#### simple
+
+One field. Insert sets it.
+
+```ts title="simple.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+import { trait } from "okmodel/traits";
+
+const labeled = trait("labeled", { fields: { label: t.text() } }); // [!code focus]
+
+const notes = table(
+  "notes",
+  { id: t.identity(), title: t.text() },
+  { traits: [labeled] }, // [!code focus]
+);
+const app = schema({ tables: [notes] });
+
+export async function add(url: string, title: string, label: string) {
+  await using db = connect(url, { schema: app });
+  return db.notes.insert({ title, label }); // [!code focus]
+}
+```
+
+#### complex
+
+`fields`, `touch`, `sealed`, and `presets` together. Insert omits the sealed columns. Update changes `title`, and `labeledAt` moves. `marked()` is the preset.
+
+```ts title="complex.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+import { trait } from "okmodel/traits";
+
+const labeled = trait("labeled", {
+  fields: {
+    label: t.text().default("x"), // [!code focus]
+    labeledAt: t.timestamptz().defaultSql("now()"), // [!code focus]
+  },
+  touch: ["labeledAt"], // [!code focus]
+  sealed: ["label"], // [!code focus]
+  presets: {
+    marked: (q) => q.where({ label: "x" }), // [!code focus]
+  },
+});
+
+const notes = table(
+  "notes",
+  { id: t.identity(), title: t.text() },
+  { traits: [labeled] },
+);
+const app = schema({ tables: [notes] });
+
+export async function rename(url: string, title: string) {
+  await using db = connect(url, { schema: app });
+  const note = await db.notes.insert({ title }); // [!code focus]
+  await db.notes.update({ where: { id: note.id }, set: { title: "Next" } });
+  return db.notes.marked().find({ limit: 1 }); // [!code focus]
+}
+```
+
+<Callout type="error" title="OKM1012">
+A column the table already has is `Trait labeled adds notes.label, and notes already declares it.` A column another trait already added is `Trait labeled adds notes.label, and trait timestamps already adds it.`
+</Callout>
+
+### Omit defaults
+
+`omitDefaults` is the reason. It drops the schema list and keeps this table's `traits`. An empty reason, or one that is only spaces, is OKM1060: `Table sessions omitDefaults needs a reason.`
+
+```ts title="sessions.ts"
+import { table, t } from "okmodel/pg";
+
+export const sessions = table(
+  "sessions",
+  {
+    id: t.identity(),
+    token: t.text(),
+  },
+  { omitDefaults: "sessions are not stamped" }, // [!code focus]
+);
+```
+
+### Built-in
+
+`timestamps`, `archivable`, `versioned`, and `sortable` come from `okmodel/traits`.
+
+| Trait | Columns | What you pass |
+| --- | --- | --- |
+| `timestamps()` | `createdAt`, `updatedAt` | `{ enforce: "trigger" }` for a database trigger. |
+| `archivable()` | `archivedAt`, `archiveId` | `cascade`, `strategy`. |
+| `versioned()` | `version` | Nothing. |
+| `sortable(groupBy?)` | `position` | A column name, or nothing for one list. |
+
+#### Timestamps
+
+Both columns are `timestamptz`, not null, default `now()`, guarded and sealed. Insert leaves them to the default. Update sets `updatedAt` and leaves `createdAt`. `{ enforce: "trigger" }` also writes `updatedAt` in the database. Any other option is refused.
+
+```ts title="timestamps.ts"
+import { table, t } from "okmodel/pg";
+import { timestamps } from "okmodel/traits";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text(),
+  },
+  { traits: [timestamps({ enforce: "trigger" })] }, // [!code focus]
+);
+```
+
+Insert omits both columns. The row comes back with them set. Update names the fields you change. `updatedAt` moves. `createdAt` does not.
+
+```ts title="stamp.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+import { timestamps } from "okmodel/traits";
+
+const notes = table(
+  "notes",
+  { id: t.identity(), title: t.text() },
+  { traits: [timestamps()] },
+);
+const app = schema({ tables: [notes] });
+
+export async function rename(url: string, title: string) {
+  await using db = connect(url, { schema: app });
+  const note = await db.notes.insert({ title }); // [!code focus]
+  return db.notes.update({ where: { id: note.id }, set: { title: "Next" } });
+}
+```
+
+#### Archive
+
+`archivedAt` is `timestamptz` and nullable. `archiveId` is `uuid` and nullable. Both are guarded and sealed. Uniques on that table become partial. `cascade` names child tables archived and restored with the row. An empty name is refused. `strategy: "column"` keeps archived rows in the table.
+
+```ts title="archive.ts"
+import { table, t } from "okmodel/pg";
+import { archivable } from "okmodel/traits";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text(),
+  },
+  { traits: [archivable({ cascade: ["comments"] })] }, // [!code focus]
+);
+```
+
+<Callout type="error" title="OKM1061">
+`strategy: "table"` is not available yet.
+</Callout>
+
+`archive({ where })` sets `archivedAt` and one new `archiveId`, shared with the cascaded children. It returns `{ count, archiveId }`. A later `find` does not see that row. `withArchived()` includes it. `onlyArchived()` is the archived set only. `restore({ archiveId })` restores that whole operation. `restore({ where })` restores those rows and the children that carry their `archiveId`.
+
+```ts title="retire.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+import { archivable } from "okmodel/traits";
+
+const notes = table(
+  "notes",
+  { id: t.identity(), title: t.text() },
+  { traits: [archivable()] },
+);
+const app = schema({ tables: [notes] });
+
+export async function retire(url: string, id: string) {
+  await using db = connect(url, { schema: app });
+  const saved = await db.notes.archive({ where: { id } }); // [!code focus]
+  const still = await db.notes.withArchived().find({ where: { id }, limit: 1 });
+  await db.notes.restore({ archiveId: saved.archiveId });
+  return still;
+}
+```
+
+<Callout type="error" title="OKM1052">
+`archive` and `restore` on a table that is not archivable are refused.
+</Callout>
+
+#### Versioned
+
+`version` starts at 1. A stale write is a conflict and changes nothing. A miss stays `{ count: 0 }`. `inc` and the other atomic writes still bump `version`. `delete`, `archive`, and `restore` do not check it. Read the row, then pass `version` back on the update. The write bumps it.
+
+```ts title="versioned.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+import { versioned } from "okmodel/traits";
+
+const tasks = table(
+  "tasks",
+  { id: t.text().primaryKey(), title: t.text() },
+  { traits: [versioned()] }, // [!code focus]
+);
+const app = schema({ tables: [tasks] });
+
+export async function edit(url: string, id: string) {
+  await using db = connect(url, { schema: app });
+  const current = await db.tasks.one({ where: { id } });
+  if (current === null) return null;
+  return db.tasks.update({
+    where: { id },
+    set: { title: "next" },
+    version: current.version, // [!code focus]
+  });
+}
+```
+
+<Callout type="error" title="OKM1120">
+Leaving `version` out is refused, and so is `version` on a table that is not versioned. An upsert and `.all()` are refused.
+</Callout>
+
+#### Sortable
+
+New rows go at the end of the group. `find` and `page` order by `position` when you omit `orderBy`. `one()` does not. A move rewrites every row in the group. A delete leaves a gap until the next `move`. `move(id, { before })` or `{ after }` places that row next to the anchor in the same group. The result is `{ position }`.
+
+```ts title="sortable.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+import { sortable } from "okmodel/traits";
+
+const tasks = table(
+  "tasks",
+  { id: t.text().primaryKey(), title: t.text(), laneId: t.text() },
+  { traits: [sortable("laneId")] }, // [!code focus]
+);
+const app = schema({ tables: [tasks] });
+
+export async function place(url: string, id: string, otherId: string) {
+  await using db = connect(url, { schema: app });
+  return db.tasks.move(id, { before: otherId }); // [!code focus]
+}
+```
+
+<Callout type="error" title="OKM1120">
+Naming the group column in `set` is refused, even when the value is the one already stored.
+</Callout>
+
+<Callout type="error" title="OKM1060">
+`via()` on this table is refused. `sortable()` cannot group by `position`. An empty group name is refused.
+</Callout>

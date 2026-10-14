@@ -1,6 +1,6 @@
 /**
  * On-disk docs source helpers — Copy Markdown / `.md` routes must return
- * byte-identical body text to the generated page files (frontmatter stripped).
+ * byte-identical body text to the page files (frontmatter stripped).
  */
 
 import { readFile } from "node:fs/promises";

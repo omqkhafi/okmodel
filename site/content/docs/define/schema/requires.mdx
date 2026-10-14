@@ -1,0 +1,110 @@
+---
+title: "Requires"
+description: "The Postgres floor, >= and a major."
+---
+`requires.postgres` is a floor, `>=` and a major. [Connect](/docs/define/connect) checks the server against it. `schema()` uses it to refuse a `uuidv7()` default below 18.
+
+<Callout type="info" title="Not the catalog">
+This field is not part of the catalog hash. Changing the floor does not change it.
+</Callout>
+
+### omitted
+
+Omitted, or `{}`, names no version. A bare `t.id()` keeps `uuidv7()`.
+
+Connect accepts PostgreSQL 15 and newer. `okm migrate apply` still looks for `default uuidv7()` before the first statement. A server below 18 that has no `uuidv7()` function is refused, and nothing is changed. A server that already defines `uuidv7()` is accepted. A migration with no such default does not ask the server.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.id(),
+  title: t.text(),
+});
+
+export default schema({
+  tables: [notes],
+});
+```
+
+<Callout type="error" title="OKM1803">
+A server below 15, when no floor is named, is `The server is PostgreSQL 14. PostgreSQL 15 is the oldest supported.`
+</Callout>
+
+<Callout type="error" title="OKM1812">
+A server below 18 with no `uuidv7()` function is `Column notes.id has a uuidv7() default (migration 0001_init, step 0), and the server is PostgreSQL 17. uuidv7() arrives in PostgreSQL 18. Nothing was changed.` The message names the column, the migration, the step, and the server.
+</Callout>
+
+### floor
+
+The string connect reads is `>=` and a major, after it trims. `>=18` asks for 18 or newer. A server below that major is refused.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.id(),
+  title: t.text(),
+});
+
+export default schema({
+  tables: [notes],
+  requires: { postgres: ">=18" }, // [!code focus]
+});
+```
+
+#### below 18
+
+`>=1` through `>=17` refuse a column whose default is `uuidv7()` when `schema()` runs. `"uuidv4"` stores `gen_random_uuid()`. A client generator is the other way through. Both are on [id default](/docs/define/schema/defaults).
+
+A floor below 15 is how connect accepts that older major on purpose.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.id({ default: "uuidv4" }), // [!code focus]
+  title: t.text(),
+});
+
+export default schema({
+  tables: [notes],
+  requires: { postgres: ">=15" }, // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1812">
+`Column notes.id uses uuidv7(). Set defaults.id to "uuidv4" or a client generator.`
+</Callout>
+
+<Callout type="error" title="OKM1802">
+A server below the floor is `The server is PostgreSQL 16. schema({ requires }) asks for >=17.` A string that is not `>=` and a major is stored, and `schema()` does not refuse `uuidv7()` for it. Connect refuses every server, because it cannot read a major: `The server is PostgreSQL 17. schema({ requires }) asks for 17.`
+</Callout>
+
+### together
+
+A schema written for 17. Both bare `t.id()` columns take the schema default, so neither stores `uuidv7()`.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.id(),
+  title: t.text(),
+});
+
+const sessions = table("sessions", {
+  id: t.id(),
+  name: t.text(),
+});
+
+export default schema({
+  tables: [notes, sessions],
+  requires: { postgres: ">=17" }, // [!code focus]
+  defaults: { id: "uuidv4" },
+});
+```
+
+<Callout type="warning" title="OKM1060">
+An empty string is `schema() requires.postgres must be a version range such as >=17.`
+</Callout>

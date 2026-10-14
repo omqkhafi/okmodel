@@ -1,0 +1,253 @@
+---
+title: "Functions"
+description: "Routines the catalog stores."
+---
+`functions` is a list of `fn()` from `okmodel/fn`. The catalog record is built when the catalog is first read. `schema()` does not run the body. Overloads differ by argument types. The same name with the same argument types is one function.
+
+`returns`, `language`, and `body` are required. `language` is `"sql"` or `"plpgsql"`. Volatility defaults to `"volatile"`. Security defaults to `"invoker"`. The install schema defaults to `public`.
+
+### sql
+
+`"sql"` stores the body as written. `dependsOn` is optional.
+
+```ts title="sql.ts"
+import { fn } from "okmodel/fn";
+import { schema, sql, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const answer = fn("answer", {
+  returns: "integer",
+  language: "sql",
+  body: sql`select 1`, // [!code focus]
+});
+
+export default schema({
+  tables: [notes],
+  functions: [answer], // [!code focus]
+});
+```
+
+#### atomic
+
+A body that begins with `BEGIN ATOMIC` is marked atomic. Its edges are read from `pg_depend`. It does not need `dependsOn`.
+
+```ts title="atomic.ts"
+import { fn } from "okmodel/fn";
+import { schema, sql, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const answer = fn("answer", {
+  returns: "integer",
+  language: "sql",
+  body: sql`begin atomic select 1`, // [!code focus]
+});
+
+export default schema({
+  tables: [notes],
+  functions: [answer],
+});
+```
+
+### plpgsql
+
+`"plpgsql"` needs `dependsOn`. Postgres does not record dependencies inside that body. A table is an object dependency. `{ table, column }` is a column dependency. `column` is the SQL name. With [casing](/docs/define/schema/casing) `"snake"`, `updatedAt` is `updated_at`.
+
+```ts title="plpgsql.ts"
+import { fn } from "okmodel/fn";
+import { schema, sql, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+  updatedAt: t.timestamptz().defaultSql("now()"),
+});
+
+const touch = fn("touch_notes", {
+  returns: "trigger",
+  language: "plpgsql",
+  body: sql`begin new."updatedAt" = now(); return new; end`,
+  dependsOn: [{ table: notes, column: "updatedAt" }], // [!code focus]
+});
+
+export default schema({
+  tables: [notes],
+  functions: [touch],
+});
+```
+
+<Callout type="error" title="OKM1824">
+plpgsql without `dependsOn` is `Function touch_notes is plpgsql and has no dependsOn. Postgres does not record dependencies inside the body.`
+</Callout>
+
+<Callout type="error" title="OKM1020">
+A missing column is `dependsOn names column updated_at, which notes does not have.` A table that is not in this schema is `Table notes is not in the catalog.` An empty body is `Function touch_notes needs a body.` `BEGIN ATOMIC` with plpgsql is `Function touch_notes BEGIN ATOMIC needs language sql.` Another language is `Function touch_notes language must be sql or plpgsql.`
+</Callout>
+
+<Callout type="error" title="OKM1023">
+The same name and the same argument types twice is `Duplicate identity for function touch_notes.`
+</Callout>
+
+### arguments
+
+Each argument has a `name` and a `type`. Names live in the definition. Argument types are the identity.
+
+```ts title="arguments.ts"
+import { fn } from "okmodel/fn";
+import { schema, sql, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const lengthOf = fn("length_of", {
+  arguments: [{ name: "title", type: "text" }], // [!code focus]
+  returns: "integer",
+  language: "sql",
+  body: sql`select char_length(title)`,
+});
+
+export default schema({
+  tables: [notes],
+  functions: [lengthOf],
+});
+```
+
+### volatility
+
+`"volatile"`, `"stable"`, or `"immutable"`. Omitted is `"volatile"`.
+
+```ts title="volatility.ts"
+import { fn } from "okmodel/fn";
+import { schema, sql, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const answer = fn("answer", {
+  returns: "integer",
+  language: "sql",
+  volatility: "immutable", // [!code focus]
+  body: sql`select 1`,
+});
+
+export default schema({
+  tables: [notes],
+  functions: [answer],
+});
+```
+
+<Callout type="error" title="OKM1020">
+Another value is `Function answer volatility literal is not supported.`
+</Callout>
+
+### security
+
+`"invoker"` or `"definer"`. Omitted is `"invoker"`. `"definer"` needs `searchPath`. Each schema in that list, split on commas, is an identifier.
+
+```ts title="security.ts"
+import { fn } from "okmodel/fn";
+import { schema, sql, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const answer = fn("answer", {
+  returns: "integer",
+  language: "sql",
+  security: "definer", // [!code focus]
+  searchPath: "public", // [!code focus]
+  body: sql`select 1`,
+});
+
+export default schema({
+  tables: [notes],
+  functions: [answer],
+});
+```
+
+<Callout type="error" title="OKM1823">
+Definer with no `searchPath`, or one that is only spaces, is `Function answer is security definer and has no search_path.`
+</Callout>
+
+<Callout type="error" title="OKM1020">
+An empty `searchPath` on an invoker is `Function answer search_path is empty.` Another security value is `Function answer security owner is not supported.`
+</Callout>
+
+### install schema
+
+`schema` on `fn()` is the install schema. The default is `public`.
+
+```ts title="install.ts"
+import { fn } from "okmodel/fn";
+import { schema, sql, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const answer = fn("answer", {
+  returns: "integer",
+  language: "sql",
+  schema: "app", // [!code focus]
+  body: sql`select 1`,
+});
+
+export default schema({
+  tables: [notes],
+  functions: [answer],
+});
+```
+
+### together
+
+A definer, arguments, a column dependency, and a [trigger](/docs/define/schema/triggers) that calls it. [Casing](/docs/define/schema/casing) `"snake"` makes the column `updated_at`.
+
+```ts title="together.ts"
+import { fn, trigger } from "okmodel/fn";
+import { schema, sql, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+  updatedAt: t.timestamptz().defaultSql("now()"),
+});
+
+const touch = fn("touch_notes", {
+  arguments: [{ name: "extra", type: "text" }],
+  returns: "trigger",
+  language: "plpgsql",
+  security: "definer",
+  searchPath: "public",
+  body: sql`begin new.updated_at = now(); return new; end`,
+  dependsOn: [{ table: notes, column: "updated_at" }],
+});
+
+export default schema({
+  tables: [notes],
+  casing: "snake",
+  functions: [touch], // [!code focus]
+  triggers: [
+    trigger("notes_touch", {
+      on: notes,
+      timing: "before",
+      events: ["update"],
+      level: "row",
+      calls: touch,
+    }),
+  ],
+});
+```

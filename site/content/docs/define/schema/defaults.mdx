@@ -1,0 +1,134 @@
+---
+title: "Id default"
+description: "What a bare t.id() means."
+---
+`defaults` has one field, `id`. It replaces a bare `t.id()`. A column that passes `default` is left alone. `"none"` is that column option. It is not a schema value.
+
+The id is omitted from insert for a database default and for a client generator. `"none"` is required on insert and still omitted from update.
+
+### uuidv7
+
+Omitted, `{}`, and `"uuidv7"` store `uuidv7()`.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.id(), // [!code focus]
+  title: t.text(),
+});
+
+export default schema({
+  tables: [notes],
+});
+```
+
+`"uuidv7"` stores the same expression.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.id(),
+  title: t.text(),
+});
+
+export default schema({
+  tables: [notes],
+  defaults: { id: "uuidv7" }, // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1812">
+`uuidv7()` needs Postgres 18. A [requires](/docs/define/schema/requires) floor below 18 is `Column notes.id uses uuidv7(). Set defaults.id to "uuidv4" or a client generator.` An omitted `requires` does not name a version, so the default stays.
+</Callout>
+
+### uuidv4
+
+`"uuidv4"` stores `gen_random_uuid()`. That function is built in from Postgres 13.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.id(),
+  title: t.text(),
+});
+
+export default schema({
+  tables: [notes],
+  requires: { postgres: ">=15" },
+  defaults: { id: "uuidv4" }, // [!code focus]
+});
+```
+
+### client
+
+A generator from `okmodel/ids` runs on insert. The catalog stores no default. Changing an OKID prefix, length, or sortable flag does not change the catalog hash. The SQL type does: `okid()` is `text`, and `uuidv4` or `uuidv7` stay `uuid`.
+
+#### uuid
+
+`uuidv4` and `uuidv7` stay `uuid`. The client `uuidv7` mints a time-ordered id, so a server older than Postgres 18 can still use one.
+
+```ts title="schema.ts"
+import { uuidv7 } from "okmodel/ids";
+import { schema, table, t } from "okmodel/pg";
+
+const sessions = table("sessions", {
+  id: t.id(),
+  name: t.text(),
+});
+
+export default schema({
+  tables: [sessions],
+  requires: { postgres: ">=15" },
+  defaults: { id: uuidv7 }, // [!code focus]
+});
+```
+
+#### okid
+
+`okid()` is `text` with collation `C`. Calling it returns the generator. It does not mint the id here. Length, prefix, and sortable are on [OKID](/docs/define/table/columns#okid).
+
+```ts title="schema.ts"
+import { okid } from "okmodel/ids";
+import { schema, table, t } from "okmodel/pg";
+
+const users = table("users", {
+  id: t.id(),
+  name: t.text(),
+});
+
+export default schema({
+  tables: [users],
+  defaults: { id: okid({ prefix: "usr_" }) }, // [!code focus]
+});
+```
+
+### column
+
+A column option wins. A bare `t.id()` takes the schema default. `t.id({ default: "uuidv4" })` stays `gen_random_uuid()` and stays `uuid`.
+
+```ts title="schema.ts"
+import { okid } from "okmodel/ids";
+import { schema, table, t } from "okmodel/pg";
+
+const users = table("users", {
+  id: t.id(), // [!code focus]
+  name: t.text(),
+});
+
+const sessions = table("sessions", {
+  id: t.id({ default: "uuidv4" }), // [!code focus]
+  name: t.text(),
+});
+
+export default schema({
+  tables: [users, sessions],
+  defaults: { id: okid({ prefix: "usr_" }) },
+});
+```
+
+<Callout type="warning" title="OKM1060">
+Anything other than an object is `schema() defaults must be an object.` Another key is `schema() defaults.createdAt is not a schema default. Accepted names: id.` Another value, including `"none"`, is `schema() defaults.id must be "uuidv7", "uuidv4", or a client generator.`
+</Callout>

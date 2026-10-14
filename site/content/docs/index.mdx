@@ -1,0 +1,62 @@
+---
+title: "Documentation"
+description: "okmodel is a catalog-first TypeScript ORM, PostgreSQL first."
+---
+The schema is the source. Migrations and queries come from it. Start with one table, then add only the part you need.
+
+<Callout title="The source">
+  The tables you declare are the catalog. Queries, migrations, and checks come from that catalog.
+</Callout>
+
+```ts title="schema.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+```
+
+## 01 Start
+
+Add the package, then one table. The next page is one example per call.
+
+<Cards>
+  <Card
+    title="Let's start"
+    description="Install a driver, define the table, then push and connect."
+    href="/docs/start"
+  />
+  <Card
+    title="Basic Usage"
+    description="Each call on the client: insert, find, one, count, exists, update, and delete."
+    href="/docs/start/basic-usage"
+  />
+</Cards>
+
+## 02 Define
+
+Each table, the schema, the client, and the config file. Open the page for the object you are setting.
+
+<Cards>
+  <Card
+    title="Table"
+    description="table() stores the columns. Open it for the key, each data type, and the queries."
+    href="/docs/define/table"
+  />
+  <Card
+    title="Schema"
+    description="schema() compiles the tables into one catalog."
+    href="/docs/define/schema"
+  />
+  <Card
+    title="Connect"
+    description="connect() opens the client. The first argument is the target."
+    href="/docs/define/connect"
+  />
+  <Card
+    title="Config"
+    description="The file okm reads. Targets, paths, timeouts, and roles."
+    href="/docs/define/config"
+  />
+</Cards>

@@ -5,13 +5,10 @@
 
 import { expect, test } from "bun:test";
 
-import { mappedPages } from "../lib/docs-map";
-import { checkDocsCode, docsCodePages } from "./docs-code";
+import { checkDocsCode } from "./docs-code";
 
 test("public docs fences typecheck against the built package", () => {
   const report = checkDocsCode();
-  const pages = docsCodePages(mappedPages);
-  expect(pages.length).toBe(mappedPages.length);
 
   process.stdout.write(
     `docs code gate: checked ${String(report.checked)}, opted out ${String(report.optedOut.length)}, skipped ${String(report.skippedExamples)} example fences\n`,

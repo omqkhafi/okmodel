@@ -3,7 +3,7 @@
  * the sample and lights the same place.
  */
 
-import { Children, isValidElement, type ReactElement, type ReactNode } from "react";
+import { Children, isValidElement, useId, type ReactElement, type ReactNode } from "react";
 
 /** `args` is `call(…)`. `object` is `call({ … })`. */
 export type AnatomyShape = "args" | "object";
@@ -111,11 +111,17 @@ export function Anatomy({
   const parts = readParts(children);
   if (parts.length === 0) return children;
   const close = `${shape === "object" ? "})" : ")"}${exported === false ? "" : ";"}`;
+  const scope = `anatomy-${useId().replaceAll(":", "")}`;
+  const hover = slotHoverCss(
+    scope,
+    parts.map((part) => part.slot),
+  );
   return (
     <figure
-      className="anatomy not-prose my-4 overflow-hidden rounded-xl border bg-fd-card text-sm shadow-sm"
+      className={`anatomy ${scope} not-prose my-4 overflow-hidden rounded-xl border bg-fd-card text-sm shadow-sm`}
       aria-label={`Anatomy of ${call}()`}
     >
+      {hover.length > 0 ? <style>{hover}</style> : null}
       <figcaption className="flex h-9.5 items-center gap-2 border-b px-4 text-fd-muted-foreground">
         <span className="font-mono text-[13px] text-fd-foreground">{call}()</span>
         <span className="ml-auto font-mono text-[10px] tracking-[0.16em] uppercase">Anatomy</span>
@@ -156,6 +162,24 @@ export function Anatomy({
       </div>
     </figure>
   );
+}
+
+/**
+ * Lights every copy of one place when that place is hovered or focused.
+ * The slot name comes from the page, so a new place does not need a CSS row.
+ *
+ * @param scope - Class on this figure, so another anatomy on the page stays dark
+ * @param slots - Place names, in source order
+ */
+function slotHoverCss(scope: string, slots: readonly string[]): string {
+  const selectors: string[] = [];
+  for (const slot of slots) {
+    if (!/^[a-z][a-z0-9-]*$/i.test(slot)) continue;
+    const place = `[data-slot="${slot}"]`;
+    selectors.push(`.${scope}:is(:has(${place}:hover), :has(${place}:focus-within)) ${place}`);
+  }
+  if (selectors.length === 0) return "";
+  return `${selectors.join(",")}{background:color-mix(in oklch,var(--color-fd-primary) 14%,transparent);box-shadow:inset 2px 0 0 var(--color-fd-primary)}`;
 }
 
 /**

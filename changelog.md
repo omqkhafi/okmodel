@@ -49,8 +49,25 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - A preset is a `where` you call on the table. A field, an argument, a list, a bound, `or`, and two `where` calls are separate sections. A chain keeps the caller's `where` first. Update and delete still need their own `where`. Insert does not use the preset. A reserved name is OKM1040. A trait preset sees the trait's columns.
 - Required rows are the `reference` option. They are rows the application expects, such as statuses. Apply inserts a missing key and does not update or delete. They are not a foreign key and not a migration insert.
 - Queries add `page`, a grouped `aggregate`, a string `search`, both tree walks, a list `update`, and `inc`. A window `as` that clashes with a column is OKM1120. `page()` still reads `select` as field names.
+- Each table option is its own subsection with a sample. `t.id()` shows `uuidv7`, `uuidv4`, a client generator, and `none`. A tenant unique leaves the key out with `{ global: "reason" }`. `has`, `none`, and `every` each filter a relation. `onConflict` is `"ignore"`, `{ on, update }`, or `{ on, return: true }`.
+- Schema is a group under Define. Each option is a page: Tables, Casing, Codecs, Row types, Id default, Requires, Traits, Tenancy, Validation, Extensions, Functions, Triggers, and Views. `/docs/define/schema` is the overview.
+- Tables is the list `schema()` compiles. A reference names a table in that list, earlier or later. The same name twice, two names that emit one type, or one SQL name twice is OKM1023. A missing name is OKM1020. Swapping the list does not change the catalog hash.
+- Casing `"snake"` rewrites a camelCase table or column. `publishedAt` is `published_at`. `userID` is `user_i_d`. `sqlName` and `renamedFrom` stay as written. Any other value is `schema() casing … must be snake.`
+- Codecs choose the TypeScript value of `t.bigint()`, `t.identity()`, and `t.numeric()`. The SQL type stays. `"string"` is a decimal string. `"number"` is a safe integer for bigint and can lose digits on numeric. `"bigint"` is a JavaScript bigint. A schema codec other than `"string"` needs the same `as` on every column of that type. Timestamps stay `"temporal"`.
+- Row types store `"emitted"` or `"inferred"`. Omitting the field is `"emitted"`. Queries still infer from `schema()`. `okm build` writes `.okm/types.d.ts` for either value. `notes` becomes `Notes`, `NotesInsert`, and `NotesUpdate`. A `t.jsonb<T>()` argument is copied from the schema source. Any other value is `schema() types … must be emitted or inferred.`
+- Id default replaces a bare `t.id()`. Omitted and `"uuidv7"` store `uuidv7()`. `"uuidv4"` stores `gen_random_uuid()`. A client generator is filled on insert and stays out of the catalog. `okid()` is `text` with collation `C`. A column `default` wins. `"none"` is that column option. A Postgres floor below 18 on `uuidv7()` is OKM1812.
+- Requires is a floor, `>=` and a major. Omitted names no version: connect accepts 15 and newer, and `uuidv7()` stays until `okm migrate apply` checks the server. `>=18` keeps `uuidv7()`. `>=1` through `>=17` refuse it at `schema()`. A server below the floor is OKM1802. An empty string is `schema() requires.postgres must be a version range such as >=17.`
+- Traits is a list applied before a table's own traits. An omitted list and `[]` add nothing. `omitDefaults` drops the schema list and needs a reason. A repeated column is OKM1012. `timestamps({ enforce: "trigger" })` adds `okm_touch_<column>` and a before-update trigger.
+- Tenancy is `columnTenancy()`, `compositeTenancy()`, or `rlsTenancy()`. Omitted, a table that sets tenancy is OKM1060. Each key is a guarded uuid filled by `for()`. `rlsTenancy` keeps the column predicate and refuses the owner, a superuser, and `BYPASSRLS` (OKM1707).
+- Validation is stored as given. `schema()` does not run the rules. Omitted and `false` are off. `true` and an object are on. `style` is `inline` or `section`. A field in both places is OKM1030. A write without `okmodel/validate` is OKM1201.
+- Extensions is a list of `citext()`, `pgTrgm()`, or `extension("name")`. The record is contributed when the catalog is read. An omitted `citext` column is OKM1020. A list that names another extension is OKM1810. The same name twice is OKM1813. An exact version is written. A `>=` floor is stored and is not written.
+- Functions is a list of `fn()`. plpgsql needs `dependsOn` (OKM1824). `security: "definer"` needs `searchPath` (OKM1823). `LANGUAGE sql` that begins with `BEGIN ATOMIC` can omit `dependsOn`. Volatility defaults to `volatile`. Security defaults to `invoker`.
+- Triggers is a list of `trigger()`. Identity is the table plus the name. The function must already be in the catalog (OKM1020). `updateOf` is SQL column names and needs an update event at level row. Events are stored as insert, update, delete, truncate.
+- Views is a list of `view()` and `materializedView()`. Output columns are text. A tenant view that hides the key is OKM1820. `refresh: "concurrently"` needs a unique index (OKM1822). Creation is `WITH NO DATA`. `db.views.name.refresh()` refreshes a materialized view.
 - The Table sidebar leads with columns, keys, defaults, references, relations, and queries. Names, visibility, checks, and required rows come last.
 - Docs pages drop the breadcrumb. Copy page sits on the title row and opens Markdown and chat actions. A code block focuses the line the paragraph names.
+- Connect is a group under Define: Drivers, Target, Topology, Check, Session, Errors, Generators, and Observers. `/docs/define/connect` is the overview, including `close()`. Session is the pool size, prepare mode, TLS, search path, and deadlines. Check includes the catalog artifact and `requireMeta`.
+- Define Config is one page per `defineConfig` option. `/docs/define/config` is the overview.
 
 ### 💥 Breaking Changes
 
@@ -99,9 +116,11 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 #### tooling
 
 - The size gates for the featureless app and the connect entries measure the static startup graph. Dynamic import targets are empty modules in that build (D248).
+- The docs site has no sync step. `site/content/docs` is the handbook and is checked in. Each page carries its title and description in frontmatter, and each folder's `meta.json` sets the sidebar order. `site/handbook`, `scripts/sync-docs.ts`, and `lib/docs-map.ts` are removed. The site check now verifies that every page is listed in its `meta.json`.
 
 #### docs
 
+- The site header shows the OKM wordmark. The home link is named OKModel.
 - Known limits record the lost-connection release path and that a sortable move is O(n) per group.
 - The changelog page shows `## Unreleased` as next until the release.
 - The npm README covers tenancy, roles and column grants, and `okm migrate check`.

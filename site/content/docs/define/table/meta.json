@@ -1,0 +1,23 @@
+{
+  "title": "Table",
+  "pages": [
+    "index",
+    "columns",
+    "keys",
+    "defaults",
+    "references",
+    "relations",
+    "queries",
+    "traits",
+    "indexes",
+    "validation",
+    "shape",
+    "filters",
+    "presets",
+    "tenancy",
+    "names",
+    "visibility",
+    "checks",
+    "reference-rows"
+  ]
+}

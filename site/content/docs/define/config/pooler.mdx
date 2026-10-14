@@ -1,0 +1,45 @@
+---
+title: "Pooler"
+description: "allowPooler skips the pooler-host refusal."
+---
+`allowPooler` skips the pooler-host refusal.
+
+Apply holds an advisory lock on one session. A transaction-mode pooler can hand the next statement a different backend.
+
+| Field | Required | Default | Role |
+| --- | --- | --- | --- |
+| `allowPooler` | no | `false` | Skip the refusal. `--allow-pooler` does the same for that invocation. Either one is enough. |
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: process.env.DATABASE_URL!,
+  allowPooler: true, // [!code focus]
+});
+```
+
+The host is lowercased before the check. The message is `Refusing pooler host <host>. Apply needs a direct connection.` The code is `invalid`.
+
+| Shape | Result |
+| --- | --- |
+| Host contains `pooler` | Refused. |
+| Host contains `pgbouncer` | Refused. |
+| Port `6543` or `6432` | Refused. |
+| Query `pgbouncer=true` | Refused. |
+| A direct `postgres://` URL | Allowed. The flag is not required. |
+
+| Command | Pooler host |
+| --- | --- |
+| `okm migrate apply`, `okm migrate check`, `okm push`, `okm seed` | Refused until `allowPooler` or `--allow-pooler`. |
+| `okm check`, when it compares one database | Refused until `allowPooler` or `--allow-pooler`. |
+| `provision()` | Refused until `allowPooler` in the config. The call takes no flag. |
+| `okm migrate status`, `okm migrate plan`, `okm doctor`, `okm ext` | Not refused. |
+| `connect()` | Not refused. |
+
+<Callout type="warning" title="OKM1854">
+Apply, push, seed, provision, and a one-database `okm check` read `pg_backend_pid()` twice on the reserved session. `okm migrate check` does the same inside the scratch replay. The two reads are not one transaction. A different pid is OKM1854. The same opt-in that skips the host check skips the probe.
+</Callout>
+
+Connection pool size is [`max`](/docs/define/connect/session#max).

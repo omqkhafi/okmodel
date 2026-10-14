@@ -1,0 +1,87 @@
+---
+title: "Overview"
+description: "connect() opens the client. The first argument is the target. schema is required."
+---
+<Anatomy call="connect" shape="args" exported="db">
+  <AnatomyPart slot="target" label="Target" code="url," mark="url">
+    A connection string, a pool from `open`, or `{ primary, replicas }`. A string or a pool returns the client. A topology returns a promise.
+  </AnatomyPart>
+  <AnatomyPart slot="schema" label="Schema">
+    <AnatomyLine code="{" />
+    <AnatomyLine code="schema," mark="required" indent={2} />
+    <AnatomyLine code="}," />
+    The [schema](/docs/define/schema) types the client. The other decisions are the pages below. [`close()`](#close) is on this page.
+  </AnatomyPart>
+</Anatomy>
+
+Import `connect` from the [driver](/docs/define/connect/drivers) you installed. The process keeps one client.
+
+<Callout type="info" title="The schema">
+The client is typed by the schema you pass. There is no global register.
+</Callout>
+
+## The declaration
+
+The list is how often you reach for each part while opening a client. The target and the schema come first.
+
+```ts title="db.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+
+export const db = connect(process.env.DATABASE_URL!, { schema: app }); // [!code focus]
+```
+
+| Order | Page | You use it for |
+| --- | --- | --- |
+| 1 | [Drivers](/docs/define/connect/drivers) | The import. |
+| 2 | [Target](/docs/define/connect/target) | A URL, a pool, or memory. |
+| 3 | [Topology](/docs/define/connect/topology) | A primary and its replicas. |
+| 4 | [Check](/docs/define/connect/check) | The server, the floor, and the catalog hash. |
+| 5 | [Session](/docs/define/connect/session) | Pool size, TLS, search path, and deadlines. |
+| 6 | [Errors](/docs/define/connect/errors) | HTTP statuses and row values. |
+| 7 | [Generators](/docs/define/connect/generators) | `uuidv4`, `uuidv7`, and `okid`. |
+| 8 | [Observers](/docs/define/connect/observers) | Notices, transactions, and errors. |
+
+## Close
+
+A script calls `close()` when it is done. A server keeps the client for the life of the process. The call ends the pool only when this client opened it. Who opened it is [Target](/docs/define/connect/target).
+
+| Client | `close()` |
+| --- | --- |
+| Opened the pool | Ends that pool. |
+| Adopted a pool | Resolves. The pool stays open. |
+| `using()` | Absent on that client. |
+
+`await using` is that call at the end of the block. It calls the same `close()`. The client has `[Symbol.asyncDispose]` when the runtime defines that symbol. A runtime without the symbol leaves the client unchanged.
+
+On Bun the adapter keeps `idleTimeout` at 0, which is Bun's default, so a finished script exits without `close()`.
+
+```ts title="script.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+
+export async function read() {
+  await using db = connect(process.env.DATABASE_URL!, { schema: app }); // [!code focus]
+  await db.notes.find({ limit: 1 });
+}
+```
+
+A second `close()` waits on the same close when this client opened the pool. The first call starts the close. A later call returns that promise. `for()` and `unscoped()` reuse it. An adopted pool resolves without closing it, on every call.
+
+[`using()`](/docs/define/connect/topology) returns a client with no `close`. The root `close()` stops the probes and closes every pool that `connect` opened.
+
+`close()` before the check settles, on a client that opened the pool, does not reject `connected` when the check succeeds. When the check fails, the rejection is `The client was closed before it connected. Await connected before close(), or do not close it before use.` That promise is [Check](/docs/define/connect/check).

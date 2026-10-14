@@ -1,0 +1,43 @@
+---
+title: "Lint from"
+description: "lintFrom is the first migration id okm migrate check lints."
+---
+lintFrom is the first migration id okm migrate check lints. Files earlier in apply order are not linted. The id itself is linted.
+
+Lint reads each SQL file in the [migrations](/docs/define/config/migrations) directory and reports findings. `lintFrom` chooses the first id in that pass.
+
+| Value | Result |
+| --- | --- |
+| omitted | Every file. |
+| a migration id | That file and every file after it, in apply order. |
+| an id that is not a migration | Refused: `lintFrom <id> is not a migration id.` |
+| an error finding on a linted file | OKM1510. |
+| warnings only | The command continues. |
+
+### omitted
+
+Leave `lintFrom` out. `okm migrate check` lints every file.
+
+### id
+
+The id is the file name without `.sql`. `okm generate` writes a number of at least four digits, `_`, and the name. An empty directory and the name `init` produce `0001_init`.
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: process.env.DATABASE_URL!,
+  lintFrom: "0003_restore", // [!code focus]
+});
+```
+
+`0003_restore` and every later file are linted. Earlier files are not. This skips lint only. The previous-catalog check, the head check, and the replay still cover every file.
+
+### other commands
+
+`okm migrate apply` does not read `lintFrom`. It lints every migration that still has a step to run, before any DDL. A database with no `okm_history` lints every file. No other command reads `lintFrom`.
+
+<Callout type="error" title="OKM1510">
+An error finding on a linted file fails `okm migrate check`. The message is one line per finding.
+</Callout>

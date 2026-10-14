@@ -1,0 +1,62 @@
+---
+title: "Overview"
+description: "table() stores the columns. The key comes first, then each data type, then the options."
+---
+<Anatomy call="table" shape="args" exported="notes">
+  <AnatomyPart slot="name" label="Name" code='"notes",' mark="name">
+    An empty name is refused.
+  </AnatomyPart>
+  <AnatomyPart slot="columns" label="Columns">
+    <AnatomyLine code="{" />
+    <AnatomyLine code="id: t.identity()," mark="key" indent={2} />
+    <AnatomyLine code="title: t.text()," mark="type" indent={2} />
+    <AnatomyLine code="published: t.boolean().default(false)," mark="after the type" indent={2} />
+    <AnatomyLine code="}," />
+    The [key](/docs/define/table/keys) comes first. Each other field is a [data type](/docs/define/table/columns). Defaults, names, and checks come after the type.
+  </AnatomyPart>
+  <AnatomyPart slot="options" label="Options" code="{ … }," mark="options">
+    Keys, indexes, checks, and the pages below. [`schema()`](/docs/define/schema) builds the catalog.
+  </AnatomyPart>
+</Anatomy>
+
+<Callout type="info" title="One builder">
+`t` is every builder. Import one builder when a file uses only that type.
+</Callout>
+
+## The declaration
+
+The list is how often you reach for each part while building. Columns, keys, and the calls come first.
+
+```ts title="notes.ts"
+import { index, table, t } from "okmodel/pg";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity(), // [!code focus]
+    title: t.text(),
+    published: t.boolean().default(false),
+  },
+  { indexes: (columns) => [index(columns.title)] }, // [!code focus]
+);
+```
+
+| Order | Page | You use it for |
+| --- | --- | --- |
+| 1 | [Columns](/docs/define/table/columns) | The builder for each value. |
+| 2 | [Keys](/docs/define/table/keys) | The primary key, and a unique. |
+| 3 | [Defaults](/docs/define/table/defaults) | What fills a column you omit. |
+| 4 | [References](/docs/define/table/references) | A foreign key. |
+| 5 | [Relations](/docs/define/table/relations) | The edge you query. |
+| 6 | [Queries](/docs/define/table/queries) | The calls on the table. |
+| 7 | [Traits](/docs/define/table/traits) | Shared columns, including timestamps and archive. |
+| 8 | [Indexes](/docs/define/table/indexes) | An extra index. |
+| 9 | [Validation](/docs/define/table/validation) | The rule that rejects a bad value. |
+| 10 | [Shape](/docs/define/table/shape) | An array, a picklist, or an enum. |
+| 11 | [Filters](/docs/define/table/filters) | What a caller may send. |
+| 12 | [Presets](/docs/define/table/presets) | A named `where`. |
+| 13 | [Tenancy](/docs/define/table/tenancy) | The schema key, global, or a path. |
+| 14 | [Names](/docs/define/table/names) | The SQL name, a previous name, and a comment. |
+| 15 | [Visibility](/docs/define/table/visibility) | Hidden, sensitive, and guarded. |
+| 16 | [Checks](/docs/define/table/checks) | SQL the row must pass. |
+| 17 | [Required rows](/docs/define/table/reference-rows) | Rows the application expects, inserted when the key is missing. |

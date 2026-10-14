@@ -1,17 +1,14 @@
 import { defineConfig, defineDocs } from "fumadocs-mdx/config";
 import { metaSchema, pageSchema } from "fumadocs-core/source/schema";
-import { z } from "zod";
 
 /**
- * Docs collection. `source` is the canonical file in the repository.
- * Edit on GitHub opens that path, not the generated page.
+ * Docs collection. `content/docs` is the handbook: pages, frontmatter, and
+ * `meta.json` sidebar order are written there by hand.
  */
 export const docs = defineDocs({
   dir: "content/docs",
   docs: {
-    schema: pageSchema.extend({
-      source: z.string(),
-    }),
+    schema: pageSchema,
     postprocess: {
       includeProcessedMarkdown: true,
     },

@@ -1,0 +1,9 @@
+{
+  "title": "Define",
+  "pages": [
+    "table",
+    "schema",
+    "connect",
+    "config"
+  ]
+}

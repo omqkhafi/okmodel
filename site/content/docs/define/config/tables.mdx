@@ -1,0 +1,28 @@
+---
+title: "Tables"
+description: "tables is a directory okm check reads for orphan table files."
+---
+`tables` is a directory `okm check` reads for orphan table files. The name is the file name without `.ts`. That text has to appear in the [schema](/docs/define/schema) module source.
+
+| Case | Result |
+| --- | --- |
+| omitted | The directory is not read. |
+| a `.ts` name absent from the schema module | OKM1024. |
+| not `.ts` | Skipped. |
+| a name that starts with `.` | Skipped. |
+
+`okm check` lists the files in that directory. A folder inside is not opened. A missing directory is an empty list.
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  tables: "./tables", // [!code focus]
+  database: process.env.DATABASE_URL!,
+});
+```
+
+<Callout type="error" title="OKM1024">
+`Table file not in schema: extra.ts.` Add the file's table to the `schema()` call that `okm check` reads.
+</Callout>

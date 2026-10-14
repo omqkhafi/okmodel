@@ -1,0 +1,266 @@
+---
+title: "Presets"
+description: "A preset is a named refinement you call on the table."
+---
+<Callout type="info" title="Where this fits">
+The table is declared. A preset names a `where` you would otherwise repeat, such as `notes.pending()`.
+</Callout>
+
+A preset receives a builder and returns that builder. `where` is the only method. It adds a predicate. It cannot remove or replace one. The caller's `where` stays first. Every added predicate joins it with AND. The tenant predicate and an active set are not in the builder. The planner puts them around the preset.
+
+Return the builder you were given. Anything else is OKM1121: `Preset pending on notes must return the builder it was given.`
+
+`inspect()` records one line per call, such as `pending filters status`, from `table notes` or `trait flagged`. A preset that adds no `where` records `filters nothing`.
+
+### where
+
+#### field
+
+A fixed value. `notes.pending()` keeps `status` equal to `"pending"`.
+
+```ts title="field.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table(
+  "notes",
+  { id: t.identity(), title: t.text(), status: t.text() },
+  { presets: { pending: (q) => q.where({ status: "pending" }) } }, // [!code focus]
+);
+
+const app = schema({ tables: [notes] });
+
+export async function pending(url: string) {
+  await using db = connect(url, { schema: app });
+  return db.notes.pending().find({ limit: 20 }); // [!code focus]
+}
+```
+
+#### argument
+
+The arguments after the builder are the method's arguments.
+
+```ts title="argument.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table(
+  "notes",
+  { id: t.identity(), title: t.text(), ownerId: t.uuid() },
+  {
+    presets: {
+      ownedBy: (q, owner: string) => q.where({ ownerId: owner }), // [!code focus]
+    },
+  },
+);
+
+const app = schema({ tables: [notes] });
+
+export async function mine(url: string, owner: string) {
+  await using db = connect(url, { schema: app });
+  return db.notes.ownedBy(owner).find({ limit: 20 }); // [!code focus]
+}
+```
+
+#### list
+
+A rest argument passes a list. `inList` comes from `okmodel/pg`.
+
+```ts title="list.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { inList, schema, table, t } from "okmodel/pg";
+
+const notes = table(
+  "notes",
+  { id: t.identity(), status: t.text() },
+  {
+    presets: {
+      inState: (q, ...states: readonly string[]) => q.where({ status: inList(states) }), // [!code focus]
+    },
+  },
+);
+
+const app = schema({ tables: [notes] });
+
+export async function openOrPending(url: string) {
+  await using db = connect(url, { schema: app });
+  return db.notes.inState("open", "pending").find({ limit: 20 }); // [!code focus]
+}
+```
+
+#### bound
+
+`gte` is a predicate, the same as a fixed value.
+
+```ts title="bound.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { gte, schema, table, t } from "okmodel/pg";
+
+const notes = table(
+  "notes",
+  { id: t.identity(), priority: t.integer() },
+  { presets: { urgent: (q) => q.where({ priority: gte(3) }) } }, // [!code focus]
+);
+
+const app = schema({ tables: [notes] });
+
+export async function urgent(url: string) {
+  await using db = connect(url, { schema: app });
+  return db.notes.urgent().find({ limit: 20 }); // [!code focus]
+}
+```
+
+#### or
+
+`or` takes an array of filters. `or(a, b)` is OKM1121: `Pass an array: or([a, b]).`
+
+```ts title="or.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { or, schema, table, t } from "okmodel/pg";
+
+const notes = table(
+  "notes",
+  { id: t.identity(), status: t.text(), ownerId: t.uuid() },
+  {
+    presets: {
+      mineOrOpen: (q, owner: string) =>
+        q.where(or([{ ownerId: owner }, { status: "open" }])), // [!code focus]
+    },
+  },
+);
+
+const app = schema({ tables: [notes] });
+
+export async function mineOrOpen(url: string, owner: string) {
+  await using db = connect(url, { schema: app });
+  return db.notes.mineOrOpen(owner).find({ limit: 20 }); // [!code focus]
+}
+```
+
+#### several
+
+Each `where` adds. The first predicate stays.
+
+```ts title="several.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { gte, schema, table, t } from "okmodel/pg";
+
+const notes = table(
+  "notes",
+  { id: t.identity(), status: t.text(), priority: t.integer() },
+  {
+    presets: {
+      stale: (q) => q.where({ status: "pending" }).where({ priority: gte(2) }), // [!code focus]
+    },
+  },
+);
+
+const app = schema({ tables: [notes] });
+
+export async function stale(url: string) {
+  await using db = connect(url, { schema: app });
+  return db.notes.stale().find({ limit: 20 }); // [!code focus]
+}
+```
+
+### Calls
+
+A preset filters `find`, `one`, `count`, `exists`, `page`, and `aggregate`. It also filters `update`, `delete`, `archive`, and `restore`. Insert does not use it.
+
+A call does not replace the handle it started from. `const pending = db.notes.pending()` still means pending after `pending.ownedBy(owner)`.
+
+Update and delete still need their own `where`. A preset does not stand in for one. `notes.pending().delete({})` is OKM1102: `delete on notes needs a where. Pass a filter, or .all(reason).` `.all("clear the backlog")` matches every pending row.
+
+#### simple
+
+One preset, then `find`.
+
+```ts title="simple.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table(
+  "notes",
+  { id: t.identity(), title: t.text(), status: t.text() },
+  { presets: { pending: (q) => q.where({ status: "pending" }) } },
+);
+
+const app = schema({ tables: [notes] });
+
+export async function pending(url: string) {
+  await using db = connect(url, { schema: app });
+  return db.notes.pending().find({ limit: 20 }); // [!code focus]
+}
+```
+
+#### complex
+
+The chain is `pending`, then `ownedBy`, then `urgent`. The caller's `where` stays first. Update uses the same `pending` filter beside its own `where`.
+
+```ts title="complex.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { gte, schema, table, t } from "okmodel/pg";
+
+const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text(),
+    status: t.text(),
+    ownerId: t.uuid(),
+    priority: t.integer(),
+  },
+  {
+    presets: {
+      pending: (q) => q.where({ status: "pending" }),
+      ownedBy: (q, owner: string) => q.where({ ownerId: owner }),
+      urgent: (q) => q.where({ priority: gte(3) }),
+    },
+  },
+);
+
+const app = schema({ tables: [notes] });
+
+export async function review(url: string, owner: string, id: string) {
+  await using db = connect(url, { schema: app });
+  const rows = await db.notes
+    .pending()
+    .ownedBy(owner)
+    .urgent()
+    .find({ where: { title: "ship" }, limit: 20 }); // [!code focus]
+  await db.notes.pending().update({ where: { id }, set: { title: "Done" } }); // [!code focus]
+  return rows;
+}
+```
+
+### Names
+
+A reserved name is a type error. On a trait, `trait()` throws OKM1040 at the call. On a table, `connect` throws it before the first query: `Preset find on table notes is a client method or a reserved name. Reserved: find, one, page, aggregate, count, exists, insert, update, delete, descendants, ancestors, sync, archive, restore, withArchived, onlyArchived, then, lock, watch, subscribe, stream, inspect, explain, with, for, as.`
+
+### Traits
+
+A trait can add presets. They see the trait's columns. The table's own names are already in the map, so a trait that repeats one is OKM1040: `Preset pending on notes is defined by table notes and by trait flagged.` Two traits that share a name are `Preset pending on notes is defined by trait flagged and by trait other.` Schema traits apply first. See [traits](/docs/define/table/traits).
+
+```ts title="trait.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+import { trait } from "okmodel/traits";
+
+const flagged = trait("flagged", {
+  fields: { flagged: t.boolean().default(false) },
+  presets: { flagged: (q) => q.where({ flagged: true }) }, // [!code focus]
+});
+
+const notes = table(
+  "notes",
+  { id: t.identity(), title: t.text() },
+  { traits: [flagged] },
+);
+
+const app = schema({ tables: [notes] });
+
+export async function flaggedNotes(url: string) {
+  await using db = connect(url, { schema: app });
+  return db.notes.flagged().find({ limit: 20 }); // [!code focus]
+}
+```

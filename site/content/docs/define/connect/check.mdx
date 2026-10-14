@@ -1,0 +1,172 @@
+---
+title: "Check"
+description: "The first connection checks the server, the catalog hash, and the floor."
+---
+`schema` is required. The [schema](/docs/define/schema) types the client. `db.connected` resolves when the check finishes. A query waits for it. A transaction and a batch wait too.
+
+[requires](/docs/define/schema/requires) is the floor `connect` reads. With no `requires`, the floor is 15. A named floor is `>=` and a major. A server below that major is refused. A floor below 15 is how `connect` accepts that older major. The floor runs after the hash check.
+
+`signal` and `timeout` on this check are [Timeouts](/docs/define/connect/session#timeouts). A preset name that is a client method or reserved is checked before the first query. The names are on [Presets](/docs/define/table/presets).
+
+| Result | What happens |
+| --- | --- |
+| Not PostgreSQL | OKM1801 |
+| `okm_meta` has no hash, and `requireMeta` is set | OKM1520 |
+| Equal catalog hashes | Returns without reading `okm_history`. |
+| Ahead by expand migrations | The drift check returns. The client opens when the floor passes. |
+| Ahead by a contract migration, or behind | OKM1520 |
+| Below 15, and the schema names no `requires` | OKM1803 |
+| Below the schema `requires` | OKM1802 |
+
+### schema
+
+```ts title="db.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] }); // [!code focus]
+
+export const db = connect(process.env.DATABASE_URL!, { schema: app }); // [!code focus]
+```
+
+### server
+
+`version()` must start with `PostgreSQL`.
+
+<Callout type="error" title="OKM1801">
+`The server is not PostgreSQL. The schema dialect is postgres.`
+</Callout>
+
+### floor
+
+A server below 15, when no floor is named, is OKM1803.
+
+<Callout type="error" title="OKM1803">
+`The server is PostgreSQL 14. PostgreSQL 15 is the oldest supported.`
+</Callout>
+
+A server below the named floor is OKM1802. The message keeps the string from `schema({ requires })`.
+
+<Callout type="error" title="OKM1802">
+`The server is PostgreSQL 16. schema({ requires }) asks for >=17.`
+</Callout>
+
+A string that is not `>=` and a major leaves no major to compare, so every server is OKM1802. [Requires](/docs/define/schema/requires) quotes that string.
+
+### Require meta
+
+`requireMeta` fails `connect` when `okm_meta` has no catalog hash. It is a `connect` option. The target name and `NODE_ENV` do not turn it on. Set this on a production connection. Only `true` turns it on. `false` is the same as omitted. `protected` on a migrate target does not affect `connect()`.
+
+| Value | Result |
+| --- | --- |
+| omitted | A database with no recorded hash skips the drift check. An existing database can adopt OKModel. |
+| `true` | A missing hash is OKM1520. |
+
+Leave `requireMeta` out. A database with no recorded hash skips the drift check. A null hash and an empty hash are both no catalog hash. An existing database can adopt OKModel. The version check still runs.
+
+A recorded hash still runs the drift check, below.
+
+`requireMeta: true` fails `connect` when the hash is missing. That throw is OKM1520. It happens before the drift check and before the version check.
+
+```ts title="db.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+
+export const db = connect(process.env.DATABASE_URL!, {
+  schema: app,
+  requireMeta: true, // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1520">
+A missing hash is `okm_meta has no catalog hash.` The fix is `Apply migrations so okm_meta records the catalog, or omit requireMeta to adopt this database.`
+</Callout>
+
+### Catalog
+
+`catalog` and `catalogDir` exist so this check can load the code's catalog. The value is `{ text, hash }`. `text` is the catalog JSON. `hash` is that hash. The JSON is checked only when the database hash differs.
+
+Connect takes the first row that applies.
+
+| Source | Code hash |
+| --- | --- |
+| `catalog` | `hash` on `{ text, hash }`. |
+| a non-empty `catalog.hash` | The file. A mismatch reads `catalog.json` once per process. |
+| a missing or empty `catalog.hash` | The schema catalog. |
+
+When `catalog` is set, `hash` is the code's catalog hash. A difference loads `text` once per process. The load checks `text` against `hash`. Concurrent connects share that load.
+
+`catalogDir` is the directory of `catalog.hash` and `catalog.json`. A trailing `/` or `\` is removed, so the joined file name is one path. Connect reads this directory when `catalog` is omitted. [`okm build`](/docs/define/config/out) writes those two files.
+
+```ts title="db.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+
+export const db = connect(process.env.DATABASE_URL!, {
+  schema: app,
+  catalogDir: ".okm", // [!code focus]
+});
+```
+
+Omitted, the directory is `.okm` under the process cwd. When `process.cwd` is missing, the directory is `./.okm`.
+
+A missing hash file hashes the schema catalog instead. `catalog.json` stays unread.
+
+When `catalog` is omitted, connect reads `catalog.hash` from that directory. UTF-16 throws OKM1027 before the schema catalog is hashed. A leading BOM is stripped. Carriage returns are removed. The hash is then trimmed, so a trailing newline is dropped. An empty result hashes the schema catalog instead.
+
+A hash that remains is the fast path. That file is the code's catalog hash. Equal hashes return. `okm_history` and `catalog.json` stay unread. A difference reads `catalog.json` once per process. Concurrent connects share that read. Connect does not rebuild the catalog from the schema.
+
+<Callout type="error" title="OKM1027">
+A missing `catalog.json` is `.okm/catalog.json is missing.` when `catalogDir` is `.okm`. Omitted, the directory in that message is `.okm` under the process cwd. The fix is `Run okm build so catalog.json matches catalog.hash. connect does not rebuild the catalog from the schema.`
+</Callout>
+
+<Callout type="error" title="OKM1027">
+A hash that does not match the JSON is `Catalog hash does not match the build artifact.`
+</Callout>
+
+<Callout type="error" title="OKM1027">
+UTF-16 `catalog.hash` is `catalog.hash is UTF-16. Save the file as UTF-8.`
+</Callout>
+
+### hash
+
+With no hash, and without [Require meta](#require-meta), the drift check is skipped. The floor still runs. Equal catalog hashes return without reading `okm_history`. The floor still runs. A different hash loads the [catalog](#catalog). The check then reads `okm_history`.
+
+Ahead by expand migrations, the drift check returns. The client opens when the floor passes.
+
+Any other verdict is OKM1520. The id is the migration id from `okm_history`.
+
+| Verdict | Message |
+| --- | --- |
+| ahead by contract | `The database is ahead by contract migration 0002_expand.` |
+| behind by expand | `The database is behind by expand migration 0003_expand.` |
+| behind by contract | `The database is behind by contract migration 0002_contract.` |
+| behind | `The database is behind the app at migration 0001_old.` |
+| behind, no id | `The database is behind the app.` |
+
+A failed read of `okm_history` uses `The database is behind the app.` A schema catalog hash that differs is this comparison.
+
+### connected
+
+A query waits for `db.connected`. Await it when the check must finish before [`close()`](/docs/define/connect#close).
+
+`close()`, before the check settles, on a client that opened the pool, rejects `connected` when the check fails. The message is `The client was closed before it connected. Await connected before close(), or do not close it before use.`

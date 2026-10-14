@@ -1,0 +1,14 @@
+{
+  "title": "Connect",
+  "pages": [
+    "index",
+    "drivers",
+    "target",
+    "topology",
+    "check",
+    "session",
+    "errors",
+    "generators",
+    "observers"
+  ]
+}

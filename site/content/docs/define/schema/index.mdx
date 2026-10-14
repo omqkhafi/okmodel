@@ -1,0 +1,32 @@
+---
+title: "Overview"
+description: "schema() compiles the tables into one catalog. Each option is a page."
+---
+<Anatomy call="schema" shape="object" exported>
+  <AnatomyPart slot="tables" label="Tables" code="tables: [notes]," mark="required">
+    The list, in the order you write it. A reference names a table in this list, earlier or later. [`table()`](/docs/define/table) only stores the columns. Names and the catalog hash are fixed here. Calling `schema()` twice on the same tables returns equal catalog bytes.
+  </AnatomyPart>
+  <AnatomyPart slot="sections" label="Pages" code="…," mark="sections">
+    Each other field is a page in this group.
+  </AnatomyPart>
+</Anatomy>
+
+## The declaration
+
+Each option is a page. Tables come first, because every other option refers to them.
+
+| Order | Page | You use it for |
+| --- | --- | --- |
+| 1 | [Tables](/docs/define/schema/tables) | The list `schema()` compiles. |
+| 2 | [Casing](/docs/define/schema/casing) | The SQL name of a camelCase field. |
+| 3 | [Codecs](/docs/define/schema/codecs) | The TypeScript value. The SQL type stays. |
+| 4 | [Row types](/docs/define/schema/types) | Emitted types, or types kept in the checker. |
+| 5 | [Id default](/docs/define/schema/defaults) | What a bare `t.id()` means. |
+| 6 | [Requires](/docs/define/schema/requires) | The Postgres floor, >= and a major. |
+| 7 | [Traits](/docs/define/schema/traits) | Columns added to every table. |
+| 8 | [Tenancy](/docs/define/schema/tenancy) | Tenant keys on every table. |
+| 9 | [Validation](/docs/define/schema/validation) | Whether rules run. |
+| 10 | [Extensions](/docs/define/schema/extensions) | Extensions the catalog names. |
+| 11 | [Functions](/docs/define/schema/functions) | Routines the catalog stores. |
+| 12 | [Triggers](/docs/define/schema/triggers) | Triggers that call those functions. |
+| 13 | [Views](/docs/define/schema/views) | Views and materialized views. |
