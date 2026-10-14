@@ -18,17 +18,17 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### runtime
 
-- `bucket(column, unit, { tz, as })` groups an aggregate by a calendar or clock unit. A day or longer returns `Temporal.PlainDate`. A second, minute, or hour returns `Temporal.Instant`. A NULL timestamp is one group: the result key is present and the value is null. `__proto__`, `constructor`, `toString`, and `hasOwnProperty` are refused as `as`. There is still no `having`. Time-zone date helpers stay deferred (D247, D257).
+- `bucket(column, unit, { tz, as })` groups an aggregate by a calendar or clock unit. A day or longer returns `Temporal.PlainDate`. On a `timestamptz`, a second, minute, or hour returns `Temporal.Instant`. Those three units are refused on a `date`. A NULL timestamp is one group: the result key is present and the value is null. `__proto__`, `constructor`, `toString`, and `hasOwnProperty` are refused as `as`, and so is an `as` that matches another bucket. There is still no `having`. Time-zone date helpers stay deferred (D247, D257).
 - `update` with `lock: "skip"` and `limit` claims up to that many unlocked rows in one statement. A read still uses `lock: "update"` and `wait: "skip"` inside `tx()` (D249).
-- `find({ search })` and `count({ search })` match a column built for search. A string is enough when the table has one. Rows come back closest first unless you pass `orderBy`. `page()` does not take `search` (D250).
+- `find({ search })` and `count({ search })` match a column built for search. A string is enough when the table has one. Rows come back closest first unless you pass `orderBy`. `page()` does not take `search`. A `language` that is not text is refused. A name that is not a text search language is refused when the statement is built (D250).
 - `relevance(query, { match, language })` orders a search column by the match. `matches` takes the same options. `{ mode, config }` is not accepted (D250).
 - A to-many `include` with `orderBy` and `limit` returns the first N related rows of each parent. The primary key breaks ties (D251).
-- `rowNumber`, `rank`, `denseRank`, and `runningTotal` go in `select` on `find` or `one`. `page()` refuses a window when the call runs (D251).
-- `descendants(id)` and `ancestors(id)` read the rows below or above a row in one statement. A row already on the path is not entered again. `ltree` is not required (D252).
+- `rowNumber`, `rank`, `denseRank`, and `runningTotal` go in `select` on `find` or `one`. A running total is the column's type, or null. `page()` refuses a window when the call runs (D251).
+- `descendants(id)` and `ancestors(id)` read the rows below or above a row in one statement. Pass `relation` when the self-relations use different columns. The fix lists the names. A row already on the path is not entered again. `ltree` is not required (D252).
 - `sync(id, relation, ids)` sets a to-many relation to exactly those ids and reports the links it added and removed (D252).
-- `versioned()` adds `version`. An update passes the version you read and the write bumps it. A stale write is a conflict and changes nothing (D254).
-- `sortable(groupBy?)` adds `position` and `move(id, { before })` or `{ after }`. New rows go at the end of the group. A move is O(n) per group. `find` and `page` order by `position` when you omit `orderBy` (D254).
-- `morph("commentable", ["tasks", "lists"])` includes the matching target, or null, as a flat union. `morphMany` is the reverse many. `morphTo` sets the type and the id together (D255).
+- `versioned()` adds `version`. An update passes the version you read and the write bumps it. A stale write is a conflict and changes nothing. Leaving `version` out is refused, and so is `version` on a table that is not versioned (D254).
+- `sortable(groupBy?)` adds `position` and `move(id, { before })` or `{ after }`. New rows go at the end of the group. A move is O(n) per group and rewrites every row in the group. Naming the group column in `set` is refused. `find` and `page` order by `position` when you omit `orderBy` (D254).
+- `morph("commentable", ["tasks", "lists"])` includes the matching target, with the type set to that table's name, or null. `morphMany` is the reverse many. `morphTo` sets the type and the id together. Setting one without the other is OKM1121. A type outside the list is OKM1120 (D255).
 
 #### docs
 
@@ -72,7 +72,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - `update` of a list refuses the same target twice (OKM1120). A target that matches nothing is not an error. An empty `set` is OKM1120. An empty list runs no statement (D246).
 - `inc` is a number or bigint column. A text column is OKM1124. A list that sets one field with `inc` in one row and a plain value in another is OKM1120. A null number stays null (D249).
-- `.stream()` yields rows in keyset batches on every driver, including PGlite. The default batch is 1000. `limit` is the total. A table with no primary key, `search`, and a window are refused. A row committed while it runs can be seen or missed (D256).
+- `.stream()` yields rows in keyset batches on every driver, including PGlite. The default batch is 1000. `limit` is the total. A table with no primary key, `one()`, `count()`, `exists()`, `search`, and a window are refused. A positive `timeout` is the budget for the whole stream, including on a driver that cannot cancel. A row committed while it runs can be seen or missed (D256).
 
 #### adapters
 
