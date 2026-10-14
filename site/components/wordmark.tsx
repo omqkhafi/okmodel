@@ -15,7 +15,7 @@ export function Wordmark({ className }: { className?: string }) {
       aria-label={SITE_NAME}
       viewBox="0 0 45 12"
       fill="currentColor"
-      className={className ?? "block h-5 w-auto"}
+      className={className ?? "block h-4 w-auto"}
     >
       <path
         fillRule="nonzero"

@@ -2,7 +2,8 @@
  * Markdown twin of the homepage. The same path the HTML offers, not the README install block.
  */
 
-import { readRootPackage, readTagline } from "./package-meta";
+import { HERO_HEADLINE_LINES, HERO_SUBHEAD } from "./hero-copy";
+import { readRootPackage } from "./package-meta";
 import { markdownResponse } from "./markdown-response";
 import { SITE_NAME } from "./site-identity";
 
@@ -13,9 +14,9 @@ export function homepageMarkdownBody(): string {
   const install = `bun add ${readRootPackage().name}`;
   return `# ${SITE_NAME}
 
-The schema is the source.
+${HERO_HEADLINE_LINES.join(" ")}
 
-${readTagline()}
+${HERO_SUBHEAD}
 
 \`\`\`sh
 ${install}

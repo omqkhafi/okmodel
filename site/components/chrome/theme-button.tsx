@@ -1,8 +1,8 @@
 "use client";
 
-import { MoonIcon, SunIcon } from "@/components/chrome/icons";
 import { cn } from "@/lib/cn";
 import { useTheme } from "@fumadocs/base-ui/provider/base";
+import { Moon, Sun } from "lucide-react";
 
 /**
  * Light/dark toggle. Reads the `dark` class on the document so it does not
@@ -22,8 +22,8 @@ export function ThemeButton({ className }: { className?: string }) {
       }}
       className={cn(className)}
     >
-      <SunIcon className="hidden size-4 dark:block" />
-      <MoonIcon className="size-4 dark:hidden" />
+      <Sun className="hidden size-4 dark:block" aria-hidden />
+      <Moon className="size-4 dark:hidden" aria-hidden />
     </button>
   );
 }

@@ -1,0 +1,1888 @@
+{
+  "scenarios": [
+    {
+      "kind": "migrate",
+      "id": "column",
+      "diff": [
+        {
+          "n": null,
+          "mark": "fold",
+          "text": "9 unchanged lines"
+        },
+        {
+          "n": 10,
+          "mark": "ctx",
+          "text": "  title: t.text().nullable(),"
+        },
+        {
+          "n": 11,
+          "mark": "ctx",
+          "text": "  authorId: t.bigint(),"
+        },
+        {
+          "n": 12,
+          "mark": "add",
+          "text": "  body: t.text().nullable(),"
+        },
+        {
+          "n": 13,
+          "mark": "ctx",
+          "text": "});"
+        },
+        {
+          "n": 14,
+          "mark": "ctx",
+          "text": ""
+        },
+        {
+          "n": null,
+          "mark": "fold",
+          "text": "1 unchanged line"
+        }
+      ],
+      "plan": {
+        "file": "migrations/0002_add_body.sql",
+        "class": "expand",
+        "steps": [
+          {
+            "class": "expand",
+            "kind": "add-column",
+            "lock": "ACCESS EXCLUSIVE",
+            "transactional": true,
+            "sql": "alter table \"public\".\"notes\" add column \"body\" text;"
+          }
+        ]
+      },
+      "lint": [],
+      "types": {
+        "label": "Notes",
+        "rows": [
+          {
+            "n": 23,
+            "mark": "add",
+            "text": "  readonly body: string | null;"
+          }
+        ],
+        "more": 2
+      }
+    },
+    {
+      "kind": "migrate",
+      "id": "required",
+      "diff": [
+        {
+          "n": null,
+          "mark": "fold",
+          "text": "7 unchanged lines"
+        },
+        {
+          "n": 8,
+          "mark": "ctx",
+          "text": "const notes = table(\"notes\", {"
+        },
+        {
+          "n": 9,
+          "mark": "ctx",
+          "text": "  id: t.identity(),"
+        },
+        {
+          "n": null,
+          "mark": "del",
+          "text": "  title: t.text().nullable(),"
+        },
+        {
+          "n": 10,
+          "mark": "add",
+          "text": "  title: t.text(),"
+        },
+        {
+          "n": 11,
+          "mark": "ctx",
+          "text": "  authorId: t.bigint(),"
+        },
+        {
+          "n": 12,
+          "mark": "ctx",
+          "text": "});"
+        },
+        {
+          "n": null,
+          "mark": "fold",
+          "text": "2 unchanged lines"
+        }
+      ],
+      "plan": {
+        "file": "migrations/0002_require_title.sql",
+        "class": "contract",
+        "steps": [
+          {
+            "class": "expand",
+            "kind": "add-constraint",
+            "lock": "ACCESS EXCLUSIVE",
+            "transactional": true,
+            "sql": "alter table \"public\".\"notes\" add constraint \"notes_title_notnull\" check (\"title\" is not null) not valid;"
+          },
+          {
+            "class": "expand",
+            "kind": "validate-constraint",
+            "lock": "SHARE UPDATE EXCLUSIVE",
+            "transactional": true,
+            "sql": "alter table \"public\".\"notes\" validate constraint \"notes_title_notnull\";"
+          },
+          {
+            "class": "contract",
+            "kind": "set-not-null",
+            "lock": "ACCESS EXCLUSIVE",
+            "transactional": true,
+            "sql": "alter table \"public\".\"notes\" alter column \"title\" set not null;"
+          },
+          {
+            "class": "expand",
+            "kind": "drop-not-null-check",
+            "lock": "ACCESS EXCLUSIVE",
+            "transactional": true,
+            "sql": "alter table \"public\".\"notes\" drop constraint \"notes_title_notnull\";"
+          }
+        ]
+      },
+      "lint": [
+        {
+          "severity": "error",
+          "code": "OKM1531",
+          "step": 2,
+          "message": "validates a check",
+          "fix": "Add the check NOT VALID, repair the rows, then validate it. Or allow OKM1531 with a reason."
+        }
+      ],
+      "types": {
+        "label": "Notes",
+        "rows": [
+          {
+            "n": null,
+            "mark": "del",
+            "text": "  readonly title: string | null;"
+          },
+          {
+            "n": 21,
+            "mark": "add",
+            "text": "  readonly title: string;"
+          }
+        ],
+        "more": 4
+      }
+    },
+    {
+      "kind": "migrate",
+      "id": "unique",
+      "diff": [
+        {
+          "n": null,
+          "mark": "fold",
+          "text": "2 unchanged lines"
+        },
+        {
+          "n": 3,
+          "mark": "ctx",
+          "text": "const authors = table(\"authors\", {"
+        },
+        {
+          "n": 4,
+          "mark": "ctx",
+          "text": "  id: t.identity(),"
+        },
+        {
+          "n": null,
+          "mark": "del",
+          "text": "  name: t.text(),"
+        },
+        {
+          "n": 5,
+          "mark": "add",
+          "text": "  name: t.text().unique(),"
+        },
+        {
+          "n": 6,
+          "mark": "ctx",
+          "text": "});"
+        },
+        {
+          "n": 7,
+          "mark": "ctx",
+          "text": ""
+        },
+        {
+          "n": null,
+          "mark": "fold",
+          "text": "7 unchanged lines"
+        }
+      ],
+      "plan": {
+        "file": "migrations/0002_unique_name.sql",
+        "class": "expand",
+        "steps": [
+          {
+            "class": "expand",
+            "kind": "create-index",
+            "lock": "SHARE UPDATE EXCLUSIVE",
+            "transactional": false,
+            "sql": "create unique index concurrently \"authors_name_key\" on \"public\".\"authors\" (\"name\");"
+          },
+          {
+            "class": "expand",
+            "kind": "add-constraint",
+            "lock": "ACCESS EXCLUSIVE",
+            "transactional": true,
+            "sql": "alter table \"public\".\"authors\" add constraint \"authors_name_key\" unique using index \"authors_name_key\";"
+          }
+        ]
+      },
+      "lint": [
+        {
+          "severity": "error",
+          "code": "OKM1528",
+          "step": 1,
+          "message": "builds a unique or primary key",
+          "fix": "Deduplicate the rows first. Or allow OKM1528 with a reason."
+        }
+      ],
+      "types": null
+    },
+    {
+      "kind": "migrate",
+      "id": "foreignKey",
+      "diff": [
+        {
+          "n": null,
+          "mark": "fold",
+          "text": "8 unchanged lines"
+        },
+        {
+          "n": 9,
+          "mark": "ctx",
+          "text": "  id: t.identity(),"
+        },
+        {
+          "n": 10,
+          "mark": "ctx",
+          "text": "  title: t.text().nullable(),"
+        },
+        {
+          "n": null,
+          "mark": "del",
+          "text": "  authorId: t.bigint(),"
+        },
+        {
+          "n": 11,
+          "mark": "add",
+          "text": "  authorId: t.bigint().references(\"authors\"),"
+        },
+        {
+          "n": 12,
+          "mark": "ctx",
+          "text": "});"
+        },
+        {
+          "n": 13,
+          "mark": "ctx",
+          "text": ""
+        },
+        {
+          "n": null,
+          "mark": "fold",
+          "text": "1 unchanged line"
+        }
+      ],
+      "plan": {
+        "file": "migrations/0002_link_author.sql",
+        "class": "expand",
+        "steps": [
+          {
+            "class": "expand",
+            "kind": "add-constraint",
+            "lock": "ACCESS EXCLUSIVE; SHARE ROW EXCLUSIVE on \"public\".\"authors\"",
+            "transactional": true,
+            "sql": "alter table \"public\".\"notes\" add constraint \"notes_authorId_fkey\" foreign key (\"authorId\") references \"public\".\"authors\" (\"id\") not valid;"
+          },
+          {
+            "class": "expand",
+            "kind": "validate-constraint",
+            "lock": "SHARE UPDATE EXCLUSIVE; ROW SHARE on \"public\".\"authors\"",
+            "transactional": true,
+            "sql": "alter table \"public\".\"notes\" validate constraint \"notes_authorId_fkey\";"
+          }
+        ]
+      },
+      "lint": [
+        {
+          "severity": "error",
+          "code": "OKM1532",
+          "step": 2,
+          "message": "validates a foreign key",
+          "fix": "Add the foreign key NOT VALID, repair the rows, then validate it. Or allow OKM1532 with a reason."
+        }
+      ],
+      "types": null
+    },
+    {
+      "kind": "migrate",
+      "id": "index",
+      "diff": [
+        {
+          "n": null,
+          "mark": "del",
+          "text": "import { schema, table, t } from \"okmodel/pg\";"
+        },
+        {
+          "n": 1,
+          "mark": "add",
+          "text": "import { index, schema, table, t } from \"okmodel/pg\";"
+        },
+        {
+          "n": 2,
+          "mark": "ctx",
+          "text": ""
+        },
+        {
+          "n": 3,
+          "mark": "ctx",
+          "text": "const authors = table(\"authors\", {"
+        },
+        {
+          "n": null,
+          "mark": "fold",
+          "text": "6 unchanged lines"
+        },
+        {
+          "n": 10,
+          "mark": "ctx",
+          "text": "  title: t.text().nullable(),"
+        },
+        {
+          "n": 11,
+          "mark": "ctx",
+          "text": "  authorId: t.bigint(),"
+        },
+        {
+          "n": null,
+          "mark": "del",
+          "text": "});"
+        },
+        {
+          "n": 12,
+          "mark": "add",
+          "text": "}, { indexes: (columns) => [index(columns.authorId)] });"
+        },
+        {
+          "n": 13,
+          "mark": "ctx",
+          "text": ""
+        },
+        {
+          "n": 14,
+          "mark": "ctx",
+          "text": "export default schema({ tables: [authors, notes] });"
+        }
+      ],
+      "plan": {
+        "file": "migrations/0002_index_author.sql",
+        "class": "expand",
+        "steps": [
+          {
+            "class": "expand",
+            "kind": "create-index",
+            "lock": "SHARE UPDATE EXCLUSIVE",
+            "transactional": false,
+            "sql": "create index concurrently \"notes_authorId_idx\" on \"public\".\"notes\" (\"authorId\");"
+          }
+        ]
+      },
+      "lint": [],
+      "types": null
+    },
+    {
+      "kind": "migrate",
+      "id": "rename",
+      "diff": [
+        {
+          "n": null,
+          "mark": "fold",
+          "text": "7 unchanged lines"
+        },
+        {
+          "n": 8,
+          "mark": "ctx",
+          "text": "const notes = table(\"notes\", {"
+        },
+        {
+          "n": 9,
+          "mark": "ctx",
+          "text": "  id: t.identity(),"
+        },
+        {
+          "n": null,
+          "mark": "del",
+          "text": "  title: t.text().nullable(),"
+        },
+        {
+          "n": 10,
+          "mark": "add",
+          "text": "  heading: t.text().nullable().renamedFrom(\"title\"),"
+        },
+        {
+          "n": 11,
+          "mark": "ctx",
+          "text": "  authorId: t.bigint(),"
+        },
+        {
+          "n": 12,
+          "mark": "ctx",
+          "text": "});"
+        },
+        {
+          "n": null,
+          "mark": "fold",
+          "text": "2 unchanged lines"
+        }
+      ],
+      "plan": {
+        "file": "migrations/0002_rename_title.sql",
+        "class": "contract",
+        "steps": [
+          {
+            "class": "contract",
+            "kind": "rename-column",
+            "lock": "ACCESS EXCLUSIVE",
+            "transactional": true,
+            "sql": "alter table \"public\".\"notes\" rename column \"title\" to \"heading\";"
+          }
+        ]
+      },
+      "lint": [
+        {
+          "severity": "error",
+          "code": "OKM1519",
+          "step": 1,
+          "message": "renames a column",
+          "fix": "Add the new column, backfill, and switch readers before dropping the old name. Or allow OKM1519 with a reason."
+        }
+      ],
+      "types": {
+        "label": "Notes",
+        "rows": [
+          {
+            "n": null,
+            "mark": "del",
+            "text": "  readonly title: string | null;"
+          },
+          {
+            "n": 21,
+            "mark": "add",
+            "text": "  readonly heading: string | null;"
+          }
+        ],
+        "more": 4
+      }
+    },
+    {
+      "kind": "migrate",
+      "id": "picklist",
+      "diff": [
+        {
+          "n": null,
+          "mark": "fold",
+          "text": "9 unchanged lines"
+        },
+        {
+          "n": 10,
+          "mark": "ctx",
+          "text": "  title: t.text().nullable(),"
+        },
+        {
+          "n": 11,
+          "mark": "ctx",
+          "text": "  authorId: t.bigint(),"
+        },
+        {
+          "n": 12,
+          "mark": "add",
+          "text": "  status: t.text().picklist([\"draft\", \"published\"]).default(\"draft\"),"
+        },
+        {
+          "n": 13,
+          "mark": "ctx",
+          "text": "});"
+        },
+        {
+          "n": 14,
+          "mark": "ctx",
+          "text": ""
+        },
+        {
+          "n": null,
+          "mark": "fold",
+          "text": "1 unchanged line"
+        }
+      ],
+      "plan": {
+        "file": "migrations/0002_add_status.sql",
+        "class": "expand",
+        "steps": [
+          {
+            "class": "expand",
+            "kind": "add-column",
+            "lock": "ACCESS EXCLUSIVE",
+            "transactional": true,
+            "sql": "alter table \"public\".\"notes\" add column \"status\" text not null default 'draft';"
+          },
+          {
+            "class": "expand",
+            "kind": "add-constraint",
+            "lock": "ACCESS EXCLUSIVE",
+            "transactional": true,
+            "sql": "alter table \"public\".\"notes\" add constraint \"notes_status_check\" check ((status IN ('draft', 'published'))) not valid;"
+          },
+          {
+            "class": "expand",
+            "kind": "validate-constraint",
+            "lock": "SHARE UPDATE EXCLUSIVE",
+            "transactional": true,
+            "sql": "alter table \"public\".\"notes\" validate constraint \"notes_status_check\";"
+          }
+        ]
+      },
+      "lint": [
+        {
+          "severity": "error",
+          "code": "OKM1531",
+          "step": 3,
+          "message": "validates a check",
+          "fix": "Add the check NOT VALID, repair the rows, then validate it. Or allow OKM1531 with a reason."
+        }
+      ],
+      "types": {
+        "label": "Notes",
+        "rows": [
+          {
+            "n": 23,
+            "mark": "add",
+            "text": "  readonly status: \"draft\" | \"published\";"
+          }
+        ],
+        "more": 2
+      }
+    },
+    {
+      "kind": "migrate",
+      "id": "dropTable",
+      "diff": [
+        {
+          "n": null,
+          "mark": "fold",
+          "text": "5 unchanged lines"
+        },
+        {
+          "n": 6,
+          "mark": "ctx",
+          "text": "});"
+        },
+        {
+          "n": 7,
+          "mark": "ctx",
+          "text": ""
+        },
+        {
+          "n": null,
+          "mark": "del",
+          "text": "const notes = table(\"notes\", {"
+        },
+        {
+          "n": null,
+          "mark": "del",
+          "text": "  id: t.identity(),"
+        },
+        {
+          "n": null,
+          "mark": "del",
+          "text": "  title: t.text().nullable(),"
+        },
+        {
+          "n": null,
+          "mark": "del",
+          "text": "  authorId: t.bigint(),"
+        },
+        {
+          "n": null,
+          "mark": "del",
+          "text": "});"
+        },
+        {
+          "n": null,
+          "mark": "del",
+          "text": ""
+        },
+        {
+          "n": null,
+          "mark": "del",
+          "text": "export default schema({ tables: [authors, notes] });"
+        },
+        {
+          "n": 8,
+          "mark": "add",
+          "text": "export default schema({ tables: [authors] });"
+        }
+      ],
+      "plan": {
+        "file": "migrations/0002_drop_notes.sql",
+        "class": "contract",
+        "steps": [
+          {
+            "class": "contract",
+            "kind": "drop-table",
+            "lock": "ACCESS EXCLUSIVE",
+            "transactional": true,
+            "sql": "drop table \"public\".\"notes\";"
+          }
+        ]
+      },
+      "lint": [
+        {
+          "severity": "error",
+          "code": "OKM1511",
+          "step": 1,
+          "message": "drops a table",
+          "fix": "Stop reading the table in an expand migration, then drop it in a later contract. Or allow OKM1511 with a reason."
+        }
+      ],
+      "types": {
+        "label": "Notes",
+        "rows": [
+          {
+            "n": null,
+            "mark": "del",
+            "text": "export interface Notes {"
+          },
+          {
+            "n": null,
+            "mark": "del",
+            "text": "  readonly id: string;"
+          },
+          {
+            "n": null,
+            "mark": "del",
+            "text": "  readonly title: string | null;"
+          },
+          {
+            "n": null,
+            "mark": "del",
+            "text": "  readonly authorId: string;"
+          }
+        ],
+        "more": 19
+      }
+    },
+    {
+      "kind": "migrate",
+      "id": "timestamps",
+      "diff": [
+        {
+          "n": 1,
+          "mark": "ctx",
+          "text": "import { schema, table, t } from \"okmodel/pg\";"
+        },
+        {
+          "n": 2,
+          "mark": "add",
+          "text": "import { timestamps } from \"okmodel/traits\";"
+        },
+        {
+          "n": 3,
+          "mark": "ctx",
+          "text": ""
+        },
+        {
+          "n": 4,
+          "mark": "ctx",
+          "text": "const authors = table(\"authors\", {"
+        },
+        {
+          "n": null,
+          "mark": "fold",
+          "text": "6 unchanged lines"
+        },
+        {
+          "n": 11,
+          "mark": "ctx",
+          "text": "  title: t.text().nullable(),"
+        },
+        {
+          "n": 12,
+          "mark": "ctx",
+          "text": "  authorId: t.bigint(),"
+        },
+        {
+          "n": null,
+          "mark": "del",
+          "text": "});"
+        },
+        {
+          "n": 13,
+          "mark": "add",
+          "text": "}, { traits: [timestamps()] });"
+        },
+        {
+          "n": 14,
+          "mark": "ctx",
+          "text": ""
+        },
+        {
+          "n": 15,
+          "mark": "ctx",
+          "text": "export default schema({ tables: [authors, notes] });"
+        }
+      ],
+      "plan": {
+        "file": "migrations/0002_add_timestamps.sql",
+        "class": "expand",
+        "steps": [
+          {
+            "class": "expand",
+            "kind": "add-column",
+            "lock": "ACCESS EXCLUSIVE",
+            "transactional": true,
+            "sql": "alter table \"public\".\"notes\" add column \"createdAt\" timestamptz not null default now();"
+          },
+          {
+            "class": "expand",
+            "kind": "add-column",
+            "lock": "ACCESS EXCLUSIVE",
+            "transactional": true,
+            "sql": "alter table \"public\".\"notes\" add column \"updatedAt\" timestamptz not null default now();"
+          }
+        ]
+      },
+      "lint": [],
+      "types": {
+        "label": "Notes",
+        "rows": [
+          {
+            "n": 23,
+            "mark": "add",
+            "text": "  readonly createdAt: Temporal.Instant;"
+          },
+          {
+            "n": 24,
+            "mark": "add",
+            "text": "  readonly updatedAt: Temporal.Instant;"
+          }
+        ],
+        "more": 0
+      }
+    },
+    {
+      "kind": "migrate",
+      "id": "archive",
+      "diff": [
+        {
+          "n": 1,
+          "mark": "ctx",
+          "text": "import { schema, table, t } from \"okmodel/pg\";"
+        },
+        {
+          "n": 2,
+          "mark": "add",
+          "text": "import { archivable } from \"okmodel/traits\";"
+        },
+        {
+          "n": 3,
+          "mark": "ctx",
+          "text": ""
+        },
+        {
+          "n": 4,
+          "mark": "ctx",
+          "text": "const authors = table(\"authors\", {"
+        },
+        {
+          "n": null,
+          "mark": "fold",
+          "text": "6 unchanged lines"
+        },
+        {
+          "n": 11,
+          "mark": "ctx",
+          "text": "  title: t.text().nullable(),"
+        },
+        {
+          "n": 12,
+          "mark": "ctx",
+          "text": "  authorId: t.bigint(),"
+        },
+        {
+          "n": null,
+          "mark": "del",
+          "text": "});"
+        },
+        {
+          "n": 13,
+          "mark": "add",
+          "text": "}, { traits: [archivable()] });"
+        },
+        {
+          "n": 14,
+          "mark": "ctx",
+          "text": ""
+        },
+        {
+          "n": 15,
+          "mark": "ctx",
+          "text": "export default schema({ tables: [authors, notes] });"
+        }
+      ],
+      "plan": {
+        "file": "migrations/0002_archivable_notes.sql",
+        "class": "expand",
+        "steps": [
+          {
+            "class": "expand",
+            "kind": "add-column",
+            "lock": "ACCESS EXCLUSIVE",
+            "transactional": true,
+            "sql": "alter table \"public\".\"notes\" add column \"archiveId\" uuid;"
+          },
+          {
+            "class": "expand",
+            "kind": "add-column",
+            "lock": "ACCESS EXCLUSIVE",
+            "transactional": true,
+            "sql": "alter table \"public\".\"notes\" add column \"archivedAt\" timestamptz;"
+          }
+        ]
+      },
+      "lint": [],
+      "types": {
+        "label": "Notes",
+        "rows": [
+          {
+            "n": 23,
+            "mark": "add",
+            "text": "  readonly archivedAt: Temporal.Instant | null;"
+          },
+          {
+            "n": 24,
+            "mark": "add",
+            "text": "  readonly archiveId: string | null;"
+          }
+        ],
+        "more": 0
+      }
+    },
+    {
+      "kind": "migrate",
+      "id": "enum",
+      "diff": [
+        {
+          "n": null,
+          "mark": "fold",
+          "text": "9 unchanged lines"
+        },
+        {
+          "n": 10,
+          "mark": "ctx",
+          "text": "  title: t.text().nullable(),"
+        },
+        {
+          "n": 11,
+          "mark": "ctx",
+          "text": "  authorId: t.bigint(),"
+        },
+        {
+          "n": 12,
+          "mark": "add",
+          "text": "  status: t.enum(\"note_status\", [\"draft\", \"live\"]).default(\"draft\"),"
+        },
+        {
+          "n": 13,
+          "mark": "ctx",
+          "text": "});"
+        },
+        {
+          "n": 14,
+          "mark": "ctx",
+          "text": ""
+        },
+        {
+          "n": null,
+          "mark": "fold",
+          "text": "1 unchanged line"
+        }
+      ],
+      "plan": {
+        "file": "migrations/0002_add_enum.sql",
+        "class": "expand",
+        "steps": [
+          {
+            "class": "expand",
+            "kind": "create-enum",
+            "lock": "ACCESS EXCLUSIVE",
+            "transactional": true,
+            "sql": "create type \"public\".\"note_status\" as enum ('draft', 'live');"
+          },
+          {
+            "class": "expand",
+            "kind": "add-column",
+            "lock": "ACCESS EXCLUSIVE",
+            "transactional": true,
+            "sql": "alter table \"public\".\"notes\" add column \"status\" note_status not null default 'draft';"
+          }
+        ]
+      },
+      "lint": [],
+      "types": {
+        "label": "Notes",
+        "rows": [
+          {
+            "n": 23,
+            "mark": "add",
+            "text": "  readonly status: \"draft\" | \"live\";"
+          }
+        ],
+        "more": 2
+      }
+    },
+    {
+      "kind": "migrate",
+      "id": "view",
+      "diff": [
+        {
+          "n": null,
+          "mark": "del",
+          "text": "import { schema, table, t } from \"okmodel/pg\";"
+        },
+        {
+          "n": 1,
+          "mark": "add",
+          "text": "import { schema, sql, table, t } from \"okmodel/pg\";"
+        },
+        {
+          "n": 2,
+          "mark": "add",
+          "text": "import { view } from \"okmodel/view\";"
+        },
+        {
+          "n": 3,
+          "mark": "ctx",
+          "text": ""
+        },
+        {
+          "n": 4,
+          "mark": "ctx",
+          "text": "const authors = table(\"authors\", {"
+        },
+        {
+          "n": null,
+          "mark": "fold",
+          "text": "8 unchanged lines"
+        },
+        {
+          "n": 13,
+          "mark": "ctx",
+          "text": "});"
+        },
+        {
+          "n": 14,
+          "mark": "ctx",
+          "text": ""
+        },
+        {
+          "n": null,
+          "mark": "del",
+          "text": "export default schema({ tables: [authors, notes] });"
+        },
+        {
+          "n": 15,
+          "mark": "add",
+          "text": "const titled = view(\"titled\", {"
+        },
+        {
+          "n": 16,
+          "mark": "add",
+          "text": "  columns: [{ name: \"id\", type: \"bigint\" }, { name: \"title\", type: \"text\" }],"
+        },
+        {
+          "n": 17,
+          "mark": "add",
+          "text": "  query: sql`select id, title from notes where title is not null`,"
+        },
+        {
+          "n": 18,
+          "mark": "add",
+          "text": "});"
+        },
+        {
+          "n": 19,
+          "mark": "add",
+          "text": ""
+        },
+        {
+          "n": 20,
+          "mark": "add",
+          "text": "export default schema({ tables: [authors, notes], views: [titled] });"
+        }
+      ],
+      "plan": {
+        "file": "migrations/0002_add_view.sql",
+        "class": "expand",
+        "steps": [
+          {
+            "class": "expand",
+            "kind": "create-view",
+            "lock": "ACCESS EXCLUSIVE",
+            "transactional": true,
+            "sql": "create view \"public\".\"titled\" as select id, title from notes where title is not null;"
+          }
+        ]
+      },
+      "lint": [],
+      "types": null
+    },
+    {
+      "kind": "migrate",
+      "id": "tenant",
+      "diff": [
+        {
+          "n": null,
+          "mark": "del",
+          "text": "import { schema } from \"okmodel/pg\";"
+        },
+        {
+          "n": 1,
+          "mark": "add",
+          "text": "import { schema, table, t } from \"okmodel/pg\";"
+        },
+        {
+          "n": 2,
+          "mark": "add",
+          "text": "import { columnTenancy } from \"okmodel/tenancy\";"
+        },
+        {
+          "n": 3,
+          "mark": "ctx",
+          "text": ""
+        },
+        {
+          "n": null,
+          "mark": "del",
+          "text": "export default schema({ tables: [] });"
+        },
+        {
+          "n": 4,
+          "mark": "add",
+          "text": "const notes = table(\"notes\", { id: t.identity(), title: t.text() });"
+        },
+        {
+          "n": 5,
+          "mark": "add",
+          "text": ""
+        },
+        {
+          "n": 6,
+          "mark": "add",
+          "text": "export default schema({"
+        },
+        {
+          "n": 7,
+          "mark": "add",
+          "text": "  tenancy: columnTenancy({ key: \"tenantId\", type: \"uuid\" }),"
+        },
+        {
+          "n": 8,
+          "mark": "add",
+          "text": "  tables: [notes],"
+        },
+        {
+          "n": 9,
+          "mark": "add",
+          "text": "});"
+        }
+      ],
+      "plan": {
+        "file": "migrations/0001_tenant_notes.sql",
+        "class": "expand",
+        "steps": [
+          {
+            "class": "expand",
+            "kind": "create-table",
+            "lock": "ACCESS EXCLUSIVE",
+            "transactional": true,
+            "sql": "create table \"public\".\"notes\" (\n  \"id\" bigint generated always as identity not null,\n  \"tenantId\" uuid not null,\n  \"title\" text not null,\n  constraint \"notes_pkey\" primary key (\"id\", \"tenantId\")\n);"
+          },
+          {
+            "class": "expand",
+            "kind": "add-constraint",
+            "lock": "ACCESS EXCLUSIVE",
+            "transactional": true,
+            "sql": "alter table \"public\".\"notes\" add constraint \"notes_id_tenantId_key\" unique (\"id\", \"tenantId\");"
+          }
+        ]
+      },
+      "lint": [],
+      "types": {
+        "label": "Notes",
+        "rows": [
+          {
+            "n": 6,
+            "mark": "add",
+            "text": "export interface Notes {"
+          },
+          {
+            "n": 7,
+            "mark": "add",
+            "text": "  readonly id: string;"
+          },
+          {
+            "n": 8,
+            "mark": "add",
+            "text": "  readonly title: string;"
+          },
+          {
+            "n": 9,
+            "mark": "add",
+            "text": "  readonly tenantId: string;"
+          }
+        ],
+        "more": 20
+      }
+    },
+    {
+      "kind": "migrate",
+      "id": "rls",
+      "diff": [
+        {
+          "n": null,
+          "mark": "del",
+          "text": "import { schema } from \"okmodel/pg\";"
+        },
+        {
+          "n": 1,
+          "mark": "add",
+          "text": "import { schema, table, t } from \"okmodel/pg\";"
+        },
+        {
+          "n": 2,
+          "mark": "add",
+          "text": "import { rlsTenancy } from \"okmodel/tenancy\";"
+        },
+        {
+          "n": 3,
+          "mark": "ctx",
+          "text": ""
+        },
+        {
+          "n": null,
+          "mark": "del",
+          "text": "export default schema({ tables: [] });"
+        },
+        {
+          "n": 4,
+          "mark": "add",
+          "text": "const notes = table(\"notes\", { id: t.identity(), title: t.text() });"
+        },
+        {
+          "n": 5,
+          "mark": "add",
+          "text": ""
+        },
+        {
+          "n": 6,
+          "mark": "add",
+          "text": "export default schema({"
+        },
+        {
+          "n": 7,
+          "mark": "add",
+          "text": "  tenancy: rlsTenancy({ key: \"tenantId\", type: \"uuid\" }),"
+        },
+        {
+          "n": 8,
+          "mark": "add",
+          "text": "  tables: [notes],"
+        },
+        {
+          "n": 9,
+          "mark": "add",
+          "text": "});"
+        }
+      ],
+      "plan": {
+        "file": "migrations/0001_tenant_rls.sql",
+        "class": "expand",
+        "steps": [
+          {
+            "class": "expand",
+            "kind": "create-table",
+            "lock": "ACCESS EXCLUSIVE",
+            "transactional": true,
+            "sql": "create table \"public\".\"notes\" (\n  \"id\" bigint generated always as identity not null,\n  \"tenantId\" uuid not null,\n  \"title\" text not null,\n  constraint \"notes_pkey\" primary key (\"id\", \"tenantId\")\n);"
+          },
+          {
+            "class": "expand",
+            "kind": "add-constraint",
+            "lock": "ACCESS EXCLUSIVE",
+            "transactional": true,
+            "sql": "alter table \"public\".\"notes\" add constraint \"notes_id_tenantId_key\" unique (\"id\", \"tenantId\");"
+          },
+          {
+            "class": "expand",
+            "kind": "enable-rls",
+            "lock": "ACCESS EXCLUSIVE",
+            "transactional": true,
+            "sql": "alter table \"public\".\"notes\" enable row level security;"
+          },
+          {
+            "class": "expand",
+            "kind": "enable-rls",
+            "lock": "ACCESS EXCLUSIVE",
+            "transactional": true,
+            "sql": "alter table \"public\".\"notes\" force row level security;"
+          },
+          {
+            "class": "expand",
+            "kind": "create-policy",
+            "lock": "ACCESS EXCLUSIVE",
+            "transactional": true,
+            "sql": "create policy \"notes_tenant\" on \"public\".\"notes\" as permissive for all using (\"tenantId\" = (NULLIF(current_setting('app.tenant'::text, true), ''::text))::uuid) with check (\"tenantId\" = (NULLIF(current_setting('app.tenant'::text, true), ''::text))::uuid);"
+          },
+          {
+            "class": "expand",
+            "kind": "create-policy",
+            "lock": "ACCESS EXCLUSIVE",
+            "transactional": true,
+            "sql": "create policy \"notes_unscoped_select\" on \"public\".\"notes\" as permissive for select using (current_setting('app.unscoped'::text, true) = 'on'::text);"
+          }
+        ]
+      },
+      "lint": [],
+      "types": {
+        "label": "Notes",
+        "rows": [
+          {
+            "n": 6,
+            "mark": "add",
+            "text": "export interface Notes {"
+          },
+          {
+            "n": 7,
+            "mark": "add",
+            "text": "  readonly id: string;"
+          },
+          {
+            "n": 8,
+            "mark": "add",
+            "text": "  readonly title: string;"
+          },
+          {
+            "n": 9,
+            "mark": "add",
+            "text": "  readonly tenantId: string;"
+          }
+        ],
+        "more": 20
+      }
+    },
+    {
+      "kind": "query",
+      "id": "include",
+      "code": [
+        {
+          "n": 1,
+          "mark": "ctx",
+          "text": "const notes = table("
+        },
+        {
+          "n": 2,
+          "mark": "ctx",
+          "text": "  \"notes\","
+        },
+        {
+          "n": 3,
+          "mark": "ctx",
+          "text": "  {"
+        },
+        {
+          "n": 4,
+          "mark": "ctx",
+          "text": "    id: t.identity(),"
+        },
+        {
+          "n": 5,
+          "mark": "ctx",
+          "text": "    title: t.text(),"
+        },
+        {
+          "n": 6,
+          "mark": "ctx",
+          "text": "    authorId: t.bigint().references(\"authors\"),"
+        },
+        {
+          "n": 7,
+          "mark": "ctx",
+          "text": "  },"
+        },
+        {
+          "n": 8,
+          "mark": "ctx",
+          "text": "  { relations: { author: one(\"authors\", \"authorId\") } },"
+        },
+        {
+          "n": 9,
+          "mark": "ctx",
+          "text": ");"
+        },
+        {
+          "n": 10,
+          "mark": "ctx",
+          "text": ""
+        },
+        {
+          "n": 11,
+          "mark": "hot",
+          "text": "const rows = await db.notes.find({"
+        },
+        {
+          "n": 12,
+          "mark": "hot",
+          "text": "  where: { authorId: ada.id },"
+        },
+        {
+          "n": 13,
+          "mark": "hot",
+          "text": "  orderBy: { title: \"asc\" },"
+        },
+        {
+          "n": 14,
+          "mark": "hot",
+          "text": "  limit: 5,"
+        },
+        {
+          "n": 15,
+          "mark": "hot",
+          "text": "  include: { author: true },"
+        },
+        {
+          "n": 16,
+          "mark": "hot",
+          "text": "});"
+        }
+      ],
+      "sql": {
+        "text": "select t.\"id\", t.\"title\", t.\"authorId\", i0.c0, i0.c1\nfrom \"notes\" t\nleft join lateral (select r0_author.\"id\" as c0, r0_author.\"name\" as c1 from \"authors\" r0_author where r0_author.\"id\" = t.\"authorId\" limit 1) i0 on true\nwhere t.\"authorId\" = $1\norder by t.\"title\" asc nulls last\nlimit $2",
+        "params": [
+          "1",
+          "5"
+        ]
+      },
+      "result": {
+        "text": "[\n  { id: \"1\", title: \"hello\", authorId: \"1\", author: { id: \"1\", name: \"Ada\" } },\n  { id: \"2\", title: \"sql tips\", authorId: \"1\", author: { id: \"1\", name: \"Ada\" } },\n]",
+        "count": 2
+      },
+      "rules": [
+        {
+          "rule": "parameterised",
+          "contribution": "planner",
+          "provenance": "planner"
+        },
+        {
+          "rule": "allowlisted",
+          "contribution": "catalog",
+          "provenance": "catalog"
+        },
+        {
+          "rule": "identifier",
+          "contribution": "catalog",
+          "provenance": "catalog"
+        },
+        {
+          "rule": "filter",
+          "contribution": "caller",
+          "provenance": "caller"
+        },
+        {
+          "rule": "bounded",
+          "contribution": "limit",
+          "provenance": "caller"
+        }
+      ]
+    },
+    {
+      "kind": "query",
+      "id": "page",
+      "code": [
+        {
+          "n": 1,
+          "mark": "ctx",
+          "text": "const notes = table("
+        },
+        {
+          "n": 2,
+          "mark": "ctx",
+          "text": "  \"notes\","
+        },
+        {
+          "n": 3,
+          "mark": "ctx",
+          "text": "  {"
+        },
+        {
+          "n": 4,
+          "mark": "ctx",
+          "text": "    id: t.identity(),"
+        },
+        {
+          "n": 5,
+          "mark": "ctx",
+          "text": "    title: t.text(),"
+        },
+        {
+          "n": 6,
+          "mark": "ctx",
+          "text": "    authorId: t.bigint().references(\"authors\"),"
+        },
+        {
+          "n": 7,
+          "mark": "ctx",
+          "text": "  },"
+        },
+        {
+          "n": 8,
+          "mark": "ctx",
+          "text": "  { relations: { author: one(\"authors\", \"authorId\") } },"
+        },
+        {
+          "n": 9,
+          "mark": "ctx",
+          "text": ");"
+        },
+        {
+          "n": 10,
+          "mark": "ctx",
+          "text": ""
+        },
+        {
+          "n": 11,
+          "mark": "hot",
+          "text": "const rows = await db.notes.page({ orderBy: { title: \"asc\" }, limit: 2 });"
+        }
+      ],
+      "sql": {
+        "text": "select t.\"id\", t.\"title\", t.\"authorId\"\nfrom \"notes\" t\norder by t.\"title\" asc nulls last, t.\"id\" asc nulls last\nlimit $1",
+        "params": [
+          "3"
+        ]
+      },
+      "result": {
+        "text": "{\n  items: [\n    { id: \"1\", title: \"hello\", authorId: \"1\" },\n    { id: \"3\", title: \"lunch\", authorId: \"2\" },\n  ],\n  next: \"WyJub3Rlczp0aXRsZS5hc2MubGFzdCxpZC5hc2MubGFzdCIsImx1bmNoIiwiMyJd\",\n}",
+        "count": 2
+      },
+      "rules": [
+        {
+          "rule": "parameterised",
+          "contribution": "planner",
+          "provenance": "planner"
+        },
+        {
+          "rule": "allowlisted",
+          "contribution": "catalog",
+          "provenance": "catalog"
+        },
+        {
+          "rule": "identifier",
+          "contribution": "catalog",
+          "provenance": "catalog"
+        },
+        {
+          "rule": "bounded",
+          "contribution": "limit",
+          "provenance": "caller"
+        }
+      ]
+    },
+    {
+      "kind": "query",
+      "id": "aggregate",
+      "code": [
+        {
+          "n": 1,
+          "mark": "ctx",
+          "text": "const notes = table("
+        },
+        {
+          "n": 2,
+          "mark": "ctx",
+          "text": "  \"notes\","
+        },
+        {
+          "n": 3,
+          "mark": "ctx",
+          "text": "  {"
+        },
+        {
+          "n": 4,
+          "mark": "ctx",
+          "text": "    id: t.identity(),"
+        },
+        {
+          "n": 5,
+          "mark": "ctx",
+          "text": "    title: t.text(),"
+        },
+        {
+          "n": 6,
+          "mark": "ctx",
+          "text": "    authorId: t.bigint().references(\"authors\"),"
+        },
+        {
+          "n": 7,
+          "mark": "ctx",
+          "text": "  },"
+        },
+        {
+          "n": 8,
+          "mark": "ctx",
+          "text": "  { relations: { author: one(\"authors\", \"authorId\") } },"
+        },
+        {
+          "n": 9,
+          "mark": "ctx",
+          "text": ");"
+        },
+        {
+          "n": 10,
+          "mark": "ctx",
+          "text": ""
+        },
+        {
+          "n": 11,
+          "mark": "hot",
+          "text": "const rows = await db.notes.aggregate({ groupBy: [\"authorId\"], count: true, limit: 10 });"
+        }
+      ],
+      "sql": {
+        "text": "select t.\"authorId\", count(*)::text\nfrom \"notes\" t\ngroup by t.\"authorId\"\norder by t.\"authorId\" asc nulls last\nlimit $1",
+        "params": [
+          "10"
+        ]
+      },
+      "result": {
+        "text": "[\n  { authorId: \"1\", count: 2 },\n  { authorId: \"2\", count: 1 },\n]",
+        "count": 2
+      },
+      "rules": [
+        {
+          "rule": "parameterised",
+          "contribution": "planner",
+          "provenance": "planner"
+        },
+        {
+          "rule": "allowlisted",
+          "contribution": "catalog",
+          "provenance": "catalog"
+        },
+        {
+          "rule": "identifier",
+          "contribution": "catalog",
+          "provenance": "catalog"
+        }
+      ]
+    },
+    {
+      "kind": "query",
+      "id": "search",
+      "code": [
+        {
+          "n": 1,
+          "mark": "ctx",
+          "text": "const pages = table(\"pages\", {"
+        },
+        {
+          "n": 2,
+          "mark": "ctx",
+          "text": "  id: t.identity(),"
+        },
+        {
+          "n": 3,
+          "mark": "ctx",
+          "text": "  title: t.text(),"
+        },
+        {
+          "n": 4,
+          "mark": "ctx",
+          "text": "  body: t.tsvector(),"
+        },
+        {
+          "n": 5,
+          "mark": "ctx",
+          "text": "});"
+        },
+        {
+          "n": 6,
+          "mark": "ctx",
+          "text": ""
+        },
+        {
+          "n": 7,
+          "mark": "hot",
+          "text": "const rows = await db.pages.find({ search: \"deploy rollback\", limit: 5 });"
+        }
+      ],
+      "sql": {
+        "text": "select t.\"id\", t.\"title\", t.\"body\"\nfrom \"pages\" t\nwhere t.\"body\" @@ websearch_to_tsquery($1)\norder by ts_rank(t.\"body\", websearch_to_tsquery($2)) desc, t.\"id\" asc nulls last\nlimit $3",
+        "params": [
+          "deploy rollback",
+          "deploy rollback",
+          "5"
+        ]
+      },
+      "result": {
+        "text": "[\n  { id: \"3\", title: \"Deploy guide\", body: \"'deploy':1 'guide':2 'rollback':3\" },\n]",
+        "count": 1
+      },
+      "rules": [
+        {
+          "rule": "parameterised",
+          "contribution": "planner",
+          "provenance": "planner"
+        },
+        {
+          "rule": "allowlisted",
+          "contribution": "catalog",
+          "provenance": "catalog"
+        },
+        {
+          "rule": "identifier",
+          "contribution": "catalog",
+          "provenance": "catalog"
+        },
+        {
+          "rule": "filter",
+          "contribution": "caller",
+          "provenance": "caller"
+        },
+        {
+          "rule": "bounded",
+          "contribution": "limit",
+          "provenance": "caller"
+        }
+      ]
+    },
+    {
+      "kind": "query",
+      "id": "scoped",
+      "code": [
+        {
+          "n": 1,
+          "mark": "ctx",
+          "text": "const app = schema({"
+        },
+        {
+          "n": 2,
+          "mark": "ctx",
+          "text": "  tenancy: columnTenancy({ key: \"tenantId\", type: \"uuid\" }),"
+        },
+        {
+          "n": 3,
+          "mark": "ctx",
+          "text": "  tables: [notes],"
+        },
+        {
+          "n": 4,
+          "mark": "ctx",
+          "text": "});"
+        },
+        {
+          "n": 5,
+          "mark": "ctx",
+          "text": ""
+        },
+        {
+          "n": 6,
+          "mark": "hot",
+          "text": "const rows = await db.for({ tenantId: acme }).notes.find({ limit: 5 });"
+        }
+      ],
+      "sql": {
+        "text": "select t.\"id\", t.\"title\", t.\"tenantId\"\nfrom \"notes\" t\nwhere t.\"tenantId\" = $1\nlimit $2",
+        "params": [
+          "0190c5a2-8f0e-7c3a-9b2d-6e4f1a0b9c11",
+          "5"
+        ]
+      },
+      "result": {
+        "text": "[\n  { id: \"1\", title: \"acme roadmap\", tenantId: \"0190c5a2-8f0e-7c3a-9b2d-6e4f1a0b9c11\" },\n  { id: \"2\", title: \"acme budget\", tenantId: \"0190c5a2-8f0e-7c3a-9b2d-6e4f1a0b9c11\" },\n]",
+        "count": 2
+      },
+      "rules": [
+        {
+          "rule": "parameterised",
+          "contribution": "planner",
+          "provenance": "planner"
+        },
+        {
+          "rule": "allowlisted",
+          "contribution": "catalog",
+          "provenance": "catalog"
+        },
+        {
+          "rule": "identifier",
+          "contribution": "catalog",
+          "provenance": "catalog"
+        },
+        {
+          "rule": "bounded",
+          "contribution": "limit",
+          "provenance": "caller"
+        },
+        {
+          "rule": "tenancy",
+          "contribution": "scoped",
+          "provenance": "planner"
+        }
+      ]
+    },
+    {
+      "kind": "query",
+      "id": "archived",
+      "code": [
+        {
+          "n": 1,
+          "mark": "ctx",
+          "text": "const notes = table(\"notes\", { id: t.identity(), title: t.text() }, { traits: [archivable()] });"
+        },
+        {
+          "n": 2,
+          "mark": "ctx",
+          "text": ""
+        },
+        {
+          "n": 3,
+          "mark": "hot",
+          "text": "const rows = await db.notes.find({ limit: 5 });"
+        }
+      ],
+      "sql": {
+        "text": "select t.\"id\", t.\"title\", to_char(t.\"archivedAt\" AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"'), t.\"archiveId\"\nfrom \"notes\" t\nwhere t.\"archivedAt\" is null\nlimit $1",
+        "params": [
+          "5"
+        ]
+      },
+      "result": {
+        "text": "[\n  { id: \"1\", title: \"keep\", archivedAt: null, archiveId: null },\n]",
+        "count": 1
+      },
+      "rules": [
+        {
+          "rule": "parameterised",
+          "contribution": "planner",
+          "provenance": "planner"
+        },
+        {
+          "rule": "allowlisted",
+          "contribution": "catalog",
+          "provenance": "catalog"
+        },
+        {
+          "rule": "identifier",
+          "contribution": "catalog",
+          "provenance": "catalog"
+        },
+        {
+          "rule": "bounded",
+          "contribution": "limit",
+          "provenance": "caller"
+        },
+        {
+          "rule": "archive",
+          "contribution": "active set",
+          "provenance": "planner"
+        }
+      ]
+    },
+    {
+      "kind": "query",
+      "id": "hiddenRead",
+      "code": [
+        {
+          "n": 1,
+          "mark": "ctx",
+          "text": "const users = table(\"users\", {"
+        },
+        {
+          "n": 2,
+          "mark": "ctx",
+          "text": "  id: t.identity(),"
+        },
+        {
+          "n": 3,
+          "mark": "ctx",
+          "text": "  email: t.text(),"
+        },
+        {
+          "n": 4,
+          "mark": "ctx",
+          "text": "  passwordHash: t.text().hidden(),"
+        },
+        {
+          "n": 5,
+          "mark": "ctx",
+          "text": "});"
+        },
+        {
+          "n": 6,
+          "mark": "ctx",
+          "text": ""
+        },
+        {
+          "n": 7,
+          "mark": "hot",
+          "text": "const rows = await db.users.find({ limit: 5 });"
+        }
+      ],
+      "sql": {
+        "text": "select t.\"id\", t.\"email\"\nfrom \"users\" t\nlimit $1",
+        "params": [
+          "5"
+        ]
+      },
+      "result": {
+        "text": "[\n  { id: \"1\", email: \"ada@example.com\" },\n]",
+        "count": 1
+      },
+      "rules": [
+        {
+          "rule": "parameterised",
+          "contribution": "planner",
+          "provenance": "planner"
+        },
+        {
+          "rule": "allowlisted",
+          "contribution": "catalog",
+          "provenance": "catalog"
+        },
+        {
+          "rule": "identifier",
+          "contribution": "catalog",
+          "provenance": "catalog"
+        },
+        {
+          "rule": "bounded",
+          "contribution": "limit",
+          "provenance": "caller"
+        },
+        {
+          "rule": "hidden",
+          "contribution": "hidden users.passwordHash excluded",
+          "provenance": "catalog"
+        }
+      ]
+    }
+  ]
+}

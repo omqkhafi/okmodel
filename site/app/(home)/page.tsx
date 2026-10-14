@@ -1,9 +1,17 @@
+/**
+ * Homepage shell layout adapted from better-auth/better-auth `docs/app/page.tsx`
+ * under the MIT License. Copyright (c) 2024 - present, Bereket Engida.
+ * See site/NOTICE. Brand art, Trusted By, Ask AI, and sign-in demos omitted;
+ * the stage is OKModel's own: a schema edit and what okmodel does with it.
+ */
+
+import { HeroFacts } from "@/components/landing/hero-facts";
+import { HeroPrism, HeroStage, HeroWalkProvider } from "@/components/landing/hero-stage";
+import { HeroTitle } from "@/components/landing/hero-title";
 import { JsonLd } from "@/components/json-ld";
-import { readRootPackage, readTagline, softwareApplicationJsonLd } from "@/lib/package-meta";
-import { SITE_NAME } from "@/lib/site-identity";
-import { githubRepoUrl } from "@/lib/shared";
+import { loadHeroScenarios } from "@/lib/hero-code";
+import { readRootPackage, softwareApplicationJsonLd } from "@/lib/package-meta";
 import type { Metadata } from "next";
-import Link from "next/link";
 
 export const metadata: Metadata = {
   alternates: { canonical: "/" },
@@ -12,65 +20,32 @@ export const metadata: Metadata = {
   },
 };
 
-const STEPS = [
-  {
-    href: "/docs/start",
-    kicker: "01",
-    title: "Let's start",
-    text: "Install a driver, define the table, then push and connect.",
-  },
-  {
-    href: "/docs/start/basic-usage",
-    kicker: "02",
-    title: "Basic Usage",
-    text: "Each call on the client: insert, find, one, count, exists, update, and delete.",
-  },
-] as const;
-
 /**
- * Entry to the handbook. The learning path lives under `/docs`.
+ * Marketing homepage, hero only: copy on top, then one stage that edits a
+ * schema and shows what okmodel does with the edit: the safe migration, the
+ * lint, and the types. The learning path lives under `/docs`.
  */
-export default function HomePage() {
+export default async function HomePage() {
+  const scenarios = await loadHeroScenarios();
   const install = `bun add ${readRootPackage().name}`;
+
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col items-center px-6 py-24 text-center">
+    <div id="hero" className="relative text-fd-foreground">
       <JsonLd data={softwareApplicationJsonLd()} />
-      <p className="rounded-full border border-fd-border px-3 py-1 font-mono text-xs text-fd-muted-foreground">
-        {SITE_NAME}
-      </p>
-      <h1 className="mt-6 max-w-xl text-5xl tracking-tight sm:text-6xl">The schema is the source.</h1>
-      <p className="mt-5 max-w-lg text-lg leading-relaxed text-fd-muted-foreground">{readTagline()}</p>
-      <div className="mt-8 flex flex-wrap justify-center gap-3">
-        <Link
-          href="/docs/start"
-          className="inline-flex bg-fd-foreground px-4 py-2 text-sm text-fd-background"
-        >
-          Start
-        </Link>
-        <Link href="/docs" className="inline-flex border border-fd-border px-4 py-2 text-sm">
-          Documentation
-        </Link>
-        <a
-          href={githubRepoUrl}
-          className="inline-flex px-4 py-2 text-sm text-fd-muted-foreground"
-        >
-          GitHub
-        </a>
-      </div>
-      <pre className="mt-12 w-full max-w-xl overflow-x-auto border border-fd-border bg-fd-card p-5 text-left font-mono text-sm">
-        <code>{install}</code>
-      </pre>
-      <ul className="mt-12 grid w-full gap-4 text-left">
-        {STEPS.map((step) => (
-          <li key={step.href} className="border border-fd-border p-4">
-            <p className="font-mono text-xs text-fd-muted-foreground">{step.kicker}</p>
-            <Link href={step.href} className="mt-1 block font-medium">
-              {step.title}
-            </Link>
-            <p className="mt-1 text-sm text-fd-muted-foreground">{step.text}</p>
-          </li>
-        ))}
-      </ul>
-    </main>
+      {/* Clipped: the prism and the grid bleed past the column padding. */}
+      <section className="relative flex min-h-[calc(100svh-var(--landing-topbar-height))] flex-col overflow-x-clip border-b border-fd-border">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 bg-grid-black/[0.02] [mask-image:radial-gradient(70%_55%_at_50%_28%,#000,transparent)] dark:bg-grid-white/[0.02]"
+        />
+        <HeroWalkProvider scenarios={scenarios}>
+          <HeroPrism />
+          <div className="relative mx-auto flex w-full max-w-7xl flex-1 flex-col items-center justify-center px-5 py-12 text-center sm:px-8">
+            <HeroTitle command={install} />
+            <HeroStage facts={<HeroFacts />} />
+          </div>
+        </HeroWalkProvider>
+      </section>
+    </div>
   );
 }
