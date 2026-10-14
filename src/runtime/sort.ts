@@ -2,9 +2,11 @@
  * Position assignment and `move`.
  *
  * Loaded on the first insert or move of a `sortable()` table. Positions are
- * dense positive integers, unique inside the group (and the tenant). A move
- * renumbers in one statement under an advisory lock so two moves cannot
- * commit the same order.
+ * dense positive integers, unique inside the group (and the tenant). The
+ * advisory lock is its own statement. The next statement reads positions.
+ * Under READ COMMITTED a statement's snapshot is taken when it starts, which
+ * is before a lock in that same statement is granted, so a commit that landed
+ * while this transaction waited would be invisible.
  */
 
 import type { ExecuteOptions, Statement } from "../contracts/driver.js";
@@ -38,16 +40,16 @@ type Seen = {
 /**
  * Inserts rows at the end of their group.
  *
- * The statement locks the group, then takes `max(position) + n`. A writer
- * that bypasses this statement can still race; the unique index rejects a
- * duplicate.
+ * The lock statement runs first. The insert then takes `max(position) + n`
+ * from a snapshot taken after that lock is held. A writer that bypasses these
+ * statements can still race; the unique index rejects a duplicate.
  *
  * @param table - Target table
  * @param columns - Columns the insert already decided to write
  * @param rows - Stamped rows, in call order
  * @param group - Group field, when the trait has one
  * @param tenantFields - Tenant fields stored on this table
- * @returns The insert, without `returning`
+ * @returns The lock, then the insert without `returning`
  */
 export function insertAtEnd(
   table: Indexed,
@@ -55,23 +57,17 @@ export function insertAtEnd(
   rows: readonly Record<string, unknown>[],
   group: string | undefined,
   tenantFields: readonly string[] | undefined,
-): { readonly text: string; readonly params: (string | null)[] } {
+): { readonly lock: Statement; readonly text: string; readonly params: (string | null)[] } {
   const position = requiredColumn(table, "position");
   const groupColumn = group === undefined ? undefined : requiredColumn(table, group);
   const tenants = tenantColumns(table, tenantFields);
-  const params: (string | null)[] = [];
-  const bind = (wire: string | null, dataType: string): string => {
-    params.push(wire);
-    return `$${String(params.length)}::${dataType}`;
-  };
   const planned: {
     readonly key: string;
-    readonly slot: string;
     readonly n: number;
     readonly row: Record<string, unknown>;
   }[] = [];
-  const slotOf = new Map<string, string>();
   const countOf = new Map<string, number>();
+  const firstOf = new Map<string, Record<string, unknown>>();
   for (const row of rows) {
     if (groupColumn !== undefined && !Object.hasOwn(row, groupColumn.field)) {
       fail(
@@ -85,44 +81,41 @@ export function insertAtEnd(
       wires(tenants, row),
       groupColumn === undefined ? null : cellWire(groupColumn, row[groupColumn.field]),
     );
-    let slot = slotOf.get(key);
-    if (slot === undefined) {
-      slot = bind(key, "text");
-      slotOf.set(key, slot);
-    }
+    if (!firstOf.has(key)) firstOf.set(key, row);
     const n = (countOf.get(key) ?? 0) + 1;
     countOf.set(key, n);
-    planned.push({ key, slot, n, row });
+    planned.push({ key, n, row });
   }
-  const locked = [...slotOf.values()].map((slot) => `(${slot})`).join(", ");
+  const params: (string | null)[] = [];
+  const bind = (wire: string | null, dataType: string): string => {
+    params.push(wire);
+    return `$${String(params.length)}::${dataType}`;
+  };
+  const slotOf = new Map<string, string>();
+  for (const key of firstOf.keys()) slotOf.set(key, bind(key, "text"));
   const baseRows: string[] = [];
-  const seenKey = new Set<string>();
-  for (const item of planned) {
-    if (seenKey.has(item.key)) continue;
-    seenKey.add(item.key);
-    const parts = [item.slot];
+  for (const [key, row] of firstOf) {
+    const parts = [slotOf.get(key) ?? bind(key, "text")];
     if (groupColumn !== undefined)
-      parts.push(bind(cellWire(groupColumn, item.row[groupColumn.field]), groupColumn.dataType));
+      parts.push(bind(cellWire(groupColumn, row[groupColumn.field]), groupColumn.dataType));
     for (const column of tenants)
-      parts.push(bind(cellWire(column, item.row[column.field]), column.dataType));
+      parts.push(bind(cellWire(column, row[column.field]), column.dataType));
     baseRows.push(`(${parts.join(", ")})`);
   }
   const baseNames = ["okm_lock"];
   if (groupColumn !== undefined) baseNames.push("okm_g");
   for (let index = 0; index < tenants.length; index += 1) baseNames.push(`okm_t${String(index)}`);
   const lists = planned.map((item) => {
+    const slot = slotOf.get(item.key) ?? bind(item.key, "text");
     const slots = columns.map((column) => cell(column, item.row[column.field], bind));
     slots.push(
-      `((select b.pos from base b where b.okm_lock = ${item.slot}) + ${String(item.n)})::integer`,
+      `((select b.pos from base b where b.okm_lock = ${slot}) + ${String(item.n)})::integer`,
     );
     return `(${slots.join(", ")})`;
   });
   const insertColumns = [...columns.map((column) => quote(column.sql)), quote(position.sql)];
   const text = [
-    "with locked as (",
-    "select pg_advisory_xact_lock(hashtextextended(k.okm_lock, 0::bigint))",
-    ` from (values ${locked}) as k(okm_lock)`,
-    "), base as (",
+    "with base as (",
     "select i.okm_lock, coalesce(max(t.",
     quote(position.sql),
     "), 0) as pos from (values ",
@@ -133,7 +126,7 @@ export function insertAtEnd(
     quote(table.model.sql),
     " as t on ",
     joinOn(groupColumn, tenants),
-    " where exists (select 1 from locked) group by i.okm_lock",
+    " group by i.okm_lock",
     ") insert into ",
     quote(table.model.sql),
     " (",
@@ -141,7 +134,7 @@ export function insertAtEnd(
     ") values ",
     lists.join(", "),
   ].join("");
-  return { text, params };
+  return { lock: groupLock([...firstOf.keys()]), text, params };
 }
 
 /**
@@ -199,7 +192,8 @@ export async function move(
     moveStatements(host.schema, table, key, id, anchor.id, moved, anchor.side, group),
   );
   const results = await runWrite(host, statements, callOptions(host));
-  const row = results[0]?.rows[0];
+  // Index 0 takes the advisory lock and is not the move's counts.
+  const row = results[1]?.rows[0];
   if (count(row?.[0]) !== 1) missing(tableName, id);
   if (count(row?.[1]) !== 1) missing(tableName, anchor.id);
   return { position: count(row?.[2]) };
@@ -316,9 +310,10 @@ function moveStatements(
   side: "before" | "after",
   group: string | undefined,
 ): readonly Statement[] {
+  const lock = groupLock([lockText(table.model.sql, moved.tenants, moved.groupWire)]);
   const place = moveStatement(schema, table, key, id, anchor, moved, side, group);
   const tenants = tenantColumns(table, tenantFieldNames(schema.tenancy, table));
-  return [place, flipStatement(table, moved, group, tenants)];
+  return [lock, place, flipStatement(table, moved, group, tenants)];
 }
 
 function moveStatement(
@@ -339,7 +334,6 @@ function moveStatement(
     params.push(wire);
     return `$${String(params.length)}::${dataType}`;
   };
-  const lock = bind(lockText(table.model.sql, moved.tenants, moved.groupWire), "text");
   const groupSlot = groupColumn === undefined ? "" : bind(moved.groupWire, groupColumn.dataType);
   const tenantSlots = tenants.map((column, index) =>
     bind(moved.tenants[index] ?? null, column.dataType),
@@ -348,30 +342,31 @@ function moveStatement(
   const anchorSlot = bind(key.encode(anchor), key.dataType);
   const delta = bind(side === "before" ? "-0.5" : "0.5", "numeric");
   const parts: string[] = [];
-  parts.push("with locked as (select pg_advisory_xact_lock(hashtextextended(");
-  parts.push(lock);
-  parts.push(", 0::bigint)) as held), members as (select t.ctid as tid, t.tableoid as toid, t.");
+  parts.push("with members as (select t.ctid as tid, t.tableoid as toid, t.");
   parts.push(quote(position.sql));
   parts.push(" as pos, t.");
   parts.push(quote(key.sql));
   parts.push(" as ident from ");
   parts.push(quote(table.model.sql));
-  parts.push(" as t where exists (select 1 from locked)");
+  parts.push(" as t");
+  let filtered = false;
   if (groupColumn !== undefined) {
-    parts.push(" and t.");
+    parts.push(" where t.");
     parts.push(quote(groupColumn.sql));
     parts.push(" is not distinct from ");
     parts.push(groupSlot);
+    filtered = true;
   }
   for (let index = 0; index < tenants.length; index += 1) {
     const column = tenants[index];
     if (column === undefined) continue;
-    parts.push(" and t.");
+    parts.push(filtered ? " and t." : " where t.");
     parts.push(quote(column.sql));
     parts.push(" is not distinct from ");
     parts.push(tenantSlots[index] ?? "null");
+    filtered = true;
   }
-  emitWhere(schema, table, undefined, sink(parts, params), "t", 0, true);
+  emitWhere(schema, table, undefined, sink(parts, params), "t", 0, filtered);
   parts.push(
     " for update of t), numbered as (select ident, pos, tid, toid, row_number() over (order by pos, ident) as ord from members), placed as (select ident, pos, tid, toid, row_number() over (order by case when ident = ",
   );
@@ -474,6 +469,30 @@ function lockText(
   group: string | null,
 ): string {
   return JSON.stringify([sqlName, tenants, group]);
+}
+
+/**
+ * Locks each group key before a later statement reads positions.
+ *
+ * Keys are taken in sorted order so two inserts that share groups cannot
+ * deadlock. The volatile lock runs once per key, in that order.
+ *
+ * @param keys - Lock text, one per group
+ * @returns The lock statement
+ */
+function groupLock(keys: readonly string[]): Statement {
+  const ordered = [...keys].sort(compareText);
+  const values = ordered.map((_, index) => `($${String(index + 1)}::text)`).join(", ");
+  return {
+    text: `select pg_advisory_xact_lock(hashtextextended(k.okm_lock, 0::bigint)) from (select v.okm_lock from (values ${values}) as v(okm_lock) order by v.okm_lock) as k`,
+    params: ordered,
+  };
+}
+
+function compareText(left: string, right: string): number {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
 }
 
 function wires(columns: readonly ColumnModel[], row: Record<string, unknown>): (string | null)[] {

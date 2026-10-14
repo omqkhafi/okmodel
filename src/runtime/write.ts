@@ -128,6 +128,13 @@ type Planned = {
   /** The statement returns matched and updated counts. A shortfall is OKM1705. */
   readonly parentGuard?: boolean;
   /**
+   * Statement indexes whose rows are not part of the write result.
+   *
+   * A sortable insert locks in one statement, then inserts in the next. The
+   * lock returns a row per group. Those rows are not inserted rows.
+   */
+  readonly quiet?: readonly number[];
+  /**
    * Statements to run when the insert did not return every input row.
    *
    * First-or-create only. The lookup is a new statement so it sees a row
@@ -278,9 +285,11 @@ async function prepareWrite(
         ? {}
         : {
             follow: (results: readonly ExecuteResult[]) =>
-              planned.recover?.(decodePlanned(results, planned.outputs)) ?? [],
+              planned.recover?.(
+                decodePlanned(withoutQuiet(results, planned.quiet), planned.outputs),
+              ) ?? [],
           }),
-      finish: (results) => finish(results, planned, table),
+      finish: (results) => finish(withoutQuiet(results, planned.quiet), planned, table),
     };
   } catch (error) {
     throw scrubWrite(host.schema, table, input, error);
@@ -421,16 +430,25 @@ async function planInsert(
   const sortMod = sorting ? await import("./sort.js") : undefined;
   const chunks = chunkRows(rows.map((row) => cellsFor(columns, row)));
   const statements: Statement[] = [];
+  const quiet: number[] = [];
   const keys: (string | null)[][] = [];
   let offset = 0;
   for (const chunk of chunks) {
     const slice = rows.slice(offset, offset + chunk.length);
     offset += chunk.length;
-    const built = path
-      ? pathInsert(table, columns, chunk, scope, tenancy)
-      : sortMod !== undefined
-        ? sortMod.insertAtEnd(table, columns, slice, traitGroup(table), tenantKeyList(tenancy))
-        : insertHead(table, columns, chunk);
+    const head =
+      path || sortMod === undefined
+        ? undefined
+        : sortMod.insertAtEnd(table, columns, slice, traitGroup(table), tenantKeyList(tenancy));
+    const built =
+      head ??
+      (path
+        ? pathInsert(table, columns, chunk, scope, tenancy)
+        : insertHead(table, columns, chunk));
+    if (head !== undefined) {
+      quiet.push(statements.length);
+      statements.push(head.lock);
+    }
     if (conflict === undefined || conflictMod === undefined) {
       statements.push(withParams(`${built.text}${clause}`, built.params));
       continue;
@@ -451,6 +469,7 @@ async function planInsert(
     keys: conflictColumns === undefined ? undefined : keys,
     keyColumns: conflictColumns,
     ...(path ? { parent: rows.length } : {}),
+    ...(quiet.length > 0 ? { quiet } : {}),
     ...(conflictColumns === undefined || conflictMod === undefined
       ? {}
       : {
@@ -943,6 +962,28 @@ function decodePlanned(
     for (const row of result.rows) decoded.push(decodeRow(outputs, row));
   }
   return decoded;
+}
+
+/**
+ * Drops statements that are not part of the write result.
+ *
+ * @param results - One result per statement, in order
+ * @param quiet - Indexes to drop. Omitted keeps every result
+ * @returns The results `finish` decodes
+ */
+function withoutQuiet(
+  results: readonly ExecuteResult[],
+  quiet: readonly number[] | undefined,
+): readonly ExecuteResult[] {
+  if (quiet === undefined || quiet.length === 0) return results;
+  const hidden = new Set(quiet);
+  const kept: ExecuteResult[] = [];
+  for (let index = 0; index < results.length; index += 1) {
+    if (hidden.has(index)) continue;
+    const result = results[index];
+    if (result !== undefined) kept.push(result);
+  }
+  return kept;
 }
 
 function lookupStatements(

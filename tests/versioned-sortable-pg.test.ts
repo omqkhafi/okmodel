@@ -67,6 +67,7 @@ test("version checks, moves, and tenancy on pglite", async () => {
     try {
       await prove(db, other);
       await proveTenancy(scoped);
+      await proveCrowd(db);
     } finally {
       await db.close();
       await other.close();
@@ -94,14 +95,28 @@ postgresTest(
         searchPath: schemaName,
         max: 1,
       });
-      await db.connected;
+      const wide = connectPostgres(primaryUrl(), {
+        schema: app,
+        searchPath: schemaName,
+        max: 8,
+      });
+      const contender = connectPostgres(primaryUrl(), {
+        schema: app,
+        searchPath: schemaName,
+        max: 1,
+      });
+      await Promise.all([db.connected, wide.connected, contender.connected]);
       try {
         await prove(db, other);
         await proveTenancy(scoped);
+        await proveCrowd(wide);
+        await proveWaiter(wide, contender, sql);
       } finally {
         await db.close();
         await other.close();
         await scoped.close();
+        await wide.close();
+        await contender.close();
       }
     });
   },
@@ -270,6 +285,155 @@ async function proveTenancy(db: TenantDb): Promise<void> {
     expect.objectContaining({ title: "right", version: 1 }),
   ]);
   expect(await left.items.move("1", { after: "1" })).toEqual({ position: 1 });
+}
+
+async function proveCrowd(db: Db): Promise<void> {
+  const count = 8;
+  const inserted = await Promise.all(
+    Array.from({ length: count }, (_, index) =>
+      db.tasks.insert({
+        id: `c${String(index)}`,
+        title: `c${String(index)}`,
+        laneId: "crowd",
+      }),
+    ),
+  );
+  expect(inserted.map((row) => row.position).sort((left, right) => left - right)).toEqual(
+    Array.from({ length: count }, (_, index) => index + 1),
+  );
+
+  const batch = await db.tasks.insert([
+    { id: "s1", title: "s1", laneId: "seq" },
+    { id: "s2", title: "s2", laneId: "seq" },
+    { id: "s3", title: "s3", laneId: "seq" },
+  ]);
+  expect(batch.map((row) => row.position)).toEqual([1, 2, 3]);
+
+  await Promise.all([
+    db.tasks.insert([
+      { id: "g1a", title: "g1a", laneId: "ga" },
+      { id: "g2a", title: "g2a", laneId: "gb" },
+    ]),
+    db.tasks.insert([
+      { id: "g2b", title: "g2b", laneId: "gb" },
+      { id: "g1b", title: "g1b", laneId: "ga" },
+    ]),
+  ]);
+  expect(await positions(db, "ga")).toEqual([1, 2]);
+  expect(await positions(db, "gb")).toEqual([1, 2]);
+
+  await db.tasks.insert([
+    { id: "m0", title: "m0", laneId: "mix" },
+    { id: "m1", title: "m1", laneId: "mix" },
+  ]);
+  await Promise.all([
+    db.tasks.insert({ id: "m2", title: "m2", laneId: "mix" }),
+    db.tasks.insert({ id: "m3", title: "m3", laneId: "mix" }),
+    db.tasks.move("m0", { after: "m1" }),
+    db.tasks.insert({ id: "m4", title: "m4", laneId: "mix" }),
+  ]);
+  expect(await positions(db, "mix")).toEqual([1, 2, 3, 4, 5]);
+}
+
+async function proveWaiter(holder: Db, other: Db, sql: LockPoll): Promise<void> {
+  await whileHolding(
+    holder,
+    sql,
+    async (tx) => {
+      await tx.tasks.insert({ id: "hold", title: "hold", laneId: "held" });
+    },
+    () => other.tasks.insert({ id: "wait", title: "wait", laneId: "held" }),
+  );
+  expect((await one(holder, "wait")).position).toBe(2);
+
+  await holder.tasks.insert([
+    { id: "hm0", title: "hm0", laneId: "hm" },
+    { id: "hm1", title: "hm1", laneId: "hm" },
+  ]);
+  await whileHolding(
+    holder,
+    sql,
+    async (tx) => {
+      await tx.tasks.move("hm0", { after: "hm1" });
+    },
+    () => other.tasks.insert({ id: "hm2", title: "hm2", laneId: "hm" }),
+  );
+  expect(await positions(holder, "hm")).toEqual([1, 2, 3]);
+
+  await holder.tasks.insert([
+    { id: "km0", title: "km0", laneId: "km" },
+    { id: "km1", title: "km1", laneId: "km" },
+  ]);
+  await whileHolding(
+    holder,
+    sql,
+    async (tx) => {
+      await tx.tasks.insert({ id: "km2", title: "km2", laneId: "km" });
+    },
+    () => other.tasks.move("km0", { after: "km1" }),
+  );
+  expect(await positions(holder, "km")).toEqual([1, 2, 3]);
+}
+
+type LockPoll = {
+  unsafe(text: string): Promise<readonly { readonly n: number | string }[]>;
+};
+
+type TxTasks = { readonly tasks: Db["tasks"] };
+
+async function whileHolding(
+  db: Db,
+  sql: LockPoll,
+  hold: (tx: TxTasks) => Promise<void>,
+  during: () => Promise<unknown>,
+): Promise<void> {
+  const ready = defer();
+  const gate = defer();
+  const holding = db.tx(async (tx) => {
+    await hold(tx);
+    ready.resolve();
+    await gate.promise;
+  });
+  await ready.promise;
+  const pending = Promise.resolve(during());
+  let waiter: unknown;
+  try {
+    await waitForAdvisoryWaiter(sql);
+  } catch (error) {
+    waiter = error;
+  } finally {
+    gate.resolve();
+  }
+  await holding;
+  await pending;
+  if (waiter !== undefined) throw waiter;
+}
+
+async function waitForAdvisoryWaiter(sql: LockPoll): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  for (;;) {
+    const found = await sql.unsafe(
+      "select count(*)::int as n from pg_locks where locktype = 'advisory' and not granted",
+    );
+    if (Number(found[0]?.n) > 0) return;
+    if (Date.now() > deadline) {
+      throw new Error("no session was waiting on the sortable advisory lock");
+    }
+    await Bun.sleep(15);
+  }
+}
+
+function defer(): { readonly promise: Promise<void>; resolve: () => void } {
+  let resolve: () => void = () => {};
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+async function positions(db: Db, laneId: string): Promise<number[]> {
+  const rows = await db.tasks.find({ where: { laneId }, limit: 20 });
+  return rows.map((row) => row.position).sort((left, right) => left - right);
 }
 
 async function title(db: Db, id: string): Promise<unknown> {

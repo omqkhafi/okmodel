@@ -40,6 +40,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `insert` with `onConflict: { on, return: true }` returns the existing row when another transaction inserts it first. The second statement runs only when the insert returned nothing, and the existing row is not changed (D246).
 - An update list of two different timestamps, dates, or byte values is not the same target. First-or-create on a timestamptz or date unique still returns that row (D246).
 - `update` with `lock: "skip"` matches the physical row by `tableoid` and `ctid`. A claim of one row no longer changes a row in another partition, or an inheritance child, that happens to share the `ctid`. A path-parent update uses the same pair (D249).
+- Concurrent inserts into one `sortable()` group no longer pick the same `position`. The advisory lock is its own statement, and `max(position)` is read in the next statement of that transaction, after the lock is held (D254).
 
 ### ♻️ Changed
 

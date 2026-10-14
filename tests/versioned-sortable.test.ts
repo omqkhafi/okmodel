@@ -196,19 +196,33 @@ test("an update checks the read version and refuses a write that cannot", async 
   expect(group.message).toContain("laneId");
 });
 
-test("an insert assigns position under the group lock", async () => {
+test("an insert locks before it reads the group's max position", async () => {
   const planned = await explainWrite(
     app,
     "insert",
     "tasks",
-    { id: "1", title: "a", laneId: "x" },
+    [
+      { id: "1", title: "a", laneId: "b" },
+      { id: "2", title: "c", laneId: "a" },
+    ],
     {},
     {},
   );
-  const text = planned.statements[0]?.text ?? "";
-  expect(text).toContain("pg_advisory_xact_lock");
-  expect(text).toContain('("id", "title", "lane_id", "position")');
-  expect(text).toContain('returning "id", "title", "lane_id", "version", "position"');
+  expect(planned.statements).toHaveLength(2);
+  const lock = planned.statements[0];
+  const insert = planned.statements[1];
+  expect(lock?.text ?? "").toContain("pg_advisory_xact_lock");
+  expect(lock?.text ?? "").toContain("order by v.okm_lock");
+  expect(lock?.text ?? "").not.toContain("insert into");
+  const locked = [...(lock?.params ?? [])].map((value) => String(value));
+  expect(locked).toHaveLength(2);
+  expect(locked).toEqual(
+    [...locked].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0)),
+  );
+  expect(insert?.text ?? "").not.toContain("pg_advisory_xact_lock");
+  expect(insert?.text ?? "").toContain("coalesce(max(");
+  expect(insert?.text ?? "").toContain('("id", "title", "lane_id", "position")');
+  expect(insert?.text ?? "").toContain('returning "id", "title", "lane_id", "version", "position"');
 
   const omitted = await captureAsync(() =>
     explainWrite(app, "insert", "tasks", { id: "1", title: "a" }, {}, {}),

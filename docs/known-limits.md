@@ -152,7 +152,7 @@ Bun.sql keeps `idleTimeout` at 0, which is Bun's default (no idle timer). A fini
 - **Keep file names in the same case as the disk.** The catalog treats `Schema.ts` and `schema.ts` as different modules. Windows does not.
 
 - **`versioned()` does not cover delete, archive, or restore (D254).** An update checks the version you read and bumps it. `delete`, `archive`, and `restore` do not. An upsert (`onConflict` update) is OKM1120. `.all()` is OKM1120. A path-tenancy parent column cannot change in the same update as the version check.
-- **`sortable()` keeps a dense integer position (D254).** A move rewrites the group. Fractional keys are not used. `via()` is OKM1060. Changing the group column is OKM1120. A delete leaves a gap until the next `move`. Adding `position` to a table that already has rows is `add-column-required`. A position that is already negative is flipped by the next move in that group.
+- **`sortable()` keeps a dense integer position (D254).** A move rewrites the group. Fractional keys are not used. `via()` is OKM1060. Changing the group column is OKM1120. A delete leaves a gap until the next `move`. Adding `position` to a table that already has rows is `add-column-required`. A position that is already negative is flipped by the next move in that group. The group's advisory lock is its own statement. The max, and a move's renumber, run in the next statement, after that lock is held.
 
 ## What works
 
