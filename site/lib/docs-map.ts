@@ -107,6 +107,23 @@ export const mappedPages: readonly MappedPage[] = [
     source: "site/handbook/basic-usage.mdx",
     handbook: "handbook/basic-usage.mdx",
   },
+  {
+    slug: "queries",
+    title: "Queries",
+    description: "Insert a row, then find it. The result follows the table.",
+    group: "start",
+    order: 2,
+    source: "site/handbook/queries.mdx",
+    handbook: "handbook/queries.mdx",
+  },
+  {
+    slug: "known-limits",
+    title: "Known limits",
+    description: "What this version does not do, or does differently from what you might expect.",
+    group: "root",
+    order: 1,
+    source: "docs/known-limits.md",
+  },
   definePage(0, "table", "Table", "table() stores the columns. The key comes first, then each data type, then the options."),
   definePage(1, "schema", "Schema", "schema() compiles the tables into one catalog. Each section is one option."),
   definePage(2, "connect", "Connect", "connect() opens the client. The first argument is the target. schema is required."),
@@ -211,10 +228,6 @@ export const excludedDocs: readonly ExcludedDoc[] = [
     reason: "Removed from the public handbook.",
   },
   {
-    path: "docs/known-limits.md",
-    reason: "Removed from the public handbook.",
-  },
-  {
     path: "docs/api.md",
     reason: "Removed from the public handbook.",
   },
@@ -238,7 +251,7 @@ export const excludedDocs: readonly ExcludedDoc[] = [
  * @param page - Mapped page
  */
 export function pageHref(page: MappedPage): string {
-  const segments = page.group === "root" ? [] : [page.group];
+  const segments: string[] = page.group === "root" ? [] : [page.group];
   if (page.slug !== "index") segments.push(page.slug);
   return segments.length === 0 ? "/docs" : `/docs/${segments.join("/")}`;
 }

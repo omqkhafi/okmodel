@@ -18,6 +18,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### docs
 
+- Queries is `/docs/start/queries`. It keeps first-or-create, `bucket()`, claim, search, the top-N include, windows, descendants, ancestors, `sync`, and `stream()`, each with when to use it and a link to known limits. `versioned()`, `sortable()`, and morph are on Table. Migration check, the 0.5.1 constraint rename, and Windows line endings are on Config. The driver notes are on Connect. Known limits is `/docs/known-limits`. `/docs/model/*`, `/docs/ship/*`, and `/docs/reference/*` redirect.
 - The docs site starts with `bun dev` from the repository root.
 - Connect is `/docs/define/connect`, after Schema. `connect()` takes a URL, a pool from `open`, or `{ primary, replicas }`. `schema` is required. The page lists the driver, pool size, prepared statements, TLS, search path, timeouts, the catalog check, `requireMeta`, errors, generators, observers, routing, and `close()`.
 - Define is four pages, `/docs/define/config`, `/docs/define/connect`, `/docs/define/schema`, and `/docs/define/table`. Each page holds the options that object accepts. Config, Connect, Schema, and Table are sections. Each section is one option. The code block focuses the line that option names, and the section lists that option's own values. A note that is not itself a value is a dashed card. The edge and icon follow info, warning, or error. `/docs/config`, `/docs/schema/*`, and `/docs/table/*` redirect there.
@@ -69,7 +70,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### 🔥 Removed
 
-- The public handbook keeps Let's start. Schema, Queries, Safety, Migrations, Drivers, and the reference pages are no longer published.
+- Safety and Drivers are no longer their own pages. The reference pages other than known limits are not published. Old URLs redirect.
 - Handbook pages no longer end with a Next link. The page footer is the previous and next page.
 
 ### 🐛 Fixed

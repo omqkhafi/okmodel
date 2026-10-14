@@ -5,13 +5,15 @@
  */
 
 import type { LoaderPlugin } from "fumadocs-core/source";
-import { Braces, Cable, FileText, Play, Table2, Terminal, type LucideIcon } from "lucide-react";
+import { BookOpen, Braces, Cable, FileText, List, Play, Table2, Terminal, type LucideIcon } from "lucide-react";
 import { createElement, type ReactNode } from "react";
 
 /** Docs path → Lucide component. `/docs` is the landing and is not a sidebar row. */
 const PATH_ICONS: Readonly<Record<string, LucideIcon>> = {
+  "/docs/known-limits": BookOpen,
   "/docs/start": Terminal,
   "/docs/start/basic-usage": Play,
+  "/docs/start/queries": List,
   "/docs/define/config": FileText,
   "/docs/define/connect": Cable,
   "/docs/define/schema": Braces,

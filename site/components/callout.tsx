@@ -1,8 +1,8 @@
 /**
  * Dashed note on a docs page. The left edge and icon follow the tone.
+ * Marks are inline so the docs shell does not import an icon package.
  */
 
-import { CircleCheck, CircleX, Info, TriangleAlert, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
@@ -14,29 +14,29 @@ export type CalloutType = "info" | "warning" | "error" | "success" | "warn";
 interface CalloutTone {
   readonly edge: string;
   readonly mark: string;
-  readonly Icon: LucideIcon;
+  readonly icon: "info" | "warning" | "error" | "success";
 }
 
 const TONES: Record<Exclude<CalloutType, "warn">, CalloutTone> = {
   info: {
     edge: "border-s-blue-500/50",
     mark: "fill-blue-500 text-fd-card",
-    Icon: Info,
+    icon: "info",
   },
   warning: {
     edge: "border-s-amber-500/50",
     mark: "fill-amber-500 text-fd-card",
-    Icon: TriangleAlert,
+    icon: "warning",
   },
   error: {
     edge: "border-s-red-500/50",
     mark: "fill-red-500 text-fd-card",
-    Icon: CircleX,
+    icon: "error",
   },
   success: {
     edge: "border-s-green-500/50",
     mark: "fill-green-500 text-fd-card",
-    Icon: CircleCheck,
+    icon: "success",
   },
 };
 
@@ -55,7 +55,6 @@ export function Callout({
   readonly children?: ReactNode;
 }): ReactNode {
   const tone = TONES[type === "warn" ? "warning" : type];
-  const Icon = tone.Icon;
   return (
     <div
       className={cn(
@@ -63,11 +62,51 @@ export function Callout({
         tone.edge,
       )}
     >
-      <Icon className={cn("size-5 shrink-0", tone.mark)} aria-hidden />
+      <CalloutMark name={tone.icon} className={cn("size-5 shrink-0", tone.mark)} />
       <div className="flex min-w-0 flex-1 flex-col gap-1 [&_p]:my-0">
         {title != null ? <p className="font-medium">{title}</p> : null}
         {children}
       </div>
     </div>
+  );
+}
+
+/**
+ * Filled mark for one tone. Paths follow the Lucide 24×24 outlines.
+ *
+ * @param name - Tone mark
+ * @param className - Size and colour
+ */
+function CalloutMark({ name, className }: { readonly name: CalloutTone["icon"]; readonly className: string }): ReactNode {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+      {name === "info" ? (
+        <>
+          <circle cx="12" cy="12" r="10" />
+          <path d="M12 16v-4" />
+          <path d="M12 8h.01" />
+        </>
+      ) : null}
+      {name === "warning" ? (
+        <>
+          <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" />
+          <path d="M12 9v4" />
+          <path d="M12 17h.01" />
+        </>
+      ) : null}
+      {name === "error" ? (
+        <>
+          <circle cx="12" cy="12" r="10" />
+          <path d="m15 9-6 6" />
+          <path d="m9 9 6 6" />
+        </>
+      ) : null}
+      {name === "success" ? (
+        <>
+          <circle cx="12" cy="12" r="10" />
+          <path d="m9 12 2 2 4-4" />
+        </>
+      ) : null}
+    </svg>
   );
 }

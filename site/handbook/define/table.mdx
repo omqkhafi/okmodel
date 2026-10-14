@@ -1361,6 +1361,49 @@ export const users = table(
 An ambiguous key is refused. Pass `from` and `to` when the join table has more than one foreign key to an end. The same field for both ends is refused.
 </Callout>
 
+
+### One relation, several tables
+
+A comment that points at a task or a list is `morph("commentable", ["tasks", "lists"])` on the comment, next to `commentableType` and `commentableId`. Use it when one table points at a closed list of others and you want the matching row back. Include returns the task or the list, or null when the row is missing or the stored type is outside the list. Each target declares `morphMany("comments", "commentable")` for the comments that point at it. That reverse many takes a limit, an order, and `has`, `none`, and `every`. `morphTo("commentable", "tasks", id)` sets the type and the id together. Setting one without the other is refused. A type outside the list is refused. `has`, `none`, and `every` on the morph itself are refused, and so are `select`, `where`, `orderBy`, and `limit` on that include. See [known limits](/docs/known-limits).
+
+```ts title="morph.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { morph, morphMany, morphTo, schema, table, t } from "okmodel/pg";
+
+const tasks = table(
+  "tasks",
+  { id: t.text().primaryKey(), title: t.text() },
+  { relations: { comments: morphMany("comments", "commentable") } },
+);
+const lists = table(
+  "lists",
+  { id: t.text().primaryKey(), name: t.text() },
+  { relations: { comments: morphMany("comments", "commentable") } },
+);
+const comments = table(
+  "comments",
+  {
+    id: t.text().primaryKey(),
+    body: t.text(),
+    commentableType: t.text(),
+    commentableId: t.text(),
+  },
+  { relations: { commentable: morph("commentable", ["tasks", "lists"]) } },
+);
+const app = schema({ tables: [tasks, lists, comments] });
+
+export async function attach(url: string, taskId: string): Promise<void> {
+  await using db = connect(url, { schema: app });
+  await db.comments.insert({
+    id: "c1",
+    body: "ship it",
+    ...morphTo("commentable", "tasks", taskId),
+  });
+  const rows = await db.comments.find({ limit: 20, include: { commentable: true } });
+  if (rows.length < 0) throw new Error("the morph did not run");
+}
+```
+
 ## Indexes
 
 `indexes` receives column handles and returns an array of index calls.
@@ -1631,6 +1674,36 @@ export const notes = table(
 <Callout type="error" title="OKM1061">
 `strategy: "table"` is not available yet.
 </Callout>
+
+### Versioned and sortable
+
+`versioned()` adds `version`. An update passes the version you read, and the write bumps it. Use it when two editors must not overwrite each other. A stale write is a conflict and changes nothing. A miss stays `{ count: 0 }`. `inc` and the other atomic writes still bump `version`. `delete`, `archive`, and `restore` do not check it. An upsert and `.all()` are refused. `sortable("laneId")` adds `position`. New rows go at the end of that lane. `move` places a row before or after another in the same lane. `find` and `page` order by `position` when you omit `orderBy`. Changing the lane in the same update is refused. `via()` on this table is refused. A delete leaves a gap until the next `move`. See [known limits](/docs/known-limits).
+
+```ts title="traits.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+import { sortable, versioned } from "okmodel/traits";
+
+const tasks = table(
+  "tasks",
+  { id: t.text().primaryKey(), title: t.text(), laneId: t.text() },
+  { traits: [versioned(), sortable("laneId")] },
+);
+const app = schema({ tables: [tasks] });
+
+export async function edit(url: string, id: string, otherId: string): Promise<void> {
+  await using db = connect(url, { schema: app });
+  const current = await db.tasks.one({ where: { id } });
+  if (current === null) return;
+  const saved = await db.tasks.update({
+    where: { id },
+    set: { title: "next" },
+    version: current.version,
+  });
+  const placed = await db.tasks.move(id, { before: otherId });
+  if (saved.count < 0 || placed.position < 0) throw new Error("the write did not run");
+}
+```
 
 ## Tenancy
 

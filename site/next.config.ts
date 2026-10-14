@@ -76,6 +76,13 @@ const config: NextConfig = {
       { source: "/docs/table/filters", destination: "/docs/define/table#filters", permanent: true },
       { source: "/docs/table/validation", destination: "/docs/define/table#validation", permanent: true },
       { source: "/docs/table/shape", destination: "/docs/define/table#shape", permanent: true },
+      { source: "/docs/model/schema", destination: "/docs/define/table", permanent: true },
+      { source: "/docs/model/queries", destination: "/docs/start/queries", permanent: true },
+      { source: "/docs/model/safety", destination: "/docs/define/table#visibility", permanent: true },
+      { source: "/docs/ship/migrations", destination: "/docs/define/config#migrations", permanent: true },
+      { source: "/docs/ship/drivers", destination: "/docs/define/connect#drivers", permanent: true },
+      { source: "/docs/reference/known-limits", destination: "/docs/known-limits", permanent: true },
+      { source: "/docs/reference/:path*", destination: "/docs", permanent: true },
     ];
   },
   // Own lockfile: keep Turbopack rooted here so `next` resolves from site/node_modules.
