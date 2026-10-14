@@ -2,34 +2,44 @@
 The SQL type stays. Hidden, sensitive, and guarded change the row the client sees and the fields a write may set. [Validation](/docs/define/table/validation) rejects a value the type still accepts.
 </Callout>
 
-Three flags. They do not change the SQL type.
+None of the three flags is stored in the catalog, so none of them changes a migration.
 
 ### Hidden
 
-`.hidden()` leaves the column out of the default row. A root `select` that names it returns it. An include omits it, including when that `select` names it.
+`.hidden()` removes the column from the row type. Insert and update can still set it. `select`, `where`, and `orderBy` take keys of that row, so a typed call cannot name the field. At runtime a root `select` list that names it returns it. An include drops it, including when that list names it.
 
 | Call | Result |
 | --- | --- |
-| `.hidden()` | Out of the default row. `where` and `orderBy` refuse it. |
-| `.hidden({ filterable: true })` | `where` and `orderBy` accept it. The default row still omits it. |
-| `select` | The root read returns it when the list names it. |
-| `include` | Omits it. |
-| `filters()` | Refuses it in `allow`, `sort`, and `relations`. |
-| `groupBy`, `sum`, `avg`, `min`, `max` | Refuse it. |
+| `.hidden()` | Off the row. `where` and `orderBy` are OKM1120. |
+| `.hidden({ filterable: true })` | Still off the row. At runtime, `where`, `orderBy`, and search accept it. |
+| root `select` | Returns it when the list names it. The type cannot name it. |
+| `include` | Drops it. |
+| `filters()` | OKM1123 in `allow`, `sort`, and `relations`. `filterable` does not change that. |
+| `groupBy`, `bucket`, `sum`, `avg`, `min`, `max` | OKM1120 either way. |
+
+`.nullable()` on `resetCode` lets insert omit it. `filterable` does not.
 
 ```ts title="users.ts"
-import { table, t } from "okmodel/pg";
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
 
-export const users = table("users", {
+const users = table("users", {
   id: t.identity(),
   email: t.text(),
   passwordHash: t.text().hidden(), // [!code focus]
-  resetCode: t.text().hidden({ filterable: true }), // [!code focus]
+  resetCode: t.text().nullable().hidden({ filterable: true }), // [!code focus]
 });
+const app = schema({ tables: [users] });
+
+export async function register(url: string, email: string, passwordHash: string) {
+  await using db = connect(url, { schema: app });
+  const row = await db.users.insert({ email, passwordHash });
+  return row.email;
+}
 ```
 
 <Callout type="error" title="OKM1120">
-`where` and `orderBy` refuse a hidden column unless `filterable` is set. `groupBy`, `sum`, `avg`, `min`, and `max` refuse it either way.
+`where` and `orderBy` refuse a hidden column unless `filterable` is set. The fix says to call `hidden({ filterable: true })`. `groupBy`, `bucket`, `sum`, `avg`, `min`, and `max` refuse it either way. Search refuses it unless `filterable` is set.
 </Callout>
 
 <Callout type="error" title="OKM1123">
@@ -42,46 +52,50 @@ A hidden column stays out of a reporting role's select unless [roles.columns](/d
 
 ### Sensitive
 
-`.sensitive()` redacts the value in logs, errors, and `inspect()`. The placeholder is `[redacted]`. The stored value is unchanged. A read that selects the column still returns it. The same column can also be [hidden](#hidden).
+`.sensitive()` keeps the column on the row. A read that selects it returns the stored value. `inspect()`, logs, and errors replace that value with `[redacted]`. A codec rejection says `Field token was rejected.` The same column can also be [hidden](#hidden).
 
 ```ts title="sessions.ts"
-import { table, t } from "okmodel/pg";
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
 
-export const sessions = table("sessions", {
+const sessions = table("sessions", {
   id: t.identity(),
   token: t.text().sensitive(), // [!code focus]
 });
-```
+const app = schema({ tables: [sessions] });
 
-<Callout type="info" title="Hash">
-The catalog hash does not include `.sensitive()`.
-</Callout>
+export async function token(url: string, id: string) {
+  await using db = connect(url, { schema: app });
+  const row = await db.sessions.one({ where: { id } });
+  return row?.token;
+}
+```
 
 ### Guarded
 
-`.guarded()` omits the column from insert and update input. A write that sets it is OKM1190. `{ allow: ["role"] }` opens that field for that call.
-
-| Call | Result |
-| --- | --- |
-| insert or update sets the field | OKM1190. |
-| `{ allow: ["role"] }` | That call may set `role`. |
-| a sealed trait field | OKM1190. `allow` does not open it. |
-| the tenant key | OKM1190. `allow` does not open it. |
+`.guarded()` omits the column from insert and update until `{ allow: ["role"] }` on that call. `allow` is a list of field names on the table. A value that arrives without it is OKM1190. A sealed trait field stays closed. Insert of the [tenant key](/docs/define/schema#tenancy) is OKM1190. An update or a `where` on that key is OKM1704. `allow` does not open either.
 
 ```ts title="accounts.ts"
-import { table, t } from "okmodel/pg";
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
 
-export const accounts = table("accounts", {
+const accounts = table("accounts", {
   id: t.identity(),
   email: t.text(),
   role: t.text().guarded(), // [!code focus]
 });
+const app = schema({ tables: [accounts] });
+
+export async function promote(url: string, email: string) {
+  await using db = connect(url, { schema: app });
+  return db.accounts.insert({ email, role: "owner" }, { allow: ["role"] }); // [!code focus]
+}
 ```
 
 <Callout type="error" title="OKM1190">
-Input cannot set a guarded field. Pass `{ allow }` with the field name, or leave it out.
+Input cannot set a guarded field. Pass `{ allow }` with the field name, or leave it out. A sealed field says it is set by a trait.
 </Callout>
 
 <Callout type="info" title="Filled elsewhere">
-A [tenant key](/docs/define/schema#tenancy) is guarded. The client fills it from the scope. [`timestamps()`](/docs/define/schema#traits) and [`archivable()`](/docs/define/schema#traits) mark their columns guarded and sealed. Input cannot set those columns. `allow` does not open a tenant key or a sealed field.
+[`timestamps()`](/docs/define/table/traits) and [`archivable()`](/docs/define/table/traits) mark their columns guarded and sealed. Input cannot set those columns.
 </Callout>
