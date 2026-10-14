@@ -45,3 +45,20 @@ export const app = schema({ tables: [authors, notes] });
 </Tabs>
 
 Next: [queries](/docs/model/queries) on a table like this, then [safety](/docs/model/safety) for fields that should not travel with every row.
+
+## Traits
+
+`versioned()` adds `version`. An update passes the version you read, and a stale write is a conflict. `sortable("laneId")` adds `position`. New rows go at the end of that lane. `move` places a row before or after another in the same lane.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+import { sortable, versioned } from "okmodel/traits";
+
+const tasks = table(
+  "tasks",
+  { id: t.text().primaryKey(), title: t.text(), laneId: t.text() },
+  { traits: [versioned(), sortable("laneId")] },
+);
+export const app = schema({ tables: [tasks] });
+```
+

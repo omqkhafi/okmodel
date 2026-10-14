@@ -128,12 +128,29 @@ type Planned = {
   /** The statement returns matched and updated counts. A shortfall is OKM1705. */
   readonly parentGuard?: boolean;
   /**
+   * Statement indexes whose rows are not part of the write result.
+   *
+   * A sortable insert locks in one statement, then inserts in the next. The
+   * lock returns a row per group. Those rows are not inserted rows.
+   */
+  readonly quiet?: readonly number[];
+  /**
    * Statements to run when the insert did not return every input row.
    *
    * First-or-create only. The lookup is a new statement so it sees a row
    * committed while the insert waited (D246).
    */
   readonly recover?: (rows: readonly Record<string, unknown>[]) => readonly Statement[];
+  /**
+   * Set when the update checked `version`.
+   *
+   * The statement returns a stale count in the first column. A positive count
+   * means nothing was written.
+   */
+  readonly versioned?: {
+    readonly fields: readonly string[];
+    readonly sent: readonly number[];
+  };
 };
 
 type StoredSchema = QuerySchema & {
@@ -187,8 +204,8 @@ const INSERT_OPTIONS = [
   "validate",
 ] as const;
 const FILTER_OPTIONS = ["allow", "expect", "returning", "signal", "timeout", "validate"] as const;
-const UPDATE_KEYS = ["set", "where", "limit", "lock"] as const;
-const UPDATE_ROW_KEYS = ["id", "set", "where"] as const;
+const UPDATE_KEYS = ["set", "where", "limit", "lock", "version"] as const;
+const UPDATE_ROW_KEYS = ["id", "set", "where", "version"] as const;
 const NO_ALLOW: ReadonlySet<string> = new Set();
 
 /**
@@ -268,9 +285,11 @@ async function prepareWrite(
         ? {}
         : {
             follow: (results: readonly ExecuteResult[]) =>
-              planned.recover?.(decodePlanned(results, planned.outputs)) ?? [],
+              planned.recover?.(
+                decodePlanned(withoutQuiet(results, planned.quiet), planned.outputs),
+              ) ?? [],
           }),
-      finish: (results) => finish(results, planned, table),
+      finish: (results) => finish(withoutQuiet(results, planned.quiet), planned, table),
     };
   } catch (error) {
     throw scrubWrite(host.schema, table, input, error);
@@ -332,6 +351,14 @@ async function planWrite(
     return planInsert(table, input, record, mods, generators, scope, schema.tenancy);
   }
   if (op === "update") {
+    if (traitNamed(table, "versioned")) {
+      const { planVersioned } = await import("./version.js");
+      return withRowFilters(scope, mods.archive, () => {
+        noteArchive(table, mods.archive);
+        const planned = planVersioned(schema, table, input, record, mods);
+        return { ...planned, keys: undefined, keyColumns: undefined };
+      });
+    }
     return withRowFilters(scope, mods.archive, () => {
       noteArchive(table, mods.archive);
       return planUpdate(schema, table, input, record, mods, scope);
@@ -371,7 +398,8 @@ async function planInsert(
       `onConflict on ${table.model.name} is not available. The insert checks the parent.`,
     );
   }
-  if (columns.length === 0) {
+  const sorting = traitNamed(table, "sortable");
+  if (columns.length === 0 && !sorting) {
     const text = `insert into ${quote(table.model.sql)} default values${clause}`;
     return {
       statements: rows.map(() => ({ text })),
@@ -392,16 +420,35 @@ async function planInsert(
     allow,
     tenantKeyList(tenancy),
   );
+  if (conflict?.kind === "update" && traitNamed(table, "versioned")) {
+    fail(
+      "OKM1120",
+      `onConflict update on ${table.model.name} does not check the version you read.`,
+      "Read the row and update. ignore and return do not change the existing row.",
+    );
+  }
+  const sortMod = sorting ? await import("./sort.js") : undefined;
   const chunks = chunkRows(rows.map((row) => cellsFor(columns, row)));
   const statements: Statement[] = [];
+  const quiet: number[] = [];
   const keys: (string | null)[][] = [];
   let offset = 0;
   for (const chunk of chunks) {
     const slice = rows.slice(offset, offset + chunk.length);
     offset += chunk.length;
-    const built = path
-      ? pathInsert(table, columns, chunk, scope, tenancy)
-      : insertHead(table, columns, chunk);
+    const head =
+      path || sortMod === undefined
+        ? undefined
+        : sortMod.insertAtEnd(table, columns, slice, traitGroup(table), tenantKeyList(tenancy));
+    const built =
+      head ??
+      (path
+        ? pathInsert(table, columns, chunk, scope, tenancy)
+        : insertHead(table, columns, chunk));
+    if (head !== undefined) {
+      quiet.push(statements.length);
+      statements.push(head.lock);
+    }
     if (conflict === undefined || conflictMod === undefined) {
       statements.push(withParams(`${built.text}${clause}`, built.params));
       continue;
@@ -422,6 +469,7 @@ async function planInsert(
     keys: conflictColumns === undefined ? undefined : keys,
     keyColumns: conflictColumns,
     ...(path ? { parent: rows.length } : {}),
+    ...(quiet.length > 0 ? { quiet } : {}),
     ...(conflictColumns === undefined || conflictMod === undefined
       ? {}
       : {
@@ -445,6 +493,13 @@ function planUpdate(
   mods: WriteMods,
   scope: CallScope | undefined,
 ): Planned {
+  if (mentionsVersion(input)) {
+    fail(
+      "OKM1120",
+      `version on ${table.model.name} needs versioned().`,
+      "Add versioned() from okmodel/traits, or remove version.",
+    );
+  }
   const allow = allowSet(table, options.allow);
   noteGuarded(table, allow, "update");
   const returning = returningOption(table, options.returning);
@@ -570,6 +625,7 @@ function planDelete(
 }
 
 function finish(results: readonly ExecuteResult[], planned: Planned, table: string): unknown {
+  if (planned.versioned !== undefined) return finishVersioned(results, planned, table);
   if (planned.parentGuard === true) return finishParent(results, planned, table);
   if (planned.shape === "count") {
     let count = 0;
@@ -609,6 +665,43 @@ function finishParent(results: readonly ExecuteResult[], planned: Planned, table
   if (updated > 0) {
     for (const result of results) {
       for (const item of result.rows) decoded.push(decodeRow(planned.outputs, item));
+    }
+  }
+  checkExpect(decoded.length, planned.expect, table, "write");
+  if (planned.shape === "row") return decoded[0] ?? null;
+  return decoded;
+}
+
+function finishVersioned(
+  results: readonly ExecuteResult[],
+  planned: Planned,
+  table: string,
+): unknown {
+  const versioned = planned.versioned;
+  const first = results[0]?.rows[0];
+  if (versioned !== undefined && first !== undefined && countCell(first[0]) > 0) {
+    const fields = versioned.fields.length === 0 ? "the row" : versioned.fields.join(", ");
+    const sent = versioned.sent.join(", ");
+    throw new OkmError(
+      "conflict",
+      `update on ${table} tried to write ${fields} at version ${sent}, and the row changed. Reread the row and retry with the version you read.`,
+      {
+        kind: "conflict",
+        columns: ["version"],
+        fix: { summary: "Reread the row and retry with the version you read." },
+      },
+    );
+  }
+  if (planned.shape === "count") {
+    const updated = first === undefined ? 0 : countCell(first[1]);
+    checkExpect(updated, planned.expect, table, "write");
+    return { count: updated };
+  }
+  const decoded: Record<string, unknown>[] = [];
+  for (const result of results) {
+    for (const item of result.rows) {
+      if (countCell(item[1]) === 0) continue;
+      decoded.push(decodeRow(planned.outputs, item));
     }
   }
   checkExpect(decoded.length, planned.expect, table, "write");
@@ -799,12 +892,16 @@ function endParent(sql: Sql, returning: readonly ColumnModel[] | undefined): voi
   );
 }
 
-function updateSliceBody(
+export function updateSliceBody(
   schema: QuerySchema,
   table: Indexed,
   rows: readonly { readonly where: unknown; readonly set: Record<string, unknown> }[],
   sql: Sql,
   wrapWhere = false,
+  hooks?: {
+    afterWhere?(sql: Sql, index: number): void;
+    afterSet?(sql: Sql): void;
+  },
 ): void {
   const fields: ColumnModel[] = [];
   const seen = new Set<string>();
@@ -826,9 +923,12 @@ function updateSliceBody(
     if (field > 0) sql.text(", ");
     sql.text(quote(column.sql));
     sql.text(" = case");
-    for (const row of rows) {
+    for (let index = 0; index < rows.length; index += 1) {
+      const row = rows[index];
+      if (row === undefined) continue;
       sql.text(" when ");
       emitBare(schema, table, row.where, sql, "t");
+      hooks?.afterWhere?.(sql, index);
       sql.text(" then ");
       const value = row.set[column.field];
       if (value === undefined) sql.text(`t.${quote(column.sql)}`);
@@ -839,6 +939,7 @@ function updateSliceBody(
     sql.text(" end");
   }
   emitTouch(sql, table, fields.length > 0);
+  hooks?.afterSet?.(sql);
   sql.text(wrapWhere ? " where (" : " where ");
   for (let index = 0; index < rows.length; index += 1) {
     const row = rows[index];
@@ -846,6 +947,7 @@ function updateSliceBody(
     if (index > 0) sql.text(" or ");
     sql.text("(");
     emitBare(schema, table, row.where, sql, "t");
+    hooks?.afterWhere?.(sql, index);
     sql.text(")");
   }
   if (wrapWhere) sql.text(")");
@@ -860,6 +962,28 @@ function decodePlanned(
     for (const row of result.rows) decoded.push(decodeRow(outputs, row));
   }
   return decoded;
+}
+
+/**
+ * Drops statements that are not part of the write result.
+ *
+ * @param results - One result per statement, in order
+ * @param quiet - Indexes to drop. Omitted keeps every result
+ * @returns The results `finish` decodes
+ */
+function withoutQuiet(
+  results: readonly ExecuteResult[],
+  quiet: readonly number[] | undefined,
+): readonly ExecuteResult[] {
+  if (quiet === undefined || quiet.length === 0) return results;
+  const hidden = new Set(quiet);
+  const kept: ExecuteResult[] = [];
+  for (let index = 0; index < results.length; index += 1) {
+    if (hidden.has(index)) continue;
+    const result = results[index];
+    if (result !== undefined) kept.push(result);
+  }
+  return kept;
 }
 
 function lookupStatements(
@@ -898,7 +1022,7 @@ function missingKeys(
   return missing;
 }
 
-function rejectDuplicateTargets(
+export function rejectDuplicateTargets(
   table: Indexed,
   rows: readonly { readonly where: unknown }[],
 ): void {
@@ -1108,7 +1232,12 @@ function emitClaim(
   return sql.statement();
 }
 
-function emitSet(sql: Sql, table: Indexed, set: Record<string, unknown>, alias: string): void {
+export function emitSet(
+  sql: Sql,
+  table: Indexed,
+  set: Record<string, unknown>,
+  alias: string,
+): void {
   const keys = Object.keys(set);
   let wrote = false;
   for (const key of keys) {
@@ -1273,7 +1402,41 @@ function emitBare(
   }
 }
 
-class Sql {
+function traitNamed(table: Indexed, name: string): boolean {
+  const traits = table.model.traits;
+  if (traits === undefined) return false;
+  for (const trait of traits) if (trait.name === name) return true;
+  return false;
+}
+
+/**
+ * Group field `sortable()` stored, when this table has that trait.
+ *
+ * @param table - Target table
+ * @returns The field, or `undefined` when the order is one list
+ */
+function traitGroup(table: Indexed): string | undefined {
+  const traits = table.model.traits;
+  if (traits === undefined) return undefined;
+  for (const trait of traits) {
+    if (trait.name !== "sortable") continue;
+    const group = (trait as { readonly group?: unknown }).group;
+    return typeof group === "string" ? group : undefined;
+  }
+  return undefined;
+}
+
+function mentionsVersion(input: unknown): boolean {
+  if (Array.isArray(input)) {
+    for (const item of input) {
+      if (isRecord(item) && Object.hasOwn(item, "version")) return true;
+    }
+    return false;
+  }
+  return isRecord(input) && Object.hasOwn(input, "version");
+}
+
+export class Sql {
   private readonly parts: string[] = [];
   private readonly params: (string | null)[] = [];
 
@@ -1436,13 +1599,21 @@ function pathInsert(
   return sql.statement();
 }
 
-function writeSet(
+export function writeSet(
   table: Indexed,
   value: unknown,
   allow: ReadonlySet<string>,
   tenancy: QuerySchema["tenancy"],
 ): Record<string, unknown> {
   if (!isRecord(value)) fail("OKM1121", "set must be an object of fields.");
+  const group = traitGroup(table);
+  if (group !== undefined && Object.hasOwn(value, group) && value[group] !== undefined) {
+    fail(
+      "OKM1120",
+      `update on ${table.model.name} cannot change ${group}. It groups position.`,
+      "Move stays in one group.",
+    );
+  }
   const set: Record<string, unknown> = {};
   for (const key of Object.keys(value)) {
     if (value[key] === undefined) continue;
@@ -1474,7 +1645,7 @@ function updateItem(
  * A list that sets one field with an operator in one row and a plain value,
  * or a different operator, in another.
  */
-function rejectMixedSets(rows: readonly { readonly set: Record<string, unknown> }[]): void {
+export function rejectMixedSets(rows: readonly { readonly set: Record<string, unknown> }[]): void {
   const kind = new Map<string, string>();
   for (const row of rows) {
     for (const key of Object.keys(row.set)) {
@@ -1504,7 +1675,7 @@ function rejectMixedSets(rows: readonly { readonly set: Record<string, unknown> 
  * @param input - The update target
  * @returns The row cap, or `undefined` when this update does not claim
  */
-function readClaim(input: Record<string, unknown>): number | undefined {
+export function readClaim(input: Record<string, unknown>): number | undefined {
   if (Object.hasOwn(input, "wait")) {
     fail(
       "OKM1120",
@@ -1543,7 +1714,7 @@ function readClaim(input: Record<string, unknown>): number | undefined {
   return limit;
 }
 
-function rejectUpdateKeys(input: Record<string, unknown>, row: boolean): void {
+export function rejectUpdateKeys(input: Record<string, unknown>, row: boolean): void {
   const accepted = row ? UPDATE_ROW_KEYS : UPDATE_KEYS;
   for (const key of Object.keys(input)) {
     if ((accepted as readonly string[]).includes(key)) continue;
@@ -1556,7 +1727,7 @@ function rejectUpdateKeys(input: Record<string, unknown>, row: boolean): void {
   }
 }
 
-function requireFilter(table: Indexed, where: unknown, mods: WriteMods, op: WriteOp): void {
+export function requireFilter(table: Indexed, where: unknown, mods: WriteMods, op: WriteOp): void {
   if (mods.all !== undefined) {
     if (mods.all.trim().length === 0) {
       fail("OKM1102", `${op} on ${table.model.name} needs a where. .all needs a reason.`);
@@ -1600,7 +1771,10 @@ function keyWire(columns: readonly ColumnModel[], row: Record<string, unknown>):
   });
 }
 
-function returningOption(table: Indexed, value: unknown): readonly ColumnModel[] | undefined {
+export function returningOption(
+  table: Indexed,
+  value: unknown,
+): readonly ColumnModel[] | undefined {
   if (value === undefined) return undefined;
   return selectedColumns(table, value);
 }
@@ -1629,7 +1803,7 @@ function outputsOf(columns: readonly ColumnModel[] | undefined): Outputs {
   };
 }
 
-function expectOf(options: Record<string, unknown>, mods: WriteMods): number | undefined {
+export function expectOf(options: Record<string, unknown>, mods: WriteMods): number | undefined {
   const value = mods.expect ?? options.expect;
   if (value === undefined) return undefined;
   if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
@@ -1689,7 +1863,7 @@ function writable(table: Indexed, column: ColumnModel, allow: ReadonlySet<string
   return column.guarded && allow.has(column.field);
 }
 
-function allowSet(table: Indexed, value: unknown): ReadonlySet<string> {
+export function allowSet(table: Indexed, value: unknown): ReadonlySet<string> {
   if (value === undefined) return NO_ALLOW;
   if (!Array.isArray(value)) fail("OKM1120", "allow must be a list of field names.");
   const set = new Set<string>();
@@ -1709,7 +1883,11 @@ function noteArchive(table: Indexed, view: ArchiveView | undefined): void {
   runSafety(rules, undefined);
 }
 
-function noteGuarded(table: Indexed, allow: ReadonlySet<string>, op: "insert" | "update"): void {
+export function noteGuarded(
+  table: Indexed,
+  allow: ReadonlySet<string>,
+  op: "insert" | "update",
+): void {
   if (!safetyInstalled()) return;
   const contributions: SafetyContribution[] = [];
   const hatches: SafetyHatch[] = [];

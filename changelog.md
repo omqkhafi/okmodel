@@ -16,6 +16,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### ✨ Added
 
+#### runtime
+
 - `bucket(column, unit, { tz, as })` groups an aggregate by a calendar or clock unit. A day or longer unit returns `Temporal.PlainDate`. A second, minute, or hour returns `Temporal.Instant`. A NULL timestamp is one group: the result key is present and the value is null. There is still no `having`. Time-zone date helpers stay deferred (D247).
 - `update` with `lock: "skip"` and `limit` claims up to that many rows in one statement and leaves rows another transaction already holds. A read still uses `lock: "update"` and `wait: "skip"` inside `tx()` (D249).
 - `find({ search })` and `count({ search })` look through a column built for search. A string is enough when the table has one. `{ for, in, match, language }` names the text, the column, how to match, and the language. Rows come back closest first, then by primary key, unless you pass `orderBy`. `search` combines with `where`, `select`, `include`, and presets. `page()` does not take `search` in this version (D250).
@@ -24,6 +26,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `rowNumber`, `rank`, `denseRank`, and `runningTotal` go in `select` on `find` or `one`. `page()` refuses a window when the call runs (D251).
 - `descendants(id)` and `ancestors(id)` read the rows below or above a row in one statement. A cycle returns. `depth`, `where`, `select`, `orderBy`, and `self` are optional. `ltree` is not required (D252).
 - `sync(id, relation, ids)` sets a to-many relation to exactly those ids and reports the links it added and removed. A join table changes link rows. A nullable foreign key is set or cleared and the related row stays (D252).
+- `versioned()` adds `version`. An update passes the version you read and the write bumps it. A stale write is a conflict and changes nothing. `inc` still bumps `version` (D254).
+- `sortable(groupBy?)` adds `position` and `move(id, { before })` or `{ after }`. New rows go at the end of the group. `find` and `page` order by `position` when you omit `orderBy` (D254).
 
 ### 💥 Breaking Changes
 
@@ -36,6 +40,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `insert` with `onConflict: { on, return: true }` returns the existing row when another transaction inserts it first. The second statement runs only when the insert returned nothing, and the existing row is not changed (D246).
 - An update list of two different timestamps, dates, or byte values is not the same target. First-or-create on a timestamptz or date unique still returns that row (D246).
 - `update` with `lock: "skip"` matches the physical row by `tableoid` and `ctid`. A claim of one row no longer changes a row in another partition, or an inheritance child, that happens to share the `ctid`. A path-parent update uses the same pair (D249).
+- Concurrent inserts into one `sortable()` group no longer pick the same `position`. The advisory lock is its own statement, and `max(position)` is read in the next statement of that transaction, after the lock is held (D254).
 
 ### ♻️ Changed
 

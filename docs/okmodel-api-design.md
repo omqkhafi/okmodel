@@ -688,7 +688,7 @@ Set in `schema({ codecs })`, override per field: `t.bigint({ as: "number" })`. D
 |---|---|
 | (default) | unknown keys in input are dropped |
 | `.guarded()` | never filled from `insert`/`update` input; set by code with `{ allow: ["field"] }` |
-| automatic guards | `t.id()` with a database default and `t.identity()` (omitted from insert and update); a column `.primaryKey()`, a composite `primaryKey`, and `t.id({ default: "none" })` (supplied on insert, omitted from update); tenant key and trait fields (`createdAt`, `updatedAt`, `archivedAt`, `archiveId`, `version`) |
+| automatic guards | `t.id()` with a database default and `t.identity()` (omitted from insert and update); a column `.primaryKey()`, a composite `primaryKey`, and `t.id({ default: "none" })` (supplied on insert, omitted from update); tenant key and trait fields (`createdAt`, `updatedAt`, `archivedAt`, `archiveId`, `version`, `position`) |
 | `.hidden()` | excluded from default selects and includes; returned only when named in `select`. `where` and `orderBy` refuse it (OKM1120). `hidden({ filterable: true })` allows those two and still leaves it out of the default row. `filters()` still refuses it (OKM1123). `groupBy`, `sum`, `avg`, `min`, and `max` still refuse it |
 | `.sensitive()` | values never appear in logs, error messages, `inspect()` output or fixtures; shown as `[redacted]` even in development |
 
@@ -733,8 +733,8 @@ Row types are emitted by default into `.okm/types.d.ts` by `okm build` and `okm 
 |---|---|---|
 | `timestamps()` | `createdAt`, `updatedAt` | set in all lanes; `{ enforce: "trigger" }` adds a DB trigger |
 | `archivable(opts?)` | `archivedAt`, `archiveId` (column strategy) | enables `archive()` and `restore()`; reads target the active set by default, `withArchived()` / `onlyArchived()` widen it; uniques become partial unique indexes (`WHERE archived_at IS NULL`; the primary key stays a full constraint; generated-column form on MySQL); `cascade: [...]` names the children archived and restored with the row |
-| `versioned()` | `version` | optimistic locking; stale write → category `conflict` |
-| `sortable(groupBy?)` | `position` | `move(id, { before \| after })` |
+| `versioned()` | `version` | optimistic locking; every update passes the version it read and the write bumps it; a stale write is category `conflict` and changes nothing |
+| `sortable(groupBy?)` | `position` | new rows go at the end of the group; `move(id, { before \| after })` renumbers that group; `find` and `page` order by `position` when `orderBy` is omitted |
 | `auditable()` | history table | before/after snapshots |
 
 `delete()` always means permanent deletion. `archivable()` adds a capability; it never changes what `delete()` does.
@@ -751,6 +751,22 @@ Row types are emitted by default into `.okm/types.d.ts` by `okm build` and `okm 
 - **Purge.** `tasks.onlyArchived().delete({ where: { archivedAt: lt(cutoff) } })` permanently deletes archived rows; no separate method.
 
 Project traits: `trait(name, { fields, presets, methods, requires })`, the same API built-ins use.
+
+#### Version contract
+
+- **The column.** `versioned()` adds `version integer not null default 1`. Input cannot set it, including `{ allow }` (OKM1190). An insert leaves it out and the database default applies. The catalog hash of a schema that calls `versioned()` changes because the column is real. The hash function does not change. A schema that does not call it keeps its hash.
+- **The check.** `update` takes `version` beside `where` and `set`, and each item of a per-row list takes its own. The version is the one the caller read. The statement locks the matching rows, and it writes only when every matched row is still at that version. It then sets `version` to `version + 1`, including when `set` uses `inc` or another atomic operator. One statement, so a list is all or nothing.
+- **A miss is not a conflict.** A `where` that matches nothing returns `{ count: 0 }`. A matched row at a different version throws `OkmError` category `conflict` (no new error kind) and writes nothing. The message names the fields and the version that was sent, and the fix is to reread and retry. `returning` includes the new version. Without `returning` the result is `{ count }`.
+- **What composes.** A per-row list, `returning`, column and composite tenancy, `lock: "skip"` with `limit`, and `onConflict: "ignore"` or `{ on, return: true }`. A claim updates rows that are free and still at that version. Locked rows are skipped. A conflict is raised only when nothing was updated and a free row matches at a different version. First-or-create does not change the existing row, so it does not bump `version`. A new row starts at 1.
+- **What does not.** `onConflict: { on, update }` is OKM1120: an upsert does not check the version you read. `.all()` is OKM1120: one version cannot describe every row. Passing `version` on a table that is not `versioned()` is OKM1120. Omitting `version` on a versioned table is OKM1120. Changing a path-tenancy parent column in the same update is OKM1120. `delete`, `archive`, and `restore` do not check or bump `version`.
+
+#### Position contract
+
+- **The column.** `sortable()` adds `position integer not null` with no default. `sortable("laneId")` splits the order by that column. The column must already exist on the table, and it cannot be `position`. Input cannot set `position` (OKM1190). An insert that omits the group column is OKM1121. New rows are placed at `max(position) + n` inside the group. The advisory lock is one statement, and the insert that reads the max is the next statement in the same transaction, so a row that commits while the lock is waited for is visible. An insert outside `tx()` is still one atomic batch. `version` stays on its default when the table is also `versioned()`.
+- **Order.** Positions are dense positive integers, unique per tenant and group. The unique index names the tenant columns itself, because a unique added after the tenancy rewrite is not widened. `via()` is refused at `schema()` (OKM1060): the tenant key is not a column. On an `archivable()` table the index is partial, `WHERE archived_at IS NULL`. Two archived rows may share a position. Active rows may not.
+- **`move(id, { before })` or `{ after }`.** Exactly one of `before` or `after`. `id` is the single primary-key column besides the tenant key. The move takes the same advisory lock in its own statement, then renumbers the group: it writes the new positions as negatives, then flips them to positive, so the unique index never sees two rows at the same positive position. The read of the group happens after the lock is held. A missing id is `not_found` and writes nothing. An anchor in another group is OKM1120 and writes nothing. The same id on both sides returns the current position and writes nothing. The result is `{ position }`.
+- **Reads.** `find` and `page` order by `position`, then the primary key, when `orderBy` is omitted. An `orderBy` you pass replaces that. `one()` is not reordered.
+- **What does not.** Changing the group column is OKM1120. `move` stays in one group. A delete leaves a gap; the next insert uses `max + 1`, and a later `move` compresses the group to `1..n`. A position that is already negative is flipped by the next move in that group: positions stay positive. Adding `position` to a table that already has rows is `add-column-required`, because the column is `NOT NULL` and has no default.
 
 ## 9. Tenancy
 
@@ -943,7 +959,7 @@ await scoped.tasks.restore({ archiveId });
 await scoped.tasks.onlyArchived().delete({ where: { archivedAt: lt(retentionCutoff) } });   // purge
 ```
 
-Atomic operators: `inc(n)`, `json.set(path, v)`, `arr.append(v)`, `arr.remove(v)`. `inc` adds to a number column (`smallint`, `integer`, `bigint`, `numeric`, `real`, `double precision`). A null number stays null. A column that is not a number is OKM1124. A per-row list that sets one field with an operator in one row and a plain value, or a different operator, in another is OKM1120. `dec` and `mul` are not in this version. `lock: "skip"` needs `limit`. That update changes up to that many matching rows and leaves rows another transaction already holds. The statement is the claim, so it runs inside `tx()` or on its own. `wait` is not an update option. A read uses `lock: "update" | "share"` and `wait: "nowait" | "skip"` inside `tx()` (section 15). There is no `findMany`; `find` returns the list.
+Atomic operators: `inc(n)`, `json.set(path, v)`, `arr.append(v)`, `arr.remove(v)`. `inc` adds to a number column (`smallint`, `integer`, `bigint`, `numeric`, `real`, `double precision`). A null number stays null. A column that is not a number is OKM1124. A per-row list that sets one field with an operator in one row and a plain value, or a different operator, in another is OKM1120. `dec` and `mul` are not in this version. `lock: "skip"` needs `limit`. That update changes up to that many matching rows and leaves rows another transaction already holds. The statement is the claim, so it runs inside `tx()` or on its own. `wait` is not an update option. A read uses `lock: "update" | "share"` and `wait: "nowait" | "skip"` inside `tx()` (section 15). There is no `findMany`; `find` returns the list. On a `versioned()` table every update passes `version`, the integer it read, and the write bumps that column in the same statement. `inc` still bumps it. A stale row is category `conflict`. `sortable()` does not take a position in `set`; `move(id, { before })` or `{ after }` places the row (section 8).
 
 ## 12. Semantics of small APIs
 
