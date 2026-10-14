@@ -22,7 +22,14 @@ import {
 } from "../dialects/pg/model.js";
 
 /** A read the caller asked for. */
-export type ReadOp = "find" | "one" | "count" | "exists" | "aggregate";
+export type ReadOp =
+  | "find"
+  | "one"
+  | "count"
+  | "exists"
+  | "aggregate"
+  | "descendants"
+  | "ancestors";
 
 /** Routing constraint chosen before execute. */
 export type RouteConstraint = "auto" | "primary" | "replica";
@@ -46,6 +53,7 @@ export type ReadBuild = (
   sink: Sink,
   outputs: Built | undefined,
   call: ReadCall,
+  hooks?: IncludeHooks,
 ) => void;
 
 /** One read call. `all` is the `.all(reason)` escape for an unbounded read. */
@@ -57,6 +65,8 @@ export type ReadCall = {
   readonly orderBy?: unknown;
   readonly limit?: unknown;
   readonly include?: unknown;
+  /** `find` and `count`. Rewritten to `matches` and `relevance` before SQL. */
+  readonly search?: unknown;
   readonly all?: string;
   /** The `after` cursor of a `page`. The condition joins the others with `and`. */
   readonly after?: Keyset;
@@ -69,6 +79,13 @@ export type ReadCall = {
   readonly timeout?: number;
   /** `"primary"` or `"replica"`. Absent means the router classifies the statement. */
   readonly route?: "primary" | "replica";
+  /**
+   * Endpoint a `.stream()` already chose.
+   *
+   * The first batch leaves `name` empty and the router fills it. Later batches
+   * pass the same object so they stay on that endpoint.
+   */
+  readonly pin?: { name?: string };
   /** Set by `for()` or `unscoped()`. Absent on a schema with no tenancy. */
   readonly scope?: CallScope;
   /** Inspect lines from the tenancy object. Absent when the schema has no tenancy. */
@@ -157,6 +174,12 @@ export type ScalarOut = {
   readonly decode: ((wire: string) => unknown) | undefined;
 };
 
+/** One target inside a morph include's JSON value. */
+export type MorphOut = {
+  readonly type: string;
+  readonly fields: readonly ScalarOut[];
+};
+
 /** A nested include. `at` is a root column for `one` and the JSON column for `many`. */
 export type IncludeOut = {
   readonly name: string;
@@ -164,6 +187,15 @@ export type IncludeOut = {
   readonly at: number;
   readonly fields: readonly ScalarOut[];
   readonly nested: readonly IncludeOut[];
+  /**
+   * Set when the include is a morph.
+   *
+   * The column at `at` is one JSON array, `[type, ...fields]`, or null.
+   */
+  readonly morph?: {
+    readonly typeKey: string;
+    readonly targets: readonly MorphOut[];
+  };
 };
 
 /** Columns and includes in statement order. */
@@ -196,6 +228,13 @@ export type IncludeHooks = {
     alias: string,
     depth: number,
   ): void;
+  /**
+   * Reports whether an include's `where` or `orderBy` needs the operator compiler.
+   *
+   * The root check does not walk includes. This does, and only after the
+   * include planner has loaded.
+   */
+  needsOperator(schema: QuerySchema, call: ReadCall): boolean;
 };
 
 export type Built = {
@@ -243,6 +282,7 @@ const FIND_OPTIONS = [
   "include",
   "limit",
   "orderBy",
+  "search",
   "select",
   "route",
   "signal",
@@ -258,6 +298,7 @@ const ONE_OPTIONS = [
   "timeout",
   "where",
 ] as const;
+const COUNT_OPTIONS = ["route", "search", "signal", "timeout", "where"] as const;
 const FILTER_OPTIONS = ["route", "signal", "timeout", "where"] as const;
 
 /**
@@ -269,6 +310,7 @@ const FILTER_OPTIONS = ["route", "signal", "timeout", "where"] as const;
 export function readOptionNames(op: ReadOp): readonly string[] {
   if (op === "find") return FIND_OPTIONS;
   if (op === "one") return ONE_OPTIONS;
+  if (op === "count") return COUNT_OPTIONS;
   return FILTER_OPTIONS;
 }
 
@@ -280,13 +322,19 @@ const BASE_RULES: readonly AppliedRule[] = [
 
 const indexesOf = new WeakMap<object, ReadonlyMap<string, Indexed>>();
 
-/** 0.2 operator SQL. Absent until that module has been imported. */
+/**
+ * 0.2 operator SQL. Absent until that module has been imported.
+ *
+ * `order` is set when the operator is an `orderBy` value. `relevance` writes
+ * its direction there; the same operator in `where` is refused by that module.
+ */
 type OperatorEmit = (
   column: ColumnModel,
   ref: string,
   name: OperatorName,
   value: unknown,
   sink: Sink,
+  order?: true,
 ) => void;
 
 let operatorEmit: OperatorEmit | undefined;
@@ -314,7 +362,26 @@ export function installOperatorSql(emit: OperatorEmit): void {
 export function readNeedsOperatorSql(schema: QuerySchema, call: ReadCall): boolean {
   if (operatorEmit !== undefined) return false;
   const table = indexes(schema).get(call.table);
-  return table !== undefined && needsOperatorSql(table, call.where);
+  if (table === undefined) return false;
+  return needsOperatorSql(table, call.where) || orderHasRelevance(call.orderBy);
+}
+
+/**
+ * Reports whether `orderBy` holds a `relevance` value.
+ *
+ * Called before the operator compiler has loaded. The include planner uses it
+ * for a related table.
+ *
+ * @param orderBy - The caller's order
+ * @returns `true` when a value is `relevance`
+ */
+export function orderHasRelevance(orderBy: unknown): boolean {
+  if (!isRecord(orderBy)) return false;
+  for (const key of Object.keys(orderBy)) {
+    const value = orderBy[key];
+    if (isOperator(value) && operatorName(value) === "relevance") return true;
+  }
+  return false;
 }
 
 /**
@@ -347,7 +414,18 @@ export function emitRelationFrom(
 const SYNC_OPERATORS = ",lt,lte,gt,gte,between,inList,notIn,";
 const TEXT_OPERATORS = ",startsWith,endsWith,contains,like,ilike,";
 
-function needsOperatorSql(table: Indexed, value: unknown, key?: string): boolean {
+/**
+ * Reports whether a filter needs the operator compiler.
+ *
+ * Equality and text patterns do not. The include planner calls this for a
+ * related table.
+ *
+ * @param table - The table the filter reads
+ * @param value - A `where` value
+ * @param key - The field, when `value` is that field's operand
+ * @returns `true` when the operator compiler has to load
+ */
+export function needsOperatorSql(table: Indexed, value: unknown, key?: string): boolean {
   if (isOperator(value)) {
     const name = operatorName(value);
     if (name === "or" || name === "and") {
@@ -385,12 +463,13 @@ function emitLazy(
   name: OperatorName,
   value: unknown,
   sink: Sink,
+  order?: true,
 ): void {
   const emit = operatorEmit;
   if (emit === undefined) {
     fail("OKM1121", `Operator ${name} on ${column.field} is not loaded.`);
   }
-  emit(column, ref, name, value, sink);
+  emit(column, ref, name, value, sink, order);
 }
 
 /**
@@ -533,7 +612,7 @@ export function logicalIntent(call: ReadCall): {
     table: call.table,
     where: plain(call.where),
     select: call.select,
-    orderBy: call.orderBy,
+    orderBy: plain(call.orderBy),
     limit: call.limit,
     include: plain(call.include),
     all: call.all,
@@ -613,7 +692,7 @@ function emitRead(
     );
   }
   if (call.build !== undefined) {
-    call.build(schema, table, sink, outputs, call);
+    call.build(schema, table, sink, outputs, call, hooks);
     return;
   }
   rejectOptions(call);
@@ -1056,8 +1135,20 @@ export function emitOrder(table: Indexed, orderBy: unknown, sink: Sink, alias: s
       );
     }
     refuseHidden(column);
-    const parsed = parseOrder(key, orderBy[key]);
+    const value = orderBy[key];
     if (index > 0) sink.text(", ");
+    if (isOperator(value) && operatorName(value) === "relevance") {
+      emitLazy(
+        column,
+        `${alias}.${quote(column.sql)}`,
+        "relevance",
+        operatorValue(value),
+        sink,
+        true,
+      );
+      continue;
+    }
+    const parsed = parseOrder(key, value);
     sink.text(alias);
     sink.text(".");
     sink.text(quote(column.sql));
@@ -1095,7 +1186,7 @@ export function refuseHidden(column: ColumnModel): void {
   fail("OKM1120", `Field ${column.field} is hidden.`, "Call hidden({ filterable: true }).");
 }
 
-function emitLimit(call: ReadCall, sink: Sink): void {
+export function emitLimit(call: ReadCall, sink: Sink): void {
   if (call.op === "one") {
     const ordered =
       call.orderBy !== undefined && isRecord(call.orderBy) && Object.keys(call.orderBy).length > 0;
@@ -1126,6 +1217,15 @@ function emitLimit(call: ReadCall, sink: Sink): void {
   sink.mark(`l:${String(limit)}`);
 }
 
+/** One target branch of a morph include. */
+export type ParsedMorphTarget = {
+  readonly type: string;
+  readonly table: string;
+  readonly sql: string;
+  readonly keySql: string;
+  readonly columns: readonly ColumnModel[];
+};
+
 export type ParsedInclude = {
   readonly name: string;
   readonly relation: RelationModel;
@@ -1137,6 +1237,17 @@ export type ParsedInclude = {
   /** Index in the projected list that is null when the related row is missing. */
   readonly anchor: number;
   readonly nested: readonly ParsedInclude[];
+  /**
+   * Set when the include is a morph.
+   *
+   * Absent on every other include, so a normal include does not carry it.
+   */
+  readonly morphTo?: {
+    readonly typeKey: string;
+    readonly typeSql: string;
+    readonly idSql: string;
+    readonly targets: readonly ParsedMorphTarget[];
+  };
 };
 
 export function selectedColumns(table: Indexed, select: unknown): readonly ColumnModel[] {
@@ -1201,10 +1312,22 @@ function rejectOptions(call: ReadCall): void {
   rejectKeys(present, accepted, call.op);
 }
 
+/**
+ * Refuses a key that `accepted` does not list.
+ *
+ * A read passes `search`. `one` and `exists` then say to use `find` or
+ * `count`, instead of the generic option list.
+ *
+ * @param value - Caller options
+ * @param accepted - Names this call allows
+ * @param where - The call, named in the error
+ * @param search - When set, a rejected `search` key uses the read message
+ */
 export function rejectKeys(
   value: Readonly<Record<string, unknown>>,
   accepted: readonly string[],
   where: string,
+  search?: true,
 ): void {
   for (const key of Object.keys(value)) {
     if (accepted.includes(key)) continue;
@@ -1212,7 +1335,9 @@ export function rejectKeys(
       "OKM1120",
       key,
       accepted,
-      `Option ${key} is not accepted by ${where}. Accepted options: ${list(accepted)}.`,
+      key === "search" && search === true
+        ? `${where}() does not take search. Pass search to find or count.`
+        : `Option ${key} is not accepted by ${where}. Accepted options: ${list(accepted)}.`,
     );
   }
 }

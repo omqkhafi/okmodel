@@ -101,6 +101,13 @@ export type PreparedWrite = {
   /** Set when `finish` can refuse a statement that already ran. `batch` refuses such a write (D183). */
   readonly checked?: "restore" | "expect" | "parent";
   finish(results: readonly ExecuteResult[]): unknown;
+  /**
+   * More statements once the planned ones have run.
+   *
+   * First-or-create uses this when the insert returned fewer rows than it was
+   * given. Empty means the insert already returned every row.
+   */
+  follow?(results: readonly ExecuteResult[]): readonly Statement[];
 };
 
 type Cell =
@@ -114,11 +121,36 @@ type Planned = {
   readonly shape: "row" | "rows" | "count";
   readonly expect: number | undefined;
   readonly keys: readonly (readonly (string | null)[])[] | undefined;
-  readonly keyFields: readonly string[] | undefined;
+  /** Conflict columns, in key order. Used to match a returned row to its input. */
+  readonly keyColumns: readonly ColumnModel[] | undefined;
   /** Rows a path insert must return. Fewer means the parent is not in this tenant. */
   readonly parent?: number;
   /** The statement returns matched and updated counts. A shortfall is OKM1705. */
   readonly parentGuard?: boolean;
+  /**
+   * Statement indexes whose rows are not part of the write result.
+   *
+   * A sortable insert locks in one statement, then inserts in the next. The
+   * lock returns a row per group. Those rows are not inserted rows.
+   */
+  readonly quiet?: readonly number[];
+  /**
+   * Statements to run when the insert did not return every input row.
+   *
+   * First-or-create only. The lookup is a new statement so it sees a row
+   * committed while the insert waited (D246).
+   */
+  readonly recover?: (rows: readonly Record<string, unknown>[]) => readonly Statement[];
+  /**
+   * Set when the update checked `version`.
+   *
+   * The statement returns a stale count in the first column. A positive count
+   * means nothing was written.
+   */
+  readonly versioned?: {
+    readonly fields: readonly string[];
+    readonly sent: readonly number[];
+  };
 };
 
 type StoredSchema = QuerySchema & {
@@ -172,8 +204,8 @@ const INSERT_OPTIONS = [
   "validate",
 ] as const;
 const FILTER_OPTIONS = ["allow", "expect", "returning", "signal", "timeout", "validate"] as const;
-const UPDATE_KEYS = ["set", "where"] as const;
-const UPDATE_ROW_KEYS = ["id", "set", "where"] as const;
+const UPDATE_KEYS = ["set", "where", "limit", "lock", "version"] as const;
+const UPDATE_ROW_KEYS = ["id", "set", "where", "version"] as const;
 const NO_ALLOW: ReadonlySet<string> = new Set();
 
 /**
@@ -203,7 +235,10 @@ export async function executeWrite(
   if (plan !== undefined) return prepared;
   if (prepared.statements.length === 0) return prepared.finish([]);
   const results = await runWrite(host, prepared.statements, prepared.options);
-  return prepared.finish(results);
+  const more = prepared.follow?.(results);
+  if (more === undefined || more.length === 0) return prepared.finish(results);
+  const extra = await runWrite(host, more, prepared.options);
+  return prepared.finish(results.concat(extra));
 }
 
 /**
@@ -246,7 +281,15 @@ async function prepareWrite(
         : planned.expect !== undefined
           ? { checked: "expect" as const }
           : {}),
-      finish: (results) => finish(results, planned, table),
+      ...(planned.recover === undefined
+        ? {}
+        : {
+            follow: (results: readonly ExecuteResult[]) =>
+              planned.recover?.(
+                decodePlanned(withoutQuiet(results, planned.quiet), planned.outputs),
+              ) ?? [],
+          }),
+      finish: (results) => finish(withoutQuiet(results, planned.quiet), planned, table),
     };
   } catch (error) {
     throw scrubWrite(host.schema, table, input, error);
@@ -308,6 +351,14 @@ async function planWrite(
     return planInsert(table, input, record, mods, generators, scope, schema.tenancy);
   }
   if (op === "update") {
+    if (traitNamed(table, "versioned")) {
+      const { planVersioned } = await import("./version.js");
+      return withRowFilters(scope, mods.archive, () => {
+        noteArchive(table, mods.archive);
+        const planned = planVersioned(schema, table, input, record, mods);
+        return { ...planned, keys: undefined, keyColumns: undefined };
+      });
+    }
     return withRowFilters(scope, mods.archive, () => {
       noteArchive(table, mods.archive);
       return planUpdate(schema, table, input, record, mods, scope);
@@ -347,7 +398,8 @@ async function planInsert(
       `onConflict on ${table.model.name} is not available. The insert checks the parent.`,
     );
   }
-  if (columns.length === 0) {
+  const sorting = traitNamed(table, "sortable");
+  if (columns.length === 0 && !sorting) {
     const text = `insert into ${quote(table.model.sql)} default values${clause}`;
     return {
       statements: rows.map(() => ({ text })),
@@ -355,7 +407,7 @@ async function planInsert(
       shape,
       expect,
       keys: undefined,
-      keyFields: undefined,
+      keyColumns: undefined,
     };
   }
   const conflictMod =
@@ -368,44 +420,68 @@ async function planInsert(
     allow,
     tenantKeyList(tenancy),
   );
+  if (conflict?.kind === "update" && traitNamed(table, "versioned")) {
+    fail(
+      "OKM1120",
+      `onConflict update on ${table.model.name} does not check the version you read.`,
+      "Read the row and update. ignore and return do not change the existing row.",
+    );
+  }
+  const sortMod = sorting ? await import("./sort.js") : undefined;
   const chunks = chunkRows(rows.map((row) => cellsFor(columns, row)));
   const statements: Statement[] = [];
+  const quiet: number[] = [];
   const keys: (string | null)[][] = [];
   let offset = 0;
   for (const chunk of chunks) {
     const slice = rows.slice(offset, offset + chunk.length);
     offset += chunk.length;
-    const built = path
-      ? pathInsert(table, columns, chunk, scope, tenancy)
-      : insertHead(table, columns, chunk);
+    const head =
+      path || sortMod === undefined
+        ? undefined
+        : sortMod.insertAtEnd(table, columns, slice, traitGroup(table), tenantKeyList(tenancy));
+    const built =
+      head ??
+      (path
+        ? pathInsert(table, columns, chunk, scope, tenancy)
+        : insertHead(table, columns, chunk));
+    if (head !== undefined) {
+      quiet.push(statements.length);
+      statements.push(head.lock);
+    }
     if (conflict === undefined || conflictMod === undefined) {
       statements.push(withParams(`${built.text}${clause}`, built.params));
       continue;
     }
-    const keyRows =
-      conflict.kind === "return" ? slice.map((row) => keyWire(conflict.columns, row)) : [];
-    for (const row of keyRows) keys.push([...row]);
+    if (conflict.kind === "return") {
+      for (const row of slice) keys.push(keyWire(conflict.columns, row));
+    }
     statements.push(
-      conflictMod.finishInsert(
-        built.text,
-        clause,
-        built.params ?? [],
-        conflict,
-        table,
-        returning,
-        keyRows,
-      ),
+      conflictMod.finishInsert(built.text, clause, built.params ?? [], conflict, table),
     );
   }
+  const conflictColumns = conflict?.kind === "return" ? conflict.columns : undefined;
   return {
     statements,
     outputs,
     shape,
     expect,
-    keys: conflict?.kind === "return" ? keys : undefined,
-    keyFields:
-      conflict?.kind === "return" ? conflict.columns.map((column) => column.field) : undefined,
+    keys: conflictColumns === undefined ? undefined : keys,
+    keyColumns: conflictColumns,
     ...(path ? { parent: rows.length } : {}),
+    ...(quiet.length > 0 ? { quiet } : {}),
+    ...(conflictColumns === undefined || conflictMod === undefined
+      ? {}
+      : {
+          recover: (found: readonly Record<string, unknown>[]) =>
+            lookupStatements(
+              conflictMod,
+              table,
+              conflictColumns,
+              returning,
+              missingKeys(found, conflictColumns, keys),
+            ),
+        }),
   };
 }
 
@@ -417,6 +493,13 @@ function planUpdate(
   mods: WriteMods,
   scope: CallScope | undefined,
 ): Planned {
+  if (mentionsVersion(input)) {
+    fail(
+      "OKM1120",
+      `version on ${table.model.name} needs versioned().`,
+      "Add versioned() from okmodel/traits, or remove version.",
+    );
+  }
   const allow = allowSet(table, options.allow);
   noteGuarded(table, allow, "update");
   const returning = returningOption(table, options.returning);
@@ -429,6 +512,8 @@ function planUpdate(
       pathAssignment(schema.tenancy, table.model.name, row.set, scope);
       return { ...row, where: stack(row.where, mods.presets) };
     });
+    rejectDuplicateTargets(table, rows);
+    rejectMixedSets(rows);
     const moves = rows.some(
       (row) => pathField(schema.tenancy, table.model.name, row.set) !== undefined,
     );
@@ -439,7 +524,7 @@ function planUpdate(
         shape: returning === undefined ? "count" : "rows",
         expect,
         keys: undefined,
-        keyFields: undefined,
+        keyColumns: undefined,
         parentGuard: true,
       };
     }
@@ -449,24 +534,43 @@ function planUpdate(
       shape: returning === undefined ? "count" : "rows",
       expect,
       keys: undefined,
-      keyFields: undefined,
+      keyColumns: undefined,
     };
   }
   if (!isRecord(input)) fail("OKM1121", "update expects { where, set } or a list of rows.");
+  const claim = readClaim(input);
   rejectUpdateKeys(input, false);
   const set = writeSet(table, input.set, allow, schema.tenancy);
   requireFilter(table, input.where, mods, "update");
   if (Object.keys(set).length === 0) fail("OKM1120", "update set is empty.");
   const where = stack(input.where, mods.presets);
-  if (pathAssignment(schema.tenancy, table.model.name, set, scope) !== undefined) {
+  const moved = pathAssignment(schema.tenancy, table.model.name, set, scope);
+  if (moved !== undefined && claim !== undefined) {
+    fail(
+      "OKM1120",
+      `lock: "skip" on ${table.model.name} cannot change ${moved} in the same claim.`,
+      "Claim the row first. Point it at a parent in a later update.",
+    );
+  }
+  if (moved !== undefined) {
     return {
       statements: [pathSetUpdate(schema, table, where, set, scope, returning)],
       outputs: parentOutputs(returning),
       shape: returning === undefined ? "count" : "rows",
       expect,
       keys: undefined,
-      keyFields: undefined,
+      keyColumns: undefined,
       parentGuard: true,
+    };
+  }
+  if (claim !== undefined) {
+    return {
+      statements: [emitClaim(schema, table, where, set, claim, returning)],
+      outputs,
+      shape: returning === undefined ? "count" : "rows",
+      expect,
+      keys: undefined,
+      keyColumns: undefined,
     };
   }
   const sql = new Sql();
@@ -489,7 +593,7 @@ function planUpdate(
     shape: returning === undefined ? "count" : "rows",
     expect,
     keys: undefined,
-    keyFields: undefined,
+    keyColumns: undefined,
   };
 }
 
@@ -516,11 +620,12 @@ function planDelete(
     shape: returning === undefined ? "count" : "rows",
     expect: expectOf(options, mods),
     keys: undefined,
-    keyFields: undefined,
+    keyColumns: undefined,
   };
 }
 
 function finish(results: readonly ExecuteResult[], planned: Planned, table: string): unknown {
+  if (planned.versioned !== undefined) return finishVersioned(results, planned, table);
   if (planned.parentGuard === true) return finishParent(results, planned, table);
   if (planned.shape === "count") {
     let count = 0;
@@ -528,14 +633,11 @@ function finish(results: readonly ExecuteResult[], planned: Planned, table: stri
     checkExpect(count, planned.expect, table, "write");
     return { count };
   }
-  const decoded: Record<string, unknown>[] = [];
-  for (const result of results) {
-    for (const row of result.rows) decoded.push(decodeRow(planned.outputs, row));
-  }
+  const decoded = decodePlanned(results, planned.outputs);
   const rows =
-    planned.keys === undefined || planned.keyFields === undefined
+    planned.keys === undefined || planned.keyColumns === undefined
       ? decoded
-      : orderByKeys(decoded, planned.keyFields, planned.keys);
+      : orderByKeys(decoded, planned.keyColumns, planned.keys);
   checkExpect(rows.length, planned.expect, table, "insert");
   if (planned.parent !== undefined && rows.length < planned.parent) {
     throw new OkmError("OKM1705", `Insert on ${table} did not find a parent in this tenant.`, {
@@ -563,6 +665,43 @@ function finishParent(results: readonly ExecuteResult[], planned: Planned, table
   if (updated > 0) {
     for (const result of results) {
       for (const item of result.rows) decoded.push(decodeRow(planned.outputs, item));
+    }
+  }
+  checkExpect(decoded.length, planned.expect, table, "write");
+  if (planned.shape === "row") return decoded[0] ?? null;
+  return decoded;
+}
+
+function finishVersioned(
+  results: readonly ExecuteResult[],
+  planned: Planned,
+  table: string,
+): unknown {
+  const versioned = planned.versioned;
+  const first = results[0]?.rows[0];
+  if (versioned !== undefined && first !== undefined && countCell(first[0]) > 0) {
+    const fields = versioned.fields.length === 0 ? "the row" : versioned.fields.join(", ");
+    const sent = versioned.sent.join(", ");
+    throw new OkmError(
+      "conflict",
+      `update on ${table} tried to write ${fields} at version ${sent}, and the row changed. Reread the row and retry with the version you read.`,
+      {
+        kind: "conflict",
+        columns: ["version"],
+        fix: { summary: "Reread the row and retry with the version you read." },
+      },
+    );
+  }
+  if (planned.shape === "count") {
+    const updated = first === undefined ? 0 : countCell(first[1]);
+    checkExpect(updated, planned.expect, table, "write");
+    return { count: updated };
+  }
+  const decoded: Record<string, unknown>[] = [];
+  for (const result of results) {
+    for (const item of result.rows) {
+      if (countCell(item[1]) === 0) continue;
+      decoded.push(decodeRow(planned.outputs, item));
     }
   }
   checkExpect(decoded.length, planned.expect, table, "write");
@@ -621,6 +760,19 @@ function parentOutputs(returning: readonly ColumnModel[] | undefined): Outputs {
   };
 }
 
+/**
+ * Physical row identity for one alias.
+ *
+ * `ctid` repeats on another partition and on an inheritance child.
+ * `tableoid` names the relation that holds the row.
+ *
+ * @param alias - Table alias in the statement
+ * @returns `alias.tableoid, alias.ctid`
+ */
+function rowId(alias: string): string {
+  return `${alias}.tableoid, ${alias}.ctid`;
+}
+
 function pathSetUpdate(
   schema: QuerySchema,
   table: Indexed,
@@ -630,7 +782,9 @@ function pathSetUpdate(
   returning: readonly ColumnModel[] | undefined,
 ): Statement {
   const sql = new Sql();
-  sql.text("with matched as (select t.ctid as tid from ");
+  sql.text("with matched as (select ");
+  sql.text(rowId("t"));
+  sql.text(" from ");
   sql.text(quote(table.model.sql));
   sql.text(" as t");
   emitFilter(schema, table, where, sql, "t");
@@ -638,7 +792,9 @@ function pathSetUpdate(
   sql.text(quote(table.model.sql));
   sql.text(" as t set ");
   emitSet(sql, table, set, "t");
-  sql.text(" where t.ctid in (select tid from matched)");
+  sql.text(" where (");
+  sql.text(rowId("t"));
+  sql.text(") in (select tableoid, ctid from matched)");
   schema.tenancy?.noteParent?.(
     table.model.name,
     set,
@@ -736,12 +892,16 @@ function endParent(sql: Sql, returning: readonly ColumnModel[] | undefined): voi
   );
 }
 
-function updateSliceBody(
+export function updateSliceBody(
   schema: QuerySchema,
   table: Indexed,
   rows: readonly { readonly where: unknown; readonly set: Record<string, unknown> }[],
   sql: Sql,
   wrapWhere = false,
+  hooks?: {
+    afterWhere?(sql: Sql, index: number): void;
+    afterSet?(sql: Sql): void;
+  },
 ): void {
   const fields: ColumnModel[] = [];
   const seen = new Set<string>();
@@ -763,9 +923,12 @@ function updateSliceBody(
     if (field > 0) sql.text(", ");
     sql.text(quote(column.sql));
     sql.text(" = case");
-    for (const row of rows) {
+    for (let index = 0; index < rows.length; index += 1) {
+      const row = rows[index];
+      if (row === undefined) continue;
       sql.text(" when ");
       emitBare(schema, table, row.where, sql, "t");
+      hooks?.afterWhere?.(sql, index);
       sql.text(" then ");
       const value = row.set[column.field];
       if (value === undefined) sql.text(`t.${quote(column.sql)}`);
@@ -776,6 +939,7 @@ function updateSliceBody(
     sql.text(" end");
   }
   emitTouch(sql, table, fields.length > 0);
+  hooks?.afterSet?.(sql);
   sql.text(wrapWhere ? " where (" : " where ");
   for (let index = 0; index < rows.length; index += 1) {
     const row = rows[index];
@@ -783,18 +947,162 @@ function updateSliceBody(
     if (index > 0) sql.text(" or ");
     sql.text("(");
     emitBare(schema, table, row.where, sql, "t");
+    hooks?.afterWhere?.(sql, index);
     sql.text(")");
   }
   if (wrapWhere) sql.text(")");
 }
 
+function decodePlanned(
+  results: readonly ExecuteResult[],
+  outputs: Outputs,
+): Record<string, unknown>[] {
+  const decoded: Record<string, unknown>[] = [];
+  for (const result of results) {
+    for (const row of result.rows) decoded.push(decodeRow(outputs, row));
+  }
+  return decoded;
+}
+
+/**
+ * Drops statements that are not part of the write result.
+ *
+ * @param results - One result per statement, in order
+ * @param quiet - Indexes to drop. Omitted keeps every result
+ * @returns The results `finish` decodes
+ */
+function withoutQuiet(
+  results: readonly ExecuteResult[],
+  quiet: readonly number[] | undefined,
+): readonly ExecuteResult[] {
+  if (quiet === undefined || quiet.length === 0) return results;
+  const hidden = new Set(quiet);
+  const kept: ExecuteResult[] = [];
+  for (let index = 0; index < results.length; index += 1) {
+    if (hidden.has(index)) continue;
+    const result = results[index];
+    if (result !== undefined) kept.push(result);
+  }
+  return kept;
+}
+
+function lookupStatements(
+  mod: typeof import("./conflict.js"),
+  table: Indexed,
+  columns: readonly ColumnModel[],
+  returning: readonly ColumnModel[],
+  keyRows: readonly (readonly (string | null)[])[],
+): readonly Statement[] {
+  if (keyRows.length === 0 || returning.length === 0) return [];
+  const width = Math.max(1, columns.length);
+  const size = Math.max(1, Math.floor(WRITE_PARAM_BUDGET / width));
+  const statements: Statement[] = [];
+  for (let index = 0; index < keyRows.length; index += size) {
+    statements.push(
+      mod.lookupExisting(table, columns, returning, keyRows.slice(index, index + size)),
+    );
+  }
+  return statements;
+}
+
+function missingKeys(
+  rows: readonly Record<string, unknown>[],
+  columns: readonly ColumnModel[],
+  keys: readonly (readonly (string | null)[])[],
+): (readonly (string | null)[])[] {
+  const have = new Set(rows.map((row) => rowKey(columns, row)));
+  const missing: (readonly (string | null)[])[] = [];
+  const seen = new Set<string>();
+  for (const key of keys) {
+    const id = key.map((value) => value ?? "").join("\0");
+    if (have.has(id) || seen.has(id)) continue;
+    seen.add(id);
+    missing.push(key);
+  }
+  return missing;
+}
+
+export function rejectDuplicateTargets(
+  table: Indexed,
+  rows: readonly { readonly where: unknown }[],
+): void {
+  if (rows.length < 2) return;
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const key = canonical(row.where);
+    if (seen.has(key)) {
+      fail(
+        "OKM1120",
+        `update on ${table.model.name} lists the same target twice.`,
+        "List each row once.",
+      );
+    }
+    seen.add(key);
+  }
+}
+
+/** Distinguishes values that have no stable text. A repeat is not reported as a duplicate. */
+let unresolved = 0;
+
+function canonical(value: unknown): string {
+  if (isOperator(value)) return `op:${operatorName(value)}:${canonical(operatorValue(value))}`;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return JSON.stringify(value);
+  }
+  if (value === null) return "null";
+  if (value === undefined) return "undefined";
+  if (typeof value === "bigint") return JSON.stringify(value.toString());
+  if (Array.isArray(value)) return `[${value.map((item) => canonical(item)).join(",")}]`;
+  if (isRecord(value)) {
+    if (plainRecord(value)) {
+      const keys = Object.keys(value).sort();
+      return `{${keys.map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`;
+    }
+    return boxed(value);
+  }
+  return fresh();
+}
+
+function plainRecord(value: object): boolean {
+  const proto: unknown = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+function boxed(value: object): string {
+  if (value instanceof Uint8Array) return `bytes:${hexBytes(value)}`;
+  if (value instanceof Date) {
+    const time = value.getTime();
+    if (Number.isNaN(time)) return fresh();
+    return `date:${value.toISOString()}`;
+  }
+  const read = (value as { readonly toString: () => string }).toString;
+  if (read === Object.prototype.toString) return fresh();
+  const text = read.call(value);
+  if (text.length > 0 && text !== "[object Object]") return `text:${text}`;
+  return fresh();
+}
+
+function hexBytes(value: Uint8Array): string {
+  let hex = "";
+  for (const byte of value) hex += byte.toString(16).padStart(2, "0");
+  return hex;
+}
+
+function fresh(): string {
+  unresolved += 1;
+  return `~${String(unresolved)}`;
+}
+
 function orderByKeys(
   rows: readonly Record<string, unknown>[],
-  fields: readonly string[],
+  columns: readonly ColumnModel[],
   keys: readonly (readonly (string | null)[])[],
 ): Record<string, unknown>[] {
   const found = new Map<string, Record<string, unknown>>();
-  for (const row of rows) found.set(fields.map((field) => wireKey(row[field])).join("\0"), row);
+  for (const row of rows) {
+    const id = rowKey(columns, row);
+    if (!found.has(id)) found.set(id, row);
+  }
   const ordered: Record<string, unknown>[] = [];
   for (const key of keys) {
     const row = found.get(key.map((value) => value ?? "").join("\0"));
@@ -803,12 +1111,33 @@ function orderByKeys(
   return ordered;
 }
 
-function wireKey(value: unknown): string {
-  if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
-    return String(value);
+function rowKey(columns: readonly ColumnModel[], row: Record<string, unknown>): string {
+  let id = "";
+  for (let index = 0; index < columns.length; index += 1) {
+    const column = columns[index];
+    if (column === undefined) continue;
+    if (index > 0) id += "\0";
+    id += valueKey(column, row[column.field]);
   }
-  return "";
+  return id;
+}
+
+function valueKey(column: ColumnModel, value: unknown): string {
+  if (value === undefined || value === null) return "";
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    typeof value === "bigint"
+  ) {
+    return wireKey(value);
+  }
+  return column.encode(value);
+}
+
+function wireKey(value: string | number | boolean | bigint): string {
+  if (typeof value === "string") return value;
+  return String(value);
 }
 
 function insertHead(
@@ -865,7 +1194,50 @@ function updateSlice(
   return sql.statement();
 }
 
-function emitSet(sql: Sql, table: Indexed, set: Record<string, unknown>, alias: string): void {
+/**
+ * One update that claims up to `limit` rows and leaves rows another
+ * transaction already holds.
+ *
+ * The write is the statement, so it does not need an outer `tx()`. Inside
+ * `tx()` the claim lasts until that transaction ends. The inner read names
+ * the physical row, then the update changes that row only. `ctid` repeats on
+ * another partition and on an inheritance child, so the match includes
+ * `tableoid`. `limit` is bound.
+ */
+function emitClaim(
+  schema: QuerySchema,
+  table: Indexed,
+  where: unknown,
+  set: Record<string, unknown>,
+  limit: number,
+  returning: readonly ColumnModel[] | undefined,
+): Statement {
+  const sql = new Sql();
+  sql.text("update ");
+  sql.text(quote(table.model.sql));
+  sql.text(" as t set ");
+  emitSet(sql, table, set, "t");
+  sql.text(" where (");
+  sql.text(rowId("t"));
+  sql.text(") in (select ");
+  sql.text(rowId("s"));
+  sql.text(" from ");
+  sql.text(quote(table.model.sql));
+  sql.text(" as s");
+  emitFilter(schema, table, where, sql, "s");
+  sql.text(" for update of s skip locked limit ");
+  sql.param(String(limit), "integer");
+  sql.text(")");
+  sql.text(returningClause(returning, "t"));
+  return sql.statement();
+}
+
+export function emitSet(
+  sql: Sql,
+  table: Indexed,
+  set: Record<string, unknown>,
+  alias: string,
+): void {
   const keys = Object.keys(set);
   let wrote = false;
   for (const key of keys) {
@@ -898,12 +1270,7 @@ function emitValue(sql: Sql, column: ColumnModel, value: unknown, alias: string)
   if (isOperator(value)) {
     const name = operatorName(value);
     if (name === "inc") {
-      const amount = operatorValue(value);
-      if (typeof amount === "object" && amount !== null) {
-        fail("OKM1121", `inc on ${column.field} needs a value.`);
-      }
-      sql.text(`${alias}.${quote(column.sql)} + `);
-      sql.param(encodeColumn(column, amount), column.dataType);
+      emitIncrement(sql, column, value, alias);
       return;
     }
     if (name === "json.set") {
@@ -916,7 +1283,7 @@ function emitValue(sql: Sql, column: ColumnModel, value: unknown, alias: string)
     }
     fail(
       "OKM1121",
-      `Field ${column.field} received an operator. set accepts a value, inc, set, or arr.`,
+      `Field ${column.field} received an operator. set accepts a value, inc, json.set, arr.append, or arr.remove.`,
     );
   }
   if (value === null) {
@@ -925,6 +1292,31 @@ function emitValue(sql: Sql, column: ColumnModel, value: unknown, alias: string)
   }
   if (typeof value === "object") takeObject(column, value);
   sql.param(encodeColumn(column, value), column.dataType);
+}
+
+/** Number columns `inc` can add to. Array types are not included. */
+const NUMBER_TYPE =
+  /^(?:smallint|integer|bigint|real|double precision|numeric|decimal)(?:\(\d+(?:,\d+)?\))?$/;
+
+function emitIncrement(sql: Sql, column: ColumnModel, value: unknown, alias: string): void {
+  if (!NUMBER_TYPE.test(column.dataType)) {
+    fail(
+      "OKM1124",
+      `inc adds to a number. ${column.field} is a ${column.dataType} column.`,
+      "Use inc on an integer, bigint, numeric, or float column.",
+    );
+  }
+  if (!isOperator(value)) fail("OKM1121", `inc on ${column.field} needs a number.`);
+  const amount = operatorValue(value);
+  if (typeof amount !== "number" && typeof amount !== "bigint" && typeof amount !== "string") {
+    fail(
+      "OKM1121",
+      `inc on ${column.field} needs a number.`,
+      "Pass the amount to add. null stores null; it is not an amount.",
+    );
+  }
+  sql.text(`${alias}.${quote(column.sql)} + `);
+  sql.param(encodeColumn(column, amount), column.dataType);
 }
 
 function emitJsonSet(sql: Sql, column: ColumnModel, value: unknown, alias: string): void {
@@ -1010,7 +1402,41 @@ function emitBare(
   }
 }
 
-class Sql {
+function traitNamed(table: Indexed, name: string): boolean {
+  const traits = table.model.traits;
+  if (traits === undefined) return false;
+  for (const trait of traits) if (trait.name === name) return true;
+  return false;
+}
+
+/**
+ * Group field `sortable()` stored, when this table has that trait.
+ *
+ * @param table - Target table
+ * @returns The field, or `undefined` when the order is one list
+ */
+function traitGroup(table: Indexed): string | undefined {
+  const traits = table.model.traits;
+  if (traits === undefined) return undefined;
+  for (const trait of traits) {
+    if (trait.name !== "sortable") continue;
+    const group = (trait as { readonly group?: unknown }).group;
+    return typeof group === "string" ? group : undefined;
+  }
+  return undefined;
+}
+
+function mentionsVersion(input: unknown): boolean {
+  if (Array.isArray(input)) {
+    for (const item of input) {
+      if (isRecord(item) && Object.hasOwn(item, "version")) return true;
+    }
+    return false;
+  }
+  return isRecord(input) && Object.hasOwn(input, "version");
+}
+
+export class Sql {
   private readonly parts: string[] = [];
   private readonly params: (string | null)[] = [];
 
@@ -1063,6 +1489,7 @@ function insertRow(
     if (!writable(table, column, allow)) refuse(table, column);
     if (value[key] !== undefined) row[key] = value[key];
   }
+  refuseHalfMorph(table, row);
   return row;
 }
 
@@ -1173,13 +1600,21 @@ function pathInsert(
   return sql.statement();
 }
 
-function writeSet(
+export function writeSet(
   table: Indexed,
   value: unknown,
   allow: ReadonlySet<string>,
   tenancy: QuerySchema["tenancy"],
 ): Record<string, unknown> {
   if (!isRecord(value)) fail("OKM1121", "set must be an object of fields.");
+  const group = traitGroup(table);
+  if (group !== undefined && Object.hasOwn(value, group) && value[group] !== undefined) {
+    fail(
+      "OKM1120",
+      `update on ${table.model.name} cannot change ${group}. It groups position.`,
+      "Move stays in one group.",
+    );
+  }
   const set: Record<string, unknown> = {};
   for (const key of Object.keys(value)) {
     if (value[key] === undefined) continue;
@@ -1189,6 +1624,7 @@ function writeSet(
     if (column.guardUpdate || !writable(table, column, allow)) refuse(table, column);
     set[key] = value[key];
   }
+  refuseHalfMorph(table, set);
   return set;
 }
 
@@ -1201,12 +1637,86 @@ function updateItem(
   if (!isRecord(value)) fail("OKM1121", "update expects { where, set } or a list of rows.");
   rejectUpdateKeys(value, true);
   const set = writeSet(table, value.set, allow, tenancy);
+  if (Object.keys(set).length === 0) fail("OKM1120", "update set is empty.");
   if (value.where !== undefined) return { where: value.where, set };
   if (value.id !== undefined) return { where: { id: value.id }, set };
   fail("OKM1102", `update on ${table.model.name} needs id or where for each row.`);
 }
 
-function rejectUpdateKeys(input: Record<string, unknown>, row: boolean): void {
+/**
+ * A list that sets one field with an operator in one row and a plain value,
+ * or a different operator, in another.
+ */
+export function rejectMixedSets(rows: readonly { readonly set: Record<string, unknown> }[]): void {
+  const kind = new Map<string, string>();
+  for (const row of rows) {
+    for (const key of Object.keys(row.set)) {
+      const value = row.set[key];
+      if (value === undefined) continue;
+      const next = isOperator(value) ? operatorName(value) : "value";
+      const previous = kind.get(key);
+      if (previous === undefined) {
+        kind.set(key, next);
+        continue;
+      }
+      if (previous === next) continue;
+      const left = previous === "value" ? "a value" : previous;
+      const right = next === "value" ? "a value" : next;
+      fail(
+        "OKM1120",
+        `${key} is both ${left} and ${right} in this update.`,
+        `Use one value or one operator for ${key} in every row.`,
+      );
+    }
+  }
+}
+
+/**
+ * `lock: "skip"` with `limit` on one update. Absent when the caller named neither.
+ *
+ * @param input - The update target
+ * @returns The row cap, or `undefined` when this update does not claim
+ */
+export function readClaim(input: Record<string, unknown>): number | undefined {
+  if (Object.hasOwn(input, "wait")) {
+    fail(
+      "OKM1120",
+      'wait belongs on a read. An update claims rows with lock: "skip".',
+      'Use lock: "skip" and limit. A read uses wait: "nowait" or "skip" inside tx().',
+    );
+  }
+  const lock = input.lock;
+  const limit = input.limit;
+  if (lock === undefined && limit === undefined) return undefined;
+  if (lock === undefined) {
+    fail(
+      "OKM1120",
+      'limit on an update needs lock: "skip".',
+      'Pass lock: "skip" to claim up to limit rows, or remove limit.',
+    );
+  }
+  if (lock !== "skip") {
+    const shown = typeof lock === "string" ? lock : (JSON.stringify(lock) ?? "undefined");
+    fail(
+      "OKM1120",
+      `lock on an update must be "skip". ${shown} is not a claim.`,
+      'Pass lock: "skip". A read uses lock: "update" or "share", and wait: "nowait" or "skip", inside tx().',
+    );
+  }
+  if (limit === undefined) {
+    fail(
+      "OKM1120",
+      'lock: "skip" needs a limit.',
+      "Pass limit so the claim takes a fixed number of rows.",
+    );
+  }
+  if (typeof limit !== "number" || !Number.isInteger(limit) || limit < 1 || limit > 2_147_483_647) {
+    fail("OKM1121", "limit must be a whole number from 1 to 2147483647.");
+  }
+  return limit;
+}
+
+export function rejectUpdateKeys(input: Record<string, unknown>, row: boolean): void {
   const accepted = row ? UPDATE_ROW_KEYS : UPDATE_KEYS;
   for (const key of Object.keys(input)) {
     if ((accepted as readonly string[]).includes(key)) continue;
@@ -1219,7 +1729,7 @@ function rejectUpdateKeys(input: Record<string, unknown>, row: boolean): void {
   }
 }
 
-function requireFilter(table: Indexed, where: unknown, mods: WriteMods, op: WriteOp): void {
+export function requireFilter(table: Indexed, where: unknown, mods: WriteMods, op: WriteOp): void {
   if (mods.all !== undefined) {
     if (mods.all.trim().length === 0) {
       fail("OKM1102", `${op} on ${table.model.name} needs a where. .all needs a reason.`);
@@ -1263,7 +1773,10 @@ function keyWire(columns: readonly ColumnModel[], row: Record<string, unknown>):
   });
 }
 
-function returningOption(table: Indexed, value: unknown): readonly ColumnModel[] | undefined {
+export function returningOption(
+  table: Indexed,
+  value: unknown,
+): readonly ColumnModel[] | undefined {
   if (value === undefined) return undefined;
   return selectedColumns(table, value);
 }
@@ -1292,7 +1805,7 @@ function outputsOf(columns: readonly ColumnModel[] | undefined): Outputs {
   };
 }
 
-function expectOf(options: Record<string, unknown>, mods: WriteMods): number | undefined {
+export function expectOf(options: Record<string, unknown>, mods: WriteMods): number | undefined {
   const value = mods.expect ?? options.expect;
   if (value === undefined) return undefined;
   if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
@@ -1327,6 +1840,47 @@ function callOptions(options: object): ExecuteOptions | undefined {
   };
 }
 
+/**
+ * A morph pair is set together or not at all.
+ *
+ * One of the two columns, or one null and the other set, is OKM1121.
+ * A type value outside the closed list is OKM1120.
+ */
+function refuseHalfMorph(table: Indexed, row: Record<string, unknown>): void {
+  const relations = table.model.relations;
+  for (let index = 0; index < relations.length; index += 1) {
+    const relation = relations[index];
+    const morph = relation?.morph;
+    if (relation === undefined || morph === undefined || morph.direction !== "to") continue;
+    const typeSet = Object.hasOwn(row, morph.typeField);
+    const idSet = Object.hasOwn(row, morph.idField);
+    const type = typeSet ? row[morph.typeField] : undefined;
+    const id = idSet ? row[morph.idField] : undefined;
+    const typeClear = type === null;
+    const idClear = id === null;
+    if (!typeSet && !idSet) continue;
+    if (typeSet !== idSet || typeClear !== idClear) {
+      fail(
+        "OKM1121",
+        `Set ${table.model.name}.${morph.typeField} and ${morph.idField} together, or clear both. Use morphTo("${morph.name}", type, id).`,
+      );
+    }
+    if (typeClear) continue;
+    let accepted = false;
+    const names: string[] = [];
+    for (const target of morph.targets) {
+      names.push(target.type);
+      if (target.type === type) accepted = true;
+    }
+    if (!accepted) {
+      fail(
+        "OKM1120",
+        `Relation ${table.model.name}.${relation.name} type ${morph.typeField} is ${typeof type === "string" ? type : typeof type}. Accepted tables: ${names.join(", ")}.`,
+      );
+    }
+  }
+}
+
 function refuse(table: Indexed, column: ColumnModel): never {
   if (fieldSealed(table.model, column.field)) {
     fail(
@@ -1352,7 +1906,7 @@ function writable(table: Indexed, column: ColumnModel, allow: ReadonlySet<string
   return column.guarded && allow.has(column.field);
 }
 
-function allowSet(table: Indexed, value: unknown): ReadonlySet<string> {
+export function allowSet(table: Indexed, value: unknown): ReadonlySet<string> {
   if (value === undefined) return NO_ALLOW;
   if (!Array.isArray(value)) fail("OKM1120", "allow must be a list of field names.");
   const set = new Set<string>();
@@ -1372,7 +1926,11 @@ function noteArchive(table: Indexed, view: ArchiveView | undefined): void {
   runSafety(rules, undefined);
 }
 
-function noteGuarded(table: Indexed, allow: ReadonlySet<string>, op: "insert" | "update"): void {
+export function noteGuarded(
+  table: Indexed,
+  allow: ReadonlySet<string>,
+  op: "insert" | "update",
+): void {
   if (!safetyInstalled()) return;
   const contributions: SafetyContribution[] = [];
   const hatches: SafetyHatch[] = [];

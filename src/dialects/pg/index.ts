@@ -65,6 +65,15 @@ export { domain, enumColumn as enum } from "./enum.js";
 export { t } from "./namespace.js";
 export * as arr from "./ops/arr-ns.js";
 export * as json from "./ops/json-ns.js";
+export { bucket, type Bucket, type BucketUnit, type WeekStart } from "./ops/bucket.js";
+export {
+  denseRank,
+  rank,
+  rowNumber,
+  runningTotal,
+  type Window,
+  type WindowOrder,
+} from "./ops/window.js";
 export { between } from "./ops/between.js";
 export { containedBy } from "./ops/containedBy.js";
 export { contains } from "./ops/contains.js";
@@ -81,6 +90,8 @@ export { ilike } from "./ops/ilike.js";
 export { inList } from "./ops/inList.js";
 export { like } from "./ops/like.js";
 export { matches } from "./ops/matches.js";
+export { relevance } from "./ops/relevance.js";
+export type { SearchMatch } from "./operators.js";
 export { lt } from "./ops/lt.js";
 export { lte } from "./ops/lte.js";
 export { none } from "./ops/none.js";
@@ -93,9 +104,14 @@ export { startsWith } from "./ops/startsWith.js";
 export {
   many,
   manyThrough,
+  morph,
+  morphMany,
+  morphTo,
   one,
   type ManyRelation,
   type ManyThroughRelation,
+  type MorphManyRelation,
+  type MorphRelation,
   type OneRelation,
   type RelationCall,
 } from "./relations.js";

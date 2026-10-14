@@ -247,9 +247,8 @@ test("later options are OKM1061 and name the version that adds them", () => {
     schema({ tables: [table("tasks", { id: t.id() }, { relations: { owner: true } })] }),
   );
   expect(tableError.code).toBe("OKM1061");
-  expect(tableError.message).toContain("one(), many(), and manyThrough()");
-  expect(tableError.message).toContain("morph arrives later");
-  expect(tableError.message).toContain("not available yet");
+  expect(tableError.message).toContain("one(), many(), manyThrough(), morph(), and morphMany()");
+  expect(tableError.message).toContain("is not a relation");
   const computed = capture(() => table("tasks", { id: t.id() }, { computed: { label: true } }));
   expect(computed.code).toBe("OKM1061");
   expect(computed.message).toContain("arrives later");

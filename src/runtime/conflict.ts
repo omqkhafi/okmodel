@@ -67,15 +67,17 @@ export function readConflict(
 }
 
 /**
- * Appends the conflict clause, or wraps a first-or-create insert.
+ * Appends the conflict clause.
+ *
+ * First-or-create is `on conflict do nothing`. It does not read the existing
+ * row here: that lookup is a later statement, so it sees a row another
+ * transaction committed while this insert waited (D246).
  *
  * @param head - `insert into … values …` without `returning`
  * @param returning - ` returning …`, including the leading space
  * @param params - Insert parameters
  * @param plan - Conflict plan
  * @param table - Target table
- * @param returningColumns - Columns in `returning`
- * @param keys - Encoded conflict-key tuples, one per inserted row. Used by `return`
  * @returns Statement text and parameters
  */
 export function finishInsert(
@@ -84,8 +86,6 @@ export function finishInsert(
   params: readonly (string | null)[],
   plan: ConflictPlan,
   table: Indexed,
-  returningColumns: readonly ColumnModel[],
-  keys: readonly (readonly (string | null)[])[],
 ): { readonly text: string; readonly params: (string | null)[] } {
   if (plan.kind === "ignore") {
     return { text: `${head} on conflict do nothing${returning}`, params: [...params] };
@@ -107,44 +107,57 @@ export function finishInsert(
       params: [...params],
     };
   }
-  return firstOrCreate(head, returning, params, plan.columns, table, returningColumns, keys);
+  return {
+    text: `${head} on conflict (${target})${conflictWhere(table, plan.columns)} do nothing${returning}`,
+    params: [...params],
+  };
 }
 
-function firstOrCreate(
-  head: string,
-  returning: string,
-  params: readonly (string | null)[],
-  keys: readonly ColumnModel[],
+/**
+ * Reads rows a first-or-create insert did not return.
+ *
+ * The conflict target is the same unique, including the tenant key. A partial
+ * unique on an archivable table only matches the active row.
+ *
+ * @param table - Target table
+ * @param keys - Conflict columns, in constraint order
+ * @param returningColumns - Columns the insert returns, in that order
+ * @param keyRows - Encoded conflict-key tuples that the insert did not return
+ * @returns One select
+ */
+export function lookupExisting(
   table: Indexed,
+  keys: readonly ColumnModel[],
   returningColumns: readonly ColumnModel[],
   keyRows: readonly (readonly (string | null)[])[],
 ): { readonly text: string; readonly params: (string | null)[] } {
-  const next = [...params];
+  const params: (string | null)[] = [];
   const tuples: string[] = [];
   for (const row of keyRows) {
     const slots: string[] = [];
     for (let index = 0; index < keys.length; index += 1) {
       const column = keys[index];
       if (column === undefined) continue;
-      next.push(row[index] ?? null);
-      slots.push(`$${String(next.length)}::${column.dataType}`);
+      params.push(row[index] ?? null);
+      slots.push(`$${String(params.length)}::${column.dataType}`);
     }
     tuples.push(keys.length === 1 ? (slots[0] ?? "null") : `(${slots.join(", ")})`);
   }
-  const keyList = keys.map((column) => quote(column.sql)).join(", ");
   const left =
     keys.length === 1
       ? `t.${quote(keys[0]?.sql ?? "")}`
       : `(${keys.map((column) => `t.${quote(column.sql)}`).join(", ")})`;
-  const names = returningColumns.map((column) => quote(column.field)).join(", ");
-  const fromTable = returningColumns
+  const projected = returningColumns
     .map((column) => projectExpr(`t.${quote(column.sql)}`, column.dataType))
     .join(", ");
-  const match = keys
-    .map((column) => `ins.${quote(column.field)} = t.${quote(column.sql)}`)
-    .join(" and ");
-  const text = `with ins(${names}) as (${head} on conflict (${keyList})${conflictWhere(table, keys)} do nothing${returning}) select ${names} from ins union all select ${fromTable} from ${quote(table.model.sql)} t where ${left} in (${tuples.join(", ")}) and not exists (select 1 from ins where ${match})`;
-  return { text, params: next };
+  const text = `select ${projected} from ${quote(table.model.sql)} t where ${left} in (${tuples.join(", ")})${activeAnd(table, keys)}`;
+  return { text, params };
+}
+
+function activeAnd(table: Indexed, columns: readonly ColumnModel[]): string {
+  const clause = conflictWhere(table, columns);
+  if (clause === "") return "";
+  return ` and t.${clause.replace(/^ where /, "")}`;
 }
 
 function conflictWhere(table: Indexed, columns: readonly ColumnModel[]): string {

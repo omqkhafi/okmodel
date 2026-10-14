@@ -503,6 +503,14 @@
       "kind": "stable"
     },
     {
+      "name": "Bucket",
+      "kind": "stable"
+    },
+    {
+      "name": "BucketUnit",
+      "kind": "stable"
+    },
+    {
       "name": "BuiltSchema",
       "kind": "stable"
     },
@@ -579,6 +587,14 @@
       "kind": "stable"
     },
     {
+      "name": "MorphManyRelation",
+      "kind": "stable"
+    },
+    {
+      "name": "MorphRelation",
+      "kind": "stable"
+    },
+    {
       "name": "NumericAs",
       "kind": "stable"
     },
@@ -631,6 +647,10 @@
       "kind": "stable"
     },
     {
+      "name": "SearchMatch",
+      "kind": "stable"
+    },
+    {
       "name": "SqlForm",
       "kind": "stable"
     },
@@ -659,6 +679,18 @@
       "kind": "stable"
     },
     {
+      "name": "WeekStart",
+      "kind": "stable"
+    },
+    {
+      "name": "Window",
+      "kind": "stable"
+    },
+    {
+      "name": "WindowOrder",
+      "kind": "stable"
+    },
+    {
       "name": "WithGenerated",
       "kind": "stable"
     },
@@ -676,6 +708,10 @@
     },
     {
       "name": "boolean",
+      "kind": "stable"
+    },
+    {
+      "name": "bucket",
       "kind": "stable"
     },
     {
@@ -712,6 +748,10 @@
     },
     {
       "name": "daterange",
+      "kind": "stable"
+    },
+    {
+      "name": "denseRank",
       "kind": "stable"
     },
     {
@@ -855,6 +895,18 @@
       "kind": "stable"
     },
     {
+      "name": "morph",
+      "kind": "stable"
+    },
+    {
+      "name": "morphMany",
+      "kind": "stable"
+    },
+    {
+      "name": "morphTo",
+      "kind": "stable"
+    },
+    {
       "name": "none",
       "kind": "stable"
     },
@@ -895,7 +947,23 @@
       "kind": "stable"
     },
     {
+      "name": "rank",
+      "kind": "stable"
+    },
+    {
       "name": "real",
+      "kind": "stable"
+    },
+    {
+      "name": "relevance",
+      "kind": "stable"
+    },
+    {
+      "name": "rowNumber",
+      "kind": "stable"
+    },
+    {
+      "name": "runningTotal",
       "kind": "stable"
     },
     {
@@ -1285,11 +1353,19 @@
       "kind": "stable"
     },
     {
+      "name": "sortable",
+      "kind": "stable"
+    },
+    {
       "name": "timestamps",
       "kind": "stable"
     },
     {
       "name": "trait",
+      "kind": "stable"
+    },
+    {
+      "name": "versioned",
       "kind": "stable"
     }
   ],

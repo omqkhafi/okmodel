@@ -61,7 +61,7 @@ async function shapes(url: string): Promise<void> {
       meta: path(["published"], eq(true)),
       doc: path(["title"], eq("a")),
       span: containedBy(span),
-      body: matches("ship", { mode: "plain", config: "english" }),
+      body: matches("ship", { match: "all-words", language: "english" }),
       loose: hasAnyKey(["published"]),
     },
     limit: 1,

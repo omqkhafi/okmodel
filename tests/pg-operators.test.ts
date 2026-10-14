@@ -1,7 +1,7 @@
 /**
  * Tagged operators for json, arrays, ranges, and tsvector (spec §10.1).
  *
- * Values are parameters. A key, path, or regconfig that cannot be bound fails
+ * Values are parameters. A key, path, or language that cannot be bound fails
  * before a statement exists. JSON cannot forge an operator.
  */
 
@@ -174,14 +174,14 @@ test("containment, keys, paths, and matches are parameters", async () => {
   expect(search.params[0]).toBe("ship the");
 
   const plain = await described(db, {
-    body: matches("ship", { mode: "plain", config: "english" }),
+    body: matches("ship", { match: "all-words", language: "english" }),
   });
   expect(plain.text).toContain(`plainto_tsquery($1::regconfig, $2)`);
   expect(plain.params[0]).toBe("english");
   expect(plain.params[1]).toBe("ship");
   expect(plain.text.includes("english")).toBe(false);
 
-  const phrase = await described(db, { body: matches("ship the", { mode: "phrase" }) });
+  const phrase = await described(db, { body: matches("ship the", { match: "phrase" }) });
   expect(phrase.text).toContain("phraseto_tsquery($1)");
 
   const title = await described(db, { title: contains("hip") });
@@ -257,7 +257,9 @@ test("an operator that does not fit the column is OKM1124 and does not run", asy
   } catch (error) {
     if (error instanceof OkmError) {
       expect(error.message).toContain("text column title");
-      expect(error.message).toContain("Text search needs a tsvector column.");
+      expect(error.message).toContain(
+        "Search needs a column built for search, not a plain text column.",
+      );
     }
   }
   expect(await codeOf(() => count({ doc: hasKey("title") }))).toBe("OKM1124");
@@ -291,11 +293,11 @@ test("hostile keys, paths, and configs fail or stay parameters", async () => {
   expect(await codeOf(() => described(db, { meta: path(["a\nb"], eq("a")) }))).toBe("OKM1122");
   expect(await codeOf(() => described(db, { body: matches("ship\u0000") }))).toBe("OKM1122");
   expect(
-    await codeOf(() => described(db, { body: matches("ship", { config: "english; drop" }) })),
+    await codeOf(() => described(db, { body: matches("ship", { language: "english; drop" }) })),
   ).toBe("OKM1122");
   expect(
     await codeOf(() =>
-      described(db, { body: matches("ship", { mode: "websearch", config: "a b" }) }),
+      described(db, { body: matches("ship", { match: "natural", language: "a b" }) }),
     ),
   ).toBe("OKM1122");
 
@@ -317,7 +319,7 @@ test("request text never becomes SQL", async () => {
       expect(nested.text.includes(marker)).toBe(false);
       expect(nested.params.some((param) => param?.includes(marker))).toBe(true);
       const search = await described(db, {
-        body: matches(marker, { config: "pg_catalog.simple" }),
+        body: matches(marker, { language: "pg_catalog.simple" }),
       });
       expect(search.text.includes(marker)).toBe(false);
       expect(search.text.includes("pg_catalog.simple")).toBe(false);

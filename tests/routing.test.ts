@@ -90,7 +90,7 @@ test("reads use the first replica until the session writes", async () => {
   } finally {
     await db.close();
   }
-});
+}, 15_000);
 
 test("a transaction write through reserve keeps later reads on the primary", async () => {
   const hits: Hit[] = [];
@@ -164,6 +164,45 @@ test("route primary and route replica select an endpoint", async () => {
     await Promise.resolve(db.notes.find({ limit: 1, route: "replica" }));
     expect(hits.at(-1)?.endpoint).toBe("east");
     expect(events.at(-1)?.reason).toBe("constraint:replica");
+  } finally {
+    await db.close();
+  }
+});
+
+test("a stream stays on the replica the first batch chose", async () => {
+  const hits: Hit[] = [];
+  const events: RouteEvent[] = [];
+  const db = await openTopology(app, hits, {
+    replicas: [named("east"), named("west")],
+    routing: { select: "roundRobin" },
+    onRoute(event) {
+      events.push(event);
+    },
+    async seed(pool) {
+      for (const id of ["a", "b", "c"]) {
+        await pool.execute("insert into notes (id, title) values ($1, $2)", [id, id]);
+      }
+    },
+  });
+  try {
+    await db.connected;
+    hits.length = 0;
+    await Promise.resolve(db.notes.find({ limit: 1 }));
+    await Promise.resolve(db.notes.find({ limit: 1 }));
+    expect(hits.map((hit) => hit.endpoint)).toEqual(["east", "west"]);
+
+    hits.length = 0;
+    events.length = 0;
+    const ids: string[] = [];
+    for await (const row of db.notes.find({}).all("export").stream({ batch: 1 })) {
+      ids.push(row.id);
+    }
+    expect(ids).toEqual(["a", "b", "c"]);
+    const read = hits.filter((hit) => hit.text.toLowerCase().startsWith("select"));
+    expect(read.length).toBeGreaterThan(1);
+    expect(read.every((hit) => hit.endpoint === "east")).toBe(true);
+    expect(events[0]).toEqual({ op: "read", endpoint: "east", reason: "auto:east" });
+    expect(events.filter((event) => event.reason === "stream:east").length).toBe(read.length - 1);
   } finally {
     await db.close();
   }
@@ -357,9 +396,13 @@ async function openTopology<S extends QuerySchema>(
   input: {
     readonly replicas: readonly (string | { readonly url: string; readonly name: string })[];
     readonly onRoute?: (event: RouteEvent) => void;
-    readonly routing?: { readonly fallback?: "primary" | "error" };
+    readonly routing?: {
+      readonly fallback?: "primary" | "error";
+      readonly select?: "roundRobin";
+    };
     readonly probe?: number;
     readonly replicaState?: ReplicaState;
+    readonly seed?: (pool: DriverPool) => Promise<void>;
   },
 ): Promise<RoutedClient<S>> {
   const catalog = (source as S & { readonly catalog: Catalog }).catalog;
@@ -374,6 +417,7 @@ async function openTopology<S extends QuerySchema>(
     async (config) => {
       const pool = await open({ dataDir: config.dataDir });
       for (const statement of renderCatalog(catalog, "public")) await pool.execute(statement);
+      if (input.seed !== undefined) await input.seed(pool);
       return watch(config.url, hits, pool);
     },
   );

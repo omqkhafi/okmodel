@@ -272,7 +272,7 @@ import { table, t } from "okmodel/sql";   // common subset
 |---|---|---|
 | Dialect | import path | types |
 | Engine version | `schema({ requires: { postgres: ">=17" } })` — the minimum gates features in types | types (OKM1110) + connect (OKM1802). In 0.2 nothing is gated in types: the one engine-dependent feature, `uuidv7()` below 18, fails when the schema is built (OKM1812), and OKM1110 is not thrown yet (D183) |
-| Driver | execution capabilities only: `transactions: "interactive" \| "batch"`, `stream`, `listen`, `cancel`, `prepared: "named" \| "unnamed" \| "none"`, `describe`. Atomic `batch` is not a flag: every driver provides it (section 15) | types (every flag gates the API: `.stream()`, `tx()`, cancellation and `listen` are absent from the client type when the driver lacks them; a dynamic call fails with an OKM error at runtime) |
+| Driver | execution capabilities only: `transactions: "interactive" \| "batch"`, `stream`, `listen`, `cancel`, `prepared: "named" \| "unnamed" \| "none"`, `describe`. Atomic `batch` is not a flag: every driver provides it (section 15). `stream` means the driver can open a server cursor. `.stream()` does not read it (section 10, D256) | types (`tx()`, cancellation, and `listen` are absent from the client type when the driver lacks them; a dynamic call fails with an OKM error at runtime). `.stream()` is on every driver |
 
 Dialect and driver are different axes: SQL capabilities (`lateral`, `returning`, `SKIP LOCKED`, generated columns) belong to the dialect and engine version; every driver on one dialect sends the same SQL. Neon over HTTP is `transactions: "batch"` on the same Postgres dialect. Reading WAL positions (`pg_current_wal_insert_lsn()`, `pg_last_wal_replay_lsn()`) is plain SQL, so it is a dialect and engine capability (`replication.position`), not a driver flag.
 
@@ -309,7 +309,7 @@ find({ where: { name: pgTrgm.similar(q) }, limit: 20 })
 |---|---|---|
 | `citext` | case-insensitive text type | M1 |
 | `pg_trgm` | similarity operators, GIN/GiST indexes, `ILIKE` acceleration | M1 |
-| `unaccent`, `hstore`, `ltree`, `btree_gist`, `btree_gin`, `fuzzystrmatch`, `pgcrypto` | types, operators, functions; `btree_gist` enables `exclude` constraints; `ltree` backs `descendants` / `ancestors` | M2 |
+| `unaccent`, `hstore`, `ltree`, `btree_gist`, `btree_gin`, `fuzzystrmatch`, `pgcrypto` | types, operators, functions; `btree_gist` enables `exclude` constraints. `descendants` and `ancestors` walk the parent column (D252). `ltree` is a later index, not that walk | M2 |
 | `uuid-ossp` | compatibility only (core provides uuid functions) | declare-only |
 | `vector` (pgvector) | `vector`, `halfvec`, `sparsevec`, distance operators, `hnsw` / `ivfflat` indexes, per-query `efSearch` / `probes` | M2 |
 | PostGIS | `geometry`, `geography`, GiST indexes, basic spatial operators; separate `okmodel/pg/postgis` | M3 |
@@ -434,8 +434,8 @@ M1 ships one physical strategy per dialect (Postgres: single statement with `LAT
 | `find` with includes | one snapshot | 1 in M1 | — |
 | `insert([...])` | all or nothing | 1 per chunk, chunks in one transaction | — |
 | `insert` with `onConflict: { update }` | per row | 1 | safe on the named unique |
-| `insert` with `onConflict: "return"` | per row | 1–2 | safe on the named unique; returns the existing row |
-| `update([...])` per-row list | all or nothing | 1 | — |
+| `insert` with `onConflict: "return"` | per row | 1–2 | safe on the named unique; returns the existing row. The second statement runs only when the insert returned nothing, so a concurrent insert is visible (D246) |
+| `update([...])` per-row list | all or nothing | 1 per chunk | a repeated target is OKM1120; a miss is not an error (D246) |
 | `update` with `lock: "skip"` | per statement | 1 | rows locked by others are skipped (job queues) |
 | `archive` / `restore` | all or nothing | 1 per table in the cascade chain | `restore` fails on unique conflicts |
 | `sync` | all or nothing | 2–3 in one transaction | — |
@@ -591,7 +591,7 @@ export const tasks = table("tasks", {
 | `validation` | table override of the schema default |
 | `traits`, `omitDefaults` | behavior bundles; opting out of schema traits with a reason |
 | `tenancy` | `via("relation.path")` or `global("reason")` |
-| `relations` | `one`, `many`, `manyThrough`, `morph`, by table name. `manyThrough("labels", { through: "taskLabels" })` is a to-many relation through a declared join table with one foreign key to each side; name `from` and `to` (join-table fields) when a table has more than one. It works in `include`, in `has` / `none` / `every` and in filters, and the join rows and the targets carry the same tenancy and active-set predicates as any relation. `morph("commentable", ["tasks", "lists"])` declares a closed list of targets and returns a flat discriminated union (M2) |
+| `relations` | `one`, `many`, `manyThrough`, `morph`, by table name. `manyThrough("labels", { through: "taskLabels" })` is a to-many relation through a declared join table with one foreign key to each side; name `from` and `to` (join-table fields) when a table has more than one. It works in `include`, in `has` / `none` / `every` and in filters, and the join rows and the targets carry the same tenancy and active-set predicates as any relation. `morph("commentable", ["tasks", "lists"])` (D255) is a polymorphic to-one on the table that holds `commentableType` and `commentableId`. The type column is text and stores the target's table name. The id column matches each target's single primary-key column. Include is `true` and returns that target's row, or null when the row is missing or the stored type is not in the list, as a flat union discriminated by the type field. `morphMany("comments", "commentable")` on each target is the reverse many and follows `many` for include, limit, order, and `has` / `none` / `every`. `morphTo("commentable", "tasks", id)` sets both columns. One without the other is OKM1121. A type outside the list is OKM1120. An unknown target, a missing column, a key of more than one column, or an id type that does not match is OKM1020, OKM1021, or OKM1022 and names the table and the column. The relation is not a catalog object. `has` / `none` / `every` on the morph, `select` / `where` / `orderBy` / `limit` on that include, a nested morph include, `sync` of a morph, and a tree walk through a morph are OKM1120 |
 | `computed` | SQL expressions usable like fields |
 | `indexes`, `checks` | database indexes, unique constraints, check constraints |
 | `primaryKey` | column names of one primary key, including a composite key |
@@ -605,7 +605,7 @@ export const tasks = table("tasks", {
 A preset is `(q, ...args) => q`. The builder `q` has one method, `where`, which adds a predicate; there is no method that removes or replaces one, and the tenant predicate and the active set are not in the builder at all (D125, D126, D180). A table's `presets` and the `presets` of each of its traits (`trait(name, { fields, presets })`) form one set. A trait's presets see the trait's columns; a table's see the table's declared columns.
 
 - **Calling.** `tasks.ownedBy(userId)` returns the table handle with the preset applied, so calls chain: `tasks.pending().ownedBy(userId).find({ limit: 20 })`. Chaining allocates a small list and runs nothing. The preset functions run, in call order, when the statement is planned.
-- **Where it applies.** `find`, `one`, `count`, `exists`, `aggregate` and `page` read through the chain. `update`, `delete`, `archive` and `restore` act only on rows the chain selects, including each item of a list `update`. `insert` ignores the chain.
+- **Where it applies.** `find`, `one`, `count`, `exists`, `aggregate`, `page`, `descendants` and `ancestors` read through the chain. On a tree read the preset filters the rows that come back and does not cut the walk short. `update`, `delete`, `archive` and `restore` act only on rows the chain selects, including each item of a list `update`. `sync` applies the chain to the parent row only. `insert` ignores the chain.
 - **Order.** The planner writes the tenant predicate, then the active set, then the caller's `where`, then each preset's predicates in call order, all joined with AND. A preset cannot see or change what was written before it. A caller's `where` and a preset on the same field both hold.
 - **Writes still need a filter.** A preset does not count as the `where` that `update` and `delete` require (OKM1102): pass a `where` or `.all(reason)`. `archive` and `restore` follow the same rule.
 - **Names.** A name that is a client method or on the reserved list is a type error in `table()` and `trait()`, and OKM1040 at runtime: in `trait()` when the trait is built, for a table at `connect()` before the first query. A name defined by a table and a trait, or by two traits, is OKM1040 from `schema()`, and its fix names both sources (`table tasks`, `trait flagged`).
@@ -656,7 +656,7 @@ globalThis.Temporal = Temporal;
 | Builder or option | Version |
 |---|---|
 | `table({ presets })` | 0.2 |
-| `morph`, `table({ computed, policies })` | later |
+| `table({ computed, policies })` | later |
 
 - Fields are `NOT NULL` unless `.nullable()`.
 - A type that names an extension (`citext`, `ltree`) is not installed unless that extension is in `schema({ extensions })`. A list that omits it fails when the catalog is built (OKM1810). Omitting the list leaves the dependency check (OKM1020).
@@ -688,7 +688,7 @@ Set in `schema({ codecs })`, override per field: `t.bigint({ as: "number" })`. D
 |---|---|
 | (default) | unknown keys in input are dropped |
 | `.guarded()` | never filled from `insert`/`update` input; set by code with `{ allow: ["field"] }` |
-| automatic guards | `t.id()` with a database default and `t.identity()` (omitted from insert and update); a column `.primaryKey()`, a composite `primaryKey`, and `t.id({ default: "none" })` (supplied on insert, omitted from update); tenant key and trait fields (`createdAt`, `updatedAt`, `archivedAt`, `archiveId`, `version`) |
+| automatic guards | `t.id()` with a database default and `t.identity()` (omitted from insert and update); a column `.primaryKey()`, a composite `primaryKey`, and `t.id({ default: "none" })` (supplied on insert, omitted from update); tenant key and trait fields (`createdAt`, `updatedAt`, `archivedAt`, `archiveId`, `version`, `position`) |
 | `.hidden()` | excluded from default selects and includes; returned only when named in `select`. `where` and `orderBy` refuse it (OKM1120). `hidden({ filterable: true })` allows those two and still leaves it out of the default row. `filters()` still refuses it (OKM1123). `groupBy`, `sum`, `avg`, `min`, and `max` still refuse it |
 | `.sensitive()` | values never appear in logs, error messages, `inspect()` output or fixtures; shown as `[redacted]` even in development |
 
@@ -733,8 +733,8 @@ Row types are emitted by default into `.okm/types.d.ts` by `okm build` and `okm 
 |---|---|---|
 | `timestamps()` | `createdAt`, `updatedAt` | set in all lanes; `{ enforce: "trigger" }` adds a DB trigger |
 | `archivable(opts?)` | `archivedAt`, `archiveId` (column strategy) | enables `archive()` and `restore()`; reads target the active set by default, `withArchived()` / `onlyArchived()` widen it; uniques become partial unique indexes (`WHERE archived_at IS NULL`; the primary key stays a full constraint; generated-column form on MySQL); `cascade: [...]` names the children archived and restored with the row |
-| `versioned()` | `version` | optimistic locking; stale write → category `conflict` |
-| `sortable(groupBy?)` | `position` | `move(id, { before \| after })` |
+| `versioned()` | `version` | optimistic locking; every update passes the version it read and the write bumps it; a stale write is category `conflict` and changes nothing |
+| `sortable(groupBy?)` | `position` | new rows go at the end of the group; `move(id, { before \| after })` renumbers that group; `find` and `page` order by `position` when `orderBy` is omitted |
 | `auditable()` | history table | before/after snapshots |
 
 `delete()` always means permanent deletion. `archivable()` adds a capability; it never changes what `delete()` does.
@@ -751,6 +751,22 @@ Row types are emitted by default into `.okm/types.d.ts` by `okm build` and `okm 
 - **Purge.** `tasks.onlyArchived().delete({ where: { archivedAt: lt(cutoff) } })` permanently deletes archived rows; no separate method.
 
 Project traits: `trait(name, { fields, presets, methods, requires })`, the same API built-ins use.
+
+#### Version contract
+
+- **The column.** `versioned()` adds `version integer not null default 1`. Input cannot set it, including `{ allow }` (OKM1190). An insert leaves it out and the database default applies. The catalog hash of a schema that calls `versioned()` changes because the column is real. The hash function does not change. A schema that does not call it keeps its hash.
+- **The check.** `update` takes `version` beside `where` and `set`, and each item of a per-row list takes its own. The version is the one the caller read. The statement locks the matching rows, and it writes only when every matched row is still at that version. It then sets `version` to `version + 1`, including when `set` uses `inc` or another atomic operator. One statement, so a list is all or nothing.
+- **A miss is not a conflict.** A `where` that matches nothing returns `{ count: 0 }`. A matched row at a different version throws `OkmError` category `conflict` (no new error kind) and writes nothing. The message names the fields and the version that was sent, and the fix is to reread and retry. `returning` includes the new version. Without `returning` the result is `{ count }`.
+- **What composes.** A per-row list, `returning`, column and composite tenancy, `lock: "skip"` with `limit`, and `onConflict: "ignore"` or `{ on, return: true }`. A claim updates rows that are free and still at that version. Locked rows are skipped. A conflict is raised only when nothing was updated and a free row matches at a different version. First-or-create does not change the existing row, so it does not bump `version`. A new row starts at 1.
+- **What does not.** `onConflict: { on, update }` is OKM1120: an upsert does not check the version you read. `.all()` is OKM1120: one version cannot describe every row. Passing `version` on a table that is not `versioned()` is OKM1120. Omitting `version` on a versioned table is OKM1120. Changing a path-tenancy parent column in the same update is OKM1120. `delete`, `archive`, and `restore` do not check or bump `version`.
+
+#### Position contract
+
+- **The column.** `sortable()` adds `position integer not null` with no default. `sortable("laneId")` splits the order by that column. The column must already exist on the table, and it cannot be `position`. Input cannot set `position` (OKM1190). An insert that omits the group column is OKM1121. New rows are placed at `max(position) + n` inside the group. The advisory lock is one statement, and the insert that reads the max is the next statement in the same transaction, so a row that commits while the lock is waited for is visible. An insert outside `tx()` is still one atomic batch. `version` stays on its default when the table is also `versioned()`.
+- **Order.** Positions are dense positive integers, unique per tenant and group. The unique index names the tenant columns itself, because a unique added after the tenancy rewrite is not widened. `via()` is refused at `schema()` (OKM1060): the tenant key is not a column. On an `archivable()` table the index is partial, `WHERE archived_at IS NULL`. Two archived rows may share a position. Active rows may not.
+- **`move(id, { before })` or `{ after }`.** Exactly one of `before` or `after`. `id` is the single primary-key column besides the tenant key. The move takes the same advisory lock in its own statement, then renumbers the group: it writes the new positions as negatives, then flips them to positive, so the unique index never sees two rows at the same positive position. The read of the group happens after the lock is held. A missing id is `not_found` and writes nothing. An anchor in another group is OKM1120 and writes nothing. The same id on both sides returns the current position and writes nothing. The result is `{ position }`.
+- **Reads.** `find` and `page` order by `position`, then the primary key, when `orderBy` is omitted. An `orderBy` you pass replaces that. `one()` is not reordered.
+- **What does not.** Changing the group column is OKM1120. `move` stays in one group. A delete leaves a gap; the next insert uses `max + 1`, and a later `move` compresses the group to `1..n`. A position that is already negative is flipped by the next move in that group: positions stay positive. Adding `position` to a table that already has rows is `add-column-required`, because the column is `NOT NULL` and has no default.
 
 ## 9. Tenancy
 
@@ -841,11 +857,17 @@ The reporting role from section 5.7 is not tenant-safe against its own SQL. It i
 | `page(opts)` | `{ items, next }` | `limit` is required; `after` takes the previous `next` (`null` on the last page); keyset on `orderBy` with the primary key appended; the cursor is opaque and encodes its order, so a different `orderBy` is OKM1130 |
 | `one(opts)` | `Row \| null` | more than one match → `not_unique`, unless `orderBy` is given (then the first row); `.required()` turns `null` into `not_found` |
 | `count(opts)`, `exists(opts)` | `number`, `boolean` | |
-| `aggregate(opts)` | grouped rows | `where`, `groupBy`, `count: true`, and `sum`, `avg`, `min`, `max` as field lists; a result row has the group fields, `count`, and one object per function (`row.sum.amount`); `groupBy` needs `limit` or `.all(reason)` (OKM1101); `orderBy` takes `groupBy` fields; no `having`, no `bucket` (M2); hidden fields are refused; the tenant and active-set predicates apply as on any read |
+| `aggregate(opts)` | grouped rows | `where`, `groupBy`, `count: true`, and `sum`, `avg`, `min`, `max` as field lists; a result row has the group fields, `count`, and one object per function (`row.sum.amount`); `groupBy` needs `limit` or `.all(reason)` (OKM1101); `orderBy` takes `groupBy` fields and a bucket `as` name; no `having`; `groupBy` accepts field names and `bucket()` (D247); hidden fields are refused; the tenant and active-set predicates apply as on any read |
 
 Aggregates decode with the source column's codec. `count` is a number. `min` and `max` follow the column. `sum` and `avg` keep the value type of the column: a `numeric` column gives the exact decimal string (the default codec) or a number when the column is `as: "number"`, an `integer` or `double` column gives a number, and a column whose value is neither a string nor a number (`bigint` as `bigint`) is refused with OKM1124. `sum` and `avg` over a `text` column pass the types and fail at runtime with OKM1124.
 
-Query modifiers apply to any read: `.stream()` (async iteration over a server-side cursor, driver capability), `.required()`, `.safe()`, `.inspect()`, `.sql()`, `.explain()`.
+`find` and `count` take `search` (D250). A string looks in the table's one search column. `{ for, in, match, language }` names the text, the column, how to match, and the language. `in` is required when the table has more than one search column, and the error lists those columns by name. `match` is `natural` (the default), `all-words`, `phrase`, or `advanced`. An omitted `language` uses the database default. `find` returns the closest rows first, then the primary key. An `orderBy` you pass replaces that order. `search` combines with `where`, `select`, `include`, and presets. `page` refuses `search` (OKM1120). `one` and `exists` do not take it. The same call written out is `where: { column: matches(q, opts) }` and `orderBy: { column: relevance(q, opts), ...primaryKey }`. Both forms compile to the same SQL.
+
+`bucket(column, unit, { tz, as, weekStart? })` groups a `timestamptz` or `date` column (D247). Units are `second`, `minute`, `hour`, `day`, `week`, `month`, `quarter`, and `year`. `as` names the result key. Day, week, month, quarter, and year return `Temporal.PlainDate` (the local date the period starts). Second, minute, and hour return `Temporal.Instant`. A nullable column includes null. A NULL timestamp is one group: the `as` key is present and the value is null. `tz` is an IANA name, required on `timestamptz` and refused on `date`. `timestamp` without a zone is refused. `weekStart` is `monday` (the default), `sunday`, or `saturday`, and only with unit `week`. A bad unit, zone, or name is OKM1120 before any SQL. There is still no `having` and no gap filling. Time-zone date helpers (`onDay` and the rest of tool 5) are deferred.
+
+`rowNumber`, `rank`, `denseRank`, and `runningTotal` go in `select` on `find` or `one` (D251). `partitionBy` is the group. Omit it to number the whole result. `orderBy` is required and is the order inside the group. `as` is the result key and must not be a column name. `rowNumber` starts at 1 and gives ties distinct numbers: the primary key is appended inside the window, ascending, for every primary-key field you did not name. `runningTotal` uses that same tie-break, so the running total is stable, and it follows the column's value type the way `sum` does (an integer is a number, a `numeric` column is the decimal string, and a text column is OKM1124). `rank` leaves a tie tied and the next rank skips. `denseRank` leaves a tie tied and the next rank is the next number. Neither appends the primary key, because that would split the tie. A window in `page` is OKM1120 when the call runs. The keyset cursor has no window value to encode. `lag`, `lead`, a frame (`ROWS` or `RANGE`), and the other window functions are not in this version.
+
+Query modifiers apply to any read: `.stream()` (keyset batches on every driver, D256), `.required()`, `.safe()`, `.inspect()`, `.sql()`, `.explain()`.
 
 ```ts no-check="read illustration; scoped is defined in the surrounding section"
 const task = await scoped.tasks.one({ where: { id } }).required();
@@ -854,6 +876,10 @@ for await (const row of scoped.tasks.find({ where: { listId } }).all("export").s
   …
 }
 ```
+
+`.stream()` fetches a batch, yields those rows, then fetches the next, until a batch comes back short. The default batch is 1000. `batch` changes it. Each batch is an ordinary query that finishes before the next row is handed out, so `break` does not hold a connection. The order is `orderBy`, then the primary key for every key field you did not name. No `orderBy` is the primary key, ascending. A table with no primary key is OKM1120. `limit` is the total number of rows, not the batch. `.all(reason)` with no `limit` streams the set. `select`, `include`, a preset, tenancy, and the archive set are the same as `page()`. Nullable sort keys follow `page()`: `asc` is nulls last and `desc` is nulls first unless `nulls` is set. `search` is OKM1120. A window in `select` is OKM1120. The keyset cursor has no window value to encode. `one()`, `count()`, and `exists()` are OKM1120: `stream()` reads rows from `find()`.
+
+A row committed while the stream runs can be seen or missed. Run the stream inside `tx({ isolation: "repeatable read" })` to read one snapshot of the primary: `tx()` holds that connection, and every batch uses it. With `connect({ primary, replicas })`, the first batch is routed like a `find` (an automatic read, `route: "primary"`, or `route: "replica"`). Later batches stay on that endpoint. `onRoute` reports them as `stream:<name>`. The stream does not rotate across replicas, and a connection failure does not continue on another target. A client with one endpoint already has one target. `signal` is passed to every batch and stops the stream before the next one. `timeout` is the budget for the whole stream, from the moment iteration starts. On a driver that can cancel, each batch gets the time still left. On a driver that cannot, the budget is checked before each batch, and a batch already running finishes. A server cursor is a later opt-in for a driver where it is cheap. It is not part of 0.7. The postgres.js cursor loop stays unbuilt (D245, D256).
 
 ### 10.1 Filters with tagged operators
 
@@ -881,7 +907,7 @@ const today = await scoped.tasks.pending().ownedBy(userId).find({
 - Field names in `where`, `select`, `orderBy` and `include` are checked against the catalog at runtime (OKM1120). A hidden field in `where` or `orderBy` is the same code. `hidden({ filterable: true })` allows those two.
 - `undefined` in a `find` filter means no filter. In `update`, `delete`, `archive`, and `restore`, a where with no effective predicate, including undefined values, is OKM1102. An empty `or()` branch is OKM1121. A field value is a leaf (D210).
 - One logical operation per call (section 5.3). Reads and relation loading: the statement count depends on query shape, never on result cardinality; no lazy loading. Writes may be split by input size or driver limits, within the operation's declared atomicity.
-- To-many `include` requires `limit` or `.all("reason")` (OKM1105); hidden fields and archived rows are excluded from includes.
+- To-many `include` requires `limit` or `.all("reason")` (OKM1105); hidden fields and archived rows are excluded from includes. `limit` is the first N related rows for each parent, in one lateral join, not N rows in total (D251). `orderBy` is that order. The primary key is appended ascending for every primary-key field you did not name, so a tie stays stable. With no `orderBy`, the related rows follow the primary key. `select`, a nested `include`, and a preset apply. `matches` and `relevance` work in the include's `where` and `orderBy`. `search` stays on `find` and `count`.
 
 #### Operators by column type (0.2)
 
@@ -894,9 +920,10 @@ All are tagged helpers from `okmodel/pg`. The planner picks the SQL from the col
 | `overlaps(x)` | array, range | `&&` |
 | `hasKey(k)`, `hasAnyKey(ks)` | jsonb | `jsonb_exists`, `jsonb_exists_any` (function forms, so a `?` never appears in SQL text) |
 | `path(segments, op)` | json, jsonb | `col #>> $1::text[]` compared with `op`; the operand type of `op` picks the cast (number to numeric, boolean to boolean, string to text) |
-| `matches(q, { mode?, config? })` | tsvector | `@@` with `websearch_to_tsquery` (default, never throws on user input), `plainto_tsquery` (`"plain"`) or `phraseto_tsquery` (`"phrase"`) |
+| `matches(q, { match?, language? })` | a column built for search | `@@` with `websearch_to_tsquery` (`natural`, the default; does not throw on ordinary text), `plainto_tsquery` (`all-words`), `phraseto_tsquery` (`phrase`), or `to_tsquery` (`advanced`, raw syntax) |
+| `relevance(q, { match?, language? })` | the same column, in `orderBy` | `ts_rank` of that same query, closest first |
 
-Atomic write operators (section 11) are `json.set(path, v)`, `arr.append(v)`, `arr.remove(v)`, exported as namespaces (`export * as json`) so each member tree-shakes. Trigram where-operators ship on `okmodel/pg/pg_trgm` (`similar`, `wordSimilar`). Citext comparison is ordinary equality on a `citext` column once `citext()` from `okmodel/pg/citext` is declared. Text search on a plain `text` column is not supported (it needs an expression index) and fails with a clear error.
+Atomic write operators (section 11) are `json.set(path, v)`, `arr.append(v)`, `arr.remove(v)`, exported as namespaces (`export * as json`) so each member tree-shakes. Trigram where-operators ship on `okmodel/pg/pg_trgm` (`similar`, `wordSimilar`). Citext comparison is ordinary equality on a `citext` column once `citext()` from `okmodel/pg/citext` is declared. A plain text column is not searched. `matches`, `relevance`, and `search` refuse it and name the columns you can search. Highlighted snippets, a helper that fills a search column from text, and keyset pages ordered by relevance are not in this version.
 
 ### 10.2 User-driven filtering
 
@@ -919,12 +946,12 @@ Relations are filterable only when listed with the exact fields allowed (`relati
 
 | Method | Rule |
 |---|---|
-| `insert(data \| data[], opts)` | unknown keys dropped; guarded fields refused; auto-chunked. `onConflict`: `"error"` (default), `"ignore"`, `{ on, update }` (upsert), `{ on, return: true }` (first-or-create). `on` must name a unique constraint (OKM1104). On a tenant table, name it without the tenant key; the target includes the key (D221) |
-| `update(target, opts)` | target is `{ where, set }` or a list `[{ id \| where, set }]` (per-row values in one statement). `where` required or `.all("reason")`. `lock: "skip"` with `limit` claims rows (job queues) |
+| `insert(data \| data[], opts)` | unknown keys dropped; guarded fields refused; auto-chunked. `onConflict`: `"error"` (default), `"ignore"`, `{ on, update }` (upsert), `{ on, return: true }` (first-or-create). `on` must name a unique constraint (OKM1104). On a tenant table, name it without the tenant key; the target includes the key (D221). A match does not change the existing row. When the insert returns nothing, a second statement reads that row (D246) |
+| `update(target, opts)` | target is `{ where, set }` or a list `[{ id \| where, set }]` (per-row values in one statement, chunked like insert). `where` required or `.all("reason")`. The same target twice in one list is OKM1120. A target that matches nothing is not an error; `count` is the rows changed. `lock: "skip"` with `limit` claims rows (job queues) |
 | `delete({ where }, opts)` | permanent deletion of the matched records. On `archivable` tables it targets the active set unless `withArchived()` / `onlyArchived()` is used |
 | `archive({ where }, opts)` | `archivable` tables only; returns `{ count, archiveId }` |
 | `restore({ where } \| { archiveId }, opts)` | `archivable` tables only; targets the archived set |
-| `sync(id, relation, ids)` | relationship operation: set a to-many relation exactly |
+| `sync(id, relation, ids)` | sets a to-many relation to exactly `ids`, in one transaction. Returns `{ added, removed }`. `expect(n)` throws `not_found` when that is not the number of links changed (D252) |
 
 ```ts no-check="write illustration; scoped, rows, and order are defined in other sections"
 await scoped.tags.insert({ name }, { onConflict: { on: "name", return: true } });          // first-or-create
@@ -936,7 +963,7 @@ await scoped.tasks.restore({ archiveId });
 await scoped.tasks.onlyArchived().delete({ where: { archivedAt: lt(retentionCutoff) } });   // purge
 ```
 
-Atomic operators: `inc(n)`, `json.set(path, v)`, `arr.append(v)`, `arr.remove(v)`.
+Atomic operators: `inc(n)`, `json.set(path, v)`, `arr.append(v)`, `arr.remove(v)`. `inc` adds to a number column (`smallint`, `integer`, `bigint`, `numeric`, `real`, `double precision`). A null number stays null. A column that is not a number is OKM1124. A per-row list that sets one field with an operator in one row and a plain value, or a different operator, in another is OKM1120. `dec` and `mul` are not in this version. `lock: "skip"` needs `limit`. That update changes up to that many matching rows and leaves rows another transaction already holds. The statement is the claim, so it runs inside `tx()` or on its own. `wait` is not an update option. A read uses `lock: "update" | "share"` and `wait: "nowait" | "skip"` inside `tx()` (section 15). There is no `findMany`; `find` returns the list. On a `versioned()` table every update passes `version`, the integer it read, and the write bumps that column in the same statement. `inc` still bumps it. A stale row is category `conflict`. `sortable()` does not take a position in `set`; `move(id, { before })` or `{ after }` places the row (section 8).
 
 ## 12. Semantics of small APIs
 
@@ -970,21 +997,27 @@ Specified before M1 and tested on every driver through the conformance suite:
 | # | Tool | pg | sqlite | mysql | Milestone |
 |---|---|---|---|---|---|
 | 1 | Computed fields | ✓ | ✓ | ✓ | M1 |
-| 2 | Top-N per group in `include` | ✓ | ✓ | ✓ | M2 |
+| 2 | Top-N per group in `include` | ✓ | ✓ | ✓ | 0.7 |
 | 3 | `has` / `none` / `every` relation filters | ✓ | ✓ | ✓ | M1 |
-| 4 | `aggregate` with `bucket(col, unit, { tz })` | ✓ | no tz | ✓ | M2 |
-| 5 | Time-zone date helpers | ✓ | partial | ✓ | M2 |
+| 4 | `aggregate` with `bucket(col, unit, { tz, as })` | ✓ | no tz | ✓ | 0.7 |
+| 5 | Time-zone date helpers | deferred | partial | ✓ | later |
 | 6 | Bulk insert with chunking | ✓ | ✓ | ✓ | M1 |
 | 7 | First-or-create (`insert` conflict mode) | ✓ | ✓ | ✓ | M2 |
 | 8 | Per-row `update` list | ✓ | ✓ (3.33+) | ✓ (8.0.19+) | M2 |
 | 9 | Atomic operators | ✓ | no arrays | no arrays | M2 |
 | 10 | `sync` | ✓ | ✓ | ✓ | M2 |
 | 11 | `descendants` / `ancestors` | ✓ | ✓ | ✓ (8+) | M2 |
-| 12 | Window helpers | ✓ | ✓ | ✓ | M2 |
+| 12 | Window helpers | ✓ | ✓ | ✓ | 0.7 |
 | 13 | Full-text search | ✓ | ✓ | ✓ | M2 |
 | 14 | Row claiming (`update` with `lock: "skip"`) | ✓ | — | ✓ (8+) | M2 |
 | 15 | Named composable queries | ✓ | ✓ | ✓ | M2 |
 | 16 | Views and materialized views, section 5.7 | ✓ | views | views | M1 |
+
+Tool 2 is a to-many `include` with `orderBy` and `limit`: the first N related rows for each parent, one lateral join, with the primary key as the tie-break (D251, section 10). Tool 12 is `rowNumber`, `rank`, `denseRank`, and `runningTotal` in `select` on `find` or `one` (D251, section 10). Tool 13 is `find({ search })` and `count({ search })` (D250, section 10). Tool 15 adds no call: a named query is a preset (section 6.2.1) or a function that returns `find` options.
+
+Tool 11 is `descendants(id, options)` and `ancestors(id, options)` (D252). One recursive statement walks a self-relation. `depth` is how many steps from the starting row. Omit it to walk the whole tree. `self` includes that row. `relation` is required when the table has more than one self-relation. `where`, `select`, and `orderBy` match `find`. A row already on the path is not entered again, so a cycle returns. A missing id returns no rows, including with `self`. The root has no ancestors. `where` and a preset filter the rows that come back. Tenancy and the active set apply on the start row, on every step, and on the result. There is no `include`. The statement starts with `WITH`, so it runs on the primary.
+
+Tool 10 is `sync(id, relation, ids)` (D252, section 11). One transaction. The first statement locks the parent row. The second adds the missing links and removes the extra ones, and sees links a sync that just committed. A join table gains and loses link rows. A one-to-many sets or clears a nullable foreign key and leaves the related row in place. A link that would have to delete that row is refused (OKM1120). Duplicate ids count once. An id that is not in the related table, or a parent that is not in this table, writes nothing and throws `not_found`. The missing-id message gives the count, not the values. `{ added, removed }` are the related ids whose links changed. `expect(n)` throws `not_found` when `added` plus `removed` is not `n`, after the statements, the same as `update`. Inside `tx()` that throw rolls the transaction back. `sync` is not a batch member.
 
 ## 14. Errors
 
@@ -1044,7 +1077,7 @@ await scoped.batch([
 ```
 
 - Every `timeout` is a number of milliseconds, in `tx()` options, in a call, and in `connect({ timeouts })` (D181). The `tx()` timeout covers the whole transaction, retries included. A nested `tx()` takes no options (OKM1121): isolation, retry, timeout and signal belong to the outermost one.
-- Row locks on reads: `find({ lock: "update" | "share", wait: "nowait" | "skip" })` inside `tx()` only (OKM1830 outside one). `t.advisoryLock(key)` takes a transaction-level advisory lock.
+- Row locks on reads: `find({ lock: "update" | "share", wait: "nowait" | "skip" })` inside `tx()` only (OKM1830 outside one). `wait: "skip"` leaves out rows another transaction holds. `lock: "skip"` is not a read lock; it claims rows on `update` (section 11). `t.advisoryLock(key)` takes a transaction-level advisory lock.
 - `connect({ timeouts })` keys: `acquire` (waiting for a connection), `statement`, `transaction`, `idleInTransaction`. Cancelling a call inside `tx()` fails the transaction and rolls it back; cancelling after completion has no effect. Server notices reach `hookm.onNotice`.
 - Every timeout (statement, transaction, batch) is kind `timeout`; `cancelled` arises only from the caller's `signal` and is never retried (D124).
 - Cancellation and timeouts: every operation accepts `{ signal, timeout }`; an aborted call cancels the statement where the driver has `cancel`, and fails as kind `cancelled` (category `transient`, never retried). `connect({ timeouts })` sets ceilings. Bun.sql and PGlite throw OKM1120 (kind `invalid`, message `timeout`) when a positive `timeout` is passed. They cannot cancel a statement that is already running (D224, D239).

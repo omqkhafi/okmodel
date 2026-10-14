@@ -16,6 +16,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### ✨ Added
 
+#### docs
+
 - The docs site starts with `bun dev` from the repository root.
 - Connect is `/docs/define/connect`, after Schema. `connect()` takes a URL, a pool from `open`, or `{ primary, replicas }`. `schema` is required. The page lists the driver, pool size, prepared statements, TLS, search path, timeouts, the catalog check, `requireMeta`, errors, generators, observers, routing, and `close()`.
 - Define is four pages, `/docs/define/config`, `/docs/define/connect`, `/docs/define/schema`, and `/docs/define/table`. Each page holds the options that object accepts. Config, Connect, Schema, and Table are sections. Each section is one option. The code block focuses the line that option names, and the section lists that option's own values. A note that is not itself a value is a dashed card. The edge and icon follow info, warning, or error. `/docs/config`, `/docs/schema/*`, and `/docs/table/*` redirect there.
@@ -47,16 +49,39 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Floats are two subsections. Real is single precision, about 6 decimal digits, 4 bytes. Double is double precision, about 15 decimal digits, 8 bytes. Infinity and NaN are OKM1210. An exact quantity stays on numeric.
 - Time is seven subsections. Instant is `t.timestamptz()` and `Temporal.Instant`, stored in UTC. Timestamp is `t.timestamp()` and `Temporal.PlainDateTime`. Date is `t.date()` and `Temporal.PlainDate`. Time of day is `t.time()` and `Temporal.PlainTime`. Offset is `t.timetz()` as `{ time, offset }` with `±HH:MM`. Any other offset is OKM1210. Interval is `t.interval(fields)` and `Temporal.Duration`. Any other `fields` value is OKM1060. Fractional seconds are an integer from 0 to 6 on timestamptz, timestamp, time, and timetz. Outside that range is OKM1060.
 
+#### runtime
+
+- `bucket(column, unit, { tz, as })` groups an aggregate by a calendar or clock unit. A day or longer unit returns `Temporal.PlainDate`. A second, minute, or hour returns `Temporal.Instant`. A NULL timestamp is one group: the result key is present and the value is null. There is still no `having`. Time-zone date helpers stay deferred (D247).
+- `update` with `lock: "skip"` and `limit` claims up to that many rows in one statement and leaves rows another transaction already holds. A read still uses `lock: "update"` and `wait: "skip"` inside `tx()` (D249).
+- `find({ search })` and `count({ search })` look through a column built for search. A string is enough when the table has one. `{ for, in, match, language }` names the text, the column, how to match, and the language. Rows come back closest first, then by primary key, unless you pass `orderBy`. `search` combines with `where`, `select`, `include`, and presets. `page()` does not take `search` in this version (D250).
+- `relevance(query, { match, language })` orders a search column by how well it matches. `find({ search })` compiles to the same SQL as `matches` plus `relevance`.
+- A to-many `include` with `orderBy` and `limit` returns the first N related rows for each parent, in one lateral join. The primary key breaks ties (D251).
+- `rowNumber`, `rank`, `denseRank`, and `runningTotal` go in `select` on `find` or `one`. `page()` refuses a window when the call runs (D251).
+- `descendants(id)` and `ancestors(id)` read the rows below or above a row in one statement. A cycle returns. `depth`, `where`, `select`, `orderBy`, and `self` are optional. `ltree` is not required (D252).
+- `sync(id, relation, ids)` sets a to-many relation to exactly those ids and reports the links it added and removed. A join table changes link rows. A nullable foreign key is set or cleared and the related row stays (D252).
+- `versioned()` adds `version`. An update passes the version you read and the write bumps it. A stale write is a conflict and changes nothing. `inc` still bumps `version` (D254).
+- `sortable(groupBy?)` adds `position` and `move(id, { before })` or `{ after }`. New rows go at the end of the group. `find` and `page` order by `position` when you omit `orderBy` (D254).
+- `morph("commentable", ["tasks", "lists"])` includes the task or the list, or null, as a flat union. `morphMany` on each target is the comments that point at it. `morphTo` sets the type and the id together. Setting one without the other is refused (D255).
+
+### 💥 Breaking Changes
+
+- `matches` takes `{ match, language }`. `match` is `natural` (the default), `all-words`, `phrase`, or `advanced`. `language` is a text search language such as `english`. `{ mode, config }` is not accepted (D250).
+
 ### 🔥 Removed
 
 - The public handbook keeps Let's start. Schema, Queries, Safety, Migrations, Drivers, and the reference pages are no longer published.
 - Handbook pages no longer end with a Next link. The page footer is the previous and next page.
+
 ### 🐛 Fixed
 
 - The Schema page lists `extensions` as `citext()`, `pgTrgm()`, or `extension("name")`. `schema()` stores the catalog record. Migrate writes `create extension`. An exact `version` is written into that statement. A `>=` floor is stored and is not.
 - Config states each option once. A schema module is refused when it exports no `schema()`. A target value that is not a URL is OKM1845. `okm check` and `okm migrate plan` report a protection mismatch. A timeout flag refuses a missing or negative number. Apply defaults an omitted field to `5000` and `30000`. `okm migrate check` leaves that field unset.
 - `okm migrate check` does not open a second connection to drop the scratch schema when the replay rolls back. A step that commits still drops that schema on a new connection (D245).
 - A server error whose text contains `CONNECT` is no longer treated as a lost connection. Classification uses the driver `code` and SQLSTATE (`08` and `57P01`–`57P03`) only. `grant CONNECT` and a check named `no_CONNECT_zz` fail with the database error, and the connection can be used again. A closed pool is SQLSTATE `08006` (D244).
+- `insert` with `onConflict: { on, return: true }` returns the existing row when another transaction inserts it first. The second statement runs only when the insert returned nothing, and the existing row is not changed (D246).
+- An update list of two different timestamps, dates, or byte values is not the same target. First-or-create on a timestamptz or date unique still returns that row (D246).
+- `update` with `lock: "skip"` matches the physical row by `tableoid` and `ctid`. A claim of one row no longer changes a row in another partition, or an inheritance child, that happens to share the `ctid`. A path-parent update uses the same pair (D249).
+- Concurrent inserts into one `sortable()` group no longer pick the same `position`. The advisory lock is its own statement, and `max(position)` is read in the next statement of that transaction, after the lock is held (D254).
 
 ### ♻️ Changed
 
@@ -64,10 +89,24 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - Reclaimed startup bytes. A closed pool reports SQLSTATE `08006` with the message `The pool is closed.` Queries are unchanged.
 
+#### runtime
+
+- `update` of a list refuses the same target twice (OKM1120). A target that matches nothing is not an error: `count` is the rows changed. An empty `set` is OKM1120 (`update set is empty.`). An empty list runs no statement (D246).
+- `inc` is a number or bigint column. A text column is OKM1124. A list that sets one field with `inc` in one row and a plain value in another is OKM1120. A null number stays null (D249).
+- The featureless startup graph is 251 minified bytes smaller. `relevance` writes its sort direction from the operator chunk, which already loads for that query. Queries are unchanged (D253).
+- `.stream()` yields rows in keyset batches on every driver, including PGlite. The default batch is 1000. `limit` is the total. A table with no primary key, `search`, and a window are refused. Rows committed while a long stream runs can be seen or missed; `tx({ isolation: "repeatable read" })` is one snapshot of the primary. On a topology the first batch chooses the endpoint and later batches stay there (D256).
+
+#### tooling
+
+- The size gates for the featureless app and the connect entries measure the static startup graph. Dynamic import targets are empty modules in that build, so a new lazy chunk does not move the number. The full build is printed and is not a gate (D248).
+
 #### docs
 
+- The docs pages for queries and schema cover first-or-create, `bucket()`, a claim, search, a top-N include and window helpers, descendants, ancestors, `sync`, `stream()`, `versioned()`, `sortable()`, and morph, including what each call refuses.
+- The changelog page shows `## Unreleased` as next until the release. Published releases stay on their own pages.
 - The npm README covers the 0.6 access features: tenancy strategies including row-level security, roles and column grants, ownership, tenant views, and `okm migrate check`.
 - The execution plan lists the 0.7 steps P90–P99. Byte reclaim is first, each feature loads lazily, and the order of P92 to P97 may change by measured bytes (D243).
+- Aggregate buckets ship on Postgres. Time-zone date helpers stay deferred (D247).
 
 ## v0.6.0 — 2026-10-11
 

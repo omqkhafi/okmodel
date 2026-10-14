@@ -14,6 +14,8 @@ import {
   registerFailFix,
   indexes,
   isRecord,
+  needsOperatorSql,
+  orderHasRelevance,
   jsonExpr,
   list,
   projectExpr,
@@ -30,6 +32,7 @@ import {
   type Plan,
   type Indexed,
   type ParsedInclude,
+  type ReadCall,
   type Sink,
 } from "./plan.js";
 
@@ -44,6 +47,31 @@ function emitIncludeSelect(
   outputs: Built | undefined,
   column: number,
 ): number {
+  const morph = include.morphTo;
+  if (morph !== undefined) {
+    if (column > 0 || outputs?.fields.length) sink.text(", ");
+    sink.text(alias);
+    sink.text(".payload");
+    outputs?.includes.push({
+      name: include.name,
+      kind: "one",
+      at: column,
+      fields: [],
+      nested: [],
+      morph: {
+        typeKey: morph.typeKey,
+        targets: morph.targets.map((target) => ({
+          type: target.type,
+          fields: target.columns.map((item, at) => ({
+            key: item.field,
+            at,
+            decode: item.decode,
+          })),
+        })),
+      },
+    });
+    return column + 1;
+  }
   const selected = include.columns;
   sink.mark(`i:${include.name}:${include.relation.kind}`);
   if (include.relation.kind === "many") {
@@ -142,6 +170,10 @@ function emitIncludeJoin(
   alias: string,
   depth: number,
 ): void {
+  if (include.morphTo !== undefined) {
+    emitMorphJoin(schema, include, sink, parentAlias, alias, depth);
+    return;
+  }
   const child = indexes(schema).get(include.relation.table);
   if (child === undefined) {
     fail(
@@ -170,10 +202,7 @@ function emitIncludeJoin(
     sink.text(") as item from ");
     emitRelationFrom(schema, include.relation, child, sink, parentAlias, childAlias, depth + 1);
     emitWhere(schema, child, include.where, sink, childAlias, depth + 1, true);
-    emitOrder(child, include.orderBy, sink, childAlias);
-    if (include.orderBy === undefined && child.model.primary.length > 0) {
-      emitPrimaryOrder(child, sink, childAlias);
-    }
+    emitIncludeOrder(child, include.orderBy, sink, childAlias);
     if (include.limit !== undefined) {
       sink.text(" limit ");
       sink.param(String(include.limit));
@@ -245,6 +274,9 @@ function emitNestedAggregate(
   alias: string,
   depth: number,
 ): void {
+  if (include.relation.morph?.direction === "to") {
+    fail("OKM1120", `Include ${include.name} is a morph and cannot be nested in this version.`);
+  }
   const child = indexes(schema).get(include.relation.table);
   if (child === undefined) {
     fail(
@@ -266,10 +298,7 @@ function emitNestedAggregate(
   sink.text(") as item from ");
   emitRelationFrom(schema, include.relation, child, sink, alias, childAlias, depth);
   emitWhere(schema, child, include.where, sink, childAlias, depth, true);
-  emitOrder(child, include.orderBy, sink, childAlias);
-  if (include.orderBy === undefined && child.model.primary.length > 0) {
-    emitPrimaryOrder(child, sink, childAlias);
-  }
+  emitIncludeOrder(child, include.orderBy, sink, childAlias);
   if (include.limit !== undefined) {
     sink.text(" limit ");
     sink.param(String(include.limit));
@@ -320,6 +349,7 @@ function parseInclude(
   value: unknown,
   all: string | undefined,
 ): ParsedInclude {
+  if (relation.morph?.direction === "to") return parseMorph(schema, name, relation, value);
   if (value === true) {
     if (relation.kind === "many" && all === undefined) {
       fail(
@@ -400,6 +430,132 @@ function childIndex(schema: QuerySchema, relation: RelationModel): Indexed {
  * @param table - Table the call named
  * @returns The call's value
  */
+function parseMorph(
+  schema: QuerySchema,
+  name: string,
+  relation: RelationModel,
+  value: unknown,
+): ParsedInclude {
+  if (value !== true) {
+    fail(
+      "OKM1120",
+      `Include ${name} is a morph. Pass true. select, where, orderBy, and limit are not available on it.`,
+    );
+  }
+  const morph = relation.morph;
+  if (morph === undefined) fail("OKM1120", `Include ${name} is not a morph.`);
+  const planned: NonNullable<ParsedInclude["morphTo"]>["targets"][number][] = [];
+  for (const target of morph.targets) {
+    const child = indexes(schema).get(target.table);
+    if (child === undefined) {
+      fail("OKM1120", `Relation ${name} names ${target.table}, which is not in the schema.`);
+    }
+    planned.push({
+      type: target.type,
+      table: target.table,
+      sql: target.sql,
+      keySql: target.keySql,
+      columns: omitHidden(selectedColumns(child, undefined)),
+    });
+  }
+  return {
+    name,
+    relation,
+    where: undefined,
+    orderBy: undefined,
+    limit: undefined,
+    columns: [],
+    presence: undefined,
+    anchor: 0,
+    nested: [],
+    morphTo: {
+      typeKey: morph.typeField,
+      typeSql: morph.typeSql,
+      idSql: morph.idSql,
+      targets: planned,
+    },
+  };
+}
+
+function emitMorphJoin(
+  schema: QuerySchema,
+  include: ParsedInclude,
+  sink: Sink,
+  parentAlias: string,
+  alias: string,
+  depth: number,
+): void {
+  const morph = include.morphTo;
+  if (morph === undefined) fail("OKM1120", `Include ${include.name} is not a morph.`);
+  sink.text(" left join lateral (select payload from (");
+  for (let index = 0; index < morph.targets.length; index += 1) {
+    const target = morph.targets[index];
+    if (target === undefined) continue;
+    if (index > 0) sink.text(" union all ");
+    const childAlias = `m${String(depth)}_${include.name}_${String(index)}`;
+    const child = indexes(schema).get(target.table);
+    if (child === undefined) {
+      fail(
+        "OKM1120",
+        `Relation ${include.name} names ${target.table}, which is not in the schema.`,
+      );
+    }
+    sink.text("select json_build_array(");
+    sink.param(target.type);
+    sink.text("::text");
+    sink.mark(`mt:${target.type}`);
+    for (const column of target.columns) {
+      sink.text(", ");
+      sink.text(jsonExpr(`${childAlias}.${quote(column.sql)}`, column.dataType));
+    }
+    sink.text(") as payload from ");
+    sink.text(quote(target.sql));
+    sink.text(" ");
+    sink.text(childAlias);
+    sink.text(" where ");
+    sink.text(parentAlias);
+    sink.text(".");
+    sink.text(quote(morph.typeSql));
+    sink.text(" = ");
+    sink.param(target.type);
+    sink.text("::text");
+    sink.text(" and ");
+    sink.text(childAlias);
+    sink.text(".");
+    sink.text(quote(target.keySql));
+    sink.text(" = ");
+    sink.text(parentAlias);
+    sink.text(".");
+    sink.text(quote(morph.idSql));
+    emitWhere(schema, child, undefined, sink, childAlias, depth + 1, true);
+  }
+  sink.text(") matched limit 1) ");
+  sink.text(alias);
+  sink.text(" on true");
+}
+
+function decodeMorph(include: IncludeOut, row: readonly (string | null)[]): unknown {
+  const morph = include.morph;
+  if (morph === undefined) return null;
+  const raw = row[include.at];
+  if (raw === null || raw === undefined) return null;
+  const parsed: unknown = JSON.parse(raw);
+  if (!Array.isArray(parsed)) return null;
+  const type = parsed[0];
+  if (typeof type !== "string") return null;
+  let target: (typeof morph.targets)[number] | undefined;
+  for (const item of morph.targets) {
+    if (item.type === type) target = item;
+  }
+  if (target === undefined) return null;
+  const child: Record<string, unknown> = {};
+  for (const field of target.fields) {
+    child[field.key] = jsonCell(parsed[field.at + 1], field.decode);
+  }
+  child[morph.typeKey] = type;
+  return child;
+}
+
 export function decodeIncluded(
   plan: Plan,
   rows: readonly (readonly (string | null)[])[],
@@ -423,6 +579,7 @@ function decodeRowIncluded(
 }
 
 function decodeInclude(include: IncludeOut, row: readonly (string | null)[]): unknown {
+  if (include.morph !== undefined) return decodeMorph(include, row);
   if (include.kind === "many") {
     const raw = row[include.at];
     if (raw === null || raw === undefined) return [];
@@ -474,9 +631,70 @@ function jsonCell(value: unknown, decode: ((wire: string) => unknown) | undefine
   return decode === undefined ? wire : decode(wire);
 }
 
+/**
+ * Orders a to-many include, then breaks ties on the primary key.
+ *
+ * A limit without that tie-break can return a different row when two related
+ * rows share the sort value. Keys the caller already named stay in their order.
+ *
+ * @param child - The related table
+ * @param orderBy - The include's order, when one was passed
+ * @param sink - Statement buffer
+ * @param alias - The related table's alias
+ */
+function emitIncludeOrder(child: Indexed, orderBy: unknown, sink: Sink, alias: string): void {
+  emitOrder(child, orderBy, sink, alias);
+  const named = isRecord(orderBy) ? Object.keys(orderBy) : [];
+  if (named.length === 0) {
+    if (child.model.primary.length > 0) emitPrimaryOrder(child, sink, alias);
+    return;
+  }
+  for (const field of child.model.primary) {
+    if (named.includes(field)) continue;
+    const column = child.columns.get(field);
+    if (column === undefined) continue;
+    sink.text(", ");
+    sink.text(alias);
+    sink.text(".");
+    sink.text(quote(column.sql));
+    sink.text(" asc");
+  }
+}
+
+/**
+ * Reports whether an include filter needs the operator compiler.
+ *
+ * `matches` and `relevance` compile with that compiler. A text pattern does not.
+ *
+ * @param schema - Connected schema
+ * @param call - The read
+ * @returns `true` when an include clause needs the compiler and it is not loaded
+ */
+function needsOperator(schema: QuerySchema, call: ReadCall): boolean {
+  const table = indexes(schema).get(call.table);
+  if (table === undefined) return false;
+  return walkOperators(schema, table, call.include);
+}
+
+function walkOperators(schema: QuerySchema, table: Indexed, include: unknown): boolean {
+  if (!isRecord(include)) return false;
+  for (const name of Object.keys(include)) {
+    const value = include[name];
+    if (!isRecord(value)) continue;
+    const relation = table.relations.get(name);
+    if (relation === undefined) continue;
+    const child = indexes(schema).get(relation.table);
+    if (child === undefined) continue;
+    if (needsOperatorSql(child, value.where) || orderHasRelevance(value.orderBy)) return true;
+    if (walkOperators(schema, child, value.include)) return true;
+  }
+  return false;
+}
+
 /** Hooks the read planner calls after this module has loaded. */
 export const includeHooks: IncludeHooks = {
   read: readIncludes,
   select: emitIncludeSelect,
   join: emitIncludeJoin,
+  needsOperator,
 };

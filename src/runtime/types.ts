@@ -8,6 +8,8 @@
 import type { DriverTimeouts, Notice } from "../contracts/driver.js";
 import type { SafeResult } from "../contracts/error.js";
 import type { QuerySchema } from "../dialects/pg/model.js";
+import type { Bucket } from "../dialects/pg/ops/bucket.js";
+import type { Window } from "../dialects/pg/ops/window.js";
 import type { Inc } from "../dialects/pg/ops/inc.js";
 import type {
   ArrAppend,
@@ -15,6 +17,8 @@ import type {
   JsonSet,
   Or,
   RelationFilter,
+  Relevance,
+  SearchMatch,
 } from "../dialects/pg/operators.js";
 import type { FieldWhere, IsJsonObject } from "../dialects/pg/where.js";
 import type { AppliedRule, ReadOp } from "./plan.js";
@@ -41,14 +45,33 @@ type WriteOp<V> = [unknown] extends [V]
       | (V extends readonly (infer E)[] ? ArrAppend<E> | ArrRemove<E> : never)
       | (IsJsonObject<V> extends true ? JsonSet<unknown> : never);
 
-/** `has`, `none`, and `every` against the related row. */
+/**
+ * `inc` on a number or bigint column.
+ *
+ * A `string` column is not included. `text` is a string, and so is `numeric`
+ * or `bigint` when the codec keeps the decimal text. The statement still
+ * accepts `inc` on a numeric database type.
+ */
+type IncOf<V> = [unknown] extends [V]
+  ? Inc<number> | Inc<bigint>
+  : [NonNullable<V>] extends [number]
+    ? Inc<number>
+    : [NonNullable<V>] extends [bigint]
+      ? Inc<bigint>
+      : never;
+
+/** `has`, `none`, and `every` against the related row. A morph include is not a filter. */
 export type RelFilter<S extends QuerySchema, Rel> = Rel extends {
-  readonly table: infer T extends string;
+  readonly morph: { readonly targets: readonly string[] };
 }
-  ? T extends keyof S["~byName"]
-    ? RelationFilter<"has" | "none" | "every", FieldWhere<RowOf<S, T>>>
-    : never
-  : never;
+  ? never
+  : Rel extends {
+        readonly table: infer T extends string;
+      }
+    ? T extends keyof S["~byName"]
+      ? RelationFilter<"has" | "none" | "every", FieldWhere<RowOf<S, T>>>
+      : never
+    : never;
 
 /** Known relation names. A string index (no declared relations) adds none. */
 type RelationKeys<R> = string extends keyof R ? never : keyof R;
@@ -69,8 +92,28 @@ export type OrderBy<Row> = {
     | "asc"
     | "desc"
     | { readonly dir: "asc" | "desc"; readonly nulls?: "first" | "last" }
+    | Relevance
     | undefined;
 };
+
+/**
+ * Text to look for.
+ *
+ * A string is enough when the table has one column built for search. `in`
+ * names the column when it has more than one.
+ */
+export type TextSearch<Row> =
+  | string
+  | {
+      /** Text to look for. */
+      readonly for: string;
+      /** Column to search. Required when the table has more than one. */
+      readonly in?: keyof Row & string;
+      /** How to match. Omitted means `natural`. */
+      readonly match?: SearchMatch;
+      /** Text search language, such as `english`. Omitted uses the database default. */
+      readonly language?: string;
+    };
 
 type Related<S extends QuerySchema, T extends keyof S["~byName"], Opt> = Opt extends {
   readonly select: infer Sel;
@@ -78,55 +121,105 @@ type Related<S extends QuerySchema, T extends keyof S["~byName"], Opt> = Opt ext
   ? Selected<RowOf<S, T>, Sel>
   : RowOf<S, T>;
 
-/** One include. To-many needs `limit`. */
+/** One include. To-many needs `limit`. A morph include is `true`. */
 export type IncludeOf<S extends QuerySchema, K extends keyof S["~byName"]> = {
   readonly [R in RelationKeys<RelationsOf<S, K>>]?: RelationsOf<S, K>[R] extends {
-    readonly kind: "many";
-    readonly table: infer T extends string;
+    readonly morph: { readonly targets: readonly string[] };
   }
-    ? T extends keyof S["~byName"]
-      ? {
-          readonly limit: number;
-          readonly select?: readonly (keyof RowOf<S, T> & string)[];
-          readonly where?: FieldWhere<RowOf<S, T>>;
-          readonly orderBy?: OrderBy<RowOf<S, T>>;
+    ? true
+    : RelationsOf<S, K>[R] extends {
+          readonly kind: "many";
+          readonly table: infer T extends string;
         }
-      : never
-    : RelationsOf<S, K>[R] extends { readonly kind: "one"; readonly table: infer T extends string }
       ? T extends keyof S["~byName"]
-        ?
-            | true
-            | {
-                readonly select?: readonly (keyof RowOf<S, T> & string)[];
-                readonly where?: FieldWhere<RowOf<S, T>>;
-                readonly orderBy?: OrderBy<RowOf<S, T>>;
-              }
+        ? {
+            readonly limit: number;
+            readonly select?: readonly (keyof RowOf<S, T> & string)[];
+            readonly where?: FieldWhere<RowOf<S, T>>;
+            readonly orderBy?: OrderBy<RowOf<S, T>>;
+          }
         : never
-      : never;
+      : RelationsOf<S, K>[R] extends {
+            readonly kind: "one";
+            readonly table: infer T extends string;
+          }
+        ? T extends keyof S["~byName"]
+          ?
+              | true
+              | {
+                  readonly select?: readonly (keyof RowOf<S, T> & string)[];
+                  readonly where?: FieldWhere<RowOf<S, T>>;
+                  readonly orderBy?: OrderBy<RowOf<S, T>>;
+                }
+          : never
+        : never;
 };
+
+/**
+ * Rows a morph include can return.
+ *
+ * Each target's row, plus the type field set to that table name, or null when
+ * the target row is missing.
+ */
+/** Flattens an intersection so a morph arm is one object type. */
+type Flat<T> = { readonly [K in keyof T]: T[K] };
+
+/** One arm of a morph union. Distributes over the closed target list. */
+type MorphArm<
+  S extends QuerySchema,
+  T extends string,
+  Field extends string,
+> = T extends keyof S["~byName"] ? Flat<RowOf<S, T> & { readonly [P in Field]: T }> : never;
+
+type MorphUnion<
+  S extends QuerySchema,
+  Targets extends readonly string[],
+  Field extends string,
+> = MorphArm<S, Targets[number], Field> | null;
 
 /** Columns kept by `select`. The full row when `select` is omitted. */
 export type Selected<Row, Sel> = [Sel] extends [readonly (infer P)[]]
   ? [P] extends [keyof Row]
     ? { readonly [K in P & keyof Row]: Row[K] }
-    : Row
+    : boolean extends HasWindow<P>
+      ? Pick<Row, Extract<P, keyof Row>> & WindowFields<Row, P>
+      : [P] extends [Window<string, string | number>]
+        ? WindowFields<Row, P>
+        : Row
   : Row;
+
+/** `true` when a select entry is a window. A mix of fields and windows is `boolean`. */
+type HasWindow<P> = P extends Window<string, string | number> ? true : false;
+
+/** Result keys a window helper adds. A field name contributes nothing. */
+type WindowFields<Row, P> = Intersect<
+  P extends Window<infer A, infer V>
+    ? { readonly [K in A]: V extends keyof Row ? NonNullable<Row[V]> | null : number }
+    : {}
+>;
 
 type IncludeRows<S extends QuerySchema, K extends keyof S["~byName"], Inc> = [Inc] extends [
   Record<string, unknown>,
 ]
   ? {
       readonly [R in keyof Inc & keyof RelationsOf<S, K>]: RelationsOf<S, K>[R] extends {
-        readonly kind: "many";
-        readonly table: infer T extends keyof S["~byName"];
+        readonly morph: {
+          readonly targets: infer Targets extends readonly string[];
+          readonly typeField: infer Field extends string;
+        };
       }
-        ? readonly Related<S, T, Inc[R]>[]
+        ? MorphUnion<S, Targets, Field>
         : RelationsOf<S, K>[R] extends {
-              readonly kind: "one";
+              readonly kind: "many";
               readonly table: infer T extends keyof S["~byName"];
             }
-          ? Related<S, T, Inc[R]> | null
-          : never;
+          ? readonly Related<S, T, Inc[R]>[]
+          : RelationsOf<S, K>[R] extends {
+                readonly kind: "one";
+                readonly table: infer T extends keyof S["~byName"];
+              }
+            ? Related<S, T, Inc[R]> | null
+            : never;
     }
   : unknown;
 
@@ -161,7 +254,8 @@ export type CallOptions = {
 /** Options shared by reads. */
 export type ReadOptions<S extends QuerySchema, K extends keyof S["~byName"]> = CallOptions & {
   readonly where?: WhereOf<S, K>;
-  readonly select?: readonly (keyof RowOf<S, K> & string)[];
+  /** Field names, or a window helper (`rowNumber`, `rank`, `denseRank`, `runningTotal`). */
+  readonly select?: readonly ((keyof RowOf<S, K> & string) | Window<string, string | number>)[];
   readonly orderBy?: OrderBy<RowOf<S, K>>;
   readonly include?: IncludeOf<S, K>;
 };
@@ -171,6 +265,7 @@ export type ReadOptions<S extends QuerySchema, K extends keyof S["~byName"]> = C
  *
  * `wait` says what happens when a row is locked by another transaction: `nowait`
  * fails at once (kind `lock_timeout`) and `skip` leaves that row out.
+ * `lock: "skip"` is not a read lock. It claims rows on `update`.
  */
 export type LockOptions = {
   readonly lock?: "update" | "share";
@@ -180,6 +275,52 @@ export type LockOptions = {
 /** `find` options. `limit` is required unless the caller uses `.all(reason)`. */
 export type FindOptions<S extends QuerySchema, K extends keyof S["~byName"]> = ReadOptions<S, K> & {
   readonly limit?: number;
+  /** Text to look for. The closest matches come first unless `orderBy` is set. */
+  readonly search?: TextSearch<RowOf<S, K>>;
+};
+
+/**
+ * Options for `descendants` and `ancestors`.
+ *
+ * `depth` is how many steps from the starting row. Omit it to walk the whole
+ * tree. `self` includes that row. `relation` names which self-relation when
+ * the table has more than one.
+ */
+export type TreeOptions<S extends QuerySchema, K extends keyof S["~byName"]> = CallOptions & {
+  readonly where?: WhereOf<S, K>;
+  readonly select?: readonly (keyof RowOf<S, K> & string)[];
+  readonly orderBy?: OrderBy<RowOf<S, K>>;
+  readonly depth?: number;
+  /** Include the starting row. Omitted leaves it out. */
+  readonly self?: boolean;
+  /** Which self-relation. Required when the table has more than one. */
+  readonly relation?: string;
+};
+
+/** Links `sync` added and removed. Values are the related row's primary key. */
+export type SyncResult = {
+  readonly added: readonly unknown[];
+  readonly removed: readonly unknown[];
+};
+
+/** Options for `sync`. `expect` matches an update: the count is links added plus links removed. */
+export type SyncOptions = CallOptions & {
+  readonly expect?: number;
+};
+
+/** The handle `sync` returns. */
+export type SyncHandle = Promise<SyncResult> & {
+  /** The statement, before it runs. */
+  sql(): Promise<{
+    readonly statements: readonly {
+      readonly text: string;
+      readonly params?: readonly (string | null)[];
+    }[];
+  }>;
+  /** `{ ok, value }` or `{ ok, error }`. */
+  safe(): Promise<SafeResult<SyncResult>>;
+  /** Throws `not_found` when the number of added and removed links is not `count`. */
+  expect(count: number): SyncHandle;
 };
 
 /** A query handle. Await it, or inspect it before it runs. */
@@ -200,8 +341,15 @@ export type Read<T> = Query<T> & {
   all(reason: string): Read<T>;
   /** Turns a null `one()` into `not_found`. */
   required(): Read<NonNullable<T>>;
-  /** Streams rows when the driver has `stream`. Otherwise OKM1111. */
-  stream(): AsyncIterable<T extends readonly (infer R)[] ? R : T>;
+  /**
+   * Yields rows in keyset batches on every driver.
+   *
+   * `batch` is how many rows one query fetches. The default is 1000.
+   * `limit` on the find is the total. A table with no primary key is OKM1120.
+   */
+  stream(options?: {
+    readonly batch?: number;
+  }): AsyncIterable<T extends readonly (infer R)[] ? R : T>;
 };
 
 /** One page: the rows, and the cursor for the next page. `next` is `null` on the last page. */
@@ -210,7 +358,12 @@ export type Page<Row> = {
   readonly next: string | null;
 };
 
-/** `page` options. `after` is the `next` of the page before. */
+/**
+ * `page` options. `after` is the `next` of the page before.
+ *
+ * `page` refuses a window helper when the call runs (OKM1120). The keyset
+ * cursor has no window value to encode.
+ */
 export type PageOptions<S extends QuerySchema, K extends keyof S["~byName"]> = ReadOptions<S, K> & {
   /** Rows in the page. At least 1. */
   readonly limit: number;
@@ -229,25 +382,63 @@ type NumericKeys<Row> = {
 }[keyof Row] &
   string;
 
+/** One `orderBy` value. `asc` is nulls last and `desc` is nulls first unless `nulls` is set. */
+type SortDir = "asc" | "desc" | { readonly dir: "asc" | "desc"; readonly nulls?: "first" | "last" };
+
 /** `aggregate` options. A hidden field is refused at runtime. */
 export type AggregateOptions<S extends QuerySchema, K extends keyof S["~byName"]> = CallOptions & {
   readonly where?: WhereOf<S, K>;
   /** One result row per distinct combination. Needs `limit`, or `.all(reason)`. */
-  readonly groupBy?: readonly (keyof RowOf<S, K> & string)[];
+  readonly groupBy?: readonly ((keyof RowOf<S, K> & string) | Bucket<string, string, string>)[];
   /** Adds `count`, the number of rows in the group. */
   readonly count?: true;
   readonly sum?: readonly NumericKeys<RowOf<S, K>>[];
   readonly avg?: readonly NumericKeys<RowOf<S, K>>[];
   readonly min?: readonly (keyof RowOf<S, K> & string)[];
   readonly max?: readonly (keyof RowOf<S, K> & string)[];
-  /** Orders the groups. Only `groupBy` fields. Without it, groups come in `groupBy` order. */
-  readonly orderBy?: OrderBy<RowOf<S, K>>;
+  /**
+   * Orders the groups. A `groupBy` field or a bucket `as`.
+   * Without it, groups come in `groupBy` order.
+   */
+  readonly orderBy?: OrderBy<RowOf<S, K>> | { readonly [key: string]: SortDir | undefined };
   readonly limit?: number;
 };
 
+/** `true` when a group entry is a bucket. A mix of fields and buckets is `boolean`. */
+type HasBucket<G> = G extends Bucket<string, string, string> ? true : false;
+
+/** One bucket key. A string group contributes nothing. */
+type BucketPiece<Row, G> =
+  G extends Bucket<infer C, infer U, infer A>
+    ? {
+        readonly [K in A]:
+          | (U extends "second" | "minute" | "hour" ? Temporal.Instant : Temporal.PlainDate)
+          | (C extends keyof Row ? (null extends Row[C] ? null : never) : null);
+      }
+    : {};
+
+/** Intersection of a union of group pieces. */
+type Intersect<U> = (U extends unknown ? (arg: U) => void : never) extends (arg: infer I) => void
+  ? I
+  : unknown;
+
+/**
+ * Group keys on an aggregate row.
+ *
+ * A plain field list stays `Pick`. A bucket list adds each `as` key. The value
+ * is `Temporal.PlainDate` for a calendar unit and `Temporal.Instant` for a
+ * clock unit, and includes `null` when the column does.
+ */
+type GroupOf<Row, G> =
+  boolean extends HasBucket<G>
+    ? Pick<Row, Extract<G, keyof Row>> & Intersect<BucketPiece<Row, G>>
+    : [G] extends [Bucket<string, string, string>]
+      ? Intersect<BucketPiece<Row, G>>
+      : Pick<Row, G & keyof Row>;
+
 /** A group: its fields, and the aggregates the call named. */
 export type AggregateRow<Row, O> = Show<
-  (O extends { readonly groupBy: readonly (infer G)[] } ? Pick<Row, G & keyof Row> : unknown) &
+  (O extends { readonly groupBy: readonly (infer G)[] } ? GroupOf<Row, G> : unknown) &
     (O extends { readonly count: true } ? { readonly count: number } : unknown) &
     (O extends { readonly sum: readonly (infer F)[] }
       ? { readonly sum: { readonly [P in F & keyof Row]: NonNullable<Row[P]> | null } }
@@ -372,11 +563,17 @@ export type UpdateOf<
   ? U
   : never;
 
-/** `set` values. `undefined` leaves the field unchanged. `inc` adds to it. `set` and `arr` write json and arrays. */
+/**
+ * `set` values.
+ *
+ * `undefined` leaves the field unchanged. `null` sets null, and only on a
+ * nullable column. `inc` adds to a number or bigint column. A null number
+ * stays null. `json.set` and `arr` write json and arrays.
+ */
 export type UpdateSet<S extends QuerySchema, K extends keyof S["~byName"]> = {
   readonly [F in keyof UpdateOf<S, K>]?:
     | UpdateOf<S, K>[F]
-    | Inc<NonNullable<UpdateOf<S, K>[F]>>
+    | IncOf<UpdateOf<S, K>[F]>
     | WriteOp<NonNullable<UpdateOf<S, K>[F]>>;
 };
 
@@ -448,20 +645,39 @@ type AllowedUpdate<
   K extends keyof S["~byName"],
   Allow extends readonly (keyof RowOf<S, K> & string)[],
 > =
-  | { readonly where?: WhereOf<S, K>; readonly set: AllowedSet<S, K, Allow> }
+  | {
+      readonly where?: WhereOf<S, K>;
+      readonly set: AllowedSet<S, K, Allow>;
+      readonly version?: number;
+    }
   | readonly {
       readonly id?: unknown;
       readonly where?: WhereOf<S, K>;
       readonly set: AllowedSet<S, K, Allow>;
+      readonly version?: number;
     }[];
 
-/** One update, or a per-row list in one statement. */
+/**
+ * One update, or a per-row list in one statement.
+ *
+ * `lock: "skip"` with `limit` claims that many matching rows and leaves rows
+ * another transaction already holds. It is not valid on a list.
+ */
 export type UpdateTarget<S extends QuerySchema, K extends keyof S["~byName"]> =
-  | { readonly where?: WhereOf<S, K>; readonly set: UpdateSet<S, K> }
+  | {
+      readonly where?: WhereOf<S, K>;
+      readonly set: UpdateSet<S, K>;
+      readonly limit?: number;
+      readonly lock?: "skip";
+      /** Version read from the row. Required at runtime when the table is `versioned()`. */
+      readonly version?: number;
+    }
   | readonly {
       readonly id?: unknown;
       readonly where?: WhereOf<S, K>;
       readonly set: UpdateSet<S, K>;
+      /** Version read from the row. Required at runtime when the table is `versioned()`. */
+      readonly version?: number;
     }[];
 
 /** `{ count, archiveId }` from one `archive()` call. */
@@ -542,7 +758,12 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   aggregate<const O extends AggregateOptions<S, K>>(
     options: O,
   ): { all(reason: string): Query<readonly AggregateRow<RowOf<S, K>, O>[]> };
-  count(options?: CallOptions & { readonly where?: WhereOf<S, K> }): Read<number>;
+  count(
+    options?: CallOptions & {
+      readonly where?: WhereOf<S, K>;
+      readonly search?: TextSearch<RowOf<S, K>>;
+    },
+  ): Read<number>;
   exists(options?: CallOptions & { readonly where?: WhereOf<S, K> }): Read<boolean>;
   /**
    * Inserts one row. Unknown keys are dropped. `{ allow }` may set guarded fields.
@@ -580,6 +801,31 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
     target: { readonly where?: WhereOf<S, K> },
     options?: WriteOptions<S, K>,
   ): Write<WriteCount>;
+  /**
+   * Rows below `id`, walking the table's self-relation.
+   *
+   * One statement. A row already seen is not entered again, so a cycle in the
+   * data returns. A missing id returns no rows. `where` and a preset filter
+   * the rows that come back. Tenancy and the active set apply at every step.
+   */
+  descendants<const O extends TreeOptions<S, K>>(
+    id: unknown,
+    options?: O,
+  ): Query<readonly ResultRow<S, K, O>[]>;
+  /** Rows above `id`. The options match {@link TableApi.descendants}. */
+  ancestors<const O extends TreeOptions<S, K>>(
+    id: unknown,
+    options?: O,
+  ): Query<readonly ResultRow<S, K, O>[]>;
+  /**
+   * Sets a to-many relation to exactly `ids`.
+   *
+   * One statement. A join table gains and loses link rows. A nullable foreign
+   * key is set or cleared, and the related row stays. A link that would have
+   * to delete a row is refused. Duplicate ids count once. An id that is not
+   * in the related table is `not_found`, and nothing is written.
+   */
+  sync(id: unknown, relation: string, ids: readonly unknown[], options?: SyncOptions): SyncHandle;
 } & (S["~byName"][K] extends { readonly "~archive": true } ? ArchiveOps<S, K, L> : unknown) &
   PresetApi<S, K, L> &
   TableExtras<S, K>;
