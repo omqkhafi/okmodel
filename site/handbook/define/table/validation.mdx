@@ -2,7 +2,7 @@
 The column has a type. A rule here rejects a value that type still allows. It runs only when validation is on and the engine has loaded. [References](/docs/define/table/references) point a column at another table.
 </Callout>
 
-A field's rules live in one place. They run when validation is enabled and the engine has loaded.
+A field's rules live in one place. Insert and update run them when validation is on and `okmodel/validate` is loaded. A read does not. `{ validate: false }` skips that call. A delete does not validate.
 
 ### Inline
 
@@ -21,7 +21,7 @@ export const notes = table("notes", {
 
 ### Section
 
-`validate` is the section. Each key is a field, and `$row` is the whole row. Every value is a list of rules. A key that is not a column is refused. A `$row` rule sees the row after the field transforms.
+`validate` is the section. Each key is a field, and `$row` is the whole row. Every value is a list of rules. A key that is not a column is OKM1060. A value that is not a list is OKM1060. A `$row` rule sees the row after the field transforms.
 
 ```ts title="rows.ts"
 import { table, t } from "okmodel/pg";
@@ -52,7 +52,7 @@ export const notes = table(
 ```
 
 <Callout type="error" title="OKM1030">
-The same field in `.validate()` and in this section is refused. `okm check` reports it.
+The same field in `.validate()` and in this section is refused. `okm check` reports it, and so does the first validated call.
 </Callout>
 
 ### Built-in
@@ -61,15 +61,15 @@ The same field in `.validate()` and in this section is refused. `okm check` repo
 
 #### Rules
 
-`trim` and `lowercase` run before the checks. A string is changed. Any other value is left as it is.
+`trim` and `lowercase` run before the checks. A string is changed, and that changed value is what the write stores. Any other value is left as it is. `message` on an issue is the key you pass, not display text.
 
 | Call | Options | Result |
 | --- | --- | --- |
 | `v.trim()` | — | Removes leading and trailing whitespace. |
 | `v.lowercase()` | — | Lowercases the string. |
-| `v.email(key)` | the issue message | Rejects a string that is not an email. |
-| `v.min(n, key)` | the minimum, the issue message | A string shorter than `n` characters, or a number below `n`. |
-| `v.rule(fn, path, key)` | the predicate, the issue path, the issue message | `false` records `key` at `path`. On a field, `fn` receives that value. |
+| `v.email(key)` | the issue key | Rejects a string that has no `@`, no dot after it, or a space. |
+| `v.min(n, key)` | the minimum, the issue key | A string is measured in code points. A number must be at least `n`. Any other value fails. |
+| `v.rule(fn, path, key)` | the predicate, the issue path, the issue key | `false` records `key` at `path`. The path is that segment, not the field name plus the segment. On a field, `fn` receives that value. |
 | `v.onInsert()` | none, or one rule | Limits the following rules, or that one rule, to insert. |
 | `v.onUpdate()` | none, or one rule | Limits the following rules, or that one rule, to update. |
 
@@ -98,17 +98,17 @@ The column type adds a check when validation is on. You do not pass a rule for i
 
 | Column | Option | Issue |
 | --- | --- | --- |
-| required on insert, or null | not nullable, and the column is written. A default lets insert omit it | `required` |
-| `t.varchar(n)`, `t.char(n)` | `n`, counted in characters | `too_long` |
+| required on insert, or null | not nullable, and the column can be written. A default lets insert omit it. Guarded, generated, and identity columns are not checked | `required` |
+| `t.varchar(n)`, `t.char(n)` | `n`, counted in code points | `too_long` |
 | `.picklist(values)` | the values. `{ check: false }` skips the database CHECK and this check still runs | `picklist` |
-| `t.smallint()`, `t.integer()`, `t.bigint()` | that type's range | `integer_range` |
+| `t.smallint()`, `t.integer()`, `t.bigint()` | that type's range. A safe integer, a bigint, or a digit string | `integer_range` |
 | `t.numeric(precision, scale)` | precision and scale. A bare `t.numeric()` accepts a decimal | `precision` |
 | `t.real()`, `t.double()` | a finite number | `precision` |
 | `t.uuid()` | a uuid string | `uuid` |
 | `t.json()`, `t.jsonb()` | a value JSON can store | `json` |
 
 <Callout type="error" title="OKM1200">
-A failed check throws. `issues` lists `{ path, message }` in column order, then `$row`. A hidden or sensitive value stays out of the issue.
+A failed check throws. The text is `Validation failed:` then the path and the key. `issues` lists `{ path, message }` in column order, then `$row`. `message` is the key. A hidden or sensitive value is not written into the issue.
 </Callout>
 
 ### Standard Schema
@@ -144,10 +144,11 @@ export const people = table("people", {
 | Value | Result |
 | --- | --- |
 | omitted | The table follows the schema. |
-| `true` | On for this table. |
+| `true` | On for this table. `onRead` and `style` stay the schema's. |
 | `false` | Off for this table. |
-| `{ enabled, onRead, style }` | The same fields as the schema flag. |
-| `style` | `"inline"` or `"section"`. |
+| `{ enabled, onRead, style }` | A key you omit stays the schema's. An object with no `enabled` is on. |
+| `onRead` | Stored. Insert and update run the rules. A read does not. |
+| `style` | `"inline"` or `"section"`. Anything else is refused. |
 
 ```ts title="switch.ts"
 import { table, t } from "okmodel/pg";
@@ -164,4 +165,32 @@ export const notes = table(
 
 <Callout type="info" title="One style">
 `"inline"` is [`.validate()`](#inline). `"section"` is the [`validate` option](#section). A column rule under `"section"`, or a section rule under `"inline"`, is OKM1030.
+</Callout>
+
+### Run
+
+Import `okmodel/validate`. A write that would validate without that import is OKM1201. `okm check` reports it too.
+
+`insert.validate(row)` checks the row and returns it frozen. A later `insert` of that value skips the rules. `insert.check(row)` returns the issues and does not throw. `pick` validates only the named fields. `omit` validates every field except those. `update.validate` checks a patch, or `set` when the body has one.
+
+```ts title="run.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+import { v } from "okmodel/validate";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.varchar(200).validate([v.trim(), v.min(1, "title_required")]),
+});
+const app = schema({ tables: [notes], validation: true });
+
+export async function add(url: string, title: string) {
+  await using db = connect(url, { schema: app });
+  const row = await db.notes.insert.validate({ title }); // [!code focus]
+  return db.notes.insert(row);
+}
+```
+
+<Callout type="info" title="Skip one call">
+`{ validate: false }` on insert or update skips the rules. Codecs still run. Delete ignores the option.
 </Callout>

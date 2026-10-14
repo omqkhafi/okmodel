@@ -276,7 +276,7 @@ A unique on a tenant table includes the key, unless the column calls `.unique({ 
 | --- | --- | --- | --- |
 | `validation` | no | off | Omit it and rules stay off. `true` turns them on. `false` leaves them off. |
 | `enabled` | no | `true` on an object | Omitting this key inside an object turns rules on. |
-| `onRead` | no | `false` | `true` runs the rules on read. |
+| `onRead` | no | `false` | Stored with the flag. Insert and update run the rules. A read does not. |
 | `style` | no | unset | `"inline"` or `"section"`. |
 
 ```ts title="schema.ts"
