@@ -40,6 +40,8 @@ const notes = table(
 export const app = schema({ tables: [authors, notes] });
 ```
 
+A comment that points at a task or a list is `morph("commentable", ["tasks", "lists"])` on the comment, next to `commentableType` and `commentableId`. Include returns the task or the list, or null. Each target declares `morphMany("comments", "commentable")` for the comments that point at it. `morphTo("commentable", "tasks", id)` sets the type and the id together.
+
 </Tab>
 
 </Tabs>

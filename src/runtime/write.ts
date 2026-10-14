@@ -1489,6 +1489,7 @@ function insertRow(
     if (!writable(table, column, allow)) refuse(table, column);
     if (value[key] !== undefined) row[key] = value[key];
   }
+  refuseHalfMorph(table, row);
   return row;
 }
 
@@ -1623,6 +1624,7 @@ export function writeSet(
     if (column.guardUpdate || !writable(table, column, allow)) refuse(table, column);
     set[key] = value[key];
   }
+  refuseHalfMorph(table, set);
   return set;
 }
 
@@ -1836,6 +1838,47 @@ function callOptions(options: object): ExecuteOptions | undefined {
     ...(hasSignal ? { signal: signal as AbortSignal } : {}),
     ...(hasTimeout ? { timeout } : {}),
   };
+}
+
+/**
+ * A morph pair is set together or not at all.
+ *
+ * One of the two columns, or one null and the other set, is OKM1121.
+ * A type value outside the closed list is OKM1120.
+ */
+function refuseHalfMorph(table: Indexed, row: Record<string, unknown>): void {
+  const relations = table.model.relations;
+  for (let index = 0; index < relations.length; index += 1) {
+    const relation = relations[index];
+    const morph = relation?.morph;
+    if (relation === undefined || morph === undefined || morph.direction !== "to") continue;
+    const typeSet = Object.hasOwn(row, morph.typeField);
+    const idSet = Object.hasOwn(row, morph.idField);
+    const type = typeSet ? row[morph.typeField] : undefined;
+    const id = idSet ? row[morph.idField] : undefined;
+    const typeClear = type === null;
+    const idClear = id === null;
+    if (!typeSet && !idSet) continue;
+    if (typeSet !== idSet || typeClear !== idClear) {
+      fail(
+        "OKM1121",
+        `Set ${table.model.name}.${morph.typeField} and ${morph.idField} together, or clear both. Use morphTo("${morph.name}", type, id).`,
+      );
+    }
+    if (typeClear) continue;
+    let accepted = false;
+    const names: string[] = [];
+    for (const target of morph.targets) {
+      names.push(target.type);
+      if (target.type === type) accepted = true;
+    }
+    if (!accepted) {
+      fail(
+        "OKM1120",
+        `Relation ${table.model.name}.${relation.name} type ${morph.typeField} is ${typeof type === "string" ? type : typeof type}. Accepted tables: ${names.join(", ")}.`,
+      );
+    }
+  }
 }
 
 function refuse(table: Indexed, column: ColumnModel): never {

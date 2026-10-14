@@ -28,6 +28,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `sync(id, relation, ids)` sets a to-many relation to exactly those ids and reports the links it added and removed. A join table changes link rows. A nullable foreign key is set or cleared and the related row stays (D252).
 - `versioned()` adds `version`. An update passes the version you read and the write bumps it. A stale write is a conflict and changes nothing. `inc` still bumps `version` (D254).
 - `sortable(groupBy?)` adds `position` and `move(id, { before })` or `{ after }`. New rows go at the end of the group. `find` and `page` order by `position` when you omit `orderBy` (D254).
+- `morph("commentable", ["tasks", "lists"])` includes the task or the list, or null, as a flat union. `morphMany` on each target is the comments that point at it. `morphTo` sets the type and the id together. Setting one without the other is refused (D255).
 
 ### 💥 Breaking Changes
 

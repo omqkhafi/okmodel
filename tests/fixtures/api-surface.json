@@ -587,6 +587,14 @@
       "kind": "stable"
     },
     {
+      "name": "MorphManyRelation",
+      "kind": "stable"
+    },
+    {
+      "name": "MorphRelation",
+      "kind": "stable"
+    },
+    {
       "name": "NumericAs",
       "kind": "stable"
     },
@@ -884,6 +892,18 @@
     },
     {
       "name": "matches",
+      "kind": "stable"
+    },
+    {
+      "name": "morph",
+      "kind": "stable"
+    },
+    {
+      "name": "morphMany",
+      "kind": "stable"
+    },
+    {
+      "name": "morphTo",
       "kind": "stable"
     },
     {

@@ -60,14 +60,18 @@ type IncOf<V> = [unknown] extends [V]
       ? Inc<bigint>
       : never;
 
-/** `has`, `none`, and `every` against the related row. */
+/** `has`, `none`, and `every` against the related row. A morph include is not a filter. */
 export type RelFilter<S extends QuerySchema, Rel> = Rel extends {
-  readonly table: infer T extends string;
+  readonly morph: { readonly targets: readonly string[] };
 }
-  ? T extends keyof S["~byName"]
-    ? RelationFilter<"has" | "none" | "every", FieldWhere<RowOf<S, T>>>
-    : never
-  : never;
+  ? never
+  : Rel extends {
+        readonly table: infer T extends string;
+      }
+    ? T extends keyof S["~byName"]
+      ? RelationFilter<"has" | "none" | "every", FieldWhere<RowOf<S, T>>>
+      : never
+    : never;
 
 /** Known relation names. A string index (no declared relations) adds none. */
 type RelationKeys<R> = string extends keyof R ? never : keyof R;
@@ -117,32 +121,61 @@ type Related<S extends QuerySchema, T extends keyof S["~byName"], Opt> = Opt ext
   ? Selected<RowOf<S, T>, Sel>
   : RowOf<S, T>;
 
-/** One include. To-many needs `limit`. */
+/** One include. To-many needs `limit`. A morph include is `true`. */
 export type IncludeOf<S extends QuerySchema, K extends keyof S["~byName"]> = {
   readonly [R in RelationKeys<RelationsOf<S, K>>]?: RelationsOf<S, K>[R] extends {
-    readonly kind: "many";
-    readonly table: infer T extends string;
+    readonly morph: { readonly targets: readonly string[] };
   }
-    ? T extends keyof S["~byName"]
-      ? {
-          readonly limit: number;
-          readonly select?: readonly (keyof RowOf<S, T> & string)[];
-          readonly where?: FieldWhere<RowOf<S, T>>;
-          readonly orderBy?: OrderBy<RowOf<S, T>>;
+    ? true
+    : RelationsOf<S, K>[R] extends {
+          readonly kind: "many";
+          readonly table: infer T extends string;
         }
-      : never
-    : RelationsOf<S, K>[R] extends { readonly kind: "one"; readonly table: infer T extends string }
       ? T extends keyof S["~byName"]
-        ?
-            | true
-            | {
-                readonly select?: readonly (keyof RowOf<S, T> & string)[];
-                readonly where?: FieldWhere<RowOf<S, T>>;
-                readonly orderBy?: OrderBy<RowOf<S, T>>;
-              }
+        ? {
+            readonly limit: number;
+            readonly select?: readonly (keyof RowOf<S, T> & string)[];
+            readonly where?: FieldWhere<RowOf<S, T>>;
+            readonly orderBy?: OrderBy<RowOf<S, T>>;
+          }
         : never
-      : never;
+      : RelationsOf<S, K>[R] extends {
+            readonly kind: "one";
+            readonly table: infer T extends string;
+          }
+        ? T extends keyof S["~byName"]
+          ?
+              | true
+              | {
+                  readonly select?: readonly (keyof RowOf<S, T> & string)[];
+                  readonly where?: FieldWhere<RowOf<S, T>>;
+                  readonly orderBy?: OrderBy<RowOf<S, T>>;
+                }
+          : never
+        : never;
 };
+
+/**
+ * Rows a morph include can return.
+ *
+ * Each target's row, plus the type field set to that table name, or null when
+ * the target row is missing.
+ */
+/** Flattens an intersection so a morph arm is one object type. */
+type Flat<T> = { readonly [K in keyof T]: T[K] };
+
+/** One arm of a morph union. Distributes over the closed target list. */
+type MorphArm<
+  S extends QuerySchema,
+  T extends string,
+  Field extends string,
+> = T extends keyof S["~byName"] ? Flat<RowOf<S, T> & { readonly [P in Field]: T }> : never;
+
+type MorphUnion<
+  S extends QuerySchema,
+  Targets extends readonly string[],
+  Field extends string,
+> = MorphArm<S, Targets[number], Field> | null;
 
 /** Columns kept by `select`. The full row when `select` is omitted. */
 export type Selected<Row, Sel> = [Sel] extends [readonly (infer P)[]]
@@ -170,16 +203,23 @@ type IncludeRows<S extends QuerySchema, K extends keyof S["~byName"], Inc> = [In
 ]
   ? {
       readonly [R in keyof Inc & keyof RelationsOf<S, K>]: RelationsOf<S, K>[R] extends {
-        readonly kind: "many";
-        readonly table: infer T extends keyof S["~byName"];
+        readonly morph: {
+          readonly targets: infer Targets extends readonly string[];
+          readonly typeField: infer Field extends string;
+        };
       }
-        ? readonly Related<S, T, Inc[R]>[]
+        ? MorphUnion<S, Targets, Field>
         : RelationsOf<S, K>[R] extends {
-              readonly kind: "one";
+              readonly kind: "many";
               readonly table: infer T extends keyof S["~byName"];
             }
-          ? Related<S, T, Inc[R]> | null
-          : never;
+          ? readonly Related<S, T, Inc[R]>[]
+          : RelationsOf<S, K>[R] extends {
+                readonly kind: "one";
+                readonly table: infer T extends keyof S["~byName"];
+              }
+            ? Related<S, T, Inc[R]> | null
+            : never;
     }
   : unknown;
 

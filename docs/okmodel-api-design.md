@@ -591,7 +591,7 @@ export const tasks = table("tasks", {
 | `validation` | table override of the schema default |
 | `traits`, `omitDefaults` | behavior bundles; opting out of schema traits with a reason |
 | `tenancy` | `via("relation.path")` or `global("reason")` |
-| `relations` | `one`, `many`, `manyThrough`, `morph`, by table name. `manyThrough("labels", { through: "taskLabels" })` is a to-many relation through a declared join table with one foreign key to each side; name `from` and `to` (join-table fields) when a table has more than one. It works in `include`, in `has` / `none` / `every` and in filters, and the join rows and the targets carry the same tenancy and active-set predicates as any relation. `morph("commentable", ["tasks", "lists"])` declares a closed list of targets and returns a flat discriminated union (M2) |
+| `relations` | `one`, `many`, `manyThrough`, `morph`, by table name. `manyThrough("labels", { through: "taskLabels" })` is a to-many relation through a declared join table with one foreign key to each side; name `from` and `to` (join-table fields) when a table has more than one. It works in `include`, in `has` / `none` / `every` and in filters, and the join rows and the targets carry the same tenancy and active-set predicates as any relation. `morph("commentable", ["tasks", "lists"])` (D255) is a polymorphic to-one on the table that holds `commentableType` and `commentableId`. The type column is text and stores the target's table name. The id column matches each target's single primary-key column. Include is `true` and returns that target's row, or null when the row is missing or the stored type is not in the list, as a flat union discriminated by the type field. `morphMany("comments", "commentable")` on each target is the reverse many and follows `many` for include, limit, order, and `has` / `none` / `every`. `morphTo("commentable", "tasks", id)` sets both columns. One without the other is OKM1121. A type outside the list is OKM1120. An unknown target, a missing column, a key of more than one column, or an id type that does not match is OKM1020, OKM1021, or OKM1022 and names the table and the column. The relation is not a catalog object. `has` / `none` / `every` on the morph, `select` / `where` / `orderBy` / `limit` on that include, a nested morph include, `sync` of a morph, and a tree walk through a morph are OKM1120 |
 | `computed` | SQL expressions usable like fields |
 | `indexes`, `checks` | database indexes, unique constraints, check constraints |
 | `primaryKey` | column names of one primary key, including a composite key |
@@ -656,7 +656,7 @@ globalThis.Temporal = Temporal;
 | Builder or option | Version |
 |---|---|
 | `table({ presets })` | 0.2 |
-| `morph`, `table({ computed, policies })` | later |
+| `table({ computed, policies })` | later |
 
 - Fields are `NOT NULL` unless `.nullable()`.
 - A type that names an extension (`citext`, `ltree`) is not installed unless that extension is in `schema({ extensions })`. A list that omits it fails when the catalog is built (OKM1810). Omitting the list leaves the dependency check (OKM1020).

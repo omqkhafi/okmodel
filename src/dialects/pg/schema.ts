@@ -427,8 +427,10 @@ export function schema<const TTables extends readonly AnyTable[]>(
     compileForeignKeys(item, byName, accepted, jobs, edges);
   }
   const model = {} as Record<string, TableModel>;
+  const scopeFields =
+    tenancy === undefined ? undefined : tenancy.keys !== undefined ? tenancy.keys : [tenancy.key];
   for (const item of prepared) {
-    model[item.tsName] = tableModel(item, edges, byName, accepted);
+    model[item.tsName] = tableModel(item, edges, byName, accepted, scopeFields);
   }
   bindViews(config.views, model, tenancy, tables, casing);
 
@@ -1405,6 +1407,7 @@ function tableModel(
   edges: readonly FkEdge[],
   byName: ReadonlyMap<string, Prepared>,
   accepted: readonly string[],
+  scopeFields: readonly string[] | undefined,
 ): TableModel {
   const primary: string[] = [];
   for (const sqlName of item.primary) {
@@ -1436,7 +1439,7 @@ function tableModel(
     primary,
     uniques: item.uniques,
     columns,
-    relations: resolveRelations(item, edges, byName, accepted),
+    relations: resolveRelations(item, edges, byName, accepted, scopeFields),
     ...(conceal ? { conceal: true as const } : {}),
     ...(item.traits !== undefined ? { traits: item.traits } : {}),
     ...(item.provenance.source !== undefined ? { source: item.provenance.source } : {}),
@@ -1450,9 +1453,11 @@ function resolveRelations(
   edges: readonly FkEdge[],
   byName: ReadonlyMap<string, Prepared>,
   accepted: readonly string[],
+  scopeFields: readonly string[] | undefined,
 ): readonly RelationModel[] {
   const raw = item.relationOptions;
   if (raw === undefined) return [];
+  const describe = (table: string) => byName.get(table);
   const record = raw as Record<string, unknown>;
   const names = Object.keys(record);
   const resolved: RelationModel[] = [];
@@ -1463,12 +1468,21 @@ function resolveRelations(
     const call = record[name];
     if (!isRelationCall(call)) {
       unavailable(
-        `Table ${item.tsName} relation ${name} is not available yet. one(), many(), and manyThrough() are accepted. morph arrives later.`,
+        `Table ${item.tsName} relation ${name} is not a relation. one(), many(), manyThrough(), morph(), and morphMany() are accepted.`,
       );
     }
     const own = (call as Partial<ManyThroughRelation>).resolve;
     if (own !== undefined) {
-      resolved.push(own({ owner: item.tsName, name, edges, tables: accepted }));
+      resolved.push(
+        own({
+          owner: item.tsName,
+          name,
+          edges,
+          tables: accepted,
+          describe,
+          ...(scopeFields === undefined ? {} : { scopeFields }),
+        }),
+      );
       continue;
     }
     if (!byName.has(call.table)) {

@@ -67,6 +67,41 @@ export type ColumnModel = {
 };
 
 /**
+ * One table a morph include can return.
+ *
+ * `type` is the table's TypeScript name, which is what the type column stores.
+ */
+export type MorphTarget = {
+  readonly type: string;
+  readonly table: string;
+  /** SQL name of the target table. */
+  readonly sql: string;
+  /** SQL name of the target's single primary-key column. */
+  readonly keySql: string;
+};
+
+/**
+ * A polymorphic pair: a type column and an id column.
+ *
+ * `to` is the owner side (one of several tables). `many` is the reverse on a target.
+ * Absent on every other relation, so a normal relation does not carry it.
+ */
+export type MorphModel = {
+  readonly direction: "to" | "many";
+  /** Column stem. The fields are `${name}Type` and `${name}Id`. */
+  readonly name: string;
+  readonly typeField: string;
+  readonly idField: string;
+  /** SQL name of the type column. */
+  readonly typeSql: string;
+  /** SQL name of the id column. */
+  readonly idSql: string;
+  /** On a reverse many, the table name stored in the type column. */
+  readonly typeValue?: string;
+  readonly targets: readonly MorphTarget[];
+};
+
+/**
  * A resolved relation.
  *
  * The join is always `related.{remote} = this.{local}`.
@@ -80,6 +115,13 @@ export type RelationModel = {
   readonly local: readonly string[];
   /** SQL names on the related table. */
   readonly remote: readonly string[];
+  /**
+   * Set on a morph relation.
+   *
+   * The include planner reads `to`. A reverse many reads `many` and emits
+   * through {@link RelationModel.through}.
+   */
+  readonly morph?: MorphModel;
   /**
    * Set on a `manyThrough` relation.
    *
