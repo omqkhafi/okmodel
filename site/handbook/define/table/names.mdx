@@ -2,16 +2,17 @@
 TypeScript sees the field name. This page is the SQL name, a rename that keeps the old column, and the comment. [Visibility](/docs/define/table/visibility) decides who can read or write it.
 </Callout>
 
-The field name is the TypeScript name.
+Insert, update, and `where` use the field name. The SQL name is what the statement quotes.
 
 ### SQL name
 
-The SQL name is the field name. When the schema sets [casing](/docs/define/schema#casing) to `"snake"`, a camelCase field is stored as snake_case. `.sqlName()` replaces the column name. `sqlName` on the table replaces the table name. Casing does not rewrite a name you set. An empty name is refused.
+The SQL name is the field name, unless you replace it. [Casing](/docs/define/schema#casing) `"snake"` rewrites a name you did not set: each uppercase letter after the first character inserts `_`, then the letter is lowercased. `publishedAt` is `published_at`. `userID` is `user_i_d`. `.sqlName()` replaces the column name. `sqlName` on the table replaces the table name. Casing does not rewrite a name you set.
 
 ```ts title="notes.ts"
-import { table, t } from "okmodel/pg";
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
 
-export const notes = table(
+const notes = table(
   "notes",
   {
     id: t.identity(),
@@ -19,15 +20,29 @@ export const notes = table(
   },
   { sqlName: "note" }, // [!code focus]
 );
+const app = schema({ tables: [notes] });
+
+export async function add(url: string, title: string) {
+  await using db = connect(url, { schema: app });
+  return db.notes.insert({ title }); // [!code focus]
+}
 ```
 
-<Callout type="warning" title="Empty">
+<Callout type="error" title="OKM1060">
 An empty column or table `sqlName` is refused.
+</Callout>
+
+<Callout type="error" title="OKM1122">
+A reserved word, a control character, or a name longer than 63 bytes is refused.
+</Callout>
+
+<Callout type="error" title="OKM1023">
+Two tables that store the same SQL name are refused. The message lists the table names.
 </Callout>
 
 ### Previous name
 
-Omitted until you set it. Migrations read the previous SQL name. `.renamedFrom()` is the previous column name. `renamedFrom` on the table is the previous table name. An empty value is refused.
+`.renamedFrom()` is the previous column SQL name. `renamedFrom` on the table is the previous table SQL name. A migration plans `ALTER TABLE … RENAME TO` or `RENAME COLUMN`. Dropping one name and adding another, with no `renamedFrom`, is refused and the fix names the line to add. A previous name that the last snapshot does not contain is refused. Remove `renamedFrom` once the migration that used it has been applied. With no snapshot, that check does not run.
 
 ```ts title="posts.ts"
 import { table, t } from "okmodel/pg";
@@ -42,17 +57,21 @@ export const notes = table(
 );
 ```
 
-<Callout type="warning" title="Empty">
+<Callout type="error" title="OKM1060">
 An empty column or table `renamedFrom` is refused.
 </Callout>
 
 <Callout type="error" title="OKM1020">
-A previous name that the last snapshot does not contain is refused. Remove `renamedFrom` once the migration that used it has been applied.
+`Table renamedFrom … is not in the previous snapshot.` A column message names the table and the previous column.
+</Callout>
+
+<Callout type="error" title="OKM1530">
+`Drop headline and add title could be a rename.` The fix is `.renamedFrom("headline")` on the new column, or `renamedFrom: "posts"` on the new table.
 </Callout>
 
 ### Comment
 
-`.comment()` stores the text you pass on the column. Omit the call to leave it off. `comment` on the table is stored beside the table. An empty table comment is refused. An empty column comment is stored.
+`.comment()` and a table `comment` are checked. The catalog has no comment field, so neither is emitted. Omit the call to leave it off. An empty table comment is refused. An empty column comment is accepted.
 
 ```ts title="labels.ts"
 import { table, t } from "okmodel/pg";
@@ -67,6 +86,10 @@ export const notes = table(
 );
 ```
 
-<Callout type="warning" title="Empty">
-An empty table `comment` is refused. A column comment stores the text you pass, including an empty one. Omit `.comment()` to leave it off.
+<Callout type="error" title="OKM1060">
+An empty table `comment` is refused.
+</Callout>
+
+<Callout type="error" title="OKM1122">
+A comment that contains a control character is refused.
 </Callout>
