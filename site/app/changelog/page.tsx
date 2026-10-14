@@ -8,8 +8,10 @@
 import { SITE_NAME } from "@/lib/site-identity";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Notes } from "@/components/release-notes/release";
 import { ChangelogShell } from "@/components/release-notes/shell";
-import { CHANGELOG_SOURCE, changelogSeriesPath, loadChangelogSeries } from "@/lib/changelog";
+import { CHANGELOG_SOURCE, changelogSeriesPath, loadChangelogSeries, loadUnreleased } from "@/lib/changelog";
+import { readRootPackage } from "@/lib/package-meta";
 
 export const metadata: Metadata = {
   title: "Changelog",
@@ -24,6 +26,8 @@ export const metadata: Metadata = {
 export default function ChangelogPage() {
   const series = loadChangelogSeries();
   const latest = series[0]!.releases[0]!;
+  const upcoming = loadUnreleased();
+  const nextVersion = readRootPackage().version;
 
   return (
     <ChangelogShell latest={latest}>
@@ -40,6 +44,23 @@ export default function ChangelogPage() {
           <code className="font-mono text-fd-foreground">{CHANGELOG_SOURCE}</code>.
         </p>
       </div>
+
+      {upcoming.length > 0 ? (
+        <article className="border-b border-dashed border-fd-border px-5 py-8 sm:px-6 lg:px-8">
+          <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <h2 className="text-2xl font-medium tracking-tight text-fd-foreground">next</h2>
+            <p className="ml-auto font-mono text-xs tracking-tight text-fd-muted-foreground">
+              {nextVersion}
+            </p>
+          </header>
+          <p className="mt-3 max-w-xl text-sm leading-relaxed text-fd-muted-foreground">
+            Not tagged yet. These notes ship with the next release.
+          </p>
+          <div className="mt-6">
+            <Notes groups={upcoming} />
+          </div>
+        </article>
+      ) : null}
 
       {series.map((entry) => {
         const newest = entry.releases[0]!;

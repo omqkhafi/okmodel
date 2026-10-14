@@ -64,6 +64,21 @@ function GroupBlock({ group }: { readonly group: ChangelogGroup }): ReactNode {
 }
 
 /**
+ * Grouped notes with no release heading. The changelog index uses this for next.
+ *
+ * @param groups - Parsed `###` groups
+ */
+export function Notes({ groups }: { readonly groups: readonly ChangelogGroup[] }): ReactNode {
+  return (
+    <div className="flex flex-col gap-6">
+      {groups.map((group) => (
+        <GroupBlock key={group.label} group={group} />
+      ))}
+    </div>
+  );
+}
+
+/**
  * One release block: tag, date, optional summary, then grouped bullets.
  *
  * @param release - Parsed release

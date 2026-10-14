@@ -62,6 +62,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### docs
 
+- The docs pages for queries and schema cover first-or-create, `bucket()`, a claim, search, a top-N include and window helpers, descendants, ancestors, `sync`, `stream()`, `versioned()`, `sortable()`, and morph, including what each call refuses.
+- The changelog page shows `## Unreleased` as next until the release. Published releases stay on their own pages.
 - The npm README covers the 0.6 access features: tenancy strategies including row-level security, roles and column grants, ownership, tenant views, and `okm migrate check`.
 - The execution plan lists the 0.7 steps P90–P99. Byte reclaim is first, each feature loads lazily, and the order of P92 to P97 may change by measured bytes (D243).
 - Aggregate buckets ship on Postgres. Time-zone date helpers stay deferred (D247).
