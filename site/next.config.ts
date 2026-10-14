@@ -81,7 +81,7 @@ const config: NextConfig = {
       { source: "/docs/model/safety", destination: "/docs/define/table#visibility", permanent: true },
       { source: "/docs/ship/migrations", destination: "/docs/define/config#migrations", permanent: true },
       { source: "/docs/ship/drivers", destination: "/docs/define/connect#drivers", permanent: true },
-      { source: "/docs/reference/known-limits", destination: "/docs/known-limits", permanent: true },
+      { source: "/docs/known-limits", destination: "/docs", permanent: true },
       { source: "/docs/reference/:path*", destination: "/docs", permanent: true },
     ];
   },

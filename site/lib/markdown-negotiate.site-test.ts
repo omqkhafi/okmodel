@@ -21,7 +21,8 @@ test("a docs path negotiates to its markdown twin", () => {
   expect(markdownTwinPath("/docs/model/safety")).toBe("/llms.mdx/docs/define/table.md");
   expect(markdownTwinPath("/docs/ship/migrations")).toBe("/llms.mdx/docs/define/config.md");
   expect(markdownTwinPath("/docs/ship/drivers")).toBe("/llms.mdx/docs/define/connect.md");
-  expect(markdownTwinPath("/docs/reference/known-limits")).toBe("/llms.mdx/docs/known-limits.md");
+  expect(markdownTwinPath("/docs/known-limits")).toBe("/llms.mdx/docs/index.md");
+  expect(markdownTwinPath("/docs/reference/known-limits")).toBe("/llms.mdx/docs/index.md");
   expect(markdownTwinPath("/docs/reference/linter")).toBe("/llms.mdx/docs/index.md");
   expect(markdownTwinPath("/")).toBe("/llms.mdx/home");
   expect(markdownTwinPath("/changelog")).toBe("/llms.mdx/releases");

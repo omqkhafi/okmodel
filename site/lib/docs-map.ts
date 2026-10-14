@@ -116,14 +116,6 @@ export const mappedPages: readonly MappedPage[] = [
     source: "site/handbook/queries.mdx",
     handbook: "handbook/queries.mdx",
   },
-  {
-    slug: "known-limits",
-    title: "Known limits",
-    description: "What this version does not do, or does differently from what you might expect.",
-    group: "root",
-    order: 1,
-    source: "docs/known-limits.md",
-  },
   definePage(0, "table", "Table", "table() stores the columns. The key comes first, then each data type, then the options."),
   definePage(1, "schema", "Schema", "schema() compiles the tables into one catalog. Each section is one option."),
   definePage(2, "connect", "Connect", "connect() opens the client. The first argument is the target. schema is required."),
@@ -222,6 +214,10 @@ export const excludedDocs: readonly ExcludedDoc[] = [
   {
     path: "docs/compatibility.md",
     reason: "Removed from the public handbook.",
+  },
+  {
+    path: "docs/known-limits.md",
+    reason: "Removed from the public handbook. The file stays in the repository.",
   },
   {
     path: "docs/size.md",

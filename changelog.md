@@ -41,7 +41,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### 🔥 Removed
 
-- Safety and Drivers are no longer their own pages. The reference pages other than known limits are not published. Old URLs redirect.
+- Safety, Drivers, and Known limits are no longer their own pages. The reference pages are not published. `/docs/known-limits` redirects to the docs home.
 - Handbook pages no longer end with a Next link.
 
 ### 🐛 Fixed
