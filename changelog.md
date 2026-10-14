@@ -97,6 +97,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 #### tooling
 
 - `okm migrate check` does not open a second connection to drop the scratch schema when the replay rolls back (D245).
+- The replica probe test has a 15 second budget, so a loaded CI runner no longer fails it on the default 5 second limit.
 
 #### docs
 
