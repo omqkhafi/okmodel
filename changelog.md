@@ -37,7 +37,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Defaults shows what insert does with each form. A literal and `.defaultSql()` are stored and applied when the field is omitted. A generator runs in the application and stays out of the catalog. `t.id()` and `t.identity()` are omitted from input. `.default(null)` follows `.nullable()`. A generated column is `stored`.
 - Shape shows the value you pass. An array element cannot be null. A picklist CHECK is `column IN (...)`, and `{ check: false }` still rejects a value at encode. Adding an enum label in order plans `ALTER TYPE … ADD VALUE`. Removing or reordering a label replaces the type.
 - Names: insert and `where` use the field name. `sqlName` is what the statement quotes, and casing does not rewrite a name you set. `renamedFrom` plans `RENAME`. A comment is checked and left off the catalog.
-- Visibility: a hidden column leaves the row type, so a typed `select` cannot name it. `filterable` opens `where` and `orderBy` at runtime. `.sensitive()` redacts logs, errors, and `inspect()` as `[redacted]`. `.guarded()` stays off insert and update until `{ allow }`. A tenant key update is OKM1704.
+- Visibility splits the options. `.hidden()` leaves the column off the row. `filterable: true` opens `where` and `orderBy` at runtime. `.sensitive()` takes no argument and redacts logs, errors, and `inspect()` as `[redacted]`. `.guarded()` stays closed until `{ allow }`. A sealed field and a tenant key stay closed. A tenant key update is OKM1704.
 - Docs pages drop the breadcrumb. Copy page sits on the title row and opens Markdown and chat actions. A code block focuses the line the paragraph names.
 
 ### 💥 Breaking Changes
