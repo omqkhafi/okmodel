@@ -1,8 +1,16 @@
 <Callout type="info" title="Where this fits">
-An index does not reject a row. A check is named SQL the row must pass. The database normalises the expression later.
+An [index](/docs/define/table/indexes) does not reject a row. A check does.
 </Callout>
 
-A check is named SQL. The function receives column handles. `sql` interpolates a handle as its SQL name. This is not a query builder. The database normalises the expression later.
+A check is named SQL. The function receives column handles. This is not a query builder.
+
+### Name
+
+The object key is the constraint name.
+
+### Expression
+
+`sql` interpolates a handle as its SQL name. The database normalises the expression later.
 
 | Field | Required | Role |
 | --- | --- | --- |

@@ -1,18 +1,12 @@
 <Callout type="info" title="Where this fits">
-Start here. The name is the first argument of `table()`. This page is the primary key. [Columns](/docs/define/table/columns) are the other fields.
+Start here. [Columns](/docs/define/table/columns) are the other fields.
 </Callout>
 
-One table has one primary key.
+One table has one primary key. A unique is a separate constraint.
 
-| Place | Result |
-| --- | --- |
-| `.primaryKey()` | One column. Update omits it. Insert still accepts the value, unless the column is generated or guarded. |
-| `primaryKey` | The key when it is more than one column, in column order. |
-| a second `.primaryKey()` | Not a composite key. Use `primaryKey`. |
-| `unique` | A named constraint. The value is the field list, in column order. |
-| `.unique()` | The same constraint for one field. |
-| `.unique({ global: "reason" })` | On a tenant table, the tenant key is left out. |
-| an empty `global` reason | Refused. |
+### One column
+
+`.primaryKey()` marks that column. Update omits it. Insert still accepts the value, unless the column is generated or guarded.
 
 ```ts title="notes.ts"
 import { table, t } from "okmodel/pg";
@@ -24,6 +18,18 @@ export const notes = table(
     title: t.text(),
   },
 );
+```
+
+<Callout type="warning" title="Not a composite">
+A second `.primaryKey()` is not a composite key. Use [several columns](#several-columns).
+</Callout>
+
+### Several columns
+
+`primaryKey` lists the columns, in column order.
+
+```ts title="memberships.ts"
+import { table, t } from "okmodel/pg";
 
 export const memberships = table(
   "memberships",
@@ -35,6 +41,10 @@ export const memberships = table(
 );
 ```
 
+### Unique
+
+`unique` names a constraint. The value is the field list, in column order. `.unique()` is that constraint for one field.
+
 ```ts title="users.ts"
 import { table, t } from "okmodel/pg";
 
@@ -42,18 +52,29 @@ export const users = table(
   "users",
   {
     id: t.identity(),
-    email: t.text(),
+    email: t.text().unique(), // [!code focus]
   },
-  { unique: { email: ["email"] } }, // [!code focus]
 );
 ```
 
-<Callout type="warning" title="Not a composite">
-A second `.primaryKey()` is not a composite key. Use the `primaryKey` option.
-</Callout>
+```ts title="logins.ts"
+import { table, t } from "okmodel/pg";
+
+export const logins = table(
+  "logins",
+  {
+    id: t.identity(),
+    email: t.text(),
+    provider: t.text(),
+  },
+  { unique: { login: ["email", "provider"] } }, // [!code focus]
+);
+```
 
 <Callout type="warning" title="Tenant unique">
 On a tenant table the key is included, unless you pass `{ global: "reason" }`. An empty reason is refused.
 </Callout>
+
+### id()
 
 `t.id()` is a uuid primary key. `t.identity()` is a generated bigint. [OKID](/docs/define/table/columns#okid) is `t.id({ default: okid() })`, stored as `text`.

@@ -1,13 +1,12 @@
 <Callout type="info" title="Where this fits">
-A `where` you repeat can be a name on the table, such as `notes.pending()`. This page is that name. It can only add a predicate.
+The table is declared. A preset names a `where` you would otherwise repeat, such as `notes.pending()`.
 </Callout>
 
-A preset is a named refinement you call on the table: `notes.pending()`. It receives a builder and returns that builder.
+A preset receives a builder and returns that builder.
 
-| Rule | Result |
-| --- | --- |
-| `where` | The only method. It adds a predicate. It cannot remove or replace one. |
-| a client method, or `find`, `insert`, `then` | OKM1040. The same list is a type error on the option. |
+### where
+
+`where` is the only method. It adds a predicate. It cannot remove or replace one.
 
 ```ts title="notes.ts"
 import { table, t } from "okmodel/pg";
@@ -27,14 +26,18 @@ export const notes = table(
 );
 ```
 
-<Callout type="error" title="OKM1040">
-A name that is a client method, or a reserved name such as `find`, `insert`, or `then`, is refused. The same list is a type error on the option.
-</Callout>
-
 <Callout type="info" title="Around the preset">
 The tenant predicate and an active set are not in the builder. The planner puts them around the preset.
 </Callout>
 
-<Callout type="info" title="Trait names">
-A trait can add presets too. The table's own names are applied first.
+### Reserved names
+
+A name that is a client method, or `find`, `insert`, or `then`, is refused. The same list is a type error on the option.
+
+<Callout type="error" title="OKM1040">
+Pick a name that is not already a method on the client.
 </Callout>
+
+### Trait names
+
+A trait can add presets too. The table's own names are applied first.

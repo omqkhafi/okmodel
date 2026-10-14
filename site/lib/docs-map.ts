@@ -127,7 +127,7 @@ export const mappedPages: readonly MappedPage[] = [
   tablePage(10, "indexes", "Indexes", "indexes receives column handles and returns an array of index calls."),
   tablePage(11, "checks", "Checks", "A check is named SQL."),
   tablePage(12, "filters", "Filters", "filters() allowlists what a caller may send."),
-  tablePage(13, "traits", "Traits", "Schema traits are the defaults. A table adds its own, or opts out."),
+  tablePage(13, "traits", "Traits", "trait() adds columns. The schema list is the default. A table adds its own, or opts out."),
   tablePage(14, "tenancy", "Tenancy", "Schema tenancy adds the key to every table."),
   tablePage(15, "presets", "Presets", "A preset is a named refinement you call on the table."),
   tablePage(16, "reference-rows", "Reference rows", "reference declares rows the application needs."),
