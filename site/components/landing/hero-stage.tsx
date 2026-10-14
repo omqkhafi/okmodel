@@ -10,6 +10,7 @@
 
 "use client";
 
+import { ChevronLeftIcon, ChevronRightIcon } from "@/components/chrome/icons";
 import { PrismBackdrop } from "@/components/landing/prism-backdrop";
 import { cn } from "@/lib/cn";
 import { HERO_GROUPS, type HeroFinding, type HeroGroupId, type HeroRule } from "@/lib/hero";
@@ -22,7 +23,6 @@ import type {
   HeroStepView,
 } from "@/lib/hero-code";
 import { useClientReducedMotion } from "@/lib/use-client-reduced-motion";
-import { ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import {
   createContext,
@@ -580,10 +580,10 @@ export function HeroStage({ facts }: { readonly facts: ReactNode }): ReactNode {
               {count}
             </p>
             <PagerButton label="Previous" onClick={() => step(-1)}>
-              <ChevronLeft aria-hidden className="size-3.5" />
+              <ChevronLeftIcon className="size-3.5" />
             </PagerButton>
             <PagerButton label="Next" onClick={() => step(1)}>
-              <ChevronRight aria-hidden className="size-3.5" />
+              <ChevronRightIcon className="size-3.5" />
             </PagerButton>
           </div>
         </div>

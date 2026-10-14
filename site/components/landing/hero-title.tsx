@@ -7,7 +7,7 @@
 
 "use client";
 
-import { ArrowRight, Check, Copy } from "lucide-react";
+import { ArrowRightIcon, CheckIcon, ClipboardIcon } from "@/components/chrome/icons";
 import Link from "next/link";
 import { useState, type CSSProperties } from "react";
 import { HERO_HEADLINE_LINES, HERO_PILL, HERO_SUBHEAD } from "@/lib/hero-copy";
@@ -43,8 +43,7 @@ export function HeroTitle({ command }: { readonly command: string }) {
           className="group inline-flex w-fit items-center rounded-full border border-fd-border bg-fd-card px-4 py-1.5 text-xs text-fd-muted-foreground transition-colors hover:bg-fd-secondary/60"
         >
           <span className="font-medium text-fd-foreground">{HERO_PILL}</span>
-          <ArrowRight
-            aria-hidden
+          <ArrowRightIcon
             className="size-3 w-0 opacity-0 transition-[width,opacity,transform,margin] duration-200 group-hover:ml-1.5 group-hover:w-3 group-hover:translate-x-0.5 group-hover:opacity-100"
           />
         </Link>
@@ -77,10 +76,7 @@ export function HeroTitle({ command }: { readonly command: string }) {
           className="group inline-flex h-10 shrink-0 items-center justify-center rounded-md border border-transparent bg-fd-foreground px-5 text-sm leading-none font-medium text-fd-background transition-opacity hover:opacity-90"
         >
           Let&apos;s start
-          <ArrowRight
-            aria-hidden
-            className="ml-2 size-3.5 transition-transform duration-300 group-hover:translate-x-0.5"
-          />
+          <ArrowRightIcon className="ml-2 size-3.5 transition-transform duration-300 group-hover:translate-x-0.5" />
         </Link>
 
         <button
@@ -94,10 +90,9 @@ export function HeroTitle({ command }: { readonly command: string }) {
           </span>
           <span className="text-fd-foreground">{command}</span>
           {copied ? (
-            <Check aria-hidden className="size-3.5 text-fd-foreground" />
+            <CheckIcon className="size-3.5 text-fd-foreground" />
           ) : (
-            <Copy
-              aria-hidden
+            <ClipboardIcon
               className="size-3.5 text-fd-muted-foreground/60 transition-colors group-hover:text-fd-foreground"
             />
           )}
