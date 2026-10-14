@@ -33,7 +33,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 #### docs
 
 - The handbook documents those calls, including what each one refuses. Define is Schema, Connect, and Config. Start is Let's start and Basic Usage. Table is a group: one page per part of `table()`, from the key through the queries. Keys, Checks, Presets, and Reference rows are split into subsections.
-- Traits shows `trait(name, { fields })`. `touch` seals those columns and sets them to `now()` on update. `methods` and `requires` stay OKM1061.
+- Traits shows `trait(name, { fields })`. `touch` seals those columns and sets them to `now()` on update. `methods` and `requires` stay OKM1061. Each built-in trait shows the call: insert for timestamps, `archive` and `restore` for archivable, `version` on update, and `move`.
 - Docs pages drop the breadcrumb. Copy page sits on the title row and opens Markdown and chat actions. A code block focuses the line the paragraph names.
 
 ### 💥 Breaking Changes

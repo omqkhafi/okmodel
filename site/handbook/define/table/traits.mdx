@@ -115,6 +115,27 @@ export const notes = table(
 );
 ```
 
+Insert omits both columns. The row comes back with them set. Update names the fields you change. `updatedAt` moves. `createdAt` does not.
+
+```ts title="stamp.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+import { timestamps } from "okmodel/traits";
+
+const notes = table(
+  "notes",
+  { id: t.identity(), title: t.text() },
+  { traits: [timestamps()] },
+);
+const app = schema({ tables: [notes] });
+
+export async function rename(url: string, title: string) {
+  await using db = connect(url, { schema: app });
+  const note = await db.notes.insert({ title }); // [!code focus]
+  return db.notes.update({ where: { id: note.id }, set: { title: "Next" } });
+}
+```
+
 #### Archive
 
 `archivedAt` is `timestamptz` and nullable. `archiveId` is `uuid` and nullable. Both are guarded and sealed. Uniques on that table become partial. `cascade` names child tables archived and restored with the row. An empty name is refused. `strategy: "column"` keeps archived rows in the table.
@@ -137,9 +158,36 @@ export const notes = table(
 `strategy: "table"` is not available yet.
 </Callout>
 
+`archive({ where })` sets `archivedAt` and one new `archiveId`, shared with the cascaded children. It returns `{ count, archiveId }`. A later `find` does not see that row. `withArchived()` includes it. `onlyArchived()` is the archived set only. `restore({ archiveId })` restores that whole operation. `restore({ where })` restores those rows and the children that carry their `archiveId`.
+
+```ts title="retire.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+import { archivable } from "okmodel/traits";
+
+const notes = table(
+  "notes",
+  { id: t.identity(), title: t.text() },
+  { traits: [archivable()] },
+);
+const app = schema({ tables: [notes] });
+
+export async function retire(url: string, id: string) {
+  await using db = connect(url, { schema: app });
+  const saved = await db.notes.archive({ where: { id } }); // [!code focus]
+  const still = await db.notes.withArchived().find({ where: { id }, limit: 1 });
+  await db.notes.restore({ archiveId: saved.archiveId });
+  return still;
+}
+```
+
+<Callout type="error" title="OKM1052">
+`archive` and `restore` on a table that is not archivable are refused.
+</Callout>
+
 #### Versioned
 
-`version` starts at 1. An update passes the version you read, and the write bumps it. A stale write is a conflict and changes nothing. A miss stays `{ count: 0 }`. `inc` and the other atomic writes still bump `version`. `delete`, `archive`, and `restore` do not check it.
+`version` starts at 1. A stale write is a conflict and changes nothing. A miss stays `{ count: 0 }`. `inc` and the other atomic writes still bump `version`. `delete`, `archive`, and `restore` do not check it. Read the row, then pass `version` back on the update. The write bumps it.
 
 ```ts title="versioned.ts"
 import { connect } from "okmodel/pg/postgresjs";
@@ -171,7 +219,7 @@ Leaving `version` out is refused, and so is `version` on a table that is not ver
 
 #### Sortable
 
-New rows go at the end of the group. `move` places a row before or after another in that group. `find` and `page` order by `position` when you omit `orderBy`. `one()` does not. A move rewrites every row in the group. A delete leaves a gap until the next `move`.
+New rows go at the end of the group. `find` and `page` order by `position` when you omit `orderBy`. `one()` does not. A move rewrites every row in the group. A delete leaves a gap until the next `move`. `move(id, { before })` or `{ after }` places that row next to the anchor in the same group. The result is `{ position }`.
 
 ```ts title="sortable.ts"
 import { connect } from "okmodel/pg/postgresjs";
