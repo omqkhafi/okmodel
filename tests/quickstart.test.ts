@@ -1,8 +1,8 @@
 /**
- * The quickstart docs and the README are the commands this test runs.
+ * The quickstart docs and the guide (`docs/guide.md`) are the commands this test runs.
  *
  * A fence that drifts from what the test requires fails here. The project is
- * a fresh install of the packed tarball. npm shows the README, so its fences
+ * a fresh install of the packed tarball. The guide is the full walkthrough, so its fences
  * run too. `REQUIRE_DOCKER=1` runs those paths on the topology and skips the
  * in-process server, which the check job already runs.
  */
@@ -53,7 +53,7 @@ afterAll(() => {
 });
 
 if (process.env.REQUIRE_DOCKER !== "1") {
-  test("quickstart docs and the readme run from the packed tarball", async () => {
+  test("quickstart docs and the guide run from the packed tarball", async () => {
     const tarball = sharedTarball();
     const docs = await listenPostgres();
     try {
@@ -76,7 +76,7 @@ if (process.env.REQUIRE_DOCKER !== "1") {
 
 postgresTest(
   gate,
-  "quickstart docs and the readme run on postgres",
+  "quickstart docs and the guide run on postgres",
   async () => {
     const tarball = sharedTarball();
     await withIsolatedDatabases(async (urls) => {
@@ -87,8 +87,8 @@ postgresTest(
   360_000,
 );
 
-test("the topology example in the readme is the docs sample", () => {
-  const readme = fenceSource(join(root, "README.md"), "replicas.ts");
+test("the topology example in the guide is the docs sample", () => {
+  const readme = fenceSource(join(root, "docs/guide.md"), "replicas.ts");
   const docs = fenceSource(join(root, "docs/readme-examples.md"), "replicas.ts");
   expect(docs).toBe(readme);
   expect(readme).toContain("onRoute");
@@ -186,7 +186,7 @@ async function runDocs(tarball: string, url: string): Promise<void> {
 }
 
 /**
- * Runs the README's push path and its generate-then-apply path on two databases.
+ * Runs the guide's push path and its generate-then-apply path on two databases.
  *
  * Push has to run before generate. Generate writes a catalog snapshot, and a
  * later push diffs against that snapshot and applies nothing.
@@ -205,21 +205,21 @@ async function runReadme(
   referenceUrl: string,
   replay: boolean,
 ): Promise<void> {
-  const path = join(root, "README.md");
+  const path = join(root, "docs/guide.md");
   const markdown = readFileSync(path, "utf8");
   expect(markdown).toContain('t.identity({ as: "number" })');
   expect(markdown).toContain("PostgreSQL 15 to 18");
   expect(markdown).toContain("await using");
   expect(markdown).toContain("pick one per database");
   if (markdown.includes("db.connected")) {
-    throw new Error("README.md awaits db.connected. Every call already waits for it.");
+    throw new Error("docs/guide.md awaits db.connected. Every call already waits for it.");
   }
   const fences = markdownFences(markdown);
   const commands = fences
     .filter((fence) => fence.lang === "sh")
     .flatMap((fence) => shellCommands(fence.code));
   if (commands.some((line) => line.split(/\s+/).includes("build") && line.includes("okm"))) {
-    throw new Error("README.md quickstart runs okm build. generate writes .okm.");
+    throw new Error("docs/guide.md quickstart runs okm build. generate writes .okm.");
   }
   const files = typescriptFiles(fences, README_FILES, path);
   const script = readmeScript(fences);
@@ -237,7 +237,7 @@ async function runReadme(
     if (line.startsWith("bunx okm push")) {
       if (generated) {
         throw new Error(
-          "README.md runs okm generate before okm push, so push would see no changes.",
+          "docs/guide.md runs okm generate before okm push, so push would see no changes.",
         );
       }
       push.push(line);
@@ -245,7 +245,7 @@ async function runReadme(
     }
     if (line.startsWith("bunx okm generate")) {
       if (line.split(/\s+/).length < 4) {
-        throw new Error("README.md runs okm generate without a migration name.");
+        throw new Error("docs/guide.md runs okm generate without a migration name.");
       }
       generated = true;
       migrate.push(line);
@@ -259,30 +259,30 @@ async function runReadme(
       seed.push(line);
       continue;
     }
-    throw new Error(`README.md has a shell command the test does not run: ${line}`);
+    throw new Error(`docs/guide.md has a shell command the test does not run: ${line}`);
   }
-  if (installs.length === 0) throw new Error("README.md has no install command");
-  if (push.length !== 1) throw new Error("README.md must run okm push once");
+  if (installs.length === 0) throw new Error("docs/guide.md has no install command");
+  if (push.length !== 1) throw new Error("docs/guide.md must run okm push once");
   if (!migrate.some((line) => line.startsWith("bunx okm generate"))) {
-    throw new Error("README.md does not run okm generate");
+    throw new Error("docs/guide.md does not run okm generate");
   }
   if (!migrate.some((line) => line.startsWith("bunx okm migrate apply"))) {
-    throw new Error("README.md does not run okm migrate apply");
+    throw new Error("docs/guide.md does not run okm migrate apply");
   }
-  if (seed.length !== 1) throw new Error("README.md must run okm seed once");
+  if (seed.length !== 1) throw new Error("docs/guide.md must run okm seed once");
   const backfill = fences.find(
     (fence) => fence.lang === "sql" && fence.code.includes("-- backfill"),
   );
-  if (backfill === undefined) throw new Error("README.md has no backfill step");
+  if (backfill === undefined) throw new Error("docs/guide.md has no backfill step");
   const recipe = fences.find(
     (fence) => fence.lang === "yaml" && fence.code.includes("bunx okm migrate check"),
   );
-  if (recipe === undefined) throw new Error("README.md has no migrate check recipe");
+  if (recipe === undefined) throw new Error("docs/guide.md has no migrate check recipe");
   const reference = files.get("reference.ts");
   const config = files.get("okmodel.config.ts");
   const factory = files.get("factory.ts");
   if (reference === undefined || config === undefined || factory === undefined) {
-    throw new Error("README.md is missing reference.ts, okmodel.config.ts, or factory.ts");
+    throw new Error("docs/guide.md is missing reference.ts, okmodel.config.ts, or factory.ts");
   }
   await withProject(tarball, files, installs, async (dir) => {
     const checked = await command(dir, ["bunx", "okm", "check"], { DATABASE_URL: pushUrl });
@@ -503,38 +503,39 @@ function readmeScript(fences: readonly MarkdownFence[]): string {
     if (name === undefined) usage.push(fence.code);
     else labeled.push(fence.code);
   }
-  if (usage.length === 0) throw new Error("README.md has no usage blocks");
+  if (usage.length === 0) throw new Error("docs/guide.md has no usage blocks");
   const script = usage.join("\n");
   const sources = [...labeled, script].join("\n");
-  if (UUID_LITERAL.test(sources)) throw new Error("README.md hard-codes a UUID");
+  if (UUID_LITERAL.test(sources)) throw new Error("docs/guide.md hard-codes a UUID");
   if (sources.includes("crypto.randomUUID()")) {
-    throw new Error("README.md supplies ids with crypto.randomUUID()");
+    throw new Error("docs/guide.md supplies ids with crypto.randomUUID()");
   }
-  if (!sources.includes("t.identity()")) throw new Error("README.md does not use t.identity()");
-  if (sources.includes("t.id()")) throw new Error("README.md mentions t.id()");
+  if (!sources.includes("t.identity()")) throw new Error("docs/guide.md does not use t.identity()");
+  if (sources.includes("t.id()")) throw new Error("docs/guide.md mentions t.id()");
   if (!sources.includes("t.bigint()")) {
-    throw new Error("README.md foreign key is not t.bigint()");
+    throw new Error("docs/guide.md foreign key is not t.bigint()");
   }
   if (!script.includes('db.authors.insert({ name: "Ada" })')) {
-    throw new Error("README.md does not insert an author by name");
+    throw new Error("docs/guide.md does not insert an author by name");
   }
-  if (!script.includes("include:")) throw new Error("README.md find has no include");
-  if (!script.includes("safe(")) throw new Error("README.md does not call safe");
-  if (!script.includes("OkmError")) throw new Error("README.md does not use OkmError");
-  if (!script.includes("note.id")) throw new Error("README.md does not query note.id");
+  if (!script.includes("include:")) throw new Error("docs/guide.md find has no include");
+  if (!script.includes("safe(")) throw new Error("docs/guide.md does not call safe");
+  if (!script.includes("OkmError")) throw new Error("docs/guide.md does not use OkmError");
+  if (!script.includes("note.id")) throw new Error("docs/guide.md does not query note.id");
   if (!sources.includes("export default schema(")) {
-    throw new Error("README.md schema is not a default export");
+    throw new Error("docs/guide.md schema is not a default export");
   }
   if (!sources.includes('import schema from "./schema.ts"')) {
-    throw new Error("README.md does not import the default schema");
+    throw new Error("docs/guide.md does not import the default schema");
   }
   if (!sources.includes("connect(url, { schema })")) {
-    throw new Error("README.md does not pass the default schema to connect");
+    throw new Error("docs/guide.md does not pass the default schema to connect");
   }
   const last = usage.at(-1) ?? "";
-  if (!last.includes("db.close()")) throw new Error("README.md does not close in the last block");
+  if (!last.includes("db.close()"))
+    throw new Error("docs/guide.md does not close in the last block");
   if (usage.slice(0, -1).some((block) => block.includes("db.close()"))) {
-    throw new Error("README.md closes the client outside the short script");
+    throw new Error("docs/guide.md closes the client outside the short script");
   }
   return script;
 }

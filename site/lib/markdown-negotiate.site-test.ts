@@ -48,7 +48,7 @@ test("a docs path negotiates to its markdown twin", () => {
   expect(markdownTwinPath("/")).toBe("/llms.mdx/home");
   expect(markdownTwinPath("/changelog")).toBe("/llms.mdx/releases");
 
-  const request = new Request("https://okmodel.omqkhafi.dev/docs/start", {
+  const request = new Request("https://okm.omqkhafi.dev/docs/start", {
     headers: { accept: "text/markdown" },
   });
   expect(markdownNegotiation(request)).toEqual({
@@ -58,12 +58,12 @@ test("a docs path negotiates to its markdown twin", () => {
 });
 
 test("html and machine routes are not rewritten", () => {
-  const html = new Request("https://okmodel.omqkhafi.dev/docs/start", {
+  const html = new Request("https://okm.omqkhafi.dev/docs/start", {
     headers: { accept: "text/html" },
   });
   expect(markdownNegotiation(html)).toEqual({ kind: "pass" });
 
-  const sitemap = new Request("https://okmodel.omqkhafi.dev/sitemap.xml", {
+  const sitemap = new Request("https://okm.omqkhafi.dev/sitemap.xml", {
     headers: { accept: "text/markdown" },
   });
   expect(markdownNegotiation(sitemap)).toEqual({ kind: "pass" });

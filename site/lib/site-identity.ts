@@ -11,7 +11,7 @@ export const SITE_NAME = "OKModel";
  * `SITE_ORIGIN` overrides the default when the site is served elsewhere.
  */
 export const SITE_ORIGIN = (
-  process.env.SITE_ORIGIN ?? "https://okmodel.omqkhafi.dev"
+  process.env.SITE_ORIGIN ?? "https://okm.omqkhafi.dev"
 ).replace(/\/$/, "");
 
 /** SPDX Apache-2.0 deed. Matches the root `package.json` license. */

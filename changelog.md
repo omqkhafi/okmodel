@@ -129,7 +129,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The home page hero reads "Edit your schema. Get a safe migration." with a pitch for the migration, lint, and types the stage shows. The package description is unchanged.
 - Known limits record the lost-connection release path and that a sortable move is O(n) per group.
 - The changelog page shows `## Unreleased` as next until the release.
-- The npm README covers tenancy, roles and column grants, and `okm migrate check`.
+- The published README is the short page: the logo, install, a schema, `okm push`, and basic usage. The full walkthrough is `docs/guide.md`. A README image has to be an absolute `https://` URL. The docs site is `https://okm.omqkhafi.dev`.
 
 ## v0.6.0 — 2026-10-11
 

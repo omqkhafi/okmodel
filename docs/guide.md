@@ -1,4 +1,4 @@
-# OKModel
+# OKModel guide
 
 okmodel is a catalog-first TypeScript ORM, PostgreSQL first. Other SQL databases are the direction. CI runs PostgreSQL 15 to 18. The schema is the single source. Migrations and queries come from it.
 

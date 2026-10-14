@@ -22,14 +22,20 @@ Every behavior change ships with a test. Repository checks that can fail have a 
 
 ## Commits
 
-Every commit message ends with exactly these two trailers and nothing else. No tool attribution line.
+The subject is `type(scope): summary`, the same shape as the pull request title (`docs/github.md`). A body is optional. When the change has one, group the lines under `Added:`, `Changed:`, `Fixed:`, or `Removed:`, each followed by `- ` bullets.
+
+End the message with a `Signed-off-by:` trailer that carries your own name and email. `git commit -s` adds it. The sign-off is the DCO certificate of origin: you wrote the change, or you have the right to submit it under Apache-2.0. Do not sign off as someone else, and do not add a tool attribution line.
 
 ```
-Signed-off-by: Omq Khafi <omqkhafi@gmail.com>
-Co-authored-by: Ali Alnaghmoush <alialnaghmoush@gmail.com>
+fix(scope): summary
+
+Fixed:
+- What was wrong and what changed
+
+Signed-off-by: Your Name <you@example.com>
 ```
 
-The sign-off is the DCO certificate of origin.
+The maintainers' commits in this repository also end with `Co-authored-by: Ali Alnaghmoush <alialnaghmoush@gmail.com>`. Contributors do not add it.
 
 ## Toolchain
 

@@ -36,7 +36,7 @@ export function readRootPackage(): RootPackage {
 }
 
 /**
- * One-line positioning. The package description and the README's first
+ * One-line positioning. The package description and the README tagline's first
  * sentence are the same claim; the build stops when they drift.
  */
 export function readTagline(): string {
@@ -103,15 +103,12 @@ function readReadme(): string {
 }
 
 /**
- * First sentence of the README, after the title.
+ * First sentence of the README tagline, the `<em>` line under the logo.
  */
 export function readmePositioningSentence(): string {
   const raw = readReadme().replace(/\r\n/g, "\n");
-  const start = raw.indexOf("\n");
-  if (start < 0) throw new Error("README has no body");
-  const rest = raw.slice(start + 1).trimStart();
-  const paragraph = rest.split("\n\n")[0] ?? "";
-  const sentence = paragraph.split(/(?<=\.)\s/)[0]?.trim() ?? "";
+  const tagline = /<em>([\s\S]*?)<\/em>/.exec(raw)?.[1]?.replace(/\s+/g, " ").trim() ?? "";
+  const sentence = tagline.split(/(?<=\.)\s/)[0]?.trim() ?? "";
   if (sentence.length === 0) throw new Error("README has no positioning sentence");
   return sentence;
 }
