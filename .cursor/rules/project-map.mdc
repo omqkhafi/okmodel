@@ -22,7 +22,7 @@ contracts → dialects → adapters → runtime → tooling. Adapters import con
 - `tests/` — flat: `*.test.ts`, `*-pg.test.ts` (real Postgres), `*.test-d.ts` (expect-type), `*.property.test.ts`, `*.worker.ts` (spawned by a test).
 - `packages/harness/src/` — Docker topology (`docker-cli.ts`, `topology.ts`), `postgres-test.ts`, driver/error/tx suites. Others: `packages/bench`, `attest`, `spikes`, `reference-app`.
 - `scripts/` — every check script (size, type-cost, postgres-suite, verify, bump, release-check…).
-- `site/` — docs site (Next); handbook pages in `site/handbook/*.mdx`. User-visible behavior changes update the site docs too.
+- `site/` — docs site (Next); handbook pages in `site/content/docs/**/*.mdx`, sidebar order in each folder's `meta.json`. User-visible behavior changes update the site docs too.
 
 ## Where each concern lives
 - Error kinds: `ERROR_KINDS` / `ErrorKind` in `src/contracts/error.ts`. SQLSTATE mapping: `src/dialects/pg/errors.ts`; driver errors: `src/adapters/error.ts`, `src/adapters/failure.ts`.

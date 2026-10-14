@@ -25,15 +25,21 @@ export function markdownTwinPath(pathname: string): string | undefined {
 
   if (path === "/docs") return "/llms.mdx/docs/index.md";
   if (path === "/docs/start/query" || path === "/docs/start/install") return "/llms.mdx/docs/start.md";
-  if (path === "/docs/model/schema" || path === "/docs/model/safety") return "/llms.mdx/docs/define/table.md";
-  if (path === "/docs/model/queries") return "/llms.mdx/docs/start/queries.md";
-  if (path === "/docs/ship/migrations") return "/llms.mdx/docs/define/config.md";
-  if (path === "/docs/ship/drivers") return "/llms.mdx/docs/define/connect.md";
-  if (path === "/docs/reference/known-limits") return "/llms.mdx/docs/known-limits.md";
-  if (path.startsWith("/docs/reference/")) return "/llms.mdx/docs/index.md";
-  if (path === "/docs/config" || path.startsWith("/docs/config/")) return "/llms.mdx/docs/define/config.md";
-  if (path === "/docs/schema" || path.startsWith("/docs/schema/")) return "/llms.mdx/docs/define/schema.md";
-  if (path === "/docs/table" || path.startsWith("/docs/table/")) return "/llms.mdx/docs/define/table.md";
+  if (path === "/docs/model/schema") return "/llms.mdx/docs/define/table.md";
+  if (path === "/docs/model/safety") return "/llms.mdx/docs/define/table/visibility.md";
+  if (path === "/docs/model/queries" || path === "/docs/start/queries") {
+    return "/llms.mdx/docs/define/table/queries.md";
+  }
+  if (path === "/docs/ship/migrations") return "/llms.mdx/docs/define/config/migrations.md";
+  if (path === "/docs/ship/drivers") return "/llms.mdx/docs/define/connect/drivers.md";
+  if (path.startsWith("/docs/define/connect/")) {
+    const folded = connectMarkdownTwin(path.slice("/docs/define/connect/".length));
+    if (folded !== undefined) return folded;
+  }
+  if (path === "/docs/known-limits" || path.startsWith("/docs/reference/")) return "/llms.mdx/docs/index.md";
+  if (path === "/docs/config" || path.startsWith("/docs/config/")) return configMarkdownTwin(path);
+  if (path === "/docs/schema" || path.startsWith("/docs/schema/")) return schemaMarkdownTwin(path);
+  if (path === "/docs/table" || path.startsWith("/docs/table/")) return tableMarkdownTwin(path);
   if (path.startsWith("/docs/")) {
     const rest = path.slice("/docs/".length);
     if (rest.length === 0) return "/llms.mdx/docs/index.md";
@@ -48,6 +54,127 @@ export function markdownTwinPath(pathname: string): string | undefined {
   }
 
   return undefined;
+}
+
+/** Old `/docs/config/...` paths, one markdown file per Config page. */
+const CONFIG_PAGES = new Set([
+  "schema",
+  "database",
+  "tables",
+  "migrations",
+  "out",
+  "timeouts",
+  "pooler",
+  "lint-from",
+  "backfill",
+  "roles",
+]);
+
+/** Retired config slugs whose public name changed. */
+const CONFIG_SLUG_ALIASES: Readonly<Record<string, string>> = {
+  targets: "database",
+  paths: "schema",
+  lint: "lint-from",
+};
+
+/**
+ * Markdown twin for a retired `/docs/config` URL.
+ *
+ * @param path - Request pathname without a trailing slash
+ */
+function configMarkdownTwin(path: string): string {
+  if (path === "/docs/config") return "/llms.mdx/docs/define/config.md";
+  const raw = path.slice("/docs/config/".length);
+  const slug = CONFIG_SLUG_ALIASES[raw] ?? raw;
+  if (CONFIG_PAGES.has(slug)) return `/llms.mdx/docs/define/config/${slug}.md`;
+  return "/llms.mdx/docs/define/config.md";
+}
+
+/**
+ * Connect pages that folded into another page. The slug is the old child.
+ * The value is the markdown twin of the page that now holds the topic.
+ */
+const CONNECT_FOLDED: Readonly<Record<string, string>> = {
+  close: "/llms.mdx/docs/define/connect.md",
+  pool: "/llms.mdx/docs/define/connect/session.md",
+  prepared: "/llms.mdx/docs/define/connect/session.md",
+  tls: "/llms.mdx/docs/define/connect/session.md",
+  "search-path": "/llms.mdx/docs/define/connect/session.md",
+  timeouts: "/llms.mdx/docs/define/connect/session.md",
+  "require-meta": "/llms.mdx/docs/define/connect/check.md",
+  catalog: "/llms.mdx/docs/define/connect/check.md",
+};
+
+/**
+ * Markdown twin for a retired Connect child, or `undefined` when the slug is still a page.
+ *
+ * @param slug - Path after `/docs/define/connect/`
+ */
+function connectMarkdownTwin(slug: string): string | undefined {
+  return CONNECT_FOLDED[slug];
+}
+
+/** Old `/docs/schema/...` paths, one markdown file per Schema page. */
+const SCHEMA_PAGES = new Set([
+  "tables",
+  "casing",
+  "codecs",
+  "types",
+  "defaults",
+  "requires",
+  "traits",
+  "tenancy",
+  "validation",
+  "extensions",
+  "functions",
+  "triggers",
+  "views",
+]);
+
+/**
+ * Markdown twin for a retired `/docs/schema` URL.
+ *
+ * @param path - Request pathname without a trailing slash
+ */
+function schemaMarkdownTwin(path: string): string {
+  if (path === "/docs/schema") return "/llms.mdx/docs/define/schema.md";
+  const slug = path.slice("/docs/schema/".length);
+  if (SCHEMA_PAGES.has(slug)) return `/llms.mdx/docs/define/schema/${slug}.md`;
+  return "/llms.mdx/docs/define/schema.md";
+}
+
+/** Old `/docs/table/...` paths, one markdown file per Table page. */
+const TABLE_PAGES = new Set([
+  "keys",
+  "columns",
+  "defaults",
+  "shape",
+  "names",
+  "visibility",
+  "validation",
+  "references",
+  "relations",
+  "indexes",
+  "checks",
+  "filters",
+  "traits",
+  "tenancy",
+  "presets",
+  "reference-rows",
+  "queries",
+]);
+
+/**
+ * Markdown twin for a retired `/docs/table` URL.
+ *
+ * @param path - Request pathname without a trailing slash
+ */
+function tableMarkdownTwin(path: string): string {
+  if (path === "/docs/table") return "/llms.mdx/docs/define/table.md";
+  const rest = path.slice("/docs/table/".length);
+  const slug = rest === "reference" ? "reference-rows" : rest;
+  if (TABLE_PAGES.has(slug)) return `/llms.mdx/docs/define/table/${slug}.md`;
+  return "/llms.mdx/docs/define/table.md";
 }
 
 /**

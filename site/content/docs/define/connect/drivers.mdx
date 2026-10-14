@@ -1,0 +1,92 @@
+---
+title: "Drivers"
+description: "Import connect from the driver you installed."
+---
+Import `connect` from the driver you installed. The calls on the client do not change.
+
+| Import | Driver | Returns |
+| --- | --- | --- |
+| `okmodel/pg/postgresjs` | postgres.js | The client. A topology is a promise. |
+| `okmodel/pg/pg` | node-postgres | The client. A topology is a promise. |
+| `okmodel/pg/bun` | Bun.sql | The client. A topology is a promise. Another runtime cannot load this entry. |
+| `okmodel/pg/pglite` | PGlite | A promise. Opening the database is async. |
+
+A string or a pool returns the client for postgres.js, node-postgres, and Bun.sql. `{ primary, replicas }` returns a promise. That object is [Topology](/docs/define/connect/topology). PGlite returns a promise for a string, a pool, omitted memory, and a topology.
+
+When the schema names no floor, a server below 15 is OKM1803. [Requires](/docs/define/schema/requires) is that floor. The test suite runs on 15, 16, 17, and 18.
+
+### postgres.js
+
+`describe` is true. `cancel` is true. The peer package is `postgres`.
+
+```ts title="postgresjs.ts"
+import { connect } from "okmodel/pg/postgresjs"; // [!code focus]
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+
+export const db = connect(process.env.DATABASE_URL!, { schema: app });
+```
+
+### node-postgres
+
+`describe` is false. It cannot describe a statement without running it. `cancel` is true. The peer package is `pg`.
+
+```ts title="pg.ts"
+import { connect } from "okmodel/pg/pg"; // [!code focus]
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+
+export const db = connect(process.env.DATABASE_URL!, { schema: app });
+```
+
+### Bun.sql
+
+Another runtime cannot load the `bun` import. There is no package to install. `describe` is false. `RAISE NOTICE` is not surfaced. `cancel` is false.
+
+```ts title="bun.ts"
+import { connect } from "okmodel/pg/bun"; // [!code focus]
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+
+export const db = connect(process.env.DATABASE_URL!, { schema: app });
+```
+
+### PGlite
+
+PGlite runs in this process. The pool size is one. `describe` is true. `cancel` is false. The peer package is `@electric-sql/pglite`. A string is a data directory. A pool and omitted memory are promises too. Omitted opens `memory://`.
+
+```ts title="pglite.ts"
+import { connect } from "okmodel/pg/pglite"; // [!code focus]
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+
+export const db = await connect("./data", { schema: app }); // [!code focus]
+```
+
+### timeout
+
+Bun.sql and PGlite refuse a positive `timeout` on a call, on `tx()`, and on `batch()`. The keys and the messages are on [Timeouts](/docs/define/connect/session#timeouts).

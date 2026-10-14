@@ -1,0 +1,42 @@
+---
+title: "Timeouts"
+description: "timeouts sets lock_timeout and statement_timeout for apply."
+---
+`timeouts` sets `lock_timeout` and `statement_timeout` for apply. Both values are milliseconds. A flag overrides the config for that invocation. `0` disables the timeout. Connect ceilings are a separate [timeouts](/docs/define/connect/session#timeouts) object.
+
+| Field | Required | Default | Role |
+| --- | --- | --- | --- |
+| `lock` | no | `5000` | `lock_timeout` when apply omits the field and the flag. `--lock-timeout` overrides it. |
+| `statement` | no | `30000` | `statement_timeout` when apply omits the field and the flag. `--statement-timeout` overrides it. |
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: process.env.DATABASE_URL!,
+  timeouts: {
+    lock: 2000, // [!code focus]
+    statement: 15000, // [!code focus]
+  },
+});
+```
+
+`--lock-timeout` and `--statement-timeout` need a finite number of milliseconds that is not negative. A missing value fails the same way. The message is `--lock-timeout needs a number of milliseconds.` The same sentence names `--statement-timeout`.
+
+### commands
+
+| Command | `timeouts` | Flag |
+| --- | --- | --- |
+| `okm migrate apply` | Used when the flag is omitted. | `--lock-timeout`, `--statement-timeout`. |
+| `okm migrate check` | Sets a field only when the config has it. Omit a field and that timeout stays unset. | Not applied. |
+| `okm push`, `provision()` | Not read. Both stay `5000` and `30000`. | Not applied. |
+| `okm check` | Not read. The command does not set either timeout. | Not applied. |
+
+`okm check`, `okm push`, and `okm migrate check` still parse the flag, so a bad number is refused. The value is not applied. `provision()` takes no flag.
+
+### session
+
+Apply sets the two values on the session. `okm migrate check` sets them for its transaction.
+
+A backfill batch sets `lock_timeout` to the apply lock timeout. It sets `statement_timeout` to `backfill.statementTimeoutMs` when that field is set, and to the apply `statement` timeout otherwise.

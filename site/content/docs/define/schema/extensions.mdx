@@ -1,0 +1,235 @@
+---
+title: "Extensions"
+description: "Extension definitions. schema() does not install them."
+---
+`extensions` is a list. Each value contributes its catalog record when the catalog is first read. `schema()` does not install the extension. Migrate writes `create extension` before the table that needs it. An omitted list, an empty list, and a value that is not a list add no extension record.
+
+`citext()`, `pgTrgm()`, and `extension("name")` take the same options.
+
+### citext
+
+`citext()` from `okmodel/pg/citext` declares `citext`. A [citext](/docs/define/table/columns#citext) column needs that name.
+
+```ts title="citext.ts"
+import { citext } from "okmodel/pg/citext";
+import { schema, table, t } from "okmodel/pg";
+
+const people = table("people", {
+  id: t.identity(),
+  email: t.citext(), // [!code focus]
+});
+
+export default schema({
+  tables: [people],
+  extensions: [citext()], // [!code focus]
+});
+```
+
+### trigram
+
+`pgTrgm()` from `okmodel/pg/pg_trgm` declares `pg_trgm`. `similar` and `wordSimilar` compare a string. `gin` and `gist` build an index on a SQL column name.
+
+#### where
+
+`similar` is `column % query`. `wordSimilar` is `column <% query`. Both take the text to compare.
+
+```ts title="where.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { pgTrgm } from "okmodel/pg/pg_trgm";
+import { schema, table, t } from "okmodel/pg";
+
+const trgm = pgTrgm();
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({
+  tables: [notes],
+  extensions: [trgm], // [!code focus]
+});
+
+export async function search(url: string, title: string) {
+  await using db = connect(url, { schema: app });
+  return db.notes.find({
+    where: { title: trgm.similar(title) }, // [!code focus]
+    limit: 1,
+  });
+}
+```
+
+#### index
+
+`gin` uses `gin_trgm_ops`. `gist` uses `gist_trgm_ops`. The argument is the SQL column name.
+
+```ts title="index.ts"
+import { pgTrgm } from "okmodel/pg/pg_trgm";
+import { schema, table, t } from "okmodel/pg";
+
+const trgm = pgTrgm();
+
+const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text(),
+  },
+  { indexes: (column) => [trgm.gin(column.title.name)] }, // [!code focus]
+);
+
+export default schema({
+  tables: [notes],
+  extensions: [trgm],
+});
+```
+
+### name
+
+`extension("name")` from `okmodel/ext` declares that name. There is no typed operator. `ltree` is this form. A [ltree](/docs/define/table/columns#search) column needs it.
+
+```ts title="name.ts"
+import { extension } from "okmodel/ext";
+import { schema, table, t } from "okmodel/pg";
+
+const places = table("places", {
+  id: t.identity(),
+  path: t.ltree(),
+});
+
+export default schema({
+  tables: [places],
+  extensions: [extension("ltree")], // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1020">
+A `citext` or `ltree` column, when this list is omitted or empty, is `column email depends on extension citext, which is not in the catalog.` The name in that sentence is the column, then the extension.
+</Callout>
+
+<Callout type="error" title="OKM1810">
+A list that declares a different extension is `Extension citext is used but not declared.` A value in the list that is not an extension is `schema({ extensions }) must be a list of extensions.`
+</Callout>
+
+<Callout type="error" title="OKM1813">
+The same name twice is `Extension citext is defined twice.`
+</Callout>
+
+### options
+
+Every call takes `version`, `schema`, and `relocatable`. Omitted, the version is unpinned, the schema is `public`, and `relocatable` is `true`. An unpinned record matches any installed version. Schema and `relocatable` still have to match.
+
+#### version
+
+`1.6` is an exact pin. Migrate writes `version '1.6'`. `>=1.6` is a floor. It is stored and is not written. A shorter tail compares as zero.
+
+```ts title="version.ts"
+import { citext } from "okmodel/pg/citext";
+import { schema, table, t } from "okmodel/pg";
+
+const people = table("people", {
+  id: t.identity(),
+  email: t.citext(),
+});
+
+export default schema({
+  tables: [people],
+  extensions: [citext({ version: "1.6" })], // [!code focus]
+});
+```
+
+A floor asks for that version or newer and does not pin `create extension`.
+
+```ts title="floor.ts"
+import { citext } from "okmodel/pg/citext";
+import { schema, table, t } from "okmodel/pg";
+
+const people = table("people", {
+  id: t.identity(),
+  email: t.citext(),
+});
+
+export default schema({
+  tables: [people],
+  extensions: [citext({ version: ">=1.6" })], // [!code focus]
+});
+```
+
+#### schema
+
+`schema` is where the extension's objects are installed. The default is `public`.
+
+```ts title="schema-name.ts"
+import { extension } from "okmodel/ext";
+import { schema, table, t } from "okmodel/pg";
+
+const places = table("places", {
+  id: t.identity(),
+  path: t.ltree(),
+});
+
+export default schema({
+  tables: [places],
+  extensions: [extension("ltree", { schema: "extensions" })], // [!code focus]
+});
+```
+
+#### relocatable
+
+`relocatable: false` refuses a later move. The default `true` allows `alter extension … set schema`.
+
+```ts title="relocatable.ts"
+import { citext } from "okmodel/pg/citext";
+import { schema, table, t } from "okmodel/pg";
+
+const people = table("people", {
+  id: t.identity(),
+  email: t.citext(),
+});
+
+export default schema({
+  tables: [people],
+  extensions: [citext({ relocatable: false })], // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1020">
+A version that is neither a dotted pin nor a `>=` floor is `Extension version latest must be a dotted version or a >= floor.`
+</Callout>
+
+<Callout type="error" title="OKM1811">
+An extension the server does not have is `Extension citext is not available on the server. Nothing was changed.`
+</Callout>
+
+<Callout type="error" title="OKM1814">
+A move of a non-relocatable extension is `Extension citext is not relocatable, so it cannot move to extensions.` A lower pin is `Extension citext cannot move from 1.6 to 1.5. Postgres cannot lower an extension version.` No update path is `Extension citext has no update path from 1.4 to 1.6. Nothing was changed.` Dependents still using it are `Extension citext still has dependents. Nothing was dropped.`
+</Callout>
+
+### together
+
+`citext` for the column, `pg_trgm` for the index, and `ltree` by name.
+
+```ts title="together.ts"
+import { extension } from "okmodel/ext";
+import { citext } from "okmodel/pg/citext";
+import { pgTrgm } from "okmodel/pg/pg_trgm";
+import { schema, table, t } from "okmodel/pg";
+
+const trgm = pgTrgm({ version: "1.6" });
+
+const people = table(
+  "people",
+  {
+    id: t.identity(),
+    email: t.citext(),
+    title: t.text(),
+    path: t.ltree(),
+  },
+  { indexes: (column) => [trgm.gin(column.title.name)] },
+);
+
+export default schema({
+  tables: [people],
+  extensions: [citext(), trgm, extension("ltree")], // [!code focus]
+});
+```

@@ -1,0 +1,19 @@
+{
+  "title": "Schema",
+  "pages": [
+    "index",
+    "tables",
+    "casing",
+    "codecs",
+    "types",
+    "defaults",
+    "requires",
+    "traits",
+    "tenancy",
+    "validation",
+    "extensions",
+    "functions",
+    "triggers",
+    "views"
+  ]
+}

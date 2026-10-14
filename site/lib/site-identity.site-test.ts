@@ -20,13 +20,13 @@ import { githubRepoUrl, npmPackageUrl } from "./shared";
 
 test("the origin, name, and license live in site-identity", () => {
   const identity = readFileSync(join(repoRoot(), "site/lib/site-identity.ts"), "utf8");
-  expect(identity).toContain("https://okmodel.omqkhafi.dev");
+  expect(identity).toContain("https://okm.omqkhafi.dev");
   expect(SITE_NAME).toBe("OKModel");
-  expect(SITE_ORIGIN).toBe(process.env.SITE_ORIGIN?.replace(/\/$/, "") ?? "https://okmodel.omqkhafi.dev");
+  expect(SITE_ORIGIN).toBe(process.env.SITE_ORIGIN?.replace(/\/$/, "") ?? "https://okm.omqkhafi.dev");
   expect(SITE_LICENSE_URL).toBe("https://www.apache.org/licenses/LICENSE-2.0");
 
   const sources = readFileSync(join(repoRoot(), "site/lib/site-identity.ts"), "utf8");
-  const originHits = sources.split("https://okmodel.omqkhafi.dev").length - 1;
+  const originHits = sources.split("https://okm.omqkhafi.dev").length - 1;
   expect(originHits).toBe(1);
 });
 
@@ -68,7 +68,7 @@ test("the default origin is not repeated outside site-identity", () => {
   ];
   for (const file of files) {
     const text = readFileSync(join(repoRoot(), file), "utf8");
-    expect(text.includes("https://okmodel.omqkhafi.dev"), file).toBe(false);
+    expect(text.includes("https://okm.omqkhafi.dev"), file).toBe(false);
     expect(text.includes('SITE_NAME = "'), file).toBe(false);
   }
 });

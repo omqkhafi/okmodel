@@ -54,7 +54,9 @@ export type BucketInput = {
  * Groups a timestamp or date column by a calendar or clock unit.
  *
  * `tz` is required for `timestamptz` and refused for `date`. `timestamp`
- * without a zone is refused. `as` is the result key. `weekStart` applies only
+ * without a zone is refused. `as` is the result key. `__proto__`, `constructor`,
+ * `toString`, and `hasOwnProperty` are refused when the aggregate runs.
+ * `weekStart` applies only
  * to `week` and defaults to Monday. A NULL timestamp is its own group: the
  * `as` key is present and the value is null.
  *

@@ -1,0 +1,16 @@
+{
+  "title": "Config",
+  "pages": [
+    "index",
+    "schema",
+    "database",
+    "tables",
+    "migrations",
+    "out",
+    "timeouts",
+    "pooler",
+    "lint-from",
+    "backfill",
+    "roles"
+  ]
+}

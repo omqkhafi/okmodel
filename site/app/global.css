@@ -166,17 +166,136 @@ html {
   box-shadow: inset 2px 0 0 var(--color-fd-primary);
 }
 
+
 /*
- * Hovering a place in a Define anatomy lights that place in the sample and
- * in the notes. A new `data-slot` needs a row in this rule.
+ * Homepage hero.
+ *
+ * Grid utilities adapted from better-auth docs/app/globals.css (see site/NOTICE).
  */
-.anatomy:is(:has([data-slot="name"]:hover), :has([data-slot="name"]:focus-within)) [data-slot="name"],
-.anatomy:is(:has([data-slot="columns"]:hover), :has([data-slot="columns"]:focus-within)) [data-slot="columns"],
-.anatomy:is(:has([data-slot="options"]:hover), :has([data-slot="options"]:focus-within)) [data-slot="options"],
-.anatomy:is(:has([data-slot="tables"]:hover), :has([data-slot="tables"]:focus-within)) [data-slot="tables"],
-.anatomy:is(:has([data-slot="sections"]:hover), :has([data-slot="sections"]:focus-within)) [data-slot="sections"],
-.anatomy:is(:has([data-slot="schema"]:hover), :has([data-slot="schema"]:focus-within)) [data-slot="schema"],
-.anatomy:is(:has([data-slot="database"]:hover), :has([data-slot="database"]:focus-within)) [data-slot="database"] {
-  background: color-mix(in oklch, var(--color-fd-primary) 14%, transparent);
-  box-shadow: inset 2px 0 0 var(--color-fd-primary);
+@layer utilities {
+  .bg-grid-black\/\[0\.02\] {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' width='32' height='32' fill='none' stroke='rgb(0 0 0 / 0.02)'%3e%3cpath d='m0 .5h32m-32 32v-32'/%3e%3c/svg%3e");
+  }
+
+  .bg-grid-white\/\[0\.02\] {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' width='32' height='32' fill='none' stroke='rgb(255 255 255 / 0.02)'%3e%3cpath d='m0 .5h32m-32 32v-32'/%3e%3c/svg%3e");
+  }
+}
+
+/*
+ * One ink per hero scenario. It tints the tab, the rail, and the prism, and
+ * follows the theme.
+ */
+:root {
+  --okm-tone-column: oklch(0.5 0.11 155);
+  --okm-tone-required: oklch(0.52 0.12 230);
+  --okm-tone-unique: oklch(0.5 0.09 195);
+  --okm-tone-foreignKey: oklch(0.5 0.12 290);
+  --okm-tone-index: oklch(0.5 0.11 255);
+  --okm-tone-rename: oklch(0.55 0.12 70);
+  --okm-tone-picklist: oklch(0.5 0.12 330);
+  --okm-tone-dropTable: oklch(0.52 0.12 15);
+  --okm-tone-timestamps: oklch(0.5 0.1 200);
+  --okm-tone-archive: oklch(0.52 0.1 45);
+  --okm-tone-enum: oklch(0.5 0.12 310);
+  --okm-tone-view: oklch(0.5 0.1 175);
+  --okm-tone-tenant: oklch(0.5 0.12 265);
+  --okm-tone-rls: oklch(0.5 0.13 20);
+  --okm-tone-include: oklch(0.5 0.12 240);
+  --okm-tone-page: oklch(0.5 0.1 125);
+  --okm-tone-aggregate: oklch(0.54 0.12 95);
+  --okm-tone-scoped: oklch(0.5 0.12 280);
+  --okm-tone-search: oklch(0.52 0.12 150);
+  --okm-tone-archived: oklch(0.52 0.1 55);
+  --okm-tone-hiddenRead: oklch(0.5 0.1 340);
+}
+
+.dark {
+  --okm-tone-column: oklch(0.74 0.09 155);
+  --okm-tone-required: oklch(0.74 0.09 230);
+  --okm-tone-unique: oklch(0.74 0.08 195);
+  --okm-tone-foreignKey: oklch(0.76 0.09 290);
+  --okm-tone-index: oklch(0.75 0.09 255);
+  --okm-tone-rename: oklch(0.8 0.1 75);
+  --okm-tone-picklist: oklch(0.77 0.1 330);
+  --okm-tone-dropTable: oklch(0.76 0.1 15);
+  --okm-tone-timestamps: oklch(0.75 0.08 200);
+  --okm-tone-archive: oklch(0.77 0.08 45);
+  --okm-tone-enum: oklch(0.75 0.1 310);
+  --okm-tone-view: oklch(0.75 0.08 175);
+  --okm-tone-tenant: oklch(0.75 0.1 265);
+  --okm-tone-rls: oklch(0.75 0.11 20);
+  --okm-tone-include: oklch(0.75 0.1 240);
+  --okm-tone-page: oklch(0.75 0.08 125);
+  --okm-tone-aggregate: oklch(0.79 0.1 95);
+  --okm-tone-scoped: oklch(0.75 0.1 280);
+  --okm-tone-search: oklch(0.77 0.1 150);
+  --okm-tone-archived: oklch(0.77 0.08 55);
+  --okm-tone-hiddenRead: oklch(0.75 0.08 340);
+}
+
+/* Settle-in for the hero copy, and the quick swap for captions that change. */
+.okm-settle {
+  animation: okm-settle 640ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--settle-delay, 0ms);
+}
+
+@keyframes okm-settle {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.okm-fade {
+  animation: okm-fade 220ms ease-out both;
+}
+
+@keyframes okm-fade {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.okm-progress {
+  transform-origin: left;
+  animation: okm-progress var(--okm-walk-ms) linear both;
+}
+
+@keyframes okm-progress {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.okm-pulse {
+  animation: okm-pulse 2.2s ease-in-out infinite;
+}
+
+@keyframes okm-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .okm-pulse {
+    animation: none;
+  }
 }

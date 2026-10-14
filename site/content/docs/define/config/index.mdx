@@ -1,0 +1,53 @@
+---
+title: "Overview"
+description: "defineConfig is the file okm reads. Each option is a page."
+---
+<Anatomy call="defineConfig" shape="object" exported>
+  <AnatomyPart slot="schema" label="Schema" code='schema: "./schema.ts",' mark="required">
+    [`schema`](/docs/define/config/schema) is required. `okm` loads this file.
+  </AnatomyPart>
+  <AnatomyPart slot="database" label="Database" code="database: process.env.DATABASE_URL!," mark="or targets">
+    [`database`](/docs/define/config/database) is one target named `default`. `targets` replaces it. Set `database` or `targets`. Both is refused.
+  </AnatomyPart>
+  <AnatomyPart slot="sections" label="Pages" code="…," mark="sections">
+    Each other field is a page in this group.
+  </AnatomyPart>
+</Anatomy>
+
+`defineConfig` is the file `okm` reads. Each option is a page.
+
+`okm` reads `okmodel.config.ts` from the project directory. The file default-exports `defineConfig` from `okmodel/migrate`.
+
+<Callout type="error" title="Refused">
+A missing `okmodel.config.ts` fails the import. An export that is not an object with a string `schema` is refused: `okmodel.config.ts must default-export defineConfig(...).`
+</Callout>
+
+<Callout type="info" title="Runtime">
+Node.js 22.18 or newer loads the config. `bunx okm` uses Node. `bun --bun okm` uses Bun.
+</Callout>
+
+## The declaration
+
+The list is how often you reach for each part while writing the file. `schema` and the target come first.
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({ // [!code focus]
+  schema: "./schema.ts",
+  database: process.env.DATABASE_URL!,
+});
+```
+
+| Order | Page | You use it for |
+| --- | --- | --- |
+| 1 | [Schema](/docs/define/config/schema) | `schema` is required. `okm` loads this file. |
+| 2 | [Database](/docs/define/config/database) | `database` is one target named `default`. `targets` replaces it. |
+| 3 | [Tables](/docs/define/config/tables) | `tables` is a directory `okm check` reads for orphan table files. |
+| 4 | [Migrations](/docs/define/config/migrations) | `migrations` is where `okm generate` writes SQL. |
+| 5 | [Out](/docs/define/config/out) | `out` is where `okm build` writes the catalog. |
+| 6 | [Timeouts](/docs/define/config/timeouts) | `timeouts` sets `lock_timeout` and `statement_timeout` for apply. |
+| 7 | [Pooler](/docs/define/config/pooler) | `allowPooler` skips the pooler-host refusal. |
+| 8 | [Lint from](/docs/define/config/lint-from) | `lintFrom` is the first migration id `okm migrate check` lints. |
+| 9 | [Backfill](/docs/define/config/backfill) | `backfill` sets batch size, pause, and batch statement timeout. |
+| 10 | [Roles](/docs/define/config/roles) | `roles` names migration, app, and optional reporting grants. |

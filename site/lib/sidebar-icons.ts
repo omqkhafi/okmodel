@@ -5,19 +5,115 @@
  */
 
 import type { LoaderPlugin } from "fumadocs-core/source";
-import { BookOpen, Braces, Cable, FileText, List, Play, Table2, Terminal, type LucideIcon } from "lucide-react";
+import {
+  BadgeCheck,
+  Binary,
+  Blocks,
+  Bookmark,
+  Boxes,
+  Braces,
+  Building,
+  Building2,
+  Cable,
+  CaseSensitive,
+  CaseUpper,
+  CircleAlert,
+  CirclePlus,
+  Columns3,
+  Crosshair,
+  Database,
+  Dices,
+  Eye,
+  FileText,
+  Fingerprint,
+  GalleryHorizontal,
+  KeyRound,
+  Layers,
+  Library,
+  Link2,
+  ListFilter,
+  ListTree,
+  Network,
+  Play,
+  Puzzle,
+  Radio,
+  Rows3,
+  Search,
+  Settings,
+  Shapes,
+  Shield,
+  ShieldCheck,
+  SquareCheck,
+  SquareFunction,
+  Table2,
+  TableProperties,
+  Terminal,
+  Timer,
+  Type,
+  Unplug,
+  Users,
+  Waypoints,
+  Zap,
+  type LucideIcon,
+} from "lucide-react";
 import { createElement, type ReactNode } from "react";
 
 /** Docs path → Lucide component. `/docs` is the landing and is not a sidebar row. */
 const PATH_ICONS: Readonly<Record<string, LucideIcon>> = {
-  "/docs/known-limits": BookOpen,
   "/docs/start": Terminal,
   "/docs/start/basic-usage": Play,
-  "/docs/start/queries": List,
-  "/docs/define/config": FileText,
+  "/docs/define/config": Settings,
+  "/docs/define/config/schema": Braces,
+  "/docs/define/config/database": Database,
+  "/docs/define/config/tables": TableProperties,
+  "/docs/define/config/migrations": FileText,
+  "/docs/define/config/out": Library,
+  "/docs/define/config/timeouts": Timer,
+  "/docs/define/config/pooler": Layers,
+  "/docs/define/config/lint-from": ShieldCheck,
+  "/docs/define/config/backfill": Rows3,
+  "/docs/define/config/roles": Users,
   "/docs/define/connect": Cable,
+  "/docs/define/connect/drivers": Unplug,
+  "/docs/define/connect/target": Crosshair,
+  "/docs/define/connect/topology": Network,
+  "/docs/define/connect/check": BadgeCheck,
+  "/docs/define/connect/session": Layers,
+  "/docs/define/connect/errors": CircleAlert,
+  "/docs/define/connect/generators": Dices,
+  "/docs/define/connect/observers": Radio,
   "/docs/define/schema": Braces,
+  "/docs/define/schema/tables": TableProperties,
+  "/docs/define/schema/casing": CaseUpper,
+  "/docs/define/schema/codecs": Binary,
+  "/docs/define/schema/types": Type,
+  "/docs/define/schema/defaults": Fingerprint,
+  "/docs/define/schema/requires": Database,
+  "/docs/define/schema/traits": Boxes,
+  "/docs/define/schema/tenancy": Building,
+  "/docs/define/schema/validation": Shield,
+  "/docs/define/schema/extensions": Blocks,
+  "/docs/define/schema/functions": SquareFunction,
+  "/docs/define/schema/triggers": Zap,
+  "/docs/define/schema/views": GalleryHorizontal,
   "/docs/define/table": Table2,
+  "/docs/define/table/keys": KeyRound,
+  "/docs/define/table/columns": Columns3,
+  "/docs/define/table/defaults": CirclePlus,
+  "/docs/define/table/shape": Shapes,
+  "/docs/define/table/names": CaseSensitive,
+  "/docs/define/table/visibility": Eye,
+  "/docs/define/table/validation": ShieldCheck,
+  "/docs/define/table/references": Link2,
+  "/docs/define/table/relations": Waypoints,
+  "/docs/define/table/indexes": ListTree,
+  "/docs/define/table/checks": SquareCheck,
+  "/docs/define/table/filters": ListFilter,
+  "/docs/define/table/traits": Puzzle,
+  "/docs/define/table/tenancy": Building2,
+  "/docs/define/table/presets": Bookmark,
+  "/docs/define/table/reference-rows": Rows3,
+  "/docs/define/table/queries": Search,
 };
 
 /**
@@ -39,6 +135,14 @@ export function sidebarIconsPlugin(): LoaderPlugin {
       file(node) {
         if (node.url) {
           const Icon = PATH_ICONS[node.url];
+          if (Icon) node.icon = iconNode(Icon);
+        }
+        return node;
+      },
+      folder(node) {
+        const url = node.index?.url;
+        if (typeof url === "string") {
+          const Icon = PATH_ICONS[url];
           if (Icon) node.icon = iconNode(Icon);
         }
         return node;

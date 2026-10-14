@@ -45,8 +45,8 @@ jobs:
         working-directory: site
         run: bun install --frozen-lockfile
 
-  sync:
-    name: sync check
+  content:
+    name: content check
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -61,9 +61,9 @@ jobs:
         working-directory: site
         run: bun install --frozen-lockfile
 
-      - name: Mapping
+      - name: Pages
         working-directory: site
-        run: bun test ./scripts/docs-map.site-test.ts
+        run: bun test ./scripts/content.site-test.ts
 
   types:
     name: types

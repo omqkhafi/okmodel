@@ -1,0 +1,28 @@
+---
+title: "Schema"
+description: "schema is required. okm loads this file."
+---
+`schema` is required. `okm` loads this file. `okm build` reads it and does not connect.
+
+A value that is not a string refuses the config. The code is `invalid`. The message is `okmodel.config.ts must default-export defineConfig(...).`
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts", // [!code focus]
+  database: process.env.DATABASE_URL!,
+});
+```
+
+### path
+
+A path is resolved from the project directory, the directory `okm` starts in. An absolute path stays absolute. A relative path, including `..`, is resolved from that directory.
+
+### export
+
+`okm` imports the file and reads its exports. A value with a `tables` array and `catalog` is the schema. [`schema()`](/docs/define/schema) returns that value. When several exports match, the name that sorts first is used.
+
+A file with no such export is refused. The code is `invalid`. The message is `<path> must export a schema().` `<path>` is the `schema` string.
+
+On that refusal, `okm migrate apply` still runs. It installs no reference rows.

@@ -1,0 +1,41 @@
+---
+title: "Backfill"
+description: "backfill sets batch size, pause, and batch statement timeout."
+---
+backfill sets batch size, pause, and batch statement timeout.
+
+`batchSize` is written into a new plan. `pauseMs` and `statementTimeoutMs` are read when the batches run.
+
+| Field | Required | Default | Role |
+| --- | --- | --- | --- |
+| `batchSize` | no | `1000` | Rows in `batch=` on a new plan. |
+| `pauseMs` | no | `0` | Milliseconds after a committed batch, and not after the last one. |
+| `statementTimeoutMs` | no | statement timeout, then `30000` | `statement_timeout` for one batch. |
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: process.env.DATABASE_URL!,
+  backfill: { // [!code focus]
+    batchSize: 1000,
+    pauseMs: 50,
+    statementTimeoutMs: 30_000,
+  },
+});
+```
+
+A new plan writes one header. It names the table, the key, and `batch=`. `pauseMs` and `statementTimeoutMs` stay out of the file.
+
+```sql title="migrations/20260301000000_init.sql"
+-- backfill table="public"."notes" key="id" batch=1000
+```
+
+Apply reads `batch=` from that line. Changing `batchSize` does not change a file that already exists.
+
+Omit `statementTimeoutMs` and the batch uses the apply [statement](/docs/define/config/timeouts) timeout, then 30 seconds. The batch `lock_timeout` is the apply lock timeout.
+
+<Callout type="error" title="Refused">
+`batchSize` below 1, or not an integer, is refused: `backfill.batchSize must be an integer of at least 1.` A header whose `batch` is below 1 is refused.
+</Callout>

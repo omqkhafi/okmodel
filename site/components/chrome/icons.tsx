@@ -118,6 +118,45 @@ export function MoonIcon({ className }: { className?: string }) {
 }
 
 /**
+ * Left chevron for carousel controls.
+ *
+ * @param className - Sizing / colour classes
+ */
+export function ChevronLeftIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className} aria-hidden>
+      <path d="M15 18l-6-6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/**
+ * Right chevron for carousel controls.
+ *
+ * @param className - Sizing / colour classes
+ */
+export function ChevronRightIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className} aria-hidden>
+      <path d="M9 18l6-6-6-6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/**
+ * Forward arrow for primary calls to action.
+ *
+ * @param className - Sizing / colour classes
+ */
+export function ArrowRightIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className} aria-hidden>
+      <path d="M5 12h14M13 6l6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/**
  * Clipboard, for the terminal copy button.
  *
  * @param className - Sizing / colour classes

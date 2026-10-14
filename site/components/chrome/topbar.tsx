@@ -66,6 +66,7 @@ export function Topbar({ tree }: { tree: PageTree.Root }) {
           >
             <Link
               href="/"
+              aria-label={SITE_NAME}
               className="flex h-full items-center px-4 text-fd-foreground transition-opacity hover:opacity-80"
             >
               <Wordmark />
@@ -73,7 +74,7 @@ export function Topbar({ tree }: { tree: PageTree.Root }) {
           </div>
 
           <div className="flex w-full items-center gap-1 px-3 lg:hidden">
-            <Link href="/" className="mr-auto flex items-center text-fd-foreground">
+            <Link href="/" aria-label={SITE_NAME} className="mr-auto flex items-center text-fd-foreground">
               <Wordmark />
             </Link>
             <button

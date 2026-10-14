@@ -2,8 +2,8 @@
  * `/llms.txt` index. Every public handbook page is listed.
  */
 
-import { mappedPages, pageHref, type MappedPage } from "./docs-map";
-import { docGroups } from "./docs-map";
+import type * as PageTree from "fumadocs-core/page-tree";
+
 import { readRootPackage, readTagline, siteSameAs } from "./package-meta";
 import { SITE_NAME, SITE_ORIGIN } from "./site-identity";
 import { source } from "./source";
@@ -56,16 +56,17 @@ export function listLlmsPages(): LlmsPageRef[] {
 }
 
 /**
- * llmstxt.org index. Every loaded page is linked. Mapped pages that the
- * source has not loaded yet still appear from the map, so a drift is visible
- * in the test rather than as a silent omission.
+ * llmstxt.org index in sidebar order. Root pages come first, then one
+ * heading per top-level folder with every page under it.
  *
  * @param origin - Absolute origin
  * @param pages - Handbook pages. Defaults to the live source.
+ * @param tree - Sidebar tree. Defaults to the live source.
  */
 export function buildLlmsTxt(
   origin: string = SITE_ORIGIN,
   pages: readonly LlmsPageRef[] = listLlmsPages(),
+  tree: PageTree.Root = source.getPageTree(),
 ): string {
   const byUrl = new Map(pages.map((page) => [page.url, page]));
   const lines: string[] = [
@@ -77,21 +78,19 @@ export function buildLlmsTxt(
     "",
   ];
 
-  const rootPages = mappedPages
-    .filter((page) => page.group === "root")
-    .slice()
-    .sort((a, b) => a.order - b.order);
+  const rootUrls: string[] = [];
+  const folders: PageTree.Folder[] = [];
+  for (const node of tree.children) {
+    if (node.type === "page") rootUrls.push(node.url);
+    else if (node.type === "folder") folders.push(node);
+  }
   lines.push("## Start", "");
-  for (const page of rootPages) lines.push(pageLine(page, byUrl, origin));
+  pushPages(lines, rootUrls, byUrl, origin);
   lines.push("");
 
-  for (const group of docGroups.slice().sort((a, b) => a.order - b.order)) {
-    lines.push(`## ${group.title}`, "");
-    const inGroup = mappedPages
-      .filter((page) => page.group === group.id)
-      .slice()
-      .sort((a, b) => a.order - b.order);
-    for (const page of inGroup) lines.push(pageLine(page, byUrl, origin));
+  for (const folder of folders) {
+    lines.push(`## ${typeof folder.name === "string" ? folder.name : ""}`, "");
+    pushPages(lines, folderUrls(folder), byUrl, origin);
     lines.push("");
   }
 
@@ -146,20 +145,32 @@ export function buildLlmsCatalog(
   };
 }
 
-function pageLine(
-  page: MappedPage,
-  byUrl: ReadonlyMap<string, LlmsPageRef>,
-  origin: string,
-): string {
-  const href = pageHref(page);
-  const loaded = byUrl.get(href);
-  const slugs = loaded?.slugs ?? slugsFromHref(href);
-  return linkLine(page.title, absoluteDocsUrl(markdownPathForSlugs(slugs), origin), page.description);
+/**
+ * Page URLs under one folder in sidebar order: the folder index, then each
+ * child, nested folders included.
+ *
+ * @param folder - Sidebar folder
+ */
+function folderUrls(folder: PageTree.Folder): string[] {
+  const urls = folder.index === undefined ? [] : [folder.index.url];
+  for (const node of folder.children) {
+    if (node.type === "page") urls.push(node.url);
+    else if (node.type === "folder") urls.push(...folderUrls(node));
+  }
+  return urls;
 }
 
-function slugsFromHref(href: string): string[] {
-  if (href === "/docs") return [];
-  return href.slice("/docs/".length).split("/");
+function pushPages(
+  lines: string[],
+  urls: readonly string[],
+  byUrl: ReadonlyMap<string, LlmsPageRef>,
+  origin: string,
+): void {
+  for (const url of urls) {
+    const page = byUrl.get(url);
+    if (page === undefined) continue;
+    lines.push(linkLine(page.title, absoluteDocsUrl(markdownPathForSlugs(page.slugs), origin), page.description));
+  }
 }
 
 function linkLine(title: string, href: string, note: string): string {

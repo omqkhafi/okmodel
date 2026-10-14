@@ -1,5 +1,5 @@
 /**
- * Installs the published package from npm and runs the README quickstart.
+ * Installs the published package from npm and runs the guide quickstart.
  *
  * The version comes from `package.json`. Registry propagation is retried at
  * most {@link ATTEMPTS} times, {@link WAIT_MS} apart. The run fails when that
@@ -100,13 +100,13 @@ async function viewPackage(version: string): Promise<unknown> {
 }
 
 /**
- * Installs `okmodel@version` and runs the README quickstart on two databases.
+ * Installs `okmodel@version` and runs the guide quickstart on two databases.
  *
- * @param root - Repository root, for `README.md`
+ * @param root - Repository root, for `docs/guide.md`
  * @param version - Published version
  */
 async function runQuickstart(root: string, version: string): Promise<void> {
-  const markdown = readFileSync(join(root, "README.md"), "utf8");
+  const markdown = readFileSync(join(root, "docs/guide.md"), "utf8");
   const fences = markdownFences(markdown);
   const files = new Map<string, string>();
   const usage: string[] = [];
@@ -116,7 +116,7 @@ async function runQuickstart(root: string, version: string): Promise<void> {
     if (name === undefined) usage.push(fence.code);
     else files.set(name, fence.code);
   }
-  if (usage.length === 0) throw new Error("README.md has no usage blocks");
+  if (usage.length === 0) throw new Error("docs/guide.md has no usage blocks");
   files.set("run.ts", usage.join("\n"));
   const commands = fences
     .filter((fence) => fence.lang === "sh")
@@ -136,12 +136,12 @@ async function runQuickstart(root: string, version: string): Promise<void> {
     const migrateCommands = commands.filter(
       (line) => line.startsWith("bunx okm generate") || line.startsWith("bunx okm migrate apply"),
     );
-    if (pushCommands.length !== 1) throw new Error("README.md must run okm push once");
+    if (pushCommands.length !== 1) throw new Error("docs/guide.md must run okm push once");
     if (!migrateCommands.some((line) => line.startsWith("bunx okm generate"))) {
-      throw new Error("README.md does not run okm generate");
+      throw new Error("docs/guide.md does not run okm generate");
     }
     if (!migrateCommands.some((line) => line.startsWith("bunx okm migrate apply"))) {
-      throw new Error("README.md does not run okm migrate apply");
+      throw new Error("docs/guide.md does not run okm migrate apply");
     }
     const push = await createIsolatedDatabase();
     try {

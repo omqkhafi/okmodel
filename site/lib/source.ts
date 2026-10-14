@@ -1,5 +1,5 @@
 /**
- * Fumadocs loader for the generated handbook.
+ * Fumadocs loader for the handbook in `content/docs`.
  */
 
 import { docs } from "collections/server";
@@ -83,7 +83,7 @@ export function resolveMarkdownPage(
 }
 
 /**
- * Page markdown for agents: the generated body, with the title as the heading.
+ * Page markdown for agents: the page body, with the title as the heading.
  *
  * @param page - Loaded page
  */

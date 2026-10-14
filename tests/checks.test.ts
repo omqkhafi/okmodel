@@ -439,7 +439,7 @@ test("release-check treats an empty diff as it always did", () => {
   });
 });
 
-test("readme check fails on a relative link and on an image", () => {
+test("readme check fails on a relative link and on a relative image", () => {
   expect(checkReadme("[quickstart](docs/quickstart.md)")).toEqual([
     "README.md contains a relative link: docs/quickstart.md",
   ]);
@@ -449,6 +449,22 @@ test("readme check fails on a relative link and on an image", () => {
     "README.md contains an image: ./logo.png",
   ]);
   expect(checkReadme('<img src="logo.png">')).toEqual(["README.md contains an image: <img"]);
+  expect(checkReadme('<source srcset="logo.png">')).toEqual([
+    "README.md contains an image: <source",
+  ]);
+});
+
+test("readme check accepts an absolute https image", () => {
+  expect(checkReadme("![logo](https://img.shields.io/npm/v/okmodel)")).toEqual([]);
+  expect(checkReadme('<img alt="logo" src="https://example.com/logo.svg" width="750">')).toEqual(
+    [],
+  );
+  expect(
+    checkReadme('<source media="(prefers-color-scheme: dark)" srcset="https://a.b/c.svg">'),
+  ).toEqual([]);
+  expect(checkReadme("![logo](http://example.com/logo.png)")).toEqual([
+    "README.md contains an image: http://example.com/logo.png",
+  ]);
 });
 
 test("readme check ignores fences and accepts absolute links", () => {

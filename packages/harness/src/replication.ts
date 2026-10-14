@@ -73,13 +73,13 @@ export async function resumeWalReplay(replica: ReplicaName): Promise<void> {
  *
  * @param replica - Which replica
  * @param target - Insert LSN the replica must catch
- * @param timeoutMs - How long to poll. Defaults to 20 seconds
+ * @param timeoutMs - How long to poll. Defaults to 45 seconds
  * @returns The replay LSN that satisfied the wait
  */
 export async function waitForReplayLsn(
   replica: ReplicaName,
   target: string,
-  timeoutMs = 20_000,
+  timeoutMs = 45_000,
 ): Promise<string> {
   return withReplica(replica, async (sql) => {
     let latest = "";

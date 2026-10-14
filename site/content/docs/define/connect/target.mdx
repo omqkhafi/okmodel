@@ -1,0 +1,93 @@
+---
+title: "Target"
+description: "A string opens a pool. A pool from open is reused."
+---
+postgres.js, node-postgres, and Bun.sql take a string or a pool. PGlite takes a data directory, a pool, or `undefined`. The import is [Drivers](/docs/define/connect/drivers). A string means this client opened the pool. An adopted pool stays open. [`close()`](/docs/define/connect#close) is that call.
+
+| Value | Result |
+| --- | --- |
+| a string, postgres.js, node-postgres, or Bun.sql | Opens a pool. [`close()`](/docs/define/connect#close) closes it. |
+| a pool from `open` | Reuses that pool. `close()` does not close it. |
+| `{ primary, replicas }` | One pool per endpoint. The call returns a promise. See [Topology](/docs/define/connect/topology). |
+| a string, PGlite | A data directory. `connect` returns a promise. `close()` closes it. |
+| `undefined`, PGlite | Memory. `open` uses `memory://`. `close()` closes it. |
+
+### string
+
+A string is passed to `open` as `url`. The client owns the pool. [`close()`](/docs/define/connect#close) closes it. node-postgres and Bun.sql do the same. How many connections is [`max`](/docs/define/connect/session#max).
+
+```ts title="db.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+
+export const db = connect(process.env.DATABASE_URL!, { schema: app }); // [!code focus]
+```
+
+The URL is not filled in. An empty `DATABASE_URL` is passed through. Check it before you call.
+
+### pool
+
+A pool from `open` is reused. `close()` does not close it. PGlite `open` returns a promise, and `connect` does too. That pool is still reused.
+
+```ts title="pool.ts"
+import { connect, open } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+
+const pool = open({ url: process.env.DATABASE_URL! });
+
+export const db = connect(pool, { schema: app }); // [!code focus]
+```
+
+### topology
+
+`{ primary, replicas }` returns a promise. The object is [Topology](/docs/define/connect/topology).
+
+### memory
+
+`undefined` is memory. PGlite has no URL. `dataDir` is omitted, and `open` uses `memory://`. `connect` returns a promise. The client opened that database, so `close()` closes it.
+
+```ts title="memory.ts"
+import { connect } from "okmodel/pg/pglite";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+
+export const db = await connect(undefined, { schema: app }); // [!code focus]
+```
+
+### directory
+
+A string is the data directory. `connect` returns a promise. `close()` closes it.
+
+```ts title="directory.ts"
+import { connect } from "okmodel/pg/pglite";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+
+export const db = await connect("data", { schema: app }); // [!code focus]
+```

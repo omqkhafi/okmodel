@@ -1,0 +1,63 @@
+---
+title: "Tables"
+description: "The list of tables. A reference names one of them."
+---
+`tables` is every [`table()`](/docs/define/table) this schema compiles. The client name is the name you passed to `table()`.
+
+The list order is the order of the emitted interfaces. The catalog is sorted by identity, so swapping two tables does not change the catalog hash. Calling `schema()` twice on the same tables returns equal catalog bytes.
+
+| Field | Required | Default | Role |
+| --- | --- | --- | --- |
+| `tables` | yes | — | The list. A reference names one entry, earlier or later. |
+
+### one
+
+One table is a schema. The module default-exports it. [Config](/docs/define/config/schema) points `schema` at this file.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+export default schema({ tables: [notes] }); // [!code focus]
+```
+
+### several
+
+`.references("notes")` looks up `notes` in this list. `comments` is first here. `notes` is second. Either order resolves.
+
+```ts title="several.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const comments = table("comments", {
+  id: t.identity(),
+  noteId: t.bigint().references("notes"), // [!code focus]
+  body: t.text(),
+});
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+export default schema({ tables: [comments, notes] }); // [!code focus]
+```
+
+<Callout type="error" title="OKM1020">
+A name that is not in the list is `Table posts is not in the schema.` The message lists the accepted names.
+</Callout>
+
+<Callout type="error" title="OKM1023">
+The same name twice is `Table notes is declared more than once.` `note-items` and `note_items` both emit `NoteItems`, which is `Table note_items and note-items both emit NoteItems.` Two tables that store the same SQL name are `Table posts uses SQL name notes, which another table already uses.`
+</Callout>
+
+<Callout type="error" title="OKM1060">
+A value that is not a list is `schema() needs a tables array.`
+</Callout>
+
+<Callout type="info" title="Empty">
+An empty list is a schema with no tables.
+</Callout>

@@ -1,0 +1,217 @@
+---
+title: "Session"
+description: "Pool size, prepare mode, TLS, search path, and deadlines."
+---
+Every connection in the pool uses one session: prepare mode, TLS, a search path, and deadlines. `max` is how many of those connections open.
+
+Set these when this client opens the pool. A pool passed as the target keeps the settings from `open`.
+
+| Field | You set it for |
+| --- | --- |
+| `max` | How many connections. |
+| `prepared` | Named statements, or unnamed. |
+| `ssl` | TLS, forwarded to the driver. |
+| `searchPath` | The session search path on every connection. |
+| `timeouts` | Acquire, statement, transaction, and idle. |
+| `timeout`, `signal` | One call, or the first connection check. |
+
+### max
+
+`max` is the number of connections in the pool.
+
+| Value | Result |
+| --- | --- |
+| omitted | 10 connections on postgres.js, node-postgres, and Bun.sql. PGlite stays one. |
+| a number | That many connections. PGlite ignores it. |
+
+Leave `max` out. `connect` forwards `max` only when it is set. postgres.js, node-postgres, and Bun.sql then open 10 connections. PGlite is always one. `connect` does not forward `max` to `open`.
+
+```ts title="pool-size.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+
+const url = process.env.DATABASE_URL!;
+
+export const db = connect(url, {
+  schema: app,
+  max: 10, // [!code focus]
+});
+```
+
+A pool passed as the target keeps the size from `open`. A replica `pool.max` overrides the connect `max` for that endpoint. That field is on [Topology](/docs/define/connect/topology).
+
+### prepared
+
+Named prepared statements are off unless you ask.
+
+| Value | Result |
+| --- | --- |
+| omitted | Unnamed. It stays valid behind a pooler in transaction mode. |
+| `"unnamed"` | The same. |
+| `"named"` | Named prepared statements. Not for transaction-mode poolers. |
+
+`okmodel/pg/postgresjs`, `okmodel/pg/pg`, and `okmodel/pg/bun` accept `prepared` on `connect`. `connect` forwards it when that call opens the pool. A value is named only when it is `"named"`. PGlite has no `prepared`. `connect` from `okmodel/pg/pglite` does not forward the field.
+
+Leave `prepared` out, or set `"unnamed"`. postgres.js sets `prepare: false`. A statement with parameters is sent with `{ prepare: false }`. A statement with no parameters is sent with no prepare option. node-postgres sends the query with no `name`. Bun.sql sets `prepare: false`.
+
+`"named"` is the ask. postgres.js sets `prepare: true` on the pool and on each statement. node-postgres sets `name` to `okm_` plus a number, one name per SQL text. Bun.sql sets `prepare: true`.
+
+```ts title="db.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+
+export const db = connect(process.env.DATABASE_URL!, {
+  schema: app,
+  prepared: "named", // [!code focus]
+});
+```
+
+### TLS
+
+`ssl` is forwarded to the driver. Leave it out and `connect` does not pass it. postgres.js and node-postgres pass the value as `ssl`. Bun.sql passes the value as `tls`. PGlite has no `ssl`.
+
+| Driver | Values |
+| --- | --- |
+| postgres.js, node-postgres | `true`, `false`, `"require"`, `"allow"`, `"prefer"`, `"verify-full"`, or an object the driver accepts. |
+| Bun.sql | `true`, `false`, `"disable"`, `"allow"`, `"prefer"`, `"require"`, `"verify-ca"`, `"verify-full"`. |
+| PGlite | Not a field. |
+
+`connect` from `okmodel/pg/postgresjs` copies `ssl` into `open`. `open` passes it as the `ssl` option of `postgres()`. An object is forwarded as-is. `okmodel/pg/pg` does the same for `pg.Pool`. `okmodel/pg/bun` copies `ssl` into `open` and passes that value as the `tls` option of `SQL`. `PgliteConfig` has no `ssl`, so `okmodel/pg/pglite` does not forward it.
+
+```ts title="db.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+
+export const db = connect(process.env.DATABASE_URL!, {
+  schema: app,
+  ssl: "require", // [!code focus]
+});
+```
+
+### Search path
+
+`searchPath` is the session search path for every connection. When `connect` opens the pool, it passes the string to `open`. Leave `searchPath` out and `open` omits the field. A comma-separated string is passed through as written, with no extra quoting.
+
+| Module | Result |
+| --- | --- |
+| `okmodel/pg/postgresjs` | `connection.search_path` is the string. |
+| `okmodel/pg/pg` | `options` is `-c search_path=` plus the string. |
+| `okmodel/pg/bun` | `connection.search_path` is the string. |
+| `okmodel/pg/pglite` | `searchPath` is not a field. |
+
+`okmodel/pg/postgresjs` sets `search_path` on the driver's `connection` object. `"app, public"` is that value. The comma and the space stay in the string. `okmodel/pg/pg` interpolates the string into the pool `options` field. The text is `-c search_path=` followed by the value. Interpolation adds no quotes, so `"app, public"` is `-c search_path=app, public`. `okmodel/pg/bun` sets `search_path` on the driver's `connection` object. The comma-separated string is passed through as written. PGlite does not take `searchPath`. `open` reads `dataDir` and `timeouts`. `connect` passes those fields and does not pass a search path.
+
+```ts title="db.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+
+export const db = connect(process.env.DATABASE_URL!, {
+  schema: app,
+  searchPath: "app, public", // [!code focus]
+});
+```
+
+### Timeouts
+
+Each key is milliseconds. Each one is optional. `connect({ timeouts })` sets the ceilings. With a key omitted, that wait has no deadline. The adapter reads `acquire`. The other keys belong to the runtime.
+
+| Key | What it bounds |
+| --- | --- |
+| `acquire` | How long to wait for a connection. Past that is OKM1846. |
+| `statement` | The timeout of a call that sets none. |
+| `transaction` | A whole `tx()`, retries included. |
+| `idleInTransaction` | How long a `tx()` waits between statements. |
+
+`statement`, `transaction`, and `idleInTransaction` fail as kind `timeout`. `acquire` fails as OKM1846. That error's kind is `timeout` too.
+
+```ts title="db.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+
+export const db = connect(process.env.DATABASE_URL!, {
+  schema: app,
+  timeouts: {
+    acquire: 2000, // [!code focus]
+    statement: 5000, // [!code focus]
+    transaction: 10000, // [!code focus]
+    idleInTransaction: 5000, // [!code focus]
+  },
+});
+```
+
+#### acquire
+
+The pool waits for a connection up to `timeouts.acquire`. With the key omitted, it waits with no deadline.
+
+<Callout type="error" title="OKM1846">
+`Timed out waiting for a connection. This pool did not hand one out within timeouts.acquire.`
+</Callout>
+
+#### statement
+
+A call that sets `timeout` uses that number. A call that sets none takes `timeouts.statement`. `batch()` does the same. The code on the error is `timeout`. The message is `The call timed out`.
+
+#### transaction
+
+A `tx()` that sets `timeout` uses that number. A `tx()` that sets none takes `timeouts.transaction`. The deadline is set once, and the retries run inside it. The message is `The transaction timed out.`
+
+A nested `tx()` accepts no options. The outer deadline still bounds it. Passing `timeout` there is OKM1121: `isolation, retry, timeout, and signal belong to the outermost tx(). A nested tx() is a savepoint on the same transaction.`
+
+#### idle
+
+The idle clock runs while no statement is in flight. It starts after `BEGIN`, and again after each statement. With the sample's 5000, the message is `The transaction sat idle for 5000 ms (timeouts.idleInTransaction).` The number is the key.
+
+#### server check
+
+`timeout` and `signal` are fields on `connect`, beside `timeouts`. They bound the check `connected` waits on. That check is [Check](/docs/define/connect/check). It runs the version query. When the catalog hash differs, the same two bound the compatibility read. `timeouts.statement` applies on the next call.
+
+A later call sets its own `timeout`, or takes `timeouts.statement`. On Bun.sql and PGlite a positive `timeout` on this check is OKM1120, because the check is an execute. A `timeout` of 0 fails the check at once as kind `timeout`. An aborted `signal` fails the check as kind `cancelled`. The message is `The call was cancelled`.
+
+#### drivers
+
+A positive `timeout` on a call, on `tx()`, or on `batch()` is refused on Bun.sql and PGlite. Those drivers cannot cancel a statement that is already running. `timeouts.statement` is that number when the call sets none, so a positive `statement` is refused when the call runs. Connect still accepts the object.
+
+postgres.js and node-postgres accept a positive timeout. `timeouts.transaction` and `timeouts.idleInTransaction` stay kind `timeout`, including on Bun.sql and PGlite.
+
+<Callout type="error" title="OKM1120">
+The message is `timeout`. The kind is `invalid`. A call or a `batch()` whose timeout is 0 fails at once as kind `timeout`, and the message is `The call timed out`. `signal` is left as the caller set it. This refusal reads only `timeout`.
+</Callout>
+
+<Callout type="error" title="OKM1121">
+`tx()` requires `timeout` to be a number of milliseconds above 0. Otherwise the message is `timeout must be a number of milliseconds above 0.`
+</Callout>

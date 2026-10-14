@@ -4,19 +4,18 @@
 
 import { expect, test } from "bun:test";
 
-import { mappedPages, pageHref } from "./docs-map";
 import { buildLlmsTxt, markdownPathForSlugs } from "./llms-index";
 import { SITE_ORIGIN } from "./site-identity";
+import { source } from "./source";
 import robots from "../app/robots";
 import sitemap from "../app/sitemap";
 
 test("llms.txt lists every public page", () => {
   const text = buildLlmsTxt();
-  for (const page of mappedPages) {
-    const href = pageHref(page);
-    const slugs = href === "/docs" ? [] : href.slice("/docs/".length).split("/");
-    expect(text, page.title).toContain(markdownPathForSlugs(slugs));
-    expect(text, page.title).toContain(page.title);
+  const pages = source.getPages();
+  expect(pages.length).toBeGreaterThan(0);
+  for (const page of pages) {
+    expect(text, page.url).toContain(`(${SITE_ORIGIN}${markdownPathForSlugs(page.slugs)})`);
   }
 });
 

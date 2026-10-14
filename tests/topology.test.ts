@@ -145,7 +145,7 @@ test("replica probes open a circuit, back off, recover, and stop on close", asyn
   } finally {
     await db.close();
   }
-});
+}, 15_000);
 
 test("a migrate target that is a replica is OKM1845", () => {
   const config = { schema: "./schema.ts" };

@@ -1,0 +1,141 @@
+---
+title: "Database"
+description: "database is one target named default. targets replaces it."
+---
+`database` is one target named `default`. `targets` replaces it. Set one of them. The name does not set protection. `NODE_ENV` is not read.
+
+<Callout type="error" title="Both">
+`Set database or targets, not both.`
+</Callout>
+
+| Field | Result |
+| --- | --- |
+| `database` | One target. Its name is `default`. A string is the URL, and `protected` is false. An object is `{ url, protected }`. |
+| `targets` | Named targets, in sorted order. Replaces `database`. A string leaves `protected` false. |
+| `url` | The connection string for that target. |
+| `protected` | Optional. `true` blocks contract work. Omitted or `false` leaves the target open. |
+
+| Name | Result |
+| --- | --- |
+| Any key | That string is the target name. `Dev` is not `dev`. |
+| `database` | The name is `default`. Pass `--target default`. |
+| A key named `dev` | `okm dev` uses that target. |
+| No key named `dev` | `okm dev` opens PGlite at `<out>/dev-db`. The default `out` is `.okm`. |
+| `targets: {}`, or neither field | No target is configured. |
+
+| URL | Result |
+| --- | --- |
+| Missing or `""` | OKM1845. `Target <name> has no url.` The environment is not read. |
+| Does not parse | OKM1845. `The target URL is not a Postgres URL.` A URL that parses is accepted. The fix asks for `postgres://`. |
+| Host | Lowercased. |
+| Port omitted | `5432`. |
+| Path | The database name, decoded. It is not lowercased. |
+| `primary`, `replicas`, `weight`, or `pool` on the object | OKM1845. `Target <name> is a replica. Migrations run on the primary only.` |
+| Host contains `pooler` or `pgbouncer`, port `6543` or `6432`, or query `pgbouncer=true` | Refused when a command connects. `Refusing pooler host <host>. Apply needs a direct connection.` |
+| `allowPooler: true` or `--allow-pooler` | That host check is skipped. |
+
+`okm migrate apply`, `okm push` when it connects, `provision()`, `okm seed`, `okm migrate check`, and `okm check` when it compares a database run the host check. `okm migrate plan` and `okm migrate status` do not. Naming the URL does not refuse it.
+
+`okm migrate apply`, `okm push` when it connects, `provision()`, and that same `okm check` comparison also read `pg_backend_pid()` twice. A change is OKM1854. The same opt-in skips the probe.
+
+| Case | Result |
+| --- | --- |
+| One target | `--target` is optional. |
+| Several targets and no `--target`, on `okm migrate apply`, `okm push`, `okm seed`, `okm migrate check`, `okm ext`, or `okm doctor` when `roles` is set | OKM1853. `Several targets are configured and --target was not passed.` |
+| `--target` with no name | OKM1853. `--target needs a name.` |
+| A name that is not configured | OKM1845. `Target <name> is not configured.` |
+| No target, on those commands or on `okm migrate status` | OKM1845. `No target is configured.` |
+| `okm migrate status` | Prints every target, in name order. The columns are `target`, `version`, `catalog`, `state`, and `protected` (`true` or `false`). `--target` keeps one name. Several targets do not need `--target`. |
+| `okm check`, several targets, no `--target` | Skips the database comparison. An unknown `--target` is still OKM1845. A protection mismatch is still OKM1852. |
+| `okm check` or `okm migrate plan`, no target | Does not throw OKM1845. Plan prints without a database. |
+| `okm migrate plan`, several targets, no `--target` | Prints the plan. It does not throw OKM1853. A protection mismatch is still OKM1852. |
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: process.env.DATABASE_URL!, // [!code focus]
+});
+```
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  targets: {
+    dev: process.env.DEV_URL!,
+    prod: { url: process.env.PROD_URL!, protected: true }, // [!code focus]
+  },
+});
+```
+
+<Callout type="error" title="OKM1845">
+`No target is configured.` `Target <name> is not configured.` `Target <name> has no url.` `The target URL is not a Postgres URL.` `Target <name> is a replica. Migrations run on the primary only.`
+</Callout>
+
+<Callout type="error" title="OKM1853">
+`Several targets are configured and --target was not passed.` `--target needs a name.`
+</Callout>
+
+<Callout type="error" title="OKM1854">
+`The backend pid changed from <first> to <second>. A pooler is handing out a new session between statements.`
+</Callout>
+
+### Protection
+
+`--allow-protected` is this invocation only. It does not change the config. `connect()` does not read it.
+
+| Work | Protected target |
+| --- | --- |
+| `plan`, `status`, `check`, `drift`, `verify`, `pull`, `catalog-export`, `inspect` | Allowed. |
+| `expand`, `reference`, `provision` | Allowed. A target that is not empty is still OKM1851. |
+| `contract`, `unclassified`, `push`, `backfill`, `seed`, `history-repair` | OKM1850 until `--allow-protected`. |
+| `okm migrate check` | OKM1850. `--allow-protected` does not lift it. Point it at a throwaway Postgres. |
+| `drop`, `rollback` | Refused on every target. The code is `invalid`. `--allow-protected` does not lift it. |
+
+`verify`, `pull`, `catalog-export`, and `inspect` have no command. `okm migrate plan` is `plan`. `okm migrate status` is `status`. `okm check` is `check` and `drift`. `okm doctor`, when `roles` is set, and `okm ext` are `check`. `okm push` is `push`. `okm seed` is `seed`. `provision()` is `provision`.
+
+On `okm migrate apply`, the unit is `backfill` when it contains a backfill step. Otherwise the last `contract` or `unclassified` step sets the class. With neither, the unit is `expand`. A history repair rewrites a stored catalog hash. A protected target needs `--allow-protected` when a row changes.
+
+```sh
+okm migrate apply --target prod --allow-protected
+```
+
+<Callout type="error" title="OKM1850">
+`<operation> is blocked on protected target <name>.` `okm migrate check` says `okm migrate check writes a scratch schema and refuses protected target <name>. Point it at a throwaway Postgres.`
+</Callout>
+
+<Callout type="error" title="No down migration">
+`drop` and `rollback` throw `There is no down migration.` Recovery is a new forward migration.
+</Callout>
+
+### The same database
+
+The match is the host, the port, and the database name. The user, the password, and the query string are left out. The host is lowercased, and an omitted port is `5432`, so those spellings match. The database name is not lowercased. `okm check` and `okm migrate plan` report a mismatch.
+
+| Pair | Result |
+| --- | --- |
+| One `protected`, one not | OKM1852. `<open> and <protected> resolve to the same database and disagree about protection.` |
+| Both unprotected | Allowed. They may share a database. |
+| Both protected | Allowed. |
+
+<Callout type="error" title="OKM1852">
+`<open> and <protected> resolve to the same database and disagree about protection.`
+</Callout>
+
+### An empty database
+
+`okm migrate apply` installs or replays when a head snapshot exists. With no migration files, or no head snapshot, it prints `nothing to apply` and does not connect. The check looks at the current schema. `okm_meta`, `okm_history`, and `okm_backfill` do not count as objects. A table, partitioned table, view, materialized view, sequence, foreign table, enum, domain, or extension does.
+
+| State | `okm migrate apply` | `provision()` |
+| --- | --- | --- |
+| Empty | Installs the head snapshot and the [reference rows](/docs/define/table/reference-rows). The history id is `provisioned@` plus the migration id. | The same install. |
+| History present | Replays the pending files, then inserts reference rows that are missing. | OKM1851. `Target <name> already has migration history and cannot be provisioned.` |
+| Objects present, no history | OKM1851. `Target <name> is not empty (<object>) and has no migration history.` | OKM1851. The same message. |
+| A provision that stopped part-way | OKM1851. `Target <name> is not empty (<object>): a previous provision stopped part-way; drop the schema or database and run again` | OKM1851. The same message. |
+
+<Callout type="error" title="OKM1851">
+`Target <name> is not empty (<object>) and has no migration history.` `Target <name> already has migration history and cannot be provisioned.` `Target <name> is not empty (<object>): a previous provision stopped part-way; drop the schema or database and run again`
+</Callout>

@@ -1,5 +1,5 @@
 /**
- * Packs the repository and runs the README, the quickstart, and the reference app on Docker Postgres.
+ * Packs the repository and runs the guide, the quickstart, and the reference app on Docker Postgres.
  *
  * `tests/quickstart.test.ts` installs the tarball in a fresh directory and runs
  * `okm push`, `okm generate` plus `okm migrate apply`, and the run script. Then

@@ -42,7 +42,7 @@ A layer may import layers below it. It must not import a layer above it. Adapter
 - `bun run layers-check` fails when an import goes upward.
 - `bun run core-purity` fails on a `node:*` import below tooling and on runtime `dependencies`. The postgres.js adapter may import `node:net` to unref an idle pool socket. The node-postgres adapter may import it to cancel a query.
 - `bun run docs:check` checks relative links, `§` references, and decision numbers.
-- `bun run readme:check` fails when `README.md` contains a relative link or an image.
+- `bun run readme:check` fails when `README.md` contains a relative link or an image that is not an absolute `https://` URL.
 - `bun test` covers package exports, the bins, the check fixtures, PGlite, and the schema fixtures. Postgres tests run when the topology is up; they fail instead of skipping when `REQUIRE_DOCKER=1`. PGlite and the in-process wire server stay in that run.
 - `bun run bump` moves the version. `next` sets `<next minor>-next.N` and does not touch the changelog. `release` drops the suffix and promotes `## Unreleased`. `patch`, `minor`, `major`, and `--set` still promote the changelog. It does not publish.
 - `bun run release-check -- --base <git-rev>` fails when `package.json` matches that revision or `changelog.md` has no new lines under `## Unreleased`. A release that promotes Unreleased is allowed, including a cut from one bare version to the next when the new `## vX.Y.Z` section has the notes. Before `vX.Y.Z` is tagged, notes added under that heading are allowed and the version stays. CI runs it on pull requests. A pull request whose changed files are all under `.github/` is exempt from the version and changelog rules and prints why; one file outside `.github/` brings both rules back.

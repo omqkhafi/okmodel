@@ -3,15 +3,14 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "sync": "bun ./scripts/sync-docs.ts",
-    "dev": "bun run sync && next dev --port 3333",
-    "build": "bun run sync && fumadocs-mdx && next build",
+    "dev": "next dev --port 3333",
+    "build": "fumadocs-mdx && next build",
     "start": "next start",
-    "types": "bun run sync && fumadocs-mdx && next typegen && tsc --noEmit",
-    "test": "bun run sync && fumadocs-mdx && bun test ./lib/*.site-test.ts ./scripts/docs-map.site-test.ts",
-    "check": "bun run sync && fumadocs-mdx && next typegen && tsc --noEmit && bun test ./lib/*.site-test.ts ./scripts/*.site-test.ts",
+    "types": "fumadocs-mdx && next typegen && tsc --noEmit",
+    "test": "fumadocs-mdx && bun test ./lib/*.site-test.ts ./scripts/content.site-test.ts",
+    "check": "fumadocs-mdx && next typegen && tsc --noEmit && bun test ./lib/*.site-test.ts ./scripts/*.site-test.ts",
     "weight": "bun ./scripts/weight.ts",
-    "postinstall": "bun run sync && fumadocs-mdx"
+    "postinstall": "fumadocs-mdx"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
@@ -21,6 +20,7 @@
     "fumadocs-mdx": "15.4.3",
     "lucide-react": "1.55.0",
     "next": "16.3.6",
+    "ogl": "^1.0.11",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "shiki": "^4.4.3",

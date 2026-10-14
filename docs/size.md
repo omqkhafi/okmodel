@@ -320,3 +320,21 @@ The in-flight timeout on Bun.sql and PGlite stays a known limit (D224). D216 mea
 Connect minified bytes match D226. The gzip deltas are the same noise D227 records (at most 3 bytes) on graphs that do not contain `tenancy.ts`. Cold import: runtime 1.742 ms, app 10.519 ms (stubbed 5.453 ms), postgres.js 8.410 ms (stubbed 2.722 ms), PGlite 10.778 ms (stubbed 2.804 ms), node-postgres 11.355 ms (stubbed 2.869 ms), Bun.sql stubbed 2.595 ms. The app total graph is 198,575 / 64,603. The same featureless fixture with `columnTenancy` on the schema is 105,154 / 34,571 (cold 11.759 ms, stubbed 6.195 ms), +14,464 / +4,427 over the featureless app. query-200 is 17,171 instantiations and 6,328 types (ceilings 17,300 and 6,500, both within 3 percent) and inferred-250 stays 17,650 (ceiling 21,180).
 
 D229 splits that fixture. `columnTenancy()` is one key again. `compositeTenancy()` and `via()` are separate imports, and bun drops them when the app does not name them. The column fixture is 97,550 / 32,423, +226 / +111 over `origin/main` at 97,324 / 32,312. The composite fixture is 98,670 / 32,818. The path fixture is 105,763 / 34,669. The six gated graphs stay on the D228 bytes.
+
+## What each 0.7 feature costs
+
+Not a gate. Startup minified bytes are what that feature added to the stubbed featureless app when it landed (D250–D256). `bun run size` on this branch still prints that app at 90,593 / 29,338, which is the D256 total, so those deltas are still the hooks in the graph. A hook above 300 minified bytes is the search planner (683). It stays. Lazy chunk bytes are the minified output of `bun build scripts/app-startup.ts --minify --splitting` (metafile `bytes`, gzip level 9 of that file). Type-cost delta is the change in query-200 instantiations and types recorded for that feature. `bun run type-cost` on this branch still prints query-200 at 17,239 instantiations and 6,374 types, and query-200+page+aggregate+through at 24,436 / 6,928.
+
+| Feature | Startup minified | Lazy chunk | Type-cost delta |
+| --- | ---: | --- | --- |
+| First-or-create | 0 | write chunk 29,403 / 9,742, shared with every write | 0 / 0 (stayed 17,171 / 6,328) |
+| `bucket()` | 0 | `bucket-group.ts` 4,519 / 1,871 | 0 / 0 |
+| Claim (`lock: "skip"`) | 0 | `lock.ts` 1,425 / 785, on top of the write chunk | +22 / +19 |
+| Search | 683 | `text-search.ts` 3,185 / 1,297 | +1 / +6 |
+| Top-N include and windows | 217 | `window.ts` 5,552 / 2,270 and `include.ts` 9,852 / 3,036 | +43 / +20 |
+| Descendants, ancestors, sync | 294 | `tree.ts` 5,025 / 2,020 and `sync.ts` 12,005 / 3,881 | 0 / 0 |
+| `versioned()` and `sortable()` | 0 | `version.ts` 5,044 / 1,920 and `sort.ts` 2,588 / 1,233 | 0 / +1 |
+| `morph` | 117 | none on an app that does not call it. The hook is the table lookup in `schema.ts` | +2 / 0 |
+| `.stream()` | 57 | `read-stream.ts` 3,161 / 1,439 | 0 / 0 |
+
+The prototype-key check on `bucket()` is inside the bucket chunk. It is not in the stubbed startup graph (D257).

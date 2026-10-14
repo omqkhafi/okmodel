@@ -1,0 +1,145 @@
+---
+title: "Visibility"
+description: "Three flags. They do not change the SQL type."
+---
+<Callout type="info" title="Where this fits">
+The SQL type stays. Hidden, sensitive, and guarded change the row the client sees and the fields a write may set. [Validation](/docs/define/table/validation) rejects a value the type still accepts.
+</Callout>
+
+None of the three flags is stored in the catalog, so none of them changes a migration.
+
+### Hidden
+
+`.hidden()` takes one option, `filterable`. Omit it and the column is off the row. `true` opens `where` and `orderBy` at runtime. The column stays off the row either way. Insert and update can still set it.
+
+#### .hidden()
+
+`select`, `where`, and `orderBy` take keys of the row, so a typed call cannot name the field. At runtime those two refuse it. A root `select` list that names it returns it. An include drops it, including when that list names it. `filters()` refuses it in `allow`, `sort`, and `relations`. `groupBy`, `bucket`, `sum`, `avg`, `min`, and `max` refuse it. Search refuses it.
+
+```ts title="users.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const users = table("users", {
+  id: t.identity(),
+  email: t.text(),
+  passwordHash: t.text().hidden(), // [!code focus]
+});
+const app = schema({ tables: [users] });
+
+export async function register(url: string, email: string, passwordHash: string) {
+  await using db = connect(url, { schema: app });
+  const row = await db.users.insert({ email, passwordHash });
+  return row.email;
+}
+```
+
+<Callout type="error" title="OKM1120">
+`where` and `orderBy` refuse the column. The fix says to call `hidden({ filterable: true })`. `groupBy`, `bucket`, `sum`, `avg`, `min`, `max`, and search refuse it too.
+</Callout>
+
+<Callout type="error" title="OKM1123">
+`filters()` refuses the field in `allow`, `sort`, or `relations`. See [filters](/docs/define/table/filters).
+</Callout>
+
+<Callout type="info" title="Roles">
+The column stays out of a reporting role's select unless [roles.columns](/docs/define/config/roles) names it.
+</Callout>
+
+#### filterable
+
+`{ filterable: true }` is the only value that changes the flag. Omit it, or pass `false`, and `where` and `orderBy` stay refused. At runtime, `where`, `orderBy`, and search accept the column. It is still off the row, so a typed call cannot name it. `filters()`, `groupBy`, `bucket`, `sum`, `avg`, `min`, and `max` still refuse it. The reporting role still omits it.
+
+`.nullable()` in the sample lets insert omit the field. `filterable` does not.
+
+```ts title="reset.ts"
+import { table, t } from "okmodel/pg";
+
+export const users = table("users", {
+  id: t.identity(),
+  resetCode: t.text().nullable().hidden({ filterable: true }), // [!code focus]
+});
+```
+
+### Sensitive
+
+`.sensitive()` takes no argument. The column stays on the row, and a read returns the stored value. `inspect()`, logs, and errors replace that value with `[redacted]`. A codec rejection says `Field token was rejected.` The same column can also be [hidden](#hidden).
+
+```ts title="sessions.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const sessions = table("sessions", {
+  id: t.identity(),
+  token: t.text().sensitive(), // [!code focus]
+});
+const app = schema({ tables: [sessions] });
+
+export async function token(url: string, id: string) {
+  await using db = connect(url, { schema: app });
+  const row = await db.sessions.one({ where: { id } });
+  return row?.token;
+}
+```
+
+### Guarded
+
+`.guarded()` takes no argument. The write option is `allow`, on that call.
+
+#### Closed
+
+Insert and update omit the field. A value that arrives is OKM1190.
+
+```ts title="accounts.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const accounts = table("accounts", {
+  id: t.identity(),
+  email: t.text(),
+  role: t.text().guarded(), // [!code focus]
+});
+const app = schema({ tables: [accounts] });
+
+export async function register(url: string, email: string) {
+  await using db = connect(url, { schema: app });
+  return db.accounts.insert({ email });
+}
+```
+
+<Callout type="error" title="OKM1190">
+Input cannot set a guarded field. Pass `{ allow }` with the field name, or leave it out.
+</Callout>
+
+#### allow
+
+`{ allow: ["role"] }` opens `role` for that call. `allow` is a list of field names on the table. A value that is not a list, or a name the table does not have, is OKM1120.
+
+```ts title="promote.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const accounts = table("accounts", {
+  id: t.identity(),
+  email: t.text(),
+  role: t.text().guarded(),
+});
+const app = schema({ tables: [accounts] });
+
+export async function promote(url: string, email: string) {
+  await using db = connect(url, { schema: app });
+  return db.accounts.insert({ email, role: "owner" }, { allow: ["role"] }); // [!code focus]
+}
+```
+
+<Callout type="error" title="OKM1120">
+`allow` must be a list of field names on the table.
+</Callout>
+
+#### Stays closed
+
+A sealed trait field stays OKM1190. The message says the trait sets it. Insert of the [tenant key](/docs/define/schema/tenancy) is OKM1190. An update or a `where` on that key is OKM1704. `allow` does not open either.
+
+<Callout type="info" title="Filled elsewhere">
+[`timestamps()`](/docs/define/table/traits) and [`archivable()`](/docs/define/table/traits) mark their columns guarded and sealed. Input cannot set those columns.
+</Callout>
