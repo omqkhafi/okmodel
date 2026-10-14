@@ -4,70 +4,143 @@
 
 ### Create
 
-`trait(name, definition)` is how a trait is built. Import it from `okmodel/traits`. The built-in traits use the same function. `name` is stored on the columns it adds.
+`trait(name, definition)` builds a trait. Import it from `okmodel/traits`. The name is stored on each column it adds. `schema()` copies those columns onto the table. Schema traits apply first. This table's list applies after them.
 
-| Option | Result |
-| --- | --- |
-| `fields` | Required. Column builders, the same ones a table uses. An empty object is allowed when the trait only adds presets. |
-| `touch` | Field names set to `now()` on update. Each one is sealed. |
-| `sealed` | Field names input cannot set, including `{ allow }`. |
-| `presets` | A named `where` on every table that uses the trait. The preset sees these columns, not the table's. |
+#### fields
 
-```ts title="labeled.ts"
+Required. Column builders, the same ones a table uses. An empty object is allowed. A missing object is OKM1060: `Trait labeled needs a fields object.` An empty name is OKM1060: `trait() trait needs a name.`
+
+```ts title="fields.ts"
+import { t } from "okmodel/pg";
+import { trait } from "okmodel/traits";
+
+export const labeled = trait("labeled", {
+  fields: { label: t.text() }, // [!code focus]
+});
+```
+
+#### touch
+
+Field names set to `now()` on update. Each one is sealed. A name that is not a field of this trait is OKM1060: `Trait labeled touch names nope, which is not one of its fields. Accepted fields: label, labeledAt.` A value that is not a list is `Trait labeled touch must be a list of field names.`
+
+```ts title="touch.ts"
 import { t } from "okmodel/pg";
 import { trait } from "okmodel/traits";
 
 export const labeled = trait("labeled", {
   fields: {
-    label: t.text().default("x"), // [!code focus]
+    label: t.text(),
     labeledAt: t.timestamptz().defaultSql("now()"),
   },
-  touch: ["labeledAt"],
+  touch: ["labeledAt"], // [!code focus]
+});
+```
+
+#### sealed
+
+Field names input cannot set, including `{ allow }`. A touched field is sealed even when this list omits it. A name outside `fields` uses the same OKM1060 as `touch`.
+
+```ts title="sealed.ts"
+import { t } from "okmodel/pg";
+import { trait } from "okmodel/traits";
+
+export const labeled = trait("labeled", {
+  fields: { label: t.text().default("x") },
+  sealed: ["label"], // [!code focus]
+});
+```
+
+#### presets
+
+A named `where` on every table that uses the trait. The preset sees these columns, not the table's. A client method is OKM1040: `Preset find on trait labeled is a client method or a reserved name.` A name a table or another trait already uses is OKM1040: `Preset marked on notes is defined by table notes and by trait labeled.`
+
+```ts title="presets.ts"
+import { t } from "okmodel/pg";
+import { trait } from "okmodel/traits";
+
+export const labeled = trait("labeled", {
+  fields: { label: t.text().default("x") },
   presets: {
-    marked: (q) => q.where({ label: "x" }),
+    marked: (q) => q.where({ label: "x" }), // [!code focus]
   },
 });
 ```
 
-<Callout type="error" title="OKM1060">
-The name must be text. `fields` must be an object. `touch` and `sealed` must name fields of this trait.
-</Callout>
-
 <Callout type="error" title="OKM1061">
-`methods` and `requires` are refused. They are not in this version.
-</Callout>
-
-<Callout type="error" title="OKM1040">
-A preset name that a table or another trait already uses is refused, and so is a client method such as `find`.
+`methods` and `requires` are refused: `Trait option methods is not available yet. It arrives in 0.2.`
 </Callout>
 
 ### On a table
 
-`traits` is a list, added on top of the schema list. A value that is not a list is refused.
+`traits` is a list. A value that is not a list is OKM1060: `Table notes traits must be a list of traits.`
 
-```ts title="notes.ts"
-import { table, t } from "okmodel/pg";
+#### simple
+
+One field. Insert sets it.
+
+```ts title="simple.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
 import { trait } from "okmodel/traits";
 
-const labeled = trait("labeled", { fields: { label: t.text() } });
+const labeled = trait("labeled", { fields: { label: t.text() } }); // [!code focus]
 
-export const notes = table(
+const notes = table(
   "notes",
-  {
-    id: t.identity(),
-    title: t.text(),
-  },
+  { id: t.identity(), title: t.text() },
   { traits: [labeled] }, // [!code focus]
 );
+const app = schema({ tables: [notes] });
+
+export async function add(url: string, title: string, label: string) {
+  await using db = connect(url, { schema: app });
+  return db.notes.insert({ title, label }); // [!code focus]
+}
+```
+
+#### complex
+
+`fields`, `touch`, `sealed`, and `presets` together. Insert omits the sealed columns. Update changes `title`, and `labeledAt` moves. `marked()` is the preset.
+
+```ts title="complex.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+import { trait } from "okmodel/traits";
+
+const labeled = trait("labeled", {
+  fields: {
+    label: t.text().default("x"), // [!code focus]
+    labeledAt: t.timestamptz().defaultSql("now()"), // [!code focus]
+  },
+  touch: ["labeledAt"], // [!code focus]
+  sealed: ["label"], // [!code focus]
+  presets: {
+    marked: (q) => q.where({ label: "x" }), // [!code focus]
+  },
+});
+
+const notes = table(
+  "notes",
+  { id: t.identity(), title: t.text() },
+  { traits: [labeled] },
+);
+const app = schema({ tables: [notes] });
+
+export async function rename(url: string, title: string) {
+  await using db = connect(url, { schema: app });
+  const note = await db.notes.insert({ title }); // [!code focus]
+  await db.notes.update({ where: { id: note.id }, set: { title: "Next" } });
+  return db.notes.marked().find({ limit: 1 }); // [!code focus]
+}
 ```
 
 <Callout type="error" title="OKM1012">
-A column the table already has, or that another trait adds, is refused. The fix names the field.
+A column the table already has is `Trait labeled adds notes.label, and notes already declares it.` A column another trait already added is `Trait labeled adds notes.label, and trait timestamps already adds it.`
 </Callout>
 
 ### Omit defaults
 
-`omitDefaults` is the reason. It drops the schema list and keeps this table's `traits`.
+`omitDefaults` is the reason. It drops the schema list and keeps this table's `traits`. An empty reason, or one that is only spaces, is OKM1060: `Table sessions omitDefaults needs a reason.`
 
 ```ts title="sessions.ts"
 import { table, t } from "okmodel/pg";
@@ -81,10 +154,6 @@ export const sessions = table(
   { omitDefaults: "sessions are not stamped" }, // [!code focus]
 );
 ```
-
-<Callout type="warning" title="Reason">
-An empty reason is rejected when the schema is built.
-</Callout>
 
 ### Built-in
 
