@@ -5,6 +5,9 @@
  * OKM11xx for a driver that lacks a flag: OKM1110 is the engine-version gate,
  * and OKM1801 is a dialect mismatch. This module does not invent a code and
  * does not throw for a missing flag.
+ *
+ * `stream` means the driver can open a server cursor. `.stream()` does not
+ * read it. That method walks keyset batches on every driver.
  */
 
 import type { DriverCapabilities } from "../contracts/driver.js";

@@ -485,15 +485,15 @@ function start(
       }
       return value;
     },
-    (prepare) => ({
+    () => ({
       all(reason: string) {
         return start(session, op, table, options, { ...mods, all: reason }, view);
       },
       required() {
         return start(session, op, table, options, { ...mods, required: true }, view);
       },
-      stream() {
-        return streamLazy(session, call, prepare);
+      stream(batch?: object) {
+        return streamLazy(session, call, mods, view, batch);
       },
     }),
   );
@@ -679,11 +679,13 @@ export function readHandle(
 function streamLazy(
   session: Session,
   call: ReadCall,
-  prepare: () => Promise<Prepared>,
+  mods: Mods,
+  view: ArchiveView | undefined,
+  batch: object | undefined,
 ): AsyncIterable<unknown> {
   return (async function* () {
     const { streamRows } = await import("./read-stream.js");
-    yield* streamRows(session, call, prepare, (error) => logged(session, error));
+    yield* streamRows(session, call, mods, view, batch, (error) => logged(session, error));
   })();
 }
 
@@ -870,16 +872,26 @@ function callOptions(
     readonly signal?: AbortSignal | undefined;
     readonly timeout?: number | undefined;
     readonly route?: "primary" | "replica" | undefined;
+    readonly pin?: { name?: string } | undefined;
   },
   statement?: number,
-): ExecuteOptions | undefined {
+): (ExecuteOptions & { readonly pin?: { name?: string } }) | undefined {
   const timeout = input.timeout ?? statement;
   const route = input.route;
-  if (input.signal === undefined && timeout === undefined && route === undefined) return undefined;
+  const pin = input.pin;
+  if (
+    input.signal === undefined &&
+    timeout === undefined &&
+    route === undefined &&
+    pin === undefined
+  ) {
+    return undefined;
+  }
   return {
     ...(input.signal !== undefined ? { signal: input.signal } : {}),
     ...(timeout !== undefined ? { timeout } : {}),
     ...(route !== undefined ? { route } : {}),
+    ...(pin !== undefined ? { pin } : {}),
   };
 }
 

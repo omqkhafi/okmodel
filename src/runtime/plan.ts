@@ -79,6 +79,13 @@ export type ReadCall = {
   readonly timeout?: number;
   /** `"primary"` or `"replica"`. Absent means the router classifies the statement. */
   readonly route?: "primary" | "replica";
+  /**
+   * Endpoint a `.stream()` already chose.
+   *
+   * The first batch leaves `name` empty and the router fills it. Later batches
+   * pass the same object so they stay on that endpoint.
+   */
+  readonly pin?: { name?: string };
   /** Set by `for()` or `unscoped()`. Absent on a schema with no tenancy. */
   readonly scope?: CallScope;
   /** Inspect lines from the tenancy object. Absent when the schema has no tenancy. */

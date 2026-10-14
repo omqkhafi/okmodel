@@ -341,8 +341,15 @@ export type Read<T> = Query<T> & {
   all(reason: string): Read<T>;
   /** Turns a null `one()` into `not_found`. */
   required(): Read<NonNullable<T>>;
-  /** Streams rows when the driver has `stream`. Otherwise OKM1111. */
-  stream(): AsyncIterable<T extends readonly (infer R)[] ? R : T>;
+  /**
+   * Yields rows in keyset batches on every driver.
+   *
+   * `batch` is how many rows one query fetches. The default is 1000.
+   * `limit` on the find is the total. A table with no primary key is OKM1120.
+   */
+  stream(options?: {
+    readonly batch?: number;
+  }): AsyncIterable<T extends readonly (infer R)[] ? R : T>;
 };
 
 /** One page: the rows, and the cursor for the next page. `next` is `null` on the last page. */

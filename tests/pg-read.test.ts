@@ -334,8 +334,9 @@ test("pglite reads", async () => {
     await seed(pool);
     const db = await connectPglite(pool, { schema: app });
     await readSuite(db, pool.taken);
-    const iterator = db.users.find({ limit: 1 }).stream()[Symbol.asyncIterator]();
-    await expectRejection(iterator.next(), "OKM1111");
+    const streamed: string[] = [];
+    for await (const row of db.users.find({ limit: 1 }).stream()) streamed.push(row.id);
+    expect(streamed).toHaveLength(1);
     await db.close();
   } finally {
     await pool.close();
