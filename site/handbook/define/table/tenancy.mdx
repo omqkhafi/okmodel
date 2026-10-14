@@ -1,0 +1,65 @@
+<Callout type="info" title="Where this fits">
+The schema may add a tenant key to every table. This page keeps that key, marks the table global, or follows a path of relations.
+</Callout>
+
+Schema [tenancy](/docs/define/schema#tenancy) adds the key to every table. `global` and `via` come from `okmodel/tenancy`. Anything else is refused.
+
+### Schema key
+
+Omitted, the schema key is added.
+
+```ts title="schema-key.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  email: t.text().unique({ global: "login email" }), // [!code focus]
+  title: t.text(),
+});
+```
+
+<Callout type="info" title="Unique">
+A unique on a tenant table includes the key unless `.unique({ global: "reason" })` says otherwise.
+</Callout>
+
+### Global
+
+`global("reason")` leaves the tenant column off this table. The reason is required.
+
+```ts title="global.ts"
+import { table, t } from "okmodel/pg";
+import { global } from "okmodel/tenancy";
+
+export const plans = table(
+  "plans",
+  { id: t.identity(), code: t.text() },
+  { tenancy: global("plans are shared") }, // [!code focus]
+);
+```
+
+<Callout type="error" title="OKM1705">
+A global table that references a tenant table is refused.
+</Callout>
+
+### Path
+
+`via("a.b")` isolates through relations. Steps are separated by `.`, up to three. An empty path is refused.
+
+```ts title="path.ts"
+import { table, t } from "okmodel/pg";
+import { via } from "okmodel/tenancy";
+
+export const tasks = table(
+  "tasks",
+  {
+    id: t.identity(),
+    projectId: t.uuid().references("projects"),
+    title: t.text(),
+  },
+  { tenancy: via("project.organization") }, // [!code focus]
+);
+```
+
+<Callout type="error" title="OKM1705">
+A path that does not end at a tenant table, a missing relation, a cycle, or more than three steps is refused.
+</Callout>

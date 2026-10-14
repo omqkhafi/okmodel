@@ -1,0 +1,167 @@
+<Callout type="info" title="Where this fits">
+The column has a type. A rule here rejects a value that type still allows. It runs only when validation is on and the engine has loaded. [References](/docs/define/table/references) point a column at another table.
+</Callout>
+
+A field's rules live in one place. They run when validation is enabled and the engine has loaded.
+
+### Inline
+
+`.validate()` stores a list of [built-in](#rules) rules on the column, or one [Standard Schema](#standard-schema).
+
+```ts title="notes.ts"
+import { table, t } from "okmodel/pg";
+import { v } from "okmodel/validate";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  title: t.varchar(200).validate([v.trim(), v.min(1, "title_required")]), // [!code focus]
+  email: t.text().validate([v.lowercase(), v.email("email_invalid")]), // [!code focus]
+});
+```
+
+### Section
+
+`validate` is the section. Each key is a field, and `$row` is the whole row. Every value is a list of rules. A key that is not a column is refused. A `$row` rule sees the row after the field transforms.
+
+```ts title="rows.ts"
+import { table, t } from "okmodel/pg";
+import { v } from "okmodel/validate";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text(),
+    status: t.text().picklist(["draft", "active"]),
+    qty: t.integer(),
+  },
+  {
+    validate: { // [!code focus]
+      title: [v.min(1, "title_required")], // [!code focus]
+      $row: [ // [!code focus]
+        v.rule( // [!code focus]
+          (row: { readonly status?: string; readonly qty?: number }) => // [!code focus]
+            row.status !== "active" || (row.qty ?? 0) > 0, // [!code focus]
+          "qty", // [!code focus]
+          "qty_required", // [!code focus]
+        ), // [!code focus]
+      ], // [!code focus]
+    }, // [!code focus]
+  },
+);
+```
+
+<Callout type="error" title="OKM1030">
+The same field in `.validate()` and in this section is refused. `okm check` reports it.
+</Callout>
+
+### Built-in
+
+`v` comes from `okmodel/validate`. Importing it loads the engine.
+
+#### Rules
+
+`trim` and `lowercase` run before the checks. A string is changed. Any other value is left as it is.
+
+| Call | Options | Result |
+| --- | --- | --- |
+| `v.trim()` | — | Removes leading and trailing whitespace. |
+| `v.lowercase()` | — | Lowercases the string. |
+| `v.email(key)` | the issue message | Rejects a string that is not an email. |
+| `v.min(n, key)` | the minimum, the issue message | A string shorter than `n` characters, or a number below `n`. |
+| `v.rule(fn, path, key)` | the predicate, the issue path, the issue message | `false` records `key` at `path`. On a field, `fn` receives that value. |
+| `v.onInsert()` | none, or one rule | Limits the following rules, or that one rule, to insert. |
+| `v.onUpdate()` | none, or one rule | Limits the following rules, or that one rule, to update. |
+
+```ts title="phases.ts"
+import { table, t } from "okmodel/pg";
+import { v } from "okmodel/validate";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  title: t.text().validate([ // [!code focus]
+    v.onInsert(), // [!code focus]
+    v.min(2, "insert_min"), // [!code focus]
+    v.onUpdate(), // [!code focus]
+    v.min(4, "update_min"), // [!code focus]
+  ]), // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1201">
+A write that validates without `okmodel/validate` imported is refused. `okm check` reports it.
+</Callout>
+
+#### Column checks
+
+The column type adds a check when validation is on. You do not pass a rule for it.
+
+| Column | Option | Issue |
+| --- | --- | --- |
+| required on insert, or null | not nullable, and the column is written. A default lets insert omit it | `required` |
+| `t.varchar(n)`, `t.char(n)` | `n`, counted in characters | `too_long` |
+| `.picklist(values)` | the values. `{ check: false }` skips the database CHECK and this check still runs | `picklist` |
+| `t.smallint()`, `t.integer()`, `t.bigint()` | that type's range | `integer_range` |
+| `t.numeric(precision, scale)` | precision and scale. A bare `t.numeric()` accepts a decimal | `precision` |
+| `t.real()`, `t.double()` | a finite number | `precision` |
+| `t.uuid()` | a uuid string | `uuid` |
+| `t.json()`, `t.jsonb()` | a value JSON can store | `json` |
+
+<Callout type="error" title="OKM1200">
+A failed check throws. `issues` lists `{ path, message }` in column order, then `$row`. A hidden or sensitive value stays out of the issue.
+</Callout>
+
+### Standard Schema
+
+`.validate()` takes one Standard Schema instead of a list. `~standard.version` is 1, and `~standard.validate` checks the value. Zod, Valibot, and any other library with that shape work. A result of `{ value }` replaces the field. Each issue message is kept, and a path on the issue is added after the field.
+
+In the [section](#section) the schema sits inside that field's list.
+
+```ts title="zod.ts" no-check="zod is installed by the application"
+import { z } from "zod";
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  title: t.text().validate(z.string().trim().min(1)), // [!code focus]
+});
+```
+
+```ts title="valibot.ts" no-check="valibot is installed by the application"
+import * as v from "valibot";
+import { table, t } from "okmodel/pg";
+
+export const people = table("people", {
+  id: t.identity(),
+  email: t.text().validate(v.pipe(v.string(), v.email())), // [!code focus]
+});
+```
+
+### Flag
+
+`validation` overrides the [schema](/docs/define/schema#validation) for this table.
+
+| Value | Result |
+| --- | --- |
+| omitted | The table follows the schema. |
+| `true` | On for this table. |
+| `false` | Off for this table. |
+| `{ enabled, onRead, style }` | The same fields as the schema flag. |
+| `style` | `"inline"` or `"section"`. |
+
+```ts title="switch.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text(),
+  },
+  { validation: true }, // [!code focus]
+);
+```
+
+<Callout type="info" title="One style">
+`"inline"` is [`.validate()`](#inline). `"section"` is the [`validate` option](#section). A column rule under `"section"`, or a section rule under `"inline"`, is OKM1030.
+</Callout>

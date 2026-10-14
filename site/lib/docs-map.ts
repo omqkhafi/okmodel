@@ -3,8 +3,8 @@
  * `site/scripts/sync-docs.ts` is the only writer of `site/content/docs/`.
  */
 
-/** Sidebar group. `root` pages sit above the folders. */
-export type DocGroupId = "root" | "start" | "define";
+/** Sidebar group. `root` pages sit above the folders. `table` is nested under Define. */
+export type DocGroupId = "root" | "start" | "define" | "table";
 
 /** One public page. */
 export interface MappedPage {
@@ -49,6 +49,12 @@ export interface DocGroup {
    */
   readonly separator?: string;
   readonly order: number;
+  /**
+   * Folder this group sits inside.
+   *
+   * The public URL is `/docs/<parent>/<id>`. Absent for a top-level folder.
+   */
+  readonly parent?: Exclude<DocGroupId, "root">;
 }
 
 /**
@@ -67,6 +73,7 @@ export interface DocSection {
 export const docGroups: readonly DocGroup[] = [
   { id: "start", title: "Start", separator: "01 Start", order: 10 },
   { id: "define", title: "Define", separator: "02 Define", order: 20 },
+  { id: "table", title: "Table", parent: "define", order: 0 },
 ];
 
 /**
@@ -107,16 +114,48 @@ export const mappedPages: readonly MappedPage[] = [
     source: "site/handbook/basic-usage.mdx",
     handbook: "handbook/basic-usage.mdx",
   },
-  definePage(
-    0,
-    "table",
-    "Table",
-    "table() stores the columns. The key comes first, then each data type, then the options. Queries are the last section.",
-  ),
+  tablePage(0, "index", "Overview", "table() stores the columns. The key comes first, then each data type, then the options."),
+  tablePage(1, "keys", "Keys", "One table has one primary key."),
+  tablePage(2, "columns", "Columns", "Each field is a data type. The builder name is that type."),
+  tablePage(3, "defaults", "Defaults", "Omitted, the column is required and not null."),
+  tablePage(4, "shape", "Shape", "array() wraps a scalar. picklist() narrows a string column. enum() creates a Postgres type."),
+  tablePage(5, "names", "Names", "The field name is the TypeScript name."),
+  tablePage(6, "visibility", "Visibility", "Three flags. They do not change the SQL type."),
+  tablePage(7, "validation", "Validation", "A field's rules live in one place. They run when validation is enabled."),
+  tablePage(8, "references", "References", "references() points a column at another table."),
+  tablePage(9, "relations", "Relations", "relations names edges. schema() resolves the foreign key."),
+  tablePage(10, "indexes", "Indexes", "indexes receives column handles and returns an array of index calls."),
+  tablePage(11, "checks", "Checks", "A check is named SQL."),
+  tablePage(12, "filters", "Filters", "filters() allowlists what a caller may send."),
+  tablePage(13, "traits", "Traits", "Schema traits are the defaults. A table adds its own, or opts out."),
+  tablePage(14, "tenancy", "Tenancy", "Schema tenancy adds the key to every table."),
+  tablePage(15, "presets", "Presets", "A preset is a named refinement you call on the table."),
+  tablePage(16, "reference-rows", "Reference rows", "reference declares rows the application needs."),
+  tablePage(17, "queries", "Queries", "find returns a list and needs a limit, or .all(reason)."),
   definePage(1, "schema", "Schema", "schema() compiles the tables into one catalog. Each section is one option."),
   definePage(2, "connect", "Connect", "connect() opens the client. The first argument is the target. schema is required."),
   definePage(3, "config", "Config", "defineConfig is the file okm reads. Each section is one option."),
 ];
+
+/**
+ * One page under the Table group. The public URL is `/docs/define/table/<slug>`.
+ *
+ * @param order - Order inside Table
+ * @param slug - File slug. `index` is `/docs/define/table`
+ * @param title - Sidebar and page title
+ * @param description - Sentence under the title
+ */
+function tablePage(order: number, slug: string, title: string, description: string): MappedPage {
+  return {
+    slug,
+    title,
+    description,
+    group: "table",
+    order,
+    source: `site/handbook/define/table/${slug}.mdx`,
+    handbook: `handbook/define/table/${slug}.mdx`,
+  };
+}
 
 /**
  * One page under Define. The public URL is `/docs/define/<slug>`.
@@ -243,9 +282,13 @@ export const excludedDocs: readonly ExcludedDoc[] = [
  * @param page - Mapped page
  */
 export function pageHref(page: MappedPage): string {
-  const segments: string[] = page.group === "root" ? [] : [page.group];
+  if (page.group === "root") return page.slug === "index" ? "/docs" : `/docs/${page.slug}`;
+  const group = docGroups.find((item) => item.id === page.group);
+  const segments: string[] = [];
+  if (group?.parent !== undefined) segments.push(group.parent);
+  segments.push(page.group);
   if (page.slug !== "index") segments.push(page.slug);
-  return segments.length === 0 ? "/docs" : `/docs/${segments.join("/")}`;
+  return `/docs/${segments.join("/")}`;
 }
 
 /**
@@ -256,5 +299,7 @@ export function pageHref(page: MappedPage): string {
 export function pageContentPath(page: MappedPage): string {
   const ext = page.handbook?.endsWith(".mdx") === true ? "mdx" : "md";
   if (page.group === "root") return `${page.slug}.${ext}`;
-  return `${page.group}/${page.slug}.${ext}`;
+  const group = docGroups.find((item) => item.id === page.group);
+  const dir = group?.parent === undefined ? page.group : `${group.parent}/${page.group}`;
+  return `${dir}/${page.slug}.${ext}`;
 }

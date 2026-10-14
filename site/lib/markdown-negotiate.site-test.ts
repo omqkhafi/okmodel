@@ -13,13 +13,14 @@ test("a docs path negotiates to its markdown twin", () => {
   expect(markdownTwinPath("/docs/config")).toBe("/llms.mdx/docs/define/config.md");
   expect(markdownTwinPath("/docs/config/file")).toBe("/llms.mdx/docs/define/config.md");
   expect(markdownTwinPath("/docs/schema/tables")).toBe("/llms.mdx/docs/define/schema.md");
-  expect(markdownTwinPath("/docs/table/columns")).toBe("/llms.mdx/docs/define/table.md");
+  expect(markdownTwinPath("/docs/table/columns")).toBe("/llms.mdx/docs/define/table/columns.md");
+  expect(markdownTwinPath("/docs/table/reference")).toBe("/llms.mdx/docs/define/table/reference-rows.md");
   expect(markdownTwinPath("/docs/start/query")).toBe("/llms.mdx/docs/start.md");
   expect(markdownTwinPath("/docs/start/install")).toBe("/llms.mdx/docs/start.md");
-  expect(markdownTwinPath("/docs/model/queries")).toBe("/llms.mdx/docs/define/table.md");
-  expect(markdownTwinPath("/docs/start/queries")).toBe("/llms.mdx/docs/define/table.md");
+  expect(markdownTwinPath("/docs/model/queries")).toBe("/llms.mdx/docs/define/table/queries.md");
+  expect(markdownTwinPath("/docs/start/queries")).toBe("/llms.mdx/docs/define/table/queries.md");
   expect(markdownTwinPath("/docs/model/schema")).toBe("/llms.mdx/docs/define/table.md");
-  expect(markdownTwinPath("/docs/model/safety")).toBe("/llms.mdx/docs/define/table.md");
+  expect(markdownTwinPath("/docs/model/safety")).toBe("/llms.mdx/docs/define/table/visibility.md");
   expect(markdownTwinPath("/docs/ship/migrations")).toBe("/llms.mdx/docs/define/config.md");
   expect(markdownTwinPath("/docs/ship/drivers")).toBe("/llms.mdx/docs/define/connect.md");
   expect(markdownTwinPath("/docs/known-limits")).toBe("/llms.mdx/docs/index.md");

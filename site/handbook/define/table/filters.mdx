@@ -1,0 +1,99 @@
+<Callout type="info" title="Where this fits">
+The table is declared. `filters()` is the allowlist a caller may send. [Queries](/docs/define/table/queries) are the calls that use it.
+</Callout>
+
+`filters()` allowlists what a caller may send. `parse` loads the parser on first use.
+
+<Callout type="error" title="OKM1123">
+A hidden field in `allow`, `sort`, or `relations` is refused here. `filterable` does not change that. See [hidden](/docs/define/table/visibility#hidden).
+</Callout>
+
+<Callout type="error" title="OKM1121">
+`parse` expects an object of fields.
+</Callout>
+
+### Allow
+
+`allow` maps a field to operators. An operator outside the list is not assignable. A scalar is `eq` when that field allows `eq`. Several fields, or several operators on one field, are combined.
+
+#### Accepted
+
+| Operator | Value |
+| --- | --- |
+| `eq` | A scalar, or an object. |
+| `in`, `inList` | An array. `in` in the list also accepts `inList`. |
+| `notIn` | An array. |
+| `lt`, `lte`, `gt`, `gte` | The bound. |
+| `between` | `[from, to]`. |
+| `startsWith`, `endsWith`, `like`, `ilike` | A string. |
+| `contains` | The value. |
+| `not` | A scalar or null. |
+| `containedBy`, `overlaps` | The value. |
+| `hasKey` | A string. |
+| `hasAnyKey` | An array of strings. |
+
+```ts title="allow.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+  status: t.text(),
+});
+
+export const noteFilters = notes.filters({
+  allow: { title: ["eq", "startsWith"], status: ["eq", "in"] }, // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1120">
+An operator the field does not list is refused. So is a value that operator does not take.
+</Callout>
+
+#### Refused
+
+`path`, `matches`, `similar`, `wordSimilar`, boolean trees, relation quantifiers, and write operators. A caller cannot name them in `allow`.
+
+### Sort
+
+`sort` names the fields a caller may sort. The request key `sort` is one of those names. `parse` orders that field ascending.
+
+```ts title="sort.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+export const noteFilters = notes.filters({
+  allow: { title: ["eq"] },
+  sort: ["title"], // [!code focus]
+});
+```
+
+### Related fields
+
+`relations` maps a [relation](/docs/define/table/relations) name to fields of that table. `parse` turns `{ author: { name: { startsWith: "a" } } }` into `has`. Those fields accept the [operators](#accepted) above. A name in `allow` is the column when that name is also a relation.
+
+```ts title="related.ts"
+import { one, table, t } from "okmodel/pg";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text(),
+    authorId: t.bigint().references("users"),
+  },
+  { relations: { author: one("users") } },
+);
+
+export const noteFilters = notes.filters({
+  relations: { author: ["name"] }, // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1123">
+A field that is not in that relation's list is refused.
+</Callout>

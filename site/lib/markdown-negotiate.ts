@@ -25,16 +25,17 @@ export function markdownTwinPath(pathname: string): string | undefined {
 
   if (path === "/docs") return "/llms.mdx/docs/index.md";
   if (path === "/docs/start/query" || path === "/docs/start/install") return "/llms.mdx/docs/start.md";
-  if (path === "/docs/model/schema" || path === "/docs/model/safety") return "/llms.mdx/docs/define/table.md";
+  if (path === "/docs/model/schema") return "/llms.mdx/docs/define/table.md";
+  if (path === "/docs/model/safety") return "/llms.mdx/docs/define/table/visibility.md";
   if (path === "/docs/model/queries" || path === "/docs/start/queries") {
-    return "/llms.mdx/docs/define/table.md";
+    return "/llms.mdx/docs/define/table/queries.md";
   }
   if (path === "/docs/ship/migrations") return "/llms.mdx/docs/define/config.md";
   if (path === "/docs/ship/drivers") return "/llms.mdx/docs/define/connect.md";
   if (path === "/docs/known-limits" || path.startsWith("/docs/reference/")) return "/llms.mdx/docs/index.md";
   if (path === "/docs/config" || path.startsWith("/docs/config/")) return "/llms.mdx/docs/define/config.md";
   if (path === "/docs/schema" || path.startsWith("/docs/schema/")) return "/llms.mdx/docs/define/schema.md";
-  if (path === "/docs/table" || path.startsWith("/docs/table/")) return "/llms.mdx/docs/define/table.md";
+  if (path === "/docs/table" || path.startsWith("/docs/table/")) return tableMarkdownTwin(path);
   if (path.startsWith("/docs/")) {
     const rest = path.slice("/docs/".length);
     if (rest.length === 0) return "/llms.mdx/docs/index.md";
@@ -49,6 +50,40 @@ export function markdownTwinPath(pathname: string): string | undefined {
   }
 
   return undefined;
+}
+
+/** Old `/docs/table/...` paths, one markdown file per Table page. */
+const TABLE_PAGES = new Set([
+  "keys",
+  "columns",
+  "defaults",
+  "shape",
+  "names",
+  "visibility",
+  "validation",
+  "references",
+  "relations",
+  "indexes",
+  "checks",
+  "filters",
+  "traits",
+  "tenancy",
+  "presets",
+  "reference-rows",
+  "queries",
+]);
+
+/**
+ * Markdown twin for a retired `/docs/table` URL.
+ *
+ * @param path - Request pathname without a trailing slash
+ */
+function tableMarkdownTwin(path: string): string {
+  if (path === "/docs/table") return "/llms.mdx/docs/define/table.md";
+  const rest = path.slice("/docs/table/".length);
+  const slug = rest === "reference" ? "reference-rows" : rest;
+  if (TABLE_PAGES.has(slug)) return `/llms.mdx/docs/define/table/${slug}.md`;
+  return "/llms.mdx/docs/define/table.md";
 }
 
 /**

@@ -1,0 +1,87 @@
+<Callout type="info" title="Where this fits">
+The SQL type stays. Hidden, sensitive, and guarded change the row the client sees and the fields a write may set. [Validation](/docs/define/table/validation) rejects a value the type still accepts.
+</Callout>
+
+Three flags. They do not change the SQL type.
+
+### Hidden
+
+`.hidden()` leaves the column out of the default row. A root `select` that names it returns it. An include omits it, including when that `select` names it.
+
+| Call | Result |
+| --- | --- |
+| `.hidden()` | Out of the default row. `where` and `orderBy` refuse it. |
+| `.hidden({ filterable: true })` | `where` and `orderBy` accept it. The default row still omits it. |
+| `select` | The root read returns it when the list names it. |
+| `include` | Omits it. |
+| `filters()` | Refuses it in `allow`, `sort`, and `relations`. |
+| `groupBy`, `sum`, `avg`, `min`, `max` | Refuse it. |
+
+```ts title="users.ts"
+import { table, t } from "okmodel/pg";
+
+export const users = table("users", {
+  id: t.identity(),
+  email: t.text(),
+  passwordHash: t.text().hidden(), // [!code focus]
+  resetCode: t.text().hidden({ filterable: true }), // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1120">
+`where` and `orderBy` refuse a hidden column unless `filterable` is set. `groupBy`, `sum`, `avg`, `min`, and `max` refuse it either way.
+</Callout>
+
+<Callout type="error" title="OKM1123">
+`filters()` refuses a hidden field in `allow`, `sort`, or `relations`. `filterable` does not change that. See [filters](/docs/define/table/filters).
+</Callout>
+
+<Callout type="info" title="Roles">
+A hidden column stays out of a reporting role's select unless [roles.columns](/docs/define/config#roles) names it. `filterable` does not add it.
+</Callout>
+
+### Sensitive
+
+`.sensitive()` redacts the value in logs, errors, and `inspect()`. The placeholder is `[redacted]`. The stored value is unchanged. A read that selects the column still returns it. The same column can also be [hidden](#hidden).
+
+```ts title="sessions.ts"
+import { table, t } from "okmodel/pg";
+
+export const sessions = table("sessions", {
+  id: t.identity(),
+  token: t.text().sensitive(), // [!code focus]
+});
+```
+
+<Callout type="info" title="Hash">
+The catalog hash does not include `.sensitive()`.
+</Callout>
+
+### Guarded
+
+`.guarded()` omits the column from insert and update input. A write that sets it is OKM1190. `{ allow: ["role"] }` opens that field for that call.
+
+| Call | Result |
+| --- | --- |
+| insert or update sets the field | OKM1190. |
+| `{ allow: ["role"] }` | That call may set `role`. |
+| a sealed trait field | OKM1190. `allow` does not open it. |
+| the tenant key | OKM1190. `allow` does not open it. |
+
+```ts title="accounts.ts"
+import { table, t } from "okmodel/pg";
+
+export const accounts = table("accounts", {
+  id: t.identity(),
+  email: t.text(),
+  role: t.text().guarded(), // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1190">
+Input cannot set a guarded field. Pass `{ allow }` with the field name, or leave it out.
+</Callout>
+
+<Callout type="info" title="Filled elsewhere">
+A [tenant key](/docs/define/schema#tenancy) is guarded. The client fills it from the scope. [`timestamps()`](/docs/define/schema#traits) and [`archivable()`](/docs/define/schema#traits) mark their columns guarded and sealed. Input cannot set those columns. `allow` does not open a tenant key or a sealed field.
+</Callout>

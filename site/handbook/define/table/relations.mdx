@@ -1,0 +1,109 @@
+<Callout type="info" title="Where this fits">
+The foreign key is the column. This page is the edge you include: one row, many rows, a join table, or one relation across several tables.
+</Callout>
+
+`relations` names edges. `schema()` resolves the foreign key.
+
+<Callout type="error" title="OKM1020">
+A missing table is refused. For a join, that includes the join table.
+</Callout>
+
+### To-one
+
+`one(table, field)` is to-one. `field` is the local foreign key when this table has several keys to that table.
+
+```ts title="to-one.ts"
+import { one, table, t } from "okmodel/pg";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    authorId: t.bigint().references("users"),
+    title: t.text(),
+  },
+  { relations: { author: one("users") } }, // [!code focus]
+);
+```
+
+<Callout type="error" title="OKM1021">
+An ambiguous key is refused. Pass `field` when more than one key points at that table.
+</Callout>
+
+### To-many
+
+`many(table, field)` is to-many. `field` is the foreign key on the other table when that table has several keys here.
+
+```ts title="to-many.ts"
+import { many, table, t } from "okmodel/pg";
+
+export const notes = table(
+  "notes",
+  { id: t.identity(), title: t.text() },
+  { relations: { comments: many("comments") } }, // [!code focus]
+);
+```
+
+<Callout type="error" title="OKM1021">
+An ambiguous key is refused. Pass `field` when more than one key points here.
+</Callout>
+
+### Join table
+
+`manyThrough(table, { through })` is to-many through a join table. The join table has one foreign key to this table and one to the related table. Name `from` and `to` when a table has more than one.
+
+```ts title="through.ts"
+import { manyThrough, table, t } from "okmodel/pg";
+
+export const users = table(
+  "users",
+  { id: t.identity(), name: t.text() },
+  { relations: { teams: manyThrough("teams", { through: "memberships" }) } }, // [!code focus]
+);
+```
+
+<Callout type="error" title="OKM1021">
+An ambiguous key is refused. Pass `from` and `to` when the join table has more than one foreign key to an end. The same field for both ends is refused.
+</Callout>
+
+
+### One relation, several tables
+
+A comment that points at a task or a list is `morph("commentable", ["tasks", "lists"])` on the comment, next to `commentableType` and `commentableId`. Use it when one table points at a closed list of others and you want the matching row back. Include returns the task or the list, with the type set to that table's name, or null when the row is missing, archived, outside the tenant, or the stored type is outside the list. Each target declares `morphMany("comments", "commentable")` for the comments that point at it. That reverse many takes a limit, an order, and `has`, `none`, and `every`. `morphTo("commentable", "tasks", id)` sets the type and the id together. Setting one without the other, or clearing one and setting the other, is refused. Clearing both is allowed. A type outside the list is refused. `has`, `none`, and `every` on the morph itself are refused, and so are `select`, `where`, `orderBy`, and `limit` on that include.
+```ts title="morph.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { morph, morphMany, morphTo, schema, table, t } from "okmodel/pg";
+
+const tasks = table(
+  "tasks",
+  { id: t.text().primaryKey(), title: t.text() },
+  { relations: { comments: morphMany("comments", "commentable") } },
+);
+const lists = table(
+  "lists",
+  { id: t.text().primaryKey(), name: t.text() },
+  { relations: { comments: morphMany("comments", "commentable") } },
+);
+const comments = table(
+  "comments",
+  {
+    id: t.text().primaryKey(),
+    body: t.text(),
+    commentableType: t.text(),
+    commentableId: t.text(),
+  },
+  { relations: { commentable: morph("commentable", ["tasks", "lists"]) } },
+);
+const app = schema({ tables: [tasks, lists, comments] });
+
+export async function attach(url: string, taskId: string): Promise<void> {
+  await using db = connect(url, { schema: app });
+  await db.comments.insert({
+    id: "c1",
+    body: "ship it",
+    ...morphTo("commentable", "tasks", taskId),
+  });
+  const rows = await db.comments.find({ limit: 20, include: { commentable: true } });
+  if (rows.length < 0) throw new Error("the morph did not run");
+}
+```

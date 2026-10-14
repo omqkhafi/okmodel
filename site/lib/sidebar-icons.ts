@@ -5,7 +5,32 @@
  */
 
 import type { LoaderPlugin } from "fumadocs-core/source";
-import { Braces, Cable, FileText, Play, Table2, Terminal, type LucideIcon } from "lucide-react";
+import {
+  Bookmark,
+  Braces,
+  Building2,
+  Cable,
+  CaseSensitive,
+  CirclePlus,
+  Columns3,
+  Eye,
+  FileText,
+  KeyRound,
+  Link2,
+  ListFilter,
+  ListTree,
+  Play,
+  Puzzle,
+  Rows3,
+  Search,
+  Shapes,
+  ShieldCheck,
+  SquareCheck,
+  Table2,
+  Terminal,
+  Waypoints,
+  type LucideIcon,
+} from "lucide-react";
 import { createElement, type ReactNode } from "react";
 
 /** Docs path → Lucide component. `/docs` is the landing and is not a sidebar row. */
@@ -16,6 +41,23 @@ const PATH_ICONS: Readonly<Record<string, LucideIcon>> = {
   "/docs/define/connect": Cable,
   "/docs/define/schema": Braces,
   "/docs/define/table": Table2,
+  "/docs/define/table/keys": KeyRound,
+  "/docs/define/table/columns": Columns3,
+  "/docs/define/table/defaults": CirclePlus,
+  "/docs/define/table/shape": Shapes,
+  "/docs/define/table/names": CaseSensitive,
+  "/docs/define/table/visibility": Eye,
+  "/docs/define/table/validation": ShieldCheck,
+  "/docs/define/table/references": Link2,
+  "/docs/define/table/relations": Waypoints,
+  "/docs/define/table/indexes": ListTree,
+  "/docs/define/table/checks": SquareCheck,
+  "/docs/define/table/filters": ListFilter,
+  "/docs/define/table/traits": Puzzle,
+  "/docs/define/table/tenancy": Building2,
+  "/docs/define/table/presets": Bookmark,
+  "/docs/define/table/reference-rows": Rows3,
+  "/docs/define/table/queries": Search,
 };
 
 /**
@@ -37,6 +79,14 @@ export function sidebarIconsPlugin(): LoaderPlugin {
       file(node) {
         if (node.url) {
           const Icon = PATH_ICONS[node.url];
+          if (Icon) node.icon = iconNode(Icon);
+        }
+        return node;
+      },
+      folder(node) {
+        const url = node.index?.url;
+        if (typeof url === "string") {
+          const Icon = PATH_ICONS[url];
           if (Icon) node.icon = iconNode(Icon);
         }
         return node;

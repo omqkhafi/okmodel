@@ -1,0 +1,48 @@
+<Callout type="info" title="Where this fits">
+The columns exist. This page adds an index the planner can use. A unique constraint stays on [Keys](/docs/define/table/keys). A rule the row must pass is a [check](/docs/define/table/checks).
+</Callout>
+
+`indexes` receives column handles and returns an array of index calls.
+
+<Callout type="info" title="SQL name">
+The handle's `name` is the SQL name `schema()` will store. A [casing](/docs/define/schema#casing) of `"snake"` has already been applied by the time the catalog is written.
+</Callout>
+
+### Index
+
+`index(...)` is one index, in column order. It needs a column.
+
+```ts title="index.ts"
+import { index, table, t } from "okmodel/pg";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text(),
+  },
+  { indexes: (columns) => [index(columns.title)] }, // [!code focus]
+);
+```
+
+### Unique
+
+`.unique()` marks that index unique.
+
+```ts title="unique-index.ts"
+import { index, table, t } from "okmodel/pg";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text(),
+    published: t.boolean().default(false),
+  },
+  { indexes: (columns) => [index(columns.published, columns.title).unique()] }, // [!code focus]
+);
+```
+
+<Callout type="warning" title="Not a constraint">
+A unique constraint and a unique index are different objects. A constraint belongs on [keys](/docs/define/table/keys). An index belongs here.
+</Callout>

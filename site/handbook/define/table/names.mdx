@@ -1,0 +1,72 @@
+<Callout type="info" title="Where this fits">
+TypeScript sees the field name. This page is the SQL name, a rename that keeps the old column, and the comment. [Visibility](/docs/define/table/visibility) decides who can read or write it.
+</Callout>
+
+The field name is the TypeScript name.
+
+### SQL name
+
+The SQL name is the field name. When the schema sets [casing](/docs/define/schema#casing) to `"snake"`, a camelCase field is stored as snake_case. `.sqlName()` replaces the column name. `sqlName` on the table replaces the table name. Casing does not rewrite a name you set. An empty name is refused.
+
+```ts title="notes.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text().sqlName("headline"), // [!code focus]
+  },
+  { sqlName: "note" }, // [!code focus]
+);
+```
+
+<Callout type="warning" title="Empty">
+An empty column or table `sqlName` is refused.
+</Callout>
+
+### Previous name
+
+Omitted until you set it. Migrations read the previous SQL name. `.renamedFrom()` is the previous column name. `renamedFrom` on the table is the previous table name. An empty value is refused.
+
+```ts title="posts.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text().renamedFrom("headline"), // [!code focus]
+  },
+  { renamedFrom: "posts" }, // [!code focus]
+);
+```
+
+<Callout type="warning" title="Empty">
+An empty column or table `renamedFrom` is refused.
+</Callout>
+
+<Callout type="error" title="OKM1020">
+A previous name that the last snapshot does not contain is refused. Remove `renamedFrom` once the migration that used it has been applied.
+</Callout>
+
+### Comment
+
+`.comment()` stores the text you pass on the column. Omit the call to leave it off. `comment` on the table is stored beside the table. An empty table comment is refused. An empty column comment is stored.
+
+```ts title="labels.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text().comment("Shown in the list"), // [!code focus]
+  },
+  { comment: "One row per note" }, // [!code focus]
+);
+```
+
+<Callout type="warning" title="Empty">
+An empty table `comment` is refused. A column comment stores the text you pass, including an empty one. Omit `.comment()` to leave it off.
+</Callout>

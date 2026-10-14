@@ -97,6 +97,18 @@ export function docMapProblems(): readonly string[] {
     if (!mappedPages.some((page) => page.group === group.id)) {
       problems.push(`group ${group.id} has no pages`);
     }
+    if (group.parent !== undefined) {
+      if (!docGroups.some((item) => item.id === group.parent)) {
+        problems.push(`group ${group.id} names unknown parent ${group.parent}`);
+      }
+      if (group.separator !== undefined) {
+        problems.push(`group ${group.id} is nested and has a separator`);
+      }
+      if (mappedPages.some((page) => page.group === group.parent && page.slug === group.id)) {
+        problems.push(`group ${group.id} uses the same slug as a page in ${group.parent}`);
+      }
+      continue;
+    }
     const inSection = sectionGroups.has(group.id);
     if (group.separator === undefined && !inSection) {
       problems.push(`group ${group.id} has no separator and is not in a section`);
@@ -425,15 +437,30 @@ function writeMeta(): void {
   });
 
   for (const group of docGroups) {
-    const pages = mappedPages
+    const nested = docGroups
+      .filter((child) => child.parent === group.id)
+      .map((child) => ({ order: child.order, name: child.id }));
+    const own = mappedPages
       .filter((page) => page.group === group.id)
+      .map((page) => ({ order: page.order, name: page.slug }));
+    const pages = [...nested, ...own]
       .slice()
-      .sort((a, b) => a.order - b.order)
-      .map((page) => page.slug);
-    const dir = join(contentDir, group.id);
+      .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))
+      .map((item) => item.name);
+    const dir = groupContentDir(group);
     mkdirSync(dir, { recursive: true });
     writeJson(join(dir, "meta.json"), { title: group.title, pages });
   }
+}
+
+/**
+ * Directory for one group's generated pages.
+ *
+ * @param group - Sidebar folder
+ */
+function groupContentDir(group: (typeof docGroups)[number]): string {
+  const parts = group.parent === undefined ? [group.id] : [group.parent, group.id];
+  return join(contentDir, ...parts);
 }
 
 function writeJson(path: string, value: unknown): void {

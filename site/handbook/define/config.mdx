@@ -131,7 +131,7 @@ The comparison is host, port, and database name. The schema name is ignored. `ok
 
 | State | `okm migrate apply` |
 | --- | --- |
-| Empty | Installs the head snapshot and the [reference](/docs/define/table#reference-rows) rows. |
+| Empty | Installs the head snapshot and the [reference](/docs/define/table/reference-rows) rows. |
 | History present | Replays the pending files. |
 | Objects present, no history | OKM1851. |
 | A provision that stopped part-way | OKM1851. Drop the schema or database and run again. |
@@ -408,7 +408,7 @@ export default defineConfig({
 ```
 
 <Callout type="info" title="Hidden columns">
-A hidden column stays out of the reporting select unless `columns` names it. See [hidden](/docs/define/table#hidden).
+A hidden column stays out of the reporting select unless `columns` names it. See [hidden](/docs/define/table/visibility#hidden).
 </Callout>
 
 | Case | Result |

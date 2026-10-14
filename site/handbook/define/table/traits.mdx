@@ -1,0 +1,126 @@
+<Callout type="info" title="Where this fits">
+The columns are yours. Schema traits are the defaults. This page adds a trait, opts out, or turns on versioned and sortable.
+</Callout>
+
+Schema [traits](/docs/define/schema#traits) are the defaults. A table adds its own, or opts out.
+
+### Added
+
+`traits` is a list, added on top of those defaults. A value that is not a list is refused.
+
+```ts title="added.ts"
+import { table, t } from "okmodel/pg";
+import { archivable } from "okmodel/traits";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text(),
+  },
+  { traits: [archivable()] }, // [!code focus]
+);
+```
+
+### Omit defaults
+
+`omitDefaults` is the reason. It drops the schema list and keeps this table's `traits`.
+
+```ts title="omit-defaults.ts"
+import { table, t } from "okmodel/pg";
+
+export const sessions = table(
+  "sessions",
+  {
+    id: t.identity(),
+    token: t.text(),
+  },
+  { omitDefaults: "sessions are not stamped" }, // [!code focus]
+);
+```
+
+<Callout type="warning" title="Reason">
+`omitDefaults` needs a reason. An empty reason is rejected when the schema is built.
+</Callout>
+
+### Built-in traits
+
+`timestamps` and `archivable` come from `okmodel/traits`.
+
+| Trait | Columns | Options |
+| --- | --- | --- |
+| `timestamps()` | `createdAt`, `updatedAt` | `{ enforce: "trigger" }` |
+| `archivable()` | `archivedAt`, `archiveId` | `cascade`, `strategy` |
+
+<Callout type="error" title="OKM1012">
+A column the table already has, or that another trait adds, is refused.
+</Callout>
+
+#### Timestamps
+
+`timestamps()` adds `createdAt` and `updatedAt`. Both are `timestamptz`, not null, default `now()`, guarded and sealed. Insert leaves them to the default. Update sets `updatedAt` and leaves `createdAt`. `{ enforce: "trigger" }` also writes `updatedAt` in the database. Any other option is refused.
+
+```ts title="timestamps.ts"
+import { table, t } from "okmodel/pg";
+import { timestamps } from "okmodel/traits";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text(),
+  },
+  { traits: [timestamps({ enforce: "trigger" })] }, // [!code focus]
+);
+```
+
+#### Archive
+
+`archivable()` adds `archivedAt` and `archiveId`. `archivedAt` is `timestamptz` and nullable. `archiveId` is `uuid` and nullable. Both are guarded and sealed. Uniques on that table become partial. `cascade` names child tables archived and restored with the row. An empty name is refused. `strategy: "column"` keeps archived rows in the table.
+
+```ts title="archive.ts"
+import { table, t } from "okmodel/pg";
+import { archivable } from "okmodel/traits";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text(),
+  },
+  { traits: [archivable({ cascade: ["comments"] })] }, // [!code focus]
+);
+```
+
+<Callout type="error" title="OKM1061">
+`strategy: "table"` is not available yet.
+</Callout>
+
+### Versioned and sortable
+
+`versioned()` adds `version`. An update passes the version you read, and the write bumps it. Use it when two editors must not overwrite each other. A stale write is a conflict and changes nothing. A miss stays `{ count: 0 }`. `inc` and the other atomic writes still bump `version`. `delete`, `archive`, and `restore` do not check it. An upsert and `.all()` are refused. Leaving `version` out is refused, and so is `version` on a table that is not versioned. `sortable("laneId")` adds `position`. New rows go at the end of that lane. `move` places a row before or after another in the same lane. A move is O(n) for that lane: it rewrites every row in the lane. `find` and `page` order by `position` when you omit `orderBy`. Naming the lane in `set` is refused, even when the value is the one already stored. `via()` on this table is refused. A delete leaves a gap until the next `move`.
+```ts title="traits.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+import { sortable, versioned } from "okmodel/traits";
+
+const tasks = table(
+  "tasks",
+  { id: t.text().primaryKey(), title: t.text(), laneId: t.text() },
+  { traits: [versioned(), sortable("laneId")] },
+);
+const app = schema({ tables: [tasks] });
+
+export async function edit(url: string, id: string, otherId: string): Promise<void> {
+  await using db = connect(url, { schema: app });
+  const current = await db.tasks.one({ where: { id } });
+  if (current === null) return;
+  const saved = await db.tasks.update({
+    where: { id },
+    set: { title: "next" },
+    version: current.version,
+  });
+  const placed = await db.tasks.move(id, { before: otherId });
+  if (saved.count < 0 || placed.position < 0) throw new Error("the write did not run");
+}
+```

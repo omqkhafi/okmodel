@@ -1,0 +1,59 @@
+<Callout type="info" title="Where this fits">
+Start here. The name is the first argument of `table()`. This page is the primary key. [Columns](/docs/define/table/columns) are the other fields.
+</Callout>
+
+One table has one primary key.
+
+| Place | Result |
+| --- | --- |
+| `.primaryKey()` | One column. Update omits it. Insert still accepts the value, unless the column is generated or guarded. |
+| `primaryKey` | The key when it is more than one column, in column order. |
+| a second `.primaryKey()` | Not a composite key. Use `primaryKey`. |
+| `unique` | A named constraint. The value is the field list, in column order. |
+| `.unique()` | The same constraint for one field. |
+| `.unique({ global: "reason" })` | On a tenant table, the tenant key is left out. |
+| an empty `global` reason | Refused. |
+
+```ts title="notes.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.uuid().primaryKey(), // [!code focus]
+    title: t.text(),
+  },
+);
+
+export const memberships = table(
+  "memberships",
+  {
+    organizationId: t.uuid(),
+    userId: t.uuid(),
+  },
+  { primaryKey: ["organizationId", "userId"] }, // [!code focus]
+);
+```
+
+```ts title="users.ts"
+import { table, t } from "okmodel/pg";
+
+export const users = table(
+  "users",
+  {
+    id: t.identity(),
+    email: t.text(),
+  },
+  { unique: { email: ["email"] } }, // [!code focus]
+);
+```
+
+<Callout type="warning" title="Not a composite">
+A second `.primaryKey()` is not a composite key. Use the `primaryKey` option.
+</Callout>
+
+<Callout type="warning" title="Tenant unique">
+On a tenant table the key is included, unless you pass `{ global: "reason" }`. An empty reason is refused.
+</Callout>
+
+`t.id()` is a uuid primary key. `t.identity()` is a generated bigint. [OKID](/docs/define/table/columns#okid) is `t.id({ default: okid() })`, stored as `text`.

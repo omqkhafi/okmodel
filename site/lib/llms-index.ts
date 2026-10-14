@@ -85,13 +85,9 @@ export function buildLlmsTxt(
   for (const page of rootPages) lines.push(pageLine(page, byUrl, origin));
   lines.push("");
 
-  for (const group of docGroups.slice().sort((a, b) => a.order - b.order)) {
+  for (const group of docGroups.filter((item) => item.parent === undefined).slice().sort((a, b) => a.order - b.order)) {
     lines.push(`## ${group.title}`, "");
-    const inGroup = mappedPages
-      .filter((page) => page.group === group.id)
-      .slice()
-      .sort((a, b) => a.order - b.order);
-    for (const page of inGroup) lines.push(pageLine(page, byUrl, origin));
+    for (const page of pagesUnder(group.id)) lines.push(pageLine(page, byUrl, origin));
     lines.push("");
   }
 
@@ -144,6 +140,24 @@ export function buildLlmsCatalog(
       markdown: absoluteDocsUrl(markdownPathForSlugs(page.slugs), origin),
     })),
   };
+}
+
+/**
+ * Pages in one top-level group, with nested folders inserted at their order.
+ *
+ * @param groupId - Top-level group
+ */
+function pagesUnder(groupId: string): readonly MappedPage[] {
+  const chunks: { order: number; pages: readonly MappedPage[] }[] = [];
+  for (const page of mappedPages) {
+    if (page.group === groupId) chunks.push({ order: page.order, pages: [page] });
+  }
+  for (const child of docGroups) {
+    if (child.parent !== groupId) continue;
+    const pages = mappedPages.filter((page) => page.group === child.id).slice().sort((a, b) => a.order - b.order);
+    chunks.push({ order: child.order, pages });
+  }
+  return chunks.sort((a, b) => a.order - b.order).flatMap((chunk) => chunk.pages);
 }
 
 function pageLine(

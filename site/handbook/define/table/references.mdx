@@ -1,0 +1,77 @@
+<Callout type="info" title="Where this fits">
+The column stores another row's key. This page is that foreign key: the target, then what happens on delete and on update. [Relations](/docs/define/table/relations) are the name you query.
+</Callout>
+
+`.references()` points a column at another table. The argument is the table name, so the column type does not cycle.
+
+### Target table
+
+The first argument is the target table name. An empty name is refused.
+
+```ts title="target.ts"
+import { table, t } from "okmodel/pg";
+
+export const comments = table("comments", {
+  id: t.identity(),
+  noteId: t.bigint().references("notes"), // [!code focus]
+  body: t.text(),
+});
+```
+
+<Callout type="error" title="OKM1020">
+`schema()` checks that the target table exists. A missing table is refused.
+</Callout>
+
+### On delete
+
+`onDelete` is `"cascade"`, `"no action"`, `"restrict"`, `"set default"`, or `"set null"`. Anything else is refused. Omitted leaves the clause off. `set null` needs a nullable column.
+
+```ts title="on-delete.ts"
+import { table, t } from "okmodel/pg";
+
+export const comments = table("comments", {
+  id: t.identity(),
+  noteId: t.bigint().references("notes", { onDelete: "cascade" }), // [!code focus]
+  body: t.text(),
+});
+```
+
+### On update
+
+`onUpdate` takes the same actions. Anything else is refused. Omitted leaves the clause off. `set null` needs a nullable column.
+
+```ts title="on-update.ts"
+import { table, t } from "okmodel/pg";
+
+export const comments = table("comments", {
+  id: t.identity(),
+  noteId: t.bigint().nullable().references("notes", { onUpdate: "set null" }), // [!code focus]
+  body: t.text(),
+});
+```
+
+### Target columns
+
+`columns` names the target column when it is not the primary key. The list needs one name. An empty name is refused. Omitted, `schema()` uses that table's primary key.
+
+```ts title="target-columns.ts"
+import { table, t } from "okmodel/pg";
+
+export const comments = table("comments", {
+  id: t.identity(),
+  authorId: t.uuid().references("users", { columns: ["id"] }), // [!code focus]
+  body: t.text(),
+});
+```
+
+<Callout type="error" title="OKM1021">
+A missing column, no primary key, or more than one name is refused.
+</Callout>
+
+<Callout type="error" title="OKM1022">
+The column type and the target type must match.
+</Callout>
+
+<Callout type="info" title="Both">
+A [relation](/docs/define/table/relations) is the name you query. The reference is the foreign key. You want both: the column stores the key, and `one` or `many` names the edge.
+</Callout>

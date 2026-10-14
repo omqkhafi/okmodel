@@ -1,0 +1,92 @@
+<Callout type="info" title="Where this fits">
+A column with no default is required and not null. This page is how a missing value is filled, from nullable through a generated expression. [Shape](/docs/define/table/shape) is next, when one column holds more than one value.
+</Callout>
+
+Omitted, the column is required and not null.
+
+### Nullable
+
+`.nullable()` allows SQL NULL.
+
+```ts title="nullable.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  publishedAt: t.timestamptz().nullable(), // [!code focus]
+});
+```
+
+### Literal
+
+`.default(literal)` stores the literal in the catalog. A default outside a [picklist](/docs/define/table/shape#picklist) is refused.
+
+```ts title="literal.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  title: t.text().default(""), // [!code focus]
+});
+```
+
+### Generator
+
+`.default(generator)` is filled on insert. The catalog stores no default.
+
+```ts title="generator.ts"
+import { table, t } from "okmodel/pg";
+import { uuidv7 } from "okmodel/ids";
+
+export const notes = table("notes", {
+  id: t.uuid().default(uuidv7), // [!code focus]
+});
+```
+
+<Callout type="info" title="Generators">
+A generator is `uuidv4`, `uuidv7`, [OKID](/docs/define/table/columns#okid) (`okid(...)` from `okmodel/ids`), or any function. `t.id()` and `t.identity()` already carry a default. The schema [id default](/docs/define/schema#id-default) changes what a bare `t.id()` means. A column option wins.
+</Callout>
+
+### Null
+
+`.default(null)` is accepted only after `.nullable()`.
+
+```ts title="null-default.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  closedAt: t.timestamptz().nullable().default(null), // [!code focus]
+});
+```
+
+<Callout type="warning" title="Null">
+A null default is accepted only after `.nullable()`.
+</Callout>
+
+### SQL
+
+`.defaultSql(expression)` stores the SQL expression as written. An empty expression is refused.
+
+```ts title="default-sql.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  createdAt: t.timestamptz().defaultSql("now()"), // [!code focus]
+});
+```
+
+### Generated
+
+`.generated(expression)` omits the column from insert and update. `stored` defaults to true. An empty expression is refused.
+
+```ts title="generated.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+  search: t.tsvector().generated("to_tsvector('simple', title)"), // [!code focus]
+});
+```

@@ -1,0 +1,35 @@
+<Callout type="info" title="Where this fits">
+Some rows belong with the catalog. Apply inserts a row when its key is missing. It does not update or delete.
+</Callout>
+
+`reference` declares rows the application needs.
+
+<Callout type="info" title="Insert only">
+Apply inserts a row when its key is missing. It does not update or delete. The rows stay on the schema. They are not a diff in the catalog.
+</Callout>
+
+| Field | Required | Values |
+| --- | --- | --- |
+| `key` | yes | One column name or several, in constraint order. |
+| `rows` | yes | Each value is a string, a number, a boolean, or null. |
+
+```ts title="statuses.ts"
+import { table, t } from "okmodel/pg";
+
+export const statuses = table(
+  "statuses",
+  {
+    code: t.text().primaryKey(),
+    label: t.text(),
+  },
+  {
+    reference: {
+      key: "code", // [!code focus]
+      rows: [
+        { code: "open", label: "Open" },
+        { code: "done", label: "Done" },
+      ],
+    },
+  },
+);
+```

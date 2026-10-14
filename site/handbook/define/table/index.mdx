@@ -1,0 +1,44 @@
+<Anatomy call="table" shape="args" exported="notes">
+  <AnatomyPart slot="name" label="Name" code='"notes",' mark="name">
+    An empty name is refused.
+  </AnatomyPart>
+  <AnatomyPart slot="columns" label="Columns">
+    <AnatomyLine code="{" />
+    <AnatomyLine code="id: t.identity()," mark="key" indent={2} />
+    <AnatomyLine code="title: t.text()," mark="type" indent={2} />
+    <AnatomyLine code="published: t.boolean().default(false)," mark="after the type" indent={2} />
+    <AnatomyLine code="}," />
+    The [key](/docs/define/table/keys) comes first. Each other field is a [data type](/docs/define/table/columns). Defaults, names, and checks come after the type.
+  </AnatomyPart>
+  <AnatomyPart slot="options" label="Options" code="{ … }," mark="options">
+    Keys, indexes, checks, and the pages below. [`schema()`](/docs/define/schema) builds the catalog.
+  </AnatomyPart>
+</Anatomy>
+
+<Callout type="info" title="One builder">
+`t` is every builder. Import one builder when a file uses only that type.
+</Callout>
+
+## The declaration
+
+Read `table()` in this order. Each page is one part of the call.
+
+| Order | Page | You set |
+| --- | --- | --- |
+| 1 | [Keys](/docs/define/table/keys) | The primary key, and a unique. |
+| 2 | [Columns](/docs/define/table/columns) | The builder for each value. |
+| 3 | [Defaults](/docs/define/table/defaults) | What fills a column you omit. |
+| 4 | [Shape](/docs/define/table/shape) | An array, a picklist, or an enum. |
+| 5 | [Names](/docs/define/table/names) | The SQL name, a previous name, and a comment. |
+| 6 | [Visibility](/docs/define/table/visibility) | Hidden, sensitive, and guarded. |
+| 7 | [Validation](/docs/define/table/validation) | The rule that rejects a bad value. |
+| 8 | [References](/docs/define/table/references) | A foreign key. |
+| 9 | [Relations](/docs/define/table/relations) | The edge you query. |
+| 10 | [Indexes](/docs/define/table/indexes) | An extra index. |
+| 11 | [Checks](/docs/define/table/checks) | SQL the row must pass. |
+| 12 | [Filters](/docs/define/table/filters) | What a caller may send. |
+| 13 | [Traits](/docs/define/table/traits) | A trait on this table, including versioned and sortable. |
+| 14 | [Tenancy](/docs/define/table/tenancy) | The schema key, global, or a path. |
+| 15 | [Presets](/docs/define/table/presets) | A named `where`. |
+| 16 | [Reference rows](/docs/define/table/reference-rows) | Rows apply inserts when the key is missing. |
+| 17 | [Queries](/docs/define/table/queries) | The calls on the table. |

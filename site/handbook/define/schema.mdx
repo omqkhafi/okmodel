@@ -53,7 +53,7 @@ export default schema({
 ```
 
 <Callout type="info" title="sqlName">
-`publishedAt` is stored as `published_at`. A column [sqlName](/docs/define/table#sql-name) still wins for that column.
+`publishedAt` is stored as `published_at`. A column [sqlName](/docs/define/table/names#sql-name) still wins for that column.
 </Callout>
 
 <Callout type="warning" title="Only snake">
@@ -135,7 +135,7 @@ Anything other than `"emitted"` or `"inferred"` is refused.
 | omitted | A bare `t.id()` stores `uuidv7()`. |
 | `"uuidv7"` | Stores `uuidv7()`. |
 | `"uuidv4"` | Stores `gen_random_uuid()`. |
-| a client generator | Filled on insert. Stays out of the catalog. `okid(...)` is [OKID](/docs/define/table#okid). |
+| a client generator | Filled on insert. Stays out of the catalog. `okid(...)` is [OKID](/docs/define/table/columns#okid). |
 | another key | Refused. |
 
 ```ts title="schema.ts"
@@ -217,7 +217,7 @@ export default schema({
 </Callout>
 
 <Callout type="info" title="Opt out">
-A table opts out with `omitDefaults` and a reason. The table can still pass its own `traits`. See [traits](/docs/define/table#traits).
+A table opts out with `omitDefaults` and a reason. The table can still pass its own `traits`. See [traits](/docs/define/table/traits).
 </Callout>
 
 <Callout type="warning" title="Reason">
@@ -250,7 +250,7 @@ export default schema({
 ```
 
 <Callout type="info" title="Opt out">
-A table opts out with `global("reason")`. A table that follows a relation instead of storing the key uses `via`. Both live on [tenancy](/docs/define/table#tenancy).
+A table opts out with `global("reason")`. A table that follows a relation instead of storing the key uses `via`. Both live on [tenancy](/docs/define/table/tenancy).
 </Callout>
 
 <Callout type="info" title="Unique">
@@ -294,7 +294,7 @@ export default schema({
 ```
 
 <Callout type="info" title="Per table">
-A table can turn the flag on or off with its own `validation`. The rules themselves are [on the table](/docs/define/table#validation): a `validate` section, or `.validate()` on a column.
+A table can turn the flag on or off with its own `validation`. The rules themselves are [on the table](/docs/define/table/validation): a `validate` section, or `.validate()` on a column.
 </Callout>
 
 <Callout type="error" title="OKM1030">
@@ -307,7 +307,7 @@ The same field in the table `validate` section and in `.validate()` is refused. 
 
 | Value | Import | Result |
 | --- | --- | --- |
-| `citext()` | `okmodel/pg/citext` | Declares `citext`. A [citext](/docs/define/table#text) column needs this name. |
+| `citext()` | `okmodel/pg/citext` | Declares `citext`. A [citext](/docs/define/table/columns#text) column needs this name. |
 | `pgTrgm()` | `okmodel/pg/pg_trgm` | Declares `pg_trgm`. `similar`, `wordSimilar`, `gin`, and `gist` are methods on that value. |
 | `extension("name")` | `okmodel/ext` | Declares that name. There is no typed API. `ltree` is this form. |
 

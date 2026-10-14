@@ -1,0 +1,69 @@
+<Callout type="info" title="Where this fits">
+A column is one value until you wrap it. An array repeats a scalar, a picklist narrows text, and an enum is a Postgres type. [Names](/docs/define/table/names) are what the database stores.
+</Callout>
+
+`.array()` wraps a scalar. `.picklist()` narrows a string column. `t.enum()` creates a Postgres type.
+
+### Array
+
+`.array()` wraps a scalar. `dims` defaults to 1. It is an integer from 1 to 6. `array({ dims: 2 })` is a matrix. There is no second `.array()` call to add a dimension.
+
+```ts title="array.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  tags: t.text().array(), // [!code focus]
+  grid: t.integer().array({ dims: 2 }), // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1060">
+A rank outside 1 to 6 is refused. Calling `.array()` on a column that is already an array is refused.
+</Callout>
+
+### Picklist
+
+`.picklist(values)` narrows a string column to a literal union. The catalog gets a CHECK. `{ check: false }` keeps the list in the type and skips that CHECK.
+
+```ts title="picklist.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  status: t.text().picklist(["open", "done"]).default("open"), // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1060">
+An empty list, an empty value, or a repeated value is refused. A default outside the list is refused.
+</Callout>
+
+<Callout type="error" title="OKM1210">
+A value outside the list is rejected when it is encoded.
+</Callout>
+
+### Enum
+
+`t.enum(name, labels)` creates a Postgres enum. The column type is that name. Labels are stored in that order. The TypeScript type is the union of the labels. A [picklist](#picklist) stays a string column and adds a CHECK. An enum is its own type, so adding a label is a type change.
+
+```ts title="enum.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  status: t.enum("note_status", ["open", "done"]), // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1060">
+An empty name, an empty list, an empty label, or a repeated label is refused.
+</Callout>
+
+<Callout type="error" title="OKM1210">
+A value outside the labels is rejected when it is encoded.
+</Callout>
+
+<Callout type="error" title="OKM1020">
+The same enum name with a different label list is refused.
+</Callout>
