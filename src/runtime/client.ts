@@ -872,16 +872,26 @@ function callOptions(
     readonly signal?: AbortSignal | undefined;
     readonly timeout?: number | undefined;
     readonly route?: "primary" | "replica" | undefined;
+    readonly pin?: { name?: string } | undefined;
   },
   statement?: number,
-): ExecuteOptions | undefined {
+): (ExecuteOptions & { readonly pin?: { name?: string } }) | undefined {
   const timeout = input.timeout ?? statement;
   const route = input.route;
-  if (input.signal === undefined && timeout === undefined && route === undefined) return undefined;
+  const pin = input.pin;
+  if (
+    input.signal === undefined &&
+    timeout === undefined &&
+    route === undefined &&
+    pin === undefined
+  ) {
+    return undefined;
+  }
   return {
     ...(input.signal !== undefined ? { signal: input.signal } : {}),
     ...(timeout !== undefined ? { timeout } : {}),
     ...(route !== undefined ? { route } : {}),
+    ...(pin !== undefined ? { pin } : {}),
   };
 }
 

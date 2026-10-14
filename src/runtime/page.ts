@@ -62,6 +62,7 @@ type Key = {
  * @param options - `where`, `select`, `orderBy`, `limit`, `include`, and `after`
  * @param mods - Signal and timeout
  * @param view - Archive visibility
+ * @param pin - Endpoint a stream already chose. Absent for `page()`
  * @returns A handle that resolves to `{ items, next }`
  */
 export function build(
@@ -70,9 +71,10 @@ export function build(
   options: object,
   mods: Mods,
   view: ArchiveView | undefined,
+  pin?: { name?: string },
 ): Promise<unknown> & Record<string, unknown> {
   try {
-    return plan(session, table, options, mods, view);
+    return plan(session, table, options, mods, view, pin);
   } catch (error) {
     throw error instanceof OkmError ? attachHttp(session.http, error) : error;
   }
@@ -84,6 +86,7 @@ function plan(
   options: object,
   mods: Mods,
   view: ArchiveView | undefined,
+  pin?: { name?: string },
 ): Promise<unknown> & Record<string, unknown> {
   const record: Record<string, unknown> = isRecord(options) ? options : {};
   if (Object.hasOwn(record, "search")) {
@@ -134,6 +137,7 @@ function plan(
       view,
     ),
     ...(after !== undefined ? { after } : {}),
+    ...(pin !== undefined ? { pin } : {}),
   };
   return readHandle(session, table, call, mods, async (compiled, rows) => {
     const items = (await decodeRows(compiled, rows, table)) as Record<string, unknown>[];

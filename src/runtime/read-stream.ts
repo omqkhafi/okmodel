@@ -100,6 +100,8 @@ export async function* streamRows(
 
   const cancel = session.pool.capabilities.cancel === true;
   const statement = session.timeouts?.statement;
+  // One object for every batch. The router writes the first endpoint into it.
+  const pin: { name?: string } = {};
   let after: string | undefined;
   let left = total;
   let pending: Promise<unknown> | undefined;
@@ -116,6 +118,7 @@ export async function* streamRows(
         pageFields(call, size, after, signal, batchTimeout(remaining, cancel, statement)),
         mods,
         view,
+        pin,
       );
       pending = handle;
       const value = asPage(await handle);

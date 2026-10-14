@@ -164,7 +164,7 @@ export async function below(url: string, id: bigint): Promise<void> {
 
 `stream()` walks the rows in batches. The default batch is 1000. Pass `batch` to change it. Each batch is a normal query, so leaving the loop does not hold a connection. The order is `orderBy`, then the primary key. Leave `orderBy` out and the rows follow the primary key. A table with no primary key cannot stream. `limit` is how many rows you want in total. `.all("export")` with no `limit` streams the set. `select`, `include`, a preset, and the archive set work the same way they do on `page()`.
 
-A row that changes while the stream runs can show up, or not. For one snapshot, run it inside `tx({ isolation: "repeatable read" })`. `signal` stops the stream. `timeout` is the time for the whole stream, not a fresh budget on every batch.
+A row that changes while the stream runs can show up, or not. For one snapshot, run it inside `tx({ isolation: "repeatable read" })`. That transaction reads the primary. When the client has replicas, the first batch chooses one endpoint and the rest of the stream stays there. `signal` stops the stream. `timeout` is the time for the whole stream, not a fresh budget on every batch.
 
 ```ts title="stream.ts"
 import { connect } from "okmodel/pg/postgresjs";
@@ -175,7 +175,7 @@ const app = schema({ tables: [notes] });
 
 export async function each(url: string): Promise<void> {
   await using db = connect(url, { schema: app });
-  for await (const row of db.notes.find().all("export").stream({ batch: 500 })) {
+  for await (const row of db.notes.find({}).all("export").stream({ batch: 500 })) {
     if (row.title === "") break;
   }
 }

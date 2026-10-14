@@ -990,6 +990,8 @@ type Choice = {
   reason: string;
   /** The dialect probe is not a tenant statement. */
   skipGuard?: boolean;
+  /** A stream batch. A connection failure does not move to another endpoint. */
+  pinned?: boolean;
 };
 
 type ClientOpts = Parameters<typeof createClient>[2];
@@ -1010,7 +1012,7 @@ function routePool(handle: Handle): DriverPool {
     capabilities: primary.pool.capabilities,
     execute: async (text, params, options) => {
       if (handle.closed) closed();
-      const choice = await choose(handle, text, options?.route);
+      const choice = await resolve(handle, text, options);
       const result = await attempt(handle, choice, (endpoint) =>
         endpoint.pool.execute(text, params, strip(options)),
       );
@@ -1185,7 +1187,7 @@ async function readOnlyUnit(
   options: ExecuteOptions | undefined,
 ): Promise<ExecuteResult> {
   if (handle.closed) closed();
-  const choice = await choose(handle, text, options?.route);
+  const choice = await resolve(handle, text, options);
   return attempt(handle, choice, async (endpoint) => {
     if (endpoint.pool.reserve === undefined) replicaReserve();
     const conn = await endpoint.pool.reserve();
@@ -1364,7 +1366,7 @@ async function attempt(
     if (choice.skipGuard !== true) await callGuard(choice.endpoint);
     return await tracked(choice.endpoint, choice.op === "read", () => run(choice.endpoint));
   } catch (error) {
-    if (choice.op !== "read" || !isUnreachable(error)) throw error;
+    if (choice.pinned === true || choice.op !== "read" || !isUnreachable(error)) throw error;
     choice.endpoint.generation += 1;
     const next = await retryOf(handle, choice);
     if (next === undefined) throw error;
@@ -1854,12 +1856,65 @@ function noteFailure(endpoint: Endpoint): void {
   if (endpoint.failures >= CIRCUIT_AT) endpoint.circuit = "open";
 }
 
-/** Drops `route` before a driver sees the options. */
+/** Drops `route` and a stream pin before a driver sees the options. */
 function strip(options: ExecuteOptions | undefined): ExecuteOptions | undefined {
-  if (options === undefined || options.route === undefined) return options;
-  const { route: _route, ...rest } = options;
+  if (options === undefined) return undefined;
+  if (!("route" in options) && !("pin" in options)) return options;
+  const bag = options as ExecuteOptions & { readonly pin?: unknown };
+  const { route: _route, pin: _pin, ...rest } = bag;
   if (rest.signal === undefined && rest.timeout === undefined) return undefined;
   return rest;
+}
+
+/**
+ * The endpoint for this statement.
+ *
+ * A stream passes one `pin` for every batch. The first read writes the name.
+ * Later reads use that endpoint and do not run selection again.
+ *
+ * @param handle - Pools and replica health
+ * @param text - Statement text
+ * @param options - Caller hint and the stream pin
+ * @returns The endpoint, the class, and the reason
+ */
+async function resolve(
+  handle: Handle,
+  text: string,
+  options: ExecuteOptions | undefined,
+): Promise<Choice> {
+  const pin = taken(options);
+  if (pin?.name !== undefined) return held(handle, pin.name);
+  const choice = await choose(handle, text, options?.route);
+  if (pin !== undefined && choice.op === "read") {
+    pin.name = choice.endpoint.name;
+    return { ...choice, pinned: true };
+  }
+  return choice;
+}
+
+/** The stream pin on `options`, when this call is one batch of a stream. */
+function taken(options: ExecuteOptions | undefined): { name?: string } | undefined {
+  if (options === undefined || !("pin" in options)) return undefined;
+  const pin = (options as { readonly pin?: unknown }).pin;
+  if (typeof pin !== "object" || pin === null) return undefined;
+  return pin as { name?: string };
+}
+
+/**
+ * The endpoint a stream already chose.
+ *
+ * @param handle - Endpoints opened at connect
+ * @param name - Name written after the first batch
+ * @returns That endpoint, marked so a failure does not change targets
+ */
+function held(handle: Handle, name: string): Choice {
+  for (const endpoint of handle.endpoints) {
+    if (endpoint.name !== name) continue;
+    return { endpoint, op: "read", reason: `stream:${name}`, pinned: true };
+  }
+  throw new OkmError("OKM1120", `stream() stays on ${name}. That target is not in this topology.`, {
+    fix: { summary: "The first batch chose this target. Later batches do not move." },
+  });
 }
 
 /** Reads the commit position after a successful write, before the write's promise resolves. */
