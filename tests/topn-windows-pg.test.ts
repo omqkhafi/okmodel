@@ -349,6 +349,38 @@ async function prove(db: Db): Promise<void> {
       } as never),
     ),
   ).toBe("OKM1120");
+
+  const prototypeKeys = ["__proto__", "constructor", "toString", "hasOwnProperty"] as const;
+  const windowCalls = [
+    (key: string) => rowNumber({ orderBy: { id: "asc" }, as: key }),
+    (key: string) => rank({ orderBy: { amount: "desc" }, as: key }),
+    (key: string) => denseRank({ orderBy: { amount: "desc" }, as: key }),
+    (key: string) => runningTotal("amount", { orderBy: { id: "asc" }, as: key }),
+  ] as const;
+  for (const make of windowCalls) {
+    for (const key of prototypeKeys) {
+      let error: OkmError | undefined;
+      try {
+        await a.tasks.find({ select: ["id", make(key)], limit: 1 }).sql();
+      } catch (caught) {
+        if (caught instanceof OkmError) error = caught;
+      }
+      expect(error?.code).toBe("OKM1120");
+      expect(error?.message).toContain(key);
+      expect(error?.message).toContain("prototype key");
+    }
+  }
+  const after = await a.tasks.find({
+    select: ["id", rowNumber({ partitionBy: ["status"], orderBy: { amount: "desc" }, as: "n" })],
+    orderBy: { id: "asc" },
+    limit: 10,
+  });
+  expect(after.find((row) => row.id === T1)?.n).toBe(1);
+  const probe: { polluted?: boolean } = {};
+  expect(probe.polluted).toBeUndefined();
+  expect(typeof Object.prototype.toString).toBe("function");
+  expect(typeof Object.prototype.hasOwnProperty).toBe("function");
+  expect(typeof Object.prototype.constructor).toBe("function");
 }
 
 /**

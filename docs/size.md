@@ -328,13 +328,13 @@ Not a gate. Startup minified bytes are what that feature added to the stubbed fe
 | Feature | Startup minified | Lazy chunk | Type-cost delta |
 | --- | ---: | --- | --- |
 | First-or-create | 0 | write chunk 29,403 / 9,742, shared with every write | 0 / 0 (stayed 17,171 / 6,328) |
-| `bucket()` | 0 | `bucket-group.ts` 4,519 / 1,871 | 0 / 0 |
+| `bucket()` | 0 | `bucket-group.ts` 4,414 / 1,809. `result-name.ts` 237 / 212, shared with windows | 0 / 0 |
 | Claim (`lock: "skip"`) | 0 | `lock.ts` 1,425 / 785, on top of the write chunk | +22 / +19 |
 | Search | 683 | `text-search.ts` 3,185 / 1,297 | +1 / +6 |
-| Top-N include and windows | 217 | `window.ts` 5,552 / 2,270 and `include.ts` 9,852 / 3,036 | +43 / +20 |
+| Top-N include and windows | 217 | `window.ts` 5,635 / 2,295 and `include.ts` 9,852 / 3,036 | +43 / +20 |
 | Descendants, ancestors, sync | 294 | `tree.ts` 5,025 / 2,020 and `sync.ts` 12,005 / 3,881 | 0 / 0 |
 | `versioned()` and `sortable()` | 0 | `version.ts` 5,044 / 1,920 and `sort.ts` 2,588 / 1,233 | 0 / +1 |
 | `morph` | 117 | none on an app that does not call it. The hook is the table lookup in `schema.ts` | +2 / 0 |
 | `.stream()` | 57 | `read-stream.ts` 3,161 / 1,439 | 0 / 0 |
 
-The prototype-key check on `bucket()` is inside the bucket chunk. It is not in the stubbed startup graph (D257).
+The prototype-key check is one helper, `refusePrototypeKey` in `result-name.ts`. `bucket()` and a window `as` both call it. That file loads with the bucket chunk and the window chunk. It is not in the stubbed startup graph (D257, D258).

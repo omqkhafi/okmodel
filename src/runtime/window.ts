@@ -27,6 +27,7 @@ import {
   type ReadCall,
   type Sink,
 } from "./plan.js";
+import { refusePrototypeKey } from "./result-name.js";
 
 const AS_NUMBER = (wire: string): number => Number(wire);
 const AS_TEXT = (wire: string): string => wire;
@@ -337,6 +338,7 @@ function readAs(value: unknown, label: string): string {
       fail("OKM1120", `${label} as has a control character.`);
     }
   }
+  refusePrototypeKey(value, `${label} as`);
   return value;
 }
 

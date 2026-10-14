@@ -272,7 +272,7 @@ export async function numbered(url: string) {
 ```
 
 <Callout type="error" title="OKM1120">
-`page()` reads `select` as field names, so a window there is OKM1120: `select must be a list of field names.` An `as` that is a column name is `rowNumber as id clashes with a column of tasks.` An empty `as` is `rowNumber needs as, the name of the result key.` A control character is `rowNumber as has a control character.` `orderBy` is required: `rowNumber needs orderBy, the order inside the group.` `lag`, `lead`, and a frame are not in this version.
+`page()` reads `select` as field names, so a window there is OKM1120: `select must be a list of field names.` An `as` that is a column name is `rowNumber as id clashes with a column of tasks.` An empty `as` is `rowNumber needs as, the name of the result key.` A control character is `rowNumber as has a control character.` A prototype key (`__proto__`, `constructor`, `toString`, or `hasOwnProperty`) is `rowNumber as __proto__ is a prototype key. Use another name for the result.` `orderBy` is required: `rowNumber needs orderBy, the order inside the group.` `lag`, `lead`, and a frame are not in this version.
 </Callout>
 
 <Callout type="error" title="OKM1124">

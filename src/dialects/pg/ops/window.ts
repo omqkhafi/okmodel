@@ -48,7 +48,8 @@ export type Window<A extends string, V extends string | number> = {
  *
  * `partitionBy` is the group. Omit it to number the whole result. `orderBy`
  * is the order inside that group. The primary key breaks ties. `as` is the
- * result key.
+ * result key. `__proto__`, `constructor`, `toString`, and `hasOwnProperty`
+ * are refused when the call runs.
  */
 type WindowOptions<A extends string> = {
   readonly partitionBy?: readonly string[];
