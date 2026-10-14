@@ -15,6 +15,7 @@ import {
   date,
   inList,
   integer,
+  rowNumber,
   schema,
   table,
   text,
@@ -125,6 +126,7 @@ async function prove(db: Db): Promise<void> {
   const a = db.for({ tenantId: TENANT_A });
   const b = db.for({ tenantId: TENANT_B });
   await refusals(a);
+  await sharedPrototypeGuard(a);
 
   const early = await add(a, {
     status: "open",
@@ -634,6 +636,40 @@ function stamp(value: unknown): string {
 
 function instant(value: unknown): string {
   return (value as Temporal.Instant).toString({ fractionalSecondDigits: 0 });
+}
+
+/**
+ * Both result-name paths refuse `__proto__`.
+ *
+ * A path that accepts the name fails this check. The messages are the shared
+ * helper's text.
+ */
+async function sharedPrototypeGuard(a: Scoped): Promise<void> {
+  const bucketError = await caught(
+    a.orders.aggregate({
+      groupBy: [bucket("createdAt", "day", { tz: "UTC", as: "__proto__" })],
+      limit: 1,
+    }),
+  );
+  expect(bucketError.message).toBe(
+    "bucket as __proto__ is a prototype key. Use another name for the result.",
+  );
+  let windowError: OkmError | undefined;
+  try {
+    await a.orders
+      .find({
+        select: ["id", rowNumber({ orderBy: { id: "asc" }, as: "__proto__" })],
+        limit: 1,
+      })
+      .sql();
+  } catch (error) {
+    if (error instanceof OkmError) windowError = error;
+    else throw error;
+  }
+  if (windowError === undefined) throw new Error("expected OkmError");
+  expect(windowError.message).toBe(
+    "rowNumber as __proto__ is a prototype key. Use another name for the result.",
+  );
 }
 
 async function caught(pending: PromiseLike<unknown>): Promise<OkmError> {

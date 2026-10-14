@@ -89,6 +89,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `update` with `lock: "skip"` matches the physical row by `tableoid` and `ctid`, so a claim does not change another partition or an inheritance child that shares the `ctid`. A path-parent update uses the same pair (D249).
 - Concurrent inserts into one `sortable()` group no longer pick the same `position`. The advisory lock is its own statement, and the max is read after that lock is held (D254).
 - `bucket()` refuses `as: "__proto__"`, `constructor`, `toString`, and `hasOwnProperty` before it writes the row (D257).
+- `rowNumber`, `rank`, `denseRank`, and `runningTotal` refuse `__proto__`, `constructor`, `toString`, and `hasOwnProperty` as the result name. The error is OKM1120, names the key, and is raised before any SQL (D258).
 
 #### adapters
 
