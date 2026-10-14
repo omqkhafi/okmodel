@@ -2,7 +2,9 @@
 The column stores another row's key. This page is that foreign key: the target, then what happens on delete and on update. [Relations](/docs/define/table/relations) are the name you query.
 </Callout>
 
-`.references(table, options)` stores the foreign key on the column. The table argument is a name, so the column type does not cycle. A later `.references()` replaces the earlier one. `schema()` checks the target.
+`.references(table, options)` stores the foreign key on the column. The table argument is a name, so the column type does not cycle. A later `.references()` replaces the earlier one. `schema()` checks the target. You do not name the constraint. It is `{table}_{column}_fkey`, using the SQL column name.
+
+A new table adds it with `alter table … add constraint`. A table that already exists adds it `not valid`, then `validate constraint`. The primary key is created with the table. A foreign key aimed at a unique waits until that unique exists.
 
 ### Target
 
@@ -23,6 +25,17 @@ const comments = table("comments", {
 });
 
 export const app = schema({ tables: [notes, comments] });
+```
+
+The name can be this table.
+
+```ts title="parent.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  parentId: t.bigint().nullable().references("notes", { onDelete: "set null" }), // [!code focus]
+});
 ```
 
 <Callout type="error" title="OKM1020">
@@ -117,11 +130,89 @@ export const comments = table("comments", {
 });
 ```
 
+<Callout type="error" title="OKM1060">
+On a tenant table, the foreign key includes the tenant key. `set null` and `set default` are then refused, on delete or on update. The message names the key and lists `cascade`, `restrict`, and `no action`. See [tenancy](/docs/define/table/tenancy).
+</Callout>
+
 ### On update
 
-`onUpdate` runs when the referenced key changes. It takes the same five actions. Omitted, the SQL has no `on update` clause. `"cascade"` copies the new key into this column. `"set null"` needs a nullable column, same as on delete.
+`onUpdate` runs when the referenced key changes. It takes the same five actions. Both options can be set on one call. Anything else is OKM1060, and the message lists the accepted actions.
 
-```ts title="on-update.ts"
+#### omitted
+
+Leave `onUpdate` off. The SQL has no `on update` clause. The [target](#target) sample does that.
+
+```ts title="update-omitted.ts"
+import { table, t } from "okmodel/pg";
+
+export const comments = table("comments", {
+  id: t.identity(),
+  noteId: t.bigint().references("notes"), // [!code focus]
+  body: t.text(),
+});
+```
+
+#### cascade
+
+`"cascade"` copies the new key into this column. This sample sets both actions.
+
+```ts title="update-cascade.ts"
+import { table, t } from "okmodel/pg";
+
+export const comments = table("comments", {
+  id: t.identity(),
+  noteId: t.bigint().references("notes", { onDelete: "cascade", onUpdate: "cascade" }), // [!code focus]
+  body: t.text(),
+});
+```
+
+#### no action
+
+`"no action"` writes `on update no action`. The key change is refused when a row still points at the old key. The check is at the end of the statement.
+
+```ts title="update-no-action.ts"
+import { table, t } from "okmodel/pg";
+
+export const comments = table("comments", {
+  id: t.identity(),
+  noteId: t.bigint().references("notes", { onUpdate: "no action" }), // [!code focus]
+  body: t.text(),
+});
+```
+
+#### restrict
+
+`"restrict"` writes `on update restrict`. The key change is refused when a row still points at the old key. The check runs immediately.
+
+```ts title="update-restrict.ts"
+import { table, t } from "okmodel/pg";
+
+export const comments = table("comments", {
+  id: t.identity(),
+  noteId: t.bigint().references("notes", { onUpdate: "restrict" }), // [!code focus]
+  body: t.text(),
+});
+```
+
+#### set default
+
+`"set default"` sets this column to its default. A default is not required for the definition to compile.
+
+```ts title="update-set-default.ts"
+import { table, t } from "okmodel/pg";
+
+export const comments = table("comments", {
+  id: t.identity(),
+  noteId: t.bigint().default("0").references("notes", { onUpdate: "set default" }), // [!code focus]
+  body: t.text(),
+});
+```
+
+#### set null
+
+`"set null"` sets this column to null. The column has to be nullable, same as on delete.
+
+```ts title="update-set-null.ts"
 import { table, t } from "okmodel/pg";
 
 export const comments = table("comments", {
@@ -158,7 +249,7 @@ export const app = schema({ tables: [notes, comments] });
 
 #### one name
 
-The list holds one field name, or that column's SQL name. An empty list is OKM1060: `references() columns must name at least one target column.` An empty name is OKM1060: `references() columns must be non-empty names.`
+The list holds one field name, or that column's SQL name. That column is the primary key or a unique. `schema()` checks that the name exists and the types match. It does not check uniqueness. Postgres refuses the constraint when the target is neither. An empty list is OKM1060: `references() columns must name at least one target column.` An empty name is OKM1060: `references() columns must be non-empty names.`
 
 ```ts title="target-columns.ts"
 import { schema, table, t } from "okmodel/pg";
