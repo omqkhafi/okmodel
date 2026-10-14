@@ -58,6 +58,7 @@ export type BucketChunk = {
  * Reads one `bucket()` group.
  *
  * Refuses a bad unit, zone, week start, or result name before any SQL.
+ * `__proto__`, `constructor`, `toString`, and `hasOwnProperty` are refused.
  * `timestamptz` needs an IANA `tz`. `date` refuses `tz`. `timestamp` without
  * a zone is refused.
  *
@@ -123,6 +124,7 @@ export function readBucket(
   if (typeof value.as !== "string" || value.as.length === 0) {
     fail("OKM1120", "bucket() needs as, the name of the result key.");
   }
+  refusePrototypeKey(value.as);
   if (
     value.as === "count" ||
     value.as === "sum" ||
@@ -197,6 +199,20 @@ export function writeGrouped(sink: Sink, names: readonly string[], orderBy: unkn
     parts.push(`${String(index)} asc nulls last`);
   }
   sink.text(parts.join(", "));
+}
+
+/**
+ * Result keys `filters().parse` already treats as ordinary prototype names.
+ *
+ * Assigning `__proto__` replaces that row's prototype. The other three
+ * shadow methods on the row. The same four names the filter parser
+ * treats as ordinary keys (D215).
+ */
+const PROTOTYPE_KEYS = ",__proto__,constructor,toString,hasOwnProperty,";
+
+function refusePrototypeKey(name: string): void {
+  if (!PROTOTYPE_KEYS.includes(`,${name},`)) return;
+  fail("OKM1120", `bucket as ${name} is a prototype key. Use another name for the result.`);
 }
 
 function unitOf(value: unknown): BucketUnit | undefined {

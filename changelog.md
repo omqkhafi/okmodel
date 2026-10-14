@@ -16,98 +16,77 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### ✨ Added
 
-#### docs
-
-- Queries is `/docs/start/queries`. It keeps first-or-create, `bucket()`, claim, search, the top-N include, windows, descendants, ancestors, `sync`, and `stream()`, each with when to use it and a link to known limits. `versioned()`, `sortable()`, and morph are on Table. Migration check, the 0.5.1 constraint rename, and Windows line endings are on Config. The driver notes are on Connect. Known limits is `/docs/known-limits`. `/docs/model/*`, `/docs/ship/*`, and `/docs/reference/*` redirect.
-- The docs site starts with `bun dev` from the repository root.
-- Connect is `/docs/define/connect`, after Schema. `connect()` takes a URL, a pool from `open`, or `{ primary, replicas }`. `schema` is required. The page lists the driver, pool size, prepared statements, TLS, search path, timeouts, the catalog check, `requireMeta`, errors, generators, observers, routing, and `close()`.
-- Define is four pages, `/docs/define/config`, `/docs/define/connect`, `/docs/define/schema`, and `/docs/define/table`. Each page holds the options that object accepts. Config, Connect, Schema, and Table are sections. Each section is one option. The code block focuses the line that option names, and the section lists that option's own values. A note that is not itself a value is a dashed card. The edge and icon follow info, warning, or error. `/docs/config`, `/docs/schema/*`, and `/docs/table/*` redirect there.
-- Let's start is `/docs/start`. `/docs/start/query` and `/docs/start/install` redirect there.
-- `/docs/config/file` redirects to Config.
-- Let's start is one numbered step per heading, on a rail: install, define the table, define the schema, define the config, push, connect, and a closing step that points to Basic Usage. There is no summary table. It adds `okmodel` and one Postgres driver, then defines the table, the schema, and `okmodel.config.ts`. The drivers are postgres.js, node-postgres, PGlite, and Bun.sql, one tab each. A titled install command does not open the driver switcher. `schema` points at that file, which is what `okm push` loads. `t.identity().primaryKey()` makes `id` the primary key. `okm push` creates the tables and writes no SQL file. A protected target refuses push. The client shows Direct and Safe for `DATABASE_URL`. Direct asserts the URL. Safe refuses an empty one. A code block focuses the line the paragraph names. A one-line file is left plain. The table sample is left plain. Define config focuses `schema` and `database`.
-- Basic Usage is the next page under Start. Each section is one call on the client from Let's start: insert, find, one, count, exists, update, and delete. Insert omits `id`. `find` returns a list and needs a limit (OKM1101). `one` returns the row or null. `count` and `exists` do not return the row. A write with no `where` is OKM1102.
-- Docs pages drop the breadcrumb. A rule sits under the title and description. Copy page sits at the end of the title row. It opens Copy Markdown, View Markdown, and Open in ChatGPT, Codex, Claude, Claude Code, and Cursor. Let's start puts a bordered Postgres chip on that row, before Copy page. Copy page uses that chip's pill: same height, radius, and type size. The mark uses the chip's text color.
-- Table, Schema, and Config each open with the anatomy of the call. `export const notes = table()` is the name, the columns, and the options. The key comes first inside the columns. Each other field is a data type. Defaults, names, and checks come after the type. An empty name is refused. `schema()` takes `tables`, then each other field as a section. Calling it twice on the same tables returns equal catalog bytes. `defineConfig()` takes `schema`, and either `database` or `targets`. Each other field is a section. The Table page then lists each data type in its own group: text, integers, exact numbers, floats, time, boolean and binary, JSON, UUID, OKID, ranges, network, geometry, search, and named types. Each builder names the SQL type, the TypeScript value, the Postgres storage size, and whether Postgres has it built in or as an extension. `serial` and `money` point at `t.identity()` and `t.numeric()`. OKID is `t.id({ default: okid() })` from `okmodel/ids`: `text` with collation `C`, filled on insert, 21 characters by default.
-- Table visibility is three subsections. Hidden leaves the column out of the default row and out of includes. A root `select` that names it returns it. `where` and `orderBy` are OKM1120 unless `hidden({ filterable: true })`. `filters()` is OKM1123 either way. `groupBy`, `sum`, `avg`, `min`, and `max` stay refused. A reporting select omits the column unless `roles.columns` names it. Sensitive redacts the value in logs, errors, and `inspect()` as `[redacted]`. A selected read still returns it. The catalog hash does not include the flag. Guarded omits the column from insert and update. Setting it is OKM1190 unless `{ allow }` names it. `allow` does not open a tenant key or a sealed trait field.
-- Table names are three subsections. The SQL name is the field name, or snake_case when casing is `"snake"`. `.sqlName()` and the table `sqlName` replace it, and casing does not rewrite a name you set. An empty name is refused. `renamedFrom` is the previous SQL name migrations read. An empty value is refused. A previous name missing from the last snapshot is OKM1020. A column `.comment()` stores the text you pass. A table `comment` is stored beside the table. An empty table comment is refused.
-- Table validation replaces Column validation. Inline is `.validate()` on the column, or one Standard Schema. Section is the `validate` option: each key is a field, `$row` is the whole row, and a key that is not a column is refused. The same field in both is OKM1030, reported by `okm check`. The table `validation` flag follows the schema when omitted. `true` turns rules on for that table, `false` turns them off, and `{ enabled, onRead, style }` uses the schema fields. `style` is `"inline"` or `"section"`.
-- Table validation examples use `v` from `okmodel/validate`. The built-in calls are `trim`, `lowercase`, `email(key)`, `min(n, key)`, `rule(fn, path, key)`, `onInsert`, and `onUpdate`. Transforms run before checks. The column type adds `required`, `too_long`, `picklist`, `integer_range`, `precision`, `uuid`, and `json` when validation is on. `.validate()` also takes one Standard Schema, including Zod and Valibot. A missing `okmodel/validate` import on a validated write is OKM1201. A failed check is OKM1200.
-- Built-in validation is two subsections. Rules lists each `v` call. `onInsert()` and `onUpdate()` limit the rules that follow, or the one rule passed to them. Column checks are added by the column type when validation is on.
-- Table references are four subsections. The target table is the first argument. An empty name is refused, and a missing table is OKM1020. `onDelete` and `onUpdate` are `cascade`, `no action`, `restrict`, `set default`, or `set null`. Anything else is refused. Omitted leaves the clause off. `set null` needs a nullable column. `columns` names the target column when it is not the primary key. The list needs one name. Omitted, `schema()` uses that table's primary key. A missing column, no primary key, or more than one name is OKM1021. A type mismatch is OKM1022.
-- Table relations are three subsections. To-one is `one(table, field)`. `field` is the local foreign key when this table has several keys to that table. To-many is `many(table, field)`. `field` is the foreign key on the other table. Join table is `manyThrough(table, { through })`. Name `from` and `to` when the join table has more than one foreign key to an end. A missing table is OKM1020. An ambiguous key is OKM1021.
-- Table indexes are two subsections. `index(...)` is one index, in column order, and it needs a column. `.unique()` marks that index unique. A unique index is not a unique constraint. The handle's `name` is the SQL name `schema()` stores.
-- Table traits is Traits. Added is a `traits` list on top of the schema defaults. A value that is not a list is refused. Omit defaults is `omitDefaults`, the reason that drops the schema list and keeps the table's own traits. An empty reason is rejected when the schema is built. Archive is `archivable()` from `okmodel/traits`. It adds `archivedAt` and `archiveId`. Uniques on that table become partial. `cascade` names child tables archived and restored with the row.
-- Table filters are three subsections. Allow maps a field to operators. Accepted operators name the value each one takes. `in` also accepts `inList`. A scalar is `eq` when that field allows `eq`. Refused operators are `path`, `matches`, `similar`, `wordSimilar`, boolean trees, relation quantifiers, and write operators. Sort names fields. The request key `sort` orders that field ascending. Related fields map a relation to fields, and `parse` turns that object into `has`. A name in `allow` is the column when that name is also a relation. A hidden field is OKM1123. `parse` expects an object (OKM1121). An operator the field does not list, or a value that operator does not take, is OKM1120.
-- Arrays and picklists are two subsections. Array is `.array()`. `dims` defaults to 1 and is an integer from 1 to 6. A second `.array()` is refused. A rank outside that range is OKM1060. Picklist is `.picklist(values)` on a string column. The catalog gets a CHECK unless `{ check: false }`. An empty list, an empty value, a repeated value, or a default outside the list is OKM1060. A value outside the list is OKM1210 when it is encoded.
-- Enum is `t.enum(name, labels)`. It creates that Postgres type. Labels are stored in that order. An empty name, an empty list, an empty label, or a repeated label is OKM1060. A value outside the labels is OKM1210 when it is encoded. The same name with a different label list is OKM1020. A picklist stays a string column. An enum is its own type, so adding a label is a type change.
-- Built-in traits lists `timestamps()` and `archivable()` from `okmodel/traits`. `timestamps()` adds `createdAt` and `updatedAt`, both guarded and sealed. `{ enforce: "trigger" }` also writes `updatedAt` in the database. `archivable()` adds `archivedAt` and `archiveId`. `cascade` names child tables. `strategy: "column"` keeps archived rows in the table. `strategy: "table"` is OKM1061. A column the table or another trait already has is OKM1012.
-- Table tenancy is Tenancy. Schema key is the default: the schema key is added. A unique on that table includes the key unless `.unique({ global: "reason" })`. Global is `global("reason")` and leaves the tenant column off. The reason is required. A global table that references a tenant table is OKM1705. Path is `via("a.b")`, at most three steps. An empty path is refused. A path that does not end at a tenant table, a missing relation, a cycle, or more than three steps is OKM1705.
-- Arrays and picklists is Shape. Array, Picklist, and Enum sit under it, in that order. Enum is `t.enum(name, labels)`.
-- Exact numbers is Numbers. Unconstrained is `t.numeric()`. Precision is an integer from 1 to 1000. Scale is an integer from 0 to that precision. `{ as: "number" }` makes the TypeScript value a number and can lose digits. Any other `as`, or a precision or scale outside those ranges, is OKM1060. The string codec keeps every digit.
-- Defaults are six subsections. Nullable allows SQL NULL. A literal default is stored in the catalog. A generator is filled on insert and is not stored. A null default is accepted only after `.nullable()`. `defaultSql` stores the expression as written. `generated` omits the column from insert and update, and `stored` defaults to true. An empty expression is refused. A default outside a picklist is refused.
-- Text is four subsections. Unbounded is `t.text()`. Varchar and char take a length from 1 to 10485760. A length outside that range is OKM1060. A longer value is OKM1210 when it is encoded. Char stores the characters you pass. Citext compares without case and needs `citext()` on the schema. Omitting `extensions` is OKM1020. A list that does not contain `citext` is OKM1810.
-- Integers are six subsections. Smallint is -32768 to 32767. Integer is -2147483648 to 2147483647. A value outside that range is OKM1210. Bigint is a decimal string across the 64-bit range. A string that is not a canonical integer is OKM1210. `{ as: "number" }` accepts a safe integer only. `{ as: "bigint" }` is a JavaScript bigint. Any other `as` is OKM1060. Identity is `GENERATED ALWAYS AS IDENTITY`, a primary key, and omitted from insert and update.
-- Floats are two subsections. Real is single precision, about 6 decimal digits, 4 bytes. Double is double precision, about 15 decimal digits, 8 bytes. Infinity and NaN are OKM1210. An exact quantity stays on numeric.
-- Time is seven subsections. Instant is `t.timestamptz()` and `Temporal.Instant`, stored in UTC. Timestamp is `t.timestamp()` and `Temporal.PlainDateTime`. Date is `t.date()` and `Temporal.PlainDate`. Time of day is `t.time()` and `Temporal.PlainTime`. Offset is `t.timetz()` as `{ time, offset }` with `±HH:MM`. Any other offset is OKM1210. Interval is `t.interval(fields)` and `Temporal.Duration`. Any other `fields` value is OKM1060. Fractional seconds are an integer from 0 to 6 on timestamptz, timestamp, time, and timetz. Outside that range is OKM1060.
-
 #### runtime
 
-- `bucket(column, unit, { tz, as })` groups an aggregate by a calendar or clock unit. A day or longer unit returns `Temporal.PlainDate`. A second, minute, or hour returns `Temporal.Instant`. A NULL timestamp is one group: the result key is present and the value is null. There is still no `having`. Time-zone date helpers stay deferred (D247).
-- `update` with `lock: "skip"` and `limit` claims up to that many rows in one statement and leaves rows another transaction already holds. A read still uses `lock: "update"` and `wait: "skip"` inside `tx()` (D249).
-- `find({ search })` and `count({ search })` look through a column built for search. A string is enough when the table has one. `{ for, in, match, language }` names the text, the column, how to match, and the language. Rows come back closest first, then by primary key, unless you pass `orderBy`. `search` combines with `where`, `select`, `include`, and presets. `page()` does not take `search` in this version (D250).
-- `relevance(query, { match, language })` orders a search column by how well it matches. `find({ search })` compiles to the same SQL as `matches` plus `relevance`.
-- A to-many `include` with `orderBy` and `limit` returns the first N related rows for each parent, in one lateral join. The primary key breaks ties (D251).
+- `bucket(column, unit, { tz, as })` groups an aggregate by a calendar or clock unit. A day or longer returns `Temporal.PlainDate`. A second, minute, or hour returns `Temporal.Instant`. A NULL timestamp is one group: the result key is present and the value is null. `__proto__`, `constructor`, `toString`, and `hasOwnProperty` are refused as `as`. There is still no `having`. Time-zone date helpers stay deferred (D247, D257).
+- `update` with `lock: "skip"` and `limit` claims up to that many unlocked rows in one statement. A read still uses `lock: "update"` and `wait: "skip"` inside `tx()` (D249).
+- `find({ search })` and `count({ search })` match a column built for search. A string is enough when the table has one. Rows come back closest first unless you pass `orderBy`. `page()` does not take `search` (D250).
+- `relevance(query, { match, language })` orders a search column by the match. `matches` takes the same options. `{ mode, config }` is not accepted (D250).
+- A to-many `include` with `orderBy` and `limit` returns the first N related rows of each parent. The primary key breaks ties (D251).
 - `rowNumber`, `rank`, `denseRank`, and `runningTotal` go in `select` on `find` or `one`. `page()` refuses a window when the call runs (D251).
-- `descendants(id)` and `ancestors(id)` read the rows below or above a row in one statement. A cycle returns. `depth`, `where`, `select`, `orderBy`, and `self` are optional. `ltree` is not required (D252).
-- `sync(id, relation, ids)` sets a to-many relation to exactly those ids and reports the links it added and removed. A join table changes link rows. A nullable foreign key is set or cleared and the related row stays (D252).
-- `versioned()` adds `version`. An update passes the version you read and the write bumps it. A stale write is a conflict and changes nothing. `inc` still bumps `version` (D254).
-- `sortable(groupBy?)` adds `position` and `move(id, { before })` or `{ after }`. New rows go at the end of the group. `find` and `page` order by `position` when you omit `orderBy` (D254).
-- `morph("commentable", ["tasks", "lists"])` includes the task or the list, or null, as a flat union. `morphMany` on each target is the comments that point at it. `morphTo` sets the type and the id together. Setting one without the other is refused (D255).
+- `descendants(id)` and `ancestors(id)` read the rows below or above a row in one statement. A row already on the path is not entered again. `ltree` is not required (D252).
+- `sync(id, relation, ids)` sets a to-many relation to exactly those ids and reports the links it added and removed (D252).
+- `versioned()` adds `version`. An update passes the version you read and the write bumps it. A stale write is a conflict and changes nothing (D254).
+- `sortable(groupBy?)` adds `position` and `move(id, { before })` or `{ after }`. New rows go at the end of the group. A move is O(n) per group. `find` and `page` order by `position` when you omit `orderBy` (D254).
+- `morph("commentable", ["tasks", "lists"])` includes the matching target, or null, as a flat union. `morphMany` is the reverse many. `morphTo` sets the type and the id together (D255).
+
+#### docs
+
+- The handbook documents those calls, including what each one refuses. Define is Table, Schema, Connect, and Config. Start is Let's start, Basic Usage, and Queries.
+- Docs pages drop the breadcrumb. Copy page sits on the title row and opens Markdown and chat actions. A code block focuses the line the paragraph names.
 
 ### 💥 Breaking Changes
 
-- `matches` takes `{ match, language }`. `match` is `natural` (the default), `all-words`, `phrase`, or `advanced`. `language` is a text search language such as `english`. `{ mode, config }` is not accepted (D250).
+- `matches` takes `{ match, language }`. `match` is `natural` (the default), `all-words`, `phrase`, or `advanced`. `{ mode, config }` is not accepted (D250).
 
 ### 🔥 Removed
 
 - Safety and Drivers are no longer their own pages. The reference pages other than known limits are not published. Old URLs redirect.
-- Handbook pages no longer end with a Next link. The page footer is the previous and next page.
+- Handbook pages no longer end with a Next link.
 
 ### 🐛 Fixed
 
-- The Schema page lists `extensions` as `citext()`, `pgTrgm()`, or `extension("name")`. `schema()` stores the catalog record. Migrate writes `create extension`. An exact `version` is written into that statement. A `>=` floor is stored and is not.
-- Config states each option once. A schema module is refused when it exports no `schema()`. A target value that is not a URL is OKM1845. `okm check` and `okm migrate plan` report a protection mismatch. A timeout flag refuses a missing or negative number. Apply defaults an omitted field to `5000` and `30000`. `okm migrate check` leaves that field unset.
-- `okm migrate check` does not open a second connection to drop the scratch schema when the replay rolls back. A step that commits still drops that schema on a new connection (D245).
-- A server error whose text contains `CONNECT` is no longer treated as a lost connection. Classification uses the driver `code` and SQLSTATE (`08` and `57P01`–`57P03`) only. `grant CONNECT` and a check named `no_CONNECT_zz` fail with the database error, and the connection can be used again. A closed pool is SQLSTATE `08006` (D244).
-- `insert` with `onConflict: { on, return: true }` returns the existing row when another transaction inserts it first. The second statement runs only when the insert returned nothing, and the existing row is not changed (D246).
-- An update list of two different timestamps, dates, or byte values is not the same target. First-or-create on a timestamptz or date unique still returns that row (D246).
-- `update` with `lock: "skip"` matches the physical row by `tableoid` and `ctid`. A claim of one row no longer changes a row in another partition, or an inheritance child, that happens to share the `ctid`. A path-parent update uses the same pair (D249).
-- Concurrent inserts into one `sortable()` group no longer pick the same `position`. The advisory lock is its own statement, and `max(position)` is read in the next statement of that transaction, after the lock is held (D254).
+#### runtime
 
-### ♻️ Changed
+- `insert` with `onConflict: { on, return: true }` returns the existing row when another transaction inserts it first, and does not change that row (D246).
+- An update list of two different timestamps, dates, or byte values is not the same target (D246).
+- `update` with `lock: "skip"` matches the physical row by `tableoid` and `ctid`, so a claim does not change another partition or an inheritance child that shares the `ctid`. A path-parent update uses the same pair (D249).
+- Concurrent inserts into one `sortable()` group no longer pick the same `position`. The advisory lock is its own statement, and the max is read after that lock is held (D254).
+- `bucket()` refuses `as: "__proto__"`, `constructor`, `toString`, and `hasOwnProperty` before it writes the row (D257).
 
 #### adapters
 
-- Reclaimed startup bytes. A closed pool reports SQLSTATE `08006` with the message `The pool is closed.` Queries are unchanged.
-
-#### runtime
-
-- `update` of a list refuses the same target twice (OKM1120). A target that matches nothing is not an error: `count` is the rows changed. An empty `set` is OKM1120 (`update set is empty.`). An empty list runs no statement (D246).
-- `inc` is a number or bigint column. A text column is OKM1124. A list that sets one field with `inc` in one row and a plain value in another is OKM1120. A null number stays null (D249).
-- The featureless startup graph is 251 minified bytes smaller. `relevance` writes its sort direction from the operator chunk, which already loads for that query. Queries are unchanged (D253).
-- `.stream()` yields rows in keyset batches on every driver, including PGlite. The default batch is 1000. `limit` is the total. A table with no primary key, `search`, and a window are refused. Rows committed while a long stream runs can be seen or missed; `tx({ isolation: "repeatable read" })` is one snapshot of the primary. On a topology the first batch chooses the endpoint and later batches stay there (D256).
+- A server error whose text contains `CONNECT` is no longer treated as a lost connection. Classification uses the driver `code` and SQLSTATE (`08` and `57P01`–`57P03`) only. A live session is rolled back and released. A session that is gone is released without a rollback (D244).
 
 #### tooling
 
-- The size gates for the featureless app and the connect entries measure the static startup graph. Dynamic import targets are empty modules in that build, so a new lazy chunk does not move the number. The full build is printed and is not a gate (D248).
+- `okm migrate check` does not open a second connection to drop the scratch schema when the replay rolls back (D245).
 
 #### docs
 
-- The docs pages for queries and schema cover first-or-create, `bucket()`, a claim, search, a top-N include and window helpers, descendants, ancestors, `sync`, `stream()`, `versioned()`, `sortable()`, and morph, including what each call refuses.
-- The changelog page shows `## Unreleased` as next until the release. Published releases stay on their own pages.
-- The npm README covers the 0.6 access features: tenancy strategies including row-level security, roles and column grants, ownership, tenant views, and `okm migrate check`.
-- The execution plan lists the 0.7 steps P90–P99. Byte reclaim is first, each feature loads lazily, and the order of P92 to P97 may change by measured bytes (D243).
-- Aggregate buckets ship on Postgres. Time-zone date helpers stay deferred (D247).
+- The Schema page lists extensions as `citext()`, `pgTrgm()`, or `extension("name")`. Config states each option once.
+
+### ♻️ Changed
+
+#### runtime
+
+- `update` of a list refuses the same target twice (OKM1120). A target that matches nothing is not an error. An empty `set` is OKM1120. An empty list runs no statement (D246).
+- `inc` is a number or bigint column. A text column is OKM1124. A list that sets one field with `inc` in one row and a plain value in another is OKM1120. A null number stays null (D249).
+- `.stream()` yields rows in keyset batches on every driver, including PGlite. The default batch is 1000. `limit` is the total. A table with no primary key, `search`, and a window are refused. A row committed while it runs can be seen or missed (D256).
+
+#### adapters
+
+- A closed pool reports SQLSTATE `08006` with the message `The pool is closed.`
+
+#### tooling
+
+- The size gates for the featureless app and the connect entries measure the static startup graph. Dynamic import targets are empty modules in that build (D248).
+
+#### docs
+
+- Known limits record the lost-connection release path and that a sortable move is O(n) per group.
+- The changelog page shows `## Unreleased` as next until the release.
+- The npm README covers tenancy, roles and column grants, and `okm migrate check`.
 
 ## v0.6.0 — 2026-10-11
 

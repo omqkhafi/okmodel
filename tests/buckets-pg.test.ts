@@ -486,6 +486,10 @@ async function refusals(a: Scoped): Promise<void> {
       },
     ],
     ["missing as", { groupBy: [bucket("createdAt", "day", { tz: "UTC", as: "" })], limit: 1 }],
+    ...(["__proto__", "constructor", "toString", "hasOwnProperty"] as const).map(
+      (key) =>
+        [key, { groupBy: [bucket("createdAt", "day", { tz: "UTC", as: key })], limit: 1 }] as const,
+    ),
     [
       "clash field",
       {
@@ -512,7 +516,18 @@ async function refusals(a: Scoped): Promise<void> {
     if (name === "timestamp") expect(error.message).toContain("date");
     if (name === "hidden") expect(error.message).toContain("hidden");
     if (name === "zone") expect(error.message).toContain("Not/AZone");
+    if (
+      name === "__proto__" ||
+      name === "constructor" ||
+      name === "toString" ||
+      name === "hasOwnProperty"
+    ) {
+      expect(error.message).toContain(name);
+      expect(error.message).toContain("prototype key");
+    }
   }
+  const probe: { polluted?: boolean } = {};
+  expect(probe.polluted).toBeUndefined();
 }
 
 async function expectWeek(

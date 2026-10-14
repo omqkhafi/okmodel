@@ -1677,7 +1677,7 @@ export const notes = table(
 
 ### Versioned and sortable
 
-`versioned()` adds `version`. An update passes the version you read, and the write bumps it. Use it when two editors must not overwrite each other. A stale write is a conflict and changes nothing. A miss stays `{ count: 0 }`. `inc` and the other atomic writes still bump `version`. `delete`, `archive`, and `restore` do not check it. An upsert and `.all()` are refused. `sortable("laneId")` adds `position`. New rows go at the end of that lane. `move` places a row before or after another in the same lane. `find` and `page` order by `position` when you omit `orderBy`. Changing the lane in the same update is refused. `via()` on this table is refused. A delete leaves a gap until the next `move`. See [known limits](/docs/known-limits).
+`versioned()` adds `version`. An update passes the version you read, and the write bumps it. Use it when two editors must not overwrite each other. A stale write is a conflict and changes nothing. A miss stays `{ count: 0 }`. `inc` and the other atomic writes still bump `version`. `delete`, `archive`, and `restore` do not check it. An upsert and `.all()` are refused. `sortable("laneId")` adds `position`. New rows go at the end of that lane. `move` places a row before or after another in the same lane. A move is O(n) for that lane. `find` and `page` order by `position` when you omit `orderBy`. Changing the lane in the same update is refused. `via()` on this table is refused. A delete leaves a gap until the next `move`. See [known limits](/docs/known-limits).
 
 ```ts title="traits.ts"
 import { connect } from "okmodel/pg/postgresjs";
