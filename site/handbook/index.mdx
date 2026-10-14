@@ -15,56 +15,49 @@ export const notes = table("notes", {
 
 ## 01 Start
 
-One table, then a query that reads the row back.
+Add the package, then one table. The next page is one example per call.
 
 <Cards>
   <Card
-    title="Install"
-    description="Add the package and point the config at your schema."
-    href="/docs/start/install"
+    title="Let's start"
+    description="Install a driver, define the table, then push and connect."
+    href="/docs/start"
   />
   <Card
-    title="First query"
-    description="Define one table, apply it, and read the row back."
-    href="/docs/start/query"
-  />
-</Cards>
-
-## 02 Model
-
-Keys, relations, and the writes you allow.
-
-<Cards>
-  <Card
-    title="Schema"
-    description="Keys and relations. The client is typed from the tables you declare."
-    href="/docs/model/schema"
+    title="Basic Usage"
+    description="Each call on the client: insert, find, one, count, exists, update, and delete."
+    href="/docs/start/basic-usage"
   />
   <Card
     title="Queries"
-    description="Insert a row, then find it."
-    href="/docs/model/queries"
-  />
-  <Card
-    title="Safety"
-    description="Hidden fields, guarded writes, and tenancy declared once."
-    href="/docs/model/safety"
+    description="Insert a row, then find it. The result follows the table."
+    href="/docs/start/queries"
   />
 </Cards>
 
-## 03 Ship
+## 02 Define
 
-The migration files are generated from the schema. They lint and check themselves.
+Each table, the schema, the client, and the config file. Open the page for the object you are setting.
 
 <Cards>
   <Card
-    title="Migrations"
-    description="Generate SQL from the schema. The files lint and check themselves."
-    href="/docs/ship/migrations"
+    title="Table"
+    description="table() stores the columns. The key, each data type, then the options."
+    href="/docs/define/table"
   />
   <Card
-    title="Drivers"
-    description="postgres.js, node-postgres, PGlite, and Bun.sql."
-    href="/docs/ship/drivers"
+    title="Schema"
+    description="schema() compiles the tables into one catalog."
+    href="/docs/define/schema"
+  />
+  <Card
+    title="Connect"
+    description="connect() opens the client. The first argument is the target."
+    href="/docs/define/connect"
+  />
+  <Card
+    title="Config"
+    description="The file okm reads. Targets, paths, timeouts, and roles."
+    href="/docs/define/config"
   />
 </Cards>

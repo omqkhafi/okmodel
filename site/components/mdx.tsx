@@ -1,6 +1,9 @@
+import { Anatomy, AnatomyLine, AnatomyPart } from "@/components/anatomy";
+import { Callout } from "@/components/callout";
 import { TerminalSnippet } from "@/components/terminal-snippet";
-import { installDriverChoice, translatePackageScript } from "@/lib/package-managers";
+import { installDriverForFence, translatePackageScript } from "@/lib/package-managers";
 import { CodeBlock, Pre } from "@fumadocs/base-ui/components/codeblock";
+import { Step, Steps } from "@fumadocs/base-ui/components/steps";
 import { Tab, Tabs } from "@fumadocs/base-ui/components/tabs";
 import defaultMdxComponents from "@fumadocs/base-ui/mdx";
 import type { MDXComponents } from "mdx/types";
@@ -8,7 +11,9 @@ import { isValidElement, type ComponentProps, type ReactNode } from "react";
 
 /**
  * MDX component map. `bun add` and `bunx` fences render as a terminal.
- * Every other fence keeps the Fumadocs code block. `Tabs` switches variants.
+ * Every other fence keeps the Fumadocs code block. `Steps` numbers a walkthrough. `Tabs` switches variants.
+ * `Callout` is a dashed note: info, warning, error, or success.
+ * `Anatomy` labels the call that opens a Define page.
  *
  * @param components - Extra overrides from the page renderer
  */
@@ -16,8 +21,14 @@ export function getMDXComponents(components?: MDXComponents): MDXComponents {
   return {
     ...defaultMdxComponents,
     pre: DocsPre,
+    Step,
+    Steps,
     Tab,
     Tabs,
+    Callout,
+    Anatomy,
+    AnatomyLine,
+    AnatomyPart,
     ...components,
   };
 }
@@ -27,14 +38,14 @@ export function getMDXComponents(components?: MDXComponents): MDXComponents {
  *
  * @param props - Compiled `pre` props
  */
-function DocsPre({ children, ...props }: ComponentProps<"pre">) {
+function DocsPre({ children, title, ...props }: ComponentProps<"pre"> & { readonly title?: string }) {
   const source = fenceText(children);
   const commands = translatePackageScript(source);
-  const driver = installDriverChoice(source);
+  const driver = installDriverForFence(source, title);
   if (commands && driver) return <TerminalSnippet commands={commands} driver={driver} />;
   if (commands) return <TerminalSnippet commands={commands} />;
   return (
-    <CodeBlock {...props}>
+    <CodeBlock {...props} title={title}>
       <Pre>{children}</Pre>
     </CodeBlock>
   );

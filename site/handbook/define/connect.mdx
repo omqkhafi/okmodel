@@ -1,0 +1,466 @@
+<Anatomy call="connect" shape="args" exported="db">
+  <AnatomyPart slot="target" label="Target" code="url," mark="url">
+    A connection string, a pool from `open`, or `{ primary, replicas }`. A string or a pool returns the client. A topology returns a promise.
+  </AnatomyPart>
+  <AnatomyPart slot="schema" label="Schema">
+    <AnatomyLine code="{" />
+    <AnatomyLine code="schema," mark="required" indent={2} />
+    <AnatomyLine code="}," />
+    The [schema](/docs/define/schema) types the client. Each other field is a section on this page.
+  </AnatomyPart>
+</Anatomy>
+
+Import `connect` from the driver you installed. The process keeps one client.
+
+## Drivers
+
+| Import | Driver | Returns |
+| --- | --- | --- |
+| `okmodel/pg/postgresjs` | postgres.js | The client. A topology is a promise. |
+| `okmodel/pg/pg` | node-postgres | The client. A topology is a promise. |
+| `okmodel/pg/bun` | Bun.sql | The client. A topology is a promise. Another runtime cannot load this entry. |
+| `okmodel/pg/pglite` | PGlite | A promise. Opening the database is async. |
+
+<Callout type="info" title="The schema">
+The client is typed by the schema you pass. There is no global register.
+</Callout>
+
+
+OKModel talks to Postgres 15, 16, 17, and 18. `connect` refuses an older server.
+
+Pick the driver the same way you pick the client. The calls on `db` do not change.
+
+| Driver | Import | When |
+| --- | --- | --- |
+| postgres.js | `okmodel/pg/postgresjs` | The usual Node and Bun client. A lost connection rejects the statement, and the next call runs. |
+| node-postgres | `okmodel/pg/pg` | The `pg` package. It does not describe a statement without running it. |
+| PGlite | `okmodel/pg/pglite` | Postgres in the same process. No server to start. |
+| Bun.sql | `okmodel/pg/bun` | Bun only. It does not describe a statement without running it and does not surface `RAISE NOTICE`. A positive `timeout` on a call, on `tx()`, or on `batch()` is OKM1120 (kind `invalid`). PGlite is the same. A `signal` is not refused, and neither driver cancels a statement already in flight. |
+
+The [compatibility table](../../../docs/compatibility.md) is the full list, generated from the conformance run. Install starts on postgres.js and switches the package: `postgres`, `pg`, `@electric-sql/pglite`, or okmodel alone for Bun.sql.
+
+## Target
+
+| Value | Result |
+| --- | --- |
+| a `postgres://` URL | Opens a pool. `close()` closes it. |
+| a pool from `open` | Reuses that pool. `close()` does not close it. |
+| `{ primary, replicas }` | One pool per endpoint. The call returns a promise. |
+| `undefined`, PGlite only | Memory. A string is a data directory. |
+
+```ts title="db.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+
+export const db = connect(process.env.DATABASE_URL!, { schema: app }); // [!code focus]
+```
+
+```ts title="pool.ts"
+import { connect, open } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+const pool = open({ url: process.env.DATABASE_URL! });
+
+export const db = connect(pool, { schema: app }); // [!code focus]
+```
+
+```ts title="memory.ts"
+import { connect } from "okmodel/pg/pglite";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+
+export const db = await connect(undefined, { schema: app }); // [!code focus]
+```
+
+<Callout type="warning" title="Empty URL">
+The URL is not filled in. An empty `DATABASE_URL` is passed through. Check it before you call.
+</Callout>
+
+## Schema
+
+`schema` is required.
+
+The first connection checks the server. `db.connected` resolves when that check finishes. A query waits for it.
+
+| Result | Code |
+| --- | --- |
+| Not PostgreSQL | OKM1801 |
+| Below 15, and the schema names no `requires` | OKM1803 |
+| Below the schema [requires](/docs/define/schema#postgres-version) | OKM1802 |
+| `okm_meta` has no hash, and `requireMeta` is set | OKM1520 |
+| Ahead by a contract migration, or behind the app | OKM1520. The message names the migration. |
+| Ahead by expand migrations | The client opens. |
+| Equal catalog hashes | The check returns without reading `okm_history`. |
+
+<Callout type="info" title="connected">
+Await `db.connected` when the check must finish before the first query. `close()` before it settles rejects `connected`.
+</Callout>
+
+## Pool
+
+`max` is the number of connections in the pool. Omitted, the driver default stands. PGlite is always one, and `max` is ignored.
+
+```ts title="pool-size.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+
+export const db = connect(process.env.DATABASE_URL!, {
+  schema: app,
+  max: 10, // [!code focus]
+});
+```
+
+## Prepared
+
+Named prepared statements are off unless you ask.
+
+| Value | Result |
+| --- | --- |
+| omitted | Unnamed. Valid behind a pooler in transaction mode. |
+| `"unnamed"` | The same. |
+| `"named"` | Named prepared statements. Not for a pooler in transaction mode. |
+
+PGlite has no `prepared`.
+
+```ts title="prepared.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+
+export const db = connect(process.env.DATABASE_URL!, {
+  schema: app,
+  prepared: "unnamed", // [!code focus]
+});
+```
+
+## TLS
+
+`ssl` is forwarded to the driver. PGlite has no `ssl`.
+
+| Driver | Values |
+| --- | --- |
+| postgres.js, node-postgres | `true`, `false`, `"require"`, `"allow"`, `"prefer"`, `"verify-full"`, or an object. |
+| Bun.sql | Those, plus `"disable"` and `"verify-ca"`. |
+
+```ts title="tls.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+
+export const db = connect(process.env.DATABASE_URL!, {
+  schema: app,
+  ssl: "require", // [!code focus]
+});
+```
+
+## Search path
+
+`searchPath` is the session search path for every connection in the pool. PGlite does not take it.
+
+```ts title="search-path.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+
+export const db = connect(process.env.DATABASE_URL!, {
+  schema: app,
+  searchPath: "app, public", // [!code focus]
+});
+```
+
+## Timeouts
+
+Each key is milliseconds. Each one is optional.
+
+| Key | Result |
+| --- | --- |
+| `acquire` | How long to wait for a connection. Past that is OKM1846. Omitted means wait with no deadline. |
+| `statement` | The `timeout` of a call that sets none. |
+| `transaction` | Bounds a whole `tx()`. |
+| `idleInTransaction` | How long a `tx()` may wait between statements. |
+
+`timeout` and `signal` on `connect` bound the dialect check. A later call sets its own `timeout`, or takes `timeouts.statement`.
+
+```ts title="timeouts.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+
+export const db = connect(process.env.DATABASE_URL!, {
+  schema: app,
+  timeouts: { // [!code focus]
+    acquire: 5_000, // [!code focus]
+    statement: 30_000, // [!code focus]
+    transaction: 60_000, // [!code focus]
+    idleInTransaction: 10_000, // [!code focus]
+  }, // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1120">
+A positive `timeout` on a call, on `tx()`, or on `batch()` is refused on Bun.sql and PGlite. Those drivers cannot cancel a statement that is already running.
+</Callout>
+
+## Catalog
+
+`catalog` is a build artifact. Its hash is the code's catalog hash. The JSON is checked only when the database hash differs.
+
+`catalogDir` is the directory of `catalog.hash` and `catalog.json`. Omitted, `connect` reads `.okm` under the process cwd when that hash file exists. The hash file is the fast path. A mismatch then reads `catalog.json` once per process and does not rebuild the catalog from the schema.
+
+```ts title="catalog.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+
+export const db = connect(process.env.DATABASE_URL!, {
+  schema: app,
+  catalogDir: ".okm", // [!code focus]
+});
+```
+
+## Require meta
+
+`requireMeta` fails `connect` when `okm_meta` has no catalog hash.
+
+| Value | Result |
+| --- | --- |
+| omitted | A database with no recorded hash skips the drift check. An existing database can adopt OKModel. |
+| `true` | A missing hash is OKM1520. |
+
+`NODE_ENV` and the target name do not turn this on. Set it on a production connection.
+
+```ts title="require-meta.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+
+export const db = connect(process.env.DATABASE_URL!, {
+  schema: app,
+  requireMeta: true, // [!code focus]
+});
+```
+
+<Callout type="info" title="Protection">
+`protected` on a migrate target does not affect `connect()`.
+</Callout>
+
+## Errors
+
+| Field | Result |
+| --- | --- |
+| `errors.http` | Statuses for `OkmError.toHttp`. `toHttp()` uses these when the caller does not pass statuses. `toHttp(statuses)` replaces them for that call. |
+| `errors.includeValues` | `true` stores row values on the error. They are never logged. |
+| `logger.error` | Receives `{ code, summary }`. |
+
+```ts title="errors.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+
+export const db = connect(process.env.DATABASE_URL!, {
+  schema: app,
+  errors: { http: { conflict: 409 }, includeValues: true }, // [!code focus]
+  logger: { // [!code focus]
+    error(entry) { // [!code focus]
+      void entry.code; // [!code focus]
+    }, // [!code focus]
+  }, // [!code focus]
+});
+```
+
+## Generators
+
+`generators` replaces a built-in client generator by name. The names are `uuidv4`, `uuidv7`, and `okid`. A function passed to `.default()` is not replaced.
+
+```ts title="generators.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+
+export const db = connect(process.env.DATABASE_URL!, {
+  schema: app,
+  generators: { uuidv7: () => "00000000-0000-7000-8000-000000000000" }, // [!code focus]
+});
+```
+
+## Observers
+
+`hookm` is a list of read-only observers. They cannot change a query. An error a hook throws is dropped.
+
+| Method | Hears |
+| --- | --- |
+| `onNotice` | A server notice, such as `RAISE NOTICE`. |
+| `onTransaction` | `start`, `commit`, or `rollback`. `depth` is 0 for the transaction and 1 and up for savepoints. |
+| `onError` | An error the runtime could not give to a caller, such as one from an `afterCommit` callback. |
+
+```ts title="observers.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+
+export const db = connect(process.env.DATABASE_URL!, {
+  schema: app,
+  hookm: [ // [!code focus]
+    { // [!code focus]
+      onTransaction(event) { // [!code focus]
+        void event.phase; // [!code focus]
+      }, // [!code focus]
+    }, // [!code focus]
+  ], // [!code focus]
+});
+```
+
+## Topology
+
+`{ primary, replicas }` opens one pool per endpoint. The promise resolves to the client. A string or a pool does not load this module.
+
+| Field | Default | Result |
+| --- | --- | --- |
+| `primary` | — | The primary URL. Its name is `primary`. |
+| `replicas` | none | A string is a URL with weight 1. An object is `{ url, weight, name, pool }`. |
+| `routing.probe` | `"1s"` | How often a replica is probed. |
+| `routing.select` | `"weighted"` | `"weighted"`, `"roundRobin"`, `"leastConnections"`, `"latencyAware"`, or a function. |
+| `routing.consistency` | `"session"` | `"session"` keeps a watermark. `"eventual"` does not. |
+| `routing.fallback` | `"primary"` | `"error"` is OKM1844 when no replica can serve an automatic read. |
+| `routing.maxLag` | unset | A duration (`"5s"`, `"500ms"`, `"2m"`) or a size (`"16MB"`, `"512KB"`, `"1GB"`, `"4096B"`). A bare number is rejected. |
+| `onRoute` | unset | Called after an endpoint is chosen. A throw is ignored. The operation still runs. |
+
+A weight of `0` is rejected. A replica `pool.max` overrides `max` for that endpoint.
+
+| Call | Result |
+| --- | --- |
+| an automatic read | A replica that has replayed at least as far as this client's last committed write. |
+| `find({ route: "primary" })` | The primary. |
+| `find({ route: "replica" })` | A replica that satisfies the watermark and `maxLag`. It does not fall back. None eligible is OKM1843. |
+| `db.using("primary")` or `db.using("replica")` | A client that forces that route. It has no `close` and no `using`. |
+| a write, a batch, a transaction, or a locking read on a replica route | OKM1840. |
+
+A string or a pool is one endpoint. It serves either `route` and has no `using`.
+
+```ts title="topology.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+
+export const db = await connect( // [!code focus]
+  { // [!code focus]
+    primary: process.env.DATABASE_URL!, // [!code focus]
+    replicas: [{ url: process.env.REPLICA_URL!, weight: 2, name: "east" }], // [!code focus]
+  }, // [!code focus]
+  { // [!code focus]
+    schema: app, // [!code focus]
+    routing: { consistency: "session", select: "weighted", maxLag: "5s" }, // [!code focus]
+  }, // [!code focus]
+); // [!code focus]
+```
+
+<Callout type="info" title="Watermark">
+The watermark is one value for the whole `connect()`. The root, `for()`, `unscoped()`, `using()`, and `reserve()` share it.
+</Callout>
+
+## Close
+
+`close()` closes the pool when this client opened it. A pool you passed in stays open.
+
+`await using` is that call at the end of the block. A server keeps the client for the life of the process. A script can close it.
+
+```ts title="script.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+
+await using db = connect(process.env.DATABASE_URL!, { schema: app }); // [!code focus]
+await db.notes.find({ limit: 1 });
+```

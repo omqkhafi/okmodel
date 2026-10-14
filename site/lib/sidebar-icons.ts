@@ -5,55 +5,19 @@
  */
 
 import type { LoaderPlugin } from "fumadocs-core/source";
-import {
-  AppWindow,
-  BookOpen,
-  Braces,
-  Cable,
-  CircleAlert,
-  Database,
-  Download,
-  FlaskConical,
-  GitBranch,
-  Layers,
-  ListChecks,
-  Network,
-  Ruler,
-  ScanSearch,
-  Server,
-  Shield,
-  ShieldCheck,
-  SquareTerminal,
-  Table2,
-  Terminal,
-  type LucideIcon,
-} from "lucide-react";
+import { BookOpen, Braces, Cable, FileText, List, Play, Table2, Terminal, type LucideIcon } from "lucide-react";
 import { createElement, type ReactNode } from "react";
 
 /** Docs path → Lucide component. `/docs` is the landing and is not a sidebar row. */
 const PATH_ICONS: Readonly<Record<string, LucideIcon>> = {
-  "/docs/start/install": Download,
-  "/docs/start/query": Terminal,
-  "/docs/model/schema": Table2,
-  "/docs/model/queries": Braces,
-  "/docs/model/safety": Shield,
-  "/docs/ship/migrations": GitBranch,
-  "/docs/ship/drivers": Cable,
-  "/docs/reference/production": ShieldCheck,
-  "/docs/reference/environments": Layers,
-  "/docs/reference/testing": FlaskConical,
-  "/docs/reference/topology": Network,
-  "/docs/reference/provisioning": Server,
-  "/docs/reference/check": ListChecks,
-  "/docs/reference/backfill": Database,
-  "/docs/reference/linter": ScanSearch,
-  "/docs/reference/compatibility": Cable,
-  "/docs/reference/size": Ruler,
-  "/docs/reference/known-limits": CircleAlert,
-  "/docs/reference/api": Braces,
-  "/docs/reference/specification": BookOpen,
-  "/docs/reference/editor-check": SquareTerminal,
-  "/docs/reference/example-app": AppWindow,
+  "/docs/known-limits": BookOpen,
+  "/docs/start": Terminal,
+  "/docs/start/basic-usage": Play,
+  "/docs/start/queries": List,
+  "/docs/define/config": FileText,
+  "/docs/define/connect": Cable,
+  "/docs/define/schema": Braces,
+  "/docs/define/table": Table2,
 };
 
 /**

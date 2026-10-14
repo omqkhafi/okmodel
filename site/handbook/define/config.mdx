@@ -1,0 +1,423 @@
+<Anatomy call="defineConfig" shape="object" exported>
+  <AnatomyPart slot="schema" label="Schema" code='schema: "./schema.ts",' mark="required">
+    Required. `okm` loads this file. `okm build` reads it and does not connect.
+  </AnatomyPart>
+  <AnatomyPart slot="database" label="Database" code="database: process.env.DATABASE_URL!," mark="or targets">
+    One target named `default`. `targets` replaces it. Set `database` or `targets`. Both is refused.
+  </AnatomyPart>
+  <AnatomyPart slot="sections" label="Sections" code="…," mark="sections">
+    Each other field is a section on this page.
+  </AnatomyPart>
+</Anatomy>
+
+## Write the file
+
+`okm` reads `okmodel.config.ts` from the project directory. The file default-exports `defineConfig` from `okmodel/migrate`.
+
+<Callout type="error" title="Refused">
+A file that does not default-export `defineConfig` is refused.
+</Callout>
+
+<Callout type="info" title="Runtime">
+Node.js 22.18 or newer loads the config. `bunx okm` uses Node. `bun --bun okm` uses Bun.
+</Callout>
+
+## Schema
+
+`schema` is required. `okm` loads this file. `okm build` reads it and does not connect.
+
+A path is resolved from the project directory. An absolute path stays absolute. A relative path, including `..`, is resolved from that directory.
+
+<Callout type="error" title="Refused">
+A module that does not export `schema()` is refused: `<path> must export a schema().`
+</Callout>
+
+<Callout type="info" title="Export">
+[Schema](/docs/define/schema) default-exports the result. Point `schema` at that file.
+</Callout>
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts", // [!code focus]
+  database: process.env.DATABASE_URL!,
+});
+```
+
+## Database
+
+`database` is one target named `default`. `targets` replaces it. The name does not set protection. `NODE_ENV` is not read.
+
+<Callout type="error" title="Both">
+Set `database` or `targets`. Both is refused.
+</Callout>
+
+| Field | Required | Default | Role |
+| --- | --- | --- | --- |
+| `database` | one of | — | One target. Its name is `default`. A string is the URL, and `protected` is false. An object is `{ url, protected }`. |
+| `targets` | one of | — | Named targets. Replaces `database`. A string value leaves `protected` false. |
+| `url` | yes | — | A `postgres://` URL. |
+| `protected` | no | `false` | Blocks contract work on that target. |
+
+| Name | Result |
+| --- | --- |
+| Any key | That string is the target name. Names are listed in sorted order. `Dev` is not `dev`. |
+| `database` | The name is `default`. |
+| A key named `dev` | `okm dev` uses that target. |
+| No key named `dev` | `okm dev` opens PGlite at `<out>/dev-db`. The default `out` is `.okm`. |
+
+| Case | Result |
+| --- | --- |
+| Empty or missing | OKM1845. The URL is not filled in from the environment. |
+| Not a URL | OKM1845. Use a `postgres://` URL. |
+| Host | Lowercased. |
+| Port omitted | `5432`. |
+| Path | The database name. |
+| `primary`, `replicas`, `weight`, or `pool` | OKM1845. Migrations run on the primary. |
+| Pooler host | Refused until [allowPooler](#pooler), or `--allow-pooler`. |
+
+| Situation | Result |
+| --- | --- |
+| One target | `--target` is optional. |
+| Several targets, no `--target` | OKM1853. The command does not guess. |
+| `--target` with no name | OKM1853. |
+| A name that is not configured | OKM1845. |
+| No `database` and no `targets` | OKM1845. |
+| `okm migrate status` | Prints every target. `protected` is its own column. `--target` filters to one name. |
+| `okm check`, several targets, no `--target` | Skips the database comparison. A name that is not configured is still OKM1845. A protection mismatch is still OKM1852. |
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  targets: {
+    dev: process.env.DEV_URL!,
+    prod: { url: process.env.PROD_URL!, protected: true }, // [!code focus]
+  },
+});
+```
+
+### Protection
+
+`--allow-protected` is this invocation only. It does not change the config. `connect()` does not read it.
+
+| Work | Protected target |
+| --- | --- |
+| plan, status, `okm check`, drift, verify, pull, catalog export, inspect | Allowed. |
+| Expand: a table, a nullable column, an index, a default, a constraint | Allowed. |
+| Reference rows. Provision an empty database | Allowed. |
+| Contract: drop a table or column, `SET NOT NULL`, drop a default, drop a constraint or index | OKM1850 until `--allow-protected`. |
+| Unclassified SQL, `okm push`, a backfill, `okm seed`, a history repair | OKM1850 until `--allow-protected`. |
+| `okm migrate check` | OKM1850. `--allow-protected` does not lift it. Point it at a throwaway database. |
+| `drop`, `rollback` | Refused. `--allow-protected` does not lift it. There is no down migration. Recovery is a new forward migration. |
+
+```sh
+okm migrate apply --target prod --allow-protected
+```
+
+### The same database
+
+The comparison is host, port, and database name. The schema name is ignored. `okm check` and `okm migrate plan` report a mismatch.
+
+| Pair | Result |
+| --- | --- |
+| One `protected`, one not | OKM1852. |
+| Both unprotected | Allowed. They may share a database. |
+| Both protected | Allowed. |
+
+### An empty database
+
+| State | `okm migrate apply` |
+| --- | --- |
+| Empty | Installs the head snapshot and the [reference](/docs/define/table#reference-rows) rows. |
+| History present | Replays the pending files. |
+| Objects present, no history | OKM1851. |
+| A provision that stopped part-way | OKM1851. Drop the schema or database and run again. |
+
+## Tables
+
+`okm check` reads every `.ts` file in this directory. Omit `tables` when every table lives in the schema module.
+
+| Case | Result |
+| --- | --- |
+| omitted | Every table lives in the schema module. |
+| A `.ts` file whose name is missing from the schema module | OKM1024. |
+| A name that starts with `.` | Skipped. |
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  tables: "./tables", // [!code focus]
+  database: process.env.DATABASE_URL!,
+});
+```
+
+## Migrations
+
+`okm generate` writes SQL here. `okm migrate apply` and `okm migrate check` read the same directory.
+
+| Field | Required | Default | Role |
+| --- | --- | --- | --- |
+| `migrations` | no | `migrations` | Generated SQL. |
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  migrations: "./migrations", // [!code focus]
+  database: process.env.DATABASE_URL!,
+});
+```
+
+
+You change the schema. `okm generate` writes the SQL. `okm migrate apply` runs the files that this database has not applied yet.
+
+```sh
+bunx okm build
+bunx okm generate init
+bunx okm migrate apply
+```
+
+`init` is the first migration. Later changes are `bunx okm generate`.
+
+### The files check themselves
+
+`okm migrate check` replays the history in a scratch schema inside one transaction and rolls that transaction back. It does not edit system catalogs or real ACLs. Run it as a non-superuser. A superuser step can reach `COPY ... PROGRAM` and `lo_import` during that replay. Lint runs first. Transaction control in a step is refused, including a `COMMIT` inside `DO`. A `COMMIT` inside `CREATE FUNCTION` or `CREATE PROCEDURE` is not that refusal. A hand-written `public.t` does not change the real table. It fails if the files do not match the schema, or if the linter reports an error. Do not point it at a database you need to keep.
+The [linter](../../../docs/linter.md) reads the plan and does not connect. [Check](../../../docs/migrate-check.md) is the command for a pipeline. A [backfill](../../../docs/backfill.md) is a step inside a migration file. There is no separate backfill command.
+
+[Production](../../../docs/production.md) is how a target is marked protected, and how connect refuses a database whose catalog is missing.
+
+### Names, and an upgrade from 0.5.1
+
+A unique or a foreign key is named from every SQL column, after `casing` and `sqlName`. A database created on 0.5.1 still has the older names. `connect()` is OKM1520 until `okm migrate apply` runs once. That migration is `RENAME CONSTRAINT`. It does not drop the table or the row. A protected target needs `--allow-protected` on that invocation. The next plan is empty. This ships in 0.6.0. The stored hash from 0.5.1 stays until that rename is applied.
+
+### Windows
+
+Git on Windows checks SQL out as CRLF unless `.gitattributes` says otherwise. `okm` reads those files as LF, including a `\r\n` inside a SQL string literal, so apply, check, and the linter see the same steps. A file that still parses to no steps, and does not say `-- no steps`, fails instead of printing `nothing to apply`.
+
+`okm generate init` writes this `.gitattributes` when the project does not have one. An existing file is not edited.
+
+```text
+migrations/*.sql text eol=lf
+*.catalog.json text eol=lf
+.okm/** text eol=lf
+```
+
+Save the files as UTF-8. A BOM is stripped. UTF-16 is refused. Point `schema`, `migrations`, and `out` at an absolute path or at `..` when the project is not the process directory. Use `postgres://localhost:5432/app`. A named pipe is not a connection string here.
+
+`okmodel.config.ts` needs Node.js 22.18 or newer, because that is when Node strips types without a flag. `bunx okm` runs on Node. `bun --bun okm` runs on Bun.
+
+## Out
+
+`okm build` writes `catalog.json`, `catalog.hash`, and `types.d.ts` here.
+
+| Field | Required | Default | Role |
+| --- | --- | --- | --- |
+| `out` | no | `.okm` | Build output. |
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  out: "./.okm", // [!code focus]
+  database: process.env.DATABASE_URL!,
+});
+```
+
+## Timeouts
+
+`timeouts` sets `lock_timeout` and `statement_timeout` for apply. Both values are milliseconds. A flag overrides the config for that invocation. `0` disables the timeout. The flag refuses a missing or negative number.
+
+| Field | Required | Default | Role |
+| --- | --- | --- | --- |
+| `lock` | no | `5000` | `lock_timeout`. `--lock-timeout` overrides it. |
+| `statement` | no | `30000` | `statement_timeout`. `--statement-timeout` overrides it. |
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: process.env.DATABASE_URL!,
+  timeouts: {
+    lock: 2000, // [!code focus]
+    statement: 15000, // [!code focus]
+  },
+});
+```
+
+| Command | `timeouts` | Flag |
+| --- | --- | --- |
+| `okm migrate apply` | Used when the flag is omitted. | `--lock-timeout`, `--statement-timeout`. |
+| `okm migrate check` | Sets a field only when the config has it. Omit a field and that timeout stays unset. | Not read. |
+| `okm push`, `provision()` | Not read. Both stay `5000` and `30000`. | Not read. |
+
+Apply sets the two values on the session. `okm migrate check` sets them for its transaction. A backfill batch uses [statementTimeoutMs](#backfill) when it is set, and this `statement` timeout otherwise. The batch `lock_timeout` is this `lock` timeout.
+
+## Pooler
+
+Migration commands refuse a pooler host. Apply holds an advisory lock on one session. A transaction-mode pooler can hand the next statement a different backend.
+
+| Field | Required | Default | Role |
+| --- | --- | --- | --- |
+| `allowPooler` | no | `false` | Skip the refusal. `--allow-pooler` does the same for that invocation. Either one is enough. |
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: process.env.DATABASE_URL!,
+  allowPooler: true, // [!code focus]
+});
+```
+
+The host is lowercased before the check. The message is `Refusing pooler host <host>. Apply needs a direct connection.`
+
+| Shape | Result |
+| --- | --- |
+| Host contains `pooler` | Refused. |
+| Host contains `pgbouncer` | Refused. |
+| Port `6543` or `6432` | Refused. |
+| Query `pgbouncer=true` | Refused. |
+| A direct `postgres://` URL | Allowed. The flag is not required. |
+
+| Command | Pooler host |
+| --- | --- |
+| `okm migrate apply`, `okm migrate check`, `okm push`, `okm seed` | Refused until the opt-in. |
+| `okm check`, when it compares one database | Refused until the opt-in. |
+| `provision()` | Refused until `allowPooler` in the config. The call takes no flag. |
+| `okm migrate status`, `okm migrate plan`, `okm doctor`, `okm ext` | Allowed. |
+| `connect()` | Allowed. |
+
+<Callout type="warning" title="OKM1854">
+When the host check passes, two reads of `pg_backend_pid()` must return the same pid. A change is OKM1854. `allowPooler` and `--allow-pooler` skip that probe.
+</Callout>
+
+## Lint from
+
+`lintFrom` is the first migration id that `okm migrate check` lints. Files before it, in apply order, are the adoption baseline. The id itself is linted.
+
+| Field | Required | Default | Role |
+| --- | --- | --- | --- |
+| `lintFrom` | no | every file | First id `okm migrate check` lints. |
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: process.env.DATABASE_URL!,
+  lintFrom: "20260301000000_init", // [!code focus]
+});
+```
+
+| Case | Result |
+| --- | --- |
+| `lintFrom` omitted | Every migration file. |
+| A migration id | That file and every file after it. |
+| Files before that id | Not linted. An old drop does not fail check. |
+| The id itself | Linted. |
+| An id that is not a migration | Refused: `lintFrom <id> is not a migration id.` |
+| An error finding on a linted file | OKM1510. |
+
+`okm migrate apply` does not read `lintFrom`. It lints every migration that still has a step to run, and it does that before any DDL. A database with no `okm_history` lints every file.
+
+## Backfill
+
+`backfill` sets how a batched update runs. `batchSize` is written into a new plan. `pauseMs` and `statementTimeoutMs` are read when the batches run.
+
+| Field | Required | Default | Role |
+| --- | --- | --- | --- |
+| `batchSize` | no | `1000` | Rows in `batch=` on a new plan. |
+| `pauseMs` | no | `0` | Milliseconds after a committed batch, and not after the last one. |
+| `statementTimeoutMs` | no | apply `statement` | `statement_timeout` for one batch. |
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: process.env.DATABASE_URL!,
+  backfill: {
+    batchSize: 1000, // [!code focus]
+    pauseMs: 50,
+    statementTimeoutMs: 30_000,
+  },
+});
+```
+
+```sql title="migrations/20260301000000_init.sql"
+-- backfill table=notes key=id batch=1000
+```
+
+A new plan writes that header. Apply reads `batch=` from the file. Changing the config does not change a file that already exists. `pauseMs` and `statementTimeoutMs` are not written into the file. Omit `statementTimeoutMs` and the batch uses the apply [statement](#timeouts) timeout, which defaults to 30 seconds. The batch `lock_timeout` is the apply lock timeout.
+
+A batch walks the primary key. It does not scan the table. Each committed batch records its key in `okm_backfill`. The next apply continues from that key. A finished step is not repeated.
+
+| Case | Result |
+| --- | --- |
+| `batch=` on the step | That size. The config is not read for this step. |
+| `batchSize` omitted on a new plan | `1000`. |
+| `batchSize` below 1, or not an integer | Refused. |
+| A header whose `batch` is below 1 | Refused. |
+| A table with no primary key | OKM1546. |
+| A key column that is not on the table | OKM1546. |
+| A lock timeout | The batch is retried. |
+| A statement timeout | The batch rolls back. The previous checkpoint stays. Apply stops. |
+| A protected target | OKM1850 until `--allow-protected`. |
+| `okm migrate status` | An unfinished backfill is its own section. |
+
+## Roles
+
+`roles` names who migrates, who the application connects as, and an optional read-only role. A name is external unless it is listed in `managed`.
+
+| Field | Required | Default | Role |
+| --- | --- | --- | --- |
+| `migration` | yes | — | Runs the files. Apply issues `SET ROLE`. Default privileges are granted as this role. |
+| `app` | yes | — | Receives the grants. |
+| `reporting` | no | — | Select only. |
+| `managed` | no | — | Roles the plan creates. Never dropped. `login` defaults to `NOLOGIN`. `inherit` defaults to `INHERIT`. `CREATE ROLE` is `NOSUPERUSER NOCREATEDB NOCREATEROLE`. |
+| `columns` | no | — | `SELECT` or `UPDATE` on named columns. `on` is the SQL name of a table, view, or materialized view. |
+
+| Role | Grants |
+| --- | --- |
+| `app` | Tables and views receive `SELECT`, `INSERT`, `UPDATE`, and `DELETE`. A materialized view receives `SELECT`. Sequences receive `USAGE` and `SELECT`. Functions receive `EXECUTE`. Default privileges repeat those grants on later objects. `okm_meta` receives `SELECT` only. |
+| `reporting` | Select on tables, views, and materialized views. `USAGE` on schemas. Default `SELECT` on later tables. No write and no `EXECUTE`. |
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: process.env.DATABASE_URL!,
+  roles: { // [!code focus]
+    migration: "okm_migrate",
+    app: "okm_app",
+    reporting: "okm_read",
+    managed: [{ name: "okm_app", login: true }],
+    columns: [{ role: "okm_app", on: "users", select: ["email"] }],
+  },
+});
+```
+
+<Callout type="info" title="Hidden columns">
+A hidden column stays out of the reporting select unless `columns` names it. See [hidden](/docs/define/table#hidden).
+</Callout>
+
+| Case | Result |
+| --- | --- |
+| An empty `migration`, `app`, or `reporting` name | Refused. The field needs a name. |
+| `reporting` is `migration` or `app` | Refused. Give it its own name. |
+| `update` on the reporting role | Refused. Grant select, or use `app` for writes. |
+| An external role does not exist | The preflight refuses. Create it, or list it in `managed`. |
+| A managed role does not exist | The plan creates it. The acting role needs `CREATEROLE`. |
+| `on` or a column is not in the schema | OKM1020. |
+| A privilege is missing on an object that exists | OKM1825. `okm doctor` names the object. |
+| `connect()` | Does not run the role check. |

@@ -21,8 +21,8 @@ ${readTagline()}
 ${install}
 \`\`\`
 
-- [Install](/docs/start/install)
-- [First query](/docs/start/query)
+- [Let's start](/docs/start)
+- [Basic Usage](/docs/start/basic-usage)
 - [Documentation](/docs)
 - [llms.txt](/llms.txt)
 - [Changelog](/changelog)

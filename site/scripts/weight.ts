@@ -26,7 +26,7 @@ interface PageWeight {
 const PAGES: readonly { readonly route: string; readonly html: string }[] = [
   { route: "/", html: "server/app/index.html" },
   { route: "/docs", html: "server/app/docs.html" },
-  { route: "/docs/start/query", html: "server/app/docs/start/query.html" },
+  { route: "/docs/start", html: "server/app/docs/start.html" },
 ];
 
 /**
@@ -44,8 +44,8 @@ function main(): void {
     }
     rows.push(measure(page.route, htmlPath, nextDir));
   }
-  const docs = rows.find((row) => row.route === "/docs/start/query");
-  const docsHtml = readFileSync(join(nextDir, "server/app/docs/start/query.html"), "utf8");
+  const docs = rows.find((row) => row.route === "/docs/start");
+  const docsHtml = readFileSync(join(nextDir, "server/app/docs/start.html"), "utf8");
   if (docs !== undefined && !docsHtml.includes("<h1")) {
     process.stderr.write("docs HTML has no h1; the page is not readable without JavaScript\n");
     process.exit(1);

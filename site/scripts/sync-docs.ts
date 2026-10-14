@@ -9,6 +9,7 @@ import { posix } from "node:path";
 
 import {
   docGroups,
+  docSections,
   excludedDocs,
   mappedPages,
   pageContentPath,
@@ -80,9 +81,28 @@ export function docMapProblems(): readonly string[] {
     }
   }
 
+  const sectionGroups = new Set<string>();
+  for (const section of docSections) {
+    if (section.separator.trim().length === 0) problems.push(`section ${section.id} has no separator`);
+    for (const id of section.groups) {
+      if (sectionGroups.has(id)) problems.push(`group ${id} is in two sections`);
+      sectionGroups.add(id);
+      if (!docGroups.some((group) => group.id === id)) {
+        problems.push(`section ${section.id} names unknown group ${id}`);
+      }
+    }
+  }
+
   for (const group of docGroups) {
     if (!mappedPages.some((page) => page.group === group.id)) {
       problems.push(`group ${group.id} has no pages`);
+    }
+    const inSection = sectionGroups.has(group.id);
+    if (group.separator === undefined && !inSection) {
+      problems.push(`group ${group.id} has no separator and is not in a section`);
+    }
+    if (group.separator !== undefined && inSection) {
+      problems.push(`group ${group.id} has its own separator and sits in a section`);
     }
   }
 
@@ -387,13 +407,21 @@ function writeMeta(): void {
     .slice()
     .sort((a, b) => a.order - b.order)
     .map((page) => page.slug);
-  const folders = docGroups
-    .slice()
-    .sort((a, b) => a.order - b.order)
-    .flatMap((group) => [`---${group.separator}---`, group.id]);
+  const blocks: { order: number; pages: string[] }[] = [];
+  for (const group of docGroups) {
+    if (group.separator === undefined) continue;
+    blocks.push({ order: group.order, pages: [`---${group.separator}---`, group.id] });
+  }
+  for (const section of docSections) {
+    blocks.push({
+      order: section.order,
+      pages: [`---${section.separator}---`, ...section.groups],
+    });
+  }
+  blocks.sort((a, b) => a.order - b.order);
   writeJson(join(contentDir, "meta.json"), {
     title: "Documentation",
-    pages: [...rootPages, ...folders],
+    pages: [...rootPages, ...blocks.flatMap((block) => block.pages)],
   });
 
   for (const group of docGroups) {

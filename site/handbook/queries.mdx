@@ -20,11 +20,11 @@ export async function read(url: string): Promise<void> {
 
 `where` is the columns of the table. A field you did not declare is not a valid filter. A request from the client goes through `filters({ allow, sort, relations })`. `parse` applies `eq`, `in`, `notIn`, `lt`, `lte`, `gt`, `gte`, `between`, `startsWith`, `endsWith`, `contains`, `like`, `ilike`, `not`, `containedBy`, `overlaps`, `hasKey`, and `hasAnyKey`. A listed relation becomes `has`. A hidden field is refused.
 
-[Safety](/docs/model/safety) covers fields that are stored but not returned, and writes that need an explicit allow.
+[Safety](/docs/define/table#visibility) covers fields that are stored but not returned, and writes that need an explicit allow.
 
 ## The first rows of a relation
 
-A to-many include takes `limit`. That limit is the first N related rows of each parent, not N rows in total. Use it when each parent should show a short list, such as the three highest-scored comments. The read is still one statement: a lateral join. Pass `orderBy` for the order inside that parent. The primary key follows it, ascending, for any key you did not name, so two rows with the same score stay in the same order. Leave `orderBy` out and the related rows follow the primary key. A parent with no related rows comes back with an empty list. `select`, a nested include, and a preset still apply. `matches` and `relevance` work inside the include. `search` stays on `find` and `count`. A window inside that include's `select` is not in this version. See [known limits](/docs/reference/known-limits).
+A to-many include takes `limit`. That limit is the first N related rows of each parent, not N rows in total. Use it when each parent should show a short list, such as the three highest-scored comments. The read is still one statement: a lateral join. Pass `orderBy` for the order inside that parent. The primary key follows it, ascending, for any key you did not name, so two rows with the same score stay in the same order. Leave `orderBy` out and the related rows follow the primary key. A parent with no related rows comes back with an empty list. `select`, a nested include, and a preset still apply. `matches` and `relevance` work inside the include. `search` stays on `find` and `count`. A window inside that include's `select` is not in this version. See [known limits](/docs/known-limits).
 
 ```ts title="include.ts"
 import { connect } from "okmodel/pg/postgresjs";
@@ -57,7 +57,7 @@ export async function read(url: string): Promise<void> {
 
 ## Number the rows
 
-`rowNumber`, `rank`, `denseRank`, and `runningTotal` go in `select` on `find` or `one`. Use them when the row should carry its place in a group, such as a rank inside each status. `partitionBy` is the group. Leave it out to number the whole result. `orderBy` is the order inside the group, and `as` is the name on the row. `rowNumber` and `runningTotal` append the primary key, so a tie stays stable. `rank` and `denseRank` leave a tie tied: two equal amounts share a rank, and `rank` skips the next number. A running total uses the column's type. An integer is a number. A `numeric` column is the decimal string. `page()` refuses a window when the call runs. `lag`, `lead`, and a frame are not in this version. See [known limits](/docs/reference/known-limits).
+`rowNumber`, `rank`, `denseRank`, and `runningTotal` go in `select` on `find` or `one`. Use them when the row should carry its place in a group, such as a rank inside each status. `partitionBy` is the group. Leave it out to number the whole result. `orderBy` is the order inside the group, and `as` is the name on the row. `rowNumber` and `runningTotal` append the primary key, so a tie stays stable. `rank` and `denseRank` leave a tie tied: two equal amounts share a rank, and `rank` skips the next number. A running total uses the column's type. An integer is a number. A `numeric` column is the decimal string. `page()` refuses a window when the call runs. `lag`, `lead`, and a frame are not in this version. See [known limits](/docs/known-limits).
 
 ```ts title="windows.ts"
 import { connect } from "okmodel/pg/postgresjs";
@@ -130,13 +130,13 @@ export async function read(url: string): Promise<void> {
 }
 ```
 
-`matches` and `relevance` take `{ match, language }`. `{ mode, config }` is not accepted. `match` is `natural` (the default, the same kind of text a search box accepts), `all-words`, `phrase`, or `advanced`. `advanced` is the database's own query syntax. `language` is a text search language such as `english`. Leave it out to use the database default. When the table has more than one search column, name it: `search: { for: "deploy", in: "body" }`. The error lists the names when you do not. A highlighted snippet and a search of a plain text column are not in this version. See [known limits](/docs/reference/known-limits).
+`matches` and `relevance` take `{ match, language }`. `{ mode, config }` is not accepted. `match` is `natural` (the default, the same kind of text a search box accepts), `all-words`, `phrase`, or `advanced`. `advanced` is the database's own query syntax. `language` is a text search language such as `english`. Leave it out to use the database default. When the table has more than one search column, name it: `search: { for: "deploy", in: "body" }`. The error lists the names when you do not. A highlighted snippet and a search of a plain text column are not in this version. See [known limits](/docs/known-limits).
 
 A named query is a preset, or a function that returns the `find` options, as `titled` and `deployNotes` do above. There is no separate call for one.
 
 ## Rows under a row
 
-`descendants(id)` reads every row below `id` in one statement. `ancestors(id)` reads the rows above it. Use them for a tree you walk from a parent column, such as a folder or a thread. Declare a relation from the table to itself. Pass `relation` when there is more than one. The error lists the names. `depth` stops after that many steps. `depth` 0 returns nothing unless you pass `self: true`, which returns the start row. A cycle comes back as rows, because a row already seen is not entered again. A missing id returns no rows. There is no `include`. `where` filters the rows that come back and does not cut the walk short. `ltree` is not required. `sync(id, relation, ids)` makes a to-many relation hold exactly those ids. It locks, then writes. A join table gains and loses link rows. A nullable foreign key is set or cleared, and the related row stays. See [known limits](/docs/reference/known-limits).
+`descendants(id)` reads every row below `id` in one statement. `ancestors(id)` reads the rows above it. Use them for a tree you walk from a parent column, such as a folder or a thread. Declare a relation from the table to itself. Pass `relation` when there is more than one. The error lists the names. `depth` stops after that many steps. `depth` 0 returns nothing unless you pass `self: true`, which returns the start row. A cycle comes back as rows, because a row already seen is not entered again. A missing id returns no rows. There is no `include`. `where` filters the rows that come back and does not cut the walk short. `ltree` is not required. `sync(id, relation, ids)` makes a to-many relation hold exactly those ids. It locks, then writes. A join table gains and loses link rows. A nullable foreign key is set or cleared, and the related row stays. See [known limits](/docs/known-limits).
 
 ```ts title="tree.ts"
 import { connect } from "okmodel/pg/postgresjs";
@@ -168,7 +168,7 @@ export async function below(url: string, id: string): Promise<void> {
 
 `stream()` walks the rows in keyset batches. Use it for an export or any read that should not load the whole set at once. It does not open a server cursor. The default batch is 1000. Pass `batch` as an integer from 1 to 2147483647. Each batch is a normal query, so leaving the loop does not hold a connection. The order is `orderBy`, then the primary key. Leave `orderBy` out and the rows follow the primary key. A table with no primary key is refused. `search` and a window in `select` are refused. `limit` is how many rows you want in total. `limit` 0 yields nothing and runs no query. `.all("export")` with no `limit` streams the set. Both together still honor `limit`. `select`, `include`, a preset, and the archive set work the same way they do on `page()`.
 
-A row committed while the stream runs can show up, or not. For one snapshot of the primary, run it inside `tx({ isolation: "repeatable read" })`. That transaction holds the connection. When the client has replicas, the first batch chooses one endpoint and later batches stay there. They do not move to another replica if that one fails. `signal` stops the stream. `timeout` is the time for the whole stream, not a fresh budget on every batch. See [known limits](/docs/reference/known-limits).
+A row committed while the stream runs can show up, or not. For one snapshot of the primary, run it inside `tx({ isolation: "repeatable read" })`. That transaction holds the connection. When the client has replicas, the first batch chooses one endpoint and later batches stay there. They do not move to another replica if that one fails. `signal` stops the stream. `timeout` is the time for the whole stream, not a fresh budget on every batch. See [known limits](/docs/known-limits).
 
 ```ts title="stream.ts"
 import { connect } from "okmodel/pg/postgresjs";
@@ -189,7 +189,7 @@ export async function each(url: string): Promise<void> {
 
 ## Insert a row, or read the one that is there
 
-`insert` with `{ onConflict: { on, return: true } }` inserts the row. When that unique is already taken, it reads the existing row and does not change it. Use it when two requests may create the same tag, slug, or external id, and both should receive the one row. The lookup runs only when the insert returned nothing. A second request that commits while the first is waiting is still visible, so both callers get the row. An update list that names the same target twice is refused. A target that matches nothing is not an error: `count` is the rows changed. An empty `set` is refused. An empty list runs no statement. See [known limits](/docs/reference/known-limits).
+`insert` with `{ onConflict: { on, return: true } }` inserts the row. When that unique is already taken, it reads the existing row and does not change it. Use it when two requests may create the same tag, slug, or external id, and both should receive the one row. The lookup runs only when the insert returned nothing. A second request that commits while the first is waiting is still visible, so both callers get the row. An update list that names the same target twice is refused. A target that matches nothing is not an error: `count` is the rows changed. An empty `set` is refused. An empty list runs no statement. See [known limits](/docs/known-limits).
 
 ```ts title="create.ts"
 import { connect } from "okmodel/pg/postgresjs";
@@ -207,7 +207,7 @@ export async function once(url: string): Promise<void> {
 
 ## Claim a free row
 
-`update` with `lock: "skip"` and `limit` changes up to that many matching rows and leaves rows another transaction already holds. Use it for a worker that should take one pending job without waiting. The database chooses which unlocked rows. There is no `orderBy` on a claim. `limit` without `lock: "skip"` is refused, and `lock: "skip"` without `limit` is refused. `lock: "skip"` on a read is refused: a read uses `lock: "update"` or `"share"` and `wait: "nowait"` or `"skip"` inside `tx()`. `wait` on an update is refused. A claim cannot change a path-tenancy parent in the same statement. `inc` adds to a number or bigint column in the same kind of write. A text column is refused. See [known limits](/docs/reference/known-limits).
+`update` with `lock: "skip"` and `limit` changes up to that many matching rows and leaves rows another transaction already holds. Use it for a worker that should take one pending job without waiting. The database chooses which unlocked rows. There is no `orderBy` on a claim. `limit` without `lock: "skip"` is refused, and `lock: "skip"` without `limit` is refused. `lock: "skip"` on a read is refused: a read uses `lock: "update"` or `"share"` and `wait: "nowait"` or `"skip"` inside `tx()`. `wait` on an update is refused. A claim cannot change a path-tenancy parent in the same statement. `inc` adds to a number or bigint column in the same kind of write. A text column is refused. See [known limits](/docs/known-limits).
 
 ```ts title="claim.ts"
 import { connect } from "okmodel/pg/postgresjs";
@@ -233,7 +233,7 @@ export async function take(url: string): Promise<void> {
 
 ## Group by a period
 
-`bucket(column, unit, { tz, as })` goes in `aggregate` `groupBy`, beside field names. Use it for a count per day or per hour. `as` is required and names the result key. Units are `second`, `minute`, `hour`, `day`, `week`, `month`, `quarter`, and `year`. A day or longer comes back as `Temporal.PlainDate`, the local date the period starts. A second, minute, or hour comes back as `Temporal.Instant`. `tz` is required for `timestamptz` and refused for `date`. A timestamp without a zone is refused. `weekStart` applies only to `week` and defaults to Monday. A NULL timestamp is one group: the key is present and the value is null. There is no gap filling, and `aggregate` has no `having`. A grouped aggregate needs `limit`, or `.all(reason)` for every group. An empty `as`, or an `as` that clashes with a group field or with count, sum, avg, min, or max, is refused. See [known limits](/docs/reference/known-limits).
+`bucket(column, unit, { tz, as })` goes in `aggregate` `groupBy`, beside field names. Use it for a count per day or per hour. `as` is required and names the result key. Units are `second`, `minute`, `hour`, `day`, `week`, `month`, `quarter`, and `year`. A day or longer comes back as `Temporal.PlainDate`, the local date the period starts. A second, minute, or hour comes back as `Temporal.Instant`. `tz` is required for `timestamptz` and refused for `date`. A timestamp without a zone is refused. `weekStart` applies only to `week` and defaults to Monday. A NULL timestamp is one group: the key is present and the value is null. There is no gap filling, and `aggregate` has no `having`. A grouped aggregate needs `limit`, or `.all(reason)` for every group. An empty `as`, or an `as` that clashes with a group field or with count, sum, avg, min, or max, is refused. See [known limits](/docs/known-limits).
 
 ```ts title="buckets.ts"
 import { connect } from "okmodel/pg/postgresjs";

@@ -3,7 +3,7 @@
 The documentation site. It is a private Next.js app, not part of the published `okmodel` package.
 
 ```sh
-bun run site:dev
+bun dev
 bun run site:check
 bun run site:build
 ```
@@ -16,7 +16,7 @@ bun run site:build
 
 The site is not deployed. The domain is not decided.
 
-What works: docs from `docs/`, llms files, markdown negotiation, search, and the home page.
+What works: the Start handbook (Let's start, Basic Usage), the Define handbook (Config, Schema, and Table), llms files, markdown negotiation, search, and the home page.
 
 Known incomplete, and the backlog for the next site steps: docs layout polish against the okengine handbook (sidebar structure, introduction page, "On this page", duplicate Quickstart, long-page navigation, code block chrome).
 

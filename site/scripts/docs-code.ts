@@ -7,7 +7,7 @@
 
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { basename, isAbsolute, join, relative, resolve } from "node:path";
 
 import { pageContentPath, type MappedPage } from "../lib/docs-map";
 import { repoRoot } from "../lib/repo";
@@ -67,6 +67,7 @@ export function checkDocsCode(): DocsCodeReport {
   const failures: DocsCodeFailure[] = [];
   const virtual: VirtualFile[] = [];
   const written = new Set<string>();
+  const queued: QueuedFence[] = [];
   let skippedExamples = 0;
   let checked = 0;
 
@@ -80,9 +81,8 @@ export function checkDocsCode(): DocsCodeReport {
       const page = relative(contentDir, file);
       const body = stripFrontmatter(raw);
       // Fences from one repository file share a directory, so `./schema.ts`
-      // in the README resolves to the schema fence earlier in that file.
+      // resolves to the last fence with that name in the file.
       const dir = join(scratch, projectDir(frontmatterField(raw, "source")));
-      const used = new Set<string>();
       let anonymous = 0;
       let continuation: { readonly disk: string } | undefined;
 
@@ -121,21 +121,21 @@ export function checkDocsCode(): DocsCodeReport {
           fence.fileName ??
           `${page.replace(/[^\w]+/g, "-").replace(/^-|-$/g, "")}-${String(anonymous).padStart(2, "0")}${ext}`;
         if (fence.fileName === undefined) anonymous += 1;
-        let disk = join(dir, preferred);
-        if (used.has(preferred) || written.has(disk)) {
-          disk = join(dir, `also-${String(written.size)}`, preferred);
+        if (fence.fileName === undefined) {
+          const disk = join(dir, preferred);
+          writeFenceFile(disk, fence.body);
+          written.add(disk);
+          virtual.push({ disk, page, preview: fence.preview });
+          continuation = { disk };
         } else {
-          used.add(preferred);
+          queued.push({ fence, page, dir, preferred });
+          continuation = undefined;
         }
-        written.add(disk);
-        mkdirSync(join(disk, ".."), { recursive: true });
-        writeFileSync(disk, fence.body.endsWith("\n") ? fence.body : `${fence.body}\n`);
-        virtual.push({ disk, page, preview: fence.preview });
         checked += 1;
-        continuation = fence.fileName === undefined ? { disk } : undefined;
       }
     }
 
+    writeQueuedFences(queued, virtual, written);
     if (virtual.length > 0) {
       failures.push(...typecheck(scratch, virtual));
     }
@@ -146,6 +146,130 @@ export function checkDocsCode(): DocsCodeReport {
   }
 
   return { checked, optedOut, skippedExamples, failures };
+}
+
+/** One titled fence waiting until every same-named fence in its file is known. */
+interface QueuedFence {
+  readonly fence: Fence;
+  readonly page: string;
+  readonly dir: string;
+  readonly preferred: string;
+}
+
+/**
+ * Write titled fences. The last fence with a name is the file `./` imports
+ * see. Earlier fences with that name sit in `also-*` beside those files.
+ * A `./db.ts` import with no fence in this file copies the one handbook file
+ * that does define it, so Basic Usage can use the client from Let's start.
+ *
+ * @param queued - Titled fences, in page order
+ * @param virtual - Files the typecheck reports against
+ * @param written - Disk paths already claimed
+ */
+function writeQueuedFences(queued: readonly QueuedFence[], virtual: VirtualFile[], written: Set<string>): void {
+  const groups = new Map<string, QueuedFence[]>();
+  for (const item of queued) {
+    const key = `${item.dir}\0${item.preferred}`;
+    const list = groups.get(key);
+    if (list === undefined) groups.set(key, [item]);
+    else list.push(item);
+  }
+
+  const canonical = new Map<string, string[]>();
+  for (const list of groups.values()) {
+    const last = list[list.length - 1];
+    if (last === undefined) continue;
+    const disk = join(last.dir, last.preferred);
+    placeFence(disk, last, virtual, written);
+    const named = canonical.get(last.preferred) ?? [];
+    named.push(disk);
+    canonical.set(last.preferred, named);
+    for (let index = 0; index < list.length - 1; index += 1) {
+      const earlier = list[index];
+      if (earlier === undefined) continue;
+      placeFence(join(earlier.dir, `also-${String(index)}`, earlier.preferred), earlier, virtual, written);
+    }
+  }
+
+  const seen = new Set<string>();
+  for (const file of virtual) {
+    copyMissingImports(file.disk, canonical, seen);
+  }
+}
+
+/**
+ * Copy a `./` import that this file does not define. A module copied from
+ * another page brings the siblings it imports, so `db.ts` keeps its `schema.ts`.
+ *
+ * @param disk - Fence already written
+ * @param canonical - File name to the last fence of that name, per source
+ * @param seen - Targets already copied
+ * @param origin - Directory the current file was copied from, when it was
+ */
+function copyMissingImports(
+  disk: string,
+  canonical: ReadonlyMap<string, readonly string[]>,
+  seen: Set<string>,
+): void {
+  const folder = join(disk, "..");
+  const folderName = basename(folder);
+  for (const spec of relativeImports(readFileSync(disk, "utf8"))) {
+    const name = spec.replace(/^\.\//, "");
+    const target = join(folder, name);
+    if (existsSync(target) || seen.has(target)) continue;
+    const parentFile = folderName.startsWith("also-") ? join(folder, "..", name) : undefined;
+    const sources = canonical.get(name) ?? [];
+    const selfContained = sources.filter((path) => relativeImports(readFileSync(path, "utf8")).length === 0);
+    const pool = selfContained.length > 0 ? selfContained : sources;
+    let source: string | undefined;
+    if (parentFile !== undefined && existsSync(parentFile)) source = parentFile;
+    else if (pool.length === 1) source = pool[0];
+    if (source === undefined || source === target) continue;
+    seen.add(target);
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(target, readFileSync(source, "utf8"));
+    copyMissingImports(target, canonical, seen);
+  }
+}
+
+/**
+ * Relative `./` imports outside a comment. The docs gate uses these to find
+ * the sibling fence.
+ *
+ * @param body - Fence source
+ */
+function relativeImports(body: string): readonly string[] {
+  const specs: string[] = [];
+  for (const match of body.matchAll(/from\s+["'](\.\/[^"']+)["']/g)) {
+    const spec = match[1];
+    if (spec !== undefined) specs.push(spec);
+  }
+  return specs;
+}
+
+/**
+ * Write one fence and remember it for the typecheck report.
+ *
+ * @param disk - Absolute path under the scratch project
+ * @param item - Fence to write
+ * @param virtual - Files the typecheck reports against
+ * @param written - Disk paths already claimed
+ */
+function placeFence(disk: string, item: QueuedFence, virtual: VirtualFile[], written: Set<string>): void {
+  writeFenceFile(disk, item.fence.body);
+  written.add(disk);
+  virtual.push({ disk, page: item.page, preview: item.fence.preview });
+}
+
+/**
+ * Write a fence body, adding a trailing newline when the sample omitted one.
+ *
+ * @param disk - Absolute path
+ * @param body - Fence source
+ */
+function writeFenceFile(disk: string, body: string): void {
+  mkdirSync(join(disk, ".."), { recursive: true });
+  writeFileSync(disk, body.endsWith("\n") ? body : `${body}\n`);
 }
 
 function ensureBuilt(): void {

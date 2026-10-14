@@ -1,8 +1,7 @@
 /**
- * Docs sidebar. The tree comes from `meta.json`. Section folders (Start, Model,
- * Ship, Reference) are unwrapped, so each page is a row under its numbered
- * label — the same shape as the OKEngine handbook. `/docs` itself is omitted;
- * the header tab already opens it.
+ * Docs sidebar. The tree comes from `meta.json`. Start and Define are
+ * unwrapped, so each page is a row under its numbered label. `/docs` itself
+ * is omitted; the header tab already opens it.
  */
 
 "use client";
@@ -18,7 +17,7 @@ import { usePathname } from "next/navigation";
 import { useMemo, useState, type ReactNode } from "react";
 
 /** Section folders whose children belong directly under the numbered label. */
-const FLAT_SECTIONS = new Set(["start", "model", "ship", "reference", "Start", "Model", "Ship", "Reference"]);
+const FLAT_SECTIONS = new Set(["start", "Start", "define", "Define"]);
 
 /**
  * Whether a node is a folder.
@@ -57,7 +56,7 @@ function sectionPages(node: PageTree.Folder): PageTree.Node[] {
 }
 
 /**
- * Lift Start, Model, Ship, and Reference so the sidebar lists routes, not folders.
+ * Lift Start so the sidebar lists routes, not folders.
  *
  * @param tree - Fumadocs page tree
  */

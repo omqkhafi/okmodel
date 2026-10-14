@@ -24,6 +24,16 @@ export function markdownTwinPath(pathname: string): string | undefined {
   if (path === "/") return "/llms.mdx/home";
 
   if (path === "/docs") return "/llms.mdx/docs/index.md";
+  if (path === "/docs/start/query" || path === "/docs/start/install") return "/llms.mdx/docs/start.md";
+  if (path === "/docs/model/schema" || path === "/docs/model/safety") return "/llms.mdx/docs/define/table.md";
+  if (path === "/docs/model/queries") return "/llms.mdx/docs/start/queries.md";
+  if (path === "/docs/ship/migrations") return "/llms.mdx/docs/define/config.md";
+  if (path === "/docs/ship/drivers") return "/llms.mdx/docs/define/connect.md";
+  if (path === "/docs/reference/known-limits") return "/llms.mdx/docs/known-limits.md";
+  if (path.startsWith("/docs/reference/")) return "/llms.mdx/docs/index.md";
+  if (path === "/docs/config" || path.startsWith("/docs/config/")) return "/llms.mdx/docs/define/config.md";
+  if (path === "/docs/schema" || path.startsWith("/docs/schema/")) return "/llms.mdx/docs/define/schema.md";
+  if (path === "/docs/table" || path.startsWith("/docs/table/")) return "/llms.mdx/docs/define/table.md";
   if (path.startsWith("/docs/")) {
     const rest = path.slice("/docs/".length);
     if (rest.length === 0) return "/llms.mdx/docs/index.md";

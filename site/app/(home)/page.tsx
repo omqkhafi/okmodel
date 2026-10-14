@@ -13,10 +13,18 @@ export const metadata: Metadata = {
 };
 
 const STEPS = [
-  { href: "/docs/start/install", kicker: "01", title: "Install", text: "Add the package and point the config at your schema." },
-  { href: "/docs/start/query", kicker: "01", title: "First query", text: "One table, three commands, and the row comes back." },
-  { href: "/docs/model/schema", kicker: "02", title: "Schema", text: "Keys and relations. The client is typed from the tables." },
-  { href: "/docs/ship/migrations", kicker: "03", title: "Migrations", text: "The SQL is generated. The files lint and check themselves." },
+  {
+    href: "/docs/start",
+    kicker: "01",
+    title: "Let's start",
+    text: "Install a driver, define the table, then push and connect.",
+  },
+  {
+    href: "/docs/start/basic-usage",
+    kicker: "02",
+    title: "Basic Usage",
+    text: "Each call on the client: insert, find, one, count, exists, update, and delete.",
+  },
 ] as const;
 
 /**
@@ -34,7 +42,7 @@ export default function HomePage() {
       <p className="mt-5 max-w-lg text-lg leading-relaxed text-fd-muted-foreground">{readTagline()}</p>
       <div className="mt-8 flex flex-wrap justify-center gap-3">
         <Link
-          href="/docs/start/install"
+          href="/docs/start"
           className="inline-flex bg-fd-foreground px-4 py-2 text-sm text-fd-background"
         >
           Start
@@ -52,7 +60,7 @@ export default function HomePage() {
       <pre className="mt-12 w-full max-w-xl overflow-x-auto border border-fd-border bg-fd-card p-5 text-left font-mono text-sm">
         <code>{install}</code>
       </pre>
-      <ul className="mt-12 grid w-full gap-4 text-left sm:grid-cols-2">
+      <ul className="mt-12 grid w-full gap-4 text-left">
         {STEPS.map((step) => (
           <li key={step.href} className="border border-fd-border p-4">
             <p className="font-mono text-xs text-fd-muted-foreground">{step.kicker}</p>

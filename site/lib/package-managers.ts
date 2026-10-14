@@ -102,6 +102,20 @@ export function translatePackageScript(source: string): PackageCommands | null {
 }
 
 /**
+ * Driver tabs for an untitled `bun add okmodel` fence.
+ *
+ * A title means the page already named the driver, so the terminal stays on
+ * that command and only switches the package manager.
+ *
+ * @param source - Fence body
+ * @param title - Fence title, when the page set one
+ */
+export function installDriverForFence(source: string, title?: string): InstallDriverId | null {
+  if (title !== undefined && title.length > 0) return null;
+  return installDriverChoice(source);
+}
+
+/**
  * The driver named by a single `bun add okmodel` line, or null when the fence
  * is not that install.
  *
