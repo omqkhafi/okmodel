@@ -32,7 +32,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### docs
 
-- The handbook documents those calls, including what each one refuses. Define is Table, Schema, Connect, and Config. Start is Let's start, Basic Usage, and Queries.
+- The handbook documents those calls, including what each one refuses. Define is Table, Schema, Connect, and Config. Start is Let's start and Basic Usage. Queries is a section of Table.
 - Docs pages drop the breadcrumb. Copy page sits on the title row and opens Markdown and chat actions. A code block focuses the line the paragraph names.
 
 ### 💥 Breaking Changes
@@ -42,6 +42,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 ### 🔥 Removed
 
 - Safety, Drivers, and Known limits are no longer their own pages. The reference pages are not published. `/docs/known-limits` redirects to the docs home.
+- Queries is no longer its own page. `/docs/start/queries` redirects to Table.
 - Handbook pages no longer end with a Next link.
 
 ### 🐛 Fixed

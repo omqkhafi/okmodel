@@ -26,7 +26,9 @@ export function markdownTwinPath(pathname: string): string | undefined {
   if (path === "/docs") return "/llms.mdx/docs/index.md";
   if (path === "/docs/start/query" || path === "/docs/start/install") return "/llms.mdx/docs/start.md";
   if (path === "/docs/model/schema" || path === "/docs/model/safety") return "/llms.mdx/docs/define/table.md";
-  if (path === "/docs/model/queries") return "/llms.mdx/docs/start/queries.md";
+  if (path === "/docs/model/queries" || path === "/docs/start/queries") {
+    return "/llms.mdx/docs/define/table.md";
+  }
   if (path === "/docs/ship/migrations") return "/llms.mdx/docs/define/config.md";
   if (path === "/docs/ship/drivers") return "/llms.mdx/docs/define/connect.md";
   if (path === "/docs/known-limits" || path.startsWith("/docs/reference/")) return "/llms.mdx/docs/index.md";
