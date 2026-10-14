@@ -2,11 +2,11 @@
 A column with no default is required and not null. This page is how a missing value is filled, from nullable through a generated expression. [Shape](/docs/define/table/shape) is next, when one column holds more than one value.
 </Callout>
 
-Omitted, the column is required and not null.
+Insert requires the field unless the column is nullable, has a default, or is left out of input. Pass a value and that value is stored. Update does not fill the default again. A later `.default()`, `.defaultSql()`, or `.generated()` replaces the one before it.
 
 ### Nullable
 
-`.nullable()` allows SQL NULL.
+`.nullable()` allows SQL NULL. Omit the field, or pass `null`. The catalog stores no default.
 
 ```ts title="nullable.ts"
 import { table, t } from "okmodel/pg";
@@ -19,37 +19,70 @@ export const notes = table("notes", {
 
 ### Literal
 
-`.default(literal)` stores the literal in the catalog. A default outside a [picklist](/docs/define/table/shape#picklist) is refused.
+`.default(literal)` stores the encoded literal in the catalog. Omit the field on insert and Postgres stores that literal.
 
 ```ts title="literal.ts"
-import { table, t } from "okmodel/pg";
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
 
-export const notes = table("notes", {
+const notes = table("notes", {
   id: t.identity(),
   title: t.text().default(""), // [!code focus]
 });
+const app = schema({ tables: [notes] });
+
+export async function add(url: string) {
+  await using db = connect(url, { schema: app });
+  return db.notes.insert({}); // [!code focus]
+}
 ```
+
+<Callout type="error" title="OKM1060">
+A default outside a [picklist](/docs/define/table/shape#picklist) is refused. The message names the value and the list.
+</Callout>
 
 ### Generator
 
-`.default(generator)` is filled on insert. The catalog stores no default.
+`.default(generator)` runs when insert omits the field. The catalog stores no default, so a writer that bypasses okmodel must supply the value. Pass a value and that value is stored instead.
 
 ```ts title="generator.ts"
-import { table, t } from "okmodel/pg";
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
 import { uuidv7 } from "okmodel/ids";
 
-export const notes = table("notes", {
+const notes = table("notes", {
   id: t.uuid().default(uuidv7), // [!code focus]
+  title: t.text(),
 });
+const app = schema({ tables: [notes] });
+
+export async function add(url: string, title: string) {
+  await using db = connect(url, { schema: app });
+  return db.notes.insert({ title });
+}
 ```
 
 <Callout type="info" title="Generators">
-A generator is `uuidv4`, `uuidv7`, [OKID](/docs/define/table/columns#okid) (`okid(...)` from `okmodel/ids`), or any function. `t.id()` and `t.identity()` already carry a default. The schema [id default](/docs/define/schema#id-default) changes what a bare `t.id()` means. A column option wins.
+A generator is `uuidv4`, `uuidv7`, or [OKID](/docs/define/table/columns#okid) (`okid(...)`), all from `okmodel/ids`, or any function. `connect({ generators })` replaces `uuidv4`, `uuidv7`, and `okid`. A function you wrote is left alone. These run in the application. They are not the database functions `uuidv7()` and `gen_random_uuid()`.
 </Callout>
+
+### Already filled
+
+`t.id()` and `t.identity()` already carry a default. Both are omitted from insert and update, so input cannot set them. The schema [id default](/docs/define/schema#id-default) changes what a bare `t.id()` means. A column option wins.
+
+| Call | What fills it | Insert |
+| --- | --- | --- |
+| `t.id()` | Database `uuidv7()`, unless the schema default says otherwise. | Omitted. |
+| `t.id({ default: "uuidv4" })` | Database `gen_random_uuid()`. | Omitted. |
+| `t.id({ default: uuidv7 })` | The client generator. Nothing is stored in the catalog. | Omitted. |
+| `t.id({ default: "none" })` | Nothing. | Required. Still omitted from update. |
+| `t.identity()` | `generated always as identity`. | Omitted. |
+
+`t.id({ default: "none" })` is the column option. It is not a schema default.
 
 ### Null
 
-`.default(null)` is accepted only after `.nullable()`.
+`.default(null)` is accepted only after `.nullable()`. The check runs when `.default()` is called, so the order is `.nullable().default(null)`.
 
 ```ts title="null-default.ts"
 import { table, t } from "okmodel/pg";
@@ -60,13 +93,13 @@ export const notes = table("notes", {
 });
 ```
 
-<Callout type="warning" title="Null">
-A null default is accepted only after `.nullable()`.
+<Callout type="error" title="OKM1060">
+A null default on a column that is not nullable is refused. Call `.nullable()` first.
 </Callout>
 
 ### SQL
 
-`.defaultSql(expression)` stores the SQL expression as written. An empty expression is refused.
+`.defaultSql(expression)` stores the expression as written. Omit the field and Postgres evaluates it. An empty expression is refused.
 
 ```ts title="default-sql.ts"
 import { table, t } from "okmodel/pg";
@@ -77,9 +110,13 @@ export const notes = table("notes", {
 });
 ```
 
+<Callout type="error" title="OKM1060">
+`defaultSql` must be a non-empty SQL expression.
+</Callout>
+
 ### Generated
 
-`.generated(expression)` omits the column from insert and update. `stored` defaults to true. An empty expression is refused.
+`.generated(expression)` is `generated always as (expression) stored`. Insert and update omit the column. A read returns the value. An empty expression is refused. `{ stored: true }` is the default, and the SQL is stored either way.
 
 ```ts title="generated.ts"
 import { table, t } from "okmodel/pg";
@@ -90,3 +127,7 @@ export const notes = table("notes", {
   search: t.tsvector().generated("to_tsvector('simple', title)"), // [!code focus]
 });
 ```
+
+<Callout type="error" title="OKM1060">
+`generated()` must be a non-empty SQL expression.
+</Callout>
