@@ -47,6 +47,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `trait()` takes `fields`, `touch`, `sealed`, and `presets`. A touched field is sealed. Schema traits apply first. `omitDefaults` drops them and needs a reason. A repeated column is OKM1012. A simple trait adds one field. A complex trait adds a touched column, a sealed column, and a preset.
 - Tenancy adds a guarded uuid. `for()` sets it. Input cannot. A unique includes the key unless `.unique({ global })`. `global("reason")` leaves the column off. `via()` follows up to three to-one relations and does not store the key. A global table cannot reference a tenant table.
 - A preset is a `where` you call on the table. A field, an argument, a list, a bound, `or`, and two `where` calls are separate sections. A chain keeps the caller's `where` first. Update and delete still need their own `where`. Insert does not use the preset. A reserved name is OKM1040. A trait preset sees the trait's columns.
+- Required rows are the `reference` option. They are rows the application expects, such as statuses. Apply inserts a missing key and does not update or delete. They are not a foreign key and not a migration insert.
 - Docs pages drop the breadcrumb. Copy page sits on the title row and opens Markdown and chat actions. A code block focuses the line the paragraph names.
 
 ### 💥 Breaking Changes

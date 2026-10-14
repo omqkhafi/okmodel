@@ -130,7 +130,7 @@ export const mappedPages: readonly MappedPage[] = [
   tablePage(13, "traits", "Traits", "trait() adds columns. The schema list is the default. A table adds its own, or opts out."),
   tablePage(14, "tenancy", "Tenancy", "Schema tenancy adds the key to every table."),
   tablePage(15, "presets", "Presets", "A preset is a named refinement you call on the table."),
-  tablePage(16, "reference-rows", "Reference rows", "reference declares rows the application needs."),
+  tablePage(16, "reference-rows", "Required rows", "Rows the application expects to find, inserted when the key is missing."),
   tablePage(17, "queries", "Queries", "find returns a list and needs a limit, or .all(reason)."),
   definePage(1, "schema", "Schema", "schema() compiles the tables into one catalog. Each section is one option."),
   definePage(2, "connect", "Connect", "connect() opens the client. The first argument is the target. schema is required."),

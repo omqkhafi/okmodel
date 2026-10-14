@@ -107,7 +107,7 @@ export default defineConfig({
 | --- | --- |
 | plan, status, `okm check`, drift, verify, pull, catalog export, inspect | Allowed. |
 | Expand: a table, a nullable column, an index, a default, a constraint | Allowed. |
-| Reference rows. Provision an empty database | Allowed. |
+| Required rows (`reference`). Provision an empty database | Allowed. |
 | Contract: drop a table or column, `SET NOT NULL`, drop a default, drop a constraint or index | OKM1850 until `--allow-protected`. |
 | Unclassified SQL, `okm push`, a backfill, `okm seed`, a history repair | OKM1850 until `--allow-protected`. |
 | `okm migrate check` | OKM1850. `--allow-protected` does not lift it. Point it at a throwaway database. |
@@ -131,7 +131,7 @@ The comparison is host, port, and database name. The schema name is ignored. `ok
 
 | State | `okm migrate apply` |
 | --- | --- |
-| Empty | Installs the head snapshot and the [reference](/docs/define/table/reference-rows) rows. |
+| Empty | Installs the head snapshot and the [required](/docs/define/table/reference-rows) rows. |
 | History present | Replays the pending files. |
 | Objects present, no history | OKM1851. |
 | A provision that stopped part-way | OKM1851. Drop the schema or database and run again. |
