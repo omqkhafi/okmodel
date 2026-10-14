@@ -1,6 +1,7 @@
 import {
   changelogSeriesBySlug,
   loadChangelogSeries,
+  loadUnreleased,
   renderChangelogIndexMarkdown,
   renderChangelogSeriesMarkdown,
 } from "@/lib/changelog";
@@ -22,7 +23,7 @@ export async function GET(
   const parts = slug ?? [];
 
   if (parts.length === 0) {
-    return markdownResponse(renderChangelogIndexMarkdown(series));
+    return markdownResponse(renderChangelogIndexMarkdown(series, loadUnreleased()));
   }
   if (parts.length === 1) {
     const entry = changelogSeriesBySlug(series, parts[0]!);

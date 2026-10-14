@@ -155,21 +155,96 @@ export function parseChangelog(raw: string): ReadonlyArray<ChangelogRelease> {
 }
 
 /**
- * Read and parse the canonical changelog from the monorepo root.
+ * Read the canonical changelog from the repository root.
+ */
+function readChangelog(): string {
+  return readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "..", "..", CHANGELOG_SOURCE),
+    "utf8",
+  );
+}
+
+/**
+ * Load and parse the canonical changelog.
  *
  * @throws If no release sections were found — an empty page is a defect, not an
  *   empty state
  */
 export function loadChangelog(): ReadonlyArray<ChangelogRelease> {
-  const raw = readFileSync(
-    join(dirname(fileURLToPath(import.meta.url)), "..", "..", CHANGELOG_SOURCE),
-    "utf8",
-  );
-  const releases = parseChangelog(raw);
+  const releases = parseChangelog(readChangelog());
   if (releases.length === 0) {
     throw new Error(`changelog: no releases parsed from ${CHANGELOG_SOURCE}`);
   }
   return releases;
+}
+
+/**
+ * Notes staged under `## Unreleased`.
+ *
+ * They are not a published release. The changelog page shows them as next
+ * until a release promotes the section.
+ *
+ * @param raw - Full `changelog.md` text
+ * @throws If a bullet or area heading appears outside a group
+ */
+export function parseUnreleased(raw: string): readonly ChangelogGroup[] {
+  type MutableGroup = { label: string; items: string[]; subgroups: MutableGroup[] };
+  const groups: MutableGroup[] = [];
+  let currentGroup: MutableGroup | null = null;
+  let openBullet: { items: string[] } | null = null;
+  let inSection = false;
+
+  for (const line of raw.replace(/\r\n/g, "\n").split("\n")) {
+    if (UNRELEASED_HEADING.test(line)) {
+      inSection = true;
+      continue;
+    }
+    if (!inSection) continue;
+    if (line.startsWith("## ")) break;
+
+    const subgroup = SUBGROUP_HEADING.exec(line);
+    if (subgroup) {
+      if (!currentGroup) {
+        throw new Error("changelog: #### heading outside a ### group in Unreleased");
+      }
+      const entry: MutableGroup = { label: subgroup[1]!, items: [], subgroups: [] };
+      currentGroup.subgroups.push(entry);
+      openBullet = entry;
+      continue;
+    }
+
+    const group = GROUP_HEADING.exec(line);
+    if (group) {
+      const entry: MutableGroup = { label: group[1]!, items: [], subgroups: [] };
+      groups.push(entry);
+      currentGroup = entry;
+      openBullet = entry;
+      continue;
+    }
+
+    const bullet = BULLET.exec(line);
+    if (bullet) {
+      if (!openBullet) throw new Error("changelog: bullet outside a group in Unreleased");
+      openBullet.items.push(bullet[1] ?? "");
+      continue;
+    }
+
+    const text = line.trim();
+    if (text.length === 0) continue;
+    const current = openBullet?.items;
+    if (current && current.length > 0) {
+      current[current.length - 1] = `${current[current.length - 1]} ${text}`;
+    }
+  }
+
+  return groups;
+}
+
+/**
+ * Load the unreleased notes. An empty list means the section is absent.
+ */
+export function loadUnreleased(): readonly ChangelogGroup[] {
+  return parseUnreleased(readChangelog());
 }
 
 /** A run of plain text or a run of code, for inline rendering. */
@@ -346,13 +421,27 @@ export function renderReleasesMarkdown(releases: ReadonlyArray<ChangelogRelease>
  *
  * @param series - Partitioned changelog
  */
-export function renderChangelogIndexMarkdown(series: ReadonlyArray<ChangelogSeries>): string {
+export function renderChangelogIndexMarkdown(
+  series: ReadonlyArray<ChangelogSeries>,
+  unreleased: ReadonlyArray<ChangelogGroup> = [],
+): string {
   const lines = [
     "# Changelog",
     "",
     `Release notes for ${SITE_NAME}, split by minor version from \`${CHANGELOG_SOURCE}\`.`,
     "",
   ];
+  if (unreleased.length > 0) {
+    lines.push(
+      "## Next",
+      "",
+      "Not tagged yet. These notes are `## Unreleased` until the release.",
+      "",
+    );
+    for (const group of unreleased) {
+      lines.push(renderGroupMarkdown(group));
+    }
+  }
   for (const entry of series) {
     const newest = entry.releases[0];
     const oldest = entry.releases[entry.releases.length - 1];

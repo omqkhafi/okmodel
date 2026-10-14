@@ -9,7 +9,10 @@ import { join } from "node:path";
 import {
   loadChangelog,
   loadChangelogSeries,
+  loadUnreleased,
   parseChangelog,
+  parseUnreleased,
+  renderChangelogIndexMarkdown,
   renderChangelogSeriesMarkdown,
 } from "./changelog";
 import { repoRoot } from "./repo";
@@ -25,6 +28,18 @@ test("published releases are kept and Unreleased is not a release", () => {
   expect(first.tag.startsWith("v")).toBe(true);
   expect(first.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   expect(first.groups.length).toBeGreaterThan(0);
+});
+
+test("unreleased notes stay off the release list and show as next", () => {
+  const raw = readFileSync(join(repoRoot(), "changelog.md"), "utf8");
+  const notes = parseUnreleased(raw);
+  expect(notes.length).toBeGreaterThan(0);
+  expect(notes.some((group) => group.items.length + group.subgroups.length > 0)).toBe(true);
+  expect(loadUnreleased()).toEqual(notes);
+  const index = renderChangelogIndexMarkdown(loadChangelogSeries(), notes);
+  expect(index).toContain("## Next");
+  expect(index).toContain("bucket");
+  expect(parseChangelog(raw).some((release) => release.tag === "vUnreleased")).toBe(false);
 });
 
 test("series pages cover every published release", () => {
