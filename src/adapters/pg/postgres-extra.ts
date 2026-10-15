@@ -24,7 +24,11 @@ import { resultFrom, rowsFrom } from "./result.js";
 const RESET_ALL = "RESET ALL";
 const UNLOCK = "SELECT pg_advisory_unlock_all()";
 
-type Lost = { on: boolean };
+type Lost = {
+  on: boolean;
+  /** Rejects the reset or drain that is using this reserved connection. */
+  stop: () => void;
+};
 
 /** State `open` shares with a checkout. */
 export type HeldPool = {
@@ -45,7 +49,6 @@ export type HeldPool = {
  */
 export async function checkout(pool: HeldPool, timeoutMs?: number): Promise<DriverConnection> {
   if (pool.isClosed()) return rejectClosed();
-  hook(pool.sql);
   const reserved = await reserveConnection(pool.sql, pool.acquireMs, pool.counters, timeoutMs);
   pool.counters.reserved += 1;
   const local = new Set<Canceller>();
@@ -64,7 +67,7 @@ export async function checkout(pool: HeldPool, timeoutMs?: number): Promise<Driv
   // socket.write. After closed() sets the socket to null, that timer throws
   // outside the query promise. The close handler sets `lost` before the next
   // statement, savepoint, or COMMIT, so that write is never scheduled.
-  const lost = { on: false };
+  const lost = { on: false, stop: (): void => undefined };
   arm(reserved, lost);
   let limit = timeoutMs !== undefined && timeoutMs > 0 ? timeoutMs : 0;
   const remember = (timeout: number | undefined): void => {
@@ -101,7 +104,7 @@ export async function checkout(pool: HeldPool, timeoutMs?: number): Promise<Driv
       released = true;
       const ms = limit;
       try {
-        if (!lost.on) await deadline(ms, () => resetConnection(reserved, session.depth()));
+        if (!lost.on) await deadline(ms, () => resetConnection(reserved, session.depth()), lost);
       } catch {
         lost.on = true;
       } finally {
@@ -110,7 +113,8 @@ export async function checkout(pool: HeldPool, timeoutMs?: number): Promise<Driv
         // in the open list, and the next statement would write to a socket that is gone.
         // The fatal ErrorResponse can still be sitting on that connection and is delivered to the
         // next query. A discarded statement consumes it. The call timeout covers that wait.
-        if (lost.on) await deadline(ms, () => pool.sql.unsafe("select 1")).catch(() => undefined);
+        if (lost.on)
+          await deadline(ms, () => pool.sql.unsafe("select 1"), pool.sql).catch(() => undefined);
         else reserved.release();
       }
     },
@@ -161,25 +165,113 @@ type ReservedConnection = Sql & {
   release(): void;
 };
 
-let closedWaits = new Set<() => void>();
+type Wait = { s: () => void; a: () => void };
+
+type Opts = {
+  readonly max: number;
+  onclose?: (id: number) => void;
+  q?: Set<Wait>;
+  n?: Set<number>;
+};
 
 /**
- * Installs the pool close hook on the first wait.
+ * Waits for one pool.
  *
- * postgres.js copies `onclose` onto `sql.options` at startup and reads that
- * property when a connection closes, so assigning it later is seen then.
- * A close before this runs leaves the hook unset: no wait is open to reject.
+ * postgres.js calls `options.onclose(id)`. A wait with no call timeout is
+ * rejected only after every slot has closed. One close retries a queued
+ * reserve, because the driver takes that reserve off its queue and drops it.
+ * A wait on a reserved connection uses that connection's own `onclose`.
  *
  * @param sql - The pool client
+ * @returns Pool options, or `undefined` for a reserved connection
  */
-export function hook(sql: Sql): void {
-  const options = (sql as { options?: Sql["options"] }).options;
-  if (options === undefined || options.onclose !== undefined) return;
-  options.onclose = () => {
-    const pending = closedWaits;
-    closedWaits = new Set();
-    for (const stop of pending) stop();
+function poolWaits(sql: Sql): Opts | undefined {
+  const options = (sql as { options?: Opts }).options;
+  if (options === undefined || options.q !== undefined) return options;
+  const q = new Set<Wait>();
+  const n = new Set<number>();
+  options.q = q;
+  options.n = n;
+  options.onclose = (id: number) => {
+    n.add(id);
+    if (n.size < options.max) {
+      queueMicrotask(() => {
+        for (const wait of q) wait.a();
+      });
+      return;
+    }
+    n.clear();
+    for (const wait of q) wait.s();
+    q.clear();
   };
+  return options;
+}
+
+/**
+ * Settles `run` when `ms` elapses, the reserved connection closes, or every
+ * slot in the pool has closed.
+ *
+ * A positive `ms` rejects with `timeout` and does not use the pool close hook.
+ * `link` is the reserved connection's lost flag, or the pool client.
+ *
+ * @param ms - Deadline in milliseconds. `0` waits for a close
+ * @param run - Driver operation
+ * @param link - Connection flag, or the pool client when the wait has no connection
+ * @returns The operation's value
+ */
+export function deadline<T>(ms: number, run: () => Promise<T>, link?: Lost | Sql): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let off = (): void => undefined;
+  const slot = link !== undefined && "stop" in link ? link : undefined;
+  const pool = slot === undefined && link !== undefined ? poolWaits(link as Sql) : undefined;
+  let ended = false;
+  return new Promise<T>((resolve, reject) => {
+    const fail = (error: unknown): void => {
+      if (ended) return;
+      ended = true;
+      reject(error);
+    };
+    const stop = (): void => {
+      fail(new DriverError("Connection closed", { sqlstate: "08006" }));
+    };
+    if (slot !== undefined) slot.stop = stop;
+    const go = (): void => {
+      const pending = run() as Promise<T> & { cancel?: () => void };
+      if (ms > 0 && timer === undefined) {
+        timer = setTimeout(() => {
+          pending.cancel?.();
+          fail(timedOut());
+        }, ms);
+      }
+      void pending.then((value) => {
+        if (ended) {
+          (value as { release?: () => void }).release?.();
+          return;
+        }
+        ended = true;
+        pool?.n?.clear();
+        resolve(value);
+      }, fail);
+    };
+    if (ms === 0 && pool?.q !== undefined) {
+      let used = false;
+      const wait: Wait = {
+        s: stop,
+        a() {
+          if (used || ended) return;
+          used = true;
+          go();
+        },
+      };
+      pool.q.add(wait);
+      off = () => pool.q?.delete(wait);
+    }
+    go();
+  }).finally(() => {
+    clearTimeout(timer);
+    if (slot !== undefined) slot.stop = (): void => undefined;
+    off();
+  });
 }
 
 /**
@@ -203,39 +295,6 @@ export async function runBatch(
   } finally {
     await connection.release();
   }
-}
-
-/**
- * Settles `run` when `ms` elapses or a pooled connection closes.
- *
- * A positive `ms` rejects with `timeout` and cancels `run` when it exposes
- * `cancel`. The pool's `onclose` rejects with SQLSTATE `08006`.
- *
- * @param ms - Deadline in milliseconds. `0` waits only for a close
- * @param run - Driver operation
- * @returns The operation's value
- */
-export function deadline<T>(ms: number, run: () => Promise<T>): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let stop = (): void => undefined;
-  const result = new Promise<T>((resolve, reject) => {
-    stop = () => {
-      reject(new DriverError("Connection closed", { sqlstate: "08006" }));
-    };
-    closedWaits.add(stop);
-    const pending = run() as Promise<T> & { cancel?: () => void };
-    if (ms > 0) {
-      timer = setTimeout(() => {
-        pending.cancel?.();
-        reject(timedOut());
-      }, ms);
-    }
-    void pending.then(resolve, reject);
-  });
-  return result.finally(() => {
-    clearTimeout(timer);
-    closedWaits.delete(stop);
-  });
 }
 
 function reserveConnection(
@@ -262,7 +321,7 @@ function reserveConnection(
       }, acquireMs);
     }
     const ms = callMs !== undefined && callMs > 0 ? callMs : 0;
-    void deadline(ms, () => sql.reserve()).then(
+    void deadline(ms, () => sql.reserve(), sql).then(
       (connection) => {
         if (settled) {
           void resetConnection(connection, 0)
@@ -329,6 +388,7 @@ function arm(sql: Sql, lost: Lost): void {
         onexecute(connection: { onclose: (() => void) | null }) {
           connection.onclose = () => {
             lost.on = true;
+            lost.stop();
           };
         },
       } as never,

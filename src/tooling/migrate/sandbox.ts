@@ -202,7 +202,7 @@ async function inCheckTransaction<T>(
     onnotice: () => {},
   });
   const reserved = await sql.reserve();
-  const lost = { on: false };
+  const lost = { on: false, stop: (): void => undefined };
   watchReserved(reserved, lost);
   refuseWhenLost(reserved, lost);
   let open = false;

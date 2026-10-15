@@ -383,8 +383,7 @@ export class PgSession implements BatchSession {
     if (watch.signal.aborted) onAbort();
     else watch.signal.addEventListener("abort", onAbort, { once: true });
     return import("./postgres-extra.js").then(
-      (mod) => (
-        mod.hook(this.sql),
+      (mod) =>
         mod.watchQuery(pending, watch, onAbort, {
           start,
           text,
@@ -399,8 +398,7 @@ export class PgSession implements BatchSession {
             this.local.delete(item);
             this.shared?.delete(item);
           },
-        })
-      ),
+        }),
       (error: unknown) => {
         this.leave();
         this.local.delete(pending);
