@@ -6,6 +6,7 @@
 
 import type { LoaderPlugin } from "fumadocs-core/source";
 import {
+  Activity,
   BadgeCheck,
   Binary,
   Blocks,
@@ -89,6 +90,7 @@ const PATH_ICONS: Readonly<Record<string, LucideIcon>> = {
   "/docs/define/connect/errors": CircleAlert,
   "/docs/define/connect/generators": Dices,
   "/docs/define/connect/observers": Radio,
+  "/docs/define/connect/otel": Activity,
   "/docs/define/schema": Braces,
   "/docs/define/schema/tables": TableProperties,
   "/docs/define/schema/casing": CaseUpper,

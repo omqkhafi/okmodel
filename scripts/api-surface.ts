@@ -17,6 +17,7 @@ export const API_ENTRIES = [
   { subpath: "okmodel/tenancy", file: "src/runtime/tenancy/index.ts" },
   { subpath: "okmodel/testing", file: "src/tooling/testing/index.ts" },
   { subpath: "okmodel/validate", file: "src/runtime/validate/index.ts" },
+  { subpath: "okmodel/otel", file: "src/runtime/otel.ts" },
   { subpath: "okmodel/ext", file: "src/dialects/pg/ext/index.ts" },
   { subpath: "okmodel/fn", file: "src/dialects/pg/fn/index.ts" },
   { subpath: "okmodel/view", file: "src/dialects/pg/view/index.ts" },
@@ -84,6 +85,7 @@ export function exportNames(source: string): readonly string[] {
 export function classifyExport(subpath: string, name: string): ApiKind {
   if (subpath === "okmodel/internal") return "internal";
   if (subpath === "okmodel/pg" && name === "domain") return "experimental";
+  if (subpath === "okmodel/otel") return "experimental";
   return "stable";
 }
 

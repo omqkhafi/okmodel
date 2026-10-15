@@ -9,6 +9,7 @@
     "session",
     "errors",
     "generators",
-    "observers"
+    "observers",
+    "otel"
   ]
 }
