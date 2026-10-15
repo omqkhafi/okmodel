@@ -18,13 +18,7 @@ import type {
   WireValue,
 } from "../../contracts/driver.js";
 import { PGLITE_CAPABILITIES } from "../capabilities.js";
-import {
-  driverErrors,
-  mapFailure,
-  rejectCancelled,
-  rejectClosed,
-  rejectTimedOut,
-} from "../failure.js";
+import { driverErrors, rejectCancelled, rejectClosed, rejectTimedOut } from "../failure.js";
 import type { BatchSession } from "./batch.js";
 import { nextTransactionDepth, runCall, type Watch } from "./call.js";
 import { noTimeout } from "./no-inflight-timeout.js";
@@ -50,10 +44,11 @@ export type PgliteConfig = DriverPoolConfig & {
  * @returns The pool
  */
 export async function open(config: PgliteConfig = {}): Promise<DriverPool> {
+  const wire = await import("./pglite-wire.js");
   const db = new PGlite({
     dataDir: config.dataDir ?? "memory://",
-    parsers: WIRE,
-    serializers: WIRE,
+    parsers: wire.parsers,
+    serializers: wire.serializers,
   });
   await db.waitReady;
   const acquireMs = config.timeouts?.acquire;
@@ -61,8 +56,8 @@ export async function open(config: PgliteConfig = {}): Promise<DriverPool> {
   const notices = noticeBuffer();
   const queryOptions: QueryOptions = {
     rowMode: "array",
-    parsers: WIRE,
-    serializers: WIRE,
+    parsers: wire.parsers,
+    serializers: wire.serializers,
     onNotice(notice) {
       notices.push(notice);
     },
@@ -79,6 +74,7 @@ export async function open(config: PgliteConfig = {}): Promise<DriverPool> {
     () => {
       inflight = Math.max(0, inflight - 1);
     },
+    (error) => wire.fail(error),
   );
 
   async function lease(): Promise<DriverConnection> {
@@ -173,6 +169,7 @@ class PgliteSession implements BatchSession {
   private readonly notices: NoticeBuffer;
   private readonly enter: () => void;
   private readonly leave: () => void;
+  private readonly fail: (error: unknown) => Promise<unknown>;
 
   /**
    * @param db - The database
@@ -180,6 +177,7 @@ class PgliteSession implements BatchSession {
    * @param notices - Notices for the statement in flight
    * @param enter - Marks one statement in flight
    * @param leave - Marks that statement finished
+   * @param fail - Maps a driver exception. Loaded with the wire codecs
    */
   constructor(
     db: PGlite,
@@ -187,12 +185,14 @@ class PgliteSession implements BatchSession {
     notices: NoticeBuffer,
     enter: () => void,
     leave: () => void,
+    fail: (error: unknown) => Promise<unknown>,
   ) {
     this.db = db;
     this.options = options;
     this.notices = notices;
     this.enter = enter;
     this.leave = leave;
+    this.fail = fail;
   }
 
   /** @inheritdoc */
@@ -218,7 +218,7 @@ class PgliteSession implements BatchSession {
       (error: unknown) => {
         this.leave();
         this.notices.take();
-        return mapFailure(error).then((mapped) => {
+        return this.fail(error).then((mapped) => {
           throw mapped;
         });
       },
@@ -337,15 +337,3 @@ class Slot {
     return this.waiters.length;
   }
 }
-
-function wireMap(oids: readonly number[]): Record<number, (value: string) => string> {
-  const parsers: Record<number, (value: string) => string> = {};
-  for (const oid of oids) parsers[oid] = (value) => value;
-  return parsers;
-}
-
-/** Identity codecs. Values stay wire text. The dialect owns parsing. */
-const WIRE = wireMap([
-  16, 17, 20, 21, 23, 25, 114, 700, 701, 1043, 1082, 1114, 1184, 1700, 2950, 3802, 1000, 1005, 1007,
-  1009, 1016, 1115, 1182, 1185, 1231, 199, 3807,
-]);

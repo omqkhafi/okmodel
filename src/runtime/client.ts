@@ -590,12 +590,13 @@ export function readHandle(
 ): Promise<unknown> & Record<string, unknown> {
   let prepared: Prepared | undefined;
   const origin = call;
+  const searched = "search" in call;
   const prepare = async (): Promise<Prepared> => {
     if (prepared !== undefined) return prepared;
     if (mods.uses !== undefined) {
       call = (await import("./presets.js")).refine(session.schema, origin, mods.uses);
     }
-    if (call.search !== undefined) {
+    if (searched) {
       call = (await import("./text-search.js")).applyTextSearch(session.schema, call);
     }
     const hooks = await hooksFor(call);
@@ -620,7 +621,7 @@ export function readHandle(
   };
   // True when the statement can be planned now: no include, no preset, no operator SQL to load.
   const sync = (): boolean =>
-    call.search === undefined &&
+    !searched &&
     call.include === undefined &&
     mods.uses === undefined &&
     !selectHasWindow(call.select) &&
@@ -732,7 +733,7 @@ export function readCall(
     ...(record.orderBy !== undefined ? { orderBy: record.orderBy } : {}),
     ...(record.limit !== undefined ? { limit: record.limit } : {}),
     ...(record.include !== undefined ? { include: record.include } : {}),
-    ...(record.search !== undefined ? { search: record.search } : {}),
+    ...("search" in record ? { search: record.search } : {}),
     ...callOptions(record),
     ...(all !== undefined ? { all } : {}),
     ...(scope !== undefined ? { scope } : {}),

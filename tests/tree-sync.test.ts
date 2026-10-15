@@ -84,6 +84,13 @@ test("sync locks the parent and refuses a link that would delete a row", async (
   const parent = await catchError(a.nodes.sync(ID, "parent", []).sql());
   expect(parent.code).toBe("OKM1120");
   expect(parent.message).toContain("to-many");
+  const self = await catchError(a.nodes.sync(ID, "children", [ID]).sql());
+  expect(self.code).toBe("OKM1120");
+  expect(self.message).toContain("own child");
+  const kept = await a.nodes.sync(ID, "children", [OTHER]).sql();
+  expect(kept.statements).toHaveLength(2);
+  const cross = await a.tags.sync(ID, "nodes", [ID]).sql();
+  expect(cross.statements).toHaveLength(2);
   expect(pool.calls).toBe(before);
 });
 

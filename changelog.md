@@ -20,7 +20,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - `bucket(column, unit, { tz, as })` groups an aggregate by a calendar or clock unit. A day or longer returns `Temporal.PlainDate`. On a `timestamptz`, a second, minute, or hour returns `Temporal.Instant`. Those three units are refused on a `date`. A NULL timestamp is one group: the result key is present and the value is null. `__proto__`, `constructor`, `toString`, and `hasOwnProperty` are refused as `as`, and so is an `as` that matches another bucket. There is still no `having`. Time-zone date helpers stay deferred (D247, D257).
 - `update` with `lock: "skip"` and `limit` claims up to that many unlocked rows in one statement. A read still uses `lock: "update"` and `wait: "skip"` inside `tx()` (D249).
-- `find({ search })` and `count({ search })` match a column built for search. A string is enough when the table has one. Rows come back closest first unless you pass `orderBy`. `page()` does not take `search`. A `language` that is not text is refused. A name that is not a text search language is refused when the statement is built (D250).
+- `find({ search })` and `count({ search })` match a column built for search. A string is enough when the table has one. Rows come back closest first unless you pass `orderBy`. `page()` does not take `search`. A `language` that is not text is refused. An empty or malformed language name is OKM1122. A well-formed name is sent to the server (D250).
 - `relevance(query, { match, language })` orders a search column by the match. `matches` takes the same options. `{ mode, config }` is not accepted (D250).
 - A to-many `include` with `orderBy` and `limit` returns the first N related rows of each parent. The primary key breaks ties (D251).
 - `rowNumber`, `rank`, `denseRank`, and `runningTotal` go in `select` on `find` or `one`. A running total is the column's type, or null. `page()` refuses a window when the call runs (D251).
@@ -90,10 +90,14 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Concurrent inserts into one `sortable()` group no longer pick the same `position`. The advisory lock is its own statement, and the max is read after that lock is held (D254).
 - `bucket()` refuses `as: "__proto__"`, `constructor`, `toString`, and `hasOwnProperty` before it writes the row (D257).
 - `rowNumber`, `rank`, `denseRank`, and `runningTotal` refuse `__proto__`, `constructor`, `toString`, and `hasOwnProperty` as the result name. The error is OKM1120, names the key, and is raised before any SQL (D258).
+- `find` and `count` with an explicit `search: undefined` are OKM1120, the same as `""` and `null`. A call that omits `search` is unchanged (D259).
+- `bucket()`, `rowNumber`, `rank`, `denseRank`, and `runningTotal` refuse the rest of the `Object.prototype` names, and `then`, as the result key. The error is the same OKM1120 sentence (D259).
+- `sync` on a self-relation refuses an id list that contains the parent's own id and writes nothing. A row cannot be its own child. Other relations are unchanged (D259).
 
 #### adapters
 
 - A server error whose text contains `CONNECT` is no longer treated as a lost connection. Classification uses the driver `code` and SQLSTATE (`08` and `57P01`–`57P03`) only. A live session is rolled back and released. A session that is gone is released without a rollback (D244).
+- On PGlite, a JS number, bigint, or boolean bound to a column is sent as wire text. A parameter protocol error (`08P01`) is kind `driver`. A closed connection stays `unavailable` (D259).
 
 #### tooling
 
@@ -105,6 +109,12 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 #### docs
 
 - The Schema page lists extensions as `citext()`, `pgTrgm()`, or `extension("name")`. Config states each option once.
+- Text search: `natural` combines unquoted words with AND. `advanced` is raw `to_tsquery`, and a syntax error comes back from Postgres as a driver error. A well-formed language name that Postgres does not know also comes back as a driver error. OKM1122 is an empty or malformed name (D259).
+- A claim returns `{ count }`. The handbook sets a `claimedBy` token, then `find`s by that token (D259).
+- PGlite is a pool of one. A statement issued while a `tx()` is open waits until it ends, unless `timeouts.acquire` is set (D259).
+- A morph write can store another tenant's id. The include reads as the caller, so that target is null (D259).
+- An include `select` that names a hidden column drops that column and does not error (D259).
+- `okm migrate check` runs the statements it is given. Run it as a non-superuser (D259).
 
 ### ♻️ Changed
 

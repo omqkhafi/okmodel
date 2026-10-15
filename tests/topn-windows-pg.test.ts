@@ -350,7 +350,21 @@ async function prove(db: Db): Promise<void> {
     ),
   ).toBe("OKM1120");
 
-  const prototypeKeys = ["__proto__", "constructor", "toString", "hasOwnProperty"] as const;
+  const prototypeKeys = [
+    "__proto__",
+    "constructor",
+    "toString",
+    "hasOwnProperty",
+    "valueOf",
+    "isPrototypeOf",
+    "propertyIsEnumerable",
+    "toLocaleString",
+    "__defineGetter__",
+    "__defineSetter__",
+    "__lookupGetter__",
+    "__lookupSetter__",
+    "then",
+  ] as const;
   const windowCalls = [
     (key: string) => rowNumber({ orderBy: { id: "asc" }, as: key }),
     (key: string) => rank({ orderBy: { amount: "desc" }, as: key }),
@@ -381,6 +395,8 @@ async function prove(db: Db): Promise<void> {
   expect(typeof Object.prototype.toString).toBe("function");
   expect(typeof Object.prototype.hasOwnProperty).toBe("function");
   expect(typeof Object.prototype.constructor).toBe("function");
+  expect(typeof Object.prototype.valueOf).toBe("function");
+  expect(Object.prototype.hasOwnProperty("then")).toBe(false);
 }
 
 /**

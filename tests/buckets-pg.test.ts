@@ -488,7 +488,23 @@ async function refusals(a: Scoped): Promise<void> {
       },
     ],
     ["missing as", { groupBy: [bucket("createdAt", "day", { tz: "UTC", as: "" })], limit: 1 }],
-    ...(["__proto__", "constructor", "toString", "hasOwnProperty"] as const).map(
+    ...(
+      [
+        "__proto__",
+        "constructor",
+        "toString",
+        "hasOwnProperty",
+        "valueOf",
+        "isPrototypeOf",
+        "propertyIsEnumerable",
+        "toLocaleString",
+        "__defineGetter__",
+        "__defineSetter__",
+        "__lookupGetter__",
+        "__lookupSetter__",
+        "then",
+      ] as const
+    ).map(
       (key) =>
         [key, { groupBy: [bucket("createdAt", "day", { tz: "UTC", as: key })], limit: 1 }] as const,
     ),
@@ -522,7 +538,16 @@ async function refusals(a: Scoped): Promise<void> {
       name === "__proto__" ||
       name === "constructor" ||
       name === "toString" ||
-      name === "hasOwnProperty"
+      name === "hasOwnProperty" ||
+      name === "valueOf" ||
+      name === "isPrototypeOf" ||
+      name === "propertyIsEnumerable" ||
+      name === "toLocaleString" ||
+      name === "__defineGetter__" ||
+      name === "__defineSetter__" ||
+      name === "__lookupGetter__" ||
+      name === "__lookupSetter__" ||
+      name === "then"
     ) {
       expect(error.message).toContain(name);
       expect(error.message).toContain("prototype key");
@@ -530,6 +555,8 @@ async function refusals(a: Scoped): Promise<void> {
   }
   const probe: { polluted?: boolean } = {};
   expect(probe.polluted).toBeUndefined();
+  expect(typeof Object.prototype.valueOf).toBe("function");
+  expect(Object.prototype.hasOwnProperty("then")).toBe(false);
 }
 
 async function expectWeek(

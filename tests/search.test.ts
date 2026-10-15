@@ -8,6 +8,8 @@ import { expect, test } from "bun:test";
 
 import type { DriverPool } from "../src/contracts/driver.js";
 import { OkmError } from "../src/contracts/error.js";
+import { open as openPglite } from "../src/adapters/pg/pglite.js";
+import { renderCatalog } from "../src/dialects/pg/ddl.js";
 import { id, matches, relevance, schema, table, text, tsvector } from "../src/dialects/pg/index.js";
 import { connect as connectPglite } from "../src/runtime/pg/pglite.js";
 
@@ -199,6 +201,10 @@ test("search names the columns you can search", async () => {
   expect(await codeOf(() => db.notes.find({ search: missing, limit: 1 }))).toBe("OKM1120");
 
   expect(await codeOf(() => db.pages.find({ search: "", limit: 1 }))).toBe("OKM1120");
+  expect(await codeOf(() => db.pages.find({ search: undefined as never, limit: 1 }))).toBe(
+    "OKM1120",
+  );
+  expect(await codeOf(() => db.pages.count({ search: undefined as never }))).toBe("OKM1120");
   expect(await codeOf(() => db.pages.find({ search: { for: "" }, limit: 1 }))).toBe("OKM1120");
   expect(
     await codeOf(() =>
@@ -231,4 +237,28 @@ test("search names the columns you can search", async () => {
   }
 
   await db.close();
+});
+
+test("a call with no search key returns every row", async () => {
+  const pool = await openPglite();
+  try {
+    for (const statement of renderCatalog(app.catalog, "public")) await pool.execute(statement);
+    const db = await connectPglite(pool, { schema: app });
+    await db.connected;
+    await db.pages.insert({
+      id: "01890c5a-8f0e-7c3a-9b2d-6e4f1a0c0001",
+      title: "one",
+      body: "deploy",
+    });
+    await db.pages.insert({
+      id: "01890c5a-8f0e-7c3a-9b2d-6e4f1a0c0002",
+      title: "two",
+      body: "other",
+    });
+    expect(await db.pages.find({ limit: 10 })).toHaveLength(2);
+    expect(await db.pages.count()).toBe(2);
+    await db.close();
+  } finally {
+    await pool.close();
+  }
 });
