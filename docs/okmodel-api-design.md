@@ -1,6 +1,6 @@
 # OKModel — API design (draft 26)
 
-Status: normative specification, draft 26. The repository implements it through the 0.7.0 release. Decisions run D1–D264. Draft 18 applied the M0 gate decisions D115–D127 (evidence: `docs/m0-findings.md` in the repository); draft 19 added D128 (catalog error codes); draft 20 added D130 (column definition and codec error codes); draft 21 added D131 (removing a picklist or enum value); draft 22 adds D132 (reserved options, reference names); draft 24 adds the 0.2 operator set (section 10.1); draft 26 takes the primary-key and Postgres 15 floor edits made in P17G (D148, D151) and renames the uuid default to `uuidv4` (D153). Draft 26 records the shipped id builder shape (P19, D153, D154) and the `defaults.id` fix text. Supersedes drafts 1–21 of this file and the API sections of `orm-research-design.md`. Evidence for the draft-4 changes is in `okmodel-gap-research.md`.
+Status: normative specification, draft 26. The repository implements it through the 0.7.0 release. Decisions run D1–D265. Draft 18 applied the M0 gate decisions D115–D127 (evidence: `docs/m0-findings.md` in the repository); draft 19 added D128 (catalog error codes); draft 20 added D130 (column definition and codec error codes); draft 21 added D131 (removing a picklist or enum value); draft 22 adds D132 (reserved options, reference names); draft 24 adds the 0.2 operator set (section 10.1); draft 26 takes the primary-key and Postgres 15 floor edits made in P17G (D148, D151) and renames the uuid default to `uuidv4` (D153). Draft 26 records the shipped id builder shape (P19, D153, D154) and the `defaults.id` fix text. Supersedes drafts 1–21 of this file and the API sections of `orm-research-design.md`. Evidence for the draft-4 changes is in `okmodel-gap-research.md`.
 
 Name: **OKModel** (short **OKM**). Package `okmodel` on npm and repository `omqkhafi/okmodel`, CLI bins `okm` and `okmodel` (same program), error class `OkmError`, error codes `OKM1xxx`, config file `okm.config.ts`, generated folder `.okm/`, metadata table `okm_meta`. The bin names are not npm package names, so a bare `bunx okm` without a local or global install could fetch an unrelated package; the README tells developers to install first (`bun add -d okmodel`, then `bunx okm`, or a global install).
 
@@ -10,7 +10,7 @@ Toolchain: **TypeScript 7** (the native compiler, still invoked as `tsc`) for ty
 
 ## 1. Decisions log
 
-Moved to `okmodel-decisions.md`. Decisions run D1–D264. This file is the normative spec; every section states a rule, an example and the guard that enforces it.
+Moved to `okmodel-decisions.md`. Decisions run D1–D265. This file is the normative spec; every section states a rule, an example and the guard that enforces it.
 
 ## 2. Design rules and the internal goal
 
