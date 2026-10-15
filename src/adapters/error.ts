@@ -221,23 +221,20 @@ function driverFields(input: {
   readonly batchIndex?: number | null | undefined;
   readonly kind?: DriverFailureKind | undefined;
 }): DriverErrorFields {
-  const fields: {
-    sqlstate?: string;
-    constraint?: string;
-    table?: string;
-    column?: string;
-    detail?: string;
-    cause?: unknown;
-    batchIndex?: number | null;
-    kind?: DriverFailureKind;
-  } = {};
-  if (input.sqlstate !== undefined) fields.sqlstate = input.sqlstate;
-  if (input.constraint !== undefined) fields.constraint = input.constraint;
-  if (input.table !== undefined) fields.table = input.table;
-  if (input.column !== undefined) fields.column = input.column;
-  if (input.detail !== undefined) fields.detail = input.detail;
-  if (input.cause !== undefined) fields.cause = input.cause;
-  if (input.batchIndex !== undefined) fields.batchIndex = input.batchIndex;
-  if (input.kind !== undefined) fields.kind = input.kind;
+  const fields: Record<string, unknown> = {};
+  const keys = [
+    "sqlstate",
+    "constraint",
+    "table",
+    "column",
+    "detail",
+    "cause",
+    "batchIndex",
+    "kind",
+  ] as const;
+  for (const key of keys) {
+    const value = input[key];
+    if (value !== undefined) fields[key] = value;
+  }
   return fields;
 }

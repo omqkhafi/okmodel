@@ -138,17 +138,25 @@ function isDriverError(error: unknown): error is DriverShape {
 /**
  * Maps a text-search failure the server reports.
  *
- * `42601` on a `tsquery` is a malformed advanced search (OKM1120). `42704`
+ * `42601` is a malformed advanced search (OKM1120) when the message names a
+ * `tsquery` or the statement is a search predicate (`to_tsquery`). `42704`
  * for a missing text search configuration is OKM1122. Other syntax errors
  * stay `driver`.
  *
  * @param error - The driver error
  * @returns The mapped error, or `undefined` when this is not a search failure
  */
+function searchQuery(error: DriverShape): boolean {
+  const cause = error.cause;
+  if (typeof cause !== "object" || cause === null) return false;
+  const query = Reflect.get(cause, "query");
+  return typeof query === "string" && query.includes("to_tsquery");
+}
+
 function searchInputError(error: DriverShape): OkmError | undefined {
   const sqlstate = error.sqlstate;
   const message = error.message;
-  if (sqlstate === "42601" && message.includes("tsquery")) {
+  if (sqlstate === "42601" && (message.includes("tsquery") || searchQuery(error))) {
     return new OkmError("OKM1120", `Search input is not valid. ${stripRowValues(message)}`, {
       kind: "invalid",
       sqlstate,

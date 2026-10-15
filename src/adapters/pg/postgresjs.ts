@@ -250,16 +250,10 @@ export function open(config: PostgresJsConfig): DriverPool {
         runCall(closed, options, (watch) => root.query(text, params, watch)),
       );
     },
-    async batch(statements, options) {
-      return sockets.occupy(async () => {
-        const { checkout } = await import("./postgres-extra.js");
-        const connection = await checkout(held);
-        try {
-          return await connection.batch(statements, options);
-        } finally {
-          await connection.release();
-        }
-      });
+    batch(statements, options) {
+      return sockets.occupy(() =>
+        import("./postgres-extra.js").then((mod) => mod.runBatch(held, statements, options)),
+      );
     },
     reserve() {
       const gate = sockets.busyGate();

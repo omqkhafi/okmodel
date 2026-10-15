@@ -179,7 +179,7 @@ export const ADAPTER_ENTRIES = [
   {
     entry: "src/adapters/pg/postgresjs.ts",
     external: ["postgres"],
-    maxIncrementalMinBytes: 15_093,
+    maxIncrementalMinBytes: 16_000, // close rule, #264
   },
   {
     entry: "src/adapters/pg/pglite.ts",

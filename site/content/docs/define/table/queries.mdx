@@ -288,7 +288,7 @@ export async function numbered(url: string) {
 | `natural` | `websearch_to_tsquery`. The default. Unquoted words are combined with AND. |
 | `all-words` | `plainto_tsquery`. |
 | `phrase` | `phraseto_tsquery`. |
-| `advanced` | `to_tsquery`. Raw syntax. A syntax error comes back from Postgres as a driver error. |
+| `advanced` | `to_tsquery`. Raw syntax. A syntax error in that query is OKM1120. Other syntax errors stay a driver error. |
 
 `language` is a text search language such as `english`. Leave it out for the database default. A well-formed name that Postgres does not know as a language reaches the server and comes back as a driver error. When the table has more than one search column, name it with `in`. The error lists the names. `{ mode, config }` is not accepted. Ranking is `ts_rank`. `matches` and `relevance` take the same `{ match, language }`.
 
