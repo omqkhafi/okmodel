@@ -238,7 +238,8 @@ export function parseUnreleased(raw: string): readonly ChangelogGroup[] {
 }
 
 /**
- * Load the unreleased notes. An empty list means the section is absent.
+ * Load the unreleased notes. An empty list means the section has no groups.
+ * A release leaves that section empty until the next notes are added.
  */
 export function loadUnreleased(): readonly ChangelogGroup[] {
   return parseUnreleased(readChangelog());

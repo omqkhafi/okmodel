@@ -91,7 +91,7 @@ Also not in this version:
 - **A table named `tx` or `batch` is shadowed.** On the client, `db.tx` and `db.batch` are the methods. A table with either name is unreachable by that property; rename the table.
 - **The row-level security guard runs once per endpoint and generation.** The first scoped statement on that endpoint checks the role and the policies. A policy weakened while the process keeps running is noticed when the endpoint reconnects and the generation changes, not on the next statement of the open pool (D238, D241). The check resolves each tenant table with `to_regclass`, so a schema named after the connected role does not hide the tables okm created.
 - **`.stream()` does not use a server cursor (D256).** The postgres.js `FETCH` loop measured 15,781 adapter-incremental bytes against 15,093 and stays unbuilt (D245). `.stream()` walks keyset batches on every driver, including PGlite, so a lost connection fails the batch the same way a `find` fails. A server cursor is a later opt-in.
-- **Row-level security adds latency.** A scoped read is about 0.3 ms. The same read with column tenancy is about 0.06 ms. A statement inside `tx()` is about 1 ms slower. Those are one sample, not a gate (D241). Reducing the extra round trips is 0.7.
+- **Row-level security adds latency.** A scoped read is about 0.3 ms. The same read with column tenancy is about 0.06 ms. A statement inside `tx()` is about 1 ms slower. Those are one sample, not a gate (D241). Reducing the extra round trips stays deferred. 0.7 did not change them.
 
 ## Reads and types
 
