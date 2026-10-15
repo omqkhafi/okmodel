@@ -1,28 +1,28 @@
 # Size and cold start
 
-The opening table is the current sample (D252). The gated bytes are the static startup graph: every relative dynamic `import()` is an empty module, so a new lazy chunk does not spend short names on that number. The reference rows are the full `bun build`, printed and not gated. Cold import is the reference, on this machine. The 0.5.0 release sample is [history](#history-the-050-release).
+The opening table is the P101 sample on `d528978`. The gated bytes are the static startup graph: every relative dynamic `import()` is an empty module, so a new lazy chunk does not spend short names on that number. The reference rows are the full `bun build`, printed and not gated. Cold import is the reference, on this machine. The 0.5.0 release sample is [history](#history-the-050-release).
 
 Numbers are from `bun run size` ([`scripts/size.ts`](../scripts/size.ts)). CI job `check` in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs `bun run check`, which runs that script. Cold import is the median of five fresh Node processes (D134). The failing cold-import gate is 25 ms, and it applies to the runtime entry only. A local sample above 15 ms is printed and does not fail the script.
 
-The runtime entry has no dynamic import, so its gate is the single-file build. An `onResolve` hook would change that mangling even with nothing to stub, so the hook is not attached there. The app and the four connect entries use `Bun.build` with one plugin. `bun build` has no plugin flag. The plugin key is the importer plus the specifier, because `build.resolve` is not implemented and the specifier alone would merge `./batch.js` from two directories. The modules in the stubbed graph are the modules a cold import of the full build loads. The gated bytes are one file: empty targets share nothing, so the shared startup chunk is inlined. Adapter incremental bytes are still the full adapter build. Lazy adapter chunks count (D245). Those gates stay 15,093 and 12,010.
+The runtime entry has no dynamic import, so its gate is the single-file build. An `onResolve` hook would change that mangling even with nothing to stub, so the hook is not attached there. The app and the four connect entries use `Bun.build` with one plugin. `bun build` has no plugin flag. The plugin key is the importer plus the specifier, because `build.resolve` is not implemented and the specifier alone would merge `./batch.js` from two directories. The modules in the stubbed graph are the modules a cold import of the full build loads. The gated bytes are one file: empty targets share nothing, so the shared startup chunk is inlined. Adapter incremental bytes are still the full adapter build. Lazy adapter chunks count (D245). Those gates are 16,000 and 12,010.
 
 Byte gates fail in that CI job. Install size is the unminified `dist/` and is printed, not gated.
 
 | Graph | Minified | Gzip | Cold import | Gate |
 | --- | ---: | ---: | ---: | --- |
-| Runtime entry `okmodel` | 5,288 | 2,026 | 1.696 ms | 6,100 / 2,250 bytes, CI cold import 25 ms. No dynamic import |
-| App startup (10 tables, one find) | 90,670 | 29,331 | | 90,900 / 30,170 bytes. Dynamic imports stubbed |
-| App startup, full build (reference) | 92,214 | 30,588 | 10.730 ms | not gated. Driver stubbed cold import 5.382 ms |
-| Connect `okmodel/pg/postgresjs` startup | 40,727 | 14,140 | | 42,450 / 14,920. Dynamic imports stubbed |
-| Connect postgres.js, full build (reference) | 43,425 | 15,283 | 8.226 ms | not gated. Driver stubbed cold import 2.738 ms |
-| Connect `okmodel/pg/pglite` startup | 38,968 | 13,529 | | 40,450 / 14,280. Dynamic imports stubbed |
-| Connect PGlite, full build (reference) | 41,431 | 14,616 | 11.311 ms | not gated. Driver stubbed cold import 2.920 ms |
-| Connect `okmodel/pg/pg` startup | 40,498 | 14,037 | | 42,850 / 15,070. Dynamic imports stubbed |
-| Connect `okmodel/pg/pg`, full build (reference) | 43,151 | 15,170 | 11.535 ms | not gated. Driver stubbed cold import 3.190 ms |
-| Connect `okmodel/pg/bun` startup | 39,469 | 13,634 | | 41,700 / 14,620. Dynamic imports stubbed. Node cold import skipped: Bun.sql runs only on Bun |
-| Connect Bun.sql, full build (reference) | 42,617 | 14,916 | | not gated. Driver stubbed cold import 2.749 ms |
+| Runtime entry `okmodel` | 5,288 | 2,026 | 7.032 ms | 6,100 / 2,250 bytes, CI cold import 25 ms. No dynamic import |
+| App startup (10 tables, one find) | 90,823 | 29,432 | | 90,900 / 30,170 bytes. Dynamic imports stubbed |
+| App startup, full build (reference) | 92,526 | 30,822 | 36.341 ms | not gated. Driver stubbed cold import 17.925 ms |
+| Connect `okmodel/pg/postgresjs` startup | 40,236 | 14,028 | | 42,450 / 14,920. Dynamic imports stubbed |
+| Connect postgres.js, full build (reference) | 42,940 | 15,178 | 23.631 ms | not gated. Driver stubbed cold import 6.808 ms |
+| Connect `okmodel/pg/pglite` startup | 38,650 | 13,433 | | 40,450 / 14,280. Dynamic imports stubbed |
+| Connect PGlite, full build (reference) | 41,245 | 14,568 | 29.431 ms | not gated. Driver stubbed cold import 8.615 ms |
+| Connect `okmodel/pg/pg` startup | 40,195 | 13,984 | | 42,850 / 15,070. Dynamic imports stubbed |
+| Connect `okmodel/pg/pg`, full build (reference) | 42,857 | 15,116 | 48.879 ms | not gated. Driver stubbed cold import 8.134 ms |
+| Connect `okmodel/pg/bun` startup | 39,822 | 13,861 | | 41,700 / 14,620. Dynamic imports stubbed. Node cold import skipped: Bun.sql runs only on Bun |
+| Connect Bun.sql, full build (reference) | 43,033 | 15,163 | | not gated. Driver stubbed cold import 7.601 ms |
 
-Left under those gates, minified / gzip: runtime entry 812 / 224, featureless app 230 / 839, postgres.js 1,723 / 780, PGlite 1,482 / 751, node-postgres 2,352 / 1,033, Bun.sql 2,231 / 986. Adapter incremental: postgres.js 15,069 of 15,093, PGlite 10,931 of 12,010. Against the D251 sample the stubbed app grew 294 / 103 and each connect entry grew 291 minified and 107–111 gzip. That is the walk loop, the sync call, and the `expect` branch on the loader `page` already uses. The sections below record the 0.5.0 release and each later measurement. They are not a second current sample.
+Left under those gates, minified / gzip: runtime entry 812 / 224, featureless app 77 / 738, postgres.js 2,214 / 892, PGlite 1,800 / 847, node-postgres 2,655 / 1,086, Bun.sql 1,878 / 759. Adapter incremental: postgres.js 15,953 of 16,000, PGlite 11,416 of 12,010. The binding startup numbers are the featureless app (77 minified) and the postgres.js adapter (47). This run's cold imports were taken on a loaded machine. The runtime entry is still 5,288 bytes; a quiet sample of that file was 1.696 ms. The stubbed app cold import is 17.925 ms, above the 15 ms local reference, and that reference is not a gate. Driver-stubbed connect cold imports are 6.808, 8.615, 8.134, and 7.601 ms. The [P101 section](#type-and-byte-budget-for-08-p101) is the proposal. The sections below are earlier measurements.
 
 ## History: the 0.5.0 release
 
@@ -338,3 +338,94 @@ Not a gate. Startup minified bytes are what that feature added to the stubbed fe
 | `.stream()` | 57 | `read-stream.ts` 3,161 / 1,439 | 0 / 0 |
 
 The prototype-key check is one helper, `refusePrototypeKey` in `result-name.ts`. `bucket()` and a window `as` both call it. That file loads with the bucket chunk and the window chunk. It is not in the stubbed startup graph (D257, D258).
+
+## Type and byte budget for 0.8 (P101)
+
+Measured 2026-10-15 on `d528978`, the `main` tip this branch started from. `bun run size` and `bun run type-cost` each ran once on that tree. No gate, cap, or ceiling moves. Throwaway patches lived in scratch worktrees and were discarded. Nothing under `src/` is in this change. Ali approves this proposal before P102.
+
+D201 still binds every M2 step: a feature loads lazily, or the step stops with the numbers and does not move a gate. D248 is why a new chunk is free on the stubbed graphs and the call site is not. D129 is the habit: the binding numbers below are within 3 percent of a ceiling, and the shapes that miss them are not built by raising the ceiling.
+
+### Headroom
+
+Gates are the constants in [`scripts/size.ts`](../scripts/size.ts). Left is gate minus measured. Startup rows are the stubbed graphs.
+
+| Graph | Minified | Gzip | Gate | Left (min / gzip) |
+| --- | ---: | ---: | --- | ---: |
+| Runtime entry | 5,288 | 2,026 | 6,100 / 2,250 | 812 / 224 |
+| Featureless app | 90,823 | 29,432 | 90,900 / 30,170 | 77 / 738 |
+| postgres.js | 40,236 | 14,028 | 42,450 / 14,920 | 2,214 / 892 |
+| PGlite | 38,650 | 13,433 | 40,450 / 14,280 | 1,800 / 847 |
+| node-postgres | 40,195 | 13,984 | 42,850 / 15,070 | 2,655 / 1,086 |
+| Bun.sql | 39,822 | 13,861 | 41,700 / 14,620 | 1,878 / 759 |
+
+Adapter incremental, lazy chunks included: postgres.js 15,953 of 16,000 (47 left), PGlite 11,416 of 12,010 (594 left). The app total graph is 270,410 / 86,365, printed and not gated. `dist/` is 1,872,613 bytes, printed and not gated.
+
+The runtime entry and every connect entry have room. The app's 77 minified bytes and the postgres.js adapter's 47 bytes are the startup constraints. Gzip is loose on every gated graph.
+
+| Probe | Instantiations | Types | Ceiling | Left (inst / types) |
+| --- | ---: | ---: | --- | ---: |
+| query-200 | 17,252 | 6,377 | 17,300 / 7,100 | 48 / 723 |
+| query-200+extensions | 17,286 | 6,497 | 17,300 / 7,100 | 14 / 603 |
+| query-200+page+aggregate+through | 24,449 | 6,931 | 24,792 / 6,931 | 343 / 0 |
+| query-200-validate | 25,221 | 6,569 | 25,631 / 6,604 | 410 / 35 |
+| query-200+presets | 19,367 | 7,256 | 19,755 / 7,341 | 388 / 85 |
+| query-200+tx | 24,457 | 7,052 | 25,011 / 7,156 | 554 / 104 |
+| columns | 624 | 918 | 720 / 1,100 | 96 / 182 |
+| inferred-200 | 14,312 | 4,587 | 17,300 / 6,500 | 2,988 / 1,913 |
+
+Within 3 percent of a ceiling: query-200 instantiations (48), query-200+extensions instantiations (14), the composite type count (0), and query-200-validate types (35). inferred-250 is 17,662 of 21,180. inferred-500 is 34,412 of 42,400. Per added table is 67 of 84. The tagged-operator surcharge is 639 of 800 (161 left). This change does not move any of those probes.
+
+### What each 0.8 candidate costs
+
+Each row is one discarded patch, measured with the same stubbed walk as the gate, then reverted. "Gated" is the featureless app and the four connect entries. A file those graphs do not import costs 0 there.
+
+| Candidate | Shape measured | Gated cost | Verdict |
+| --- | --- | --- | --- |
+| SQL builder, composed `sql` fragments | New branch in `plan.ts` before the operator check | App 91,007 / 29,492 (+184 / +60), 107 over 90,900. Each connect entry +184 minified and still under its gate. Incremental +0 | Does not fit in `plan.ts`. Fits at +0 on the existing `emitLazy` path |
+| Typed raw SQL, explicit class (§16) | `sqlTemplate()` plus `import()` on the query handle | App 90,903 / 29,462 (+80 / +30), 3 over 90,900. Connect entries +80 minified | Does not fit as its own method. A generic method on `Query` is +0 instantiations and +0 types on every probe above |
+| `explain()` (§5.4, §15.1, D202) | `explain()` plus `import()` on the query handle | App 90,899 / 29,449 (+76 / +17), 1 under 90,900. Connect entries +76 minified | Fits alone, with 1 minified byte left. The same method on `Query` is +0 / +0 types |
+| `explain()` and raw SQL together | Both methods | App 90,979 / 29,476 (+156 / +44), 79 over 90,900 | Does not fit as two call sites |
+| One shared SQL-lane import | `lane()` returns `import("./sql-lane.js")` | App 90,868 / 29,439 (+45 / +7), 32 minified left. Connect entries +45 minified. Incremental +0 | Fits. This is the call site for raw SQL and `explain()` together |
+| Dev inspector routing reasons | Already behind the lazy topology import | +0 on the stubbed graphs if the body stays in that module | Fits in the existing chunk |
+| `okmodel/otel` (§5.5) | New file, not imported by app or connect | Gated +0. Own bundle 103 / 112 | Fits. No new gate |
+| Neon adapter (§4) | Batch HTTP `open` plus a connect entry. No reserve, stream, or listen | Existing gates +0. Own connect graph 32,159 / 11,436. Incremental 577 | Fits the current gates. P107 sets a new gate from the real adapter. Floor recorded here. Upper bound is the postgres.js connect graph, 40,236 / 14,028 and incremental 15,953, because that graph has the session Neon does not |
+| `okm driver test` (§4.2, §20) | New tooling file | Gated +0. Own file 128 / 114 | Fits |
+| Typed `fn` call (§5.7, D190) | Branch in `plan.ts` | App 90,955 / 29,473 (+132 / +41), 55 over 90,900. Connect entries +132 minified and under | Does not fit in `plan.ts` |
+| Typed `fn` call as a `WhereValue` member | One object union arm | query-200 17,253 / 6,379 (+1 / +2). Composite 24,450 / 6,933 (+1 / +2), 2 types over 6,931 | Does not fit in the base where type |
+| Typed `fn` call as a tagged operator | Same path as today's operators: `emitLazy`, not `WhereValue` | +0 bytes. Composite types stay 6,931. Surcharge has 161 left; one more operator was not added to that probe | Fits |
+| Builder views (§5.7) | `viewFrom()` added in `view/index.ts` | Gated graphs identical to the baseline. The query probes do not import that module | Fits |
+| Inline `as` / `has`, default on | Generic `references` plus automatic `as` and reverse `has` | query-200 48,003 / 9,624 (+30,751 / +3,247). Composite 56,033 / 10,250 (+31,584 / +3,319). inferred-200 26,397 / 6,268. Columns 711 / 939 | Does not fit |
+| Inline `as` only | Generic `references` plus automatic `as` | query-200 22,381 / 7,093 (+5,129 / +716). Composite 29,690 / 7,656 (+5,241 / +725) | Does not fit. The S1 stop line was +30 instantiations |
+| Generic `references`, merge not instantiated | The method is generic and the relation merge returns the explicit relations | query-200 21,698 / 6,964 (+4,446 / +587). Composite types 7,526 | Does not fit. The generic method is the cost |
+| Explicit `as` / `has` overload only | Bare `.references("t")` stays the current signature. The phantom appears only when `as` or `has` is passed. No name merge | query-200 17,372 / 6,421 (+120 / +44), 72 instantiations over. Composite 24,569 / 6,975, 44 types over. Columns 723 / 947, 3 instantiations over 720. Validate types 6,613, 9 over 6,604. Minified bytes +0 | Does not fit, and it does not deliver automatic names |
+| postgres.js `FETCH` loop (D245) | `loadStream` imports a chunk that reserves a connection and calls `cursorStream` | postgres.js incremental 16,296 (+343), 296 over 16,000. App 90,884 / 29,452 (+61 / +20), still under. Other connect entries and the PGlite incremental stay put | Does not fit. Keep unbuilt |
+
+### Options
+
+SQL builder. Build composed fragments as tagged values on the existing `emitLazy` path. The compiler lives in the module an app imports, the same way an operator does. That is +0 on every gated graph. A synchronous branch in `plan.ts` needs the app minified gate raised by at least 107, to the measured 91,007, and this proposal does not ask for that.
+
+Typed raw SQL and `explain()`. One dynamic import on the query handle carries both, at +45 / +7, with 32 minified bytes left on the app. The return type of raw SQL is the caller's class (§16), and a generic method on `Query` did not move a type probe. Two methods miss the app gate by 79. A raw-SQL method by itself misses by 3. The inspector's routing reasons stay in `topology.ts`, which the stubbed graph already replaces with an empty module. Do not add a `connect()` option check for either feature: the app has 32 bytes left after the shared import, and a second method was +80.
+
+`okmodel/otel`. A separate entry the featureless app does not import. The existing lazy hook is enough. Gated cost 0. No gate to set.
+
+Neon. A new connect entry does not spend the four existing connect gates or the two incremental gates. The thin batch adapter is a floor (32,159 / 11,436, incremental 577). P107 measures the real adapter and proposes its own gate at that measurement. That is a new gate, not a move. This proposal does not set the number.
+
+`okm driver test`. Tooling. Gated cost 0.
+
+Typed `fn` calls. They fit in 0.8 as tagged operators on `emitLazy`. They do not fit as a `plan.ts` branch (55 minified over the app) or as a member of `WhereValue` (composite types 6,933). Builder views fit in 0.8 while they stay in `view/index.ts`, which the featureless app and the query probes do not import.
+
+Inline relations. The approved direction is `as` and `has` on `.references()`, on by default (`okmodel-relations-inline-design.md`, Ali's Project doc). Default-on needs about 31,000 more query instantiations and about 3,300 more composite types. The smallest overload that does not even merge names still misses query-200 instantiations, composite types, the column ceiling, and validate types. Raising those four ceilings for the overload would be +120 instantiations, +44 composite types, +99 column instantiations, and +9 validate types, and that overload is not the feature. This proposal defers P108 and P108B. A ceiling decision of the default-on size is a separate approval, and S1's own stop line already fails.
+
+postgres.js `FETCH`. D245 measured 15,781 against a gate of 15,093. The gate is now 16,000 and the same loop measures 16,296. The 47 bytes left cannot hold `cursor.ts`. `.stream()` stays keyset batches (D256). This proposal keeps the loop unbuilt and does not raise 16,000.
+
+### Order for P102–P108B
+
+1. P102 builds the SQL builder as tagged fragments. Gated cost 0.
+2. P106, `okm driver test`, can land beside it. Gated cost 0.
+3. P103 and P104 share the one client import (+45 / +7, 32 minified left). One of them adds the import. The other fills that chunk. The inspector body stays in the topology chunk.
+4. P105, `okmodel/otel`, is its own entry. Gated cost 0.
+5. Builder views stay in 0.8, in the view module. Typed `fn` calls stay in 0.8 only as tagged operators.
+6. P107, Neon, follows P106. It brings a new gate from its own measurement. The floor is 32,159 / 11,436 and incremental 577.
+7. P108 and P108B wait. They do not fit the current ceilings.
+8. The postgres.js `FETCH` loop stays unbuilt.
+9. P109 is the gate. No gate, cap, or ceiling moves on the way there.
