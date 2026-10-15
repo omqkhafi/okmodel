@@ -238,6 +238,9 @@ jobs:
       - name: Are the types wrong
         run: bun run attw
 
+      - name: Packed files are tracked
+        run: bun run pack-tracked
+
       - name: Size
         run: bun run size
 

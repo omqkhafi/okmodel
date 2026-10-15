@@ -133,10 +133,17 @@ export function open(config: BunSqlConfig): DriverPool {
     execute(text, params, options) {
       const refused = noTimeout(options);
       if (refused !== undefined) return refused;
-      return runCall(closed, options, async (watch) => {
-        await releaseParked(parked);
-        return root.query(text, params, watch);
-      });
+      return runCall(closed, options, (watch) =>
+        releaseParked(parked).then(() =>
+          root
+            .query(text, params, watch)
+            .catch((error: unknown) =>
+              import("./bunsql-extra.js").then((mod) =>
+                mod.reopen(error, () => root.query(text, params, watch)),
+              ),
+            ),
+        ),
+      );
     },
     async batch(statements, options) {
       const refused = noTimeout(options);
@@ -150,10 +157,15 @@ export function open(config: BunSqlConfig): DriverPool {
     },
     reserve: () => checkout(),
     stream(text, params) {
-      return stream(text, params);
+      return (async function* () {
+        const { streamRows } = await import("./bunsql-extra.js");
+        yield* streamRows(checkout, text, params);
+      })();
     },
     listen(channel, onNotify) {
-      return listen(channel, onNotify);
+      return import("./bunsql-extra.js").then((mod) =>
+        mod.listen(sql, parked, closed, channel, onNotify),
+      );
     },
     stats: () => statsOf(counters, max),
     async close() {
@@ -162,28 +174,6 @@ export function open(config: BunSqlConfig): DriverPool {
       await sql.close();
     },
   };
-
-  function stream(
-    text: string,
-    params?: readonly WireValue[],
-  ): AsyncIterable<readonly (readonly WireValue[])[]> {
-    return (async function* () {
-      const { streamRows } = await import("./bunsql-extra.js");
-      yield* streamRows(checkout, text, params);
-    })();
-  }
-
-  async function listen(
-    channel: string,
-    onNotify: (payload: string) => void,
-  ): Promise<() => Promise<void>> {
-    if (closed) return rejectClosed();
-    await releaseParked(parked);
-    const subscription = await sql.listen(channel, onNotify);
-    return async () => {
-      await subscription.unlisten();
-    };
-  }
 }
 
 export function send(sql: SQL, text: string, params: readonly WireValue[] | undefined): WireQuery {

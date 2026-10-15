@@ -1,6 +1,6 @@
 {
   "name": "okmodel",
-  "version": "0.7.0-next.104",
+  "version": "0.7.0-next.105",
   "description": "okmodel is a catalog-first TypeScript ORM, PostgreSQL first.",
   "keywords": [
     "migrations",
@@ -129,6 +129,7 @@
     "compiler-api": "bun ./scripts/compiler-api.ts",
     "publint": "publint run . --strict --pack bun",
     "attw": "bun ./scripts/attw.ts",
+    "pack-tracked": "bun ./scripts/pack-tracked.ts",
     "prepack": "bun ./scripts/strip-workspaces.ts strip",
     "postpack": "bun ./scripts/strip-workspaces.ts restore",
     "size": "bun ./scripts/size.ts",
@@ -137,7 +138,7 @@
     "test:postgres": "bun ./scripts/postgres-suite.ts",
     "test:tarball": "bun ./scripts/tarball-smoke.ts",
     "verify": "bun ./scripts/verify.ts",
-    "check": "bun run format:check && bun run lint && bun run typecheck && bun run editor-check && bun run type-cost && bun run layers-check && bun run core-purity && bun run okid-drift && bun run docs:check && bun run readme:check && bun run compiler-api && bun run bundle-purity && bun run build && bun test && bun run test:runtimes && bun run publint && bun run attw && bun run size",
+    "check": "bun run format:check && bun run lint && bun run typecheck && bun run editor-check && bun run type-cost && bun run layers-check && bun run core-purity && bun run okid-drift && bun run docs:check && bun run readme:check && bun run compiler-api && bun run bundle-purity && bun run build && bun test && bun run test:runtimes && bun run publint && bun run attw && bun run pack-tracked && bun run size",
     "bump": "bun ./scripts/bump-version.ts",
     "release-check": "bun ./scripts/release-check.ts",
     "db:up": "bun ./packages/harness/src/docker-cli.ts up",

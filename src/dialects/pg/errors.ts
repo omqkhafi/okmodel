@@ -71,6 +71,8 @@ export type MapPostgresErrorOptions = {
 export function mapPostgresError(error: unknown, options?: MapPostgresErrorOptions): OkmError {
   if (error instanceof OkmError) return error;
   if (!isDriverError(error)) return OkmError.from(error);
+  const search = searchInputError(error);
+  if (search !== undefined) return search;
   const kind = kindOf(error);
   const columns = columnsOf(error);
   const hint = hintOf(error, kind);
@@ -131,6 +133,44 @@ type DriverShape = {
 function isDriverError(error: unknown): error is DriverShape {
   if (!(error instanceof Error) || error.name !== "DriverError") return false;
   return "batchIndex" in error;
+}
+
+/**
+ * Maps a text-search failure the server reports.
+ *
+ * `42601` on a `tsquery` is a malformed advanced search (OKM1120). `42704`
+ * for a missing text search configuration is OKM1122. Other syntax errors
+ * stay `driver`.
+ *
+ * @param error - The driver error
+ * @returns The mapped error, or `undefined` when this is not a search failure
+ */
+function searchInputError(error: DriverShape): OkmError | undefined {
+  const sqlstate = error.sqlstate;
+  const message = error.message;
+  if (sqlstate === "42601" && message.includes("tsquery")) {
+    return new OkmError("OKM1120", `Search input is not valid. ${stripRowValues(message)}`, {
+      kind: "invalid",
+      sqlstate,
+      cause: error.cause ?? error,
+      fix: { summary: "Fix the advanced search text, or use natural, all-words, or phrase." },
+    });
+  }
+  if (
+    sqlstate === "42704" &&
+    message.includes("text search configuration") &&
+    message.includes("does not exist")
+  ) {
+    return new OkmError("OKM1122", stripRowValues(message), {
+      kind: "invalid",
+      sqlstate,
+      cause: error.cause ?? error,
+      fix: {
+        summary: "Use a text search configuration that exists, such as english, or omit language.",
+      },
+    });
+  }
+  return undefined;
 }
 
 function kindOf(error: DriverShape): ErrorKind {

@@ -1,4 +1,4 @@
-import { readdirSync, rmSync } from "node:fs";
+import { existsSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 import { repoRoot } from "./root.js";
@@ -37,7 +37,12 @@ if (name === undefined) {
 const tarball = join(root, name);
 let code = 1;
 try {
-  const attw = Bun.spawn(["bunx", "attw", tarball, "--profile", "esm-only"], {
+  const attwBin = join(root, "node_modules", ".bin", "attw");
+  if (!existsSync(attwBin)) {
+    console.error(`attw: ${attwBin} is missing. Run bun install from the repository root.`);
+    process.exit(1);
+  }
+  const attw = Bun.spawn([attwBin, tarball, "--profile", "esm-only"], {
     cwd: root,
     stdout: "inherit",
     stderr: "inherit",

@@ -77,12 +77,13 @@ export function registerDriverSuite(suite: DriverSuite): void {
 
   test(`${name} keeps timestamps as wire text`, async () => {
     await using(suite.open, async (pool) => {
+      const zone = "with cfg as (select set_config('TimeZone', 'UTC', true))";
       const equal = await pool.execute(
-        "SELECT ($1::timestamptz = TIMESTAMPTZ '2020-01-02 03:04:05+00')",
+        `${zone} select ($1::timestamptz = TIMESTAMPTZ '2020-01-02 03:04:05+00') from cfg`,
         ["2020-01-02 03:04:05+00"],
       );
       expect(equal.rows[0]?.[0]).toBe("t");
-      const printed = await scalar(pool, "SELECT $1::timestamptz::text", [
+      const printed = await scalar(pool, `${zone} select $1::timestamptz::text from cfg`, [
         "2020-01-02 03:04:05+00",
       ]);
       expect(printed).toContain("2020-01-02");

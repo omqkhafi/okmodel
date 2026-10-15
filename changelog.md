@@ -94,17 +94,27 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `rowNumber`, `rank`, `denseRank`, and `runningTotal` refuse `__proto__`, `constructor`, `toString`, and `hasOwnProperty` as the result name. The error is OKM1120, names the key, and is raised before any SQL (D258).
 - `find` and `count` with an explicit `search: undefined` are OKM1120, the same as `""` and `null`. A call that omits `search` is unchanged (D259).
 - `bucket()`, `rowNumber`, `rank`, `denseRank`, and `runningTotal` refuse the rest of the `Object.prototype` names, and `then`, as the result key. The error is the same OKM1120 sentence (D259).
-- `sync` on a self-relation refuses an id list that contains the parent's own id and writes nothing. A row cannot be its own child. Other relations are unchanged (D259).
+- `sync` on a tree-shaped `many` refuses an id list that contains the parent's own id and writes nothing. The message says "tree". `manyThrough`, including a row that links to itself, is accepted. Other relations are unchanged (D259).
+- A malformed advanced search is OKM1120 and names the search input. A missing text search configuration is OKM1122, including `public.english`. Other syntax errors stay `driver` (D260).
+- `morphTo` with a null name, a null type, or an id that is not a non-empty string is OKM1120. An empty string name or type stays OKM1020 (D260).
+- Updating a tree parent to the row's own id is OKM1120 when `where` is the primary key. A filter that is not the key is not checked (D260).
+- `update` with `limit` and `returning: true` returns the updated rows and honors `select`. Without it the result stays `{ count }` (D260).
+- An include `select` that names a hidden column is OKM1120. A default include still omits the column (D260).
 
 #### adapters
 
 - A server error whose text contains `CONNECT` is no longer treated as a lost connection. Classification uses the driver `code` and SQLSTATE (`08` and `57P01`–`57P03`) only. A live session is rolled back and released. A session that is gone is released without a rollback (D244).
 - On PGlite, a JS number, bigint, or boolean bound to a column is sent as wire text. A parameter protocol error (`08P01`) is kind `driver`. A closed connection stays `unavailable` (D259).
+- The timestamp conformance statements set the session time zone to UTC, so the wire text does not depend on the server time zone.
+- Bun.sql retries a statement that fails because the socket is already closed, so the query after a backend killed during `.stream()` does not fail once (D260).
+- The timestamp conformance statements set the session time zone to UTC, so the wire text does not depend on the server time zone.
 
 #### tooling
 
 - `okm migrate check` does not open a second connection to drop the scratch schema when the replay rolls back (D245).
 - The replica probe test has a 15 second budget, so a loaded CI runner no longer fails it on the default 5 second limit.
+- `bun run attw` runs `node_modules/.bin/attw` from the repository root and fails with a clear error when that binary is missing.
+- `bun run pack-tracked` packs the tarball and fails when a file in it, other than `dist/`, is not tracked by git. `bun run check` runs it. The release publish job runs it with `--release`, which also fails when the worktree is dirty.
 - The docs site hero and theme control use inline SVG icons again so the client shell does not import `lucide-react`.
 - Streaming replication waits poll for 45 seconds before `routing.auto` fails on a slow catch-up.
 
@@ -113,11 +123,11 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The docs site favicon is the OKM mark: a white letter on a dark rounded square. It cycles O, K, then M on its own icon link, so opening a page does not rewrite the static icon.
 - The favicon morph keeps the letter visible. The paths sit in the same box as the OKEngine mark, so the blur does not wipe the tile.
 - The Schema page lists extensions as `citext()`, `pgTrgm()`, or `extension("name")`. Config states each option once.
-- Text search: `natural` combines unquoted words with AND. `advanced` is raw `to_tsquery`, and a syntax error comes back from Postgres as a driver error. A well-formed language name that Postgres does not know also comes back as a driver error. OKM1122 is an empty or malformed name (D259).
-- A claim returns `{ count }`. The handbook sets a `claimedBy` token, then `find`s by that token (D259).
+- Text search: `natural` combines unquoted words with AND. `advanced` is raw `to_tsquery`. A syntax error in that query is OKM1120 and names the search input. A missing text search configuration is OKM1122. An empty or malformed name is still OKM1122 when the statement is built (D259, D260).
+- A claim returns `{ count }` unless `returning: true`, which returns the updated rows. The handbook sets a `claimedBy` token, then `find`s by that token (D259, D260).
 - PGlite is a pool of one. A statement issued while a `tx()` is open waits until it ends, unless `timeouts.acquire` is set (D259).
 - A morph write can store another tenant's id. The include reads as the caller, so that target is null (D259).
-- An include `select` that names a hidden column drops that column and does not error (D259).
+- An include `select` that names a hidden column is OKM1120. A default include still omits it (D260).
 - `okm migrate check` runs the statements it is given. Run it as a non-superuser (D259).
 
 ### ♻️ Changed

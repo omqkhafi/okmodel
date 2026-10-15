@@ -21,6 +21,7 @@ import {
   projectExpr,
   quote,
   readLimit,
+  refuseHidden,
   rejectKeys,
   selectedColumns,
   cell,
@@ -307,7 +308,24 @@ function emitNestedAggregate(
   sink.text(") limited) ordered)");
 }
 
-/** Includes never return a hidden column, even when `select` names it. */
+/**
+ * Columns an include returns.
+ *
+ * A named `select` that includes a hidden column is OKM1120, the same as
+ * `where` and `orderBy`. An omitted `select` still drops hidden columns.
+ *
+ * @param table - The related table
+ * @param select - The caller's list, or `undefined` for the default
+ * @returns Columns the include projects
+ */
+function includeColumns(table: Indexed, select: unknown): readonly ColumnModel[] {
+  const columns = selectedColumns(table, select);
+  if (select === undefined) return omitHidden(columns);
+  for (const column of columns) refuseHidden(column);
+  return columns;
+}
+
+/** Includes never return a hidden column when `select` is omitted. */
 function omitHidden(columns: readonly ColumnModel[]): readonly ColumnModel[] {
   for (const column of columns) {
     if (!column.hidden) continue;
@@ -384,7 +402,7 @@ function parseInclude(
     );
   }
   const child = childIndex(schema, relation);
-  const columns = omitHidden(selectedColumns(child, value.select));
+  const columns = includeColumns(child, value.select);
   const nestedValue = value.include;
   const nested = nestedValue === undefined ? [] : readIncludes(schema, child, nestedValue, reason);
   return {

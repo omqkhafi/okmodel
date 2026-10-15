@@ -74,6 +74,13 @@ test("morph resolves both directions and does not change the catalog hash", () =
   expect(reverse?.table).toBe("comments");
   expect(reverse?.morph?.typeValue).toBe("tasks");
   expect(reverse?.local).toEqual(["id"]);
+  expect(() => morphTo("rel", null as never, null as never)).toThrow(OkmError);
+  try {
+    morphTo("rel", null as never, null as never);
+  } catch (error) {
+    expect(error).toBeInstanceOf(OkmError);
+    expect((error as OkmError).code).toBe("OKM1120");
+  }
   expect(morphTo("commentable", "tasks", "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9d01")).toEqual({
     commentableType: "tasks",
     commentableId: "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9d01",

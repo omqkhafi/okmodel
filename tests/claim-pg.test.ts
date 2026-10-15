@@ -138,6 +138,19 @@ async function run(db: Db): Promise<void> {
     "OKM1830",
   );
   expect(outside.message).toContain("transaction");
+
+  const returned = await db.p93Jobs.update(
+    { where: { id: A }, set: { status: "done" }, limit: 1, lock: "skip" },
+    { returning: true },
+  );
+  expect(value(returned)).toEqual([{ id: A, status: "done", qty: 4 }]);
+  const counted = await db.p93Jobs.update({
+    where: { id: A },
+    set: { status: "done" },
+    limit: 1,
+    lock: "skip",
+  });
+  expect(counted).toEqual({ count: 1 });
 }
 
 async function race(owner: Db, other: Db): Promise<void> {

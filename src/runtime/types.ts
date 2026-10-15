@@ -602,7 +602,7 @@ export type InsertOptions<S extends QuerySchema, K extends keyof S["~byName"]> =
 
 /** Options for `update` and `delete`. */
 export type WriteOptions<S extends QuerySchema, K extends keyof S["~byName"]> = {
-  readonly returning?: readonly (keyof RowOf<S, K> & string)[];
+  readonly returning?: true | readonly (keyof RowOf<S, K> & string)[];
   /** Guarded fields this call may set. `delete` ignores it. */
   readonly allow?: readonly (keyof RowOf<S, K> & string)[];
   readonly expect?: number;
@@ -795,6 +795,10 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
     target: AllowedUpdate<S, K, Allow>,
     options: WriteOptions<S, K> & { readonly allow: Allow },
   ): Write<WriteCount>;
+  update(
+    target: UpdateTarget<S, K>,
+    options: WriteOptions<S, K> & { readonly returning: true },
+  ): Write<readonly Show<RowOf<S, K>>[]>;
   update(target: UpdateTarget<S, K>, options?: WriteOptions<S, K>): Write<WriteCount>;
   /** Deletes matching rows. `where` is required. */
   delete(

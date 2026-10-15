@@ -31,6 +31,11 @@ const nodes = table(
       manager: one("nodes", "managerId"),
       reports: many("nodes", "managerId"),
       tags: manyThrough("tags", { through: "nodeTags" }),
+      follows: manyThrough("nodes", {
+        through: "nodeFollows",
+        from: "followerId",
+        to: "followeeId",
+      }),
     },
     presets: {
       called: (q, name: string) => q.where({ name }),
@@ -59,6 +64,15 @@ const nodeTags = table(
     tagId: uuid().references("tags"),
   },
   { primaryKey: ["nodeId", "tagId"] },
+);
+
+const nodeFollows = table(
+  "nodeFollows",
+  {
+    followerId: uuid().references("nodes"),
+    followeeId: uuid().references("nodes"),
+  },
+  { primaryKey: ["followerId", "followeeId"] },
 );
 
 const badLinks = table(
@@ -106,5 +120,5 @@ const items = table(
 export const app = schema({
   casing: "snake",
   tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
-  tables: [nodes, tags, nodeTags, badLinks, folders, files, items],
+  tables: [nodes, tags, nodeTags, nodeFollows, badLinks, folders, files, items],
 });
