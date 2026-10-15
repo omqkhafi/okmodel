@@ -19,10 +19,12 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 #### dialects
 
 - `fragment` composes SQL in `where` and in `select` on `find` or `one`. A value is a parameter. `ident` names the field, the same name `where` uses, and a hidden field is refused. The tenant predicate stays (D266).
+- `raw` and `explain` run typed SQL from a table handle. The row class names the columns. `"read"` or `"write"` is required. A scoped tenant read keeps the tenant predicate outside the fragment. A raw write on that table is OKM1702 and sends nothing. `explain` returns the plan outside production and sends nothing when `NODE_ENV` is `production` (D268).
 
 #### runtime
 
 - `okmodel/otel` turns `hookm`, `onRoute`, and `inspect()` into OpenTelemetry `db.*` spans. You pass the tracer. Statement text stays off unless `statement: true`. Parameters and a tenant id are not recorded. An error span records the error name and an OKM code, and leaves out the message and the stack (D267).
+- On a topology client, `inspect().routing.reason` matches `onRoute`. The preview does not call `onRoute` and does not move the selector. A string or a pool stays synchronous `single-endpoint` (D268).
 
 #### docs
 

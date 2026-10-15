@@ -555,6 +555,10 @@
       "kind": "stable"
     },
     {
+      "name": "ExplainResult",
+      "kind": "stable"
+    },
+    {
       "name": "FilterOperator",
       "kind": "stable"
     },
@@ -787,6 +791,10 @@
       "kind": "stable"
     },
     {
+      "name": "explain",
+      "kind": "stable"
+    },
+    {
       "name": "fragment",
       "kind": "stable"
     },
@@ -964,6 +972,10 @@
     },
     {
       "name": "rank",
+      "kind": "stable"
+    },
+    {
+      "name": "raw",
       "kind": "stable"
     },
     {

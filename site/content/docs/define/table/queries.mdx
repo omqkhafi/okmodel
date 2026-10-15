@@ -810,3 +810,55 @@ export async function perWeek(url: string) {
 <Callout type="error" title="OKM1120">
 An empty `as` is refused. `__proto__`, `constructor`, `toString`, and `hasOwnProperty` are refused. An `as` that clashes with a group field, another bucket, or `count`, `sum`, `avg`, `min`, or `max` is refused.
 </Callout>
+
+### Raw SQL
+
+`raw` and `explain` are functions. Pass the table handle, including one from `for()`. The class names the row: each field needs an initializer, and that order is the select list. `"read"` is one select. `"write"` runs on the primary. A scoped tenant read keeps the tenant predicate outside the fragment, so the select list names the primary key with `ident`.
+
+```ts title="raw-notes.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { fragment, ident, raw, schema, table, t } from "okmodel/pg";
+
+class NoteRow {
+  id = "";
+  title = "";
+}
+
+const notes = table("notes", { id: t.id(), title: t.text() });
+const app = schema({ tables: [notes] });
+
+export async function titled(url: string) {
+  await using db = connect(url, { schema: app });
+  return raw(
+    db.notes,
+    NoteRow,
+    "read",
+    fragment`select ${ident("id")}, ${ident("title")} from notes`, // [!code focus]
+  );
+}
+```
+
+<Callout type="error" title="OKM1602">
+Pass `"read"` or `"write"`, a `fragment` template, and a class with an initializer on every column. A read starts with `select`. A write starts with `insert`, `update`, or `delete`.
+</Callout>
+
+<Callout type="error" title="OKM1702">
+A raw write on a scoped tenant table sends nothing. A raw read must select the primary key with `ident` and must not alias it. `unscoped("reason")` is the hatch for a reviewed statement.
+</Callout>
+
+### Explain
+
+`explain` describes a query you already built. Outside production it returns the `EXPLAIN` lines with the statement text and parameters. In production it does not send the statement: `plan` is null and `params` is empty.
+
+```ts title="explain-notes.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { explain, schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", { id: t.id(), title: t.text() });
+const app = schema({ tables: [notes] });
+
+export async function plan(url: string) {
+  await using db = connect(url, { schema: app });
+  return explain(db.notes, db.notes.find({ limit: 1 })); // [!code focus]
+}
+```

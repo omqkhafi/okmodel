@@ -410,7 +410,7 @@ A logical operation is what the caller means; a method is how it is spelled. One
 | Lifecycle operations | `delete` (permanent), `archive` and `restore` (only on `archivable` tables) |
 | Relationship operations | `sync` |
 | Execution primitives | `tx`, `batch` |
-| Query modifiers | `.inspect()`, `.sql()`, `.explain()`, `.safe()`, `.stream()`, `.required()` |
+| Query modifiers | `.inspect()`, `.sql()`, `.safe()`, `.stream()`, `.required()`. `explain()` is a function on `okmodel/pg` (section 5.4) |
 | Routing constraints | `route` on a read, and `db.using("primary" \| "replica")`; routing is otherwise automatic (section 15.1) |
 
 Guarantees are invariants, not a list of methods. A guarantee without a named CI test is design intent, not a guarantee:
@@ -445,12 +445,14 @@ Mode names above are the current proposal; they are fixed once the semantics tab
 
 ### 5.4 Inspection
 
-```ts no-check="inspect illustration; scoped is defined in the surrounding section and explain is M2"
+```ts no-check="inspect illustration; scoped is defined in the surrounding section"
+import { explain } from "okmodel/pg";
+
 const q = scoped.tasks.pending().find({ include: { list: true }, limit: 50 });
 
 q.inspect()                 // stable, documented structure
 q.sql()                     // { text, params }
-await q.explain()           // database EXPLAIN (M2)
+await explain(scoped.tasks, q) // database EXPLAIN, outside production
 ```
 
 ```text
@@ -467,7 +469,7 @@ safety     tenant ✓  bounded ✓  parameterised ✓
 
 Every rule's provenance includes its source location (`schema.ts:12`), recorded when the table, trait or preset is defined, so the output above can say where each rule came from. In development, repeating one fingerprint many times inside one request context warns with the calling line (N+1 detection without lazy loading).
 
-`inspect()` answers what was asked, what OKModel added and why, and how it will run. The internal IR is not public in 0.x.
+`inspect()` answers what was asked, what OKModel added and why, and how it will run. The internal IR is not public in 0.x. On a topology client, `inspect().routing.reason` is the same string `onRoute` receives (`auto:<name>`, `constraint:primary`, `constraint:replica`, `fallback:behind`, and the other fallback reasons). The preview does not call `onRoute` and does not move the selector. A string or a pool stays synchronous `single-endpoint`. `explain(table, query)` is section 16. In production it returns `plan: null` and empty `params` and does not send the statement (D268).
 
 ### 5.5 Fingerprints
 
@@ -867,7 +869,7 @@ Aggregates decode with the source column's codec. `count` is a number. `min` and
 
 `rowNumber`, `rank`, `denseRank`, and `runningTotal` go in `select` on `find` or `one` (D251). `partitionBy` is the group. Omit it to number the whole result. `orderBy` is required and is the order inside the group. `as` is the result key and must not be a column name. `__proto__`, `constructor`, `toString`, and `hasOwnProperty` are OKM1120 before any SQL (D258). `rowNumber` starts at 1 and gives ties distinct numbers: the primary key is appended inside the window, ascending, for every primary-key field you did not name. `runningTotal` uses that same tie-break, so the running total is stable, and it follows the column's value type the way `sum` does (an integer is a number, a `numeric` column is the decimal string, and a text column is OKM1124). `rank` leaves a tie tied and the next rank skips. `denseRank` leaves a tie tied and the next rank is the next number. Neither appends the primary key, because that would split the tie. A window in `page` is OKM1120 when the call runs. The keyset cursor has no window value to encode. `lag`, `lead`, a frame (`ROWS` or `RANGE`), and the other window functions are not in this version.
 
-Query modifiers apply to any read: `.stream()` (keyset batches on every driver, D256), `.required()`, `.safe()`, `.inspect()`, `.sql()`, `.explain()`.
+Query modifiers apply to any read: `.stream()` (keyset batches on every driver, D256), `.required()`, `.safe()`, `.inspect()`, `.sql()`. `explain()` is a function on `okmodel/pg` (section 16).
 
 ```ts no-check="read illustration; scoped is defined in the surrounding section"
 const task = await scoped.tasks.one({ where: { id } }).required();
@@ -1136,7 +1138,7 @@ const replica = db.using("replica"); // no close(), no using()
 await replica.tasks.find({ limit: 50 });
 ```
 
-An automatic read chooses one eligible replica. The pipeline is health (a closed circuit), then consistency and lag, then capacity, then `routing.select`. The default is `weighted`: smooth weighted round-robin, with state on the topology handle. Equal weights rotate in config order. A replica `weight` of `0` or below is OKM1120, so `weighted` only sees positive weights. `roundRobin` ignores weights. `leastConnections` uses the router's in-flight count. `latencyAware` uses an exponentially weighted moving average of round-trip time, alpha 0.2. A function `select(candidates, ctx)` runs for an automatic read with two or more candidates. A committed write moves the client-wide watermark, described below. `routing.consistency` is `"session"` (the default) or `"eventual"`. `routing.maxLag` is a duration or a size. `routing.fallback` is `"primary"` (the default) or `"error"`. `inspect()` stays `single-endpoint`. Routing reasons are delivered to `onRoute`. Showing them from `inspect()` is the M2 dev inspector. A migrate target that carries `primary`, `replicas`, `weight`, or `pool` is OKM1845 and is not resolved.
+An automatic read chooses one eligible replica. The pipeline is health (a closed circuit), then consistency and lag, then capacity, then `routing.select`. The default is `weighted`: smooth weighted round-robin, with state on the topology handle. Equal weights rotate in config order. A replica `weight` of `0` or below is OKM1120, so `weighted` only sees positive weights. `roundRobin` ignores weights. `leastConnections` uses the router's in-flight count. `latencyAware` uses an exponentially weighted moving average of round-trip time, alpha 0.2. A function `select(candidates, ctx)` runs for an automatic read with two or more candidates. A committed write moves the client-wide watermark, described below. `routing.consistency` is `"session"` (the default) or `"eventual"`. `routing.maxLag` is a duration or a size. `routing.fallback` is `"primary"` (the default) or `"error"`. On a topology client, `inspect().routing.reason` is the same string `onRoute` receives. A string or a pool stays `single-endpoint`. A migrate target that carries `primary`, `replicas`, `weight`, or `pool` is OKM1845 and is not resolved.
 
 A string or a pool is one endpoint. It serves `route: "primary"` and `route: "replica"` from that endpoint. It has no `using`. A write's options do not take `route`. `using("replica")` injects the route, and the router raises OKM1840 for a write, a batch, a transaction, or a locking read. Inside `tx()`, `route: "replica"` is OKM1840 because the transaction already holds the primary connection. The dialect check (`select current_setting(...)`) always uses the primary. A statement whose text starts with `with` is treated as a write. `schema()` rejects a table named `using` as a reserved word (OKM1122). A model that still carries that name is OKM1120 at connect.
 
@@ -1188,7 +1190,7 @@ all replicas → health → consistency and lag → capacity → selection strat
 - `routing.maxLag` is a string. Time forms are `"5s"`, `"500ms"`, and `"2m"`. Size forms are `"16MB"`, `"512KB"`, `"1GB"`, and `"4096B"` (`KB` is 1024). A bare number is OKM1120, because the unit would be ambiguous. Byte lag is the primary's current WAL insert position, sampled by the probe on the primary and refreshed on each tracked write, minus the replica's replay position. Time lag comes from the replica's replay timestamp, and only while that replay position is behind the primary's. A caught-up replica has lag zero, so an idle primary does not make replicas look stale. `maxLag` applies to automatic reads and to `route: "replica"` and `using("replica")`. A replica past the ceiling is not eligible. The strict routes fail with OKM1843 and do not use the primary.
 - **Capability gate.** Positions need `replication.position` on the endpoint, detected per endpoint at connect. A primary without it, or a replica without it, means the watermark and the lag cannot be checked. After a write, automatic reads use the primary, and `route: "replica"` and `using("replica")` are OKM1843. `maxLag` excludes a replica that lacks position support. A read with no write yet and no `maxLag` still uses replicas. `consistency: "eventual"` needs no positions except when `maxLag` is set.
 
-**`onRoute`.** A topology connect option. The callback receives `{ op, endpoint, reason }` after an endpoint is chosen. `op` is `"read"`, `"write"`, `"tx"`, or `"lock"`. `reason` is `primary-required`, `constraint:primary`, `constraint:replica`, `auto:<name>`, or `fallback:<no-replicas | unhealthy | position-unknown | saturated | behind>`. `behind` means healthy replicas exist and none satisfies the watermark or `maxLag`. A throw is swallowed and the operation continues. `inspect()` stays `single-endpoint`. Routing reasons in `inspect()` are the M2 dev inspector.
+**`onRoute`.** A topology connect option. The callback receives `{ op, endpoint, reason }` after an endpoint is chosen. `op` is `"read"`, `"write"`, `"tx"`, or `"lock"`. `reason` is `primary-required`, `constraint:primary`, `constraint:replica`, `auto:<name>`, or `fallback:<no-replicas | unhealthy | position-unknown | saturated | behind>`. `behind` means healthy replicas exist and none satisfies the watermark or `maxLag`. A throw is swallowed and the operation continues. `inspect().routing` on that client reports the same reason strings. The preview does not call `onRoute` and does not move the selector. A string or a pool stays synchronous `single-endpoint` (D268).
 
 ### 15.2 Pools, connection affinity and target resolution
 
@@ -1200,18 +1202,33 @@ all replicas → health → consistency and lag → capacity → selection strat
 
 ## 16. Typed raw SQL
 
-```ts no-check="typed raw SQL is M2 and scoped.sql is not a shipped method"
-const overdue = await scoped.sql`
-  select l.id, l.name, count(t.id)::int as overdue
-  from lists l join tasks t on t.list_id = l.id
-  where t.due_at < now() and t.completed_at is null
-  group by l.id, l.name
-`.as("overdueByList");
+`raw` and `explain` are functions on `okmodel/pg` (D268). An app that does not import them does not keep them. They are not methods on the query.
+
+```ts no-check="illustration; the client comes from connect"
+import { explain, fragment, ident, raw } from "okmodel/pg";
+
+class NoteRow {
+  id = "";
+  title = "";
+  n = 0;
+}
+
+const rows = await raw(
+  scoped.notes,
+  NoteRow,
+  "read",
+  fragment`select ${ident("id")}, ${ident("title")}, ${3} from notes`,
+);
+const described = await explain(db.notes, db.notes.find({ limit: 1 }));
 ```
 
-- Types recorded in `okm.lock.json` by `okm build` via driver `describe`; stale entries fail CI (OKM1601).
-- Tenancy and deletion-trait filters apply when tables are recognised; unverifiable statements on tenant tables fail closed (OKM1702) unless `.trusted("reason")`. In 0.2 no public runtime path takes raw SQL, so OKM1702 is not thrown; typed raw SQL is M2 (D183).
-- `sql.raw(text, "reason")` requires a reason.
+- The class constructs with no arguments. Its own enumerable keys, in initializer order, are the result columns. A key that is a field of the table uses that field's decode. Any other key uses the initializer: a number, a boolean, or driver text. `null` stays `null`. A class with no initializers, a constructor that needs arguments, or a statement that is not one `select` or one write is OKM1602.
+- `"read"` starts with `select`. `"write"` starts with `insert`, `update`, or `delete` and runs on the primary. A leading `with` is not a read.
+- Identifiers are `ident(name)`, the TypeScript field. A hidden field is OKM1120, including `hidden({ filterable: true })`. A string, number, boolean, or null is a parameter. A comment, a semicolon, or a `$` in the literal is OKM1125, the same rule as `fragment` (D266).
+- A scoped tenant read is wrapped so the tenant predicate sits outside the fragment. When the table is archivable, `archived_at is null` is in that same outer predicate. The select list must name the one primary key, besides the tenant key, with `ident`. Do not alias it. Anything else is OKM1702. A raw write on a scoped tenant table is OKM1702 and sends nothing. `unscoped("reason")` skips the tenant predicate. The archive filter still wraps a read. A missing tenant scope is OKM1701 from the existing table guard, before `raw` runs.
+- A table that is not a tenant table runs the statement as written. A write still goes to the primary. An archivable table that is not a tenant table still wraps a read. That write is not failed closed.
+- `explain(table, query)` sends `EXPLAIN` (not `ANALYZE`) outside production and returns `{ text, params, plan }`. In production (`NODE_ENV` is `"production"`) it does not send the statement. `plan` is null and `params` is empty.
+- Recording column types with `okm build` into `okm.lock`, and `scoped.sql`…`.as(name)`, stays deferred. OKM1601 remains the code for a stale signature when that path exists. `sql.raw(text, "reason")` is not this API.
 
 ## 17. Generics
 
@@ -1572,7 +1589,7 @@ test("today view runs one query", async () => {
 | Stale typed-SQL signature | CI | OKM1601 |
 | Commit or batch outcome unknown (result never received) | runtime | OKM1401 |
 | Tenant table without context | types | OKM1701 |
-| Unverifiable raw SQL on tenant table | runtime | OKM1702 (not thrown in 0.2: no path takes raw SQL) |
+| Unverifiable raw SQL on tenant table | runtime | OKM1702 |
 | Changing the tenant key | types + runtime | OKM1704 |
 | Global table referencing tenant table | `okm check` | OKM1705 |
 | Tenant index not led by the key | schema, when the schema is built. Not a linter rule | OKM1706 |

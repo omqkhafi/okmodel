@@ -520,6 +520,13 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     fix: "Regenerate the typed SQL and commit the new signature.",
   },
   {
+    code: "OKM1602",
+    title: "Bad typed SQL",
+    summary:
+      "A raw statement is missing its class, is not one select or one write, or the result class has no column initializers.",
+    fix: 'Pass "read" or "write", a fragment`...`, and a class with an initializer on every column. Identifiers are ident(name).',
+  },
+  {
     code: "OKM1701",
     title: "Tenant context missing",
     summary: "A tenant table was used on a client that has no tenant context.",
@@ -528,8 +535,9 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
   {
     code: "OKM1702",
     title: "Unverifiable tenant SQL",
-    summary: "Raw SQL touches a tenant table and the tenant predicate cannot be proved.",
-    fix: "Use the query builder, or mark the fragment trusted with a reason if it is reviewed.",
+    summary:
+      "Raw SQL on a tenant table cannot prove the tenant predicate. A raw write is this. A raw read that does not select the primary key with ident is this.",
+    fix: 'Use update or delete, or select the primary key with ident(name). unscoped("reason") is the reviewed hatch.',
   },
   {
     code: "OKM1704",

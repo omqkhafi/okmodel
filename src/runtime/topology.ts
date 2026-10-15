@@ -64,7 +64,7 @@ export type RouteName = "primary" | "replica";
 /**
  * One routing choice.
  *
- * `onRoute` receives this. `inspect()` does not, until the dev inspector (M2).
+ * `onRoute` receives this. `inspect()` on a topology client shows the same reason.
  */
 export type RouteEvent = {
   /** What the statement was classified as. */
@@ -435,8 +435,7 @@ export async function connectTopology<S extends QuerySchema>(
     const client = createClient(options.schema, router, { ownsPool: true, ...shared });
     const routed = client as RoutedClient<S>;
     routed.using = (route) => derive(options.schema, handle, router, shared, route);
-    handles.set(routed, handle);
-    return routed;
+    return instrument(routed, handle);
   } catch (error) {
     for (const endpoint of opened) {
       if (endpoint.timer !== undefined) clearTimeout(endpoint.timer);
@@ -471,6 +470,146 @@ export function readTopology(client: object): TopologyView | undefined {
       nextDelayMs: endpoint.nextDelayMs,
     })),
   };
+}
+
+/**
+ * Shows routing reasons from `inspect()` on this client.
+ *
+ * The body stays in this module. The stubbed startup graph replaces the
+ * module with an empty file, so the reasons cost nothing there. A preview
+ * restores the selector weights so `inspect` does not change the next pick.
+ * `onRoute` is not called.
+ *
+ * @param client - Client `connect` or `using` returned
+ * @param handle - Pools and the watermark
+ * @param forced - Route `using` injected. A call's `route` wins when this is absent
+ * @returns The same client, with reads reporting the reason
+ */
+function instrument<T extends object>(client: T, handle: Handle, forced?: RouteName): T {
+  // A Proxy is the client the caller holds. The cast keeps `using` and the tables.
+  const proxy = new Proxy(client, {
+    get(target, key, receiver) {
+      if (key === "using") return Reflect.get(target, key, receiver);
+      const value: unknown = Reflect.get(target, key, receiver);
+      if (typeof value !== "function") return retarget(value, handle, forced);
+      if (key === "tx") {
+        return (...args: unknown[]) => {
+          const index = typeof args[0] === "function" ? 0 : 1;
+          const fn = args[index];
+          if (typeof fn === "function") {
+            args[index] = (inner: unknown, ...rest: unknown[]) =>
+              (fn as (client: unknown, ...more: unknown[]) => unknown)(
+                typeof inner === "object" && inner !== null
+                  ? instrument(inner, handle, "primary")
+                  : inner,
+                ...rest,
+              );
+          }
+          return (value as (...inner: unknown[]) => unknown).apply(target, args);
+        };
+      }
+      return (...args: unknown[]) =>
+        retarget((value as (...inner: unknown[]) => unknown).apply(target, args), handle, forced);
+    },
+  }) as T;
+  handles.set(proxy, handle);
+  return proxy;
+}
+
+function wrapTable(table: object, handle: Handle, forced: RouteName | undefined): object {
+  return new Proxy(table, {
+    get(target, key, receiver) {
+      const value: unknown = Reflect.get(target, key, receiver);
+      if (typeof value !== "function") return value;
+      return (...args: unknown[]) => {
+        const route = forced ?? readCallRoute(args[0]);
+        return retarget(
+          (value as (...inner: unknown[]) => unknown).apply(target, args),
+          handle,
+          route,
+        );
+      };
+    },
+  });
+}
+
+function retarget(value: unknown, handle: Handle, route: RouteName | undefined): unknown {
+  if (typeof value !== "object" || value === null) return value;
+  if (
+    typeof Reflect.get(value, "inspect") === "function" &&
+    typeof Reflect.get(value, "then") === "function"
+  ) {
+    return showReason(value, handle, route);
+  }
+  if (typeof Reflect.get(value, "find") === "function") return wrapTable(value, handle, route);
+  if (typeof Reflect.get(value, "table") === "function") return instrument(value, handle, route);
+  return value;
+}
+
+function showReason(query: object, handle: Handle, route: RouteName | undefined): object {
+  return new Proxy(query, {
+    get(target, key, receiver) {
+      const value: unknown = Reflect.get(target, key, receiver);
+      if (key === "inspect" && typeof value === "function") {
+        const inspect = value as (this: object) => unknown;
+        return () =>
+          Promise.resolve(inspect.call(target)).then(async (view) => {
+            if (typeof view !== "object" || view === null) return view;
+            const sql = Reflect.get(view, "sql");
+            const text =
+              typeof sql === "object" &&
+              sql !== null &&
+              typeof Reflect.get(sql, "text") === "string"
+                ? (Reflect.get(sql, "text") as string)
+                : "";
+            const choice = await preview(handle, text, route);
+            return {
+              ...view,
+              routing: {
+                endpoint: choice.endpoint.name,
+                role: choice.endpoint.role,
+                reason: choice.reason,
+              },
+            };
+          });
+      }
+      if ((key === "all" || key === "required") && typeof value === "function") {
+        const method = value as (this: object, ...args: unknown[]) => unknown;
+        return (...args: unknown[]) => retarget(method.apply(target, args), handle, route);
+      }
+      return typeof value === "function"
+        ? (value as (this: object) => unknown).bind(target)
+        : value;
+    },
+  });
+}
+
+function readCallRoute(value: unknown): RouteName | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const route = Reflect.get(value, "route");
+  return route === "primary" || route === "replica" ? route : undefined;
+}
+
+/**
+ * The endpoint `choose` would pick, without moving the selector.
+ *
+ * @param handle - Weights and the round-robin cursor
+ * @param text - Statement text
+ * @param route - Forced route, or absent
+ * @returns The choice `inspect` reports
+ */
+async function preview(handle: Handle, text: string, route: string | undefined): Promise<Choice> {
+  const currents = handle.endpoints.map((endpoint) => endpoint.current);
+  const rrLast = handle.rrLast;
+  try {
+    return await choose(handle, text, route);
+  } finally {
+    for (let index = 0; index < handle.endpoints.length; index += 1) {
+      const endpoint = handle.endpoints[index];
+      if (endpoint !== undefined) endpoint.current = currents[index] ?? 0;
+    }
+    handle.rrLast = rrLast;
+  }
 }
 
 function refuseRouting(routing: TopologyOptions["routing"]): void {
@@ -1097,7 +1236,7 @@ function derive<S extends QuerySchema>(
   const name = readRoute(route);
   const client = createClient(schema, force(handle, router, name), { ...shared, ownsPool: false });
   delete (client as { close?: unknown }).close;
-  return client;
+  return instrument(client, handle, name);
 }
 
 /**

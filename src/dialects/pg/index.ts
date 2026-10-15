@@ -103,6 +103,7 @@ export { overlaps } from "./ops/overlaps.js";
 export { path } from "./ops/path.js";
 export { startsWith } from "./ops/startsWith.js";
 export { fragment, ident, type Fragment } from "./ops/fragment.js";
+export { explain, raw, type ExplainResult } from "./ops/lane.js";
 export {
   many,
   manyThrough,

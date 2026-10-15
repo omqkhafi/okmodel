@@ -1,18 +1,16 @@
 /**
- * Three registered codes that 0.2 never throws, and why that is correct (D183).
+ * Two registered codes that are not thrown, and why that is correct (D183).
  *
  * - OKM1110, a feature needs a newer engine than `requires` allows. The one
  *   feature that depends on the engine is an explicit `uuidv7()` database
  *   default, and it fails as OKM1812 when the schema is built (and OKM1802
  *   when the server is older than `requires`). A bare `t.id()` stores
  *   `gen_random_uuid()`. Nothing is gated at the type level yet.
- * - OKM1191, a multi-statement read inside READ COMMITTED. Every 0.2 read is one
+ * - OKM1191, a multi-statement read inside READ COMMITTED. Every read is one
  *   statement (`snapshot-reads.test.ts`), so the single-statement plan always exists.
- * - OKM1702, unverifiable raw SQL on a tenant table. No public runtime path takes raw
- *   SQL (`raw-sql-paths.test.ts`).
  *
- * This test fails when one of them starts to be thrown, so whoever adds the throw also
- * writes its test and updates the spec text that says 0.2 does not reach it.
+ * OKM1702 is thrown: a raw write on a scoped tenant table, and a raw read that
+ * does not select the primary key with `ident` (`ops/lane.ts`, D268).
  */
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -31,13 +29,13 @@ function sources(dir: string): string[] {
   });
 }
 
-test("OKM1110, OKM1191 and OKM1702 are registered and not thrown anywhere in src", () => {
+test("OKM1110 and OKM1191 are registered and not thrown anywhere in src", () => {
   const found: string[] = [];
   for (const file of sources("src")) {
     if (file.endsWith("tooling/errors/registry.ts") || file.endsWith("contracts/error.ts"))
       continue;
     const content = readFileSync(file, "utf8");
-    for (const code of ["OKM1110", "OKM1191", "OKM1702"]) {
+    for (const code of ["OKM1110", "OKM1191"]) {
       if (content.includes(`"${code}"`)) found.push(`${file}: ${code}`);
     }
   }

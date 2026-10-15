@@ -85,7 +85,7 @@ test("reads use the first replica until the session writes", async () => {
     expect(seen.routing).toEqual({
       endpoint: "primary",
       role: "primary",
-      reason: "single-endpoint",
+      reason: "fallback:behind",
     });
   } finally {
     await db.close();
