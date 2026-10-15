@@ -7,9 +7,9 @@
  */
 
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
+import { repoRoot } from "./repo";
 import { SITE_NAME } from "./site-identity";
 
 /** One `### <label>` block inside a release. */
@@ -158,10 +158,7 @@ export function parseChangelog(raw: string): ReadonlyArray<ChangelogRelease> {
  * Read the canonical changelog from the repository root.
  */
 function readChangelog(): string {
-  return readFileSync(
-    join(dirname(fileURLToPath(import.meta.url)), "..", "..", CHANGELOG_SOURCE),
-    "utf8",
-  );
+  return readFileSync(join(repoRoot(), CHANGELOG_SOURCE), "utf8");
 }
 
 /**

@@ -151,6 +151,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - A trigger that also fires on insert names `new` in `when`. Postgres rejects `old` on an insert event.
 - `extension("hstore", { schema: "extensions" })` needs `create schema "extensions"` before apply. The column type is `extensions.hstore`, because that type is not on the search path.
 - The traits insert is awaited. `await using` closes the client when the function returns, so a returned promise closed it before the row was written.
+- The docs site reads the repository `package.json` by walking up to the manifest named `okmodel`. A Next output manifest with a trailing comma is not that file.
 
 ### ♻️ Changed
 
