@@ -130,10 +130,31 @@ test("the site deploys only after a successful release of a stable tag", () => {
   expect(yaml).toContain("bun-version: 1.4.2");
   expect(yaml).toContain("actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1");
   expect(yaml).toContain("oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2");
-  expect(yaml).toContain("bunx vercel@64.2.0 pull --yes --environment=production");
-  expect(yaml).toContain("bunx vercel@64.2.0 build --prod");
-  expect(yaml).toContain("bunx vercel@64.2.0 deploy --prebuilt --prod");
-  expect(yaml).toContain("working-directory: ${{ runner.temp }}/release/site");
+  expect(yaml).toContain("type: choice");
+  expect(yaml).toContain("default: production");
+  expect(yaml).toContain("- preview");
+  expect(yaml).toContain("bun ./scripts/deploy-ref.ts --preview-url");
+  expect(yaml).toContain("steps.release.outputs.confirm == 'true'");
+  expect(yaml).toContain("steps.release.outputs.confirm == 'false'");
+  expect(yaml).toContain(
+    "github.event_name == 'workflow_dispatch' && inputs.target || 'production'",
+  );
+  expect(yaml).toContain(
+    "bunx vercel@64.2.0 pull --yes --environment=${{ steps.release.outputs.environment }}",
+  );
+  expect(yaml).toContain("bunx vercel@64.2.0 build ${{ steps.release.outputs.prod_flag }}");
+  expect(yaml).toContain(
+    "bunx vercel@64.2.0 deploy --prebuilt ${{ steps.release.outputs.prod_flag }}",
+  );
+  expect(yaml).not.toContain("--environment=production");
+  expect(yaml).not.toContain("build --prod");
+  expect(yaml).not.toContain("--prebuilt --prod");
+  expect(yaml.split("\n").filter((line) => line.includes("working-directory:"))).toEqual([
+    "        working-directory: ${{ runner.temp }}/release/site",
+    "        working-directory: ${{ runner.temp }}/release",
+    "        working-directory: ${{ runner.temp }}/release",
+    "        working-directory: ${{ runner.temp }}/release",
+  ]);
   expect(yaml).toContain("bun install --frozen-lockfile");
   for (const name of ["VERCEL_TOKEN", "VERCEL_ORG_ID", "VERCEL_PROJECT_ID"]) {
     expect(yaml).toContain(`${name}: \${{ secrets.${name} }}`);

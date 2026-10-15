@@ -19,9 +19,12 @@ import {
   deployRefProblems,
   pageContainsVersion,
   prereleaseProblem,
+  deploymentUrlFromDeployOutput,
   productionUrlFromDeployOutput,
   resolveDeployTag,
+  resolveDeployTarget,
   tagCommitProblem,
+  vercelDeployPlan,
 } from "../scripts/deploy-ref.js";
 import { releaseRefProblem } from "../scripts/release-ref.js";
 import { checkLayers } from "../scripts/layers-check.js";
@@ -606,6 +609,46 @@ test("deploy confirm retries until the page shows the release version and stays 
   expect(blocked).toBe(true);
 });
 
+test("a manual preview is the only target that is not production", () => {
+  expect(resolveDeployTarget("workflow_run", "preview")).toEqual({
+    ok: true,
+    value: "production",
+  });
+  expect(resolveDeployTarget("workflow_run", "staging")).toEqual({
+    ok: true,
+    value: "production",
+  });
+  expect(resolveDeployTarget("workflow_dispatch", undefined)).toEqual({
+    ok: true,
+    value: "production",
+  });
+  expect(resolveDeployTarget("workflow_dispatch", "production")).toEqual({
+    ok: true,
+    value: "production",
+  });
+  expect(resolveDeployTarget("workflow_dispatch", "preview")).toEqual({
+    ok: true,
+    value: "preview",
+  });
+  expect(resolveDeployTarget("workflow_dispatch", "staging")).toEqual({
+    ok: false,
+    problem: "Refusing target staging. Pass production or preview.",
+  });
+  expect(resolveDeployTarget("push", "preview").ok).toBe(false);
+  expect(vercelDeployPlan("production")).toEqual({
+    target: "production",
+    environment: "production",
+    prodFlag: "--prod",
+    confirm: true,
+  });
+  expect(vercelDeployPlan("preview")).toEqual({
+    target: "preview",
+    environment: "preview",
+    prodFlag: "",
+    confirm: false,
+  });
+});
+
 test("vercel deploy json yields the production URL", () => {
   expect(
     productionUrlFromDeployOutput({
@@ -632,6 +675,16 @@ test("vercel deploy json yields the production URL", () => {
       "Vercel did not return a production URL. The deployment URL was https://okmodel-abc.vercel.app.",
   });
   expect(productionUrlFromDeployOutput({ status: "error", message: "no token" })).toEqual({
+    ok: false,
+    problem: "no token",
+  });
+  expect(
+    deploymentUrlFromDeployOutput({
+      status: "ok",
+      deployment: { url: "https://okmodel-abc.vercel.app", productionUrl: null, target: null },
+    }),
+  ).toEqual({ ok: true, value: "https://okmodel-abc.vercel.app" });
+  expect(deploymentUrlFromDeployOutput({ status: "error", message: "no token" })).toEqual({
     ok: false,
     problem: "no token",
   });

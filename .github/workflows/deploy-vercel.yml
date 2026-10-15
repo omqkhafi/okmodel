@@ -5,9 +5,15 @@ name: Deploy site
 # requests still get preview deployments.
 #
 # After the Release workflow finishes successfully, this deploys the commit
-# that Release built. A failed Release skips the job. A manual run takes a v*
-# tag. The tag must be v plus the package.json version at that commit, and
-# the version must be a release (X.Y.Z). A prerelease is refused.
+# that Release built. A failed Release skips the job. That path is always
+# production. A manual run takes a v* tag and a target: production (the
+# default) or preview. Preview is a rehearsal and does not alias production.
+# The tag must be v plus the package.json version at that commit, and the
+# version must be a release (X.Y.Z). A prerelease is refused.
+#
+# The Vercel CLI runs from the release checkout root. The project root
+# directory is site/, so running it inside site/ would look for site/site.
+# bun install stays in site/.
 #
 # VERCEL_TOKEN, VERCEL_ORG_ID, and VERCEL_PROJECT_ID are repository secrets.
 # They are passed through the environment and are not printed.
@@ -21,6 +27,14 @@ on:
         description: Tag to deploy, v plus the package version
         required: true
         type: string
+      target:
+        description: production updates the live site; preview is a rehearsal
+        required: true
+        type: choice
+        default: production
+        options:
+          - production
+          - preview
 
 concurrency:
   group: deploy-vercel
@@ -51,6 +65,7 @@ jobs:
         env:
           DEPLOY_EVENT: ${{ github.event_name }}
           DEPLOY_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || '' }}
+          DEPLOY_TARGET: ${{ github.event_name == 'workflow_dispatch' && inputs.target || 'production' }}
           DEPLOY_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
           DEPLOY_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: bun ./scripts/deploy-ref.ts
@@ -70,34 +85,41 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Pull Vercel project settings
-        working-directory: ${{ runner.temp }}/release/site
+        working-directory: ${{ runner.temp }}/release
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
           VERCEL_TELEMETRY_DISABLED: "1"
-        run: bunx vercel@64.2.0 pull --yes --environment=production --non-interactive
+        run: bunx vercel@64.2.0 pull --yes --environment=${{ steps.release.outputs.environment }} --non-interactive
 
       - name: Build site
-        working-directory: ${{ runner.temp }}/release/site
+        working-directory: ${{ runner.temp }}/release
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
           VERCEL_TELEMETRY_DISABLED: "1"
-        run: bunx vercel@64.2.0 build --prod --non-interactive
+        run: bunx vercel@64.2.0 build ${{ steps.release.outputs.prod_flag }} --non-interactive
 
       - name: Deploy site
-        working-directory: ${{ runner.temp }}/release/site
+        working-directory: ${{ runner.temp }}/release
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
           VERCEL_TELEMETRY_DISABLED: "1"
-        run: bunx vercel@64.2.0 deploy --prebuilt --prod --json --non-interactive > "$RUNNER_TEMP/vercel-deploy.json"
+        run: bunx vercel@64.2.0 deploy --prebuilt ${{ steps.release.outputs.prod_flag }} --json --non-interactive > "$RUNNER_TEMP/vercel-deploy.json"
 
       - name: Confirm the deployed version
+        if: steps.release.outputs.confirm == 'true'
         env:
           DEPLOY_JSON: ${{ runner.temp }}/vercel-deploy.json
           DEPLOY_VERSION: ${{ steps.release.outputs.version }}
         run: bun ./scripts/deploy-ref.ts --confirm
+
+      - name: Print the preview URL
+        if: steps.release.outputs.confirm == 'false'
+        env:
+          DEPLOY_JSON: ${{ runner.temp }}/vercel-deploy.json
+        run: bun ./scripts/deploy-ref.ts --preview-url
