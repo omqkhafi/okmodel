@@ -20,15 +20,18 @@ export type IdDefault = "uuidv7" | "uuidv4" | "none";
 /**
  * Primary key.
  *
- * With no options, the database default is `uuidv7()` unless
- * `schema({ defaults: { id } })` says otherwise. `uuidv4` stores
- * `gen_random_uuid()` (built in from Postgres 13). `none` takes the id on
- * insert. A client generator (`uuidv4`, `uuidv7`, or `okid(...)` from
- * `okmodel/ids`) is filled on insert and stored with no database default.
- * OKID is `text` with collation `C`. A database default is omitted from
- * insert and update. `none` is required on insert and omitted from update.
+ * With no options, the database default is `gen_random_uuid()` unless
+ * `schema({ defaults: { id } })` says otherwise. That function is built in
+ * from Postgres 13, so a bare call works on every supported major. `uuidv7`
+ * stores `uuidv7()` and needs Postgres 18 (`minPostgres: 18`). Pick it for a large write-heavy
+ * table: the ids are time-ordered and the index stays local. Random ids are
+ * fine elsewhere. `none` takes the id on insert. A client generator
+ * (`uuidv4`, `uuidv7`, or `okid(...)` from `okmodel/ids`) is filled on insert
+ * and stored with no database default. OKID is `text` with collation `C`. A
+ * database default is omitted from insert and update. `none` is required on
+ * insert and omitted from update.
  *
- * @param options - Which default to store. Omitted means the schema default, or `uuidv7()`
+ * @param options - Which default to store. Omitted means the schema default, or `gen_random_uuid()`
  * @returns An id column
  */
 export function id(): ColumnBuilder<string, IdFlags>;
@@ -67,7 +70,7 @@ export function id(options?: {
     ...(okid ? { collation: "C" } : {}),
     idSource: chosen === undefined ? "implicit" : "column",
     ...(client === undefined && !supplied
-      ? { defaultSql: chosen === "uuidv4" ? "gen_random_uuid()" : "uuidv7()" }
+      ? { defaultSql: chosen === "uuidv7" ? "uuidv7()" : "gen_random_uuid()" }
       : {}),
     primaryKey: true,
     encode: okid ? encodeText : encodeUuid,

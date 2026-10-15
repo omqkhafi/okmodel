@@ -1,10 +1,11 @@
 /**
  * Three registered codes that 0.2 never throws, and why that is correct (D183).
  *
- * - OKM1110, a feature needs a newer engine than `requires` allows. In 0.2 the one
- *   feature that depends on the engine is `uuidv7()`, and it fails as OKM1812 when
- *   the schema is built (and OKM1802 when the server is older than `requires`).
- *   Nothing is gated at the type level yet.
+ * - OKM1110, a feature needs a newer engine than `requires` allows. The one
+ *   feature that depends on the engine is an explicit `uuidv7()` database
+ *   default, and it fails as OKM1812 when the schema is built (and OKM1802
+ *   when the server is older than `requires`). A bare `t.id()` stores
+ *   `gen_random_uuid()`. Nothing is gated at the type level yet.
  * - OKM1191, a multi-statement read inside READ COMMITTED. Every 0.2 read is one
  *   statement (`snapshot-reads.test.ts`), so the single-statement plan always exists.
  * - OKM1702, unverifiable raw SQL on a tenant table. No public runtime path takes raw
@@ -47,8 +48,8 @@ test("OKM1110, OKM1191 and OKM1702 are registered and not thrown anywhere in src
   }
 });
 
-test("the engine-dependent feature of 0.2 fails as OKM1812 at schema build, not OKM1110", () => {
-  const users = table("users", { id: id(), name: text() });
+test("an explicit uuidv7() fails as OKM1812 at schema build, not OKM1110", () => {
+  const users = table("users", { id: id({ default: "uuidv7" }), name: text() });
   let caught: unknown;
   try {
     schema({ requires: { postgres: ">=17" }, tables: [users] });
@@ -57,6 +58,11 @@ test("the engine-dependent feature of 0.2 fails as OKM1812 at schema build, not 
   }
   expect(caught).toBeInstanceOf(OkmError);
   expect((caught as OkmError).code).toBe("OKM1812");
-  // A schema that declares 18 builds.
+  expect(() =>
+    schema({
+      requires: { postgres: ">=17" },
+      tables: [table("users", { id: id(), name: text() })],
+    }),
+  ).not.toThrow();
   expect(() => schema({ requires: { postgres: ">=18" }, tables: [users] })).not.toThrow();
 });

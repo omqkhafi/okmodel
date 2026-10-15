@@ -12,6 +12,7 @@ import { renderCatalog } from "../src/dialects/pg/ddl.js";
 import { schema, table, t } from "../src/dialects/pg/index.js";
 import { okid, uuidv4, uuidv7 } from "../src/runtime/ids/index.js";
 import { connect } from "../src/runtime/pg/pglite.js";
+import { lintPlan } from "../src/tooling/migrate/lint.js";
 import { planMigration } from "../src/tooling/migrate/plan.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -85,18 +86,65 @@ test("schema defaults.id uuidv4 is a database default and a function is not", ()
   expect(label(client, "id")).toBe("client");
 });
 
-test("uuidv7 below Postgres 18 names minPostgres", () => {
+test("a bare id is gen_random_uuid and schema or column choices still override", () => {
+  const bare = schema({
+    minPostgres: 15,
+    tables: [table("sessions", { id: t.id() })],
+  });
+  expect(expression(bare, "id")).toBe("gen_random_uuid()");
+  const omitted = schema({ tables: [table("sessions", { id: t.id() })] });
+  expect(expression(omitted, "id")).toBe("gen_random_uuid()");
+  const timeOrdered = schema({
+    defaults: { id: "uuidv7" },
+    minPostgres: 18,
+    tables: [table("sessions", { id: t.id() })],
+  });
+  expect(expression(timeOrdered, "id")).toBe("uuidv7()");
+  const mixed = schema({
+    defaults: { id: "uuidv7" },
+    minPostgres: 18,
+    tables: [
+      table("sessions", { id: t.id() }),
+      table("devices", { id: t.id({ default: "uuidv4" }) }),
+    ],
+  });
+  expect(expression(mixed, "id", "sessions")).toBe("uuidv7()");
+  expect(expression(mixed, "id", "devices")).toBe("gen_random_uuid()");
+});
+
+test("an explicit uuidv7 below Postgres 18 is OKM1812", () => {
   let error: OkmError | undefined;
   try {
     schema({
       requires: { postgres: ">=15" },
-      tables: [table("sessions", { id: t.id() })],
+      tables: [table("sessions", { id: t.id({ default: "uuidv7" }) })],
     });
   } catch (caught) {
     if (caught instanceof OkmError) error = caught;
   }
   expect(error?.code).toBe("OKM1812");
-  expect(error?.message).toContain("minPostgres");
+  expect(error?.message).toContain("uuidv7()");
+  expect(error?.message).toContain("minPostgres: 18");
+  expect(error?.fix.summary).toContain("minPostgres: 18");
+});
+
+test("changing uuidv7() to gen_random_uuid() is a plain set default", () => {
+  const before = schema({
+    minPostgres: 18,
+    tables: [table("notes", { id: t.id({ default: "uuidv7" }), title: t.text() })],
+  });
+  const after = schema({
+    tables: [table("notes", { id: t.id(), title: t.text() })],
+  });
+  const plan = planMigration({ before: before.catalog, after: after.catalog, name: "id_default" });
+  expect(plan.steps.map((step) => step.sql)).toEqual([
+    'alter table "public"."notes" alter column "id" set default gen_random_uuid()',
+  ]);
+  expect(plan.steps.map((step) => step.kind)).toEqual(["set-default"]);
+  expect(plan.steps.map((step) => step.lock)).toEqual(["ACCESS EXCLUSIVE"]);
+  expect(plan.steps.every((step) => step.safeRewrite !== true)).toBe(true);
+  expect(plan.steps.every((step) => !/\bupdate\b/i.test(step.sql))).toBe(true);
+  expect(lintPlan(plan, before.catalog, after.catalog)).toEqual([]);
 });
 
 test("adding collation is a plan step", () => {

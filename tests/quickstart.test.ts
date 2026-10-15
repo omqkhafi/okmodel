@@ -64,14 +64,17 @@ if (process.env.REQUIRE_DOCKER !== "1") {
     const push = await listenPostgres();
     const apply = await listenPostgres();
     const reference = await listenPostgres();
+    const readme = await listenPostgres();
     try {
       await runReadme(tarball, push.url, apply.url, reference.url, false);
+      await runReadmeQuickstart(tarball, readme.url);
     } finally {
       await push.close();
       await apply.close();
       await reference.close();
+      await readme.close();
     }
-  }, 360_000);
+  }, 480_000);
 }
 
 postgresTest(
@@ -82,9 +85,10 @@ postgresTest(
     await withIsolatedDatabases(async (urls) => {
       await runDocs(tarball, urls.docs);
       await runReadme(tarball, urls.push, urls.apply, urls.reference, true);
+      await runReadmeQuickstart(tarball, urls.readme);
     });
   },
-  360_000,
+  480_000,
 );
 
 test("the topology example in the guide is the docs sample", () => {
@@ -181,6 +185,36 @@ async function runDocs(tarball: string, url: string): Promise<void> {
   const rest = commands.filter((line) => !line.startsWith("bun add "));
   await withProject(tarball, files, installs, async (dir) => {
     for (const line of rest) await command(dir, line.split(/\s+/), { DATABASE_URL: url });
+    await command(dir, ["bun", "run.ts"], { DATABASE_URL: url });
+  });
+}
+
+const README_RUN = `import { db } from "./db.ts";
+
+const row = await db.notes.insert({ title: "hello" });
+if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(row.id)) {
+  throw new Error(\`expected a uuid from t.id(), got \${String(row.id)}\`);
+}
+await db.close();
+`;
+
+/**
+ * Runs the README quickstart: a bare `t.id()`, `okm push`, and an insert.
+ *
+ * @param tarball - Packed package
+ * @param url - Postgres URL
+ */
+async function runReadmeQuickstart(tarball: string, url: string): Promise<void> {
+  const path = join(root, "README.md");
+  const fences = markdownFences(readFileSync(path, "utf8"));
+  const files = typescriptFiles(fences, ["schema.ts", "okmodel.config.ts", "db.ts"], path);
+  const schema = files.get("schema.ts") ?? "";
+  if (!schema.includes("id: t.id()"))
+    throw new Error("README quickstart does not use a bare t.id()");
+  if (schema.includes("t.identity()")) throw new Error("README quickstart still uses t.identity()");
+  files.set("run.ts", README_RUN);
+  await withProject(tarball, files, ["bun add okmodel", "bun add postgres"], async (dir) => {
+    await command(dir, ["bunx", "okm", "push"], { DATABASE_URL: url });
     await command(dir, ["bun", "run.ts"], { DATABASE_URL: url });
   });
 }
@@ -552,6 +586,7 @@ async function withIsolatedDatabases(
     readonly push: string;
     readonly apply: string;
     readonly reference: string;
+    readonly readme: string;
   }) => Promise<void>,
 ): Promise<void> {
   const admin = openPostgres();
@@ -561,6 +596,7 @@ async function withIsolatedDatabases(
     push: `okm_qs_${id}_p`,
     apply: `okm_qs_${id}_a`,
     reference: `okm_qs_${id}_r`,
+    readme: `okm_qs_${id}_m`,
   } as const;
   const created: string[] = [];
   try {
@@ -578,6 +614,7 @@ async function withIsolatedDatabases(
       push: urlFor(names.push),
       apply: urlFor(names.apply),
       reference: urlFor(names.reference),
+      readme: urlFor(names.readme),
     });
   } finally {
     for (const name of created.reverse()) {

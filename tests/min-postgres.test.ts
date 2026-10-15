@@ -13,7 +13,8 @@ import { schema, table, t } from "../src/dialects/pg/index.js";
 import { repoRoot } from "../scripts/root.js";
 
 const notes = table("notes", { id: t.identity(), name: t.text() });
-const sessions = table("sessions", { id: t.id(), name: t.text() });
+const sessions = table("sessions", { id: t.id({ default: "uuidv7" }), name: t.text() });
+const bare = table("bare", { id: t.id(), name: t.text() });
 
 test("minPostgres and the string form store the same floor and the same catalog", () => {
   const byNumber = schema({ minPostgres: 17, tables: [notes] });
@@ -68,6 +69,13 @@ test("an explicit uuidv7 below 18 is refused for both forms", () => {
   expect(() => schema({ minPostgres: 18, tables: [sessions] })).not.toThrow();
   expect(() => schema({ requires: { postgres: ">=18" }, tables: [sessions] })).not.toThrow();
   expect(() => schema({ tables: [sessions] })).not.toThrow();
+  expect(() => schema({ minPostgres: 17, tables: [bare] })).not.toThrow();
+  const column = schema({ tables: [bare] }).catalog.objects.find(
+    (object) => object.kind === "column",
+  );
+  expect(column?.kind === "column" ? column.definition.defaultExpression : "").toBe(
+    "gen_random_uuid()",
+  );
 });
 
 test("uuidv7's floor is named in the refusal and on the minPostgres page", () => {

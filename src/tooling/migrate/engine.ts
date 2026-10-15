@@ -1,9 +1,9 @@
 /**
  * Engine-version checks `okm migrate apply` runs before the first statement.
  *
- * The only engine-dependent feature in 0.2 is a `uuidv7()` database default.
- * The major it needs is {@link UUIDV7_POSTGRES}. Nothing here is reachable
- * from `connect()`.
+ * An explicit `uuidv7()` database default needs {@link UUIDV7_POSTGRES}.
+ * A bare `t.id()` stores `gen_random_uuid()` and does not match here.
+ * Nothing here is reachable from `connect()`.
  */
 
 import type { DriverConnection } from "../../contracts/driver.js";

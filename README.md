@@ -62,14 +62,14 @@ Define the table, compile the schema, point the config at it, push, then connect
 import { schema, table, t } from "okmodel/pg";
 
 export const notes = table("notes", {
-  id: t.identity().primaryKey(),
+  id: t.id(),
   title: t.text(),
 });
 
 export default schema({ tables: [notes] });
 ```
 
-The schema's minimum is PostgreSQL 15. Omit `minPostgres` unless you need a newer major. `minPostgres: 18` is how a `uuidv7()` default is declared. `requires: { postgres: ">=18" }` is the same floor and is deprecated.
+`t.id()` stores `gen_random_uuid()`, which works on Postgres 15 to 18. For a large write-heavy table, `defaults: { id: "uuidv7" }` keeps the ids time-ordered and the index local. That choice needs Postgres 18 and `minPostgres: 18`. Omit `minPostgres` unless you need a newer major. `requires: { postgres: ">=18" }` is the same floor and is deprecated.
 
 `okmodel.config.ts`:
 
