@@ -121,8 +121,32 @@ Not taken here.
 | Logical serializable description: keys, relation names, a codec identity and version, client id rules, and an explicit mark for database-specific expressions. No second sync schema. | 0.9, on `okm catalog export` and the programmatic schema API |
 | Classify two catalogs as same, older, newer, or diverged from migration lineage or a schema-version list. The hash stays equality. | 0.9 |
 | Dialect matrix: each behavior same, differs, or unsupported, with a test id. No silent emulation. | M3 starts the matrix. M4 carries its own R2, R3, and R4 rows as part of dialect done |
-| Driver rows still open on PostgreSQL: COMMIT loss on PGlite, the repeated-insert outcome on node-postgres, PGlite, and Bun.sql, and whether a client-generated id is allowed to survive a retried callback. Today a client-generator id cannot be supplied (OKM1190) and a re-run callback plans a new one. | 0.8 P106, as conformance rows. An API change that lets the caller pass the id is not in the 0.8 line-up |
+| Driver rows still open on PostgreSQL: COMMIT loss on PGlite, the repeated-insert outcome on node-postgres, PGlite, and Bun.sql, and whether a client-generated id is allowed to survive a retried callback. Today a client-generator id cannot be supplied (OKM1190) and a re-run callback plans a new one. | 0.8 P106, as conformance rows. The allow-path proposal is below. Ali decides. Nothing is built for it |
 | The R6 integration test in the previous section. | 0.8 P106 |
+
+## P106. What the command records
+
+`okm driver test` runs the existing driver, error-mapping, and transaction suites and prints each case as `pass`, `fail`, or `unsupported`. The dialect in the report is `postgres`. A row is a case id, the behavior, and the driver result. An unsupported row names the capability.
+
+R6 is `r6.commit`, `r6.rollback`, and `r6.savepoint`: a `notes` table and an `outbox` table in one `schema()`, written with `tx.notes.insert` and `tx.outbox.insert`. Commit keeps both. Rollback keeps neither. A nested `tx.tx()` that throws rolls back only the inner outbox row. The schema has no tenancy.
+
+R3 repeated insert is `r3.repeat-insert` (`23505`, kind `unique`), `r3.on-conflict-ignore`, `r3.on-conflict-update`, and `r3.on-conflict-return`. R3's current id rule is `r3.retry-id` (a re-run callback plans a new client-generated id; PGlite is `unsupported` because of `one connection`) and `r3.supply-id` (a caller cannot supply one, OKM1190).
+
+R2 COMMIT loss stays the transaction suite's cut cases. On PGlite they are `r2.commit-loss` and `r2.batch-commit-loss`, result `unsupported`, capability `no socket to cut`. The same sentence is in [`compatibility.md`](compatibility.md).
+
+R4's shape, for this one dialect, is that row: case id, behavior, driver result. SQLite and MySQL are not in the report.
+
+### Caller-supplied client id (proposal only)
+
+A caller-supplied id on a client-generator column stays refused (OKM1190) unless the call opts in. The starting point is the `{ allow }` list that already names a guarded field: `insert({ id }, { allow: ["id"] })`.
+
+1. Without `allow`, supplying the id stays OKM1190. The generator still fills an omitted id.
+2. With `allow` naming that field, the call writes the supplied id and does not run the generator for that row. A row in the same list that omits the id still gets a generated one.
+3. An id the caller holds outside the callback stays that id across a serialization or deadlock retry. An id generated inside the callback is a new id on each attempt. That is today's behavior, and it stays when `allow` is absent.
+4. Inserting that same id again is a conflict (`23505`, kind `unique`) unless `onConflict` is set. `allow` does not make the repeat idempotent.
+5. `allow` does not apply to a database default (`gen_random_uuid()`, `uuidv7()`). The server still assigns those.
+
+Ali decides. This step builds none of it.
 
 ## Count
 

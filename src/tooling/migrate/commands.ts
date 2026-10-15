@@ -38,8 +38,8 @@ export function formatFailure(error: unknown, verbose = false): string {
  * Runs one `okm` invocation.
  *
  * `--version` stays in the bin. This function handles `build`, `check`,
- * `generate`, `dev`, `push`, `seed`, `ext list`, `ext check`, `doctor`, and
- * `migrate plan`, `apply`, `status`, and `check`.
+ * `generate`, `dev`, `push`, `seed`, `ext list`, `ext check`, `doctor`,
+ * `driver test`, and `migrate plan`, `apply`, `status`, and `check`.
  *
  * @param argv - Arguments after the program name
  * @param io - Working directory and stdout. Defaults to the process
@@ -131,6 +131,19 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
     const parsed = splitFlags(rest);
     const { doctorProject } = await import("./doctor.js");
     stdout(await doctorProject(cwd, parsed.name, invoke(parsed)));
+    return;
+  }
+  if (command === "driver") {
+    const sub = rest[0];
+    if (sub !== "test") {
+      const message =
+        sub === undefined ? "Unknown command driver." : `Unknown command driver ${sub}.`;
+      throw new OkmError("invalid", message, {
+        fix: { summary: "Use okm driver test <driver>." },
+      });
+    }
+    const { driverTest } = await import("../driver-test.js");
+    await driverTest(rest.slice(1), stdout);
     return;
   }
   if (command === "ext") {
@@ -247,6 +260,7 @@ const COMMANDS: readonly (readonly [string, string])[] = [
   ["check", "Lint the schema and compare it with one target."],
   ["dev", "Watch the schema and reload."],
   ["doctor [code]", "Print a target report, or one error code."],
+  ["driver test <driver>", "Run conformance against one driver."],
   ["ext list", "List extensions the server can install."],
   ["ext check", "Compare declared extensions with the server."],
   ["generate [name]", "Write the next migration."],

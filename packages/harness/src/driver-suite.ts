@@ -5,9 +5,8 @@
  * adapter did not declare is skipped. Error-mapping cases are a separate suite.
  */
 
-import { expect } from "bun:test";
-
 import { DriverError } from "../../../src/adapters/error.js";
+import { expect } from "./expect.js";
 import { OkmError } from "../../../src/contracts/error.js";
 import type {
   DriverCapabilities,
@@ -19,11 +18,58 @@ import type {
 /** Opens one pool. The caller closes it. */
 export type DriverOpener = () => DriverPool | Promise<DriverPool>;
 
-/** Registers one suite case. `skip` records a case the adapter did not declare. */
+/**
+ * Registers one suite case.
+ *
+ * `skip` records a case the adapter did not declare. `unsupported` names the
+ * capability, so a report can say unsupported instead of dropping the case.
+ */
 export type SuiteTest = {
   (name: string, fn: () => Promise<void>, timeoutMs?: number): void;
   skip(name: string, fn: () => Promise<void>, timeoutMs?: number): void;
+  /**
+   * Records a case this driver cannot run.
+   *
+   * @param name - Case title
+   * @param capability - The limit that explains it, for example `cancel`
+   */
+  unsupported?(name: string, capability: string): void;
 };
+
+/**
+ * Returns a registrar that does not run the case.
+ *
+ * When `test.unsupported` exists, the case is recorded with `capability` and
+ * is not also skipped. Otherwise the case is skipped. `title` changes the
+ * skipped name. The default keeps `name`.
+ *
+ * @param test - Registrar the suite was given
+ * @param capability - Why the case cannot run
+ * @param title - Skipped title. Omitted keeps `name`
+ * @returns A registrar that records the case and does not run it
+ */
+export function skipFor(
+  test: SuiteTest,
+  capability: string,
+  title?: (name: string) => string,
+): SuiteTest {
+  const label = title ?? ((name: string) => name);
+  const register: SuiteTest = (name, fn, timeoutMs) => {
+    if (test.unsupported !== undefined) {
+      test.unsupported(name, capability);
+      return;
+    }
+    test.skip(label(name), fn, timeoutMs);
+  };
+  register.skip = (name, fn, timeoutMs) => {
+    if (test.unsupported !== undefined) {
+      test.unsupported(name, capability);
+      return;
+    }
+    test.skip(label(name), fn, timeoutMs);
+  };
+  return register;
+}
 
 /** What one adapter run needs. */
 export type DriverSuite = {
@@ -57,7 +103,8 @@ export type DriverSuite = {
 export function registerDriverSuite(suite: DriverSuite): void {
   const { name } = suite;
   const test = suite.test;
-  const optional = (flag: boolean): SuiteTest => (flag ? test : skipped(test));
+  const optional = (flag: boolean, capability: string): SuiteTest =>
+    flag ? test : skipFor(test, capability);
 
   test(`${name} execute returns rows`, async () => {
     await using(suite.open, async (pool) => {
@@ -120,7 +167,7 @@ export function registerDriverSuite(suite: DriverSuite): void {
     });
   });
 
-  const notices = suite.notices === false ? skipped(test) : test;
+  const notices = suite.notices === false ? skipFor(test, "notices") : test;
   notices(`${name} returns notices`, async () => {
     await using(suite.open, async (pool) => {
       const result = await pool.execute("DO $$ BEGIN RAISE NOTICE 'okm-p13'; END $$");
@@ -181,7 +228,7 @@ export function registerDriverSuite(suite: DriverSuite): void {
     });
   });
 
-  optional(suite.capabilities.cancel)(
+  optional(suite.capabilities.cancel, "cancel")(
     `${name} cancels an in-flight statement`,
     async () => {
       await using(suite.open, async (pool) => {
@@ -196,7 +243,7 @@ export function registerDriverSuite(suite: DriverSuite): void {
     10_000,
   );
 
-  optional(suite.capabilities.cancel)(
+  optional(suite.capabilities.cancel, "cancel")(
     `${name} times out an in-flight statement`,
     async () => {
       await using(suite.open, async (pool) => {
@@ -209,7 +256,7 @@ export function registerDriverSuite(suite: DriverSuite): void {
     10_000,
   );
 
-  optional(suite.capabilities.cancel)(
+  optional(suite.capabilities.cancel, "cancel")(
     `${name} cancels a batch and rolls it back`,
     async () => {
       await using(suite.open, async (pool) => {
@@ -227,7 +274,7 @@ export function registerDriverSuite(suite: DriverSuite): void {
     10_000,
   );
 
-  optional(suite.capabilities.cancel)(
+  optional(suite.capabilities.cancel, "cancel")(
     `${name} times out a batch and rolls it back`,
     async () => {
       await using(suite.open, async (pool) => {
@@ -330,7 +377,7 @@ export function registerDriverSuite(suite: DriverSuite): void {
     }
   }, 10_000);
 
-  optional(suite.capabilities.describe)(`${name} describes a statement`, async () => {
+  optional(suite.capabilities.describe, "describe")(`${name} describes a statement`, async () => {
     await using(suite.open, async (pool) => {
       if (pool.describe === undefined) throw new DriverError("describe is not on the pool");
       const described = await pool.describe("SELECT $1::int AS n");
@@ -339,7 +386,7 @@ export function registerDriverSuite(suite: DriverSuite): void {
     });
   });
 
-  optional(suite.capabilities.stream)(`${name} streams rows`, async () => {
+  optional(suite.capabilities.stream, "stream")(`${name} streams rows`, async () => {
     await using(suite.open, async (pool) => {
       if (pool.stream === undefined) throw new DriverError("stream is not on the pool");
       const rows: string[] = [];
@@ -353,7 +400,7 @@ export function registerDriverSuite(suite: DriverSuite): void {
     });
   });
 
-  optional(suite.capabilities.listen)(`${name} delivers a notification`, async () => {
+  optional(suite.capabilities.listen, "listen")(`${name} delivers a notification`, async () => {
     await using(suite.open, async (pool) => {
       if (pool.listen === undefined) throw new DriverError("listen is not on the pool");
       const payloads: string[] = [];
@@ -369,16 +416,6 @@ export function registerDriverSuite(suite: DriverSuite): void {
       }
     });
   });
-}
-
-function skipped(test: SuiteTest): SuiteTest {
-  const register: SuiteTest = (name, fn, timeoutMs) => {
-    test.skip(name, fn, timeoutMs);
-  };
-  register.skip = (name, fn, timeoutMs) => {
-    test.skip(name, fn, timeoutMs);
-  };
-  return register;
 }
 
 async function using(open: DriverOpener, fn: (pool: DriverPool) => Promise<void>): Promise<void> {

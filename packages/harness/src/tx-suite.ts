@@ -9,8 +9,6 @@
  * names the reason in the test title.
  */
 
-import { expect } from "bun:test";
-
 import type {
   DriverCapabilities,
   DriverPool,
@@ -20,11 +18,12 @@ import { OkmError } from "../../../src/contracts/error.js";
 import { renderCatalog } from "../../../src/dialects/pg/ddl.js";
 import { id, schema, table, t, text } from "../../../src/dialects/pg/index.js";
 import type { QuerySchema } from "../../../src/dialects/pg/model.js";
+import { uuidv4 } from "../../../src/runtime/ids/index.js";
 import type { Connected, ConnectOptions, Hookm, TxClient } from "../../../src/runtime/types.js";
 import { columnTenancy } from "../../../src/runtime/tenancy/index.js";
-import type { SuiteTest } from "./driver-suite.js";
+import { skipFor, type SuiteTest } from "./driver-suite.js";
+import { expect } from "./expect.js";
 import { startCutProxy } from "./proxy.js";
-import { openPostgres } from "./postgres.js";
 import { isolatedSchemaName } from "./schema-name.js";
 import { primaryUrl } from "./topology.js";
 
@@ -48,6 +47,13 @@ export type TxSuite = {
   ) => Connected<S> | Promise<Connected<S>>;
   /** One in-process connection: no second transaction can run beside the first. */
   readonly memory: boolean;
+  /**
+   * Database URL for the admin connection and for pools that do not pass one.
+   *
+   * Omitted uses the topology primary. A cut proxy still replaces it for the
+   * pool that must lose its COMMIT.
+   */
+  readonly url?: string;
   /** The driver returns server notices. */
   readonly notices: boolean;
   /** Test registrar. */
@@ -67,6 +73,16 @@ const tenantApp = schema({
   tables: [notes],
 });
 
+const noteRows = table("notes", { id: t.text().primaryKey(), body: t.text() });
+const outbox = table("outbox", { id: t.text().primaryKey(), kind: t.text() });
+const slots = table("slots", { id: t.text().primaryKey(), label: t.text() });
+const issued = table("issued", { id: id({ default: uuidv4 }), body: t.text() });
+const ledger = table("ledger", { id: t.text().primaryKey(), balance: t.integer() });
+const rowsApp = schema({
+  casing: "snake",
+  tables: [noteRows, outbox, slots, issued, ledger],
+});
+
 type Db = Connected<typeof app>;
 
 type EnvOptions = {
@@ -75,6 +91,7 @@ type EnvOptions = {
   readonly hookm?: readonly Hookm[];
   readonly url?: string;
   readonly sql?: readonly string[];
+  readonly generators?: ConnectOptions<QuerySchema>["generators"];
 };
 
 type Env<S extends QuerySchema> = {
@@ -104,16 +121,17 @@ export function registerTxSuite(suite: TxSuite): void {
     fn: (env: Env<S>) => Promise<void>,
   ): Promise<void> {
     const schemaName = suite.memory ? "public" : isolatedSchemaName();
-    const admin = suite.memory ? undefined : openPostgres();
+    const admin = suite.memory ? undefined : await openSuiteAdmin(suite.url);
     const pools: DriverPool[] = [];
     try {
       if (admin !== undefined) await admin.unsafe(`create schema ${schemaName}`);
       const open = async (config: { max: number; url?: string }): Promise<DriverPool> => {
+        const url = config.url ?? suite.url;
         const pool = await suite.open({
           schema: schemaName,
           max: config.max,
           ...(options.timeouts !== undefined ? { timeouts: options.timeouts } : {}),
-          ...(config.url !== undefined ? { url: config.url } : {}),
+          ...(url !== undefined ? { url } : {}),
         });
         pools.push(pool);
         return pool;
@@ -129,6 +147,7 @@ export function registerTxSuite(suite: TxSuite): void {
         schema: built,
         ...(options.timeouts !== undefined ? { timeouts: options.timeouts } : {}),
         ...(options.hookm !== undefined ? { hookm: options.hookm } : {}),
+        ...(options.generators !== undefined ? { generators: options.generators } : {}),
       } as ConnectOptions<S>);
       try {
         await fn({
@@ -783,7 +802,7 @@ export function registerTxSuite(suite: TxSuite): void {
   proxied(
     `${name} a commit cut on the wire is outcome_unknown (OKM1401) and is never retried`,
     async () => {
-      const proxy = await startCutProxy(primaryUrl());
+      const proxy = await startCutProxy(suite.url ?? primaryUrl());
       try {
         await withApp({ url: proxy.url, max: 2 }, async ({ db, direct }) => {
           let runs = 0;
@@ -814,7 +833,7 @@ export function registerTxSuite(suite: TxSuite): void {
   proxied(
     `${name} a batch whose commit is cut is outcome_unknown with a null batchIndex`,
     async () => {
-      const proxy = await startCutProxy(primaryUrl());
+      const proxy = await startCutProxy(suite.url ?? primaryUrl());
       try {
         await withApp({ url: proxy.url, max: 2 }, async ({ db }) => {
           proxy.cutNextCommit();
@@ -982,6 +1001,163 @@ export function registerTxSuite(suite: TxSuite): void {
     },
   );
 
+  // ── offline-first rows (P100 R3 and R6; R2 is the commit-cut case above) ──
+
+  const withRows = (options: EnvOptions, fn: (env: Env<typeof rowsApp>) => Promise<void>) =>
+    withEnv(rowsApp, options, fn);
+
+  test(`${name} r6.commit commit keeps the note and the outbox row`, async () => {
+    await withRows({}, async ({ db }) => {
+      await db.tx(async (tx) => {
+        await tx.notes.insert({ id: "n1", body: "hello" });
+        await tx.outbox.insert({ id: "o1", kind: "created" });
+      });
+      expect((await db.notes.find({ limit: 10 })).map((row) => row.id)).toEqual(["n1"]);
+      expect((await db.outbox.find({ limit: 10 })).map((row) => row.id)).toEqual(["o1"]);
+    });
+  });
+
+  test(`${name} r6.rollback rollback keeps neither the note nor the outbox row`, async () => {
+    await withRows({}, async ({ db }) => {
+      const error = await failure(
+        db.tx(async (tx) => {
+          await tx.notes.insert({ id: "n1", body: "hello" });
+          await tx.outbox.insert({ id: "o1", kind: "created" });
+          throw new Error("rollback");
+        }),
+      );
+      expect(error).toBeInstanceOf(Error);
+      expect(await db.notes.find({ limit: 10 })).toEqual([]);
+      expect(await db.outbox.find({ limit: 10 })).toEqual([]);
+    });
+  });
+
+  test(`${name} r6.savepoint a nested tx that throws rolls back only the inner outbox row`, async () => {
+    await withRows({}, async ({ db }) => {
+      await db.tx(async (tx) => {
+        await tx.notes.insert({ id: "n1", body: "hello" });
+        const error = await failure(
+          tx.tx(async (inner) => {
+            await inner.outbox.insert({ id: "inner", kind: "dropped" });
+            throw new Error("inner");
+          }),
+        );
+        expect(error).toBeInstanceOf(Error);
+        if (error instanceof Error) expect(error.message).toBe("inner");
+        await tx.outbox.insert({ id: "outer", kind: "kept" });
+      });
+      expect((await db.notes.find({ limit: 10 })).map((row) => row.id)).toEqual(["n1"]);
+      expect((await db.outbox.find({ limit: 10 })).map((row) => row.id)).toEqual(["outer"]);
+    });
+  });
+
+  test(`${name} r3.repeat-insert a repeated insert of the same key is 23505 kind unique`, async () => {
+    await withRows({}, async ({ db }) => {
+      await db.slots.insert({ id: "1", label: "first" });
+      const error = await failure(db.slots.insert({ id: "1", label: "again" }));
+      expect(error).toBeInstanceOf(OkmError);
+      if (error instanceof OkmError) {
+        expect(error.kind).toBe("unique");
+        expect(error.sqlstate).toBe("23505");
+      }
+    });
+  });
+
+  test(`${name} r3.on-conflict-ignore onConflict ignore leaves the stored row`, async () => {
+    await withRows({}, async ({ db }) => {
+      await db.slots.insert({ id: "1", label: "first" });
+      await db.slots.insert({ id: "1", label: "ignored" }, { onConflict: "ignore" });
+      const stored = await db.slots.find({ where: { id: "1" }, limit: 1 });
+      expect(stored[0]?.label).toBe("first");
+    });
+  });
+
+  test(`${name} r3.on-conflict-update onConflict update writes the listed columns`, async () => {
+    await withRows({}, async ({ db }) => {
+      await db.slots.insert({ id: "1", label: "first" });
+      await db.slots.insert(
+        { id: "1", label: "updated" },
+        { onConflict: { on: "id", update: ["label"] } },
+      );
+      const stored = await db.slots.find({ where: { id: "1" }, limit: 1 });
+      expect(stored[0]?.label).toBe("updated");
+    });
+  });
+
+  test(`${name} r3.on-conflict-return onConflict return gives the stored row back`, async () => {
+    await withRows({}, async ({ db }) => {
+      await db.slots.insert({ id: "1", label: "first" });
+      const returned = await db.slots.insert(
+        { id: "1", label: "nope" },
+        { onConflict: { on: "id", return: true } },
+      );
+      expect(returned.label).toBe("first");
+      const stored = await db.slots.find({ where: { id: "1" }, limit: 1 });
+      expect(stored[0]?.label).toBe("first");
+    });
+  });
+
+  race(
+    `${name} r3.retry-id a re-run transaction callback plans a new client-generated id`,
+    async () => {
+      let next = 0;
+      const planned: string[] = [];
+      await withRows(
+        {
+          generators: {
+            uuidv4: () => {
+              next += 1;
+              const id = `00000000-0000-4000-8000-${next.toString(16).padStart(12, "0")}`;
+              planned.push(id);
+              return id;
+            },
+          },
+        },
+        async ({ db }) => {
+          await db.ledger.insert({ id: "a", balance: 1 });
+          await db.ledger.insert({ id: "b", balance: 1 });
+          const attempts = { a: 0, b: 0 };
+          const ids: { a: string[]; b: string[] } = { a: [], b: [] };
+          const ready = barrier(2);
+          const run = (me: "a" | "b", first: string, second: string) =>
+            db.tx({ retry: 2 }, async (tx) => {
+              attempts[me] += 1;
+              const row = await tx.issued.insert({ body: me });
+              ids[me].push(row.id);
+              await tx.ledger.find({ where: { id: first }, limit: 1, lock: "update" });
+              if (attempts[me] === 1) await ready();
+              await tx.ledger.find({ where: { id: second }, limit: 1, lock: "update" });
+            });
+          await Promise.all([run("a", "a", "b"), run("b", "b", "a")]);
+          expect(attempts.a + attempts.b).toBe(3);
+          const victim = attempts.a === 2 ? "a" : "b";
+          const victimIds = ids[victim];
+          expect(victimIds).toHaveLength(2);
+          expect(victimIds[0]).not.toBe(victimIds[1]);
+          const stored = new Set((await db.issued.find({ limit: 10 })).map((row) => row.id));
+          expect(stored.has(victimIds[0] ?? "")).toBe(false);
+          expect(stored.has(victimIds[1] ?? "")).toBe(true);
+          expect(planned).toContain(victimIds[0] ?? "");
+          expect(planned).toContain(victimIds[1] ?? "");
+        },
+      );
+    },
+    20_000,
+  );
+
+  test(`${name} r3.supply-id a caller cannot supply a client-generator id (OKM1190)`, async () => {
+    await withRows({}, async ({ db }) => {
+      const error = await failure(
+        db.issued.insert({
+          id: "00000000-0000-4000-8000-000000000099",
+          body: "no",
+        } as never),
+      );
+      expect(error).toBeInstanceOf(OkmError);
+      if (error instanceof OkmError) expect(error.code).toBe("OKM1190");
+    });
+  });
+
   // ── helpers bound to the suite ──────────────────────────────────────────
 
   /** Starts a transaction that locks one account row and holds it until released. */
@@ -1004,9 +1180,12 @@ export function registerTxSuite(suite: TxSuite): void {
 }
 
 function skipped(test: SuiteTest, reason: string): SuiteTest {
-  const register: SuiteTest = (name, fn) => test.skip(`${name} (${reason})`, fn);
-  register.skip = (name, fn) => test.skip(`${name} (${reason})`, fn);
-  return register;
+  return skipFor(test, reason, (name) => `${name} (${reason})`);
+}
+
+async function openSuiteAdmin(url: string | undefined) {
+  const { openPostgres } = await import("./postgres.js");
+  return openPostgres(url);
 }
 
 async function failure(promise: Promise<unknown>): Promise<unknown> {

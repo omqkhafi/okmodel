@@ -1361,6 +1361,7 @@ The startup compatibility check allows the database to be ahead of the app by `e
 | `okm seed <file>` | seeds with factories |
 | `okm import drizzle <path>` | convert a Drizzle schema (M2) |
 | `okm doctor [code]` | explain a code or diagnose the project |
+| `okm driver test <driver>` | run the conformance suites against one driver (`pglite`, `postgresjs`, `pg`, `bun`, or a module path). `--url` is the Postgres URL. `pglite` does not use it. The other built-ins need `--url` or `DATABASE_URL` |
 | `okm upgrade` | codemods between 0.x releases |
 
 ### 19.5 Targets
@@ -1469,6 +1470,8 @@ test("today view runs one query", async () => {
 **Capability matrix.** The registry and the conformance suite are tied together in CI: every capability a driver declares has at least one conformance test that the driver passes, and a test that needs an undeclared capability is skipped explicitly. A declared capability without a test fails the build. `emulated` features run the same tests (the result is checked, not the mechanism). The docs' compatibility table is generated from these results, not written by hand.
 
 **Driver conformance suite** (`okmodel/conformance`): the same semantic tests against any adapter — null semantics, codecs (numeric, bigint, timestamps, JSON), defaults and generated values, `RETURNING`, transactions, the atomic `batch` contract (section 15), connection reservation and release, error mapping, constraints, pagination and cursors, locking, concurrency, and the small-API semantics table (section 12).
+
+`okm driver test <driver> [--url <url>]` runs that suite against the driver the argument names. `<driver>` is `pglite`, `postgresjs`, `pg`, `bun`, or a path to a module that exports `name`, `capabilities`, `open`, and `connect`. `--url` (or `DATABASE_URL`) is the Postgres URL. An in-process driver does not need it. The report is one dialect, `postgres`. Each row is a case id, the behavior, and `pass`, `fail`, or `unsupported`. An unsupported row names the capability the driver lacks (`cancel`, `describe`, `stream`, `listen`, `notices`, `one connection`, `no socket to cut`). A failure exits 1. An unsupported case does not. A driver that cannot run atomic `batch` fails the command.
 
 **Topology tests.** Consistency is tested on real streaming replication (a primary and replicas in CI service containers, replay paused with `pg_wal_replay_pause()`). Router and selection logic may run over several independent PGlite instances as endpoints, with replication state supplied through the documented `ReplicaState` seam; no test mocks the database itself. First-party adapters must pass it in CI; community adapters run `okm driver test` (M2).
 
