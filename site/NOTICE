@@ -50,7 +50,9 @@ re-measures its percentage-sized host, device pixel ratio is capped, `ogl`
 loads after mount, and the loop obeys `prefers-reduced-motion` by painting one
 frame with time frozen.
 
-Inter
------
-`site/app/fonts/InterVariable.woff2` is the Inter variable font.
-Its licence is `site/app/fonts/LICENSE.txt`.
+IBM Plex Sans
+--------------
+`site/app/fonts/IBMPlexSansVar-Roman.woff2` and
+`site/app/fonts/IBMPlexSansVar-Italic.woff2` are the IBM Plex Sans variable
+fonts (weight 100–700, normal width). Their licence is
+`site/app/fonts/LICENSE.txt`.

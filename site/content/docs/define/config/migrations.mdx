@@ -28,7 +28,7 @@ export default defineConfig({
 
 Apply loads every `*.sql` file in name order, together with its `.catalog.json`. A SQL file without that snapshot is refused. For `0001_init.sql` the message is `Migration 0001_init is missing its catalog snapshot.`
 
-`okm migrate check` reads this directory. The first migration id it lints is [`lintFrom`](/docs/define/config/lint-from).
+`okm migrate check` reads this directory and runs the statements it is given. Run it as a non-superuser. The first migration id it lints is [`lintFrom`](/docs/define/config/lint-from).
 
 ### Line endings
 

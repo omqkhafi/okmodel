@@ -195,6 +195,14 @@ async function prepare(
   const relatedId = identityColumn(session, related);
   const parent = userValue(identity, id);
   const wanted = readIds(relatedId, ids);
+  const own = String(relatedId.encode(parent));
+  if (owner.model.name === related.model.name && wanted.some((item) => String(item) === own)) {
+    fail(
+      "OKM1120",
+      `sync on ${owner.model.name}.${relation.name} cannot make a row its own child.`,
+      "A row cannot be its own child. Leave its id out of the list.",
+    );
+  }
   const where = await presetWhere(session.schema, table, mods.uses);
   noteSafety(session, table, mods.archive);
   const statement = withRowFilters(session.scope, mods.archive, () =>

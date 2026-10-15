@@ -261,3 +261,20 @@ postgresTest(
   },
   15_000,
 );
+
+postgresTest(gate, "a row cannot be its own child", async () => {
+  await withApp(1, async (db) => {
+    const a = db.for({ tenantId: TENANT_A });
+    await seedTree(a);
+    const before = (await a.nodes.find({ where: { id: row(2) }, limit: 1 }))[0]?.parentId;
+    const error = await catchError(a.nodes.sync(row(1), "children", [row(1)]));
+    expect(error.code).toBe("OKM1120");
+    expect(error.message).toContain("own child");
+    expect((await a.nodes.find({ where: { id: row(2) }, limit: 1 }))[0]?.parentId).toBe(before);
+    expect((await a.nodes.find({ where: { id: row(5) }, limit: 1 }))[0]?.parentId).toBe(row(1));
+    const normal = await a.nodes.sync(row(1), "children", [row(2)]);
+    expect(normal.removed).toEqual([row(5)]);
+    expect((await a.nodes.find({ where: { id: row(2) }, limit: 1 }))[0]?.parentId).toBe(row(1));
+    expect((await a.nodes.find({ where: { id: row(5) }, limit: 1 }))[0]?.parentId).toBeNull();
+  });
+});

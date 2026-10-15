@@ -36,7 +36,9 @@ export function markdownTwinPath(pathname: string): string | undefined {
     const folded = connectMarkdownTwin(path.slice("/docs/define/connect/".length));
     if (folded !== undefined) return folded;
   }
-  if (path === "/docs/known-limits" || path.startsWith("/docs/reference/")) return "/llms.mdx/docs/index.md";
+  if (path === "/docs/known-limits" || path === "/docs/reference/known-limits" || path === "/docs/reference/linter") {
+    return "/llms.mdx/docs/index.md";
+  }
   if (path === "/docs/config" || path.startsWith("/docs/config/")) return configMarkdownTwin(path);
   if (path === "/docs/schema" || path.startsWith("/docs/schema/")) return schemaMarkdownTwin(path);
   if (path === "/docs/table" || path.startsWith("/docs/table/")) return tableMarkdownTwin(path);

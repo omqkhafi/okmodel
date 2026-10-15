@@ -14,7 +14,10 @@ import { readRootPackage, softwareApplicationJsonLd } from "@/lib/package-meta";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  alternates: { canonical: "/" },
+  alternates: {
+    canonical: "/",
+    types: { "text/markdown": "/llms.mdx/home" },
+  },
   openGraph: {
     images: ["/og/home"],
   },

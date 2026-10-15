@@ -340,7 +340,7 @@ export const link = {
 
 #### include
 
-A morph include is `true`. `select`, `where`, `orderBy`, and `limit` are OKM1120. Nesting it inside another include is OKM1120.
+A morph include is `true`. `select`, `where`, `orderBy`, and `limit` are OKM1120. Nesting it inside another include is OKM1120. A write can store another tenant's id. The include reads as the caller, so that target is null.
 
 ```ts title="morph.ts"
 import { connect } from "okmodel/pg/postgresjs";

@@ -133,7 +133,7 @@ export async function byStatus(url: string) {
 | `orderBy` | Order inside that parent. The primary key follows, ascending, for any key you did not name. |
 | omitted `orderBy` | The primary key. |
 | no related rows | `[]`. |
-| `select`, a nested include, a preset | Apply. |
+| `select`, a nested include, a preset | Apply. A `select` that names a hidden column drops that column and does not error. |
 | `matches`, `relevance` | Apply inside the include. |
 | `search` | Stays on `find` and `count`. |
 | a window in `select` | Not in this version. |
@@ -272,7 +272,7 @@ export async function numbered(url: string) {
 ```
 
 <Callout type="error" title="OKM1120">
-`page()` reads `select` as field names, so a window there is OKM1120: `select must be a list of field names.` An `as` that is a column name is `rowNumber as id clashes with a column of tasks.` An empty `as` is `rowNumber needs as, the name of the result key.` A control character is `rowNumber as has a control character.` A prototype key (`__proto__`, `constructor`, `toString`, or `hasOwnProperty`) is `rowNumber as __proto__ is a prototype key. Use another name for the result.` `orderBy` is required: `rowNumber needs orderBy, the order inside the group.` `lag`, `lead`, and a frame are not in this version.
+`page()` reads `select` as field names, so a window there is OKM1120: `select must be a list of field names.` An `as` that is a column name is `rowNumber as id clashes with a column of tasks.` An empty `as` is `rowNumber needs as, the name of the result key.` A control character is `rowNumber as has a control character.` A name on `Object.prototype`, or `then`, is `rowNumber as __proto__ is a prototype key. Use another name for the result.` `orderBy` is required: `rowNumber needs orderBy, the order inside the group.` `lag`, `lead`, and a frame are not in this version.
 </Callout>
 
 <Callout type="error" title="OKM1124">
@@ -285,12 +285,12 @@ export async function numbered(url: string) {
 
 | `match` | Query |
 | --- | --- |
-| `natural` | `websearch_to_tsquery`. The default. |
+| `natural` | `websearch_to_tsquery`. The default. Unquoted words are combined with AND. |
 | `all-words` | `plainto_tsquery`. |
 | `phrase` | `phraseto_tsquery`. |
-| `advanced` | `to_tsquery`. |
+| `advanced` | `to_tsquery`. Raw syntax. A syntax error comes back from Postgres as a driver error. |
 
-`language` is a text search language such as `english`. Leave it out for the database default. When the table has more than one search column, name it with `in`. The error lists the names. `{ mode, config }` is not accepted. Ranking is `ts_rank`. `matches` and `relevance` take the same `{ match, language }`.
+`language` is a text search language such as `english`. Leave it out for the database default. A well-formed name that Postgres does not know as a language reaches the server and comes back as a driver error. When the table has more than one search column, name it with `in`. The error lists the names. `{ mode, config }` is not accepted. Ranking is `ts_rank`. `matches` and `relevance` take the same `{ match, language }`.
 
 #### simple
 
@@ -347,7 +347,7 @@ export async function ranked(url: string) {
 </Callout>
 
 <Callout type="error" title="OKM1122">
-A name that is not a text search language is refused when the statement is built.
+OKM1122 is an empty or malformed name. A well-formed name is sent to the server.
 </Callout>
 
 ### Tree
@@ -670,7 +670,7 @@ A text column is `inc adds to a number. title is a text column.`
 
 ### Claim
 
-`update` with `lock: "skip"` and `limit` changes up to that many matching rows and leaves rows another transaction already holds. The database chooses which unlocked rows.
+`update` with `lock: "skip"` and `limit` changes up to that many matching rows and leaves rows another transaction already holds. The database chooses which unlocked rows. The result is `{ count }`, the number of rows changed. Set a `claimedBy` token in `set`, then `find` by that token.
 
 | Input | Result |
 | --- | --- |
@@ -687,17 +687,20 @@ import { schema, table, t } from "okmodel/pg";
 const jobs = table("jobs", {
   id: t.identity(),
   status: t.text(),
+  claimedBy: t.text().nullable(),
 });
 const app = schema({ tables: [jobs] });
 
-export async function take(url: string) {
+export async function take(url: string, token: string) {
   await using db = connect(url, { schema: app });
-  return db.jobs.update({
+  const claimed = await db.jobs.update({
     where: { status: "pending" },
-    set: { status: "running" },
-    limit: 1, // [!code focus]
-    lock: "skip", // [!code focus]
+    set: { status: "running", claimedBy: token }, // [!code focus]
+    limit: 1,
+    lock: "skip",
   });
+  if (claimed.count === 0) return [];
+  return db.jobs.find({ where: { claimedBy: token }, limit: claimed.count }); // [!code focus]
 }
 ```
 

@@ -3,6 +3,7 @@ import type { NextConfig } from "next";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { DISCOVERY_LINK } from "./lib/discovery-links";
 import { readRootPackage } from "./lib/package-meta";
 import { npmPackageUrl } from "./lib/shared";
 
@@ -31,6 +32,13 @@ const config: NextConfig = {
   },
   typescript: {
     tsconfigPath: "tsconfig.build.json",
+  },
+  async headers() {
+    const link = { key: "Link", value: DISCOVERY_LINK };
+    return [
+      { source: "/", headers: [link] },
+      { source: "/:path*", headers: [link] },
+    ];
   },
   async redirects() {
     return [
@@ -91,7 +99,8 @@ const config: NextConfig = {
       { source: "/docs/define/connect/require-meta", destination: "/docs/define/connect/check#require-meta", permanent: true },
       { source: "/docs/define/connect/catalog", destination: "/docs/define/connect/check#catalog", permanent: true },
       { source: "/docs/known-limits", destination: "/docs", permanent: true },
-      { source: "/docs/reference/:path*", destination: "/docs", permanent: true },
+      { source: "/docs/reference/known-limits", destination: "/docs", permanent: true },
+      { source: "/docs/reference/linter", destination: "/docs", permanent: true },
     ];
   },
   // Own lockfile: keep Turbopack rooted here so `next` resolves from site/node_modules.

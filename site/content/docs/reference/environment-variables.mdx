@@ -1,0 +1,117 @@
+---
+title: "Environment Variables"
+description: "connect and defineConfig do not read the environment. okm reads OKM_DEBUG. Local Postgres reads POSTGRES_VERSION and REQUIRE_DOCKER."
+---
+`connect` and `defineConfig` do not read the environment. `okm` reads `OKM_DEBUG`. Local Postgres reads `POSTGRES_VERSION`, `REQUIRE_DOCKER`, and the three host ports.
+
+## Client
+
+The client takes the URL you pass. [Target](/docs/define/connect/target) is that argument. [Database](/docs/define/config/database) is the field in `okmodel.config.ts`.
+
+```ts title="db.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+
+const url = process.env.DATABASE_URL;
+if (url === undefined || url.length === 0) throw new Error("DATABASE_URL is not set");
+
+export const db = connect(url, { schema: app });
+```
+
+`DATABASE_URL` is the name in the handbook. `connect` does not look it up. A missing or empty value is passed through. Check it before the call.
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: process.env.DATABASE_URL!,
+});
+```
+
+A missing or empty `database` is OKM1845. `Target default has no url.` The config loader does not fill it from the environment.
+
+| Name | Result |
+| --- | --- |
+| `NODE_ENV` | Not read. It does not select a target, set `protected`, or turn on [`requireMeta`](/docs/define/connect/check). |
+| `OKM_ALLOW_PROTECTED` | Not read. `--allow-protected` is that invocation. Setting the variable leaves OKM1850 in place. |
+
+A replica URL is the same kind of argument. [Topology](/docs/define/connect/topology) takes the strings you pass.
+
+<Callout type="info" title="The URL">
+`connect` and `defineConfig` receive the string you pass. They do not read `DATABASE_URL`.
+</Callout>
+
+## CLI
+
+`okm` reads one variable, and only when a command throws.
+
+| Variable | Read by | Accepted | Default | Unset |
+| --- | --- | --- | --- | --- |
+| `OKM_DEBUG` | the `okm` bin | `1` | none | `error <code>: <message>`, then the fix. No stack. |
+
+`1` appends the stack after those two lines. Any other string leaves the stack off. `--verbose` prints the stack for that invocation.
+
+```sh
+OKM_DEBUG=1 okm check
+```
+
+Migrate commands read the config and the flags. The target, protection, and the apply timeouts are those fields. See [Database](/docs/define/config/database) and [Timeouts](/docs/define/config/timeouts).
+
+## Tests and local Postgres
+
+`bun run db:up`, `bun run db:down`, `bun run test:postgres`, and `bun run verify` read these. The published client does not. PGlite has no server and does not read them.
+
+### Version
+
+| Variable | Read by | Accepted | Default | Unset |
+| --- | --- | --- | --- | --- |
+| `POSTGRES_VERSION` | `db:up`, `db:down`, `verify`, `test:postgres` | `15`, `16`, `17`, `18` | `17` | `17`. The image is `postgres:17`. |
+
+Any other string, including `""`, throws `Postgres version '<value>' is outside 15–18.` `bun run db:up` and `bun run db:down` print that after `[db]` and exit 1.
+
+`bun run verify` uses this major. `bun run verify --all` runs 15, 16, 17, and 18, and sets `POSTGRES_VERSION` to the major it is starting. `bun run test:postgres` uses the major for the suite plan. It does not start Docker.
+
+### Docker
+
+| Variable | Read by | Accepted | Default | Unset |
+| --- | --- | --- | --- | --- |
+| `REQUIRE_DOCKER` | Postgres tests | `1` | none | Skip when Docker or the topology is down. |
+
+Only `1` fails the test. `true` and `0` skip.
+
+| Probe | `1` | Unset |
+| --- | --- | --- |
+| Docker is not running | REQUIRE_DOCKER=1 but Docker is not running. | Skipping Postgres tests: Docker is not running. |
+| Docker is running, Postgres is closed | REQUIRE_DOCKER=1 but Postgres is not accepting connections. Run `bun run db:up`. | Skipping Postgres tests: Docker is running but Postgres is not up. Run `bun run db:up`. |
+| The primary accepts connections | The test runs. | The test runs. |
+
+`bun run test:postgres` and `bun run verify` set `REQUIRE_DOCKER=1` for the test process. The probe opens the topology primary. A `DATABASE_URL` in the environment does not move it.
+
+### Ports
+
+The primary URL is `postgres://okm:okm@127.0.0.1:<port>/okm`. Replica `a` and replica `b` use the same user, password, host, and database.
+
+| Variable | Read by | Accepted | Default | Unset |
+| --- | --- | --- | --- | --- |
+| `OKM_PRIMARY_PORT` | `db:up` and the primary URL | a host port | `55432` | `55432` when that port is free |
+| `OKM_REPLICA_A_PORT` | `db:up` and the replica `a` URL | a host port | `55433` | `55433` when that port is free |
+| `OKM_REPLICA_B_PORT` | `db:up` and the replica `b` URL | a host port | `55434` | `55434` when that port is free |
+
+When all three are unset and one of `55432`–`55434` is taken, `db:up` binds three free ports and prints `[db] Postgres <version> topology is up (primary <port>, replicas <a> and <b>).` Tests still open `55432`–`55434` until you set the variables to the printed ports.
+
+Setting any one of the three pins all three. An omitted name stays at its default, and the free-port choice does not run.
+
+When `GITHUB_ENV` is set, `db:up` appends the three ports for the next step. Locally that file is unset, and the shell that ran `db:up` is unchanged.
+
+```sh
+POSTGRES_VERSION=16 bun run db:up
+REQUIRE_DOCKER=1 bun test
+```

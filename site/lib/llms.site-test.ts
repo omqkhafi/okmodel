@@ -5,9 +5,9 @@
 import { expect, test } from "bun:test";
 
 import { buildLlmsTxt, markdownPathForSlugs } from "./llms-index";
+import { buildRobotsTxt } from "./robots-txt";
 import { SITE_ORIGIN } from "./site-identity";
 import { source } from "./source";
-import robots from "../app/robots";
 import sitemap from "../app/sitemap";
 
 test("llms.txt lists every public page", () => {
@@ -26,12 +26,15 @@ test("sitemap and robots advertise the handbook", () => {
   expect(urls).toContain(`${SITE_ORIGIN}/changelog`);
   expect(urls).toContain(`${SITE_ORIGIN}/llms.txt`);
   expect(urls).toContain(`${SITE_ORIGIN}/llms-full.txt`);
-  expect(urls.some((url) => url.includes("/docs/reference/"))).toBe(false);
+  expect(urls).toContain(`${SITE_ORIGIN}/docs/reference/cli`);
+  expect(urls).toContain(`${SITE_ORIGIN}/docs/ai/mcp`);
 
-  const robotsDoc = robots();
-  expect(robotsDoc.sitemap).toBe(`${SITE_ORIGIN}/sitemap.xml`);
-  expect(robotsDoc.host).toBe(SITE_ORIGIN);
-  const rules = robotsDoc.rules;
-  const list = Array.isArray(rules) ? rules : [rules];
-  expect(list.some((rule) => rule.userAgent === "*")).toBe(true);
+  expect(urls).toContain(`${SITE_ORIGIN}/.well-known/agent-skills/index.json`);
+
+  const robotsTxt = buildRobotsTxt();
+  expect(robotsTxt).toContain(`Sitemap: ${SITE_ORIGIN}/sitemap.xml`);
+  expect(robotsTxt).toContain(`Host: ${SITE_ORIGIN}`);
+  expect(robotsTxt).toContain("User-Agent: *");
+  expect(robotsTxt).toContain("Content-Signal: search=yes, ai-input=yes, ai-train=yes");
+  expect(robotsTxt).toContain("User-Agent: GPTBot\nContent-Signal: search=yes, ai-input=yes, ai-train=yes\nAllow: /");
 });

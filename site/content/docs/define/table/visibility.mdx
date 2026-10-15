@@ -14,7 +14,7 @@ None of the three flags is stored in the catalog, so none of them changes a migr
 
 #### .hidden()
 
-`select`, `where`, and `orderBy` take keys of the row, so a typed call cannot name the field. At runtime those two refuse it. A root `select` list that names it returns it. An include drops it, including when that list names it. `filters()` refuses it in `allow`, `sort`, and `relations`. `groupBy`, `bucket`, `sum`, `avg`, `min`, and `max` refuse it. Search refuses it.
+`select`, `where`, and `orderBy` take keys of the row, so a typed call cannot name the field. At runtime those two refuse it. A root `select` list that names it returns it. An include drops it silently, including when that list names it. `filters()` refuses it in `allow`, `sort`, and `relations`. `groupBy`, `bucket`, `sum`, `avg`, `min`, and `max` refuse it. Search refuses it.
 
 ```ts title="users.ts"
 import { connect } from "okmodel/pg/postgresjs";

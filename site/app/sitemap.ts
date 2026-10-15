@@ -26,6 +26,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${SITE_ORIGIN}/llms.txt`, changeFrequency: "weekly", priority: 0.8 },
     { url: `${SITE_ORIGIN}/llms.json`, changeFrequency: "weekly", priority: 0.7 },
     { url: `${SITE_ORIGIN}/llms-full.txt`, changeFrequency: "weekly", priority: 0.5 },
+    {
+      url: `${SITE_ORIGIN}/.well-known/agent-skills/index.json`,
+      changeFrequency: "weekly",
+      priority: 0.5,
+    },
     ...pages,
   ];
 }

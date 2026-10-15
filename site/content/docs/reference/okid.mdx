@@ -1,0 +1,125 @@
+---
+title: "OKID"
+description: "okid() is a client generator. The id column is text with collation C."
+---
+
+`okid()` is a client generator. The id column is `text` with collation `C`.
+
+`okid` comes from `okmodel/ids`. Calling it returns the generator. Insert calls that generator once when the field is omitted and stores the string. The catalog stores no default.
+
+<Callout type="info" title="Where this fits">
+The column form is on [columns](/docs/define/table/columns#okid). A schema-wide id is the [id default](/docs/define/schema/defaults). [`generators`](/docs/define/connect/generators) replaces the function on `connect`.
+</Callout>
+
+### Format
+
+A default id is 21 characters from a 64-character alphabet: digits, `a-z`, `A-Z`, `-`, and `_`. That is 126 bits. The characters are URL-safe. `length` is the body, an integer from 8 to 128. The prefix is extra.
+
+| Call | Body |
+| --- | --- |
+| `okid()` | 21 characters. |
+| `okid(length)` | `length` characters. |
+| `okid({ sortable: true })` | 8 time characters, then random. Length is at least 16. |
+| `okid({ prefix })` | The prefix, then the body. The prefix is at most 32 characters. |
+
+The 8 time characters are a 48-bit epoch millisecond, so string order matches time across milliseconds. Two ids from the same millisecond share those 8 characters. The rest is random. With a prefix, a sortable id is the prefix, then those 8 characters, then the random tail. Collation `C` keeps that order as byte order.
+
+`lowercase`, `uppercase`, `numbers`, and `symbols` default to included. `lookAlikes: false` drops `1`, `l`, `I`, `0`, `O`, `o`, `u`, `v`, `5`, `S`, and `s` from the body. A sortable id ignores those toggles. A smaller alphabet still draws each remaining character equally. The draw uses `crypto.getRandomValues`.
+
+<Callout type="warning" title="Not a secret">
+An OKID identifies a row. A sortable id embeds its creation time, to the millisecond.
+</Callout>
+
+### Options
+
+| Field | Default | Effect |
+| --- | --- | --- |
+| `length` | 21 | Body length, from 8 to 128. Sortable needs at least 16. |
+| `prefix` | none | Prepended. At most 32 characters from the alphabet. |
+| `sortable` | false | Time in the first 8 characters of the body. |
+| `lowercase` | true | Include `a-z`. |
+| `uppercase` | true | Include `A-Z`. |
+| `numbers` | true | Include `0-9`. |
+| `symbols` | true | Include `-` and `_`. |
+| `lookAlikes` | true | `false` drops the characters above from the body. |
+
+<Callout type="error" title="RangeError">
+A bad option throws when the generator runs. A fractional length is `okid: length must be an integer, got 1.5` Length 7 is `okid: length 7 is out of range [8, 128]` A sortable length of 15 is `okid: length 15 is out of range [16, 128]` An empty alphabet is `okid: alphabet is empty — enable at least one character group` A long prefix is `okid: prefix length 33 exceeds max 32` A character outside the alphabet is `okid: prefix contains invalid character ":" — use characters from OKID_ALPHABET` That name is the generator's alphabet. `okmodel/ids` exports `okid` and the `OkidOptions` type.
+</Callout>
+
+### Column
+
+`t.id({ default: okid() })` is a primary key. Insert omits the field. Update cannot set it. A bare `t.id()` stays `uuid` until the schema [id default](/docs/define/schema/defaults) is an `okid` generator. A column option wins.
+
+`.default(okid())` on another string column fills that column in the client. The SQL type and collation stay as declared. Collation `C` is set when the generator name on `t.id` is `okid`.
+
+A writer that bypasses okmodel must supply the value. The column has no database default.
+
+```ts title="users.ts"
+import { okid } from "okmodel/ids";
+import { table, t } from "okmodel/pg";
+
+export const users = table("users", {
+  id: t.id({ default: okid({ prefix: "usr_", sortable: true }) }), // [!code focus]
+  email: t.text(),
+});
+```
+
+```ts title="schema.ts"
+import { okid } from "okmodel/ids";
+import { schema, table, t } from "okmodel/pg";
+
+const users = table("users", {
+  id: t.id(), // [!code focus]
+  name: t.text(),
+});
+
+export default schema({
+  tables: [users],
+  defaults: { id: okid({ prefix: "usr_" }) }, // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1190">
+The id is guarded. `Field users.id is guarded. Input cannot set it.`
+</Callout>
+
+### Catalog and migrations
+
+The catalog stores `text` and collation `C`. Create SQL includes `collate "C"` and no default. The model labels the fill `client`. The hashed catalog does not store the generator, so a new prefix, length, sortable flag, or alphabet toggle does not change the catalog hash and does not produce a migration.
+
+A change of SQL type or collation does. The plan emits `set data type text collate "C"`. A type change adds `using "id"::text`. A database default that goes away is `drop default`.
+
+Storage follows [text](/docs/define/table/columns#text). A 21-character body is 22 bytes.
+
+### Generators
+
+`connect({ generators: { okid } })` replaces every `okid` generator. The function takes no arguments. One function covers every column of that name. The string it returns is the stored id. A function you wrote and passed to `.default()` is left alone.
+
+```ts title="db.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+import { okid } from "okmodel/ids";
+
+const notes = table("notes", {
+  id: t.id({ default: okid({ prefix: "nt_" }) }),
+  title: t.text(),
+});
+const app = schema({ tables: [notes] });
+
+export async function add(url: string, title: string) {
+  await using db = connect(url, {
+    schema: app,
+    generators: {
+      okid: () => "nt_fixed", // [!code focus]
+    },
+  });
+  return db.notes.insert({ title });
+}
+```
+
+### Drift
+
+The implementation is a vendored copy of okengine: `okid.ts`, `okid-shared.ts`, and `okid-extended.ts` under `src/runtime/ids`. The copy is Apache-2.0. okengine stays the source of truth. `bun run okid-drift` fails when those files leave the hashes in `src/runtime/ids/okid.vendor.json`. The check is part of `bun run check`.
+
+When okengine is checked out beside this repo, or `OKENGINE_SRC` points at its `src` directory, the check compares that tree as well. The copy may import the options path directly, so this package does not depend on okengine. The `okid` exported from `okmodel/ids` is the generator around that copy.

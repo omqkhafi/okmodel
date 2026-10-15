@@ -71,7 +71,7 @@ export const db = connect(process.env.DATABASE_URL!, { schema: app });
 
 ### PGlite
 
-PGlite runs in this process. The pool size is one. `describe` is true. `cancel` is false. The peer package is `@electric-sql/pglite`. A string is a data directory. A pool and omitted memory are promises too. Omitted opens `memory://`.
+PGlite runs in this process. The pool size is one. A statement issued while a `tx()` is open waits until that transaction ends, unless `timeouts.acquire` is set. `describe` is true. `cancel` is false. The peer package is `@electric-sql/pglite`. A string is a data directory. A pool and omitted memory are promises too. Omitted opens `memory://`.
 
 ```ts title="pglite.ts"
 import { connect } from "okmodel/pg/pglite"; // [!code focus]

@@ -1,0 +1,67 @@
+---
+title: "LLM"
+description: "llms.txt lists every handbook page. Fetch that index, then one page."
+---
+
+[llms.txt](/llms.txt) lists every handbook page. Fetch that index, then one page.
+
+The site generates the file from the handbook. The repository does not store a copy at the root.
+
+<Callout type="info" title="Start here">
+Fetch `/llms.txt`. Open one linked page. Use `/llms-full.txt` when you need the whole handbook.
+</Callout>
+
+## Discovery
+
+Every response sends a `Link` header:
+
+| Target | Relation |
+| --- | --- |
+| `/llms.txt` | `describedby` |
+| `/sitemap.xml` | `sitemap` |
+| `/.well-known/agent-skills/index.json` | `agent-skills` |
+
+A handbook URL also sends `rel="alternate"` for its markdown twin. The same three relations are `<link>` elements in the page head. `/robots.txt` sets `Content-Signal: search=yes, ai-input=yes, ai-train=yes` on every crawler group.
+
+## The index
+
+`/llms.txt` is `text/markdown`. The public origin is `https://okm.omqkhafi.dev`. Set `SITE_ORIGIN` when the site is served elsewhere.
+
+The body is the site name, the package description, and one instruction: fetch `/llms.mdx/docs/⟨slug⟩.md` for one page, or [/llms-full.txt](/llms-full.txt) for every page. Root pages sit under `Start`. Each sidebar folder is its own heading, in sidebar order. A page line is the title, the absolute markdown URL, and the page description.
+
+`Also` links the [changelog](/changelog), `llms-full.txt`, the GitHub repository, and the npm package.
+
+The [sitemap](/sitemap.xml) lists `/llms.txt`, `/llms.json`, and `/llms-full.txt`. `robots.txt` allows every crawler, including the named AI user agents, and points them at that sitemap.
+
+## One page
+
+A handbook page as markdown is `/llms.mdx/docs/⟨slug⟩.md`. The introduction is `/llms.mdx/docs/index.md`.
+
+The body is the source file with the YAML frontmatter removed. The title is the heading.
+
+Send `Accept: text/markdown` on the HTML URL. The site rewrites `/docs/⟨slug⟩` to that file, `/` to `/llms.mdx/home`, and `/changelog` to `/llms.mdx/releases` (a series is `/llms.mdx/releases/⟨series⟩`). Those responses set `Vary: Accept`.
+
+When `Accept` prefers markdown and no page matches, the response is a markdown 404. The body links the handbook, `llms.txt`, and the sitemap.
+
+## The full set
+
+[/llms-full.txt](/llms-full.txt) joins every handbook page. Each block opens with the title and the HTML path.
+
+[/llms.json](/llms.json) is the same set as JSON: name, description, origin, the index URL, the full-text URL, and one object per page with `slug`, `title`, `description`, `html`, and `markdown`.
+
+## In the repository
+
+Read these when changing OKModel. The handbook is the public guide. Normative text lives in `docs/`.
+
+| File | What it is |
+| --- | --- |
+| `AGENTS.md` | Repository rules. Root `CLAUDE.md` and `site/CLAUDE.md` import it. Toolchain, layers, scripts, and the size and type ceilings. |
+| `docs/` | Normative text. The spec is `docs/okmodel-api-design.md` (draft 26). Decisions are `docs/okmodel-decisions.md` (D1–D250). |
+| `site/content/docs/` | Handbook source. This is what `llms.txt` indexes. |
+| `.agents/skills/okm-ship/SKILL.md` | Close user-visible work: notes under `## Unreleased`, then `bun run bump next`. |
+| `.cursor/rules/` | Cursor rules for this repo, including the project map. |
+| `site/AGENTS.md` | Next.js rules for the docs app. |
+
+The index route is `site/app/llms.txt/route.ts`. The full text, the JSON catalogue, and the per-page routes sit beside it under `site/app/`.
+
+Read `AGENTS.md` before an edit. Read the spec and the decision when the change is behavior. Fetch one handbook page when the question is how a caller uses the library.
