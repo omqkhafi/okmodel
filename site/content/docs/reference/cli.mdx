@@ -41,6 +41,7 @@ An unknown command is `Unknown command <name>.` `okm migrate` with a subcommand 
 | `check` | Lints the schema. Compares one database when a target is selected. |
 | `dev` | Names a target called `dev`, or creates a PGlite database and prints its directory. |
 | `doctor [code]` | Lists triggers, checks [roles](/docs/define/config/roles) when they are set, or prints one error code. |
+| `driver test <driver>` | Runs the conformance suites against one driver. |
 | `ext list` | Lists extensions the server can install. |
 | `ext check` | Compares declared extensions with the server. |
 | `generate [name]` | Writes the next migration. |
@@ -53,7 +54,7 @@ An unknown command is `Unknown command <name>.` `okm migrate` with a subcommand 
 
 ## Flags
 
-`check`, `generate`, `push`, `migrate`, `seed`, `doctor`, and `ext` parse the flags in this table. `build` and `dev` leave the rest of the line unread.
+`check`, `generate`, `push`, `migrate`, `seed`, `doctor`, and `ext` parse the flags in this table. `build` and `dev` leave the rest of the line unread. `driver test` reads `--url` only, in [driver test](#driver-test).
 
 | Flag | Read by |
 | --- | --- |
@@ -93,6 +94,21 @@ The help line is `Watch the schema and reload.` This command does not stay runni
 
 ```sh
 bunx okm dev
+```
+
+## driver test
+
+`okm driver test <driver>` runs the conformance suites against one driver and prints a report. `<driver>` is `pglite`, `postgresjs`, `pg`, `bun`, or a path to a module. The module exports `name`, `capabilities`, `open`, and `connect`. `memory: true` means one in-process connection. `notices: false` means the driver does not surface `RAISE NOTICE`. `size` is the pool size the stats case expects. Omitted, `memory` is false, `notices` is true, and `size` is 1 for an in-process driver and 4 otherwise.
+
+`--url <postgres-url>` is the database. `--url=<postgres-url>` is the same. `DATABASE_URL` is used when the flag is omitted. `pglite` does not connect to it. The other built-in drivers need one of the two. The command does not read `okmodel.config.ts`.
+
+The report starts with `driver <name>` and `dialect postgres`. Then one row per case, tab-separated: case id, behavior, result, capability. The result is `pass`, `fail`, or `unsupported`. The capability is set on an unsupported row and names the limit (`cancel`, `describe`, `stream`, `listen`, `notices`, `one connection`, `no socket to cut`). A failure exits 1. An unsupported case does not.
+
+PGlite has no socket to cut, so COMMIT loss is `unsupported` with capability `no socket to cut`.
+
+```sh
+okm driver test pglite
+okm driver test postgresjs --url "$DATABASE_URL"
 ```
 
 ## doctor

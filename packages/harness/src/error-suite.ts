@@ -6,12 +6,11 @@
  * into an `OkmError`.
  */
 
-import { expect } from "bun:test";
-
 import type { DriverCapabilities, DriverPool, Statement } from "../../../src/contracts/driver.js";
 import { OkmError, type ErrorKind } from "../../../src/contracts/error.js";
 import { mapPostgresError } from "../../../src/dialects/pg/errors.js";
-import type { SuiteTest } from "./driver-suite.js";
+import { skipFor, type SuiteTest } from "./driver-suite.js";
+import { expect } from "./expect.js";
 
 /** What one adapter run needs. */
 export type ErrorSuite = {
@@ -32,7 +31,8 @@ export type ErrorSuite = {
  */
 export function registerErrorMappingSuite(suite: ErrorSuite): void {
   const { name, test } = suite;
-  const optional = (flag: boolean): SuiteTest => (flag ? test : skipped(test));
+  const optional = (flag: boolean, capability: string): SuiteTest =>
+    flag ? test : skipFor(test, capability);
 
   test(`${name} maps a unique violation`, async () => {
     await using(suite.open, async (pool) => {
@@ -135,7 +135,7 @@ export function registerErrorMappingSuite(suite: ErrorSuite): void {
     });
   });
 
-  optional(suite.capabilities.cancel)(
+  optional(suite.capabilities.cancel, "cancel")(
     `${name} maps an in-flight statement timeout`,
     async () => {
       await using(suite.open, async (pool) => {
@@ -192,16 +192,6 @@ export function registerErrorMappingSuite(suite: ErrorSuite): void {
       expect(atCommit.batchIndex).toBe(null);
     });
   });
-}
-
-function skipped(test: SuiteTest): SuiteTest {
-  const register: SuiteTest = (name, fn, timeoutMs) => {
-    test.skip(name, fn, timeoutMs);
-  };
-  register.skip = (name, fn, timeoutMs) => {
-    test.skip(name, fn, timeoutMs);
-  };
-  return register;
 }
 
 async function using(

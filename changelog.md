@@ -26,6 +26,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The P100 audit records what PostgreSQL already proves for R1–R7, and the gaps later phases still have to decide. No API change.
 - The 0.8 type and byte budget is recorded (P101). No gate or ceiling moves. Ali approves it before P102.
 
+#### tooling
+
+- `okm driver test <driver>` runs the driver, error, and transaction suites and prints each case as pass, fail, or unsupported, with the capability that explains an unsupported case.
+
 ## v0.7.0 — 2026-10-15
 
 ### ✨ Added
