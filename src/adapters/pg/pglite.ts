@@ -238,7 +238,7 @@ class PgliteSession implements BatchSession {
       (error: unknown) => {
         this.leave();
         this.notices.take();
-        return this.fail(error).then((mapped) => {
+        return this.fail(stampQuery(error, text)).then((mapped) => {
           throw mapped;
         });
       },
@@ -356,4 +356,10 @@ class Slot {
   get waiting(): number {
     return this.waiters.length;
   }
+}
+
+function stampQuery(error: unknown, text: string): unknown {
+  if (typeof error === "object" && error !== null && !("query" in error))
+    Reflect.set(error, "query", text);
+  return error;
 }

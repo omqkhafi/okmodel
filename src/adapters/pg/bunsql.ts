@@ -68,6 +68,8 @@ export type HeldPool = {
   readonly counters: Counters;
   readonly notices: ReturnType<typeof noticeBuffer>;
   readonly isClosed: () => boolean;
+  /** Sockets this pool has closed. The count never returns to zero. */
+  readonly closures: () => number;
 };
 
 const clientPools = new WeakSet<DriverPool>();
@@ -114,7 +116,10 @@ export function open(config: BunSqlConfig): DriverPool {
   const parked: ReservedSQL[] = [];
   // A backend the server has already closed. The next statement drains it
   // before reuse. The count lives on this pool, not at module scope.
+  // `dropped` is cleared after a drain. `closures` only grows, so a reserved
+  // handle can see a reconnect that the drain already forgot.
   let dropped = 0;
+  let closures = 0;
 
   const sql = new SQL(config.url, {
     max,
@@ -130,6 +135,7 @@ export function open(config: BunSqlConfig): DriverPool {
     ...(config.ssl !== undefined ? { tls: config.ssl } : {}),
     onclose() {
       dropped += 1;
+      closures += 1;
     },
   });
 
@@ -146,7 +152,15 @@ export function open(config: BunSqlConfig): DriverPool {
     },
   );
 
-  const held: HeldPool = { sql, parked, acquireMs, counters, notices, isClosed };
+  const held: HeldPool = {
+    sql,
+    parked,
+    acquireMs,
+    counters,
+    notices,
+    isClosed,
+    closures: () => closures,
+  };
 
   const run = (
     text: string,

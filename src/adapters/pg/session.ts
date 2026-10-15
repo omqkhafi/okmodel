@@ -119,7 +119,9 @@ export class WireSession implements BatchSession {
         },
         (error: unknown) => {
           this.onLeave();
-          return driverErrors().then((errors) => Promise.reject(errors.mapDriverError(error)));
+          return driverErrors().then((errors) =>
+            Promise.reject(errors.mapDriverError(stampQuery(error, text))),
+          );
         },
       );
     }
@@ -186,7 +188,7 @@ export class WireSession implements BatchSession {
       },
       (error: unknown) => {
         this.finishWatched(pending, watch, onAbort);
-        return classify(error, watch);
+        return classify(stampQuery(error, text), watch);
       },
     );
   }
@@ -196,6 +198,12 @@ export class WireSession implements BatchSession {
     this.untrack(pending);
     watch.signal.removeEventListener("abort", onAbort);
   }
+}
+
+function stampQuery(error: unknown, text: string): unknown {
+  if (typeof error === "object" && error !== null && !("query" in error))
+    Reflect.set(error, "query", text);
+  return error;
 }
 
 async function classify(error: unknown, watch: Watch): Promise<never> {

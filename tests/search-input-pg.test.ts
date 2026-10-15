@@ -31,7 +31,7 @@ const pages = table("pages", {
 });
 const app = schema({ casing: "snake", tables: [pages] });
 const ID = "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9d11";
-const BAD = ["'", "!", "&&", "(", "<->", ":*", "deploy OR cats"] as const;
+const BAD = ["'", "!", "&&", "(", "<->", ":*", "\\", "a\\", "deploy OR cats"] as const;
 
 type Db = Connected<typeof app>;
 

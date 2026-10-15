@@ -9,10 +9,13 @@ import type { Sql } from "postgres";
 import type {
   DescribeResult,
   DriverConnection,
+  ExecuteOptions,
   ExecuteResult,
+  Statement,
   WireValue,
 } from "../../contracts/driver.js";
 import { isConnectionLost } from "../../contracts/connection.js";
+import { DriverError, timedOut } from "../error.js";
 import { driverErrors, mapFailure, rejectClosed } from "../failure.js";
 import { runCall, type Watch } from "./call.js";
 import { PgSession, type Canceller, type Counters, type NoticeBuffer } from "./postgresjs.js";
@@ -40,9 +43,10 @@ export type HeldPool = {
  * @param pool - The open pool
  * @returns A connection the caller must release
  */
-export async function checkout(pool: HeldPool): Promise<DriverConnection> {
+export async function checkout(pool: HeldPool, timeoutMs?: number): Promise<DriverConnection> {
   if (pool.isClosed()) return rejectClosed();
-  const reserved = await reserveConnection(pool.sql, pool.acquireMs, pool.counters);
+  hook(pool.sql);
+  const reserved = await reserveConnection(pool.sql, pool.acquireMs, pool.counters, timeoutMs);
   pool.counters.reserved += 1;
   const local = new Set<Canceller>();
   const session = new PgSession(
@@ -62,6 +66,10 @@ export async function checkout(pool: HeldPool): Promise<DriverConnection> {
   // statement, savepoint, or COMMIT, so that write is never scheduled.
   const lost = { on: false };
   arm(reserved, lost);
+  let limit = timeoutMs !== undefined && timeoutMs > 0 ? timeoutMs : 0;
+  const remember = (timeout: number | undefined): void => {
+    if (timeout !== undefined && timeout > 0) limit = timeout;
+  };
   const guard = <T>(run: () => Promise<T>): Promise<T> =>
     lost.on
       ? rejectClosed()
@@ -70,30 +78,39 @@ export async function checkout(pool: HeldPool): Promise<DriverConnection> {
           throw error;
         });
   return {
-    execute: (text, params, options) =>
-      guard(() => runCall(pool.isClosed(), options, (watch) => session.query(text, params, watch))),
-    batch: (statements, options) =>
-      guard(() =>
+    execute: (text, params, options) => {
+      remember(options?.timeout);
+      return guard(() =>
+        runCall(pool.isClosed(), options, (watch) => session.query(text, params, watch)),
+      );
+    },
+    batch: (statements, options) => {
+      remember(options?.timeout);
+      return guard(() =>
         runCall(pool.isClosed(), options, async (watch: Watch | undefined) => {
           const { runAtomicBatch } = await import("./batch.js");
           return runAtomicBatch(session, statements, watch);
         }),
-      ),
+      );
+    },
     cancel() {
       session.cancel();
     },
     async release() {
       if (released) return;
       released = true;
+      const ms = limit;
       try {
-        if (!lost.on) await resetConnection(reserved, session.depth());
+        if (!lost.on) await deadline(ms, () => resetConnection(reserved, session.depth()));
+      } catch {
+        lost.on = true;
       } finally {
         pool.counters.reserved = Math.max(0, pool.counters.reserved - 1);
         // A closed connection is already back in the driver's closed list. Releasing it would put it
         // in the open list, and the next statement would write to a socket that is gone.
         // The fatal ErrorResponse can still be sitting on that connection and is delivered to the
-        // next query. A discarded statement consumes it.
-        if (lost.on) await pool.sql.unsafe("select 1").catch(() => undefined);
+        // next query. A discarded statement consumes it. The call timeout covers that wait.
+        if (lost.on) await deadline(ms, () => pool.sql.unsafe("select 1")).catch(() => undefined);
         else reserved.release();
       }
     },
@@ -144,40 +161,127 @@ type ReservedConnection = Sql & {
   release(): void;
 };
 
+let closedWaits = new Set<() => void>();
+
+/**
+ * Installs the pool close hook on the first wait.
+ *
+ * postgres.js copies `onclose` onto `sql.options` at startup and reads that
+ * property when a connection closes, so assigning it later is seen then.
+ * A close before this runs leaves the hook unset: no wait is open to reject.
+ *
+ * @param sql - The pool client
+ */
+export function hook(sql: Sql): void {
+  const options = (sql as { options?: Sql["options"] }).options;
+  if (options === undefined || options.onclose !== undefined) return;
+  options.onclose = () => {
+    const pending = closedWaits;
+    closedWaits = new Set();
+    for (const stop of pending) stop();
+  };
+}
+
+/**
+ * Checks out one connection, runs one batch, and releases it.
+ *
+ * The call timeout covers acquiring the connection and clearing it on release.
+ *
+ * @param pool - The open pool
+ * @param statements - Statements in order
+ * @param options - Call timeout and signal
+ * @returns One result per statement
+ */
+export async function runBatch(
+  pool: HeldPool,
+  statements: readonly Statement[],
+  options: ExecuteOptions | undefined,
+): Promise<readonly ExecuteResult[]> {
+  const connection = await checkout(pool, options?.timeout);
+  try {
+    return await connection.batch(statements, options);
+  } finally {
+    await connection.release();
+  }
+}
+
+/**
+ * Settles `run` when `ms` elapses or a pooled connection closes.
+ *
+ * A positive `ms` rejects with `timeout` and cancels `run` when it exposes
+ * `cancel`. The pool's `onclose` rejects with SQLSTATE `08006`.
+ *
+ * @param ms - Deadline in milliseconds. `0` waits only for a close
+ * @param run - Driver operation
+ * @returns The operation's value
+ */
+export function deadline<T>(ms: number, run: () => Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let stop = (): void => undefined;
+  const result = new Promise<T>((resolve, reject) => {
+    stop = () => {
+      reject(new DriverError("Connection closed", { sqlstate: "08006" }));
+    };
+    closedWaits.add(stop);
+    const pending = run() as Promise<T> & { cancel?: () => void };
+    if (ms > 0) {
+      timer = setTimeout(() => {
+        pending.cancel?.();
+        reject(timedOut());
+      }, ms);
+    }
+    void pending.then(resolve, reject);
+  });
+  return result.finally(() => {
+    clearTimeout(timer);
+    closedWaits.delete(stop);
+  });
+}
+
 function reserveConnection(
   sql: Sql,
   acquireMs: number | undefined,
   counters: Counters,
+  callMs: number | undefined,
 ): Promise<ReservedConnection> {
   counters.waiting += 1;
   let settled = false;
+  const finish = (): void => {
+    counters.waiting = Math.max(0, counters.waiting - 1);
+  };
   return new Promise((resolve, reject) => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     if (acquireMs !== undefined) {
       timer = setTimeout(() => {
+        if (settled) return;
         settled = true;
-        counters.waiting = Math.max(0, counters.waiting - 1);
+        finish();
         void driverErrors().then((errors) => {
           reject(errors.acquireTimeout());
         });
       }, acquireMs);
     }
-    sql.reserve().then(
+    const ms = callMs !== undefined && callMs > 0 ? callMs : 0;
+    void deadline(ms, () => sql.reserve()).then(
       (connection) => {
         if (settled) {
-          void resetConnection(connection, 0).finally(() => {
-            connection.release();
-          });
+          void resetConnection(connection, 0)
+            .catch(() => undefined)
+            .finally(() => {
+              connection.release();
+            });
           return;
         }
+        settled = true;
         if (timer !== undefined) clearTimeout(timer);
-        counters.waiting = Math.max(0, counters.waiting - 1);
+        finish();
         resolve(connection);
       },
       (error: unknown) => {
         if (settled) return;
+        settled = true;
         if (timer !== undefined) clearTimeout(timer);
-        counters.waiting = Math.max(0, counters.waiting - 1);
+        finish();
         void mapFailure(error).then(reject);
       },
     );
@@ -324,12 +428,12 @@ export function watchQuery(
   },
 ): Promise<ExecuteResult> {
   return pending.then(
-    (result) => {
+    (value) => {
       finishWatch(pending, watch, onAbort, ctx);
       const why = watch.reason();
       if (why === "timeout" || why === "cancelled") return classify(why, watch);
       ctx.note(ctx.text);
-      return resultFrom(result, ctx.notices.since(ctx.start));
+      return resultFrom(value, ctx.notices.since(ctx.start));
     },
     (error: unknown) => {
       finishWatch(pending, watch, onAbort, ctx);

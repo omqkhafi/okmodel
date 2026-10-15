@@ -149,6 +149,14 @@ export async function checkout(held: HeldPool): Promise<DriverConnection & { evi
     },
   );
   let lost: Lost = { on: false };
+  // Snapshotted after the handle is reserved. A later close means this handle
+  // may already be a new connection, without the transaction or the tenant GUC.
+  const opened = held.closures();
+  const reconnected = (): Promise<never> | undefined => {
+    if (held.closures() === opened) return undefined;
+    lost.on = true;
+    return Promise.reject(new DriverError("Connection closed", { sqlstate: "08006" }));
+  };
   const guard = <T>(run: () => Promise<T>): Promise<T> =>
     refuseWhenLost(lost, () =>
       run().catch((error: unknown) => {
@@ -166,6 +174,8 @@ export async function checkout(held: HeldPool): Promise<DriverConnection & { evi
     execute: (text, params, options) => {
       const refused = noTimeout(options);
       if (refused !== undefined) return refused;
+      const gone = reconnected();
+      if (gone !== undefined) return gone;
       return guard(() =>
         runCall(isClosed(), options, (watch) => session.query(text, params, watch)),
       );
@@ -173,6 +183,8 @@ export async function checkout(held: HeldPool): Promise<DriverConnection & { evi
     batch: (statements, options) => {
       const refused = noTimeout(options);
       if (refused !== undefined) return refused;
+      const gone = reconnected();
+      if (gone !== undefined) return gone;
       return guard(() =>
         runCall(isClosed(), options, async (watch: Watch | undefined) => {
           const { runAtomicBatch } = await import("./batch.js");

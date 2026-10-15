@@ -90,3 +90,7 @@ export const db = await connect("./data", { schema: app }); // [!code focus]
 ### timeout
 
 Bun.sql and PGlite refuse a positive `timeout` on a call, on `tx()`, and on `batch()`. The keys and the messages are on [Timeouts](/docs/define/connect/session#timeouts).
+
+### A lost connection
+
+The first call after a backend kill on an idle connection is `unavailable` and retryable. Bun.sql retries a client read once at transaction depth 0. postgres.js and node-postgres do not. A reserved Bun.sql handle whose backend was killed fails the next statement with `unavailable` instead of running it on a new connection. On postgres.js, a `reserve`, a `release`, and a timed call settle when the pool breaks. A kill during connect can still surface an unhandled rejection from the driver's own type-catalog query.
