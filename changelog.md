@@ -110,6 +110,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### docs
 
+- The docs site favicon is the OKM mark: a white letter on a dark rounded square. It cycles O, K, then M on its own icon link, so opening a page does not rewrite the static icon.
+- The favicon morph keeps the letter visible. The paths sit in the same box as the OKEngine mark, so the blur does not wipe the tile.
 - The Schema page lists extensions as `citext()`, `pgTrgm()`, or `extension("name")`. Config states each option once.
 - Text search: `natural` combines unquoted words with AND. `advanced` is raw `to_tsquery`, and a syntax error comes back from Postgres as a driver error. A well-formed language name that Postgres does not know also comes back as a driver error. OKM1122 is an empty or malformed name (D259).
 - A claim returns `{ count }`. The handbook sets a `claimedBy` token, then `find`s by that token (D259).
