@@ -19,6 +19,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 #### docs
 
 - Offline-first constraints R1–R7 are recorded for the 0.8 train. They do not start a phase. P100 audits PostgreSQL and writes a report (D265).
+- The P100 audit records what PostgreSQL already proves for R1–R7, and the gaps later phases still have to decide. No API change.
 
 ## v0.7.0 — 2026-10-15
 
