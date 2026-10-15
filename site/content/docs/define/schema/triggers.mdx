@@ -166,3 +166,83 @@ export default schema({
   ],
 });
 ```
+
+### Create your own
+
+There is no built-in trigger on this list. `trigger()` from `okmodel/fn` is the declaration. The function it calls has to be in [functions](/docs/define/schema/functions). `timestamps({ enforce: "trigger" })` adds its own function and trigger; that option is on [traits](/docs/define/schema/traits).
+
+#### Simple
+
+One before-update row trigger. `okm generate` writes the table, then the function, then `create trigger "notes_touch" before update on "public"."notes" for each row execute function "public"."touch_notes"()`.
+
+```ts title="own.ts"
+import { fn, trigger } from "okmodel/fn";
+import { schema, sql, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const touch = fn("touch_notes", {
+  returns: "trigger",
+  language: "plpgsql",
+  body: sql`begin return new; end`,
+  dependsOn: [notes],
+});
+
+export default schema({
+  tables: [notes],
+  functions: [touch],
+  triggers: [
+    trigger("notes_touch", {
+      on: notes, // [!code focus]
+      timing: "before",
+      events: ["update"],
+      level: "row",
+      calls: touch,
+    }),
+  ],
+});
+```
+
+#### Advanced
+
+`updateOf` limits the update to those SQL columns. `when` is stored as written. Insert is still an event, so the trigger also runs then, and `updateOf` applies only to the update. `okm generate` writes `create trigger "notes_touch" before insert or update of "title" on "public"."notes" for each row when (old.title is distinct from new.title) execute function "public"."touch_notes"()`.
+
+```ts title="own-advanced.ts"
+import { fn, trigger } from "okmodel/fn";
+import { schema, sql, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const touch = fn("touch_notes", {
+  returns: "trigger",
+  language: "plpgsql",
+  body: sql`begin return new; end`,
+  dependsOn: [notes],
+});
+
+export default schema({
+  tables: [notes],
+  functions: [touch],
+  triggers: [
+    trigger("notes_touch", {
+      on: notes,
+      timing: "before",
+      events: ["insert", "update"], // [!code focus]
+      level: "row",
+      updateOf: ["title"], // [!code focus]
+      when: sql`old.title is distinct from new.title`, // [!code focus]
+      calls: touch,
+    }),
+  ],
+});
+```
+
+<Callout type="error" title="OKM1020">
+A column the table does not have is `Trigger notes_touch names column missing, which notes does not have.`
+</Callout>

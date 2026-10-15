@@ -140,3 +140,68 @@ export async function open(url: string, title: string, token: string) {
 <Callout type="error" title="OKM1012">
 A column the table already has is `Trait labeled adds notes.label, and notes already declares it.` A column another trait already added is `Trait labeled adds notes.label, and trait timestamps already adds it.`
 </Callout>
+
+### Create your own
+
+`timestamps()`, `archivable()`, `versioned()`, and `sortable()` are the built-ins above. A trait you write is `trait(name, { fields })` from `okmodel/traits`, the same function those built-ins call. Put it on this list and it is copied onto every table that does not opt out. The field options are on [traits](/docs/define/table/traits).
+
+#### Simple
+
+One text column with a default. Insert omits it. `okm generate` adds `"label" text not null default 'note'` on `notes`.
+
+```ts title="own.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+import { trait } from "okmodel/traits";
+
+const labeled = trait("labeled", {
+  fields: { label: t.text().default("note") }, // [!code focus]
+});
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({
+  tables: [notes],
+  traits: [labeled], // [!code focus]
+});
+
+export async function add(url: string, title: string) {
+  await using db = connect(url, { schema: app });
+  return db.notes.insert({ title }); // [!code focus]
+}
+```
+
+#### Advanced
+
+`stamped` seals `label`, so input cannot set it, and touches `labeledAt`, so an update sets that column to `now()`. `timestamps()` is the same list, applied first, so the table also has `createdAt` and `updatedAt`.
+
+```ts title="own-advanced.ts"
+import { schema, table, t } from "okmodel/pg";
+import { timestamps, trait } from "okmodel/traits";
+
+const stamped = trait("stamped", {
+  fields: {
+    label: t.text().default("note"), // [!code focus]
+    labeledAt: t.timestamptz().defaultSql("now()"), // [!code focus]
+  },
+  touch: ["labeledAt"], // [!code focus]
+  sealed: ["label"], // [!code focus]
+});
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+export default schema({
+  tables: [notes],
+  traits: [timestamps(), stamped], // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1012">
+A column the table already declares is `Trait stamped adds notes.label, and notes already declares it.`
+</Callout>

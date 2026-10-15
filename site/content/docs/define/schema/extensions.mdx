@@ -233,3 +233,62 @@ export default schema({
   extensions: [citext(), trgm, extension("ltree")], // [!code focus]
 });
 ```
+
+### Create your own
+
+`citext()` and `pgTrgm()` are the built-ins above. A name they do not cover is `extension()` from `okmodel/ext`. That call has the same options and no typed operator.
+
+#### Simple
+
+`unaccent` is one name. `okm generate` writes `create extension "unaccent" schema "public"` before the table.
+
+```ts title="own.ts"
+import { extension } from "okmodel/ext";
+import { schema, table, t } from "okmodel/pg";
+
+const documents = table("documents", {
+  id: t.identity(),
+  body: t.text(),
+});
+
+export default schema({
+  tables: [documents],
+  extensions: [extension("unaccent")], // [!code focus]
+});
+```
+
+#### Advanced
+
+`version` is an exact pin and is written. `schema` is the install schema. `relocatable: false` refuses a later move. `t.custom({ extension })` records that the column needs this name, so the list has to declare it.
+
+`okm generate` writes `create extension "hstore" schema "extensions" version '1.8'` before the table.
+
+```ts title="own-advanced.ts"
+import { extension } from "okmodel/ext";
+import { schema, table, t } from "okmodel/pg";
+
+const places = table("places", {
+  id: t.identity(),
+  attrs: t.custom({
+    sqlType: "hstore",
+    extension: "hstore", // [!code focus]
+    encode: (value: string) => value,
+    decode: (wire: string) => wire,
+  }),
+});
+
+export default schema({
+  tables: [places],
+  extensions: [
+    extension("hstore", {
+      version: "1.8", // [!code focus]
+      schema: "extensions", // [!code focus]
+      relocatable: false, // [!code focus]
+    }),
+  ],
+});
+```
+
+<Callout type="error" title="OKM1814">
+A later move of that extension is `Extension hstore is not relocatable, so it cannot move to public.`
+</Callout>

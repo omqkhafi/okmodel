@@ -251,3 +251,85 @@ export default schema({
   ],
 });
 ```
+
+### Create your own
+
+There is no built-in function. `fn()` from `okmodel/fn` is the declaration. The sections above are its options.
+
+#### Simple
+
+One SQL function, no arguments. `okm generate` writes it after the table: `create function "public"."answer"() returns integer language sql volatile security invoker as $okm$select 1$okm$`.
+
+```ts title="own.ts"
+import { fn } from "okmodel/fn";
+import { schema, sql, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const answer = fn("answer", {
+  returns: "integer",
+  language: "sql",
+  body: sql`select 1`, // [!code focus]
+});
+
+export default schema({
+  tables: [notes],
+  functions: [answer], // [!code focus]
+});
+```
+
+#### Advanced
+
+`slugify` is immutable and takes one argument. `touch_notes` is plpgsql, so it lists the column it writes, and it is a definer, so it sets `searchPath`. The trigger is created after both functions. `okm generate` writes the table, then `slugify`, then `touch_notes`, then `create trigger "notes_touch" before update of "title" on "public"."notes" for each row when (old.title is distinct from new.title) execute function "public"."touch_notes"()`.
+
+```ts title="own-advanced.ts"
+import { fn, trigger } from "okmodel/fn";
+import { schema, sql, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+  updatedAt: t.timestamptz().defaultSql("now()"),
+});
+
+const slugify = fn("slugify", {
+  arguments: [{ name: "title", type: "text" }], // [!code focus]
+  returns: "text",
+  language: "sql",
+  volatility: "immutable", // [!code focus]
+  body: sql`select lower(title)`,
+});
+
+const touch = fn("touch_notes", {
+  returns: "trigger",
+  language: "plpgsql",
+  security: "definer", // [!code focus]
+  searchPath: "public", // [!code focus]
+  body: sql`begin new.updated_at = now(); return new; end`,
+  dependsOn: [{ table: notes, column: "updated_at" }], // [!code focus]
+});
+
+export default schema({
+  tables: [notes],
+  casing: "snake",
+  functions: [slugify, touch],
+  triggers: [
+    trigger("notes_touch", {
+      on: notes,
+      timing: "before",
+      events: ["update"],
+      level: "row",
+      updateOf: ["title"],
+      when: sql`old.title is distinct from new.title`,
+      calls: touch,
+    }),
+  ],
+});
+```
+
+<Callout type="error" title="OKM1823">
+Definer with no `searchPath` is `Function touch_notes is security definer and has no search_path.`
+</Callout>
