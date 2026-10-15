@@ -458,20 +458,7 @@ function wrap(
 
 function shift(text: string, by: number): string {
   if (by === 0) return text;
-  let out = text;
-  for (let index = markerCount(text); index >= 1; index -= 1) {
-    out = out.replaceAll(`$${String(index)}`, `$${String(index + by)}`);
-  }
-  return out;
-}
-
-function markerCount(text: string): number {
-  let highest = 0;
-  for (const match of text.matchAll(/\$(\d+)/g)) {
-    const value = Number(match[1]);
-    if (value > highest) highest = value;
-  }
-  return highest;
+  return text.replace(/\$(\d+)/g, (_match, digits: string) => `$${String(Number(digits) + by)}`);
 }
 
 function decodeRows(

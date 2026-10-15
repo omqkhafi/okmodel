@@ -8,11 +8,21 @@ import { expect, test } from "bun:test";
 
 import type { DriverPool } from "../src/contracts/driver.js";
 import { OkmError } from "../src/contracts/error.js";
-import { explain, fragment, ident, raw, schema, t, table } from "../src/dialects/pg/index.js";
+import {
+  explain,
+  fragment,
+  ident,
+  one,
+  raw,
+  schema,
+  t,
+  table,
+  uuid,
+} from "../src/dialects/pg/index.js";
 import { connect } from "../src/runtime/pg/postgresjs.js";
 import { connectTopology } from "../src/runtime/topology.js";
 import { archivable } from "../src/runtime/traits/index.js";
-import { columnTenancy } from "../src/runtime/tenancy/index.js";
+import { columnTenancy, compositeTenancy, via } from "../src/runtime/tenancy/index.js";
 
 const TENANT = "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c8d";
 const PAYLOAD = "'; drop table notes; --";
@@ -46,6 +56,10 @@ class NoteRow {
   id = "";
   title = "";
   n = 0;
+}
+
+class ProjectRow {
+  id = "";
 }
 
 type Call = {
@@ -84,6 +98,61 @@ test("a raw read binds parameters, decodes the class, and keeps the tenant predi
   expect(sent[0]?.params).toContain(PAYLOAD);
   expect(sent[0]?.params).toContain(TENANT);
   expect(sent[0]?.route).toBeUndefined();
+});
+
+test("a raw read renumbers two tenant markers past nine user parameters", async () => {
+  const organization = "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c11";
+  const workspace = "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c22";
+  const organizations = table("organizations", { id: uuid().primaryKey(), name: t.text() });
+  const projects = table(
+    "projects",
+    {
+      id: t.text().primaryKey(),
+      name: t.text(),
+      organizationId: uuid().references("organizations"),
+    },
+    {
+      tenancy: via("organization"),
+      relations: { organization: one("organizations", "organizationId") },
+    },
+  );
+  const scopedSchema = schema({
+    casing: "snake",
+    tenancy: compositeTenancy({ key: ["organizationId", "workspaceId"], type: "uuid" }),
+    tables: [organizations, projects],
+  });
+  const calls: Call[] = [];
+  const db = connect(
+    recording(calls, () => [["p1"]]),
+    { schema: scopedSchema },
+  );
+  await db.connected;
+  calls.length = 0;
+  const scoped = db.for({ organizationId: organization, workspaceId: workspace });
+  await raw(
+    scoped.projects,
+    ProjectRow,
+    "read",
+    fragment`select ${ident("id")} from projects where ${ident("id")} <> ${"u1"} and ${ident("id")} <> ${"u2"} and ${ident("id")} <> ${"u3"} and ${ident("id")} <> ${"u4"} and ${ident("id")} <> ${"u5"} and ${ident("id")} <> ${"u6"} and ${ident("id")} <> ${"u7"} and ${ident("id")} <> ${"u8"} and ${ident("id")} <> ${"u9"}`,
+  );
+  const sent = calls.filter((call) => !call.text.startsWith("select current_setting"));
+  expect(sent).toHaveLength(1);
+  expect(sent[0]?.text).toBe(
+    'select okm_raw.* from (select "id" from projects where "id" <> $1 and "id" <> $2 and "id" <> $3 and "id" <> $4 and "id" <> $5 and "id" <> $6 and "id" <> $7 and "id" <> $8 and "id" <> $9) as okm_raw where okm_raw."id" in (select "id" from "projects" as okm_tenant where exists (select 1 from "organizations" p0 where p0."id" = okm_tenant."organization_id" and p0."organization_id" = $10 and p0."workspace_id" = $11))',
+  );
+  expect(sent[0]?.params).toEqual([
+    "u1",
+    "u2",
+    "u3",
+    "u4",
+    "u5",
+    "u6",
+    "u7",
+    "u8",
+    "u9",
+    organization,
+    workspace,
+  ]);
 });
 
 test("a hidden field is refused through ident, including a filterable one", async () => {

@@ -36,6 +36,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - `okm driver test <driver>` runs the driver, error, and transaction suites and prints each case as pass, fail, or unsupported, with the capability that explains an unsupported case.
 
+### 🐛 Fixed
+
+- A raw read renumbers every `$n` marker in a multi-parameter tenant predicate once. Nine user parameters and `$1`, `$2` stay `$10`, `$11`.
+
 ## v0.7.0 — 2026-10-15
 
 ### ✨ Added
