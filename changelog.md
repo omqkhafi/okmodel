@@ -109,7 +109,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### dialects
 
-- A `42601` whose message names `tsquery`, or whose statement is a search predicate (`to_tsquery`), is OKM1120. An unescaped backslash is included. Other syntax errors stay `driver` (D261).
+- A `42601` whose message names `tsquery`, or whose statement is a search predicate (`to_tsquery`), is OKM1120. An unescaped backslash is included. Other syntax errors stay `driver` (D263).
 
 #### adapters
 
@@ -119,8 +119,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Bun.sql drops a pooled connection on a closed signal or `57P01` before the next statement uses it. A read that failed because that connection was already dead is tried once on a new connection. A write, a lock, or a statement inside a transaction is not retried (D260).
 - Bun.sql rejects a wire integer outside the signed int8 range as kind `invalid`, including an id of 2^64. A numeric value written as that integer is refused too (D260).
 - PGlite `connect(pool)` then `close()` marks that client closed. Later calls are `unavailable`. The pool stays open (D260).
-- A reserved Bun.sql handle whose backend was killed fails the next statement with `unavailable` (SQLSTATE `08006`, retryable) after the pool drains the closed socket. A scoped read does not come back empty (D261).
-- On postgres.js, a wait with no call deadline is rejected when every slot in its pool has closed, or when the reserved connection it uses closes. A queued `reserve` is started again after a close, because the driver drops that `sql.reserve()` without settling. A wait that already has a deadline is not on the close hook (D261).
+- A reserved Bun.sql handle whose backend was killed fails the next statement with `unavailable` (SQLSTATE `08006`, retryable) after the pool drains the closed socket. A scoped read does not come back empty (D263).
+- On postgres.js, a wait with no call deadline is rejected when every slot in its pool has closed, or when the reserved connection it uses closes. A queued `reserve` is started again after a close, because the driver drops that `sql.reserve()` without settling. A wait that already has a deadline is not on the close hook (D263).
 - The timestamp conformance statements set the session time zone to UTC, so the wire text does not depend on the server time zone.
 
 #### tooling
@@ -131,7 +131,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `bun run pack-tracked` packs the tarball and fails when a file in it, other than `dist/`, is not tracked by git. `bun run check` runs it. The release publish job runs it with `--release`, which also fails when the worktree is dirty.
 - The docs site hero and theme control use inline SVG icons again so the client shell does not import `lucide-react`.
 - Streaming replication waits poll for 45 seconds before `routing.auto` fails on a slow catch-up.
-- The postgres.js adapter incremental gate is 16,000 minified bytes. The room is the close rule (D261).
+- The postgres.js adapter incremental gate is 16,000 minified bytes. The room is the close rule (D263).
 
 #### docs
 
@@ -144,8 +144,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - A morph write can store another tenant's id. The include reads as the caller, so that target is null (D259).
 - An include `select` that names a hidden column is OKM1120. A default include still omits it (D260).
 - `okm migrate check` runs the statements it is given. Run it as a non-superuser (D259).
-- The first call after a backend kill on an idle connection is `unavailable` and retryable. Bun.sql retries a client read once at transaction depth 0. postgres.js and node-postgres do not. A kill during a postgres.js connect can leave an unhandled rejection from the driver's type-catalog query (D261).
-- A postgres.js wait with no call deadline is rejected on a close only when every slot in that pool has closed, or when the reserved connection it uses closes. A queued `sql.reserve()` is dropped by the driver without settling when a slot closes. okmodel starts it again. A wait that already has a deadline ends at that deadline (D261).
+- The first call after a backend kill on an idle connection is `unavailable` and retryable. Bun.sql retries a client read once at transaction depth 0. postgres.js and node-postgres do not. A kill during a postgres.js connect can leave an unhandled rejection from the driver's type-catalog query (D263).
+- A postgres.js wait with no call deadline is rejected on a close only when every slot in that pool has closed, or when the reserved connection it uses closes. A queued `sql.reserve()` is dropped by the driver without settling when a slot closes. okmodel starts it again. A wait that already has a deadline ends at that deadline (D263).
 
 ### ♻️ Changed
 
