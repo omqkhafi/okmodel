@@ -250,7 +250,7 @@ export const app = schema({ tables: [counts] });
 
 #### Uuid
 
-`t.id()` is a uuid primary key. Needs PostgreSQL 18 or higher. The default is `uuidv7()`. On an older server, `okm migrate apply` stops with OKM1812 before it runs any statement. Set `minPostgres: 18` and use a server that has it, or `defaults.id: "uuidv4"` or a client generator. `t.id({ default: "uuidv4" })` uses `gen_random_uuid()`, which Postgres has included since 13. `t.id({ default: "none" })` means the insert supplies the id. The string form `requires: { postgres: ">=18" }` is the same floor and is deprecated.
+`t.id()` is a uuid primary key. The default is `gen_random_uuid()`, which Postgres has included since 13, so it works on every supported major. `t.id({ default: "uuidv7" })` stores `uuidv7()`. Pick that for a large write-heavy table: the ids are time-ordered and the index stays local. It needs Postgres 18 and `minPostgres: 18`. On an older server, `okm migrate apply` stops with OKM1812 before it runs any statement. `t.id({ default: "uuidv4" })` stores the same `gen_random_uuid()` as a bare call. `t.id({ default: "none" })` means the insert supplies the id. `defaults: { id: "uuidv7" }` keeps the old database default on every bare `t.id()`. `requires: { postgres: ">=18" }` is the same floor and is deprecated.
 
 #### Generated in the app
 

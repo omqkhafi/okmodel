@@ -403,20 +403,28 @@ test("a column primary key and a composite key are catalog constraints", () => {
   expect(code?.guardUpdate).toBe(true);
 });
 
-test("uuidv7 below the declared Postgres 18 names the uuidv4 default", () => {
+test("a bare id stores gen_random_uuid and an explicit uuidv7 still needs Postgres 18", () => {
+  const bare = schema({
+    requires: { postgres: ">=15" },
+    tables: [table("sessions", { id: t.id() })],
+  });
+  const bareColumn = bare.catalog.objects.find((object) => object.kind === "column");
+  expect(bareColumn?.kind === "column" ? bareColumn.definition.defaultExpression : "").toBe(
+    "gen_random_uuid()",
+  );
   const error = capture(() =>
     schema({
       requires: { postgres: ">=17" },
-      tables: [table("sessions", { id: t.id() })],
+      tables: [table("sessions", { id: t.id({ default: "uuidv7" }) })],
     }),
   );
   expect(error.code).toBe("OKM1812");
   expect(error.message).toContain("uuidv7()");
-  expect(error.message).toContain("minPostgres");
+  expect(error.message).toContain("minPostgres: 18");
   expect(error.fix.summary).toContain("minPostgres: 18");
   const allowed = schema({
     requires: { postgres: ">=18" },
-    tables: [table("sessions", { id: t.id() })],
+    tables: [table("sessions", { id: t.id({ default: "uuidv7" }) })],
   });
   const column = allowed.catalog.objects.find((object) => object.kind === "column");
   expect(column?.kind === "column" ? column.definition.defaultExpression : "").toBe("uuidv7()");

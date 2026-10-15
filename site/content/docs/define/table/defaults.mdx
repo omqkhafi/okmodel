@@ -76,8 +76,9 @@ A generator is `uuidv4`, `uuidv7`, or [OKID](/docs/define/table/columns#okid) (`
 
 | Call | What fills it | Insert |
 | --- | --- | --- |
-| `t.id()` | Database `uuidv7()`, unless the schema default says otherwise. | Omitted. |
-| `t.id({ default: "uuidv4" })` | Database `gen_random_uuid()`. | Omitted. |
+| `t.id()` | Database `gen_random_uuid()`, unless the schema default says otherwise. | Omitted. |
+| `t.id({ default: "uuidv7" })` | Database `uuidv7()`. Needs Postgres 18. | Omitted. |
+| `t.id({ default: "uuidv4" })` | Database `gen_random_uuid()`, the same as a bare call. | Omitted. |
 | `t.id({ default: uuidv7 })` | The client generator. Nothing is stored in the catalog. | Omitted. |
 | `t.id({ default: "none" })` | Nothing. | Required. Still omitted from update. |
 | `t.identity()` | `generated always as identity`. | Omitted. |
@@ -86,9 +87,7 @@ A generator is `uuidv4`, `uuidv7`, or [OKID](/docs/define/table/columns#okid) (`
 
 #### database
 
-Needs PostgreSQL 18 or higher.
-
-A bare `t.id()` is omitted from insert. Postgres fills `uuidv7()`.
+A bare `t.id()` is omitted from insert. Postgres fills `gen_random_uuid()`. A large write-heavy table can store `uuidv7()` instead: the ids are time-ordered and the index stays local. That function needs Postgres 18 and `minPostgres: 18`.
 
 ```ts title="id-insert.ts"
 import { connect } from "okmodel/pg/postgresjs";

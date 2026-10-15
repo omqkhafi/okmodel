@@ -143,6 +143,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 #### dialects
 
 - A `uuidv7()` default on a floor below 18 is OKM1812 and names that major. A server below `minPostgres` is OKM1802. A server below 15 with no floor is OKM1803. The handbook page is Minimum Postgres (D261).
+- A bare `t.id()` stores `gen_random_uuid()`, so it works on Postgres 15 to 18. `defaults: { id: "uuidv7" }` keeps the old database default. An explicit `uuidv7()` on a server below 18 is still OKM1812 and needs `minPostgres: 18`. An existing table whose default is `uuidv7()` plans `SET DEFAULT gen_random_uuid()` and does not rewrite the table (D262).
 
 #### runtime
 

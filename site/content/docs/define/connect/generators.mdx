@@ -40,5 +40,5 @@ export async function add(url: string, title: string) {
 ```
 
 <Callout type="info" title="Left alone">
-A function you wrote and passed to `.default()` keeps its own call. `uuidv7()` and `gen_random_uuid()` stay database defaults.
+A function you wrote and passed to `.default()` keeps its own call. A bare `t.id()` stores `gen_random_uuid()`. `t.id({ default: "uuidv7" })` stores `uuidv7()`, which needs Postgres 18. Pick that for a large write-heavy table: the ids are time-ordered and the index stays local. Random ids are fine elsewhere.
 </Callout>

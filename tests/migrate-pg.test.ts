@@ -139,6 +139,7 @@ postgresTest(
         await roundTrip(sql, schemaName, ref, "change-key", keyedItems(), compositeItems());
         await roundTrip(sql, schemaName, ref, "drop-key", keyedItems(), openItems());
         await roundTrip(sql, schemaName, ref, "create-uuidv4", undefined, uuidv4Sessions());
+        await roundTrip(sql, schemaName, ref, "create-bare-id", undefined, bareIdSessions());
         const version = await sql<
           { v: string }[]
         >`select current_setting('server_version_num') as v`;
@@ -517,10 +518,16 @@ function uuidv4Sessions(): Catalog {
   }).catalog;
 }
 
+function bareIdSessions(): Catalog {
+  return schema({
+    tables: [defineTable("sessions", { id: t.id() })],
+  }).catalog;
+}
+
 function uuidSessions(): Catalog {
   return schema({
     requires: { postgres: ">=18" },
-    tables: [defineTable("sessions", { id: t.id() })],
+    tables: [defineTable("sessions", { id: t.id({ default: "uuidv7" }) })],
   }).catalog;
 }
 

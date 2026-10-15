@@ -118,8 +118,13 @@ export type SchemaInput<TTables extends readonly AnyTable[]> = {
   /**
    * What a bare `t.id()` means.
    *
-   * `"uuidv7"` and `"uuidv4"` are database defaults. A client generator is
-   * filled on insert and stays out of the catalog. A column option wins.
+   * Omitted, the database default is `gen_random_uuid()`. `"uuidv4"` stores
+   * the same function. `"uuidv7"` stores `uuidv7()` and needs Postgres 18
+   * (`minPostgres: 18`).
+   * Pick `uuidv7` for a large write-heavy table: the ids are time-ordered
+   * and the index stays local. Random ids are fine elsewhere. A client
+   * generator is filled on insert and stays out of the catalog. A column
+   * option wins.
    */
   readonly defaults?: {
     readonly id?: "uuidv7" | "uuidv4" | ClientGenerator<string>;
@@ -1653,7 +1658,8 @@ function readIdDefault(
 /**
  * Rejects `uuidv7()` when the schema declares a Postgres older than the feature.
  *
- * An omitted floor does not name a version, so the default stays until apply.
+ * A bare `t.id()` stores `gen_random_uuid()` and is not this expression.
+ * An omitted floor does not name a version, so an explicit `uuidv7()` stays until apply.
  *
  * @param requires - Declared engine range
  */
