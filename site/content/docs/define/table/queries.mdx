@@ -279,6 +279,43 @@ export async function numbered(url: string) {
 `runningTotal` on a column that is not a number or a string is refused.
 </Callout>
 
+### SQL fragment
+
+`fragment` is a SQL expression you can nest. A string, number, boolean, or null is a parameter. `ident` names the field, the same name `where` uses, and a hidden field is refused (OKM1120); `hidden({ filterable: true })` is allowed in `where` only. `fragment.column` is the field the fragment is attached to in `where`. `.as(name)` puts a numeric expression in `select` on `find` or `one`. The tenant predicate stays in front of the fragment.
+
+The check `sql` tag is a different function. It builds a check, an index predicate, or a default. It does not accept parameters.
+
+#### where and select
+
+`length(${fragment.column})` uses the `title` field this fragment filters. `ident("status")` is the field `status`. `len` is a number.
+
+```ts title="fragment.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { fragment, ident, schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+  status: t.text(),
+});
+const app = schema({ tables: [notes] });
+
+const open = fragment`${ident("status")} = ${"open"}`;
+
+export async function openNotes(url: string) {
+  await using db = connect(url, { schema: app });
+  return db.notes.find({
+    where: { title: fragment`length(${fragment.column}) > ${3} and ${open}` }, // [!code focus]
+    select: ["id", fragment`length(${ident("title")})`.as("len")], // [!code focus]
+    limit: 20,
+  });
+}
+```
+
+<Callout type="error" title="OKM1125">
+A fragment that closes the surrounding predicate, a comment, a semicolon, or a `$` in the literal is OKM1125. So is an interpolation inside quotes, an empty fragment, and a select fragment that is not a number. `ident("")` is OKM1122.
+</Callout>
+
 ### Text search
 
 `find({ search })` and `count({ search })` match a [search column](/docs/define/table/columns#search). A string is enough when the table has one. Rows come back closest first, then by primary key, unless you pass `orderBy`. `count` uses the same match and does not order.

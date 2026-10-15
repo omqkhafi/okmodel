@@ -21,11 +21,13 @@ import {
   operatorValue,
   type OperatorName,
 } from "../dialects/pg/operators.js";
-import { fail, installOperatorSql, isRecord, quote, type Sink } from "./plan.js";
+import { fail, installOperatorSql, isRecord, quote, type Indexed, type Sink } from "./plan.js";
+import { emitSqlValue } from "./sql-fragment.js";
 
 /**
  * Compiles one 0.2 operator, or rejects a text operator on the wrong column.
  *
+ * @param table - Table the where field belongs to. `ident` resolves against it
  * @param column - Field being filtered
  * @param ref - SQL reference, already quoted
  * @param name - Operator name
@@ -35,6 +37,7 @@ import { fail, installOperatorSql, isRecord, quote, type Sink } from "./plan.js"
  *   sorts descending. The same operator in a filter is refused.
  */
 function emitStructured(
+  table: Indexed,
   column: ColumnModel,
   ref: string,
   name: OperatorName,
@@ -42,6 +45,10 @@ function emitStructured(
   sink: Sink,
   order?: true,
 ): void {
+  if (name === "sql") {
+    emitSqlValue(table, ref, value, sink);
+    return;
+  }
   if (name === "contains" || name === "containedBy" || name === "overlaps") {
     emitContainment(column, ref, name, value, sink);
     return;

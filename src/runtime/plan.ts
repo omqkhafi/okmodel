@@ -329,6 +329,7 @@ const indexesOf = new WeakMap<object, ReadonlyMap<string, Indexed>>();
  * its direction there; the same operator in `where` is refused by that module.
  */
 type OperatorEmit = (
+  table: Indexed,
   column: ColumnModel,
   ref: string,
   name: OperatorName,
@@ -458,6 +459,7 @@ function isTextColumn(dataType: string): boolean {
 }
 
 function emitLazy(
+  table: Indexed,
   column: ColumnModel,
   ref: string,
   name: OperatorName,
@@ -469,7 +471,7 @@ function emitLazy(
   if (emit === undefined) {
     fail("OKM1121", `Operator ${name} on ${column.field} is not loaded.`);
   }
-  emit(column, ref, name, value, sink, order);
+  emit(table, column, ref, name, value, sink, order);
 }
 
 /**
@@ -982,7 +984,7 @@ function emitOperator(
     sink.text(" escape E'\\\\'");
     return;
   }
-  emitLazy(column, ref, name, value, sink);
+  emitLazy(table, column, ref, name, value, sink);
 }
 
 function emitNot(
@@ -1139,6 +1141,7 @@ export function emitOrder(table: Indexed, orderBy: unknown, sink: Sink, alias: s
     if (index > 0) sink.text(", ");
     if (isOperator(value) && operatorName(value) === "relevance") {
       emitLazy(
+        table,
         column,
         `${alias}.${quote(column.sql)}`,
         "relevance",

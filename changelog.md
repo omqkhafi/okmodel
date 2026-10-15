@@ -16,6 +16,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### ✨ Added
 
+#### dialects
+
+- `fragment` composes SQL in `where` and in `select` on `find` or `one`. A value is a parameter. `ident` names the field, the same name `where` uses, and a hidden field is refused. The tenant predicate stays (D266).
+
 #### docs
 
 - Offline-first constraints R1–R7 are recorded for the 0.8 train. They do not start a phase. P100 audits PostgreSQL and writes a report (D265).

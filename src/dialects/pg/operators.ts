@@ -40,6 +40,7 @@ export type OperatorName =
   | "relevance"
   | "similar"
   | "wordSimilar"
+  | "sql"
   | "json.set"
   | "arr.append"
   | "arr.remove";
