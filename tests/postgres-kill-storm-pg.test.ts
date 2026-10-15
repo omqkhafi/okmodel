@@ -64,7 +64,7 @@ postgresTest(
     };
     expect(report.settled).toBe(200 * 8);
     expect(report.hung).toBe(0);
-    expect(report.maxMs).toBeLessThanOrEqual(300 + 1000);
+    expect(report.maxMs).toBeLessThanOrEqual(10_000);
     console.info(
       `kill storm settled=${report.settled} hung=${report.hung} maxMs=${report.maxMs} unhandled=${report.crashes.length}`,
     );

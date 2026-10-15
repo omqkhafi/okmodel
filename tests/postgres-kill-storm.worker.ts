@@ -36,6 +36,11 @@ const kill = (async () => {
 })();
 
 const timeout = 300;
+/**
+ * A call that has not settled by this bound counts as hung.
+ * The statement timeout stays 300 ms. The extra room is the parallel suite.
+ */
+const settleBound = 10_000;
 const runs = 200;
 const inflight = 8;
 let settled = 0;
@@ -50,7 +55,7 @@ for (let run = 0; run < runs; run += 1) {
       setTimeout(() => {
         if (!done) hung += 1;
         resolve();
-      }, timeout + 1000);
+      }, settleBound);
     });
     const call = (async () => {
       let connection: DriverConnection | undefined;

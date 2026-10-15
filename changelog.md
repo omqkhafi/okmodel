@@ -14,6 +14,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+## v0.7.0 — 2026-10-15
+
 ### ✨ Added
 
 #### dialects
@@ -54,13 +56,13 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Required rows are the `reference` option. They are rows the application expects, such as statuses. Apply inserts a missing key and does not update or delete. They are not a foreign key and not a migration insert.
 - Queries add `page`, a grouped `aggregate`, a string `search`, both tree walks, a list `update`, and `inc`. A window `as` that clashes with a column is OKM1120. `page()` still reads `select` as field names.
 - Each table option is its own subsection with a sample. `t.id()` shows `uuidv7`, `uuidv4`, a client generator, and `none`. A tenant unique leaves the key out with `{ global: "reason" }`. `has`, `none`, and `every` each filter a relation. `onConflict` is `"ignore"`, `{ on, update }`, or `{ on, return: true }`.
-- Schema is a group under Define. Each option is a page: Tables, Casing, Codecs, Row types, Id default, Requires, Traits, Tenancy, Validation, Extensions, Functions, Triggers, and Views. `/docs/define/schema` is the overview.
+- Schema is a group under Define. Each option is a page: Tables, Casing, Codecs, Row types, Id default, Minimum Postgres, Traits, Tenancy, Validation, Extensions, Functions, Triggers, and Views. `/docs/define/schema` is the overview. `/docs/define/schema/requires` redirects to Minimum Postgres.
 - Tables is the list `schema()` compiles. A reference names a table in that list, earlier or later. The same name twice, two names that emit one type, or one SQL name twice is OKM1023. A missing name is OKM1020. Swapping the list does not change the catalog hash.
 - Casing `"snake"` rewrites a camelCase table or column. `publishedAt` is `published_at`. `userID` is `user_i_d`. `sqlName` and `renamedFrom` stay as written. Any other value is `schema() casing … must be snake.`
 - Codecs choose the TypeScript value of `t.bigint()`, `t.identity()`, and `t.numeric()`. The SQL type stays. `"string"` is a decimal string. `"number"` is a safe integer for bigint and can lose digits on numeric. `"bigint"` is a JavaScript bigint. A schema codec other than `"string"` needs the same `as` on every column of that type. Timestamps stay `"temporal"`.
 - Row types store `"emitted"` or `"inferred"`. Omitting the field is `"emitted"`. Queries still infer from `schema()`. `okm build` writes `.okm/types.d.ts` for either value. `notes` becomes `Notes`, `NotesInsert`, and `NotesUpdate`. A `t.jsonb<T>()` argument is copied from the schema source. Any other value is `schema() types … must be emitted or inferred.`
-- Id default replaces a bare `t.id()`. Omitted and `"uuidv7"` store `uuidv7()`. `"uuidv4"` stores `gen_random_uuid()`. A client generator is filled on insert and stays out of the catalog. `okid()` is `text` with collation `C`. A column `default` wins. `"none"` is that column option. A Postgres floor below 18 on `uuidv7()` is OKM1812.
-- Requires is a floor, `>=` and a major. Omitted names no version: connect accepts 15 and newer, and `uuidv7()` stays until `okm migrate apply` checks the server. `>=18` keeps `uuidv7()`. `>=1` through `>=17` refuse it at `schema()`. A server below the floor is OKM1802. An empty string is `schema() requires.postgres must be a version range such as >=17.`
+- Id default replaces a bare `t.id()`. Omitted and `"uuidv4"` store `gen_random_uuid()`. `"uuidv7"` stores `uuidv7()` and needs Postgres 18. A client generator is filled on insert and stays out of the catalog. `okid()` is `text` with collation `C`. A column `default` wins. `"none"` is that column option. A Postgres floor below 18 on `uuidv7()` is OKM1812.
+- Minimum Postgres is `minPostgres`, a major from 15 through 18. Omitted means 15. `requires: { postgres: ">=17" }` stores the same floor and is deprecated. A bare `t.id()` stores `gen_random_uuid()`. An explicit `uuidv7()` on a floor below 18 is OKM1812. A server below the floor is OKM1802.
 - Traits is a list applied before a table's own traits. An omitted list and `[]` add nothing. `omitDefaults` drops the schema list and needs a reason. A repeated column is OKM1012. `timestamps({ enforce: "trigger" })` adds `okm_touch_<column>` and a before-update trigger.
 - Tenancy is `columnTenancy()`, `compositeTenancy()`, or `rlsTenancy()`. Omitted, a table that sets tenancy is OKM1060. Each key is a guarded uuid filled by `for()`. `rlsTenancy` keeps the column predicate and refuses the owner, a superuser, and `BYPASSRLS` (OKM1707).
 - Validation is stored as given. `schema()` does not run the rules. Omitted and `false` are off. `true` and an object are on. `style` is `inline` or `section`. A field in both places is OKM1030. A write without `okmodel/validate` is OKM1201.
@@ -116,7 +118,6 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - A server error whose text contains `CONNECT` is no longer treated as a lost connection. Classification uses the driver `code` and SQLSTATE (`08` and `57P01`–`57P03`) only. A live session is rolled back and released. A session that is gone is released without a rollback (D244).
 - On PGlite, a JS number, bigint, or boolean bound to a column is sent as wire text. A parameter protocol error (`08P01`) is kind `driver`. A closed connection stays `unavailable` (D259).
-- The timestamp conformance statements set the session time zone to UTC, so the wire text does not depend on the server time zone.
 - Bun.sql drops a pooled connection on a closed signal or `57P01` before the next statement uses it. A read that failed because that connection was already dead is tried once on a new connection. A write, a lock, or a statement inside a transaction is not retried (D260).
 - Bun.sql rejects a wire integer outside the signed int8 range as kind `invalid`, including an id of 2^64. A numeric value written as that integer is refused too (D260).
 - PGlite `connect(pool)` then `close()` marks that client closed. Later calls are `unavailable`. The pool stays open (D260).
@@ -187,6 +188,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Known limits record the lost-connection release path and that a sortable move is O(n) per group.
 - The changelog page shows `## Unreleased` as next until the release.
 - The published README is the short page: the logo, install, a schema, `okm push`, and basic usage. The full walkthrough is `docs/guide.md`. A README image has to be an absolute `https://` URL. The docs site is `https://okm.omqkhafi.dev`.
+- The spec status names the 0.7.0 release. Decisions run through D264.
 
 ### ⚠️ Deprecated
 

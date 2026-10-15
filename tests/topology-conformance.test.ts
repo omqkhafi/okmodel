@@ -303,60 +303,68 @@ serial(
   30_000,
 );
 
-test("pool.separation: PGlite reserve", async () => {
-  const events: RouteEvent[] = [];
-  const caughtUp: ReplicaState = { replayLsn: () => "0/1" };
-  const db = await connectTopology(
-    {
-      primary: memory("primary"),
-      replicas: [{ url: memory("east"), name: "east" }],
-    },
-    {
-      schema: app,
-      routing: { probe: 60_000, consistency: "eventual" },
-      replicaState: caughtUp,
-      timeouts: { acquire: 300 },
-      onRoute(event) {
-        events.push(event);
+// Bun's default timeout is 5s. This test opens two PGlite databases, and the
+// file is pinned to the consistency shard, so that default fires under load
+// and passes on a quiet rerun. The poll still fails at 10s if the insert
+// never lands. Serial keeps it off the Docker tests in this file.
+test.serial(
+  "pool.separation: PGlite reserve",
+  async () => {
+    const events: RouteEvent[] = [];
+    const caughtUp: ReplicaState = { replayLsn: () => "0/1" };
+    const db = await connectTopology(
+      {
+        primary: memory("primary"),
+        replicas: [{ url: memory("east"), name: "east" }],
       },
-    },
-    async (config) => {
-      const pool = await openPglite({ dataDir: config.dataDir, timeouts: { acquire: 300 } });
-      const stored = Reflect.get(app, "catalog");
-      if (typeof stored !== "object" || stored === null) throw new Error("schema has no catalog");
-      for (const statement of renderCatalog(stored as Catalog, "public")) {
-        await pool.execute(statement);
-      }
-      return pool;
-    },
-  );
-  try {
-    await db.connected;
-    events.length = 0;
-    let release = (): void => undefined;
-    const heldGate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    let inserted = false;
-    const held = db.tx(async (tx) => {
-      await tx.notes.insert({ id: "hold", title: "held" });
-      inserted = true;
-      await heldGate;
-    });
-    await poll(async () => inserted);
-    events.length = 0;
-    await db.notes.find({ limit: 1 });
-    expect(events.at(-1)?.endpoint).toBe("east");
-    await expectCode(() => db.tx(async () => undefined), "OKM1846");
-    release();
-    await held;
-    await db.tx(async (tx) => {
-      await tx.notes.insert({ id: "after", title: "released" });
-    });
-  } finally {
-    await db.close();
-  }
-});
+      {
+        schema: app,
+        routing: { probe: 60_000, consistency: "eventual" },
+        replicaState: caughtUp,
+        timeouts: { acquire: 300 },
+        onRoute(event) {
+          events.push(event);
+        },
+      },
+      async (config) => {
+        const pool = await openPglite({ dataDir: config.dataDir, timeouts: { acquire: 300 } });
+        const stored = Reflect.get(app, "catalog");
+        if (typeof stored !== "object" || stored === null) throw new Error("schema has no catalog");
+        for (const statement of renderCatalog(stored as Catalog, "public")) {
+          await pool.execute(statement);
+        }
+        return pool;
+      },
+    );
+    try {
+      await db.connected;
+      events.length = 0;
+      let release = (): void => undefined;
+      const heldGate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let inserted = false;
+      const held = db.tx(async (tx) => {
+        await tx.notes.insert({ id: "hold", title: "held" });
+        inserted = true;
+        await heldGate;
+      });
+      await poll(async () => inserted);
+      events.length = 0;
+      await db.notes.find({ limit: 1 });
+      expect(events.at(-1)?.endpoint).toBe("east");
+      await expectCode(() => db.tx(async () => undefined), "OKM1846");
+      release();
+      await held;
+      await db.tx(async (tx) => {
+        await tx.notes.insert({ id: "after", title: "released" });
+      });
+    } finally {
+      await db.close();
+    }
+  },
+  { timeout: 30_000 },
+);
 
 serial(
   "tx.affinity",
