@@ -107,6 +107,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - On PGlite, a JS number, bigint, or boolean bound to a column is sent as wire text. A parameter protocol error (`08P01`) is kind `driver`. A closed connection stays `unavailable` (D259).
 - The timestamp conformance statements set the session time zone to UTC, so the wire text does not depend on the server time zone.
 - Bun.sql retries a statement that fails because the socket is already closed, so the query after a backend killed during `.stream()` does not fail once (D260).
+- Bun.sql rejects a wire integer outside the signed int8 range as kind `invalid`, including an id of 2^64. A numeric value written as that integer is refused too (D260).
+- PGlite `connect(pool)` then `close()` marks that client closed. Later calls are `unavailable`. The pool stays open (D260).
 - The timestamp conformance statements set the session time zone to UTC, so the wire text does not depend on the server time zone.
 
 #### tooling

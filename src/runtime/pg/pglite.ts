@@ -2,13 +2,14 @@
  * `connect` for PGlite (`okmodel/pg/pglite`).
  *
  * Opening a database is async. An existing pool is reused and not closed.
+ * Closing that client marks the client closed.
  * A `{ primary, replicas }` object loads the topology module. A replica URL is
  * that endpoint's data directory.
  */
 
 import type { DriverPool } from "../../contracts/driver.js";
 import type { QuerySchema } from "../../dialects/pg/model.js";
-import { open, type PgliteConfig } from "../../adapters/pg/pglite.js";
+import { open, seal, type PgliteConfig } from "../../adapters/pg/pglite.js";
 import { createClient } from "../client.js";
 import type { RoutedClient, TopologyInput, TopologyOptions } from "../topology.js";
 import type { ConnectOptions, Connected } from "../types.js";
@@ -53,13 +54,13 @@ export async function connect<const S extends QuerySchema>(
     return import("../topology.js").then((mod) => mod.default(target, options, open as never));
   }
   const pool = isPool(target)
-    ? target
+    ? seal(target)
     : await open({
         ...(target !== undefined ? { dataDir: target } : {}),
         ...(options.timeouts !== undefined ? { timeouts: options.timeouts } : {}),
       });
   return createClient(options.schema, pool, {
-    ownsPool: !isPool(target),
+    ownsPool: true,
     http: options.errors?.http,
     includeValues: options.errors?.includeValues,
     logger: options.logger,
