@@ -1,54 +1,70 @@
 /**
- * The commit a production site deploy may build.
+ * The commit a production site deploy may publish.
  *
  * A manual run passes a `v*` tag. A run after Release uses that workflow's
  * commit and the tag it was dispatched on. The tag check is
  * {@link releaseRefProblem}: `refs/tags/v` plus the `package.json` version at
  * that commit. A prerelease suffix is refused here and is still accepted by
- * the Release workflow.
+ * the Release workflow. The workflow then moves `refs/heads/release` to that
+ * commit, and the confirm step fetches the origin declared in
+ * `site/lib/site-identity.ts`.
  *
  *   bun ./scripts/deploy-ref.ts
- *   DEPLOY_JSON=vercel-deploy.json DEPLOY_VERSION=0.7.0 bun ./scripts/deploy-ref.ts --confirm
+ *   DEPLOY_VERSION=0.7.0 bun ./scripts/deploy-ref.ts --confirm
  */
 
 import { appendFileSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { parseArgs } from "node:util";
 
 import { releaseRefProblem } from "./release-ref.js";
 import { exitOnProblems } from "./report.js";
+import { repoRoot } from "./root.js";
 
 /** `v` plus `X.Y.Z`, with an optional prerelease or build suffix. */
 const TAG_NAME =
   /^v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 
-/** Pauses before each fetch of the production page. The first try does not wait. */
-export const DEPLOY_FETCH_WAITS_MS = [0, 5_000, 10_000, 15_000, 20_000] as const;
+/**
+ * Pauses before each fetch of the production page.
+ *
+ * The first try does not wait. The later pauses grow from 10 seconds to 60
+ * seconds and then stay at 60 seconds. Their sum stays inside
+ * {@link DEPLOY_FETCH_BUDGET_MS}.
+ */
+export const DEPLOY_FETCH_WAITS_MS = [
+  0, 10_000, 20_000, 30_000, 40_000, 50_000, 60_000, 60_000, 60_000, 60_000, 60_000, 60_000, 60_000,
+  60_000, 60_000,
+] as const;
 
-/** Sleep between fetches never exceeds this. */
-export const DEPLOY_FETCH_BUDGET_MS = 60_000;
+/** Twelve minutes. A production build is allowed this long to show the version. */
+export const DEPLOY_FETCH_BUDGET_MS = 12 * 60 * 1000;
 
 /** How long one fetch may take. */
 const FETCH_TIMEOUT_MS = 15_000;
 
-/** A Release run is production. A manual run may rehearse on preview. */
-export type DeployTarget = "production" | "preview";
+/** The default origin written beside `SITE_ORIGIN` in `site/lib/site-identity.ts`. */
+const DECLARED_ORIGIN =
+  /export const SITE_ORIGIN = \(\s*process\.env\.SITE_ORIGIN \?\? "(https:\/\/[^"]+)"/;
 
 /**
- * Vercel commands for one target.
+ * The production origin `site/lib/site-identity.ts` declares.
  *
- * Preview does not pass `--prod` and does not fetch the page. The production
- * alias is only assigned for `production`.
+ * The site module stays out of this script. The confirm step reads that
+ * declaration so the URL is not copied here.
+ *
+ * @param source - Contents of `site/lib/site-identity.ts`
+ * @returns The default origin, with no trailing slash
  */
-export type VercelDeployPlan = {
-  /** `production` or `preview`. */
-  readonly target: DeployTarget;
-  /** `vercel pull --environment`. */
-  readonly environment: DeployTarget;
-  /** `--prod` for production. Empty for a preview rehearsal. */
-  readonly prodFlag: "--prod" | "";
-  /** Production checks the live page. Preview only prints the deployment URL. */
-  readonly confirm: boolean;
-};
+export function declaredSiteOrigin(source: string): string {
+  const origin = DECLARED_ORIGIN.exec(source)?.[1];
+  if (origin === undefined) {
+    throw new Error(
+      "site/lib/site-identity.ts does not declare a default https origin for SITE_ORIGIN.",
+    );
+  }
+  return origin.replace(/\/$/, "");
+}
 
 /**
  * The GitHub event the deploy workflow is resolving.
@@ -99,41 +115,6 @@ export function resolveDeployTag(event: DeployEvent): DeployText {
   }
   const shown = event.eventName.length === 0 ? "(unset)" : event.eventName;
   return { ok: false, problem: `Refusing to deploy from event ${shown}.` };
-}
-
-/**
- * Where this run deploys.
- *
- * `workflow_run` is production and ignores `input`. A manual run defaults to
- * production. `preview` is a rehearsal and does not alias the production domain.
- *
- * @param eventName - `workflow_dispatch` or `workflow_run`
- * @param input - Manual `target` input. Ignored on a Release run
- * @returns `production` or `preview`, or a refusal
- */
-export function resolveDeployTarget(eventName: string, input: string | undefined): DeployText {
-  if (eventName === "workflow_run") return { ok: true, value: "production" };
-  if (eventName !== "workflow_dispatch") {
-    const shown = eventName.length === 0 ? "(unset)" : eventName;
-    return { ok: false, problem: `Refusing to deploy from event ${shown}.` };
-  }
-  const target = (input ?? "").trim();
-  if (target.length === 0 || target === "production") return { ok: true, value: "production" };
-  if (target === "preview") return { ok: true, value: "preview" };
-  return { ok: false, problem: `Refusing target ${target}. Pass production or preview.` };
-}
-
-/**
- * Vercel flags for a resolved target.
- *
- * @param target - `production` or `preview`
- * @returns Environment, the `--prod` flag, and whether to fetch the page
- */
-export function vercelDeployPlan(target: DeployTarget): VercelDeployPlan {
-  if (target === "preview") {
-    return { target, environment: "preview", prodFlag: "", confirm: false };
-  }
-  return { target: "production", environment: "production", prodFlag: "--prod", confirm: true };
 }
 
 /**
@@ -212,42 +193,6 @@ export function pageContainsVersion(body: string, version: string): boolean {
 }
 
 /**
- * The production URL from `vercel deploy --json`.
- *
- * Accepts the non-interactive wrapper (`status` plus `deployment`) and the
- * bare deployment object. A production deploy with no alias is a refusal.
- *
- * @param value - Parsed deploy JSON
- * @returns The `https` production URL, or a refusal
- */
-export function productionUrlFromDeployOutput(value: unknown): DeployText {
-  const deployment = deploymentOf(value);
-  if (!deployment.ok) return deployment;
-  const production = httpsUrl(deployment.value.productionUrl);
-  if (production !== undefined) return { ok: true, value: production };
-  const deploymentUrl = httpsUrl(deployment.value.url);
-  const where = deploymentUrl === undefined ? "" : ` The deployment URL was ${deploymentUrl}.`;
-  return { ok: false, problem: `Vercel did not return a production URL.${where}` };
-}
-
-/**
- * The deployment URL from `vercel deploy --json`.
- *
- * This is the unique deployment, not the production alias. A preview rehearsal
- * prints it and does not fetch it.
- *
- * @param value - Parsed deploy JSON
- * @returns The `https` deployment URL, or a refusal
- */
-export function deploymentUrlFromDeployOutput(value: unknown): DeployText {
-  const deployment = deploymentOf(value);
-  if (!deployment.ok) return deployment;
-  const url = httpsUrl(deployment.value.url);
-  if (url !== undefined) return { ok: true, value: url };
-  return { ok: false, problem: "Vercel did not return a deployment URL." };
-}
-
-/**
  * Fetches the production page until it contains `version`, or the wait budget ends.
  *
  * @param url - Production URL
@@ -286,29 +231,9 @@ export async function confirmDeployedVersion(
       last = error instanceof Error ? error.message : String(error);
     }
   }
-  throw new Error(`${last} Waited ${String(waited)} ms.`);
-}
-
-/**
- * The deployment object, or a refusal when the CLI reported an error.
- *
- * @param value - Parsed deploy JSON
- * @returns The deployment record, or a refusal
- */
-function deploymentOf(
-  value: unknown,
-):
-  | { readonly ok: true; readonly value: Record<string, unknown> }
-  | { readonly ok: false; readonly problem: string } {
-  if (!isRecord(value)) {
-    return { ok: false, problem: "Vercel deploy output is not JSON." };
-  }
-  const status = value.status;
-  if (status === "error" || status === "action_required") {
-    const message = typeof value.message === "string" ? value.message : "Vercel deploy failed.";
-    return { ok: false, problem: message };
-  }
-  return { ok: true, value: isRecord(value.deployment) ? value.deployment : value };
+  throw new Error(
+    `${last} The production site did not show ${version} within ${String(budget)} ms. Waited ${String(waited)} ms.`,
+  );
 }
 
 function tagResult(raw: string): DeployText {
@@ -320,13 +245,6 @@ function tagResult(raw: string): DeployText {
     };
   }
   return { ok: true, value: tag };
-}
-
-function httpsUrl(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim();
-  if (!/^https:\/\/\S+$/.test(trimmed)) return undefined;
-  return trimmed;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -401,7 +319,7 @@ function writeOutput(lines: readonly string[]): void {
 }
 
 /**
- * Resolves the release commit and writes `sha`, `tag`, `version`, and the Vercel target.
+ * Resolves the release commit and writes `sha`, `tag`, and `version`.
  */
 function resolveDeploy(): void {
   const eventName = process.env.DEPLOY_EVENT ?? "";
@@ -433,65 +351,23 @@ function resolveDeploy(): void {
   const version = versionAtCommit(sha);
   const problems = deployRefProblems(tag, version);
   exitOnProblems([...problems]);
-  const target = resolveDeployTarget(eventName, process.env.DEPLOY_TARGET);
-  if (!target.ok) {
-    exitOnProblems([target.problem]);
-    return;
-  }
-  const plan = vercelDeployPlan(target.value === "preview" ? "preview" : "production");
-  writeOutput([
-    `sha=${sha}`,
-    `tag=${tag}`,
-    `version=${version}`,
-    `target=${plan.target}`,
-    `environment=${plan.environment}`,
-    `prod_flag=${plan.prodFlag}`,
-    `confirm=${plan.confirm ? "true" : "false"}`,
-  ]);
-  console.log(`${tag} (${version}) at ${sha} → ${plan.target}`);
+  writeOutput([`sha=${sha}`, `tag=${tag}`, `version=${version}`]);
+  console.log(`${tag} (${version}) at ${sha}`);
 }
 
 /**
- * Prints the production URL and fails when the page does not contain the version.
+ * Fetches the production origin until the page contains `DEPLOY_VERSION`.
  */
 async function confirmDeploy(): Promise<void> {
   const version = process.env.DEPLOY_VERSION ?? "";
   if (version.length === 0) throw new Error("DEPLOY_VERSION is unset.");
-  const url = productionUrlFromDeployOutput(readDeployJson());
-  if (!url.ok) throw new Error(url.problem);
-  await confirmDeployedVersion(url.value, version, {
+  const source = readFileSync(join(repoRoot(), "site/lib/site-identity.ts"), "utf8");
+  const origin = declaredSiteOrigin(source);
+  await confirmDeployedVersion(origin, version, {
     fetchPage: fetchPage,
     sleep: (ms) => Bun.sleep(ms),
   });
-  console.log(`Deployed ${url.value} at ${version}`);
-}
-
-/**
- * Prints the preview deployment URL. Does not fetch it.
- */
-function printPreviewUrl(): void {
-  const url = deploymentUrlFromDeployOutput(readDeployJson());
-  if (!url.ok) throw new Error(url.problem);
-  console.log(url.value);
-}
-
-/**
- * Parsed `vercel deploy --json` output.
- *
- * @returns The JSON value
- */
-function readDeployJson(): unknown {
-  const jsonPath = process.env.DEPLOY_JSON ?? "";
-  if (jsonPath.length === 0) throw new Error("DEPLOY_JSON is unset.");
-  const raw = readFileSync(jsonPath, "utf8");
-  try {
-    return JSON.parse(raw) as unknown;
-  } catch {
-    const start = raw.indexOf("{");
-    const end = raw.lastIndexOf("}");
-    if (start < 0 || end <= start) throw new Error("Vercel deploy output is not JSON.");
-    return JSON.parse(raw.slice(start, end + 1)) as unknown;
-  }
+  console.log(`Deployed ${origin} at ${version}`);
 }
 
 /**
@@ -512,14 +388,10 @@ if (import.meta.main) {
   const { values } = parseArgs({
     options: {
       confirm: { type: "boolean", default: false },
-      "preview-url": { type: "boolean", default: false },
     },
   });
   try {
-    if (values.confirm && values["preview-url"]) {
-      exitOnProblems(["Pass only one of --confirm and --preview-url."]);
-    } else if (values.confirm) await confirmDeploy();
-    else if (values["preview-url"]) printPreviewUrl();
+    if (values.confirm) await confirmDeploy();
     else resolveDeploy();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

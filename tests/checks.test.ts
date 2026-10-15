@@ -16,15 +16,12 @@ import {
   DEPLOY_FETCH_BUDGET_MS,
   DEPLOY_FETCH_WAITS_MS,
   confirmDeployedVersion,
+  declaredSiteOrigin,
   deployRefProblems,
   pageContainsVersion,
   prereleaseProblem,
-  deploymentUrlFromDeployOutput,
-  productionUrlFromDeployOutput,
   resolveDeployTag,
-  resolveDeployTarget,
   tagCommitProblem,
-  vercelDeployPlan,
 } from "../scripts/deploy-ref.js";
 import { releaseRefProblem } from "../scripts/release-ref.js";
 import { checkLayers } from "../scripts/layers-check.js";
@@ -551,14 +548,26 @@ test("a site deploy accepts a release tag and refuses a prerelease", () => {
   expect(tagCommitProblem("v0.7.0", "a".repeat(40), undefined)).toBeUndefined();
 });
 
+test("the confirm step reads the origin site-identity declares", () => {
+  const identity = readFileSync(join(root, "site/lib/site-identity.ts"), "utf8");
+  expect(declaredSiteOrigin(identity)).toBe("https://okm.omqkhafi.dev");
+  expect(() => declaredSiteOrigin('export const SITE_NAME = "OKModel";')).toThrow(
+    /does not declare a default https origin/,
+  );
+});
+
 test("the deployed page must contain the release version, not a prerelease that starts with it", () => {
   expect(pageContainsVersion("<span>v0.7.0</span>", "0.7.0")).toBe(true);
   expect(pageContainsVersion("v0.7.0-next.106", "0.7.0")).toBe(false);
   expect(pageContainsVersion("0.6.0", "0.7.0")).toBe(false);
   expect(pageContainsVersion("v0.7.0", "")).toBe(false);
   const waits = DEPLOY_FETCH_WAITS_MS.reduce<number>((sum, wait) => sum + wait, 0);
+  expect(DEPLOY_FETCH_WAITS_MS[0]).toBe(0);
+  expect(DEPLOY_FETCH_WAITS_MS[1]).toBe(10_000);
+  expect(DEPLOY_FETCH_WAITS_MS.at(-1)).toBe(60_000);
+  expect(DEPLOY_FETCH_BUDGET_MS).toBe(12 * 60 * 1000);
   expect(waits).toBeLessThanOrEqual(DEPLOY_FETCH_BUDGET_MS);
-  expect(waits).toBe(50_000);
+  expect(waits).toBe(690_000);
 });
 
 test("deploy confirm retries until the page shows the release version and stays inside the budget", async () => {
@@ -575,7 +584,7 @@ test("deploy confirm retries until the page shows the release version and stays 
     },
   });
   expect(seen).toEqual(["https://okm.example", "https://okm.example"]);
-  expect(slept).toBe(5_000);
+  expect(slept).toBe(10_000);
 
   slept = 0;
   let refused = false;
@@ -589,10 +598,13 @@ test("deploy confirm retries until the page shows the release version and stays 
   } catch (error) {
     refused = true;
     expect(error).toBeInstanceOf(Error);
-    if (error instanceof Error) expect(error.message).toMatch(/does not contain 0\.7\.0/);
+    if (error instanceof Error) {
+      expect(error.message).toMatch(/does not contain 0\.7\.0/);
+      expect(error.message).toMatch(/did not show 0\.7\.0/);
+    }
   }
   expect(refused).toBe(true);
-  expect(slept).toBe(50_000);
+  expect(slept).toBe(690_000);
   expect(slept).toBeLessThanOrEqual(DEPLOY_FETCH_BUDGET_MS);
 
   let blocked = false;
@@ -607,85 +619,4 @@ test("deploy confirm retries until the page shows the release version and stays 
     if (error instanceof Error) expect(error.message).toMatch(/must be https/);
   }
   expect(blocked).toBe(true);
-});
-
-test("a manual preview is the only target that is not production", () => {
-  expect(resolveDeployTarget("workflow_run", "preview")).toEqual({
-    ok: true,
-    value: "production",
-  });
-  expect(resolveDeployTarget("workflow_run", "staging")).toEqual({
-    ok: true,
-    value: "production",
-  });
-  expect(resolveDeployTarget("workflow_dispatch", undefined)).toEqual({
-    ok: true,
-    value: "production",
-  });
-  expect(resolveDeployTarget("workflow_dispatch", "production")).toEqual({
-    ok: true,
-    value: "production",
-  });
-  expect(resolveDeployTarget("workflow_dispatch", "preview")).toEqual({
-    ok: true,
-    value: "preview",
-  });
-  expect(resolveDeployTarget("workflow_dispatch", "staging")).toEqual({
-    ok: false,
-    problem: "Refusing target staging. Pass production or preview.",
-  });
-  expect(resolveDeployTarget("push", "preview").ok).toBe(false);
-  expect(vercelDeployPlan("production")).toEqual({
-    target: "production",
-    environment: "production",
-    prodFlag: "--prod",
-    confirm: true,
-  });
-  expect(vercelDeployPlan("preview")).toEqual({
-    target: "preview",
-    environment: "preview",
-    prodFlag: "",
-    confirm: false,
-  });
-});
-
-test("vercel deploy json yields the production URL", () => {
-  expect(
-    productionUrlFromDeployOutput({
-      status: "ok",
-      deployment: {
-        url: "https://okmodel-abc.vercel.app",
-        productionUrl: "https://okm.omqkhafi.dev",
-        target: "production",
-      },
-    }),
-  ).toEqual({ ok: true, value: "https://okm.omqkhafi.dev" });
-  expect(
-    productionUrlFromDeployOutput({
-      status: "ok",
-      deployment: {
-        url: "https://okmodel-abc.vercel.app",
-        productionUrl: null,
-        target: "production",
-      },
-    }),
-  ).toEqual({
-    ok: false,
-    problem:
-      "Vercel did not return a production URL. The deployment URL was https://okmodel-abc.vercel.app.",
-  });
-  expect(productionUrlFromDeployOutput({ status: "error", message: "no token" })).toEqual({
-    ok: false,
-    problem: "no token",
-  });
-  expect(
-    deploymentUrlFromDeployOutput({
-      status: "ok",
-      deployment: { url: "https://okmodel-abc.vercel.app", productionUrl: null, target: null },
-    }),
-  ).toEqual({ ok: true, value: "https://okmodel-abc.vercel.app" });
-  expect(deploymentUrlFromDeployOutput({ status: "error", message: "no token" })).toEqual({
-    ok: false,
-    problem: "no token",
-  });
 });

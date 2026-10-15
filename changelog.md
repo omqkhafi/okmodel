@@ -151,6 +151,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The size gates for the featureless app and the connect entries measure the static startup graph. Dynamic import targets are empty modules in that build (D248).
 - The docs site has no sync step. `site/content/docs` is the handbook and is checked in. Each page carries its title and description in frontmatter, and each folder's `meta.json` sets the sidebar order. `site/handbook`, `scripts/sync-docs.ts`, and `lib/docs-map.ts` are removed. The site check now verifies that every page is listed in its `meta.json`.
 - The docs site deploys to production only after a release is published. A push to `main` no longer updates the public site, so the site shows the published version.
+- The docs site publishes when the workflow moves the `release` branch to the release commit. Vercel builds that branch. The workflow no longer calls the Vercel CLI, and the repository no longer needs `VERCEL_TOKEN`, `VERCEL_ORG_ID`, or `VERCEL_PROJECT_ID`.
 
 #### docs
 
