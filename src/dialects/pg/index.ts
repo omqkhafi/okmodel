@@ -102,6 +102,7 @@ export { or } from "./ops/or.js";
 export { overlaps } from "./ops/overlaps.js";
 export { path } from "./ops/path.js";
 export { startsWith } from "./ops/startsWith.js";
+export { fragment, ident, type Fragment } from "./ops/fragment.js";
 export {
   many,
   manyThrough,

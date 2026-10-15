@@ -942,6 +942,23 @@ await scoped.tasks.find({ ...q, limit: 50 });
 
 Relations are filterable only when listed with the exact fields allowed (`relations: { list: ["name"] }`), which serves admin panels without opening arbitrary traversal. `parse` turns `{ list: { name: { startsWith: "Work" } } }` into `has`. A field that is not in that list is OKM1123. Hidden fields can never be allowlisted: `filters()` throws OKM1123 when it is called (at module load, not per request). `filters()` is synchronous and cheap; `parse()` is asynchronous because the parser loads on first use (D161, D233).
 
+### 10.3 Composed fragments
+
+`fragment` is the composed `sql` fragment on the escape ladder (rule 15, D266). The check-constraint `sql` tag stays a string builder. A fragment is a tagged operator, compiled on the same lazy path as the other operators. It is a `where` operand on a field, and `.as(name)` puts it in `select` on `find` or `one`. The select value is a number.
+
+```ts no-check="fragment illustration; scoped is defined in the surrounding section"
+import { fragment, ident } from "okmodel/pg";
+
+const open = fragment`${ident("status")} = ${"open"}`;
+const rows = await scoped.notes.find({
+  where: { title: fragment`length(${fragment.column}) > ${3} and ${open}` },
+  select: ["id", fragment`length(${ident("title")})`.as("len")],
+  limit: 20,
+});
+```
+
+A string, number, boolean, or null is a parameter. `ident(name)` is quoted with the planner's identifier quotes; the name is the SQL spelling. `fragment.column` is the where field, already qualified. Another fragment is nested and parenthesized. The literal text cannot include a comment, a semicolon, a `$`, or an unbalanced quote or parenthesis, and an interpolation cannot sit inside quotes (OKM1125). An empty name or a control character in `ident` is OKM1122. The tenant predicate is applied before the fragment and the fragment is parenthesized, so the fragment cannot remove it. `filters()` does not parse a fragment. A select fragment that is not a finite number is OKM1125.
+
 ## 11. Writing
 
 | Method | Rule |
@@ -1503,6 +1520,7 @@ test("today view runs one query", async () => {
 | A dynamic call the driver's capabilities do not allow | runtime | OKM1111 |
 | Unknown field name at runtime, or a hidden field in `where` or `orderBy` | runtime | OKM1120 |
 | Object where a value is expected | runtime | OKM1121 |
+| A composed fragment is empty, unbalanced, or not a number in `select` | runtime | OKM1125 |
 | Cursor used with a different order | runtime | OKM1130 |
 | Composition breaks a core invariant (final safety verification) | runtime | OKM1190 |
 | Multi-statement read requested inside `READ COMMITTED` with no single-statement plan | runtime | OKM1191 (not thrown in 0.2: every read is one statement) |

@@ -22,6 +22,7 @@ import {
   type OperatorName,
 } from "../dialects/pg/operators.js";
 import { fail, installOperatorSql, isRecord, quote, type Sink } from "./plan.js";
+import { emitSqlValue } from "./sql-fragment.js";
 
 /**
  * Compiles one 0.2 operator, or rejects a text operator on the wrong column.
@@ -42,6 +43,10 @@ function emitStructured(
   sink: Sink,
   order?: true,
 ): void {
+  if (name === "sql") {
+    emitSqlValue(ref, value, sink);
+    return;
+  }
   if (name === "contains" || name === "containedBy" || name === "overlaps") {
     emitContainment(column, ref, name, value, sink);
     return;

@@ -9,6 +9,7 @@
 
 import { throwNamed } from "../contracts/error.js";
 import type { ColumnModel, QuerySchema } from "../dialects/pg/model.js";
+import { readSelectFragment, type FragmentPart } from "../dialects/pg/ops/fragment.js";
 import { isWindow, type WindowCall } from "../dialects/pg/ops/window.js";
 import {
   emitLimit,
@@ -28,6 +29,7 @@ import {
   type Sink,
 } from "./plan.js";
 import { refusePrototypeKey } from "./result-name.js";
+import { decodeSqlNumber, emitSqlSelect } from "./sql-fragment.js";
 
 const AS_NUMBER = (wire: string): number => Number(wire);
 const AS_TEXT = (wire: string): string => wire;
@@ -51,7 +53,8 @@ type Parsed = {
 
 type Item =
   | { readonly kind: "column"; readonly column: ColumnModel }
-  | { readonly kind: "window"; readonly window: Parsed };
+  | { readonly kind: "window"; readonly window: Parsed }
+  | { readonly kind: "sql"; readonly as: string; readonly parts: readonly FragmentPart[] };
 
 type Spec = {
   readonly items: readonly Item[];
@@ -92,6 +95,11 @@ function statement(spec: Spec): ReadBuild {
         sink.text(projectExpr(`t.${quote(item.column.sql)}`, item.column.dataType));
         sink.mark(`s:${item.column.field}`);
         outputs?.fields.push({ key: item.column.field, at: column, decode: item.column.decode });
+      } else if (item.kind === "sql") {
+        emitSqlSelect(item.parts, sink, "t");
+        sink.text("::text");
+        sink.mark(`s:${item.as}`);
+        outputs?.fields.push({ key: item.as, at: column, decode: decodeSqlNumber });
       } else {
         emitWindow(table, item.window, sink);
         sink.text("::text");
@@ -228,6 +236,21 @@ function readSpec(table: Indexed, select: unknown): Spec {
       const column = columnOn(table, entry, "select");
       names.add(column.field);
       items.push({ kind: "column", column });
+      continue;
+    }
+    const sql = readSelectFragment(entry);
+    if (sql !== undefined) {
+      const as = readAs(sql.as, "fragment");
+      if (names.has(as) || table.columns.has(as)) {
+        fail(
+          "OKM1120",
+          `fragment as ${as} clashes with a column of ${table.model.name}.`,
+          "Pick an as name that is not a column.",
+        );
+      }
+      names.add(as);
+      ordinals.set(as, String(items.length + 1));
+      items.push({ kind: "sql", as, parts: sql.parts });
       continue;
     }
     if (!isWindow(entry)) {

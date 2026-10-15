@@ -194,6 +194,13 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     fix: "Use an operator the error lists for that column type. Search needs a column built for search, not a plain text column.",
   },
   {
+    code: "OKM1125",
+    title: "Bad SQL fragment",
+    summary:
+      "A composed fragment is empty, unbalanced, or interpolates a value it cannot bind. A select fragment that is not a number is the same code.",
+    fix: "Interpolate a string, number, boolean, null, ident(name), fragment.column, or another fragment. Keep parentheses and quotes balanced. A select fragment is a numeric expression named with as().",
+  },
+  {
     code: "OKM1130",
     title: "Cursor order",
     summary:
