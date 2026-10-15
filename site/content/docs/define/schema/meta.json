@@ -7,7 +7,7 @@
     "codecs",
     "types",
     "defaults",
-    "requires",
+    "min-postgres",
     "traits",
     "tenancy",
     "validation",

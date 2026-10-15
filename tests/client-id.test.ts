@@ -85,7 +85,7 @@ test("schema defaults.id uuidv4 is a database default and a function is not", ()
   expect(label(client, "id")).toBe("client");
 });
 
-test("uuidv7 below Postgres 18 names defaults.id", () => {
+test("uuidv7 below Postgres 18 names minPostgres", () => {
   let error: OkmError | undefined;
   try {
     schema({
@@ -96,7 +96,7 @@ test("uuidv7 below Postgres 18 names defaults.id", () => {
     if (caught instanceof OkmError) error = caught;
   }
   expect(error?.code).toBe("OKM1812");
-  expect(error?.message).toContain("defaults.id");
+  expect(error?.message).toContain("minPostgres");
 });
 
 test("adding collation is a plan step", () => {

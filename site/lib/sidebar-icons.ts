@@ -95,7 +95,7 @@ const PATH_ICONS: Readonly<Record<string, LucideIcon>> = {
   "/docs/define/schema/codecs": Binary,
   "/docs/define/schema/types": Type,
   "/docs/define/schema/defaults": Fingerprint,
-  "/docs/define/schema/requires": Database,
+  "/docs/define/schema/min-postgres": Database,
   "/docs/define/schema/traits": Boxes,
   "/docs/define/schema/tenancy": Building,
   "/docs/define/schema/validation": Shield,

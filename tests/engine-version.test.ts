@@ -59,7 +59,7 @@ test("a schema without the default does not ask the server", async () => {
   expect(sent).toEqual([]);
 });
 
-test("a server older than 18 is refused with OKM1812 and both fixes", async () => {
+test("a server older than 18 is refused with OKM1812 and names minPostgres", async () => {
   const error = await caught(() =>
     assertUuidV7Available(connection([], ["170004", null]), [
       migration("0001_init", [step(CREATE)]),
@@ -68,9 +68,10 @@ test("a server older than 18 is refused with OKM1812 and both fixes", async () =
   expect(error.code).toBe("OKM1812");
   expect(error.message).toContain("users.id");
   expect(error.message).toContain("PostgreSQL 17");
+  expect(error.message).toContain("PostgreSQL 18");
+  expect(error.message).toContain("minPostgres");
   expect(error.message).toContain("0001_init");
-  expect(error.fix.summary).toContain("schema({ requires");
-  expect(error.fix.summary).toContain('t.id({ default: "uuidv4" })');
+  expect(error.fix.summary).toContain("minPostgres: 18");
 });
 
 test("PostgreSQL 18, or a uuidv7() function the server already has, is accepted", async () => {

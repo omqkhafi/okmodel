@@ -86,6 +86,8 @@ A generator is `uuidv4`, `uuidv7`, or [OKID](/docs/define/table/columns#okid) (`
 
 #### database
 
+Needs PostgreSQL 18 or higher.
+
 A bare `t.id()` is omitted from insert. Postgres fills `uuidv7()`.
 
 ```ts title="id-insert.ts"

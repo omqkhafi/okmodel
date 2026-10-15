@@ -1,12 +1,14 @@
 /**
  * Engine-version checks `okm migrate apply` runs before the first statement.
  *
- * The only engine-dependent feature in 0.2 is a `uuidv7()` database default,
- * which Postgres has from 18. Nothing here is reachable from `connect()`.
+ * The only engine-dependent feature in 0.2 is a `uuidv7()` database default.
+ * The major it needs is {@link UUIDV7_POSTGRES}. Nothing here is reachable
+ * from `connect()`.
  */
 
 import type { DriverConnection } from "../../contracts/driver.js";
 import { OkmError } from "../../contracts/error.js";
+import { UUIDV7_POSTGRES, uuidv7NeedsPostgres } from "../../dialects/pg/floor.js";
 import type { StoredMigration } from "./files.js";
 
 /** Where a migration sets a `uuidv7()` default. */
@@ -69,18 +71,10 @@ export async function assertUuidV7Available(
   const row = result.rows[0];
   const major = Math.floor(Number(row?.[0] ?? "0") / 10_000);
   const defined = row?.[1] !== null && row?.[1] !== undefined;
-  if (major >= 18 || defined) return;
+  if (major >= UUIDV7_POSTGRES || defined) return;
   const where = found.column === undefined ? "A column" : `Column ${found.column}`;
-  throw new OkmError(
-    "OKM1812",
-    `${where} has a uuidv7() default (migration ${found.migrationId}, step ${String(found.stepIndex)}), and the server is PostgreSQL ${String(major)}. uuidv7() arrives in PostgreSQL 18. Nothing was changed.`,
-    {
-      fix: {
-        summary:
-          'Either run PostgreSQL 18 and declare schema({ requires: { postgres: ">=18" } }), or use t.id({ default: "uuidv4" }) (or schema({ defaults: { id: "uuidv4" } })), which uses gen_random_uuid() and works on PostgreSQL 13 and newer. Then delete the migration that was not applied and generate it again.',
-      },
-    },
-  );
+  const message = `${where} has a uuidv7() default (migration ${found.migrationId}, step ${String(found.stepIndex)}), and the server is PostgreSQL ${String(major)}. ${uuidv7NeedsPostgres()} Nothing was changed.`;
+  throw new OkmError("OKM1812", message, { fix: { summary: uuidv7NeedsPostgres() } });
 }
 
 function columnOf(sql: string): string | undefined {

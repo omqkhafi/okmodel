@@ -114,7 +114,7 @@ import { tasks } from "./tables/tasks";
 import { countries } from "./tables/countries";
 
 export const appSchema = schema({
-  requires: { postgres: ">=17" },   // minimum database engine
+  minPostgres: 17,                   // oldest major; omitted means 15
   casing: "snake",
   codecs: { bigint: "string", numeric: "string", timestamps: "temporal" },
   traits: [timestamps()],
@@ -152,7 +152,7 @@ await connect({ primary: url, replicas: [r1, r2] }, { schema: appSchema }); // t
 connect(url, { schema: appSchema, tenancy: { registry } });                  // tenant registry, section 9.1 (M5)
 ```
 
-- On connect: the server is PostgreSQL 15 or newer (OKM1803). `schema({ requires })` can name an older major on purpose, and the server must satisfy that range (OKM1802). Dialect match is OKM1801.
+- On connect: the server is PostgreSQL 15 or newer (OKM1803). `minPostgres` is 15, 16, 17, or 18, and the server must satisfy that major (OKM1802). Omitted means 15. `requires: { postgres: ">=17" }` is the same floor and is deprecated. Dialect match is OKM1801.
 - There is no user-facing schema or edition version. The package version is the contract: features exist or not by release, and default changes ship with `okm upgrade` codemods. The catalog format version is internal and lives in `okm.lock.json`.
 - Each `connect()` returns a client typed by its own schema, independent of `Register`.
 
@@ -271,7 +271,7 @@ import { table, t } from "okmodel/sql";   // common subset
 | Layer | Declared by | Checked by |
 |---|---|---|
 | Dialect | import path | types |
-| Engine version | `schema({ requires: { postgres: ">=17" } })` — the minimum gates features in types | types (OKM1110) + connect (OKM1802). In 0.2 nothing is gated in types: the one engine-dependent feature, `uuidv7()` below 18, fails when the schema is built (OKM1812), and OKM1110 is not thrown yet (D183) |
+| Engine version | `minPostgres: 17` — the minimum gates features. Omitted means 15. `requires: { postgres: ">=17" }` is deprecated | types (OKM1110) + connect (OKM1802). In 0.2 nothing is gated in types: the one engine-dependent feature, `uuidv7()` below 18, fails when the schema is built (OKM1812), and OKM1110 is not thrown yet (D183, D261) |
 | Driver | execution capabilities only: `transactions: "interactive" \| "batch"`, `stream`, `listen`, `cancel`, `prepared: "named" \| "unnamed" \| "none"`, `describe`. Atomic `batch` is not a flag: every driver provides it (section 15). `stream` means the driver can open a server cursor. `.stream()` does not read it (section 10, D256) | types (`tx()`, cancellation, and `listen` are absent from the client type when the driver lacks them; a dynamic call fails with an OKM error at runtime). `.stream()` is on every driver |
 
 Dialect and driver are different axes: SQL capabilities (`lateral`, `returning`, `SKIP LOCKED`, generated columns) belong to the dialect and engine version; every driver on one dialect sends the same SQL. Neon over HTTP is `transactions: "batch"` on the same Postgres dialect. Reading WAL positions (`pg_current_wal_insert_lsn()`, `pg_last_wal_replay_lsn()`) is plain SQL, so it is a dialect and engine capability (`replication.position`), not a driver flag.
@@ -317,7 +317,7 @@ find({ where: { name: pgTrgm.similar(q) }, limit: 20 })
 
 TimescaleDB, ParadeDB and pg_partman add catalog objects rather than types and are evaluated after 1.0.
 
-**Version awareness.** Definitions read `requires.postgres` and the declared extension version. A feature the declared versions lack (`halfvec` below pgvector 0.7, `uuidv7()` below Postgres 18) fails at schema build (OKM1812). When `requires` is not declared, `okm migrate apply` and `okm push` check the connected server before the first statement: a migration that sets a `default uuidv7()` on a server below 18 without a `uuidv7()` function stops with OKM1812 and nothing is created (D185). Nothing is checked in `connect()`. Core features are never gated behind an extension.
+**Version awareness.** Definitions read `minPostgres` and the declared extension version. A feature the declared versions lack (`halfvec` below pgvector 0.7, `uuidv7()` below Postgres 18) fails at schema build (OKM1812). The message names the feature, the major it needs, and `minPostgres`. When the floor is omitted, `okm migrate apply` and `okm push` check the connected server before the first statement: a migration that sets a `default uuidv7()` on a server below 18 without a `uuidv7()` function stops with OKM1812 and nothing is created (D185). Nothing is checked in `connect()`. `requires: { postgres: ">=17" }` is the same floor and is deprecated (D261). Core features are never gated behind an extension.
 
 **Lifecycle through migrations.**
 
@@ -647,7 +647,7 @@ import { Temporal } from "temporal-polyfill";
 globalThis.Temporal = Temporal;
 ```
 
-`t.id()` with `uuidv7()` or `uuidv4`, and `t.identity()`, are omitted from insert and update. `t.id({ default: "none" })`, `.primaryKey()`, and a composite `primaryKey` are required on insert (optional when the column already has a default) and omitted from update. A declared `requires` below Postgres 18 rejects `uuidv7()` at schema build (OKM1812) and the message names `defaults.id`; with no `requires`, apply refuses it on a server below 18 (D185), and its fix names `t.id({ default: "uuidv4" })` and `schema({ requires })`.
+`t.id()` with `uuidv7()` or `uuidv4`, and `t.identity()`, are omitted from insert and update. `t.id({ default: "none" })`, `.primaryKey()`, and a composite `primaryKey` are required on insert (optional when the column already has a default) and omitted from update. A declared floor below Postgres 18 rejects `uuidv7()` at schema build (OKM1812). The message is `uuidv7() needs PostgreSQL 18 or higher. minPostgres: 18.` With no floor, apply refuses it on a server below 18 (D185). `requires.postgres` is deprecated (D261).
 
 **Client defaults and id generators (0.2, D153, D154).** `.default(x)` takes a literal or a client generator (`uuidv4`, `uuidv7`, `okid(...)`, or a function): the client fills the field on insert when it is omitted, nothing enters the database catalog or its hash, and the column has no database default, so a writer that bypasses okmodel must supply the value. `.defaultSql(sql)` is the database default. `schema({ tables, defaults: { id } })` sets what a bare `t.id()` means; a per-column option wins; `connect({ generators })` replaces a built-in generator for tests. OKID columns are `text` with `COLLATE "C"` so sortable ids order as time. Builder shape (shipped in P19): `t.id({ default: uuidv4 | uuidv7 | okid({ prefix, sortable, length }) })` fills the id in the application; the strings `"uuidv4"`, `"uuidv7"` and `"none"` stay database defaults (`"none"` is column-only, so the insert type requires that id); `okid` and the other generators come from `okmodel/ids`. A literal passed to `.default()` is a database default, a function is a client generator.
 
@@ -1499,7 +1499,7 @@ test("today view runs one query", async () => {
 | `archive`/`restore` on a non-archivable table (dynamic call) | runtime | OKM1052 |
 | `upsert` target not unique | types | OKM1104 |
 | To-many include without `limit` | types | OKM1105 |
-| Feature needs a newer engine than `requires` allows | types | OKM1110 (not thrown in 0.2; `uuidv7()` is OKM1812) |
+| Feature needs a newer engine than `minPostgres` allows | types | OKM1110 (not thrown in 0.2; `uuidv7()` is OKM1812) |
 | A dynamic call the driver's capabilities do not allow | runtime | OKM1111 |
 | Unknown field name at runtime, or a hidden field in `where` or `orderBy` | runtime | OKM1120 |
 | Object where a value is expected | runtime | OKM1121 |
@@ -1558,8 +1558,8 @@ test("today view runs one query", async () => {
 | RLS with owner, superuser, or BYPASSRLS role | first scoped call | OKM1707 |
 | RLS policy missing, not forced, or not the emitted predicate | first scoped call | OKM1708 |
 | Schema/driver dialect mismatch | types | OKM1801 |
-| Server does not satisfy `requires` | connect | OKM1802 |
-| Server is older than PostgreSQL 15 and `requires` does not name that older major | connect | OKM1803 |
+| Server does not satisfy `minPostgres` | connect | OKM1802 |
+| Server is older than PostgreSQL 15 | connect | OKM1803 |
 | Extension builder used but not declared | build | OKM1810 |
 | Declared extension unavailable on the server | plan / `okm doctor` | OKM1811 |
 | Feature not in the declared versions | build | OKM1812 |

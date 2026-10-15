@@ -26,7 +26,9 @@ const root = repoRoot();
 /** Schema sources. Each exports `app`. */
 const BARE = `schema({ tables: [table("users", { id: t.id(), name: t.text() })] })`;
 const DECLARED = `schema({ requires: { postgres: ">=18" }, tables: [table("users", { id: t.id(), name: t.text() })] })`;
+const DECLARED_NUMBER = `schema({ minPostgres: 18, tables: [table("users", { id: t.id(), name: t.text() })] })`;
 const TOO_LOW = `schema({ requires: { postgres: ">=17" }, tables: [table("users", { id: t.id(), name: t.text() })] })`;
+const TOO_LOW_NUMBER = `schema({ minPostgres: 17, tables: [table("users", { id: t.id(), name: t.text() })] })`;
 const UUIDV4 = `schema({ tables: [table("users", { id: t.id({ default: "uuidv4" }), name: t.text() })] })`;
 const SCHEMA_DEFAULT = `schema({ defaults: { id: "uuidv4" }, tables: [table("users", { id: t.id(), name: t.text() })] })`;
 
@@ -55,7 +57,7 @@ postgresTest(
 
 postgresTest(
   gate,
-  "the error names the column, the version, and both fixes",
+  "the error names the column, the version, and minPostgres",
   async () => {
     await inDatabase(BARE, async ({ cwd, major, sql }) => {
       await run(["generate"], { cwd, stdout: () => undefined });
@@ -70,11 +72,10 @@ postgresTest(
       expect(error.message).toContain("Column users.id has a uuidv7() default");
       expect(error.message).toContain("0001_migration");
       expect(error.message).toContain(`the server is PostgreSQL ${String(major)}`);
-      expect(error.message).toContain("uuidv7() arrives in PostgreSQL 18");
+      expect(error.message).toContain("uuidv7() needs PostgreSQL 18 or higher");
+      expect(error.message).toContain("minPostgres");
       expect(error.message).toContain("Nothing was changed");
-      expect(error.fix.summary).toContain('schema({ requires: { postgres: ">=18" } })');
-      expect(error.fix.summary).toContain('t.id({ default: "uuidv4" })');
-      expect(error.fix.summary).toContain("gen_random_uuid()");
+      expect(error.fix.summary).toContain("minPostgres: 18");
     });
   },
   60_000,
@@ -82,30 +83,38 @@ postgresTest(
 
 postgresTest(
   gate,
-  "requires declared: >=18 stops apply below 18 and connect says OKM1802; >=17 stops at schema build",
+  "both floor forms: 18 stops apply below 18 and connect says OKM1802; 17 stops at schema build",
   async () => {
-    await inDatabase(DECLARED, async ({ cwd, url, major, sql, app }) => {
-      await run(["generate"], { cwd, stdout: () => undefined });
-      if (major >= 18) {
-        await run(["migrate", "apply"], { cwd, stdout: () => undefined });
-        await usesTheDefault(sql);
-        return;
-      }
-      expect((await failure(() => applyIn(cwd))).code).toBe("OKM1812");
-      await expectNothingCreated(sql);
-      const client = connect(url, { schema: app, max: 1 });
-      try {
-        expect((await failure(() => client.connected)).code).toBe("OKM1802");
-      } finally {
-        await client.close();
-      }
-    });
-    await inDatabase(TOO_LOW, async () => undefined, {
-      loadError: (error) => {
-        expect(error).toBeInstanceOf(OkmError);
-        expect((error as OkmError).code).toBe("OKM1812");
-      },
-    });
+    for (const source of [DECLARED, DECLARED_NUMBER]) {
+      await inDatabase(source, async ({ cwd, url, major, sql, app }) => {
+        await run(["generate"], { cwd, stdout: () => undefined });
+        if (major >= 18) {
+          await run(["migrate", "apply"], { cwd, stdout: () => undefined });
+          await usesTheDefault(sql);
+          return;
+        }
+        expect((await failure(() => applyIn(cwd))).code).toBe("OKM1812");
+        await expectNothingCreated(sql);
+        const client = connect(url, { schema: app, max: 1 });
+        try {
+          const connected = await failure(() => client.connected);
+          expect(connected.code).toBe("OKM1802");
+          expect(connected.message).toContain("minPostgres: 18");
+        } finally {
+          await client.close();
+        }
+      });
+    }
+    for (const source of [TOO_LOW, TOO_LOW_NUMBER]) {
+      await inDatabase(source, async () => undefined, {
+        loadError: (error) => {
+          expect(error).toBeInstanceOf(OkmError);
+          expect((error as OkmError).code).toBe("OKM1812");
+          expect((error as OkmError).message).toContain("minPostgres");
+          expect((error as OkmError).message).toContain("PostgreSQL 18");
+        },
+      });
+    }
   },
   60_000,
 );

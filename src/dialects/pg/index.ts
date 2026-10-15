@@ -5,6 +5,7 @@
  * Each builder is a separate export so a bundle can keep only the ones it calls.
  */
 
+export { type PostgresMajor } from "./floor.js";
 export {
   schema,
   type BuiltSchema,

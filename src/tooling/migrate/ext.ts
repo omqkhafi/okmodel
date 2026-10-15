@@ -101,15 +101,30 @@ function formatCheck(
     }
     const want = object.definition.version;
     if (!versionAccepted(want, have)) {
-      throw new OkmError(
-        "OKM1812",
-        `Extension ${name} is ${have} on the server. The schema requires ${want ?? ""}.`,
-        { fix: { summary: "Install a version the declaration accepts, or change the pin." } },
-      );
+      throw new OkmError("OKM1812", extensionNeeds(name, want ?? "", have), {
+        fix: { summary: "Install a version the declaration accepts, or change the pin." },
+      });
     }
     lines.push([name, want ?? "-", have].join("\t"));
   }
   return `${lines.join("\n")}\n`;
+}
+
+/**
+ * Refusal when the installed extension does not meet the pin.
+ *
+ * A `>=` pin says "or higher". An exact pin names that version.
+ *
+ * @param name - Extension name
+ * @param want - Declared pin
+ * @param have - Installed version
+ * @returns OKM1812 message
+ */
+function extensionNeeds(name: string, want: string, have: string): string {
+  const floor = /^>=(\d+(?:\.\d+)*)$/.exec(want);
+  const need = floor?.[1] ?? want;
+  const higher = floor === null ? "" : " or higher";
+  return `Extension ${name} needs ${need}${higher}. The server has ${have}. Install a version the declaration accepts, or change the pin.`;
 }
 
 function versionAccepted(declared: string | undefined, installed: string): boolean {

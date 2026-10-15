@@ -69,6 +69,8 @@ export const notes = table("notes", {
 export default schema({ tables: [notes] });
 ```
 
+The schema's minimum is PostgreSQL 15. Omit `minPostgres` unless you need a newer major. `minPostgres: 18` is how a `uuidv7()` default is declared. `requires: { postgres: ">=18" }` is the same floor and is deprecated.
+
 `okmodel.config.ts`:
 
 ```ts
