@@ -34,6 +34,26 @@ The same run can be started from the GitHub Actions page: open Actions, choose R
 
 Provenance is the npm attestation that GitHub Actions built the tarball. The workflow sets `permissions.id-token` to `write` so npm can attach it.
 
+## Site
+
+The production site changes only after a release is published. A push to `main` does not deploy it. `site/vercel.json` sets `git.deploymentEnabled.main` to false, so the Vercel Git integration skips production for that branch. Pull requests still get preview deployments.
+
+`.github/workflows/deploy-vercel.yml` runs when the Release workflow completes with success. It also runs when someone starts it by hand, from `main`, with a `v*` tag. The commit is the Release run's commit, or the commit that tag points at. The tag must be `v` plus the `package.json` version at that commit, and the version must be a release (`X.Y.Z`). A prerelease is refused. Those checks apply to both targets. A failed Release skips the deploy.
+
+A manual run has `target`. `production` is the default and is what a Release run always does; that path cannot be switched to preview. `preview` is a rehearsal: the CLI pulls the preview environment, builds and deploys without `--prod`, skips the page check, and prints the deployment URL. A preview URL sits behind the Vercel login.
+
+The Vercel project's root directory is `site`. The CLI runs from the checkout root, not from `site/`, because running it inside `site/` makes Vercel look for `site/site`. `bun install` still runs in `site/`. The site reads the repository `package.json` from the parent of `site/`, so Git preview builds need files outside that root included. This workflow builds on the runner, where the whole tag is checked out.
+
+`production` prints the production URL and fails if that page does not contain the version. The check fetches that URL without the token, so the production site has to answer without deployment protection.
+
+Before the first release, run the workflow by hand from main with target=preview and an existing stable tag (for example v0.6.0). It never changes the production site.
+
+Three repository secrets. The workflow passes them through the environment and does not print them. No values belong in the repository:
+
+- `VERCEL_TOKEN`
+- `VERCEL_ORG_ID`
+- `VERCEL_PROJECT_ID`
+
 ## Dry run
 
 Before the tag, from the commit you are about to tag:
