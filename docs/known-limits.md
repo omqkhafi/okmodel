@@ -164,6 +164,10 @@ Bun.sql keeps `idleTimeout` at 0, which is Bun's default (no idle timer). A fini
 - **`versioned()` does not cover delete, archive, or restore (D254).** An update checks the version you read and bumps it. `delete`, `archive`, and `restore` do not. An upsert (`onConflict` update) is OKM1120. `.all()` is OKM1120. Omitting `version` is OKM1120. `version` on a table that is not `versioned()` is OKM1120. A path-tenancy parent column cannot change in the same update as the version check.
 - **`sortable()` keeps a dense integer position (D254).** A move is O(n) per group: it rewrites every row in the group. Fractional keys are not used. `one()` is not reordered onto `position`. `via()` is OKM1060. Naming the group column in `set` is OKM1120, including when the value is the one already stored. A delete leaves a gap until the next `move`. Adding `position` to a table that already has rows is `add-column-required`. A position that is already negative is flipped by the next move in that group. The group's advisory lock is its own statement. The max, and a move's renumber, run in the next statement, after that lock is held.
 
+## Observability
+
+- **`okmodel/otel` uses the observers that already exist (D267).** `onRoute` becomes a span that starts and ends in that call, so it has no duration. `db.query.summary` is the fingerprint, and it is set from `inspect()`, because the route event does not carry one. Statement text is off unless `statement: true`. Parameters are never attributes. A tenant id is not an attribute. `onError` is an error the caller does not receive, such as `afterCommit`. A query that throws to the caller is not that event.
+
 ## What works
 
 `.hidden()` stays out of default selects and includes. `.sensitive()` redacts values in logs, errors, and `inspect()`. `one()`, `many()`, `manyThrough()`, `morph()`, and `morphMany()` work. A relation value that is not one of those throws OKM1061.

@@ -1496,5 +1496,39 @@
       "name": "view",
       "kind": "stable"
     }
+  ],
+  "okmodel/otel": [
+    {
+      "name": "OtelAttribute",
+      "kind": "experimental"
+    },
+    {
+      "name": "OtelObservers",
+      "kind": "experimental"
+    },
+    {
+      "name": "OtelOptions",
+      "kind": "experimental"
+    },
+    {
+      "name": "OtelSpan",
+      "kind": "experimental"
+    },
+    {
+      "name": "OtelSpanOptions",
+      "kind": "experimental"
+    },
+    {
+      "name": "OtelStatusCode",
+      "kind": "experimental"
+    },
+    {
+      "name": "OtelTracer",
+      "kind": "experimental"
+    },
+    {
+      "name": "otel",
+      "kind": "experimental"
+    }
   ]
 }

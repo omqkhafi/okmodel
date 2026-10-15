@@ -56,3 +56,5 @@ export const db = connect(process.env.DATABASE_URL!, {
 ### onError
 
 `error` is `unknown`. An `afterCommit` callback is one case. That error is reported to `onError` and never changes the commit result.
+
+[OpenTelemetry](/docs/define/connect/otel) turns these observers, and `onRoute`, into spans.

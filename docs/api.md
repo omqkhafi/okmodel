@@ -15,3 +15,5 @@ Stable exports are the application API this release commits to. Experimental exp
 `okmodel/migrate` exports `defineConfig`, `MigrateConfig`, and `TargetInput`. The CLI imports the planning and apply helpers from the package. Those helpers are not exports.
 
 `okmodel/testing` exports `testing`. It opens a real driver pool and returns factories, `expectQueries`, and `isolation`. See [testing](testing.md).
+
+`okmodel/otel` is experimental. It exports `otel`. You pass a tracer. The package does not import OpenTelemetry. Spans use the `db.*` attributes. `db.query.summary` is the fingerprint from `inspect()`. Statement text stays off unless you set `statement: true`. Parameters and tenant ids are not attributes.
