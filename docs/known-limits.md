@@ -166,7 +166,7 @@ Bun.sql keeps `idleTimeout` at 0, which is Bun's default (no idle timer). A fini
 
 ## Observability
 
-- **`okmodel/otel` uses the observers that already exist (D267).** `onRoute` becomes a span that starts and ends in that call, so it has no duration. `db.query.summary` is the fingerprint, and it is set from `inspect()`, because the route event does not carry one. Statement text is off unless `statement: true`. Parameters are never attributes. A tenant id is not an attribute. `onError` is an error the caller does not receive, such as `afterCommit`. A query that throws to the caller is not that event.
+- **`okmodel/otel` uses the observers that already exist (D267).** `onRoute` becomes a span that starts and ends in that call, so it has no duration. `db.query.summary` is the fingerprint, and it is set from `inspect()`, because the route event does not carry one. Statement text is off unless `statement: true`. Parameters are never attributes. A tenant id is not an attribute. `onError` is an error the caller does not receive, such as `afterCommit`. A query that throws to the caller is not that event. The exception is the error name and the OKM code when the error has one, with no message and no stack. Overlapping top-level transactions pair spans last-in, first-out because the transaction event has no id, and a rollback can be marked on the wrong span.
 
 ## What works
 

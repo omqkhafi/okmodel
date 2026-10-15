@@ -6,7 +6,9 @@
 
 import { expect, test } from "bun:test";
 
+import { DriverError } from "../src/adapters/error.js";
 import { open } from "../src/adapters/pg/pglite.js";
+import { OkmError } from "../src/contracts/error.js";
 import type { Catalog } from "../src/contracts/catalog/types.js";
 import { renderCatalog } from "../src/dialects/pg/ddl.js";
 import { schema, t, table } from "../src/dialects/pg/index.js";
@@ -34,6 +36,14 @@ type Seen = {
   status: number | undefined;
   readonly events: { readonly name: string; readonly attributes: Record<string, OtelAttribute> }[];
   exception: boolean;
+  recorded:
+    | {
+        readonly name?: string;
+        readonly code?: string;
+        readonly message?: string;
+        readonly stack?: string;
+      }
+    | undefined;
   ended: boolean;
 };
 
@@ -134,6 +144,35 @@ test("an afterCommit error is an error span", async () => {
   }
 }, 15_000);
 
+test("an error span keeps the name and the OKM code, and drops the message and the stack", () => {
+  const seen = recorder();
+  const tracing = otel({ tracer: seen.tracer });
+  const secret = "ada@example.com";
+  tracing.hookm.onError?.(
+    new DriverError(`Key (email)=(${secret}) already exists.`, {
+      sqlstate: "23505",
+      detail: `Key (email)=(${secret}) already exists.`,
+    }),
+  );
+  const driver = seen.spans.find((span) => span.name === "error");
+  expect(driver?.attributes["error.type"]).toBe("DriverError");
+  expect(driver?.attributes["error.code"]).toBeUndefined();
+  expect(driver?.recorded).toEqual({ name: "DriverError" });
+  expect(driver?.recorded).not.toHaveProperty("message");
+  expect(driver?.recorded).not.toHaveProperty("stack");
+  expect(JSON.stringify(driver?.recorded)).not.toContain(secret);
+
+  seen.spans.length = 0;
+  tracing.hookm.onError?.(new OkmError("OKM1120", `rejected ${secret}`));
+  const okm = seen.spans[0];
+  expect(okm?.attributes["error.type"]).toBe("OkmError");
+  expect(okm?.attributes["error.code"]).toBeUndefined();
+  expect(okm?.recorded).toEqual({ name: "OkmError", code: "OKM1120" });
+  expect(okm?.recorded).not.toHaveProperty("message");
+  expect(okm?.recorded).not.toHaveProperty("stack");
+  expect(JSON.stringify(okm?.recorded)).not.toContain(secret);
+});
+
 test("a transaction span ends when the transaction commits", async () => {
   const seen = recorder();
   const tracing = otel({ tracer: seen.tracer });
@@ -187,6 +226,7 @@ function recorder(): { readonly tracer: OtelTracer; readonly spans: Seen[] } {
         status: undefined,
         events: [],
         exception: false,
+        recorded: undefined,
         ended: false,
       };
       spans.push(seen);
@@ -197,8 +237,9 @@ function recorder(): { readonly tracer: OtelTracer; readonly spans: Seen[] } {
         setStatus(status) {
           seen.status = status.code;
         },
-        recordException() {
+        recordException(exception) {
           seen.exception = true;
+          seen.recorded = exception;
         },
         addEvent(eventName, attributes) {
           seen.events.push({ name: eventName, attributes: { ...attributes } });

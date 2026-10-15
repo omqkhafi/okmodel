@@ -29,7 +29,7 @@ Every span sets `db.system.name` to `postgresql`. The span kind is client.
 
 Statement text is off. `statement: true` sets `db.query.text` from that inspection. Parameters are never attributes. A tenant id is not an attribute.
 
-`onError` is an error the caller does not receive, such as one thrown from `afterCommit`. A query that throws to the caller is not that event.
+`onError` is an error the caller does not receive, such as one thrown from `afterCommit`. A query that throws to the caller is not that event. The exception is the error name and the OKM code when the error has one, with no message and no stack.
 
 ```ts title="db.ts"
 import { connect } from "okmodel/pg/postgresjs";

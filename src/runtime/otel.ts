@@ -30,8 +30,13 @@ export interface OtelSpan {
   setAttribute(key: string, value: OtelAttribute): void;
   /** Sets the span status. `message` is never sent. */
   setStatus(status: { readonly code: OtelStatusCode }): void;
-  /** Records an exception. The message is the tracer's concern. */
-  recordException(exception: unknown): void;
+  /**
+   * Records an exception.
+   *
+   * `name` is the error name. `code` is an OKM code when the error has one.
+   * Message and stack are omitted.
+   */
+  recordException(exception: { readonly name: string; readonly code?: string }): void;
   /** Adds a span event. */
   addEvent(name: string, attributes?: Readonly<Record<string, OtelAttribute>>): void;
   /** Ends the span. */
@@ -154,7 +159,7 @@ export function otel(options: OtelOptions): OtelObservers {
         "db.system.name": SYSTEM,
         "error.type": errorType(error),
       });
-      span.recordException(error);
+      span.recordException(recordedException(error));
       span.setStatus({ code: STATUS_ERROR });
       span.end();
     },
@@ -223,4 +228,28 @@ function latest(open: readonly OpenTx[], depth: number): number {
  */
 function errorType(error: unknown): string {
   return error instanceof Error && error.name.length > 0 ? error.name : "error";
+}
+
+/**
+ * Name, and an OKM code when the error has one.
+ *
+ * The message and the stack stay off. A driver message can name a key and a value.
+ *
+ * @param error - What `onError` received
+ */
+function recordedException(error: unknown): { readonly name: string; readonly code?: string } {
+  const name = errorType(error);
+  const code = okmCode(error);
+  return code === undefined ? { name } : { name, code };
+}
+
+/**
+ * The OKM code on `error`, when that property is one.
+ *
+ * @param error - What `onError` received
+ */
+function okmCode(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null || !("code" in error)) return undefined;
+  const code = error.code;
+  return typeof code === "string" && /^OKM\d+$/.test(code) ? code : undefined;
 }

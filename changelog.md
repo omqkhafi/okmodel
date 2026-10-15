@@ -22,7 +22,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### runtime
 
-- `okmodel/otel` turns `hookm`, `onRoute`, and `inspect()` into OpenTelemetry `db.*` spans. You pass the tracer. Statement text stays off unless `statement: true`. Parameters and a tenant id are not recorded (D267).
+- `okmodel/otel` turns `hookm`, `onRoute`, and `inspect()` into OpenTelemetry `db.*` spans. You pass the tracer. Statement text stays off unless `statement: true`. Parameters and a tenant id are not recorded. An error span records the error name and an OKM code, and leaves out the message and the stack (D267).
 
 #### docs
 
