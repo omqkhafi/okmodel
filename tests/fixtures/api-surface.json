@@ -563,6 +563,10 @@
       "kind": "stable"
     },
     {
+      "name": "Fragment",
+      "kind": "stable"
+    },
+    {
       "name": "IdFlags",
       "kind": "stable"
     },
@@ -783,6 +787,10 @@
       "kind": "stable"
     },
     {
+      "name": "fragment",
+      "kind": "stable"
+    },
+    {
       "name": "gt",
       "kind": "stable"
     },
@@ -804,6 +812,10 @@
     },
     {
       "name": "id",
+      "kind": "stable"
+    },
+    {
+      "name": "ident",
       "kind": "stable"
     },
     {
