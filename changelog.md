@@ -137,6 +137,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### docs
 
+- The docs site uses IBM Plex Sans.
 - The site header shows the OKM wordmark. The home link is named OKModel.
 - The header wordmark is one step smaller. The theme control uses the Lucide moon and sun.
 - The home page hero reads "Edit your schema. Get a safe migration." with a pitch for the migration, lint, and types the stage shows. The package description is unchanged.
