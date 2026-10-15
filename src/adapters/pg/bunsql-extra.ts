@@ -1,11 +1,13 @@
 /**
  * Reserved connections for Bun.sql.
  *
- * Loaded on the first reserve, batch, or stream. A read does not use it.
+ * Loaded on the first reserve, batch, stream, or dead connection. A read that
+ * succeeds does not use it.
  */
 
 import type { ReservedSQL, SQL } from "bun";
 
+import { isConnectionFailure } from "../../contracts/connection.js";
 import type { DriverConnection, WireValue } from "../../contracts/driver.js";
 import { DriverError } from "../error.js";
 import { rejectClosed } from "../failure.js";
@@ -26,28 +28,72 @@ import { WireSession } from "./session.js";
  * @returns A connection the caller must release
  */
 /**
- * Runs `again` when `error` is a socket Bun has already closed.
+ * Drops a dead pooled socket, then runs `again` once when that is safe.
  *
- * A socket Bun has already closed fails the next statement with
- * "Connection closed". The attempt after that opens a new socket. A statement
- * the server terminates (`57P01`) is not retried: that query was in flight.
- * Any other error is rethrown.
+ * A `57P01` or a socket Bun has already closed is evicted before another
+ * statement can take it. A client read is tried once more when `depth` is 0.
+ * A raw pool retries only when the socket had already closed, or Bun rejected
+ * the statement before the server saw it, so a query killed while it was
+ * running is not started again. `again` does not pass through `recover`.
  *
+ * @param sql - The pool
  * @param error - The failure from the first attempt
- * @param again - The same statement
- * @returns The retried result
+ * @param text - Statement text, used to decide the retry
+ * @param depth - Open transaction depth. Above zero, an earlier command was sent
+ * @param clientRead - The pool was opened for a client, which retries a read once
+ * @param closedDuring - `onclose` ran after this statement was sent
+ * @param again - The same statement, on whatever connection the pool hands out next
+ * @returns The retried result, or a rejection of `error`
  */
-export async function reopen<T>(error: unknown, again: () => Promise<T>): Promise<T> {
-  if (!socketClosed(error)) throw error;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      return await again();
-    } catch (next) {
-      error = next;
-      if (!socketClosed(next) || attempt === 1) throw next;
-    }
+export async function recover<T>(
+  sql: SQL,
+  error: unknown,
+  text: string,
+  depth: number,
+  clientRead: boolean,
+  closedDuring: boolean,
+  again: () => Promise<T>,
+): Promise<T> {
+  if (!lostQuery(error)) throw error;
+  await flushClosed(sql);
+  const alreadyDead = closedDuring || socketClosed(error);
+  if ((!clientRead && !alreadyDead) || depth !== 0 || !readStatement(text)) throw error;
+  try {
+    return await again();
+  } catch (next) {
+    if (lostQuery(next)) await flushClosed(sql);
+    throw next;
   }
-  throw error;
+}
+
+/**
+ * Spends a closed socket before the caller's statement is sent.
+ *
+ * @param sql - The pool
+ */
+export function drainClosed(sql: SQL): Promise<void> {
+  return flushClosed(sql).then(() => undefined);
+}
+
+/**
+ * A read, under the same classification the topology uses for its one retry.
+ *
+ * Transaction control, writes, and locks are not retried.
+ *
+ * @param text - Statement text
+ * @returns `true` when running the statement again cannot repeat a write
+ */
+function readStatement(text: string): boolean {
+  const head = text.trimStart().toLowerCase().replace(/\s+/g, " ");
+  if (head.length === 0 || head.includes("pg_advisory")) return false;
+  if (/\sfor (?:no key update|key share|update|share)\b/.test(head)) return false;
+  return !/^(?:insert|update|delete|refresh|with|create|alter|drop|truncate|grant|revoke|comment|vacuum|analyze|reindex|copy|begin|start|commit|rollback|savepoint|release|set|reset)\b/.test(
+    head,
+  );
+}
+
+function lostQuery(error: unknown): boolean {
+  return isConnectionFailure(error) || socketClosed(error);
 }
 
 function socketClosed(error: unknown): boolean {
@@ -143,6 +189,9 @@ export async function checkout(held: HeldPool): Promise<DriverConnection & { evi
       if (!lost.on && reportsClosed(reserved)) lost.on = true;
       try {
         if (!lost.on) await reset(session, reserved);
+      } catch (error) {
+        if (lostQuery(error) || reportsClosed(reserved)) lost.on = true;
+        else throw error;
       } finally {
         counters.reserved = Math.max(0, counters.reserved - 1);
         // A closed Bun.sql connection rejects the next statement with
@@ -203,16 +252,18 @@ async function takeOpen(held: HeldPool): Promise<ReservedSQL | undefined> {
  * a socket that fails once and a second that is already open.
  *
  * @param sql - The pool
+ * @returns `true` when a statement got a live connection
  */
-async function flushClosed(sql: SQL): Promise<void> {
+async function flushClosed(sql: SQL): Promise<boolean> {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       await sql.unsafe("select 1");
-      return;
+      return true;
     } catch {
       // The closed socket rejects once.
     }
   }
+  return false;
 }
 
 function bunClosed(message: string): boolean {

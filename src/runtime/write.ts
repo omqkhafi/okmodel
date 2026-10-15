@@ -609,10 +609,14 @@ function planDelete(
   if (!isRecord(input)) fail("OKM1121", "delete expects { where }.");
   rejectKeys(input, ["where"], "delete");
   requireFilter(table, input.where, mods, "delete");
-  const returning =
-    options.returning === true
-      ? selectedColumns(table, options.returning)
-      : returningOption(table, options.returning);
+  if (options.returning === true) {
+    fail(
+      "OKM1120",
+      "delete does not accept returning: true.",
+      "Pass the field names in returning, or omit returning for a count.",
+    );
+  }
+  const returning = returningOption(table, options.returning);
   const sql = new Sql();
   sql.text("delete from ");
   sql.text(quote(table.model.sql));
