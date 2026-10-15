@@ -281,13 +281,13 @@ export async function numbered(url: string) {
 
 ### SQL fragment
 
-`fragment` is a SQL expression you can nest. A string, number, boolean, or null is a parameter. `ident` quotes a SQL name. `fragment.column` is the field the fragment is attached to in `where`. `.as(name)` puts a numeric expression in `select` on `find` or `one`. The tenant predicate stays in front of the fragment.
+`fragment` is a SQL expression you can nest. A string, number, boolean, or null is a parameter. `ident` names the field, the same name `where` uses, and a hidden field is refused (OKM1120); `hidden({ filterable: true })` is allowed in `where` only. `fragment.column` is the field the fragment is attached to in `where`. `.as(name)` puts a numeric expression in `select` on `find` or `one`. The tenant predicate stays in front of the fragment.
 
 The check `sql` tag is a different function. It builds a check, an index predicate, or a default. It does not accept parameters.
 
 #### where and select
 
-`length(${fragment.column})` uses the `title` field this fragment filters. `ident("status")` is the SQL name `status`. `len` is a number.
+`length(${fragment.column})` uses the `title` field this fragment filters. `ident("status")` is the field `status`. `len` is a number.
 
 ```ts title="fragment.ts"
 import { connect } from "okmodel/pg/postgresjs";

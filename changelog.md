@@ -18,7 +18,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### dialects
 
-- `fragment` composes SQL in `where` and in `select` on `find` or `one`. A value is a parameter, `ident` quotes a name, and the tenant predicate stays (D266).
+- `fragment` composes SQL in `where` and in `select` on `find` or `one`. A value is a parameter. `ident` names the field, the same name `where` uses, and a hidden field is refused. The tenant predicate stays (D266).
 
 #### docs
 

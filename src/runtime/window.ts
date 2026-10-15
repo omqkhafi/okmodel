@@ -96,7 +96,7 @@ function statement(spec: Spec): ReadBuild {
         sink.mark(`s:${item.column.field}`);
         outputs?.fields.push({ key: item.column.field, at: column, decode: item.column.decode });
       } else if (item.kind === "sql") {
-        emitSqlSelect(item.parts, sink, "t");
+        emitSqlSelect(table, item.parts, sink, "t");
         sink.text("::text");
         sink.mark(`s:${item.as}`);
         outputs?.fields.push({ key: item.as, at: column, decode: decodeSqlNumber });

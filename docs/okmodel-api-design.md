@@ -957,7 +957,7 @@ const rows = await scoped.notes.find({
 });
 ```
 
-A string, number, boolean, or null is a parameter. `ident(name)` is quoted with the planner's identifier quotes; the name is the SQL spelling. `fragment.column` is the where field, already qualified. Another fragment is nested and parenthesized. The literal text cannot include a comment, a semicolon, a `$`, or an unbalanced quote or parenthesis, and an interpolation cannot sit inside quotes (OKM1125). An empty name or a control character in `ident` is OKM1122. The tenant predicate is applied before the fragment and the fragment is parenthesized, so the fragment cannot remove it. `filters()` does not parse a fragment. A select fragment that is not a finite number is OKM1125.
+A string, number, boolean, or null is a parameter. `ident(name)` names the TypeScript field, the same name `where` uses, and the compiler quotes that column (`casing`, `sqlName`). A hidden field is OKM1120. `hidden({ filterable: true })` is allowed in `where` only. An unknown name is OKM1120. `fragment.column` is the where field, already qualified. Another fragment is nested and parenthesized. The literal text cannot include a comment, a semicolon, a `$`, or an unbalanced quote or parenthesis, and an interpolation cannot sit inside quotes (OKM1125). An empty name or a control character in `ident` is OKM1122. The tenant predicate is applied before the fragment and the fragment is parenthesized, so the fragment cannot remove it. `filters()` does not parse a fragment. A select fragment that is not a finite number is OKM1125.
 
 ## 11. Writing
 

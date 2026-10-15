@@ -301,7 +301,7 @@ function bind(parts: readonly FragmentPart[]): Fragment {
  * Builds a composed SQL fragment.
  *
  * Call it as a template. A string, number, boolean, or null is a parameter.
- * `ident(name)` is a quoted identifier. `fragment.column` is the where field.
+ * `ident(name)` names a field. The compiler quotes that column. `fragment.column` is the where field.
  * Another fragment is nested and parenthesized. The literal SQL cannot close
  * the surrounding predicate.
  *
@@ -340,18 +340,19 @@ export const fragment: {
 });
 
 /**
- * Stores an identifier for a fragment to quote.
+ * Stores a field name for a fragment to resolve.
  *
- * The name is the SQL spelling. With `casing: "snake"`, a field `ownerId` is
- * `owner_id`. Empty names and control characters are OKM1122.
+ * The name is the TypeScript field, the same name `where` uses. Casing and
+ * `sqlName` are applied when the compiler quotes the column. A hidden field
+ * is OKM1120 at planning. Empty names and control characters are OKM1122.
  *
- * @param name - SQL identifier
- * @returns A value `fragment` quotes
+ * @param name - Field name
+ * @returns A value `fragment` resolves against the table
  */
 export function ident(name: string): FragmentIdent {
   if (typeof name !== "string" || name.length === 0) {
     throw new OkmError("OKM1122", "ident needs a name.", {
-      fix: { summary: "Pass the SQL name, such as title." },
+      fix: { summary: "Pass the field name, such as title." },
     });
   }
   assertNoControl(name, "ident");

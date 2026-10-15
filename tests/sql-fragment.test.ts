@@ -55,15 +55,6 @@ test("a nested fragment binds parameters in order and quotes identifiers", async
   expect(plannedQuery.params).toEqual(["3", "open", "1"]);
   expect(plannedQuery.text.includes("open")).toBe(false);
   expect(plannedQuery.text.includes("> 3")).toBe(false);
-
-  const quoted = await planned(
-    db.notes.find({
-      where: { title: fragment`${ident('a"b')} = ${"x"}` },
-      limit: 1,
-    }),
-  );
-  expect(quoted.text).toContain('t."a""b"');
-  expect(quoted.params[0]).toBe("x");
 });
 
 test("two fragment shapes do not share one statement", async () => {
@@ -102,7 +93,7 @@ test("a fragment keeps the tenant predicate", async () => {
   const scoped = db.for({ tenantId: TENANT_A });
   const plannedQuery = await planned(
     scoped.tasks.find({
-      where: { title: fragment`true or ${ident("tenant_id")} is null` },
+      where: { title: fragment`true or ${ident("tenantId")} is null` },
       limit: 1,
     }),
   );
@@ -155,3 +146,90 @@ test("a select fragment is a number and names its key", async () => {
   expect(plannedQuery.text.indexOf("length")).toBeLessThan(plannedQuery.text.indexOf("<>"));
   expect(plannedQuery.params).toEqual(["x", "2"]);
 });
+
+const exposed = table("notes", {
+  id: text(),
+  title: text().sqlName('a"b'),
+  ownerId: text(),
+  secret: text().hidden(),
+  code: text().hidden({ filterable: true }),
+});
+
+const exposedApp = schema({ casing: "snake", tables: [exposed] });
+
+test("ident resolves the field, quotes sqlName, and follows the hidden rule", async () => {
+  const db = connect(pool, { schema: exposedApp });
+  await db.connected;
+  const quoted = await planned(
+    db.notes.find({
+      where: { id: fragment`${ident("title")} = ${"x"}` },
+      limit: 1,
+    }),
+  );
+  expect(quoted.text).toContain('t."a""b"');
+  const cased = await planned(
+    db.notes.find({
+      where: { id: fragment`${ident("ownerId")} = ${"x"}` },
+      limit: 1,
+    }),
+  );
+  expect(cased.text).toContain('t."owner_id"');
+  const filterable = await planned(
+    db.notes.find({
+      where: { id: fragment`${ident("code")} = ${"k"}` },
+      limit: 1,
+    }),
+  );
+  expect(filterable.text).toContain('t."code"');
+
+  const hiddenWhere = await catchPlanned(
+    db.notes.find({
+      where: { id: fragment`${ident("secret")} = ${"x"}` },
+      limit: 1,
+    }),
+  );
+  expect(hiddenWhere.code).toBe("OKM1120");
+  expect(hiddenWhere.message).toBe("Field secret is hidden.");
+  expect(hiddenWhere.fix.summary).toBe("Call hidden({ filterable: true }).");
+
+  const hiddenSelect = await catchPlanned(
+    db.notes.find({
+      select: ["id", fragment`length(${ident("secret")})`.as("len")],
+      limit: 1,
+    }),
+  );
+  expect(hiddenSelect.code).toBe("OKM1120");
+  expect(hiddenSelect.message).toBe("Field secret is hidden.");
+
+  const filterableSelect = await catchPlanned(
+    db.notes.find({
+      select: ["id", fragment`length(${ident("code")})`.as("len")],
+      limit: 1,
+    }),
+  );
+  expect(filterableSelect.code).toBe("OKM1120");
+  expect(filterableSelect.message).toBe("Field code is hidden.");
+  expect(filterableSelect.fix.summary).toBe("A select fragment cannot name a hidden field.");
+
+  const unknown = await catchPlanned(
+    db.notes.find({
+      where: { id: fragment`${ident("owner_id")} = ${"x"}` },
+      limit: 1,
+    }),
+  );
+  expect(unknown.code).toBe("OKM1120");
+  expect(unknown.message).toContain("Field owner_id is not on notes.");
+  expect(unknown.fix.summary.length).toBeGreaterThan(0);
+});
+
+async function catchPlanned(query: {
+  sql: () => Statement | Promise<Statement>;
+}): Promise<OkmError> {
+  try {
+    await planned(query);
+  } catch (error) {
+    expect(error).toBeInstanceOf(OkmError);
+    if (error instanceof OkmError) return error;
+  }
+  throw new Error("expected OKM1120");
+}

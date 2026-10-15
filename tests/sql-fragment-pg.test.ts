@@ -4,6 +4,8 @@
 
 import { expect } from "bun:test";
 
+import { OkmError } from "../src/contracts/error.js";
+
 import { renderCatalog } from "../src/dialects/pg/ddl.js";
 import { fragment, ident, id, schema, table, text } from "../src/dialects/pg/index.js";
 import { connect } from "../src/runtime/pg/postgresjs.js";
@@ -22,6 +24,8 @@ const notes = table("notes", {
   id: id({ default: "none" }),
   title: text(),
   status: text(),
+  secret: text().hidden().nullable(),
+  code: text().hidden({ filterable: true }).nullable(),
 });
 
 const app = schema({
@@ -42,7 +46,7 @@ postgresTest(gate, "a fragment keeps the tenant and binds the injection", async 
       await db.connected;
       const a = db.for({ tenantId: TENANT_A });
       const b = db.for({ tenantId: TENANT_B });
-      await a.notes.insert({ id: NOTE_A, title: "hello", status: "open" });
+      await a.notes.insert({ id: NOTE_A, title: "hello", status: "open", code: "k" });
       await b.notes.insert({ id: NOTE_B, title: PAYLOAD, status: "open" });
       const open = fragment`${ident("status")} = ${"open"}`;
       const rows = await a.notes.find({
@@ -62,8 +66,60 @@ postgresTest(gate, "a fragment keeps the tenant and binds the injection", async 
         limit: 5,
       });
       expect(other.map((row) => row.id)).toEqual([NOTE_B]);
+      const coded = await a.notes.find({
+        where: { title: fragment`${ident("code")} = ${"k"}` },
+        limit: 5,
+      });
+      expect(coded.map((row) => row.id)).toEqual([NOTE_A]);
+      await expectHidden(
+        a.notes.find({
+          where: { title: fragment`${ident("secret")} = ${"x"}` },
+          limit: 1,
+        }),
+      );
+      await expectHidden(
+        a.notes.find({
+          select: ["id", fragment`length(${ident("secret")})`.as("len")],
+          limit: 1,
+        }),
+      );
+      await expectHidden(
+        a.notes.find({
+          select: ["id", fragment`length(${ident("code")})`.as("len")],
+          limit: 1,
+        }),
+      );
+      let unknown: unknown;
+      try {
+        await a.notes.find({
+          where: { title: fragment`${ident("missing")} = ${"x"}` },
+          limit: 1,
+        });
+      } catch (error) {
+        unknown = error;
+      }
+      expect(unknown).toBeInstanceOf(OkmError);
+      if (unknown instanceof OkmError) {
+        expect(unknown.code).toBe("OKM1120");
+        expect(unknown.fix.summary.length).toBeGreaterThan(0);
+      }
     } finally {
       await db.close();
     }
   });
 });
+
+async function expectHidden(pending: PromiseLike<unknown>): Promise<void> {
+  try {
+    await pending;
+  } catch (error) {
+    expect(error).toBeInstanceOf(OkmError);
+    if (error instanceof OkmError) {
+      expect(error.code).toBe("OKM1120");
+      expect(error.message).toContain("is hidden.");
+      expect(error.fix.summary.length).toBeGreaterThan(0);
+    }
+    return;
+  }
+  throw new Error("expected OKM1120");
+}
