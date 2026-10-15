@@ -148,6 +148,9 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The first call after a backend kill on an idle connection is `unavailable` and retryable. Bun.sql retries a client read once at transaction depth 0. postgres.js and node-postgres do not. A kill during a postgres.js connect can leave an unhandled rejection from the driver's type-catalog query (D263).
 - A postgres.js wait with no call deadline is rejected on a close only when every slot in that pool has closed, or when the reserved connection it uses closes. A queued `sql.reserve()` is dropped by the driver without settling when a slot closes. okmodel starts it again. A wait that already has a deadline ends at that deadline (D263).
 - Docs search answers `GET /api/search?query=` with the matching pages. An empty query and a query with no matches return an empty list. The static index stays on the server.
+- A trigger that also fires on insert names `new` in `when`. Postgres rejects `old` on an insert event.
+- `extension("hstore", { schema: "extensions" })` needs `create schema "extensions"` before apply. The column type is `extensions.hstore`, because that type is not on the search path.
+- The traits insert is awaited. `await using` closes the client when the function returns, so a returned promise closed it before the row was written.
 
 ### ♻️ Changed
 

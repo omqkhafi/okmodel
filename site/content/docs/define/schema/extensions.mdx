@@ -259,7 +259,7 @@ export default schema({
 
 #### Advanced
 
-`version` is an exact pin and is written. `schema` is the install schema. `relocatable: false` refuses a later move. `t.custom({ extension })` records that the column needs this name, so the list has to declare it.
+`version` is an exact pin and is written. `schema` is the install schema. It has to exist already: `okm migrate apply` does not create it. Run `create schema "extensions"` on the database before apply. The type then lives in that schema, not on the search path, so the column names `extensions.hstore`. `relocatable: false` refuses a later move. `t.custom({ extension })` records that the column needs this name, so the list has to declare it.
 
 `okm generate` writes `create extension "hstore" schema "extensions" version '1.8'` before the table.
 
@@ -270,7 +270,7 @@ import { schema, table, t } from "okmodel/pg";
 const places = table("places", {
   id: t.identity(),
   attrs: t.custom({
-    sqlType: "hstore",
+    sqlType: "extensions.hstore",
     extension: "hstore", // [!code focus]
     encode: (value: string) => value,
     decode: (wire: string) => wire,

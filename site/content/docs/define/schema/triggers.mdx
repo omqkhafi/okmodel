@@ -130,7 +130,7 @@ export default schema({
 
 ### together
 
-Several events, `updateOf`, and `when`. The column name is the SQL name.
+Several events, `updateOf`, and `when`. The column name is the SQL name. This trigger also fires on insert, so `when` names `new` only.
 
 ```ts title="together.ts"
 import { fn, trigger } from "okmodel/fn";
@@ -160,7 +160,7 @@ export default schema({
       events: ["insert", "update"], // [!code focus]
       level: "row",
       updateOf: ["updated_at"],
-      when: sql`old.title is distinct from new.title`,
+      when: sql`new.title <> ''`,
       calls: touch,
     }),
   ],
@@ -208,7 +208,7 @@ export default schema({
 
 #### Advanced
 
-`updateOf` limits the update to those SQL columns. `when` is stored as written. Insert is still an event, so the trigger also runs then, and `updateOf` applies only to the update. `okm generate` writes `create trigger "notes_touch" before insert or update of "title" on "public"."notes" for each row when (old.title is distinct from new.title) execute function "public"."touch_notes"()`.
+`updateOf` limits the update to those SQL columns. Insert is still an event, so the trigger also runs then, and `updateOf` applies only to the update. `when` is stored as written. This trigger fires on insert, and an insert has no old row, so `when` names `new` only. `okm generate` writes `create trigger "notes_touch" before insert or update of "title" on "public"."notes" for each row when (new.title <> '') execute function "public"."touch_notes"()`.
 
 ```ts title="own-advanced.ts"
 import { fn, trigger } from "okmodel/fn";
@@ -236,7 +236,7 @@ export default schema({
       events: ["insert", "update"], // [!code focus]
       level: "row",
       updateOf: ["title"], // [!code focus]
-      when: sql`old.title is distinct from new.title`, // [!code focus]
+      when: sql`new.title <> ''`, // [!code focus]
       calls: touch,
     }),
   ],

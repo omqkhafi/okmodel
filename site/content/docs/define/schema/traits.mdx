@@ -147,7 +147,7 @@ A column the table already has is `Trait labeled adds notes.label, and notes alr
 
 #### Simple
 
-One text column with a default. Insert omits it. `okm generate` adds `"label" text not null default 'note'` on `notes`.
+One text column with a default. Insert omits it, and the insert is awaited: `await using` closes the client when the function returns, so a returned promise would close it before the row is written. `okm generate` adds `"label" text not null default 'note'` on `notes`.
 
 ```ts title="own.ts"
 import { connect } from "okmodel/pg/postgresjs";
@@ -163,14 +163,14 @@ const notes = table("notes", {
   title: t.text(),
 });
 
-const app = schema({
+export const app = schema({
   tables: [notes],
   traits: [labeled], // [!code focus]
 });
 
 export async function add(url: string, title: string) {
   await using db = connect(url, { schema: app });
-  return db.notes.insert({ title }); // [!code focus]
+  return await db.notes.insert({ title }); // [!code focus]
 }
 ```
 
