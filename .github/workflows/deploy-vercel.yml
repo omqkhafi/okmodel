@@ -1,0 +1,103 @@
+name: Deploy site
+
+# Production deploys of site/. A push to main does not run this file.
+# site/vercel.json turns off the Vercel Git integration for main; pull
+# requests still get preview deployments.
+#
+# After the Release workflow finishes successfully, this deploys the commit
+# that Release built. A failed Release skips the job. A manual run takes a v*
+# tag. The tag must be v plus the package.json version at that commit, and
+# the version must be a release (X.Y.Z). A prerelease is refused.
+#
+# VERCEL_TOKEN, VERCEL_ORG_ID, and VERCEL_PROJECT_ID are repository secrets.
+# They are passed through the environment and are not printed.
+on:
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to deploy, v plus the package version
+        required: true
+        type: string
+
+concurrency:
+  group: deploy-vercel
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: deploy / production
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Require a stable release tag
+        id: release
+        env:
+          DEPLOY_EVENT: ${{ github.event_name }}
+          DEPLOY_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || '' }}
+          DEPLOY_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          DEPLOY_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: bun ./scripts/deploy-ref.ts
+
+      - name: Checkout the release commit
+        env:
+          RELEASE_SHA: ${{ steps.release.outputs.sha }}
+        run: |
+          if ! printf '%s' "$RELEASE_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "Refusing to check out a commit that is not 40 hex digits." >&2
+            exit 1
+          fi
+          git worktree add --detach "$RUNNER_TEMP/release" "$RELEASE_SHA"
+
+      - name: Install site
+        working-directory: ${{ runner.temp }}/release/site
+        run: bun install --frozen-lockfile
+
+      - name: Pull Vercel project settings
+        working-directory: ${{ runner.temp }}/release/site
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_TELEMETRY_DISABLED: "1"
+        run: bunx vercel@64.2.0 pull --yes --environment=production --non-interactive
+
+      - name: Build site
+        working-directory: ${{ runner.temp }}/release/site
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_TELEMETRY_DISABLED: "1"
+        run: bunx vercel@64.2.0 build --prod --non-interactive
+
+      - name: Deploy site
+        working-directory: ${{ runner.temp }}/release/site
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_TELEMETRY_DISABLED: "1"
+        run: bunx vercel@64.2.0 deploy --prebuilt --prod --json --non-interactive > "$RUNNER_TEMP/vercel-deploy.json"
+
+      - name: Confirm the deployed version
+        env:
+          DEPLOY_JSON: ${{ runner.temp }}/vercel-deploy.json
+          DEPLOY_VERSION: ${{ steps.release.outputs.version }}
+        run: bun ./scripts/deploy-ref.ts --confirm

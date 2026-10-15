@@ -112,6 +112,46 @@ test("published package problem names a missing version and missing provenance",
   ).toBeUndefined();
 });
 
+test("the site deploys only after a successful release of a stable tag", () => {
+  const yaml = readFileSync(join(root, ".github/workflows/deploy-vercel.yml"), "utf8");
+  expect(yaml).toContain("workflows: [Release]");
+  expect(yaml).toContain("types: [completed]");
+  expect(yaml).toContain("workflow_dispatch:");
+  expect(yaml).toContain("required: true");
+  expect(yaml).toContain(
+    "github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'",
+  );
+  expect(yaml).toContain("group: deploy-vercel");
+  expect(yaml).toContain("cancel-in-progress: false");
+  expect(yaml).toContain("contents: read");
+  expect(yaml).not.toContain("contents: write");
+  expect(yaml).toContain("bun ./scripts/deploy-ref.ts");
+  expect(yaml).toContain("bun ./scripts/deploy-ref.ts --confirm");
+  expect(yaml).toContain("bun-version: 1.4.2");
+  expect(yaml).toContain("actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1");
+  expect(yaml).toContain("oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2");
+  expect(yaml).toContain("bunx vercel@64.2.0 pull --yes --environment=production");
+  expect(yaml).toContain("bunx vercel@64.2.0 build --prod");
+  expect(yaml).toContain("bunx vercel@64.2.0 deploy --prebuilt --prod");
+  expect(yaml).toContain("working-directory: ${{ runner.temp }}/release/site");
+  expect(yaml).toContain("bun install --frozen-lockfile");
+  for (const name of ["VERCEL_TOKEN", "VERCEL_ORG_ID", "VERCEL_PROJECT_ID"]) {
+    expect(yaml).toContain(`${name}: \${{ secrets.${name} }}`);
+  }
+  const secretLines = yaml.split("\n").filter((line) => line.includes("secrets.VERCEL_"));
+  expect(secretLines.length).toBeGreaterThan(0);
+  for (const line of secretLines) {
+    expect(line).toMatch(/^\s+VERCEL_[A-Z_]+: \$\{\{ secrets\.VERCEL_[A-Z_]+ \}\}$/);
+  }
+  expect(yaml).not.toMatch(/^environment:/m);
+  expect(readFileSync(join(root, "scripts/deploy-ref.ts"), "utf8")).toContain("releaseRefProblem");
+  const vercel = JSON.parse(readFileSync(join(root, "site/vercel.json"), "utf8")) as unknown;
+  expect(vercel).toEqual({ git: { deploymentEnabled: { main: false } } });
+  const release = readFileSync(join(root, ".github/workflows/release.yml"), "utf8");
+  expect(release).toContain("name: smoke / quickstart");
+  expect(release).not.toContain("deploy-vercel");
+});
+
 test("workflows pin third-party actions and release waits for the matrix", () => {
   const workflows = readdirSync(join(root, ".github/workflows")).filter((name) =>
     name.endsWith(".yml"),

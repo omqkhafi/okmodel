@@ -34,6 +34,20 @@ The same run can be started from the GitHub Actions page: open Actions, choose R
 
 Provenance is the npm attestation that GitHub Actions built the tarball. The workflow sets `permissions.id-token` to `write` so npm can attach it.
 
+## Site
+
+The production site changes only after a release is published. A push to `main` does not deploy it. `site/vercel.json` sets `git.deploymentEnabled.main` to false, so the Vercel Git integration skips production for that branch. Pull requests still get preview deployments.
+
+`.github/workflows/deploy-vercel.yml` runs when the Release workflow completes with success. It also runs when someone starts it by hand, from `main`, with a `v*` tag. The commit is the Release run's commit, or the commit that tag points at. The tag must be `v` plus the `package.json` version at that commit, and the version must be a release (`X.Y.Z`). A prerelease is refused. A failed Release skips the deploy. The job then builds `site/` at that commit and deploys the prebuilt output to Vercel production. It prints the production URL and fails if that page does not contain the version. The check fetches that URL without the token, so the production site has to answer without deployment protection.
+
+The Vercel project's root directory is `site`. The site reads the repository `package.json` from the parent of `site/`, so preview builds need files outside that root included. The production workflow builds on the runner, where the whole tag is checked out.
+
+Three repository secrets. The workflow passes them through the environment and does not print them. No values belong in the repository:
+
+- `VERCEL_TOKEN`
+- `VERCEL_ORG_ID`
+- `VERCEL_PROJECT_ID`
+
 ## Dry run
 
 Before the tag, from the commit you are about to tag:
