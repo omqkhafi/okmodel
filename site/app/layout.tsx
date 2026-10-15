@@ -1,6 +1,7 @@
 import localFont from "next/font/local";
 import { Provider } from "@/components/provider";
 import { Topbar } from "@/components/chrome/topbar";
+import { OkmFaviconCycle } from "@/components/okm-logo-icon";
 import { ScrollToTop } from "@/components/scroll-to-top";
 import { readTagline } from "@/lib/package-meta";
 import { SITE_NAME, SITE_ORIGIN } from "@/lib/site-identity";
@@ -63,6 +64,7 @@ export default function Layout({ children }: { children: ReactNode }) {
           Skip to content
         </a>
         <Provider>
+          <OkmFaviconCycle />
           <ScrollToTop />
           <Topbar tree={source.getPageTree()} />
           <div id="content" className="flex flex-1 flex-col">
