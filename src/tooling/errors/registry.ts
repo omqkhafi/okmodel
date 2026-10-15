@@ -1,3 +1,4 @@
+import { POSTGRES_FLOOR, uuidv7NeedsPostgres } from "../../dialects/pg/floor.js";
 import {
   VALIDATION_NOT_IMPORTED,
   VALIDATION_NOT_IMPORTED_FIX,
@@ -149,8 +150,9 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
   {
     code: "OKM1110",
     title: "Engine version",
-    summary: "The feature needs a newer engine than schema({ requires }) allows.",
-    fix: "Raise requires, or stop using the feature. The error names both versions.",
+    summary:
+      "A feature needs a newer PostgreSQL than minPostgres allows. The message names the feature, the version it needs, and this schema's minimum.",
+    fix: "Raise minPostgres, or stop using the feature. The error names both versions.",
   },
   {
     code: "OKM1111",
@@ -563,15 +565,14 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
   {
     code: "OKM1802",
     title: "Server version",
-    summary: "The connected server does not satisfy schema({ requires }).",
-    fix: "Upgrade the server, or lower requires to a version the server meets.",
+    summary: "The connected server is older than this schema's minPostgres.",
+    fix: "Upgrade the server, or lower minPostgres to a major the server meets.",
   },
   {
     code: "OKM1803",
     title: "Postgres floor",
-    summary:
-      "The connected server is older than PostgreSQL 15, and the schema does not set requires to that older major.",
-    fix: "Upgrade the server to PostgreSQL 15 or newer, or set schema({ requires }) to the older major on purpose.",
+    summary: `The connected server is older than PostgreSQL ${String(POSTGRES_FLOOR)}.`,
+    fix: `Upgrade the server to PostgreSQL ${String(POSTGRES_FLOOR)} or higher.`,
   },
   {
     code: "OKM1810",
@@ -589,8 +590,8 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     code: "OKM1812",
     title: "Feature version",
     summary:
-      "A feature needs a newer Postgres or extension version than the one declared or connected.",
-    fix: 'Raise the declared version, or avoid the feature. uuidv7() below 18 can use t.id({ default: "uuidv4" }), defaults.id set to "uuidv4", or a client generator. Core features are never gated on an extension.',
+      "A feature needs a newer PostgreSQL than minPostgres, or an extension version the server does not have. The message names the feature and the version.",
+    fix: `Raise minPostgres, or avoid the feature. ${uuidv7NeedsPostgres()} An extension pin names the version to install. Core features are never gated on an extension.`,
   },
   {
     code: "OKM1813",

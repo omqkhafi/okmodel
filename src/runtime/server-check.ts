@@ -6,6 +6,12 @@
 
 import type { DriverPool, ExecuteOptions } from "../contracts/driver.js";
 import { OkmError, type ErrorStatuses } from "../contracts/error.js";
+import {
+  isPostgresMajor,
+  parsePostgresFloor,
+  POSTGRES_FLOOR,
+  serverNeedsPostgres,
+} from "../dialects/pg/floor.js";
 import type { QuerySchema } from "../dialects/pg/model.js";
 import { attachHttp, withHttp } from "./client.js";
 import type { CatalogArtifact } from "./types.js";
@@ -22,11 +28,11 @@ export const versionQuery =
 /**
  * Accepts the `server_version_num` row, or throws OKM1801, OKM1520, OKM1802, or OKM1803.
  *
- * A declared `requires` is the minimum, including a major below 15 when the
- * schema names it on purpose. With no `requires`, the floor is 15.
+ * A declared floor is the minimum. With no floor, the minimum is 15.
+ * A major below 15 is refused when the schema is built.
  *
  * @param pool - Connection that ran the version query
- * @param schema - Schema whose `requires` is the declared minimum
+ * @param schema - Schema whose floor is the declared minimum
  * @param rows - `server_version_num`, `version()`, and the `okm_meta` hash
  * @param http - Status overrides from `connect`
  * @param requireMeta - When true, a missing hash is OKM1520
@@ -83,27 +89,28 @@ export async function acceptServer(
     }
   }
   const major = Math.floor(Number(rows[0]?.[0] ?? "0") / 10_000);
-  const requires = schema.requires?.postgres;
-  if (requires === undefined) {
-    if (major < 15) {
+  const raw = schema.requires?.postgres;
+  if (raw === undefined) {
+    if (major < POSTGRES_FLOOR) {
       throw new OkmError(
         "OKM1803",
-        `The server is PostgreSQL ${String(major)}. PostgreSQL 15 is the oldest supported.`,
+        serverNeedsPostgres(major, POSTGRES_FLOOR),
         withHttp(http, {
-          fix: { summary: "Upgrade to PostgreSQL 15, or set schema({ requires }) to this major." },
+          fix: {
+            summary: `Upgrade to PostgreSQL ${String(POSTGRES_FLOOR)} or higher.`,
+          },
         }),
       );
     }
     return;
   }
-  const match = /^>=(\d+)$/.exec(requires.trim());
-  const need = match?.[1] === undefined ? undefined : Number(match[1]);
-  if (need === undefined || major < need) {
+  const need = parsePostgresFloor(raw);
+  if (!isPostgresMajor(need) || major < need) {
     throw new OkmError(
       "OKM1802",
-      `The server is PostgreSQL ${String(major)}. schema({ requires }) asks for ${requires}.`,
+      serverNeedsPostgres(major, isPostgresMajor(need) ? need : POSTGRES_FLOOR),
       withHttp(http, {
-        fix: { summary: "Upgrade the server, or lower requires to a version the server meets." },
+        fix: { summary: "Upgrade the server, or lower minPostgres to a major the server meets." },
       }),
     );
   }

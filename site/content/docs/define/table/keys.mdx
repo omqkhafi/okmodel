@@ -111,6 +111,8 @@ An empty reason is `unique() global needs a reason.` `{ global: true }` with no 
 
 ### id()
 
+Needs PostgreSQL 18 or higher.
+
 `t.id()` is a uuid primary key. The schema [id default](/docs/define/schema/defaults) is what a bare call means. A column option wins. [OKID](/docs/define/table/columns#okid) is `t.id({ default: okid() })`, stored as `text`.
 
 | Call | What fills it | Insert |

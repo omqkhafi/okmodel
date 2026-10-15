@@ -615,6 +615,10 @@
       "kind": "stable"
     },
     {
+      "name": "PostgresMajor",
+      "kind": "stable"
+    },
+    {
       "name": "PresetQuery",
       "kind": "stable"
     },

@@ -245,7 +245,7 @@ The registry has 110 codes, in numeric order. Ranges are schema `OKM1000`, queri
 | `OKM1102` | Unfiltered write | A write with no effective predicate, including undefined values, is OKM1102. |
 | `OKM1104` | Upsert target | onConflict names columns that are not a unique constraint. |
 | `OKM1105` | Include without limit | A to-many include has no limit. |
-| `OKM1110` | Engine version | The feature needs a newer engine than `schema({ requires })` allows. |
+| `OKM1110` | Engine version | A feature needs a newer PostgreSQL than minPostgres allows. The message names the feature, the version it needs, and this schema's minimum. |
 | `OKM1111` | Missing capability | The call needs a driver capability this driver does not have. |
 | `OKM1120` | Unknown field | The name is not a field or an option. timeout and signal go in the second argument of update. Options go first: tx(options, fn). |
 | `OKM1121` | Object as value | An empty or() branch is OKM1121. or() takes one array: or([a, b]). A plain object was passed where a value is required. |
@@ -342,11 +342,11 @@ The registry has 110 codes, in numeric order. Ranges are schema `OKM1000`, queri
 | Code | Title | Summary |
 | --- | --- | --- |
 | `OKM1801` | Dialect mismatch | The schema dialect and the driver dialect are not the same. |
-| `OKM1802` | Server version | The connected server does not satisfy `schema({ requires })`. |
-| `OKM1803` | Postgres floor | The connected server is older than PostgreSQL 15, and the schema does not set requires to that older major. |
+| `OKM1802` | Server version | The connected server is older than this schema's minPostgres. |
+| `OKM1803` | Postgres floor | The connected server is older than PostgreSQL 15. |
 | `OKM1810` | Extension not declared | An extension builder was used but the extension is not declared on the schema. |
 | `OKM1811` | Extension unavailable | A declared extension is not installed on the server. |
-| `OKM1812` | Feature version | A feature needs a newer Postgres or extension version than the one declared or connected. |
+| `OKM1812` | Feature version | A feature needs a newer PostgreSQL than minPostgres, or an extension version the server does not have. The message names the feature and the version. |
 | `OKM1813` | Extension defined twice | The same extension definition was registered twice. |
 | `OKM1814` | Extension change refused | The plan would downgrade an extension, move a non-relocatable one, or drop one that still has dependents. |
 | `OKM1820` | View tenancy | A view over tenant tables does not expose the tenant key and is not marked global. |

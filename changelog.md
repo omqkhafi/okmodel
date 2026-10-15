@@ -16,6 +16,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### ✨ Added
 
+#### dialects
+
+- `minPostgres: 17` sets the oldest Postgres major this schema runs on. The majors are 15, 16, 17, and 18. Omitted means 15. `requires: { postgres: ">=17" }` stores the same floor. The floor is not part of the catalog hash (D261).
+
 #### runtime
 
 - `bucket(column, unit, { tz, as })` groups an aggregate by a calendar or clock unit. A day or longer returns `Temporal.PlainDate`. On a `timestamptz`, a second, minute, or hour returns `Temporal.Instant`. Those three units are refused on a `date`. A NULL timestamp is one group: the result key is present and the value is null. `__proto__`, `constructor`, `toString`, and `hasOwnProperty` are refused as `as`, and so is an `as` that matches another bucket. There is still no `having`. Time-zone date helpers stay deferred (D247, D257).
@@ -136,6 +140,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### ♻️ Changed
 
+#### dialects
+
+- A `uuidv7()` default on a floor below 18 is OKM1812 and names that major. A server below `minPostgres` is OKM1802. A server below 15 with no floor is OKM1803. The handbook page is Minimum Postgres (D261).
+
 #### runtime
 
 - `update` of a list refuses the same target twice (OKM1120). A target that matches nothing is not an error. An empty `set` is OKM1120. An empty list runs no statement (D246).
@@ -163,6 +171,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Known limits record the lost-connection release path and that a sortable move is O(n) per group.
 - The changelog page shows `## Unreleased` as next until the release.
 - The published README is the short page: the logo, install, a schema, `okm push`, and basic usage. The full walkthrough is `docs/guide.md`. A README image has to be an absolute `https://` URL. The docs site is `https://okm.omqkhafi.dev`.
+
+### ⚠️ Deprecated
+
+- `requires: { postgres: ">=17" }` still sets the floor and is deprecated. Use `minPostgres` (D261).
 
 ## v0.6.0 — 2026-10-11
 

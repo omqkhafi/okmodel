@@ -36,6 +36,15 @@ import {
 import { compileColumn, type CompilableColumn } from "./compile.js";
 import { ColumnBuilder, formatType, type ColumnState, type ReferenceModifier } from "./column.js";
 import {
+  formatPostgresFloor,
+  isPostgresMajor,
+  minPostgresDefinition,
+  parsePostgresFloor,
+  UUIDV7_POSTGRES,
+  uuidv7NeedsPostgres,
+  type PostgresMajor,
+} from "./floor.js";
+import {
   type ArchiveModel,
   type ColumnModel,
   type RelationModel,
@@ -67,8 +76,16 @@ export type SchemaCodecs = {
   readonly timestamps: "temporal";
 };
 
-/** Engine requirement recorded for connect. */
+/**
+ * Engine requirement recorded for connect.
+ *
+ * The stored value is `>=` and a major. `minPostgres` and the deprecated
+ * string form normalise to the same object.
+ */
 export type SchemaRequires = {
+  /**
+   * @deprecated Use `minPostgres`. `">=17"` is the same floor as `minPostgres: 17`.
+   */
   readonly postgres?: string;
 };
 
@@ -81,6 +98,15 @@ export type SchemaRequires = {
  */
 export type SchemaInput<TTables extends readonly AnyTable[]> = {
   readonly tables: TTables;
+  /**
+   * Oldest Postgres major this schema runs on.
+   *
+   * Omitted means 15. A feature that needs a newer major is refused here.
+   */
+  readonly minPostgres?: PostgresMajor;
+  /**
+   * @deprecated Use {@link SchemaInput.minPostgres}. `">=17"` is the same floor as `minPostgres: 17`.
+   */
   readonly requires?: SchemaRequires;
   readonly casing?: "snake";
   readonly codecs?: {
@@ -134,6 +160,11 @@ export type BuiltSchema<TTables extends readonly AnyTable[]> = {
   readonly types: "emitted" | "inferred";
   readonly casing: "snake" | undefined;
   readonly codecs: SchemaCodecs;
+  /**
+   * Declared floor, normalised to `>=` and a major.
+   *
+   * Absent when the schema names no floor. Connect then uses 15.
+   */
   readonly requires: SchemaRequires | undefined;
   readonly tables: TTables;
   /**
@@ -224,6 +255,7 @@ const SCHEMA_KNOWN = new Set([
   "defaults",
   "extensions",
   "functions",
+  "minPostgres",
   "requires",
   "tables",
   "tenancy",
@@ -388,7 +420,7 @@ export function schema<const TTables extends readonly AnyTable[]>(
   const hooks = collectHooks(tenancy, schemaTraits, config.tables, config.views);
   const types = readTypes(config.types);
   const codecs = readCodecs(config.codecs);
-  const requires = readRequires(config.requires);
+  const requires = readFloor(config.minPostgres, config.requires);
   const idDefault = readIdDefault(config.defaults);
   const namespace = staticNamespace("public");
   const accepted = acceptTables(config.tables);
@@ -922,7 +954,7 @@ function compileTable(
       columnPrimary.push(prepared.sqlName);
     }
     if (column.state.defaultSql === "uuidv7()") {
-      refuseUuidV7(item.name, field, requires);
+      refuseUuidV7(requires);
     }
     const labels = column.state.enumLabels;
     if (labels !== undefined) {
@@ -1619,37 +1651,45 @@ function readIdDefault(
 }
 
 /**
- * Rejects `uuidv7()` when the schema declares a Postgres older than 18.
+ * Rejects `uuidv7()` when the schema declares a Postgres older than the feature.
  *
- * An undeclared `requires` does not name a version, so the default stays.
+ * An omitted floor does not name a version, so the default stays until apply.
  *
- * @param tableName - Table that owns the column
- * @param field - Column field name
  * @param requires - Declared engine range
  */
-function refuseUuidV7(
-  tableName: string,
-  field: string,
-  requires: SchemaRequires | undefined,
-): void {
-  const declared = Number(/^>=(\d+)$/.exec(requires?.postgres ?? "")?.[1]);
-  if (!(declared > 0) || declared >= 18) return;
-  throw new OkmError(
-    "OKM1812",
-    `Column ${tableName}.${field} uses uuidv7(). Set defaults.id to "uuidv4" or a client generator.`,
-    { fix: { summary: "Set defaults.id." } },
-  );
+function refuseUuidV7(requires: SchemaRequires | undefined): void {
+  const declared = parsePostgresFloor(requires?.postgres);
+  if (!(declared > 0) || declared >= UUIDV7_POSTGRES) return;
+  const sentence = uuidv7NeedsPostgres();
+  throw new OkmError("OKM1812", sentence, { fix: { summary: sentence } });
 }
 
-function readRequires(requires: SchemaRequires | undefined): SchemaRequires | undefined {
-  if (requires === undefined) {
-    return undefined;
+/**
+ * Normalises `minPostgres` and the deprecated string form to one floor.
+ *
+ * Passing both is an error. Any other value is an error. Omitted is `undefined`.
+ * An empty `requires` object stores `{}`.
+ *
+ * @param minPostgres - Numeric floor
+ * @param requires - Deprecated `{ postgres }` range
+ * @returns The stored floor, or `undefined` when neither key was passed
+ */
+function readFloor(minPostgres: unknown, requires: unknown): SchemaRequires | undefined {
+  if (minPostgres !== undefined && requires !== undefined) {
+    definition("minPostgres or requires.postgres, not both.");
   }
-  const postgres = requires.postgres;
-  if (postgres !== undefined && postgres.length === 0) {
-    definition("schema() requires.postgres must be a version range such as >=17.");
+  if (minPostgres === undefined && requires === undefined) return undefined;
+  let major = minPostgres;
+  if (minPostgres === undefined) {
+    if (typeof requires !== "object" || requires === null || Array.isArray(requires)) {
+      definition(minPostgresDefinition());
+    }
+    const postgres = (requires as { readonly postgres?: unknown }).postgres;
+    if (postgres === undefined) return {};
+    major = typeof postgres === "string" ? parsePostgresFloor(postgres) : NaN;
   }
-  return postgres === undefined ? {} : { postgres };
+  if (!isPostgresMajor(major)) definition(minPostgresDefinition());
+  return { postgres: formatPostgresFloor(major) };
 }
 
 function readIndex(tableName: string, call: IndexCall): IndexCall {

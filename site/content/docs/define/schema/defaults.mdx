@@ -4,6 +4,8 @@ description: "What a bare t.id() means."
 ---
 `defaults` has one field, `id`. It replaces a bare `t.id()`. A column that passes `default` is left alone. `"none"` is that column option. It is not a schema value.
 
+Needs PostgreSQL 18 or higher.
+
 The id is omitted from insert for a database default and for a client generator. `"none"` is required on insert and still omitted from update.
 
 ### uuidv7
@@ -40,7 +42,7 @@ export default schema({
 ```
 
 <Callout type="error" title="OKM1812">
-`uuidv7()` needs Postgres 18. A [requires](/docs/define/schema/requires) floor below 18 is `Column notes.id uses uuidv7(). Set defaults.id to "uuidv4" or a client generator.` An omitted `requires` does not name a version, so the default stays.
+`uuidv7()` needs PostgreSQL 18 or higher. A [minPostgres](/docs/define/schema/min-postgres) floor below 18 is `uuidv7() needs PostgreSQL 18 or higher. minPostgres: 18.` An omitted floor does not name a version, so the default stays until apply.
 </Callout>
 
 ### uuidv4
@@ -57,7 +59,6 @@ const notes = table("notes", {
 
 export default schema({
   tables: [notes],
-  requires: { postgres: ">=15" },
   defaults: { id: "uuidv4" }, // [!code focus]
 });
 ```
@@ -81,7 +82,6 @@ const sessions = table("sessions", {
 
 export default schema({
   tables: [sessions],
-  requires: { postgres: ">=15" },
   defaults: { id: uuidv7 }, // [!code focus]
 });
 ```

@@ -4,7 +4,7 @@ description: "The first connection checks the server, the catalog hash, and the 
 ---
 `schema` is required. The [schema](/docs/define/schema) types the client. `db.connected` resolves when the check finishes. A query waits for it. A transaction and a batch wait too.
 
-[requires](/docs/define/schema/requires) is the floor `connect` reads. With no `requires`, the floor is 15. A named floor is `>=` and a major. A server below that major is refused. A floor below 15 is how `connect` accepts that older major. The floor runs after the hash check.
+[minPostgres](/docs/define/schema/min-postgres) is the floor `connect` reads. With no floor, the minimum is 15. A named floor is 15, 16, 17, or 18. A server below that major is refused. A major below 15 is refused when `schema()` runs. The floor runs after the hash check.
 
 `signal` and `timeout` on this check are [Timeouts](/docs/define/connect/session#timeouts). A preset name that is a client method or reserved is checked before the first query. The names are on [Presets](/docs/define/table/presets).
 
@@ -15,8 +15,8 @@ description: "The first connection checks the server, the catalog hash, and the 
 | Equal catalog hashes | Returns without reading `okm_history`. |
 | Ahead by expand migrations | The drift check returns. The client opens when the floor passes. |
 | Ahead by a contract migration, or behind | OKM1520 |
-| Below 15, and the schema names no `requires` | OKM1803 |
-| Below the schema `requires` | OKM1802 |
+| Below 15, and the schema names no `minPostgres` | OKM1803 |
+| Below the schema `minPostgres` | OKM1802 |
 
 ### schema
 
@@ -47,16 +47,16 @@ export const db = connect(process.env.DATABASE_URL!, { schema: app }); // [!code
 A server below 15, when no floor is named, is OKM1803.
 
 <Callout type="error" title="OKM1803">
-`The server is PostgreSQL 14. PostgreSQL 15 is the oldest supported.`
+`The server is PostgreSQL 14. This schema needs PostgreSQL 15 or higher (minPostgres: 15).`
 </Callout>
 
-A server below the named floor is OKM1802. The message keeps the string from `schema({ requires })`.
+A server below the named floor is OKM1802.
 
 <Callout type="error" title="OKM1802">
-`The server is PostgreSQL 16. schema({ requires }) asks for >=17.`
+`The server is PostgreSQL 16. This schema needs PostgreSQL 17 or higher (minPostgres: 17).`
 </Callout>
 
-A string that is not `>=` and a major leaves no major to compare, so every server is OKM1802. [Requires](/docs/define/schema/requires) quotes that string.
+A value that is not an allowed major is refused when `schema()` runs. [Minimum Postgres](/docs/define/schema/min-postgres) lists the majors. `requires: { postgres: ">=17" }` is the same floor and is deprecated.
 
 ### Require meta
 

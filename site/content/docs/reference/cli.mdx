@@ -119,7 +119,7 @@ bunx okm doctor OKM1520
 
 `list` prints a tab-separated table. The header is `name`, `default`, `installed`, `schema`.
 
-`check` compares extensions declared on the schema with what is installed. No declaration is `no extensions`. A missing install is OKM1811: `Extension <name> is not installed on the server.` A version the declaration rejects is OKM1812: `Extension <name> is <installed> on the server. The schema requires <declared>.` A match prints `name`, `declared`, `installed`. An omitted pin is `-`. Declarations are on [Extensions](/docs/define/schema/extensions).
+`check` compares extensions declared on the schema with what is installed. No declaration is `no extensions`. A missing install is OKM1811: `Extension <name> is not installed on the server.` A version the declaration rejects is OKM1812: `Extension <name> needs <declared> or higher. The server has <installed>. Install a version the declaration accepts, or change the pin.` An exact pin omits "or higher". A match prints `name`, `declared`, `installed`. An omitted pin is `-`. Declarations are on [Extensions](/docs/define/schema/extensions).
 
 `okm ext test` and `okm ext scaffold` exit 1: `okm ext <name> is not available yet.` Another name is `Unknown command ext <name>.`
 

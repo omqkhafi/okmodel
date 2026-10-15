@@ -32,6 +32,9 @@ export function markdownTwinPath(pathname: string): string | undefined {
   }
   if (path === "/docs/ship/migrations") return "/llms.mdx/docs/define/config/migrations.md";
   if (path === "/docs/ship/drivers") return "/llms.mdx/docs/define/connect/drivers.md";
+  if (path === "/docs/define/schema/requires") {
+    return "/llms.mdx/docs/define/schema/min-postgres.md";
+  }
   if (path.startsWith("/docs/define/connect/")) {
     const folded = connectMarkdownTwin(path.slice("/docs/define/connect/".length));
     if (folded !== undefined) return folded;
@@ -123,7 +126,7 @@ const SCHEMA_PAGES = new Set([
   "codecs",
   "types",
   "defaults",
-  "requires",
+  "min-postgres",
   "traits",
   "tenancy",
   "validation",
@@ -141,6 +144,7 @@ const SCHEMA_PAGES = new Set([
 function schemaMarkdownTwin(path: string): string {
   if (path === "/docs/schema") return "/llms.mdx/docs/define/schema.md";
   const slug = path.slice("/docs/schema/".length);
+  if (slug === "requires") return "/llms.mdx/docs/define/schema/min-postgres.md";
   if (SCHEMA_PAGES.has(slug)) return `/llms.mdx/docs/define/schema/${slug}.md`;
   return "/llms.mdx/docs/define/schema.md";
 }
