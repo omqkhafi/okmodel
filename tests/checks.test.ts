@@ -23,7 +23,11 @@ import {
   resolveDeployTag,
   tagCommitProblem,
 } from "../scripts/deploy-ref.js";
-import { releaseRefProblem } from "../scripts/release-ref.js";
+import {
+  releaseCommitProblem,
+  releaseRefProblem,
+  releaseTagCommitProblem,
+} from "../scripts/release-ref.js";
 import { checkLayers } from "../scripts/layers-check.js";
 import {
   checkReleaseDirs,
@@ -494,9 +498,26 @@ test("readme check accepts the repository readme", () => {
 test("release ref accepts v plus the package version and refuses anything else", () => {
   expect(releaseRefProblem("refs/tags/v0.1.1", "0.1.1")).toBeUndefined();
   expect(releaseRefProblem("refs/tags/v0.1.0", "0.1.1")).toBe(
-    "Refusing to publish from refs/tags/v0.1.0. package.json is 0.1.1, so the tag must be v0.1.1. Run: gh workflow run release.yml --ref v0.1.1",
+    'Refusing to publish from refs/tags/v0.1.0. package.json is 0.1.1, so the tag must be v0.1.1. Run: gh workflow run release.yml --ref "v0.1.1" -f commit=<sha>',
   );
   expect(releaseRefProblem(undefined, "0.1.1")).toContain("Refusing to publish from (unset)");
+});
+
+test("a release commit must be the full SHA the tag peels to", () => {
+  const sha = "a".repeat(40);
+  const other = "b".repeat(40);
+  expect(releaseCommitProblem(sha)).toBeUndefined();
+  expect(releaseCommitProblem(`  ${sha.toUpperCase()}  `)).toBeUndefined();
+  expect(releaseCommitProblem(undefined)).toContain("(unset)");
+  expect(releaseCommitProblem("")).toContain("(unset)");
+  expect(releaseCommitProblem(sha.slice(0, 7))).toContain("40-hex");
+  expect(releaseCommitProblem(`${sha}0`)).toContain("40-hex");
+  expect(releaseTagCommitProblem("v0.7.0", sha, sha)).toBeUndefined();
+  expect(releaseTagCommitProblem("v0.7.0", sha.toUpperCase(), sha)).toBeUndefined();
+  expect(releaseTagCommitProblem("v0.7.0", other, sha)).toBe(
+    `Refusing to publish. Tag v0.7.0 points at ${other}, not the QA'd commit ${sha}.`,
+  );
+  expect(releaseTagCommitProblem("v0.7.0", sha, "abc")).toContain("not the QA'd commit abc");
 });
 
 test("a site deploy accepts a release tag and refuses a prerelease", () => {

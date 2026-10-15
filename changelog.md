@@ -152,6 +152,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The docs site has no sync step. `site/content/docs` is the handbook and is checked in. Each page carries its title and description in frontmatter, and each folder's `meta.json` sets the sidebar order. `site/handbook`, `scripts/sync-docs.ts`, and `lib/docs-map.ts` are removed. The site check now verifies that every page is listed in its `meta.json`.
 - The docs site deploys to production only after a release is published. A push to `main` no longer updates the public site, so the site shows the published version.
 - The docs site publishes when the workflow moves the `release` branch to the release commit. Vercel builds that branch. The workflow no longer calls the Vercel CLI, and the repository no longer needs `VERCEL_TOKEN`, `VERCEL_ORG_ID`, or `VERCEL_PROJECT_ID`.
+- A release requires the commit that was QA'd. The tag must point at that commit, `package.json` there must match the tag, and the published provenance must record that same commit.
 
 #### docs
 
