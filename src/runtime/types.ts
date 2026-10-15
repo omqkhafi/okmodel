@@ -790,20 +790,35 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
     data: readonly (RequiredInsert<InsertOf<S, K>> & OptionalInsert<InsertOf<S, K>>)[],
     options?: InsertOptions<S, K>,
   ): Write<readonly Show<RowOf<S, K>>[]>;
-  /** Updates matching rows, or a per-row list in one statement. `where` is required. */
-  update<const Allow extends readonly (keyof RowOf<S, K> & string)[]>(
+  /**
+   * Updates matching rows, or a per-row list in one statement. `where` is required.
+   *
+   * `{ allow, returning: true }` returns the written rows. `{ allow }` without
+   * `returning: true` returns `{ count }`.
+   */
+  update<
+    const Allow extends readonly (keyof RowOf<S, K> & string)[],
+    const Opt extends WriteOptions<S, K> & { readonly allow: Allow },
+  >(
     target: AllowedUpdate<S, K, Allow>,
-    options: WriteOptions<S, K> & { readonly allow: Allow },
-  ): Write<WriteCount>;
+    options: Opt,
+  ): [Opt["returning"]] extends [true] ? Write<readonly Show<RowOf<S, K>>[]> : Write<WriteCount>;
   update(
     target: UpdateTarget<S, K>,
     options: WriteOptions<S, K> & { readonly returning: true },
   ): Write<readonly Show<RowOf<S, K>>[]>;
   update(target: UpdateTarget<S, K>, options?: WriteOptions<S, K>): Write<WriteCount>;
-  /** Deletes matching rows. `where` is required. */
+  /**
+   * Deletes matching rows. `where` is required.
+   *
+   * `{ returning: true }` is not accepted. Pass the field names, or omit
+   * `returning` for `{ count }`.
+   */
   delete(
     target: { readonly where?: WhereOf<S, K> },
-    options?: WriteOptions<S, K>,
+    options?: Omit<WriteOptions<S, K>, "returning"> & {
+      readonly returning?: Exclude<WriteOptions<S, K>["returning"], true>;
+    },
   ): Write<WriteCount>;
   /**
    * Rows below `id`, walking the table's self-relation.

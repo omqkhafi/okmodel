@@ -8,7 +8,7 @@
 
 import type { DriverPool } from "../../contracts/driver.js";
 import type { QuerySchema } from "../../dialects/pg/model.js";
-import { open, type BunSqlConfig } from "../../adapters/pg/bunsql.js";
+import { markClientPool, open, type BunSqlConfig } from "../../adapters/pg/bunsql.js";
 import { createClient } from "../client.js";
 import type { RoutedClient, TopologyInput, TopologyOptions } from "../topology.js";
 import type { ConnectOptions, Connected } from "../types.js";
@@ -52,7 +52,13 @@ export function connect<const S extends QuerySchema>(
   options: BunSqlConnectOptions<S>,
 ): Connected<S> | Promise<RoutedClient<S>> {
   if (typeof target === "object" && !isPool(target)) {
-    return import("../topology.js").then((mod) => mod.default(target, options, open as never));
+    return import("../topology.js").then((mod) =>
+      mod.default(target, options, ((config: BunSqlConfig) => {
+        const pool = open(config);
+        markClientPool(pool);
+        return pool;
+      }) as never),
+    );
   }
   const owned = !isPool(target);
   const pool = isPool(target)
@@ -65,6 +71,7 @@ export function connect<const S extends QuerySchema>(
         ...(options.searchPath !== undefined ? { searchPath: options.searchPath } : {}),
         ...(options.ssl !== undefined ? { ssl: options.ssl } : {}),
       });
+  if (!isPool(target)) markClientPool(pool);
   return createClient(options.schema, pool, {
     ownsPool: owned,
     http: options.errors?.http,

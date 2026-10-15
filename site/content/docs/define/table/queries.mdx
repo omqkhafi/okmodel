@@ -670,7 +670,7 @@ A text column is `inc adds to a number. title is a text column.`
 
 ### Claim
 
-`update` with `lock: "skip"` and `limit` changes up to that many matching rows and leaves rows another transaction already holds. The database chooses which unlocked rows. The result is `{ count }`, the number of rows changed. `{ returning: true }` returns the updated rows and honors `select`. Set a `claimedBy` token in `set`, then `find` by that token, or pass `returning: true` and read the rows from the claim.
+`update` with `lock: "skip"` and `limit` changes up to that many matching rows and leaves rows another transaction already holds. The database chooses which unlocked rows. The result is `{ count }`, the number of rows changed. `{ returning: true }` returns the updated rows and honors `select`, including when `{ allow }` names a guarded field. Set a `claimedBy` token in `set`, then `find` by that token, or pass `returning: true` and read the rows from the claim. `delete` does not accept `{ returning: true }`. That call is OKM1120 and deletes nothing. Pass the field names, or omit `returning` for `{ count }`.
 
 | Input | Result |
 | --- | --- |

@@ -22,7 +22,7 @@ import type {
 import { BUNSQL_CAPABILITIES } from "../capabilities.js";
 import { DriverError } from "../error.js";
 import { driverErrors, mapFailure, rejectClosed } from "../failure.js";
-import { runCall } from "./call.js";
+import { runCall, type Watch } from "./call.js";
 import { noTimeout } from "./no-inflight-timeout.js";
 import { noticeBuffer, WireSession, type WireQuery } from "./session.js";
 
@@ -70,6 +70,21 @@ export type HeldPool = {
   readonly isClosed: () => boolean;
 };
 
+const clientPools = new WeakSet<DriverPool>();
+
+/**
+ * Marks a pool opened for a client.
+ *
+ * A client read that finds a dead socket is tried once. A pool from raw
+ * {@link open} is not marked, so a statement the server killed while it was
+ * running is not started again.
+ *
+ * @param pool - The pool `connect` just opened
+ */
+export function markClientPool(pool: DriverPool): void {
+  clientPools.add(pool);
+}
+
 /** Pool occupancy. */
 export type Counters = {
   reserved: number;
@@ -97,6 +112,9 @@ export function open(config: BunSqlConfig): DriverPool {
   // which is what the reset check observes. Queries and listen give it back
   // so the slot is not stuck.
   const parked: ReservedSQL[] = [];
+  // A backend the server has already closed. The next statement drains it
+  // before reuse. The count lives on this pool, not at module scope.
+  let dropped = 0;
 
   const sql = new SQL(config.url, {
     max,
@@ -110,6 +128,9 @@ export function open(config: BunSqlConfig): DriverPool {
       ...(config.searchPath !== undefined ? { search_path: config.searchPath } : {}),
     },
     ...(config.ssl !== undefined ? { tls: config.ssl } : {}),
+    onclose() {
+      dropped += 1;
+    },
   });
 
   const root = new WireSession(
@@ -126,24 +147,48 @@ export function open(config: BunSqlConfig): DriverPool {
   );
 
   const held: HeldPool = { sql, parked, acquireMs, counters, notices, isClosed };
+
+  const run = (
+    text: string,
+    params: readonly WireValue[] | undefined,
+    watch: Watch | undefined,
+  ): ReturnType<WireSession["query"]> => {
+    const sent = dropped;
+    return root
+      .query(text, params, watch)
+      .catch((error: unknown) =>
+        import("./bunsql-extra.js").then((mod) =>
+          mod.recover(sql, error, text, root.depth(), clientPools.has(pool), dropped > sent, () =>
+            root.query(text, params, watch),
+          ),
+        ),
+      );
+  };
+
+  const afterDrop = (
+    text: string,
+    params: readonly WireValue[] | undefined,
+    watch: Watch | undefined,
+  ): ReturnType<WireSession["query"]> => {
+    if (dropped === 0) return run(text, params, watch);
+    const seen = dropped;
+    return import("./bunsql-extra.js").then((mod) =>
+      mod.drainClosed(sql).then(() => {
+        if (dropped === seen) dropped = 0;
+        return run(text, params, watch);
+      }),
+    );
+  };
   const checkout = (): Promise<DriverConnection> =>
     closed ? rejectClosed() : import("./bunsql-extra.js").then((mod) => mod.checkout(held));
 
-  return {
+  const pool: DriverPool = {
     capabilities: BUNSQL_CAPABILITIES,
     execute(text, params, options) {
       const refused = noTimeout(options);
       if (refused !== undefined) return refused;
       return runCall(closed, options, (watch) =>
-        releaseParked(parked).then(() =>
-          root
-            .query(text, params, watch)
-            .catch((error: unknown) =>
-              import("./bunsql-extra.js").then((mod) =>
-                mod.reopen(error, () => root.query(text, params, watch)),
-              ),
-            ),
-        ),
+        releaseParked(parked).then(() => afterDrop(text, params, watch)),
       );
     },
     async batch(statements, options) {
@@ -175,6 +220,7 @@ export function open(config: BunSqlConfig): DriverPool {
       await sql.close();
     },
   };
+  return pool;
 }
 
 export function send(sql: SQL, text: string, params: readonly WireValue[] | undefined): WireQuery {

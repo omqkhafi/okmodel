@@ -99,6 +99,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `morphTo` with a null name, a null type, or an id that is not a non-empty string is OKM1120. An empty string name or type stays OKM1020 (D260).
 - Updating a tree parent to the row's own id is OKM1120 when `where` is the primary key. A filter that is not the key is not checked (D260).
 - `update` with `limit` and `returning: true` returns the updated rows and honors `select`. Without it the result stays `{ count }` (D260).
+- `update` with `{ allow, returning: true }` is typed as the updated rows, and that is what the call returns.
+- `delete` with `{ returning: true }` is OKM1120 and deletes nothing. The option type does not accept `true`. Pass the field names, or omit `returning` for `{ count }`.
 - An include `select` that names a hidden column is OKM1120. A default include still omits the column (D260).
 
 #### adapters
@@ -106,7 +108,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - A server error whose text contains `CONNECT` is no longer treated as a lost connection. Classification uses the driver `code` and SQLSTATE (`08` and `57P01`–`57P03`) only. A live session is rolled back and released. A session that is gone is released without a rollback (D244).
 - On PGlite, a JS number, bigint, or boolean bound to a column is sent as wire text. A parameter protocol error (`08P01`) is kind `driver`. A closed connection stays `unavailable` (D259).
 - The timestamp conformance statements set the session time zone to UTC, so the wire text does not depend on the server time zone.
-- Bun.sql retries a statement that fails because the socket is already closed, so the query after a backend killed during `.stream()` does not fail once (D260).
+- Bun.sql drops a pooled connection on a closed signal or `57P01` before the next statement uses it. A read that failed because that connection was already dead is tried once on a new connection. A write, a lock, or a statement inside a transaction is not retried (D260).
 - Bun.sql rejects a wire integer outside the signed int8 range as kind `invalid`, including an id of 2^64. A numeric value written as that integer is refused too (D260).
 - PGlite `connect(pool)` then `close()` marks that client closed. Later calls are `unavailable`. The pool stays open (D260).
 - The timestamp conformance statements set the session time zone to UTC, so the wire text does not depend on the server time zone.
@@ -126,7 +128,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The favicon morph keeps the letter visible. The paths sit in the same box as the OKEngine mark, so the blur does not wipe the tile.
 - The Schema page lists extensions as `citext()`, `pgTrgm()`, or `extension("name")`. Config states each option once.
 - Text search: `natural` combines unquoted words with AND. `advanced` is raw `to_tsquery`. A syntax error in that query is OKM1120 and names the search input. A missing text search configuration is OKM1122. An empty or malformed name is still OKM1122 when the statement is built (D259, D260).
-- A claim returns `{ count }` unless `returning: true`, which returns the updated rows. The handbook sets a `claimedBy` token, then `find`s by that token (D259, D260).
+- A claim returns `{ count }` unless `returning: true`, which returns the updated rows, including when `{ allow }` names a guarded field. `delete` does not accept `{ returning: true }` (OKM1120, and the row stays). The handbook sets a `claimedBy` token, then `find`s by that token (D259, D260).
 - PGlite is a pool of one. A statement issued while a `tx()` is open waits until it ends, unless `timeouts.acquire` is set (D259).
 - A morph write can store another tenant's id. The include reads as the caller, so that target is null (D259).
 - An include `select` that names a hidden column is OKM1120. A default include still omits it (D260).
