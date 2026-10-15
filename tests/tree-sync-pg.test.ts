@@ -269,12 +269,25 @@ postgresTest(gate, "a row cannot be its own child", async () => {
     const before = (await a.nodes.find({ where: { id: row(2) }, limit: 1 }))[0]?.parentId;
     const error = await catchError(a.nodes.sync(row(1), "children", [row(1)]));
     expect(error.code).toBe("OKM1120");
-    expect(error.message).toContain("own child");
+    expect(error.message).toContain("tree");
     expect((await a.nodes.find({ where: { id: row(2) }, limit: 1 }))[0]?.parentId).toBe(before);
     expect((await a.nodes.find({ where: { id: row(5) }, limit: 1 }))[0]?.parentId).toBe(row(1));
     const normal = await a.nodes.sync(row(1), "children", [row(2)]);
     expect(normal.removed).toEqual([row(5)]);
     expect((await a.nodes.find({ where: { id: row(2) }, limit: 1 }))[0]?.parentId).toBe(row(1));
     expect((await a.nodes.find({ where: { id: row(5) }, limit: 1 }))[0]?.parentId).toBeNull();
+    const followed = await a.nodes.sync(row(1), "follows", [row(1), row(2)]);
+    expect(followed.added.toSorted(byText)).toEqual([row(1), row(2)].sort(byText));
+    expect(followed.removed).toEqual([]);
+    const dropped = await a.nodes.sync(row(1), "follows", [row(1)]);
+    expect(dropped.added).toEqual([]);
+    expect(dropped.removed).toEqual([row(2)]);
+    const cycle = await catchError(
+      a.nodes.update({ where: { id: row(2) }, set: { parentId: row(2) } }),
+    );
+    expect(cycle.code).toBe("OKM1120");
+    expect(cycle.message).toContain("tree");
+    expect((await a.nodes.find({ where: { id: row(2) }, limit: 1 }))[0]?.parentId).toBe(row(1));
+    await a.nodes.update({ where: { name: "mid" }, set: { name: "mid" } });
   });
 });

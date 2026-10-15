@@ -4,7 +4,7 @@
  * Loaded on the first reserve, batch, or stream. A read does not use it.
  */
 
-import type { SQL } from "bun";
+import type { ReservedSQL, SQL } from "bun";
 
 import type { DriverConnection, WireValue } from "../../contracts/driver.js";
 import { DriverError } from "../error.js";
@@ -25,10 +25,70 @@ import { WireSession } from "./session.js";
  * @param held - The pool and its counters
  * @returns A connection the caller must release
  */
-export async function checkout(held: HeldPool): Promise<DriverConnection> {
+/**
+ * Runs `again` when `error` is a socket Bun has already closed.
+ *
+ * A socket Bun has already closed fails the next statement with
+ * "Connection closed". The attempt after that opens a new socket. A statement
+ * the server terminates (`57P01`) is not retried: that query was in flight.
+ * Any other error is rethrown.
+ *
+ * @param error - The failure from the first attempt
+ * @param again - The same statement
+ * @returns The retried result
+ */
+export async function reopen<T>(error: unknown, again: () => Promise<T>): Promise<T> {
+  if (!socketClosed(error)) throw error;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await again();
+    } catch (next) {
+      error = next;
+      if (!socketClosed(next) || attempt === 1) throw next;
+    }
+  }
+  throw error;
+}
+
+function socketClosed(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  if (error.message === "Connection closed") return true;
+  return error.cause instanceof Error && error.cause.message === "Connection closed";
+}
+
+/**
+ * Subscribes on one pooled connection.
+ *
+ * @param sql - The pool
+ * @param parked - Reserved handles to put back first
+ * @param closed - The pool is closed
+ * @param channel - Notify channel
+ * @param onNotify - Payload callback
+ * @returns Stops the subscription
+ */
+export async function listen(
+  sql: SQL,
+  parked: ReservedSQL[],
+  closed: boolean,
+  channel: string,
+  onNotify: (payload: string) => void,
+): Promise<() => Promise<void>> {
+  if (closed) return rejectClosed();
+  const pending = parked.splice(0);
+  for (const reserved of pending) {
+    const done: unknown = reserved.release();
+    if (done instanceof Promise) await done;
+  }
+  const subscription = await sql.listen(channel, onNotify);
+  return async () => {
+    await subscription.unlisten();
+  };
+}
+
+export async function checkout(held: HeldPool): Promise<DriverConnection & { evict(): void }> {
   const { counters, isClosed } = held;
   if (isClosed()) return rejectClosed();
-  const reserved = held.parked.pop() ?? (await reserve(held.sql, held.acquireMs, counters));
+  const reserved = (await takeOpen(held)) ?? (await reserve(held.sql, held.acquireMs, counters));
   counters.reserved += 1;
   const session = new WireSession(
     (text, params) => send(reserved, text, params),
@@ -74,20 +134,85 @@ export async function checkout(held: HeldPool): Promise<DriverConnection> {
         }),
       );
     },
+    evict() {
+      lost.on = true;
+    },
     async release() {
       if (released) return;
       released = true;
+      if (!lost.on && reportsClosed(reserved)) lost.on = true;
       try {
         if (!lost.on) await reset(session, reserved);
       } finally {
         counters.reserved = Math.max(0, counters.reserved - 1);
         // A closed Bun.sql connection rejects the next statement with
         // "Connection closed". A discarded statement takes that rejection.
-        if (lost.on) await held.sql.unsafe("select 1").catch(() => undefined);
-        else await park(held.parked, reserved);
+        if (lost.on) {
+          // The slot has to be free before the pool can open a new connection.
+          // Releasing a closed handle puts it back once; flush spends that failure.
+          try {
+            reserved.release();
+          } catch {
+            // Bun already dropped the handle.
+          }
+          await flushClosed(held.sql);
+        } else await park(held.parked, reserved);
       }
     },
   };
+}
+
+/**
+ * A parked connection Bun has already closed.
+ *
+ * @param reserved - The handle about to be reused
+ * @returns `true` when the handle reports itself closed
+ */
+function reportsClosed(reserved: ReservedSQL): boolean {
+  return Reflect.get(reserved, "closed") === true;
+}
+
+/**
+ * Drops parked connections that report closed, then returns one that is open.
+ *
+ * A closed handle is not released back into Bun's pool. A discarded statement
+ * takes the rejection so the next checkout does not see it.
+ *
+ * @param held - The pool and its parked handles
+ * @returns An open handle, or `undefined` when the park is empty
+ */
+async function takeOpen(held: HeldPool): Promise<ReservedSQL | undefined> {
+  while (held.parked.length > 0) {
+    const next = held.parked.pop();
+    if (next === undefined) return undefined;
+    if (!reportsClosed(next)) return next;
+    try {
+      next.release();
+    } catch {
+      // Bun already dropped the handle.
+    }
+    await flushClosed(held.sql);
+  }
+  return undefined;
+}
+
+/**
+ * Spends the one failure a closed Bun.sql socket reports, then stops.
+ *
+ * The next statement on that pool opens a new connection. Three tries cover
+ * a socket that fails once and a second that is already open.
+ *
+ * @param sql - The pool
+ */
+async function flushClosed(sql: SQL): Promise<void> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await sql.unsafe("select 1");
+      return;
+    } catch {
+      // The closed socket rejects once.
+    }
+  }
 }
 
 function bunClosed(message: string): boolean {
@@ -110,7 +235,7 @@ async function reset(session: WireSession, sql: SQL): Promise<void> {
  * @returns Chunks of wire rows
  */
 export function streamRows(
-  checkout: () => Promise<DriverConnection>,
+  checkout: () => Promise<DriverConnection & { evict?: () => void }>,
   text: string,
   params: readonly WireValue[] | undefined,
 ): AsyncIterable<readonly (readonly WireValue[])[]> {
@@ -122,6 +247,9 @@ export function streamRows(
         text,
         params,
       );
+    } catch (error) {
+      connection.evict?.();
+      throw error;
     } finally {
       await connection.release();
     }

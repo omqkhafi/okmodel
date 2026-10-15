@@ -20,6 +20,7 @@ import type {
   WireValue,
 } from "../../contracts/driver.js";
 import { BUNSQL_CAPABILITIES } from "../capabilities.js";
+import { DriverError } from "../error.js";
 import { driverErrors, mapFailure, rejectClosed } from "../failure.js";
 import { runCall } from "./call.js";
 import { noTimeout } from "./no-inflight-timeout.js";
@@ -30,7 +31,7 @@ export {
   hasCapability,
   readCapability,
 } from "../capabilities.js";
-export { DriverError } from "../error.js";
+export { DriverError };
 
 /** TLS values Bun.sql accepts that this adapter forwards. */
 export type BunSqlTls =
@@ -133,10 +134,17 @@ export function open(config: BunSqlConfig): DriverPool {
     execute(text, params, options) {
       const refused = noTimeout(options);
       if (refused !== undefined) return refused;
-      return runCall(closed, options, async (watch) => {
-        await releaseParked(parked);
-        return root.query(text, params, watch);
-      });
+      return runCall(closed, options, (watch) =>
+        releaseParked(parked).then(() =>
+          root
+            .query(text, params, watch)
+            .catch((error: unknown) =>
+              import("./bunsql-extra.js").then((mod) =>
+                mod.reopen(error, () => root.query(text, params, watch)),
+              ),
+            ),
+        ),
+      );
     },
     async batch(statements, options) {
       const refused = noTimeout(options);
@@ -150,10 +158,15 @@ export function open(config: BunSqlConfig): DriverPool {
     },
     reserve: () => checkout(),
     stream(text, params) {
-      return stream(text, params);
+      return (async function* () {
+        const { streamRows } = await import("./bunsql-extra.js");
+        yield* streamRows(checkout, text, params);
+      })();
     },
     listen(channel, onNotify) {
-      return listen(channel, onNotify);
+      return import("./bunsql-extra.js").then((mod) =>
+        mod.listen(sql, parked, closed, channel, onNotify),
+      );
     },
     stats: () => statsOf(counters, max),
     async close() {
@@ -162,33 +175,36 @@ export function open(config: BunSqlConfig): DriverPool {
       await sql.close();
     },
   };
-
-  function stream(
-    text: string,
-    params?: readonly WireValue[],
-  ): AsyncIterable<readonly (readonly WireValue[])[]> {
-    return (async function* () {
-      const { streamRows } = await import("./bunsql-extra.js");
-      yield* streamRows(checkout, text, params);
-    })();
-  }
-
-  async function listen(
-    channel: string,
-    onNotify: (payload: string) => void,
-  ): Promise<() => Promise<void>> {
-    if (closed) return rejectClosed();
-    await releaseParked(parked);
-    const subscription = await sql.listen(channel, onNotify);
-    return async () => {
-      await subscription.unlisten();
-    };
-  }
 }
 
 export function send(sql: SQL, text: string, params: readonly WireValue[] | undefined): WireQuery {
+  const refused = refuseInt8(params);
+  if (refused !== undefined) return refused;
   if (params === undefined || params.length === 0) return sql.unsafe(text).raw();
   return sql.unsafe(text, [...params]).raw();
+}
+
+/**
+ * Rejects a canonical integer outside the signed int8 range.
+ *
+ * The other drivers get SQLSTATE 22003 from the server. Bun.sql does not, so
+ * the refusal is a rejected query the session maps like that SQLSTATE.
+ *
+ * @param params - Wire parameters
+ * @returns A rejected query, or `undefined` when every integer fits
+ */
+function refuseInt8(params: readonly WireValue[] | undefined): WireQuery | undefined {
+  if (params === undefined) return undefined;
+  for (const value of params) {
+    if (value === null || value.length < 19 || !/^-?(?:0|[1-9]\d*)$/.test(value)) continue;
+    const parsed = BigInt(value);
+    if (parsed > 9223372036854775807n || parsed < -9223372036854775808n) {
+      return Promise.reject(
+        new DriverError("bigint out of range", { sqlstate: "22003" }),
+      ) as WireQuery;
+    }
+  }
+  return undefined;
 }
 
 export async function reserve(

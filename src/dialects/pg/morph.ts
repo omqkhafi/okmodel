@@ -316,6 +316,33 @@ function declaredTargets(options: unknown, name: string): readonly string[] | un
   return undefined;
 }
 
+/**
+ * Refuses `morphTo` when the name, type, or id is missing.
+ *
+ * `null` used to throw a TypeError on `.length`. An empty name or type stays
+ * OKM1020. A null or non-string id, or a null type, is OKM1120.
+ *
+ * @param name - Column stem
+ * @param type - Target table name
+ * @param id - That table's primary key
+ */
+export function assertMorphTo(name: unknown, type: unknown, id: unknown): void {
+  if (name === null || type === null || typeof id !== "string" || id.length === 0) {
+    throw new OkmError(
+      "OKM1120",
+      "morphTo() needs a morph name, a target table, and that table's id.",
+    );
+  }
+  if (
+    typeof name !== "string" ||
+    name.length === 0 ||
+    typeof type !== "string" ||
+    type.length === 0
+  ) {
+    throw new OkmError("OKM1020", "morphTo() needs a morph name and a target table.");
+  }
+}
+
 function isTextType(dataType: string): boolean {
   return (
     dataType === "text" ||

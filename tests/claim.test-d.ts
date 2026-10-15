@@ -32,6 +32,30 @@ async function shapes(url: string): Promise<void> {
     limit: 10,
     lock: "skip",
   });
+  const counted = db.jobs.update({
+    where: { status: "pending" },
+    set: { title: "running" },
+    limit: 1,
+    lock: "skip",
+  });
+  expectTypeOf(counted).resolves.toEqualTypeOf<{ readonly count: number }>();
+  const rows = db.jobs.update(
+    { where: { status: "pending" }, set: { title: "running" }, limit: 1, lock: "skip" },
+    { returning: true },
+  );
+  expectTypeOf(rows).resolves.toEqualTypeOf<
+    readonly {
+      readonly id: string;
+      readonly title: string;
+      readonly status: string;
+      readonly qty: number;
+      readonly left: number | null;
+      readonly whole: bigint;
+      readonly exact: number;
+      readonly digits: string;
+      readonly note: string | null;
+    }[]
+  >();
 
   await db.jobs.update({
     where: { id: "a" },

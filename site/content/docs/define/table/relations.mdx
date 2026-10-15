@@ -326,7 +326,7 @@ export const tasks = table(
 
 #### morphTo
 
-`morphTo(name, type, id)` sets the type and id columns together. Spread it into insert or update. Setting one without the other, or clearing one and setting the other, is OKM1121. Clearing both is allowed. A type outside the list is OKM1120, and the message lists the accepted tables. An empty name or type is OKM1020.
+`morphTo(name, type, id)` sets the type and id columns together. Spread it into insert or update. Setting one without the other, or clearing one and setting the other, is OKM1121. Clearing both is allowed. A type outside the list is OKM1120, and the message lists the accepted tables. An empty name or type is OKM1020. A null name, a null type, or an id that is not a non-empty string is OKM1120. A write can store another tenant's id. The include reads as the caller, so that target is null.
 
 ```ts title="morph-to.ts"
 import { morphTo } from "okmodel/pg";

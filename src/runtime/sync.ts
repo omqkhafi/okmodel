@@ -196,11 +196,16 @@ async function prepare(
   const parent = userValue(identity, id);
   const wanted = readIds(relatedId, ids);
   const own = String(relatedId.encode(parent));
-  if (owner.model.name === related.model.name && wanted.some((item) => String(item) === own)) {
+  if (
+    relation.kind === "many" &&
+    relation.through === undefined &&
+    owner.model.name === related.model.name &&
+    wanted.some((item) => String(item) === own)
+  ) {
     fail(
       "OKM1120",
-      `sync on ${owner.model.name}.${relation.name} cannot make a row its own child.`,
-      "A row cannot be its own child. Leave its id out of the list.",
+      `sync on ${owner.model.name}.${relation.name} cannot make a row its own child in a tree.`,
+      "A row cannot be its own child in a tree. Leave its id out of the list.",
     );
   }
   const where = await presetWhere(session.schema, table, mods.uses);

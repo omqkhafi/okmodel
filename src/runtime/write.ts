@@ -514,6 +514,7 @@ function planUpdate(
     });
     rejectDuplicateTargets(table, rows);
     rejectMixedSets(rows);
+    for (const row of rows) refuseTreeCycle(table, row.where, row.set, schema.tenancy?.key);
     const moves = rows.some(
       (row) => pathField(schema.tenancy, table.model.name, row.set) !== undefined,
     );
@@ -543,6 +544,7 @@ function planUpdate(
   const set = writeSet(table, input.set, allow, schema.tenancy);
   requireFilter(table, input.where, mods, "update");
   if (Object.keys(set).length === 0) fail("OKM1120", "update set is empty.");
+  refuseTreeCycle(table, input.where, set, schema.tenancy?.key);
   const where = stack(input.where, mods.presets);
   const moved = pathAssignment(schema.tenancy, table.model.name, set, scope);
   if (moved !== undefined && claim !== undefined) {
@@ -607,7 +609,10 @@ function planDelete(
   if (!isRecord(input)) fail("OKM1121", "delete expects { where }.");
   rejectKeys(input, ["where"], "delete");
   requireFilter(table, input.where, mods, "delete");
-  const returning = returningOption(table, options.returning);
+  const returning =
+    options.returning === true
+      ? selectedColumns(table, options.returning)
+      : returningOption(table, options.returning);
   const sql = new Sql();
   sql.text("delete from ");
   sql.text(quote(table.model.sql));
@@ -1628,6 +1633,90 @@ export function writeSet(
   return set;
 }
 
+/**
+ * Refuses a tree parent that points at the row being updated.
+ *
+ * The check runs only when `where` is that row's primary key. A filter that
+ * is not the key can match many rows, so it is not checked.
+ *
+ * @param table - The table being updated
+ * @param where - The caller's filter, before presets
+ * @param set - Fields the update writes
+ */
+function refuseTreeCycle(
+  table: Indexed,
+  where: unknown,
+  set: Record<string, unknown>,
+  scopeKey: string | undefined,
+): void {
+  const own = keyedId(table, where, scopeKey);
+  if (own === undefined) return;
+  for (const relation of table.model.relations) {
+    if (
+      relation.kind !== "many" ||
+      relation.through !== undefined ||
+      relation.morph !== undefined
+    ) {
+      continue;
+    }
+    if (relation.table !== table.model.name) continue;
+    for (const sql of relation.remote) {
+      const column = columnBySql(table, sql);
+      if (column === undefined) continue;
+      const value = set[column.field];
+      if (typeof value !== "string" && typeof value !== "number" && typeof value !== "bigint") {
+        continue;
+      }
+      if ((typeof value === "string" ? value : value.toString()) !== own) continue;
+      fail(
+        "OKM1120",
+        `update on ${table.model.name}.${column.field} cannot point a tree row at itself.`,
+        "Set the parent to another row. A filter that is not the primary key is not checked.",
+      );
+    }
+  }
+}
+
+/**
+ * The primary-key value when `where` names that key and nothing else.
+ *
+ * A tenancy column in the key may be absent: the scope fills it.
+ *
+ * @param table - The table being updated
+ * @param where - The caller's filter
+ * @param scopeKey - Tenancy column the scope fills, when it is part of the key
+ * @returns The key text, or `undefined` when the filter is not that key
+ */
+function keyedId(table: Indexed, where: unknown, scopeKey: string | undefined): string | undefined {
+  if (!isRecord(where)) return undefined;
+  const primary = table.model.primary;
+  const required = primary.filter((field) => field !== scopeKey);
+  const field = required.length === 1 ? required[0] : undefined;
+  if (field === undefined || !Object.hasOwn(where, field)) return undefined;
+  for (const key of Object.keys(where)) {
+    if (!primary.includes(key)) return undefined;
+  }
+  const value = where[field];
+  if (typeof value !== "string" && typeof value !== "number" && typeof value !== "bigint") {
+    return undefined;
+  }
+  return String(value);
+}
+
+/**
+ * The column whose SQL name is `sql`.
+ *
+ * @param table - The table
+ * @param sql - Quoted-free SQL name
+ * @returns The column, or `undefined`
+ */
+function columnBySql(table: Indexed, sql: string): ColumnModel | undefined {
+  for (const column of table.model.columns) {
+    if (column.sql === sql) return column;
+  }
+  return undefined;
+}
+
 function updateItem(
   table: Indexed,
   value: unknown,
@@ -1778,6 +1867,7 @@ export function returningOption(
   value: unknown,
 ): readonly ColumnModel[] | undefined {
   if (value === undefined) return undefined;
+  if (value === true) return selectedColumns(table, undefined);
   return selectedColumns(table, value);
 }
 

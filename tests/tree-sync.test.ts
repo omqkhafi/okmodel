@@ -86,7 +86,29 @@ test("sync locks the parent and refuses a link that would delete a row", async (
   expect(parent.message).toContain("to-many");
   const self = await catchError(a.nodes.sync(ID, "children", [ID]).sql());
   expect(self.code).toBe("OKM1120");
-  expect(self.message).toContain("own child");
+  expect(self.message).toContain("tree");
+  const follows = await a.nodes.sync(ID, "follows", [ID, OTHER]).sql();
+  expect(follows.statements).toHaveLength(2);
+  const cycle = await catchError(
+    a.nodes.update({ where: { id: ID }, set: { parentId: ID } }).sql(),
+  );
+  expect(cycle.code).toBe("OKM1120");
+  expect(cycle.message).toContain("tree");
+  const other = await a.nodes.update({ where: { id: ID }, set: { parentId: OTHER } }).sql();
+  expect(other.statements[0]?.text).toContain("update");
+  const filtered = await a.nodes.update({ where: { name: "root" }, set: { parentId: ID } }).sql();
+  expect(filtered.statements[0]?.text).toContain("update");
+  const returned = await a.nodes
+    .update(
+      { where: { name: "root" }, set: { name: "next" }, limit: 1, lock: "skip" },
+      { returning: true },
+    )
+    .sql();
+  expect(returned.statements[0]?.text).toContain("returning");
+  const counted = await a.nodes
+    .update({ where: { name: "root" }, set: { name: "next" }, limit: 1, lock: "skip" })
+    .sql();
+  expect(counted.statements[0]?.text).not.toContain("returning");
   const kept = await a.nodes.sync(ID, "children", [OTHER]).sql();
   expect(kept.statements).toHaveLength(2);
   const cross = await a.tags.sync(ID, "nodes", [ID]).sql();

@@ -123,13 +123,13 @@ test("reads omit hidden fields, writes strip input, and inspect redacts", async 
       .inspect();
     expect(tokenView.sql.params).toContain("[redacted]");
     expect(JSON.stringify(tokenView).includes("session-secret-value")).toBe(false);
-    const included = await db.sessions.find({
-      where: { id: SESSION },
-      include: { user: { select: ["passwordHash"] as never } },
-      limit: 1,
-    });
-    expect(JSON.stringify(included).includes(SECRET)).toBe(false);
-    expect(JSON.stringify(included).includes("passwordHash")).toBe(false);
+    await expectHidden(
+      db.sessions.find({
+        where: { id: SESSION },
+        include: { user: { select: ["passwordHash"] as never } },
+        limit: 1,
+      }),
+    );
 
     const described = await db.users.find({ where: { email: "a@b.c" }, limit: 1 }).inspect();
     expect(JSON.stringify(described).includes(SECRET)).toBe(false);

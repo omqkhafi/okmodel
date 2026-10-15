@@ -10,11 +10,14 @@ import { join } from "node:path";
 
 import type { DriverPool, ExecuteResult } from "../src/contracts/driver.js";
 import { POSTGRESJS_CAPABILITIES } from "../src/adapters/capabilities.js";
+import { open as openPglite } from "../src/adapters/pg/pglite.js";
 import { open } from "../src/adapters/pg/postgresjs.js";
 import { open as openPg } from "../src/adapters/pg/nodepostgres.js";
 import { open as openBun } from "../src/adapters/pg/bunsql.js";
+import { connect as connectPglite } from "../src/runtime/pg/pglite.js";
 import { connect as connectPg } from "../src/runtime/pg/pg.js";
 import { connect as connectBun } from "../src/runtime/pg/bun.js";
+import { OkmError } from "../src/contracts/error.js";
 import { schema, table, t } from "../src/dialects/pg/index.js";
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
 import { primaryUrl } from "../packages/harness/src/topology.js";
@@ -49,6 +52,32 @@ test("close is idempotent and await using calls it once", async () => {
     await scoped.connected;
   }
   expect(closes).toBe(1);
+});
+
+test("pglite connect(pool) then close marks the client closed", async () => {
+  const pool = await openPglite();
+  try {
+    const db = await connectPglite(pool, { schema: app });
+    await db.connected;
+    await db.close();
+    const error = await db.notes.find({ limit: 1 }).then(
+      () => {
+        throw new Error("expected unavailable");
+      },
+      (caught: unknown) => caught,
+    );
+    expect(error).toBeInstanceOf(OkmError);
+    if (!(error instanceof OkmError)) return;
+    expect(error.kind).toBe("unavailable");
+    expect(error.code).toBe("unavailable");
+    const still = await pool.execute("select 1");
+    expect(still.rows).toEqual([["1"]]);
+    const other = await connectPglite(pool, { schema: app });
+    await other.connected;
+    await other.close();
+  } finally {
+    await pool.close();
+  }
 });
 
 test("a client that adopted a pool does not close it", async () => {

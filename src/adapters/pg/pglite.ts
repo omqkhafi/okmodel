@@ -161,6 +161,26 @@ export async function open(config: PgliteConfig = {}): Promise<DriverPool> {
   };
 }
 
+/**
+ * A pool whose `close` marks this client only.
+ *
+ * The inner pool stays open. A later call fails as unavailable.
+ * The body stays this small: the PGlite incremental figure is 11,510, 500 under its gate.
+ *
+ * @param pool - The caller's pool
+ * @returns A pool the client owns
+ */
+export function seal(pool: DriverPool): DriverPool {
+  let closed = 0;
+  return new Proxy(pool, {
+    get: (inner, key) =>
+      key === "close"
+        ? () => Promise.resolve((closed = 1))
+        : ((inner = (inner as never)[key]),
+          closed && (inner as { call?: unknown })?.call ? () => rejectClosed() : inner),
+  });
+}
+
 class PgliteSession implements BatchSession {
   readonly canCancel = false;
   private transactionDepth = 0;

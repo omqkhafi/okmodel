@@ -138,6 +138,9 @@ jobs:
       - name: Check
         run: bun run check
 
+      - name: Packed files are tracked
+        run: bun ./scripts/pack-tracked.ts --release
+
       - name: Setup Node for publish
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:

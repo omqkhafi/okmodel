@@ -8,7 +8,7 @@
 
 import { OkmError } from "../../contracts/error.js";
 import type { RelationModel } from "./model.js";
-import { resolveMorph, resolveMorphMany } from "./morph.js";
+import { assertMorphTo, resolveMorph, resolveMorphMany } from "./morph.js";
 import { resolveThrough } from "./through.js";
 
 /** A to-one relation. `field` is the local foreign key when the table has several. */
@@ -284,9 +284,7 @@ export function morphTo<const TName extends string, const TType extends string>(
   type: TType,
   id: string,
 ): { readonly [K in `${TName}Type`]: TType } & { readonly [K in `${TName}Id`]: string } {
-  if (name.length === 0 || type.length === 0) {
-    throw new OkmError("OKM1020", "morphTo() needs a morph name and a target table.");
-  }
+  assertMorphTo(name, type, id);
   const row: Record<string, string> = {};
   row[`${name}Type`] = type;
   row[`${name}Id`] = id;
