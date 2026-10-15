@@ -4,16 +4,12 @@
  */
 
 import { readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+
+import { siteRoot } from "./repo";
 
 /** Absolute path to `site/content/docs`. */
-export const DOCS_CONTENT_DIR = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "..",
-  "content",
-  "docs",
-);
+export const DOCS_CONTENT_DIR = join(siteRoot(), "content", "docs");
 
 /**
  * Strip a leading YAML frontmatter block (`---` … `---`).

@@ -5,8 +5,9 @@
 
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+
+import { siteRoot } from "./repo";
 
 /** Discovery schema the index names. */
 export const AGENT_SKILLS_SCHEMA = "https://schemas.agentskills.io/discovery/0.2.0/schema.json";
@@ -17,10 +18,7 @@ export const AGENT_SKILL_NAME = "okmodel";
 /** Path-absolute URL of the skill file. */
 export const AGENT_SKILL_URL = `/.well-known/agent-skills/${AGENT_SKILL_NAME}/SKILL.md`;
 
-const SKILL_PATH = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "../content/agent-skills/okmodel/SKILL.md",
-);
+const SKILL_PATH = join(siteRoot(), "content/agent-skills/okmodel/SKILL.md");
 
 /** One published skill, pinned to the bytes on disk. */
 export interface AgentSkillEntry {
