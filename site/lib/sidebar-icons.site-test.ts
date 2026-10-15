@@ -34,9 +34,7 @@ test("section folders become the routes under their label", () => {
 
 test("reference and ai resources sit under their labels", () => {
   const flat = flattenSectionFolders(source.getPageTree());
-  const labels = flat.children.map((node) =>
-    node.type === "page" ? node.url : node.type === "separator" ? node.name : node.type === "folder" ? node.name : node.type,
-  );
+  const labels = flat.children.map((node) => (node.type === "page" ? node.url : node.name));
   expect(labels).toContain("03 Reference");
   expect(labels).toContain("/docs/reference/cli");
   expect(labels).toContain("/docs/reference/errors");

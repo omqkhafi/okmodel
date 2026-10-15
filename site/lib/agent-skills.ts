@@ -32,10 +32,11 @@ export interface AgentSkillEntry {
 }
 
 /**
- * Raw skill file. The route serves these bytes unchanged.
+ * Raw skill file. Copied into an `ArrayBuffer` so `Response` accepts the body.
+ * The route serves these bytes unchanged.
  */
-export function readAgentSkillBytes(): Uint8Array {
-  return readFileSync(SKILL_PATH);
+export function readAgentSkillBytes(): Uint8Array<ArrayBuffer> {
+  return new Uint8Array(readFileSync(SKILL_PATH));
 }
 
 /**
