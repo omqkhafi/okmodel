@@ -10,7 +10,7 @@ import { POSTGRES_VERSIONS } from "../packages/harness/src/version.js";
 import { renderCompatibility, supportSentence } from "../scripts/compatibility.js";
 import { verifyVersions } from "../scripts/verify.js";
 import { changelogReleaseNotes, milestoneTitle } from "../scripts/github-release.js";
-import { publishedPackageProblem } from "../scripts/npm-smoke.js";
+import { provenanceCommitProblem, publishedPackageProblem } from "../scripts/npm-smoke.js";
 import {
   POSTGRES_EXCLUSIONS,
   POSTGRES_KNOWN_FAILURES,
@@ -110,6 +110,41 @@ test("published package problem names a missing version and missing provenance",
       "0.1.1",
     ),
   ).toBeUndefined();
+});
+
+test("published provenance must record the QA'd commit", () => {
+  const sha = "a".repeat(40);
+  const other = "b".repeat(40);
+  expect(provenanceCommitProblem(provenanceDocument([sha]), sha)).toBeUndefined();
+  expect(provenanceCommitProblem(provenanceDocument([sha.toUpperCase()]), sha)).toBeUndefined();
+  expect(provenanceCommitProblem(provenanceDocument([other]), sha)).toBe(
+    `provenance records commit ${other}, not the QA'd commit ${sha}`,
+  );
+  expect(provenanceCommitProblem(provenanceDocument([sha, other]), sha)).toContain(other);
+  expect(provenanceCommitProblem(provenanceDocument([]), sha)).toBe(
+    "provenance does not record a git commit",
+  );
+  expect(provenanceCommitProblem({ attestations: [] }, sha)).toBe(
+    "provenance attestation is missing",
+  );
+  expect(provenanceCommitProblem({}, sha)).toBe(
+    "npm attestations response is not an attestations document",
+  );
+  expect(provenanceCommitProblem(provenanceDocument([sha]), "abc")).toContain("40-hex");
+  expect(provenanceCommitProblem(provenanceDocument([sha], true), sha)).toBeUndefined();
+});
+
+test("the release workflow requires the QA'd commit on the tag job and the smoke job", () => {
+  const release = readFileSync(join(root, ".github/workflows/release.yml"), "utf8");
+  expect(release).toContain("description: Full 40-hex SHA of the QA'd commit");
+  expect(release).toContain("required: true");
+  expect(release).toContain("fetch-depth: 0");
+  expect(release).toContain("fetch-tags: true");
+  expect(release.match(/RELEASE_COMMIT: \$\{\{ inputs\.commit \}\}/g)).toEqual([
+    "RELEASE_COMMIT: ${{ inputs.commit }}",
+    "RELEASE_COMMIT: ${{ inputs.commit }}",
+  ]);
+  expect(release).toContain("bun ./scripts/npm-smoke.ts");
 });
 
 test("the site deploys only after a successful release of a stable tag", () => {
@@ -356,6 +391,35 @@ test("verify runs one version unless --all", () => {
   expect(() => verifyVersions(["--nope"], {})).toThrow(/Usage/);
   expect(() => verifyVersions([], { POSTGRES_VERSION: "14" })).toThrow(/outside 15/);
 });
+
+/**
+ * An attestations document whose SLSA statement records `commits`.
+ *
+ * @param commits - `gitCommit` digests to put in the statement
+ * @param withPublish - Also include the npm publish attestation, which has no git commit
+ * @returns The document `provenanceCommitProblem` reads
+ */
+function provenanceDocument(commits: readonly string[], withPublish = false): unknown {
+  const statement = {
+    predicate: {
+      buildDefinition: {
+        resolvedDependencies: commits.map((gitCommit) => ({ digest: { gitCommit } })),
+      },
+    },
+  };
+  const payload = Buffer.from(JSON.stringify(statement), "utf8").toString("base64");
+  const attestations: unknown[] = [];
+  if (withPublish) {
+    attestations.push({
+      predicateType: "https://github.com/npm/attestation/tree/main/specs/publish/v0.1",
+    });
+  }
+  attestations.push({
+    predicateType: "https://slsa.dev/provenance/v1",
+    bundle: { dsseEnvelope: { payload } },
+  });
+  return { attestations };
+}
 
 function unpinnedActions(yaml: string): readonly string[] {
   const problems: string[] = [];
