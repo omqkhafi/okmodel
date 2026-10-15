@@ -1,7 +1,7 @@
 /**
- * Docs sidebar. The tree comes from `meta.json`. Start and Define are
- * unwrapped, so each page is a row under its numbered label. `/docs` itself
- * is omitted; the header tab already opens it.
+ * Docs sidebar. The tree comes from `meta.json`. Start, Define, Reference,
+ * and AI Resources are unwrapped, so each page is a row under its numbered
+ * label. `/docs` itself is omitted; the header tab already opens it.
  */
 
 "use client";
@@ -17,7 +17,16 @@ import { usePathname } from "next/navigation";
 import { useMemo, useState, type ReactNode } from "react";
 
 /** Section folders whose children belong directly under the numbered label. */
-const FLAT_SECTIONS = new Set(["start", "Start", "define", "Define"]);
+const FLAT_SECTIONS = new Set([
+  "start",
+  "Start",
+  "define",
+  "Define",
+  "reference",
+  "Reference",
+  "ai",
+  "AI Resources",
+]);
 
 /**
  * Whether a node is a folder.

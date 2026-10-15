@@ -1,0 +1,76 @@
+---
+title: "Skills"
+description: "The agent skills in this repository, and the skill the site publishes."
+---
+The agent skills in this repository, and when to run each one.
+
+A skill is a file an agent reads and follows. Skills live at `.agents/skills/<name>/SKILL.md`. The `description` in that file says when it applies. This repository ships one skill.
+
+The site publishes one skill for agents that are not in this repository. The index is [`/.well-known/agent-skills/index.json`](/.well-known/agent-skills/index.json). The file is [`/.well-known/agent-skills/okmodel/SKILL.md`](/.well-known/agent-skills/okmodel/SKILL.md). It says to start at `/llms.txt`, then fetch one page. The index pins that file with a SHA-256 digest.
+
+## okm-ship
+
+`.agents/skills/okm-ship/SKILL.md` closes an implementation. Run it before you say the work is done. A missing changelog note for user-visible work is a defect.
+
+`AGENTS.md` and `.cursor/rules/changelog.mdc` send the agent to this file. Follow the skill file.
+
+### When it applies
+
+After a change to behavior, the public API, the CLI, a dialect, an adapter, errors, or the normative docs. Also when the prompt says to ship, close out, or sync the changelog.
+
+A pure typo or a format-only edit stays out of the changelog and skips the bump.
+
+### What it requires
+
+Three steps, in order. Finish them before the work is called done, and before the commit.
+
+| Step | Action |
+| --- | --- |
+| 1 | From the diff, list what a user or an app author would notice. |
+| 2 | Append those notes to `changelog.md` under `## Unreleased`. |
+| 3 | Run `bun run bump next`. |
+
+A note that would describe an API the source does not have stops the skill. Ask before writing it.
+
+Create a group only when it has bullets. Keep this order:
+
+| Group | Use it for |
+| --- | --- |
+| `### ✨ Added` | A new capability, export, or command. |
+| `### 💥 Breaking Changes` | An incompatible API, config, or behavior. |
+| `### ♻️ Changed` | A behavior or default change. |
+| `### ⚠️ Deprecated` | A deprecation. |
+| `### 🔥 Removed` | A removal. |
+| `### 🐛 Fixed` | A bug fix. |
+| `### 🔒 Security` | A security-relevant change. |
+
+A group with 8 or more bullets gets `####` areas, and only for areas that have bullets. Order: `contracts`, `dialects`, `adapters`, `runtime`, `tooling`, `docs`. The area is where the change lives. The CLI, scripts, checks, and CI are `tooling`. Files under `docs/` are `docs`. A smaller group stays flat.
+
+One idea per bullet. Write the user-visible impact. Put the bullet in its group, under its area when the group is large.
+
+| Prompt | Notes go under | Command |
+| --- | --- | --- |
+| An implementation | `## Unreleased` | `bun run bump next` |
+| The release prompt of a train | `## Unreleased`; the command promotes that section | `bun run bump release` |
+| An untagged release the prompt names, such as `v0.6.0` | That existing `## vX.Y.Z` | Leave `package.json` as it is |
+
+`bun run bump next` sets `package.json` to `<next release>-next.N` and leaves the changelog in place. `bun run bump release` drops the `-next.N` suffix, renames `## Unreleased` to `## vX.Y.Z — <date>`, and leaves a fresh empty `## Unreleased`.
+
+Hygiene finishes before a release bump. A hygiene prompt that is not itself the release still runs `bun run bump next`. The release prompt of a train is P17B for 0.1.0, then P30, P44, P55, and P66. That prompt runs `bun run bump release`.
+
+`patch`, `minor`, `major`, and `--set` remain available. Each of those still promotes the changelog. `--dry-run` prints the plan and writes nothing.
+
+<Callout type="info" title="Untagged release">
+When the prompt names a release that has no tag yet, the notes go under that heading. `bun run bump` stays unrun. `bun run release-check` allows this until the tag exists.
+</Callout>
+
+Before the execution report, review the change against the engineering standards in the skill (D129). The report states runtime entry size, minified and gzip, cold import, and any type-cost change. It also states the app startup graph, the total graph, and connect-entry cold imports. A measurement within 3% of a type ceiling is called out. A path listed in `.cursor/rules/project-map.mdc` that moved is updated in that same change.
+
+### What it must not do
+
+- Append a bullet under a tagged `## vX.Y.Z`. Current notes go under `## Unreleased`.
+- Write a `## v…` heading. `bun run bump release` writes it.
+- Add a group or an area outside the lists above.
+- Describe an API the source does not have. Stop and ask.
+- Run `bun run bump release` outside the release prompt of a train.
+- Run `bun run bump` when the prompt names an untagged release.

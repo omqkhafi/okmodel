@@ -5,6 +5,7 @@ import { ScrollToTop } from "@/components/scroll-to-top";
 import { readTagline } from "@/lib/package-meta";
 import { SITE_NAME, SITE_ORIGIN } from "@/lib/site-identity";
 import { source } from "@/lib/source";
+import { WEBMCP_GUARD } from "@/lib/webmcp-guard";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import "./global.css";
@@ -41,6 +42,11 @@ export const metadata: Metadata = {
 export default function Layout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={inter.className} suppressHydrationWarning>
+      <head>
+        <link rel="describedby" type="text/markdown" href="/llms.txt" title="Site index for LLMs" />
+        <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
+        <link rel="agent-skills" type="application/json" href="/.well-known/agent-skills/index.json" />
+      </head>
       <body className="flex min-h-screen flex-col">
         <a href="#content" className="skip-link">
           Skip to content
@@ -52,6 +58,7 @@ export default function Layout({ children }: { children: ReactNode }) {
             {children}
           </div>
         </Provider>
+        <script dangerouslySetInnerHTML={{ __html: WEBMCP_GUARD }} />
       </body>
     </html>
   );

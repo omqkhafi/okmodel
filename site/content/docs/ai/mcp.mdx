@@ -1,0 +1,37 @@
+---
+title: "MCP"
+description: "okmodel does not ship an MCP server. The browser can register read-only handbook tools."
+---
+
+okmodel does not ship an MCP server. There is no package to add, no config file, and no tools to call.
+
+An MCP server is deferred. If one is built, it is a separate package outside the core. It is not scheduled.
+
+## In the browser
+
+The site registers three read-only tools when the browser has `document.modelContext` or `navigator.modelContext`. A browser without that API does not download the script.
+
+| Tool | Input | Reads |
+| --- | --- | --- |
+| `search_docs` | `query` | `/api/search` |
+| `get_page` | `slug`, such as `reference/cli` | That page as markdown |
+| `list_pages` | none | `/llms.json` |
+
+## The handbook
+
+An agent reads the site. Start at [`/llms.txt`](/llms.txt). The index lists every public page as markdown, in sidebar order. Each line is the page title, its markdown URL, and the page description.
+
+| URL | Returns |
+| --- | --- |
+| `/llms.txt` | The index, as markdown. |
+| `/llms.mdx/docs/⟨slug⟩.md` | One page. The title is the heading. YAML frontmatter is stripped. |
+| `/llms-full.txt` | Every page in one file. Each block starts with the title and the HTML path. |
+| `/llms.json` | The same pages as JSON. Each page has `slug`, `title`, `description`, `html`, and `markdown`. |
+
+The introduction is `/llms.mdx/docs/index.md`. A nested page keeps its path, such as `/llms.mdx/docs/define/table/columns.md`. The same route also accepts a trailing `content.md` and the slug without `.md`.
+
+Send `Accept: text/markdown` on a handbook URL and the response is that page's markdown. The response sets `Vary: Accept`. This covers `/`, `/docs`, and `/changelog`. A URL under `/llms` is already markdown and is served as written. An unknown path with that `Accept` header is a markdown 404. The body links `/docs`, `/llms.txt`, and `/sitemap.xml`.
+
+## Errors
+
+`OkmError`, from `okmodel`, carries `fix` for a person or a coding agent. `fix.summary` is one sentence. `fix.suggestion` is the nearest accepted name, when one is close.

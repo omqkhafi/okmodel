@@ -1,0 +1,370 @@
+---
+title: "Errors"
+description: "OkmError carries a kind, a category, and a code. okm doctor prints each OKM code."
+---
+A failure from the client is an `OkmError`. Import the class from `okmodel`.
+
+```ts title="catch.ts"
+import { OkmError } from "okmodel";
+
+export function respond(error: unknown) {
+  const err = OkmError.from(error); // [!code focus]
+  return err.toHttp();
+}
+```
+
+`code` is an `OKM1xxx` guard, or the kind name when that kind has no number. `kind` selects the category. `summary` is the same text as `message`.
+
+## Fields
+
+| Field | What it holds |
+| --- | --- |
+| `code` | `OKM1xxx`, or the kind when that kind has no number. |
+| `kind` | One of the kinds below. |
+| `category` | The category of that kind. |
+| `summary` | What failed. Same string as `message`. |
+| `retryable` | Whether a declared retry may run the call again. |
+| `fix` | `{ summary, suggestion? }`. `suggestion` is a nearer accepted name. |
+| `table` | Table the database named, when it named one. |
+| `columns` | Columns the failure names. Empty when it names none. |
+| `constraint` | Constraint name the database sent. |
+| `sqlstate` | SQLSTATE the database sent. |
+| `batchIndex` | Statement index inside a batch, or `null` on one statement and at commit. |
+| `issues` | Validation checks. Present on OKM1200. |
+
+`fields()` maps each column to a reason. The same object comes back on later calls. It has no row values.
+
+`values()` returns row values only when the error was built with `includeValues`. [Errors](/docs/define/connect/errors) on connect is where that flag is set. `log()` returns the structured record: name, code, kind, category, summary, retryable, batch index, fix, fields, and table, columns, constraint, SQLSTATE, and issues when they are set. It leaves the row values out, and so does `toHttp()`. The logger on the client receives `{ code, summary }`.
+
+`toHttp()` returns `{ status, body }`. The body is `{ code, reason, fields }`. `reason` is the summary. A category missing from the status map keeps the default in the table below.
+
+`match` runs the handler for this category. `_` runs when that category is omitted.
+
+```ts title="match.ts"
+import { OkmError } from "okmodel";
+
+export function formOrHttp(error: OkmError) {
+  return error.match({
+    input: (item) => item.fields(), // [!code focus]
+    conflict: (item) => item.fields(), // [!code focus]
+    _: (item) => item.toHttp(), // [!code focus]
+  });
+}
+```
+
+`OkmError.is` narrows the kind, and the table when you pass one.
+
+```ts title="unique.ts"
+import { OkmError } from "okmodel";
+
+export function emailTaken(error: unknown): boolean {
+  return OkmError.is(error, "unique", "notes"); // [!code focus]
+}
+```
+
+`OkmError.from` returns an `OkmError` unchanged. A `DriverError` whose kind is `timeout`, `cancelled`, or `outcome_unknown` keeps that kind. Any other thrown value becomes kind `driver` and code `driver`. `from` does not read constraint SQLSTATEs. The client does that before a query rejects.
+
+A query exposes the same settlement as `safe` from `okmodel`.
+
+```ts title="insert.ts"
+import { db } from "./db.ts";
+
+export async function addNote(title: string) {
+  const result = await db.notes.insert({ title }).safe(); // [!code focus]
+  if (!result.ok) return result.error.summary;
+  return result.value;
+}
+```
+
+`{ ok: true, value }` is success. `{ ok: false, error }` is the mapped `OkmError`.
+
+<Callout type="info" title="Row values">
+The summary drops `=(...)` from a server message, and turns `contains (...)` into `contains (…)`. With `includeValues: true`, `values()` still returns the row. The log line does not.
+</Callout>
+
+## Kinds
+
+`ERROR_KINDS` and `ERROR_CATEGORIES` are exported from `okmodel`. The constructor derives the category from the kind. A transient kind retries, except `cancelled`. `outcome_unknown` is internal, and it does not retry.
+
+| Kind | Category | Status | Retries |
+| --- | --- | --- | --- |
+| `invalid` | `input` | 422 | no |
+| `not_null` | `input` | 422 | no |
+| `check` | `input` | 422 | no |
+| `foreign_key` | `input` | 422 | no |
+| `unique` | `conflict` | 409 | no |
+| `exclusion` | `conflict` | 409 | no |
+| `conflict` | `conflict` | 409 | no |
+| `not_found` | `not_found` | 404 | no |
+| `not_unique` | `not_found` | 404 | no |
+| `forbidden` | `forbidden` | 403 | no |
+| `serialization` | `transient` | 503 | yes |
+| `deadlock` | `transient` | 503 | yes |
+| `lock_timeout` | `transient` | 503 | yes |
+| `timeout` | `transient` | 503 | yes |
+| `cancelled` | `transient` | 503 | no |
+| `unavailable` | `transient` | 503 | yes |
+| `schema_drift` | `internal` | 500 | no |
+| `driver` | `internal` | 500 | no |
+| `read_only` | `internal` | 500 | no |
+| `outcome_unknown` | `internal` | 500 | no |
+
+Pass `http` on connect, or pass statuses to `toHttp(statuses)`, to replace one of these. A category you leave out keeps the status in the table. The connect page is [Errors](/docs/define/connect/errors).
+
+When the constructor is given no `fix`, the kind supplies one sentence.
+
+| Kinds | Default fix |
+| --- | --- |
+| `cancelled` | Do not retry. The caller aborted the call. |
+| `outcome_unknown` | Check whether the write landed, using an idempotency key, before retrying. |
+| `timeout`, `serialization`, `deadlock`, `lock_timeout`, `unavailable` | Retry the call. |
+| `unique`, `exclusion`, `conflict` | Change the conflicting value, or update the existing row. |
+| `not_null` | Provide a value for the column. |
+| `check`, `invalid` | Change the value so it passes the check. |
+| `foreign_key` | Use a key that exists, or insert the referenced row first. |
+| `not_found` | Look up a row that exists. |
+| `not_unique` | Narrow the filter so it matches one row. |
+| `forbidden` | Use a role that is allowed to perform this operation. |
+| `read_only` | Run the write on the primary. |
+| `schema_drift` | Apply the migrations that match this build. |
+| `driver` | Read the summary and correct the call. |
+
+A fix passed in replaces that sentence. A rejected name that is close to an accepted one appends a did-you-mean hint to the summary and sets `fix.suggestion` to that name.
+
+## Which code, which kind
+
+Three codes pick a kind when the caller does not pass one.
+
+| Code | Kind |
+| --- | --- |
+| `OKM1401` | `outcome_unknown` |
+| `OKM1846` | `timeout` |
+| `OKM1520` | `schema_drift` |
+
+A code that is itself a kind name uses that kind. A mapped database error does this for every kind except `outcome_unknown`. The client also raises `invalid`, `not_found`, `not_unique`, `timeout`, `cancelled`, `unavailable`, and `forbidden` with the kind as the code. Every other `OKM1xxx`, with no `kind` passed, is `invalid`.
+
+Four codes pass a kind other than that default.
+
+| Code | Kind |
+| --- | --- |
+| `OKM1522` | `conflict` |
+| `OKM1825` | `forbidden` |
+| `OKM1850` | `forbidden` |
+| `OKM1851` | `forbidden` |
+
+## Driver failures
+
+The adapter normalises the driver exception into `DriverError`. postgres.js and node-postgres put the SQLSTATE on `code`. Bun.sql puts `ERR_POSTGRES_SERVER_ERROR` on `code` and the SQLSTATE on `errno`. The copied fields are `sqlstate`, `constraint` (`constraint_name` or `constraint`), `table` (`table_name` or `table`), `column` (`column_name` or `column`), `detail`, and `batchIndex`.
+
+`cancelled()` is the caller's signal. `timedOut()` is a statement, transaction, or batch deadline. `outcomeUnknown()` is a commit whose result never arrived. Those three stay `DriverError` until the client maps them. `acquireTimeout()` is already `OkmError` `OKM1846`. A closed pool is a `DriverError` with SQLSTATE `08006`.
+
+The client maps that error. An `OkmError` passes through. A driver kind of `timeout`, `cancelled`, or `outcome_unknown` wins over the SQLSTATE. `57014` without one of those kinds is `timeout`, because `cancelled` comes only from the signal.
+
+| SQLSTATE | Kind |
+| --- | --- |
+| `23505` | `unique` |
+| `23502` | `not_null` |
+| `23514` | `check` |
+| `23503`, `23001` | `foreign_key` |
+| `23P01` | `exclusion` |
+| `23000` | `conflict` |
+| `40001` | `serialization` |
+| `40P01` | `deadlock` |
+| `55P03` | `lock_timeout` |
+| `57014` | `timeout` |
+| `40003` | `outcome_unknown` |
+| `25006` | `read_only` |
+| class `08`, `53300`, `57P01`, `57P02`, `57P03` | `unavailable` |
+| class `22` | `invalid` |
+| class `53` | `unavailable` |
+
+Anything else is kind `driver`. With no SQLSTATE, a TLS failure or a dropped connection is `unavailable`.
+
+The connection codes are `ECONNRESET`, `ECONNREFUSED`, `EPIPE`, `ENOTFOUND`, `ETIMEDOUT`, `CONNECT_TIMEOUT`, `EHOSTUNREACH`, `ENETUNREACH`, `EAI_AGAIN`, `CONNECTION_CLOSED`, `CONNECTION_ENDED`, `CONNECTION_DESTROYED`, and `ERR_POSTGRES_CONNECTION_CLOSED`. Classification reads the code, the errno, or the SQLSTATE. It does not read the message. A TLS cause starts with `ERR_TLS_`, `ERR_POSTGRES_TLS_`, or `SELF_SIGNED_CERT_`, or is exactly `DEPTH_ZERO_SELF_SIGNED_CERT` or `UNABLE_TO_VERIFY_LEAF_SIGNATURE`.
+
+These SQLSTATEs keep their kind and add a reason.
+
+| SQLSTATE | Kind stays | Reason |
+| --- | --- | --- |
+| `42P01` | `driver` | `undefined_table` |
+| `42703` | `driver` | `undefined_column` |
+| `0A000`, message contains `materialized view is not populated` | `driver` | `not_populated` |
+| `55000`, message contains `cannot refresh materialized view` and `concurrently` | `driver` | `no_unique_index` |
+| `42501`, message contains `materialized view` | `driver` | `not_owner` |
+| no SQLSTATE, TLS cause | `unavailable` | `tls` |
+
+`fields()` uses that reason. With a schema, the reason is the catalog object's name key for the columns the error names. With no schema, `table_pkey` becomes `pkey`, and a trailing `_fkey`, `_check`, or `_key` is removed. No constraint name leaves the kind as the reason.
+
+Bun.sql and PGlite reject a positive `timeout` as `OKM1120`. The message is `timeout`. The kind is `invalid`. They cannot cancel a statement that is already running.
+
+## Doctor
+
+`okm doctor OKM1020` prints the registry entry: the code, the title, the summary, and the fix.
+
+```text title="okm doctor OKM1020"
+OKM1020: Unknown table
+A table, dependency, or catalog object is missing or does not match its identity.
+Use a name that is in the schema. The error lists the accepted names and a nearest-name hint when one is close.
+```
+
+An unknown code throws `OkmError` with code `invalid`. The message is `Unknown code`, then the argument, then a period. The fix says to pass a code from the registry, or to run `okm doctor` with no argument.
+
+With no code, the command lists each table's triggers, one line per table, or `no triggers`. When the config sets `roles`, it also connects and checks that those roles exist, that a managed role can be created, and that the application role can reach each managed object. The command does not change the database.
+
+The registry is not on the runtime entry. A process that never explains a code does not load it.
+
+## Registry
+
+The registry has 110 codes, in numeric order. Ranges are schema `OKM1000`, queries and capabilities `OKM1100`, validation `OKM1200`, mapped database errors `OKM1300`, transactions `OKM1400`, migrations `OKM1500`, typed SQL `OKM1600`, tenancy and policies `OKM1700`, drivers and versions `OKM1800`, and CLI `OKM1900`. Mapped database errors use the kind as the code, so `OKM1300` has no entry. `OKM1900` has no entry. The tables below are every code the registry holds.
+
+### Schema
+
+| Code | Title | Summary |
+| --- | --- | --- |
+| `OKM1012` | Trait field conflict | A trait added a field that the table already declares. |
+| `OKM1020` | Unknown table | A table, dependency, or catalog object is missing or does not match its identity. |
+| `OKM1021` | Foreign key target | A foreign key is missing its target table or column, or the target is ambiguous. |
+| `OKM1022` | Foreign key type | A foreign key column and the column it references have different types. |
+| `OKM1023` | Duplicate name | Two catalog objects share an identity, or two tables emit the same type name. |
+| `OKM1024` | Table file not in schema | A table file is not passed to schema(). |
+| `OKM1025` | Multiple Register | More than one Register augmentation is in the project. |
+| `OKM1026` | Dependency cycle | The catalog dependency graph contains a cycle, so objects cannot be ordered. |
+| `OKM1027` | Unreadable catalog | The catalog document is malformed or uses a version this build cannot read. |
+| `OKM1030` | Validation in two places | A field is validated both on the column and somewhere else. |
+| `OKM1040` | Preset name collision | A preset uses the name of a client method or a reserved name, or a table and its traits (or two traits) define the same preset. |
+| `OKM1051` | Archive foreign key | A foreign key into a table-strategy archivable table uses CASCADE, SET NULL, or SET DEFAULT and is not listed in cascade. |
+| `OKM1052` | Not archivable | archive or restore was called on a table that is not archivable. |
+| `OKM1060` | Invalid column | A column definition has a bad length, precision, scale, array rank, interval qualifier, or an empty or repeated picklist or enum. |
+| `OKM1061` | Reserved option | The option exists in the types but this version does not implement it. |
+
+### Queries and capabilities
+
+| Code | Title | Summary |
+| --- | --- | --- |
+| `OKM1101` | Find without limit | find was called without a limit. |
+| `OKM1102` | Unfiltered write | A write with no effective predicate, including undefined values, is OKM1102. |
+| `OKM1104` | Upsert target | onConflict names columns that are not a unique constraint. |
+| `OKM1105` | Include without limit | A to-many include has no limit. |
+| `OKM1110` | Engine version | The feature needs a newer engine than `schema({ requires })` allows. |
+| `OKM1111` | Missing capability | The call needs a driver capability this driver does not have. |
+| `OKM1120` | Unknown field | The name is not a field or an option. timeout and signal go in the second argument of update. Options go first: tx(options, fn). |
+| `OKM1121` | Object as value | An empty or() branch is OKM1121. or() takes one array: or([a, b]). A plain object was passed where a value is required. |
+| `OKM1122` | Bad identifier | An identifier is empty, too long, contains NUL or another control character, or is an unquoted reserved word. |
+| `OKM1123` | Hidden field allowlist | A hidden field was added to a filter or sort allowlist. |
+| `OKM1124` | Operator mismatch | An operator does not apply to the column type. |
+| `OKM1130` | Cursor order | A cursor was reused with a different orderBy than the one that created it, or is not a cursor page() returned. |
+| `OKM1190` | Safety violation | A query composition broke a core invariant. violations lists every broken rule in stable order. |
+| `OKM1191` | No snapshot plan | A multi-statement read was requested inside READ COMMITTED and no single-statement plan exists. |
+
+### Validation
+
+| Code | Title | Summary |
+| --- | --- | --- |
+| `OKM1200` | Validation failed | A write or a standalone check failed a validation rule. issues lists each path and message key. |
+| `OKM1201` | Validation not imported | Validation is enabled but `okmodel/validate` was not imported. |
+| `OKM1210` | Codec rejected a value | A codec refused a value: not numeric text, not a valid temporal value, or the wrong shape. |
+
+### Transactions
+
+| Code | Title | Summary |
+| --- | --- | --- |
+| `OKM1401` | Outcome unknown | A commit or batch was sent and its result never arrived, so the write may or may not have happened. |
+
+### Migrations
+
+`OKM1538`, `OKM1539`, `OKM1540`, `OKM1543`, `OKM1544`, and `OKM1545` are warnings. A warning is printed and the command still succeeds. An error blocks plan, check, and apply.
+
+| Code | Title | Summary |
+| --- | --- | --- |
+| `OKM1510` | Unsafe migration | A migration has an unresolved lint error, or an override with an empty reason or a code no statement in the step triggered. |
+| `OKM1511` | Drop table | A statement drops a table. The rows and anything that reads them are gone. |
+| `OKM1512` | Drop column | A statement drops a column. Stored values and the code that reads them are gone. |
+| `OKM1513` | Drop enum | A statement drops an enum that columns or code may still depend on. |
+| `OKM1514` | Drop domain | A statement drops a domain that columns or code may still depend on. |
+| `OKM1515` | Drop function | A statement drops a function that queries or triggers may still call. |
+| `OKM1516` | Drop view | A statement drops a view that queries may still read. |
+| `OKM1517` | Drop extension | A statement drops an extension. A dependent still in the catalog is refused before this finding. |
+| `OKM1518` | Drop materialized view | A statement drops a materialized view and the rows it stores. |
+| `OKM1519` | Rename column | A statement renames a column. Existing queries still use the old name. |
+| `OKM1520` | Schema drift | The database has drifted past what an expand migration can repair. |
+| `OKM1521` | Snapshot mismatch | Provisioning from the snapshot does not match the replayed migration history. |
+| `OKM1522` | Apply lock held | Another apply already holds the target's migration lock. |
+| `OKM1523` | Rename table | A statement renames a table. Existing queries still use the old name. |
+| `OKM1524` | Column type change | A statement changes a column type. Existing readers and writers may not accept the new type. |
+| `OKM1525` | Required column | A statement adds a NOT NULL column with no default to a table that already has rows. |
+| `OKM1526` | Drop default | A statement removes a column default. Writers that omitted the column will fail. |
+| `OKM1527` | Shrink length | A statement shortens a character length. Values longer than the new limit no longer fit. |
+| `OKM1528` | Unique constraint | A statement adds a unique or primary-key constraint on a table that already has rows. |
+| `OKM1529` | Unique index | A statement creates a unique index on a table that already has rows. |
+| `OKM1530` | Ambiguous rename | A rename could match more than one object. |
+| `OKM1531` | Validating check | A statement adds or validates a check against rows already stored. |
+| `OKM1532` | Validating foreign key | A statement adds or validates a foreign key against rows already stored. |
+| `OKM1533` | Narrowing type | A statement narrows a numeric or integer type. Values outside the new range no longer fit. |
+| `OKM1534` | Index locks | A statement creates an index on an existing table without CONCURRENTLY. |
+| `OKM1535` | Check without NOT VALID | A statement adds a check on an existing table without NOT VALID. |
+| `OKM1536` | Foreign key without NOT VALID | A statement adds a foreign key on an existing table without NOT VALID. |
+| `OKM1537` | Set not null | A statement sets NOT NULL on a column that already exists. |
+| `OKM1538` | Type rewrite | A statement changes a column type in a way that rewrites the table. |
+| `OKM1539` | Timestamp without time zone | A column is timestamp without time zone. The instant depends on the session time zone. |
+| `OKM1540` | varchar length | A column is varchar(n). text stores the same values without a length limit in the type. |
+| `OKM1541` | Picklist removal | A picklist or enum value was removed and the replacement was not given. |
+| `OKM1542` | Data statement | A migration contains a data statement outside backfill(), or a DO or CALL whose body is not analysed. |
+| `OKM1543` | serial column | A column uses serial or a nextval default. Identity is the form this repo generates. |
+| `OKM1544` | json column | A column is json. jsonb is available and stores the same documents in binary. |
+| `OKM1545` | Identity not always | An identity column is generated by default. The repo default is generated always. |
+| `OKM1546` | Backfill key | A backfill step targets a table that has no primary key. |
+| `OKM1547` | History differs | Replaying a migration does not match its stored catalog, or the file was generated from a different parent than the previous migration. |
+| `OKM1548` | Previous catalog | An expand migration drops or changes a table, column, constraint, or type the previous catalog relies on. |
+| `OKM1549` | Stale head | The last migration's catalog does not match the schema. |
+| `OKM1550` | Row-level security weakened | A statement disables row-level security, drops or widens a policy, grants BYPASSRLS, or changes the owner of a tenant table. |
+| `OKM1551` | Transaction control in a step | A step contains COMMIT, ROLLBACK, or other transaction control, including inside a DO body. A function or procedure body is not this. |
+
+### Typed SQL
+
+| Code | Title | Summary |
+| --- | --- | --- |
+| `OKM1601` | Stale typed SQL | A typed SQL signature no longer matches the database. |
+
+### Tenancy and policies
+
+| Code | Title | Summary |
+| --- | --- | --- |
+| `OKM1701` | Tenant context missing | A tenant table was used on a client that has no tenant context. |
+| `OKM1702` | Unverifiable tenant SQL | Raw SQL touches a tenant table and the tenant predicate cannot be proved. |
+| `OKM1704` | Tenant key change | An update tried to change the tenant key. |
+| `OKM1705` | Global references tenant | A global table references a tenant table. |
+| `OKM1706` | Tenant index | An index on a tenant table does not lead with the tenant key. |
+| `OKM1707` | RLS role | A scoped call under rls ran as a role that owns the tenant tables, is a superuser, or has BYPASSRLS. The reason field says which. The message names the endpoint. |
+| `OKM1708` | RLS policy | A scoped call under rls found a tenant table whose row-level security is missing, not forced, or whose policies are not the ones okm generate emits. The message names the table and the endpoint. |
+
+### Drivers and versions
+
+| Code | Title | Summary |
+| --- | --- | --- |
+| `OKM1801` | Dialect mismatch | The schema dialect and the driver dialect are not the same. |
+| `OKM1802` | Server version | The connected server does not satisfy `schema({ requires })`. |
+| `OKM1803` | Postgres floor | The connected server is older than PostgreSQL 15, and the schema does not set requires to that older major. |
+| `OKM1810` | Extension not declared | An extension builder was used but the extension is not declared on the schema. |
+| `OKM1811` | Extension unavailable | A declared extension is not installed on the server. |
+| `OKM1812` | Feature version | A feature needs a newer Postgres or extension version than the one declared or connected. |
+| `OKM1813` | Extension defined twice | The same extension definition was registered twice. |
+| `OKM1814` | Extension change refused | The plan would downgrade an extension, move a non-relocatable one, or drop one that still has dependents. |
+| `OKM1820` | View tenancy | A view over tenant tables does not expose the tenant key and is not marked global. |
+| `OKM1821` | Replace needs recreate | An incompatible replace would have to recreate dependents. CASCADE is never used. |
+| `OKM1822` | Concurrent refresh | REFRESH CONCURRENTLY was declared without a unique index on the materialized view. |
+| `OKM1823` | Security definer path | A SECURITY DEFINER function has no search_path. |
+| `OKM1824` | Function dependencies | A plpgsql function has no dependsOn. Postgres does not record dependencies inside the body. |
+| `OKM1825` | Missing privilege | A role lacks a privilege on a managed object. |
+| `OKM1830` | Lock outside transaction | find was called with a row lock outside tx(). |
+| `OKM1840` | Replica not allowed | A replica route was used on an operation that requires the primary, or inside tx(). |
+| `OKM1841` | External object differs | An external object does not match the owner's exported catalog. |
+| `OKM1842` | Cross-database foreign key | A foreign key points at a table in another database. |
+| `OKM1843` | No eligible replica | A replica was required and none is eligible: unhealthy, behind the session, or none configured. |
+| `OKM1844` | Fallback refused | An automatic read found no eligible replica and fallback is error. |
+| `OKM1845` | Target unresolved | The target could not be resolved. The tenant is unknown or the resolver failed. |
+| `OKM1846` | Acquire timeout | The pool did not hand out a connection within timeouts.acquire. |
+| `OKM1850` | Protected target | The operation is blocked on a protected target and --allow-protected was not passed. |
+| `OKM1851` | Target not empty | Provisioning was asked to fill a target that already has objects. |
+| `OKM1852` | Protection mismatch | Targets that resolve to the same database disagree about protection, or tenants of one schema-per-tenant database do. |
+| `OKM1853` | Target not named | Several targets are configured and the command was not given --target. |
+| `OKM1854` | Pooler session | Two statements on the same connection saw different backend pids. A transaction-mode pooler is in the way. |

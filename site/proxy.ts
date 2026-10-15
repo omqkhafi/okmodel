@@ -4,8 +4,10 @@
  */
 
 import { isChromeInspectorProbe } from "@/lib/chrome-inspector";
+import { DISCOVERY_LINK, markdownAlternateLink } from "@/lib/discovery-links";
 import { markdownNegotiation, markdownTwinPath } from "@/lib/markdown-negotiate";
 import { markdownNotFoundResponse } from "@/lib/not-found-markdown";
+import { buildRobotsTxt } from "@/lib/robots-txt";
 import { type NextRequest, NextResponse } from "next/server";
 
 /**
@@ -23,12 +25,19 @@ export function proxy(request: NextRequest): NextResponse | Response {
     return new NextResponse(null, { status: 204 });
   }
 
+  if (request.nextUrl.pathname === "/robots.txt") {
+    return new NextResponse(buildRobotsTxt(), {
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        Link: DISCOVERY_LINK,
+      },
+    });
+  }
+
   const action = markdownNegotiation(request);
   if (action.kind === "pass") {
     const response = NextResponse.next();
-    if (markdownTwinPath(request.nextUrl.pathname) !== undefined) {
-      response.headers.set("Vary", "Accept");
-    }
+    stampAlternate(response, request.nextUrl.pathname);
     return response;
   }
 
@@ -44,7 +53,23 @@ export function proxy(request: NextRequest): NextResponse | Response {
   url.pathname = action.pathname;
   const response = NextResponse.rewrite(url);
   response.headers.set("Vary", "Accept");
+  stampAlternate(response, request.nextUrl.pathname);
   return response;
+}
+
+/**
+ * Advertise this URL's markdown twin. Site-wide discovery links are set in
+ * `next.config.ts` so JSON routes get them too.
+ *
+ * @param response - Outgoing response
+ * @param pathname - Request pathname
+ */
+function stampAlternate(response: NextResponse, pathname: string): void {
+  response.headers.append("Link", DISCOVERY_LINK);
+  const alternate = markdownAlternateLink(pathname);
+  if (alternate === undefined) return;
+  response.headers.append("Link", alternate);
+  if (markdownTwinPath(pathname) !== undefined) response.headers.set("Vary", "Accept");
 }
 
 export const config = {
