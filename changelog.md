@@ -29,6 +29,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 ### 🐛 Fixed
 
 - `btreeGin().gin` uses the `int4_ops` operator class that `btree_gin` creates.
+- The release smoke keeps asking npm while a published version is still processing: 31 times, 30 seconds apart, with `bun add --no-cache`. The job timeout is 45 minutes.
 
 ### ♻️ Changed
 
