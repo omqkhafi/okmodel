@@ -14,6 +14,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+## v0.9.0 — 2026-10-16
+
 ### ✨ Added
 
 #### dialects

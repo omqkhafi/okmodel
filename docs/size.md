@@ -439,9 +439,9 @@ postgres.js `FETCH`. D245 measured 15,781 against a gate of 15,093. The gate is 
 | 0.7.0 | 470,445 | 397 |
 | 0.8.0 | 651,337 | 484 |
 | 0.9.0-next.9 | 705,375 | 521 |
-| 0.9.0-next.12 (P119, before `bump release`) | 709,225 | 527 |
+| 0.9.0 | 709,219 | 527 |
 
-Unpacked size of the 0.9.0-next.9 measurement is 2,864,530 bytes. The 0.9.0-next.12 measurement is `npm pack --dry-run --json` after `bun run build` on this tree: packed 709,225 bytes, 527 files, unpacked 2,879,278 bytes. Against 0.8.0 that is 57,888 more packed bytes and 43 more files. `dist` in that tarball is 524 files and 2,850,835 bytes, which is the `size: dist` line from `bun run size` (2,850,835, reported, not gated). Nothing in that growth is a test, a script, a sourcemap, or a second copy of the docs.
+Unpacked size of the 0.9.0-next.9 measurement is 2,864,530 bytes. The 0.9.0 measurement is `npm pack --dry-run --json` after `bun run build` on the release commit's tree: packed 709,219 bytes, 527 files, unpacked 2,879,270 bytes. Against 0.8.0 that is 57,882 more packed bytes and 43 more files. `dist` in that tarball is 524 files and 2,850,835 bytes, which is the `size: dist` line from `bun run size` (2,850,835, reported, not gated). Nothing in that growth is a test, a script, a sourcemap, or a second copy of the docs.
 
 ## 0.9.0 release (P119)
 
