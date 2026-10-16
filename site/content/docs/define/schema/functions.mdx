@@ -35,7 +35,7 @@ export default schema({
 
 #### atomic
 
-A body that begins with `BEGIN ATOMIC` is marked atomic. Its edges are read from `pg_depend`. It does not need `dependsOn`. The catalog keeps the text you wrote. `okm migrate check` and `okm check` reprint that body on the connected server before they compare, so a qualifier Postgres adds, such as `by_id.n` for an argument used beside a table, is not a difference (D273).
+A body that begins with `BEGIN ATOMIC` is marked atomic. Its edges are read from `pg_depend`. It does not need `dependsOn`. The catalog keeps the text you wrote. `okm migrate check` and `okm check` reprint that body on the connected server before they compare, so a qualifier Postgres adds, such as `by_id.n` for an argument used beside a table, is not a difference (D273). Two overloads of one name are matched by that name and the identity arguments, so each keeps its own reprinted body.
 
 ```ts title="atomic.ts"
 import { fn } from "okmodel/fn";
