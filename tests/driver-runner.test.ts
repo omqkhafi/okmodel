@@ -98,9 +98,6 @@ test("the packed bun driver loads its chunk and maps the pool config", () => {
   expect(branch).toContain("url: config.url ?? url");
   expect(branch).toContain("searchPath: config.schema");
   expect(branch).toContain("timeouts: config.timeouts");
-  const packed = join(import.meta.dir, "..", "dist", "tooling", "driver-run.js");
-  expect(existsSync(packed)).toBe(true);
-  expect(readFileSync(packed, "utf8").includes('from "bun"')).toBe(false);
 });
 
 test("the packed runner does not statically import bun", () => {

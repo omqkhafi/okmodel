@@ -102,7 +102,7 @@ A compute can be suspended. The first connection is a cold start. OKModel does n
 
 A read replica can be behind the primary. After a write, a later read on that replica can miss the row until the replica replays it. `route: "replica"` still goes to a replica. A miss is a miss. OKModel does not report the row as present, and it does not move that call to the primary. Session consistency can keep an automatic read on the primary until the replica has caught up (`fallback:behind` or `fallback:position-unknown`).
 
-`okm driver test neon` marks COMMIT loss `unsupported` (`no socket to cut`). The harness cut is a TCP relay, and this driver speaks WebSocket or HTTP. A result that never arrives is still `outcome_unknown` (OKM1401).
+`okm driver test neon` marks COMMIT loss `unsupported` (`no socket to cut`). The harness cut is a TCP relay, and this driver speaks WebSocket or HTTP. A result that never arrives is still `outcome_unknown` (OKM1401). Neon has its own connect gate and is not a column in the compatibility table. postgres.js and node-postgres pointed at a Neon endpoint stay unclassified.
 
 ```ts title="neon.ts"
 import { connect } from "okmodel/pg/neon"; // [!code focus]

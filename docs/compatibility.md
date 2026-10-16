@@ -6,7 +6,7 @@ Supported majors are Postgres 15, 16, 17, and 18. The floor is 15: Postgres 13 i
 
 PGlite runs in the check job. The in-process wire server runs in the check job. postgres.js, node-postgres, and Bun.sql run in the postgres job (`REQUIRE_DOCKER=1`). Bun.sql runs only under Bun. A skip means the adapter did not declare the capability that case needs. node-postgres and Bun.sql do not describe a statement without running it. Bun.sql does not surface RAISE NOTICE and does not abort an in-flight statement. PGlite has no socket to cut, so COMMIT loss (`r2.commit-loss`, `r2.batch-commit-loss`) is `unsupported` in `okm driver test`, with that reason. It is not a silent skip.
 
-Neon is not a column in this table. `okmodel/pg/neon` is checked locally when its credentials are set and skipped in CI. WebSocket mode is interactive. HTTP mode is `transactions: "batch"`: `tx()` is refused. A transaction-mode pooler does not promise session state. COMMIT loss is `unsupported` (`no socket to cut`) because the harness cut is a TCP relay. A result that never arrives is still `outcome_unknown`.
+Neon is not a column in this table. postgres.js and node-postgres pointed at Neon endpoints are not columns either, and those results stay unclassified (D269). `okmodel/pg/neon` has its own connect gate. It is checked locally when its credentials are set and skipped in CI. WebSocket mode is interactive. HTTP mode is `transactions: "batch"`: `tx()` is refused. A transaction-mode pooler does not promise session state. COMMIT loss is `unsupported` (`no socket to cut`) because the harness cut is a TCP relay. A result that never arrives is still `outcome_unknown`.
 
 | Case | postgres.js | node-postgres | Bun.sql | PGlite |
 | --- | --- | --- | --- | --- |
