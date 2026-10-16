@@ -1071,11 +1071,13 @@ export const app = schema({ tables: [legacy, scratch] });
 
 ### okm ext and okm doctor
 
-`okm ext list` prints the extensions this server can install, and the version that is already installed. `okm ext check` compares that list with the schema. `okm doctor` lists the triggers on each table. `okm doctor OKM1811` prints what that error code means. `okm ext test` and `okm ext scaffold` are not in this version. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
+`okm ext list` prints the extensions this server can install, and the version that is already installed. `okm ext check` compares that list with the schema. `okm ext scaffold <name>` prints a starting `extension()` definition from the server catalog. `okm ext test <file>` checks that definition and exits non-zero when a signature does not match. All four are read-only, including on a protected target. `okm doctor` lists the triggers on each table. `okm doctor OKM1811` prints what that error code means. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
 
 ```text
 okm ext list
 okm ext check
+okm ext scaffold pg_trgm
+okm ext test ./pg-trgm.ts
 okm doctor
 okm doctor OKM1811
 ```
@@ -1281,7 +1283,9 @@ The worked example is a project tracker: workspaces as tenants, archive, a funct
 | `okm migrate status`      | Prints version, catalog hash, and state. Read-only on a protected target. An unfinished backfill is listed under the table.                                                                              |
 | `okm seed <file>`         | Runs the file's default export against the migrated target. OKM1850 on a protected target unless `--allow-protected`.                                                                                    |
 | `okm ext list`            | Prints extensions the server can install. Read-only on a protected target.                                                                                                                               |
-| `okm ext check`           | Compares installed extensions with the schema. OKM1811 if one is missing, OKM1812 if the pin is not met. Read-only on a protected target. `okm ext test` and `okm ext scaffold` are not in this version. |
+| `okm ext check`           | Compares installed extensions with the schema. OKM1811 if one is missing, OKM1812 if the pin is not met. Read-only on a protected target.                                                                 |
+| `okm ext scaffold <name>` | Prints a starting `extension()` definition from the connected catalog. `--out` writes that file and never overwrites. Read-only on a protected target.                                                    |
+| `okm ext test <file>`     | Checks the file's types, operators, functions, and index methods against the server. A mismatch exits non-zero. A version the server does not meet is OKM1812. Read-only on a protected target.           |
 | `okm doctor [code]`       | Lists triggers, or explains one error code. A role check is read-only on a protected target.                                                                                                             |
 | `okm --version`           | Prints the package version.                                                                                                                                                                              |
 

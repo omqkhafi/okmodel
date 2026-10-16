@@ -1501,7 +1501,31 @@
       "kind": "stable"
     },
     {
+      "name": "ExtensionFunction",
+      "kind": "stable"
+    },
+    {
+      "name": "ExtensionIndexMethod",
+      "kind": "stable"
+    },
+    {
+      "name": "ExtensionOperator",
+      "kind": "stable"
+    },
+    {
       "name": "ExtensionOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "ExtensionProvides",
+      "kind": "stable"
+    },
+    {
+      "name": "ExtensionRequires",
+      "kind": "stable"
+    },
+    {
+      "name": "ExtensionType",
       "kind": "stable"
     },
     {
@@ -1526,6 +1550,76 @@
     },
     {
       "name": "pgTrgm",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/pg/unaccent": [
+    {
+      "name": "Unaccent",
+      "kind": "stable"
+    },
+    {
+      "name": "unaccent",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/pg/hstore": [
+    {
+      "name": "Hstore",
+      "kind": "stable"
+    },
+    {
+      "name": "hstore",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/pg/ltree": [
+    {
+      "name": "Ltree",
+      "kind": "stable"
+    },
+    {
+      "name": "ltree",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/pg/btree_gist": [
+    {
+      "name": "BtreeGist",
+      "kind": "stable"
+    },
+    {
+      "name": "btreeGist",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/pg/btree_gin": [
+    {
+      "name": "BtreeGin",
+      "kind": "stable"
+    },
+    {
+      "name": "btreeGin",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/pg/fuzzystrmatch": [
+    {
+      "name": "Fuzzystrmatch",
+      "kind": "stable"
+    },
+    {
+      "name": "fuzzystrmatch",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/pg/pgcrypto": [
+    {
+      "name": "Pgcrypto",
+      "kind": "stable"
+    },
+    {
+      "name": "pgcrypto",
       "kind": "stable"
     }
   ],

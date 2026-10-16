@@ -45,6 +45,8 @@ An unknown command is `Unknown command <name>.` `okm migrate` with a subcommand 
 | `driver test <driver>` | Runs the conformance suites against one driver. |
 | `ext list` | Lists extensions the server can install. |
 | `ext check` | Compares declared extensions with the server. |
+| `ext scaffold <name>` | Prints a starting `extension()` definition. `--out` writes it and never overwrites. |
+| `ext test <file>` | Checks that definition against the server. |
 | `generate [name]` | Writes the next migration. |
 | `import drizzle <path>` | Converts a Drizzle schema into table files. Runs that file. Needs no database. |
 | `migrate plan <name>` | Prints the plan. Adds lock estimates when one target answers. `--json` prints a document. |
@@ -176,7 +178,11 @@ bunx okm doctor OKM1520
 
 `check` compares extensions declared on the schema with what is installed. No declaration is `no extensions`. A missing install is OKM1811: `Extension <name> is not installed on the server.` A version the declaration rejects is OKM1812: `Extension <name> needs <declared> or higher. The server has <installed>. Install a version the declaration accepts, or change the pin.` An exact pin omits "or higher". A match prints `name`, `declared`, `installed`. An omitted pin is `-`. Declarations are on [Extensions](/docs/define/schema/extensions).
 
-`okm ext test` and `okm ext scaffold` exit 1: `okm ext <name> is not available yet.` Another name is `Unknown command ext <name>.`
+`scaffold <name>` reads `pg_depend`, `pg_type`, `pg_proc`, `pg_operator`, and `pg_settings` for an extension that is already installed. A missing install is OKM1811. The text is a starting `extension()` definition the project owns. `--out <file>` writes that text. An existing file is `invalid` and nothing is written. Without `--out` the text is printed.
+
+`test <file>` loads that module and checks each exported `extension()`. Every declared type, operator, function, and index method must exist with that signature. A mismatch is `invalid` and the message lists each one. A `requires` version or Postgres floor the server does not meet is OKM1812. A match prints `ok <name>`.
+
+Another name is `Unknown command ext <name>.`
 
 ```sh
 bunx okm ext check

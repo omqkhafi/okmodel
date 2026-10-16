@@ -543,6 +543,8 @@ await custom.close();
 ```text
 okm ext list
 okm ext check
+okm ext scaffold pg_trgm
+okm ext test ./pg-trgm.ts
 okm doctor
 okm doctor OKM1811
 ```
