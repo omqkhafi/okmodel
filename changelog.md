@@ -14,6 +14,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+### ♻️ Changed
+
+- The execution plan schedules the 0.9 Tooling train as P110 through P119.
+
 ## v0.8.0 — 2026-10-16
 
 ### ✨ Added
