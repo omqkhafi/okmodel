@@ -239,6 +239,46 @@ postgresTest(
 
 postgresTest(
   gate,
+  "two BEGIN ATOMIC overloads keep distinct reprinted bodies",
+  async () => {
+    await using(async (sql) => {
+      const tasks = table("tasks", { id: t.text().primaryKey(), title: t.text() });
+      const app = schema({
+        tables: [tasks],
+        functions: [
+          fn("pick", {
+            arguments: [{ name: "n", type: "integer" }],
+            returns: "integer",
+            language: "sql",
+            body: "begin atomic select n + 1; end",
+          }),
+          fn("pick", {
+            arguments: [{ name: "s", type: "text" }],
+            returns: "text",
+            language: "sql",
+            body: "begin atomic select s || '!'; end",
+          }),
+        ],
+      });
+      await apply(sql, catalog([]), app.catalog);
+      const live = await introspectSchema(queryOf(sql), "public", "public");
+      const sealed = await sealViews(queryOf(sql), app.catalog);
+      const integer = bodyOfArgs(sealed, "pick", "integer");
+      const text = bodyOfArgs(sealed, "pick", "text");
+      expect(integer).toBeDefined();
+      expect(text).toBeDefined();
+      expect(integer).not.toBe(text);
+      expect(integer).toContain("1");
+      expect(integer).not.toContain("!");
+      expect(text).toContain("!");
+      expect(routineSteps(live, sealed)).toEqual([]);
+    });
+  },
+  30_000,
+);
+
+postgresTest(
+  gate,
   "begin atomic reads dependencies from pg_depend",
   async () => {
     await using(async (sql) => {
@@ -319,6 +359,17 @@ function routineSteps(before: Catalog, after: Catalog): string[] {
 function bodyOf(source: Catalog, name: string): string | undefined {
   const found = source.objects.find(
     (object) => object.kind === "function" && object.identity.name === name,
+  );
+  return found?.kind === "function" ? found.definition.body : undefined;
+}
+
+function bodyOfArgs(source: Catalog, name: string, arg: string): string | undefined {
+  const found = source.objects.find(
+    (object) =>
+      object.kind === "function" &&
+      object.identity.name === name &&
+      object.identity.argTypes.length === 1 &&
+      object.identity.argTypes[0] === arg,
   );
   return found?.kind === "function" ? found.definition.body : undefined;
 }

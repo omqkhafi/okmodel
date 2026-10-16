@@ -208,7 +208,7 @@ The plan is [#307](https://github.com/omqkhafi/okmodel/issues/307). Milestone [0
 
 | ID | Branch | Delivers |
 |---|---|---|
-| P110 | `p110-carry-ins` | [#308](https://github.com/omqkhafi/okmodel/issues/308). 0.8 carry-ins. `reprintAtomicBodies` is keyed by the function name plus its identity arguments. A tarball size breakdown: 0.7.0 was 470,445 bytes and 397 files; 0.8.0 is 651,337 bytes and 484 files. The tool bumps deferred in D264. The remaining Windows unknowns, three surfaces. A decision for `orderBy` with a function call and for computed fields (OKM1061): build them, or record them as after M2. §5.7. Wave 3. Own worktree |
+| P110 | `p110-carry-ins` | [#308](https://github.com/omqkhafi/okmodel/issues/308). Shipped: 0.8 carry-ins. `reprintAtomicBodies` matches a function by name and identity arguments. The tarball breakdown is in [size](size.md). Tool bumps from D264 that CI accepts are in, and the rest stay deferred there. The three Windows unknowns stay unknown. `orderBy` on a function call and computed fields (OKM1061) are after M2 (D282), not built. §5.7. Wave 3 |
 | P111 | `p111-okm-pull` | [#309](https://github.com/omqkhafi/okmodel/issues/309). `okm pull` writes schema source from an existing database (§19.4). Wave 1. Own worktree |
 | P112 | `p112-pull-plpgsql` | [#314](https://github.com/omqkhafi/okmodel/issues/314). `okm pull` verifies plpgsql dependencies on a scratch database (§5.7). After [#309](https://github.com/omqkhafi/okmodel/issues/309). Wave 2. Own worktree |
 | P113 | `p113-import-drizzle` | [#315](https://github.com/omqkhafi/okmodel/issues/315). `okm import drizzle` converts a Drizzle schema (§19.4). After [#309](https://github.com/omqkhafi/okmodel/issues/309). Wave 3. Own worktree |
@@ -230,6 +230,10 @@ The plan is [#307](https://github.com/omqkhafi/okmodel/issues/307). Milestone [0
 ### Later phases (prompts written when reached)
 
 M2 Depth is Phase 7 (trains 0.6 Access, 0.7 Query depth, 0.8 SQL lane, 0.9 Tooling). M3 SQLite starts with the dialect-semantics matrix (R4 in [`offline-first-constraints.md`](offline-first-constraints.md)). M3 and M4 each treat their R2, R3, and R4 rows as part of dialect done. M5 Hardening (schema-per-tenant and database-per-tenant with `tenancy.registry`, target resolution, tenant provisioning and rollout control (`--class`, `--canary`, `--concurrency`, `--max-failures`, contract gating, second pass), studio, live docs), then the 1.0 gate.
+
+| Item | When |
+|---|---|
+| `orderBy` with a function call, and computed fields (OKM1061) | After M2 (D282). Not built. `orderBy` still does not accept the value `fn()` returns. `table({ computed })` throws OKM1061 and names no release |
 
 ## Dependency notes (audit of draft 16)
 

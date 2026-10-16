@@ -429,3 +429,72 @@ postgres.js `FETCH`. D245 measured 15,781 against a gate of 15,093. The gate is 
 7. P108 and P108B wait. They do not fit the current ceilings.
 8. The postgres.js `FETCH` loop stays unbuilt.
 9. P109 is the gate. No gate, cap, or ceiling moves on the way there.
+
+## Published tarball (P110)
+
+`npm pack --dry-run --json` on this tree, after `bun run build`. The `size` field is the packed tarball. `unpackedSize` is the files inside it. `files` in `package.json` is `dist`, `README.md`, and `LICENSE`. npm also writes `package.json` into the tarball. This is not a gate.
+
+| Release | Packed bytes | Files |
+| --- | ---: | ---: |
+| 0.7.0 | 470,445 | 397 |
+| 0.8.0 | 651,337 | 484 |
+| 0.9.0-next.8 (this measurement) | 705,369 | 521 |
+
+Unpacked size of this measurement is 2,864,531 bytes. The step from 0.8.0 to this tree is the 0.9 work already on main (pull, catalogs, the GitHub Action, Drizzle import, extension packs). Nothing in that growth is a test, a script, a sourcemap, or a second copy of the docs.
+
+Top-level paths:
+
+| Path | Files | Bytes |
+| --- | ---: | ---: |
+| `dist` | 518 | 2,837,551 |
+| `LICENSE` | 1 | 11,340 |
+| `package.json` | 1 | 8,990 |
+| `README.md` | 1 | 6,650 |
+
+Inside `dist`:
+
+| Path | Files | Bytes |
+| --- | ---: | ---: |
+| `dist/shared` | 129 | 1,269,359 |
+| `dist/tooling` | 134 | 840,475 |
+| `dist/runtime` | 81 | 314,915 |
+| `dist/dialects` | 119 | 278,094 |
+| `dist/contracts` | 30 | 86,841 |
+| `dist/adapters` | 23 | 47,773 |
+| `dist/okm.js` | 1 | 47 |
+| `dist/okmodel.js` | 1 | 47 |
+
+There are no `.map` files. Subpath export entries (the `.js` and `.d.ts` the export names, not the shared chunks they import):
+
+| Export | Bytes |
+| --- | ---: |
+| `.` | 1,394 |
+| `./pg` | 40,628 |
+| `./internal` | 3,428 |
+| `./migrate` | 2,439 |
+| `./pg/postgresjs` | 3,747 |
+| `./pg/pglite` | 3,404 |
+| `./pg/pg` | 3,758 |
+| `./pg/bun` | 3,905 |
+| `./pg/neon` | 4,394 |
+| `./ids` | 6,668 |
+| `./safety` | 14,627 |
+| `./traits` | 36,499 |
+| `./tenancy` | 65,000 |
+| `./testing` | 3,258 |
+| `./validate` | 6,030 |
+| `./otel` | 6,313 |
+| `./ext` | 3,831 |
+| `./fn` | 15,018 |
+| `./view` | 16,903 |
+| `./pg/citext` | 693 |
+| `./pg/pg_trgm` | 2,355 |
+| `./pg/unaccent` | 1,257 |
+| `./pg/hstore` | 1,857 |
+| `./pg/ltree` | 1,914 |
+| `./pg/btree_gist` | 1,294 |
+| `./pg/btree_gin` | 1,251 |
+| `./pg/fuzzystrmatch` | 2,034 |
+| `./pg/pgcrypto` | 1,853 |
+
+Every export path is in the tarball. `dist/shared` and `dist/tooling/driver-run.js` are not export paths. `okm` and `okm driver test` load them from the packed package, so they stay. `files` is unchanged. No path was removed.

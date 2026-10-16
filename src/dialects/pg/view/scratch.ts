@@ -6,7 +6,9 @@
  * replaces the author query and `pg_depend` supplies column edges (D117).
  * A `BEGIN ATOMIC` body is replaced with the `pg_get_functiondef` block, so a
  * plan from the live catalog does not treat Postgres's reprint as a change
- * (D273). The scratch schema is dropped before this returns. Plans never use it.
+ * (D273). Each function is matched by its name and identity arguments, so two
+ * overloads do not share a body. The scratch schema is dropped before this
+ * returns. Plans never use it.
  */
 
 import { catalog } from "../../../contracts/catalog/build.js";
@@ -178,18 +180,19 @@ async function createObjects(
 }
 
 const FUNCTION_DEFS = `
-  select pg_get_functiondef(p.oid) as definition
+  select p.proname as name,
+    pg_get_function_identity_arguments(p.oid) as args,
+    pg_get_functiondef(p.oid) as definition
   from pg_proc p
   join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = $1 and p.prokind = 'f'
-  order by p.oid
 `;
 
 /**
  * Replaces each atomic body with the block Postgres prints.
  *
- * Functions are created in catalog order, and `oid` follows that order, so
- * the rows zip with those objects. A plpgsql body is left as written.
+ * The row is the function whose name and identity arguments match. Two
+ * overloads of one name stay two bodies. A plpgsql body is left as written.
  * Postgres qualifies an argument as `function.argument` when the body names
  * a table. That qualifier is part of the reprint, not a different function.
  *
@@ -203,28 +206,136 @@ async function reprintAtomicBodies(runner: CatalogQuery, source: Catalog): Promi
   );
   if (!created.some((object) => object.definition.atomic === true)) return source;
   const rows = await runner.query(FUNCTION_DEFS, [SCRATCH]);
-  if (rows.length !== created.length) {
-    throw new OkmError(
-      "OKM1020",
-      `Expected ${String(created.length)} functions in the scratch schema and found ${String(rows.length)}.`,
-      { fix: { summary: "The function body has to run against the tables in this schema." } },
-    );
-  }
-  const bodies = new Map<FunctionObject, string>();
-  for (let index = 0; index < created.length; index += 1) {
-    const object = created[index];
-    if (object === undefined || object.definition.atomic !== true) continue;
-    bodies.set(object, atomicBody(cellText(rows[index]?.definition)));
-  }
+  const printed = rows.map((row) => ({
+    name: cellText(row.name),
+    args: splitIdentityArguments(cellText(row.args)),
+    body: atomicBody(cellText(row.definition)),
+  }));
+  const used = new Set<number>();
   let changed = false;
   const objects = source.objects.map((object) => {
-    if (object.kind !== "function") return object;
-    const body = bodies.get(object);
+    if (object.kind !== "function" || object.definition.atomic !== true) return object;
+    const matches = printed.flatMap((row, index) =>
+      identityMatches(object, row.name, row.args) ? [index] : [],
+    );
+    const index = matches[0];
+    const signature = `${object.identity.name}(${object.identity.argTypes.join(", ")})`;
+    if (matches.length === 0 || index === undefined) {
+      throw new OkmError(
+        "OKM1020",
+        `Function ${signature} was not created in the scratch schema.`,
+        { fix: { summary: "The function body has to run against the tables in this schema." } },
+      );
+    }
+    if (matches.length > 1 || used.has(index)) {
+      throw new OkmError(
+        "OKM1020",
+        `Function ${signature} was created more than once in the scratch schema.`,
+        { fix: { summary: "The function body has to run against the tables in this schema." } },
+      );
+    }
+    used.add(index);
+    const body = printed[index]?.body;
     if (body === undefined || body === object.definition.body) return object;
     changed = true;
     return { ...object, definition: { ...object.definition, body } };
   });
   return changed ? catalog(objects) : source;
+}
+
+/**
+ * Whether one scratch row is this function's overload.
+ *
+ * `pg_get_function_identity_arguments` prints `name type`. The catalog stores
+ * the type. A schema prefix on that type is ignored.
+ *
+ * @param object - Catalog function
+ * @param name - `proname`
+ * @param args - Identity arguments, one entry per input
+ * @returns `true` when the name and every argument type match
+ */
+function identityMatches(object: FunctionObject, name: string, args: readonly string[]): boolean {
+  if (name !== object.identity.name || args.length !== object.identity.argTypes.length) {
+    return false;
+  }
+  return args.every((printed, index) =>
+    printedHasType(object.identity.argTypes[index] ?? "", printed),
+  );
+}
+
+/**
+ * Splits `pg_get_function_identity_arguments` on commas outside parentheses.
+ *
+ * @param args - Identity argument list, or empty
+ * @returns One `name type` entry per input argument
+ */
+function splitIdentityArguments(args: string): string[] {
+  const trimmed = args.trim();
+  if (trimmed.length === 0) return [];
+  const parts: string[] = [];
+  let current = "";
+  let depth = 0;
+  for (const char of trimmed) {
+    if (char === "(") depth += 1;
+    else if (char === ")" && depth > 0) depth -= 1;
+    if (char === "," && depth === 0) {
+      parts.push(current.trim());
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  parts.push(current.trim());
+  return parts;
+}
+
+/**
+ * Abbreviations an author may write, and the type Postgres prints.
+ */
+const ARG_TYPE_ALIASES: Readonly<Record<string, string>> = {
+  int: "integer",
+  int2: "smallint",
+  int4: "integer",
+  int8: "bigint",
+  bool: "boolean",
+  float4: "real",
+  float8: "double precision",
+  varchar: "character varying",
+  timestamptz: "timestamp with time zone",
+};
+
+/**
+ * Whether one identity argument is this catalog type.
+ *
+ * The printed form may lead with the argument name (`n integer`) and may
+ * schema-qualify the type (`okm_view_seal.task_status`).
+ *
+ * @param author - Type stored on the function identity
+ * @param printed - One identity argument from Postgres
+ * @returns `true` when the types are the same
+ */
+function printedHasType(author: string, printed: string): boolean {
+  const want = canonicalArgType(author);
+  const got = printed.trim().replaceAll(/\s+/g, " ").toLowerCase();
+  if (canonicalArgType(got) === want) return true;
+  const space = got.indexOf(" ");
+  if (space < 0) return false;
+  const name = got.slice(0, space);
+  if (!/^[a-z_][a-z0-9_]*$/.test(name)) return false;
+  return canonicalArgType(got.slice(space + 1)) === want;
+}
+
+/**
+ * Folds a type name for comparison.
+ *
+ * @param type - Author type or a printed identity argument
+ * @returns Lowercase type with one space between words and no schema
+ */
+function canonicalArgType(type: string): string {
+  const compact = type.trim().replaceAll(/\s+/g, " ").toLowerCase();
+  const dot = compact.lastIndexOf(".");
+  const bare = dot < 0 ? compact : compact.slice(dot + 1);
+  return ARG_TYPE_ALIASES[bare] ?? bare;
 }
 
 async function createViews(
