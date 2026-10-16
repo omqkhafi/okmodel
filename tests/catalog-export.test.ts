@@ -4,8 +4,10 @@
 
 import { expect, test } from "bun:test";
 
-import { schema, t, table, type AnyTable } from "../src/dialects/pg/index.js";
+import { external, schema, t, table, type AnyTable } from "../src/dialects/pg/index.js";
+import { stampOwnership } from "../src/dialects/pg/owner.js";
 import {
+  assertSnapshots,
   serializeSnapshot,
   snapshotFromCatalog,
   type CatalogSnapshot,
@@ -31,6 +33,15 @@ test("the same source serializes to the same bytes and the same hash", () => {
   expect(first.logical).toEqual({ namespace: "identity", name: "identity", format: 1 });
   expect(serializeSnapshot(first)).not.toContain("postgres://");
   expect(serializeSnapshot(first)).not.toContain("function");
+});
+
+test("an external mark with no snapshot list is not OKM1841", () => {
+  const outside = external(table("outside", { id: t.uuid().primaryKey() }));
+  const stamped = stampOwnership(
+    schema({ tables: [outside] }).catalog,
+    new Map([["outside", "external"]]),
+  );
+  expect(() => assertSnapshots("/tmp", { schema: "./schema.ts" }, stamped)).not.toThrow();
 });
 
 test("a column change moves the catalog hash and leaves the logical identity", () => {

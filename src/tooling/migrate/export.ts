@@ -225,14 +225,17 @@ export function couplingFindings(source: Catalog): readonly Finding[] {
 /**
  * Checks external tables against the snapshot files.
  *
- * This does not open a connection. A missing file, a table the snapshots
- * do not list, or columns that differ is OKM1841.
+ * This does not open a connection. With no `external` paths, a
+ * `withOwner(..., "external")` table stays hands-off and is not OKM1841.
+ * When paths are set, a missing file, a table the snapshots do not list,
+ * or columns that differ is OKM1841.
  *
  * @param cwd - Project directory
  * @param config - Project config
  * @param source - Placed catalog
  */
 export function assertSnapshots(cwd: string, config: MigrateConfig, source: Catalog): void {
+  if ((config.external ?? []).length === 0) return;
   const snapshots = loadSnapshots(cwd, config);
   for (const table of externalTables(source)) {
     const found = findTable(snapshots, table.namespace, table.name);
