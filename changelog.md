@@ -28,6 +28,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### runtime
 
+- `insert({ id }, { allow: ["id"] })` writes a supplied id on a client-generator primary key. An omitted id in the same list is still generated. Without `allow`, a supplied id is OKM1190. A database default stays OKM1190 when `allow` names it. On a list, the type opens `id` only when `allow` is exactly `["id"]` (D272).
 - `okmodel/otel` turns `hookm`, `onRoute`, and `inspect()` into OpenTelemetry `db.*` spans. You pass the tracer. Statement text stays off unless `statement: true`. Parameters and a tenant id are not recorded. An error span records the error name and an OKM code, and leaves out the message and the stack (D267).
 - On a topology client, `inspect().routing.reason` matches `onRoute`. The preview does not call `onRoute` and does not move the selector. A string or a pool stays synchronous `single-endpoint` (D268).
 - `connect` from `okmodel/pg/neon` returns a promise for a string, a pool, and a topology. Writes go to the primary. A replica can lag, and `route: "replica"` stays on that replica (D269).

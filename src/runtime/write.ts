@@ -1495,7 +1495,7 @@ function insertRow(
     const column = table.columns.get(key);
     if (column === undefined) continue;
     tenancy?.guard(table.model.name, key, "insert");
-    if (!writable(table, column, allow)) refuse(table, column);
+    if (!writable(table, column, allow, "insert")) refuse(table, column);
     if (value[key] !== undefined) row[key] = value[key];
   }
   refuseHalfMorph(table, row);
@@ -1553,7 +1553,7 @@ function writtenColumns(
   for (const column of table.model.columns) {
     if (
       present.has(column.field) &&
-      (writable(table, column, allow) ||
+      (writable(table, column, allow, "insert") ||
         column.fill !== undefined ||
         tenantKeys?.includes(column.field) === true)
     ) {
@@ -1630,7 +1630,7 @@ export function writeSet(
     const column = table.columns.get(key);
     if (column === undefined) continue;
     tenancy?.guard(table.model.name, key, "update");
-    if (column.guardUpdate || !writable(table, column, allow)) refuse(table, column);
+    if (column.guardUpdate || !writable(table, column, allow, "update")) refuse(table, column);
     set[key] = value[key];
   }
   refuseHalfMorph(table, set);
@@ -1994,10 +1994,31 @@ function refuse(table: Indexed, column: ColumnModel): never {
   fail("OKM1120", `Field ${table.model.name}.${column.field} cannot be written.`);
 }
 
-function writable(table: Indexed, column: ColumnModel, allow: ReadonlySet<string>): boolean {
+/**
+ * Whether this write may set the column.
+ *
+ * A writable column is open. A guarded column opens when `allow` names it,
+ * except a primary key: that opens on insert only, and only when a client
+ * generator fills it. A database default has no fill, so `allow` leaves it
+ * closed. Update never changes the key.
+ *
+ * @param table - Table being written
+ * @param column - Column the input names
+ * @param allow - Guarded fields this call may set
+ * @param op - Insert may supply a client id. Update may not
+ * @returns Whether the value is written
+ */
+function writable(
+  table: Indexed,
+  column: ColumnModel,
+  allow: ReadonlySet<string>,
+  op: "insert" | "update",
+): boolean {
   if (fieldSealed(table.model, column.field)) return false;
   if (column.writable) return true;
-  return column.guarded && allow.has(column.field);
+  if (!column.guarded || !allow.has(column.field)) return false;
+  if (!table.model.primary.includes(column.field)) return true;
+  return op === "insert" && column.fill !== undefined;
 }
 
 export function allowSet(table: Indexed, value: unknown): ReadonlySet<string> {
