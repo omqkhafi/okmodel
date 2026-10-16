@@ -38,6 +38,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The 0.8 type and byte budget is recorded (P101). No gate or ceiling moves. Ali approves it before P102.
 - The drivers page covers Neon: WebSocket and HTTP, the pooler, a cold start, and replica lag (D269).
 - The P108 study measures four inline-relation shapes. An opt-in entry types `as` and `has` without moving an existing ceiling. The default-path harvest and a loose `references()` store do not fit. No gate moves.
+- Inline relations do not ship in 0.8. `relations` on the table remains how an include is named (D270).
+- postgres.js and node-postgres results on Neon primary and primary-pool endpoints are recorded. A cause that was not established stays unclassified (D269).
 
 #### tooling
 
