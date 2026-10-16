@@ -41,17 +41,21 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The P108 study measures four inline-relation shapes. An opt-in entry types `as` and `has` without moving an existing ceiling. The default-path harvest and a loose `references()` store do not fit. No gate moves.
 - Inline relations do not ship in 0.8. `relations` on the table remains how an include is named (D270).
 - postgres.js and node-postgres results on Neon primary and primary-pool endpoints are recorded. A cause that was not established stays unclassified (D269).
-- The OKE Windows audit records 32 surfaces: 17 work, 4 probably work, 1 fails, and 10 are unknown. The failure is `okm check` reporting OKM1024 when a table file stem differs in case from the schema text. The unknown rows are what a Windows runner for #218 still has to run (#219).
+- The OKE Windows audit records 32 surfaces: 27 work, 2 probably work, none fail, and 3 are unknown. The table-file stem compare is fixed (#219). Packed `okm driver test` finds its runner.
 
 #### tooling
 
 - `okm driver test <driver>` runs the driver, error, and transaction suites and prints each case as pass, fail, or unsupported, with the capability that explains an unsupported case.
 - `okm driver test neon` runs those suites. COMMIT loss is unsupported (`no socket to cut`). The Neon connect gate is 42,000 minified and 14,500 gzip (D269).
+- A Windows job runs the audit checklist from the packed tarball. It is not a required check. A step that needs a TCP Postgres URL is skipped.
+- The repository `.gitattributes` keeps migration SQL, catalog JSON, and `.okm` files LF on checkout (D237).
 
 ### 🐛 Fixed
 
 - A raw read renumbers every `$n` marker in a multi-parameter tenant predicate once. Nine user parameters and `$1`, `$2` stay `$10`, `$11`.
 - The bundle check leaves `@neondatabase/serverless` external, the same way it leaves `postgres`, `pg`, and PGlite external (D269).
+- `okm check` matches a table file stem without case, so `Tasks.ts` with `import { tasks } from "./tasks"` is not OKM1024.
+- Packed `okm driver test` finds `dist/tooling/driver-run.js` when the command itself is in a shared chunk. That entry does not import the `bun` package, so Node can run `pglite`. `okm driver test bun` loads the Bun adapter from a chunk of the same build and passes the same pool config as the other drivers.
 
 ## v0.7.0 — 2026-10-15
 

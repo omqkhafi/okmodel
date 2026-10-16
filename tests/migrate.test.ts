@@ -374,6 +374,13 @@ test("unlisted table files are the ones the schema source does not mention", () 
   ]);
 });
 
+test("a table file stem matches the schema text without case sensitivity", () => {
+  expect(unlistedTableFiles('import { tasks } from "./tasks";', ["Tasks.ts"])).toEqual([]);
+  expect(unlistedTableFiles('import { tasks } from "./tasks";', ["Tasks.ts", "Extra.ts"])).toEqual([
+    "Extra.ts",
+  ]);
+});
+
 test("trusted loader checks the hash and does not rebuild the catalog", () => {
   const built = schema({
     tables: [table("tasks", { id: t.identity(), title: t.text() })],

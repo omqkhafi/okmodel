@@ -1,0 +1,186 @@
+name: Windows
+
+# Not a required status, and not part of `gate / check`. This workflow does
+# not change branch protection. `windows-latest` is intentional: the job
+# exists to run on current Windows. The Ubuntu hash job only publishes
+# `catalog.hash` so the Windows job can compare it.
+#
+# A step that needs a TCP Postgres URL prints SKIP. It does not start a
+# service container.
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+concurrency:
+  group: windows-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  linux-hash:
+    name: hash / linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      SMOKE: ${{ github.workspace }}/okm smoke
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Build and pack
+        run: |
+          bun run build
+          bun pm pack
+          tarball=(okmodel-*.tgz)
+          if [ "${#tarball[@]}" -ne 1 ]; then
+            echo "expected one tarball"
+            exit 1
+          fi
+          echo "TARBALL=$(pwd)/${tarball[0]}" >> "$GITHUB_ENV"
+
+      - name: Linux catalog hash
+        run: |
+          bun ./scripts/windows-audit.ts install "$TARBALL" "$SMOKE"
+          bun ./scripts/windows-audit.ts hashes "$SMOKE" linux-hash
+
+      - name: Upload catalog hash
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux-catalog-hash
+          path: linux-hash
+          if-no-files-found: error
+
+  audit:
+    name: audit / checklist
+    needs: linux-hash
+    if: ${{ !cancelled() }}
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      SMOKE: ${{ github.workspace }}/okm smoke
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Build and pack
+        id: pack
+        shell: bash
+        run: |
+          bun run build
+          bun pm pack
+          tarball=(okmodel-*.tgz)
+          if [ "${#tarball[@]}" -ne 1 ]; then
+            echo "expected one tarball"
+            exit 1
+          fi
+          echo "TARBALL=$(pwd)/${tarball[0]}" >> "$GITHUB_ENV"
+
+      - name: Install packed tarball
+        if: ${{ !cancelled() && steps.pack.outcome == 'success' }}
+        shell: bash
+        run: bun ./scripts/windows-audit.ts install "$TARBALL" "$SMOKE"
+
+      - name: bunx and bun --bun versions
+        if: ${{ !cancelled() && steps.pack.outcome == 'success' }}
+        shell: bash
+        run: bun ./scripts/windows-audit.ts versions "$SMOKE"
+
+      - name: generate init
+        if: ${{ !cancelled() && steps.pack.outcome == 'success' }}
+        shell: bash
+        run: bun ./scripts/windows-audit.ts init "$SMOKE"
+
+      - name: LF bytes
+        if: ${{ !cancelled() && steps.pack.outcome == 'success' }}
+        shell: bash
+        run: bun ./scripts/windows-audit.ts lf "$SMOKE"
+
+      - name: Recorded source
+        if: ${{ !cancelled() && steps.pack.outcome == 'success' }}
+        shell: bash
+        run: bun ./scripts/windows-audit.ts sources "$SMOKE"
+
+      - name: Download Linux catalog hash
+        if: ${{ !cancelled() && needs.linux-hash.result == 'success' }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: linux-catalog-hash
+          path: linux-hash
+
+      - name: Compare catalog hash
+        if: ${{ !cancelled() && steps.pack.outcome == 'success' && needs.linux-hash.result == 'success' }}
+        shell: bash
+        run: bun ./scripts/windows-audit.ts compare "$SMOKE" linux-hash
+
+      - name: Compare catalog hash skipped
+        if: ${{ !cancelled() && needs.linux-hash.result != 'success' }}
+        shell: bash
+        run: |
+          echo "Linux hash job result: ${{ needs.linux-hash.result }}. catalog.hash was not compared."
+          exit 1
+
+      - name: connect reads catalog.hash
+        if: ${{ !cancelled() && steps.pack.outcome == 'success' }}
+        shell: bash
+        run: bun ./scripts/windows-audit.ts connect "$SMOKE"
+
+      - name: okm check Tasks.ts
+        if: ${{ !cancelled() && steps.pack.outcome == 'success' }}
+        shell: bash
+        run: bun ./scripts/windows-audit.ts check "$SMOKE"
+
+      - name: autocrlf clone
+        if: ${{ !cancelled() && steps.pack.outcome == 'success' }}
+        shell: bash
+        run: bun ./scripts/windows-audit.ts autocrlf "$SMOKE"
+
+      - name: okm dev
+        if: ${{ !cancelled() && steps.pack.outcome == 'success' }}
+        shell: bash
+        run: bun ./scripts/windows-audit.ts dev "$SMOKE"
+
+      - name: Finished postgres.js script
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: bun ./scripts/windows-audit.ts skip "A finished postgres.js script needs a TCP Postgres URL. This job does not start a service container."
+
+      - name: driver test pglite
+        if: ${{ !cancelled() && steps.pack.outcome == 'success' }}
+        timeout-minutes: 15
+        shell: bash
+        run: bun ./scripts/windows-audit.ts driver "$SMOKE"
+
+      - name: Named-pipe host
+        if: ${{ !cancelled() && steps.pack.outcome == 'success' }}
+        shell: bash
+        run: bun ./scripts/windows-audit.ts pipe "$SMOKE"
