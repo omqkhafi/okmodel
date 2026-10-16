@@ -53,6 +53,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### 🐛 Fixed
 
+- `okmodel/pg/bun` typechecks without `bun-types`. The adapter declarations name the Bun.sql slice they use, so a consumer does not resolve the `bun` module.
 - `okm migrate check` and `okm check` reprint a `BEGIN ATOMIC` body before they compare it. An argument qualifier Postgres prints, such as `by_id.n`, is not OKM1547 (D273).
 - A raw read renumbers every `$n` marker in a multi-parameter tenant predicate once. Nine user parameters and `$1`, `$2` stay `$10`, `$11`.
 - The bundle check leaves `@neondatabase/serverless` external, the same way it leaves `postgres`, `pg`, and PGlite external (D269).
