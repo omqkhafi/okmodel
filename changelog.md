@@ -29,6 +29,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 ### 🐛 Fixed
 
 - `btreeGin().gin` uses the `int4_ops` operator class that `btree_gin` creates.
+- A `BEGIN ATOMIC` reprint is matched by the function name and its identity arguments, so two overloads do not share a body. `orderBy` on a function call and computed fields stay after M2 (D282).
 
 ### ♻️ Changed
 
