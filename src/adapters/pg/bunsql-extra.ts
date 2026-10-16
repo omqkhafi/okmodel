@@ -5,7 +5,7 @@
  * succeeds does not use it.
  */
 
-import type { ReservedSQL, SQL } from "bun";
+import type { ReservedSQL, SQL } from "./bun-sql.js";
 
 import { isConnectionFailure } from "../../contracts/connection.js";
 import type { DriverConnection, WireValue } from "../../contracts/driver.js";

@@ -10,7 +10,9 @@
  * the backend, so `cancel` is false. Server notices are not surfaced.
  */
 
-import { SQL, type ReservedSQL } from "bun";
+import { SQL as BunSQL } from "bun";
+
+import type { ReservedSQL, SQL } from "./bun-sql.js";
 
 import type {
   DriverConnection,
@@ -121,7 +123,7 @@ export function open(config: BunSqlConfig): DriverPool {
   let dropped = 0;
   let closures = 0;
 
-  const sql = new SQL(config.url, {
+  const sql = new BunSQL(config.url, {
     max,
     idleTimeout: 0,
     maxLifetime: 0,
