@@ -6,8 +6,9 @@
  * An unsupported row names the capability. The dialect column is `postgres`.
  */
 
-import { pathToFileURL } from "node:url";
-import { resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import type {
   DriverCapabilities,
@@ -221,22 +222,52 @@ async function firstParty(driver: string, url: string | undefined): Promise<Targ
   if (typeof Bun === "undefined" || typeof Bun.SQL !== "function") {
     throw new Error("bun runs only under Bun.");
   }
-  const adapter = await import("../../../src/adapters/pg/bunsql.js");
-  const runtime = await import("../../../src/runtime/pg/bun.js");
+  const adapter = await loadExport(bunModule("src/adapters/pg/bunsql.ts", "adapters/pg/bunsql.js"));
+  const runtime = await loadExport(bunModule("src/runtime/pg/bun.ts", "runtime/pg/bun.js"));
+  const open = adapter.open;
+  const connect = runtime.connect;
+  if (typeof open !== "function" || typeof connect !== "function") {
+    throw new Error("bun driver modules did not load.");
+  }
   return networked(
     "bun.sql",
     adapter.capabilities,
     false,
     url,
-    (config) =>
-      adapter.open({
-        url: config.url ?? url,
-        max: config.max,
-        searchPath: config.schema,
-        ...(config.timeouts !== undefined ? { timeouts: config.timeouts } : {}),
-      }),
-    (pool, options) => runtime.connect(pool, options),
+    open as Target["open"],
+    connect as TxSuite["connect"],
   );
+}
+
+/**
+ * File URL of the Bun adapter.
+ *
+ * The specifier is built at runtime. A string literal would be bundled, and
+ * that bundle statically imports `bun`, which Node cannot resolve. A source
+ * checkout loads the TypeScript file. The packed build loads the file under
+ * `dist/`.
+ *
+ * @param source - Path under the repository `src/` directory
+ * @param packed - Path under `dist/`
+ * @returns `file:` URL
+ */
+function bunModule(source: string, packed: string): string {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const checkout = join(here, "..", "..", "..", source);
+  if (existsSync(checkout)) return pathToFileURL(checkout).href;
+  return pathToFileURL(join(here, "..", packed)).href;
+}
+
+async function loadExport(url: string): Promise<{
+  readonly capabilities: DriverCapabilities;
+  readonly open: unknown;
+  readonly connect: unknown;
+}> {
+  const loaded: unknown = await import(url);
+  if (!isRecord(loaded) || !isCapabilities(loaded.capabilities)) {
+    throw new Error("bun driver modules did not load.");
+  }
+  return { capabilities: loaded.capabilities, open: loaded.open, connect: loaded.connect };
 }
 
 function networked(

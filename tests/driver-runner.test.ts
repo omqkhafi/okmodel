@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test, expect } from "bun:test";
@@ -31,6 +31,38 @@ test("a file beside the module is the runner when the source tree is absent", ()
   const here = scratch();
   writeFileSync(join(here, "driver-run.js"), "");
   expect(driverRunnerPath(here)).toBe(join(here, "driver-run.js"));
+});
+
+test("the packed runner does not statically import bun", async () => {
+  const root = scratch();
+  const outfile = join(root, "driver-run.js");
+  const entry = join(import.meta.dir, "..", "packages", "harness", "src", "driver-run.ts");
+  const built = Bun.spawnSync({
+    cmd: [
+      "bun",
+      "build",
+      entry,
+      "--outfile",
+      outfile,
+      "--format",
+      "esm",
+      "--target",
+      "node",
+      "--external",
+      "postgres",
+      "--external",
+      "@electric-sql/pglite",
+      "--external",
+      "pg",
+      "--external",
+      "bun",
+      "--external",
+      "@neondatabase/serverless",
+    ],
+    cwd: join(import.meta.dir, ".."),
+  });
+  expect(built.exitCode).toBe(0);
+  expect(readFileSync(outfile, "utf8").includes('from "bun"')).toBe(false);
 });
 
 test("a source checkout prefers driver-run.ts", () => {
