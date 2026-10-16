@@ -16,7 +16,7 @@
         "oxlint": "^1.88.0",
         "oxlint-tsgolint": "^7.0.2004",
         "publint": "^0.3.25",
-        "temporal-polyfill": "^1.0.5",
+        "temporal-polyfill": "^1.0.6",
         "temporal-spec": "^1.0.1",
         "typescript": "7",
         "typescript-editor": "npm:typescript@6.0.3",
@@ -471,7 +471,7 @@
 
     "supports-hyperlinks": ["supports-hyperlinks@3.2.0", "", { "dependencies": { "has-flag": "^4.0.0", "supports-color": "^7.0.0" } }, "sha512-zFObLMyZeEwzAoKCyu1B91U79K2t7ApXuQfo8OuxwXLDgcKxuwM+YvcbIhm6QWqz7mHUH1TVytR1PwVVjEuMig=="],
 
-    "temporal-polyfill": ["temporal-polyfill@1.0.5", "", { "dependencies": { "temporal-spec": "1.0.1", "temporal-utils": "1.0.3" } }, "sha512-+H/mmY74i6wXCMcjIhGuSnODcyZnc4eois2myhOyX0UqRAKNXQY5m9iB1en5jQ/n4SXtjLXo1ElBI5bmn8tZwQ=="],
+    "temporal-polyfill": ["temporal-polyfill@1.0.6", "", { "dependencies": { "temporal-spec": "1.0.1", "temporal-utils": "1.0.3" } }, "sha512-tYyEry1HLGUDbm2356W3iYD0OZdo7rlP7h98Zr/EnjqLZQwTAfcBDUvJnJbfA15v/vQad57hJZScG5O0W2oKEA=="],
 
     "temporal-spec": ["temporal-spec@1.0.1", "", {}, "sha512-wxVoanmDeavXie1vu2JaQ3WIc3JZnWAOYFBsJyATaVsXsycKYUflGsyBmrRSnoCpZJpwPyr38VpgSUlQ8CbFxg=="],
 

@@ -201,7 +201,7 @@
     "oxlint": "^1.88.0",
     "oxlint-tsgolint": "^7.0.2004",
     "publint": "^0.3.25",
-    "temporal-polyfill": "^1.0.5",
+    "temporal-polyfill": "^1.0.6",
     "temporal-spec": "^1.0.1",
     "typescript": "7",
     "typescript-editor": "npm:typescript@6.0.3"
