@@ -14,7 +14,7 @@ import { usingIndex } from "./using.js";
 /** `btree_gin` plus the methods the naming overlay selected. */
 export type BtreeGin = Extension & {
   /**
-   * A GIN index with `gin_int4_ops`.
+   * A GIN index with `int4_ops`.
    *
    * @param column - SQL column name
    * @returns An index call whose expression is the `using` tail
@@ -33,7 +33,7 @@ export function btreeGin(options: ExtensionOptions = {}): BtreeGin {
   return {
     ...declared,
     gin(column: string): IndexCall {
-      return usingIndex(column, "gin", "gin_int4_ops");
+      return usingIndex(column, "gin", "int4_ops");
     },
   };
 }

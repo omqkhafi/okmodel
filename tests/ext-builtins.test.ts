@@ -57,7 +57,7 @@ test("btree_gist and btree_gin plans store the operator class", () => {
   expect(text).toContain('create extension "btree_gist"');
   expect(text).toContain('create extension "btree_gin"');
   expect(text).toContain('using gist ("n" gist_int4_ops)');
-  expect(text).toContain('using gin ("m" gin_int4_ops)');
+  expect(text).toContain('using gin ("m" int4_ops)');
 });
 
 test("provides and requires are not part of the catalog hash", () => {

@@ -185,9 +185,13 @@ test("similar plans as a schema-qualified operator and gin is the catalog index"
   }
 });
 
-test("okm ext test and scaffold are not available", async () => {
-  expect((await rejection(() => run(["ext", "test"]))).message).toContain("not available yet");
-  expect((await rejection(() => run(["ext", "scaffold"]))).message).toContain("not available yet");
+test("okm ext test and scaffold need a name", async () => {
+  expect((await rejection(() => run(["ext", "test"]))).message).toContain(
+    "okm ext test <file> needs a name.",
+  );
+  expect((await rejection(() => run(["ext", "scaffold"]))).message).toContain(
+    "okm ext scaffold <name> needs a name.",
+  );
 });
 
 async function rejection(operation: () => Promise<unknown>): Promise<Error> {

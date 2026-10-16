@@ -69,7 +69,7 @@ export const EXT_PACKS: readonly ExtPackRecord[] = [
     name: "btree_gin",
     versions: { 15: "1.3", 16: "1.3", 17: "1.3", 18: "1.3" },
     minPostgres: 15,
-    signatures: [{ kind: "opclass", name: "gin_int4_ops", method: "gin" }],
+    signatures: [{ kind: "opclass", name: "int4_ops", method: "gin" }],
   },
   {
     name: "fuzzystrmatch",

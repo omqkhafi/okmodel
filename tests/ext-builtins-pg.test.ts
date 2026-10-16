@@ -84,7 +84,7 @@ postgresTest(
   gate,
   "hstore hasKey reads an installed hstore",
   async () => {
-    await useCustom("hstore", hstore(), "hstore", "a=>1", (pack) => pack.hasKey("a"), ["a=>1"]);
+    await useCustom("hstore", hstore(), "hstore", "a=>1", (pack) => pack.hasKey("a"), ['"a"=>"1"']);
   },
   30_000,
 );
@@ -158,7 +158,7 @@ postgresTest(
       });
       const text = await apply(sql, app);
       expect(text).toContain('using gist ("n" gist_int4_ops)');
-      expect(text).toContain('using gin ("m" gin_int4_ops)');
+      expect(text).toContain('using gin ("m" int4_ops)');
       await sql.unsafe("insert into nums (n) values (1)");
       const found = await sql<{ n: number }[]>`select n from nums where n = 1`;
       expect(found.map((row) => row.n)).toEqual([1]);

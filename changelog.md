@@ -26,6 +26,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okm ext scaffold <name>` prints a starting `extension()` definition from the connected catalog. `--out` writes that file and never overwrites. It is read-only, including on a protected target (D278).
 - `okm ext test <file>` checks declared types, operators, functions, and index methods against the server. A wrong signature exits non-zero with the mismatch listed. A version the server does not meet is OKM1812. It is read-only, including on a protected target (D278).
 
+### 🐛 Fixed
+
+- `btreeGin().gin` uses the `int4_ops` operator class that `btree_gin` creates.
+
 ### ♻️ Changed
 
 - The execution plan schedules the 0.9 Tooling train as P110 through P119.

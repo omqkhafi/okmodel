@@ -181,7 +181,7 @@ export async function parents(url: string) {
 
 ### btree_gist and btree_gin
 
-`btreeGist()` from `okmodel/pg/btree_gist` indexes an integer with `gist_int4_ops`. `btreeGin()` from `okmodel/pg/btree_gin` indexes an integer with `gin_int4_ops`.
+`btreeGist()` from `okmodel/pg/btree_gist` indexes an integer with `gist_int4_ops`. `btreeGin()` from `okmodel/pg/btree_gin` indexes an integer with `int4_ops`.
 
 ```ts title="btree.ts"
 import { btreeGin } from "okmodel/pg/btree_gin";
