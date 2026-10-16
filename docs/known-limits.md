@@ -4,6 +4,14 @@ What this version does not do, or does differently from what you might expect. E
 
 `okmodel/internal` has no stability promise. Names on that subpath can change or disappear in any release. Its exports are marked `@internal`.
 
+## okm pull
+
+`okm pull` reads a database and writes table files plus a schema file (D275). It does not connect for writing, so a protected target is allowed. It never overwrites a file (OKM1855). `--out <directory>` writes somewhere else. There is no prompt.
+
+Written: tables, columns (type, default, nullability, identity, stored generated), primary and composite keys, unique constraints, checks, foreign keys with one local column, indexes that have a column (a partial predicate and an expression stay), the sequence an identity column owns, enums, domains, and extensions.
+
+Printed under `not pulled yet`, with a count, and not written: functions, triggers, views, materialized views, policies, roles, grants, and default privileges. The same list holds a partition, a composite foreign key, a standalone sequence, an expression index with no column, a column type `table()` has no builder for, a deferrable or nulls-not-distinct constraint, a non-default collation, and an identity that is not generated always as the only primary key. Comments are not pulled: the catalog does not store them. A domain with no check is not in the catalog, so it is not pulled. The logical namespace is `public`, because `schema()` has one namespace. Nothing in that list is dropped without a line.
+
 ## Not built yet
 
 An option or builder that is not in this version throws OKM1061 and names the prompt or version that adds it, or it is not a method yet. These are the ones the plan has assigned.

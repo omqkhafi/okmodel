@@ -50,21 +50,24 @@ An unknown command is `Unknown command <name>.` `okm migrate` with a subcommand 
 | `migrate status` | Prints each target's version and state. |
 | `migrate check` | Replays migration history in a scratch schema and rolls it back. |
 | `push` | Applies the schema diff. Writes no SQL file. |
+| `pull` | Reads one database and writes one table file per table, plus the schema file. |
 | `seed <file>` | Runs the file's default export on one target. |
 
 ## Flags
 
-`check`, `generate`, `push`, `migrate`, `seed`, `doctor`, and `ext` parse the flags in this table. `build` and `dev` leave the rest of the line unread. `driver test` reads `--url` only, in [driver test](#driver-test).
+`check`, `generate`, `push`, `pull`, `migrate`, `seed`, `doctor`, and `ext` parse the flags in this table. `build` and `dev` leave the rest of the line unread. `driver test` reads `--url` only, in [driver test](#driver-test). `pull` reads `--target`, `--schema`, and `--out` itself.
 
 | Flag | Read by |
 | --- | --- |
-| `--target <name>`, `--target=<name>` | `check`, `migrate plan`, `migrate apply`, `migrate status`, `migrate check`, `push`, `seed`, `ext`, and `doctor` when [roles](/docs/define/config/roles) is set. Who requires it is [Database](/docs/define/config/database). |
+| `--target <name>`, `--target=<name>` | `check`, `migrate plan`, `migrate apply`, `migrate status`, `migrate check`, `push`, `pull`, `seed`, `ext`, and `doctor` when [roles](/docs/define/config/roles) is set. Who requires it is [Database](/docs/define/config/database). |
 | `--allow-protected` | `migrate apply`, `push`, and `seed`. One invocation. Blocked work is [Protection](/docs/define/config/database#protection). `migrate check` ignores the flag. |
 | `--allow-pooler` | `migrate apply`, `push`, `seed`, `migrate check`, and `check` when it compares a database. Same opt-in as [allowPooler](/docs/define/config/pooler). Either one is enough. |
 | `--lock-timeout <milliseconds>` | `migrate apply`. Overrides [timeouts.lock](/docs/define/config/timeouts). `0` disables it. |
 | `--statement-timeout <milliseconds>` | `migrate apply`. Overrides [timeouts.statement](/docs/define/config/timeouts). |
 | `--replace <table>.<column>.<old>=<new>` | `generate` and `migrate plan`. Repeat it for each removed value. `=null` is the null replacement, on a nullable column. |
 | `--provision` | `migrate check`. Compares a snapshot install with a full replay. |
+| `--schema <name>`, `--schema=<name>` | `pull`. Repeat it, or separate names with a comma. The default is the target's current schema. |
+| `--out <directory>`, `--out=<directory>` | `pull`. Writes `schema.ts` and `tables/` there. Without it, pull uses the schema path and the tables directory from the config. |
 
 A missing `--target` name is OKM1853: `--target needs a name.` A missing `--replace` value is OKM1541: `--replace needs table.column.old=new.` `--lock-timeout` and `--statement-timeout` need a finite number of milliseconds that is not negative. The message names the flag. `check`, `push`, and `migrate check` refuse a bad number and do not apply it. The same parser runs on the other commands in the list above.
 
@@ -76,6 +79,17 @@ The files are `catalog.json`, `catalog.hash`, and `types.d.ts`. `catalog.hash` i
 
 ```sh
 bunx okm build
+```
+
+## pull
+
+`okm pull` reads one database and writes one table file per table, plus the schema file. It does not write to the database, so a protected target is allowed. An existing file is OKM1855 and nothing is written. `--out <directory>` is the other place to write. The default namespace is the target's current schema. `--schema <name>` selects others and may be repeated.
+
+Tables, columns, keys, uniques, checks, single-column foreign keys, indexes, identity sequences, enums, domains, and extensions are written. Functions, triggers, views, materialized views, policies, roles, and grants are printed under `not pulled yet` with a count, and so is anything `table()` cannot say. A column type with no builder is that list, with the table and the column. Nothing is dropped without a line.
+
+```sh
+bunx okm pull
+bunx okm pull --schema public --out ./adopted
 ```
 
 ## check

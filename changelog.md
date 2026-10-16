@@ -14,6 +14,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+### ✨ Added
+
+- `okm pull` reads a database and writes one table file per table plus the schema file. It is read-only, including on a protected target, and an existing file is OKM1855. Functions, triggers, views, policies, roles, and grants are listed under `not pulled yet` (D275).
+
 ### ♻️ Changed
 
 - The execution plan schedules the 0.9 Tooling train as P110 through P119.
