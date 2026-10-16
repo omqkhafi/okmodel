@@ -13,6 +13,7 @@ import type { Catalog } from "../src/contracts/catalog/types.js";
 import { OkmError } from "../src/contracts/error.js";
 import { fn, trigger } from "../src/dialects/pg/fn/index.js";
 import { introspectSchema, type CatalogQuery } from "../src/dialects/pg/introspect.js";
+import { sealViews } from "../src/dialects/pg/view/scratch.js";
 import { schema, table, t } from "../src/dialects/pg/index.js";
 import { timestamps } from "../src/runtime/traits/index.js";
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
@@ -188,6 +189,49 @@ postgresTest(
       expect(bodyOf(live, "okm_touch_updated_at")).toBe(
         'begin new."updated_at" = now(); return new; end',
       );
+    });
+  },
+  30_000,
+);
+
+postgresTest(
+  gate,
+  "a BEGIN ATOMIC reprint qualifier is not a replace after the scratch reprint",
+  async () => {
+    await using(async (sql) => {
+      const tasks = table("tasks", { id: t.text().primaryKey(), title: t.text() });
+      const app = schema({
+        tables: [tasks],
+        functions: [
+          fn("by_id", {
+            arguments: [{ name: "n", type: "text" }],
+            returns: "text",
+            language: "sql",
+            body: "begin atomic select title from tasks where id = n; end",
+          }),
+          fn("count_tasks", {
+            returns: "bigint",
+            language: "sql",
+            body: "begin atomic select count(*) from tasks; end",
+          }),
+          fn("add_one", {
+            arguments: [{ name: "n", type: "integer" }],
+            returns: "integer",
+            language: "sql",
+            body: "begin atomic select n + 1; end",
+          }),
+        ],
+      });
+      await apply(sql, catalog([]), app.catalog);
+      const live = await introspectSchema(queryOf(sql), "public", "public");
+      const authorPlan = routineSteps(live, app.catalog);
+      expect(authorPlan.some((step) => step.includes("by_id.n") || step.includes("by_id"))).toBe(
+        true,
+      );
+      const sealed = await sealViews(queryOf(sql), app.catalog);
+      expect(bodyOf(sealed, "by_id")).toContain("by_id.n");
+      expect(bodyOf(sealed, "count_tasks")).toContain("AS count");
+      expect(routineSteps(live, sealed)).toEqual([]);
     });
   },
   30_000,

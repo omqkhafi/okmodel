@@ -741,7 +741,17 @@ function searchPathOf(config: string): string | undefined {
   return found === undefined || found.length === 0 ? undefined : found;
 }
 
-function atomicBody(definition: string): string {
+/**
+ * The `BEGIN ATOMIC` block inside `pg_get_functiondef`.
+ *
+ * A definition that does not contain that block is returned whole. The slice
+ * stops at the last `END`, which is the block closer. A `CASE` closer earlier
+ * in the reprint stays inside the block.
+ *
+ * @param definition - `pg_get_functiondef` text
+ * @returns The body introspection stores
+ */
+export function atomicBody(definition: string): string {
   const start = definition.indexOf("BEGIN ATOMIC");
   if (start < 0) return definition.trim();
   const end = definition.lastIndexOf("END");

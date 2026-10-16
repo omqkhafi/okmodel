@@ -4,7 +4,9 @@
  * Domain and enum types from the catalog are created there, then the tables,
  * then the functions a view may call, then each view. `pg_get_viewdef`
  * replaces the author query and `pg_depend` supplies column edges (D117).
- * The scratch schema is dropped before this returns. Plans never use it.
+ * A `BEGIN ATOMIC` body is replaced with the `pg_get_functiondef` block, so a
+ * plan from the live catalog does not treat Postgres's reprint as a change
+ * (D273). The scratch schema is dropped before this returns. Plans never use it.
  */
 
 import { catalog } from "../../../contracts/catalog/build.js";
@@ -17,12 +19,13 @@ import {
 import type {
   Catalog,
   ColumnObject,
+  FunctionObject,
   MaterializedViewObject,
   TableObject,
   ViewObject,
 } from "../../../contracts/catalog/types.js";
 import { createObjectSql, quoteIdent } from "../ddl.js";
-import type { CatalogQuery } from "../introspect.js";
+import { atomicBody, type CatalogQuery } from "../introspect.js";
 import { cellText, PUBLIC, VIEW_DEPENDENCIES, viewDependencyEdges } from "./depend.js";
 
 const SCRATCH = "okm_view_seal";
@@ -47,18 +50,22 @@ const VIEW_SHAPE = `
  *
  * The returned catalog matches what introspection prints for those views
  * when the same query is applied. A declared column list that disagrees
- * with the database is OKM1020.
+ * with the database is OKM1020. A `BEGIN ATOMIC` function body is the
+ * server reprint, including an argument qualifier such as `by_id.n`.
  *
  * @param runner - Database connection. Statements share its session
- * @param source - Catalog whose views are still author SQL
- * @returns A catalog whose views carry the reprint and `pg_depend` edges
+ * @param source - Catalog whose views and atomic bodies are still author SQL
+ * @returns A catalog whose views and atomic bodies carry the reprint
  */
 export async function sealViews(runner: CatalogQuery, source: Catalog): Promise<Catalog> {
   const views = source.objects.filter(
     (object): object is ViewObject | MaterializedViewObject =>
       object.kind === "view" || object.kind === "materializedView",
   );
-  if (views.length === 0) return source;
+  const hasAtomic = source.objects.some(
+    (object) => object.kind === "function" && object.definition.atomic === true,
+  );
+  if (views.length === 0 && !hasAtomic) return source;
   await dropScratch(runner);
   await runner.query(`create schema ${quoteIdent(SCRATCH)}`);
   const previous = await runner.query(`select current_setting('search_path') as path`);
@@ -72,12 +79,14 @@ export async function sealViews(runner: CatalogQuery, source: Catalog): Promise<
       await runner.query(stubTable(object, source));
     }
     await createObjects(runner, source, "function");
+    const reprinted = await reprintAtomicBodies(runner, source);
+    if (views.length === 0) return reprinted;
     await createViews(runner, views);
     const shapes = await runner.query(VIEW_SHAPE, [SCRATCH]);
     const deps = await runner.query(VIEW_DEPENDENCIES, [SCRATCH]);
     const edges = viewDependencyEdges(deps, PUBLIC, source.objects);
     const byName = new Map(shapes.map((row) => [cellText(row.name), row]));
-    const next = source.objects.map((object) => {
+    const next = reprinted.objects.map((object) => {
       if (object.kind !== "view" && object.kind !== "materializedView") return object;
       const row = byName.get(object.identity.name);
       if (row === undefined) {
@@ -166,6 +175,56 @@ async function createObjects(
     const statement = createObjectSql(object, SCRATCH);
     if (statement !== undefined) await runner.query(statement);
   }
+}
+
+const FUNCTION_DEFS = `
+  select pg_get_functiondef(p.oid) as definition
+  from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = $1 and p.prokind = 'f'
+  order by p.oid
+`;
+
+/**
+ * Replaces each atomic body with the block Postgres prints.
+ *
+ * Functions are created in catalog order, and `oid` follows that order, so
+ * the rows zip with those objects. A plpgsql body is left as written.
+ * Postgres qualifies an argument as `function.argument` when the body names
+ * a table. That qualifier is part of the reprint, not a different function.
+ *
+ * @param runner - Database connection
+ * @param source - Catalog whose functions were just created in the scratch schema
+ * @returns `source` when no atomic body changed
+ */
+async function reprintAtomicBodies(runner: CatalogQuery, source: Catalog): Promise<Catalog> {
+  const created = source.objects.filter(
+    (object): object is FunctionObject => object.kind === "function",
+  );
+  if (!created.some((object) => object.definition.atomic === true)) return source;
+  const rows = await runner.query(FUNCTION_DEFS, [SCRATCH]);
+  if (rows.length !== created.length) {
+    throw new OkmError(
+      "OKM1020",
+      `Expected ${String(created.length)} functions in the scratch schema and found ${String(rows.length)}.`,
+      { fix: { summary: "The function body has to run against the tables in this schema." } },
+    );
+  }
+  const bodies = new Map<FunctionObject, string>();
+  for (let index = 0; index < created.length; index += 1) {
+    const object = created[index];
+    if (object === undefined || object.definition.atomic !== true) continue;
+    bodies.set(object, atomicBody(cellText(rows[index]?.definition)));
+  }
+  let changed = false;
+  const objects = source.objects.map((object) => {
+    if (object.kind !== "function") return object;
+    const body = bodies.get(object);
+    if (body === undefined || body === object.definition.body) return object;
+    changed = true;
+    return { ...object, definition: { ...object.definition, body } };
+  });
+  return changed ? catalog(objects) : source;
 }
 
 async function createViews(
@@ -258,6 +317,15 @@ async function dropScratch(runner: CatalogQuery): Promise<void> {
   `,
     [SCRATCH],
   );
+  const routines = await runner.query(
+    `
+    select p.proname as name, pg_get_function_identity_arguments(p.oid) as args
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = $1
+  `,
+    [SCRATCH],
+  );
   const views = rows.filter((row) => cellText(row.kind) === "v" || cellText(row.kind) === "m");
   for (let pass = 0; pass < Math.max(views.length, 1); pass += 1) {
     for (const row of views) {
@@ -270,6 +338,12 @@ async function dropScratch(runner: CatalogQuery): Promise<void> {
         // A later view in this list may still be using it. The next pass retries.
       }
     }
+  }
+  for (const row of routines) {
+    const args = cellText(row.args);
+    await runner.query(
+      `drop function if exists ${quoteIdent(SCRATCH)}.${quoteIdent(cellText(row.name))}(${args})`,
+    );
   }
   for (const row of rows) {
     if (cellText(row.kind) !== "r") continue;

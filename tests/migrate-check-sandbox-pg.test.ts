@@ -115,6 +115,24 @@ for (const who of ["superuser", "owner"] as const) {
 
 postgresTest(
   gate,
+  "a BEGIN ATOMIC argument qualifier does not fail migrate check",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const cwd = mkdtempSync(join(tmpdir(), "okm-check-atomic-fn-"));
+    try {
+      writeAtomicProject(cwd, database.url);
+      await cli(cwd, ["generate", "init"]);
+      expect(await cli(cwd, ["migrate", "check"])).toBe("ok 1 migrations\n");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  90_000,
+);
+
+postgresTest(
+  gate,
   "BEGIN ATOMIC function and procedure bodies pass check and apply",
   async () => {
     const database = await createIsolatedDatabase();
@@ -284,6 +302,47 @@ async function publicAcl(sql: Sql): Promise<string> {
     select coalesce(nspacl::text, '') as acl from pg_namespace where nspname = 'public'
   `;
   return rows[0]?.acl ?? "";
+}
+
+function writeAtomicProject(cwd: string, url: string): void {
+  const source = (path: string): string => JSON.stringify(join(root, path));
+  writeFileSync(
+    join(cwd, "schema.ts"),
+    [
+      `import { fn } from ${source("src/dialects/pg/fn/index.ts")};`,
+      `import { schema, t, table } from ${source("src/dialects/pg/index.ts")};`,
+      'const tasks = table("tasks", { id: t.text().primaryKey(), title: t.text() });',
+      "export const app = schema({",
+      "  tables: [tasks],",
+      "  functions: [",
+      '    fn("by_id", {',
+      '      arguments: [{ name: "n", type: "text" }],',
+      '      returns: "text",',
+      '      language: "sql",',
+      '      body: "begin atomic select title from tasks where id = n; end",',
+      "    }),",
+      '    fn("count_tasks", {',
+      '      returns: "bigint",',
+      '      language: "sql",',
+      '      body: "begin atomic select count(*) from tasks; end",',
+      "    }),",
+      "  ],",
+      "});",
+      "",
+    ].join("\n"),
+  );
+  writeFileSync(
+    join(cwd, "okmodel.config.ts"),
+    [
+      `import { defineConfig } from ${source("src/tooling/migrate/index.ts")};`,
+      "export default defineConfig({",
+      '  schema: "./schema.ts",',
+      '  migrations: "./migrations",',
+      `  database: ${JSON.stringify(url)},`,
+      "});",
+      "",
+    ].join("\n"),
+  );
 }
 
 function writeProject(cwd: string, url: string): void {
