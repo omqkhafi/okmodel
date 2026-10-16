@@ -51,6 +51,19 @@ export type MigrateConfig = {
    */
   readonly lintFrom?: string;
   /**
+   * Postgres schema this catalog owns.
+   *
+   * Omitted means `public`. `schema()` still compiles `public`. Tooling
+   * places the catalog here before it plans, and stores `okm_meta` here.
+   */
+  readonly namespace?: string;
+  /**
+   * Snapshots from `okm catalog export`, one path per owning catalog.
+   *
+   * `external()` tables are verified against these files.
+   */
+  readonly external?: readonly string[];
+  /**
    * Batched backfill (D195).
    *
    * `batchSize` is what a new plan writes as `batch=`. A step header overrides

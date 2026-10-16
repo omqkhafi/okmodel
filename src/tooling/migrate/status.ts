@@ -24,6 +24,7 @@ import { loadMigrations } from "./files.js";
 import { projectPath } from "./paths.js";
 import { assertTargetPolicy, listTargets, type InvokeFlags, type TargetRecord } from "./policy.js";
 import { loadConfig } from "./project.js";
+import { catalogNamespace } from "./export.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
 import { expandProvisioned, provisionHistoryIsKnown } from "./snapshot.js";
 
@@ -179,6 +180,7 @@ export async function readTargetStatus(input: {
  */
 export async function statusProject(cwd: string, flags: InvokeFlags): Promise<string> {
   const config = await loadConfig(cwd);
+  const namespace = catalogNamespace(config);
   const targets = chosen(listTargets(config), flags.target);
   const migrations = loadMigrations(projectPath(cwd, config.migrations ?? "migrations"));
   const rows: TargetStatus[] = [];
@@ -188,6 +190,7 @@ export async function statusProject(cwd: string, flags: InvokeFlags): Promise<st
         url: target.url,
         target: target.name,
         protected: target.protected,
+        ...(namespace === "public" ? {} : { searchPath: namespace }),
         migrations,
       }),
     );

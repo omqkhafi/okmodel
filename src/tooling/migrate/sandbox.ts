@@ -84,7 +84,7 @@ export async function replayCheckHistory(
       const live = await introspectSchema(
         runner,
         scratch,
-        "public",
+        config.namespace ?? "public",
         managedRoleOptions(config.roles),
       );
       for (const item of lintReprints(migration.catalog, live, migration.steps)) {
@@ -138,7 +138,7 @@ export async function proveCheckSnapshot(
       {
         id: "snapshot",
         catalog: head.catalog,
-        steps: retargetSteps(planned.steps, provided),
+        steps: retargetSteps(planned.steps, provided, config.namespace ?? "public"),
       },
       session,
       [],
@@ -147,7 +147,7 @@ export async function proveCheckSnapshot(
     return introspectSchema(
       catalogQuery(sql),
       provided,
-      "public",
+      config.namespace ?? "public",
       managedRoleOptions(config.roles),
     );
   });
@@ -161,7 +161,7 @@ export async function proveCheckSnapshot(
     return introspectSchema(
       catalogQuery(sql),
       replayed,
-      "public",
+      config.namespace ?? "public",
       managedRoleOptions(config.roles),
     );
   });
@@ -169,18 +169,26 @@ export async function proveCheckSnapshot(
 }
 
 /**
- * Rewrites `"public".` to the scratch schema.
+ * Rewrites the catalog schema to the scratch schema.
+ *
+ * `source` defaults to `public`. A foreign key aimed at another schema is
+ * left in place.
  *
  * @param steps - Plan steps
  * @param schema - Scratch schema
+ * @param source - Schema the statements currently name
  * @returns The same steps, aimed at `schema`
  */
-export function retargetSteps(steps: readonly PlanStep[], schema: string): readonly PlanStep[] {
-  const from = `${quoteIdent("public")}.`;
+export function retargetSteps(
+  steps: readonly PlanStep[],
+  schema: string,
+  source = "public",
+): readonly PlanStep[] {
+  const from = `${quoteIdent(source)}.`;
   const to = `${quoteIdent(schema)}.`;
-  const fromDefaults = `in schema ${quoteIdent("public")} `;
+  const fromDefaults = `in schema ${quoteIdent(source)} `;
   const toDefaults = `in schema ${quoteIdent(schema)} `;
-  const fromSchema = `on schema ${quoteIdent("public")}`;
+  const fromSchema = `on schema ${quoteIdent(source)}`;
   const toSchema = `on schema ${quoteIdent(schema)}`;
   return steps.map((step) => ({
     ...step,
@@ -389,7 +397,7 @@ async function replayMigration(
     connection,
     scratch,
     config.roles?.migration,
-    { ...migration, steps: retargetSteps(migration.steps, scratch) },
+    { ...migration, steps: retargetSteps(migration.steps, scratch, config.namespace ?? "public") },
     session,
     skips,
   );

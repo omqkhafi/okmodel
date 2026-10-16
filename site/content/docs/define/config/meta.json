@@ -11,6 +11,8 @@
     "pooler",
     "lint-from",
     "backfill",
-    "roles"
+    "roles",
+    "namespace",
+    "external"
   ]
 }

@@ -795,6 +795,10 @@
       "kind": "stable"
     },
     {
+      "name": "external",
+      "kind": "stable"
+    },
+    {
       "name": "fragment",
       "kind": "stable"
     },

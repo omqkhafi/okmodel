@@ -580,6 +580,23 @@ function createSequenceSql(object: SequenceObject, schema: string): string {
   return `create sequence ${qualify(schema, object.identity.name)} as ${definition.dataType} start ${definition.start} increment ${definition.increment}${cycle}`;
 }
 
+/**
+ * Schema a foreign key points at.
+ *
+ * A key inside one namespace uses `schema`, so a scratch replay can retarget
+ * it. A key whose target namespace differs keeps that namespace.
+ */
+function referenceSchema(object: ConstraintObject, schema: string): string {
+  const references = object.definition.references;
+  if (references === undefined) return schema;
+  const target = references.parent.namespace;
+  const parent = object.identity.parent.namespace;
+  if (target.form === "static" && parent.form === "static" && target.name !== parent.name) {
+    return target.name;
+  }
+  return schema;
+}
+
 function constraintBody(object: ConstraintObject, schema: string): string {
   const definition = object.definition;
   const columns = definition.columns.map((name) => quoteIdent(name)).join(", ");
@@ -597,7 +614,7 @@ function constraintBody(object: ConstraintObject, schema: string): string {
       const target =
         references === undefined
           ? ""
-          : ` references ${qualify(schema, references.parent.name)} (${references.columns.map((name) => quoteIdent(name)).join(", ")})`;
+          : ` references ${qualify(referenceSchema(object, schema), references.parent.name)} (${references.columns.map((name) => quoteIdent(name)).join(", ")})`;
       const onDelete =
         references?.onDelete === undefined ? "" : ` on delete ${references.onDelete}`;
       const onUpdate =

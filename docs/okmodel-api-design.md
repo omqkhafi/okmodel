@@ -1,6 +1,6 @@
 # OKModel — API design (draft 26)
 
-Status: normative specification, draft 26. The repository implements it through the 0.8.0 release. Decisions run D1–D276. Draft 18 applied the M0 gate decisions D115–D127 (evidence: `docs/m0-findings.md` in the repository); draft 19 added D128 (catalog error codes); draft 20 added D130 (column definition and codec error codes); draft 21 added D131 (removing a picklist or enum value); draft 22 adds D132 (reserved options, reference names); draft 24 adds the 0.2 operator set (section 10.1); draft 26 takes the primary-key and Postgres 15 floor edits made in P17G (D148, D151) and renames the uuid default to `uuidv4` (D153). Draft 26 records the shipped id builder shape (P19, D153, D154) and the `defaults.id` fix text. Supersedes drafts 1–21 of this file and the API sections of `orm-research-design.md`. Evidence for the draft-4 changes is in `okmodel-gap-research.md`.
+Status: normative specification, draft 26. The repository implements it through the 0.8.0 release. Decisions run D1–D277. Draft 18 applied the M0 gate decisions D115–D127 (evidence: `docs/m0-findings.md` in the repository); draft 19 added D128 (catalog error codes); draft 20 added D130 (column definition and codec error codes); draft 21 added D131 (removing a picklist or enum value); draft 22 adds D132 (reserved options, reference names); draft 24 adds the 0.2 operator set (section 10.1); draft 26 takes the primary-key and Postgres 15 floor edits made in P17G (D148, D151) and renames the uuid default to `uuidv4` (D153). Draft 26 records the shipped id builder shape (P19, D153, D154) and the `defaults.id` fix text. Supersedes drafts 1–21 of this file and the API sections of `orm-research-design.md`. Evidence for the draft-4 changes is in `okmodel-gap-research.md`.
 
 Name: **OKModel** (short **OKM**). Package `okmodel` on npm and repository `omqkhafi/okmodel`, CLI bins `okm` and `okmodel` (same program), error class `OkmError`, error codes `OKM1xxx`, config file `okm.config.ts`, generated folder `.okm/`, metadata table `okm_meta`. The bin names are not npm package names, so a bare `bunx okm` without a local or global install could fetch an unrelated package; the README tells developers to install first (`bun add -d okmodel`, then `bunx okm`, or a global install).
 
@@ -10,7 +10,7 @@ Toolchain: **TypeScript 7** (the native compiler, still invoked as `tsc`) for ty
 
 ## 1. Decisions log
 
-Moved to `okmodel-decisions.md`. Decisions run D1–D276. This file is the normative spec; every section states a rule, an example and the guard that enforces it.
+Moved to `okmodel-decisions.md`. Decisions run D1–D277. This file is the normative spec; every section states a rule, an example and the guard that enforces it.
 
 ## 2. Design rules and the internal goal
 
@@ -257,7 +257,7 @@ A topology routes reads. `routing` accepts `probe`, `select`, `fallback`, `consi
 
 **Namespaces.** Every catalog object carries an explicit namespace, and emitted SQL is always schema-qualified; nothing depends on `search_path`. The default namespace is a setting (`schema({ namespace })`, default `public`) that is written into the catalog and the snapshots, never assumed. A PostgreSQL schema is a namespace, not automatically a tenant or a service. OKModel has no `microservice` concept: service boundaries are deployment and ownership boundaries above the catalog.
 
-**Several catalogs on one database.** Each `schema()` has its own namespace, ownership and migration history. A catalog may reference objects another catalog owns: they are declared `external`, schema-qualified, and verified but never altered. `external(identityUsers)` turns a table exported by another catalog into an external definition that keeps its identity. `okm catalog export` writes a catalog snapshot that a dependent verifies in CI, like the previous-release check. Foreign keys across catalogs are allowed only within one database (OKM1842 otherwise) and `okm check` lists them as coupling.
+**Several catalogs on one database.** `schema()` still compiles `public`. `defineConfig({ namespace })` places that catalog into its Postgres schema and stores `okm_meta`, `okm_history`, and `okm_backfill` there, so two catalogs on one database keep separate namespaces, ownership, and history (D277). `connect()` still reads unqualified `okm_meta` on the connection search path, which is `public`, and does not see another namespace. `external(users)` marks a table another catalog owns. The table keeps the namespace and name from that catalog's snapshot, SQL is schema-qualified, and a plan never creates, alters, or drops it. A managed table in the same database may reference it. `defineConfig({ external: ["./identity.okm.json"] })` names one snapshot path per owning catalog. `okm catalog export [--json] [--out <file>]` writes that snapshot from the schema source. `catalogHash` is the physical identity. `logical` is `namespace`, `name`, and `format`, and it is not that hash (R5). The file has no function and no connection URL. `okm check` and `okm migrate check` verify each external table against the snapshot and the database when `external` names at least one file. A `withOwner` mark with no snapshot list stays hands-off and is not OKM1841. A stale or missing snapshot is OKM1841. A foreign key across catalogs is allowed only inside one database; another database is OKM1842. `okm check` lists that key as a `coupling` warning. Keys, relations, codecs, defaults, client id rules, and a sync API are not in the snapshot (R1).
 
 ## 4. Dialects and capabilities
 
@@ -1385,7 +1385,7 @@ The startup compatibility check allows the database to be ahead of the app by `e
 | Command | Does |
 |---|---|
 | `okm build` / `okm dev` | validate schema, emit `.okm/`, update typed-SQL signatures; `okm dev` starts a local PGlite database in `.okm/dev-db` when no dev target is configured (real Postgres, no Docker) |
-| `okm catalog export [--json]` | write the catalog snapshot (used by dependent catalogs, docs and tooling) |
+| `okm catalog export [--json] [--out <file>]` | write the catalog snapshot a dependent verifies. `--json` prints it. `--out` writes it. With neither, the JSON is printed |
 | `okm check` | capabilities, unlisted tables, validation conflicts, stale renames, lint |
 | `okm migrate plan <name>` | plan, classify, lint |
 | `okm migrate apply` | apply with timeouts, retries, checkpoints and resume; on an empty target it provisions from the current snapshot (section 19.6). Flags: `--target <name>` (required when several targets exist), `--allow-protected`; with many targets also `--class shared\|tenant`, `--canary <n>`, `--concurrency <n>`, `--max-failures <n>` (section 19.5) |
@@ -1618,8 +1618,8 @@ test("today view runs one query", async () => {
 | Application role lacks privileges on a managed object | `okm doctor` | OKM1825 |
 | Row lock on `find` outside a transaction | types + runtime | OKM1830 |
 | `.replica()` on an operation that requires the primary, or inside `tx()` | types + runtime | OKM1840 |
-| External object differs from the owner's exported catalog | `okm check` / CI | OKM1841 |
-| Foreign key across databases | build | OKM1842 |
+| External object differs from the owner's exported catalog | `okm check` / `okm migrate check` | OKM1841 |
+| Foreign key across databases | `okm check` / `okm migrate check` | OKM1842 |
 | `.replica()` with no eligible replica (unhealthy, behind the session, position unavailable, none configured) | runtime | OKM1843 |
 | Automatic read with `fallback: "error"` and no eligible replica | runtime | OKM1844 |
 | Target cannot be resolved (unknown tenant, resolver failure) | runtime / CLI | OKM1845 |

@@ -38,6 +38,7 @@ An unknown command is `Unknown command <name>.` `okm migrate` with a subcommand 
 | Command | Result |
 | --- | --- |
 | `build` | Writes the catalog under [out](/docs/define/config/out). |
+| `catalog export` | Writes the catalog snapshot a dependent verifies. |
 | `check` | Lints the schema. Compares one database when a target is selected. |
 | `dev` | Names a target called `dev`, or creates a PGlite database and prints its directory. |
 | `doctor [code]` | Lists triggers, checks [roles](/docs/define/config/roles) when they are set, or prints one error code. |
@@ -92,9 +93,19 @@ bunx okm pull
 bunx okm pull --schema public --out ./adopted
 ```
 
+## catalog export
+
+`okm catalog export` writes the snapshot of the schema this project owns. It does not connect. `--json` prints the JSON. `--out <file>` writes that file and prints the path. With neither, the JSON is printed. `--json` and `--out` together print the JSON and write the file.
+
+The file has `catalogHash` and `logical` (`namespace`, `name`, `format`). A table is a namespace, a name, and columns. There is no function and no connection URL. A dependent lists the path in [`external`](/docs/define/config/external).
+
+```sh
+okm catalog export --out identity.okm.json
+```
+
 ## check
 
-`okm check` lints the schema against the previous snapshot, then prints warning findings and `ok`. An error finding is OKM1510 and the command exits 1. A finding line is `<severity> <code> <place>: <reason> -- fix: <fix>`.
+`okm check` lints the schema against the previous snapshot, then prints warning findings and `ok`. An error finding is OKM1510 and the command exits 1. A finding line is `<severity> <code> <place>: <reason> -- fix: <fix>`. An external table is checked against each [`external`](/docs/define/config/external) snapshot and, when a target is selected, against that database. A stale or missing snapshot is OKM1841. A foreign key whose namespaces differ is a `coupling` warning. A foreign key into another database is OKM1842.
 
 A [tables](/docs/define/config/tables) directory is scanned for a `.ts` file whose name is absent from the schema module. That is OKM1024: `Table file not in schema: <file>.` A schema that would validate on write, with no runtime import of `okmodel/validate`, is OKM1201. The rules are on [Validation](/docs/define/schema/validation).
 

@@ -12,6 +12,7 @@ import postgres, { type Sql } from "postgres";
 
 import { OkmError } from "../../contracts/error.js";
 import type { Catalog } from "../../contracts/catalog/types.js";
+import { quoteIdent } from "../../dialects/pg/ddl.js";
 import {
   introspectSchema,
   type CatalogQuery,
@@ -48,13 +49,14 @@ export async function assertAuthorDrift(
       const rows = await sql<{ pid: string }[]>`select pg_backend_pid()::text as pid`;
       return rows[0]?.pid ?? "";
     }, allowPooler);
+    const schema = authorSchema(author);
     const present = await sql<{ reg: string | null }[]>`
-      select to_regclass('public.okm_meta')::text as reg
+      select to_regclass(${metaReg(schema)})::text as reg
     `;
     if (present[0]?.reg == null) return;
     const runner = catalogQuery(sql);
     const authorOnServer = await sealViews(runner, author);
-    const live = await introspectSchema(runner, "public", "public", managedRoleOptions(roles));
+    const live = await introspectSchema(runner, schema, schema, managedRoleOptions(roles));
     const plan = planMigration({ before: live, after: authorOnServer, name: "check" });
     if (plan.steps.length === 0) return;
     throw new OkmError(
@@ -106,6 +108,24 @@ export function managedRoleOptions(roles: RolesInput | undefined): IntrospectOpt
         managedRoles: names,
         ...(roles?.reporting !== undefined ? { reportingRole: roles.reporting } : {}),
       };
+}
+
+function authorSchema(author: Catalog): string {
+  for (const object of author.objects) {
+    if (
+      object.kind === "table" &&
+      object.owner !== "external" &&
+      object.identity.namespace.form === "static"
+    ) {
+      return object.identity.namespace.name;
+    }
+  }
+  return "public";
+}
+
+function metaReg(schema: string): string {
+  if (schema === "public") return "public.okm_meta";
+  return `${quoteIdent(schema)}.okm_meta`;
 }
 
 function managedRoleNames(roles: RolesInput | undefined): readonly string[] | undefined {

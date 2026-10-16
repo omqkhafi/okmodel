@@ -250,7 +250,10 @@ export async function introspectSchema(
         ...(refTable.length > 0
           ? {
               references: {
-                parent: { namespace, name: refTable },
+                parent: {
+                  namespace: referencedNamespace(text(row, "ref_schema"), concrete, namespace),
+                  name: refTable,
+                },
                 columns: refColumns,
                 ...(onDelete !== undefined ? { onDelete } : {}),
                 ...(onUpdate !== undefined ? { onUpdate } : {}),
@@ -460,7 +463,51 @@ export async function introspectSchema(
       )),
     );
   }
+  await includeOutsideReferences(runner, logical, provenance, objects);
   return catalog(objects);
+}
+
+/**
+ * Adds a foreign-key target that lives in another schema.
+ *
+ * Introspection reads one schema. A target in that schema is already in
+ * `objects` under `logical`. `catalog()` still requires a target that lives
+ * elsewhere, and its columns. The stored catalog marks those objects external,
+ * so a plan does not emit DDL for them.
+ */
+async function includeOutsideReferences(
+  runner: CatalogQuery,
+  logical: string,
+  provenance: Provenance,
+  objects: CatalogObject[],
+): Promise<void> {
+  const wanted = new Map<string, { readonly schema: string; readonly name: string }>();
+  for (const object of objects) {
+    if (object.kind !== "constraint" || object.definition.references === undefined) continue;
+    const parent = object.definition.references.parent;
+    if (parent.namespace.form !== "static" || parent.namespace.name === logical) continue;
+    wanted.set(`${parent.namespace.name}.${parent.name}`, {
+      schema: parent.namespace.name,
+      name: parent.name,
+    });
+  }
+  for (const target of wanted.values()) {
+    const namespace = staticNamespace(target.schema);
+    const parent = { namespace, name: target.name };
+    objects.push(table({ namespace, name: target.name, provenance }));
+    const rows = await runner.query(OUTSIDE_COLUMNS, [target.schema, target.name]);
+    for (const row of rows) {
+      objects.push(
+        column({
+          parent,
+          name: text(row, "name"),
+          dataType: text(row, "type"),
+          nullable: !flag(row, "not_null"),
+          provenance,
+        }),
+      );
+    }
+  }
 }
 
 const EMITTED = new Set(["SELECT", "INSERT", "UPDATE", "DELETE", "EXECUTE", "USAGE"]);
@@ -867,6 +914,25 @@ const COLUMNS = `
     and ${member("c.oid", "pg_class")}
 `;
 
+function referencedNamespace(
+  refSchema: string,
+  concrete: string,
+  logical: ReturnType<typeof staticNamespace>,
+): ReturnType<typeof staticNamespace> {
+  if (refSchema.length > 0 && refSchema !== concrete) return staticNamespace(refSchema);
+  return logical;
+}
+
+const OUTSIDE_COLUMNS = `
+  select a.attname as name, format_type(a.atttypid, a.atttypmod) as type, a.attnotnull as not_null
+  from pg_attribute a
+  join pg_class c on c.oid = a.attrelid
+  join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = $1 and c.relname = $2
+    and a.attnum > 0 and not a.attisdropped
+  order by a.attnum
+`;
+
 const CONSTRAINTS = `
   select rel.relname as parent, con.conname as name, con.contype as contype,
     con.condeferrable as deferrable, con.condeferred as deferred,
@@ -877,6 +943,7 @@ const CONSTRAINTS = `
       join pg_attribute a on a.attrelid = con.conrelid and a.attnum = cols.attnum
     ) as columns,
     ref.relname as ref_table,
+    refn.nspname as ref_schema,
     (
       select coalesce(string_agg(a.attname, ',' order by cols.ord), '')
       from unnest(con.confkey) with ordinality as cols(attnum, ord)
@@ -886,6 +953,7 @@ const CONSTRAINTS = `
   join pg_class rel on rel.oid = con.conrelid
   join pg_namespace n on n.oid = rel.relnamespace
   left join pg_class ref on ref.oid = con.confrelid
+  left join pg_namespace refn on refn.oid = ref.relnamespace
   where n.nspname = $1
     and con.contype in ('p', 'u', 'f', 'c')
     and not exists (select 1 from pg_inherits i where i.inhrelid = rel.oid)

@@ -14,6 +14,7 @@ export {
   type SchemaRequires,
 } from "./schema.js";
 export { withOwner, type DeclaredOwner } from "./owner.js";
+export { external } from "./external.js";
 export {
   index,
   sql,

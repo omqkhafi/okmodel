@@ -29,6 +29,16 @@ import type { AnyTable } from "../../dialects/pg/table.js";
 import type { Catalog } from "../../contracts/catalog/types.js";
 import { batchSizeField } from "./backfill.js";
 import { type MigrateConfig } from "./config.js";
+import {
+  assertLiveExternal,
+  assertSnapshots,
+  catalogNamespace,
+  couplingFindings,
+  externalNamespaceMap,
+  loadSnapshots,
+  renderExport,
+} from "./export.js";
+import { placeCatalog } from "./place.js";
 import { annotateLock, readRowEstimates, renameAliases, type RowEstimate } from "./estimate.js";
 import {
   assertTargetAlias,
@@ -57,7 +67,7 @@ type Previous = {
 export async function buildProject(cwd: string): Promise<string> {
   const config = await loadConfig(cwd);
   const built = await loadSchema(cwd, config.schema);
-  return writeArtifact(cwd, config, withRoles(built, config));
+  return writeArtifact(cwd, config, withRoles(built, config, cwd));
 }
 
 /**
@@ -156,7 +166,8 @@ export async function checkProject(cwd: string, flags?: InvokeFlags): Promise<re
       });
     }
   }
-  const findings = lintOpened(opened);
+  assertSnapshots(cwd, opened.config, opened.built.catalog);
+  const findings = [...lintOpened(opened), ...couplingFindings(opened.built.catalog)];
   if (hasError(findings)) throw lintRefusal(findings);
   const named = flags?.target;
   if (targets.length === 0) return findings;
@@ -166,6 +177,7 @@ export async function checkProject(cwd: string, flags?: InvokeFlags): Promise<re
   assertTargetPolicy(target, "drift", flags?.allowProtected ?? false);
   const { assertAuthorDrift } = await import("./drift.js");
   const allowPooler = flags?.allowPooler === true || opened.config.allowPooler === true;
+  await assertLiveExternal(target.url, opened.built.catalog, loadSnapshots(cwd, opened.config));
   await assertAuthorDrift(target.url, opened.built.catalog, opened.config.roles, allowPooler);
   return findings;
 }
@@ -228,6 +240,7 @@ async function prepare(
     renames: opened.renames,
     replacements: flags.map((flag) => parseReplace(flag)),
     name,
+    ...placedSchema(opened.config),
     ...batchSizeField(opened.config.backfill?.batchSize),
   });
   return {
@@ -275,7 +288,7 @@ async function displayPlan(
   let estimates: ReadonlyMap<string, RowEstimate>;
   try {
     const names = plan.steps.flatMap((step) => step.tables ?? []);
-    estimates = await readRowEstimates(target.url, "public", names);
+    estimates = await readRowEstimates(target.url, catalogNamespace(config), names);
   } catch {
     return offline;
   }
@@ -287,13 +300,14 @@ function lintOpened(opened: {
   readonly built: Built;
   readonly previous: Catalog;
   readonly renames: readonly DeclaredRename[];
-  readonly config: { readonly backfill?: { readonly batchSize?: number } };
+  readonly config: MigrateConfig;
 }): readonly Finding[] {
   const plan = planMigration({
     before: opened.previous,
     after: opened.built.catalog,
     renames: opened.renames,
     name: "check",
+    ...placedSchema(opened.config),
     ...batchSizeField(opened.config.backfill?.batchSize),
   });
   return [
@@ -317,7 +331,7 @@ export async function openProject(cwd: string): Promise<{
   readonly renames: readonly DeclaredRename[];
 }> {
   const config = await loadConfig(cwd);
-  const built = withRoles(await loadSchema(cwd, config.schema), config);
+  const built = await loadBuiltSchema(cwd, config);
   const declarations = schemaDeclarations(built);
   const previous = readPrevious(projectPath(cwd, config.migrations ?? "migrations"));
   const stale = staleRenames(previous?.catalog, declarations.renames);
@@ -334,14 +348,25 @@ export async function openProject(cwd: string): Promise<{
   };
 }
 
-function withRoles(built: Built, config: MigrateConfig): Built {
+function withRoles(built: Built, config: MigrateConfig, cwd: string): Built {
   const marks = ownershipMarks(built);
   const stamped = marks.size === 0 ? built.catalog : stampOwnership(built.catalog, marks);
+  const placed = placeCatalog(
+    stamped,
+    catalogNamespace(config),
+    externalNamespaceMap(loadSnapshots(cwd, config)),
+  );
   const roles = config.roles;
   const catalog =
-    roles === undefined ? stamped : attachRoles(stamped, roles, exposureFor(built, roles));
+    roles === undefined ? placed : attachRoles(placed, roles, exposureFor(built, roles));
   if (catalog === built.catalog) return built;
   return { ...built, catalog };
+}
+
+function placedSchema(config: MigrateConfig): { readonly schema: string } | undefined {
+  const namespace = catalogNamespace(config);
+  if (namespace === "public") return undefined;
+  return { schema: namespace };
 }
 
 function ownershipMarks(built: Built): ReadonlyMap<string, "external" | "ignored"> {
@@ -468,7 +493,20 @@ function writeArtifact(cwd: string, config: MigrateConfig, built: Built): string
  * @returns The built schema, with roles attached when the config declares them
  */
 export async function loadBuiltSchema(cwd: string, config: MigrateConfig): Promise<Built> {
-  return withRoles(await loadSchema(cwd, config.schema), config);
+  return withRoles(await loadSchema(cwd, config.schema), config, cwd);
+}
+
+/**
+ * Prints or writes the catalog snapshot.
+ *
+ * @param cwd - Project directory
+ * @param args - Arguments after `export`
+ * @returns Stdout
+ */
+export async function exportProject(cwd: string, args: readonly string[]): Promise<string> {
+  const config = await loadConfig(cwd);
+  const built = await loadBuiltSchema(cwd, config);
+  return renderExport(cwd, config, built.catalog, args);
 }
 
 /**
