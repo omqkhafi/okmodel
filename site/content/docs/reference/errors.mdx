@@ -304,7 +304,7 @@ The registry has 110 codes, in numeric order. Ranges are schema `OKM1000`, queri
 | `OKM1535` | Check without NOT VALID | A statement adds a check on an existing table without NOT VALID. |
 | `OKM1536` | Foreign key without NOT VALID | A statement adds a foreign key on an existing table without NOT VALID. |
 | `OKM1537` | Set not null | A statement sets NOT NULL on a column that already exists. |
-| `OKM1538` | Type rewrite | A statement changes a column type in a way that rewrites the table. Binary-coercible changes, varchar widening, varchar to text, and a numeric precision increase at the same scale do not. |
+| `OKM1538` | Type rewrite | A statement changes a column type in a way that rewrites the table. Binary-coercible changes, varchar widening, varchar to text, and a numeric precision increase at the same scale do not. The expand/contract recipe is [type change](/docs/reference/type-change). |
 | `OKM1539` | Timestamp without time zone | A column is timestamp without time zone. The instant depends on the session time zone. |
 | `OKM1540` | varchar length | A column is varchar(n). text stores the same values without a length limit in the type. |
 | `OKM1541` | Picklist removal | A picklist or enum value was removed and the replacement was not given. |

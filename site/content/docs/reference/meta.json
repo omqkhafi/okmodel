@@ -5,6 +5,7 @@
     "schema-api",
     "github-action",
     "errors",
+    "type-change",
     "okid",
     "environment-variables"
   ]

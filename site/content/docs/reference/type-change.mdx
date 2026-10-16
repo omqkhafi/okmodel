@@ -1,0 +1,82 @@
+---
+title: "Type change"
+description: "A type change that rewrites the table is five migrations, not one ALTER TYPE."
+---
+OKM1538 warns when a column type change rewrites the table. 0.9 does not rewrite that statement into a safe form, and there is no `okm migrate type-change` command. Add a new column, fill it, keep both columns updated, switch readers, then drop the old column. Each of those is its own migration.
+
+`varchar(n)` widening, `varchar` to `text`, and the other changes listed on [OKM1538](/docs/reference/errors) do not rewrite the heap. This page is for a change that does, such as `integer` cents to `numeric(12,2)` dollars.
+
+## Add the new column
+
+The new column is nullable. The release that still writes `cents` keeps working.
+
+```sql
+alter table "public"."prices" add column "amount" numeric(12, 2);
+```
+
+## Backfill
+
+The step header is `-- backfill`. The statement fills rows where `amount` is still null, one key range at a time. Apply runs one transaction per batch.
+
+```sql
+-- backfill table="public"."prices" key="id" batch=1000
+-- transactional: false
+update "public"."prices"
+set "amount" = "cents"::numeric / 100
+where "amount" is null
+  and ($1::text is null or "id" > $1::integer)
+  and ($2::text is null or "id" <= $2::integer);
+```
+
+## Dual-write
+
+A `before insert or update` trigger copies a write on one column onto the other. Deploy it before any release that writes `amount`. An old release that sets only `cents` still fills `amount`. A new release that sets only `amount` still fills `cents`.
+
+```sql
+create function "public"."prices_amount_sync"() returns trigger
+language plpgsql as $$
+begin
+  if tg_op = 'INSERT' then
+    if new.amount is null and new.cents is not null then
+      new.amount := new.cents::numeric / 100;
+    elsif new.cents is null and new.amount is not null then
+      new.cents := (new.amount * 100)::integer;
+    end if;
+    return new;
+  end if;
+  if new.cents is distinct from old.cents and new.amount is not distinct from old.amount then
+    new.amount := new.cents::numeric / 100;
+  elsif new.amount is distinct from old.amount and new.cents is not distinct from old.cents then
+    new.cents := (new.amount * 100)::integer;
+  end if;
+  return new;
+end;
+$$;
+
+create trigger "prices_amount_sync"
+before insert or update on "public"."prices"
+for each row execute function "public"."prices_amount_sync"();
+```
+
+## Switch reads
+
+Ship the release that reads `amount` with this migration, after the backfill has finished. The check is added `not valid`, validated, then the column is `not null`, then the check is dropped. The trigger stays, so an old writer still fills `amount`.
+
+```sql
+alter table "public"."prices"
+  add constraint "prices_amount_not_null" check ("amount" is not null) not valid;
+alter table "public"."prices" validate constraint "prices_amount_not_null";
+alter table "public"."prices" alter column "amount" set not null;
+alter table "public"."prices" drop constraint "prices_amount_not_null";
+```
+
+## Drop the old column
+
+Ship this only after every release reads and writes `amount`. Dropping the column is OKM1512, so the step needs a reason. Drop the trigger first.
+
+```sql
+-- okm-allow OKM1512: readers and writers use amount
+drop trigger "prices_amount_sync" on "public"."prices";
+drop function "public"."prices_amount_sync"();
+alter table "public"."prices" drop column "cents";
+```

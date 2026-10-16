@@ -135,6 +135,20 @@ export async function removeNote(id: string) {
 
 `okm push` is for a database you can recreate. A shared database uses reviewed migrations: `okm generate init`, then `okm migrate apply`.
 
+## 0.9
+
+This release is the tooling train. `okm pull` writes schema files from a database. `okm import drizzle` writes them from a Drizzle schema. Several catalogs share one database through `external()` and `okm catalog export`. `describe` and `buildCatalog` are on `okmodel/migrate`. Extension packs cover `unaccent`, `hstore`, `ltree`, `btree_gist`, `btree_gin`, `fuzzystrmatch`, and `pgcrypto`. The GitHub Action posts the migration plan on a pull request. A type change that rewrites a table is five migrations, not one `ALTER COLUMN … TYPE`.
+
+| Want…                   | Go to                                                                  |
+| ----------------------- | ---------------------------------------------------------------------- |
+| Pull a database         | [pull](https://okm.omqkhafi.dev/docs/reference/cli#pull)               |
+| Import Drizzle          | [From Drizzle](https://okm.omqkhafi.dev/docs/start/from-drizzle)       |
+| Several catalogs        | [Catalogs](https://okm.omqkhafi.dev/docs/define/schema/catalogs)       |
+| `describe`              | [Schema API](https://okm.omqkhafi.dev/docs/reference/schema-api)       |
+| Extension packs         | [Extensions](https://okm.omqkhafi.dev/docs/define/schema/extensions)   |
+| The GitHub Action       | [GitHub Action](https://okm.omqkhafi.dev/docs/reference/github-action) |
+| A rewriting type change | [Type change](https://okm.omqkhafi.dev/docs/reference/type-change)     |
+
 ## Next
 
 | Want…                       | Go to                                                                                    |
