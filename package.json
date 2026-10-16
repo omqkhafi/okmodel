@@ -1,6 +1,6 @@
 {
   "name": "okmodel",
-  "version": "0.9.0-next.6",
+  "version": "0.9.0-next.7",
   "description": "okmodel is a catalog-first TypeScript ORM, PostgreSQL first.",
   "keywords": [
     "migrations",
@@ -165,6 +165,7 @@
     "@arethetypeswrong/cli": "^0.18.5",
     "@electric-sql/pglite-socket": "^0.2.11",
     "@types/bun": "^1.4.2",
+    "drizzle-orm": "0.45.4",
     "expect-type": "^1.4.0",
     "fast-check": "^4.10.2",
     "oxc-parser": "^0.152.0",

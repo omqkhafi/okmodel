@@ -2,6 +2,7 @@
   "title": "Start",
   "pages": [
     "index",
-    "basic-usage"
+    "basic-usage",
+    "from-drizzle"
   ]
 }

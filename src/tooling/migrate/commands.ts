@@ -106,6 +106,17 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
     stdout((await pullProject(cwd, rest)).text);
     return;
   }
+  if (command === "import") {
+    const sub = rest[0];
+    if (sub !== "drizzle") {
+      throw new OkmError("invalid", `Unknown command import ${sub ?? ""}.`, {
+        fix: { summary: "Use okm import drizzle <path>." },
+      });
+    }
+    const { importDrizzle } = await import("./import-drizzle.js");
+    stdout((await importDrizzle(cwd, rest.slice(1))).text);
+    return;
+  }
   if (command === "migrate") {
     const sub = rest[0];
     const migrateArgs = rest.slice(1);
@@ -292,6 +303,10 @@ const COMMANDS: readonly (readonly [string, string])[] = [
   ["ext list", "List extensions the server can install."],
   ["ext check", "Compare declared extensions with the server."],
   ["generate [name]", "Write the next migration."],
+  [
+    "import drizzle <path>",
+    "Import a Drizzle schema. This runs that file. Writes table files and needs no database.",
+  ],
   ["migrate plan <name>", "Print the plan and its lock estimates. --json prints a document."],
   ["migrate apply", "Apply pending migrations."],
   ["migrate status", "Print whether the target is current."],

@@ -1,0 +1,37 @@
+---
+title: "From Drizzle"
+description: "okm import drizzle writes okmodel table files from a Drizzle schema."
+---
+
+`okm import drizzle` reads a Drizzle schema and writes one table file per table, plus the schema file. It does not need a database. The file is imported, so it runs. `drizzle-orm` is resolved from the project. okmodel does not depend on it.
+
+```sh
+bunx okm import drizzle ./src/db/schema.ts --out ./adopted
+```
+
+An existing file is OKM1855 and nothing is written. A project that cannot resolve `drizzle-orm` is OKM1856. Install it in that project.
+
+The report starts with `namespace <name>`. SQL names stay. TypeScript fields follow the Drizzle property names. When the namespace is not `public`, set it on the config. `schema()` still compiles `public`.
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./adopted/schema.ts",
+  tables: "./adopted/tables",
+  namespace: "shop",
+  database: process.env.DATABASE_URL!,
+});
+```
+
+Then `okm build` and `okm generate init`.
+
+These are printed under `not imported`, with the table and the reason, and they are not written:
+
+- A composite foreign key. `references()` takes one local column.
+- `relations()`. They are not guessed into foreign keys.
+- A custom column type.
+- A view, a policy, and a sequence `table()` cannot map.
+- The sequence behind `serial`, `smallserial`, or `bigserial`. The column is written as `integer`, `smallint`, or `bigint` and not null.
+
+A second Postgres schema is listed the same way. Import it on its own and set `namespace`.

@@ -18,6 +18,14 @@ Printed under `not pulled yet`, with a count, and not written: policies, roles, 
 
 The composite action `.github/actions/migrate` posts one sticky pull-request comment from `okm migrate plan --json` and can run the preview recipe (D279, §19.8). It does not create a database and it does not drop one. The caller passes the URL. A fork pull request receives no secrets, so `preview: true` is for a pull request in the same repository. See [GitHub Action](github-action.md).
 
+## okm import drizzle
+
+`okm import drizzle <path>` converts a Drizzle schema into table files (D280). It imports that file, so the command runs the project's code. It uses the project's own `drizzle-orm` (`getTableConfig`). okmodel does not depend on it. A project that cannot resolve `drizzle-orm` fails with OKM1856. The fix is to install it in that project. The command needs no database. It never overwrites a file (OKM1855). `--out <directory>` writes somewhere else.
+
+The files are the same ones `okm pull` writes. SQL names stay. TypeScript fields follow the Drizzle property names. The report starts with `namespace <name>`. When that name is not `public`, set `defineConfig({ namespace })`. `schema()` still compiles `public`.
+
+Not imported, each with the table and the reason: a composite foreign key, `relations()` (they are not turned into `references()`), a custom column type, a view, a policy, a sequence `table()` cannot map, and the sequence behind `serial`, `smallserial`, or `bigserial`. Those columns are written as `integer`, `smallint`, or `bigint` and not null, without the sequence. A second Postgres schema is listed too: one import writes one namespace.
+
 ## Not built yet
 
 An option or builder that is not in this version throws OKM1061 and names the prompt or version that adds it, or it is not a method yet. These are the ones the plan has assigned.
