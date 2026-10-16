@@ -314,6 +314,8 @@ function bundleAdapterEntries(root: string): readonly string[] {
         "pg",
         "--external",
         "bun",
+        "--external",
+        "@neondatabase/serverless",
       ],
       { cwd: root, stdout: "pipe", stderr: "pipe" },
     );

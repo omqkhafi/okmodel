@@ -47,6 +47,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 ### 🐛 Fixed
 
 - A raw read renumbers every `$n` marker in a multi-parameter tenant predicate once. Nine user parameters and `$1`, `$2` stay `$10`, `$11`.
+- The bundle check leaves `@neondatabase/serverless` external, the same way it leaves `postgres`, `pg`, and PGlite external (D269).
 
 ## v0.7.0 — 2026-10-15
 
