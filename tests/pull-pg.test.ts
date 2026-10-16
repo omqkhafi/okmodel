@@ -141,10 +141,13 @@ postgresTest(
       expect(hasEnum(built.catalog)).toBe(true);
       expect(hasDomain(built.catalog)).toBe(true);
       expect(hasDefault(built.catalog)).toBe(true);
-      expect(first.text).toContain("note_open");
-      expect(first.text).toContain("open_notes");
-      expect(first.text).toContain("functions: 1");
-      expect(first.text).toContain("views: 1");
+      expect(first.text).toContain("note_open(note_status): verified");
+      expect(first.text).toContain("open_notes: verified");
+      expect(first.text).toContain("aggregates: 0");
+      expect(first.text).toContain("procedures: 0");
+      expect(first.text).toContain("event triggers: 0");
+      expect(first.text).toContain("rules: 0");
+      expect(readFileSync(join(cwd, "schema.ts"), "utf8")).toContain("fn(");
       expect(first.text).toContain("notes.note");
       expect(first.text).toContain("extra_seq");
       expect(first.text).toContain("notes_title_expr");
@@ -182,12 +185,90 @@ postgresTest(
       const built = await loadSchema(cwd, "./adopted/schema.ts");
       const live = await readLive(database.url);
       expectEqual(align(live, keysOf(pulled)), align(built.catalog, new Set()));
-      expect(pulled.text).toContain("functions: 1");
-      expect(pulled.text).toContain("task_is_open");
-      expect(pulled.text).toContain("views: 2");
-      expect(pulled.text).toContain("active_projects");
-      expect(pulled.text).toContain("open_tasks");
+      expect(pulled.text).toContain("task_is_open(task_status): verified");
+      expect(pulled.text).toContain("active_projects: verified");
+      expect(pulled.text).toContain("open_tasks: verified");
+      expect(pulled.text).not.toContain("candidate-only");
       expect(pulled.text).toContain("policies: 0");
+      const source = readFileSync(join(cwd, "adopted/schema.ts"), "utf8");
+      expect(source).toContain("fn(");
+      expect(source).toContain('view("active_projects"');
+      expect(source).toContain('view("open_tasks"');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  60_000,
+);
+
+postgresTest(
+  gate,
+  "pull round-trips functions, a trigger, a view over a view, and a materialized view",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const cwd = tempProject();
+    try {
+      await apply(database.url, [
+        "create table items (id integer primary key, name text not null)",
+        "create function item_name(n integer) returns text language sql stable as $$ select name from items where id = n $$",
+        "create function item_touch() returns trigger language plpgsql as $$ begin perform 1 from items; return new; end $$",
+        "create function item_count() returns bigint language sql begin atomic select count(*) from items; end",
+        "create trigger items_touch before update on items for each row execute function item_touch()",
+        "create view item_names as select id, name from items",
+        "create view item_name_count as select count(*) as n from item_names",
+        "create materialized view item_mat as select id, name from items with no data",
+        "create unique index item_mat_id on item_mat (id)",
+      ]);
+      writeConfig(cwd, database.url);
+      const pulled = await pullProject(cwd, ["--out", "adopted"]);
+      const built = await loadSchema(cwd, "./adopted/schema.ts");
+      const live = await readLive(database.url);
+      expectEqual(align(live, keysOf(pulled)), align(built.catalog, new Set()));
+      expect(pulled.text).toContain("item_name(integer): verified");
+      expect(pulled.text).toContain("item_count(): verified");
+      expect(pulled.text).toContain("item_touch(): candidate-only");
+      expect(pulled.text).toContain("item_names: verified");
+      expect(pulled.text).toContain("item_name_count: verified");
+      expect(pulled.text).toContain("item_mat: verified");
+      expect(pulled.text).toContain("items.items_touch: verified");
+      const source = readFileSync(join(cwd, "adopted/schema.ts"), "utf8");
+      expect(source).toContain("candidate-only: a plpgsql body is not proved by creation");
+      expect(source).toContain("dependsOn: [items]");
+      expect(source).toContain("verified: scratch replay created this function");
+      expect(source).toContain('view("item_names"');
+      expect(source).toContain("materializedView(");
+      expect(source).not.toContain("(q) =>");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  60_000,
+);
+
+postgresTest(
+  gate,
+  "a missed SQL dependency fails the scratch replay and plpgsql stays candidate-only",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const cwd = tempProject();
+    try {
+      await apply(database.url, [
+        "create table notes (id integer primary key)",
+        "create function peek() returns regclass language sql as $$ select 'notes'::regclass $$",
+        "create function touch_note() returns trigger language plpgsql as $$ begin perform 1 from notes; return new; end $$",
+      ]);
+      writeConfig(cwd, database.url);
+      const pulled = await pullProject(cwd, ["--out", "adopted"]);
+      expect(pulled.text).toContain("peek(): unverified");
+      expect(pulled.text).toContain("touch_note(): candidate-only");
+      const source = readFileSync(join(cwd, "adopted/schema.ts"), "utf8");
+      expect(source).toContain("unverified: scratch replay did not create this function");
+      expect(source).toContain("candidate-only: a plpgsql body is not proved by creation");
+      expect(source).toContain("dependsOn: [notes]");
+      const built = await loadSchema(cwd, "./adopted/schema.ts");
+      expect(built.catalog.objects.some((object) => object.kind === "function")).toBe(true);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
       await database.close();
@@ -472,6 +553,12 @@ function stamp(
       provenance,
       definition: { ...object.definition, base: canonicalTypeName(object.definition.base) },
     };
+  }
+  if (object.kind === "view" || object.kind === "materializedView") {
+    return { ...object, provenance, dependencies: [] };
+  }
+  if (object.kind === "function" && object.definition.atomic !== true) {
+    return { ...object, provenance, dependencies: [] };
   }
   if (object.kind === "sequence") {
     const targets = object.dependencies.map((edge) => edge.target);

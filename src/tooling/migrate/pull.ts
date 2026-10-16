@@ -1,8 +1,10 @@
 /**
  * `okm pull` reads a database and writes table files plus a schema file.
  *
- * The connection is read-only: every statement is a catalog query. A protected
- * target is allowed. An existing file is refused before anything is written.
+ * The selected namespaces are only read. A scratch schema is created and
+ * dropped to verify functions and views, then dropped before this returns.
+ * A protected target is allowed. An existing file is refused before anything
+ * is written.
  */
 
 import { spawnSync } from "node:child_process";
@@ -18,7 +20,16 @@ import type { Catalog, CatalogObject } from "../../contracts/catalog/types.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
 import { projectPath } from "./paths.js";
 import { assertTargetPolicy, selectTarget } from "./policy.js";
-import { emitPull, formatPullReport, type PullFile, type PullSkip } from "./pull-emit.js";
+import {
+  emitPull,
+  formatPullReport,
+  tableExportNames,
+  type PullCount,
+  type PullFile,
+  type PullSkip,
+} from "./pull-emit.js";
+import { planRoutines } from "./pull-routines.js";
+import { verifyPulled } from "./pull-verify.js";
 import { loadConfig } from "./project.js";
 
 /** What `okm pull` prints, and the objects the files leave out. */
@@ -48,25 +59,42 @@ export async function pullProject(cwd: string, argv: readonly string[]): Promise
   const target = selectTarget(config, flags.target);
   assertTargetPolicy(target, "pull", flags.allowProtected);
   const layout = layoutOf(cwd, config.schema, config.tables, flags.out);
-  const read = await readCatalog(target.url, flags.schemas);
-  const emitted = emitPull(read.catalog, layout);
-  const tables = emitted.files.filter((file) => file.path !== layout.schemaFile);
-  if (tables.length === 0) {
-    const name = read.schemas.join(", ");
-    throw new OkmError("invalid", `Namespace ${name} has no tables.`, {
-      fix: { summary: "Pass --schema <name> for a namespace that has tables." },
-    });
+  const sql = postgres(target.url, {
+    max: 1,
+    connect_timeout: 5,
+    idle_timeout: 1,
+    onnotice: () => {},
+  });
+  try {
+    const read = await readCatalog(sql, flags.schemas);
+    const query = queryOf(sql);
+    const plan = planRoutines(read.catalog, tableExportNames(read.catalog));
+    const verdicts = await verifyPulled(query, read.catalog, plan);
+    const unexpressed = await countUnexpressed(query, read.schemas);
+    const emitted = emitPull(read.catalog, layout, { plan, verdicts, unexpressed });
+    const tables = emitted.files.filter((file) => file.path !== layout.schemaFile);
+    if (tables.length === 0) {
+      const name = read.schemas.join(", ");
+      throw new OkmError("invalid", `Namespace ${name} has no tables.`, {
+        fix: { summary: "Pass --schema <name> for a namespace that has tables." },
+      });
+    }
+    refuseExisting(emitted.files);
+    for (const file of emitted.files) {
+      mkdirSync(dirname(file.path), { recursive: true });
+      writeFileSync(file.path, file.text);
+    }
+    formatFiles(emitted.files.map((file) => file.path));
+    return {
+      text: formatPullReport(emitted.counts, emitted.skipped, emitted.verdicts, unexpressed),
+      skipped: emitted.skipped,
+    };
+  } catch (error) {
+    if (error instanceof OkmError) throw error;
+    throw sessionFailure(error) ?? unavailable(error);
+  } finally {
+    await finishQuiet(() => sql.end({ timeout: 5 }));
   }
-  refuseExisting(emitted.files);
-  for (const file of emitted.files) {
-    mkdirSync(dirname(file.path), { recursive: true });
-    writeFileSync(file.path, file.text);
-  }
-  formatFiles(emitted.files.map((file) => file.path));
-  return {
-    text: formatPullReport(tables.length, emitted.skipped),
-    skipped: emitted.skipped,
-  };
 }
 
 /**
@@ -124,15 +152,9 @@ export function parsePullArgs(argv: readonly string[]): {
 }
 
 async function readCatalog(
-  url: string,
+  sql: Sql,
   schemas: readonly string[],
 ): Promise<{ readonly catalog: Catalog; readonly schemas: readonly string[] }> {
-  const sql = postgres(url, {
-    max: 1,
-    connect_timeout: 5,
-    idle_timeout: 1,
-    onnotice: () => {},
-  });
   try {
     const chosen = schemas.length > 0 ? schemas : [await currentSchema(sql)];
     const objects: CatalogObject[] = [];
@@ -144,9 +166,57 @@ async function readCatalog(
   } catch (error) {
     if (error instanceof OkmError) throw error;
     throw sessionFailure(error) ?? unavailable(error);
-  } finally {
-    await finishQuiet(() => sql.end({ timeout: 5 }));
   }
+}
+
+const UNEXPRESSED = `
+  select
+    (select count(*)::int from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = $1 and p.prokind = 'a') as aggregates,
+    (select count(*)::int from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = $1 and p.prokind = 'p') as procedures,
+    (select count(*)::int from pg_event_trigger) as event_triggers,
+    (select count(*)::int from pg_rewrite r
+      join pg_class c on c.oid = r.ev_class
+      join pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = $1 and r.rulename <> '_RETURN') as rules
+`;
+
+async function countUnexpressed(
+  query: CatalogQuery,
+  schemas: readonly string[],
+): Promise<readonly PullCount[]> {
+  let aggregates = 0;
+  let procedures = 0;
+  let eventTriggers = 0;
+  let rules = 0;
+  for (const name of schemas) {
+    const rows = await query.query(UNEXPRESSED, [name]);
+    const row = rows[0];
+    aggregates += countCell(row?.aggregates);
+    procedures += countCell(row?.procedures);
+    eventTriggers = countCell(row?.event_triggers);
+    rules += countCell(row?.rules);
+  }
+  return [
+    { kind: "aggregate", count: aggregates, reason: "the catalog has no aggregate kind" },
+    { kind: "procedure", count: procedures, reason: "the catalog has no procedure kind" },
+    {
+      kind: "eventTrigger",
+      count: eventTriggers,
+      reason: "the catalog has no event trigger kind",
+    },
+    { kind: "rule", count: rules, reason: "the catalog has no rule kind" },
+  ];
+}
+
+function countCell(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "bigint") return Number(value);
+  if (typeof value === "string" && value.length > 0) return Number(value);
+  return 0;
 }
 
 async function currentSchema(sql: Sql): Promise<string> {

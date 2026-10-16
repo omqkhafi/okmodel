@@ -19,6 +19,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okm pull` reads a database and writes one table file per table plus the schema file. It is read-only, including on a protected target, and an existing file is OKM1855. Functions, triggers, views, policies, roles, and grants are listed under `not pulled yet` (D275).
 - `okm migrate check` warns OKM1552 when a domain check or a `LANGUAGE sql` function body reprints, and OKM1538 warns only when the type change rewrites the heap (D276).
 - `external(table)` marks a table another catalog owns. `okm catalog export` writes a snapshot whose `catalogHash` is separate from its logical identity. `defineConfig({ namespace, external })` places the catalog and verifies those snapshots. Two catalogs on one database keep separate history. A foreign key into another database is OKM1842 (D277).
+- `okm pull` writes functions, triggers, views, and materialized views. A view is SQL with its columns. Views and `BEGIN ATOMIC` bodies take `dependsOn` from `pg_depend`. A plpgsql or SQL-string body gets lexical `dependsOn` candidates. A scratch replay with `check_function_bodies` on marks each function verified or candidate-only (D278).
 
 ### ♻️ Changed
 
