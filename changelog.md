@@ -41,7 +41,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The P108 study measures four inline-relation shapes. An opt-in entry types `as` and `has` without moving an existing ceiling. The default-path harvest and a loose `references()` store do not fit. No gate moves.
 - Inline relations do not ship in 0.8. `relations` on the table remains how an include is named (D270).
 - postgres.js and node-postgres results on Neon primary and primary-pool endpoints are recorded. A cause that was not established stays unclassified (D269).
-- The OKE Windows audit records 32 surfaces: 26 work, 2 probably work, 1 fails, and 3 are unknown. The failure is packed `okm driver test`, which cannot find its runner. The table-file stem compare is fixed (#219).
+- The OKE Windows audit records 32 surfaces: 27 work, 2 probably work, none fail, and 3 are unknown. The table-file stem compare is fixed (#219). Packed `okm driver test` finds its runner.
 
 #### tooling
 
@@ -55,6 +55,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - A raw read renumbers every `$n` marker in a multi-parameter tenant predicate once. Nine user parameters and `$1`, `$2` stay `$10`, `$11`.
 - The bundle check leaves `@neondatabase/serverless` external, the same way it leaves `postgres`, `pg`, and PGlite external (D269).
 - `okm check` matches a table file stem without case, so `Tasks.ts` with `import { tasks } from "./tasks"` is not OKM1024.
+- Packed `okm driver test` finds `dist/tooling/driver-run.js` when the command itself is in a shared chunk.
 
 ## v0.7.0 — 2026-10-15
 

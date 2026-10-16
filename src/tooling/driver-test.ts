@@ -34,7 +34,7 @@ export async function driverTest(
   args: readonly string[],
   stdout: (text: string) => void,
 ): Promise<void> {
-  const runner = runnerPath();
+  const runner = driverRunnerPath(dirname(fileURLToPath(import.meta.url)));
   if (!existsSync(runner)) {
     throw new OkmError("invalid", "okm driver test cannot find its runner.", {
       fix: { summary: "Run bun run build, then retry." },
@@ -51,11 +51,23 @@ export async function driverTest(
   }
 }
 
-function runnerPath(): string {
-  const here = dirname(fileURLToPath(import.meta.url));
+/**
+ * Path of the `okm driver test` runner.
+ *
+ * A source checkout finds `packages/harness/src/driver-run.ts` and the
+ * command spawns `bun`. The packed build writes
+ * `dist/tooling/driver-run.js`. Splitting puts this module in
+ * `dist/shared/`, so that file is one directory up from the chunk.
+ *
+ * @param here - Directory of this module
+ * @returns Runner path. The caller checks that the file exists
+ */
+export function driverRunnerPath(here: string): string {
   const source = join(here, "..", "..", "packages", "harness", "src", "driver-run.ts");
   if (existsSync(source)) return source;
-  return join(here, "driver-run.js");
+  const beside = join(here, "driver-run.js");
+  if (existsSync(beside)) return beside;
+  return join(here, "..", "tooling", "driver-run.js");
 }
 
 function runProcess(

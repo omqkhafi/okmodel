@@ -70,7 +70,7 @@ The guides tell a project to run `bunx okm`, and `bun --bun okm` when the comman
 | --- | --- | --- |
 | `bunx okm` and `bun --bun okm` start on Windows | **works** | Both commands printed `0.8.0-next.14` from the packed tarball. `okm generate init` then completed on Node v22.23.3 and on `bun --bun`. |
 | Node older than 22.18 is told to run `bun --bun okm` and then exits | **works** | [`nodeStartupMessage`](../src/tooling/node-version.ts). [`tests/crlf-safety.test.ts`](../tests/crlf-safety.test.ts) (`Node older than 22.18 is told to use bun --bun okm`). The message is a string. It does not launch Bun. |
-| `okm driver test` from the packed package spawns `process.execPath` | **fails** | [`runnerPath`](../src/tooling/driver-test.ts) looks for `driver-run.js` next to the bundled file. That file is `dist/shared/74atysff.js`, so the lookup is `dist/shared/driver-run.js`. The packed runner is `dist/tooling/driver-run.js`. The Windows job printed `error invalid: okm driver test cannot find its runner.` The same call failed from this tarball on macOS. Not fixed in this change. |
+| `okm driver test` from the packed package spawns `process.execPath` | **works** | [`driverRunnerPath`](../src/tooling/driver-test.ts) checks `driver-run.js` beside the module, then `../tooling/driver-run.js`. The packed runner is `dist/tooling/driver-run.js` and the command lands in `dist/shared/`. [`tests/driver-runner.test.ts`](../tests/driver-runner.test.ts). The first Windows job looked only beside the shared chunk and printed `error invalid: okm driver test cannot find its runner.` |
 | `okm driver test` from a source checkout spawns `bun` | **unknown** | Same file, command `bun`, no shell. Proof: that command on Windows from a checkout where `runnerPath()` still sees `driver-run.ts`. |
 
 ## File watchers
@@ -123,9 +123,9 @@ This is the list for [#218](https://github.com/omqkhafi/okmodel/issues/218). The
 
 | Label | Count |
 | --- | --- |
-| works | 26 |
+| works | 27 |
 | probably works | 2 |
-| fails | 1 |
+| fails | 0 |
 | unknown | 3 |
 
-The failure is packed `okm driver test`: it cannot find `driver-run.js`. The three unknowns are two casings of one module, `spawn("bun")` from a source checkout, and socket unref. The last one needs a TCP URL, which this job does not start. `okm seed` and migrate check/apply against a pre-existing `.gitattributes` were skipped for the same reason.
+No row fails. The three unknowns are two casings of one module, `spawn("bun")` from a source checkout, and socket unref. The last one needs a TCP URL, which this job does not start. `okm seed` and migrate check/apply against a pre-existing `.gitattributes` were skipped for the same reason.
