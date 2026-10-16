@@ -12,6 +12,9 @@ import type { Catalog } from "../contracts/catalog/types.js";
 import type { DriverPool, ExecuteOptions } from "../contracts/driver.js";
 import { OkmError } from "../contracts/error.js";
 import type { QuerySchema } from "../dialects/pg/model.js";
+import { artifactDir, readText } from "./artifact-file.js";
+
+export { artifactDir } from "./artifact-file.js";
 
 /** Build artifact `okm build` wrote. */
 export type CatalogArtifact = {
@@ -30,6 +33,7 @@ export type CatalogArtifact = {
  * @param recordedHash - Hash from the startup query
  * @param source - Optional build artifact, or a directory that contains one
  * @param options - Cancellation and deadline for the history query
+ * @param namespace - Schema that stores `okm_history`. `public` stays unqualified
  */
 export async function assertCompatible(
   pool: DriverPool,
@@ -40,6 +44,7 @@ export async function assertCompatible(
     readonly catalogDir?: string;
   },
   options: ExecuteOptions | undefined,
+  namespace = "public",
 ): Promise<void> {
   const code = await codeHash(schema, source);
   if (code.hash === recordedHash) return;
@@ -67,7 +72,7 @@ export async function assertCompatible(
     });
   }
   const { assertDrift } = await import("./drift-detail.js");
-  await assertDrift(pool, code.hash, recordedHash, options);
+  await assertDrift(pool, code.hash, recordedHash, options, namespace);
 }
 
 async function codeHash(
@@ -106,53 +111,3 @@ async function readHashFile(catalogDir: string | undefined): Promise<string | un
   const hash = catalogFileText(text, "catalog.hash").trim();
   return hash.length === 0 ? undefined : hash;
 }
-
-/**
- * Directory of `catalog.hash` and `catalog.json`.
- *
- * A trailing `/` or `\` is removed so the joined file name is one path.
- *
- * @param catalogDir - Directory the caller passed, or the default `.okm`
- * @returns The directory, without a trailing slash
- */
-export function artifactDir(catalogDir: string | undefined): string {
-  if (catalogDir !== undefined) return catalogDir.replace(/[/\\]+$/, "");
-  const cwd = globalThis.process?.cwd?.() ?? ".";
-  return `${cwd}/.okm`;
-}
-
-/**
- * Reads an optional build artifact.
- *
- * The runtime layer cannot import `node:fs`. Bun and Node expose a file read
- * without that import. A missing file is `undefined`.
- */
-async function readText(path: string): Promise<string | undefined> {
-  const bun = (
-    globalThis as {
-      Bun?: {
-        file: (path: string) => { exists: () => Promise<boolean>; text: () => Promise<string> };
-      };
-    }
-  ).Bun;
-  if (bun !== undefined) {
-    const file = bun.file(path);
-    if (!(await file.exists())) return undefined;
-    return file.text();
-  }
-  const loader = (
-    globalThis as {
-      process?: { getBuiltinModule?: (name: string) => NodeFs };
-    }
-  ).process?.getBuiltinModule;
-  if (loader === undefined) return undefined;
-  try {
-    return await loader("node:fs/promises").readFile(path, "utf8");
-  } catch {
-    return undefined;
-  }
-}
-
-type NodeFs = {
-  readFile: (path: string, encoding: "utf8") => Promise<string>;
-};

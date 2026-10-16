@@ -737,7 +737,7 @@ function catalogSchema(namespace: string | undefined): { readonly schema: string
  * Creates a non-public schema and points this session at it.
  *
  * `okm_meta` is unqualified, so the search path is what gives each catalog
- * its own history. `public` is left alone: `connect()` still reads that name.
+ * its own history during apply. `connect()` reads the namespace `okm build` stored.
  */
 async function enterCatalogSchema(connection: DriverConnection, schema: string): Promise<void> {
   if (schema === "public") return;
