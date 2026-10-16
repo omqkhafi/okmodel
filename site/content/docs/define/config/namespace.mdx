@@ -5,7 +5,7 @@ description: "namespace is the Postgres schema this catalog owns."
 
 `namespace` is the Postgres schema this catalog owns. Omitted means `public`.
 
-`schema()` still compiles `public`. `okm` places the catalog into `namespace` before it plans. Apply creates that schema when it is not `public`, then sets the session search path so `okm_meta`, `okm_history`, and `okm_backfill` land there. `connect()` still reads `okm_meta` on the `public` search path.
+`schema()` still compiles `public`. `okm` places the catalog into `namespace` before it plans. Apply creates that schema when it is not `public`, then sets the session search path so `okm_meta`, `okm_history`, and `okm_backfill` land there. `connect()` reads `okm_meta` in that namespace. `public` keeps the unqualified query.
 
 ```ts title="okmodel.config.ts"
 import { defineConfig } from "okmodel/migrate";

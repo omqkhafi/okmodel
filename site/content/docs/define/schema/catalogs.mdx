@@ -9,7 +9,7 @@ description: "Two catalogs on one database. external() keeps a table the other c
 
 `okm catalog export` writes the snapshot. The dependent lists that file in `external`. `okm check` and `okm migrate check` compare the declaration and the database with the file. A stale or missing snapshot is OKM1841. `okm check` lists a cross-catalog foreign key as `coupling`.
 
-`connect()` still reads `okm_meta` on the `public` search path. It does not see a hash stored in another schema.
+`connect()` reads `okm_meta` in that namespace. `okm build` writes `.okm/namespace` when the name is not `public`. A missing table still skips the check. A hash that does not match is OKM1520.
 
 ### owning catalog
 

@@ -13,7 +13,8 @@ import {
   serverNeedsPostgres,
 } from "../dialects/pg/floor.js";
 import type { QuerySchema } from "../dialects/pg/model.js";
-import { attachHttp, withHttp } from "./client.js";
+import { artifactDir, readText } from "./artifact-file.js";
+import { attachHttp, mapOptions, withHttp } from "./client.js";
 import type { CatalogArtifact } from "./types.js";
 
 /**
@@ -25,15 +26,70 @@ import type { CatalogArtifact } from "./types.js";
 export const versionQuery =
   "select current_setting('server_version_num'), version(), (select (xpath('//catalog_hash/text()', query_to_xml('select catalog_hash from okm_meta where id = ''head''', true, false, '')))[1]::text where to_regclass('okm_meta') is not null)";
 
+const historyQuery =
+  "select migration_id, class, catalog_hash from okm_history order by migration_id, step_index";
+
 /**
- * Accepts the `server_version_num` row, or throws OKM1801, OKM1520, OKM1802, or OKM1803.
+ * Startup query for the namespace `okm build` recorded.
  *
- * A declared floor is the minimum. With no floor, the minimum is 15.
- * A major below 15 is refused when the schema is built.
+ * `public` returns {@link versionQuery}, the same string as before.
+ * Another namespace qualifies `okm_meta`. `to_regclass` still lets a
+ * database with no such table plan.
  *
- * @param pool - Connection that ran the version query
+ * @param namespace - Catalog schema. `public` is unqualified
+ * @returns The version, dialect, and hash query
+ */
+export async function versionSql(namespace: string): Promise<string> {
+  if (namespace === "public") return versionQuery;
+  const relation = await qualified("okm_meta", namespace);
+  const literal = relation.replaceAll("'", "''");
+  return `select current_setting('server_version_num'), version(), (select (xpath('//catalog_hash/text()', query_to_xml('select catalog_hash from ${literal} where id = ''head''', true, false, '')))[1]::text where to_regclass('${literal}') is not null)`;
+}
+
+/**
+ * History query used when the catalog hashes differ.
+ *
+ * `public` stays unqualified, so a search path still finds that table.
+ *
+ * @param namespace - Catalog schema. `public` is unqualified
+ * @returns The `okm_history` select
+ */
+export async function historySql(namespace: string): Promise<string> {
+  if (namespace === "public") return historyQuery;
+  return `select migration_id, class, catalog_hash from ${await qualified("okm_history", namespace)} order by migration_id, step_index`;
+}
+
+/**
+ * Namespace stored beside the catalog hash.
+ *
+ * A missing file means `public`. `okm build` writes the file only when
+ * `defineConfig({ namespace })` is not `public`.
+ *
+ * @param catalogDir - Directory `connect` was given, or the default `.okm`
+ * @returns The schema name
+ */
+export async function recordedNamespace(catalogDir: string | undefined): Promise<string> {
+  const text = await readText(`${artifactDir(catalogDir)}/namespace`);
+  if (text === undefined) return "public";
+  const line = text.trim();
+  if (line === "" || line === "public") return "public";
+  if (line.includes("\0") || line.includes("\n") || line.includes("\r")) {
+    throw new OkmError("OKM1122", "The catalog namespace file is not one identifier.", {
+      fix: { summary: "Run okm build so .okm/namespace is the schema from defineConfig." },
+    });
+  }
+  return line;
+}
+
+/**
+ * Accepts the server row, or throws OKM1801, OKM1520, OKM1802, or OKM1803.
+ *
+ * The first statement reads `okm_meta` in the catalog namespace. A declared
+ * floor is the minimum. With no floor, the minimum is 15. A major below 15
+ * is refused when the schema is built.
+ *
+ * @param pool - Connection that runs the version query
  * @param schema - Schema whose floor is the declared minimum
- * @param rows - `server_version_num`, `version()`, and the `okm_meta` hash
  * @param http - Status overrides from `connect`
  * @param requireMeta - When true, a missing hash is OKM1520
  * @param options - Signal and timeout for the compatibility read
@@ -42,12 +98,20 @@ export const versionQuery =
 export async function acceptServer(
   pool: DriverPool,
   schema: QuerySchema,
-  rows: readonly (readonly (string | null)[])[],
   http: ErrorStatuses | undefined,
   requireMeta: boolean,
   options: ExecuteOptions | undefined,
   source: { readonly catalog?: CatalogArtifact; readonly catalogDir?: string },
 ): Promise<void> {
+  const namespace = await recordedNamespace(source.catalogDir);
+  let rows: readonly (readonly (string | null)[])[];
+  try {
+    const result = await pool.execute(await versionSql(namespace), undefined, options);
+    rows = result.rows;
+  } catch (error) {
+    const { mapPostgresError } = await import("../dialects/pg/errors.js");
+    throw mapPostgresError(error, mapOptions(http, false, schema));
+  }
   // A preset named like a client method would hide that method. Fail before the first query.
   for (const name in schema.model) {
     if (schema.model[name]?.presets !== undefined) {
@@ -82,7 +146,7 @@ export async function acceptServer(
   } else {
     const { assertCompatible } = await import("./drift.js");
     try {
-      await assertCompatible(pool, schema, recorded, source, options);
+      await assertCompatible(pool, schema, recorded, source, options, namespace);
     } catch (error) {
       if (error instanceof OkmError) throw attachHttp(http, error);
       throw error;
@@ -114,4 +178,9 @@ export async function acceptServer(
       }),
     );
   }
+}
+
+async function qualified(table: "okm_meta" | "okm_history", namespace: string): Promise<string> {
+  const { quoteIdent } = await import("../dialects/pg/ddl.js");
+  return `${quoteIdent(namespace)}.${table}`;
 }

@@ -5,7 +5,15 @@
  * `.catalog`, which runs that validation. Generate writes SQL only.
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -493,7 +501,26 @@ function writeArtifact(cwd: string, config: MigrateConfig, built: Built): string
   writeFileSync(join(directory, "catalog.json"), text);
   writeFileSync(join(directory, "catalog.hash"), `${sha256(text)}\n`);
   writeFileSync(join(directory, "types.d.ts"), typesText(cwd, config.schema, built));
+  writeNamespace(directory, catalogNamespace(config));
   return directory;
+}
+
+/**
+ * Records the catalog schema next to the hash.
+ *
+ * `connect()` reads this file. `public` deletes a stale file so the startup
+ * query stays the unqualified text.
+ *
+ * @param directory - `.okm` directory
+ * @param namespace - Schema from `defineConfig`
+ */
+function writeNamespace(directory: string, namespace: string): void {
+  const path = join(directory, "namespace");
+  if (namespace === "public") {
+    if (existsSync(path)) unlinkSync(path);
+    return;
+  }
+  writeFileSync(path, `${namespace}\n`);
 }
 
 /**

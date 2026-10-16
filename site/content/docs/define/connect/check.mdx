@@ -13,6 +13,8 @@ description: "The first connection checks the server, the catalog hash, and the 
 | Not PostgreSQL | OKM1801 |
 | `okm_meta` has no hash, and `requireMeta` is set | OKM1520 |
 | Equal catalog hashes | Returns without reading `okm_history`. |
+
+`okm_meta` is read in the namespace `defineConfig` placed. `public` uses the unqualified name. `okm build` writes `.okm/namespace` for any other schema, and `connect` reads that file from `catalogDir` or `.okm`. A missing file keeps the `public` query.
 | Ahead by expand migrations | The drift check returns. The client opens when the floor passes. |
 | Ahead by a contract migration, or behind | OKM1520 |
 | Below 15, and the schema names no `minPostgres` | OKM1803 |

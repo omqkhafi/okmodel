@@ -8,6 +8,7 @@
 import type { DriverPool, ExecuteOptions } from "../contracts/driver.js";
 import { OkmError } from "../contracts/error.js";
 import { AHEAD_CONTRACT, BEHIND_CONTRACT, BEHIND_EXPAND } from "./compat-words.js";
+import { historySql } from "./server-check.js";
 
 /** One applied migration, in history order. */
 export type DriftMigration = {
@@ -73,20 +74,18 @@ export function driftVerdict(
  * @param codeHash - Hash of the code's catalog
  * @param recordedHash - Hash from the startup query
  * @param options - The call's cancellation and deadline
+ * @param namespace - Schema that stores `okm_history`. `public` stays unqualified
  */
 export async function assertDrift(
   pool: DriverPool,
   codeHash: string,
   recordedHash: string,
   options: ExecuteOptions | undefined,
+  namespace = "public",
 ): Promise<void> {
   let rows: readonly (readonly (string | null)[])[];
   try {
-    const result = await pool.execute(
-      "select migration_id, class, catalog_hash from okm_history order by migration_id, step_index",
-      undefined,
-      options,
-    );
+    const result = await pool.execute(await historySql(namespace), undefined, options);
     rows = result.rows;
   } catch (error) {
     throw gapError({ state: "behind", migrationId: "" }, error);

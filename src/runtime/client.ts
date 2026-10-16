@@ -756,16 +756,8 @@ async function checkServer(
   options: ExecuteOptions | undefined,
   source: { readonly catalog?: CatalogArtifact; readonly catalogDir?: string },
 ): Promise<void> {
-  const server = await import("./server-check.js");
-  let rows: readonly (readonly (string | null)[])[];
-  try {
-    const result = await pool.execute(server.versionQuery, undefined, options);
-    rows = result.rows;
-  } catch (error) {
-    const { mapPostgresError } = await import("../dialects/pg/errors.js");
-    throw mapPostgresError(error, mapOptions(http, false, schema));
-  }
-  await server.acceptServer(pool, schema, rows, http, requireMeta, options, source);
+  const { acceptServer } = await import("./server-check.js");
+  await acceptServer(pool, schema, http, requireMeta, options, source);
 }
 
 async function mapError(session: Session, error: unknown): Promise<OkmError> {
@@ -899,7 +891,15 @@ function callOptions(
   };
 }
 
-function mapOptions(
+/**
+ * Statuses and schema the Postgres error mapper reads.
+ *
+ * @param http - Status overrides from `connect`
+ * @param includeValues - When true, a mapped error may include bound values
+ * @param schema - Schema whose names the mapper can mention
+ * @returns Mapper options
+ */
+export function mapOptions(
   http: ErrorStatuses | undefined,
   includeValues: boolean,
   schema: QuerySchema,
