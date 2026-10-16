@@ -30,6 +30,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - `btreeGin().gin` uses the `int4_ops` operator class that `btree_gin` creates.
 - A `BEGIN ATOMIC` reprint is matched by the function name and its identity arguments, so two overloads do not share a body. A name that appears once is that row, so a typmod or an array is still reprinted. `orderBy` on a function call and computed fields stay after M2 (D282).
+- The release smoke keeps asking npm while a published version is still processing: 31 times, 30 seconds apart, with `bun add --no-cache`. The job timeout is 45 minutes.
 
 ### ♻️ Changed
 
