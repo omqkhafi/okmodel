@@ -132,6 +132,8 @@ Passing `{ as, has }` on all 77 calls kept instantiations at 17,252 and raised t
 
 ## Recommendation
 
+Rejected. See [Addendum: P108 close-out](#addendum-p108-close-out). The text below is the recommendation as measured.
+
 Ship the opt-in entry (A) if 0.8 is allowed to type `as` and `has` only for programs that import `okmodel/pg/relations`. It is the only probed shape that types both names and leaves every existing ceiling on the sample. It is not the default-on direction from the relations design. Default-on still does not fit: B is the closest default-path attempt, and it is 150 query instantiations and 70 composite types over. D is the closest on types (+0 until the options are passed) and misses the app by 32 minified bytes, without typing the names.
 
 C also fits, and its feature fixture is the smaller one (27,690 / 7,092). It drops `has`.
@@ -144,3 +146,9 @@ Stop at the first miss. Do not raise a ceiling in the same change.
 2. Keep that module out of the featureless app and out of `src/contracts/index.ts`. Stop if the app exceeds 90,900 minified or 30,170 gzip, or the runtime entry exceeds 6,100 / 2,250. This sample's app has 34 minified bytes left, so the entry cannot be imported from `scripts/app-startup.ts`.
 3. Implement `relates` and one-level `as` / `has` in that module. The feature fixture on the 200-table query project measured 54,012 instantiations and 7,961 types. Stop and ask before exceeding that sample. There is no ceiling to compare it with until Ali sets one.
 4. Register the names at runtime inside that module. Do not write them into the catalog document. Stop if step 2's byte gates move.
+
+## Addendum: P108 close-out
+
+Ali rejected the opt-in entry. The only acceptable call was `find({ include: { author } })` with no codegen. `relates` and `inlineRows` are not that call.
+
+P108B then probed that call. E1 (type augmentation) and E2 (harvest when `find` resolves a table) both moved an existing ceiling. Candidate D had already missed the app gate by 32 minified bytes. Nothing shipped. [D270](okmodel-decisions.md) records the numbers and the reopen conditions. `relations` on the table remains how an include is named.
