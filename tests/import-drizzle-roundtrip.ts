@@ -6,8 +6,8 @@
  */
 
 import { expect } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { catalog } from "../src/contracts/catalog/build.js";
@@ -24,6 +24,45 @@ import { canonicalTypeName } from "../src/tooling/migrate/type-name.js";
 import { repoRoot } from "../scripts/root.js";
 
 const root = repoRoot();
+
+/**
+ * A path a temp file can import. Package specifiers do not resolve here.
+ *
+ * @param fromFile - The file that contains the import
+ * @param sourceFile - A source file in this repository
+ * @returns A relative specifier
+ */
+function sourceImport(fromFile: string, sourceFile: string): string {
+  let spec = relative(dirname(fromFile), sourceFile).replaceAll("\\", "/");
+  if (!spec.startsWith(".")) spec = `./${spec}`;
+  return spec;
+}
+
+/**
+ * Points emitted `okmodel/pg` and `okmodel/ext` imports at source.
+ *
+ * @param directory - The adopted schema directory
+ */
+function rewritePackageImports(directory: string): void {
+  for (const name of readdirSync(directory, { withFileTypes: true })) {
+    const path = join(directory, name.name);
+    if (name.isDirectory()) {
+      rewritePackageImports(path);
+      continue;
+    }
+    if (!name.name.endsWith(".ts")) continue;
+    const text = readFileSync(path, "utf8")
+      .replaceAll(
+        'from "okmodel/pg"',
+        `from ${JSON.stringify(sourceImport(path, join(root, "src/dialects/pg/index.ts")))}`,
+      )
+      .replaceAll(
+        'from "okmodel/ext"',
+        `from ${JSON.stringify(sourceImport(path, join(root, "src/dialects/pg/ext/index.ts")))}`,
+      );
+    writeFileSync(path, text);
+  }
+}
 
 /** Drizzle fixture the command imports. */
 export const fixturePath = join(root, "tests/fixtures/drizzle/schema.ts");
@@ -49,9 +88,10 @@ export async function roundTrip(
     expect(imported.text).toContain("extra_seq");
     expect(imported.text).toContain("notes_n_seq");
     expect(imported.text).toContain("extras_id_seq");
+    const configPath = join(cwd, "okmodel.config.ts");
     writeFileSync(
-      join(cwd, "okmodel.config.ts"),
-      `import { defineConfig } from "okmodel/migrate";
+      configPath,
+      `import { defineConfig } from ${JSON.stringify(sourceImport(configPath, join(root, "src/tooling/migrate/index.ts")))};
 
 export default defineConfig({
   schema: "./adopted/schema.ts",
@@ -60,11 +100,8 @@ export default defineConfig({
 });
 `,
     );
-    // The config and the emitted files import okmodel. A temp directory does
-    // not see the repository package unless it is linked.
-    const modules = join(cwd, "node_modules");
-    mkdirSync(modules);
-    symlinkSync(root, join(modules, "okmodel"));
+    // Bun 1.4.2 does not resolve the repository package from this temp directory.
+    rewritePackageImports(join(cwd, "adopted"));
     await buildProject(cwd);
     const built = await loadSchema(cwd, "./adopted/schema.ts");
     const live = await apply(renderCatalog(built.catalog, "shop"));
