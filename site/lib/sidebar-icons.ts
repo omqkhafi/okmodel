@@ -133,6 +133,7 @@ const PATH_ICONS: Readonly<Record<string, LucideIcon>> = {
   "/docs/define/table/reference-rows": Rows3,
   "/docs/define/table/queries": Search,
   "/docs/reference/cli": SquareTerminal,
+  "/docs/reference/schema-api": Braces,
   "/docs/reference/github-action": GitPullRequest,
   "/docs/reference/errors": OctagonAlert,
   "/docs/reference/okid": Hash,

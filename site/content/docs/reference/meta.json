@@ -2,6 +2,7 @@
   "title": "Reference",
   "pages": [
     "cli",
+    "schema-api",
     "github-action",
     "errors",
     "okid",

@@ -217,7 +217,7 @@ The plan is [#307](https://github.com/omqkhafi/okmodel/issues/307). Milestone [0
 | P115B | `p115b-connect-meta` | [#326](https://github.com/omqkhafi/okmodel/issues/326). `connect()` reads `okm_meta` from the catalog namespace (D283). After [#311](https://github.com/omqkhafi/okmodel/issues/311). Own machine |
 | P116 | `p116-ext` | [#312](https://github.com/omqkhafi/okmodel/issues/312). Extension packs and `okm ext` beyond `list` and `check` (§4.1). `list` and `check` shipped in 0.3. Wave 2. Own worktree |
 | P117 | `p117-github-action` | [#313](https://github.com/omqkhafi/okmodel/issues/313). The GitHub Action posts the plan, the classification, and the locks on the pull request, and it can drive the preview recipe (§19.8, D80). Wave 2. Own worktree |
-| P118 | `p118-schema-api` | [#316](https://github.com/omqkhafi/okmodel/issues/316). Programmatic schema API (D26). After [#311](https://github.com/omqkhafi/okmodel/issues/311). Carries R1 and R5, the same description and identity as P115. Size and type ceilings are tight: stop, and split the work if it does not fit. Wave 3. Own worktree |
+| P118 | `p118-schema-api` | [#316](https://github.com/omqkhafi/okmodel/issues/316). Shipped: `describe` and `buildCatalog` on `okmodel/migrate` (D26, D284). The description is JSON. Its logical identity stays `public` when the catalog is placed. `buildCatalog` after `JSON.parse` matches the catalog hash. Wave 3. Own worktree |
 | P119 | `p119-gate-0.9` | [#317](https://github.com/omqkhafi/okmodel/issues/317). Gate and release 0.9.0. This is the M2 gate. Last, after the other steps in this train. Wave 4. Own worktree |
 
 #### Later trains

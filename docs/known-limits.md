@@ -26,6 +26,10 @@ The files are the same ones `okm pull` writes. SQL names stay. TypeScript fields
 
 Not imported, each with the table and the reason: a composite foreign key, `relations()` (they are not turned into `references()`), a custom column type, a view, a policy, a sequence `table()` cannot map, and the sequence behind `serial`, `smallserial`, or `bigserial`. Those columns are written as `integer`, `smallint`, or `bigint` and not null, without the sequence. A second Postgres schema is listed too: one import writes one namespace.
 
+## Programmatic schema API
+
+`describe(schema)` and `buildCatalog(description)` are on `okmodel/migrate` (D284). The description is JSON: `logical` (`namespace`, `name`, `format`) and the catalog document. `logical` stays `public` when `defineConfig({ namespace })` places the catalog. The catalog hash changes with that placement. Codecs, client generators, and relation helpers are not in the description. `okm catalog export` is still the column snapshot a dependent verifies. It is not this description. There is no sync API.
+
 ## Not built yet
 
 An option or builder that is not in this version throws OKM1061 and names the prompt or version that adds it, or it is not a method yet. These are the ones the plan has assigned.

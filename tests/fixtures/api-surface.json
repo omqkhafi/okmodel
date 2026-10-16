@@ -1267,7 +1267,15 @@
   ],
   "okmodel/migrate": [
     {
+      "name": "LogicalIdentity",
+      "kind": "stable"
+    },
+    {
       "name": "MigrateConfig",
+      "kind": "stable"
+    },
+    {
+      "name": "SchemaDescription",
       "kind": "stable"
     },
     {
@@ -1275,7 +1283,15 @@
       "kind": "stable"
     },
     {
+      "name": "buildCatalog",
+      "kind": "stable"
+    },
+    {
       "name": "defineConfig",
+      "kind": "stable"
+    },
+    {
+      "name": "describe",
       "kind": "stable"
     },
     {
