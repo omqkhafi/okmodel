@@ -1,0 +1,4 @@
+# Migration SQL, catalog JSON, and .okm stay LF on checkout (D237).
+migrations/*.sql text eol=lf
+*.catalog.json text eol=lf
+.okm/** text eol=lf

@@ -173,6 +173,9 @@ export async function checkProject(cwd: string, flags?: InvokeFlags): Promise<re
 /**
  * Table files whose names do not appear in the schema module.
  *
+ * The stem is compared without case, so `Tasks.ts` matches `tasks` in the
+ * schema text. A case-insensitive volume still loads that import.
+ *
  * @param schemaSource - Source text of the schema module
  * @param fileNames - File names in the tables directory
  * @returns Files `okm check` reports as OKM1024
@@ -181,12 +184,13 @@ export function unlistedTableFiles(
   schemaSource: string,
   fileNames: readonly string[],
 ): readonly string[] {
+  const folded = schemaSource.toLowerCase();
   const missing: string[] = [];
   for (const file of fileNames) {
     if (!file.endsWith(".ts")) continue;
     const stem = basename(file, ".ts");
     if (stem.length === 0 || stem.startsWith(".")) continue;
-    if (!schemaSource.includes(stem)) missing.push(file);
+    if (!folded.includes(stem.toLowerCase())) missing.push(file);
   }
   return missing;
 }
