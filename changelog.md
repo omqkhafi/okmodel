@@ -32,6 +32,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okm ext scaffold <name>` prints a starting `extension()` definition from the connected catalog. `--out` writes that file and never overwrites. It is read-only, including on a protected target (D281).
 - `okm ext test <file>` checks declared types, operators, functions, and index methods against the server. A wrong signature exits non-zero with the mismatch listed. A version the server does not meet is OKM1812. It is read-only, including on a protected target (D281).
 
+#### docs
+
+- A type change that rewrites the heap stays OKM1538, a warning with no automatic safe form. The documented recipe adds the new column, backfills it, dual-writes, switches reads, then drops the old column, each as its own migration (D285).
+
 ### 🐛 Fixed
 
 - `btreeGin().gin` uses the `int4_ops` operator class that `btree_gin` creates.
