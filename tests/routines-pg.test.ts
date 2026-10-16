@@ -279,6 +279,77 @@ postgresTest(
 
 postgresTest(
   gate,
+  "a lone BEGIN ATOMIC function with typmods and an array still reprints",
+  async () => {
+    await using(async (sql) => {
+      const app = schema({
+        tables: [table("tasks", { id: t.text().primaryKey() })],
+        functions: [
+          fn("shape", {
+            arguments: [
+              { name: "label", type: "varchar(20)" },
+              { name: "amount", type: "numeric(10,2)" },
+              { name: "flags", type: "int[]" },
+            ],
+            returns: "integer",
+            language: "sql",
+            body: "begin atomic select cardinality(flags) + length(label) + amount::integer; end",
+          }),
+        ],
+      });
+      await apply(sql, catalog([]), app.catalog);
+      const live = await introspectSchema(queryOf(sql), "public", "public");
+      const sealed = await sealViews(queryOf(sql), app.catalog);
+      const body = bodyOf(sealed, "shape");
+      expect(body).toBeDefined();
+      expect(body).toContain("cardinality");
+      expect(routineSteps(live, sealed)).toEqual([]);
+    });
+  },
+  30_000,
+);
+
+postgresTest(
+  gate,
+  "BEGIN ATOMIC overloads stay distinct when one argument has a typmod",
+  async () => {
+    await using(async (sql) => {
+      const app = schema({
+        tables: [table("tasks", { id: t.text().primaryKey() })],
+        functions: [
+          fn("pick", {
+            arguments: [{ name: "label", type: "varchar(20)" }],
+            returns: "text",
+            language: "sql",
+            body: "begin atomic select label; end",
+          }),
+          fn("pick", {
+            arguments: [{ name: "n", type: "integer" }],
+            returns: "integer",
+            language: "sql",
+            body: "begin atomic select n + 1; end",
+          }),
+        ],
+      });
+      await apply(sql, catalog([]), app.catalog);
+      const live = await introspectSchema(queryOf(sql), "public", "public");
+      const sealed = await sealViews(queryOf(sql), app.catalog);
+      const text = bodyOfArgs(sealed, "pick", "varchar(20)");
+      const integer = bodyOfArgs(sealed, "pick", "integer");
+      expect(text).toBeDefined();
+      expect(integer).toBeDefined();
+      expect(text).not.toBe(integer);
+      expect(text).toContain("label");
+      expect(integer).toContain("1");
+      expect(text).not.toContain("+ 1");
+      expect(routineSteps(live, sealed)).toEqual([]);
+    });
+  },
+  30_000,
+);
+
+postgresTest(
+  gate,
   "begin atomic reads dependencies from pg_depend",
   async () => {
     await using(async (sql) => {

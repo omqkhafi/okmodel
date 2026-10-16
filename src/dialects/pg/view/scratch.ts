@@ -6,9 +6,10 @@
  * replaces the author query and `pg_depend` supplies column edges (D117).
  * A `BEGIN ATOMIC` body is replaced with the `pg_get_functiondef` block, so a
  * plan from the live catalog does not treat Postgres's reprint as a change
- * (D273). Each function is matched by its name and identity arguments, so two
- * overloads do not share a body. The scratch schema is dropped before this
- * returns. Plans never use it.
+ * (D273). A name that appears once is that row. Overloads compare identity
+ * arguments after typmods and aliases are folded, so two overloads do not
+ * share a body. The scratch schema is dropped before this returns. Plans
+ * never use it.
  */
 
 import { catalog } from "../../../contracts/catalog/build.js";
@@ -188,13 +189,21 @@ const FUNCTION_DEFS = `
   where n.nspname = $1 and p.prokind = 'f'
 `;
 
+/** One function Postgres created in the scratch schema. */
+type PrintedFunction = {
+  readonly name: string;
+  readonly args: readonly string[];
+  readonly body: string;
+};
+
 /**
  * Replaces each atomic body with the block Postgres prints.
  *
- * The row is the function whose name and identity arguments match. Two
- * overloads of one name stay two bodies. A plpgsql body is left as written.
- * Postgres qualifies an argument as `function.argument` when the body names
- * a table. That qualifier is part of the reprint, not a different function.
+ * A name that appears on one scratch row is that row. Argument text is
+ * compared only when two or more rows share the name. A plpgsql body is left
+ * as written. Postgres qualifies an argument as `function.argument` when the
+ * body names a table. That qualifier is part of the reprint, not a different
+ * function.
  *
  * @param runner - Database connection
  * @param source - Catalog whose functions were just created in the scratch schema
@@ -206,34 +215,24 @@ async function reprintAtomicBodies(runner: CatalogQuery, source: Catalog): Promi
   );
   if (!created.some((object) => object.definition.atomic === true)) return source;
   const rows = await runner.query(FUNCTION_DEFS, [SCRATCH]);
-  const printed = rows.map((row) => ({
+  const printed: PrintedFunction[] = rows.map((row) => ({
     name: cellText(row.name),
     args: splitIdentityArguments(cellText(row.args)),
     body: atomicBody(cellText(row.definition)),
   }));
+  const byName = new Map<string, number[]>();
+  for (let index = 0; index < printed.length; index += 1) {
+    const name = printed[index]?.name ?? "";
+    const list = byName.get(name);
+    if (list === undefined) byName.set(name, [index]);
+    else list.push(index);
+  }
   const used = new Set<number>();
   let changed = false;
   const objects = source.objects.map((object) => {
     if (object.kind !== "function" || object.definition.atomic !== true) return object;
-    const matches = printed.flatMap((row, index) =>
-      identityMatches(object, row.name, row.args) ? [index] : [],
-    );
-    const index = matches[0];
-    const signature = `${object.identity.name}(${object.identity.argTypes.join(", ")})`;
-    if (matches.length === 0 || index === undefined) {
-      throw new OkmError(
-        "OKM1020",
-        `Function ${signature} was not created in the scratch schema.`,
-        { fix: { summary: "The function body has to run against the tables in this schema." } },
-      );
-    }
-    if (matches.length > 1 || used.has(index)) {
-      throw new OkmError(
-        "OKM1020",
-        `Function ${signature} was created more than once in the scratch schema.`,
-        { fix: { summary: "The function body has to run against the tables in this schema." } },
-      );
-    }
+    const named = byName.get(object.identity.name) ?? [];
+    const index = chooseReprint(object, printed, named, used);
     used.add(index);
     const body = printed[index]?.body;
     if (body === undefined || body === object.definition.body) return object;
@@ -244,20 +243,73 @@ async function reprintAtomicBodies(runner: CatalogQuery, source: Catalog): Promi
 }
 
 /**
- * Whether one scratch row is this function's overload.
+ * Picks the scratch row for one atomic function.
  *
- * `pg_get_function_identity_arguments` prints `name type`. The catalog stores
- * the type. A schema prefix on that type is ignored.
+ * One row for the name is taken as it is. Overloads have to match normalised
+ * identity arguments. A miss names the catalog arguments and every scratch
+ * list for that name.
  *
  * @param object - Catalog function
- * @param name - `proname`
- * @param args - Identity arguments, one entry per input
- * @returns `true` when the name and every argument type match
+ * @param printed - Functions created in the scratch schema
+ * @param named - Indexes of rows with this function's name
+ * @param used - Rows already given to another overload
+ * @returns Index into `printed`
  */
-function identityMatches(object: FunctionObject, name: string, args: readonly string[]): boolean {
-  if (name !== object.identity.name || args.length !== object.identity.argTypes.length) {
-    return false;
-  }
+function chooseReprint(
+  object: FunctionObject,
+  printed: readonly PrintedFunction[],
+  named: readonly number[],
+  used: ReadonlySet<number>,
+): number {
+  const only = named[0];
+  if (named.length === 1 && only !== undefined && !used.has(only)) return only;
+  const matches = named.filter((index) => {
+    const row = printed[index];
+    return row !== undefined && !used.has(index) && identityMatches(object, row.args);
+  });
+  const index = matches[0];
+  if (named.length > 1 && matches.length === 1 && index !== undefined) return index;
+  throw reprintMiss(
+    object,
+    named.map((index) => printed[index]).filter((row) => row !== undefined),
+  );
+}
+
+/**
+ * OKM1020 when an overload cannot be paired with one scratch row.
+ *
+ * @param object - Catalog function
+ * @param rows - Scratch rows that share its name
+ * @returns The error, with both argument lists
+ */
+function reprintMiss(object: FunctionObject, rows: readonly PrintedFunction[]): OkmError {
+  const catalog = object.identity.argTypes.join(", ");
+  const scratch =
+    rows.length === 0
+      ? "(none)"
+      : rows
+          .map((row) => (row.args.length === 0 ? "(no arguments)" : row.args.join(", ")))
+          .join("; ");
+  return new OkmError(
+    "OKM1020",
+    `Function ${object.identity.name}(${catalog}) was not created in the scratch schema. Catalog arguments: ${catalog}. Scratch arguments: ${scratch}.`,
+    { fix: { summary: "The function body has to run against the tables in this schema." } },
+  );
+}
+
+/**
+ * Whether one scratch argument list is this overload.
+ *
+ * Compared only when the name is shared. Typmods, array suffixes, and
+ * abbreviations are folded first. `pg_get_function_identity_arguments`
+ * prints `name type`.
+ *
+ * @param object - Catalog function
+ * @param args - Identity arguments, one entry per input
+ * @returns `true` when every argument type matches
+ */
+function identityMatches(object: FunctionObject, args: readonly string[]): boolean {
+  if (args.length !== object.identity.argTypes.length) return false;
   return args.every((printed, index) =>
     printedHasType(object.identity.argTypes[index] ?? "", printed),
   );
@@ -298,9 +350,14 @@ const ARG_TYPE_ALIASES: Readonly<Record<string, string>> = {
   int4: "integer",
   int8: "bigint",
   bool: "boolean",
+  decimal: "numeric",
+  char: "character",
   float4: "real",
   float8: "double precision",
   varchar: "character varying",
+  time: "time without time zone",
+  timetz: "time with time zone",
+  timestamp: "timestamp without time zone",
   timestamptz: "timestamp with time zone",
 };
 
@@ -332,10 +389,40 @@ function printedHasType(author: string, printed: string): boolean {
  * @returns Lowercase type with one space between words and no schema
  */
 function canonicalArgType(type: string): string {
-  const compact = type.trim().replaceAll(/\s+/g, " ").toLowerCase();
+  let compact = type.trim().replaceAll(/\s+/g, " ").toLowerCase();
   const dot = compact.lastIndexOf(".");
-  const bare = dot < 0 ? compact : compact.slice(dot + 1);
-  return ARG_TYPE_ALIASES[bare] ?? bare;
+  if (dot >= 0) compact = compact.slice(dot + 1);
+  compact = stripTypmods(compact).replaceAll(/\s+/g, " ").trim();
+  let arrays = 0;
+  while (compact.endsWith("[]")) {
+    arrays += 1;
+    compact = compact.slice(0, -2).trim();
+  }
+  const aliased = ARG_TYPE_ALIASES[compact] ?? compact;
+  return arrays === 0 ? aliased : `${aliased}${"[]".repeat(arrays)}`;
+}
+
+/**
+ * Drops precision and scale. Identity arguments do not carry them.
+ *
+ * @param type - Type text, already lowercased
+ * @returns The same text with every parenthetical removed
+ */
+function stripTypmods(type: string): string {
+  let out = "";
+  let depth = 0;
+  for (const char of type) {
+    if (char === "(") {
+      depth += 1;
+      continue;
+    }
+    if (char === ")" && depth > 0) {
+      depth -= 1;
+      continue;
+    }
+    if (depth === 0) out += char;
+  }
+  return out;
 }
 
 async function createViews(
