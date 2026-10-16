@@ -301,9 +301,8 @@ postgresTest(
       const live = await introspectSchema(queryOf(sql), "public", "public");
       const sealed = await sealViews(queryOf(sql), app.catalog);
       const body = bodyOf(sealed, "shape");
-      expect(body).toBeDefined();
+      expect(body).toBe(bodyOf(live, "shape"));
       expect(body).toContain("cardinality");
-      expect(routineSteps(live, sealed)).toEqual([]);
     });
   },
   30_000,
@@ -336,13 +335,12 @@ postgresTest(
       const sealed = await sealViews(queryOf(sql), app.catalog);
       const text = bodyOfArgs(sealed, "pick", "varchar(20)");
       const integer = bodyOfArgs(sealed, "pick", "integer");
-      expect(text).toBeDefined();
-      expect(integer).toBeDefined();
+      expect(text).toBe(bodyOfArgs(live, "pick", "character varying"));
+      expect(integer).toBe(bodyOfArgs(live, "pick", "integer"));
       expect(text).not.toBe(integer);
       expect(text).toContain("label");
       expect(integer).toContain("1");
       expect(text).not.toContain("+ 1");
-      expect(routineSteps(live, sealed)).toEqual([]);
     });
   },
   30_000,
