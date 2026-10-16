@@ -73,7 +73,7 @@ const FLOAT_WIDTH: Readonly<Record<string, number>> = {
  * Step rules, lowest free code in each category.
  *
  * OKM1534 to OKM1537 are errors when the statement is not the safe form.
- * OKM1538 stays a warning: a rewriting type change has no safe form here.
+ * OKM1538 stays a warning, and only when the type change rewrites the table.
  */
 export const STEP_RULES: readonly StepRule[] = [
   rule("OKM1511", "destructive", "error", "Dropping a table destroys its rows.", (input) =>
@@ -337,7 +337,13 @@ function hit(matched: boolean, reason: string): readonly string[] {
   return matched ? [reason] : [];
 }
 
-function normalized(sql: string): string {
+/**
+ * Collapses whitespace and lowercases SQL outside quoted identifiers.
+ *
+ * @param sql - One statement
+ * @returns The comparison form
+ */
+export function normalizedSql(sql: string): string {
   const collapsed = sql.trim().replace(/\s+/g, " ");
   let out = "";
   let quoted = false;
@@ -353,7 +359,7 @@ function normalized(sql: string): string {
 }
 
 function weakensRls(input: StepInput): readonly string[] {
-  const text = normalized(input.step.sql);
+  const text = normalizedSql(input.step.sql);
   if (/\bdisable row level security\b/.test(text)) return ["disables row level security"];
   if (/\bno force row level security\b/.test(text)) return ["stops forcing row level security"];
   if (/^drop policy\b/.test(text)) return ["drops a policy"];
@@ -481,7 +487,7 @@ function parenthesized(text: string, open: number): string | undefined {
 function policyExpression(input: StepInput, table: string, name: string): string | undefined {
   const expression =
     expressionOf(input.after, table, name) ?? expressionOf(input.before, table, name);
-  return expression === undefined ? undefined : normalized(expression);
+  return expression === undefined ? undefined : normalizedSql(expression);
 }
 
 function expressionOf(source: Catalog, table: string, name: string): string | undefined {
@@ -507,7 +513,7 @@ function hasPolicy(source: Catalog, table: string): boolean {
 }
 
 function dataStatement(step: PlanStep): readonly string[] {
-  const text = normalized(step.sql);
+  const text = normalizedSql(step.sql);
   if (/^(?:do|call)\b/.test(text)) return ["the body is not analysed"];
   if (step.backfill !== undefined) return [];
   if (/^(?:insert|update|delete|merge|truncate)\b/.test(text)) {
@@ -520,11 +526,11 @@ function dataStatement(step: PlanStep): readonly string[] {
 }
 
 function matches(step: PlanStep, kind: StepKind, pattern: RegExp): boolean {
-  return pattern.test(normalized(step.sql)) || step.kind === kind;
+  return pattern.test(normalizedSql(step.sql)) || step.kind === kind;
 }
 
 function renamesTable(step: PlanStep): boolean {
-  const text = normalized(step.sql);
+  const text = normalizedSql(step.sql);
   if (/^alter table\s+\S+\s+rename to\b/.test(text)) return true;
   return (
     step.kind === "rename-table" && !/^alter table\s+\S+\s+rename (column|constraint)\b/.test(text)
@@ -532,7 +538,7 @@ function renamesTable(step: PlanStep): boolean {
 }
 
 function droppedType(input: StepInput): "enum" | "domain" | undefined {
-  const text = normalized(input.step.sql);
+  const text = normalizedSql(input.step.sql);
   const dropping = /^drop type\b/.test(text);
   if (!dropping && input.step.kind !== "drop-enum" && input.step.kind !== "drop-domain") {
     return undefined;
@@ -548,7 +554,7 @@ function droppedType(input: StepInput): "enum" | "domain" | undefined {
 }
 
 function requiredColumn(input: StepInput): boolean {
-  const text = normalized(input.step.sql);
+  const text = normalizedSql(input.step.sql);
   const adding =
     /^alter table\s+\S+\s+add column\b/.test(text) || input.step.kind === "add-column-required";
   if (!adding) return false;
@@ -561,7 +567,7 @@ function requiredColumn(input: StepInput): boolean {
 
 function uniqueConstraint(input: StepInput): boolean {
   if (!tableExists(input)) return false;
-  const text = normalized(input.step.sql);
+  const text = normalizedSql(input.step.sql);
   if (/\busing index\b/.test(text)) return false;
   if (/^alter table\s+\S+\s+add constraint\b/.test(text) && /\b(unique|primary key)\b/.test(text)) {
     return true;
@@ -569,15 +575,15 @@ function uniqueConstraint(input: StepInput): boolean {
   if (!/^create unique index\b/.test(text)) return false;
   const name = createdIndexName(text);
   if (name === undefined) return false;
-  return input.later.some((step) => usesIndex(normalized(step.sql), name));
+  return input.later.some((step) => usesIndex(normalizedSql(step.sql), name));
 }
 
 function uniqueIndex(input: StepInput): boolean {
-  const text = normalized(input.step.sql);
+  const text = normalizedSql(input.step.sql);
   if (!/^create unique index\b/.test(text)) return false;
   if (!tableExists(input)) return false;
   const name = createdIndexName(text);
-  if (name !== undefined && input.later.some((step) => usesIndex(normalized(step.sql), name))) {
+  if (name !== undefined && input.later.some((step) => usesIndex(normalizedSql(step.sql), name))) {
     return false;
   }
   return true;
@@ -593,7 +599,7 @@ function usesIndex(text: string, name: string): boolean {
 }
 
 function unsafeSetNotNull(input: StepInput): boolean {
-  const text = normalized(input.step.sql);
+  const text = normalizedSql(input.step.sql);
   const match = /^alter table\s+(\S+)\s+alter column\s+(\S+)\s+set not null\b/.exec(text);
   if (match === null && input.step.kind !== "set-not-null") return false;
   if (!tableExists(input)) return false;
@@ -616,13 +622,13 @@ function validatedNotNullCheck(
 ): boolean {
   const needle = `check (${column} is not null) not valid`;
   for (const step of earlier) {
-    const text = normalized(step.sql);
+    const text = normalizedSql(step.sql);
     if (!text.startsWith(`alter table ${table} `) || !text.includes(needle)) continue;
     const added = /^alter table\s+\S+\s+add constraint\s+(\S+)\s+check\b/.exec(text);
     const name = added?.[1];
     if (name === undefined) continue;
     const validated = earlier.some((item) =>
-      normalized(item.sql).startsWith(`alter table ${table} validate constraint ${name}`),
+      normalizedSql(item.sql).startsWith(`alter table ${table} validate constraint ${name}`),
     );
     if (validated) return true;
   }
@@ -630,18 +636,20 @@ function validatedNotNullCheck(
 }
 
 function blockingIndex(input: StepInput): boolean {
-  const text = normalized(input.step.sql);
+  const text = normalizedSql(input.step.sql);
   if (!/^create(?: unique)? index\b/.test(text) && input.step.kind !== "create-index") return false;
   if (/\bconcurrently\b/.test(text)) return false;
   return tableExists(input);
 }
 
 function checkWithoutNotValid(input: StepInput): boolean {
-  return addedConstraint(input, "check") && !/\bnot valid\b/.test(normalized(input.step.sql));
+  return addedConstraint(input, "check") && !/\bnot valid\b/.test(normalizedSql(input.step.sql));
 }
 
 function foreignKeyWithoutNotValid(input: StepInput): boolean {
-  return addedConstraint(input, "foreign key") && !/\bnot valid\b/.test(normalized(input.step.sql));
+  return (
+    addedConstraint(input, "foreign key") && !/\bnot valid\b/.test(normalizedSql(input.step.sql))
+  );
 }
 
 function validatingCheck(input: StepInput): boolean {
@@ -651,14 +659,14 @@ function validatingCheck(input: StepInput): boolean {
 }
 
 function widenValidate(input: StepInput): boolean {
-  const text = normalized(input.step.sql);
+  const text = normalizedSql(input.step.sql);
   if (!/^alter table\s+\S+\s+validate constraint\b/.test(text)) return false;
   if (input.step.kind === "widen-check") return true;
   const name = /^alter table\s+\S+\s+validate constraint\s+(\S+)/.exec(text)?.[1];
   if (name === undefined) return false;
   return input.earlier.some((step) => {
     if (step.kind !== "widen-check") return false;
-    const prior = normalized(step.sql);
+    const prior = normalizedSql(step.sql);
     return prior.includes(`add constraint ${name} `);
   });
 }
@@ -670,13 +678,13 @@ function validatingForeignKey(input: StepInput): boolean {
 
 function addedConstraint(input: StepInput, kind: "check" | "foreign key"): boolean {
   if (!tableExists(input)) return false;
-  const text = normalized(input.step.sql);
+  const text = normalizedSql(input.step.sql);
   if (!/^alter table\s+\S+\s+add constraint\b/.test(text)) return false;
   return new RegExp(`\\b${kind}\\b`).test(text);
 }
 
 function validates(input: StepInput, kind: "check" | "foreignKey"): boolean {
-  const text = normalized(input.step.sql);
+  const text = normalizedSql(input.step.sql);
   const table = /^alter table\s+\S+\s+validate constraint\s+(\S+)/.exec(text);
   if (table !== null) {
     const token = table[1];
@@ -697,7 +705,7 @@ function typeChange(
   input: StepInput,
   mode: "incompatible" | "shrink" | "narrow" | "rewrite",
 ): readonly string[] {
-  const text = normalized(input.step.sql);
+  const text = normalizedSql(input.step.sql);
   const changing = TYPE_CHANGE.test(text) || input.step.kind === "set-column-type";
   if (!changing) return [];
   const compared = columnTypes(input);
@@ -709,17 +717,19 @@ function typeChange(
   if (before === after) return [];
   const shrink = lengthShrink(before, after);
   if (mode === "shrink") return shrink ? ["shortens a character length"] : [];
-  if (shrink) return [];
+  if (shrink) {
+    return mode === "rewrite" && tableRewrites(before, after, input) ? ["rewrites the table"] : [];
+  }
   if (mode === "narrow") return narrows(before, after) ? ["narrows a type"] : [];
-  if (lengthGrow(before, after)) return [];
+  if (lengthGrow(before, after) && mode !== "rewrite") return [];
   if (mode === "incompatible") return ["changes a column type"];
-  return rewrites(before, after) ? ["rewrites the table"] : [];
+  return tableRewrites(before, after, input) ? ["rewrites the table"] : [];
 }
 
 function columnTypes(
   input: StepInput,
 ): { readonly before: string; readonly after: string } | undefined {
-  const text = normalized(input.step.sql);
+  const text = normalizedSql(input.step.sql);
   const match = TYPE_CHANGE.exec(text);
   const table = lastName(match?.[1]);
   const column = lastName(match?.[2]);
@@ -755,10 +765,147 @@ function lengthGrow(before: string, after: string): boolean {
   );
 }
 
-function rewrites(before: string, after: string): boolean {
-  if (lengthShrink(before, after) || lengthGrow(before, after)) return false;
-  if (isCharacter(before) && after === "text") return false;
+/**
+ * Whether Postgres rewrites the heap for this type change (D276).
+ *
+ * A `USING` expression that is not a plain cast always rewrites. The other
+ * exceptions are the ones `ATColumnChangeRequiresRewrite` skips: a
+ * binary-coercible change, `varchar(n)` widening, `varchar` to `text`, a
+ * numeric precision increase at the same scale, and an unconstrained domain
+ * over the old type. `timestamp` to `timestamptz` rewrites unless `TimeZone`
+ * is UTC, and this function does not connect, so that pair stays a rewrite.
+ *
+ * @param before - Canonical type before the statement
+ * @param after - Canonical type after the statement
+ * @param input - The step and the catalogs
+ * @returns `true` when `pg_class.relfilenode` changes
+ */
+function tableRewrites(before: string, after: string, input: StepInput): boolean {
+  if (usingRewrites(input)) return true;
+  if (varyingRelaxation(before, after)) return false;
+  if (isVarying(before) && after === "text") return false;
+  if (before === "text" && unconstrainedVarying(after)) return false;
+  if ((before === "text" || isVarying(before)) && unconstrainedCharacter(after)) return false;
+  if (numericRelaxation(before, after)) return false;
+  if (binaryPair(before, after)) return false;
+  if (domainSkipsRewrite(before, after, input)) return false;
   return true;
+}
+
+/**
+ * A create or alter of a domain, or a `LANGUAGE sql` function.
+ *
+ * Offline lint cannot see the reprint. The allow is still for that statement.
+ * `okm migrate check` decides whether the text actually differs.
+ *
+ * @param sql - One statement
+ * @returns `true` when OKM1552 can fire for this statement
+ */
+export function statementMayReprint(sql: string): boolean {
+  const text = normalizedSql(sql);
+  if (/^(?:create|alter) domain\b/.test(text)) return true;
+  return /^create(?: or replace)? function\b/.test(text) && /\blanguage sql\b/.test(text);
+}
+
+function usingRewrites(input: StepInput): boolean {
+  const text = normalizedSql(input.step.sql);
+  const at = text.search(/\busing\b/);
+  if (at < 0) return false;
+  const column = lastName(TYPE_CHANGE.exec(text)?.[2]);
+  if (column === undefined) return true;
+  const expression = text
+    .slice(at + "using".length)
+    .trim()
+    .replace(/;$/, "");
+  return !plainCast(expression, column);
+}
+
+function plainCast(expression: string, column: string): boolean {
+  const bare = column.toLowerCase();
+  const quoted = `"${column}"`;
+  return (
+    expression.startsWith(`${bare}::`) ||
+    expression.startsWith(`${quoted}::`) ||
+    expression.startsWith(`cast(${bare} as `) ||
+    expression.startsWith(`cast(${quoted} as `)
+  );
+}
+
+function isVarying(type: string): boolean {
+  return (
+    type === "character varying" ||
+    type === "varchar" ||
+    type.startsWith("character varying(") ||
+    type.startsWith("varchar(")
+  );
+}
+
+function unconstrainedVarying(type: string): boolean {
+  return type === "character varying" || type === "varchar";
+}
+
+function unconstrainedCharacter(type: string): boolean {
+  return type === "bpchar" || type === "character";
+}
+
+function varyingRelaxation(before: string, after: string): boolean {
+  const left = charLength(before);
+  if (left?.family === "varying" && unconstrainedVarying(after)) return true;
+  const right = charLength(after);
+  return left?.family === "varying" && right?.family === "varying" && right.length > left.length;
+}
+
+function numericRelaxation(before: string, after: string): boolean {
+  const left = numericBounds(before);
+  const right = numericBounds(after);
+  if (left === undefined || right === undefined) return false;
+  if (right.precision === undefined) return left.precision !== undefined;
+  if (left.precision === undefined || left.scale === undefined || right.scale === undefined) {
+    return false;
+  }
+  return right.scale === left.scale && right.precision > left.precision;
+}
+
+function numericBounds(
+  type: string,
+): { readonly precision: number | undefined; readonly scale: number | undefined } | undefined {
+  const match = /^numeric(?:\((\d+)(?:,(\d+))?\))?$/.exec(type);
+  if (match === null) return undefined;
+  if (match[1] === undefined) return { precision: undefined, scale: undefined };
+  return {
+    precision: Number(match[1]),
+    scale: match[2] === undefined ? 0 : Number(match[2]),
+  };
+}
+
+function binaryPair(before: string, after: string): boolean {
+  if (before === "integer" && after === "oid") return true;
+  if (before === "oid" && after === "integer") return true;
+  if (before === "cidr" && after === "inet") return true;
+  return before === "xml" && after === "text";
+}
+
+function domainSkipsRewrite(before: string, after: string, input: StepInput): boolean {
+  const next = domainNamed(input, after);
+  if (next !== undefined && next.check.trim().length === 0 && canonical(next.base) === before) {
+    return true;
+  }
+  const previous = domainNamed(input, before);
+  return previous !== undefined && canonical(previous.base) === after;
+}
+
+function domainNamed(
+  input: StepInput,
+  name: string,
+): { readonly base: string; readonly check: string } | undefined {
+  for (const source of [input.after, input.before]) {
+    for (const object of source.objects) {
+      if (object.kind !== "type" || object.identity.name !== name) continue;
+      if (!isDomain(object.definition)) continue;
+      return object.definition;
+    }
+  }
+  return undefined;
 }
 
 function narrows(before: string, after: string): boolean {
@@ -784,10 +931,6 @@ function charLength(
   return undefined;
 }
 
-function isCharacter(type: string): boolean {
-  return type === "text" || charLength(type) !== undefined;
-}
-
 function numericSpec(
   type: string,
 ): { readonly precision: number; readonly scale: number } | undefined {
@@ -806,7 +949,7 @@ function tableExists(input: StepInput): boolean {
 }
 
 function statementTable(step: PlanStep): string | undefined {
-  const text = normalized(step.sql);
+  const text = normalizedSql(step.sql);
   const altered = /^(?:alter|drop) table\s+(\S+)/.exec(text);
   if (altered?.[1] !== undefined) return lastName(altered[1]);
   const index = /^create(?: unique)? index(?: concurrently)?\s+\S+\s+on\s+(\S+)/.exec(text);

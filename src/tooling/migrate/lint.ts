@@ -14,7 +14,8 @@ import { parseCatalog } from "../../contracts/catalog/document.js";
 import type { Catalog, ColumnObject } from "../../contracts/catalog/types.js";
 import { OkmError } from "../../contracts/error.js";
 import { errorDoc } from "../errors/registry.js";
-import { COLUMN_RULES, STEP_RULES, type LintSeverity } from "./lint-rules.js";
+import { COLUMN_RULES, STEP_RULES, statementMayReprint, type LintSeverity } from "./lint-rules.js";
+import { REPRINT_CODE, reprintHits } from "./reprint.js";
 import { readMigrationPlan } from "./files.js";
 import type { MigrationPlan, PlanStep } from "./plan.js";
 import { sqlStatements } from "./sql-lex.js";
@@ -53,6 +54,28 @@ export function lintPlan(plan: MigrationPlan, before: Catalog, after: Catalog): 
     );
   });
   return findings;
+}
+
+/**
+ * Warns when a replayed domain check or `LANGUAGE sql` body reprints.
+ *
+ * Called from `okm migrate check` after introspection. A warning does not
+ * fail the command. An allow with an empty reason, or a code the replay did
+ * not trigger, is OKM1510.
+ *
+ * @param declared - Catalog stored with the migration
+ * @param stored - Catalog read back from the scratch schema
+ * @param steps - Statements of that migration, including `-- okm-allow`
+ * @returns Findings in catalog order
+ */
+export function lintReprints(
+  declared: Catalog,
+  stored: Catalog,
+  steps: readonly PlanStep[],
+): readonly Finding[] {
+  return reprintHits(declared, stored, steps).map((hit) =>
+    finding(hit.severity, hit.code, hit.place, hit.reason),
+  );
 }
 
 /**
@@ -184,6 +207,7 @@ function lintStep(
         triggered.add(hit.code);
       }
     }
+    if (statementMayReprint(statement.sql)) triggered.add(REPRINT_CODE);
     const place = multi
       ? `step ${String(number)} statement ${String(index + 1)}`
       : `step ${String(number)}`;

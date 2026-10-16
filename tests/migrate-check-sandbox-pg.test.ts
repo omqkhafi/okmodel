@@ -122,7 +122,11 @@ postgresTest(
     try {
       writeAtomicProject(cwd, database.url);
       await cli(cwd, ["generate", "init"]);
-      expect(await cli(cwd, ["migrate", "check"])).toBe("ok 1 migrations\n");
+      const checked = await cli(cwd, ["migrate", "check"]);
+      expect(checked.startsWith("ok 1 migrations\n")).toBe(true);
+      expect(checked).toContain("warning OKM1552");
+      expect(checked).toContain("function by_id body reprints differently");
+      expect(checked).toContain("function count_tasks body reprints differently");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
       await database.close();

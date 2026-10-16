@@ -29,6 +29,7 @@ import {
   lintPlan,
   type Finding,
 } from "../src/tooling/migrate/lint.js";
+import { reprintHits } from "../src/tooling/migrate/reprint.js";
 import {
   formatPlan,
   parsePlan,
@@ -186,7 +187,7 @@ test("renames, type changes, required columns, and dropped defaults are errors",
         table("tasks", { id: t.identity(), title: t.varchar(20) }),
       ),
     ),
-  ).toEqual(["OKM1527"]);
+  ).toEqual(["OKM1527", "OKM1538"]);
   expect(
     codes(
       diff(
@@ -374,7 +375,7 @@ test("locking errors cover an unsafe set not null, and a rewriting type change s
       table("tasks", { id: t.identity(), title: t.varchar(20) }),
     ),
   );
-  expect(shrunk).not.toContain("OKM1538");
+  expect(shrunk).toEqual(["OKM1527", "OKM1538"]);
 
   const narrowed = codes(
     diff(
@@ -825,6 +826,443 @@ test("BEGIN ATOMIC in create function or procedure stays one statement", () => {
   expect(codesOfHand("begin atomic select 1; end")).toContain("OKM1551");
   expect(codesOfHand("begin atomic select 1; end;\ncommit")).toContain("OKM1551");
 });
+
+test("every step rule fires, stays quiet on its safe form, and honors an override", () => {
+  const existing = schema({ tables: [tasks()] }).catalog;
+  const empty = schema({ tables: [] }).catalog;
+  const wide = schema({ tables: [table("tasks", { title: t.varchar(30) })] }).catalog;
+  const short = schema({ tables: [table("tasks", { title: t.varchar(20) })] }).catalog;
+  const big = schema({ tables: [table("tasks", { n: t.bigint() })] }).catalog;
+  const small = schema({ tables: [table("tasks", { n: t.integer() })] }).catalog;
+  const textTitle = schema({ tables: [table("tasks", { title: t.text() })] }).catalog;
+  const intTitle = schema({ tables: [table("tasks", { title: t.integer() })] }).catalog;
+  const labeled = schema({
+    tables: [
+      table("tasks", {
+        id: t.identity(),
+        name: t.domain("label", t.text(), "((length(VALUE) > 0))"),
+      }),
+    ],
+  }).catalog;
+  const colored = schema({
+    tables: [table("tasks", { id: t.identity(), status: t.enum("color", ["red", "blue"]) })],
+  }).catalog;
+  const fixtures: readonly Fixture[] = [
+    { code: "OKM1511", fire: 'drop table "tasks"', safe: 'create table "tasks" ("id" bigint)' },
+    {
+      code: "OKM1512",
+      fire: 'alter table "tasks" drop column "title"',
+      safe: 'create table "tasks" ("id" bigint)',
+    },
+    {
+      code: "OKM1513",
+      fire: 'drop type "color"',
+      safe: "create type \"color\" as enum ('red')",
+      before: colored,
+      after: colored,
+    },
+    {
+      code: "OKM1514",
+      fire: 'drop type "label"',
+      safe: 'create table "tasks" ("id" bigint)',
+      before: labeled,
+      after: labeled,
+    },
+    {
+      code: "OKM1515",
+      fire: 'drop function "answer"()',
+      safe: 'create table "tasks" ("id" bigint)',
+    },
+    { code: "OKM1516", fire: 'drop view "titles"', safe: 'create table "tasks" ("id" bigint)' },
+    {
+      code: "OKM1517",
+      fire: 'drop extension "pgcrypto"',
+      safe: 'create table "tasks" ("id" bigint)',
+    },
+    {
+      code: "OKM1518",
+      fire: 'drop materialized view "titles"',
+      safe: 'create table "tasks" ("id" bigint)',
+    },
+    {
+      code: "OKM1519",
+      fire: 'alter table "tasks" rename column "title" to "name"',
+      safe: 'create table "tasks" ("id" bigint)',
+    },
+    {
+      code: "OKM1523",
+      fire: 'alter table "tasks" rename to "notes"',
+      safe: 'create table "tasks" ("id" bigint)',
+    },
+    {
+      code: "OKM1524",
+      fire: 'alter table "tasks" alter column "title" type integer',
+      safe: 'create table "tasks" ("id" bigint)',
+      before: textTitle,
+      after: intTitle,
+    },
+    {
+      code: "OKM1525",
+      fire: 'alter table "tasks" add column "note" text not null',
+      safe: 'alter table "tasks" add column "note" text',
+      before: existing,
+      after: existing,
+      safeBefore: existing,
+      safeAfter: existing,
+    },
+    {
+      code: "OKM1526",
+      fire: 'alter table "tasks" alter column "title" drop default',
+      safe: 'alter table "tasks" alter column "title" set default \'x\'',
+    },
+    {
+      code: "OKM1527",
+      fire: 'alter table "tasks" alter column "title" type varchar(20)',
+      safe: 'alter table "tasks" alter column "title" type varchar(30)',
+      before: wide,
+      after: short,
+      safeBefore: short,
+      safeAfter: wide,
+    },
+    {
+      code: "OKM1528",
+      fire: 'alter table "tasks" add constraint "tasks_title_key" unique ("title")',
+      safe: 'alter table "tasks" add constraint "tasks_title_key" unique using index "tasks_title_idx"',
+      before: existing,
+      after: existing,
+      safeBefore: existing,
+      safeAfter: existing,
+    },
+    {
+      code: "OKM1529",
+      fire: 'create unique index "tasks_title_idx" on "tasks" ("title")',
+      safe: 'create unique index "tasks_title_idx" on "tasks" ("title")',
+      before: existing,
+      after: existing,
+    },
+    {
+      code: "OKM1531",
+      fire: 'alter table "tasks" validate constraint "tasks_title_check"',
+      safe: 'alter table "tasks" add constraint "tasks_title_check" check ((title <> \'\')) not valid',
+      before: existing,
+      after: existing,
+      safeBefore: existing,
+      safeAfter: existing,
+    },
+    {
+      code: "OKM1532",
+      fire: 'alter table "tasks" add constraint "tasks_owner_fkey" foreign key ("owner_id") references "users" ("id")',
+      safe: 'alter table "tasks" add constraint "tasks_owner_fkey" foreign key ("owner_id") references "users" ("id") not valid',
+      before: existing,
+      after: existing,
+      safeBefore: existing,
+      safeAfter: existing,
+    },
+    {
+      code: "OKM1533",
+      fire: 'alter table "tasks" alter column "n" type integer',
+      safe: 'alter table "tasks" alter column "n" type bigint',
+      before: big,
+      after: small,
+      safeBefore: small,
+      safeAfter: big,
+    },
+    {
+      code: "OKM1534",
+      fire: 'create index "tasks_title_idx" on "tasks" ("title")',
+      safe: 'create index concurrently "tasks_title_idx" on "tasks" ("title")',
+      before: existing,
+      after: existing,
+      safeBefore: existing,
+      safeAfter: existing,
+    },
+    {
+      code: "OKM1535",
+      fire: 'alter table "tasks" add constraint "tasks_title_check" check ((title <> \'\'))',
+      safe: 'alter table "tasks" add constraint "tasks_title_check" check ((title <> \'\')) not valid',
+      before: existing,
+      after: existing,
+      safeBefore: existing,
+      safeAfter: existing,
+    },
+    {
+      code: "OKM1536",
+      fire: 'alter table "tasks" add constraint "tasks_owner_fkey" foreign key ("owner_id") references "users" ("id")',
+      safe: 'alter table "tasks" add constraint "tasks_owner_fkey" foreign key ("owner_id") references "users" ("id") not valid',
+      before: existing,
+      after: existing,
+      safeBefore: existing,
+      safeAfter: existing,
+    },
+    {
+      code: "OKM1537",
+      fire: 'alter table "tasks" alter column "title" set not null',
+      safe: 'alter table "tasks" alter column "title" set not null',
+      before: existing,
+      after: existing,
+    },
+    {
+      code: "OKM1538",
+      fire: 'alter table "tasks" alter column "title" type integer',
+      safe: 'alter table "tasks" alter column "title" type varchar(30)',
+      before: textTitle,
+      after: intTitle,
+      safeBefore: short,
+      safeAfter: wide,
+    },
+    {
+      code: "OKM1542",
+      fire: 'insert into "tasks" ("title") values (\'a\')',
+      safe: '-- backfill table="public"."tasks" key="id" batch=100\nupdate "public"."tasks" set "title" = \'x\' where "id" = \'a\'',
+    },
+    {
+      code: "OKM1550",
+      fire: 'alter table "tasks" disable row level security',
+      safe: 'create table "tasks" ("id" bigint)',
+    },
+    { code: "OKM1551", fire: "commit", safe: 'create table "tasks" ("id" bigint)' },
+  ];
+  expect(fixtures.map((item) => item.code).sort()).toEqual(
+    STEP_RULES.map((rule) => rule.code).sort(),
+  );
+  for (const item of fixtures) {
+    const fired = lintSql(item.fire, item.before ?? empty, item.after ?? item.before ?? empty);
+    expect(
+      fired.map((finding) => finding.code),
+      item.code,
+    ).toContain(item.code);
+    const rule = STEP_RULES.find((entry) => entry.code === item.code);
+    expect(fired.find((finding) => finding.code === item.code)?.severity, item.code).toBe(
+      rule?.severity,
+    );
+    const quiet = lintSql(
+      item.safe,
+      item.safeBefore ?? empty,
+      item.safeAfter ?? item.safeBefore ?? empty,
+    );
+    expect(
+      quiet.map((finding) => finding.code),
+      item.code,
+    ).not.toContain(item.code);
+    const allowed = lintSql(
+      `-- okm-allow ${item.code}: reviewed\n${item.fire}`,
+      item.before ?? empty,
+      item.after ?? item.before ?? empty,
+    );
+    expect(
+      allowed.map((finding) => finding.code),
+      item.code,
+    ).not.toContain(item.code);
+    expect(
+      allowed.map((finding) => finding.code),
+      item.code,
+    ).not.toContain("OKM1510");
+    const blank = lintSql(
+      `-- okm-allow ${item.code}:\n${item.fire}`,
+      item.before ?? empty,
+      item.after ?? item.before ?? empty,
+    );
+    expect(
+      blank.map((finding) => finding.code),
+      item.code,
+    ).toContain(item.code);
+    expect(
+      blank.map((finding) => finding.code),
+      item.code,
+    ).toContain("OKM1510");
+    const unusedCode = item.code === "OKM1511" ? "OKM1542" : "OKM1511";
+    const unused = lintSql(
+      `-- okm-allow ${unusedCode}: not this statement\n${item.fire}`,
+      item.before ?? empty,
+      item.after ?? item.before ?? empty,
+    );
+    expect(
+      unused.map((finding) => finding.code),
+      item.code,
+    ).toContain(item.code);
+    expect(formatFindings(unused), item.code).toContain(`override ${unusedCode} does not match`);
+  }
+  expect(labeled.objects.some((object) => object.kind === "type")).toBe(true);
+});
+
+test("OKM1538 follows the heap rewrite and stays quiet when Postgres does not rewrite", () => {
+  const pair = (before: AnyTable, after: AnyTable): readonly string[] => codes(diff(before, after));
+  const col = <C extends object>(column: C): AnyTable => table("tasks", { title: column });
+  expect(pair(col(t.varchar(10)), col(t.varchar(20)))).not.toContain("OKM1538");
+  expect(pair(col(t.varchar(10)), col(t.text()))).not.toContain("OKM1538");
+  expect(pair(col(t.text()), col(t.custom(pass("character varying"))))).not.toContain("OKM1538");
+  expect(pair(col(t.varchar(10)), col(t.custom(pass("character varying"))))).not.toContain(
+    "OKM1538",
+  );
+  expect(pair(col(t.text()), col(t.custom(pass("bpchar"))))).not.toContain("OKM1538");
+  expect(pair(col(t.varchar(10)), col(t.custom(pass("bpchar"))))).not.toContain("OKM1538");
+  expect(pair(col(t.numeric(6, 2)), col(t.numeric(10, 2)))).not.toContain("OKM1538");
+  expect(pair(col(t.numeric(6, 2)), col(t.numeric(10, 2)))).toContain("OKM1524");
+  const unconstrained = pair(col(t.numeric(6, 2)), col(t.numeric()));
+  expect(unconstrained).not.toContain("OKM1538");
+  expect(unconstrained).toContain("OKM1533");
+  expect(pair(col(t.integer()), col(t.custom(pass("oid"))))).not.toContain("OKM1538");
+  expect(pair(col(t.custom(pass("oid"))), col(t.integer()))).not.toContain("OKM1538");
+  expect(pair(col(t.cidr()), col(t.inet()))).not.toContain("OKM1538");
+  expect(pair(col(t.custom(pass("xml"))), col(t.text()))).not.toContain("OKM1538");
+  expect(pair(col(t.integer()), col(t.bigint()))).toContain("OKM1538");
+  expect(pair(col(t.varchar(20)), col(t.varchar(10)))).toEqual(["OKM1527", "OKM1538"]);
+  expect(pair(col(t.char(3)), col(t.char(8)))).toEqual(["OKM1538"]);
+  expect(pair(col(t.timestamp()), col(t.timestamptz()))).toContain("OKM1538");
+  expect(pair(col(t.inet()), col(t.cidr()))).toContain("OKM1538");
+
+  const plain = castCodes("title::character varying(20)");
+  expect(plain).not.toContain("OKM1538");
+  const expression = castCodes("length(title)");
+  expect(expression).toContain("OKM1538");
+
+  const base = schema({ tables: [table("tasks", { n: t.integer() })] }).catalog;
+  const domain = schema({
+    tables: [table("tasks", { n: t.domain("plain_int", t.integer(), "((VALUE > 0))") })],
+  }).catalog;
+  const open = clearCheck(domain, "plain_int");
+  expect(handType(base, open, "plain_int")).not.toContain("OKM1538");
+  expect(handType(base, domain, "plain_int")).toContain("OKM1538");
+  expect(handType(domain, base, "integer")).not.toContain("OKM1538");
+});
+
+test("OKM1552 compares a stored domain check and a LANGUAGE sql body", () => {
+  const declared = schema({
+    tables: [table("tasks", { n: t.domain("pos", t.integer(), "VALUE > 0") })],
+    functions: [
+      fn("by_id", {
+        arguments: [{ name: "n", type: "text" }],
+        returns: "text",
+        language: "sql",
+        body: "begin atomic select title from tasks where id = n; end",
+      }),
+    ],
+  }).catalog;
+  const stored = patchReprint(declared);
+  const steps = planMigration({
+    before: schema({ tables: [] }).catalog,
+    after: declared,
+    name: "reprint",
+  }).steps;
+  const hits = reprintHits(declared, stored, steps);
+  expect(hits.map((hit) => hit.code)).toEqual(["OKM1552", "OKM1552"]);
+  expect(hits.every((hit) => hit.severity === "warning")).toBe(true);
+  expect(hits.map((hit) => hit.reason)).toEqual([
+    "domain pos check reprints differently",
+    "function by_id body reprints differently",
+  ]);
+  expect(reprintHits(declared, declared, steps)).toEqual([]);
+
+  const allowed = steps.map((step) =>
+    step.sql.includes("pos") || step.sql.includes("by_id")
+      ? { ...step, allows: [{ code: "OKM1552", reason: "reviewed" }] }
+      : step,
+  );
+  expect(reprintHits(declared, stored, allowed)).toEqual([]);
+  const blank = steps.map((step) =>
+    step.sql.includes("domain") ? { ...step, allows: [{ code: "OKM1552", reason: " " }] } : step,
+  );
+  expect(reprintHits(declared, stored, blank).some((hit) => hit.code === "OKM1510")).toBe(true);
+  const unused = steps.map((step) =>
+    step.sql.includes("by_id")
+      ? { ...step, allows: [{ code: "OKM1552", reason: "reviewed" }] }
+      : step,
+  );
+  expect(
+    reprintHits(declared, declared, unused).some(
+      (hit) => hit.code === "OKM1510" && hit.reason.includes("OKM1552"),
+    ),
+  ).toBe(true);
+
+  expect(
+    codesOfHand("-- okm-allow OKM1552: reviewed\ncreate domain pos as integer check (value > 0)"),
+  ).not.toContain("OKM1510");
+  expect(codesOfHand("-- okm-allow OKM1552: reviewed\ncreate table tasks (id bigint)")).toContain(
+    "OKM1510",
+  );
+  expect(
+    codesOfHand("-- okm-allow OKM1552:\ncreate domain pos as integer check (value > 0)"),
+  ).toContain("OKM1510");
+});
+
+type Fixture = {
+  readonly code: string;
+  readonly fire: string;
+  readonly safe: string;
+  readonly before?: Catalog;
+  readonly after?: Catalog;
+  readonly safeBefore?: Catalog;
+  readonly safeAfter?: Catalog;
+};
+
+function lintSql(sql: string, before: Catalog, after: Catalog): readonly Finding[] {
+  return lintPlan(parsePlan(`-- name: hand\n\n${sql}\n`), before, after);
+}
+
+function pass(sqlType: string): {
+  readonly sqlType: string;
+  readonly encode: (value: string) => string;
+  readonly decode: (wire: string) => string;
+} {
+  return { sqlType, encode: (value) => value, decode: (wire) => wire };
+}
+
+function castCodes(using: string): readonly string[] {
+  const before = schema({ tables: [table("tasks", { title: t.varchar(10) })] }).catalog;
+  const after = schema({ tables: [table("tasks", { title: t.varchar(20) })] }).catalog;
+  return lintSql(
+    `alter table "tasks" alter column "title" type character varying(20) using ${using}`,
+    before,
+    after,
+  ).map((item) => item.code);
+}
+
+function handType(before: Catalog, after: Catalog, typeName: string): readonly string[] {
+  return lintSql(`alter table "tasks" alter column "n" type ${typeName}`, before, after).map(
+    (item) => item.code,
+  );
+}
+
+function clearCheck(source: Catalog, name: string): Catalog {
+  return {
+    ...source,
+    objects: source.objects.map((object) => {
+      if (
+        object.kind !== "type" ||
+        object.identity.name !== name ||
+        !("check" in object.definition)
+      ) {
+        return object;
+      }
+      return { ...object, definition: { ...object.definition, check: "" } };
+    }),
+  };
+}
+
+function patchReprint(source: Catalog): Catalog {
+  return {
+    ...source,
+    objects: source.objects.map((object) => {
+      if (
+        object.kind === "type" &&
+        object.identity.name === "pos" &&
+        "check" in object.definition
+      ) {
+        return { ...object, definition: { ...object.definition, check: "((VALUE > 0))" } };
+      }
+      if (object.kind === "function" && object.identity.name === "by_id") {
+        return {
+          ...object,
+          definition: {
+            ...object.definition,
+            body: "BEGIN ATOMIC\n  SELECT title FROM tasks WHERE id = by_id.n;\nEND",
+          },
+        };
+      }
+      return object;
+    }),
+  };
+}
 
 function hand(sql: string): readonly Finding[] {
   const empty = schema({ tables: [] }).catalog;

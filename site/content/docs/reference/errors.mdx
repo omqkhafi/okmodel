@@ -272,7 +272,7 @@ The registry has 110 codes, in numeric order. Ranges are schema `OKM1000`, queri
 
 ### Migrations
 
-`OKM1538`, `OKM1539`, `OKM1540`, `OKM1543`, `OKM1544`, and `OKM1545` are warnings. A warning is printed and the command still succeeds. An error blocks plan, check, and apply.
+`OKM1538`, `OKM1539`, `OKM1540`, `OKM1543`, `OKM1544`, `OKM1545`, and `OKM1552` are warnings. A warning is printed and the command still succeeds. An error blocks plan, check, and apply.
 
 | Code | Title | Summary |
 | --- | --- | --- |
@@ -304,7 +304,7 @@ The registry has 110 codes, in numeric order. Ranges are schema `OKM1000`, queri
 | `OKM1535` | Check without NOT VALID | A statement adds a check on an existing table without NOT VALID. |
 | `OKM1536` | Foreign key without NOT VALID | A statement adds a foreign key on an existing table without NOT VALID. |
 | `OKM1537` | Set not null | A statement sets NOT NULL on a column that already exists. |
-| `OKM1538` | Type rewrite | A statement changes a column type in a way that rewrites the table. |
+| `OKM1538` | Type rewrite | A statement changes a column type in a way that rewrites the table. Binary-coercible changes, varchar widening, varchar to text, and a numeric precision increase at the same scale do not. |
 | `OKM1539` | Timestamp without time zone | A column is timestamp without time zone. The instant depends on the session time zone. |
 | `OKM1540` | varchar length | A column is varchar(n). text stores the same values without a length limit in the type. |
 | `OKM1541` | Picklist removal | A picklist or enum value was removed and the replacement was not given. |
@@ -318,6 +318,7 @@ The registry has 110 codes, in numeric order. Ranges are schema `OKM1000`, queri
 | `OKM1549` | Stale head | The last migration's catalog does not match the schema. |
 | `OKM1550` | Row-level security weakened | A statement disables row-level security, drops or widens a policy, grants BYPASSRLS, or changes the owner of a tenant table. |
 | `OKM1551` | Transaction control in a step | A step contains COMMIT, ROLLBACK, or other transaction control, including inside a DO body. A function or procedure body is not this. |
+| `OKM1552` | Reprinted declaration | A domain check or a LANGUAGE sql function body is stored differently from the text in the migration catalog. |
 
 ### Typed SQL
 
