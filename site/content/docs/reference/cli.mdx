@@ -84,9 +84,9 @@ bunx okm build
 
 ## pull
 
-`okm pull` reads one database and writes one table file per table, plus the schema file. It does not write to the database, so a protected target is allowed. An existing file is OKM1855 and nothing is written. `--out <directory>` is the other place to write. The default namespace is the target's current schema. `--schema <name>` selects others and may be repeated.
+`okm pull` reads one database and writes one table file per table, plus the schema file. It does not write the selected namespaces, so a protected target is allowed. It creates a scratch schema to verify functions and views, then drops it. An existing file is OKM1855 and nothing is written. `--out <directory>` is the other place to write. The default namespace is the target's current schema. `--schema <name>` selects others and may be repeated.
 
-Tables, columns, keys, uniques, checks, single-column foreign keys, indexes, identity sequences, enums, domains, and extensions are written. Functions, triggers, views, materialized views, policies, roles, and grants are printed under `not pulled yet` with a count, and so is anything `table()` cannot say. A column type with no builder is that list, with the table and the column. Nothing is dropped without a line.
+Tables, columns, keys, uniques, checks, single-column foreign keys, indexes, identity sequences, enums, domains, extensions, functions, triggers, views, and materialized views are written. A view is SQL text with its columns. Views and `BEGIN ATOMIC` bodies take dependencies from `pg_depend`. A plpgsql or SQL-string body gets `dependsOn` candidates from a lexical match. The report marks each function `verified` (the scratch replay created it with `check_function_bodies` on), `candidate-only` (plpgsql: creation does not prove the body), or `unverified` (creation failed). A comment above the declaration says the same thing. Policies, roles, grants, aggregates, procedures, event triggers, and rules are printed under `not pulled yet` with a count, and so is anything `table()` cannot say. A column type with no builder is that list, with the table and the column. Nothing is dropped without a line.
 
 ```sh
 bunx okm pull

@@ -1,8 +1,9 @@
 /**
  * Turns an introspected catalog into table files and a schema file.
  *
- * `schema()` is the only writer. A kind it cannot store is returned, with
- * the SQL the catalog already holds, and is not guessed.
+ * `schema()` is the only writer. Functions, triggers, and views are written
+ * beside the tables. A kind it cannot store is returned, with the SQL the
+ * catalog already holds, and is not guessed.
  */
 
 import { relative, dirname } from "node:path";
@@ -19,6 +20,12 @@ import type {
   SequenceObject,
   TableObject,
 } from "../../contracts/catalog/types.js";
+import {
+  planRoutines,
+  renderRoutines,
+  type RoutinePlan,
+  type RoutineVerdict,
+} from "./pull-routines.js";
 
 /** One file `okm pull` writes. */
 export type PullFile = {
@@ -54,18 +61,37 @@ export type PullLayout = {
 export type PullEmission = {
   readonly files: readonly PullFile[];
   readonly skipped: readonly PullSkip[];
+  /** Scratch results for the routines the files declare. */
+  readonly verdicts: readonly RoutineVerdict[];
+  readonly counts: {
+    readonly tables: number;
+    readonly functions: number;
+    readonly triggers: number;
+    readonly views: number;
+    readonly materializedViews: number;
+  };
 };
 
 const DEFERRED: readonly { readonly kind: string; readonly reason: string }[] = [
-  { kind: "function", reason: "a later step writes functions" },
-  { kind: "trigger", reason: "a later step writes triggers" },
-  { kind: "view", reason: "a later step writes views" },
-  { kind: "materializedView", reason: "a later step writes materialized views" },
   { kind: "policy", reason: "a later step writes policies" },
   { kind: "role", reason: "a later step writes roles and grants" },
   { kind: "grant", reason: "a later step writes roles and grants" },
   { kind: "defaultPrivilege", reason: "a later step writes roles and grants" },
 ];
+
+/** A kind the catalog cannot store, counted for the report. */
+export type PullCount = {
+  readonly kind: string;
+  readonly count: number;
+  readonly reason: string;
+};
+
+/** Scratch verdicts and the kinds the catalog has no object for. */
+export type PullReview = {
+  readonly plan: RoutinePlan;
+  readonly verdicts: readonly RoutineVerdict[];
+  readonly unexpressed: readonly PullCount[];
+};
 
 const RESERVED = new Set([
   "await",
@@ -124,9 +150,10 @@ const RESERVED = new Set([
  *
  * @param source - Catalog from introspection, logical namespace `public`
  * @param layout - Schema file and tables directory
+ * @param review - Scratch verdicts. Omitted marks every function candidate-only
  * @returns The files and the objects they do not declare
  */
-export function emitPull(source: Catalog, layout: PullLayout): PullEmission {
+export function emitPull(source: Catalog, layout: PullLayout, review?: PullReview): PullEmission {
   const statements = rendered(source);
   const skipped: PullSkip[] = [];
   const enums = enumLabels(source);
@@ -139,6 +166,7 @@ export function emitPull(source: Catalog, layout: PullLayout): PullEmission {
   const imports: { readonly name: string; readonly file: string }[] = [];
   const usedFiles = new Set<string>();
   const identitySequences = new Set<string>();
+  const tableExports = new Map<string, string>();
 
   for (const table of tables) {
     if (table.definition.partition !== undefined) {
@@ -157,6 +185,7 @@ export function emitPull(source: Catalog, layout: PullLayout): PullEmission {
     const planned = planTable(table, byParent, enums, domains, statements, skipped);
     if (planned === undefined) continue;
     if (planned.identitySequence !== undefined) identitySequences.add(planned.identitySequence);
+    tableExports.set(table.identity.name, planned.exportName);
     const fileName = uniqueFile(planned.exportName, usedFiles);
     const path = `${layout.tablesDir}/${fileName}.ts`;
     files.push({ path, text: planned.text });
@@ -187,6 +216,8 @@ export function emitPull(source: Catalog, layout: PullLayout): PullEmission {
     );
   }
 
+  const plan = review?.plan ?? planRoutines(source, tableExports);
+  for (const item of plan.skipped) skipped.push(item);
   for (const object of source.objects) {
     if (!isDeferred(object.kind)) continue;
     skipped.push(
@@ -214,47 +245,77 @@ export function emitPull(source: Catalog, layout: PullLayout): PullEmission {
     );
   }
 
+  const verdictList = review?.verdicts ?? [];
+  const routines = renderRoutines(plan, new Map(verdictList.map((item) => [item.key, item])));
   files.push({
     path: layout.schemaFile,
-    text: schemaText(layout.schemaFile, imports, extensionCalls(source)),
+    text: schemaText(layout.schemaFile, imports, extensionCalls(source), routines),
   });
   files.sort((left, right) => compare(left.path, right.path));
   skipped.sort((left, right) =>
     compare(`${left.kind}\0${left.label}`, `${right.kind}\0${right.label}`),
   );
-  return { files, skipped };
+  const viewCount = plan.views.filter((item) => item.object.kind === "view").length;
+  return {
+    files,
+    skipped,
+    verdicts: verdictList,
+    counts: {
+      tables: tables.length - skippedTables(source, skipped),
+      functions: plan.functions.length,
+      triggers: plan.triggers.length,
+      views: viewCount,
+      materializedViews: plan.views.length - viewCount,
+    },
+  };
+}
+
+function skippedTables(source: Catalog, skipped: readonly PullSkip[]): number {
+  let count = 0;
+  for (const object of source.objects) {
+    if (object.kind !== "table") continue;
+    if (skipped.some((item) => item.key === identityKey(object.identity))) count += 1;
+  }
+  return count;
 }
 
 /**
  * Text `okm pull` prints.
  *
- * Deferred kinds are always listed, including a count of zero, so a kind is
- * not dropped without a line.
+ * Deferred kinds and kinds the catalog cannot store are always listed,
+ * including a count of zero, so a kind is not dropped without a line.
+ * Each pulled function is `verified`, `candidate-only`, or `unverified`.
  *
- * @param tableCount - Tables written
+ * @param counts - Objects the files declare
  * @param skipped - Objects the files leave out
+ * @param verdicts - Scratch results. Empty when no routine was pulled
+ * @param unexpressed - Aggregates, procedures, event triggers, and rules
  * @returns The report, with a trailing newline
  */
-export function formatPullReport(tableCount: number, skipped: readonly PullSkip[]): string {
+export function formatPullReport(
+  counts: PullEmission["counts"],
+  skipped: readonly PullSkip[],
+  verdicts: readonly RoutineVerdict[],
+  unexpressed: readonly PullCount[],
+): string {
   const lines = [
-    `pulled ${String(tableCount)} ${tableCount === 1 ? "table" : "tables"}`,
-    "not pulled yet",
+    `pulled ${counted(counts.tables, "table", "tables")}, ${counted(counts.functions, "function", "functions")}, ${counted(counts.triggers, "trigger", "triggers")}, ${counted(counts.views, "view", "views")}, ${counted(counts.materializedViews, "materialized view", "materialized views")}`,
   ];
-  const deferredKinds = [
-    "function",
-    "trigger",
-    "view",
-    "materializedView",
-    "policy",
-    "role",
-    "grant",
-    "defaultPrivilege",
-  ];
+  const marked = [...verdicts].sort((left, right) => compare(left.label, right.label));
+  for (const item of marked) {
+    const detail = item.detail.length > 0 ? ` — ${item.detail}` : "";
+    lines.push(`  ${item.label}: ${item.status}${detail}`);
+  }
+  lines.push("not pulled yet");
+  const deferredKinds = ["policy", "role", "grant", "defaultPrivilege"];
   for (const kind of deferredKinds) {
     const rows = skipped.filter((item) => item.kind === kind);
     const reason = deferredReason(kind);
     lines.push(`  ${kindLabel(kind)}: ${String(rows.length)} — ${reason}`);
     for (const row of rows) lines.push(`    ${row.label}`);
+  }
+  for (const item of unexpressed) {
+    lines.push(`  ${kindLabel(item.kind)}: ${String(item.count)} — ${item.reason}`);
   }
   const rest = skipped.filter((item) => !deferredKinds.includes(item.kind));
   const groups = new Map<string, PullSkip[]>();
@@ -345,11 +406,7 @@ function planTable(
   }
 
   const options: string[] = [];
-  const sqlName = jsIdent(table.identity.name);
-  const exportName =
-    sqlName === table.identity.name
-      ? table.identity.name
-      : freshIdent(table.identity.name, new Set());
+  const exportName = exportNameOf(table.identity.name);
   if (exportName !== table.identity.name) {
     options.push(`    sqlName: ${JSON.stringify(table.identity.name)},`);
   }
@@ -835,9 +892,17 @@ function schemaText(
   schemaFile: string,
   imports: readonly { readonly name: string; readonly file: string }[],
   extensions: readonly string[],
+  routines: {
+    readonly imports: readonly string[];
+    readonly body: string;
+    readonly functions: readonly string[];
+    readonly triggers: readonly string[];
+    readonly views: readonly string[];
+  },
 ): string {
   const lines = ['import { schema } from "okmodel/pg";'];
   if (extensions.length > 0) lines.push('import { extension } from "okmodel/ext";');
+  for (const line of routines.imports) lines.push(line);
   const sorted = [...imports].sort((left, right) => compare(left.name, right.name));
   for (const item of sorted) {
     lines.push(
@@ -852,10 +917,26 @@ function schemaText(
   extensions: [
 ${extensions.map((call) => `    ${call},`).join("\n")}
   ]`;
+  const functionBlock =
+    routines.functions.length === 0
+      ? ""
+      : `,
+  functions: [${routines.functions.join(", ")}]`;
+  const triggerBlock =
+    routines.triggers.length === 0
+      ? ""
+      : `,
+  triggers: [${routines.triggers.join(", ")}]`;
+  const viewBlock =
+    routines.views.length === 0
+      ? ""
+      : `,
+  views: [${routines.views.join(", ")}]`;
+  const body = routines.body.length === 0 ? "" : `\n${routines.body}`;
   return `${lines.join("\n")}
-
+${body}
 export default schema({
-  tables: [${tables}]${extensionBlock},
+  tables: [${tables}]${extensionBlock}${functionBlock}${triggerBlock}${viewBlock},
 });
 `;
 }
@@ -990,9 +1071,14 @@ function deferredReason(kind: string): string {
 function kindLabel(kind: string): string {
   if (kind === "materializedView") return "materialized views";
   if (kind === "defaultPrivilege") return "default privileges";
+  if (kind === "eventTrigger") return "event triggers";
   if (kind === "policy") return "policies";
   if (kind.endsWith("s")) return kind;
   return `${kind}s`;
+}
+
+function counted(count: number, one: string, many: string): string {
+  return `${String(count)} ${count === 1 ? one : many}`;
 }
 
 function objectLabel(object: CatalogObject): string {
@@ -1019,6 +1105,29 @@ function uniqueFile(name: string, used: Set<string>): string {
   }
   used.add(file);
   return file;
+}
+
+/**
+ * SQL table name to the binding `table()` writes.
+ *
+ * A partitioned table is omitted. The binding matches the table file.
+ *
+ * @param source - Introspected catalog
+ * @returns Bindings for tables this step writes
+ */
+export function tableExportNames(source: Catalog): ReadonlyMap<string, string> {
+  const names = new Map<string, string>();
+  for (const object of source.objects) {
+    if (object.kind !== "table" || object.definition.partition !== undefined) continue;
+    names.set(object.identity.name, exportNameOf(object.identity.name));
+  }
+  return names;
+}
+
+function exportNameOf(name: string): string {
+  const sqlName = jsIdent(name);
+  if (sqlName === name) return name;
+  return freshIdent(name, new Set());
 }
 
 function freshIdent(sql: string, used: Set<string>): string {

@@ -9,7 +9,30 @@ import { join } from "node:path";
 
 import { repoRoot } from "../scripts/root.js";
 import { parsePlan } from "../src/tooling/migrate/plan.js";
-import { sqlQuoteOpen, sqlStatements } from "../src/tooling/migrate/sql-lex.js";
+import { sqlIdentifiers, sqlQuoteOpen, sqlStatements } from "../src/tooling/migrate/sql-lex.js";
+
+test("identifiers skip comments, strings, and dollar quotes", () => {
+  expect(sqlIdentifiers(`select name from notes where id = n`)).toEqual([
+    { text: "select", quoted: false },
+    { text: "name", quoted: false },
+    { text: "from", quoted: false },
+    { text: "notes", quoted: false },
+    { text: "where", quoted: false },
+    { text: "id", quoted: false },
+    { text: "n", quoted: false },
+  ]);
+  expect(sqlIdentifiers(`select 'notes'::regclass`)).toEqual([
+    { text: "select", quoted: false },
+    { text: "regclass", quoted: false },
+  ]);
+  expect(sqlIdentifiers(`select "Notes" -- notes\n from items`)).toEqual([
+    { text: "select", quoted: false },
+    { text: "Notes", quoted: true },
+    { text: "from", quoted: false },
+    { text: "items", quoted: false },
+  ]);
+  expect(sqlIdentifiers(`select $body$ notes $body$`)).toEqual([{ text: "select", quoted: false }]);
+});
 
 test("line and block comments are removed, including a nested block", () => {
   expect(sqlStatements("/* note */ truncate logs")).toEqual(["truncate logs"]);

@@ -361,6 +361,82 @@ function isEscapeString(sql: string, index: number): boolean {
   return true;
 }
 
+/** One identifier {@link sqlIdentifiers} found outside a string or a comment. */
+export type SqlName = {
+  /** Spelling as written. A quoted name is unescaped. An unquoted name is not folded. */
+  readonly text: string;
+  /** True when the name was a double-quoted identifier. */
+  readonly quoted: boolean;
+};
+
+/**
+ * Identifiers outside comments, strings, and dollar quotes.
+ *
+ * The quote rules are the same ones {@link sqlStatements} uses. A name inside
+ * a string or a dollar quote is not a match: Postgres still resolves
+ * `'notes'::regclass`, and this scan does not.
+ *
+ * @param sql - Function body or view query
+ * @returns Identifiers in source order
+ */
+export function sqlIdentifiers(sql: string): readonly SqlName[] {
+  const names: SqlName[] = [];
+  let index = 0;
+  while (index < sql.length) {
+    if (sql.startsWith("--", index)) {
+      index = lineCommentEnd(sql, index + 2);
+      continue;
+    }
+    if (sql.startsWith("/*", index)) {
+      const block = blockComment(sql, index + 2);
+      index = block.index;
+      if (block.open) break;
+      continue;
+    }
+    const dollar = dollarAt(sql, index);
+    if (dollar !== undefined) {
+      const closed = takeDollar(sql, dollar);
+      index = closed.index;
+      if (closed.open) break;
+      continue;
+    }
+    if (isEscapeString(sql, index)) {
+      const quote = takeQuoted(sql, index + 2, true);
+      index = quote.index;
+      if (quote.open) break;
+      continue;
+    }
+    const char = sql[index];
+    if (char === "'") {
+      const quote = takeQuoted(sql, index + 1, false);
+      index = quote.index;
+      if (quote.open) break;
+      continue;
+    }
+    if (char === '"') {
+      const quote = takeIdent(sql, index + 1);
+      if (!quote.open) {
+        names.push({ text: unescapeIdent(sql.slice(index + 1, quote.index - 1)), quoted: true });
+      }
+      index = quote.index;
+      if (quote.open) break;
+      continue;
+    }
+    if (isIdentStart(sql.charCodeAt(index))) {
+      const word = readWord(sql, index);
+      names.push({ text: word, quoted: false });
+      index += word.length;
+      continue;
+    }
+    index += 1;
+  }
+  return names;
+}
+
+function unescapeIdent(text: string): string {
+  return text.replaceAll('""', '"');
+}
+
 function isIdentStart(code: number): boolean {
   return (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || code === 95;
 }
