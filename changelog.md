@@ -37,6 +37,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The P100 audit records what PostgreSQL already proves for R1–R7, and the gaps later phases still have to decide. No API change.
 - The 0.8 type and byte budget is recorded (P101). No gate or ceiling moves. Ali approves it before P102.
 - The drivers page covers Neon: WebSocket and HTTP, the pooler, a cold start, and replica lag (D269).
+- The P108 study measures four inline-relation shapes. An opt-in entry types `as` and `has` without moving an existing ceiling. The default-path harvest and a loose `references()` store do not fit. No gate moves.
 
 #### tooling
 
