@@ -15,8 +15,10 @@ import {
   viewObject,
 } from "../../../contracts/catalog/view.js";
 import type { CatalogObject, Provenance } from "../../../contracts/catalog/types.js";
+import { formatType } from "../column.js";
+import { quoteIdent } from "../ddl.js";
 import type { SchemaHook } from "../model.js";
-import type { SqlText } from "../table.js";
+import { snakeCase, type AnyTable, type SqlText } from "../table.js";
 import { viewClient, type ViewInstall } from "./client.js";
 
 /** One declared output column. `type` is the Postgres type name. */
@@ -38,6 +40,82 @@ export type ViewOptions = {
    * OKM1820 unless this is `global("reason")`.
    */
   readonly tenancy?: unknown;
+};
+
+/** Output columns of {@link ViewFrom.from}. A tuple keeps each name. */
+type TupleColumns<K extends readonly string[]> = K extends readonly []
+  ? readonly []
+  : K extends readonly [infer H extends string, ...infer R extends readonly string[]]
+    ? readonly [{ readonly name: H; readonly type: string }, ...TupleColumns<R>]
+    : readonly { readonly name: K[number]; readonly type: string }[];
+
+/** Every column of a table, when `from` is not given a list. */
+type AllColumns<T extends AnyTable> = readonly {
+  readonly name: keyof T["columns"] & string;
+  readonly type: string;
+}[];
+
+const BUILT = Symbol("okmodel.view.from");
+
+/** What `q.from` stores. `install` renders the SQL once casing is known. */
+type Recipe = {
+  readonly [BUILT]: true;
+  readonly table: AnyTable;
+  readonly picked: readonly string[] | undefined;
+  readonly predicate: string | undefined;
+  readonly mark: unknown;
+};
+
+/**
+ * The value `(q) => q.from(...)` returns.
+ *
+ * @typeParam C - Output columns, for `db.views`
+ */
+export type ViewBuilt<C extends readonly ViewColumnInput[] = readonly ViewColumnInput[]> = {
+  /** Declared columns. Present for the type. The catalog uses the SQL names. */
+  readonly "~columns"?: C;
+  /**
+   * Adds a WHERE clause.
+   *
+   * The text is stored as written, the same way `query` is.
+   *
+   * @param predicate - SQL after `where`
+   * @returns The same view, with the clause
+   */
+  where(predicate: SqlText | string): ViewBuilt<C>;
+  /**
+   * Opts the view out of tenancy.
+   *
+   * Pass `global("reason")` from `okmodel/tenancy`.
+   *
+   * @param mark - `global("reason")`
+   * @returns The same view, opted out
+   */
+  tenancy(mark: unknown): ViewBuilt<C>;
+};
+
+/**
+ * The argument of `view(name, (q) => q.from(...))`.
+ */
+export type ViewFrom = {
+  /**
+   * Selects every column of `table`.
+   *
+   * @param table - Source table
+   * @returns The view query
+   */
+  from<const T extends AnyTable>(table: T): ViewBuilt<AllColumns<T>>;
+  /**
+   * Selects `columns` from `table`, in that order.
+   *
+   * @param table - Source table
+   * @param columns - Output columns. Names are the table's fields
+   * @returns The view query
+   */
+  from<const T extends AnyTable, const K extends readonly (keyof T["columns"] & string)[]>(
+    table: T,
+    columns: K,
+  ): ViewBuilt<TupleColumns<K>>;
 };
 
 /**
@@ -138,7 +216,27 @@ export type MaterializedViewDeclaration<
 export function view<const N extends string, const C extends readonly ViewColumnInput[]>(
   name: N,
   options: ViewOptions & { readonly columns: C },
+): ViewDeclaration<N, C>;
+/**
+ * Declares a view from a table.
+ *
+ * `view(name, (q) => q.from(table))` selects that table's columns. Pass a
+ * column list to project. `.where` adds a predicate. `.tenancy` opts out.
+ *
+ * @param name - View name
+ * @param build - `q.from(...)`
+ * @returns The definition object `schema({ views })` stores
+ */
+export function view<const N extends string, const C extends readonly ViewColumnInput[]>(
+  name: N,
+  build: (q: ViewFrom) => ViewBuilt<C>,
+): ViewDeclaration<N, C>;
+export function view<const N extends string, const C extends readonly ViewColumnInput[]>(
+  name: N,
+  source: (ViewOptions & { readonly columns: C }) | ((q: ViewFrom) => ViewBuilt<C>),
 ): ViewDeclaration<N, C> {
+  if (typeof source === "function") return viewFrom(name, source);
+  const options = source;
   const schema = options.schema ?? "public";
   const columns = options.columns.map((column) => ({ name: column.name, dataType: column.type }));
   const query = bodyText(options.query);
@@ -256,6 +354,230 @@ export function materializedView<
       ];
     },
   };
+}
+
+const viewFromApi = {
+  from(table: AnyTable, columns?: readonly string[]): ViewBuilt {
+    return finish({
+      [BUILT]: true,
+      table,
+      picked: columns,
+      predicate: undefined,
+      mark: undefined,
+    });
+  },
+} as ViewFrom;
+
+/**
+ * Declares a view from `(q) => q.from(...)`.
+ *
+ * @param name - View name
+ * @param build - The callback
+ * @returns The view declaration
+ */
+function viewFrom<const N extends string, const C extends readonly ViewColumnInput[]>(
+  name: N,
+  build: (q: ViewFrom) => ViewBuilt<C>,
+): ViewDeclaration<N, C> {
+  const built = build(viewFromApi);
+  if (!isRecipe(built)) {
+    throw new OkmError("OKM1121", `View ${name} must return q.from(...).`, {
+      fix: { summary: "Return q.from(table), and chain where() or tenancy() on that value." },
+    });
+  }
+  const recipe = built;
+  let casingMode: "snake" | undefined;
+  let rendered:
+    | { readonly query: string; readonly columns: readonly ViewColumnInput[] }
+    | undefined;
+  const render = (): { readonly query: string; readonly columns: readonly ViewColumnInput[] } => {
+    rendered ??= renderQuery(name, recipe, casingMode);
+    return rendered;
+  };
+  const bound = viewClient(
+    name,
+    () => render().columns,
+    () => render().query,
+    recipe.mark,
+    "plain",
+  );
+  let securityInvoker = false;
+  return {
+    name,
+    schema: "public",
+    "~kind": "view",
+    install(model, tenancy, tables, casing, scoped) {
+      casingMode = casing;
+      rendered = undefined;
+      bound.install(model, tenancy, tables, casing, scoped);
+      securityInvoker = tenancy?.strategy === "rls" && scoped.has(name);
+    },
+    hook: bound.hook,
+    contribute(peers, builtObjects) {
+      assertPeers(peers);
+      assertNoTable(builtObjects, name);
+      const query = render().query;
+      const columns = render().columns.map((column) => ({
+        name: column.name,
+        dataType: column.type,
+      }));
+      const provenance: Provenance = { origin: "file", name };
+      return [
+        viewObject({
+          namespace: staticNamespace("public"),
+          name,
+          columns,
+          query,
+          provenance,
+          ...(securityInvoker ? { securityInvoker: true as const } : {}),
+        }),
+      ];
+    },
+  };
+}
+
+/**
+ * Reports whether `value` is a {@link Recipe}.
+ *
+ * @param value - The callback result
+ * @returns Whether `from` created it
+ */
+function isRecipe(value: unknown): value is Recipe {
+  return typeof value === "object" && value !== null && BUILT in value;
+}
+
+/**
+ * Chains `where` and `tenancy` on one recipe.
+ *
+ * @param recipe - The from() state
+ * @returns The builder value
+ */
+function finish<C extends readonly ViewColumnInput[]>(recipe: Recipe): ViewBuilt<C> {
+  const built = {
+    ...recipe,
+    where(predicate: SqlText | string): ViewBuilt<C> {
+      return finish({ ...recipe, predicate: bodyText(predicate) });
+    },
+    tenancy(mark: unknown): ViewBuilt<C> {
+      return finish({ ...recipe, mark });
+    },
+  };
+  return built;
+}
+
+/**
+ * Renders `select ... from ...` using schema casing.
+ *
+ * @param name - View name, for errors
+ * @param recipe - The from() state
+ * @param casing - Schema casing
+ * @returns The query and the SQL column names
+ */
+function renderQuery(
+  name: string,
+  recipe: Recipe,
+  casing: "snake" | undefined,
+): { readonly query: string; readonly columns: readonly ViewColumnInput[] } {
+  const fields = recipe.picked ?? Object.keys(recipe.table.columns);
+  if (fields.length === 0) {
+    throw new OkmError("OKM1120", `View ${name} selects no columns.`, {
+      fix: { summary: "Pick at least one column of the table." },
+    });
+  }
+  const columns: ViewColumnInput[] = [];
+  const selected: string[] = [];
+  for (const field of fields) {
+    const column = recipe.table.columns[field];
+    if (column === undefined || typeof column !== "object" || column === null) {
+      throw new OkmError(
+        "OKM1020",
+        `View ${name} names ${field}, which ${recipe.table.name} does not have.`,
+        { fix: { summary: "Pass a column of that table." } },
+      );
+    }
+    const sqlName = columnSql(column, field, casing);
+    columns.push({ name: sqlName, type: columnType(column, field) });
+    selected.push(quoteIdent(sqlName));
+  }
+  const tableName = tableSql(recipe.table, casing);
+  let query = `select ${selected.join(", ")} from ${quoteIdent(tableName)}`;
+  if (recipe.predicate !== undefined && recipe.predicate.trim().length > 0) {
+    query += ` where ${recipe.predicate}`;
+  }
+  return { query, columns };
+}
+
+/**
+ * SQL name of a table.
+ *
+ * @param table - Source table
+ * @param casing - Schema casing
+ * @returns The name in the FROM clause
+ */
+function tableSql(table: AnyTable, casing: "snake" | undefined): string {
+  const options = table.options as { readonly sqlName?: unknown } | undefined;
+  if (typeof options?.sqlName === "string" && options.sqlName.length > 0) return options.sqlName;
+  return casing === "snake" ? snakeCase(table.name) : table.name;
+}
+
+/**
+ * SQL name of one output column.
+ *
+ * @param column - Column builder
+ * @param field - TypeScript field
+ * @param casing - Schema casing
+ * @returns The name in the SELECT list
+ */
+function columnSql(column: object, field: string, casing: "snake" | undefined): string {
+  const state = readState(column, field);
+  if (state.sqlName !== undefined && state.sqlName.length > 0) return state.sqlName;
+  return casing === "snake" ? snakeCase(field) : field;
+}
+
+/**
+ * Postgres type of one output column.
+ *
+ * @param column - Column builder
+ * @param field - TypeScript field, for the error
+ * @returns The type name stored on the view
+ */
+function columnType(column: object, field: string): string {
+  const state = readState(column, field);
+  return formatType(state.baseType, state.dims);
+}
+
+/**
+ * Reads `baseType` and `dims` off a column builder.
+ *
+ * @param column - Column builder
+ * @param field - TypeScript field, for the error
+ * @returns The state the builder stores
+ */
+function readState(
+  column: object,
+  field: string,
+): { readonly baseType: string; readonly dims: number; readonly sqlName: string | undefined } {
+  if (!("state" in column)) {
+    throw new OkmError("OKM1020", `Column ${field} has no type.`, {
+      fix: { summary: "Pass a column built with t." },
+    });
+  }
+  const state = column.state;
+  if (typeof state !== "object" || state === null || !("baseType" in state)) {
+    throw new OkmError("OKM1020", `Column ${field} has no type.`, {
+      fix: { summary: "Pass a column built with t." },
+    });
+  }
+  const baseType = state.baseType;
+  const dims = "dims" in state && typeof state.dims === "number" ? state.dims : 0;
+  const sqlName =
+    "sqlName" in state && typeof state.sqlName === "string" ? state.sqlName : undefined;
+  if (typeof baseType !== "string" || baseType.length === 0) {
+    throw new OkmError("OKM1020", `Column ${field} has no type.`, {
+      fix: { summary: "Pass a column built with t." },
+    });
+  }
+  return { baseType, dims, sqlName };
 }
 
 function bodyText(body: SqlText | string): string {

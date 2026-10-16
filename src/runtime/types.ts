@@ -194,7 +194,13 @@ type HasWindow<P> = P extends Window<string, string | number> ? true : false;
 /** Result keys a window helper adds. A field name contributes nothing. */
 type WindowFields<Row, P> = Intersect<
   P extends Window<infer A, infer V>
-    ? { readonly [K in A]: V extends keyof Row ? NonNullable<Row[V]> | null : number }
+    ? {
+        readonly [K in A]: V extends keyof Row
+          ? NonNullable<Row[V]> | null
+          : V extends number
+            ? number
+            : string;
+      }
     : {}
 >;
 

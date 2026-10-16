@@ -1459,6 +1459,10 @@
       "kind": "stable"
     },
     {
+      "name": "FnCall",
+      "kind": "stable"
+    },
+    {
       "name": "FunctionArgumentInput",
       "kind": "stable"
     },
@@ -1535,11 +1539,19 @@
       "kind": "stable"
     },
     {
+      "name": "ViewBuilt",
+      "kind": "stable"
+    },
+    {
       "name": "ViewColumnInput",
       "kind": "stable"
     },
     {
       "name": "ViewDeclaration",
+      "kind": "stable"
+    },
+    {
+      "name": "ViewFrom",
       "kind": "stable"
     },
     {

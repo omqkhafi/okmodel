@@ -895,7 +895,7 @@ export const app = schema({
 
 ### Functions
 
-`fn()` is a function that lives in the database. This one takes a title and returns text. A plpgsql function names the tables it reads in `dependsOn`, or the declaration is OKM1824. `security: "definer"` also needs a `searchPath`, or it is OKM1823. A query cannot call it as `fn.slugify(col)` yet. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
+`fn()` is a function that lives in the database. This one takes a title and returns text. A plpgsql function names the tables it reads in `dependsOn`, or the declaration is OKM1824. `security: "definer"` also needs a `searchPath`, or it is OKM1823. The value `fn()` returns is callable: `slug(ident("title"))` in `where`, and `slug(ident("title")).as("slug")` in `select`. `orderBy` does not accept the call. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
 
 `functions.ts`:
 
