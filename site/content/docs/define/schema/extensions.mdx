@@ -84,22 +84,209 @@ export default schema({
 });
 ```
 
-### name
+### unaccent
 
-`extension("name")` from `okmodel/ext` declares that name. There is no typed operator. `ltree` is this form. A [ltree](/docs/define/table/columns#search) column needs it.
+`unaccent()` from `okmodel/pg/unaccent` declares `unaccent`. `unaccent(value)` is `unaccent(column) = unaccent(value)`.
 
-```ts title="name.ts"
-import { extension } from "okmodel/ext";
+```ts title="unaccent.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { unaccent } from "okmodel/pg/unaccent";
 import { schema, table, t } from "okmodel/pg";
+
+const fold = unaccent();
+
+const words = table("words", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({
+  tables: [words],
+  extensions: [fold],
+});
+
+export async function folded(url: string) {
+  await using db = connect(url, { schema: app });
+  return db.words.find({
+    where: { title: fold.unaccent("Café") }, // [!code focus]
+    limit: 1,
+  });
+}
+```
+
+### hstore
+
+`hstore()` from `okmodel/pg/hstore` declares `hstore`. `hasKey` is `column ? key`. `gin` uses `gin_hstore_ops`. `gist` uses `gist_hstore_ops`.
+
+```ts title="hstore.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { hstore } from "okmodel/pg/hstore";
+import { custom, schema, table, t } from "okmodel/pg";
+
+const store = hstore();
+
+const docs = table("docs", {
+  id: t.identity(),
+  attrs: custom<string>({
+    sqlType: "hstore",
+    encode: (value) => value,
+    decode: (wire) => wire,
+    extension: "hstore",
+  }),
+});
+
+const app = schema({
+  tables: [docs],
+  extensions: [store],
+});
+
+export async function withKey(url: string) {
+  await using db = connect(url, { schema: app });
+  return db.docs.find({
+    where: { attrs: store.hasKey("a") }, // [!code focus]
+    limit: 1,
+  });
+}
+```
+
+### ltree
+
+`ltree()` from `okmodel/pg/ltree` declares `ltree`. `ancestorOf` is `column @> path`. `descendantOf` is `column <@ path`. `gist` uses `gist_ltree_ops`. This is not the parent-column walk.
+
+```ts title="ltree.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { ltree } from "okmodel/pg/ltree";
+import { schema, table, t } from "okmodel/pg";
+
+const tree = ltree();
 
 const places = table("places", {
   id: t.identity(),
   path: t.ltree(),
 });
 
-export default schema({
+const app = schema({
   tables: [places],
-  extensions: [extension("ltree")], // [!code focus]
+  extensions: [tree],
+});
+
+export async function parents(url: string) {
+  await using db = connect(url, { schema: app });
+  return db.places.find({
+    where: { path: tree.ancestorOf("Top.Science.Physics") }, // [!code focus]
+    limit: 1,
+  });
+}
+```
+
+### btree_gist and btree_gin
+
+`btreeGist()` from `okmodel/pg/btree_gist` indexes an integer with `gist_int4_ops`. `btreeGin()` from `okmodel/pg/btree_gin` indexes an integer with `int4_ops`.
+
+```ts title="btree.ts"
+import { btreeGin } from "okmodel/pg/btree_gin";
+import { btreeGist } from "okmodel/pg/btree_gist";
+import { schema, table, t } from "okmodel/pg";
+
+const gist = btreeGist();
+const gin = btreeGin();
+
+const nums = table(
+  "nums",
+  {
+    id: t.identity(),
+    n: t.integer(),
+    m: t.integer(),
+  },
+  { indexes: (column) => [gist.gist(column.n.name), gin.gin(column.m.name)] }, // [!code focus]
+);
+
+export default schema({
+  tables: [nums],
+  extensions: [gist, gin],
+});
+```
+
+### fuzzystrmatch
+
+`fuzzystrmatch()` from `okmodel/pg/fuzzystrmatch` declares `fuzzystrmatch`. `levenshtein(value, distance)` is `levenshtein(column, value) = distance`. `daitchMokotoff` needs extension 1.2 and PostgreSQL 16 (OKM1812).
+
+```ts title="fuzzy.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { fuzzystrmatch } from "okmodel/pg/fuzzystrmatch";
+import { schema, table, t } from "okmodel/pg";
+
+const fuzzy = fuzzystrmatch();
+
+const words = table("words", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({
+  tables: [words],
+  extensions: [fuzzy],
+});
+
+export async function close(url: string) {
+  await using db = connect(url, { schema: app });
+  return db.words.find({
+    where: { title: fuzzy.levenshtein("sitting", 3) }, // [!code focus]
+    limit: 1,
+  });
+}
+```
+
+### pgcrypto
+
+`pgcrypto()` from `okmodel/pg/pgcrypto` declares `pgcrypto`. `digest(algorithm, hex)` compares `encode(digest(column, algorithm), 'hex')` with that hex. `fipsMode` needs extension 1.4 and PostgreSQL 18 (OKM1812).
+
+```ts title="digest.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { pgcrypto } from "okmodel/pg/pgcrypto";
+import { schema, table, t } from "okmodel/pg";
+
+const crypto = pgcrypto();
+
+const words = table("words", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({
+  tables: [words],
+  extensions: [crypto],
+});
+
+export async function hashed(url: string) {
+  await using db = connect(url, { schema: app });
+  return db.words.find({
+    where: {
+      title: crypto.digest(
+        "sha256",
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+      ),
+    }, // [!code focus]
+    limit: 1,
+  });
+}
+```
+
+### name
+
+`extension("name")` from `okmodel/ext` declares that name. There is no typed operator. `uuid-ossp` is this form. A [ltree](/docs/define/table/columns#search) column can use `ltree()` from `okmodel/pg/ltree` instead.
+
+```ts title="name.ts"
+import { extension } from "okmodel/ext";
+import { schema, table, t } from "okmodel/pg";
+
+const keys = table("keys", {
+  id: t.identity(),
+});
+
+export default schema({
+  tables: [keys],
+  extensions: [extension("uuid-ossp")], // [!code focus]
 });
 ```
 

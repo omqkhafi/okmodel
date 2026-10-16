@@ -16,12 +16,19 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### ✨ Added
 
+- `okm import drizzle <path>` writes table files from a Drizzle schema using the project's own `drizzle-orm` and the same emitter as `okm pull`. It needs no database. An existing file is OKM1855. A missing `drizzle-orm` is OKM1856. Composite foreign keys, `relations()`, and custom types are listed as not imported (D280).
 - The GitHub Action `.github/actions/migrate` posts one sticky pull-request comment from `okm migrate plan --json`: the strictest class, each step's class and lock, row estimates, and lint codes. Preview applies a database the caller created and never creates or drops one (D279).
 - `okm pull` reads a database and writes one table file per table plus the schema file. It is read-only, including on a protected target, and an existing file is OKM1855. Functions, triggers, views, policies, roles, and grants are listed under `not pulled yet` (D275).
 - `okm migrate check` warns OKM1552 when a domain check or a `LANGUAGE sql` function body reprints, and OKM1538 warns only when the type change rewrites the heap (D276).
 - `external(table)` marks a table another catalog owns. `okm catalog export` writes a snapshot whose `catalogHash` is separate from its logical identity. `defineConfig({ namespace, external })` places the catalog and verifies those snapshots. Two catalogs on one database keep separate history. A foreign key into another database is OKM1842 (D277).
 - `okm pull` writes functions, triggers, views, and materialized views. A view is SQL with its columns. Views and `BEGIN ATOMIC` bodies take `dependsOn` from `pg_depend`. A plpgsql or SQL-string body gets lexical `dependsOn` candidates. A scratch replay with `check_function_bodies` on marks each function verified or candidate-only (D278).
-- `okm import drizzle <path>` writes table files from a Drizzle schema using the project's own `drizzle-orm` and the same emitter as `okm pull`. It needs no database. An existing file is OKM1855. A missing `drizzle-orm` is OKM1856. Composite foreign keys, `relations()`, and custom types are listed as not imported (D280).
+- `okmodel/pg/unaccent`, `hstore`, `ltree`, `btree_gist`, `btree_gin`, `fuzzystrmatch`, and `pgcrypto` are generated extension packs. A feature the declared version does not include fails with OKM1812 and names `minPostgres`. `vector` is not in this version (D281).
+- `okm ext scaffold <name>` prints a starting `extension()` definition from the connected catalog. `--out` writes that file and never overwrites. It is read-only, including on a protected target (D281).
+- `okm ext test <file>` checks declared types, operators, functions, and index methods against the server. A wrong signature exits non-zero with the mismatch listed. A version the server does not meet is OKM1812. It is read-only, including on a protected target (D281).
+
+### 🐛 Fixed
+
+- `btreeGin().gin` uses the `int4_ops` operator class that `btree_gin` creates.
 
 ### ♻️ Changed
 

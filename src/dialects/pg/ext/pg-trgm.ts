@@ -9,6 +9,7 @@
 import { tag, type Tagged } from "../operators.js";
 import type { IndexCall } from "../table.js";
 import { extension, type Extension, type ExtensionOptions } from "./index.js";
+import { usingIndex } from "./using.js";
 
 /** Operand stored on a trigram operator. */
 export type TrigramQuery = {
@@ -72,17 +73,4 @@ export function pgTrgm(options: ExtensionOptions = {}): PgTrgm {
       return usingIndex(column, "gist", "gist_trgm_ops");
     },
   };
-}
-
-function usingIndex(column: string, method: string, opclass: string): IndexCall {
-  const quoted = `"${column.replaceAll('"', '""')}"`;
-  const call: IndexCall = {
-    columns: [column],
-    isUnique: false,
-    expression: `using ${method} (${quoted} ${opclass})`,
-    unique() {
-      return call;
-    },
-  };
-  return call;
 }

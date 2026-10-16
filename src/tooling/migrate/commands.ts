@@ -44,7 +44,8 @@ export function formatFailure(error: unknown, verbose = false): string {
  * Runs one `okm` invocation.
  *
  * `--version` stays in the bin. This function handles `build`, `check`,
- * `generate`, `dev`, `push`, `seed`, `ext list`, `ext check`, `doctor`,
+ * `generate`, `dev`, `push`, `seed`, `ext list`, `ext check`, `ext scaffold`,
+ * `ext test`, `doctor`,
  * `driver test`, and `migrate plan`, `apply`, `status`, and `check`.
  *
  * @param argv - Arguments after the program name
@@ -186,10 +187,20 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
   }
   if (command === "ext") {
     const sub = rest[0];
-    if (sub === "test" || sub === "scaffold") {
-      throw new OkmError("invalid", `okm ext ${sub} is not available yet.`, {
-        fix: { summary: "okm ext list and okm ext check are the commands in this version." },
-      });
+    if (sub === "scaffold" || sub === "test") {
+      const parsed = extInvocation(rest.slice(1));
+      const { extScaffold, extTest } = await import("./ext.js");
+      const text =
+        sub === "scaffold"
+          ? await extScaffold(
+              cwd,
+              requireName(parsed, "okm ext scaffold <name>"),
+              parsed.flags,
+              parsed.out,
+            )
+          : await extTest(cwd, requireName(parsed, "okm ext test <file>"), parsed.flags);
+      stdout(text);
+      return;
     }
     if (sub === "list" || sub === "check") {
       const { extProject } = await import("./ext.js");
@@ -197,10 +208,47 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
       return;
     }
     throw new OkmError("invalid", `Unknown command ext ${sub ?? ""}.`, {
-      fix: { summary: "Use okm ext list or okm ext check." },
+      fix: { summary: "Use okm ext list, okm ext check, okm ext scaffold, or okm ext test." },
     });
   }
   throw new OkmError("invalid", `Unknown command ${command ?? ""}.`);
+}
+
+function requireName(parsed: ExtParsed, usage: string): string {
+  if (parsed.name === undefined || parsed.name.length === 0) {
+    throw new OkmError("invalid", `${usage} needs a name.`, {
+      fix: { summary: `Pass ${usage}.` },
+    });
+  }
+  return parsed.name;
+}
+
+type ExtParsed = {
+  readonly name: string | undefined;
+  readonly out: string | undefined;
+  readonly flags: InvokeFlags;
+};
+
+function extInvocation(args: readonly string[]): ExtParsed {
+  const rest: string[] = [];
+  let out: string | undefined;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index] ?? "";
+    if (arg === "--out" || arg.startsWith("--out=")) {
+      const value = arg === "--out" ? args[index + 1] : arg.slice("--out=".length);
+      if (value === undefined || value.length === 0 || value.startsWith("--")) {
+        throw new OkmError("invalid", "--out needs a file.", {
+          fix: { summary: "Pass --out <file>. The command never overwrites." },
+        });
+      }
+      out = value;
+      if (arg === "--out") index += 1;
+      continue;
+    }
+    rest.push(arg);
+  }
+  const parsed = splitFlags(rest);
+  return { name: parsed.name, out, flags: invoke(parsed) };
 }
 
 function invoke(parsed: Parsed): InvokeFlags {
@@ -302,6 +350,8 @@ const COMMANDS: readonly (readonly [string, string])[] = [
   ["driver test <driver>", "Run conformance against one driver."],
   ["ext list", "List extensions the server can install."],
   ["ext check", "Compare declared extensions with the server."],
+  ["ext scaffold <name>", "Print a starting extension() definition."],
+  ["ext test <file>", "Check an extension() definition against the server."],
   ["generate [name]", "Write the next migration."],
   [
     "import drizzle <path>",

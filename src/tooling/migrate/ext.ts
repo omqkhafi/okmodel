@@ -1,10 +1,15 @@
 /**
- * `okm ext list` and `okm ext check`.
+ * `okm ext list`, `check`, `scaffold`, and `test`.
  *
- * Both talk to the selected target. List prints every extension the server
- * can install, and the installed version when one is present. Check compares
- * the schema's declarations with what is installed.
+ * All four talk to the selected target and are read-only, including on a
+ * protected target. List prints every extension the server can install.
+ * Check compares the schema's declarations with what is installed. Scaffold
+ * prints a starting definition. Test checks that definition against the server.
  */
+
+import { existsSync, writeFileSync } from "node:fs";
+import { isAbsolute, join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { open } from "../../adapters/pg/postgresjs.js";
 import { OkmError } from "../../contracts/error.js";
@@ -14,6 +19,13 @@ import type { CatalogObject, ExtensionObject } from "../../contracts/catalog/typ
 import { assertTargetPolicy, selectTarget, type InvokeFlags } from "./policy.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
 import { openProject } from "./project.js";
+import {
+  extensionsFromModule,
+  readSurface,
+  refuseMismatches,
+  renderScaffold,
+  surfaceMismatches,
+} from "./ext-surface.js";
 
 /**
  * Runs `list` or `check` against the selected target.
@@ -125,6 +137,93 @@ function extensionNeeds(name: string, want: string, have: string): string {
   const need = floor?.[1] ?? want;
   const higher = floor === null ? "" : " or higher";
   return `Extension ${name} needs ${need}${higher}. The server has ${have}. Install a version the declaration accepts, or change the pin.`;
+}
+
+/**
+ * Prints a starting definition for one installed extension.
+ *
+ * `--out` writes the file when that path does not exist. An existing file
+ * is refused and nothing is written. Without `--out`, the text is returned
+ * for stdout.
+ *
+ * @param cwd - Project directory
+ * @param name - Extension name
+ * @param flags - Target and protection flags
+ * @param out - File to write, when the caller passed `--out`
+ * @returns The definition, or a one-line wrote message
+ */
+export async function extScaffold(
+  cwd: string,
+  name: string,
+  flags: InvokeFlags,
+  out?: string,
+): Promise<string> {
+  if (out !== undefined) {
+    const path = isAbsolute(out) ? out : join(cwd, out);
+    if (existsSync(path)) {
+      throw new OkmError(
+        "invalid",
+        `okm ext scaffold would overwrite ${path}. Nothing was written.`,
+        { fix: { summary: "Pass a path that does not exist. The command never overwrites." } },
+      );
+    }
+  }
+  const text = await withServer(cwd, flags, async (pool) =>
+    renderScaffold(await readSurface(pool, name)),
+  );
+  if (out === undefined) return text;
+  const path = isAbsolute(out) ? out : join(cwd, out);
+  writeFileSync(path, text);
+  return `wrote ${path}\n`;
+}
+
+/**
+ * Checks one definition file against the connected server.
+ *
+ * Every declared type, operator, function, and index method must exist with
+ * the declared signature. `requires` must be met (OKM1812).
+ *
+ * @param cwd - Project directory
+ * @param file - Definition file, relative to `cwd` or absolute
+ * @param flags - Target and protection flags
+ * @returns `ok <name>` for each definition
+ */
+export async function extTest(cwd: string, file: string, flags: InvokeFlags): Promise<string> {
+  const path = isAbsolute(file) ? file : join(cwd, file);
+  const imported: unknown = await import(pathToFileURL(path).href);
+  const declared = extensionsFromModule(imported);
+  if (declared.length === 0) {
+    throw new OkmError("invalid", `okm ext test found no extension() in ${path}.`, {
+      fix: { summary: "Export the value extension() returns." },
+    });
+  }
+  return withServer(cwd, flags, async (pool) => {
+    const lines: string[] = [];
+    for (const extension of declared) {
+      const server = await readSurface(pool, extension.name);
+      refuseMismatches(extension.name, surfaceMismatches(extension, server));
+      lines.push(`ok ${extension.name}`);
+    }
+    return `${lines.join("\n")}\n`;
+  });
+}
+
+async function withServer(
+  cwd: string,
+  flags: InvokeFlags,
+  body: (pool: DriverPool) => Promise<string>,
+): Promise<string> {
+  const opened = await openProject(cwd);
+  const target = selectTarget(opened.config, flags.target);
+  assertTargetPolicy(target, "check", flags.allowProtected);
+  const pool = open({ url: target.url, max: 1 });
+  try {
+    return await body(pool);
+  } catch (error) {
+    throw sessionFailure(error) ?? error;
+  } finally {
+    await finishQuiet(() => pool.close());
+  }
 }
 
 function versionAccepted(declared: string | undefined, installed: string): boolean {

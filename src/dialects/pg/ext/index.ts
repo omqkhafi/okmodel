@@ -10,6 +10,56 @@ import { OkmError } from "../../../contracts/error.js";
 import { extensionObject } from "../../../contracts/catalog/extension.js";
 import type { ExtensionObject } from "../../../contracts/catalog/types.js";
 
+/** One type the definition says the extension provides. */
+export type ExtensionType = {
+  readonly name: string;
+};
+
+/** One operator the definition says the extension provides. */
+export type ExtensionOperator = {
+  readonly name: string;
+  readonly left?: string;
+  readonly right?: string;
+  readonly result: string;
+};
+
+/** One function the definition says the extension provides. */
+export type ExtensionFunction = {
+  readonly name: string;
+  readonly args: readonly string[];
+  readonly returns: string;
+};
+
+/** One index method the definition says the extension provides. */
+export type ExtensionIndexMethod = {
+  readonly name: string;
+  readonly opclass?: string;
+};
+
+/**
+ * Types, operators, functions, and index methods a definition declares.
+ *
+ * `okm ext test` checks these against the connected server. They are not
+ * catalog objects and they do not change the catalog hash.
+ */
+export type ExtensionProvides = {
+  readonly types?: readonly ExtensionType[];
+  readonly operators?: readonly ExtensionOperator[];
+  readonly functions?: readonly ExtensionFunction[];
+  readonly indexMethods?: readonly ExtensionIndexMethod[];
+};
+
+/**
+ * Version floors for a definition.
+ *
+ * `postgres` is `>=15`. `version` is an exact pin or a `>=` floor.
+ * `okm ext test` checks both against the connected server (OKM1812).
+ */
+export type ExtensionRequires = {
+  readonly postgres?: string;
+  readonly version?: string;
+};
+
 /** Options on {@link extension}. */
 export type ExtensionOptions = {
   /** Exact pin (`1.6`) or a floor (`>=0.7`). Omitted means unpinned. */
@@ -22,6 +72,14 @@ export type ExtensionOptions = {
    * The default is `true`. A move of a non-relocatable extension is OKM1814.
    */
   readonly relocatable?: boolean;
+  /**
+   * Floors `okm ext test` checks. Not stored in the catalog record.
+   */
+  readonly requires?: ExtensionRequires;
+  /**
+   * Objects `okm ext test` checks. Not stored in the catalog record.
+   */
+  readonly provides?: ExtensionProvides;
 };
 
 /**
@@ -35,6 +93,10 @@ export type Extension = {
   readonly schema: string;
   readonly relocatable: boolean;
   readonly version?: string;
+  /** Floors from {@link ExtensionOptions.requires}. Absent when omitted. */
+  readonly requires?: ExtensionRequires;
+  /** Objects from {@link ExtensionOptions.provides}. Absent when omitted. */
+  readonly provides?: ExtensionProvides;
   /**
    * Catalog records for this declaration.
    *
@@ -59,6 +121,8 @@ export function extension(name: string, options: ExtensionOptions = {}): Extensi
   const schema = options.schema ?? "public";
   const relocatable = options.relocatable ?? true;
   const version = options.version;
+  const requires = options.requires;
+  const provides = options.provides;
   const record = extensionObject({
     name,
     schema,
@@ -71,6 +135,8 @@ export function extension(name: string, options: ExtensionOptions = {}): Extensi
     schema,
     relocatable,
     ...(version !== undefined ? { version } : {}),
+    ...(requires !== undefined ? { requires } : {}),
+    ...(provides !== undefined ? { provides } : {}),
     contribute(peers, built) {
       const names = peerNames(peers);
       assertDeclared(names, built);

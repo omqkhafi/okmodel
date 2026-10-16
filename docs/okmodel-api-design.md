@@ -317,7 +317,7 @@ find({ where: { name: pgTrgm.similar(q) }, limit: 20 })
 
 TimescaleDB, ParadeDB and pg_partman add catalog objects rather than types and are evaluated after 1.0.
 
-**Version awareness.** Definitions read `minPostgres` and the declared extension version. A feature the declared versions lack (`halfvec` below pgvector 0.7, an explicit `uuidv7()` below Postgres 18) fails at schema build (OKM1812). A bare `t.id()` stores `gen_random_uuid()` and is not that feature (D262). The message names the feature, the major it needs, and `minPostgres`. When the floor is omitted, `okm migrate apply` and `okm push` check the connected server before the first statement: a migration that sets a `default uuidv7()` on a server below 18 without a `uuidv7()` function stops with OKM1812 and nothing is created (D185). Nothing is checked in `connect()`. `requires: { postgres: ">=17" }` is the same floor and is deprecated (D261). Core features are never gated behind an extension.
+**Version awareness.** Definitions read `minPostgres` and the declared extension version. A feature the declared versions lack (`halfvec` below pgvector 0.7, an explicit `uuidv7()` below Postgres 18) fails at schema build (OKM1812). A generated pack method fails when that method is called, with the same code, and names `minPostgres` (D281). The check is not inside `contribute()`. A bare `t.id()` stores `gen_random_uuid()` and is not that feature (D262). The message names the feature, the major it needs, and `minPostgres`. When the floor is omitted, `okm migrate apply` and `okm push` check the connected server before the first statement: a migration that sets a `default uuidv7()` on a server below 18 without a `uuidv7()` function stops with OKM1812 and nothing is created (D185). Nothing is checked in `connect()`. `requires: { postgres: ">=17" }` is the same floor and is deprecated (D261). Core features are never gated behind an extension.
 
 **Lifecycle through migrations.**
 
@@ -335,11 +335,11 @@ Objects that belong to an extension (found through `pg_depend` deptype `e`) are 
 
 **Runtime settings** (`hnsw.ef_search`, `pg_trgm.similarity_threshold`) are per operation, not per connection: `vector.cosine(col, q, { efSearch: 100 })` wraps the statement in a short transaction with `SET LOCAL`, which stays correct behind poolers in transaction mode.
 
-**Safety.** An extension adds types, operators, functions and index methods only. It cannot alter queries or read data; its SQL is tagged, so injection rules apply; final safety verification runs after every contribution. A definition used twice fails at build (OKM1813). `okm ext list` and `okm ext check` talk to the connected server. `okm ext test` and `okm ext scaffold` are not in this version.
+**Safety.** An extension adds types, operators, functions and index methods only. It cannot alter queries or read data; its SQL is tagged, so injection rules apply; final safety verification runs after every contribution. A definition used twice fails at build (OKM1813). `okm ext list`, `okm ext check`, `okm ext scaffold`, and `okm ext test` talk to the connected server. All four are read-only, including on a protected target. `okm ext test <file>` checks every declared type, operator, function, and index method against that server and exits non-zero with the mismatches listed. A declared version the server does not meet is OKM1812.
 
 **Own definitions.** A developer writes `extension("acme_geo", { requires, provides: { types, operators, indexMethods, functions, triggers, views } })`. Functions, triggers and views are first-class catalog objects (section 5.7), owned by the extension as `external`. Forward-only SQL bundles do not exist; `okm migrate new --sql` is the explicit escape hatch.
 
-**Extension without a definition.** `okm ext scaffold <name>` is not in this version. When it arrives it reads the connected server's catalog (`pg_depend`, `pg_type`, `pg_proc`, `pg_operator`, `pg_settings`) and prints a starting definition that the developer owns and edits.
+**Extension without a definition.** `okm ext scaffold <name>` reads the connected server's catalog (`pg_depend`, `pg_type`, `pg_proc`, `pg_operator`, `pg_settings`) and prints a starting definition that the developer owns and edits. It writes a file only when `--out` is given, and it never overwrites an existing file. `vector` is not a built-in in this version: the CI images do not ship pgvector (D281).
 
 ### 4.2 Layers and the driver contract
 
@@ -1394,7 +1394,7 @@ The startup compatibility check allows the database to be ahead of the app by `e
 | `okm generate` | produce migration SQL from the schema, including extension lifecycle; no TS is generated |
 | `okm push` | prototype sync; blocked on a `protected` target (section 19.7). A target named `production` is not blocked unless that entry sets `protected` |
 | `okm pull` | read one database and write one table file per table, plus the schema file (D275, D278). Written: tables, columns (type, default, nullability, identity, stored generated), primary and composite keys, unique constraints, checks, single-column foreign keys, indexes (partial and expression when the index has a column), identity sequences, enums, domains, extensions, functions, triggers, views, and materialized views. A view is the SQL-string form. Views and `BEGIN ATOMIC` bodies take edges from `pg_depend`. A plpgsql or SQL-string body gets lexical `dependsOn` candidates. A scratch replay with `check_function_bodies` on marks each function `verified` or `candidate-only`. Printed under `not pulled yet`, with a count: policies, roles, grants, aggregates, procedures, event triggers, rules, and anything `table()` cannot say (a partition, a composite foreign key, a standalone sequence, an expression index with no column, a column type with no builder). An existing file is OKM1855. The selected namespaces are read-only, including on a protected target |
-| `okm ext list\|check` | list the extensions the connected server can install and the version that is installed; check those versions against the schema. `okm ext test` and `okm ext scaffold` are not in this version |
+| `okm ext list\|check\|scaffold <name>\|test <file>` | list the extensions the connected server can install and the version that is installed; check those versions against the schema; print a starting `extension()` definition from the server catalog; check a definition file's types, operators, functions, and index methods against that server. All four are read-only, including on a protected target. `scaffold` writes a file only with `--out` and never overwrites |
 | `okm seed <file>` | seeds with factories |
 | `okm import drizzle <path>` | convert a Drizzle schema into table files with the same emitter as `okm pull` (D280). The file is imported with the project's own `drizzle-orm`, which runs that code. okmodel does not depend on it. A missing `drizzle-orm` is OKM1856. An existing file is OKM1855. Needs no database. Composite foreign keys, `relations()`, custom types, views, and sequences `table()` cannot map are printed under `not imported` |
 | `okm doctor [code]` | explain a code or diagnose the project |
@@ -1443,7 +1443,7 @@ A new Target is created from the current provisionable snapshot, not by replayin
 
 | Operation class | On a protected target |
 |---|---|
-| read-only: `plan`, `status`, `okm check`, `okm ext check`, drift, `verify`, `pull`, `catalog export`, `inspect` | allowed |
+| read-only: `plan`, `status`, `okm check`, `okm ext check`, `okm ext scaffold`, `okm ext test`, drift, `verify`, `pull`, `catalog export`, `inspect` | allowed |
 | `okm migrate check` | refused. The command writes a scratch schema. Point it at a throwaway Postgres. `--allow-protected` does not apply |
 | `expand` migration (including extension add and upgrade) | allowed |
 | `reference` rows | allowed (additive) |
