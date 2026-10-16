@@ -1,0 +1,83 @@
+---
+title: "Several catalogs"
+description: "Two catalogs on one database. external() keeps a table the other catalog owns."
+---
+
+`schema()` compiles `public`. The Postgres schema comes from `defineConfig({ namespace })`. Each catalog has its own namespace, its own ownership, and its own `okm_meta`.
+
+`external(users)` marks a table the other catalog exported. The plan does not create, alter, or drop it. A managed table in the same database may reference it. A key that points at another database is OKM1842.
+
+`okm catalog export` writes the snapshot. The dependent lists that file in `external`. `okm check` and `okm migrate check` compare the declaration and the database with the file. A stale or missing snapshot is OKM1841. `okm check` lists a cross-catalog foreign key as `coupling`.
+
+`connect()` still reads `okm_meta` on the `public` search path. It does not see a hash stored in another schema.
+
+### owning catalog
+
+```ts title="identity/schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+export const users = table("users", {
+  id: t.uuid().primaryKey(),
+  email: t.text(),
+});
+
+export default schema({ tables: [users] });
+```
+
+```ts title="identity/okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: process.env.DATABASE_URL,
+  namespace: "identity",
+});
+```
+
+```sh
+okm generate init
+okm migrate apply
+okm catalog export --out identity.okm.json
+```
+
+### dependent catalog
+
+```ts title="billing/schema.ts"
+import { external, schema, table, t } from "okmodel/pg";
+import { users } from "../identity/schema.ts";
+
+const invoices = table("invoices", {
+  id: t.uuid().primaryKey(),
+  userId: t.uuid().references("users"),
+});
+
+export default schema({ tables: [external(users), invoices] });
+```
+
+```ts title="billing/okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: process.env.DATABASE_URL,
+  namespace: "billing",
+  external: ["../identity/identity.okm.json"],
+});
+```
+
+```sh
+okm generate init
+okm migrate apply
+okm check
+okm migrate check
+```
+
+The invoices migration references `"identity"."users"`. It does not create that table. Both commands pass while the snapshot matches the database. Drop `email` in the identity catalog and skip `okm catalog export`: the billing check fails with OKM1841.
+
+<Callout type="info" title="Snapshot">
+The file has `catalogHash` and, separately, `logical` (`namespace`, `name`, `format`). It has column names and types. It has no function and no connection URL.
+</Callout>
+
+<Callout type="error" title="OKM1842">
+`A foreign key references identity in database <name>. This database is <other>.` Keep the foreign key inside one database.
+</Callout>

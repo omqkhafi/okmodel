@@ -9,7 +9,13 @@ import { OkmError } from "../../contracts/error.js";
 import { formatFindings, hasError, lintRefusal } from "./lint.js";
 import { sessionFailure } from "./lost.js";
 import type { InvokeFlags } from "./policy.js";
-import { buildProject, checkProject, generateProject, planProject } from "./project.js";
+import {
+  buildProject,
+  checkProject,
+  exportProject,
+  generateProject,
+  planProject,
+} from "./project.js";
 
 /** Where a command reads the project and writes its text. */
 export type CommandIo = {
@@ -59,6 +65,16 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
   if (command === "build") {
     const directory = await buildProject(cwd);
     stdout(`${directory}\n`);
+    return;
+  }
+  if (command === "catalog") {
+    const sub = rest[0];
+    if (sub !== "export") {
+      throw new OkmError("invalid", `Unknown command catalog ${sub ?? ""}.`, {
+        fix: { summary: "Use okm catalog export." },
+      });
+    }
+    stdout(await exportProject(cwd, rest.slice(1)));
     return;
   }
   if (command === "check") {
@@ -262,6 +278,7 @@ function splitFlags(args: readonly string[]): Parsed {
 
 const COMMANDS: readonly (readonly [string, string])[] = [
   ["build", "Write the schema build."],
+  ["catalog export", "Write the catalog snapshot."],
   ["check", "Lint the schema and compare it with one target."],
   ["dev", "Watch the schema and reload."],
   ["doctor [code]", "Print a target report, or one error code."],

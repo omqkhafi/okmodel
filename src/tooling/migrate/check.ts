@@ -35,6 +35,7 @@ import {
 } from "./lint.js";
 import { planMigration, type MigrationPlan, type PlanStep } from "./plan.js";
 import { assertDirectConnection, selectTarget, type InvokeFlags } from "./policy.js";
+import { assertLiveExternal, assertSnapshots, loadSnapshots } from "./export.js";
 import { openProject } from "./project.js";
 import { proveCheckSnapshot, replayCheckHistory } from "./sandbox.js";
 import { transactionControl } from "./sql-lex.js";
@@ -102,6 +103,8 @@ export async function checkMigrations(
       },
     );
   }
+  assertSnapshots(cwd, opened.config, opened.built.catalog);
+  await assertLiveExternal(target.url, opened.built.catalog, loadSnapshots(cwd, opened.config));
   const directory = projectPath(cwd, opened.config.migrations ?? "migrations");
   const history = readHistory(directory);
   const previous = previousFailures(history);

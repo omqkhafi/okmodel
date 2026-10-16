@@ -10,6 +10,7 @@
  */
 
 import { open } from "../../adapters/pg/postgresjs.js";
+import { quoteIdent } from "../../dialects/pg/ddl.js";
 import { startupHash } from "../../contracts/catalog/document.js";
 import type { Catalog } from "../../contracts/catalog/types.js";
 import { hasError, lintMigrationDirectory, lintRefusal } from "./lint.js";
@@ -276,6 +277,7 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
     await prepareMigrationRole(connection, request, session);
     await assertExtensionsAvailable(connection, request.migrations);
     await assertUuidV7Available(connection, request.migrations);
+    await enterCatalogSchema(connection, request.schema ?? "public");
     const state = request.snapshot === undefined ? undefined : await targetState(connection);
     if (request.snapshot !== undefined && state !== undefined) {
       if (state.kind === "empty") {
@@ -383,6 +385,7 @@ export async function applyProject(
     ...(config.roles !== undefined
       ? { migrationRole: config.roles.migration, appRole: config.roles.app }
       : {}),
+    ...catalogSchema(config.namespace),
     lintDirectory: directory,
     onProgress: (line) => {
       if (write !== undefined) write(`${line}\n`);
@@ -414,6 +417,7 @@ export async function pushProject(cwd: string, flags: InvokeFlags): Promise<stri
     after: head.catalog,
     renames: head.renames,
     name: "push",
+    ...catalogSchema(config.namespace),
     ...batchSizeField(config.backfill?.batchSize),
   });
   if (plan.steps.length === 0) return `target ${target.name}\nno changes\n`;
@@ -434,6 +438,7 @@ export async function pushProject(cwd: string, flags: InvokeFlags): Promise<stri
     ...(config.roles !== undefined
       ? { migrationRole: config.roles.migration, appRole: config.roles.app }
       : {}),
+    ...catalogSchema(config.namespace),
   });
   return formatReport(report);
 }
@@ -721,6 +726,23 @@ async function insertReference(connection: DriverConnection, request: ApplyReque
 
 function concreteSchema(request: ApplyRequest): string {
   return request.searchPath ?? request.schema ?? "public";
+}
+
+function catalogSchema(namespace: string | undefined): { readonly schema: string } | undefined {
+  if (namespace === undefined || namespace === "public") return undefined;
+  return { schema: namespace };
+}
+
+/**
+ * Creates a non-public schema and points this session at it.
+ *
+ * `okm_meta` is unqualified, so the search path is what gives each catalog
+ * its own history. `public` is left alone: `connect()` still reads that name.
+ */
+async function enterCatalogSchema(connection: DriverConnection, schema: string): Promise<void> {
+  if (schema === "public") return;
+  await connection.execute(`create schema if not exists ${quoteIdent(schema)}`);
+  await connection.execute(`set search_path to ${quoteIdent(schema)}`);
 }
 
 type TargetShape =

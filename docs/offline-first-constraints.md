@@ -14,6 +14,8 @@ A future consumer also needs a logical, serializable description derived from th
 
 Record the gap. Build no API.
 
+`okm catalog export` writes a snapshot derived from the schema source (D275). The file is JSON. `catalogHash` is the physical catalog hash. `logical` is `namespace`, `name`, and `format`, and it is not that hash (R5). A table entry is a namespace, a name, and columns (`name`, `type`, `nullable`). There is no function, no default, no expression, and no connection URL. A dependent points `defineConfig({ external })` at the file. That file is the verification input. It is not the logical description this section names: keys, including composite keys, relations, codecs, defaults, client-generated id rules, and a schema version are still absent. There is no sync API.
+
 ## R2. Transactions with a stated atomicity scope
 
 Verify across drivers: an atomic `batch`, an interactive `tx` where the driver supports one, nested savepoints, rollback, affected-row behavior, and `outcome_unknown` (a COMMIT was sent and the result never arrived). State exactly what `batch()` guarantees: ORM-issued statements, or any SQL, DDL included. There is no universal atomicity claim. An unsupported case is refused explicitly. Test COMMIT loss on each driver.
