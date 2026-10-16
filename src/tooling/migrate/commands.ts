@@ -85,6 +85,11 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
     stdout(await pushProject(cwd, invoke(splitFlags(rest))));
     return;
   }
+  if (command === "pull") {
+    const { pullProject } = await import("./pull.js");
+    stdout((await pullProject(cwd, rest)).text);
+    return;
+  }
   if (command === "migrate") {
     const sub = rest[0];
     const parsed = splitFlags(rest.slice(1));
@@ -269,6 +274,7 @@ const COMMANDS: readonly (readonly [string, string])[] = [
   ["migrate status", "Print whether the target is current."],
   ["migrate check", "Replay migration history in a scratch schema."],
   ["push", "Apply the schema diff to one target."],
+  ["pull", "Write table files and a schema from one database."],
   ["seed <file>", "Run a seed file on one target."],
 ];
 

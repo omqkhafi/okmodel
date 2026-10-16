@@ -1,6 +1,6 @@
 # OKModel — API design (draft 26)
 
-Status: normative specification, draft 26. The repository implements it through the 0.8.0 release. Decisions run D1–D274. Draft 18 applied the M0 gate decisions D115–D127 (evidence: `docs/m0-findings.md` in the repository); draft 19 added D128 (catalog error codes); draft 20 added D130 (column definition and codec error codes); draft 21 added D131 (removing a picklist or enum value); draft 22 adds D132 (reserved options, reference names); draft 24 adds the 0.2 operator set (section 10.1); draft 26 takes the primary-key and Postgres 15 floor edits made in P17G (D148, D151) and renames the uuid default to `uuidv4` (D153). Draft 26 records the shipped id builder shape (P19, D153, D154) and the `defaults.id` fix text. Supersedes drafts 1–21 of this file and the API sections of `orm-research-design.md`. Evidence for the draft-4 changes is in `okmodel-gap-research.md`.
+Status: normative specification, draft 26. The repository implements it through the 0.8.0 release. Decisions run D1–D275. Draft 18 applied the M0 gate decisions D115–D127 (evidence: `docs/m0-findings.md` in the repository); draft 19 added D128 (catalog error codes); draft 20 added D130 (column definition and codec error codes); draft 21 added D131 (removing a picklist or enum value); draft 22 adds D132 (reserved options, reference names); draft 24 adds the 0.2 operator set (section 10.1); draft 26 takes the primary-key and Postgres 15 floor edits made in P17G (D148, D151) and renames the uuid default to `uuidv4` (D153). Draft 26 records the shipped id builder shape (P19, D153, D154) and the `defaults.id` fix text. Supersedes drafts 1–21 of this file and the API sections of `orm-research-design.md`. Evidence for the draft-4 changes is in `okmodel-gap-research.md`.
 
 Name: **OKModel** (short **OKM**). Package `okmodel` on npm and repository `omqkhafi/okmodel`, CLI bins `okm` and `okmodel` (same program), error class `OkmError`, error codes `OKM1xxx`, config file `okm.config.ts`, generated folder `.okm/`, metadata table `okm_meta`. The bin names are not npm package names, so a bare `bunx okm` without a local or global install could fetch an unrelated package; the README tells developers to install first (`bun add -d okmodel`, then `bunx okm`, or a global install).
 
@@ -10,7 +10,7 @@ Toolchain: **TypeScript 7** (the native compiler, still invoked as `tsc`) for ty
 
 ## 1. Decisions log
 
-Moved to `okmodel-decisions.md`. Decisions run D1–D274. This file is the normative spec; every section states a rule, an example and the guard that enforces it.
+Moved to `okmodel-decisions.md`. Decisions run D1–D275. This file is the normative spec; every section states a rule, an example and the guard that enforces it.
 
 ## 2. Design rules and the internal goal
 
@@ -1392,7 +1392,7 @@ The startup compatibility check allows the database to be ahead of the app by `e
 | `okm migrate check` | CI: replay the history into a scratch schema (OKM1547), previous catalog (OKM1548), stale head (OKM1549), and lint. Exit zero prints `ok N migrations`. A protected target is refused. No prompts |
 | `okm generate` | produce migration SQL from the schema, including extension lifecycle; no TS is generated |
 | `okm push` | prototype sync; blocked on a `protected` target (section 19.7). A target named `production` is not blocked unless that entry sets `protected` |
-| `okm pull` | introspect an existing database into table files and a schema (M2) |
+| `okm pull` | read one database and write one table file per table, plus the schema file (D275). Written: tables, columns (type, default, nullability, identity, stored generated), primary and composite keys, unique constraints, checks, single-column foreign keys, indexes (partial and expression when the index has a column), identity sequences, enums, domains, and extensions. Printed under `not pulled yet`, with a count: functions, triggers, views, materialized views, policies, roles, grants, and anything `table()` cannot say (a partition, a composite foreign key, a standalone sequence, an expression index with no column, a column type with no builder). An existing file is OKM1855. Read-only, including on a protected target |
 | `okm ext list\|check` | list the extensions the connected server can install and the version that is installed; check those versions against the schema. `okm ext test` and `okm ext scaffold` are not in this version |
 | `okm seed <file>` | seeds with factories |
 | `okm import drizzle <path>` | convert a Drizzle schema (M2) |
@@ -1627,6 +1627,7 @@ test("today view runs one query", async () => {
 | Targets resolving to the same database differ in protection, or tenants of one `schemaPerTenant` database differ in protection | `okm check` / `okm doctor` | OKM1852 |
 | Several targets configured and none named (`--target`) | CLI | OKM1853 |
 | Two statements saw different backend pids (a pooler handed out a new session) | apply, seed, check | OKM1854 |
+| `okm pull` would overwrite a file | CLI | OKM1855 |
 
 ## 22. Non-goals
 

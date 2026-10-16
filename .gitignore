@@ -1,4 +1,5 @@
 node_modules
+.okm-pull-*
 .env
 dist
 .doc-fences

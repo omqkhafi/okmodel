@@ -739,6 +739,12 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
       "Two statements on the same connection saw different backend pids. A transaction-mode pooler is in the way.",
     fix: "Use a direct connection, or pass --allow-pooler.",
   },
+  {
+    code: "OKM1855",
+    title: "Pull would overwrite",
+    summary: "okm pull found a file it would replace. It writes nothing.",
+    fix: "Pass --out <directory> to write somewhere else, or move the file.",
+  },
 ];
 
 let byCode: ReadonlyMap<string, ErrorDoc> | undefined;
