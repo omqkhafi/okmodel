@@ -388,7 +388,7 @@ Each row is one discarded patch, measured with the same stubbed walk as the gate
 | One shared SQL-lane import | `lane()` returns `import("./sql-lane.js")` | App 90,868 / 29,439 (+45 / +7), 32 minified left. Connect entries +45 minified. Incremental +0 | Fits. This is the call site for raw SQL and `explain()` together |
 | Dev inspector routing reasons | Already behind the lazy topology import | +0 on the stubbed graphs if the body stays in that module | Fits in the existing chunk |
 | `okmodel/otel` (§5.5) | New file, not imported by app or connect | Gated +0. Own bundle 103 / 112 | Fits. No new gate |
-| Neon adapter (§4) | Batch HTTP `open` plus a connect entry. No reserve, stream, or listen | Existing gates +0. Own connect graph 32,159 / 11,436. Incremental 577 | Fits the current gates. P107 sets a new gate from the real adapter. Floor recorded here. Upper bound is the postgres.js connect graph, 40,236 / 14,028 and incremental 15,953, because that graph has the session Neon does not |
+| Neon adapter (§4) | WebSocket pool and HTTP batch in one connect entry | Existing gates +0. Own connect graph 40,837 / 14,135 stubbed | P107 sets the gate at 42,000 / 14,500 (measured + 3%, rounded down to the hundred, D156, D157, D160). The earlier HTTP-only floor was 32,159 / 11,436 |
 | `okm driver test` (§4.2, §20) | New tooling file | Gated +0. Own file 128 / 114 | Fits |
 | Typed `fn` call (§5.7, D190) | Branch in `plan.ts` | App 90,955 / 29,473 (+132 / +41), 55 over 90,900. Connect entries +132 minified and under | Does not fit in `plan.ts` |
 | Typed `fn` call as a `WhereValue` member | One object union arm | query-200 17,253 / 6,379 (+1 / +2). Composite 24,450 / 6,933 (+1 / +2), 2 types over 6,931 | Does not fit in the base where type |

@@ -94,6 +94,40 @@ export const BUNSQL_CAPABILITIES = {
 } as const satisfies DriverCapabilities;
 
 /**
+ * Neon WebSocket pool execution flags.
+ *
+ * Interactive transactions pass on a direct connection. `stream`, `listen`,
+ * `cancel`, and `describe` stay false: a server cursor, `LISTEN`, and a
+ * side-channel cancel are session features the pooler does not keep, and the
+ * client has no describe API. Statements use the unnamed protocol.
+ * `prepared: "named"` is not for a transaction-mode pooler.
+ */
+export const NEON_WEBSOCKET_CAPABILITIES = {
+  transactions: "interactive",
+  stream: false,
+  listen: false,
+  cancel: false,
+  prepared: "unnamed",
+  describe: false,
+} as const satisfies DriverCapabilities;
+
+/**
+ * Neon HTTP execution flags.
+ *
+ * One request is one statement. `sql.transaction` is the atomic batch.
+ * There is no interactive `tx()`, no `LISTEN`, no server cursor, and no
+ * cancel of a statement the server has already started.
+ */
+export const NEON_HTTP_CAPABILITIES = {
+  transactions: "batch",
+  stream: false,
+  listen: false,
+  cancel: false,
+  prepared: "none",
+  describe: false,
+} as const satisfies DriverCapabilities;
+
+/**
  * Reads one capability flag.
  *
  * @param flags - Declared capabilities

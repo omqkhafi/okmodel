@@ -98,13 +98,13 @@ bunx okm dev
 
 ## driver test
 
-`okm driver test <driver>` runs the conformance suites against one driver and prints a report. `<driver>` is `pglite`, `postgresjs`, `pg`, `bun`, or a path to a module. The module exports `name`, `capabilities`, `open`, and `connect`. `memory: true` means one in-process connection. `notices: false` means the driver does not surface `RAISE NOTICE`. `size` is the pool size the stats case expects. Omitted, `memory` is false, `notices` is true, and `size` is 1 for an in-process driver and 4 otherwise.
+`okm driver test <driver>` runs the conformance suites against one driver and prints a report. `<driver>` is `pglite`, `postgresjs`, `pg`, `bun`, `neon`, or a path to a module. The module exports `name`, `capabilities`, `open`, and `connect`. `memory: true` means one in-process connection. `notices: false` means the driver does not surface `RAISE NOTICE`. `size` is the pool size the stats case expects. Omitted, `memory` is false, `notices` is true, and `size` is 1 for an in-process driver and 4 otherwise.
 
 `--url <postgres-url>` is the database. `--url=<postgres-url>` is the same. `DATABASE_URL` is used when the flag is omitted. `pglite` does not connect to it. The other built-in drivers need one of the two. The command does not read `okmodel.config.ts`.
 
 The report starts with `driver <name>` and `dialect postgres`. Then one row per case, tab-separated: case id, behavior, result, capability. The result is `pass`, `fail`, or `unsupported`. The capability is set on an unsupported row and names the limit (`cancel`, `describe`, `stream`, `listen`, `notices`, `one connection`, `no socket to cut`). A failure exits 1. An unsupported case does not.
 
-PGlite has no socket to cut, so COMMIT loss is `unsupported` with capability `no socket to cut`.
+PGlite has no socket to cut, so COMMIT loss is `unsupported` with capability `no socket to cut`. Neon uses the same row: the harness cut is a TCP relay, and Neon speaks WebSocket or HTTP.
 
 ```sh
 okm driver test pglite

@@ -1215,6 +1215,52 @@
       "kind": "stable"
     }
   ],
+  "okmodel/pg/neon": [
+    {
+      "name": "DriverError",
+      "kind": "stable"
+    },
+    {
+      "name": "NeonConfig",
+      "kind": "stable"
+    },
+    {
+      "name": "NeonConnectOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "NeonMode",
+      "kind": "stable"
+    },
+    {
+      "name": "NeonTarget",
+      "kind": "stable"
+    },
+    {
+      "name": "capabilities",
+      "kind": "stable"
+    },
+    {
+      "name": "connect",
+      "kind": "stable"
+    },
+    {
+      "name": "hasCapability",
+      "kind": "stable"
+    },
+    {
+      "name": "httpCapabilities",
+      "kind": "stable"
+    },
+    {
+      "name": "open",
+      "kind": "stable"
+    },
+    {
+      "name": "readCapability",
+      "kind": "stable"
+    }
+  ],
   "okmodel/migrate": [
     {
       "name": "MigrateConfig",

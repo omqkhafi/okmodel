@@ -22,11 +22,13 @@
       },
       "peerDependencies": {
         "@electric-sql/pglite": "^0.5.8",
+        "@neondatabase/serverless": "^1.2.0",
         "pg": "^8.16.0",
         "postgres": "^3.4.9",
       },
       "optionalPeers": [
         "@electric-sql/pglite",
+        "@neondatabase/serverless",
         "pg",
         "postgres",
       ],
@@ -53,6 +55,7 @@
       "version": "0.0.0",
       "devDependencies": {
         "@electric-sql/pglite": "^0.5.8",
+        "@neondatabase/serverless": "^1.2.0",
         "pg": "^8.16.0",
         "postgres": "^3.4.9",
       },
@@ -110,6 +113,8 @@
     "@electric-sql/pglite-socket": ["@electric-sql/pglite-socket@0.2.11", "", { "peerDependencies": { "@electric-sql/pglite": "0.5.8", "@electric-sql/pglite-age": "0.0.9", "@electric-sql/pglite-pg_hashids": "0.0.9", "@electric-sql/pglite-pg_ivm": "0.0.9", "@electric-sql/pglite-pg_textsearch": "0.0.10", "@electric-sql/pglite-pg_uuidv7": "0.0.9", "@electric-sql/pglite-pgtap": "0.0.9", "@electric-sql/pglite-pgvector": "0.0.9" }, "bin": { "pglite-server": "dist/scripts/server.js" } }, "sha512-DKnJBf7+5zFCXXGZAGUvGoWKetPPvaQ7fLSGVqP5onzgBhV9vvTcHigireMROMglgovvhoXHaMOKqt69/vts4A=="],
 
     "@loaderkit/resolve": ["@loaderkit/resolve@1.0.6", "", { "dependencies": { "@braidai/lang": "^1.0.0" } }, "sha512-G8FdIoF5CypfwmD9rl8BXod5HDn8JqB0CCNBXDTaRZ+yRYhARrrSToX1zg1zy9jX3zLqigsELwhT4gNtkdQAUg=="],
+
+    "@neondatabase/serverless": ["@neondatabase/serverless@1.2.0", "", {}, "sha512-tnaqgixUengZQNd9ZrS3ytQfamJzLKY8QxgqWQTNHHtB+KrFQWk77JTbbpg4RD+J3qE4eO2lVytvGDX5Kj6FdQ=="],
 
     "@okmodel/attest": ["@okmodel/attest@workspace:packages/attest"],
 

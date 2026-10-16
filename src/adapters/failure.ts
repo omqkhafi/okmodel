@@ -33,7 +33,7 @@ export function rejectClosed(): Promise<never> {
 /**
  * Rejects with OKM1120 when a driver cannot cancel a positive timeout.
  *
- * The message stays `timeout`. Kind stays `invalid`. Bun.sql and PGlite call
+ * The message stays `timeout`. Kind stays `invalid`. Bun.sql, PGlite, and Neon call
  * this. Other drivers do not, so their connect graphs omit it.
  *
  * @returns A rejected promise

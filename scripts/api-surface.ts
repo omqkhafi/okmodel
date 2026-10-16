@@ -28,6 +28,7 @@ export const API_ENTRIES = [
   { subpath: "okmodel/pg/pglite", file: "src/runtime/pg/pglite.ts" },
   { subpath: "okmodel/pg/pg", file: "src/runtime/pg/pg.ts" },
   { subpath: "okmodel/pg/bun", file: "src/runtime/pg/bun.ts" },
+  { subpath: "okmodel/pg/neon", file: "src/runtime/pg/neon.ts" },
   { subpath: "okmodel/migrate", file: "src/tooling/migrate/index.ts" },
 ] as const;
 

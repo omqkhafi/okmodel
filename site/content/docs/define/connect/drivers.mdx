@@ -10,8 +10,9 @@ Import `connect` from the driver you installed. The calls on the client do not c
 | `okmodel/pg/pg` | node-postgres | The client. A topology is a promise. |
 | `okmodel/pg/bun` | Bun.sql | The client. A topology is a promise. Another runtime cannot load this entry. |
 | `okmodel/pg/pglite` | PGlite | A promise. Opening the database is async. |
+| `okmodel/pg/neon` | Neon | A promise. Opening the pool is async. |
 
-A string or a pool returns the client for postgres.js, node-postgres, and Bun.sql. `{ primary, replicas }` returns a promise. That object is [Topology](/docs/define/connect/topology). PGlite returns a promise for a string, a pool, omitted memory, and a topology.
+A string or a pool returns the client for postgres.js, node-postgres, and Bun.sql. `{ primary, replicas }` returns a promise. That object is [Topology](/docs/define/connect/topology). PGlite returns a promise for a string, a pool, omitted memory, and a topology. Neon returns a promise for a string, a pool, and a topology.
 
 When the schema names no floor, a server below 15 is OKM1803. [minPostgres](/docs/define/schema/min-postgres) is that floor. The test suite runs on 15, 16, 17, and 18.
 
@@ -87,9 +88,39 @@ const app = schema({ tables: [notes] });
 export const db = await connect("./data", { schema: app }); // [!code focus]
 ```
 
+### Neon
+
+The peer package is `@neondatabase/serverless`. `connect` and `open` return a promise. `mode` is `websocket` or `http`. Omitted is `websocket`.
+
+WebSocket mode is a pool. `transactions` is `interactive`, so `tx()` works on a direct connection. `prepared` is `unnamed`. `stream`, `listen`, `cancel`, and `describe` are false. A positive `timeout` is refused.
+
+HTTP mode sends one request per statement. `transactions` is `batch`. `batch()` is one atomic HTTP transaction. `tx()` is OKM1111. There is no `reserve`. `prepared` is `none`.
+
+A transaction-mode pooler does not promise session state. Advisory locks, `SET`, `LISTEN`, and prepared statements belong to one server session. With one small compute, that pooler reused a backend: a custom `SET`, `LISTEN`, and `PREPARE` were still visible on the next statement, and a second connection saw the `SET`. That reuse is not a guarantee. Do not rely on it. `prepared: "named"` is not for that pooler.
+
+A compute can be suspended. The first connection is a cold start. OKModel does not treat that wait as a query result.
+
+A read replica can be behind the primary. After a write, a later read on that replica can miss the row until the replica replays it. `route: "replica"` still goes to a replica. A miss is a miss. OKModel does not report the row as present, and it does not move that call to the primary. Session consistency can keep an automatic read on the primary until the replica has caught up (`fallback:behind` or `fallback:position-unknown`).
+
+`okm driver test neon` marks COMMIT loss `unsupported` (`no socket to cut`). The harness cut is a TCP relay, and this driver speaks WebSocket or HTTP. A result that never arrives is still `outcome_unknown` (OKM1401).
+
+```ts title="neon.ts"
+import { connect } from "okmodel/pg/neon"; // [!code focus]
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+
+export const db = await connect(process.env.DATABASE_URL!, { schema: app }); // [!code focus]
+```
+
 ### timeout
 
-Bun.sql and PGlite refuse a positive `timeout` on a call, on `tx()`, and on `batch()`. The keys and the messages are on [Timeouts](/docs/define/connect/session#timeouts).
+Bun.sql, PGlite, and Neon refuse a positive `timeout` on a call, on `tx()`, and on `batch()`. The keys and the messages are on [Timeouts](/docs/define/connect/session#timeouts).
 
 ### A lost connection
 

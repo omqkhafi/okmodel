@@ -41,6 +41,8 @@ type Target = {
   readonly notices: boolean;
   readonly size: number;
   readonly url?: string;
+  /** False when the TCP commit-cut proxy cannot sit on this driver. */
+  readonly cut: boolean;
   open(config: {
     readonly schema: string;
     readonly max: number;
@@ -113,14 +115,20 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
   }
   if (driver === undefined) {
     throw new Error(
-      "okm driver test needs a driver: pglite, postgresjs, pg, bun, or a module path.",
+      "okm driver test needs a driver: pglite, postgresjs, pg, bun, neon, or a module path.",
     );
   }
   return { driver, url: url ?? process.env.DATABASE_URL };
 }
 
 async function loadTarget(driver: string, url: string | undefined): Promise<Target> {
-  if (driver === "pglite" || driver === "postgresjs" || driver === "pg" || driver === "bun") {
+  if (
+    driver === "pglite" ||
+    driver === "postgresjs" ||
+    driver === "pg" ||
+    driver === "bun" ||
+    driver === "neon"
+  ) {
     return firstParty(driver, url);
   }
   if (
@@ -131,7 +139,9 @@ async function loadTarget(driver: string, url: string | undefined): Promise<Targ
   ) {
     return moduleTarget(driver, url);
   }
-  throw new Error(`Unknown driver ${driver}. Use pglite, postgresjs, pg, bun, or a module path.`);
+  throw new Error(
+    `Unknown driver ${driver}. Use pglite, postgresjs, pg, bun, neon, or a module path.`,
+  );
 }
 
 async function firstParty(driver: string, url: string | undefined): Promise<Target> {
@@ -144,6 +154,7 @@ async function firstParty(driver: string, url: string | undefined): Promise<Targ
       memory: true,
       notices: true,
       size: 1,
+      cut: true,
       open: (config) =>
         config.timeouts === undefined
           ? adapter.open()
@@ -188,6 +199,25 @@ async function firstParty(driver: string, url: string | undefined): Promise<Targ
       (pool, options) => runtime.connect(pool, options),
     );
   }
+  if (driver === "neon") {
+    const adapter = await import("../../../src/adapters/pg/neon.js");
+    const runtime = await import("../../../src/runtime/pg/neon.js");
+    return networked(
+      "neon",
+      adapter.capabilities,
+      false,
+      url,
+      (config) =>
+        adapter.open({
+          url: config.url ?? url,
+          max: config.max,
+          searchPath: config.schema,
+          ...(config.timeouts !== undefined ? { timeouts: config.timeouts } : {}),
+        }),
+      (pool, options) => runtime.connect(pool, options),
+      false,
+    );
+  }
   if (typeof Bun === "undefined" || typeof Bun.SQL !== "function") {
     throw new Error("bun runs only under Bun.");
   }
@@ -216,6 +246,7 @@ function networked(
   url: string,
   open: Target["open"],
   connect: TxSuite["connect"],
+  cut = true,
 ): Target {
   return {
     name,
@@ -224,6 +255,7 @@ function networked(
     notices,
     size: 4,
     url,
+    cut,
     open,
     connect,
   };
@@ -257,6 +289,7 @@ async function moduleTarget(driver: string, url: string | undefined): Promise<Ta
     memory,
     notices,
     size,
+    cut: true,
     ...(url !== undefined ? { url } : {}),
     open: open as Target["open"],
     connect: connect as Target["connect"],
@@ -327,6 +360,7 @@ async function runTarget(target: Target): Promise<readonly Row[]> {
     connect: (pool, options) => target.connect(pool, options),
     memory: target.memory,
     notices: target.notices,
+    ...(target.cut ? {} : { cut: false }),
     ...(target.url !== undefined ? { url: target.url } : {}),
     test: tx,
   });
