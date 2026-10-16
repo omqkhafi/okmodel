@@ -308,6 +308,9 @@ function tableApi(
   for (const name in session.schema.model[table]?.presets as object) {
     api[name] = (...args: unknown[]) => tableApi(session, table, view, [uses, name, args]);
   }
+  // `raw` and `explain` read this. The symbol is not a method, so an app that
+  // never imports those functions does not keep them.
+  (api as Record<symbol, unknown>)[Symbol.for("okm.lane")] = [session, table, mapError];
   return api as unknown as TableApi<QuerySchema, string>;
 }
 

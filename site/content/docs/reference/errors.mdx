@@ -323,14 +323,15 @@ The registry has 110 codes, in numeric order. Ranges are schema `OKM1000`, queri
 
 | Code | Title | Summary |
 | --- | --- | --- |
-| `OKM1601` | Stale typed SQL | A typed SQL signature no longer matches the database. |
+| `OKM1601` | Stale typed SQL | A typed SQL signature no longer matches the database. Recording signatures with `okm build` is deferred. |
+| `OKM1602` | Bad typed SQL | A raw statement is missing its class, is not one select or one write, or the result class has no column initializers. |
 
 ### Tenancy and policies
 
 | Code | Title | Summary |
 | --- | --- | --- |
 | `OKM1701` | Tenant context missing | A tenant table was used on a client that has no tenant context. |
-| `OKM1702` | Unverifiable tenant SQL | Raw SQL touches a tenant table and the tenant predicate cannot be proved. |
+| `OKM1702` | Unverifiable tenant SQL | Raw SQL on a tenant table cannot prove the tenant predicate. A raw write is this. A raw read that does not select the primary key with ident is this. |
 | `OKM1704` | Tenant key change | An update tried to change the tenant key. |
 | `OKM1705` | Global references tenant | A global table references a tenant table. |
 | `OKM1706` | Tenant index | An index on a tenant table does not lead with the tenant key. |

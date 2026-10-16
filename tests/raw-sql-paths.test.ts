@@ -1,14 +1,10 @@
 /**
- * OKM1702 in 0.2: no public runtime path takes raw SQL on a tenant table.
+ * Raw SQL is `raw` and `explain` from `okmodel/pg` (D268).
  *
- * The spec makes unverifiable SQL on a tenant table a runtime error (OKM1702)
- * unless it is marked trusted. Typed raw SQL is M2. In 0.2 the only thing called
- * `sql` in the public API is the template that writes a default, a check or an
- * index expression in a schema definition, and the client has no method that takes
- * SQL text. This test fails when that stops being true: a new method on the client
- * or on a table handle, a new place where `sql` or `.unsafe()` reaches the runtime
- * layer, or a `sql` value that a call starts to accept. Whoever adds one must add
- * the OKM1702 check in the same change and update the lists below.
+ * Those are functions, not methods. A client, a table handle, or a query handle
+ * must not grow a method that takes SQL text, and `sql` or `.unsafe()` must not
+ * reach the runtime layer from anywhere else. A tenant write through `raw` is
+ * OKM1702 (`sql-lane.test.ts`).
  */
 
 import { readFileSync, readdirSync, statSync } from "node:fs";

@@ -93,6 +93,7 @@ const SPEC_CODES = [
   "OKM1550",
   "OKM1551",
   "OKM1601",
+  "OKM1602",
   "OKM1701",
   "OKM1702",
   "OKM1704",
