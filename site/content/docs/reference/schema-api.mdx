@@ -1,0 +1,30 @@
+---
+title: "Schema API"
+description: "describe() and buildCatalog() on okmodel/migrate turn a schema into JSON and back."
+---
+
+`describe` and `buildCatalog` live on `okmodel/migrate`. A codegen tool, a CI check, or a dashboard imports them. They are not on the runtime entry, and `schema()` does not change.
+
+`describe(schema)` returns JSON. `logical` is the schema identity: `namespace`, `name`, and `format`. That identity is `public`, the namespace `schema()` compiles. `defineConfig({ namespace })` places the catalog into another Postgres schema. That placement changes the catalog hash and does not change `logical`. `catalog` is the catalog document. Object keys are sorted. There are no functions in it.
+
+`buildCatalog` reads a description, including one that came back from `JSON.parse`. The catalog hash matches the catalog `schema()` built.
+
+Codecs, client generators (`uuidv4`, `uuidv7`, `okid`), and relation helpers stay on the schema. The catalog hash does not include them.
+
+```ts title="describe.ts"
+import { schema, t, table } from "okmodel/pg";
+import { buildCatalog, describe } from "okmodel/migrate";
+
+const users = table("users", {
+  id: t.id(),
+  email: t.text(),
+});
+
+export const app = schema({ tables: [users] });
+
+export const description = describe(app);
+
+export const catalog = buildCatalog(JSON.parse(JSON.stringify(description)));
+```
+
+`catalog` is the catalog `okm` plans. Apply that catalog the same way as `app.catalog`.
