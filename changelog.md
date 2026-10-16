@@ -41,7 +41,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The P108 study measures four inline-relation shapes. An opt-in entry types `as` and `has` without moving an existing ceiling. The default-path harvest and a loose `references()` store do not fit. No gate moves.
 - Inline relations do not ship in 0.8. `relations` on the table remains how an include is named (D270).
 - postgres.js and node-postgres results on Neon primary and primary-pool endpoints are recorded. A cause that was not established stays unclassified (D269).
-- The OKE Windows audit records 32 surfaces: 17 work, 4 probably work, 1 fails, and 10 are unknown. The failure is `okm check` reporting OKM1024 when a table file stem differs in case from the schema text. The unknown rows are what a Windows runner for #218 still has to run (#219).
+- The OKE Windows audit records 32 surfaces: 26 work, 2 probably work, 1 fails, and 3 are unknown. The failure is packed `okm driver test`, which cannot find its runner. The table-file stem compare is fixed (#219).
 
 #### tooling
 
