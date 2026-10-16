@@ -159,7 +159,7 @@ postgresTest(
       const text = await apply(sql, app);
       expect(text).toContain('using gist ("n" gist_int4_ops)');
       expect(text).toContain('using gin ("m" int4_ops)');
-      await sql.unsafe("insert into nums (n) values (1)");
+      await sql.unsafe("insert into nums (n, m) values (1, 1)");
       const found = await sql<{ n: number }[]>`select n from nums where n = 1`;
       expect(found.map((row) => row.n)).toEqual([1]);
     } finally {
