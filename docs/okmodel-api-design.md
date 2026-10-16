@@ -1,6 +1,6 @@
 # OKModel — API design (draft 26)
 
-Status: normative specification, draft 26. The repository implements it through the 0.7.0 release. Decisions run D1–D265. Draft 18 applied the M0 gate decisions D115–D127 (evidence: `docs/m0-findings.md` in the repository); draft 19 added D128 (catalog error codes); draft 20 added D130 (column definition and codec error codes); draft 21 added D131 (removing a picklist or enum value); draft 22 adds D132 (reserved options, reference names); draft 24 adds the 0.2 operator set (section 10.1); draft 26 takes the primary-key and Postgres 15 floor edits made in P17G (D148, D151) and renames the uuid default to `uuidv4` (D153). Draft 26 records the shipped id builder shape (P19, D153, D154) and the `defaults.id` fix text. Supersedes drafts 1–21 of this file and the API sections of `orm-research-design.md`. Evidence for the draft-4 changes is in `okmodel-gap-research.md`.
+Status: normative specification, draft 26. The repository implements it through the 0.7.0 release. Decisions run D1–D269. Draft 18 applied the M0 gate decisions D115–D127 (evidence: `docs/m0-findings.md` in the repository); draft 19 added D128 (catalog error codes); draft 20 added D130 (column definition and codec error codes); draft 21 added D131 (removing a picklist or enum value); draft 22 adds D132 (reserved options, reference names); draft 24 adds the 0.2 operator set (section 10.1); draft 26 takes the primary-key and Postgres 15 floor edits made in P17G (D148, D151) and renames the uuid default to `uuidv4` (D153). Draft 26 records the shipped id builder shape (P19, D153, D154) and the `defaults.id` fix text. Supersedes drafts 1–21 of this file and the API sections of `orm-research-design.md`. Evidence for the draft-4 changes is in `okmodel-gap-research.md`.
 
 Name: **OKModel** (short **OKM**). Package `okmodel` on npm and repository `omqkhafi/okmodel`, CLI bins `okm` and `okmodel` (same program), error class `OkmError`, error codes `OKM1xxx`, config file `okm.config.ts`, generated folder `.okm/`, metadata table `okm_meta`. The bin names are not npm package names, so a bare `bunx okm` without a local or global install could fetch an unrelated package; the README tells developers to install first (`bun add -d okmodel`, then `bunx okm`, or a global install).
 
@@ -10,7 +10,7 @@ Toolchain: **TypeScript 7** (the native compiler, still invoked as `tsc`) for ty
 
 ## 1. Decisions log
 
-Moved to `okmodel-decisions.md`. Decisions run D1–D265. This file is the normative spec; every section states a rule, an example and the guard that enforces it.
+Moved to `okmodel-decisions.md`. Decisions run D1–D269. This file is the normative spec; every section states a rule, an example and the guard that enforces it.
 
 ## 2. Design rules and the internal goal
 
@@ -1395,7 +1395,7 @@ The startup compatibility check allows the database to be ahead of the app by `e
 | `okm seed <file>` | seeds with factories |
 | `okm import drizzle <path>` | convert a Drizzle schema (M2) |
 | `okm doctor [code]` | explain a code or diagnose the project |
-| `okm driver test <driver>` | run the conformance suites against one driver (`pglite`, `postgresjs`, `pg`, `bun`, or a module path). `--url` is the Postgres URL. `pglite` does not use it. The other built-ins need `--url` or `DATABASE_URL` |
+| `okm driver test <driver>` | run the conformance suites against one driver (`pglite`, `postgresjs`, `pg`, `bun`, `neon`, or a module path). `--url` is the Postgres URL. `pglite` does not use it. The other built-ins need `--url` or `DATABASE_URL` |
 | `okm upgrade` | codemods between 0.x releases |
 
 ### 19.5 Targets
@@ -1505,9 +1505,9 @@ test("today view runs one query", async () => {
 
 **Driver conformance suite** (`okmodel/conformance`): the same semantic tests against any adapter — null semantics, codecs (numeric, bigint, timestamps, JSON), defaults and generated values, `RETURNING`, transactions, the atomic `batch` contract (section 15), connection reservation and release, error mapping, constraints, pagination and cursors, locking, concurrency, and the small-API semantics table (section 12).
 
-`okm driver test <driver> [--url <url>]` runs that suite against the driver the argument names. `<driver>` is `pglite`, `postgresjs`, `pg`, `bun`, or a path to a module that exports `name`, `capabilities`, `open`, and `connect`. `--url` (or `DATABASE_URL`) is the Postgres URL. An in-process driver does not need it. The report is one dialect, `postgres`. Each row is a case id, the behavior, and `pass`, `fail`, or `unsupported`. An unsupported row names the capability the driver lacks (`cancel`, `describe`, `stream`, `listen`, `notices`, `one connection`, `no socket to cut`). A failure exits 1. An unsupported case does not. A driver that cannot run atomic `batch` fails the command.
+`okm driver test <driver> [--url <url>]` runs that suite against the driver the argument names. `<driver>` is `pglite`, `postgresjs`, `pg`, `bun`, `neon`, or a path to a module that exports `name`, `capabilities`, `open`, and `connect`. `--url` (or `DATABASE_URL`) is the Postgres URL. An in-process driver does not need it. The report is one dialect, `postgres`. Each row is a case id, the behavior, and `pass`, `fail`, or `unsupported`. An unsupported row names the capability the driver lacks (`cancel`, `describe`, `stream`, `listen`, `notices`, `one connection`, `no socket to cut`). A failure exits 1. An unsupported case does not. A driver that cannot run atomic `batch` fails the command.
 
-**Topology tests.** Consistency is tested on real streaming replication (a primary and replicas in CI service containers, replay paused with `pg_wal_replay_pause()`). Router and selection logic may run over several independent PGlite instances as endpoints, with replication state supplied through the documented `ReplicaState` seam; no test mocks the database itself. First-party adapters must pass it in CI; community adapters run `okm driver test` (M2).
+**Topology tests.** Consistency is tested on real streaming replication (a primary and replicas in CI service containers, replay paused with `pg_wal_replay_pause()`). Router and selection logic may run over several independent PGlite instances as endpoints, with replication state supplied through the documented `ReplicaState` seam; no test mocks the database itself. First-party adapters must pass it in CI; community adapters run `okm driver test` (M2). The Neon topology (one primary and two read replicas) runs when its credentials are set and skips otherwise, so CI does not need those secrets. A replica can lag the primary. That read is polled, and a miss stays a miss.
 
 **Migration verification:** apply the full history to an empty database; after each migration, introspect and compare with the catalog (zero diff); check the previous release's catalog against the new schema. Comparison uses the normalisation pipeline of section 19.3.
 

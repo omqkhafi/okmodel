@@ -25,6 +25,7 @@ export const ADAPTER_ENTRIES = [
   { entry: "src/runtime/pg/pglite.ts", external: "@electric-sql/pglite" },
   { entry: "src/runtime/pg/pg.ts", external: "pg" },
   { entry: "src/runtime/pg/bun.ts", external: "bun" },
+  { entry: "src/runtime/pg/neon.ts", external: "@neondatabase/serverless" },
 ] as const;
 
 /** Published library entries that must not contain an npm package. */

@@ -10,7 +10,7 @@ Stable exports are the application API this release commits to. Experimental exp
 
 `okmodel/pg` is the schema API: column builders, `table`, `schema`, `index`, operators, `one`, `many`, `manyThrough`, `morph`, `morphMany`, and `morphTo`. It also exports `bucket`, `matches`, `relevance`, `rowNumber`, `rank`, `denseRank`, `runningTotal`, `fragment`, `ident`, `raw`, and `explain`. `raw` and `explain` take a table handle. An app that does not import them drops them (D268). `ExplainResult` is the `explain` return type. `okmodel/traits` exports `versioned` and `sortable`. `domain` is experimental. Catalog compilation, row-type emit, Postgres error mapping, and the operator tag helpers are not exported.
 
-`okmodel/pg/postgresjs` and `okmodel/pg/pglite` export `connect` and the pool opener for that driver. The client has `close()`. A second `close()` waits on the same call. When the runtime defines `Symbol.asyncDispose`, the client implements it, and `await using` calls `close()`. A client that adopted an existing pool resolves `close()` without ending that pool.
+`okmodel/pg/postgresjs`, `okmodel/pg/pglite`, `okmodel/pg/pg`, `okmodel/pg/bun`, and `okmodel/pg/neon` export `connect` and the pool opener for that driver. Neon `connect` returns a promise for a string, a pool, and a topology. `httpCapabilities` is the HTTP mode. The client has `close()`. A second `close()` waits on the same call. When the runtime defines `Symbol.asyncDispose`, the client implements it, and `await using` calls `close()`. A client that adopted an existing pool resolves `close()` without ending that pool.
 
 `okmodel/migrate` exports `defineConfig`, `MigrateConfig`, and `TargetInput`. The CLI imports the planning and apply helpers from the package. Those helpers are not exports.
 

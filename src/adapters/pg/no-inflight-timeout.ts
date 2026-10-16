@@ -1,7 +1,7 @@
 /**
  * Refusal for a driver that cannot cancel an in-flight statement (D224).
  *
- * Bun.sql and PGlite refuse a positive `timeout`. The OKM1120 text loads with
+ * Bun.sql, PGlite, and Neon refuse a positive `timeout`. The OKM1120 text loads with
  * the lazy error module, so a connect entry does not carry it. Kind is
  * `invalid`, which separates it from kind `timeout`. `timeout: 0` still fails
  * immediately as kind `timeout`. `signal` is unchanged. postgres.js and

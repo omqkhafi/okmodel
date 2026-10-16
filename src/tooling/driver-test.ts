@@ -17,7 +17,7 @@ import { OkmError } from "../contracts/error.js";
 /**
  * Runs the conformance suites for the driver named on the command line.
  *
- * `<driver>` is `pglite`, `postgresjs`, `pg`, `bun`, or a module path.
+ * `<driver>` is `pglite`, `postgresjs`, `pg`, `bun`, `neon`, or a module path.
  * `--url` is the Postgres URL. `pglite` does not use it. The other built-in
  * drivers need `--url` or `DATABASE_URL`. A module whose export sets
  * `memory: true` does not need a URL.

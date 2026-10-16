@@ -56,6 +56,13 @@ export type TxSuite = {
   readonly url?: string;
   /** The driver returns server notices. */
   readonly notices: boolean;
+  /**
+   * The TCP commit-cut proxy can sit on this driver's socket.
+   *
+   * False for a client that does not speak Postgres TCP. Those rows are
+   * `unsupported` with capability `no socket to cut`. Omitted means the proxy runs.
+   */
+  readonly cut?: boolean;
   /** Test registrar. */
   readonly test: SuiteTest;
 };
@@ -113,7 +120,7 @@ export function registerTxSuite(suite: TxSuite): void {
   const needsSecond = suite.memory ? skipped(test, "one connection") : test;
   const cancels = suite.capabilities.cancel && !suite.memory ? test : skipped(test, "no cancel");
   const race = needsSecond;
-  const proxied = suite.memory ? skipped(test, "no socket to cut") : test;
+  const proxied = suite.memory || suite.cut === false ? skipped(test, "no socket to cut") : test;
 
   async function withEnv<S extends QuerySchema>(
     built: S & { readonly catalog: Parameters<typeof renderCatalog>[0] },

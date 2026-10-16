@@ -21,20 +21,27 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `fragment` composes SQL in `where` and in `select` on `find` or `one`. A value is a parameter. `ident` names the field, the same name `where` uses, and a hidden field is refused. The tenant predicate stays (D266).
 - `raw` and `explain` run typed SQL from a table handle. The row class names the columns. `"read"` or `"write"` is required. A scoped tenant read keeps the tenant predicate outside the fragment. A raw write on that table is OKM1702 and sends nothing. `explain` returns the plan outside production and sends nothing when `NODE_ENV` is `production` (D268).
 
+#### adapters
+
+- `okmodel/pg/neon` connects with `@neondatabase/serverless`. `websocket` is a pool and `tx()` works on a direct connection. `http` sends one request per statement, and `batch()` is the atomic call. `tx()` on HTTP is OKM1111. A positive timeout is refused. A transaction-mode pooler does not promise session state. With one small compute it reused a backend, so a custom `SET` was still visible on a second connection (D269).
+
 #### runtime
 
 - `okmodel/otel` turns `hookm`, `onRoute`, and `inspect()` into OpenTelemetry `db.*` spans. You pass the tracer. Statement text stays off unless `statement: true`. Parameters and a tenant id are not recorded. An error span records the error name and an OKM code, and leaves out the message and the stack (D267).
 - On a topology client, `inspect().routing.reason` matches `onRoute`. The preview does not call `onRoute` and does not move the selector. A string or a pool stays synchronous `single-endpoint` (D268).
+- `connect` from `okmodel/pg/neon` returns a promise for a string, a pool, and a topology. Writes go to the primary. A replica can lag, and `route: "replica"` stays on that replica (D269).
 
 #### docs
 
 - Offline-first constraints R1–R7 are recorded for the 0.8 train. They do not start a phase. P100 audits PostgreSQL and writes a report (D265).
 - The P100 audit records what PostgreSQL already proves for R1–R7, and the gaps later phases still have to decide. No API change.
 - The 0.8 type and byte budget is recorded (P101). No gate or ceiling moves. Ali approves it before P102.
+- The drivers page covers Neon: WebSocket and HTTP, the pooler, a cold start, and replica lag (D269).
 
 #### tooling
 
 - `okm driver test <driver>` runs the driver, error, and transaction suites and prints each case as pass, fail, or unsupported, with the capability that explains an unsupported case.
+- `okm driver test neon` runs those suites. COMMIT loss is unsupported (`no socket to cut`). The Neon connect gate is 42,000 minified and 14,500 gzip (D269).
 
 ### 🐛 Fixed
 

@@ -131,6 +131,13 @@ export const CONNECT_ENTRIES = [
     maxMinBytes: 41_700,
     maxGzipBytes: 14_620,
   },
+  {
+    entry: "src/runtime/pg/neon.ts",
+    file: "neon.js",
+    external: ["@neondatabase/serverless"],
+    maxMinBytes: 42_000,
+    maxGzipBytes: 14_500,
+  },
 ] as const;
 
 /** Operator modules the app fixture does not import. They must not be in its startup graph. */
@@ -1140,7 +1147,7 @@ function stubbedImport(dir: string, file: string, specifier: string): number {
   const stub = join(dir, "okm-driver-stub.mjs");
   writeFileSync(
     stub,
-    "export default function driver() { return {}; }\nexport class PostgresError extends Error {}\nexport class PGlite {}\nexport class Pool {}\nexport class SQL {}\n",
+    "export default function driver() { return {}; }\nexport function neon() { return {}; }\nexport const neonConfig = {};\nexport class NeonDbError extends Error {}\nexport class PostgresError extends Error {}\nexport class PGlite {}\nexport class Pool {}\nexport class SQL {}\n",
   );
   const href = JSON.stringify(pathToFileURL(stub).href);
   rewriteSpecifier(dir, specifier, href);

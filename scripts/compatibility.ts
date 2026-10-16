@@ -54,6 +54,8 @@ export function renderCompatibility(cells: readonly CompatibilityCell[]): string
     "",
     "PGlite runs in the check job. The in-process wire server runs in the check job. postgres.js, node-postgres, and Bun.sql run in the postgres job (`REQUIRE_DOCKER=1`). Bun.sql runs only under Bun. A skip means the adapter did not declare the capability that case needs. node-postgres and Bun.sql do not describe a statement without running it. Bun.sql does not surface RAISE NOTICE and does not abort an in-flight statement. PGlite has no socket to cut, so COMMIT loss (`r2.commit-loss`, `r2.batch-commit-loss`) is `unsupported` in `okm driver test`, with that reason. It is not a silent skip.",
     "",
+    'Neon is not a column in this table. `okmodel/pg/neon` is checked locally when its credentials are set and skipped in CI. WebSocket mode is interactive. HTTP mode is `transactions: "batch"`: `tx()` is refused. A transaction-mode pooler does not promise session state. COMMIT loss is `unsupported` (`no socket to cut`) because the harness cut is a TCP relay. A result that never arrives is still `outcome_unknown`.',
+    "",
     `| ${header.join(" | ")} |`,
     `| ${header.map(() => "---").join(" | ")} |`,
   ];
