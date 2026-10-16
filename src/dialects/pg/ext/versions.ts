@@ -30,7 +30,7 @@ export type ExtPackRecord = {
   readonly signatures: readonly ExtSignature[];
 };
 
-/** Packs this version generates. `vector` is not in the list (D279). */
+/** Packs this version generates. `vector` is not in the list (D281). */
 export const EXT_PACKS: readonly ExtPackRecord[] = [
   {
     name: "unaccent",

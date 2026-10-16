@@ -317,7 +317,7 @@ find({ where: { name: pgTrgm.similar(q) }, limit: 20 })
 
 TimescaleDB, ParadeDB and pg_partman add catalog objects rather than types and are evaluated after 1.0.
 
-**Version awareness.** Definitions read `minPostgres` and the declared extension version. A feature the declared versions lack (`halfvec` below pgvector 0.7, an explicit `uuidv7()` below Postgres 18) fails at schema build (OKM1812). A generated pack method fails when that method is called, with the same code, and names `minPostgres` (D279). The check is not inside `contribute()`. A bare `t.id()` stores `gen_random_uuid()` and is not that feature (D262). The message names the feature, the major it needs, and `minPostgres`. When the floor is omitted, `okm migrate apply` and `okm push` check the connected server before the first statement: a migration that sets a `default uuidv7()` on a server below 18 without a `uuidv7()` function stops with OKM1812 and nothing is created (D185). Nothing is checked in `connect()`. `requires: { postgres: ">=17" }` is the same floor and is deprecated (D261). Core features are never gated behind an extension.
+**Version awareness.** Definitions read `minPostgres` and the declared extension version. A feature the declared versions lack (`halfvec` below pgvector 0.7, an explicit `uuidv7()` below Postgres 18) fails at schema build (OKM1812). A generated pack method fails when that method is called, with the same code, and names `minPostgres` (D281). The check is not inside `contribute()`. A bare `t.id()` stores `gen_random_uuid()` and is not that feature (D262). The message names the feature, the major it needs, and `minPostgres`. When the floor is omitted, `okm migrate apply` and `okm push` check the connected server before the first statement: a migration that sets a `default uuidv7()` on a server below 18 without a `uuidv7()` function stops with OKM1812 and nothing is created (D185). Nothing is checked in `connect()`. `requires: { postgres: ">=17" }` is the same floor and is deprecated (D261). Core features are never gated behind an extension.
 
 **Lifecycle through migrations.**
 
@@ -339,7 +339,7 @@ Objects that belong to an extension (found through `pg_depend` deptype `e`) are 
 
 **Own definitions.** A developer writes `extension("acme_geo", { requires, provides: { types, operators, indexMethods, functions, triggers, views } })`. Functions, triggers and views are first-class catalog objects (section 5.7), owned by the extension as `external`. Forward-only SQL bundles do not exist; `okm migrate new --sql` is the explicit escape hatch.
 
-**Extension without a definition.** `okm ext scaffold <name>` reads the connected server's catalog (`pg_depend`, `pg_type`, `pg_proc`, `pg_operator`, `pg_settings`) and prints a starting definition that the developer owns and edits. It writes a file only when `--out` is given, and it never overwrites an existing file. `vector` is not a built-in in this version: the CI images do not ship pgvector (D279).
+**Extension without a definition.** `okm ext scaffold <name>` reads the connected server's catalog (`pg_depend`, `pg_type`, `pg_proc`, `pg_operator`, `pg_settings`) and prints a starting definition that the developer owns and edits. It writes a file only when `--out` is given, and it never overwrites an existing file. `vector` is not a built-in in this version: the CI images do not ship pgvector (D281).
 
 ### 4.2 Layers and the driver contract
 
