@@ -129,3 +129,15 @@ This is the list for [#218](https://github.com/omqkhafi/okmodel/issues/218). The
 | unknown | 3 |
 
 No row fails. The three unknowns are two casings of one module, `spawn("bun")` from a source checkout, and socket unref. The last one needs a TCP URL, which this job does not start. `okm seed` and migrate check/apply against a pre-existing `.gitattributes` were skipped for the same reason.
+
+## What the Windows CI job covers
+
+The job is [`.github/workflows/windows.yml`](../.github/workflows/windows.yml). It is not a required status. It runs on `windows-latest` for pull requests and for `main`. It does not start Postgres. A step that needs a TCP URL prints SKIP.
+
+| Unknown | CI Windows job | Why it stays unknown |
+| --- | --- | --- |
+| Two module paths that differ only by case (`Schema.ts` and `schema.ts`) | Not covered | `okm check` with `tables/Tasks.ts` compares a table-file stem to the schema text. It does not import one module under both spellings or compare those two hashes. |
+| `okm driver test` from a source checkout spawns `bun` | Not covered | The job runs `okm driver test pglite` from the packed tarball. That runner is `dist/tooling/driver-run.js`. The checkout path, where the runner is still `driver-run.ts` and the command is `bun`, is not run. |
+| An idle postgres.js or node-postgres socket is unref'd so a finished script can exit | Not covered | The step is SKIP: a finished postgres.js script needs a TCP Postgres URL, and the job does not start a service container. |
+
+Those three stay unknown. This pass did not run them.
