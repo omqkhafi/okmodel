@@ -39,6 +39,31 @@ describe("lintPullRequest", () => {
     ]);
   });
 
+  test("Cursor agent wrapper: Closes inside the markers still passes", () => {
+    const body = [
+      "<!-- CURSOR_AGENT_PR_BODY_BEGIN -->",
+      "Reads follow the watermark.",
+      "",
+      "Closes #86",
+      "<!-- CURSOR_AGENT_PR_BODY_END -->",
+      "",
+      '<div><a href="https://cursor.com/agents/bc-example">Open</a></div>',
+      "",
+    ].join("\n");
+    expect(lintPullRequest({ ...valid, body })).toEqual([]);
+  });
+
+  test("Cursor agent wrapper: Closes missing inside the markers still fails", () => {
+    const body = [
+      "<!-- CURSOR_AGENT_PR_BODY_BEGIN -->",
+      "Reads follow the watermark.",
+      "<!-- CURSOR_AGENT_PR_BODY_END -->",
+      "",
+      "Closes #86",
+    ].join("\n");
+    expect(lintPullRequest({ ...valid, body })).toEqual(["body must end with Closes #N"]);
+  });
+
   test("missing type label", () => {
     expect(lintPullRequest({ ...valid, labels: ["area: runtime"] })).toEqual([
       "exactly one type: label is required, found 0",

@@ -14,6 +14,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+### 🐛 Fixed
+
+- `scripts/pr-lint.ts` judges `Closes #N` on the text inside `<!-- CURSOR_AGENT_PR_BODY_BEGIN -->` … `<!-- CURSOR_AGENT_PR_BODY_END -->`, so a Cursor Cloud Agent footer after the end marker no longer fails `lint / pull request`.
+
 ## v0.9.0 — 2026-10-16
 
 ### ✨ Added

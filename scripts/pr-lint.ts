@@ -78,13 +78,34 @@ export function lintPullRequest(pr: PullRequestMeta): readonly string[] {
 }
 
 /**
+ * Author text inside a Cursor agent wrapper, or the whole body.
+ *
+ * Cloud Agents wrap the description in `CURSOR_AGENT_PR_BODY_*` comments and
+ * append a footer after `<!-- CURSOR_AGENT_PR_BODY_END -->`. The closing line
+ * is judged on the wrapped text when those markers are present.
+ *
+ * @param body - Pull request body
+ * @returns The text that must end with `Closes #N`
+ */
+function authorBody(body: string): string {
+  const begin = "<!-- CURSOR_AGENT_PR_BODY_BEGIN -->";
+  const end = "<!-- CURSOR_AGENT_PR_BODY_END -->";
+  const start = body.indexOf(begin);
+  const stop = body.indexOf(end);
+  if (start !== -1 && stop !== -1 && stop > start) {
+    return body.slice(start + begin.length, stop);
+  }
+  return body;
+}
+
+/**
  * The last non-empty line is `Closes #N`.
  *
  * @param body - Pull request body
  * @returns Whether the body ends with a closing line
  */
 function closesIssue(body: string): boolean {
-  const lines = body.replace(/\r\n/g, "\n").trimEnd().split("\n");
+  const lines = authorBody(body).replace(/\r\n/g, "\n").trimEnd().split("\n");
   const last = lines[lines.length - 1] ?? "";
   return /^Closes #\d+$/.test(last.trim());
 }

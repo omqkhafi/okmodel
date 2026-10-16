@@ -21,6 +21,7 @@ Every issue and every pull request has exactly one `type:` label and at least on
 - Title: `type(scope): summary`. The type is one of the `type:` names. The scope is a short lowercase name, such as `runtime`, `ci`, or `docs`.
 - Branch: `pNN-short-name`, the same name as the plan row.
 - The body ends with `Closes #N`.
+- A Cursor Cloud Agent may wrap that body in `<!-- CURSOR_AGENT_PR_BODY_BEGIN -->` … `<!-- CURSOR_AGENT_PR_BODY_END -->` and append a footer after the end marker. The closing line is judged on the text inside those markers (`scripts/pr-lint.ts`).
 - The pull request milestone is the milestone of that issue.
 - The path labeler adds `area:` from the files that changed. Set `type:` yourself.
 
