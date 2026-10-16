@@ -56,11 +56,8 @@ postgresTest(gate, "a call returns the slug and the builder view is readable", a
         limit: 5,
       });
       expect(rows).toEqual([{ id: "n1", slug: "hello" }]);
-      const viewed = await db.views.activeNotes.find({ limit: 5 });
-      expect(viewed.map((row) => row.id).sort((left, right) => (left < right ? -1 : 1))).toEqual([
-        "n1",
-        "n2",
-      ]);
+      const viewed = await db.views.activeNotes.find({ orderBy: { id: "asc" }, limit: 5 });
+      expect(viewed.map((row) => row.id)).toEqual(["n1", "n2"]);
     } finally {
       await db.close();
     }
