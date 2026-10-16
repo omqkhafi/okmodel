@@ -1,4 +1,12 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test, expect } from "bun:test";
@@ -17,6 +25,38 @@ function scratch(): string {
   return root;
 }
 
+function buildRunner(root: string): string {
+  const entry = join(import.meta.dir, "..", "packages", "harness", "src", "driver-run.ts");
+  const built = Bun.spawnSync({
+    cmd: [
+      "bun",
+      "build",
+      entry,
+      "--outdir",
+      root,
+      "--format",
+      "esm",
+      "--target",
+      "node",
+      "--splitting",
+      "--chunk-naming=shared/[hash].js",
+      "--external",
+      "postgres",
+      "--external",
+      "@electric-sql/pglite",
+      "--external",
+      "pg",
+      "--external",
+      "bun",
+      "--external",
+      "@neondatabase/serverless",
+    ],
+    cwd: join(import.meta.dir, ".."),
+  });
+  expect(built.exitCode).toBe(0);
+  return join(root, "driver-run.js");
+}
+
 test("a shared chunk finds driver-run.js under dist/tooling", () => {
   const root = scratch();
   const shared = join(root, "dist", "shared");
@@ -33,35 +73,38 @@ test("a file beside the module is the runner when the source tree is absent", ()
   expect(driverRunnerPath(here)).toBe(join(here, "driver-run.js"));
 });
 
-test("the packed runner does not statically import bun", async () => {
-  const root = scratch();
-  const outfile = join(root, "driver-run.js");
-  const entry = join(import.meta.dir, "..", "packages", "harness", "src", "driver-run.ts");
-  const built = Bun.spawnSync({
-    cmd: [
-      "bun",
-      "build",
-      entry,
-      "--outfile",
-      outfile,
-      "--format",
-      "esm",
-      "--target",
-      "node",
-      "--external",
-      "postgres",
-      "--external",
-      "@electric-sql/pglite",
-      "--external",
-      "pg",
-      "--external",
-      "bun",
-      "--external",
-      "@neondatabase/serverless",
-    ],
-    cwd: join(import.meta.dir, ".."),
-  });
-  expect(built.exitCode).toBe(0);
+test("the packed bun driver loads its chunk and maps the pool config", () => {
+  const outfile = buildRunner(scratch());
+  const built = readFileSync(outfile, "utf8");
+  const source = readFileSync(
+    join(import.meta.dir, "..", "packages", "harness", "src", "driver-run.ts"),
+    "utf8",
+  );
+  const branch = source.slice(
+    source.indexOf('typeof Bun === "undefined"'),
+    source.indexOf("function networked"),
+  );
+  const specs = [...built.matchAll(/import\("(\.\/shared\/[^"]+\.js)"\)/g)].map(
+    (match) => match[1] ?? "",
+  );
+  expect(built.includes('from "bun"')).toBe(false);
+  expect(specs.length).toBeGreaterThan(0);
+  for (const spec of specs) expect(existsSync(join(outfile, "..", spec))).toBe(true);
+  const shared = join(outfile, "..", "shared");
+  const bunChunk = readdirSync(shared).find((name) =>
+    readFileSync(join(shared, name), "utf8").includes('from "bun"'),
+  );
+  expect(bunChunk).toBeTruthy();
+  expect(branch).toContain("url: config.url ?? url");
+  expect(branch).toContain("searchPath: config.schema");
+  expect(branch).toContain("timeouts: config.timeouts");
+  const packed = join(import.meta.dir, "..", "dist", "tooling", "driver-run.js");
+  expect(existsSync(packed)).toBe(true);
+  expect(readFileSync(packed, "utf8").includes('from "bun"')).toBe(false);
+});
+
+test("the packed runner does not statically import bun", () => {
+  const outfile = buildRunner(scratch());
   expect(readFileSync(outfile, "utf8").includes('from "bun"')).toBe(false);
 });
 
