@@ -14,6 +14,10 @@ The scratch replay creates those objects from empty, in dependency order, with `
 
 Printed under `not pulled yet`, with a count, and not written: policies, roles, grants, default privileges, aggregates, procedures, event triggers, and rules. The catalog has no kind for the last four. The same list holds a partition, a composite foreign key, a standalone sequence, an expression index with no column, a column type `table()` has no builder for, a deferrable or nulls-not-distinct constraint, a non-default collation, an identity that is not generated always as the only primary key, a security-definer function with no `search_path`, a `security_invoker` view, and an expression or partial index on a materialized view. Comments are not pulled: the catalog does not store them. A domain with no check is not in the catalog, so it is not pulled. The logical namespace is `public`, because `schema()` has one namespace. Nothing in that list is dropped without a line.
 
+## GitHub Action
+
+The composite action `.github/actions/migrate` posts one sticky pull-request comment from `okm migrate plan --json` and can run the preview recipe (D279, §19.8). It does not create a database and it does not drop one. The caller passes the URL. A fork pull request receives no secrets, so `preview: true` is for a pull request in the same repository. See [GitHub Action](github-action.md).
+
 ## Not built yet
 
 An option or builder that is not in this version throws OKM1061 and names the prompt or version that adds it, or it is not a method yet. These are the ones the plan has assigned.

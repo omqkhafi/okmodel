@@ -1,0 +1,55 @@
+name: GitHub Action
+
+# Dogfood for the composite action. Not a required check. The gate does
+# not list this job. Fork pull requests receive no secrets, so this job
+# runs on a pull request in this repository and uses the workflow token
+# only. The Postgres service is created by the workflow. The action does
+# not create or drop it.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  dogfood:
+    name: dogfood / migrate plan
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: okm
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d okm"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/okm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Plan
+        uses: ./.github/actions/migrate
+        with:
+          target: ci
+          working-directory: fixtures/github-action
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/okm

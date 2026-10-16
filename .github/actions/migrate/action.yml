@@ -1,0 +1,67 @@
+name: OKModel migrate
+description: >-
+  Run okm migrate check and okm migrate plan against a named target, post
+  one sticky pull-request comment, and optionally apply a caller-supplied
+  preview database.
+inputs:
+  target:
+    description: >-
+      Named migration target. Required. The action never infers a target
+      (OKM1853).
+    required: true
+  working-directory:
+    description: Project directory, relative to the workspace unless absolute.
+    required: false
+    default: "."
+  version:
+    description: >-
+      Published okmodel version to run. Empty uses the source checked out
+      with this action, which is the action's own release.
+    required: false
+    default: ""
+  comment:
+    description: >-
+      Post or update the sticky pull-request comment. Needs GITHUB_TOKEN
+      with pull-requests write. Fork pull requests do not receive secrets.
+    required: false
+    default: "true"
+  preview:
+    description: >-
+      Run okm migrate apply --target with the target input, then okm seed
+      when seed is set. The action does not create or drop a database.
+    required: false
+    default: "false"
+  database-url:
+    description: >-
+      Postgres URL for the commands. Prefer the DATABASE_URL environment
+      variable so the URL is not stored as a workflow input. A secret passed
+      as an input can appear in the workflow file.
+    required: false
+    default: ""
+  seed:
+    description: Seed file for okm seed. Used only when preview is true.
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      with:
+        bun-version: 1.4.2
+
+    - name: Migrate
+      shell: bash
+      env:
+        INPUT_TARGET: ${{ inputs.target }}
+        INPUT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_COMMENT: ${{ inputs.comment }}
+        INPUT_PREVIEW: ${{ inputs.preview }}
+        INPUT_DATABASE_URL: ${{ inputs.database-url }}
+        INPUT_SEED: ${{ inputs.seed }}
+        EVENT_NAME: ${{ github.event_name }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_TOKEN: ${{ github.token }}
+      run: bash "$GITHUB_ACTION_PATH/run.sh"
