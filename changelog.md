@@ -14,6 +14,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+## v0.8.0 — 2026-10-16
+
 ### ✨ Added
 
 #### dialects
@@ -33,6 +35,13 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - On a topology client, `inspect().routing.reason` matches `onRoute`. The preview does not call `onRoute` and does not move the selector. A string or a pool stays synchronous `single-endpoint` (D268).
 - `connect` from `okmodel/pg/neon` returns a promise for a string, a pool, and a topology. Writes go to the primary. A replica can lag, and `route: "replica"` stays on that replica (D269).
 
+#### tooling
+
+- `okm driver test <driver>` runs the driver, error, and transaction suites and prints each case as pass, fail, or unsupported, with the capability that explains an unsupported case.
+- `okm driver test neon` runs those suites. COMMIT loss is unsupported (`no socket to cut`). The Neon connect gate is 42,000 minified and 14,500 gzip (D269).
+- A Windows job runs the audit checklist from the packed tarball. It is not a required check. A step that needs a TCP Postgres URL is skipped.
+- The repository `.gitattributes` keeps migration SQL, catalog JSON, and `.okm` files LF on checkout (D237).
+
 #### docs
 
 - Offline-first constraints R1–R7 are recorded for the 0.8 train. They do not start a phase. P100 audits PostgreSQL and writes a report (D265).
@@ -42,14 +51,11 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The P108 study measures four inline-relation shapes. An opt-in entry types `as` and `has` without moving an existing ceiling. The default-path harvest and a loose `references()` store do not fit. No gate moves.
 - Inline relations do not ship in 0.8. `relations` on the table remains how an include is named (D270).
 - postgres.js and node-postgres results on Neon primary and primary-pool endpoints are recorded. A cause that was not established stays unclassified (D269).
-- The OKE Windows audit records 32 surfaces: 27 work, 2 probably work, none fail, and 3 are unknown. The table-file stem compare is fixed (#219). Packed `okm driver test` finds its runner.
+- The OKE Windows audit records 32 surfaces: 27 work, 2 probably work, none fail, and 3 are unknown (#219).
 
-#### tooling
+### ♻️ Changed
 
-- `okm driver test <driver>` runs the driver, error, and transaction suites and prints each case as pass, fail, or unsupported, with the capability that explains an unsupported case.
-- `okm driver test neon` runs those suites. COMMIT loss is unsupported (`no socket to cut`). The Neon connect gate is 42,000 minified and 14,500 gzip (D269).
-- A Windows job runs the audit checklist from the packed tarball. It is not a required check. A step that needs a TCP Postgres URL is skipped.
-- The repository `.gitattributes` keeps migration SQL, catalog JSON, and `.okm` files LF on checkout (D237).
+- The spec status names the 0.8.0 release. Decisions run through D274.
 
 ### 🐛 Fixed
 
