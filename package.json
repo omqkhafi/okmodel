@@ -200,7 +200,7 @@
     "oxfmt": "0.71.0",
     "oxlint": "^1.88.0",
     "oxlint-tsgolint": "^7.0.2004",
-    "publint": "^0.3.24",
+    "publint": "^0.3.25",
     "temporal-polyfill": "^1.0.5",
     "temporal-spec": "^1.0.1",
     "typescript": "7",
