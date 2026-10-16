@@ -27,6 +27,7 @@ import {
   Dices,
   Eye,
   FileCode,
+  FileInput,
   FolderTree,
   FileText,
   Fingerprint,
@@ -74,6 +75,7 @@ import { createElement, type ReactNode } from "react";
 const PATH_ICONS: Readonly<Record<string, LucideIcon>> = {
   "/docs/start": Terminal,
   "/docs/start/basic-usage": Play,
+  "/docs/start/from-drizzle": FileInput,
   "/docs/define/config": Settings,
   "/docs/define/config/schema": Braces,
   "/docs/define/config/database": Database,
