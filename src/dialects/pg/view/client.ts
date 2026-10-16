@@ -52,20 +52,50 @@ export type ViewInstall = (
   scoped: Set<string>,
 ) => void;
 
+/** A value, or a function `install` calls once casing is known. */
+type ColumnSource =
+  | readonly { readonly name: string; readonly type: string }[]
+  | (() => readonly { readonly name: string; readonly type: string }[]);
+
+/** A query string, or a function `install` calls once casing is known. */
+type QuerySource = string | (() => string);
+
+/**
+ * Reads declared columns. A function runs then.
+ *
+ * @param source - Columns or a getter
+ * @returns The columns
+ */
+function readColumns(
+  source: ColumnSource,
+): readonly { readonly name: string; readonly type: string }[] {
+  return typeof source === "function" ? source() : source;
+}
+
+/**
+ * Reads the query. A function runs then.
+ *
+ * @param source - SQL or a getter
+ * @returns The SQL
+ */
+function readQuery(source: QuerySource): string {
+  return typeof source === "function" ? source() : source;
+}
+
 /**
  * Client name, read model, and the hook that moves the handle under `views`.
  *
  * @param name - SQL name of the view
- * @param columns - Declared output columns
- * @param query - Author SQL
+ * @param columns - Declared output columns, or a getter `install` calls
+ * @param query - Author SQL, or a getter `install` calls
  * @param tenancy - `global("reason")`, when the view opts out
  * @param refresh - `plain` stores no `refresh`. A materialized view is `blocking` or `concurrently`
  * @returns Methods stored on the declaration
  */
 export function viewClient(
   name: string,
-  columns: readonly { readonly name: string; readonly type: string }[],
-  query: string,
+  columns: ColumnSource,
+  query: QuerySource,
   tenancy: unknown,
   refresh: "plain" | "blocking" | "concurrently" = "plain",
 ): { readonly field: string; readonly install: ViewInstall; readonly hook: SchemaHook } {
@@ -74,13 +104,15 @@ export function viewClient(
   return {
     field,
     install(model, scope, tables, casing, scoped) {
+      const listed = readColumns(columns);
+      const text = readQuery(query);
       if (Object.hasOwn(model, field)) {
         throw new OkmError("OKM1023", `View ${name} uses the client name ${field}.`, {
           fix: { summary: "Give the view a name that no table uses." },
         });
       }
-      const exposes = exposesKey(columns, scope);
-      if (scope !== undefined && readsTenant(query, tables, casing, scoped)) {
+      const exposes = exposesKey(listed, scope);
+      if (scope !== undefined && readsTenant(text, tables, casing, scoped)) {
         if (!exposes && marked === undefined) {
           throw new OkmError(
             "OKM1820",
@@ -103,7 +135,7 @@ export function viewClient(
         sql: name,
         primary: [],
         uniques: [],
-        columns: columnModels(columns, scope),
+        columns: columnModels(listed, scope),
         relations: [],
       };
       if (marked !== undefined) globalViews.set(built, marked);

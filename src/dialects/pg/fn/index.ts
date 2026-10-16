@@ -21,6 +21,16 @@ import type {
   TriggerLevel,
   TriggerTiming,
 } from "../../../contracts/catalog/types.js";
+import { quoteIdent } from "../ddl.js";
+import {
+  identName,
+  isFragmentParts,
+  sqlExpression,
+  type FragmentIdent,
+  type FragmentPart,
+} from "../ops/fragment.js";
+import { isOperator, operatorName, operatorValue, type Eq } from "../operators.js";
+import type { Window } from "../ops/window.js";
 import type { AnyTable, SqlText } from "../table.js";
 
 /** One argument of {@link fn}. */
@@ -28,6 +38,62 @@ export type FunctionArgumentInput = {
   readonly name: string;
   readonly type: string;
 };
+
+/** Postgres types that bind as a number. Anything else binds as text. */
+type NumericReturn =
+  | "smallint"
+  | "integer"
+  | "bigint"
+  | "int2"
+  | "int4"
+  | "int8"
+  | "real"
+  | "double precision"
+  | "float4"
+  | "float8"
+  | "numeric";
+
+/** A select name for {@link FnCall.as}. Numeric returns are numbers. Text stays text. */
+type CallAs<R extends string, A extends string> = R extends NumericReturn | `numeric${string}`
+  ? Window<A, number>
+  : Window<A, string>;
+
+/**
+ * A typed call.
+ *
+ * It is a `sql` fragment, so `where` accepts it as {@link Eq}. `.as(name)` is
+ * the `select` form. `orderBy` does not: adding the call to that union is one
+ * composite type over the ceiling.
+ *
+ * @typeParam R - Declared return type
+ */
+export type FnCall<R extends string = string> = Eq<never> & {
+  /**
+   * Names the select result.
+   *
+   * @typeParam A - Result key
+   * @param name - Result key. Not a column name
+   * @returns A select entry
+   */
+  as<const A extends string>(name: A): CallAs<R, A>;
+};
+
+/** One argument value. `ident` names a field. Null is SQL null. */
+type CallValue<T extends string> = T extends "boolean" | "bool"
+  ? boolean | FragmentIdent | null
+  : T extends NumericReturn | `numeric${string}`
+    ? number | FragmentIdent | null
+    : string | FragmentIdent | null;
+
+/** Argument list of a call, in declaration order. */
+type CallArgs<A extends readonly FunctionArgumentInput[]> = {
+  [I in keyof A]: A[I] extends FunctionArgumentInput ? CallValue<A[I]["type"]> : never;
+};
+
+/** `fn.slugify(col)`. The value is {@link FnCall}. */
+type FnCaller<A extends readonly FunctionArgumentInput[], R extends string> = (
+  ...args: CallArgs<A>
+) => FnCall<R>;
 
 /**
  * A table, or one column of a table.
@@ -116,7 +182,13 @@ export type TriggerDeclaration = {
  * @param options - Signature, language, body, and dependencies
  * @returns The definition object `schema({ functions })` stores
  */
-export function fn(name: string, options: FunctionOptions): Routine {
+export function fn<
+  const A extends readonly FunctionArgumentInput[] = readonly [],
+  const R extends string = string,
+>(
+  name: string,
+  options: FunctionOptions & { readonly arguments?: A; readonly returns: R },
+): Routine & FnCaller<A, R> {
   const language = options.language;
   const body = bodyText(options.body);
   const atomic = language === "sql" && /^\s*begin\s+atomic\b/i.test(body);
@@ -147,32 +219,168 @@ export function fn(name: string, options: FunctionOptions): Routine {
   }
   const argTypes = (options.arguments ?? []).map((argument) => argument.type);
   const schema = options.schema ?? "public";
-  return {
-    name,
-    schema,
-    argTypes,
-    contribute(peers, built) {
-      assertPeers(peers, "functions");
-      const namespace = staticNamespace(schema);
-      const provenance: Provenance = { origin: "file", name };
-      return [
-        functionObject({
-          namespace,
-          name,
-          ...(options.arguments !== undefined ? { arguments: options.arguments } : {}),
-          returns: options.returns,
-          language,
-          ...(options.volatility !== undefined ? { volatility: options.volatility } : {}),
-          ...(options.security !== undefined ? { security: options.security } : {}),
-          ...(options.searchPath !== undefined ? { searchPath: options.searchPath } : {}),
-          body,
-          ...(atomic ? { atomic: true } : {}),
-          provenance,
-          dependencies: dependencyEdges(options.dependsOn, built),
-        }),
-      ];
-    },
+  const declared = options.arguments ?? [];
+  const contribute = (peers: unknown, built: unknown): readonly CatalogObject[] => {
+    assertPeers(peers, "functions");
+    const namespace = staticNamespace(schema);
+    const provenance: Provenance = { origin: "file", name };
+    return [
+      functionObject({
+        namespace,
+        name,
+        ...(options.arguments !== undefined ? { arguments: options.arguments } : {}),
+        returns: options.returns,
+        language,
+        ...(options.volatility !== undefined ? { volatility: options.volatility } : {}),
+        ...(options.security !== undefined ? { security: options.security } : {}),
+        ...(options.searchPath !== undefined ? { searchPath: options.searchPath } : {}),
+        body,
+        ...(atomic ? { atomic: true } : {}),
+        provenance,
+        dependencies: dependencyEdges(options.dependsOn, built),
+      }),
+    ];
   };
+  const call = (...args: readonly unknown[]): FnCall<R> =>
+    invoke(schema, name, declared, options.returns, args);
+  define(call, "name", name);
+  define(call, "schema", schema);
+  define(call, "argTypes", argTypes);
+  define(call, "contribute", contribute);
+  return call as Routine & FnCaller<A, R>;
+}
+
+/**
+ * Sets one own property on a call.
+ *
+ * `Object.assign` cannot write `name`: a function's `name` is read-only.
+ *
+ * @param target - The call
+ * @param key - Property name
+ * @param value - Property value
+ */
+function define(target: object, key: string, value: unknown): void {
+  Object.defineProperty(target, key, {
+    value,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
+}
+
+const NUMERIC_RETURNS = new Set<string>([
+  "smallint",
+  "integer",
+  "bigint",
+  "int2",
+  "int4",
+  "int8",
+  "real",
+  "double precision",
+  "float4",
+  "float8",
+  "numeric",
+]);
+
+/**
+ * Builds the call fragment `schema.name(args)`.
+ *
+ * A string, number, or boolean is a parameter. `ident` and a column handle
+ * name a field. Null is SQL null. Another call is nested.
+ *
+ * @param schemaName - Function schema
+ * @param name - Function name
+ * @param declared - Declared arguments
+ * @param returns - Declared return type
+ * @param args - Values the caller passed
+ * @returns The tagged call
+ */
+function invoke<R extends string>(
+  schemaName: string,
+  name: string,
+  declared: readonly FunctionArgumentInput[],
+  returns: R,
+  args: readonly unknown[],
+): FnCall<R> {
+  if (args.length !== declared.length) {
+    throw new OkmError(
+      "OKM1120",
+      `Function ${name} expects ${String(declared.length)} arguments.`,
+      { fix: { summary: "Pass one value for each declared argument, in order." } },
+    );
+  }
+  const parts: FragmentPart[] = [{ k: "t", s: `${quoteIdent(schemaName)}.${quoteIdent(name)}(` }];
+  for (let index = 0; index < args.length; index += 1) {
+    if (index > 0) parts.push({ k: "t", s: ", " });
+    appendArg(parts, args[index], name);
+  }
+  parts.push({ k: "t", s: ")" });
+  const textual = !(NUMERIC_RETURNS.has(returns) || returns.startsWith("numeric("));
+  return sqlExpression(parts, textual) as unknown as FnCall<R>;
+}
+
+/**
+ * Appends one argument.
+ *
+ * @param parts - Call parts
+ * @param value - The argument
+ * @param name - Function name, for the error
+ */
+function appendArg(parts: FragmentPart[], value: unknown, name: string): void {
+  if (value === null) {
+    parts.push({ k: "n" });
+    return;
+  }
+  if (typeof value === "string" || typeof value === "boolean") {
+    parts.push({ k: "p", v: String(value) });
+    return;
+  }
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) {
+      throw new OkmError("OKM1120", `Function ${name} needs a finite number.`, {
+        fix: { summary: "Pass a finite number, or leave it out." },
+      });
+    }
+    parts.push({ k: "p", v: String(value) });
+    return;
+  }
+  const field = identName(value);
+  if (field !== undefined) {
+    parts.push({ k: "i", n: field });
+    return;
+  }
+  if (isOperator(value) && operatorName(value) === "sql") {
+    const stored = operatorValue(value);
+    if (isFragmentParts(stored)) {
+      parts.push({ k: "f", parts: stored });
+      return;
+    }
+  }
+  if (isHandle(value)) {
+    assertIdentifier(value.name, `function ${name}`);
+    parts.push({ k: "i", n: value.name });
+    return;
+  }
+  throw new OkmError("OKM1121", `Function ${name} received a value it cannot bind.`, {
+    fix: { summary: "Pass a string, number, boolean, null, or ident(field)." },
+  });
+}
+
+/**
+ * A `{ name }` handle that is not an operator.
+ *
+ * @param value - One argument
+ * @returns Whether it names a field
+ */
+function isHandle(value: unknown): value is { readonly name: string } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "name" in value &&
+    typeof value.name === "string" &&
+    value.name.length > 0 &&
+    !isOperator(value)
+  );
 }
 
 /**

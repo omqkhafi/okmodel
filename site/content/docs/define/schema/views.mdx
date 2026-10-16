@@ -6,7 +6,7 @@ description: "Views and materialized views."
 
 `db.views` is the read handle. The client name is the camelCase of the view name, so `open_notes` is `openNotes`. Every output column is decoded as text. Each field is `string | null`. A plain view has `find`, `one`, `count`, and `exists`. A materialized view also has `refresh()`.
 
-`columns`, `query` are required. `schema` defaults to `public`. `tenancy` opts a view out with `global("reason")`.
+`columns`, `query` are required on the SQL form. The builder form is `view(name, (q) => q.from(table))`. A column list projects those fields. Omit it to select every field. `.where(sql`...`)` appends that text. `.tenancy(global("reason"))` opts out. The builder's schema is `public`. `materializedView()` stays the SQL form. `schema` defaults to `public`. `tenancy` opts a view out with `global("reason")`.
 
 ### view
 

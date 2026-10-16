@@ -54,7 +54,12 @@ type Parsed = {
 type Item =
   | { readonly kind: "column"; readonly column: ColumnModel }
   | { readonly kind: "window"; readonly window: Parsed }
-  | { readonly kind: "sql"; readonly as: string; readonly parts: readonly FragmentPart[] };
+  | {
+      readonly kind: "sql";
+      readonly as: string;
+      readonly parts: readonly FragmentPart[];
+      readonly textual?: true;
+    };
 
 type Spec = {
   readonly items: readonly Item[];
@@ -99,7 +104,11 @@ function statement(spec: Spec): ReadBuild {
         emitSqlSelect(table, item.parts, sink, "t");
         sink.text("::text");
         sink.mark(`s:${item.as}`);
-        outputs?.fields.push({ key: item.as, at: column, decode: decodeSqlNumber });
+        outputs?.fields.push({
+          key: item.as,
+          at: column,
+          decode: item.textual === true ? AS_TEXT : decodeSqlNumber,
+        });
       } else {
         emitWindow(table, item.window, sink);
         sink.text("::text");
@@ -250,7 +259,11 @@ function readSpec(table: Indexed, select: unknown): Spec {
       }
       names.add(as);
       ordinals.set(as, String(items.length + 1));
-      items.push({ kind: "sql", as, parts: sql.parts });
+      items.push(
+        sql.textual === true
+          ? { kind: "sql", as, parts: sql.parts, textual: true }
+          : { kind: "sql", as, parts: sql.parts },
+      );
       continue;
     }
     if (!isWindow(entry)) {

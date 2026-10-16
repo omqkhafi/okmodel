@@ -20,6 +20,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - `fragment` composes SQL in `where` and in `select` on `find` or `one`. A value is a parameter. `ident` names the field, the same name `where` uses, and a hidden field is refused. The tenant predicate stays (D266).
 - `raw` and `explain` run typed SQL from a table handle. The row class names the columns. `"read"` or `"write"` is required. A scoped tenant read keeps the tenant predicate outside the fragment. A raw write on that table is OKM1702 and sends nothing. `explain` returns the plan outside production and sends nothing when `NODE_ENV` is `production` (D268).
+- The value `fn()` returns is callable. `slugify(ident("title"))` is a `where` operand. `.as("slug")` names a `select` entry: a numeric return is a number, and any other return is text. `orderBy` does not accept the call. `view(name, (q) => q.from(table))` selects that table. A column list projects those fields. `materializedView()` stays SQL plus declared columns (D271).
 
 #### adapters
 

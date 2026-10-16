@@ -90,9 +90,11 @@ function isPart(value: unknown): value is FragmentPart {
  */
 export function readSelectFragment(
   value: unknown,
-): { readonly as: string; readonly parts: readonly FragmentPart[] } | undefined {
+):
+  | { readonly as: string; readonly parts: readonly FragmentPart[]; readonly textual?: true }
+  | undefined {
   if (!isOperator(value) || operatorName(value) !== "sql") return undefined;
-  const named = value as { readonly as?: unknown };
+  const named = value as { readonly as?: unknown; readonly text?: unknown };
   if (typeof named.as !== "string") {
     fragmentError(
       "A select fragment needs as(name).",
@@ -103,7 +105,8 @@ export function readSelectFragment(
   if (!isFragmentParts(stored)) {
     fragmentError("A fragment was not created by fragment``.", "Call fragment`...`.");
   }
-  return { as: named.as, parts: stored };
+  const textual = named.text === true;
+  return textual ? { as: named.as, parts: stored, textual: true } : { as: named.as, parts: stored };
 }
 
 type Scan = { quote: "'" | '"' | undefined; paren: number };
@@ -281,7 +284,7 @@ function isTemplate(value: unknown): value is TemplateStringsArray {
   return Array.isArray(value) && "raw" in value;
 }
 
-function bind(parts: readonly FragmentPart[]): Fragment {
+function bind(parts: readonly FragmentPart[], textual = false): Fragment {
   const tagged = tag("sql", parts);
   return Object.assign(tagged, {
     as<const A extends string>(name: A): Window<A, number> {
@@ -292,9 +295,39 @@ function bind(parts: readonly FragmentPart[]): Fragment {
         );
       }
       assertNoControl(name, "fragment as");
-      return Object.assign(tag("sql", parts), { as: name }) as unknown as Window<A, number>;
+      const selected = Object.assign(tag("sql", parts), { as: name });
+      return (textual ? Object.assign(selected, { text: true }) : selected) as unknown as Window<
+        A,
+        number
+      >;
     },
   }) as unknown as Fragment;
+}
+
+/**
+ * A function call stored as a `sql` fragment.
+ *
+ * The planner compiles it on the same path as {@link fragment}. `textual`
+ * makes `.as(name)` keep the wire string. A numeric call parses a number.
+ *
+ * @param parts - Expression parts, including the function name
+ * @param textual - When true, a select result stays text
+ * @returns A where operand. Call `.as(name)` to use it in `select`
+ */
+export function sqlExpression(parts: readonly FragmentPart[], textual = false): Fragment {
+  return bind(parts, textual);
+}
+
+/**
+ * Reads the field name `ident` stored.
+ *
+ * @param value - A fragment interpolation
+ * @returns The field name, or `undefined` when `value` is not an ident
+ */
+export function identName(value: unknown): string | undefined {
+  if (typeof value !== "object" || value === null || !(IDENT in value)) return undefined;
+  const stored = (value as { readonly [IDENT]: unknown })[IDENT];
+  return typeof stored === "string" ? stored : undefined;
 }
 
 /**
