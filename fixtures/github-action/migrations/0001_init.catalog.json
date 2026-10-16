@@ -1,0 +1,91 @@
+{
+  "objects": [
+    {
+      "definition": { "dataType": "uuid", "nullable": false },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "notes",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "id",
+        "parent": { "name": "notes", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "notes", "origin": "file" }
+    },
+    {
+      "definition": { "dataType": "text", "nullable": false },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "table",
+            "name": "notes",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "column",
+        "name": "title",
+        "parent": { "name": "notes", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "column",
+      "owner": "managed",
+      "provenance": { "name": "notes", "origin": "file" }
+    },
+    {
+      "definition": {
+        "columns": ["id"],
+        "constraintKind": "primaryKey",
+        "deferrable": false,
+        "initially": "immediate",
+        "nameKey": "pkey",
+        "nullsNotDistinct": false
+      },
+      "dependencies": [
+        {
+          "target": {
+            "kind": "column",
+            "name": "id",
+            "parent": { "name": "notes", "namespace": { "form": "static", "name": "public" } }
+          }
+        },
+        {
+          "target": {
+            "kind": "table",
+            "name": "notes",
+            "namespace": { "form": "static", "name": "public" }
+          }
+        }
+      ],
+      "identity": {
+        "kind": "constraint",
+        "name": "notes_pkey",
+        "parent": { "name": "notes", "namespace": { "form": "static", "name": "public" } }
+      },
+      "kind": "constraint",
+      "owner": "managed",
+      "provenance": { "name": "notes", "origin": "file" }
+    },
+    {
+      "definition": {},
+      "dependencies": [],
+      "identity": {
+        "kind": "table",
+        "name": "notes",
+        "namespace": { "form": "static", "name": "public" }
+      },
+      "kind": "table",
+      "owner": "managed",
+      "provenance": { "name": "notes", "origin": "file" }
+    }
+  ],
+  "version": 1
+}

@@ -48,7 +48,14 @@ import {
   type InvokeFlags,
 } from "./policy.js";
 import { projectPath } from "./paths.js";
-import { formatPlan, planMigration, staleRenames, type MigrationPlan } from "./plan.js";
+import { formatPlanJson } from "./plan-json.js";
+import {
+  formatPlan,
+  planMigration,
+  staleRenames,
+  type MigrationPlan,
+  type PlanStep,
+} from "./plan.js";
 import { hasError, lintCatalog, lintPlan, lintRefusal, type Finding } from "./lint.js";
 import { parseReplace } from "./values.js";
 
@@ -110,7 +117,7 @@ export async function generateProject(
  * @param name - Plan name
  * @param flags - `--replace` values
  * @param invoke - Target and protection flags, when the command passed them
- * @returns The plan, its lint findings, and the text to print
+ * @returns The plan, its lint findings, the human text, and the `--json` document. Both forms use the same lock lines
  */
 export async function planProject(
   cwd: string,
@@ -121,12 +128,16 @@ export async function planProject(
   readonly plan: MigrationPlan;
   readonly findings: readonly Finding[];
   readonly text: string;
+  readonly json: string;
 }> {
   const prepared = await prepare(cwd, name, flags);
+  const findings = lintPrepared(prepared);
+  const lockText = await planLockText(prepared.config, prepared.plan, invoke);
   return {
     plan: prepared.plan,
-    findings: lintPrepared(prepared),
-    text: await displayPlan(prepared.config, prepared.plan, invoke),
+    findings,
+    text: formatPlan(prepared.plan, lockText),
+    json: formatPlanJson(prepared.plan, findings, lockText),
   };
 }
 
@@ -261,28 +272,28 @@ function lintPrepared(prepared: {
 }
 
 /**
- * Prints estimates when a selected target answers.
+ * Lock callback when a selected target answers.
  *
- * A connection or query failure returns the offline text and does not throw.
- * Protection and an unknown `--target` still throw: those are the same
- * refusals the other read-only commands use. A pooler is not refused.
+ * A connection or query failure returns `undefined` and does not throw.
+ * The printed lock is then the offline lock. Protection and an unknown
+ * `--target` still throw: those are the same refusals the other read-only
+ * commands use. A pooler is not refused.
  *
  * @param config - Project config
- * @param plan - Plan to print
+ * @param plan - Plan to annotate
  * @param invoke - Target flags
- * @returns Offline text, or the same text with lock estimates
+ * @returns Annotated locks, or `undefined` for the offline lock text
  */
-async function displayPlan(
+async function planLockText(
   config: MigrateConfig,
   plan: MigrationPlan,
   invoke: InvokeFlags | undefined,
-): Promise<string> {
-  const offline = formatPlan(plan);
+): Promise<((step: PlanStep) => string) | undefined> {
   const targets = listTargets(config);
-  if (targets.length === 0) return offline;
+  if (targets.length === 0) return undefined;
   assertTargetAlias(targets);
   const named = invoke?.target;
-  if (named === undefined && targets.length !== 1) return offline;
+  if (named === undefined && targets.length !== 1) return undefined;
   const target = selectTarget(config, named);
   assertTargetPolicy(target, "plan", invoke?.allowProtected ?? false);
   let estimates: ReadonlyMap<string, RowEstimate>;
@@ -290,10 +301,10 @@ async function displayPlan(
     const names = plan.steps.flatMap((step) => step.tables ?? []);
     estimates = await readRowEstimates(target.url, catalogNamespace(config), names);
   } catch {
-    return offline;
+    return undefined;
   }
   const aliases = renameAliases(plan.steps);
-  return formatPlan(plan, (step) => annotateLock(step, estimates, aliases));
+  return (step) => annotateLock(step, estimates, aliases);
 }
 
 function lintOpened(opened: {

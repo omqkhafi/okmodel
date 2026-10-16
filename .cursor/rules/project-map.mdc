@@ -18,7 +18,8 @@ contracts → dialects → adapters → runtime → tooling. Adapters import con
 - `src/adapters/` — `error.ts`, `failure.ts` (driver error mapping), `capabilities.ts`.
 - `src/runtime/` — client, planner (`plan.ts`), predicates, include, write, archive, batch, drift, text search (`text-search.ts`); `pg/` connect entries per driver; `otel.ts` (`okmodel/otel`); `ids/`, `safety/`, `tenancy/`, `traits/`, `validate/`.
 - `src/tooling/migrate/` — apply, check (sandbox), lint (`lint-rules.ts`), SQL lexer `sql-lex.ts`, files, status, provision, runner.
-- `src/tooling/cli.ts` — `okm` CLI; `src/tooling/driver-test.ts` — `okm driver test` (the suites stay in `packages/harness`); `src/tooling/errors/registry.ts` — doctor text for every OKM code; `src/tooling/testing/`.
+- `src/tooling/cli.ts` — `okm` CLI; `src/tooling/driver-test.ts` — `okm driver test` (the suites stay in `packages/harness`); `src/tooling/errors/registry.ts` — doctor text for every OKM code; `src/tooling/testing/`; `src/tooling/github/` — plan comment for the GitHub Action.
+- `.github/actions/migrate/` — official composite GitHub Action (`action.yml`). Dogfood workflow: `.github/workflows/github-action.yml`.
 - `tests/` — flat: `*.test.ts`, `*-pg.test.ts` (real Postgres), `*.test-d.ts` (expect-type), `*.property.test.ts`, `*.worker.ts` (spawned by a test).
 - `packages/harness/src/` — Docker topology (`docker-cli.ts`, `topology.ts`), `postgres-test.ts`, driver/error/tx suites. Others: `packages/bench`, `attest`, `spikes`, `reference-app`.
 - `scripts/` — every check script (size, type-cost, postgres-suite, verify, bump, release-check…).

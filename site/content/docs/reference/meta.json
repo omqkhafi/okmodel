@@ -2,6 +2,7 @@
   "title": "Reference",
   "pages": [
     "cli",
+    "github-action",
     "errors",
     "okid",
     "environment-variables"

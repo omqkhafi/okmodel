@@ -108,14 +108,20 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
   }
   if (command === "migrate") {
     const sub = rest[0];
-    const parsed = splitFlags(rest.slice(1));
+    const migrateArgs = rest.slice(1);
+    const parsed = splitFlags(
+      sub === "plan" ? migrateArgs.filter((arg) => arg !== "--json") : migrateArgs,
+    );
     if (sub === "plan") {
       if (parsed.name === undefined) {
         throw new OkmError("invalid", "okm migrate plan needs a name.");
       }
       const planned = await planProject(cwd, parsed.name, parsed.flags, invoke(parsed));
-      stdout(planned.text);
-      stdout(formatFindings(planned.findings));
+      if (migrateArgs.includes("--json")) stdout(planned.json);
+      else {
+        stdout(planned.text);
+        stdout(formatFindings(planned.findings));
+      }
       if (hasError(planned.findings)) throw lintRefusal(planned.findings);
       return;
     }
@@ -286,7 +292,7 @@ const COMMANDS: readonly (readonly [string, string])[] = [
   ["ext list", "List extensions the server can install."],
   ["ext check", "Compare declared extensions with the server."],
   ["generate [name]", "Write the next migration."],
-  ["migrate plan <name>", "Print the plan and its lock estimates."],
+  ["migrate plan <name>", "Print the plan and its lock estimates. --json prints a document."],
   ["migrate apply", "Apply pending migrations."],
   ["migrate status", "Print whether the target is current."],
   ["migrate check", "Replay migration history in a scratch schema."],

@@ -1,0 +1,61 @@
+---
+title: GitHub Action
+description: The official action posts the migration plan on a pull request and can apply a preview database.
+---
+
+The composite action `.github/actions/migrate` runs `okm migrate check` and `okm migrate plan --json` against a named target and posts one sticky pull-request comment. The heading is the strictest class. Each step shows its class and lock, including the row estimate the plan prints. Lint findings keep their codes. A lint error or a failed check fails the job with that command's exit code.
+
+`preview: true` runs `okm migrate apply` on the target you named, then `okm seed` when `seed` is set. The action does not infer the target. A protected target is refused by the existing policy. The action never creates or drops a database.
+
+## Permissions
+
+The comment step uses the workflow `GITHUB_TOKEN` only.
+
+```yaml
+permissions:
+  contents: read
+  pull-requests: write
+```
+
+Pass the database URL as `DATABASE_URL`. A URL in the `database-url` input can show up in the workflow file. The action masks `DATABASE_URL` in the log and does not echo it.
+
+A fork pull request receives no secrets. Preview mode is for a pull request in the same repository.
+
+## Plan
+
+`version` empty runs the okmodel source checked out with the action. Set `version` to a published release that supports `okm migrate plan --json` to install that package instead. `comment` defaults to `true`. The comment contains `<!-- okmodel-migrate-plan -->` and is updated in place.
+
+```yaml
+name: Plan
+on:
+  pull_request:
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: omqkhafi/okmodel/.github/actions/migrate@<commit>
+        with:
+          target: ci
+        env:
+          DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
+```
+
+Pin `<commit>` to the full SHA of the release you trust. The action pins `oven-sh/setup-bun` by SHA.
+
+## Preview
+
+Create the empty database outside the action. `okm migrate apply --target preview` installs the head snapshot. `okm seed` runs when `seed` is set. Deleting the database stays outside the action.
+
+```yaml
+- uses: omqkhafi/okmodel/.github/actions/migrate@<commit>
+  with:
+    target: preview
+    preview: "true"
+    seed: seed.ts
+  env:
+    DATABASE_URL: ${{ secrets.PREVIEW_DATABASE_URL }}
+```
