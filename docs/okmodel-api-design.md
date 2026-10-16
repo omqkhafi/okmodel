@@ -1396,7 +1396,7 @@ The startup compatibility check allows the database to be ahead of the app by `e
 | `okm pull` | read one database and write one table file per table, plus the schema file (D275, D278). Written: tables, columns (type, default, nullability, identity, stored generated), primary and composite keys, unique constraints, checks, single-column foreign keys, indexes (partial and expression when the index has a column), identity sequences, enums, domains, extensions, functions, triggers, views, and materialized views. A view is the SQL-string form. Views and `BEGIN ATOMIC` bodies take edges from `pg_depend`. A plpgsql or SQL-string body gets lexical `dependsOn` candidates. A scratch replay with `check_function_bodies` on marks each function `verified` or `candidate-only`. Printed under `not pulled yet`, with a count: policies, roles, grants, aggregates, procedures, event triggers, rules, and anything `table()` cannot say (a partition, a composite foreign key, a standalone sequence, an expression index with no column, a column type with no builder). An existing file is OKM1855. The selected namespaces are read-only, including on a protected target |
 | `okm ext list\|check` | list the extensions the connected server can install and the version that is installed; check those versions against the schema. `okm ext test` and `okm ext scaffold` are not in this version |
 | `okm seed <file>` | seeds with factories |
-| `okm import drizzle <path>` | convert a Drizzle schema (M2) |
+| `okm import drizzle <path>` | convert a Drizzle schema into table files with the same emitter as `okm pull` (D280). The file is imported with the project's own `drizzle-orm`, which runs that code. okmodel does not depend on it. A missing `drizzle-orm` is OKM1856. An existing file is OKM1855. Needs no database. Composite foreign keys, `relations()`, custom types, views, and sequences `table()` cannot map are printed under `not imported` |
 | `okm doctor [code]` | explain a code or diagnose the project |
 | `okm driver test <driver>` | run the conformance suites against one driver (`pglite`, `postgresjs`, `pg`, `bun`, `neon`, or a module path). `--url` is the Postgres URL. `pglite` does not use it. The other built-ins need `--url` or `DATABASE_URL` |
 | `okm upgrade` | codemods between 0.x releases |
@@ -1629,7 +1629,8 @@ test("today view runs one query", async () => {
 | Targets resolving to the same database differ in protection, or tenants of one `schemaPerTenant` database differ in protection | `okm check` / `okm doctor` | OKM1852 |
 | Several targets configured and none named (`--target`) | CLI | OKM1853 |
 | Two statements saw different backend pids (a pooler handed out a new session) | apply, seed, check | OKM1854 |
-| `okm pull` would overwrite a file | CLI | OKM1855 |
+| `okm pull` or `okm import drizzle` would overwrite a file | CLI | OKM1855 |
+| `okm import drizzle` cannot resolve `drizzle-orm` from the project | CLI | OKM1856 |
 
 ## 22. Non-goals
 

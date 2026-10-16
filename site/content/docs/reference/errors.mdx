@@ -370,3 +370,5 @@ The registry has 110 codes, in numeric order. Ranges are schema `OKM1000`, queri
 | `OKM1852` | Protection mismatch | Targets that resolve to the same database disagree about protection, or tenants of one schema-per-tenant database do. |
 | `OKM1853` | Target not named | Several targets are configured and the command was not given --target. |
 | `OKM1854` | Pooler session | Two statements on the same connection saw different backend pids. A transaction-mode pooler is in the way. |
+| `OKM1855` | Pull would overwrite | okm pull or okm import drizzle found a file it would replace. It writes nothing. |
+| `OKM1856` | Drizzle is not installed | okm import drizzle could not resolve drizzle-orm from the project. Install it in that project. |

@@ -750,8 +750,14 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
   {
     code: "OKM1855",
     title: "Pull would overwrite",
-    summary: "okm pull found a file it would replace. It writes nothing.",
+    summary: "okm pull or okm import drizzle found a file it would replace. It writes nothing.",
     fix: "Pass --out <directory> to write somewhere else, or move the file.",
+  },
+  {
+    code: "OKM1856",
+    title: "Drizzle is not installed",
+    summary: "okm import drizzle could not resolve drizzle-orm from the project.",
+    fix: "Install drizzle-orm in the project that owns the schema.",
   },
 ];
 

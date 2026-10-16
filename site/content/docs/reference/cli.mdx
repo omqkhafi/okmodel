@@ -46,6 +46,7 @@ An unknown command is `Unknown command <name>.` `okm migrate` with a subcommand 
 | `ext list` | Lists extensions the server can install. |
 | `ext check` | Compares declared extensions with the server. |
 | `generate [name]` | Writes the next migration. |
+| `import drizzle <path>` | Converts a Drizzle schema into table files. Runs that file. Needs no database. |
 | `migrate plan <name>` | Prints the plan. Adds lock estimates when one target answers. `--json` prints a document. |
 | `migrate apply` | Applies pending migrations. |
 | `migrate status` | Prints each target's version and state. |
@@ -69,7 +70,7 @@ An unknown command is `Unknown command <name>.` `okm migrate` with a subcommand 
 | `--replace <table>.<column>.<old>=<new>` | `generate` and `migrate plan`. Repeat it for each removed value. `=null` is the null replacement, on a nullable column. |
 | `--provision` | `migrate check`. Compares a snapshot install with a full replay. |
 | `--schema <name>`, `--schema=<name>` | `pull`. Repeat it, or separate names with a comma. The default is the target's current schema. |
-| `--out <directory>`, `--out=<directory>` | `pull`. Writes `schema.ts` and `tables/` there. Without it, pull uses the schema path and the tables directory from the config. |
+| `--out <directory>`, `--out=<directory>` | `pull` and `import drizzle`. Writes `schema.ts` and `tables/` there. Without it, the command uses the schema path and the tables directory from the config, or `schema.ts` and `tables/` when `import drizzle` has no config yet. |
 
 A missing `--target` name is OKM1853: `--target needs a name.` A missing `--replace` value is OKM1541: `--replace needs table.column.old=new.` `--lock-timeout` and `--statement-timeout` need a finite number of milliseconds that is not negative. The message names the flag. `check`, `push`, and `migrate check` refuse a bad number and do not apply it. The same parser runs on the other commands in the list above.
 
@@ -92,6 +93,18 @@ Tables, columns, keys, uniques, checks, single-column foreign keys, indexes, ide
 ```sh
 bunx okm pull
 bunx okm pull --schema public --out ./adopted
+```
+
+## import drizzle
+
+`okm import drizzle <path>` reads a Drizzle schema and writes one table file per table, plus the schema file. It imports that path, so the file runs. The `drizzle-orm` package is the one installed in the project. okmodel does not depend on it. A missing package is OKM1856: install `drizzle-orm` in the project. An existing file is OKM1855 and nothing is written. The command does not connect.
+
+The report starts with `namespace <name>`. When the name is not `public`, set [namespace](/docs/define/config/namespace) to it. `schema()` still compiles `public`.
+
+Composite foreign keys, `relations()`, and custom column types are printed under `not imported` with the table and the reason. A `serial` column is written as `integer` not null. The sequence `serial` would create is listed, not written.
+
+```sh
+bunx okm import drizzle ./src/db/schema.ts --out ./adopted
 ```
 
 ## catalog export

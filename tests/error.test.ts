@@ -130,6 +130,7 @@ const SPEC_CODES = [
   "OKM1853",
   "OKM1854",
   "OKM1855",
+  "OKM1856",
 ] as const;
 
 test("categories, statuses, match, and safe follow spec 14", async () => {

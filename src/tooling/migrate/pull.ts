@@ -26,6 +26,7 @@ import {
   tableExportNames,
   type PullCount,
   type PullFile,
+  type PullLayout,
   type PullSkip,
 } from "./pull-emit.js";
 import { planRoutines } from "./pull-routines.js";
@@ -79,12 +80,7 @@ export async function pullProject(cwd: string, argv: readonly string[]): Promise
         fix: { summary: "Pass --schema <name> for a namespace that has tables." },
       });
     }
-    refuseExisting(emitted.files);
-    for (const file of emitted.files) {
-      mkdirSync(dirname(file.path), { recursive: true });
-      writeFileSync(file.path, file.text);
-    }
-    formatFiles(emitted.files.map((file) => file.path));
+    commitPullFiles(emitted.files, "Pull");
     return {
       text: formatPullReport(emitted.counts, emitted.skipped, emitted.verdicts, unexpressed),
       skipped: emitted.skipped,
@@ -243,6 +239,45 @@ function queryOf(sql: Sql): CatalogQuery {
   };
 }
 
+/**
+ * Resolves the schema file and the tables directory for a pull or an import.
+ *
+ * `--out` writes `schema.ts` and `tables/` under that directory. Without it,
+ * the project's schema path and tables directory are used.
+ *
+ * @param cwd - Project directory
+ * @param schema - Config schema path
+ * @param tables - Config tables directory, when set
+ * @param out - `--out` directory, when set
+ * @returns Absolute paths
+ */
+export function pullLayout(
+  cwd: string,
+  schema: string,
+  tables: string | undefined,
+  out: string | undefined,
+): PullLayout {
+  return layoutOf(cwd, schema, tables, out);
+}
+
+/**
+ * Refuses an existing file, writes the rest, and formats them.
+ *
+ * @param files - Files from {@link emitPull}
+ * @param verb - `Pull` or `Import`, named in OKM1855
+ */
+export function commitPullFiles(
+  files: readonly PullFile[],
+  verb: "Pull" | "Import" = "Pull",
+): void {
+  refuseExisting(files, verb);
+  for (const file of files) {
+    mkdirSync(dirname(file.path), { recursive: true });
+    writeFileSync(file.path, file.text);
+  }
+  formatFiles(files.map((file) => file.path));
+}
+
 function layoutOf(
   cwd: string,
   schema: string,
@@ -259,10 +294,10 @@ function layoutOf(
   return { schemaFile, tablesDir };
 }
 
-function refuseExisting(files: readonly PullFile[]): void {
+function refuseExisting(files: readonly PullFile[], verb: "Pull" | "Import"): void {
   for (const file of files) {
     if (!existsSync(file.path)) continue;
-    throw new OkmError("OKM1855", `Pull would overwrite ${file.path}.`, {
+    throw new OkmError("OKM1855", `${verb} would overwrite ${file.path}.`, {
       fix: {
         summary: `Pass --out <directory> to write somewhere else, or move ${file.path}.`,
       },

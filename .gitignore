@@ -1,6 +1,8 @@
 node_modules
 reports/
 .okm-pull-*
+.okm-import-*
+reports/
 .env
 dist
 .doc-fences

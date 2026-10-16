@@ -290,23 +290,27 @@ function skippedTables(source: Catalog, skipped: readonly PullSkip[]): number {
  * @param skipped - Objects the files leave out
  * @param verdicts - Scratch results. Empty when no routine was pulled
  * @param unexpressed - Aggregates, procedures, event triggers, and rules
+ * @param verb - `imported` for `okm import drizzle`. `pulled` is `okm pull`
  * @returns The report, with a trailing newline
  */
 export function formatPullReport(
   counts: PullEmission["counts"],
   skipped: readonly PullSkip[],
-  verdicts: readonly RoutineVerdict[],
-  unexpressed: readonly PullCount[],
+  verdicts: readonly RoutineVerdict[] = [],
+  unexpressed: readonly PullCount[] = [],
+  verb: "pulled" | "imported" = "pulled",
 ): string {
   const lines = [
-    `pulled ${counted(counts.tables, "table", "tables")}, ${counted(counts.functions, "function", "functions")}, ${counted(counts.triggers, "trigger", "triggers")}, ${counted(counts.views, "view", "views")}, ${counted(counts.materializedViews, "materialized view", "materialized views")}`,
+    verb === "imported"
+      ? `imported ${counted(counts.tables, "table", "tables")}`
+      : `pulled ${counted(counts.tables, "table", "tables")}, ${counted(counts.functions, "function", "functions")}, ${counted(counts.triggers, "trigger", "triggers")}, ${counted(counts.views, "view", "views")}, ${counted(counts.materializedViews, "materialized view", "materialized views")}`,
   ];
   const marked = [...verdicts].sort((left, right) => compare(left.label, right.label));
   for (const item of marked) {
     const detail = item.detail.length > 0 ? ` — ${item.detail}` : "";
     lines.push(`  ${item.label}: ${item.status}${detail}`);
   }
-  lines.push("not pulled yet");
+  lines.push(verb === "imported" ? "not imported" : "not pulled yet");
   const deferredKinds = ["policy", "role", "grant", "defaultPrivilege"];
   for (const kind of deferredKinds) {
     const rows = skipped.filter((item) => item.kind === kind);
@@ -381,10 +385,14 @@ function planTable(
   for (const column of [...bag.columns].sort((left, right) =>
     compare(left.identity.name, right.identity.name),
   )) {
-    const field = freshIdent(column.identity.name, names);
+    const field = freshIdent(declaredIdent(column.provenance.source, column.identity.name), names);
     fields.set(column.identity.name, field);
     if (column === identityColumn) {
-      columnLines.push(`    ${field}: t.identity(),`);
+      const renamed =
+        column.provenance.source !== undefined && field !== column.identity.name
+          ? `.sqlName(${JSON.stringify(column.identity.name)})`
+          : "";
+      columnLines.push(`    ${field}: t.identity()${renamed},`);
       emitted.add(column.identity.name);
       continue;
     }
@@ -406,7 +414,10 @@ function planTable(
   }
 
   const options: string[] = [];
-  const exportName = exportNameOf(table.identity.name);
+  const exportName =
+    table.provenance.source === undefined
+      ? exportNameOf(table.identity.name)
+      : freshIdent(declaredIdent(table.provenance.source, table.identity.name), new Set());
   if (exportName !== table.identity.name) {
     options.push(`    sqlName: ${JSON.stringify(table.identity.name)},`);
   }
@@ -1128,6 +1139,31 @@ function exportNameOf(name: string): string {
   const sqlName = jsIdent(name);
   if (sqlName === name) return name;
   return freshIdent(name, new Set());
+}
+
+/**
+ * TypeScript name stored on provenance, or the SQL name.
+ *
+ * `okm import drizzle` sets `field:<property>` and `export:<binding>`.
+ * Introspection leaves `source` unset, so `okm pull` keeps the SQL name.
+ *
+ * @param source - Provenance source, when the author recorded one
+ * @param fallback - SQL name
+ * @returns The name to sanitize into an identifier
+ */
+function declaredIdent(source: string | undefined, fallback: string): string {
+  if (source === undefined) return fallback;
+  const field = prefixed(source, "field:");
+  if (field !== undefined) return field;
+  const exported = prefixed(source, "export:");
+  if (exported !== undefined) return exported;
+  return fallback;
+}
+
+function prefixed(source: string, prefix: string): string | undefined {
+  if (!source.startsWith(prefix)) return undefined;
+  const name = source.slice(prefix.length);
+  return name.length > 0 ? name : undefined;
 }
 
 function freshIdent(sql: string, used: Set<string>): string {

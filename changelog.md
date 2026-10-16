@@ -21,6 +21,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okm migrate check` warns OKM1552 when a domain check or a `LANGUAGE sql` function body reprints, and OKM1538 warns only when the type change rewrites the heap (D276).
 - `external(table)` marks a table another catalog owns. `okm catalog export` writes a snapshot whose `catalogHash` is separate from its logical identity. `defineConfig({ namespace, external })` places the catalog and verifies those snapshots. Two catalogs on one database keep separate history. A foreign key into another database is OKM1842 (D277).
 - `okm pull` writes functions, triggers, views, and materialized views. A view is SQL with its columns. Views and `BEGIN ATOMIC` bodies take `dependsOn` from `pg_depend`. A plpgsql or SQL-string body gets lexical `dependsOn` candidates. A scratch replay with `check_function_bodies` on marks each function verified or candidate-only (D278).
+- `okm import drizzle <path>` writes table files from a Drizzle schema using the project's own `drizzle-orm` and the same emitter as `okm pull`. It needs no database. An existing file is OKM1855. A missing `drizzle-orm` is OKM1856. Composite foreign keys, `relations()`, and custom types are listed as not imported (D280).
 
 ### ♻️ Changed
 
