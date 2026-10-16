@@ -99,7 +99,7 @@ bun run bump release
 # → leaves a fresh empty ## Unreleased
 ```
 
-That release prompt is P17B for 0.1.0, then P30, P44, P55, P66, P86, and P99.
+That release prompt is P17B for 0.1.0, then P30, P44, P55, P66, P86, P99, and P110.
 
 Do **not** invent `## v{next}` yourself. `patch`, `minor`, `major`, and `--set` remain available; they still promote the changelog. `--dry-run` prints the plan and writes nothing.
 
