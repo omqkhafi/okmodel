@@ -56,7 +56,7 @@ One idea per bullet. Write the user-visible impact. Put the bullet in its group,
 
 `bun run bump next` sets `package.json` to `<next release>-next.N` and leaves the changelog in place. `bun run bump release` drops the `-next.N` suffix, renames `## Unreleased` to `## vX.Y.Z — <date>`, and leaves a fresh empty `## Unreleased`.
 
-Hygiene finishes before a release bump. A hygiene prompt that is not itself the release still runs `bun run bump next`. The release prompt of a train is P17B for 0.1.0, then P30, P44, P55, and P66. That prompt runs `bun run bump release`.
+Hygiene finishes before a release bump. A hygiene prompt that is not itself the release still runs `bun run bump next`. The release prompt of a train is P17B for 0.1.0, then P30, P44, P55, P66, P86, P99, P110, and P119. That prompt runs `bun run bump release`.
 
 `patch`, `minor`, `major`, and `--set` remain available. Each of those still promotes the changelog. `--dry-run` prints the plan and writes nothing.
 

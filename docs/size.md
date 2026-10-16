@@ -438,9 +438,28 @@ postgres.js `FETCH`. D245 measured 15,781 against a gate of 15,093. The gate is 
 | --- | ---: | ---: |
 | 0.7.0 | 470,445 | 397 |
 | 0.8.0 | 651,337 | 484 |
-| 0.9.0-next.9 (this measurement) | 705,375 | 521 |
+| 0.9.0-next.9 | 705,375 | 521 |
+| 0.9.0-next.12 (P119, before `bump release`) | 709,225 | 527 |
 
-Unpacked size of this measurement is 2,864,530 bytes. The step from 0.8.0 to this tree is the 0.9 work already on main (pull, catalogs, the GitHub Action, Drizzle import, extension packs). Nothing in that growth is a test, a script, a sourcemap, or a second copy of the docs.
+Unpacked size of the 0.9.0-next.9 measurement is 2,864,530 bytes. The 0.9.0-next.12 measurement is `npm pack --dry-run --json` after `bun run build` on this tree: packed 709,225 bytes, 527 files, unpacked 2,879,278 bytes. Against 0.8.0 that is 57,888 more packed bytes and 43 more files. `dist` in that tarball is 524 files and 2,850,835 bytes, which is the `size: dist` line from `bun run size` (2,850,835, reported, not gated). Nothing in that growth is a test, a script, a sourcemap, or a second copy of the docs.
+
+## 0.9.0 release (P119)
+
+`bun run size` on this tree, exit 0. Dynamic imports stubbed for the gated rows. Cold import on the runtime entry in that run is the median of five Node processes (4.007 ms). The same timer over 10 runs, median of the two central samples, is 4.145 ms. No gate moved.
+
+| Graph | Minified | Gzip | Gate |
+| --- | ---: | ---: | --- |
+| Runtime entry `okmodel` | 5,288 | 2,026 | 6,100 / 2,250 |
+| App startup (10 tables, one find) | 90,718 | 29,426 | 90,900 / 30,170 |
+| Connect `okmodel/pg/postgresjs` | 40,131 | 14,005 | 42,450 / 14,920 |
+| Connect `okmodel/pg/pglite` | 38,545 | 13,401 | 40,450 / 14,280 |
+| Connect `okmodel/pg/pg` | 40,090 | 13,958 | 42,850 / 15,070 |
+| Connect `okmodel/pg/bun` | 39,717 | 13,839 | 41,700 / 14,620 |
+| Connect `okmodel/pg/neon` | 40,689 | 14,084 | 42,000 / 14,500 |
+
+Adapter incremental: postgres.js 15,953 of 16,000, PGlite 11,416 of 12,010. The script's finding is the full-build app cold import 25.072 ms, above the 15 ms local reference and not a gate. `dist/` is 2,850,835 bytes, printed and not gated.
+
+The tables below are the 0.9.0-next.9 breakdown.
 
 Top-level paths:
 

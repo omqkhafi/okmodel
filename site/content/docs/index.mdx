@@ -4,6 +4,8 @@ description: "okmodel is a catalog-first TypeScript ORM, PostgreSQL first."
 ---
 The schema is the source. Migrations and queries come from it. Start with one table, then add only the part you need.
 
+0.9 adds tooling around that schema: [pull](/docs/reference/cli#pull) writes table files from a database, [import drizzle](/docs/start/from-drizzle) writes them from a Drizzle schema, [catalogs](/docs/define/schema/catalogs) share one database, [describe](/docs/reference/schema-api) returns the catalog as JSON, [extension packs](/docs/define/schema/extensions) cover the contrib set except `vector`, the [GitHub Action](/docs/reference/github-action) posts the plan, and a [type change](/docs/reference/type-change) that rewrites a table is five migrations.
+
 <Callout title="The source">
   The tables you declare are the catalog. Queries, migrations, and checks come from that catalog.
 </Callout>

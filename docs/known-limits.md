@@ -156,6 +156,17 @@ node-postgres sets `allowExitOnIdle` and `idleTimeoutMillis: 0`. A plain pool ex
 
 Bun.sql keeps `idleTimeout` at 0, which is Bun's default (no idle timer). A finished Bun script exits without `close()`. `Query.cancel()` does not abort the backend statement on Bun 1.4, and Bun.sql does not surface `RAISE NOTICE`. Those conformance cases are skipped. Bun.sql also cannot describe a statement without running it. `okmodel/pg/bun` loads only on Bun.
 
+## After M2
+
+These were named on the M2 row and are not in 0.9.0. They are not scheduled on a later 0.x train.
+
+- **`vector` (pgvector)** (D281). Official `postgres` images do not ship it, and this repository adds no topology service. `tests/` has no `okmodel/pg/vector` import.
+- **Tool 5, time-zone date helpers** (D247). `bucket()` shipped. `onDay` and the rest of tool 5 did not. The tools table marks tool 5 `deferred`.
+- **`orderBy` on a function call, and computed fields** (D282). `orderBy` does not accept the value `fn()` returns (one composite type over 6,931). `table({ computed })` throws OKM1061. Tool 1 in the tools table is `later`.
+- **`okm migrate type-change`** (D285). Not a command. The expand/contract recipe in [a type change that rewrites the table](type-change.md) is the 0.9 answer.
+- **postgres.js `FETCH` stream loop** (D245). `.stream()` is keyset batches (D256).
+- **Inline `references(table, { as, has })`** (D270). An include is named with `relations` on the table.
+
 ## Migrations
 
 - **A volatile default is a batched backfill** (D193, D195). The planner adds the column nullable, sets the default, then fills existing rows with an idempotent `UPDATE` (`where` the column is null) in key-range batches. A removed picklist or enum value uses the same step (`where` the old value). A stable or constant default stays a plain `ADD COLUMN`. The step format, the pause, and resume are in [backfill](backfill.md).

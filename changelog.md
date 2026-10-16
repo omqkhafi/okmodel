@@ -46,6 +46,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 ### ♻️ Changed
 
 - The execution plan schedules the 0.9 Tooling train as P110 through P119.
+- 0.9.0 is the M2 gate. No gate or ceiling moved. `vector`, tool 5, `orderBy` on a function call, and computed fields stay deferred (D286).
 
 ## v0.8.0 — 2026-10-16
 
