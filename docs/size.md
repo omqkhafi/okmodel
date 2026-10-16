@@ -438,9 +438,9 @@ postgres.js `FETCH`. D245 measured 15,781 against a gate of 15,093. The gate is 
 | --- | ---: | ---: |
 | 0.7.0 | 470,445 | 397 |
 | 0.8.0 | 651,337 | 484 |
-| 0.9.0-next.8 (this measurement) | 705,369 | 521 |
+| 0.9.0-next.9 (this measurement) | 705,375 | 521 |
 
-Unpacked size of this measurement is 2,864,531 bytes. The step from 0.8.0 to this tree is the 0.9 work already on main (pull, catalogs, the GitHub Action, Drizzle import, extension packs). Nothing in that growth is a test, a script, a sourcemap, or a second copy of the docs.
+Unpacked size of this measurement is 2,864,530 bytes. The step from 0.8.0 to this tree is the 0.9 work already on main (pull, catalogs, the GitHub Action, Drizzle import, extension packs). Nothing in that growth is a test, a script, a sourcemap, or a second copy of the docs.
 
 Top-level paths:
 
@@ -448,7 +448,7 @@ Top-level paths:
 | --- | ---: | ---: |
 | `dist` | 518 | 2,837,551 |
 | `LICENSE` | 1 | 11,340 |
-| `package.json` | 1 | 8,990 |
+| `package.json` | 1 | 8,989 |
 | `README.md` | 1 | 6,650 |
 
 Inside `dist`:
