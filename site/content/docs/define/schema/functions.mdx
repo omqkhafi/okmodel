@@ -6,7 +6,7 @@ description: "Routines the catalog stores."
 
 `returns`, `language`, and `body` are required. `language` is `"sql"` or `"plpgsql"`. Volatility defaults to `"volatile"`. Security defaults to `"invoker"`. The install schema defaults to `public`.
 
-The value `fn()` returns is callable. `slugify(ident("title"))` is a `where` operand. `slugify(ident("title")).as("slug")` is a `select` entry. A numeric return is a number. Any other return is text. A string, number, boolean, or null is a parameter. `ident` names a field. `orderBy` does not accept the call.
+The value `fn()` returns is callable. `slugify(ident("title"))` is a `where` operand. `slugify(ident("title")).as("slug")` is a `select` entry. A numeric return is a number. A boolean return is read as text, as is any other non-numeric return. A string, number, boolean, or null is a parameter. `ident` names a field. `orderBy` does not accept the call.
 
 ### sql
 

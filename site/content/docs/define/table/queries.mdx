@@ -585,7 +585,7 @@ A stream with no `limit` and no `.all(reason)` is refused.
 
 A client-generator `t.id({ default: uuidv4 })` omits `id` from insert. `{ allow: ["id"] }` writes the id you pass and skips the generator for that row. A list can mix a supplied id with a row that omits it. Without `allow`, a supplied id is OKM1190. On a list, `allow` has to be exactly `["id"]`. A longer list does not open `id` in the type.
 
-`t.id()` and `t.id({ default: "uuidv7" })` are database defaults. Naming `id` in `allow` is OKM1190 at runtime. The type may still accept that call. Update does not change the key. A primary key with no client generator, including `.primaryKey().guarded()`, stays refused. A guarded field that is not the key still opens with `allow`.
+`t.id()` and `t.id({ default: "uuidv7" })` are database defaults. The type accepts `allow: ["id"]` on that id, and the runtime fails with OKM1190. Update does not change the key. A primary key with no client generator, including `.primaryKey().guarded()`, stays refused. A guarded field that is not the key still opens with `allow`.
 
 ```ts title="supplied-id.ts"
 import { uuidv4 } from "okmodel/ids";

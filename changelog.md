@@ -59,6 +59,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The bundle check leaves `@neondatabase/serverless` external, the same way it leaves `postgres`, `pg`, and PGlite external (D269).
 - `okm check` matches a table file stem without case, so `Tasks.ts` with `import { tasks } from "./tasks"` is not OKM1024.
 - Packed `okm driver test` finds `dist/tooling/driver-run.js` when the command itself is in a shared chunk. That entry does not import the `bun` package, so Node can run `pglite`. `okm driver test bun` loads the Bun adapter from a chunk of the same build and passes the same pool config as the other drivers.
+- The packed bun driver test builds its own runner, so a Postgres consistency shard does not need a prior `dist/` build.
 
 ## v0.7.0 — 2026-10-15
 

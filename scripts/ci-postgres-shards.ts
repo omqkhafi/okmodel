@@ -63,7 +63,6 @@ const HEAVY: Readonly<Record<string, PostgresShard>> = {
  */
 const BUILD_FILES: ReadonlySet<string> = new Set([
   "tests/client-close.test.ts",
-  "tests/driver-runner.test.ts",
   "tests/early-close.test.ts",
   "tests/package.test.ts",
   "tests/quickstart.test.ts",
