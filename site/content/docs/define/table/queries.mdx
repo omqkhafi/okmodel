@@ -581,6 +581,33 @@ A stream with no `limit` and no `.all(reason)` is refused.
 `batch` outside 1 to 2147483647 is refused. A `timeout` that is not a number above 0 is refused.
 </Callout>
 
+### Supplied id
+
+A client-generator `t.id({ default: uuidv4 })` omits `id` from insert. `{ allow: ["id"] }` writes the id you pass and skips the generator for that row. A list can mix a supplied id with a row that omits it. Without `allow`, a supplied id is OKM1190. On a list, `allow` has to be exactly `["id"]`. A longer list does not open `id` in the type.
+
+`t.id()` and `t.id({ default: "uuidv7" })` are database defaults. Naming `id` in `allow` is OKM1190 at runtime. The type may still accept that call. Update does not change the key. A primary key with no client generator, including `.primaryKey().guarded()`, stays refused. A guarded field that is not the key still opens with `allow`.
+
+```ts title="supplied-id.ts"
+import { uuidv4 } from "okmodel/ids";
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const users = table("users", { id: t.id({ default: uuidv4 }), name: t.text() });
+const app = schema({ tables: [users] });
+
+export async function keep(url: string, id: string) {
+  await using db = connect(url, { schema: app });
+  return db.users.insert(
+    [{ id, name: "Ada" }, { name: "Grace" }],
+    { allow: ["id"] },
+  );
+}
+```
+
+<Callout type="error" title="OKM1190">
+A supplied id without `allow`, a database-default id named in `allow`, and an update of the key are refused.
+</Callout>
+
 ### First or create
 
 `onConflict` decides what an insert does when a unique is already taken.

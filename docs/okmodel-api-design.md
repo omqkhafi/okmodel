@@ -1,6 +1,6 @@
 # OKModel — API design (draft 26)
 
-Status: normative specification, draft 26. The repository implements it through the 0.7.0 release. Decisions run D1–D270. Draft 18 applied the M0 gate decisions D115–D127 (evidence: `docs/m0-findings.md` in the repository); draft 19 added D128 (catalog error codes); draft 20 added D130 (column definition and codec error codes); draft 21 added D131 (removing a picklist or enum value); draft 22 adds D132 (reserved options, reference names); draft 24 adds the 0.2 operator set (section 10.1); draft 26 takes the primary-key and Postgres 15 floor edits made in P17G (D148, D151) and renames the uuid default to `uuidv4` (D153). Draft 26 records the shipped id builder shape (P19, D153, D154) and the `defaults.id` fix text. Supersedes drafts 1–21 of this file and the API sections of `orm-research-design.md`. Evidence for the draft-4 changes is in `okmodel-gap-research.md`.
+Status: normative specification, draft 26. The repository implements it through the 0.7.0 release. Decisions run D1–D272. Draft 18 applied the M0 gate decisions D115–D127 (evidence: `docs/m0-findings.md` in the repository); draft 19 added D128 (catalog error codes); draft 20 added D130 (column definition and codec error codes); draft 21 added D131 (removing a picklist or enum value); draft 22 adds D132 (reserved options, reference names); draft 24 adds the 0.2 operator set (section 10.1); draft 26 takes the primary-key and Postgres 15 floor edits made in P17G (D148, D151) and renames the uuid default to `uuidv4` (D153). Draft 26 records the shipped id builder shape (P19, D153, D154) and the `defaults.id` fix text. Supersedes drafts 1–21 of this file and the API sections of `orm-research-design.md`. Evidence for the draft-4 changes is in `okmodel-gap-research.md`.
 
 Name: **OKModel** (short **OKM**). Package `okmodel` on npm and repository `omqkhafi/okmodel`, CLI bins `okm` and `okmodel` (same program), error class `OkmError`, error codes `OKM1xxx`, config file `okm.config.ts`, generated folder `.okm/`, metadata table `okm_meta`. The bin names are not npm package names, so a bare `bunx okm` without a local or global install could fetch an unrelated package; the README tells developers to install first (`bun add -d okmodel`, then `bunx okm`, or a global install).
 
@@ -10,7 +10,7 @@ Toolchain: **TypeScript 7** (the native compiler, still invoked as `tsc`) for ty
 
 ## 1. Decisions log
 
-Moved to `okmodel-decisions.md`. Decisions run D1–D270. This file is the normative spec; every section states a rule, an example and the guard that enforces it.
+Moved to `okmodel-decisions.md`. Decisions run D1–D272. This file is the normative spec; every section states a rule, an example and the guard that enforces it.
 
 ## 2. Design rules and the internal goal
 
@@ -690,7 +690,7 @@ Set in `schema({ codecs })`, override per field: `t.bigint({ as: "number" })`. D
 |---|---|
 | (default) | unknown keys in input are dropped |
 | `.guarded()` | never filled from `insert`/`update` input; set by code with `{ allow: ["field"] }` |
-| automatic guards | `t.id()` with a database default and `t.identity()` (omitted from insert and update); a column `.primaryKey()`, a composite `primaryKey`, and `t.id({ default: "none" })` (supplied on insert, omitted from update); tenant key and trait fields (`createdAt`, `updatedAt`, `archivedAt`, `archiveId`, `version`, `position`) |
+| automatic guards | `t.id()` with a database default and `t.identity()` (omitted from insert and update); a client-generator `t.id()` is omitted from insert unless that insert passes `{ allow: ["id"] }` (D272), and it stays omitted from update; a column `.primaryKey()`, a composite `primaryKey`, and `t.id({ default: "none" })` (supplied on insert, omitted from update); tenant key and trait fields (`createdAt`, `updatedAt`, `archivedAt`, `archiveId`, `version`, `position`) |
 | `.hidden()` | excluded from default selects and includes; returned only when named in `select`. `where` and `orderBy` refuse it (OKM1120). `hidden({ filterable: true })` allows those two and still leaves it out of the default row. `filters()` still refuses it (OKM1123). `groupBy`, `sum`, `avg`, `min`, and `max` still refuse it |
 | `.sensitive()` | values never appear in logs, error messages, `inspect()` output or fixtures; shown as `[redacted]` even in development |
 
@@ -971,6 +971,8 @@ A string, number, boolean, or null is a parameter. `ident(name)` names the TypeS
 | `archive({ where }, opts)` | `archivable` tables only; returns `{ count, archiveId }` |
 | `restore({ where } \| { archiveId }, opts)` | `archivable` tables only; targets the archived set |
 | `sync(id, relation, ids)` | sets a to-many relation to exactly `ids`, in one transaction. Returns `{ added, removed }`. `expect(n)` throws `not_found` when that is not the number of links changed (D252) |
+
+A client-generator `t.id()` stays OKM1190 when the insert supplies `id`, unless `{ allow: ["id"] }`. That call writes the supplied id and does not run the generator for that row. A list row that omits `id` is still generated. The list type adds optional `id` only when `allow` is exactly `["id"]`. A longer list does not open `id`. A database default (`gen_random_uuid()`, `uuidv7()`) stays OKM1190 when `allow` names `id`. The type of that call may still accept it. Update does not change the key. A primary key with no client fill, including `.primaryKey().guarded()`, stays refused when named in `allow`. A guarded field that is not the primary key still opens. Inserting the same id again is `unique` (`23505`) unless `onConflict` is set (D272).
 
 ```ts no-check="write illustration; scoped, rows, and order are defined in other sections"
 await scoped.tags.insert({ name }, { onConflict: { on: "name", return: true } });          // first-or-create

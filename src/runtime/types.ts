@@ -789,6 +789,23 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   /**
    * Inserts a list in one transaction. Unknown keys are dropped.
    *
+   * `{ allow: ["id"] }` may set `id` on a client-generator primary key.
+   * A row that omits `id` still takes the generator. A longer `allow` list
+   * does not open `id` in this type.
+   *
+   * @param data - Rows. `id` is optional when `allow` is exactly `["id"]`
+   * @param options - Must set `allow` to `["id"]`
+   * @returns The inserted rows
+   */
+  insert(
+    data: readonly (RequiredInsert<InsertOf<S, K>> &
+      OptionalInsert<InsertOf<S, K>> &
+      Partial<Pick<RowOf<S, K>, "id" & keyof RowOf<S, K>>>)[],
+    options: InsertOptions<S, K> & { readonly allow: readonly ["id"] },
+  ): Write<readonly Show<RowOf<S, K>>[]>;
+  /**
+   * Inserts a list in one transaction. Unknown keys are dropped.
+   *
    * Rows may carry different keys. An omitted key or an explicit `undefined` takes the
    * database default for that row; `null` stays NULL.
    */

@@ -256,6 +256,8 @@ export const app = schema({ tables: [counts] });
 
 Import `uuidv4`, `uuidv7`, or `okid` from `okmodel/ids` and pass it to `.default()`. Or set `defaults.id` on `schema()` for every id column that does not choose its own. A choice on the column wins. A generator is not a database default, so changing it does not create a migration, and an insert that bypasses okmodel has to supply the value.
 
+`t.id({ default: uuidv4 })` is guarded. `insert({ id, name }, { allow: ["id"] })` writes that id, and a list row that omits `id` still gets one. Without `allow`, a supplied id is OKM1190. On a list, `allow` has to be exactly `["id"]` for the type to accept `id`. `t.id()` and `t.id({ default: "uuidv7" })` are database defaults: `allow` does not open them, and the runtime is OKM1190. Update does not change the key.
+
 `generated.ts`:
 
 ```ts
