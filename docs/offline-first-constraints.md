@@ -14,7 +14,7 @@ A future consumer also needs a logical, serializable description derived from th
 
 Record the gap. Build no API.
 
-`okm catalog export` writes a snapshot derived from the schema source (D276). The file is JSON. `catalogHash` is the physical catalog hash. `logical` is `namespace`, `name`, and `format`, and it is not that hash (R5). A table entry is a namespace, a name, and columns (`name`, `type`, `nullable`). There is no function, no default, no expression, and no connection URL. A dependent points `defineConfig({ external })` at the file. That file is the verification input. It is not the logical description this section names: keys, including composite keys, relations, codecs, defaults, client-generated id rules, and a schema version are still absent. There is no sync API.
+`okm catalog export` writes a snapshot derived from the schema source (D277). The file is JSON. `catalogHash` is the physical catalog hash. `logical` is `namespace`, `name`, and `format`, and it is not that hash (R5). A table entry is a namespace, a name, and columns (`name`, `type`, `nullable`). There is no function, no default, no expression, and no connection URL. A dependent points `defineConfig({ external })` at the file. That file is the verification input. It is not the logical description this section names: keys, including composite keys, relations, codecs, defaults, client-generated id rules, and a schema version are still absent. There is no sync API.
 
 ## R2. Transactions with a stated atomicity scope
 
