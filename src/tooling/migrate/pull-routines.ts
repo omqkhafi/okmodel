@@ -4,7 +4,9 @@
  * Views and `BEGIN ATOMIC` bodies take edges the catalog already read from
  * `pg_depend`. A plpgsql or SQL-string body gets table candidates from
  * {@link sqlIdentifiers}. A view or a function named in that body is an
- * ordering edge only: `dependsOn` accepts tables and columns.
+ * ordering edge only: `dependsOn` accepts tables and columns. A view query
+ * is matched the same way, so a view over a view waits for the view it names
+ * when `pg_depend` recorded no column edge.
  */
 
 import { identityKey, staticNamespace } from "../../contracts/catalog/identity.js";
@@ -261,10 +263,19 @@ export function planRoutines(
       }
     }
     const matched = matchNames(object.definition.query, tables, viewByName, functionByName);
-    const edges = matched.functions.filter(
-      (identity) => identityKey(identity) !== identityKey(object.identity),
-    );
-    if (edges.length > 0) orderEdges.set(identityKey(object.identity), edges);
+    const self = identityKey(object.identity);
+    const edges: ObjectIdentity[] = [];
+    for (const name of matched.tables) {
+      const identity = tables.get(name);
+      if (identity !== undefined) edges.push(identity);
+    }
+    for (const identity of matched.views) {
+      if (identityKey(identity) !== self) edges.push(identity);
+    }
+    for (const identity of matched.functions) {
+      if (identityKey(identity) !== self) edges.push(identity);
+    }
+    if (edges.length > 0) orderEdges.set(self, edges);
     plannedViews.push({
       object,
       binding: freshBinding(object.identity.name, used),

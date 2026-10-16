@@ -143,7 +143,7 @@ postgresTest(
       expect(hasDefault(built.catalog)).toBe(true);
       expect(first.text).toContain("note_open(note_status): verified");
       expect(first.text).toContain("open_notes: verified");
-      expect(first.text).toContain("aggregates: 0");
+      expect(first.text).toContain("aggregates: 2");
       expect(first.text).toContain("procedures: 0");
       expect(first.text).toContain("event triggers: 0");
       expect(first.text).toContain("rules: 0");
