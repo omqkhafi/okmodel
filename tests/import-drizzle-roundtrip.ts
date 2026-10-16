@@ -6,7 +6,7 @@
  */
 
 import { expect } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -60,6 +60,11 @@ export default defineConfig({
 });
 `,
     );
+    // The config and the emitted files import okmodel. A temp directory does
+    // not see the repository package unless it is linked.
+    const modules = join(cwd, "node_modules");
+    mkdirSync(modules);
+    symlinkSync(root, join(modules, "okmodel"));
     await buildProject(cwd);
     const built = await loadSchema(cwd, "./adopted/schema.ts");
     const live = await apply(renderCatalog(built.catalog, "shop"));
