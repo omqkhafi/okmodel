@@ -17,6 +17,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 ### ✨ Added
 
 - `okm pull` reads a database and writes one table file per table plus the schema file. It is read-only, including on a protected target, and an existing file is OKM1855. Functions, triggers, views, policies, roles, and grants are listed under `not pulled yet` (D275).
+- `okm migrate check` warns OKM1552 when a domain check or a `LANGUAGE sql` function body reprints, and OKM1538 warns only when the type change rewrites the heap (D276).
 
 ### ♻️ Changed
 

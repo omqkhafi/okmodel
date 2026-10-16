@@ -23,6 +23,7 @@ import { ensureMigrationTables } from "./apply.js";
 import type { MigrateConfig } from "./config.js";
 import { catalogQuery, managedRoleOptions } from "./drift.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
+import { lintReprints, type Finding } from "./lint.js";
 import { planMigration, type MigrationPlan, type PlanStep } from "./plan.js";
 import { assertStableBackend } from "./policy.js";
 import { assumeRole, assertSchemaUsageLanded, grantSchema } from "./runner.js";
@@ -45,6 +46,7 @@ export type ReplayStop = {
 /** Replay result. `skips` are statements check did not execute. */
 export type ReplayOutcome = {
   readonly skips: readonly string[];
+  readonly reprints: readonly Finding[];
   readonly stop?: ReplayStop;
 };
 
@@ -68,6 +70,7 @@ export async function replayCheckHistory(
   history: readonly CheckMigration[],
 ): Promise<ReplayOutcome> {
   const skips: string[] = [];
+  const reprints: Finding[] = [];
   let stop: ReplayStop | undefined;
   await inCheckTransaction(url, scratch, config, allowPooler, async (sql) => {
     const connection = driverOf(sql);
@@ -84,6 +87,9 @@ export async function replayCheckHistory(
         "public",
         managedRoleOptions(config.roles),
       );
+      for (const item of lintReprints(migration.catalog, live, migration.steps)) {
+        reprints.push({ ...item, place: `${migration.id} ${item.place}` });
+      }
       const sealed = await sealViews(runner, migration.catalog);
       const back = planMigration({ before: live, after: sealed, name: migration.id });
       if (back.steps.length === 0) continue;
@@ -91,7 +97,7 @@ export async function replayCheckHistory(
       return;
     }
   });
-  return stop === undefined ? { skips } : { skips, stop };
+  return stop === undefined ? { skips, reprints } : { skips, reprints, stop };
 }
 
 /**

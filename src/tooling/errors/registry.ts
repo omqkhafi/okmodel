@@ -425,7 +425,8 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
   {
     code: "OKM1538",
     title: "Type rewrite",
-    summary: "A statement changes a column type in a way that rewrites the table.",
+    summary:
+      "A statement changes a column type in a way that rewrites the table. Binary-coercible changes, varchar widening, varchar to text, and a numeric precision increase at the same scale do not.",
     fix: "There is no safe form for a rewriting type change in this version. A column swap is expand and contract work for a later step. OKM1524 already requires a reason for the type change.",
   },
   {
@@ -512,6 +513,13 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     summary:
       "A step contains COMMIT, ROLLBACK, or other transaction control, including inside a DO body. A function or procedure body is not this.",
     fix: "Remove the transaction control. okm migrate check replays one transaction and rolls it back. Apply accepts the step only with -- okm-allow OKM1551: reason.",
+  },
+  {
+    code: "OKM1552",
+    title: "Reprinted declaration",
+    summary:
+      "A domain check or a LANGUAGE sql function body is stored differently from the text in the migration catalog.",
+    fix: "Write the check or the body the way Postgres prints it, or allow OKM1552 with a reason. The warning does not fail apply. A domain whose check differs is still OKM1547.",
   },
   {
     code: "OKM1601",

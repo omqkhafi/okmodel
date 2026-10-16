@@ -26,7 +26,13 @@ import type { MigrateConfig } from "./config.js";
 import { catalogsEqual } from "./equal.js";
 import { loadMigrations, readMigrationPlan } from "./files.js";
 import { projectPath } from "./paths.js";
-import { hasError, lintMigrationDirectory, lintRefusal } from "./lint.js";
+import {
+  formatFindings,
+  hasError,
+  lintMigrationDirectory,
+  lintRefusal,
+  type Finding,
+} from "./lint.js";
 import { planMigration, type MigrationPlan, type PlanStep } from "./plan.js";
 import { assertDirectConnection, selectTarget, type InvokeFlags } from "./policy.js";
 import { openProject } from "./project.js";
@@ -108,11 +114,17 @@ export async function checkMigrations(
     if (equivalence !== undefined) throwFailure([equivalence]);
   }
   const replayed = await replayHistory(opened.config, target.url, flags, history);
+  const reprintErrors = replayed.reprints.filter((item) => item.severity === "error");
+  const reprintWarnings = replayed.reprints.filter((item) => item.severity === "warning");
   const failures = [...replayed.failures, ...previous, ...stale, ...lint];
-  if (failures.length > 0) throwFailure(failures);
+  if (reprintErrors.length > 0) {
+    const refusal = lintRefusal(reprintErrors);
+    failures.push({ code: refusal.code, message: refusal.message, fix: refusal.fix.summary });
+  }
+  if (failures.length > 0) throwFailure(failures, reprintWarnings);
   const summary = `ok ${String(history.length)} migrations\n`;
-  if (replayed.skips.length === 0) return summary;
-  return `${summary}${replayed.skips.join("\n")}\n`;
+  const skipped = replayed.skips.length === 0 ? "" : `${replayed.skips.join("\n")}\n`;
+  return `${summary}${skipped}${formatFindings(reprintWarnings)}`;
 }
 
 /**
@@ -286,8 +298,12 @@ async function replayHistory(
   url: string,
   flags: InvokeFlags,
   history: readonly HistoryEntry[],
-): Promise<{ readonly failures: readonly CheckFailure[]; readonly skips: readonly string[] }> {
-  if (history.length === 0) return { failures: [], skips: [] };
+): Promise<{
+  readonly failures: readonly CheckFailure[];
+  readonly skips: readonly string[];
+  readonly reprints: readonly Finding[];
+}> {
+  if (history.length === 0) return { failures: [], skips: [], reprints: [] };
   const scratch = `${CHECK_SCHEMA_PREFIX}${crypto.randomUUID().replaceAll("-", "")}`;
   const outcome = await replayCheckHistory(
     url,
@@ -296,10 +312,13 @@ async function replayHistory(
     flags.allowPooler || config.allowPooler === true,
     history,
   );
-  if (outcome.stop === undefined) return { failures: [], skips: outcome.skips };
+  if (outcome.stop === undefined) {
+    return { failures: [], skips: outcome.skips, reprints: outcome.reprints };
+  }
   return {
     failures: [historyFailure(history, outcome.stop.index, outcome.stop.back)],
     skips: outcome.skips,
+    reprints: outcome.reprints,
   };
 }
 
@@ -377,14 +396,16 @@ function readHistory(directory: string): readonly HistoryEntry[] {
   }));
 }
 
-function throwFailure(failures: readonly CheckFailure[]): never {
+function throwFailure(failures: readonly CheckFailure[], warnings: readonly Finding[] = []): never {
   const first = failures[0];
   if (first === undefined) throw new Error("okm migrate check has no failure to report.");
   const message =
     failures.length === 1
       ? first.message
       : failures.map((failure) => `${failure.code} ${failure.message}`).join("\n");
-  throw new OkmError(first.code, message, { fix: { summary: first.fix } });
+  const notes = formatFindings(warnings).trim();
+  const text = notes.length === 0 ? message : `${message}\n${notes}`;
+  throw new OkmError(first.code, text, { fix: { summary: first.fix } });
 }
 
 function checkedKind(kind: CatalogObject["kind"]): boolean {
