@@ -1,8 +1,10 @@
 /**
  * Installs the published package from npm and runs the guide quickstart.
  *
- * The version comes from `package.json`. Registry propagation is retried at
- * most {@link ATTEMPTS} times, {@link WAIT_MS} apart. The run fails when that
+ * The version comes from `package.json`. npm can return from publish while the
+ * version is still processing, so the registry is asked at most {@link ATTEMPTS}
+ * times, {@link WAIT_MS} apart. Each install passes `--no-cache` so bun does not
+ * reuse a manifest from before the version existed. The run fails when that
  * version is missing, its provenance attestation is missing, or the attestation's
  * git commit is not `RELEASE_COMMIT` (the QA'd SHA). `npm view` only carries the
  * predicate type. The commit is in the signed statement at the attestations URL.
@@ -37,11 +39,29 @@ const SLSA_PROVENANCE = "https://slsa.dev/provenance/v1";
  */
 class SmokeStop extends Error {}
 
-/** How many times the registry is asked before the smoke fails. */
-const ATTEMPTS = 6;
+/**
+ * How many times the registry is asked before the smoke fails.
+ *
+ * npm publish can return while the version is still processing. One release
+ * stayed uninstallable for more than 7 minutes after publish returned.
+ */
+export const ATTEMPTS = 31;
 
-/** Pause between registry attempts. */
-const WAIT_MS = 10_000;
+/** Pause between registry attempts. Thirty gaps of this pause are 15 minutes. */
+export const WAIT_MS = 30_000;
+
+/**
+ * `bun add` arguments for one published version.
+ *
+ * `--no-cache` ignores bun's manifest cache. A miss from before the version
+ * existed would otherwise be reused until that cache entry expired.
+ *
+ * @param version - Version the workflow just published
+ * @returns Arguments for the install command
+ */
+export function publishedInstallArgs(version: string): readonly string[] {
+  return ["bun", "add", "--no-cache", `okmodel@${version}`, "postgres"];
+}
 
 /**
  * Why a published version cannot be smoked, or undefined when it can.
@@ -171,6 +191,11 @@ function shown(value: unknown): string {
   return typeof value === "string" ? value : "(missing)";
 }
 
+function firstLine(text: string): string {
+  const line = text.split("\n").find((item) => item.trim().length > 0);
+  return line ?? text;
+}
+
 async function untilReady(label: string, fn: () => Promise<boolean>): Promise<void> {
   let last = `${label} did not succeed`;
   for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
@@ -181,7 +206,12 @@ async function untilReady(label: string, fn: () => Promise<boolean>): Promise<vo
       if (error instanceof SmokeStop) throw error;
       last = error instanceof Error ? error.message : String(error);
     }
-    if (attempt < ATTEMPTS) await Bun.sleep(WAIT_MS);
+    if (attempt < ATTEMPTS) {
+      console.error(
+        `[npm-smoke] ${label} attempt ${String(attempt)}/${String(ATTEMPTS)}: ${firstLine(last)}`,
+      );
+      await Bun.sleep(WAIT_MS);
+    }
   }
   throw new Error(`${last} after ${String(ATTEMPTS)} attempts, ${String(WAIT_MS)} ms apart`);
 }
@@ -274,7 +304,7 @@ async function runQuickstart(root: string, version: string): Promise<void> {
       writeFileSync(join(dir, "package.json"), manifest);
       rmSync(join(dir, "node_modules"), { recursive: true, force: true });
       rmSync(join(dir, "bun.lock"), { force: true });
-      await command(dir, ["bun", "add", `okmodel@${version}`, "postgres"]);
+      await command(dir, publishedInstallArgs(version));
       return true;
     });
     for (const [name, source] of files) writeFileSync(join(dir, name), source);

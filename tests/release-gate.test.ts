@@ -10,7 +10,13 @@ import { POSTGRES_VERSIONS } from "../packages/harness/src/version.js";
 import { renderCompatibility, supportSentence } from "../scripts/compatibility.js";
 import { verifyVersions } from "../scripts/verify.js";
 import { changelogReleaseNotes, milestoneTitle } from "../scripts/github-release.js";
-import { provenanceCommitProblem, publishedPackageProblem } from "../scripts/npm-smoke.js";
+import {
+  ATTEMPTS,
+  WAIT_MS,
+  provenanceCommitProblem,
+  publishedInstallArgs,
+  publishedPackageProblem,
+} from "../scripts/npm-smoke.js";
 import {
   POSTGRES_EXCLUSIONS,
   POSTGRES_KNOWN_FAILURES,
@@ -87,6 +93,23 @@ test("a release milestone drops a trailing .0", () => {
   expect(milestoneTitle("0.2.0")).toBe("0.2");
   expect(milestoneTitle("0.1.1")).toBe("0.1.1");
   expect(milestoneTitle("0.10.0")).toBe("0.10");
+});
+
+test("npm smoke waits out registry processing and skips bun's manifest cache", () => {
+  expect((ATTEMPTS - 1) * WAIT_MS).toBeGreaterThanOrEqual(15 * 60 * 1000);
+  expect(publishedInstallArgs("0.8.0")).toEqual([
+    "bun",
+    "add",
+    "--no-cache",
+    "okmodel@0.8.0",
+    "postgres",
+  ]);
+  const release = readFileSync(join(root, ".github/workflows/release.yml"), "utf8");
+  const smoke = release.slice(release.indexOf("name: smoke / quickstart"));
+  expect(smoke).toContain("timeout-minutes: 45");
+  expect(readFileSync(join(root, "docs/release.md"), "utf8")).toContain(
+    "at most 31 times, 30 seconds apart",
+  );
 });
 
 test("published package problem names a missing version and missing provenance", () => {
