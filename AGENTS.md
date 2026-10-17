@@ -58,7 +58,7 @@ A layer may import layers below it. It must not import a layer above it. Adapter
 
 ## Docs
 
-Documents in `docs/` are normative. The spec is draft 26. The repository implements it through the 0.9.0 release. Decisions run D1–D294. GitHub organization is [docs/github.md](docs/github.md) (D206).
+Documents in `docs/` are normative. The spec is draft 26. The repository implements it through the 0.9.0 release. Decisions run D1–D296. GitHub organization is [docs/github.md](docs/github.md) (D206).
 
 ## Engineering standards
 
