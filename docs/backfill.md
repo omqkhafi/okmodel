@@ -52,7 +52,7 @@ The primary key is `(migration_id, step_index)`.
 
 After every committed batch the runner writes that row. The final batch also writes the normal `okm_history` row, in the same transaction, and sets `state` to `done`. A step already in `okm_history` is skipped. A rerun loads `last_key` and does not issue a finished batch again. `okm_history` is unchanged.
 
-`okm migrate status` keeps its target columns. Under them, an unfinished backfill prints the migration, the step, the rows so far, the last key, and the state. A finished step is not listed there.
+Apply progress lines print a 1-based step index (`backfill <id> step 1 batch …`). `okm migrate status` keeps its target columns. Under them, an unfinished backfill prints the migration, the stored (0-based) step index, the rows so far, the last key, and the state. A finished step is not listed there. Status `failed at step N` also uses that stored index; apply's own `failed at step N` counts from 1.
 
 A protected target refuses a backfill unless `--allow-protected`. That check runs before every batch, so a target that becomes protected between batches stops at the next one. The committed batches stay.
 

@@ -68,6 +68,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Sensitive docs cover redaction in logs, errors, `cause`, and spans; writes docs cover unknown keys (D291).
 - Queries and the error reference document OKM1126 when a finished statement exceeds 65,535 parameters (D292).
 - Guide roles privileges, production.md `--target` / status / check behavior, and known-limits pooler notes (DM-2, DM-3, D293).
+- Known limits, README, guide, spec, and handbook pages match the code after the 0.9.1 fixes: Temporal polyfill on Node 22/24, `okm dev`, `okmodel/safety`, redaction, untyped `raw` and raw projection (B-07, B-08), minimum Bun, `okmodel.config.ts`, `listen` as a driver capability only, catalog export vs `describe`, backfill step numbering, and a Not tested section (DM-1 to DM-12, D296).
 
 ## v0.9.0 — 2026-10-16
 

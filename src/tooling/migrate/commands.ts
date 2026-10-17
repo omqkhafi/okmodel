@@ -431,7 +431,7 @@ const COMMANDS: readonly (readonly [string, string])[] = [
   ["build", "Write the schema build."],
   ["catalog export", "Write the catalog snapshot."],
   ["check", "Lint the schema and compare it with one target."],
-  ["dev", "Watch the schema and reload."],
+  ["dev", "Open a PGlite database in .okm/dev-db, or name a target called dev."],
   ["doctor [code]", "Print a target report, or one error code."],
   ["driver test <driver>", "Run conformance against one driver."],
   ["ext list", "List extensions the server can install."],

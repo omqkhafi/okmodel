@@ -850,6 +850,8 @@ An empty `as` is refused. `__proto__`, `constructor`, `toString`, and `hasOwnPro
 
 `raw` and `explain` are functions. Pass the table handle, including one from `for()`. The class names the row: each field needs an initializer, and that order is the select list. `"read"` is one select. `"write"` runs on the primary. A scoped tenant read keeps the tenant predicate outside the fragment, so the select list names the primary key with `ident`.
 
+There is no untyped `sql.raw(text, reason)` in this version. A key that is a field of the handle's table uses that field's decode. Any other key (a joined column, an expression) uses the initializer: a number, a boolean, or driver text. Joined columns are not projected through another table's codecs.
+
 ```ts title="raw-notes.ts"
 import { connect } from "okmodel/pg/postgresjs";
 import { fragment, ident, raw, schema, table, t } from "okmodel/pg";

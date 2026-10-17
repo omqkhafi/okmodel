@@ -2,7 +2,7 @@
 
 Status: normative specification, draft 26. The repository implements it through the 0.9.0 release. Decisions run D1–D289. Draft 18 applied the M0 gate decisions D115–D127 (evidence: `docs/m0-findings.md` in the repository); draft 19 added D128 (catalog error codes); draft 20 added D130 (column definition and codec error codes); draft 21 added D131 (removing a picklist or enum value); draft 22 adds D132 (reserved options, reference names); draft 24 adds the 0.2 operator set (section 10.1); draft 26 takes the primary-key and Postgres 15 floor edits made in P17G (D148, D151) and renames the uuid default to `uuidv4` (D153). Draft 26 records the shipped id builder shape (P19, D153, D154) and the `defaults.id` fix text. Supersedes drafts 1–21 of this file and the API sections of `orm-research-design.md`. Evidence for the draft-4 changes is in `okmodel-gap-research.md`.
 
-Name: **OKModel** (short **OKM**). Package `okmodel` on npm and repository `omqkhafi/okmodel`, CLI bins `okm` and `okmodel` (same program), error class `OkmError`, error codes `OKM1xxx`, config file `okm.config.ts`, generated folder `.okm/`, metadata table `okm_meta`. The bin names are not npm package names, so a bare `bunx okm` without a local or global install could fetch an unrelated package; the README tells developers to install first (`bun add -d okmodel`, then `bunx okm`, or a global install).
+Name: **OKModel** (short **OKM**). Package `okmodel` on npm and repository `omqkhafi/okmodel`, CLI bins `okm` and `okmodel` (same program), error class `OkmError`, error codes `OKM1xxx`, config file `okmodel.config.ts` (older drafts said `okm.config.ts`; the loader reads `okmodel.config.ts`), generated folder `.okm/`, metadata table `okm_meta`. The bin names are not npm package names, so a bare `bunx okm` without a local or global install could fetch an unrelated package; the README tells developers to install first (`bun add -d okmodel`, then `bunx okm`, or a global install).
 
 Toolchain: **TypeScript 7** (the native compiler, still invoked as `tsc`) for typecheck, declaration emit and editor support, with `strict` on. TypeScript 7.0 has no stable programmatic API (expected in 7.1), so no OKModel tool may depend on the TypeScript compiler API: `okm` reads user TypeScript by executing it through the runtime and emits source as text (`okm pull`). Type-level checks need no compiler API: type correctness is asserted with `expect-type` style assertions in `*.test-d.ts` files compiled by `tsc`, and type cost (instantiations, check time) is read from the compiler's own diagnostics by a script; a tool that does need the API, such as `@ark/attest`, may only run in a separate CI job on the TypeScript 6 compatibility package (`@typescript/typescript6`, binary `tsc6`), never in the main checks (D114). M0 records both compilers for the editor-facing checks. Linting does not use typescript-eslint until it supports TypeScript 7. See D111.
 
@@ -28,7 +28,7 @@ Moved to `okmodel-decisions.md`. Decisions run D1–D289. This file is the norma
 12. Logical intent is the public contract; physical execution may change without API changes.
 13. Every implicit behavior is traceable to where it came from.
 14. Same semantics, not same features: semantics are identical on every driver; features differ and are declared. What a driver or dialect lacks is refused clearly, never imitated silently, and the API is never reduced to the least capable driver.
-15. Escape ladder: typed builder, then composed `sql` fragments, then typed raw SQL, then `sql.raw` with a reason, then a raw migration. Every step keeps the maximum safety it can (tenancy, parameterisation, dependency tracking) and never silently drops one.
+15. Escape ladder: typed builder, then composed `sql` fragments, then typed raw SQL, then a raw migration. Untyped `sql.raw(text, reason)` is not in this version (B-07). Every step keeps the maximum safety it can (tenancy, parameterisation, dependency tracking) and never silently drops one.
 16. The core is runtime-agnostic: no `node:*` imports (enforced in CI), context is passed explicitly (`db.for(...)`), and the package's own API is usable under `erasableSyntaxOnly`. An `AsyncLocalStorage` helper is optional (`okmodel/als`).
 17. Target, connection and routing are separate concerns. An operation resolves to one endpoint; the endpoint owns a pool; the pool owns connections. Nothing above the pool sees a URL, a pool or a connection, and the primary is never treated as one more replica (section 3.6, invariants A–K).
 
@@ -56,13 +56,14 @@ Safety and correctness — also in CI:
 
 | File | Responsibility | Placement question |
 |---|---|---|
-| `okm.config.ts` | tooling: CLI, build, migrations | used only by the CLI? |
+| `okmodel.config.ts` | tooling: CLI, build, migrations | used only by the CLI? |
 | `db/schema.ts` | the model | changes a type, a field or data behavior? |
 | `db/client.ts` | runtime | varies by environment or at runtime? |
 
-### 3.1 `okm.config.ts`
+### 3.1 `okmodel.config.ts`
 
 ```ts no-check="queries and lint are not fields of defineConfig"
+// okmodel.config.ts
 import { defineConfig } from "okmodel/migrate";
 
 export default defineConfig({
@@ -274,7 +275,7 @@ import { table, t } from "okmodel/sql";   // common subset
 |---|---|---|
 | Dialect | import path | types |
 | Engine version | `minPostgres: 17` — the minimum gates features. Omitted means 15. `requires: { postgres: ">=17" }` is deprecated | types (OKM1110) + connect (OKM1802). In 0.2 nothing is gated in types: an explicit `uuidv7()` below 18 fails when the schema is built (OKM1812). A bare `t.id()` stores `gen_random_uuid()` (D262). OKM1110 is not thrown yet (D183, D261) |
-| Driver | execution capabilities only: `transactions: "interactive" \| "batch"`, `stream`, `listen`, `cancel`, `prepared: "named" \| "unnamed" \| "none"`, `describe`. Atomic `batch` is not a flag: every driver provides it (section 15). `stream` means the driver can open a server cursor. `.stream()` does not read it (section 10, D256) | types (`tx()`, cancellation, and `listen` are absent from the client type when the driver lacks them; a dynamic call fails with an OKM error at runtime). `.stream()` is on every driver |
+| Driver | execution capabilities only: `transactions: "interactive" \| "batch"`, `stream`, `listen`, `cancel`, `prepared: "named" \| "unnamed" \| "none"`, `describe`. Atomic `batch` is not a flag: every driver provides it (section 15). `stream` means the driver can open a server cursor. `.stream()` does not read it (section 10, D256). `listen` is a capability flag on the driver contract only; there is no `client.listen` / `db.listen` in this version | types (`tx()` and cancellation are absent from the client type when the driver lacks them; a dynamic call fails with an OKM error at runtime). `.stream()` is on every driver |
 
 Dialect and driver are different axes: SQL capabilities (`lateral`, `returning`, `SKIP LOCKED`, generated columns) belong to the dialect and engine version; every driver on one dialect sends the same SQL. Neon over HTTP is `transactions: "batch"` on the same Postgres dialect. Reading WAL positions (`pg_current_wal_insert_lsn()`, `pg_last_wal_replay_lsn()`) is plain SQL, so it is a dialect and engine capability (`replication.position`), not a driver flag.
 
@@ -1233,7 +1234,7 @@ const described = await explain(db.notes, db.notes.find({ limit: 1 }));
 - A scoped tenant read is wrapped so the tenant predicate sits outside the fragment. When the table is archivable, `archived_at is null` is in that same outer predicate. The select list must name the one primary key, besides the tenant key, with `ident`. Do not alias it. Anything else is OKM1702. A raw write on a scoped tenant table is OKM1702 and sends nothing. `unscoped("reason")` skips the tenant predicate. The archive filter still wraps a read. A missing tenant scope is OKM1701 from the existing table guard, before `raw` runs.
 - A table that is not a tenant table runs the statement as written. A write still goes to the primary. An archivable table that is not a tenant table still wraps a read. That write is not failed closed.
 - `explain(table, query)` sends `EXPLAIN` (not `ANALYZE`) outside production and returns `{ text, params, plan }`. In production (`NODE_ENV` is `"production"`) it does not send the statement. `plan` is null and `params` is empty.
-- Recording column types with `okm build` into `okm.lock`, and `scoped.sql`…`.as(name)`, stays deferred. OKM1601 remains the code for a stale signature when that path exists. `sql.raw(text, "reason")` is not this API.
+- Recording column types with `okm build` into `okm.lock`, and `scoped.sql`…`.as(name)`, stays deferred. OKM1601 remains the code for a stale signature when that path exists. Untyped `sql.raw(text, "reason")` is not in this version (B-07). Result typing is the class initializers only: a joined or expression column that is not a field of the handle's table is not projected through another table's codecs (B-08).
 
 ## 17. Generics
 
@@ -1388,7 +1389,7 @@ The startup compatibility check allows the database to be ahead of the app by `e
 | Command | Does |
 |---|---|
 | `okm build` / `okm dev` | validate schema, emit `.okm/`, update typed-SQL signatures; `okm dev` starts a local PGlite database in `.okm/dev-db` when no dev target is configured (real Postgres, no Docker) |
-| `okm catalog export [--json] [--out <file>]` | write the catalog snapshot a dependent verifies. `--json` prints it. `--out` writes it. With neither, the JSON is printed |
+| `okm catalog export [--json] [--out <file>]` | write the column snapshot a dependent verifies (table names plus each column's name, type, and nullability). Not the full catalog; that is `describe(schema)`. `--json` prints it. `--out` writes it. With neither, the JSON is printed |
 | `okm check` | capabilities, unlisted tables, validation conflicts, stale renames, lint |
 | `okm migrate plan <name> [--json]` | plan, classify, lint. `--json` prints a document (`name`, `class`, each step's `class`, `lock`, and `sql`, and findings) instead of the SQL text. The lock string is the human `-- lock:` line, including row estimates (D279) |
 | `okm migrate apply` | apply with timeouts, retries, checkpoints and resume; on an empty target it provisions from the current snapshot (section 19.6). Flags: `--target <name>` (required when several targets exist), `--allow-protected`; with many targets also `--class shared\|tenant`, `--canary <n>`, `--concurrency <n>`, `--max-failures <n>` (section 19.5) |
