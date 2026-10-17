@@ -14,6 +14,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+### 🐛 Fixed
+
+- A node-postgres call with `timeout` or `signal` removes its checkout `error` listener, so repeated timed calls do not stack listeners on a pooled client. A call that reaches its deadline while waiting for a connection is refused and does not run. A cancel that does not settle destroys that client, so the pool can serve the next call after a kill storm.
+
 ## v0.9.1 — 2026-10-17
 
 ### 💥 Breaking Changes
