@@ -165,8 +165,18 @@ export function emitPull(source: Catalog, layout: PullLayout, review?: PullRevie
   const files: PullFile[] = [];
   const imports: { readonly name: string; readonly file: string }[] = [];
   const usedFiles = new Set<string>();
+  const usedExports = new Set<string>();
   const identitySequences = new Set<string>();
   const tableExports = new Map<string, string>();
+
+  for (const table of tables) {
+    if (table.definition.partition !== undefined) continue;
+    const exportName = freshIdent(
+      declaredIdent(table.provenance.source, table.identity.name),
+      usedExports,
+    );
+    tableExports.set(table.identity.name, exportName);
+  }
 
   for (const table of tables) {
     if (table.definition.partition !== undefined) {
@@ -182,10 +192,20 @@ export function emitPull(source: Catalog, layout: PullLayout, review?: PullRevie
       skipChildren(table.identity.name, byParent, statements, skipped);
       continue;
     }
-    const planned = planTable(table, byParent, enums, domains, statements, skipped);
+    const exportName = tableExports.get(table.identity.name);
+    if (exportName === undefined) continue;
+    const planned = planTable(
+      table,
+      byParent,
+      enums,
+      domains,
+      statements,
+      skipped,
+      exportName,
+      tableExports,
+    );
     if (planned === undefined) continue;
     if (planned.identitySequence !== undefined) identitySequences.add(planned.identitySequence);
-    tableExports.set(table.identity.name, planned.exportName);
     const fileName = uniqueFile(planned.exportName, usedFiles);
     const path = `${layout.tablesDir}/${fileName}.ts`;
     files.push({ path, text: planned.text });
@@ -360,6 +380,8 @@ function planTable(
   domains: ReadonlyMap<string, { readonly base: string; readonly check: string }>,
   statements: readonly string[],
   skipped: PullSkip[],
+  exportName: string,
+  tableExports: ReadonlyMap<string, string>,
 ): PlannedTable | undefined {
   const bag = byParent.get(table.identity.name) ?? {
     columns: [],
@@ -389,10 +411,8 @@ function planTable(
     fields.set(column.identity.name, field);
     if (column === identityColumn) {
       const renamed =
-        column.provenance.source !== undefined && field !== column.identity.name
-          ? `.sqlName(${JSON.stringify(column.identity.name)})`
-          : "";
-      columnLines.push(`    ${field}: t.identity()${renamed},`);
+        field !== column.identity.name ? `.sqlName(${JSON.stringify(column.identity.name)})` : "";
+      columnLines.push(`    ${jsKey(field)}: t.identity()${renamed},`);
       emitted.add(column.identity.name);
       continue;
     }
@@ -409,15 +429,11 @@ function planTable(
       );
       continue;
     }
-    columnLines.push(`    ${field}: ${built},`);
+    columnLines.push(`    ${jsKey(field)}: ${built},`);
     emitted.add(column.identity.name);
   }
 
   const options: string[] = [];
-  const exportName =
-    table.provenance.source === undefined
-      ? exportNameOf(table.identity.name)
-      : freshIdent(declaredIdent(table.provenance.source, table.identity.name), new Set());
   if (exportName !== table.identity.name) {
     options.push(`    sqlName: ${JSON.stringify(table.identity.name)},`);
   }
@@ -519,7 +535,7 @@ function planTable(
         continue;
       }
       if (field === undefined) continue;
-      foreign.set(field, referenceCall(references));
+      foreign.set(field, referenceCall(references, tableExports));
       continue;
     }
     skipped.push(
@@ -790,17 +806,20 @@ function columnReason(column: ColumnObject): string {
 
 function rewriteForeign(lines: readonly string[], foreign: ReadonlyMap<string, string>): string[] {
   return lines.map((line) => {
-    const match = /^    ([A-Za-z_$][A-Za-z0-9_$]*): (.+),$/.exec(line);
-    if (match === null) return line;
-    const field = match[1] ?? "";
-    const call = foreign.get(field);
-    if (call === undefined) return line;
-    return `    ${field}: ${match[2] ?? ""}${call},`;
+    for (const [field, call] of foreign) {
+      const key = jsKey(field);
+      const prefix = `    ${key}: `;
+      if (!line.startsWith(prefix) || !line.endsWith(",")) continue;
+      const body = line.slice(prefix.length, -1);
+      return `${prefix}${body}${call},`;
+    }
+    return line;
   });
 }
 
 function referenceCall(
   references: NonNullable<ConstraintObject["definition"]["references"]>,
+  tableExports: ReadonlyMap<string, string>,
 ): string {
   const options: string[] = [];
   if (references.columns.length > 0) {
@@ -811,7 +830,8 @@ function referenceCall(
   if (references.onUpdate !== undefined)
     options.push(`onUpdate: ${JSON.stringify(references.onUpdate)}`);
   const optionText = options.length === 0 ? "" : `, { ${options.join(", ")} }`;
-  return `.references(${JSON.stringify(references.parent.name)}${optionText})`;
+  const parent = tableExports.get(references.parent.name) ?? exportNameOf(references.parent.name);
+  return `.references(${JSON.stringify(parent)}${optionText})`;
 }
 
 function indexCall(index: IndexObject, fields: ReadonlyMap<string, string>): string {
@@ -1107,15 +1127,62 @@ function objectName(object: CatalogObject): string {
   return "";
 }
 
+/**
+ * Windows device stems (any case). A file named `con.ts` is refused on NTFS.
+ * Comparison is lowercase-folded; the written stem keeps its original case
+ * after a stable `_` prefix when the bare stem is reserved.
+ */
+const WINDOWS_RESERVED = new Set([
+  "con",
+  "prn",
+  "aux",
+  "nul",
+  "com1",
+  "com2",
+  "com3",
+  "com4",
+  "com5",
+  "com6",
+  "com7",
+  "com8",
+  "com9",
+  "lpt1",
+  "lpt2",
+  "lpt3",
+  "lpt4",
+  "lpt5",
+  "lpt6",
+  "lpt7",
+  "lpt8",
+  "lpt9",
+]);
+
+/**
+ * One table file stem: case-insensitive unique, never a Windows reserved name.
+ *
+ * `used` stores lowercase-folded stems so `Tasks` and `tasks` cannot share a
+ * path on a case-insensitive volume. The same database always yields the same
+ * stems: tables are sorted by SQL name before this runs, and the suffix is
+ * deterministic (`_2`, `_3`, …).
+ *
+ * @param name - Export binding that would become the stem
+ * @param used - Folded stems already taken
+ * @returns The stem to write (without `.ts`)
+ */
 function uniqueFile(name: string, used: Set<string>): string {
-  let file = name;
+  const base = reservedFileStem(name);
+  let file = base;
   let salt = 2;
-  while (used.has(file)) {
-    file = `${name}_${String(salt)}`;
+  while (used.has(file.toLowerCase())) {
+    file = `${base}_${String(salt)}`;
     salt += 1;
   }
-  used.add(file);
+  used.add(file.toLowerCase());
   return file;
+}
+
+function reservedFileStem(name: string): string {
+  return WINDOWS_RESERVED.has(name.toLowerCase()) ? `_${name}` : name;
 }
 
 /**
@@ -1128,16 +1195,18 @@ function uniqueFile(name: string, used: Set<string>): string {
  */
 export function tableExportNames(source: Catalog): ReadonlyMap<string, string> {
   const names = new Map<string, string>();
+  const used = new Set<string>();
   for (const object of source.objects) {
     if (object.kind !== "table" || object.definition.partition !== undefined) continue;
-    names.set(object.identity.name, exportNameOf(object.identity.name));
+    names.set(
+      object.identity.name,
+      freshIdent(declaredIdent(object.provenance.source, object.identity.name), used),
+    );
   }
   return names;
 }
 
 function exportNameOf(name: string): string {
-  const sqlName = jsIdent(name);
-  if (sqlName === name) return name;
   return freshIdent(name, new Set());
 }
 
@@ -1169,12 +1238,14 @@ function prefixed(source: string, prefix: string): string | undefined {
 function freshIdent(sql: string, used: Set<string>): string {
   let name = jsIdent(sql);
   if (name === "table" || name === "columns") name = `${name}Name`;
+  const base = name;
   let salt = 2;
-  while (used.has(name)) {
-    name = `${jsIdent(sql)}_${String(salt)}`;
+  // Folded so `Tasks` and `tasks` cannot share a binding (row types collide).
+  while (used.has(name.toLowerCase())) {
+    name = `${base}_${String(salt)}`;
     salt += 1;
   }
-  used.add(name);
+  used.add(name.toLowerCase());
   return name;
 }
 
@@ -1196,6 +1267,7 @@ function jsIdent(sql: string): string {
 }
 
 function jsKey(name: string): string {
+  if (name === "__proto__") return '["__proto__"]';
   if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) && !RESERVED.has(name)) return name;
   return JSON.stringify(name);
 }

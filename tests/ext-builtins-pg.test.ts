@@ -210,6 +210,33 @@ postgresTest(
 
 postgresTest(
   gate,
+  "okm ext scaffold includes a composite type owned by the extension",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const sql = openPostgres(database.url);
+    const cwd = mkdtempSync(join(tmpdir(), "okm-ext-composite-"));
+    try {
+      if (!(await available(sql, "hstore"))) return;
+      await sql.unsafe("create extension hstore");
+      await sql.unsafe("create type hstore_pair as (k text, v text)");
+      await sql.unsafe("alter extension hstore add type hstore_pair");
+      writeProject(cwd, database.url, false);
+      const printed: string[] = [];
+      await run(["ext", "scaffold", "hstore"], { cwd, stdout: (text) => printed.push(text) });
+      const source = printed.join("");
+      expect(source).toContain('"name": "hstore_pair"');
+      expect(source).toContain('"name": "hstore"');
+    } finally {
+      await sql.end({ timeout: 5 });
+      await database.close();
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  },
+  60_000,
+);
+
+postgresTest(
+  gate,
   "okm ext test lists a wrong signature",
   async () => {
     const database = await createIsolatedDatabase();

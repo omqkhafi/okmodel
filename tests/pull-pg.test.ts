@@ -398,6 +398,106 @@ postgresTest(
   20_000,
 );
 
+postgresTest(
+  gate,
+  "pull round-trips a hostile-name database with stable file stems",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const cwd = tempProject();
+    try {
+      await apply(database.url, [
+        'create table "Tasks" (id integer primary key)',
+        'create table "tasks" (id integer primary key, "__proto__" text not null)',
+        'create table "con" (id integer primary key)',
+        'create table "aux" (id integer primary key)',
+        'create table "nul" (id integer primary key)',
+        'create table "com1" (id integer primary key)',
+        'create table "my table" (id integer primary key)',
+        'create table "say ""hi""" (id integer primary key)',
+        "create table class (id integer primary key)",
+        'create table "pairs" (org text not null, num integer not null, primary key (org, num))',
+        'create table "pair_notes" (org text not null, num integer not null, note text not null, primary key (org, num, note), foreign key (org, num) references "pairs" (org, num))',
+        'create table "kids" (id integer primary key, task_id integer not null references "Tasks" (id))',
+      ]);
+      writeFileSync(
+        join(cwd, "okmodel.config.ts"),
+        `import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./adopted/schema.ts",
+  tables: "./adopted/tables",
+  database: ${JSON.stringify(database.url)},
+});
+`,
+      );
+      const pulled = await pullProject(cwd, ["--out", "adopted"]);
+      const names = readdirSync(join(cwd, "adopted/tables")).sort();
+      expect(names).toContain("Tasks.ts");
+      expect(names).toContain("tasks_2.ts");
+      expect(names).toContain("_con.ts");
+      expect(names).toContain("_aux.ts");
+      expect(names).toContain("_nul.ts");
+      expect(names).toContain("_com1.ts");
+      expect(names).toContain("my_table.ts");
+      expect(names.some((name) => /^con\.ts$/i.test(name))).toBe(false);
+      const tasksText = readFileSync(join(cwd, "adopted/tables/tasks_2.ts"), "utf8");
+      expect(tasksText).toContain("export const tasks_2");
+      expect(tasksText).toContain('sqlName: "tasks"');
+      expect(tasksText).toContain('["__proto__"]:');
+      const kidsText = readFileSync(join(cwd, "adopted/tables/kids.ts"), "utf8");
+      expect(kidsText).toContain('.references("Tasks"');
+      expect(pulled.text).toContain("references() takes one local column");
+      const built = await loadSchema(cwd, "./adopted/schema.ts");
+      const live = await readLive(database.url);
+      expectEqual(align(live, keysOf(pulled)), align(built.catalog, new Set()));
+      expect(hasCompositeKey(built.catalog)).toBe(true);
+      const source = readFileSync(join(cwd, "adopted/schema.ts"), "utf8");
+      expect(unlistedTableFiles(source, names)).toEqual([]);
+      const { checkProject } = await import("../src/tooling/migrate/project.js");
+      await checkProject(cwd);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  60_000,
+);
+
+postgresTest(
+  gate,
+  "pull without oxfmt on PATH still writes the report",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const cwd = tempProject();
+    const previous = process.env.PATH;
+    try {
+      await apply(database.url, ["create table items (id integer primary key)"]);
+      writeConfig(cwd, database.url);
+      writeFileSync(join(cwd, ".oxfmtrc.json"), "{}\n");
+      process.env.PATH = "/usr/bin:/bin";
+      const notices: string[] = [];
+      const write = process.stderr.write.bind(process.stderr);
+      process.stderr.write = ((chunk: string | Uint8Array, ...rest: unknown[]) => {
+        notices.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
+        return write(chunk, ...(rest as []));
+      }) as typeof process.stderr.write;
+      try {
+        const pulled = await pullProject(cwd, ["--out", "adopted"]);
+        expect(pulled.text).toContain("pulled");
+        expect(existsSync(join(cwd, "adopted/schema.ts"))).toBe(true);
+        expect(notices.some((line) => line.includes("oxfmt missing or failed"))).toBe(true);
+      } finally {
+        process.stderr.write = write;
+      }
+    } finally {
+      process.env.PATH = previous;
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  60_000,
+);
+
 function linkPackage(): void {
   const directory = join(root, "packages/reference-app/node_modules");
   const link = join(directory, "okmodel");

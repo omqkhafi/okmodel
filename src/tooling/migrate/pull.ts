@@ -9,7 +9,7 @@
 
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 
 import postgres, { type Sql } from "postgres";
 
@@ -263,6 +263,9 @@ export function pullLayout(
 /**
  * Refuses an existing file, writes the rest, and formats them.
  *
+ * When `oxfmt` is missing or fails, the files stay as written and a notice is
+ * printed on stderr. The pull or import report still returns.
+ *
  * @param files - Files from {@link emitPull}
  * @param verb - `Pull` or `Import`, named in OKM1855
  */
@@ -308,16 +311,20 @@ function refuseExisting(files: readonly PullFile[], verb: "Pull" | "Import"): vo
 function formatFiles(files: readonly string[]): void {
   if (files.length === 0) return;
   const root = formatterRoot(dirname(files[0] ?? "."));
-  const binary = join(root, "node_modules", ".bin", "oxfmt");
-  const result = spawnSync(binary, ["--write", ...files], {
+  const pathEnv = [join(root, "node_modules", ".bin"), process.env.PATH ?? ""].join(delimiter);
+  const result = spawnSync("oxfmt", ["--write", ...files], {
     cwd: root,
     encoding: "utf8",
+    env: { ...process.env, PATH: pathEnv },
   });
   if (result.error !== undefined || result.status !== 0) {
-    const detail = result.stderr || result.stdout || "oxfmt failed";
-    throw new OkmError("invalid", `The pulled files were not formatted. ${detail.trim()}`, {
-      fix: { summary: "Run oxfmt on the pulled files, or fix the formatter settings." },
-    });
+    const detail = (
+      result.stderr ||
+      result.stdout ||
+      result.error?.message ||
+      "oxfmt failed"
+    ).trim();
+    process.stderr.write(`notice: oxfmt missing or failed; wrote unformatted files. ${detail}\n`);
   }
 }
 

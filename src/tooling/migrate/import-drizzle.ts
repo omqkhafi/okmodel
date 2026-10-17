@@ -660,19 +660,14 @@ function columnOf(
     serial || identity !== undefined || generated !== undefined
       ? undefined
       : readDefault(value, extras, `${tableName}.${sqlName}`);
-  const nullable = flag(value, "notNull") ? false : true;
   const dataType = note !== undefined ? note.name : mapped.dataType;
-  const solePrimary =
-    identity?.always === true &&
-    dataType === "bigint" &&
-    !nullable &&
-    primaryColumns.length === 1 &&
-    primaryColumns[0] === sqlName;
+  const inPrimary = primaryColumns.includes(sqlName);
+  const nullable = inPrimary || flag(value, "notNull") ? false : true;
   return column({
     parent,
     name: sqlName,
     dataType,
-    nullable: solePrimary ? false : nullable,
+    nullable,
     provenance: provenanceOf(`field:${property}`),
     ...(defaultExpression !== undefined ? { defaultExpression } : {}),
     ...(identity !== undefined ? { identity } : {}),

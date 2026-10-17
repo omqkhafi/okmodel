@@ -5,7 +5,7 @@ alwaysApply: true
 
 # okmodel project map
 
-Use this map instead of re-exploring. Full rules: `AGENTS.md`. Normative docs: `docs/` (spec `docs/okmodel-api-design.md`, decisions `docs/okmodel-decisions.md` (D1–D289), plan `docs/okmodel-execution-plan.md`, limits `docs/known-limits.md`, GitHub setup `docs/github.md`). If you move or rename a path listed here, update this file in the same change.
+Use this map instead of re-exploring. Full rules: `AGENTS.md`. Normative docs: `docs/` (spec `docs/okmodel-api-design.md`, decisions `docs/okmodel-decisions.md` (D1–D290), plan `docs/okmodel-execution-plan.md`, limits `docs/known-limits.md`, GitHub setup `docs/github.md`). If you move or rename a path listed here, update this file in the same change.
 
 ## Layers (imports only go down; `bun run layers-check`, rank map in `scripts/layers.ts`)
 contracts → dialects → adapters → runtime → tooling. Adapters import contracts or other adapter files, not dialects.

@@ -41,6 +41,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The type-change recipe's temporary `IS NOT NULL` validate is no longer OKM1531 (D289).
 - An unknown CLI flag is an error; `okm <command> --help` lists that command's flags (D289).
 - Backfill progress prints a 1-based step index (D289).
+- `okm pull` and `okm import drizzle` write foreign keys with the exported table binding, keep file stems unique on case-insensitive volumes, and never write a Windows-reserved stem (`con`, `aux`, `nul`, `com1`, …). A column `__proto__` is a computed key. Composite primary-key columns stay not null on Drizzle import. Missing `oxfmt` prints a notice and still writes the report. `okm ext scaffold` includes composite types (D290).
 
 #### docs
 
