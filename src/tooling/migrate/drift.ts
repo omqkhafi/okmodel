@@ -25,7 +25,9 @@ import { sealViews } from "../../dialects/pg/view/scratch.js";
 import type { RolesInput } from "../../dialects/pg/role/index.js";
 import { planMigration } from "./plan.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
-import { assertDirectConnection, assertStableBackend } from "./policy.js";
+import { driverUrl } from "./driver-url.js";
+import { assertDirectConnection } from "./policy.js";
+import { probeStableBackend } from "./pooler-probe.js";
 
 /**
  * Refuses when the connected database differs from the schema.
@@ -41,17 +43,21 @@ export async function assertAuthorDrift(
   allowPooler = false,
 ): Promise<void> {
   assertDirectConnection(url, allowPooler);
-  const sql = postgres(url, {
+  const sql = postgres(driverUrl(url), {
     max: 1,
     connect_timeout: 5,
     idle_timeout: 1,
     onnotice: () => {},
   });
   try {
-    await assertStableBackend(async () => {
-      const rows = await sql<{ pid: string }[]>`select pg_backend_pid()::text as pid`;
-      return rows[0]?.pid ?? "";
-    }, allowPooler);
+    await probeStableBackend(
+      url,
+      async () => {
+        const rows = await sql<{ pid: string }[]>`select pg_backend_pid()::text as pid`;
+        return rows[0]?.pid ?? "";
+      },
+      allowPooler,
+    );
     const schema = authorSchema(author);
     const present = await sql<{ reg: string | null }[]>`
       select to_regclass(${metaReg(schema)})::text as reg

@@ -42,11 +42,12 @@ import { finishQuiet } from "./lost.js";
 import { catalogQuery, managedRoleOptions, sealDomainChecks } from "./drift.js";
 import {
   assertDirectConnection,
-  assertStableBackend,
   assertTargetPolicy,
   selectTarget,
   type InvokeFlags,
 } from "./policy.js";
+import { probeStableBackend } from "./pooler-probe.js";
+import { driverUrl } from "./driver-url.js";
 import type { DeclaredRename } from "../../dialects/pg/declarations.js";
 import postgres from "postgres";
 
@@ -269,8 +270,9 @@ export function applyUnits(
  */
 export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
   assertDirectConnection(request.url, request.allowPooler === true);
+  const url = driverUrl(request.url);
   const pool = open({
-    url: request.url,
+    url,
     max: 1,
     ...(request.searchPath !== undefined ? { searchPath: request.searchPath } : {}),
   });
@@ -284,7 +286,11 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
   const connection = reserved;
   let locked = false;
   try {
-    await assertStableBackend(() => backendPid(connection), request.allowPooler === true);
+    await probeStableBackend(
+      request.url,
+      () => backendPid(connection),
+      request.allowPooler === true,
+    );
     await assertStandardStrings(connection);
     await setTimeouts(connection, request);
     await lockTarget(connection, request.target);
@@ -499,8 +505,9 @@ type PushRequest = {
  */
 async function pushTarget(request: PushRequest): Promise<ApplyReport> {
   assertDirectConnection(request.url, request.allowPooler === true);
+  const url = driverUrl(request.url);
   const pool = open({
-    url: request.url,
+    url,
     max: 1,
     ...(request.searchPath !== undefined ? { searchPath: request.searchPath } : {}),
   });
@@ -513,7 +520,11 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
   const connection = await pool.reserve();
   let locked = false;
   try {
-    await assertStableBackend(() => backendPid(connection), request.allowPooler === true);
+    await probeStableBackend(
+      request.url,
+      () => backendPid(connection),
+      request.allowPooler === true,
+    );
     await assertStandardStrings(connection);
     await setTimeouts(connection, {
       url: request.url,
@@ -529,7 +540,7 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
     await ensureMigrationTables((sql) => connection.execute(sql));
     const history = await readHistory(connection);
     const pushId = nextSequenceId("push", history.ids);
-    const sql = postgres(request.url, {
+    const sql = postgres(url, {
       max: 1,
       connect_timeout: 5,
       idle_timeout: 1,

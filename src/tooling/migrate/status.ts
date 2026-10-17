@@ -10,6 +10,7 @@
 
 import { open } from "../../adapters/pg/postgresjs.js";
 import { OkmError } from "../../contracts/error.js";
+import { driverUrl } from "./driver-url.js";
 import {
   AHEAD_CONTRACT,
   AHEAD_EXPAND,
@@ -141,7 +142,7 @@ export async function readTargetStatus(input: {
 }): Promise<TargetStatus> {
   assertTargetPolicy({ name: input.target, protected: input.protected }, "status");
   const pool = open({
-    url: input.url,
+    url: driverUrl(input.url),
     max: 1,
     ...(input.searchPath !== undefined ? { searchPath: input.searchPath } : {}),
   });

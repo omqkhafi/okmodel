@@ -17,11 +17,12 @@ import { createdOf } from "../testing/factories.js";
 import { testing } from "../testing/index.js";
 import {
   assertDirectConnection,
-  assertStableBackend,
   assertTargetPolicy,
   selectTarget,
   type InvokeFlags,
 } from "./policy.js";
+import { probeStableBackend } from "./pooler-probe.js";
+import { driverUrl } from "./driver-url.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
 import { loadConfig, loadSchema } from "./project.js";
 
@@ -49,17 +50,21 @@ export async function seedProject(cwd: string, file: string, flags: InvokeFlags)
   const allowPooler = flags.allowPooler || config.allowPooler === true;
   assertDirectConnection(target.url, allowPooler);
   const schema = await loadSchema(cwd, config.schema);
-  const pool = open({ url: target.url, max: 1 });
+  const pool = open({ url: driverUrl(target.url), max: 1 });
   let harness: Awaited<ReturnType<typeof testing>> | undefined;
   try {
     const held = await pool.reserve?.();
     if (held !== undefined) {
       try {
-        await assertStableBackend(async () => {
-          const result = await held.execute("select pg_backend_pid()::text");
-          const cell = result.rows[0]?.[0];
-          return cell === null || cell === undefined ? "" : String(cell);
-        }, allowPooler);
+        await probeStableBackend(
+          target.url,
+          async () => {
+            const result = await held.execute("select pg_backend_pid()::text");
+            const cell = result.rows[0]?.[0];
+            return cell === null || cell === undefined ? "" : String(cell);
+          },
+          allowPooler,
+        );
       } finally {
         await finishQuiet(() => held.release());
       }

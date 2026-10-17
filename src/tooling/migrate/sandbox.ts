@@ -17,7 +17,7 @@ import { OkmError } from "../../contracts/error.js";
 import { quoteIdent } from "../../dialects/pg/ddl.js";
 import { introspectSchema } from "../../dialects/pg/introspect.js";
 import { roleExists } from "../../dialects/pg/role/check.js";
-import { createdRoleName, createRoleOnce } from "../../dialects/pg/role/sql.js";
+import { changesRole, createdRoleName, createRoleOnce } from "../../dialects/pg/role/sql.js";
 import { sealViews } from "../../dialects/pg/view/scratch.js";
 import { ensureMigrationTables } from "./apply.js";
 import type { MigrateConfig } from "./config.js";
@@ -25,8 +25,9 @@ import { catalogQuery, managedRoleOptions } from "./drift.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
 import { lintReprints, type Finding } from "./lint.js";
 import { planMigration, type MigrationPlan, type PlanStep } from "./plan.js";
-import { assertStableBackend } from "./policy.js";
-import { assumeRole, assertSchemaUsageLanded, grantSchema } from "./runner.js";
+import { driverUrl } from "./driver-url.js";
+import { probeStableBackend } from "./pooler-probe.js";
+import { assumeRole, assertSchemaUsageLanded, grantSchema, ownSchema } from "./runner.js";
 import { snapshotDifference } from "./snapshot.js";
 import { sqlStatements } from "./sql-lex.js";
 
@@ -209,7 +210,7 @@ async function inCheckTransaction<T>(
   allowPooler: boolean,
   run: (sql: Sql) => Promise<T>,
 ): Promise<T> {
-  const sql = postgres(url, {
+  const sql = postgres(driverUrl(url), {
     max: 1,
     connect_timeout: 5,
     idle_timeout: 1,
@@ -229,11 +230,15 @@ async function inCheckTransaction<T>(
   let rolledBack = false;
   let xid = "";
   try {
-    await assertStableBackend(async () => {
-      const rows = await reserved.unsafe("select pg_backend_pid()::text as pid");
-      const pid = cell(rows[0], "pid");
-      return pid ?? "";
-    }, allowPooler);
+    await probeStableBackend(
+      url,
+      async () => {
+        const rows = await reserved.unsafe("select pg_backend_pid()::text as pid");
+        const pid = cell(rows[0], "pid");
+        return pid ?? "";
+      },
+      allowPooler,
+    );
     await reserved.unsafe("begin");
     open = true;
     xid = await readXid(reserved);
@@ -347,7 +352,7 @@ function closedError(): Error {
  * @returns The name when it is still present, or when the drop could not be confirmed
  */
 async function dropScratch(url: string, scratch: string): Promise<string | undefined> {
-  const sql = postgres(url, {
+  const sql = postgres(driverUrl(url), {
     max: 1,
     connect_timeout: 5,
     idle_timeout: 1,
@@ -421,6 +426,14 @@ async function runSteps(
     }
     if (prepared.sql.length === 0) continue;
     try {
+      if (
+        migrationRole !== undefined &&
+        !changesRole(step.sql) &&
+        session.setRole !== migrationRole &&
+        (await roleExists(connection, migrationRole))
+      ) {
+        await assumeRole(connection, migrationRole, session);
+      }
       const created = createdRoleName(step.sql);
       const existed = created !== undefined && (await roleExists(connection, created));
       if (step.backfill !== undefined) {
@@ -431,18 +444,23 @@ async function runSteps(
       } else if (!existed) {
         await sql.unsafe(createRoleOnce(prepared.sql.replace(/;\s*$/, "")));
       }
-      if (created !== undefined && created === migrationRole) {
-        if (!existed) {
-          await grantSchema(connection, scratch, created);
-          await connection.execute(
-            `grant select, insert, update on okm_meta, okm_history, okm_backfill to ${quoteIdent(created)}`,
-          );
-        }
-        await assumeRole(connection, created, session);
+      if (created !== undefined && created === migrationRole && !existed) {
+        await grantSchema(connection, scratch, created);
+        await ownSchema(connection, scratch, created);
+        await connection.execute(
+          `grant select, insert, update on okm_meta, okm_history, okm_backfill to ${quoteIdent(created)}`,
+        );
       }
     } catch (error) {
       throw failStep(migration.id, index, error);
     }
+  }
+  if (
+    migrationRole !== undefined &&
+    session.setRole !== migrationRole &&
+    (await roleExists(connection, migrationRole))
+  ) {
+    await assumeRole(connection, migrationRole, session);
   }
 }
 

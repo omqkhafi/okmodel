@@ -158,29 +158,62 @@ export function assertDirectConnection(url: string, allowPooler: boolean): void 
   }
 }
 
+/** Options for {@link assertStableBackend}. */
+export type StableBackendOptions = {
+  /**
+   * Holds another backend between pid reads so a LIFO transaction-mode
+   * pooler cannot hand the next read the same server. Resolves to a release
+   * function that ends the hold.
+   */
+  readonly holdBackend?: () => Promise<() => Promise<void>>;
+};
+
 /**
- * Refuses a session whose backend pid changes between two statements.
+ * Refuses a session whose backend pid changes across eight statements.
  *
- * The two reads are separate round trips and are not wrapped in a
- * transaction. A transaction-mode pooler can hand back a different backend
- * for the second one. `--allow-pooler` skips the probe.
+ * The reads are separate round trips and are not wrapped in a transaction.
+ * A transaction-mode pooler can hand back a different backend. Two reads
+ * miss a default PgBouncer with `server_round_robin=0` (LIFO); eight reads
+ * plus an optional hold between them catch that case. A direct session
+ * keeps one pid. `--allow-pooler` skips the probe.
  *
  * @param readPid - Reads `pg_backend_pid()` on the session under test
  * @param allowPooler - The invocation opted in
+ * @param options - Optional hold used by the migrate warm-and-hold probe
  */
 export async function assertStableBackend(
   readPid: () => Promise<string>,
   allowPooler: boolean,
+  options?: StableBackendOptions,
 ): Promise<void> {
   if (allowPooler) return;
-  const first = await readPid();
-  const second = await readPid();
-  if (first === second) return;
-  throw new OkmError(
-    "OKM1854",
-    `The backend pid changed from ${first} to ${second}. A pooler is handing out a new session between statements.`,
-    { fix: { summary: "Use a direct connection, or pass --allow-pooler." } },
-  );
+  const seen = new Set<string>();
+  let first = "";
+  let release: (() => Promise<void>) | undefined;
+  try {
+    for (let i = 0; i < 8; i += 1) {
+      const pid = await readPid();
+      if (first.length === 0) first = pid;
+      seen.add(pid);
+      if (seen.size >= 2) {
+        const second = [...seen].find((value) => value !== first) ?? pid;
+        throw new OkmError(
+          "OKM1854",
+          `The backend pid changed from ${first} to ${second}. A pooler is handing out a new session between statements.`,
+          { fix: { summary: "Use a direct connection, or pass --allow-pooler." } },
+        );
+      }
+      if (release !== undefined) {
+        await release();
+        release = undefined;
+      }
+      if (i < 7 && options?.holdBackend !== undefined) {
+        release = await options.holdBackend();
+      }
+    }
+  } finally {
+    if (release !== undefined) await release().catch(() => undefined);
+  }
 }
 
 /**

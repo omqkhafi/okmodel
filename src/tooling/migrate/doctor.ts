@@ -14,6 +14,7 @@ import { assertRoleHealth } from "../../dialects/pg/role/check.js";
 import { errorDoc } from "../errors/registry.js";
 import { omitManagedObjects } from "./managed.js";
 import { assertTargetPolicy, selectTarget, type InvokeFlags } from "./policy.js";
+import { driverUrl } from "./driver-url.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
 import { openProject } from "./project.js";
 
@@ -46,7 +47,7 @@ export async function doctorProject(
   if (opened.config.roles !== undefined) {
     const target = selectTarget(opened.config, flags?.target);
     assertTargetPolicy(target, "check", flags?.allowProtected ?? false);
-    const pool = open({ url: target.url, max: 1 });
+    const pool = open({ url: driverUrl(target.url), max: 1 });
     try {
       await assertRoleHealth(pool, opened.config.roles, objects);
     } catch (error) {

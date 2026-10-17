@@ -27,7 +27,7 @@ The host is lowercased before the check. The message is `Refusing pooler host <h
 | Host contains `pooler` | Refused. |
 | Host contains `pgbouncer` | Refused. |
 | Port `6543` or `6432` | Refused. |
-| Query `pgbouncer=true` | Refused. |
+| Query `pgbouncer=true` | Refused by the migrate guard. Migrate strips that parameter before the URL becomes a startup parameter; other pooler hints are not interpreted. |
 | A direct `postgres://` URL | Allowed. The flag is not required. |
 
 | Command | Pooler host |
@@ -39,7 +39,7 @@ The host is lowercased before the check. The message is `Refusing pooler host <h
 | `connect()` | Not refused. |
 
 <Callout type="warning" title="OKM1854">
-Apply, push, seed, provision, and a one-database `okm check` read `pg_backend_pid()` twice on the reserved session. `okm migrate check` does the same inside the scratch replay. The two reads are not one transaction. A different pid is OKM1854. The same opt-in that skips the host check skips the probe.
+Apply, push, seed, provision, and a one-database `okm check` read `pg_backend_pid()` eight times on the reserved session and hold another backend between reads so a LIFO pooler cannot reuse one server. `okm migrate check` does the same inside the scratch replay. The reads are not one transaction. Two or more distinct pids are OKM1854. The same opt-in that skips the host check skips the probe.
 </Callout>
 
 Connection pool size is [`max`](/docs/define/connect/session#max).

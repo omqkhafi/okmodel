@@ -8,6 +8,7 @@
 
 import { open } from "../../adapters/pg/postgresjs.js";
 import { aboutBatchCount } from "./backfill.js";
+import { driverUrl } from "./driver-url.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
 import type { PlanStep } from "./plan.js";
 
@@ -50,7 +51,7 @@ export async function readRowEstimates(
   schema: string,
   tables: readonly string[],
 ): Promise<ReadonlyMap<string, RowEstimate>> {
-  const pool = open({ url, max: 1 });
+  const pool = open({ url: driverUrl(url), max: 1 });
   try {
     const connection = await pool.reserve?.();
     if (connection === undefined) {

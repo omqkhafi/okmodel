@@ -23,6 +23,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - A backslash in a composed fragment can no longer desync the literal guard and escape a tenant filter (B-01, D287).
 - A unique, foreign-key, or check failure on a table with a sensitive column no longer puts the value in `error.cause` (`detail`, parameters, `where`, and `internalQuery` stay off). Tables without sensitive columns keep today's cause. `includeValues` remains the explicit opt-in (B-33, D291).
+- With `defineConfig({ roles })`, managed functions revoke `EXECUTE` from `PUBLIC` and grant it only to the app role, so the reporting role cannot execute them (B-31, D293). Provider-specific role checks (RDS, Cloud SQL, Supabase) follow in M-4.
 
 ### 🐛 Fixed
 
@@ -44,6 +45,9 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - When the schema hash moves with no DDL (an external table the dependent already verified), `okm push` and `okm migrate apply` re-stamp `okm_meta` instead of leaving `connect()` on OKM1520 (D289).
 - `okm migrate check` keeps a trigger's function in the logical namespace, so schemas with `timestamps({ enforce: "trigger" })` or hand-written triggers no longer fail OKM1020 (D289).
 - `okm check` and `okm push` reprint domain checks on the connected server before planning, so a non-canonical author check is not permanent live drift (D289).
+- The guide's `roles` block applies as a superuser and as a `CREATEROLE` schema owner: managed roles are created before `SET ROLE`, schema ownership is transferred when possible, and a failed role unit stays re-runnable with a clear privilege error. On Postgres 15, apply grants itself membership after `CREATE ROLE` (which leaves none); on Postgres 16+ it grants `WITH SET TRUE` (B-30, D293).
+- Migrate strips the `pgbouncer` query parameter before the URL becomes a startup parameter; other pooler hints are not interpreted (B-25, D293). Provider-specific role-admin checks (RDS, Cloud SQL, Supabase) follow in M-4.
+- The pooler pid probe uses eight reads on the apply session (OKM1854 when the backend pid changes). Warm-and-hold for LIFO PgBouncer is kept out of apply/seed so single-connection targets do not hang; URL heuristics still refuse typical pooler hosts and ports (B-41, D293).
 - The type-change recipe's temporary `IS NOT NULL` validate is no longer OKM1531 (D289).
 - An unknown CLI flag is an error; `okm <command> --help` lists that command's flags (D289).
 - Backfill progress prints a 1-based step index (D289).
@@ -55,6 +59,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okm push` docs say it applies the live schema diff as `push-<n>`, and known-limits cover external re-stamp and domain-check sealing (D289).
 - Sensitive docs cover redaction in logs, errors, `cause`, and spans; writes docs cover unknown keys (D291).
 - Queries and the error reference document OKM1126 when a finished statement exceeds 65,535 parameters (D292).
+- Guide roles privileges, production.md `--target` / status / check behavior, and known-limits pooler notes (DM-2, DM-3, D293).
 
 ## v0.9.0 — 2026-10-16
 

@@ -30,6 +30,7 @@ test("roles without the new fields emit the same grants", () => {
   );
   expect(sql).toEqual([
     'create role "mig" with nosuperuser nocreatedb nocreaterole inherit nologin',
+    'alter default privileges for role "mig" in schema "public" revoke execute on functions from public',
     'alter default privileges for role "mig" in schema "public" grant execute on functions to "app"',
     'alter default privileges for role "mig" in schema "public" grant select on sequences to "app"',
     'alter default privileges for role "mig" in schema "public" grant usage on sequences to "app"',

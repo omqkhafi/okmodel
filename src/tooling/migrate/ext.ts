@@ -17,6 +17,7 @@ import { compareExtensionVersions, isExactVersion } from "../../contracts/catalo
 import type { DriverPool, WireValue } from "../../contracts/driver.js";
 import type { CatalogObject, ExtensionObject } from "../../contracts/catalog/types.js";
 import { assertTargetPolicy, selectTarget, type InvokeFlags } from "./policy.js";
+import { driverUrl } from "./driver-url.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
 import { openProject } from "./project.js";
 import {
@@ -43,7 +44,7 @@ export async function extProject(
   const opened = await openProject(cwd);
   const target = selectTarget(opened.config, flags.target);
   assertTargetPolicy(target, "check", flags.allowProtected);
-  const pool = open({ url: target.url, max: 1 });
+  const pool = open({ url: driverUrl(target.url), max: 1 });
   try {
     if (command === "list") return formatList(await readExtensions(pool));
     return formatCheck(opened.built.catalog.objects, await readExtensions(pool));
@@ -216,7 +217,7 @@ async function withServer(
   const opened = await openProject(cwd);
   const target = selectTarget(opened.config, flags.target);
   assertTargetPolicy(target, "check", flags.allowProtected);
-  const pool = open({ url: target.url, max: 1 });
+  const pool = open({ url: driverUrl(target.url), max: 1 });
   try {
     return await body(pool);
   } catch (error) {

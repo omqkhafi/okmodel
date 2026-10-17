@@ -1029,7 +1029,9 @@ await harness.close();
 
 ### Roles and grants
 
-The migration connects as one role and the app connects as another. `roles` names both, and `roles.reporting` is the optional third. The app role receives select, insert, update, and delete on tables and views, select on materialized views, execute on functions, and usage plus select on sequences. Default privileges grant the same on objects created later. Apply also grants that role select on `okm_meta`, and nothing else there, so `connect()` can read the stored hash. Apply runs as the migration role, and switches to it with `SET ROLE` when the connection is someone else. A role you already created is external, unless you list it in `managed`.
+The migration connects as one role and the app connects as another. `roles` names both, and `roles.reporting` is the optional third. The app role receives select, insert, update, and delete on tables and views, select on materialized views, execute on functions, and usage plus select on sequences. Default privileges grant the same on objects created later. When `roles` is set, apply also revokes `EXECUTE` from `PUBLIC` on managed functions and from default privileges, so only the app role can execute them. Apply also grants that role select on `okm_meta`, and nothing else there, so `connect()` can read the stored hash. Apply creates every managed role as the connecting user first, then switches to the migration role with `SET ROLE` for the rest of the plan. A role you already created is external, unless you list it in `managed`.
+
+The connecting role must be a superuser, or have `CREATEROLE`, own the target schema, and be able to `GRANT CREATE` on the database (so apply can make the migration role the schema owner). Before `SET ROLE`, apply grants itself membership on a managed migration role (`WITH SET TRUE` on Postgres 16+; a plain grant on Postgres 15). Managed-provider admin roles (RDS, Cloud SQL, Supabase) are checked separately; do not assume those attributes from this list.
 
 `roles.reporting` can only select. It gets select on tables, views, and materialized views, usage on schemas, and default privileges for select on tables created later. It does not get insert, update, delete, or execute. A hidden column is left out of that select unless `roles.columns` lists it. Under `rlsTenancy()` this role is not `BYPASSRLS` and it is not tenant-safe against its own SQL: it sees no tenant rows until the session sets `app.tenant`, and it can set `app.unscoped` itself and then read every tenant. `unscoped()` is the application client's read escape and is not given to this role.
 
@@ -1049,6 +1051,7 @@ export default defineConfig({
   schema: "./schema.ts",
   database: url,
   // Apply uses the migration role. The app uses the app role.
+  // okm_app is external here: create it first, or list it in managed.
   roles: {
     migration: "okm_migrate",
     app: "okm_app",
