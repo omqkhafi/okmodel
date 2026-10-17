@@ -34,6 +34,8 @@ export type MapPostgresErrorSchema = {
 type SqlField = {
   readonly field: string;
   readonly sql: string;
+  /** When true, mapped errors for this table keep values out of `cause` (B-33). */
+  readonly sensitive?: boolean;
 };
 
 /** Options for {@link mapPostgresError}. */
@@ -71,7 +73,7 @@ export type MapPostgresErrorOptions = {
 export function mapPostgresError(error: unknown, options?: MapPostgresErrorOptions): OkmError {
   if (error instanceof OkmError) return error;
   if (!isDriverError(error)) return OkmError.from(error);
-  const search = searchInputError(error);
+  const search = searchInputError(error, options);
   if (search !== undefined) return search;
   const kind = kindOf(error);
   const columns = columnsOf(error);
@@ -83,6 +85,8 @@ export function mapPostgresError(error: unknown, options?: MapPostgresErrorOptio
       : reasonOf(kind, error.table, error.constraint, columns, options?.schema));
   const values = options?.includeValues === true ? valuesOf(error.detail, columns) : undefined;
   const code = kind === "outcome_unknown" ? "OKM1401" : kind;
+  const redactCause =
+    options?.includeValues !== true && needsSafeCause(options?.schema, error.table, columns);
   return new OkmError(code, summaryOf(kind, error, columns, fieldReason), {
     kind,
     fieldReason,
@@ -92,12 +96,76 @@ export function mapPostgresError(error: unknown, options?: MapPostgresErrorOptio
     ...(error.constraint !== undefined ? { constraint: error.constraint } : {}),
     ...(error.sqlstate !== undefined ? { sqlstate: error.sqlstate } : {}),
     batchIndex: error.batchIndex,
-    cause: error.cause ?? error,
+    cause: redactCause ? safeCause(error) : (error.cause ?? error),
     ...(options?.includeValues === true && values !== undefined
       ? { includeValues: true, values }
       : {}),
     ...(options?.http !== undefined ? { http: options.http } : {}),
   });
+}
+
+/**
+ * Whether this failure may carry a sensitive value in the driver cause (B-33).
+ *
+ * True when the error's table has a sensitive column, or when a named column is
+ * sensitive on any table in the schema.
+ *
+ * @param schema - Connected schema, when `connect` passed one
+ * @param table - SQL table from the driver error
+ * @param columns - SQL column names parsed from the error
+ */
+function needsSafeCause(
+  schema: MapPostgresErrorSchema | undefined,
+  table: string | undefined,
+  columns: readonly string[],
+): boolean {
+  if (schema === undefined) return false;
+  const model = modelForTable(schema, table);
+  if (model !== undefined && model.columns.some((column) => column.sensitive === true)) {
+    return true;
+  }
+  if (columns.length === 0) return false;
+  for (const item of Object.values(schema.model)) {
+    for (const column of item.columns) {
+      if (column.sensitive !== true) continue;
+      for (const name of columns) {
+        if (column.sql === name || column.field === name) return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Cause fields that cannot hold a row value.
+ *
+ * Omits `detail`, `message`, parameters, `where`, and `internalQuery`.
+ *
+ * @param error - Normalised driver error
+ */
+function safeCause(error: DriverShape): Readonly<Record<string, string>> {
+  const out: Record<string, string> = { name: "DriverError" };
+  if (error.sqlstate !== undefined) out.sqlstate = error.sqlstate;
+  if (error.constraint !== undefined) out.constraint = error.constraint;
+  if (error.table !== undefined) out.table = error.table;
+  if (error.column !== undefined) out.column = error.column;
+  const nested = error.cause;
+  if (typeof nested === "object" && nested !== null) {
+    const code = Reflect.get(nested, "code");
+    if (typeof code === "string" && code.length > 0 && code.length <= 64) out.code = code;
+  }
+  return out;
+}
+
+function modelForTable(
+  schema: MapPostgresErrorSchema,
+  table: string | undefined,
+): MapPostgresErrorSchema["model"][string] | undefined {
+  if (table === undefined) return undefined;
+  for (const item of Object.values(schema.model)) {
+    if (item.sql === table) return item;
+  }
+  return schema.model[table];
 }
 
 /** TLS and certificate codes from Node, OpenSSL, and Bun.sql (QA-L9). */
@@ -153,14 +221,22 @@ function searchQuery(error: DriverShape): boolean {
   return typeof query === "string" && query.includes("to_tsquery");
 }
 
-function searchInputError(error: DriverShape): OkmError | undefined {
+function searchInputError(
+  error: DriverShape,
+  options?: MapPostgresErrorOptions,
+): OkmError | undefined {
   const sqlstate = error.sqlstate;
   const message = error.message;
+  const cause =
+    options?.includeValues !== true &&
+    needsSafeCause(options?.schema, error.table, columnsOf(error))
+      ? safeCause(error)
+      : (error.cause ?? error);
   if (sqlstate === "42601" && (message.includes("tsquery") || searchQuery(error))) {
     return new OkmError("OKM1120", `Search input is not valid. ${stripRowValues(message)}`, {
       kind: "invalid",
       sqlstate,
-      cause: error.cause ?? error,
+      cause,
       fix: { summary: "Fix the advanced search text, or use natural, all-words, or phrase." },
     });
   }
@@ -172,7 +248,7 @@ function searchInputError(error: DriverShape): OkmError | undefined {
     return new OkmError("OKM1122", stripRowValues(message), {
       kind: "invalid",
       sqlstate,
-      cause: error.cause ?? error,
+      cause,
       fix: {
         summary: "Use a text search configuration that exists, such as english, or omit language.",
       },

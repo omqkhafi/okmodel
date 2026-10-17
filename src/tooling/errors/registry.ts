@@ -164,7 +164,7 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     code: "OKM1120",
     title: "Unknown field",
     summary:
-      "The name is not a field or an option. timeout and signal go in the second argument of update. Options go first: tx(options, fn).",
+      "The name is not a field or an option on a write, read, or update. An unknown key on insert, update, upsert, or first-or-create is refused and names the key and the table. timeout and signal go in the second argument of update. Options go first: tx(options, fn).",
     fix: "Use a field from the catalog, or move the option. The error includes a nearest-name hint when one is close.",
   },
   {
