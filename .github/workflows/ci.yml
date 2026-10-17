@@ -325,12 +325,32 @@ jobs:
           bun-version: 1.4.2
 
       # Cursor agents cannot PATCH milestones (403). Copy from Closes #N (D206).
+      # Inline so this works while the job still checks out the base branch.
       - name: Sync milestone from Closes
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
-        run: bun ./scripts/pr-sync-milestone.ts --pr "$PR_NUMBER"
+        run: |
+          set -euo pipefail
+          meta="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")"
+          if echo "$meta" | jq -e '.milestone != null' >/dev/null; then
+            echo "milestone already set"
+            exit 0
+          fi
+          body="$(echo "$meta" | jq -r '.body // ""')"
+          body="${body%%<!-- CURSOR_AGENT_PR_BODY_END -->*}"
+          n="$(printf '%s\n' "$body" | sed -n 's/^Closes #\([0-9][0-9]*\)$/\1/p' | tail -1)"
+          if [ -z "${n}" ]; then
+            echo "no Closes #N line"
+            exit 0
+          fi
+          mil="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${n}" --jq '.milestone.number // empty')"
+          if [ -z "${mil}" ]; then
+            echo "issue #${n} has no milestone"
+            exit 0
+          fi
+          gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}" -f "milestone=${mil}"
+          echo "set milestone ${mil} from #${n}"
 
       - name: Lint pull request
         env:
