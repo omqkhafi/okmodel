@@ -8,7 +8,7 @@
  */
 
 import { open } from "../../adapters/pg/postgresjs.js";
-import { driverUrl } from "../../adapters/pg/url.js";
+import { driverUrl } from "./driver-url.js";
 import { assertStableBackend } from "./policy.js";
 
 /**

@@ -18,8 +18,8 @@ import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres
 import { createIsolatedDatabase, openPostgres } from "../packages/harness/src/postgres.js";
 import { primaryUrl } from "../packages/harness/src/topology.js";
 import { open } from "../src/adapters/pg/postgresjs.js";
-import { driverUrl } from "../src/adapters/pg/url.js";
 import { applyTarget } from "../src/tooling/migrate/apply.js";
+import { driverUrl } from "../src/tooling/migrate/driver-url.js";
 import { assertDirectConnection, assertStableBackend } from "../src/tooling/migrate/policy.js";
 import { probeStableBackend } from "../src/tooling/migrate/pooler-probe.js";
 import { planMigration } from "../src/tooling/migrate/plan.js";
@@ -129,13 +129,13 @@ postgresTest(
       expect(() => assertDirectConnection(withHint, false)).toThrow(OkmError);
       expect(() => assertDirectConnection(withHint, true)).not.toThrow();
       expect(driverUrl(withHint)).not.toContain("pgbouncer");
-      const pool = open({ url: withHint, max: 1 });
-      try {
-        const result = await pool.execute("select 1::text");
-        expect(result.rows[0]?.[0]).toBe("1");
-      } finally {
-        await pool.close();
-      }
+      await applyTarget({
+        url: withHint,
+        target: "default",
+        protected: false,
+        allowPooler: true,
+        migrations: [],
+      });
     } finally {
       await database.close();
     }

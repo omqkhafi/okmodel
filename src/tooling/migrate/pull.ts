@@ -17,6 +17,7 @@ import { OkmError } from "../../contracts/error.js";
 import { introspectSchema, type CatalogQuery } from "../../dialects/pg/introspect.js";
 import { catalog } from "../../contracts/catalog/build.js";
 import type { Catalog, CatalogObject } from "../../contracts/catalog/types.js";
+import { driverUrl } from "./driver-url.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
 import { projectPath } from "./paths.js";
 import { assertTargetPolicy, selectTarget } from "./policy.js";
@@ -60,7 +61,7 @@ export async function pullProject(cwd: string, argv: readonly string[]): Promise
   const target = selectTarget(config, flags.target);
   assertTargetPolicy(target, "pull", flags.allowProtected);
   const layout = layoutOf(cwd, config.schema, config.tables, flags.out);
-  const sql = postgres(target.url, {
+  const sql = postgres(driverUrl(target.url), {
     max: 1,
     connect_timeout: 5,
     idle_timeout: 1,

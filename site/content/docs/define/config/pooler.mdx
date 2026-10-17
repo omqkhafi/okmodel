@@ -27,7 +27,7 @@ The host is lowercased before the check. The message is `Refusing pooler host <h
 | Host contains `pooler` | Refused. |
 | Host contains `pgbouncer` | Refused. |
 | Port `6543` or `6432` | Refused. |
-| Query `pgbouncer=true` | Refused by the migrate guard. Drivers strip that parameter before the URL becomes a startup parameter; other pooler hints are not interpreted. |
+| Query `pgbouncer=true` | Refused by the migrate guard. Migrate strips that parameter before the URL becomes a startup parameter; other pooler hints are not interpreted. |
 | A direct `postgres://` URL | Allowed. The flag is not required. |
 
 | Command | Pooler host |

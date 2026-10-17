@@ -25,7 +25,7 @@ import { sealViews } from "../../dialects/pg/view/scratch.js";
 import type { RolesInput } from "../../dialects/pg/role/index.js";
 import { planMigration } from "./plan.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
-import { driverUrl } from "../../adapters/pg/url.js";
+import { driverUrl } from "./driver-url.js";
 import { assertDirectConnection } from "./policy.js";
 import { probeStableBackend } from "./pooler-probe.js";
 

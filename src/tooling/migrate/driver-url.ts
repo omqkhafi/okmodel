@@ -1,16 +1,16 @@
 /**
- * Connection URL helpers shared by the Postgres drivers.
+ * Connection URL helpers for migrate commands.
  *
  * Pooler client hints in the query string are not Postgres startup parameters.
- * Drivers that pass the URL through must strip those hints first.
+ * Every migrate path that opens a driver must strip those hints first. The
+ * URL guard still reads `pgbouncer=true` on the original URL before this runs.
  */
 
 /**
  * Removes the `pgbouncer` query parameter before a driver opens a connection.
  *
  * Other pooler hints in the URL are left alone: this version does not
- * interpret them. The migrate pooler guard still reads `pgbouncer=true` on
- * the original URL before this runs.
+ * interpret them.
  *
  * @param url - A `postgres://` or `postgresql://` URL
  * @returns The same URL without `pgbouncer` in the query string

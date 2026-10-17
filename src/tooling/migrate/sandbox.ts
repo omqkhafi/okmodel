@@ -25,7 +25,7 @@ import { catalogQuery, managedRoleOptions } from "./drift.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
 import { lintReprints, type Finding } from "./lint.js";
 import { planMigration, type MigrationPlan, type PlanStep } from "./plan.js";
-import { driverUrl } from "../../adapters/pg/url.js";
+import { driverUrl } from "./driver-url.js";
 import { probeStableBackend } from "./pooler-probe.js";
 import { assumeRole, assertSchemaUsageLanded, grantSchema, ownSchema } from "./runner.js";
 import { snapshotDifference } from "./snapshot.js";
@@ -352,7 +352,7 @@ function closedError(): Error {
  * @returns The name when it is still present, or when the drop could not be confirmed
  */
 async function dropScratch(url: string, scratch: string): Promise<string | undefined> {
-  const sql = postgres(url, {
+  const sql = postgres(driverUrl(url), {
     max: 1,
     connect_timeout: 5,
     idle_timeout: 1,

@@ -14,6 +14,7 @@ import type { Catalog, CatalogObject, ColumnObject } from "../../contracts/catal
 import { OkmError } from "../../contracts/error.js";
 import { quoteIdent } from "../../dialects/pg/ddl.js";
 import type { MigrateConfig } from "./config.js";
+import { driverUrl } from "./driver-url.js";
 import type { Finding } from "./lint.js";
 import { projectPath } from "./paths.js";
 
@@ -275,7 +276,12 @@ export async function assertLiveExternal(
 ): Promise<void> {
   if (snapshots.length === 0 && externalTables(source).length === 0) return;
   const postgres = (await import("postgres")).default;
-  const sql = postgres(url, { max: 1, connect_timeout: 5, idle_timeout: 1, onnotice: () => {} });
+  const sql = postgres(driverUrl(url), {
+    max: 1,
+    connect_timeout: 5,
+    idle_timeout: 1,
+    onnotice: () => {},
+  });
   try {
     const current = await sql<{ name: string }[]>`select current_database() as name`;
     const database = current[0]?.name;

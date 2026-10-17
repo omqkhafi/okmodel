@@ -47,6 +47,7 @@ import {
   type InvokeFlags,
 } from "./policy.js";
 import { probeStableBackend } from "./pooler-probe.js";
+import { driverUrl } from "./driver-url.js";
 import type { DeclaredRename } from "../../dialects/pg/declarations.js";
 import postgres from "postgres";
 
@@ -269,8 +270,9 @@ export function applyUnits(
  */
 export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
   assertDirectConnection(request.url, request.allowPooler === true);
+  const url = driverUrl(request.url);
   const pool = open({
-    url: request.url,
+    url,
     max: 1,
     ...(request.searchPath !== undefined ? { searchPath: request.searchPath } : {}),
   });
@@ -503,8 +505,9 @@ type PushRequest = {
  */
 async function pushTarget(request: PushRequest): Promise<ApplyReport> {
   assertDirectConnection(request.url, request.allowPooler === true);
+  const url = driverUrl(request.url);
   const pool = open({
-    url: request.url,
+    url,
     max: 1,
     ...(request.searchPath !== undefined ? { searchPath: request.searchPath } : {}),
   });
@@ -537,7 +540,7 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
     await ensureMigrationTables((sql) => connection.execute(sql));
     const history = await readHistory(connection);
     const pushId = nextSequenceId("push", history.ids);
-    const sql = postgres(request.url, {
+    const sql = postgres(url, {
       max: 1,
       connect_timeout: 5,
       idle_timeout: 1,
