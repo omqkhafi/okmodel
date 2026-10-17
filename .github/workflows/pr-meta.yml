@@ -34,7 +34,8 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
-      pull-requests: read
+      pull-requests: write
+      issues: write
     steps:
       - name: Checkout base
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -46,6 +47,14 @@ jobs:
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.4.2
+
+      # Cursor agents cannot PATCH milestones (403). Copy from Closes #N (D206).
+      - name: Sync milestone from Closes
+        env:
+          PR_NUMBER: ${{ github.event_name == 'workflow_dispatch' && inputs.pr || github.event.pull_request.number }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: bun ./scripts/pr-sync-milestone.ts --pr "$PR_NUMBER"
 
       - name: Lint pull request
         env:

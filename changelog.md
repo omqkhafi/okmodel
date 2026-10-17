@@ -53,6 +53,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### tooling
 
+- CI copies the milestone from `Closes #N` onto the pull request before `lint / pull request`, so agents that cannot PATCH milestones still pass D206.
 - The sticky migrate-plan comment matches the marker and the bot author, so another author's marked comment is not edited (B-22, D295).
 - `okm driver test` drops leftover `okm_*` tables after each wire and error case, refuses Bun below `1.4.0`, and never reports an unrun case as `pass` (B-05, B-06, B-42, D295).
 - `okmodel/testing` factories and `isolation()` work under `compositeTenancy()`; concurrent creates no longer false-positive as a factory cycle; matviews are refreshed in `isolation()` and documented otherwise (B-32, B-28, B-34, D295).
