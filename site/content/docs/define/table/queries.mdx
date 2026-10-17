@@ -458,7 +458,7 @@ No self-relation is `nodes has no relation to itself.` More than one, and no `re
 
 `sync(id, relation, ids)` makes a to-many relation hold exactly those ids. It locks the parent, then writes, and returns `{ added, removed }`. Duplicate ids count once. A join table gains and loses link rows. A nullable foreign key is set or cleared, and the related row stays. A link that would have to delete a row is refused.
 
-A missing parent is `not_found`: `sync on nodes did not find that id.` An id that is not on the related table is `not_found`: `sync on nodes.children is missing 1 ids.` The relation must be `many` or `manyThrough`: `sync on nodes.children is not a to-many relation.` A tree-shaped `many` (the same table, through its own foreign key) refuses a list that contains the parent's own id. `manyThrough` accepts that link, including a row that follows itself. An `update` that sets a tree parent to the row's own id is OKM1120 when `where` is the primary key. A filter that is not the key is not checked.
+A missing parent is `not_found`: `sync on nodes did not find that id.` An id that is not on the related table is `not_found`: `sync on nodes.children is missing 1 ids.` The relation must be `many` or `manyThrough`: `sync on nodes.children is not a to-many relation.` A tree-shaped `many` (the same table, through its own foreign key) refuses a list that contains the parent's own id. `manyThrough` accepts that link, including a row that follows itself. An `update` that sets a tree parent to the row's own id, or to a descendant, is OKM1120 when `where` is the primary key. A filter that is not the key is not checked.
 
 #### simple
 

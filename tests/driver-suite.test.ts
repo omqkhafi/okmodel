@@ -2,7 +2,7 @@
  * Conformance v1 for the postgres.js and PGlite adapters.
  */
 
-import { test } from "bun:test";
+import { expect, test } from "bun:test";
 
 import { registerDriverSuite, type SuiteTest } from "../packages/harness/src/driver-suite.js";
 import {
@@ -88,6 +88,44 @@ registerDriverSuite({
   capabilities: bunSql?.capabilities ?? BUNSQL_CAPABILITIES,
   notices: false,
   test: bunSql === undefined ? skipped("Bun.sql runs only under Bun") : postgresCases,
+});
+
+postgresTest(decision, "a driver-suite case drops its okm_ tables", async () => {
+  const jobs: { name: string; fn?: () => Promise<void> }[] = [];
+  const registrar = Object.assign(
+    (name: string, fn: () => Promise<void>) => {
+      jobs.push({ name, fn });
+    },
+    {
+      skip(name: string) {
+        jobs.push({ name });
+      },
+    },
+  );
+  registerDriverSuite({
+    name: "cleanup-check",
+    open: () => openPostgres({ url: primaryUrl(), max: 2, timeouts: { acquire: 5_000 } }),
+    openLimited: () => openPostgres({ url: primaryUrl(), max: 1, timeouts: { acquire: 150 } }),
+    openOther: () => openPostgres({ url: primaryUrl(), max: 1 }),
+    size: 2,
+    capabilities: postgresCapabilities,
+    test: registrar,
+  });
+  const batch = jobs.find((job) => job.name.includes("batch commits every statement"));
+  if (batch?.fn === undefined) throw new Error("expected the batch commits case");
+  await batch.fn();
+  const pool = openPostgres({ url: primaryUrl(), max: 1 });
+  try {
+    const result = await pool.execute(`
+      select tablename
+      from pg_tables
+      where schemaname = current_schema()
+        and tablename like 'okm\\_%' escape '\\'
+      order by 1`);
+    expect(result.rows).toEqual([]);
+  } finally {
+    await pool.close();
+  }
 });
 
 /**

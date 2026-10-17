@@ -78,7 +78,7 @@ await custom.tasks.find({ limit: 1 });
 await custom.close();
 ```
 
-A function must return one of the candidate objects it was given, or that candidate's `name`. Anything else is OKM1120 and the message names the return value. A throw is not replaced with OKM1120. The function runs only when an automatic read has two or more candidates. `route: "replica"` and `using("replica")` do not call it.
+A function must return one of the candidate objects it was given, or that candidate's `name`. Anything else is OKM1120 and the message names the return value. An `OkmError` throw keeps its kind. Any other throw becomes kind `invalid` with that value as `cause`. The function runs only when an automatic read has two or more candidates. `route: "replica"` and `using("replica")` do not call it.
 
 A replica is saturated when it was given a `max` and `stats()` reports no idle connection, at least one waiter, and `size` at or above that max. An automatic read skips it. If every healthy replica is saturated, the read uses the primary and the reason is `fallback:saturated`, or OKM1844 when `fallback` is `"error"`. `route: "replica"` and `using("replica")` ignore capacity and wait for a connection.
 

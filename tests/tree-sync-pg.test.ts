@@ -63,24 +63,12 @@ async function seedTree(a: Scoped): Promise<void> {
 
 postgresTest(
   gate,
-  "a cycle, a depth limit, a root, and a missing id all return",
+  "a depth limit, a root, and a missing id all return",
   async () => {
     await withApp(1, async (db) => {
       const a = db.for({ tenantId: TENANT_A });
       await a.nodes.insert({ id: row(1), name: "a", parentId: null, managerId: null });
       await a.nodes.insert({ id: row(2), name: "b", parentId: row(1), managerId: null });
-      await a.nodes.update({ where: { id: row(1) }, set: { parentId: row(2) } });
-      const down = await a.nodes.descendants(row(1), {
-        relation: "children",
-        timeout: 2_000,
-      });
-      expect(down.map((item) => item.name)).toEqual(["b"]);
-      const up = await a.nodes.ancestors(row(1), {
-        relation: "children",
-        self: true,
-        timeout: 2_000,
-      });
-      expect(up.map((item) => item.name)).toEqual(["a", "b"]);
       expect(await a.nodes.ancestors(row(1), { relation: "children", depth: 0 })).toEqual([]);
       expect(
         (await a.nodes.descendants(row(1), { relation: "children", depth: 0, self: true })).map(
@@ -96,6 +84,34 @@ postgresTest(
       ).toEqual(["root"]);
       const missing = "01890c5a-8f0e-7c3a-9b2d-6e4f1a0cffff";
       expect(await a.nodes.descendants(missing, { relation: "children", self: true })).toEqual([]);
+    });
+  },
+  15_000,
+);
+
+postgresTest(
+  gate,
+  "a tree update refuses a direct and an indirect cycle, and a valid move works",
+  async () => {
+    await withApp(1, async (db) => {
+      const a = db.for({ tenantId: TENANT_A });
+      await a.nodes.insert({ id: row(1), name: "root", parentId: null, managerId: null });
+      await a.nodes.insert({ id: row(2), name: "mid", parentId: row(1), managerId: null });
+      await a.nodes.insert({ id: row(3), name: "leaf", parentId: row(2), managerId: null });
+      await a.nodes.insert({ id: row(4), name: "sib", parentId: row(1), managerId: null });
+      const direct = await catchError(
+        a.nodes.update({ where: { id: row(2) }, set: { parentId: row(2) } }),
+      );
+      expect(direct.code).toBe("OKM1120");
+      expect(direct.message).toContain("tree");
+      const indirect = await catchError(
+        a.nodes.update({ where: { id: row(1) }, set: { parentId: row(3) } }),
+      );
+      expect(indirect.code).toBe("OKM1120");
+      expect(indirect.message).toContain("descendant");
+      expect((await a.nodes.find({ where: { id: row(1) }, limit: 1 }))[0]?.parentId).toBeNull();
+      await a.nodes.update({ where: { id: row(3) }, set: { parentId: row(4) } });
+      expect((await a.nodes.find({ where: { id: row(3) }, limit: 1 }))[0]?.parentId).toBe(row(4));
     });
   },
   15_000,

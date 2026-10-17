@@ -425,7 +425,30 @@ async function using(open: DriverOpener, fn: (pool: DriverPool) => Promise<void>
   try {
     await fn(pool);
   } finally {
+    await dropOkmTables(pool);
     await pool.close();
+  }
+}
+
+/** Drops leftover `okm_*` tables from this case (B-05 / B-06). */
+async function dropOkmTables(pool: DriverPool): Promise<void> {
+  try {
+    await pool.execute(`
+      do $$
+      declare
+        r record;
+      begin
+        for r in
+          select tablename
+          from pg_tables
+          where schemaname = current_schema()
+            and tablename like 'okm\\_%' escape '\\'
+        loop
+          execute format('drop table if exists %I cascade', r.tablename);
+        end loop;
+      end $$`);
+  } catch {
+    // The pool may already be closed or the session aborted.
   }
 }
 

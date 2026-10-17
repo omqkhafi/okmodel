@@ -286,7 +286,8 @@ test(
       const error = await rejection(mapped.notes.find({ limit: 1 }));
       expect(error).toBeInstanceOf(OkmError);
       if (error instanceof OkmError) {
-        expect(error.code).not.toBe("OKM1120");
+        expect(error.code).toBe("invalid");
+        expect(error.kind).toBe("invalid");
         expect(error.cause).toBe(plain);
       }
     } finally {

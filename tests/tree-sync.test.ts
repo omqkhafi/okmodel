@@ -96,8 +96,10 @@ test("sync locks the parent and refuses a link that would delete a row", async (
   expect(cycle.message).toContain("tree");
   const other = await a.nodes.update({ where: { id: ID }, set: { parentId: OTHER } }).sql();
   expect(other.statements[0]?.text).toContain("update");
+  expect(other.statements[0]?.text).toContain("with recursive");
   const filtered = await a.nodes.update({ where: { name: "root" }, set: { parentId: ID } }).sql();
   expect(filtered.statements[0]?.text).toContain("update");
+  expect(filtered.statements[0]?.text).not.toContain("with recursive");
   const returned = await a.nodes
     .update(
       { where: { name: "root" }, set: { name: "next" }, limit: 1, lock: "skip" },

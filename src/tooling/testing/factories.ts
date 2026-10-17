@@ -115,8 +115,6 @@ export type FactoryHost = {
   readonly rng: Rng;
   /** Latest row of a table in one tenant. Isolation uses its own map. */
   cache: Map<string, Record<string, unknown>>;
-  /** Tables currently being inserted. A repeat is a factory cycle. */
-  readonly creating: Set<string>;
   readonly created: Map<string, number>;
   readonly definitions: Map<string, (context: FactoryContext) => Readonly<Record<string, unknown>>>;
 };
@@ -164,17 +162,21 @@ export async function insertRow(
   overrides: Readonly<Record<string, unknown>> | undefined,
   children: Readonly<Record<string, number>> | undefined,
   inherited: string | undefined,
+  creating?: Set<string>,
 ): Promise<Record<string, unknown>> {
-  if (host.creating.has(table)) {
+  // Each top-level create gets its own set. Concurrent creates do not share it,
+  // so independent work is not reported as a factory cycle (B-28).
+  const inflight = creating ?? new Set<string>();
+  if (inflight.has(table)) {
     throw new OkmError("invalid", `Factory cycle at ${table}.`, {
       fix: { summary: "A ref() points back at a row that is still being created." },
     });
   }
-  host.creating.add(table);
+  inflight.add(table);
   try {
-    return await insertPrepared(host, table, overrides, children, inherited);
+    return await insertPrepared(host, table, overrides, children, inherited, inflight);
   } finally {
-    host.creating.delete(table);
+    inflight.delete(table);
   }
 }
 
@@ -184,16 +186,17 @@ async function insertPrepared(
   overrides: Readonly<Record<string, unknown>> | undefined,
   children: Readonly<Record<string, number>> | undefined,
   inherited: string | undefined,
+  creating: Set<string>,
 ): Promise<Record<string, unknown>> {
   const facts = requireTable(host, table);
   const defined = host.definitions.get(table)?.(context(host)) ?? {};
   const merged: Record<string, unknown> = { ...defined, ...overrides };
-  const key = host.schema.tenancy?.key;
-  const taken = takeTenant(merged, facts.tenant ? key : undefined);
+  const keys = tenantKeyNames(host);
+  const taken = takeTenant(merged, facts.tenant ? keys : []);
   const requested = taken.tenant ?? inherited;
   const tenant = facts.tenant ? (requested ?? host.rng.uuid()) : undefined;
-  const resolved = await resolveRefs(host, taken.rest, tenant);
-  await fillRequired(host, facts, resolved, tenant);
+  const resolved = await resolveRefs(host, taken.rest, tenant, creating);
+  await fillRequired(host, facts, resolved, tenant, creating);
   const row = await writeRow(host, facts, resolved, tenant);
   host.cache.set(cacheKey(table, facts.tenant ? tenant : undefined), row);
   host.created.set(table, (host.created.get(table) ?? 0) + 1);
@@ -208,7 +211,7 @@ async function insertPrepared(
       }
       const link = linkFields(host, facts, requireTable(host, child), row);
       for (let index = 0; index < count; index += 1) {
-        await insertRow(host, child, link, undefined, tenant);
+        await insertRow(host, child, link, undefined, tenant, creating);
       }
     }
   }
@@ -270,24 +273,30 @@ function context(host: FactoryHost): FactoryContext {
 
 function takeTenant(
   row: Record<string, unknown>,
-  key: string | undefined,
+  keys: readonly string[],
 ): { readonly tenant: string | undefined; readonly rest: Record<string, unknown> } {
-  if (key === undefined || !Object.hasOwn(row, key)) return { tenant: undefined, rest: row };
-  const value = row[key];
+  if (keys.length === 0) return { tenant: undefined, rest: row };
   const rest = { ...row };
-  delete rest[key];
-  if (typeof value !== "string" || value.length === 0) {
-    throw new OkmError("invalid", `${key} must be a uuid string.`, {
-      fix: { summary: `Pass create({ ${key} }) the tenant uuid.` },
-    });
+  let tenant: string | undefined;
+  for (const key of keys) {
+    if (!Object.hasOwn(rest, key)) continue;
+    const value = rest[key];
+    delete rest[key];
+    if (typeof value !== "string" || value.length === 0) {
+      throw new OkmError("invalid", `${key} must be a uuid string.`, {
+        fix: { summary: `Pass create({ ${key} }) the tenant uuid.` },
+      });
+    }
+    tenant ??= value;
   }
-  return { tenant: value, rest };
+  return { tenant, rest };
 }
 
 async function resolveRefs(
   host: FactoryHost,
   row: Readonly<Record<string, unknown>>,
   tenant: string | undefined,
+  creating: Set<string>,
 ): Promise<Record<string, unknown>> {
   const resolved: Record<string, unknown> = {};
   for (const field of Object.keys(row)) {
@@ -298,9 +307,9 @@ async function resolveRefs(
       continue;
     }
     resolved[field] = primaryValue(
-      await referenced(host, target, tenant),
+      await referenced(host, target, tenant, creating),
       requireTable(host, target),
-      host.schema.tenancy?.key,
+      tenantKeyNames(host),
     );
   }
   return resolved;
@@ -311,13 +320,14 @@ async function fillRequired(
   facts: TableFacts,
   row: Record<string, unknown>,
   tenant: string | undefined,
+  creating: Set<string>,
 ): Promise<void> {
   for (const column of facts.columns) {
     if (!isRequired(column) || Object.hasOwn(row, column.field)) continue;
     const foreign = facts.foreignKeys.find((key) => key.columns.includes(column.sql));
     if (foreign !== undefined) {
       const target = factsBySql(host, foreign.target);
-      const parent = await referenced(host, target.name, tenant);
+      const parent = await referenced(host, target.name, tenant, creating);
       assignForeign(host, facts, foreign, parent, row);
       if (Object.hasOwn(row, column.field)) continue;
     }
@@ -333,14 +343,14 @@ function assignForeign(
   row: Record<string, unknown>,
 ): void {
   const target = factsBySql(host, foreign.target);
-  const key = host.schema.tenancy?.key;
+  const keys = new Set(tenantKeyNames(host));
   for (let index = 0; index < foreign.columns.length; index += 1) {
     const childSql = foreign.columns[index];
     const parentSql = foreign.targetColumns[index];
     if (childSql === undefined || parentSql === undefined) continue;
     const field = fieldOf(child, childSql);
     const source = fieldOf(target, parentSql);
-    if (field === undefined || source === undefined || field === key) continue;
+    if (field === undefined || source === undefined || keys.has(field)) continue;
     if (!Object.hasOwn(row, field)) row[field] = parent[source];
   }
 }
@@ -349,6 +359,7 @@ async function referenced(
   host: FactoryHost,
   table: string,
   tenant: string | undefined,
+  creating: Set<string>,
 ): Promise<Record<string, unknown>> {
   const facts = requireTable(host, table);
   const scope = facts.tenant ? tenant : undefined;
@@ -360,13 +371,23 @@ async function referenced(
     scope === undefined ? undefined : tenantOverride(host, scope),
     undefined,
     scope,
+    creating,
   );
 }
 
 function tenantOverride(host: FactoryHost, tenant: string): Record<string, unknown> | undefined {
-  const key = host.schema.tenancy?.key;
-  if (key === undefined) return undefined;
-  return { [key]: tenant };
+  const keys = tenantKeyNames(host);
+  if (keys.length === 0) return undefined;
+  const overrides: Record<string, unknown> = {};
+  for (const key of keys) overrides[key] = tenant;
+  return overrides;
+}
+
+function tenantKeyNames(host: FactoryHost): readonly string[] {
+  const tenancy = host.schema.tenancy;
+  if (tenancy === undefined) return [];
+  if (tenancy.keys !== undefined && tenancy.keys.length > 0) return tenancy.keys;
+  return [tenancy.key];
 }
 
 function linkFields(
@@ -402,7 +423,7 @@ function paired(
   parentSql: readonly string[],
   row: Record<string, unknown>,
 ): Record<string, unknown> {
-  const key = host.schema.tenancy?.key;
+  const keys = new Set(tenantKeyNames(host));
   const linked: Record<string, unknown> = {};
   for (let index = 0; index < childSql.length; index += 1) {
     const childName = childSql[index];
@@ -410,7 +431,7 @@ function paired(
     if (childName === undefined || parentName === undefined) continue;
     const field = fieldOf(child, childName);
     const source = fieldOf(parent, parentName);
-    if (field === undefined || source === undefined || field === key) continue;
+    if (field === undefined || source === undefined || keys.has(field)) continue;
     linked[field] = row[source];
   }
   if (Object.keys(linked).length === 0) {
@@ -520,9 +541,10 @@ function enumLabels(catalog: Catalog, dataType: string): readonly string[] | und
 function primaryValue(
   row: Record<string, unknown>,
   facts: TableFacts,
-  tenantKey: string | undefined,
+  tenantKeys: readonly string[],
 ): unknown {
-  const fields = facts.primary.filter((field) => field !== tenantKey);
+  const skip = new Set(tenantKeys);
+  const fields = facts.primary.filter((field) => !skip.has(field));
   if (fields.length !== 1) {
     throw new OkmError("invalid", `ref(${facts.name}) needs a single primary key.`, {
       fix: { summary: "Set the foreign-key columns in the factory." },

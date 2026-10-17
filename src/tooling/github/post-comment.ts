@@ -7,7 +7,12 @@
 
 import { readFileSync } from "node:fs";
 
-import { planCommentBody, stickyCommentTarget, type StickyComment } from "./comment.js";
+import {
+  PLAN_COMMENT_BOT,
+  planCommentBody,
+  stickyCommentTarget,
+  type StickyComment,
+} from "./comment.js";
 
 const PAGE = 100;
 
@@ -51,7 +56,8 @@ export async function postPlanComment(
     `${api}/repos/${repository}/issues/${pull}/comments`,
     headers,
   );
-  const target = stickyCommentTarget(comments);
+  const authors = stickyAuthors();
+  const target = stickyCommentTarget(comments, authors);
   const response =
     target === undefined
       ? await fetch(`${api}/repos/${repository}/issues/${pull}/comments`, {
@@ -84,11 +90,19 @@ async function listComments(url: string, headers: HeadersInit): Promise<readonly
     if (!Array.isArray(parsed)) throw new Error("GitHub comment list was not an array.");
     for (const item of parsed) {
       if (!isComment(item)) continue;
-      comments.push({ id: item.id, body: item.body });
+      comments.push({ id: item.id, body: item.body, author: item.user.login });
     }
     if (parsed.length < PAGE) break;
   }
   return comments;
+}
+
+function stickyAuthors(): readonly string[] {
+  const actor = process.env.GITHUB_ACTOR;
+  if (actor === undefined || actor.length === 0 || actor === PLAN_COMMENT_BOT) {
+    return [PLAN_COMMENT_BOT];
+  }
+  return [PLAN_COMMENT_BOT, actor];
 }
 
 function required(name: string): string {
@@ -99,10 +113,16 @@ function required(name: string): string {
   return value;
 }
 
-function isComment(value: unknown): value is { readonly id: number; readonly body: string } {
+function isComment(value: unknown): value is {
+  readonly id: number;
+  readonly body: string;
+  readonly user: { readonly login: string };
+} {
   if (typeof value !== "object" || value === null) return false;
   const record = value as Record<string, unknown>;
-  return typeof record.id === "number" && typeof record.body === "string";
+  if (typeof record.id !== "number" || typeof record.body !== "string") return false;
+  if (typeof record.user !== "object" || record.user === null) return false;
+  return typeof (record.user as { readonly login?: unknown }).login === "string";
 }
 
 if (import.meta.main) {

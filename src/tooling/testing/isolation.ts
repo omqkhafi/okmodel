@@ -84,15 +84,16 @@ async function checkTable(
   tenantA: string,
   tenantB: string,
 ): Promise<void> {
-  const key = host.schema.tenancy?.key;
-  if (key === undefined) return;
   const keys = tenantKeys(host);
+  if (keys.length === 0) return;
   if (host.definitions.size > 0 && !host.definitions.has(facts.name)) {
     throw new OkmError("invalid", `Factory ${facts.name} is missing.`, {
       fix: { summary: `Add ${facts.name} to factories().` },
     });
   }
-  const row = await insertRow(host, facts.name, { [key]: tenantB }, undefined, tenantB);
+  const overrides: Record<string, unknown> = {};
+  for (const key of keys) overrides[key] = tenantB;
+  const row = await insertRow(host, facts.name, overrides, undefined, tenantB);
   const where = primaryWhere(facts, row, keys);
   const client = openTenant(host, tenantA);
   const handle = tableHandle(client, facts.name);
@@ -273,7 +274,15 @@ async function checkFlips(
       if (flipped === undefined) continue;
       values[flipped] = tenantB;
       const client = openTenant(host, values);
-      const stored: unknown = await tableHandle(client, facts.name).insert(data);
+      let stored: unknown;
+      try {
+        stored = await tableHandle(client, facts.name).insert(data);
+      } catch (error) {
+        // A composite FK that includes tenant keys refuses a flipped row.
+        // The insert never landed, so there is nothing for tenant A to leak.
+        if (error instanceof OkmError && error.kind === "foreign_key") continue;
+        throw error;
+      }
       if (!isRow(stored)) continue;
       const where = primaryWhere(facts, stored, keys);
       await readTenant(facts, tableHandle(clientA, facts.name), where);
@@ -399,9 +408,8 @@ async function checkView(
     for (const tenant of [tenantA, tenantB]) {
       for (const name of sources) {
         const facts = requireFacts(host, name);
-        const key = keys[0];
         const overrides = markerFor(view, facts, keys, tenant);
-        if (key !== undefined) overrides[key] = tenant;
+        for (const key of keys) overrides[key] = tenant;
         const row = await insertRow(host, name, overrides, undefined, tenant);
         if (tenant === tenantB) seeded.push(row);
       }
