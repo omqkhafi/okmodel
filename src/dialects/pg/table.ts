@@ -357,7 +357,10 @@ export function table<
     name,
     columns,
     filters(spec: FilterSpec) {
-      return openFilters(name, options?.relations, spec, hiddenFields);
+      const ownHidden = hiddenColumnFields(columns);
+      return openFilters(name, options?.relations, spec, (tableName, field) =>
+        tableName === name ? ownHidden.has(field) : hiddenFields.has(`${tableName}.${field}`),
+      );
     },
     ...(options !== undefined ? { options } : {}),
     ...(source !== undefined ? { source } : {}),
@@ -604,11 +607,31 @@ function sqlValue(value: SqlValue | undefined): string {
   definition("sql accepts a column, a string, a number, a boolean, or null.");
 }
 
+/**
+ * Hidden `table.field` keys for relation allowlists on `filters()`.
+ *
+ * Own-table allow/sort use the calling instance's columns. Related names use
+ * this set: each `table(name, …)` replaces that name's entries so a later
+ * definition without `.hidden()` does not keep a prior mark (test suites and
+ * hot reload redefine the same SQL name).
+ */
 const hiddenFields = new Set<string>();
 
-function remember(name: string, columns: Readonly<Record<string, object>>): void {
+function hiddenColumnFields(columns: Readonly<Record<string, object>>): ReadonlySet<string> {
+  const fields = new Set<string>();
   for (const field of Object.keys(columns)) {
     const column = columns[field] as { readonly state?: { readonly hidden?: boolean } } | undefined;
-    if (column?.state?.hidden === true) hiddenFields.add(`${name}.${field}`);
+    if (column?.state?.hidden === true) fields.add(field);
+  }
+  return fields;
+}
+
+function remember(name: string, columns: Readonly<Record<string, object>>): void {
+  const prefix = `${name}.`;
+  for (const key of hiddenFields) {
+    if (key.startsWith(prefix)) hiddenFields.delete(key);
+  }
+  for (const field of hiddenColumnFields(columns)) {
+    hiddenFields.add(`${name}.${field}`);
   }
 }

@@ -14,10 +14,15 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+## v0.9.1 — 2026-10-17
+
 ### 💥 Breaking Changes
 
-- Breaking-ish: now refused — a backslash in `fragment` / `raw` template text is OKM1125. Pass the value as an interpolation (D287).
+- Breaking-ish: now refused — a backslash in `fragment` / `raw` template text is OKM1125. Pass the value as an interpolation (B-01, D287).
 - Breaking-ish: now refused — an unknown key on `insert`, `update`, upsert / `onConflict`, or first-or-create is OKM1120 and names the key and the table (B-39, D291).
+- Breaking-ish: now refused — a finished statement with more than 65,535 parameters is OKM1126 (count and limit in the message) instead of a retryable `unavailable` (B-40, D292).
+- Breaking-ish: now refused — an unknown CLI flag is an error; `okm <command> --help` lists that command's flags (B-26, D289).
+- Breaking-ish: now refused — an `update` that would set a tree parent to the row itself or to a descendant is OKM1120 when `where` is the primary key (B-10, D295).
 
 ### 🔒 Security
 
@@ -26,6 +31,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - With `defineConfig({ roles })`, managed functions revoke `EXECUTE` from `PUBLIC` and grant it only to the app role, so the reporting role cannot execute them (B-31, D293). Provider-specific role checks (RDS, Cloud SQL, Supabase) follow in M-4.
 
 ### 🐛 Fixed
+
+#### dialects
+
+- `filters()` OKM1123 uses the calling table's own columns for allow/sort, and replaces per-table hidden marks when the same SQL name is redefined, so a prior `.hidden()` no longer poisons later suites that reuse `tasks.title` (and the same pattern for relation targets).
 
 #### runtime
 
@@ -44,21 +53,22 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### tooling
 
+- CI copies the milestone from `Closes #N` onto the pull request before `lint / pull request`, so agents that cannot PATCH milestones still pass D206.
 - The sticky migrate-plan comment matches the marker and the bot author, so another author's marked comment is not edited (B-22, D295).
 - `okm driver test` drops leftover `okm_*` tables after each wire and error case, refuses Bun below `1.4.0`, and never reports an unrun case as `pass` (B-05, B-06, B-42, D295).
 - `okmodel/testing` factories and `isolation()` work under `compositeTenancy()`; concurrent creates no longer false-positive as a factory cycle; matviews are refreshed in `isolation()` and documented otherwise (B-32, B-28, B-34, D295).
 - The Bun.sql kill-storm test (B-03) retries post-storm scoped reads on `unavailable`/closed (bounded) so a dying reserved handle after the storm does not fail CI, without relaxing storm `short`/`leaks`/`readOnly`/`nested` asserts.
-- `okm push` plans from the live catalog and applies each change under a fresh `push-<n>` id, so a second push is no longer skipped (D289).
-- When the schema hash moves with no DDL (an external table the dependent already verified), `okm push` and `okm migrate apply` re-stamp `okm_meta` instead of leaving `connect()` on OKM1520 (D289).
-- `okm migrate check` keeps a trigger's function in the logical namespace, so schemas with `timestamps({ enforce: "trigger" })` or hand-written triggers no longer fail OKM1020 (D289).
-- `okm check` and `okm push` reprint domain checks on the connected server before planning, so a non-canonical author check is not permanent live drift (D289).
+- `okm push` plans from the live catalog and applies each change under a fresh `push-<n>` id, so a second push is no longer skipped (B-29, D289).
+- When the schema hash moves with no DDL (an external table the dependent already verified), `okm push` and `okm migrate apply` re-stamp `okm_meta` instead of leaving `connect()` on OKM1520 (B-21, D289).
+- `okm migrate check` keeps a trigger's function in the logical namespace, so schemas with `timestamps({ enforce: "trigger" })` or hand-written triggers no longer fail OKM1020 (B-24, D289).
+- `okm check` and `okm push` reprint domain checks on the connected server before planning, so a non-canonical author check is not permanent live drift (B-36, D289).
 - The guide's `roles` block applies as a superuser and as a `CREATEROLE` schema owner: managed roles are created before `SET ROLE`, schema ownership is transferred when possible, and a failed role unit stays re-runnable with a clear privilege error. On Postgres 15, apply grants itself membership after `CREATE ROLE` (which leaves none); on Postgres 16+ it grants `WITH SET TRUE` (B-30, D293).
 - Migrate strips the `pgbouncer` query parameter before the URL becomes a startup parameter; other pooler hints are not interpreted (B-25, D293). Provider-specific role-admin checks (RDS, Cloud SQL, Supabase) follow in M-4.
 - The pooler pid probe uses eight reads on the apply session (OKM1854 when the backend pid changes). Warm-and-hold for LIFO PgBouncer is kept out of apply/seed so single-connection targets do not hang; URL heuristics still refuse typical pooler hosts and ports (B-41, D293).
-- The type-change recipe's temporary `IS NOT NULL` validate is no longer OKM1531 (D289).
-- An unknown CLI flag is an error; `okm <command> --help` lists that command's flags (D289).
-- Backfill progress prints a 1-based step index (D289).
-- `okm pull` and `okm import drizzle` write foreign keys with the exported table binding, keep file stems unique on case-insensitive volumes, and never write a Windows-reserved stem (`con`, `aux`, `nul`, `com1`, …). A column `__proto__` is a computed key. Composite primary-key columns stay not null on Drizzle import. Missing `oxfmt` prints a notice and still writes the report. `okm ext scaffold` includes composite types (D290).
+- The type-change recipe's temporary `IS NOT NULL` validate is no longer OKM1531 (B-37, D289).
+- An unknown CLI flag is an error; `okm <command> --help` lists that command's flags (B-26, D289).
+- Backfill progress prints a 1-based step index (B-27, D289).
+- `okm pull` and `okm import drizzle` write foreign keys with the exported table binding, keep file stems unique on case-insensitive volumes, and never write a Windows-reserved stem (`con`, `aux`, `nul`, `com1`, …). A column `__proto__` is a computed key. Composite primary-key columns stay not null on Drizzle import. Missing `oxfmt` prints a notice and still writes the report. `okm ext scaffold` includes composite types (B-14 to B-19, B-38, D290).
 
 #### docs
 
