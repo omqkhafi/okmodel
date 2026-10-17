@@ -128,8 +128,8 @@ export async function runTarget(
  * Assumes `role` for the rest of this connection.
  *
  * A second call with the same role does nothing. A non-superuser that created
- * the role with `CREATEROLE` gets `WITH SET TRUE` first: Postgres 16+ grants
- * `ADMIN` without `SET` on that membership.
+ * the role with `CREATEROLE` is granted membership first: Postgres 15 creates
+ * no membership row, and Postgres 16+ grants `ADMIN` without `SET`.
  *
  * @param connection - Reserved connection
  * @param role - Migration role
@@ -147,9 +147,11 @@ export async function assumeRole(
 }
 
 /**
- * Grants the connecting role `SET` on `role` when it lacks that option.
+ * Grants the connecting role membership that can `SET ROLE` to `role`.
  *
  * Superusers skip the grant. A role that is already `current_user` skips it.
+ * On Postgres 16+ the grant uses `WITH SET TRUE`. On Postgres 15 and earlier
+ * `CREATE ROLE` leaves no membership, so a plain `GRANT` is enough.
  *
  * @param connection - Reserved connection, before `SET ROLE`
  * @param role - Role to assume
@@ -161,20 +163,28 @@ async function ensureSetOption(connection: DriverConnection, role: string): Prom
   const current = who.rows[0]?.[0];
   if (typeof current !== "string" || current === role) return;
   if (roleFlag(who.rows[0]?.[1])) return;
-  // `pg_auth_members.set_option` and `GRANT … WITH SET` are Postgres 16+.
   const version = await connection.execute("show server_version_num");
   const versionNum = Number(version.rows[0]?.[0] ?? 0);
-  if (!Number.isFinite(versionNum) || versionNum < 160_000) return;
-  const option = await connection.execute(
-    `select am.set_option
-       from pg_auth_members am
-       join pg_roles r on r.oid = am.roleid
-       join pg_roles m on m.oid = am.member
-      where r.rolname = $1 and m.rolname = $2`,
-    [role, current],
-  );
-  if (roleFlag(option.rows[0]?.[0])) return;
-  await connection.execute(`grant ${quoteIdent(role)} to ${quoteIdent(current)} with set true`);
+  // `pg_auth_members.set_option` and `GRANT … WITH SET` are Postgres 16+.
+  if (Number.isFinite(versionNum) && versionNum >= 160_000) {
+    const option = await connection.execute(
+      `select am.set_option
+         from pg_auth_members am
+         join pg_roles r on r.oid = am.roleid
+         join pg_roles m on m.oid = am.member
+        where r.rolname = $1 and m.rolname = $2`,
+      [role, current],
+    );
+    if (roleFlag(option.rows[0]?.[0])) return;
+    await connection.execute(`grant ${quoteIdent(role)} to ${quoteIdent(current)} with set true`);
+    return;
+  }
+  const member = await connection.execute("select pg_has_role($1, $2, 'MEMBER')", [
+    current,
+    role,
+  ]);
+  if (roleFlag(member.rows[0]?.[0])) return;
+  await connection.execute(`grant ${quoteIdent(role)} to ${quoteIdent(current)}`);
 }
 
 /**
@@ -209,7 +219,7 @@ export function rolePrivilegeError(error: unknown, role?: string): OkmError | un
         kind: "forbidden",
         cause: error,
         fix: {
-          summary: `Grant ${name} to the connecting role WITH SET TRUE, or connect as a superuser.`,
+          summary: `Grant ${name} to the connecting role (WITH SET TRUE on Postgres 16+), or connect as a superuser.`,
         },
       },
     );
@@ -223,7 +233,7 @@ export function rolePrivilegeError(error: unknown, role?: string): OkmError | un
         kind: "forbidden",
         cause: error,
         fix: {
-          summary: `Grant ${name} to the connecting role WITH SET TRUE, or connect as a superuser.`,
+          summary: `Grant ${name} to the connecting role (WITH SET TRUE on Postgres 16+), or connect as a superuser.`,
         },
       },
     );
