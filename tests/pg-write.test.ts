@@ -107,14 +107,21 @@ async function writeSuite(db: Client, pool: DriverPool): Promise<void> {
   expect(inserted.role).toBe("member");
   expect(inserted.email).toBe("a@b.c");
 
-  const dropped = await db.users.insert({
+  await expectRejection(
+    db.users.insert({
+      id: OTHER,
+      email: "b@b.c",
+      name: null,
+      unknown: true,
+    } as never),
+    "OKM1120",
+  );
+  const kept = await db.users.insert({
     id: OTHER,
     email: "b@b.c",
     name: null,
-    unknown: true,
-  } as never);
-  expect(dropped.email).toBe("b@b.c");
-  expect("unknown" in dropped).toBe(false);
+  });
+  expect(kept.email).toBe("b@b.c");
 
   await expectRejection(
     db.users.insert({ id: rowId(9), email: "c@b.c", role: "admin" } as never),

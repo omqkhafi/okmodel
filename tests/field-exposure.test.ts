@@ -2,7 +2,7 @@
  * Guarded, hidden, and sensitive fields, and input stripping.
  *
  * Hidden columns stay out of default reads and includes. Sensitive values
- * stay out of inspect output and errors. Unknown input keys are dropped.
+ * stay out of inspect output and errors. Unknown input keys are refused (B-39).
  */
 
 import { expect, test } from "bun:test";
@@ -84,16 +84,24 @@ test("reads omit hidden fields, writes strip input, and inspect redacts", async 
     const db = await connectPglite(pool, { schema: app });
     await db.connected;
 
+    await expectCode(
+      db.users.insert({
+        id: USER,
+        email: "a@b.c",
+        passwordHash: SECRET,
+        extra: true,
+      } as never),
+      "OKM1120",
+    );
+
     const inserted = await db.users.insert({
       id: USER,
       email: "a@b.c",
       passwordHash: SECRET,
-      extra: true,
-    } as never);
+    });
     expect(inserted.email).toBe("a@b.c");
     expect(inserted.role).toBe("member");
     expect("passwordHash" in inserted).toBe(false);
-    expect("extra" in inserted).toBe(false);
 
     await expectCode(
       db.users.insert({ id: USER, email: "b@b.c", passwordHash: "x", role: "admin" } as never),
@@ -164,7 +172,11 @@ test("reads omit hidden fields, writes strip input, and inspect redacts", async 
     expect(logged.join("\n").includes(SECRET)).toBe(false);
     await failing.close();
 
-    await db.users.update({ where: { id: USER }, set: { email: "c@b.c", nope: 1 } as never });
+    await expectCode(
+      db.users.update({ where: { id: USER }, set: { email: "c@b.c", nope: 1 } as never }),
+      "OKM1120",
+    );
+    await db.users.update({ where: { id: USER }, set: { email: "c@b.c" } });
     expect((await db.users.one({ where: { id: USER } }))?.email).toBe("c@b.c");
     await expectCode(
       db.users.update({ where: { id: USER }, set: { role: "owner" } as never }),

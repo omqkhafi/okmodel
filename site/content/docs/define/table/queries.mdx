@@ -581,6 +581,14 @@ A stream with no `limit` and no `.all(reason)` is refused.
 `batch` outside 1 to 2147483647 is refused. A `timeout` that is not a number above 0 is refused.
 </Callout>
 
+### Unknown keys
+
+An unknown key on `insert`, `update`, upsert / `onConflict`, or first-or-create is OKM1120. The message names the key and the table. Typos are no longer dropped silently. Guarded, sealed, and computed fields keep their existing codes (OKM1190 and the rest).
+
+<Callout type="error" title="OKM1120">
+`Field nope is not on notes.` Use a field from the catalog.
+</Callout>
+
 ### Supplied id
 
 A client-generator `t.id({ default: uuidv4 })` omits `id` from insert. `{ allow: ["id"] }` writes the id you pass and skips the generator for that row. A list can mix a supplied id with a row that omits it. Without `allow`, a supplied id is OKM1190. On a list, `allow` has to be exactly `["id"]`. A longer list does not open `id` in the type.

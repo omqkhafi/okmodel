@@ -690,11 +690,11 @@ Set in `schema({ codecs })`, override per field: `t.bigint({ as: "number" })`. D
 
 | Marker | Effect |
 |---|---|
-| (default) | unknown keys in input are dropped |
+| (default) | unknown keys in input are refused (OKM1120); the message names the key and the table (D291) |
 | `.guarded()` | never filled from `insert`/`update` input; set by code with `{ allow: ["field"] }` |
 | automatic guards | `t.id()` with a database default and `t.identity()` (omitted from insert and update); a client-generator `t.id()` is omitted from insert unless that insert passes `{ allow: ["id"] }` (D272), and it stays omitted from update; a column `.primaryKey()`, a composite `primaryKey`, and `t.id({ default: "none" })` (supplied on insert, omitted from update); tenant key and trait fields (`createdAt`, `updatedAt`, `archivedAt`, `archiveId`, `version`, `position`) |
 | `.hidden()` | excluded from default selects and includes; returned only when named in `select`. `where` and `orderBy` refuse it (OKM1120). `hidden({ filterable: true })` allows those two and still leaves it out of the default row. `filters()` still refuses it (OKM1123). `groupBy`, `sum`, `avg`, `min`, and `max` still refuse it |
-| `.sensitive()` | values never appear in logs, error messages, `inspect()` output or fixtures; shown as `[redacted]` even in development |
+| `.sensitive()` | values never appear in logs, error messages, `error.cause`, OpenTelemetry spans, `inspect()` output or fixtures; shown as `[redacted]` even in development. A table with a sensitive column maps driver failures to a cause that keeps only safe fields (D291). `includeValues` is the explicit opt-in |
 
 **One concept, four mechanisms: field exposure.** Every field answers four questions:
 
@@ -967,7 +967,7 @@ A string, number, boolean, or null is a parameter. `ident(name)` names the TypeS
 
 | Method | Rule |
 |---|---|
-| `insert(data \| data[], opts)` | unknown keys dropped; guarded fields refused; auto-chunked. `onConflict`: `"error"` (default), `"ignore"`, `{ on, update }` (upsert), `{ on, return: true }` (first-or-create). `on` must name a unique constraint (OKM1104). On a tenant table, name it without the tenant key; the target includes the key (D221). A match does not change the existing row. When the insert returns nothing, a second statement reads that row (D246) |
+| `insert(data \| data[], opts)` | unknown keys refused (OKM1120, names key and table); guarded fields refused; auto-chunked. `onConflict`: `"error"` (default), `"ignore"`, `{ on, update }` (upsert), `{ on, return: true }` (first-or-create). `on` must name a unique constraint (OKM1104). On a tenant table, name it without the tenant key; the target includes the key (D221). A match does not change the existing row. When the insert returns nothing, a second statement reads that row (D246) |
 | `update(target, opts)` | target is `{ where, set }` or a list `[{ id \| where, set }]` (per-row values in one statement, chunked like insert). `where` required or `.all("reason")`. The same target twice in one list is OKM1120. A target that matches nothing is not an error; `count` is the rows changed. `lock: "skip"` with `limit` claims rows (job queues) |
 | `delete({ where }, opts)` | permanent deletion of the matched records. On `archivable` tables it targets the active set unless `withArchived()` / `onlyArchived()` is used |
 | `archive({ where }, opts)` | `archivable` tables only; returns `{ count, archiveId }` |

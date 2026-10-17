@@ -247,11 +247,12 @@ The registry has 110 codes, in numeric order. Ranges are schema `OKM1000`, queri
 | `OKM1105` | Include without limit | A to-many include has no limit. |
 | `OKM1110` | Engine version | A feature needs a newer PostgreSQL than minPostgres allows. The message names the feature, the version it needs, and this schema's minimum. |
 | `OKM1111` | Missing capability | The call needs a driver capability this driver does not have. |
-| `OKM1120` | Unknown field | The name is not a field or an option. timeout and signal go in the second argument of update. Options go first: tx(options, fn). |
+| `OKM1120` | Unknown field | The name is not a field or an option on a write, read, or update. An unknown key on insert, update, upsert, or first-or-create is refused and names the key and the table. timeout and signal go in the second argument of update. Options go first: tx(options, fn). |
 | `OKM1121` | Object as value | An empty or() branch is OKM1121. or() takes one array: or([a, b]). A plain object was passed where a value is required. |
 | `OKM1122` | Bad identifier | An identifier is empty, too long, contains NUL or another control character, or is an unquoted reserved word. |
 | `OKM1123` | Hidden field allowlist | A hidden field was added to a filter or sort allowlist. |
 | `OKM1124` | Operator mismatch | An operator does not apply to the column type. |
+| `OKM1125` | Bad SQL fragment | A composed fragment is empty, unbalanced, includes a backslash, or interpolates a value it cannot bind. A select fragment that is not a number is the same code. |
 | `OKM1130` | Cursor order | A cursor was reused with a different orderBy than the one that created it, or is not a cursor page() returned. |
 | `OKM1190` | Safety violation | A query composition broke a core invariant. violations lists every broken rule in stable order. |
 | `OKM1191` | No snapshot plan | A multi-statement read was requested inside READ COMMITTED and no single-statement plan exists. |

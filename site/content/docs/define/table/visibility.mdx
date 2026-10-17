@@ -63,7 +63,7 @@ export const users = table("users", {
 
 ### Sensitive
 
-`.sensitive()` takes no argument. The column stays on the row, and a read returns the stored value. `inspect()`, logs, and errors replace that value with `[redacted]`. A codec rejection says `Field token was rejected.` The same column can also be [hidden](#hidden).
+`.sensitive()` takes no argument. The column stays on the row, and a read returns the stored value. `inspect()`, logs, errors, and OpenTelemetry spans replace that value with `[redacted]` or omit it. A unique, foreign-key, or check failure on a table that has a sensitive column keeps the value out of `error.cause` as well: the cause carries only safe fields (`code`, `sqlstate`, `constraint`, `table`, column names), never `detail`, parameters, `where`, or `internalQuery`. Tables with no sensitive column keep today's cause. `connect({ errors: { includeValues: true } })` is the explicit opt-in that can put values on the error. A codec rejection says `Field token was rejected.` The same column can also be [hidden](#hidden).
 
 ```ts title="sessions.ts"
 import { connect } from "okmodel/pg/postgresjs";

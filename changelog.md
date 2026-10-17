@@ -17,10 +17,12 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 ### 💥 Breaking Changes
 
 - Breaking-ish: now refused — a backslash in `fragment` / `raw` template text is OKM1125. Pass the value as an interpolation (D287).
+- Breaking-ish: now refused — an unknown key on `insert`, `update`, upsert / `onConflict`, or first-or-create is OKM1120 and names the key and the table (B-39, D291).
 
 ### 🔒 Security
 
 - A backslash in a composed fragment can no longer desync the literal guard and escape a tenant filter (B-01, D287).
+- A unique, foreign-key, or check failure on a table with a sensitive column no longer puts the value in `error.cause` (`detail`, parameters, `where`, and `internalQuery` stay off). Tables without sensitive columns keep today's cause. `includeValues` remains the explicit opt-in (B-33, D291).
 
 ### 🐛 Fixed
 
@@ -47,6 +49,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - Known limits record that Bun.sql does not park reserved handles, that a post-commit reset failure does not fail the call, and that a send-without-result is OKM1401 with no `afterCommit` (D288).
 - `okm push` docs say it applies the live schema diff as `push-<n>`, and known-limits cover external re-stamp and domain-check sealing (D289).
+- Sensitive docs cover redaction in logs, errors, `cause`, and spans; writes docs cover unknown keys (D291).
 
 ## v0.9.0 — 2026-10-16
 

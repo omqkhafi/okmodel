@@ -25,6 +25,7 @@ import {
   registerFailFix,
   indexes,
   isRecord,
+  list,
   projectExpr,
   quote,
   rejectKeys,
@@ -1493,13 +1494,28 @@ function insertRow(
   const row: Record<string, unknown> = {};
   for (const key of Object.keys(value)) {
     const column = table.columns.get(key);
-    if (column === undefined) continue;
+    if (column === undefined) refuseUnknownField(table, key);
     tenancy?.guard(table.model.name, key, "insert");
     if (!writable(table, column, allow, "insert")) refuse(table, column);
     if (value[key] !== undefined) row[key] = value[key];
   }
   refuseHalfMorph(table, row);
   return row;
+}
+
+/**
+ * Refuses a write field that is not on the table (B-39).
+ *
+ * @param table - Table being written
+ * @param key - Caller key
+ */
+function refuseUnknownField(table: Indexed, key: string): never {
+  throwNamed(
+    "OKM1120",
+    key,
+    table.names,
+    `Field ${key} is not on ${table.model.name}. Accepted names: ${list(table.names)}.`,
+  );
 }
 
 function cellsFor(columns: readonly ColumnModel[], row: Record<string, unknown>): Cell[] {
@@ -1626,9 +1642,9 @@ export function writeSet(
   }
   const set: Record<string, unknown> = {};
   for (const key of Object.keys(value)) {
-    if (value[key] === undefined) continue;
     const column = table.columns.get(key);
-    if (column === undefined) continue;
+    if (column === undefined) refuseUnknownField(table, key);
+    if (value[key] === undefined) continue;
     tenancy?.guard(table.model.name, key, "update");
     if (column.guardUpdate || !writable(table, column, allow, "update")) refuse(table, column);
     set[key] = value[key];
