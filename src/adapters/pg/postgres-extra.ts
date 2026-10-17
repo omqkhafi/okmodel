@@ -121,44 +121,21 @@ export async function checkout(pool: HeldPool, timeoutMs?: number): Promise<Driv
   };
 }
 
-/**
- * Describes a statement.
- *
- * @param sql - Pool client
- * @param text - SQL
- * @param params - Wire parameters
- * @returns Column names and the parameter count
- */
 export async function describe(
   sql: Sql,
   text: string,
   params?: readonly WireValue[],
 ): Promise<DescribeResult> {
-  const pending = sql.unsafe(text, asParams(params), { prepare: true });
-  const described = await pending.describe();
-  return {
-    columns: described.columns.map((column) => column.name),
-    parameterCount: described.types.length,
-  };
+  const d = await sql.unsafe(text, asParams(params), { prepare: true }).describe();
+  return { columns: d.columns.map((c) => c.name), parameterCount: d.types.length };
 }
 
-/**
- * Yields cursor chunks.
- *
- * @param sql - Pool client
- * @param text - SQL
- * @param params - Wire parameters
- * @returns Chunks of wire rows
- */
 export async function* stream(
   sql: Sql,
   text: string,
   params?: readonly WireValue[],
 ): AsyncIterable<readonly (readonly WireValue[])[]> {
-  const pending = sql.unsafe(text, asParams(params));
-  for await (const chunk of pending.cursor(64)) {
-    yield rowsFrom(chunk);
-  }
+  for await (const chunk of sql.unsafe(text, asParams(params)).cursor(64)) yield rowsFrom(chunk);
 }
 
 type ReservedConnection = Sql & {
@@ -196,12 +173,12 @@ function poolWaits(sql: Sql): Opts | undefined {
     n.add(id);
     if (n.size < options.max) {
       queueMicrotask(() => {
-        for (const wait of q) wait.a();
+        for (const w of q) w.a();
       });
       return;
     }
     n.clear();
-    for (const wait of q) wait.s();
+    for (const w of q) w.s();
     q.clear();
   };
   return options;
@@ -309,19 +286,25 @@ function reserveConnection(
     counters.waiting = Math.max(0, counters.waiting - 1);
   };
   return new Promise((resolve, reject) => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    if (acquireMs !== undefined) {
-      timer = setTimeout(() => {
-        if (settled) return;
-        settled = true;
-        finish();
-        void driverErrors().then((errors) => {
-          reject(errors.acquireTimeout());
-        });
-      }, acquireMs);
-    }
-    const ms = callMs !== undefined && callMs > 0 ? callMs : 0;
-    void deadline(ms, () => sql.reserve(), sql).then(
+    const timer =
+      acquireMs === undefined
+        ? undefined
+        : setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            finish();
+            void driverErrors().then((errors) => {
+              reject(errors.acquireTimeout());
+            });
+          }, acquireMs);
+    const done = (fn: () => void): void => {
+      if (settled) return;
+      settled = true;
+      if (timer !== undefined) clearTimeout(timer);
+      finish();
+      fn();
+    };
+    void deadline(callMs !== undefined && callMs > 0 ? callMs : 0, () => sql.reserve(), sql).then(
       (connection) => {
         if (settled) {
           void resetConnection(connection, 0)
@@ -331,17 +314,14 @@ function reserveConnection(
             });
           return;
         }
-        settled = true;
-        if (timer !== undefined) clearTimeout(timer);
-        finish();
-        resolve(connection);
+        done(() => {
+          resolve(connection);
+        });
       },
       (error: unknown) => {
-        if (settled) return;
-        settled = true;
-        if (timer !== undefined) clearTimeout(timer);
-        finish();
-        void mapFailure(error).then(reject);
+        done(() => {
+          void mapFailure(error).then(reject);
+        });
       },
     );
   });
@@ -349,20 +329,19 @@ function reserveConnection(
 
 async function resetConnection(sql: Sql, depth: number): Promise<void> {
   if (depth > 0) await sql.unsafe("ROLLBACK").catch(() => undefined);
-  try {
+  const clear = async (): Promise<void> => {
     await sql.unsafe(RESET_ALL);
     await sql.unsafe(UNLOCK);
+  };
+  try {
+    await clear();
   } catch {
     await sql.unsafe("ROLLBACK").catch(() => undefined);
-    await sql.unsafe(RESET_ALL);
-    await sql.unsafe(UNLOCK);
+    await clear();
   }
 }
 
-function asParams(params: readonly WireValue[] | undefined): string[] {
-  if (params === undefined) return [];
-  return params as unknown as string[];
-}
+const asParams = (params?: readonly WireValue[]): string[] => (params ?? []) as unknown as string[];
 
 /**
  * Sets `lost` when the reserved socket closes.
@@ -373,10 +352,6 @@ function asParams(params: readonly WireValue[] | undefined): string[] {
  * @param sql - Reserved connection
  * @param lost - Set when that socket closes
  */
-export function watchReserved(sql: Sql, lost: Lost): void {
-  arm(sql, lost);
-}
-
 function arm(sql: Sql, lost: Lost): void {
   const unsafe = sql.unsafe.bind(sql);
   sql.unsafe = ((text: string, params?: unknown, options?: object) =>
@@ -394,6 +369,9 @@ function arm(sql: Sql, lost: Lost): void {
       } as never,
     )) as Sql["unsafe"];
 }
+
+/** @inheritdoc */
+export const watchReserved = arm;
 
 type Gate = {
   enter(): void;
@@ -418,13 +396,8 @@ export async function holdCheckout<T extends { release(): Promise<void> }>(
     const connection = await checkout();
     let released = false;
     const release = connection.release.bind(connection);
-    connection.release = () => {
-      if (released) return Promise.resolve();
-      released = true;
-      return release().finally(() => {
-        gate.leave();
-      });
-    };
+    connection.release = () =>
+      released ? Promise.resolve() : ((released = true), release().finally(() => gate.leave()));
     return connection;
   } catch (error) {
     gate.leave();
@@ -451,11 +424,9 @@ export async function holdListener(
     return async () => {
       if (stopped) return;
       stopped = true;
-      try {
-        await stop();
-      } finally {
+      await stop().finally(() => {
         gate.leave();
-      }
+      });
     };
   } catch (error) {
     gate.leave();
@@ -487,42 +458,34 @@ export function watchQuery(
     untrack(pending: Canceller): void;
   },
 ): Promise<ExecuteResult> {
+  const done = (): void => {
+    ctx.leave();
+    ctx.untrack(pending);
+    watch.signal.removeEventListener("abort", onAbort);
+  };
   return pending.then(
     (value) => {
-      finishWatch(pending, watch, onAbort, ctx);
+      done();
       const why = watch.reason();
       if (why === "timeout" || why === "cancelled") return classify(why, watch);
       ctx.note(ctx.text);
       return resultFrom(value, ctx.notices.since(ctx.start));
     },
     (error: unknown) => {
-      finishWatch(pending, watch, onAbort, ctx);
+      done();
       return classify(error, watch);
     },
   );
 }
 
-function finishWatch(
-  pending: Canceller,
-  watch: Watch,
-  onAbort: () => void,
-  ctx: { leave(): void; untrack(pending: Canceller): void },
-): void {
-  ctx.leave();
-  ctx.untrack(pending);
-  watch.signal.removeEventListener("abort", onAbort);
-}
-
 async function classify(error: unknown, watch: Watch): Promise<never> {
   const errors = await driverErrors();
-  if (error instanceof errors.DriverError) return Promise.reject(error);
+  if (error instanceof errors.DriverError) throw error;
   const why = typeof error === "string" ? error : watch.reason();
-  if (why === "timeout") {
-    return Promise.reject(errors.timedOut(typeof error === "string" ? undefined : error));
+  const cause = typeof error === "string" ? undefined : error;
+  if (why === "timeout") throw errors.timedOut(cause);
+  if (why === "cancelled" || errors.errorField(error, "code") === "57014") {
+    throw errors.cancelled(cause);
   }
-  const code = errors.errorField(error, "code");
-  if (why === "cancelled" || code === "57014") {
-    return Promise.reject(errors.cancelled(typeof error === "string" ? undefined : error));
-  }
-  return Promise.reject(errors.mapDriverError(error));
+  throw errors.mapDriverError(error);
 }

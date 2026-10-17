@@ -80,8 +80,33 @@ const identity = (value: string): string => value;
  * @param source - Pool or client
  * @param handle - What to do with the error
  */
-export function armDriverError(source: object, handle: () => void = () => {}): void {
-  (source as { on(event: "error", listener: () => void): void }).on("error", handle);
+export function armDriverError(source: object, handle: (error?: unknown) => void = () => {}): void {
+  (source as { on(event: "error", listener: (error: unknown) => void): void }).on("error", handle);
+}
+
+/**
+ * Records an idle or checked-out client error on the notice path (B-44).
+ *
+ * Does not throw. The pool has already dropped a dead idle client.
+ *
+ * @param notices - Pool notice buffer
+ * @param error - The `error` event value
+ */
+export function logClientError(
+  notices: { push(notice: { severity: string; message: string; code?: string }): void },
+  error: unknown,
+): void {
+  const message =
+    error instanceof Error ? error.message : typeof error === "string" ? error : "client error";
+  const code =
+    typeof error === "object" && error !== null && "code" in error
+      ? Reflect.get(error, "code")
+      : undefined;
+  notices.push({
+    severity: "ERROR",
+    message,
+    ...(typeof code === "string" && code.length > 0 ? { code } : {}),
+  });
 }
 
 /** Text values stay text. The dialect owns parsing. */
@@ -99,7 +124,8 @@ const WIRE = {
  */
 export function open(config: NodePostgresConfig): DriverPool {
   const max = config.max ?? 10;
-  const acquireMs = config.timeouts?.acquire;
+  // Default 10 s so a storm cannot leave reserve() unsettled (B-44 companion).
+  const acquireMs = config.timeouts?.acquire ?? 1e4;
   const counters: Counters = { reserved: 0, busy: 0, reservedBusy: 0, waiting: 0 };
   const inflight = new Set<WireQuery>();
   const notices = noticeBuffer();
@@ -119,10 +145,16 @@ export function open(config: NodePostgresConfig): DriverPool {
     ...(config.searchPath !== undefined ? { options: `-c search_path=${config.searchPath}` } : {}),
   });
   // The pool has already removed the idle client before this runs.
-  armDriverError(pool);
+  armDriverError(pool, (error) => {
+    logClientError(notices, error);
+  });
   pool.on("connect", (client) => {
     client.on("notice", (notice) => {
       notices.push(notice);
+    });
+    // Stay on the client after checkout removes the pool idle listener (B-44).
+    armDriverError(client, (error) => {
+      logClientError(notices, error);
     });
   });
 
@@ -151,6 +183,10 @@ export function open(config: NodePostgresConfig): DriverPool {
         if (watch === undefined) return root.query(text, params, undefined);
         const client = await connectClient(pool, acquireMs, counters);
         counters.busy += 1;
+        // connect() already armed the client; keep a checkout-scoped sink too.
+        armDriverError(client, (error) => {
+          logClientError(notices, error);
+        });
         const session = new WireSession(
           (statement, values) => send(client, statement, values, named, client),
           notices,

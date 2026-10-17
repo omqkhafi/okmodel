@@ -206,8 +206,9 @@ export type DriverPoolConfig = {
   readonly max?: number;
   /**
    * Ceilings in milliseconds. An adapter reads `acquire`: it waits for a
-   * connection up to that long, then fails with OKM1846. Omitted means wait
-   * without a deadline. The other keys belong to the runtime.
+   * connection up to that long, then fails with OKM1846. Omitted means the
+   * adapter default (10 s on postgres.js and node-postgres). The other keys
+   * belong to the runtime.
    */
   readonly timeouts?: DriverTimeouts;
 };
