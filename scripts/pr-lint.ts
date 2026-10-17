@@ -80,11 +80,16 @@ export function lintPullRequest(pr: PullRequestMeta): readonly string[] {
 /**
  * The last non-empty line is `Closes #N`.
  *
+ * Content after `<!-- CURSOR_AGENT_PR_BODY_END -->` is ignored so a Cursor
+ * agent footer does not break the closing line.
+ *
  * @param body - Pull request body
  * @returns Whether the body ends with a closing line
  */
 function closesIssue(body: string): boolean {
-  const lines = body.replace(/\r\n/g, "\n").trimEnd().split("\n");
+  const end = body.indexOf("<!-- CURSOR_AGENT_PR_BODY_END -->");
+  const text = (end === -1 ? body : body.slice(0, end)).replace(/\r\n/g, "\n").trimEnd();
+  const lines = text.split("\n");
   const last = lines[lines.length - 1] ?? "";
   return /^Closes #\d+$/.test(last.trim());
 }

@@ -92,6 +92,10 @@ export async function checkout(held: HeldPool): Promise<DriverConnection> {
       released = true;
       try {
         if (!lost) await reset(session, client);
+      } catch {
+        // A reset failure after COMMIT must not fail the call. Destroy the
+        // client; the statement or commit result already returned.
+        lost = true;
       } finally {
         counters.reserved = Math.max(0, counters.reserved - 1);
         events.removeListener("error", onError);
