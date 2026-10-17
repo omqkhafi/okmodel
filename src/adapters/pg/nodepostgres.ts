@@ -19,7 +19,13 @@ import type {
   WireValue,
 } from "../../contracts/driver.js";
 import { NODE_POSTGRES_CAPABILITIES } from "../capabilities.js";
-import { driverErrors, mapFailure, rejectClosed } from "../failure.js";
+import {
+  driverErrors,
+  mapFailure,
+  rejectCancelled,
+  rejectClosed,
+  rejectTimedOut,
+} from "../failure.js";
 import { runCall } from "./call.js";
 import { noticeBuffer, WireSession, type WireQuery } from "./session.js";
 
@@ -66,6 +72,16 @@ export type Counters = {
 };
 
 const CANCEL_CODE = 80877102;
+
+/**
+ * After a call aborts, how long the query may still settle before the
+ * checked-out client is destroyed.
+ *
+ * Cancel should finish as `57014` and return the connection. A backend that
+ * is already gone never answers; leaving that client checked out pins a pool
+ * slot until the socket times out.
+ */
+const ABORT_GRACE_MS = 250;
 
 const identity = (value: string): string => value;
 
@@ -182,10 +198,19 @@ export function open(config: NodePostgresConfig): DriverPool {
       return runCall(closed, options, async (watch) => {
         if (watch === undefined) return root.query(text, params, undefined);
         const client = await connectClient(pool, acquireMs, counters);
+        // The call timed out while it waited for a pool slot. Release the
+        // client without a query so a backlog of aborted checkouts cannot
+        // pin every connection.
+        if (watch.signal.aborted) {
+          client.release();
+          return watch.reason() === "cancelled" ? rejectCancelled() : rejectTimedOut();
+        }
         counters.busy += 1;
-        // connect() already armed the client; keep a checkout-scoped sink too.
-        armDriverError(client, (error) => {
-          logClientError(notices, error);
+        // `connect` already logs client errors. This listener only marks the
+        // checkout dead, and it is removed on release so timed calls cannot
+        // stack `error` listeners on a reused client.
+        const slot = trackCheckout(client, () => {
+          counters.busy = Math.max(0, counters.busy - 1);
         });
         const session = new WireSession(
           (statement, values) => send(client, statement, values, named, client),
@@ -196,11 +221,13 @@ export function open(config: NodePostgresConfig): DriverPool {
           () => undefined,
           inflight,
         );
+        if (watch.signal.aborted) slot.abandon();
+        else watch.signal.addEventListener("abort", slot.abandon, { once: true });
         try {
           return await session.query(text, params, watch);
         } finally {
-          counters.busy = Math.max(0, counters.busy - 1);
-          client.release();
+          watch.signal.removeEventListener("abort", slot.abandon);
+          slot.release();
         }
       });
     },
@@ -291,6 +318,50 @@ function cancelBackend(client: PoolClient): void {
     bytes.writeInt32BE(secret, 12);
     socket.end(bytes);
   });
+}
+
+/**
+ * Tracks one checked-out client until the timed call finishes.
+ *
+ * A connection `error` destroys the client on release instead of returning it
+ * to the pool. If the call aborts and the query does not settle, the client
+ * is destroyed after {@link ABORT_GRACE_MS} so the slot cannot stay pinned.
+ *
+ * @param client - The checked-out client
+ * @param done - Runs once, when the checkout is released
+ * @returns Abandon on abort, and release when the call ends
+ */
+function trackCheckout(client: PoolClient, done: () => void): { abandon(): void; release(): void } {
+  let dead = false;
+  let released = false;
+  let grace: ReturnType<typeof setTimeout> | undefined;
+  const onError = (): void => {
+    dead = true;
+  };
+  const events = client as unknown as {
+    on(event: "error", listener: () => void): void;
+    removeListener(event: "error", listener: () => void): void;
+  };
+  events.on("error", onError);
+  const release = (): void => {
+    if (released) return;
+    released = true;
+    if (grace !== undefined) clearTimeout(grace);
+    events.removeListener("error", onError);
+    done();
+    client.release(dead ? true : undefined);
+  };
+  return {
+    abandon() {
+      if (released || grace !== undefined) return;
+      grace = setTimeout(() => {
+        dead = true;
+        release();
+      }, ABORT_GRACE_MS);
+      grace.unref();
+    },
+    release,
+  };
 }
 
 export function connectClient(

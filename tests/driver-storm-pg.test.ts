@@ -132,7 +132,8 @@ async function spawnStorm(
       new Response(proc.stderr).text(),
       proc.exited,
     ]);
-    expect(code, stderr).toBe(0);
+    expect(code, `${stdout}\n${stderr}`).toBe(0);
+    expect(stderr).not.toContain("MaxListenersExceededWarning");
     const line = stdout.trim().split("\n").at(-1) ?? "";
     return JSON.parse(line) as StormReport;
   }
@@ -150,7 +151,9 @@ async function spawnStorm(
     timeout: 120_000,
     env: process.env,
   });
-  expect(nodeChild.exitCode, nodeChild.stderr?.toString() ?? "").toBe(0);
+  const nodeErr = nodeChild.stderr?.toString() ?? "";
+  expect(nodeChild.exitCode, `${nodeChild.stdout?.toString() ?? ""}\n${nodeErr}`).toBe(0);
+  expect(nodeErr).not.toContain("MaxListenersExceededWarning");
   const line = (nodeChild.stdout?.toString() ?? "").trim().split("\n").at(-1) ?? "";
   return JSON.parse(line) as StormReport;
 }

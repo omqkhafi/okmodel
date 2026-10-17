@@ -50,6 +50,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Bun.sql `reserve()` stamps code-less closed-socket texts (`Connection closed`, `connection must be a PostgresSQLConnection`) with SQLSTATE `08006`, so a checkout that fails before the reserved-handle guard classifies as `unavailable` instead of `driver` (B-03, D288).
 - postgres.js caps reconnect backoff under 1 s with jitter, defaults `timeouts.acquire` to 10 s (OKM1846), swallows `nextWrite` on a null socket (Bun and Node), and rebuilds the pool so a kill storm's first OK read arrives within 3 s (B-02, B-43, D294). Other uncaught exceptions still print and leave a non-zero exit so `okm migrate check` / `apply` refusals are not reported as success on Bun.
 - node-postgres defaults `timeouts.acquire` to 10 s and keeps an idle/checked-out client `error` listener that logs on the notice path without throwing, so a backend kill of an idle client does not crash Node (B-44, D294).
+- A node-postgres call with `timeout` or `signal` removes its checkout `error` listener, so repeated timed calls do not stack listeners on a pooled client. A call that reaches its deadline while waiting for a connection is refused and does not run. A cancel that does not settle destroys that client, so the pool can serve the next call after a kill storm.
 
 #### tooling
 
