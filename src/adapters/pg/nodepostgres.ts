@@ -221,12 +221,15 @@ export function open(config: NodePostgresConfig): DriverPool {
           () => undefined,
           inflight,
         );
-        if (watch.signal.aborted) slot.abandon();
-        else watch.signal.addEventListener("abort", slot.abandon, { once: true });
+        const onAbort = (): void => {
+          slot.abandon();
+        };
+        if (watch.signal.aborted) onAbort();
+        else watch.signal.addEventListener("abort", onAbort, { once: true });
         try {
           return await session.query(text, params, watch);
         } finally {
-          watch.signal.removeEventListener("abort", slot.abandon);
+          watch.signal.removeEventListener("abort", onAbort);
           slot.release();
         }
       });
