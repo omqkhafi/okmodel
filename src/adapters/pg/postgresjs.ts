@@ -122,50 +122,27 @@ class PoolSockets {
     });
   }
 
-  /**
-   * Refcount for one execute, checkout, or stream.
-   *
-   * @returns Enter and leave for that call
-   */
-  busyGate(): { enter(): void; leave(): void } {
+  /** Refcount for one execute/checkout/stream (`busy`) or `LISTEN` (`listeners`). */
+  gate(key: "busy" | "listeners"): { enter(): void; leave(): void } {
     return {
       enter: () => {
-        this.busy += 1;
+        this[key] += 1;
         this.wake();
       },
       leave: () => {
-        this.busy -= 1;
-        this.park();
-      },
-    };
-  }
-
-  /**
-   * Refcount for one `LISTEN`.
-   *
-   * @returns Enter and leave for that listener
-   */
-  listenerGate(): { enter(): void; leave(): void } {
-    return {
-      enter: () => {
-        this.listeners += 1;
-        this.wake();
-      },
-      leave: () => {
-        this.listeners -= 1;
+        this[key] -= 1;
         this.park();
       },
     };
   }
 
   private wake(): void {
-    // Not writable: still connecting, or already closed. ref/unref would add a connect listener.
-    for (const socket of this.held) if (socket.writable) socket.ref();
+    for (const s of this.held) if (s.writable) s.ref();
   }
 
   private park(): void {
     if (this.busy > 0 || this.listeners > 0) return;
-    for (const socket of this.held) if (socket.writable) socket.unref();
+    for (const s of this.held) if (s.writable) s.unref();
   }
 }
 
@@ -185,6 +162,7 @@ function driverOptions(
     idle_timeout: state.plain ? 0 : 30,
     ...(state.plain ? { max_lifetime: null } : {}),
     connect_timeout: 5,
+    backoff: () => 0.05 + Math.random() * 0.2,
     types: WIRE_TYPES,
     ...(state.plain ? { socket: (options: SocketTarget) => state.sockets.connect(options) } : {}),
     ...(config.ssl !== undefined ? { ssl: config.ssl } : {}),
@@ -198,6 +176,29 @@ function driverOptions(
   };
 }
 
+type Live = { on: boolean; sql: Sql; m(): Sql };
+
+const lives: Live[] = [];
+
+// D241 / B-02: swallow nextWrite on a null socket (Bun and Node wording) and
+// rebuild the stuck pool so the next read settles.
+process.on("uncaughtException", (e: unknown) => {
+  if (
+    !(
+      e instanceof TypeError &&
+      (e.message.includes("socket.write") || e.message.includes("reading 'write'"))
+    )
+  ) {
+    return;
+  }
+  for (const x of lives) {
+    if (!x.on) continue;
+    const prev = x.sql;
+    x.m();
+    void prev.end({ timeout: 0 }).catch(() => {});
+  }
+});
+
 /**
  * Opens a postgres.js pool for one endpoint.
  *
@@ -206,7 +207,7 @@ function driverOptions(
  */
 export function open(config: PostgresJsConfig): DriverPool {
   const max = config.max ?? 10;
-  const acquireMs = config.timeouts?.acquire;
+  const acquireMs = config.timeouts?.acquire ?? 1e4;
   const counters: Counters = { reserved: 0, busy: 0, reservedBusy: 0, waiting: 0 };
   const poolInflight = new Set<Canceller>();
   const notices = noticeBuffer();
@@ -220,19 +221,10 @@ export function open(config: PostgresJsConfig): DriverPool {
   // driver's socket, so that pool keeps the 30s idle timer and can exit.
   const plain = config.ssl === undefined;
   const sockets = new PoolSockets();
-  const sql = postgres(
-    config.url,
-    driverOptions(config, {
-      max,
-      named,
-      plain,
-      notices,
-      sockets,
-    }),
-  );
-
+  const opts = { max, named, plain, notices, sockets };
+  const make = (): Sql => postgres(config.url, driverOptions(config, opts));
   const root = new PgSession(
-    sql,
+    make(),
     counters,
     "pool",
     poolInflight,
@@ -241,7 +233,20 @@ export function open(config: PostgresJsConfig): DriverPool {
     notices,
     named,
   );
-  const held = { sql, acquireMs, counters, isClosed, notices, named, poolInflight };
+  const held = {
+    on: true,
+    m: (): Sql => (root.sql = make()),
+    get sql() {
+      return root.sql;
+    },
+    acquireMs,
+    counters,
+    isClosed,
+    notices,
+    named,
+    poolInflight,
+  };
+  lives.push(held);
 
   return {
     capabilities: POSTGRESJS_CAPABILITIES,
@@ -256,7 +261,7 @@ export function open(config: PostgresJsConfig): DriverPool {
       );
     },
     reserve() {
-      const gate = sockets.busyGate();
+      const gate = sockets.gate("busy");
       gate.enter();
       return import("./postgres-extra.js").then(
         (mod) => mod.holdCheckout(gate, () => mod.checkout(held)),
@@ -268,26 +273,26 @@ export function open(config: PostgresJsConfig): DriverPool {
     },
     describe: (text, params) =>
       sockets.occupy(() =>
-        import("./postgres-extra.js").then((mod) => mod.describe(sql, text, params)),
+        import("./postgres-extra.js").then((mod) => mod.describe(root.sql, text, params)),
       ),
     stream(text, params) {
-      const gate = sockets.busyGate();
+      const gate = sockets.gate("busy");
       return (async function* () {
         gate.enter();
         try {
-          yield* loadStream(sql, text, params);
+          yield* loadStream(root.sql, text, params);
         } finally {
           gate.leave();
         }
       })();
     },
     listen(channel, onNotify) {
-      const gate = sockets.listenerGate();
+      const gate = sockets.gate("listeners");
       gate.enter();
       return import("./postgres-extra.js").then(
         (mod) =>
           mod.holdListener(gate, async () => {
-            const listening = await sql.listen(channel, onNotify);
+            const listening = await root.sql.listen(channel, onNotify);
             return async () => {
               await listening.unlisten();
             };
@@ -304,7 +309,8 @@ export function open(config: PostgresJsConfig): DriverPool {
     stats: () => statsOf(counters, max),
     async close() {
       closed = true;
-      await sql.end({ timeout: 5 });
+      held.on = false;
+      await root.sql.end({ timeout: 5 });
     },
   };
 }
@@ -312,7 +318,8 @@ export function open(config: PostgresJsConfig): DriverPool {
 export class PgSession implements BatchSession {
   readonly canCancel = true;
   private transactionDepth = 0;
-  private readonly sql: Sql;
+  /** Current client. A storm rebuild assigns a new pool client here. */
+  sql: Sql;
   private readonly counters: Counters;
   private readonly scope: "pool" | "reserved";
   private readonly local: Set<Canceller>;
@@ -463,23 +470,19 @@ function send(
   params: readonly WireValue[] | undefined,
   named: boolean,
 ): Pending {
-  if (!named && (params === undefined || params.length === 0)) return sql.unsafe(text).raw();
-  return sql.unsafe(text, asParams(params), { prepare: named }).raw();
+  return !named && (params === undefined || params.length === 0)
+    ? sql.unsafe(text).raw()
+    : sql.unsafe(text, asParams(params), { prepare: named }).raw();
 }
 
-function asParams(params: readonly WireValue[] | undefined): string[] {
-  if (params === undefined) return [];
-  return params as unknown as string[];
-}
+const asParams = (params?: readonly WireValue[]): string[] => (params ?? []) as unknown as string[];
 
-function statsOf(counters: Counters, size: number): DriverStats {
-  return {
-    size,
-    idle: Math.max(0, size - counters.reserved - counters.busy),
-    inflight: counters.busy + counters.reservedBusy,
-    waiting: counters.waiting,
-  };
-}
+const statsOf = (c: Counters, size: number): DriverStats => ({
+  size,
+  idle: Math.max(0, size - c.reserved - c.busy),
+  inflight: c.busy + c.reservedBusy,
+  waiting: c.waiting,
+});
 
 function noticeBuffer(): NoticeBuffer & { push(notice: postgres.Notice): void } {
   let notices: Notice[] | undefined;
@@ -487,29 +490,17 @@ function noticeBuffer(): NoticeBuffer & { push(notice: postgres.Notice): void } 
     push(notice) {
       const severity = typeof notice.severity === "string" ? notice.severity : "";
       const message = typeof notice.message === "string" ? notice.message : "";
-      const code =
-        typeof notice.code === "string" && notice.code.length > 0 ? notice.code : undefined;
-      const entry: Notice =
-        code === undefined ? { severity, message } : { severity, message, code };
-      (notices ??= []).push(entry);
+      const code = typeof notice.code === "string" && notice.code ? notice.code : undefined;
+      (notices ??= []).push(code ? { severity, message, code } : { severity, message });
     },
-    start() {
-      return notices?.length ?? 0;
-    },
-    since(start) {
-      if (notices === undefined || notices.length === start) return EMPTY_NOTICES;
-      return notices.slice(start);
-    },
+    start: () => notices?.length ?? 0,
+    since: (start) =>
+      notices === undefined || notices.length === start ? EMPTY_NOTICES : notices.slice(start),
   };
 }
 
-function wire(to: number, from: readonly number[]) {
-  return {
-    to,
-    from: [...from],
-    serialize: (value: string) => value,
-    parse: (value: string) => value,
-  };
+function wire(to: number, from: number[]) {
+  return { to, from, serialize: String, parse: String };
 }
 
 /**

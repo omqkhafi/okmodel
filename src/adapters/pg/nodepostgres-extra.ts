@@ -11,7 +11,13 @@ import type { DriverConnection, WireValue } from "../../contracts/driver.js";
 import { DriverError } from "../error.js";
 import { rejectClosed } from "../failure.js";
 import { runCall, type Watch } from "./call.js";
-import { armDriverError, connectClient, send, type HeldPool } from "./nodepostgres.js";
+import {
+  armDriverError,
+  connectClient,
+  logClientError,
+  send,
+  type HeldPool,
+} from "./nodepostgres.js";
 import { resetSession } from "./reserved.js";
 import { cursorStream } from "./cursor.js";
 import { WireSession, type WireQuery } from "./session.js";
@@ -32,12 +38,13 @@ export async function checkout(held: HeldPool): Promise<DriverConnection> {
   const client = await connectClient(pool, held.acquireMs, counters);
   counters.reserved += 1;
   let lost = false;
-  const onError = (): void => {
+  const onError = (error?: unknown): void => {
     lost = true;
+    if (error !== undefined) logClientError(held.notices, error);
   };
   const events = client as unknown as {
-    on(event: "error", listener: () => void): void;
-    removeListener(event: "error", listener: () => void): void;
+    on(event: "error", listener: (error: unknown) => void): void;
+    removeListener(event: "error", listener: (error: unknown) => void): void;
   };
   events.on("error", onError);
   const local = new Set<WireQuery>();
