@@ -288,7 +288,7 @@ postgresTest(
       await sql.unsafe(`insert into tasks (id, title) values (1, 'a')`);
       writeProject(cwd, root, database.url, true);
       const pushed = await okm(root, cwd, ["push"]);
-      expect(pushed).toContain("applied");
+      expect(pushed).toMatch(/applied push-\d+/);
       expect(await indexValid(sql, "public", "tasks_title_idx")).toBe(true);
       const note = await sql<{ column_name: string }[]>`
         select column_name from information_schema.columns

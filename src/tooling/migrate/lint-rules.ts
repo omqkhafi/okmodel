@@ -654,8 +654,31 @@ function foreignKeyWithoutNotValid(input: StepInput): boolean {
 
 function validatingCheck(input: StepInput): boolean {
   if (widenValidate(input)) return false;
+  if (notNullFloorValidate(input)) return false;
   if (validates(input, "check")) return true;
   return checkWithoutNotValid(input);
+}
+
+/**
+ * `VALIDATE` of the temporary `col IS NOT NULL` check from the safe rewrite.
+ *
+ * The documented type-change recipe and the planner both use that form before
+ * `SET NOT NULL`. It is not OKM1531: the scan is intentional and paired with
+ * the lock-safe sequence (B-36).
+ */
+function notNullFloorValidate(input: StepInput): boolean {
+  const text = normalizedSql(input.step.sql);
+  const name = /^alter table\s+(\S+)\s+validate constraint\s+(\S+)/.exec(text);
+  if (name === null) return false;
+  const table = name[1];
+  const constraint = name[2];
+  if (table === undefined || constraint === undefined) return false;
+  return input.earlier.some((step) => {
+    const prior = normalizedSql(step.sql);
+    if (!prior.startsWith(`alter table ${table} `)) return false;
+    if (!prior.includes(`add constraint ${constraint} `)) return false;
+    return /check\s*\(\s*\S+\s+is not null\s*\)\s*not valid/.test(prior);
+  });
 }
 
 function widenValidate(input: StepInput): boolean {

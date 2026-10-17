@@ -18,6 +18,8 @@ import type { DriverConnection } from "../../contracts/driver.js";
 import { OkmError } from "../../contracts/error.js";
 import { assertCreateRole, currentUser, roleExists } from "../../dialects/pg/role/check.js";
 import { changesRole } from "../../dialects/pg/role/sql.js";
+import { introspectSchema } from "../../dialects/pg/introspect.js";
+import { sealViews } from "../../dialects/pg/view/scratch.js";
 import { batchSizeField } from "./backfill.js";
 import {
   assumeRole,
@@ -28,6 +30,7 @@ import {
 } from "./runner.js";
 import { assertExtensionsAvailable } from "./extensions.js";
 import { assertUuidV7Available } from "./engine.js";
+import { assertSnapshots } from "./export.js";
 import { projectPath } from "./paths.js";
 import { loadBuiltSchema, loadConfig, projectHead } from "./project.js";
 import { loadHeadSnapshot, loadMigrations } from "./files.js";
@@ -37,12 +40,19 @@ import { planMigration, type PlanStep } from "./plan.js";
 import type { StoredMigration } from "./files.js";
 import { finishQuiet } from "./lost.js";
 import {
+  catalogQuery,
+  managedRoleOptions,
+  sealDomainChecks,
+} from "./drift.js";
+import {
   assertDirectConnection,
   assertStableBackend,
   assertTargetPolicy,
   selectTarget,
   type InvokeFlags,
 } from "./policy.js";
+import type { DeclaredRename } from "../../dialects/pg/declarations.js";
+import postgres from "postgres";
 
 /** One step with its index in the migration file. */
 export type IndexedStep = {
@@ -125,6 +135,15 @@ export type ApplyRequest = {
     readonly reference: readonly ReferenceTable[];
     readonly only?: boolean;
   };
+  /**
+   * Catalog hash `okm_meta` must record when this run finishes.
+   *
+   * When the plan (or pending units) leave the database matching the schema
+   * but `okm_meta` still holds an older hash — for example an external table
+   * gained a column and the dependent exported a new snapshot — the runner
+   * re-stamps `okm_meta` and `okm_history` under a fresh id.
+   */
+  readonly headHash?: string;
 };
 
 /** Migrations that ran at least one step in this invocation. */
@@ -316,8 +335,19 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
     if (request.snapshot !== undefined) {
       await insertReference(connection, request);
     }
+    const desiredHash = request.headHash;
+    const headStamp =
+      desiredHash === undefined
+        ? []
+        : await restampHeadHash(
+            connection,
+            request,
+            nextSequenceId("restamp", history.ids),
+            desiredHash,
+          );
     await grantAppMeta(connection, request.appRole, session);
-    return restamped.length === 0 ? report : { ...report, restamped };
+    const stamped = [...restamped, ...headStamp];
+    return stamped.length === 0 ? report : { ...report, restamped: stamped };
   } finally {
     if (locked) {
       await finishQuiet(() =>
@@ -357,6 +387,7 @@ export async function applyProject(
       return undefined;
     throw error;
   });
+  if (built !== undefined) assertSnapshots(cwd, config, built.catalog);
   const progress: string[] = [];
   const report = await applyTarget({
     url: target.url,
@@ -382,6 +413,7 @@ export async function applyProject(
       catalogHash: head.catalogHash,
       reference: built === undefined ? [] : readReference(built.tables, built.casing, head.catalog),
     },
+    ...(built !== undefined ? { headHash: startupHash(built.catalog) } : {}),
     ...(config.roles !== undefined
       ? { migrationRole: config.roles.migration, appRole: config.roles.app }
       : {}),
@@ -400,8 +432,9 @@ export async function applyProject(
 /**
  * Prototype sync. Blocked on a protected target.
  *
- * A target named production is not special. Protection is the `protected`
- * flag (spec §19.8). The plan's statements run as one migration.
+ * Plans from the live catalog on the target (not the last migration file),
+ * applies under a fresh `push-<n>` id from `okm_history`, and re-stamps
+ * `okm_meta` when the schema hash moved with no DDL (B-29, B-21).
  *
  * @param cwd - Project directory
  * @param flags - Target and protection flags
@@ -412,35 +445,247 @@ export async function pushProject(cwd: string, flags: InvokeFlags): Promise<stri
   const target = selectTarget(config, flags.target);
   assertTargetPolicy(target, "push", flags.allowProtected);
   const head = await projectHead(cwd);
-  const plan = planMigration({
-    before: head.previous,
-    after: head.catalog,
-    renames: head.renames,
-    name: "push",
-    ...catalogSchema(config.namespace),
-    ...batchSizeField(config.backfill?.batchSize),
-  });
-  if (plan.steps.length === 0) return `target ${target.name}\nno changes\n`;
-  const report = await applyTarget({
+  assertSnapshots(cwd, config, head.catalog);
+  const catalogHash = startupHash(head.catalog);
+  const report = await pushTarget({
     url: target.url,
     target: target.name,
     protected: target.protected,
     allowProtected: flags.allowProtected,
     allowPooler: flags.allowPooler || config.allowPooler === true,
     ...backfillTiming(config.backfill),
-    migrations: [
-      {
-        id: "push",
-        catalogHash: startupHash(head.catalog),
-        steps: plan.steps,
-      },
-    ],
+    after: head.catalog,
+    renames: head.renames,
+    catalogHash,
     ...(config.roles !== undefined
-      ? { migrationRole: config.roles.migration, appRole: config.roles.app }
+      ? { migrationRole: config.roles.migration, appRole: config.roles.app, roles: config.roles }
       : {}),
     ...catalogSchema(config.namespace),
+    ...batchSizeField(config.backfill?.batchSize),
   });
+  if (report.applied.length === 0 && (report.restamped ?? []).length === 0) {
+    return `target ${target.name}\nno changes\n`;
+  }
   return formatReport(report);
+}
+
+type PushRequest = {
+  readonly url: string;
+  readonly target: string;
+  readonly protected: boolean;
+  readonly allowProtected?: boolean;
+  readonly allowPooler?: boolean;
+  readonly after: Catalog;
+  readonly renames: readonly DeclaredRename[];
+  readonly catalogHash: string;
+  readonly migrationRole?: string;
+  readonly appRole?: string;
+  readonly roles?: import("../../dialects/pg/role/index.js").RolesInput;
+  readonly schema?: string;
+  readonly searchPath?: string;
+  readonly backfillPauseMs?: number;
+  readonly backfillStatementTimeoutMs?: number;
+  readonly batchSize?: number;
+};
+
+/**
+ * Plans from the connected catalog and applies or re-stamps under one lock.
+ *
+ * @param request - Target, schema catalog, and push options
+ * @returns Apply report for {@link formatReport}
+ */
+async function pushTarget(request: PushRequest): Promise<ApplyReport> {
+  assertDirectConnection(request.url, request.allowPooler === true);
+  const pool = open({
+    url: request.url,
+    max: 1,
+    ...(request.searchPath !== undefined ? { searchPath: request.searchPath } : {}),
+  });
+  if (pool.reserve === undefined) {
+    await pool.close();
+    throw new OkmError("invalid", "The driver cannot reserve a connection.", {
+      fix: { summary: "Push needs a driver with interactive transactions." },
+    });
+  }
+  const connection = await pool.reserve();
+  let locked = false;
+  try {
+    await assertStableBackend(() => backendPid(connection), request.allowPooler === true);
+    await assertStandardStrings(connection);
+    await setTimeouts(connection, {
+      url: request.url,
+      target: request.target,
+      protected: request.protected,
+      migrations: [],
+    });
+    await lockTarget(connection, request.target);
+    locked = true;
+    const session: { setRole?: string } = {};
+    const schema = request.schema ?? "public";
+    await enterCatalogSchema(connection, schema);
+    await ensureMigrationTables((sql) => connection.execute(sql));
+    const history = await readHistory(connection);
+    const pushId = nextSequenceId("push", history.ids);
+    const sql = postgres(request.url, {
+      max: 1,
+      connect_timeout: 5,
+      idle_timeout: 1,
+      onnotice: () => {},
+      ...(schema !== "public" ? { connection: { search_path: schema } } : {}),
+    });
+    let planSteps: readonly PlanStep[] = [];
+    try {
+      const runner = catalogQuery(sql);
+      if (schema !== "public") {
+        await sql.unsafe(`create schema if not exists ${quoteIdent(schema)}`);
+        await sql.unsafe(`set search_path to ${quoteIdent(schema)}`);
+      }
+      const authorViews = await sealViews(runner, request.after);
+      const author = await sealDomainChecks(runner, authorViews);
+      const live = await introspectSchema(
+        runner,
+        schema,
+        schema,
+        managedRoleOptions(request.roles),
+      );
+      const plan = planMigration({
+        before: live,
+        after: author,
+        renames: request.renames,
+        name: pushId,
+        ...(request.schema !== undefined ? { schema: request.schema } : {}),
+        ...(request.batchSize !== undefined ? { batchSize: request.batchSize } : {}),
+      });
+      planSteps = plan.steps;
+    } finally {
+      await finishQuiet(() => sql.end({ timeout: 5 }));
+    }
+    if (planSteps.length === 0) {
+      const stamped = await restampHeadHash(connection, request, pushId, request.catalogHash);
+      await grantAppMeta(connection, request.appRole, session);
+      if (stamped.length === 0) {
+        return { target: request.target, applied: [] };
+      }
+      return { target: request.target, applied: [], restamped: stamped };
+    }
+    const migration: StoredMigration = {
+      id: pushId,
+      catalogHash: request.catalogHash,
+      steps: planSteps,
+    };
+    await prepareMigrationRole(
+      connection,
+      {
+        url: request.url,
+        target: request.target,
+        protected: request.protected,
+        migrations: [migration],
+        ...(request.migrationRole !== undefined ? { migrationRole: request.migrationRole } : {}),
+        ...(request.schema !== undefined ? { schema: request.schema } : {}),
+      },
+      session,
+    );
+    await assertExtensionsAvailable(connection, [migration]);
+    await assertUuidV7Available(connection, [migration]);
+    const units = applyUnits(migration, new Set());
+    const report = await runTarget(
+      connection,
+      {
+        policy: {
+          target: request.target,
+          protected: request.protected,
+          allowProtected: request.allowProtected === true,
+        },
+        units,
+        retries: DEFAULT_RETRIES,
+        lockTimeoutMs: DEFAULT_LOCK_MS,
+        statementTimeoutMs: DEFAULT_STATEMENT_MS,
+        backfillStatementTimeoutMs:
+          request.backfillStatementTimeoutMs ?? DEFAULT_STATEMENT_MS,
+        ...(request.backfillPauseMs !== undefined
+          ? { backfillPauseMs: request.backfillPauseMs }
+          : {}),
+        ...(request.migrationRole !== undefined ? { migrationRole: request.migrationRole } : {}),
+        ...(request.schema !== undefined ? { schema: request.schema } : {}),
+      },
+      session,
+    );
+    await grantAppMeta(connection, request.appRole, session);
+    return report;
+  } finally {
+    if (locked) {
+      await finishQuiet(() =>
+        connection.execute("select pg_advisory_unlock(hashtext($1))", [lockKey(request.target)]),
+      );
+    }
+    await finishQuiet(() => connection.release());
+    await finishQuiet(() => pool.close());
+  }
+}
+
+/**
+ * Re-stamps `okm_meta` and appends a history row when the stored hash drifted.
+ *
+ * @param connection - Locked apply connection
+ * @param request - Target policy
+ * @param migrationId - Fresh id for the history row
+ * @param catalogHash - Hash the schema requires
+ * @returns The id when a row was written, otherwise empty
+ */
+async function restampHeadHash(
+  connection: DriverConnection,
+  request: { readonly target: string; readonly protected: boolean; readonly allowProtected?: boolean },
+  migrationId: string,
+  catalogHash: string,
+): Promise<readonly string[]> {
+  const present = await connection.execute("select to_regclass('okm_meta') is not null");
+  if (!wireTrue(present.rows[0]?.[0])) return [];
+  const current = await connection.execute(
+    "select catalog_hash from okm_meta where id = 'head'",
+  );
+  const stored = current.rows[0]?.[0];
+  if (typeof stored === "string" && stored === catalogHash) return [];
+  assertTargetPolicy(
+    { name: request.target, protected: request.protected },
+    "history-repair",
+    request.allowProtected === true,
+  );
+  await connection.execute("begin");
+  try {
+    await connection.execute(
+      "insert into okm_history (migration_id, step_index, class, catalog_hash) values ($1, 0, 'expand', $2)",
+      [migrationId, catalogHash],
+    );
+    await connection.execute(
+      `insert into okm_meta (id, catalog_hash, migration_id) values ('head', $1, $2)
+       on conflict (id) do update set catalog_hash = excluded.catalog_hash, migration_id = excluded.migration_id`,
+      [catalogHash, migrationId],
+    );
+    await connection.execute("commit");
+  } catch (error) {
+    await connection.execute("rollback").catch(() => undefined);
+    throw error;
+  }
+  return [migrationId];
+}
+
+/**
+ * Next `prefix-<n>` id that is not already in history.
+ *
+ * @param prefix - `push` or `restamp`
+ * @param ids - Migration ids already recorded
+ * @returns A fresh id
+ */
+function nextSequenceId(prefix: string, ids: readonly string[]): string {
+  const pattern = new RegExp(`^${prefix}-(\\d+)$`);
+  let max = 0;
+  for (const id of ids) {
+    const match = pattern.exec(id);
+    if (match === null) continue;
+    const value = Number(match[1]);
+    if (Number.isFinite(value) && value > max) max = value;
+  }
+  return `${prefix}-${String(max + 1)}`;
 }
 
 /**
@@ -473,8 +718,10 @@ export function backfillTiming(
 function formatReport(report: ApplyReport): string {
   const role = report.setRole !== undefined ? `set role ${report.setRole}\n` : "";
   const restamped = (report.restamped ?? []).map((id) => `restamped ${id}\n`).join("");
-  if (report.applied.length === 0)
-    return `target ${report.target}\n${role}${restamped}nothing to apply\n`;
+  if (report.applied.length === 0) {
+    if (restamped.length > 0) return `target ${report.target}\n${role}${restamped}`;
+    return `target ${report.target}\n${role}nothing to apply\n`;
+  }
   return `target ${report.target}\n${role}${restamped}${report.applied.map((id) => `applied ${id}`).join("\n")}\n`;
 }
 

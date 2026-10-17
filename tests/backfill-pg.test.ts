@@ -151,8 +151,8 @@ postgresTest(
       );
       expect(messageOf(failed)).toContain("failed at step 1");
       expect(progress).toEqual([
-        "backfill 0001_fill step 0 batch 1 rows 10 key 10",
-        "backfill 0001_fill step 0 batch 2 rows 20 key 20",
+        "backfill 0001_fill step 1 batch 1 rows 10 key 10",
+        "backfill 0001_fill step 1 batch 2 rows 20 key 20",
       ]);
       const stopped = await backfillRows(sql);
       expect(stopped).toEqual([

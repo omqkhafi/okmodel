@@ -13,8 +13,11 @@ import postgres, { type Sql } from "postgres";
 import { OkmError } from "../../contracts/error.js";
 import type { Catalog } from "../../contracts/catalog/types.js";
 import { quoteIdent } from "../../dialects/pg/ddl.js";
+import { isDomain } from "../../contracts/catalog/enum.js";
+import type { CatalogObject } from "../../contracts/catalog/types.js";
 import {
   introspectSchema,
+  reprintDomainCheck,
   type CatalogQuery,
   type IntrospectOptions,
 } from "../../dialects/pg/introspect.js";
@@ -55,7 +58,7 @@ export async function assertAuthorDrift(
     `;
     if (present[0]?.reg == null) return;
     const runner = catalogQuery(sql);
-    const authorOnServer = await sealViews(runner, author);
+    const authorOnServer = await sealDomainChecks(runner, await sealViews(runner, author));
     const live = await introspectSchema(runner, schema, schema, managedRoleOptions(roles));
     const plan = planMigration({ before: live, after: authorOnServer, name: "check" });
     if (plan.steps.length === 0) return;
@@ -73,6 +76,46 @@ export async function assertAuthorDrift(
   } finally {
     await finishQuiet(() => sql.end({ timeout: 5 }));
   }
+}
+
+/**
+ * Reprints each domain check the way this server stores it.
+ *
+ * Author spellings such as `VALUE > 0` become `((VALUE > 0))`, so a plan
+ * against a live catalog does not treat the reprint as a permanent change.
+ * The catalog hash still uses the author text (B-37).
+ *
+ * @param runner - Database connection
+ * @param source - Catalog whose domain checks may still be author SQL
+ * @returns A catalog whose domain checks carry the server reprint
+ */
+export async function sealDomainChecks(
+  runner: CatalogQuery,
+  source: Catalog,
+): Promise<Catalog> {
+  const objects: CatalogObject[] = [];
+  let changed = false;
+  for (const object of source.objects) {
+    if (object.kind !== "type" || !isDomain(object.definition)) {
+      objects.push(object);
+      continue;
+    }
+    const reprinted = await reprintDomainCheck(
+      runner,
+      object.definition.base,
+      object.definition.check,
+    );
+    if (reprinted === object.definition.check) {
+      objects.push(object);
+      continue;
+    }
+    changed = true;
+    objects.push({
+      ...object,
+      definition: { ...object.definition, check: reprinted },
+    });
+  }
+  return changed ? { version: source.version, objects } : source;
 }
 
 /**

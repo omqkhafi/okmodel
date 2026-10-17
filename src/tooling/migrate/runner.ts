@@ -295,7 +295,7 @@ async function runBackfill(
       lastKey: committed.lastKey,
     };
     run.onProgress?.(
-      `backfill ${unit.migrationId} step ${String(item.index)} batch ${String(batches)} rows ${String(rows)} key ${committed.lastKey ?? "-"}`,
+      `backfill ${unit.migrationId} step ${String(item.index + 1)} batch ${String(batches)} rows ${String(rows)} key ${committed.lastKey ?? "-"}`,
     );
     await run.afterBatch?.(note);
     if (committed.final) return;

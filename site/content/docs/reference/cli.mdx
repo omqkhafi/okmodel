@@ -272,7 +272,7 @@ bunx okm migrate check --provision
 
 ## push
 
-`okm push` plans the schema against the last snapshot and applies that plan as one migration named `push`. It writes no SQL file. An empty plan prints `target <name>` and `no changes`. A plan with steps uses the apply summary, and the applied id is `push`.
+`okm push` plans the schema against the live catalog on the target and applies that plan as one migration named `push-<n>`, where `n` comes from `okm_history`. It writes no SQL file. An empty plan that already matches `okm_meta` prints `target <name>` and `no changes`. When the hash moved with no DDL, it re-stamps `okm_meta` and prints `restamped push-<n>`. A plan with steps uses the apply summary.
 
 A protected target is OKM1850 until `--allow-protected`. Lock and statement timeouts stay 5000 and 30000 milliseconds. The config and the flags are not applied. A pooler host is refused until [allowPooler](/docs/define/config/pooler) or `--allow-pooler`.
 

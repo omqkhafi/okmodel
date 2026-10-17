@@ -79,14 +79,14 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
     return;
   }
   if (command === "check") {
-    const findings = await checkProject(cwd, invoke(splitFlags(rest)));
+    const findings = await checkProject(cwd, invoke(splitFlags(rest, "check")));
     const warnings = formatFindings(findings);
     if (warnings.length > 0) stdout(warnings);
     stdout("ok\n");
     return;
   }
   if (command === "generate") {
-    const parsed = splitFlags(rest);
+    const parsed = splitFlags(rest, "generate");
     const written = await generateProject(cwd, parsed.name ?? "migration", parsed.flags);
     stdout(written === undefined ? "no changes\n" : `${written.path}\n`);
     if (written !== undefined) stdout(formatFindings(written.findings));
@@ -99,7 +99,7 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
   }
   if (command === "push") {
     const { pushProject } = await import("./apply.js");
-    stdout(await pushProject(cwd, invoke(splitFlags(rest))));
+    stdout(await pushProject(cwd, invoke(splitFlags(rest, "push"))));
     return;
   }
   if (command === "pull") {
@@ -121,8 +121,24 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
   if (command === "migrate") {
     const sub = rest[0];
     const migrateArgs = rest.slice(1);
+    const commandKey =
+      sub === "plan"
+        ? "migrate plan"
+        : sub === "apply"
+          ? "migrate apply"
+          : sub === "status"
+            ? "migrate status"
+            : sub === "check"
+              ? "migrate check"
+              : undefined;
+    if (commandKey === undefined) {
+      throw new OkmError("invalid", `Unknown command migrate ${sub ?? ""}.`, {
+        fix: { summary: "Use okm migrate plan, apply, status, or check." },
+      });
+    }
     const parsed = splitFlags(
       sub === "plan" ? migrateArgs.filter((arg) => arg !== "--json") : migrateArgs,
+      commandKey,
     );
     if (sub === "plan") {
       if (parsed.name === undefined) {
@@ -149,14 +165,12 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
     }
     if (sub === "check") {
       const { checkMigrations } = await import("./check.js");
-      const provision =
-        parsed.flags.includes("--provision") || rest.slice(1).includes("--provision");
-      stdout(await checkMigrations(cwd, invoke(parsed), { provision }));
+      stdout(await checkMigrations(cwd, invoke(parsed), { provision: parsed.provision }));
       return;
     }
   }
   if (command === "seed") {
-    const parsed = splitFlags(rest);
+    const parsed = splitFlags(rest, "seed");
     if (parsed.name === undefined) {
       throw new OkmError("invalid", "okm seed needs a file.", {
         fix: { summary: "Pass okm seed <file>." },
@@ -167,7 +181,7 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
     return;
   }
   if (command === "doctor") {
-    const parsed = splitFlags(rest);
+    const parsed = splitFlags(rest, "doctor");
     const { doctorProject } = await import("./doctor.js");
     stdout(await doctorProject(cwd, parsed.name, invoke(parsed)));
     return;
@@ -204,7 +218,7 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
     }
     if (sub === "list" || sub === "check") {
       const { extProject } = await import("./ext.js");
-      stdout(await extProject(cwd, sub, invoke(splitFlags(rest.slice(1)))));
+      stdout(await extProject(cwd, sub, invoke(splitFlags(rest.slice(1), "ext"))));
       return;
     }
     throw new OkmError("invalid", `Unknown command ext ${sub ?? ""}.`, {
@@ -247,7 +261,7 @@ function extInvocation(args: readonly string[]): ExtParsed {
     }
     rest.push(arg);
   }
-  const parsed = splitFlags(rest);
+  const parsed = splitFlags(rest, "ext");
   return { name: parsed.name, out, flags: invoke(parsed) };
 }
 
@@ -269,64 +283,118 @@ type Parsed = {
   readonly target: string | undefined;
   readonly allowProtected: boolean;
   readonly allowPooler: boolean;
+  readonly provision: boolean;
   readonly lockTimeoutMs: number | undefined;
   readonly statementTimeoutMs: number | undefined;
 };
 
-function splitFlags(args: readonly string[]): Parsed {
+type CommandKey =
+  | "check"
+  | "generate"
+  | "push"
+  | "seed"
+  | "doctor"
+  | "ext"
+  | "migrate plan"
+  | "migrate apply"
+  | "migrate status"
+  | "migrate check";
+
+const COMMAND_FLAGS: Readonly<Record<CommandKey, readonly string[]>> = {
+  check: ["--target", "--allow-pooler", "--lock-timeout", "--statement-timeout"],
+  generate: ["--replace"],
+  push: ["--target", "--allow-protected", "--allow-pooler"],
+  seed: ["--target", "--allow-protected", "--allow-pooler"],
+  doctor: ["--target"],
+  ext: ["--target", "--allow-pooler", "--out"],
+  "migrate plan": ["--target", "--allow-protected", "--replace", "--json"],
+  "migrate apply": [
+    "--target",
+    "--allow-protected",
+    "--allow-pooler",
+    "--lock-timeout",
+    "--statement-timeout",
+  ],
+  "migrate status": ["--target"],
+  "migrate check": [
+    "--target",
+    "--allow-protected",
+    "--allow-pooler",
+    "--provision",
+    "--lock-timeout",
+    "--statement-timeout",
+  ],
+};
+
+function splitFlags(args: readonly string[], command: CommandKey): Parsed {
+  const allowed = new Set(COMMAND_FLAGS[command]);
   const flags: string[] = [];
   const positionals: string[] = [];
   let target: string | undefined;
   let allowProtected = false;
   let allowPooler = false;
+  let provision = false;
   let lockTimeoutMs: number | undefined;
   let statementTimeoutMs: number | undefined;
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index] ?? "";
-    if (arg === "--replace") {
-      const value = args[index + 1];
-      if (value === undefined) {
+    if (arg === "--replace" || arg.startsWith("--replace=")) {
+      refuseUnknown(command, "--replace", allowed);
+      const value = arg === "--replace" ? args[index + 1] : arg.slice("--replace=".length);
+      if (value === undefined || value.length === 0 || (arg === "--replace" && value.startsWith("--"))) {
         throw new OkmError("OKM1541", "--replace needs table.column.old=new.", {
           fix: { summary: "Pass --replace <table>.<column>.<old>=<new>." },
         });
       }
       flags.push(value);
-      index += 1;
-      continue;
-    }
-    if (arg.startsWith("--replace=")) {
-      flags.push(arg.slice("--replace=".length));
+      if (arg === "--replace") index += 1;
       continue;
     }
     if (arg === "--allow-protected") {
+      refuseUnknown(command, arg, allowed);
       allowProtected = true;
       continue;
     }
     if (arg === "--allow-pooler") {
+      refuseUnknown(command, arg, allowed);
       allowPooler = true;
       continue;
     }
-    if (arg === "--target") {
-      const value = args[index + 1];
-      if (value === undefined || value.startsWith("--")) {
+    if (arg === "--provision") {
+      refuseUnknown(command, arg, allowed);
+      provision = true;
+      continue;
+    }
+    if (arg === "--json") {
+      refuseUnknown(command, arg, allowed);
+      continue;
+    }
+    if (arg === "--target" || arg.startsWith("--target=")) {
+      refuseUnknown(command, "--target", allowed);
+      const value = arg === "--target" ? args[index + 1] : arg.slice("--target=".length);
+      if (value === undefined || value.length === 0 || (arg === "--target" && value.startsWith("--"))) {
         throw new OkmError("OKM1853", "--target needs a name.", {
           fix: { summary: "Pass --target <name>." },
         });
       }
       target = value;
-      index += 1;
-      continue;
-    }
-    if (arg.startsWith("--target=")) {
-      target = arg.slice("--target=".length);
+      if (arg === "--target") index += 1;
       continue;
     }
     if (arg === "--lock-timeout" || arg === "--statement-timeout") {
+      refuseUnknown(command, arg, allowed);
       const value = numberFlag(arg, args[index + 1]);
       if (arg === "--lock-timeout") lockTimeoutMs = value;
       else statementTimeoutMs = value;
       index += 1;
       continue;
+    }
+    if (arg.startsWith("-")) {
+      throw new OkmError("invalid", `Unknown flag ${arg}.`, {
+        fix: {
+          summary: `Use okm ${command} --help for the flags this command accepts.`,
+        },
+      });
     }
     positionals.push(arg);
   }
@@ -336,9 +404,19 @@ function splitFlags(args: readonly string[]): Parsed {
     target,
     allowProtected,
     allowPooler,
+    provision,
     lockTimeoutMs,
     statementTimeoutMs,
   };
+}
+
+function refuseUnknown(command: CommandKey, flag: string, allowed: ReadonlySet<string>): void {
+  if (allowed.has(flag)) return;
+  throw new OkmError("invalid", `Unknown flag ${flag}.`, {
+    fix: {
+      summary: `Use okm ${command} --help for the flags this command accepts.`,
+    },
+  });
 }
 
 const COMMANDS: readonly (readonly [string, string])[] = [
@@ -379,7 +457,26 @@ function commandHelp(argv: readonly string[]): string {
   if (found === undefined) {
     return `Unknown command ${key}.\n\n${commandsTable()}`;
   }
-  return `${found[0]}\n${found[1]}\n`;
+  const flags = flagsForHelp(found[0]);
+  const lines = [found[0], found[1]];
+  if (flags.length > 0) {
+    lines.push("", "Flags:");
+    for (const flag of flags) lines.push(`  ${flag}`);
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function flagsForHelp(commandLine: string): readonly string[] {
+  const key = helpCommandKey(commandLine);
+  if (key === undefined) return [];
+  return COMMAND_FLAGS[key];
+}
+
+function helpCommandKey(commandLine: string): CommandKey | undefined {
+  const name = commandLine.replace(/\s+\[.*?\]/g, "").replace(/\s+<.*?>/g, "").trim();
+  if (name in COMMAND_FLAGS) return name as CommandKey;
+  if (name.startsWith("ext ")) return "ext";
+  return undefined;
 }
 
 function numberFlag(flag: string, value: string | undefined): number {
