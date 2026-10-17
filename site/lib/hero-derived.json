@@ -145,15 +145,7 @@
           }
         ]
       },
-      "lint": [
-        {
-          "severity": "error",
-          "code": "OKM1531",
-          "step": 2,
-          "message": "validates a check",
-          "fix": "Add the check NOT VALID, repair the rows, then validate it. Or allow OKM1531 with a reason."
-        }
-      ],
+      "lint": [],
       "types": {
         "label": "Notes",
         "rows": [

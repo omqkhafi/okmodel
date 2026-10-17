@@ -76,6 +76,7 @@ export async function sealViews(runner: CatalogQuery, source: Catalog): Promise<
   const path = await scratchSearchPath(runner, source);
   try {
     await runner.query(`select set_config('search_path', $1, false)`, [path]);
+    await createExtensions(runner, source);
     await createObjects(runner, source, "type");
     for (const object of source.objects) {
       if (object.kind !== "table") continue;
@@ -177,6 +178,24 @@ async function createObjects(
     if (object.kind !== kind) continue;
     const statement = createObjectSql(object, SCRATCH);
     if (statement !== undefined) await runner.query(statement);
+  }
+}
+
+/**
+ * Creates catalog extensions before stub tables need their types.
+ *
+ * Extensions are database-wide, so the seal path uses `IF NOT EXISTS` and
+ * does not drop them with the scratch schema.
+ *
+ * @param runner - Database connection
+ * @param source - Catalog that may declare extensions such as `citext`
+ */
+async function createExtensions(runner: CatalogQuery, source: Catalog): Promise<void> {
+  for (const object of source.objects) {
+    if (object.kind !== "extension") continue;
+    const statement = createObjectSql(object, SCRATCH);
+    if (statement === undefined) continue;
+    await runner.query(statement.replace(/^create extension\b/i, "create extension if not exists"));
   }
 }
 

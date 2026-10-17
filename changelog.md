@@ -34,7 +34,6 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 #### tooling
 
 - The Bun.sql kill-storm test (B-03) retries post-storm scoped reads on `unavailable`/closed (bounded) so a dying reserved handle after the storm does not fail CI, without relaxing storm `short`/`leaks`/`readOnly`/`nested` asserts.
-
 - `okm push` plans from the live catalog and applies each change under a fresh `push-<n>` id, so a second push is no longer skipped (D289).
 - When the schema hash moves with no DDL (an external table the dependent already verified), `okm push` and `okm migrate apply` re-stamp `okm_meta` instead of leaving `connect()` on OKM1520 (D289).
 - `okm migrate check` keeps a trigger's function in the logical namespace, so schemas with `timestamps({ enforce: "trigger" })` or hand-written triggers no longer fail OKM1020 (D289).
@@ -42,11 +41,11 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The type-change recipe's temporary `IS NOT NULL` validate is no longer OKM1531 (D289).
 - An unknown CLI flag is an error; `okm <command> --help` lists that command's flags (D289).
 - Backfill progress prints a 1-based step index (D289).
+
 #### docs
-- `okm push` docs say it applies the live schema diff as `push-<n>`, and known-limits cover external re-stamp and domain-check sealing (D289).
 
 - Known limits record that Bun.sql does not park reserved handles, that a post-commit reset failure does not fail the call, and that a send-without-result is OKM1401 with no `afterCommit` (D288).
-
+- `okm push` docs say it applies the live schema diff as `push-<n>`, and known-limits cover external re-stamp and domain-check sealing (D289).
 
 ## v0.9.0 — 2026-10-16
 

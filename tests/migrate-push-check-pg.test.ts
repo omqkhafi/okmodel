@@ -98,7 +98,7 @@ postgresTest(
       writeBilling(billing, identity);
       const applied = await cli(billing, ["migrate", "apply"]);
       expect(applied).toMatch(/restamped restamp-\d+/);
-      expect(applied).not.toContain("nothing to apply");
+      expect(applied).toContain("nothing to apply");
       await connectOk(billing, database.url);
 
       const snapshotPath = join(identity, "identity.okm.json");

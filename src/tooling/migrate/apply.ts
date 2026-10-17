@@ -137,9 +137,14 @@ export type ApplyRequest = {
    * When the plan (or pending units) leave the database matching the schema
    * but `okm_meta` still holds an older hash — for example an external table
    * gained a column and the dependent exported a new snapshot — the runner
-   * re-stamps `okm_meta` and `okm_history` under a fresh id.
+   * re-stamps `okm_meta` and `okm_history` under a fresh id. File apply only
+   * enables that path when `defineConfig({ external })` is set; a foreign or
+   * legacy hash without external snapshots is left for connect or the pre-D208
+   * restamp.
    */
   readonly headHash?: string;
+  /** When true, an empty apply may re-stamp `okm_meta` to {@link headHash}. */
+  readonly restampHead?: boolean;
 };
 
 /** Migrations that ran at least one step in this invocation. */
@@ -333,7 +338,7 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
     }
     const desiredHash = request.headHash;
     const headStamp =
-      desiredHash === undefined
+      desiredHash === undefined || request.restampHead !== true
         ? []
         : await restampHeadHash(
             connection,
@@ -385,6 +390,7 @@ export async function applyProject(
   });
   if (built !== undefined) assertSnapshots(cwd, config, built.catalog);
   const progress: string[] = [];
+  const externalConfigured = (config.external ?? []).length > 0;
   const report = await applyTarget({
     url: target.url,
     target: target.name,
@@ -410,6 +416,7 @@ export async function applyProject(
       reference: built === undefined ? [] : readReference(built.tables, built.casing, head.catalog),
     },
     ...(built !== undefined ? { headHash: startupHash(built.catalog) } : {}),
+    ...(externalConfigured ? { restampHead: true } : {}),
     ...(config.roles !== undefined
       ? { migrationRole: config.roles.migration, appRole: config.roles.app }
       : {}),
@@ -716,8 +723,7 @@ function formatReport(report: ApplyReport): string {
   const role = report.setRole !== undefined ? `set role ${report.setRole}\n` : "";
   const restamped = (report.restamped ?? []).map((id) => `restamped ${id}\n`).join("");
   if (report.applied.length === 0) {
-    if (restamped.length > 0) return `target ${report.target}\n${role}${restamped}`;
-    return `target ${report.target}\n${role}nothing to apply\n`;
+    return `target ${report.target}\n${role}${restamped}nothing to apply\n`;
   }
   return `target ${report.target}\n${role}${restamped}${report.applied.map((id) => `applied ${id}`).join("\n")}\n`;
 }
