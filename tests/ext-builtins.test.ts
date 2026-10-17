@@ -87,6 +87,14 @@ test("scaffold text names types, operators, and functions", () => {
   expect(text).toContain('">=1.8"');
 });
 
+test("scaffold text includes a composite type", () => {
+  const text = renderScaffold({
+    ...sample(),
+    types: [{ name: "hstore" }, { name: "hstore_pair" }],
+  });
+  expect(text).toContain('"name": "hstore_pair"');
+});
+
 test("a wrong function signature is listed", () => {
   const declared = extension("hstore", {
     provides: { functions: [{ name: "akeys", args: ["text"], returns: "text[]" }] },

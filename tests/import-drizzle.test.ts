@@ -5,7 +5,7 @@
 import { expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, relative } from "node:path";
 
 import { PGlite } from "@electric-sql/pglite";
 
@@ -17,6 +17,26 @@ import { repoRoot } from "../scripts/root.js";
 import { fixturePath, roundTrip } from "./import-drizzle-roundtrip.js";
 
 const root = repoRoot();
+
+function rewriteAdoptedImports(directory: string): void {
+  for (const name of readdirSync(directory, { withFileTypes: true })) {
+    const path = join(directory, name.name);
+    if (name.isDirectory()) {
+      rewriteAdoptedImports(path);
+      continue;
+    }
+    if (!name.name.endsWith(".ts")) continue;
+    let spec = relative(dirname(path), join(root, "src/dialects/pg/index.ts")).replaceAll(
+      "\\",
+      "/",
+    );
+    if (!spec.startsWith(".")) spec = `./${spec}`;
+    writeFileSync(
+      path,
+      readFileSync(path, "utf8").replaceAll('from "okmodel/pg"', `from ${JSON.stringify(spec)}`),
+    );
+  }
+}
 
 test("import drizzle round-trips through PGlite", async () => {
   await roundTrip(async (statements) => {
@@ -62,6 +82,42 @@ test("import drizzle is deterministic and refuses an existing file", async () =>
     }
     expect(refused).toBeInstanceOf(OkmError);
     if (refused instanceof OkmError) expect(refused.code).toBe("OKM1855");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("import drizzle keeps composite primary key columns not null and renames reserved files", async () => {
+  const cwd = mkdtempSync(join(root, ".okm-import-"));
+  try {
+    const hostile = join(root, "tests/fixtures/drizzle/hostile.ts");
+    const imported = await importDrizzle(cwd, [hostile, "--out", "adopted"]);
+    expect(imported.text).toContain("imported 1 table");
+    const names = readdirSync(join(cwd, "adopted/tables"));
+    expect(names).toContain("_Con.ts");
+    expect(names.some((name) => /^con\.ts$/i.test(name))).toBe(false);
+    const text = readFileSync(join(cwd, "adopted/tables/_Con.ts"), "utf8");
+    expect(text).toContain('sqlName: "con"');
+    expect(text).toContain('primaryKey: ["org", "num"]');
+    expect(text).not.toMatch(/org:[\s\S]*\.nullable\(\)/);
+    expect(text).not.toMatch(/num:[\s\S]*\.nullable\(\)/);
+    rewriteAdoptedImports(join(cwd, "adopted"));
+    const { loadSchema } = await import("../src/tooling/migrate/project.js");
+    const built = await loadSchema(cwd, "./adopted/schema.ts");
+    const org = built.catalog.objects.find(
+      (object) =>
+        object.kind === "column" &&
+        object.identity.parent.name === "con" &&
+        object.identity.name === "org",
+    );
+    const num = built.catalog.objects.find(
+      (object) =>
+        object.kind === "column" &&
+        object.identity.parent.name === "con" &&
+        object.identity.name === "num",
+    );
+    expect(org?.kind === "column" ? org.definition.nullable : true).toBe(false);
+    expect(num?.kind === "column" ? num.definition.nullable : true).toBe(false);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

@@ -45,7 +45,7 @@ An unknown command is `Unknown command <name>.` `okm migrate` with a subcommand 
 | `driver test <driver>` | Runs the conformance suites against one driver. |
 | `ext list` | Lists extensions the server can install. |
 | `ext check` | Compares declared extensions with the server. |
-| `ext scaffold <name>` | Prints a starting `extension()` definition. `--out` writes it and never overwrites. |
+| `ext scaffold <name>` | Prints a starting `extension()` definition, including composite types. `--out` writes it and never overwrites. |
 | `ext test <file>` | Checks that definition against the server. |
 | `generate [name]` | Writes the next migration. |
 | `import drizzle <path>` | Converts a Drizzle schema into table files. Runs that file. Needs no database. |
@@ -90,6 +90,8 @@ bunx okm build
 
 `okm pull` reads one database and writes one table file per table, plus the schema file. It does not write the selected namespaces, so a protected target is allowed. It creates a scratch schema to verify functions and views, then drops it. An existing file is OKM1855 and nothing is written. `--out <directory>` is the other place to write. The default namespace is the target's current schema. `--schema <name>` selects others and may be repeated.
 
+Export bindings and file stems are unique when folded to lowercase, so `Tasks` and `tasks` become `Tasks` / `tasks_2` and do not collide on a case-insensitive volume or in row types. A Windows-reserved stem (`con`, `aux`, `nul`, `com1`–`com9`, `lpt1`–`lpt9`, any case) gets a `_` prefix. The SQL name stays in `sqlName` when the binding differs. A column named `__proto__` is written as a computed key. Single-column foreign keys name the exported table binding, not the raw SQL table name. When `oxfmt` is missing, the files stay unformatted, a notice is printed, and the report still returns.
+
 Tables, columns, keys, uniques, checks, single-column foreign keys, indexes, identity sequences, enums, domains, extensions, functions, triggers, views, and materialized views are written. A view is SQL text with its columns. Views and `BEGIN ATOMIC` bodies take dependencies from `pg_depend`. A plpgsql or SQL-string body gets `dependsOn` candidates from a lexical match. The report marks each function `verified` (the scratch replay created it with `check_function_bodies` on), `candidate-only` (plpgsql: creation does not prove the body), or `unverified` (creation failed). A comment above the declaration says the same thing. Policies, roles, grants, aggregates, procedures, event triggers, and rules are printed under `not pulled yet` with a count, and so is anything `table()` cannot say. A column type with no builder is that list, with the table and the column. Nothing is dropped without a line.
 
 ```sh
@@ -101,7 +103,7 @@ bunx okm pull --schema public --out ./adopted
 
 `okm import drizzle <path>` reads a Drizzle schema and writes one table file per table, plus the schema file. It imports that path, so the file runs. The `drizzle-orm` package is the one installed in the project. okmodel does not depend on it. A missing package is OKM1856: install `drizzle-orm` in the project. An existing file is OKM1855 and nothing is written. The command does not connect.
 
-The report starts with `namespace <name>`. When the name is not `public`, set [namespace](/docs/define/config/namespace) to it. `schema()` still compiles `public`.
+The report starts with `namespace <name>`. When the name is not `public`, set [namespace](/docs/define/config/namespace) to it. `schema()` still compiles `public`. File stems follow the same lowercase-folded uniqueness and Windows-reserved rules as [pull](#pull). Composite primary-key columns are not null even when Drizzle omitted `.notNull()` on the column.
 
 Composite foreign keys, `relations()`, and custom column types are printed under `not imported` with the table and the reason. A `serial` column is written as `integer` not null. The sequence `serial` would create is listed, not written.
 

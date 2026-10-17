@@ -47,7 +47,7 @@ const TYPES = `
   where e.extname = $1
     and d.deptype = 'e'
     and d.classid = 'pg_type'::regclass
-    and t.typtype in ('b', 'e', 'd')
+    and t.typtype in ('b', 'e', 'd', 'c')
   order by t.typname
 `;
 
