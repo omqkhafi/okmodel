@@ -22,6 +22,18 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - A backslash in a composed fragment can no longer desync the literal guard and escape a tenant filter (B-01, D287).
 
+### 🐛 Fixed
+
+#### adapters
+
+- Bun.sql no longer parks a reserved handle for the next checkout, so concurrent scoped units after a backend kill keep separate sessions and tenant settings (B-03, D288).
+- A reset or release failure after a statement or `COMMIT` completed destroys the connection and does not fail the call on Bun.sql, node-postgres, or Neon, so a committed write is reported as committed and `afterCommit` still runs (B-04, D288).
+- node-postgres maps `Client has encountered a connection error and is not queryable` to a lost connection (`CONNECTION_CLOSED`), matching Bun.sql's message-only closed texts (D288).
+
+#### docs
+
+- Known limits record that Bun.sql does not park reserved handles, that a post-commit reset failure does not fail the call, and that a send-without-result is OKM1401 with no `afterCommit` (D288).
+
 ## v0.9.0 — 2026-10-16
 
 ### ✨ Added

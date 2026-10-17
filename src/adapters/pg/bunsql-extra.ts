@@ -13,7 +13,7 @@ import { DriverError } from "../error.js";
 import { rejectClosed } from "../failure.js";
 import { runCall, type Watch } from "./call.js";
 import { noTimeout } from "./no-inflight-timeout.js";
-import { park, reserve, send, type HeldPool } from "./bunsql.js";
+import { releaseReserved, reserve, send, type HeldPool } from "./bunsql.js";
 import { refuseWhenLost, resetSession, type Lost } from "./reserved.js";
 import { cursorStream } from "./cursor.js";
 import { WireSession } from "./session.js";
@@ -21,8 +21,9 @@ import { WireSession } from "./session.js";
 /**
  * Checks out one connection and clears it on release.
  *
- * A connection that is gone is neither reset nor parked: Bun.sql has already
- * dropped it, and parking it would hand a dead session to the next caller.
+ * A connection that is gone is neither reset nor returned to the pool: Bun.sql
+ * has already dropped it. A reset or release failure after the caller's work
+ * finished destroys the handle and does not fail the call.
  *
  * @param held - The pool and its counters
  * @returns A connection the caller must release
@@ -98,15 +99,14 @@ function lostQuery(error: unknown): boolean {
 
 function socketClosed(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
-  if (error.message === "Connection closed") return true;
-  return error.cause instanceof Error && error.cause.message === "Connection closed";
+  if (bunClosed(error.message)) return true;
+  return error.cause instanceof Error && bunClosed(error.cause.message);
 }
 
 /**
  * Subscribes on one pooled connection.
  *
  * @param sql - The pool
- * @param parked - Reserved handles to put back first
  * @param closed - The pool is closed
  * @param channel - Notify channel
  * @param onNotify - Payload callback
@@ -114,17 +114,11 @@ function socketClosed(error: unknown): boolean {
  */
 export async function listen(
   sql: SQL,
-  parked: ReservedSQL[],
   closed: boolean,
   channel: string,
   onNotify: (payload: string) => void,
 ): Promise<() => Promise<void>> {
   if (closed) return rejectClosed();
-  const pending = parked.splice(0);
-  for (const reserved of pending) {
-    const done: unknown = reserved.release();
-    if (done instanceof Promise) await done;
-  }
   const subscription = await sql.listen(channel, onNotify);
   return async () => {
     await subscription.unlisten();
@@ -134,7 +128,7 @@ export async function listen(
 export async function checkout(held: HeldPool): Promise<DriverConnection & { evict(): void }> {
   const { counters, isClosed } = held;
   if (isClosed()) return rejectClosed();
-  const reserved = (await takeOpen(held)) ?? (await reserve(held.sql, held.acquireMs, counters));
+  const reserved = await reserve(held.sql, held.acquireMs, counters);
   counters.reserved += 1;
   const session = new WireSession(
     (text, params) => send(reserved, text, params),
@@ -201,9 +195,17 @@ export async function checkout(held: HeldPool): Promise<DriverConnection & { evi
       if (!lost.on && reportsClosed(reserved)) lost.on = true;
       try {
         if (!lost.on) await reset(session, reserved);
-      } catch (error) {
-        if (lostQuery(error) || reportsClosed(reserved)) lost.on = true;
-        else throw error;
+        else if (session.depth() > 0 && !reportsClosed(reserved)) {
+          // Marked lost while the handle still looks open. Clear the
+          // transaction before Bun.sql puts the handle back in the pool.
+          // A backend that is already gone rejects this and we destroy below.
+          await reserved.unsafe("ROLLBACK").catch(() => undefined);
+          session.abandon();
+        }
+      } catch {
+        // A reset failure after COMMIT must not fail the call. Destroy the
+        // handle; the statement or commit result already returned.
+        lost.on = true;
       } finally {
         counters.reserved = Math.max(0, counters.reserved - 1);
         // A closed Bun.sql connection rejects the next statement with
@@ -216,15 +218,29 @@ export async function checkout(held: HeldPool): Promise<DriverConnection & { evi
           } catch {
             // Bun already dropped the handle.
           }
-          await flushClosed(held.sql);
-        } else await park(held.parked, reserved);
+          // A pool probe while another checkout holds a session can land on that
+          // backend. Drain only when we are the last reservation.
+          if (counters.reserved === 0) await flushClosed(held.sql);
+        } else {
+          try {
+            await releaseReserved(reserved);
+          } catch {
+            // Release itself failed: spend the closed socket so the pool can open another.
+            try {
+              reserved.release();
+            } catch {
+              // Bun already dropped the handle.
+            }
+            if (counters.reserved === 0) await flushClosed(held.sql);
+          }
+        }
       }
     },
   };
 }
 
 /**
- * A parked connection Bun has already closed.
+ * A reserved connection Bun has already closed.
  *
  * @param reserved - The handle about to be reused
  * @returns `true` when the handle reports itself closed
@@ -234,34 +250,12 @@ function reportsClosed(reserved: ReservedSQL): boolean {
 }
 
 /**
- * Drops parked connections that report closed, then returns one that is open.
- *
- * A closed handle is not released back into Bun's pool. A discarded statement
- * takes the rejection so the next checkout does not see it.
- *
- * @param held - The pool and its parked handles
- * @returns An open handle, or `undefined` when the park is empty
- */
-async function takeOpen(held: HeldPool): Promise<ReservedSQL | undefined> {
-  while (held.parked.length > 0) {
-    const next = held.parked.pop();
-    if (next === undefined) return undefined;
-    if (!reportsClosed(next)) return next;
-    try {
-      next.release();
-    } catch {
-      // Bun already dropped the handle.
-    }
-    await flushClosed(held.sql);
-  }
-  return undefined;
-}
-
-/**
  * Spends the one failure a closed Bun.sql socket reports, then stops.
  *
  * The next statement on that pool opens a new connection. Three tries cover
- * a socket that fails once and a second that is already open.
+ * a socket that fails once and a second that is already open. Release clears
+ * an open transaction before the handle returns to the pool, so this probe
+ * cannot nest a later `begin` on a dirty session.
  *
  * @param sql - The pool
  * @returns `true` when a statement got a live connection

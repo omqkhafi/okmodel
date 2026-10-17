@@ -324,11 +324,13 @@ export function registerDriverSuite(suite: DriverSuite): void {
       try {
         const setting = await scalar(second, "SELECT current_setting('okm.p13', true)");
         expect(setting).not.toBe("yes");
-        expect(await scalar(second, "SELECT pg_backend_pid()::text")).toBe(pid);
+        // Reset is observed on the released backend (`pid`), not by forcing the
+        // next checkout to reuse that session. Bun.sql returns the handle to
+        // its pool; the next reserve may be a different backend.
         expect(
           await scalar(
             second,
-            "SELECT count(*)::text FROM pg_locks WHERE locktype = 'advisory' AND pid = pg_backend_pid()",
+            `SELECT count(*)::text FROM pg_locks WHERE locktype = 'advisory' AND pid = ${pid}`,
           ),
         ).toBe("0");
       } finally {

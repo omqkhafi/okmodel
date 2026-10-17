@@ -47,7 +47,7 @@ export async function checkout(held: HeldPool): Promise<DriverConnection> {
       // node-postgres rejects a cut socket with a plain Error and no code.
       // The client's `error` event has already set `lost`. The message is not read.
       const guarded = pending.catch((error: unknown) => {
-        if (isConnectionLost(error) || lost) {
+        if (isConnectionLost(error) || lost || pgClosed(error)) {
           lost = true;
           if (isConnectionLost(error)) throw error;
           throw Object.assign(new DriverError("CONNECTION_CLOSED", { cause: error }), {
@@ -92,6 +92,10 @@ export async function checkout(held: HeldPool): Promise<DriverConnection> {
       released = true;
       try {
         if (!lost) await reset(session, client);
+      } catch {
+        // A reset failure after COMMIT must not fail the call. Destroy the
+        // client; the statement or commit result already returned.
+        lost = true;
       } finally {
         counters.reserved = Math.max(0, counters.reserved - 1);
         events.removeListener("error", onError);
@@ -99,6 +103,19 @@ export async function checkout(held: HeldPool): Promise<DriverConnection> {
       }
     },
   };
+}
+
+/**
+ * node-postgres refuses a dead client with this exact text and no code.
+ *
+ * @param error - Caught value
+ * @returns `true` when the client is no longer queryable
+ */
+function pgClosed(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    error.message === "Client has encountered a connection error and is not queryable"
+  );
 }
 
 async function reset(session: WireSession, client: PoolClient): Promise<void> {

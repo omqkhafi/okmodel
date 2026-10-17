@@ -65,7 +65,6 @@ export type BunSqlConfig = DriverPoolConfig & {
 /** What a checkout needs from the pool that opened it. */
 export type HeldPool = {
   readonly sql: SQL;
-  readonly parked: ReservedSQL[];
   readonly acquireMs: number | undefined;
   readonly counters: Counters;
   readonly notices: ReturnType<typeof noticeBuffer>;
@@ -111,11 +110,6 @@ export function open(config: BunSqlConfig): DriverPool {
   let closed = false;
   const isClosed = (): boolean => closed;
   const named = config.prepared === "named";
-  // Bun.sql hands the next reserve to a fresh connection until `max` is
-  // full. Parking the last release makes the next checkout the same session,
-  // which is what the reset check observes. Queries and listen give it back
-  // so the slot is not stuck.
-  const parked: ReservedSQL[] = [];
   // A backend the server has already closed. The next statement drains it
   // before reuse. The count lives on this pool, not at module scope.
   // `dropped` is cleared after a drain. `closures` only grows, so a reserved
@@ -156,7 +150,6 @@ export function open(config: BunSqlConfig): DriverPool {
 
   const held: HeldPool = {
     sql,
-    parked,
     acquireMs,
     counters,
     notices,
@@ -203,9 +196,7 @@ export function open(config: BunSqlConfig): DriverPool {
     execute(text, params, options) {
       const refused = noTimeout(options);
       if (refused !== undefined) return refused;
-      return runCall(closed, options, (watch) =>
-        releaseParked(parked).then(() => afterDrop(text, params, watch)),
-      );
+      return runCall(closed, options, (watch) => afterDrop(text, params, watch));
     },
     async batch(statements, options) {
       const refused = noTimeout(options);
@@ -225,14 +216,11 @@ export function open(config: BunSqlConfig): DriverPool {
       })();
     },
     listen(channel, onNotify) {
-      return import("./bunsql-extra.js").then((mod) =>
-        mod.listen(sql, parked, closed, channel, onNotify),
-      );
+      return import("./bunsql-extra.js").then((mod) => mod.listen(sql, closed, channel, onNotify));
     },
     stats: () => statsOf(counters, max),
     async close() {
       closed = true;
-      await releaseParked(parked);
       await sql.close();
     },
   };
@@ -289,20 +277,12 @@ export async function reserve(
   }
 }
 
-export async function park(parked: ReservedSQL[], reserved: ReservedSQL): Promise<void> {
-  parked.push(reserved);
-  while (parked.length > 1) {
-    const extra = parked.shift();
-    if (extra !== undefined) await releaseReserved(extra);
-  }
-}
-
-async function releaseParked(parked: ReservedSQL[]): Promise<void> {
-  const pending = parked.splice(0);
-  for (const reserved of pending) await releaseReserved(reserved);
-}
-
-function releaseReserved(reserved: ReservedSQL): Promise<void> {
+/**
+ * Returns a reserved handle to Bun's pool.
+ *
+ * @param reserved - The handle to release
+ */
+export function releaseReserved(reserved: ReservedSQL): Promise<void> {
   const done: unknown = reserved.release();
   return done instanceof Promise ? done.then(() => undefined) : Promise.resolve();
 }
