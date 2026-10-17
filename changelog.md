@@ -14,6 +14,14 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+### 💥 Breaking Changes
+
+- Breaking-ish: now refused — a backslash in `fragment` / `raw` template text is OKM1125. Pass the value as an interpolation (D287).
+
+### 🔒 Security
+
+- A backslash in a composed fragment can no longer desync the literal guard and escape a tenant filter (B-01, D287).
+
 ## v0.9.0 — 2026-10-16
 
 ### ✨ Added

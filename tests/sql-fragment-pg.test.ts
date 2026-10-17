@@ -123,3 +123,146 @@ async function expectHidden(pending: PromiseLike<unknown>): Promise<void> {
   }
   throw new Error("expected OKM1120");
 }
+
+function expectBackslash(build: () => unknown): void {
+  expect(build).toThrow(OkmError);
+  try {
+    build();
+  } catch (error) {
+    expect(error).toBeInstanceOf(OkmError);
+    if (error instanceof OkmError) {
+      expect(error.code).toBe("OKM1125");
+      expect(error.message).toBe("A fragment cannot include a backslash.");
+      expect(error.fix.summary).toBe("Pass the value as an interpolation.");
+    }
+    return;
+  }
+  throw new Error("expected OKM1125");
+}
+
+function asTemplate(literal: string): TemplateStringsArray {
+  return Object.assign([literal], { raw: [literal] }) as unknown as TemplateStringsArray;
+}
+
+postgresTest(gate, "a backslash cannot desync the fragment guard (B-01)", async () => {
+  await withPostgresSchema(async (sql, schemaName) => {
+    for (const statement of renderCatalog(app.catalog, schemaName)) {
+      await sql.unsafe(statement);
+    }
+    const db = connect(primaryUrl(), { schema: app, searchPath: schemaName, max: 1 });
+    try {
+      await db.connected;
+      const a = db.for({ tenantId: TENANT_A });
+      const b = db.for({ tenantId: TENANT_B });
+      await a.notes.insert({ id: NOTE_A, title: "hello", status: "open" });
+      await b.notes.insert({ id: NOTE_B, title: "other", status: "open" });
+
+      const leak = (): unknown =>
+        fragment`${ident("title")} = E'\\'' ) or ( true or title = E'\\''`;
+      expectBackslash(leak);
+      let rows: unknown;
+      try {
+        rows = await a.notes.find({
+          where: { title: leak() as never },
+          limit: 5,
+        });
+      } catch (error) {
+        expect(error).toBeInstanceOf(OkmError);
+        if (error instanceof OkmError) {
+          expect(error.code).toBe("OKM1125");
+        }
+        rows = "refused";
+      }
+      expect(rows).toBe("refused");
+
+      expectBackslash(() => fragment`${ident("title")} = E'\\''`);
+      expectBackslash(() => fragment`${ident("title")} = e'\\''`);
+      expectBackslash(() => fragment`${ident("title")} = E'\\'\\''`);
+      expectBackslash(() => fragment`${ident("title")} = E'\\'' ) or ( title = $$x$$`);
+      expectBackslash(() => fragment`${ident("title")} = '\\x27'`);
+
+      await sql.unsafe("set standard_conforming_strings to off");
+      expectBackslash(() => fragment`${ident("title")} = '\\''`);
+      await sql.unsafe("set standard_conforming_strings to on");
+
+      const doubled = await a.notes.find({
+        where: { title: fragment`${ident("title")} = 'hel''lo'` },
+        limit: 5,
+      });
+      expect(doubled).toEqual([]);
+      await a.notes.update({
+        where: { id: NOTE_A },
+        set: { title: "hel'lo" },
+      });
+      const found = await a.notes.find({
+        where: { title: fragment`${ident("title")} = 'hel''lo'` },
+        limit: 5,
+      });
+      expect(found.map((row) => row.id)).toEqual([NOTE_A]);
+
+      const unicode = await a.notes.find({
+        where: {
+          title: fragment`${ident("title")} = U&'!0068!0065!006C!0027!006C!006F' UESCAPE '!'`,
+        },
+        limit: 5,
+      });
+      expect(unicode.map((row) => row.id)).toEqual([NOTE_A]);
+
+      const inside = await a.notes.find({
+        where: {
+          title: fragment`${ident("title")} = '--' or ${ident("title")} = '/*' or ${ident("title")} = '$x$' or ${ident("title")} = ';'`,
+        },
+        limit: 5,
+      });
+      expect(inside).toEqual([]);
+    } finally {
+      await db.close();
+    }
+  });
+});
+
+postgresTest(
+  gate,
+  "accepted fragment literals match Postgres quote boundaries (B-01 fuzz)",
+  async () => {
+    await withPostgresSchema(async (sql) => {
+      const alphabet = [`'`, `"`, "\\", "E", "e", "U", "&", "$", ";", "-", "/", "*", "(", ")"];
+      expect(alphabet).toHaveLength(14);
+      expect(alphabet).toContain("\\");
+      const accepted: string[] = [];
+      const samples: string[] = [];
+      for (let length = 1; length <= 3; length += 1) {
+        let batch = [""];
+        for (let step = 0; step < length; step += 1) {
+          const next: string[] = [];
+          for (const prefix of batch) {
+            for (const char of alphabet) next.push(prefix + char);
+          }
+          batch = next;
+        }
+        samples.push(...batch);
+      }
+      for (const sample of samples) {
+        try {
+          fragment(asTemplate(sample));
+          accepted.push(sample);
+        } catch (error) {
+          expect(error).toBeInstanceOf(OkmError);
+          if (error instanceof OkmError) expect(error.code).toBe("OKM1125");
+        }
+      }
+      expect(samples.length).toBe(14 + 14 ** 2 + 14 ** 3);
+      expect(accepted.length).toBeGreaterThan(0);
+      for (const sample of accepted) {
+        expect(sample.includes("\\")).toBe(false);
+        try {
+          await sql.unsafe(`select (${sample})`);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          expect(message.toLowerCase()).not.toContain("unterminated");
+        }
+      }
+    });
+  },
+  60_000,
+);
