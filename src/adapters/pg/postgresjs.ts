@@ -176,21 +176,14 @@ function driverOptions(
   };
 }
 
+/** Open pools rebuilt after a null-socket `nextWrite` (B-02). */
 type Live = { on: boolean; sql: Sql; m(): Sql };
 
 const lives: Live[] = [];
 
-// D241 / B-02: swallow nextWrite on a null socket (Bun and Node wording) and
-// rebuild the stuck pool so the next read settles.
+// D241 / D294: contain Bun/Node nextWrite on null and rebuild stuck pools.
 process.on("uncaughtException", (e: unknown) => {
-  if (
-    !(
-      e instanceof TypeError &&
-      (e.message.includes("socket.write") || e.message.includes("reading 'write'"))
-    )
-  ) {
-    return;
-  }
+  if (!(e instanceof TypeError && /socket\.write|reading 'write'/.test(e.message))) return;
   for (const x of lives) {
     if (!x.on) continue;
     const prev = x.sql;
@@ -280,7 +273,7 @@ export function open(config: PostgresJsConfig): DriverPool {
       return (async function* () {
         gate.enter();
         try {
-          yield* loadStream(root.sql, text, params);
+          yield* (await import("./postgres-extra.js")).stream(root.sql, text, params);
         } finally {
           gate.leave();
         }
@@ -445,23 +438,13 @@ export class PgSession implements BatchSession {
   }
 
   private enter(): void {
-    if (this.scope === "pool") this.counters.busy += 1;
-    else this.counters.reservedBusy += 1;
+    this.counters[this.scope === "pool" ? "busy" : "reservedBusy"] += 1;
   }
 
   private leave(): void {
-    if (this.scope === "pool") this.counters.busy = Math.max(0, this.counters.busy - 1);
-    else this.counters.reservedBusy = Math.max(0, this.counters.reservedBusy - 1);
+    const k = this.scope === "pool" ? "busy" : "reservedBusy";
+    this.counters[k] = Math.max(0, this.counters[k] - 1);
   }
-}
-
-async function* loadStream(
-  sql: Sql,
-  text: string,
-  params: readonly WireValue[] | undefined,
-): AsyncIterable<readonly (readonly WireValue[])[]> {
-  const { stream } = await import("./postgres-extra.js");
-  yield* stream(sql, text, params);
 }
 
 function send(

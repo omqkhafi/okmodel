@@ -55,16 +55,16 @@ export function connect<const S extends QuerySchema>(
     return import("../topology.js").then((mod) => mod.default(target, options, open as never));
   }
   const owned = !isPool(target);
-  const pool = isPool(target)
-    ? target
-    : open({
-        url: target,
-        ...(options.max !== undefined ? { max: options.max } : {}),
-        ...(options.timeouts !== undefined ? { timeouts: options.timeouts } : {}),
-        ...(options.prepared !== undefined ? { prepared: options.prepared } : {}),
-        ...(options.searchPath !== undefined ? { searchPath: options.searchPath } : {}),
-        ...(options.ssl !== undefined ? { ssl: options.ssl } : {}),
-      });
+  const pool = owned
+    ? open({
+        url: target as string,
+        max: options.max,
+        timeouts: options.timeouts,
+        prepared: options.prepared,
+        searchPath: options.searchPath,
+        ssl: options.ssl,
+      } as PostgresJsConfig)
+    : target;
   return createClient(options.schema, pool, {
     ownsPool: owned,
     http: options.errors?.http,
