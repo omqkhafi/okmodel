@@ -14,24 +14,24 @@ import type { FilterSpec, ParsedFilters } from "./table.js";
  * @param table - Table the filters belong to
  * @param relations - Relation calls stored on the table, when it has any
  * @param spec - Allow, sort, and relation fields
- * @param hiddenFields - `table.field` keys recorded while tables were defined
+ * @param isHidden - Whether `table.field` is hidden (own columns or related names)
  * @returns A parser for one request object
  */
 export function openFilters(
   table: string,
   relations: unknown,
   spec: FilterSpec,
-  hiddenFields: ReadonlySet<string>,
+  isHidden: (table: string, field: string) => boolean,
 ): { parse(query: unknown): Promise<ParsedFilters> } {
   const allow = spec.allow ?? {};
   const sort = spec.sort ?? [];
-  for (const field of Object.keys(allow)) deny(hiddenFields, table, field);
-  for (const field of sort) deny(hiddenFields, table, field);
+  for (const field of Object.keys(allow)) deny(isHidden, table, field);
+  for (const field of sort) deny(isHidden, table, field);
   const nested = spec.relations;
   if (nested !== undefined) {
     for (const name of Object.keys(nested)) {
       const target = relationTable(relations, name);
-      for (const field of nested[name] ?? []) deny(hiddenFields, target, field);
+      for (const field of nested[name] ?? []) deny(isHidden, target, field);
     }
   }
   return {
@@ -41,8 +41,12 @@ export function openFilters(
   };
 }
 
-function deny(hiddenFields: ReadonlySet<string>, table: string, field: string): void {
-  if (!hiddenFields.has(`${table}.${field}`)) return;
+function deny(
+  isHidden: (table: string, field: string) => boolean,
+  table: string,
+  field: string,
+): void {
+  if (!isHidden(table, field)) return;
   throw new OkmError("OKM1123", `Field ${table}.${field} is hidden.`, {
     fix: {
       // 93 characters. A shorter sentence moves the featureless-app gzip (D233).
