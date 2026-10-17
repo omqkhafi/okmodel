@@ -117,6 +117,9 @@ type Scan = { quote: "'" | '"' | undefined; paren: number };
  * An interpolation is refused while a quote is open, so a value cannot land
  * inside a string. `$`, `;`, and comments are refused outside quotes so the
  * fragment cannot close the tenant predicate or number its own parameters.
+ * A backslash is refused everywhere: Postgres treats `\` as an escape in
+ * `E'...'` and when `standard_conforming_strings` is off, which would desync
+ * this scanner from the server (D287).
  *
  * @param literal - One template literal
  * @param state - Quote and depth carried across literals
@@ -125,6 +128,12 @@ function scanLiteral(literal: string, state: Scan): void {
   for (let index = 0; index < literal.length; index += 1) {
     const char = literal[index] ?? "";
     const code = literal.charCodeAt(index);
+    if (char === "\\") {
+      fragmentError(
+        "A fragment cannot include a backslash.",
+        "Pass the value as an interpolation.",
+      );
+    }
     if (state.quote !== undefined) {
       if (char !== state.quote) continue;
       if (literal[index + 1] === state.quote) {

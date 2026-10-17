@@ -131,6 +131,36 @@ test("a fragment that would close the predicate is refused before SQL", () => {
   }
 });
 
+test("a backslash in fragment text is OKM1125", () => {
+  const payloads = [
+    () => fragment`${ident("title")} = E'\\'' ) or ( true or title = E'\\''`,
+    () => fragment`${ident("title")} = E'\\''`,
+    () => fragment`${ident("title")} = e'\\''`,
+    () => fragment`${ident("title")} = '\\''`,
+    () => fragment`${ident("title")} = '\\x27'`,
+    () => fragment`${ident("title")} = 'a\\b'`,
+  ] as const;
+  for (const payload of payloads) {
+    expect(payload).toThrow(OkmError);
+    try {
+      payload();
+    } catch (error) {
+      expect(error).toBeInstanceOf(OkmError);
+      expect((error as OkmError).code).toBe("OKM1125");
+      expect((error as OkmError).message).toBe("A fragment cannot include a backslash.");
+      expect((error as OkmError).fix.summary).toBe("Pass the value as an interpolation.");
+    }
+  }
+  // Doubled quotes and a U& string without a backslash stay accepted.
+  expect(() => fragment`${ident("title")} = 'it''s'`).not.toThrow();
+  expect(() => fragment`${ident("title")} = U&'!0041' UESCAPE '!'`).not.toThrow();
+  // Dollar quotes, comments, and semicolons inside quotes are plain text.
+  expect(() => fragment`${ident("title")} = '$tag$x$tag$'`).not.toThrow();
+  expect(() => fragment`${ident("title")} = '-- not a comment'`).not.toThrow();
+  expect(() => fragment`${ident("title")} = '/* not a comment */'`).not.toThrow();
+  expect(() => fragment`${ident("title")} = ';'`).not.toThrow();
+});
+
 test("a select fragment is a number and names its key", async () => {
   const db = connect(pool, { schema: app });
   await db.connected;

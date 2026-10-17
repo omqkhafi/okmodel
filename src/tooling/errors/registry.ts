@@ -197,8 +197,8 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     code: "OKM1125",
     title: "Bad SQL fragment",
     summary:
-      "A composed fragment is empty, unbalanced, or interpolates a value it cannot bind. A select fragment that is not a number is the same code.",
-    fix: "Interpolate a string, number, boolean, null, ident(name), fragment.column, or another fragment. Keep parentheses and quotes balanced. A select fragment is a numeric expression named with as().",
+      "A composed fragment is empty, unbalanced, includes a backslash, or interpolates a value it cannot bind. A select fragment that is not a number is the same code.",
+    fix: "Interpolate a string, number, boolean, null, ident(name), fragment.column, or another fragment. Keep parentheses and quotes balanced. Pass a value that needs a backslash as an interpolation. A select fragment is a numeric expression named with as().",
   },
   {
     code: "OKM1130",

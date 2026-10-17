@@ -1,6 +1,6 @@
 # OKModel — API design (draft 26)
 
-Status: normative specification, draft 26. The repository implements it through the 0.9.0 release. Decisions run D1–D286. Draft 18 applied the M0 gate decisions D115–D127 (evidence: `docs/m0-findings.md` in the repository); draft 19 added D128 (catalog error codes); draft 20 added D130 (column definition and codec error codes); draft 21 added D131 (removing a picklist or enum value); draft 22 adds D132 (reserved options, reference names); draft 24 adds the 0.2 operator set (section 10.1); draft 26 takes the primary-key and Postgres 15 floor edits made in P17G (D148, D151) and renames the uuid default to `uuidv4` (D153). Draft 26 records the shipped id builder shape (P19, D153, D154) and the `defaults.id` fix text. Supersedes drafts 1–21 of this file and the API sections of `orm-research-design.md`. Evidence for the draft-4 changes is in `okmodel-gap-research.md`.
+Status: normative specification, draft 26. The repository implements it through the 0.9.0 release. Decisions run D1–D287. Draft 18 applied the M0 gate decisions D115–D127 (evidence: `docs/m0-findings.md` in the repository); draft 19 added D128 (catalog error codes); draft 20 added D130 (column definition and codec error codes); draft 21 added D131 (removing a picklist or enum value); draft 22 adds D132 (reserved options, reference names); draft 24 adds the 0.2 operator set (section 10.1); draft 26 takes the primary-key and Postgres 15 floor edits made in P17G (D148, D151) and renames the uuid default to `uuidv4` (D153). Draft 26 records the shipped id builder shape (P19, D153, D154) and the `defaults.id` fix text. Supersedes drafts 1–21 of this file and the API sections of `orm-research-design.md`. Evidence for the draft-4 changes is in `okmodel-gap-research.md`.
 
 Name: **OKModel** (short **OKM**). Package `okmodel` on npm and repository `omqkhafi/okmodel`, CLI bins `okm` and `okmodel` (same program), error class `OkmError`, error codes `OKM1xxx`, config file `okm.config.ts`, generated folder `.okm/`, metadata table `okm_meta`. The bin names are not npm package names, so a bare `bunx okm` without a local or global install could fetch an unrelated package; the README tells developers to install first (`bun add -d okmodel`, then `bunx okm`, or a global install).
 
@@ -10,7 +10,7 @@ Toolchain: **TypeScript 7** (the native compiler, still invoked as `tsc`) for ty
 
 ## 1. Decisions log
 
-Moved to `okmodel-decisions.md`. Decisions run D1–D286. This file is the normative spec; every section states a rule, an example and the guard that enforces it.
+Moved to `okmodel-decisions.md`. Decisions run D1–D287. This file is the normative spec; every section states a rule, an example and the guard that enforces it.
 
 ## 2. Design rules and the internal goal
 
@@ -961,7 +961,7 @@ const rows = await scoped.notes.find({
 });
 ```
 
-A string, number, boolean, or null is a parameter. `ident(name)` names the TypeScript field, the same name `where` uses, and the compiler quotes that column (`casing`, `sqlName`). A hidden field is OKM1120. `hidden({ filterable: true })` is allowed in `where` only. An unknown name is OKM1120. `fragment.column` is the where field, already qualified. Another fragment is nested and parenthesized. The literal text cannot include a comment, a semicolon, a `$`, or an unbalanced quote or parenthesis, and an interpolation cannot sit inside quotes (OKM1125). An empty name or a control character in `ident` is OKM1122. The tenant predicate is applied before the fragment and the fragment is parenthesized, so the fragment cannot remove it. `filters()` does not parse a fragment. A select fragment that is not a finite number is OKM1125.
+A string, number, boolean, or null is a parameter. `ident(name)` names the TypeScript field, the same name `where` uses, and the compiler quotes that column (`casing`, `sqlName`). A hidden field is OKM1120. `hidden({ filterable: true })` is allowed in `where` only. An unknown name is OKM1120. `fragment.column` is the where field, already qualified. Another fragment is nested and parenthesized. The literal text cannot include a comment, a semicolon, a `$`, a backslash, or an unbalanced quote or parenthesis, and an interpolation cannot sit inside quotes (OKM1125, D287). Pass a value that needs a backslash as an interpolation. An empty name or a control character in `ident` is OKM1122. The tenant predicate is applied before the fragment and the fragment is parenthesized, so the fragment cannot remove it. `filters()` does not parse a fragment. A select fragment that is not a finite number is OKM1125.
 
 ## 11. Writing
 
@@ -1228,7 +1228,7 @@ const described = await explain(db.notes, db.notes.find({ limit: 1 }));
 
 - The class constructs with no arguments. Its own enumerable keys, in initializer order, are the result columns. A key that is a field of the table uses that field's decode. Any other key uses the initializer: a number, a boolean, or driver text. `null` stays `null`. A class with no initializers, a constructor that needs arguments, or a statement that is not one `select` or one write is OKM1602.
 - `"read"` starts with `select`. `"write"` starts with `insert`, `update`, or `delete` and runs on the primary. A leading `with` is not a read.
-- Identifiers are `ident(name)`, the TypeScript field. A hidden field is OKM1120, including `hidden({ filterable: true })`. A string, number, boolean, or null is a parameter. A comment, a semicolon, or a `$` in the literal is OKM1125, the same rule as `fragment` (D266).
+- Identifiers are `ident(name)`, the TypeScript field. A hidden field is OKM1120, including `hidden({ filterable: true })`. A string, number, boolean, or null is a parameter. A comment, a semicolon, a `$`, or a backslash in the literal is OKM1125, the same rule as `fragment` (D266, D287).
 - A scoped tenant read is wrapped so the tenant predicate sits outside the fragment. When the table is archivable, `archived_at is null` is in that same outer predicate. The select list must name the one primary key, besides the tenant key, with `ident`. Do not alias it. Anything else is OKM1702. A raw write on a scoped tenant table is OKM1702 and sends nothing. `unscoped("reason")` skips the tenant predicate. The archive filter still wraps a read. A missing tenant scope is OKM1701 from the existing table guard, before `raw` runs.
 - A table that is not a tenant table runs the statement as written. A write still goes to the primary. An archivable table that is not a tenant table still wraps a read. That write is not failed closed.
 - `explain(table, query)` sends `EXPLAIN` (not `ANALYZE`) outside production and returns `{ text, params, plan }`. In production (`NODE_ENV` is `"production"`) it does not send the statement. `plan` is null and `params` is empty.

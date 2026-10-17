@@ -313,7 +313,7 @@ export async function openNotes(url: string) {
 ```
 
 <Callout type="error" title="OKM1125">
-A fragment that closes the surrounding predicate, a comment, a semicolon, or a `$` in the literal is OKM1125. So is an interpolation inside quotes, an empty fragment, and a select fragment that is not a number. `ident("")` is OKM1122.
+A fragment that closes the surrounding predicate, a comment, a semicolon, a `$`, or a backslash in the literal is OKM1125. So is an interpolation inside quotes, an empty fragment, and a select fragment that is not a number. Pass a value that needs a backslash as an interpolation. `ident("")` is OKM1122.
 </Callout>
 
 ### Text search
