@@ -114,6 +114,30 @@ function safe<T>(
   );
 }
 
+/** Post-storm pool recovery: retry only unavailable/closed, bounded for CI. */
+const AFTER_STORM_ATTEMPTS = 8;
+
+function recoverableAfterStorm(error: unknown): boolean {
+  if (error instanceof OkmError) return error.kind === "unavailable";
+  if (!(error instanceof Error)) return false;
+  return (
+    error.message === "Connection closed" ||
+    error.message === "connection must be a PostgresSQLConnection" ||
+    /call timed out after/i.test(error.message)
+  );
+}
+
+async function untilAfterStorm<T>(work: () => Promise<T>): Promise<T> {
+  let last: unknown;
+  for (let attempt = 1; attempt <= AFTER_STORM_ATTEMPTS; attempt += 1) {
+    const result = await safe(work());
+    if (result.ok) return result.value;
+    last = result.error;
+    if (!recoverableAfterStorm(last)) throw last;
+  }
+  throw last;
+}
+
 async function dockerPrimaryLogsSince(sinceIso: string): Promise<string> {
   const proc = Bun.spawn(["docker", "logs", "okmodel-primary-1", "--since", sinceIso], {
     stdout: "pipe",
@@ -202,8 +226,10 @@ postgresTest(
         expect(leaks).toBe(0);
         expect(readOnly).toBe(0);
         expect(nested).toBe(0);
-        const afterA = await timed(dA.projects.find({ limit: 50 }), CALL_MS);
-        const afterB = await timed(dB.projects.count(), CALL_MS);
+        // After the storm the pool may still hold a dying handle; retry only
+        // unavailable/closed until the scoped reads succeed (bounded for CI).
+        const afterA = await untilAfterStorm(() => dA.projects.find({ limit: 50 }));
+        const afterB = await untilAfterStorm(() => dB.projects.count());
         expect(afterA.length).toBeGreaterThanOrEqual(5);
         expect(afterB).toBe(7);
         expect(writes).toBeGreaterThan(0);

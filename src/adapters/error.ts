@@ -172,13 +172,14 @@ function isSqlstate(value: string | undefined): value is string {
 export function mapDriverError(error: unknown, batchIndex?: number | null): unknown {
   if (error instanceof OkmError) return error;
   if (error instanceof DriverError) {
-    return batchIndex === undefined ? error : error.at(batchIndex);
+    const stamped = stampBunClosed(error);
+    return batchIndex === undefined ? stamped : stamped.at(batchIndex);
   }
   const message = messageOf(error);
   return new DriverError(
     message,
     driverFields({
-      sqlstate: sqlstateOf(error),
+      sqlstate: sqlstateOf(error) ?? (bunClosedText(message) ? "08006" : undefined),
       constraint: errorField(error, "constraint_name") ?? errorField(error, "constraint"),
       table: errorField(error, "table_name") ?? errorField(error, "table"),
       column: errorField(error, "column_name") ?? errorField(error, "column"),
@@ -187,6 +188,40 @@ export function mapDriverError(error: unknown, batchIndex?: number | null): unkn
       batchIndex,
     }),
   );
+}
+
+/**
+ * Bun.sql closed-socket texts carry no code (D244). Stamp SQLSTATE `08006`
+ * so {@link mapPostgresError} classifies them as `unavailable`, including when
+ * `reserve()` fails before the reserved-handle guard runs.
+ *
+ * @param error - An existing {@link DriverError}
+ * @returns The same error, or a copy with `08006`
+ */
+function stampBunClosed(error: DriverError): DriverError {
+  if (error.sqlstate !== undefined) return error;
+  const fromCause = error.cause instanceof Error ? error.cause.message : undefined;
+  if (!bunClosedText(error.message) && (fromCause === undefined || !bunClosedText(fromCause))) {
+    return error;
+  }
+  return new DriverError(
+    error.message,
+    driverFields({
+      sqlstate: "08006",
+      constraint: error.constraint,
+      table: error.table,
+      column: error.column,
+      detail: error.detail,
+      cause: error.cause,
+      kind: error.kind,
+      batchIndex: error.batchIndex,
+    }),
+  );
+}
+
+/** Exact Bun.sql texts for a handle that is already gone (D244). */
+function bunClosedText(message: string): boolean {
+  return message === "Connection closed" || message === "connection must be a PostgresSQLConnection";
 }
 
 /**
