@@ -71,4 +71,13 @@ describe("lintPullRequest", () => {
       "title must match type(scope): summary, where type is feat, fix, perf, docs, test, chore, refactor, security",
     ]);
   });
+
+  test("Closes before a Cursor agent footer still passes", () => {
+    expect(
+      lintPullRequest({
+        ...valid,
+        body: "Reads follow the watermark.\n\nCloses #86\n\n<!-- CURSOR_AGENT_PR_BODY_END -->\n\n<div>footer</div>\n",
+      }),
+    ).toEqual([]);
+  });
 });
