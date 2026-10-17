@@ -47,7 +47,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okm check` and `okm push` reprint domain checks on the connected server before planning, so a non-canonical author check is not permanent live drift (D289).
 - The guide's `roles` block applies as a superuser and as a `CREATEROLE` schema owner: managed roles are created before `SET ROLE`, schema ownership is transferred when possible, and a failed role unit stays re-runnable with a clear privilege error (B-30, D293).
 - Migrate strips the `pgbouncer` query parameter before the URL becomes a startup parameter; other pooler hints are not interpreted (B-25, D293). Provider-specific role-admin checks (RDS, Cloud SQL, Supabase) follow in M-4.
-- The pooler pid probe uses eight reads and a hold between them, so a default PgBouncer (`server_round_robin=0`) is refused without `--allow-pooler` (B-41, D293).
+- The pooler pid probe uses eight reads on the apply session (OKM1854 when the backend pid changes). Warm-and-hold for LIFO PgBouncer is kept out of apply/seed so single-connection targets do not hang; URL heuristics still refuse typical pooler hosts and ports (B-41, D293).
 - The type-change recipe's temporary `IS NOT NULL` validate is no longer OKM1531 (D289).
 - An unknown CLI flag is an error; `okm <command> --help` lists that command's flags (D289).
 - Backfill progress prints a 1-based step index (D289).

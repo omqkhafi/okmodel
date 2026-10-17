@@ -1,64 +1,32 @@
 /**
- * Warm-and-hold pid probe for transaction-mode poolers.
+ * Pid probe for transaction-mode poolers (B-41).
  *
- * Two back-to-back reads miss a default PgBouncer (`server_round_robin=0`):
- * LIFO hands the same backend back every time. Warming two backends and
- * holding one between reads forces a second pid when a pooler is present.
- * A direct session keeps one pid for all eight reads.
+ * Eight separate `pg_backend_pid()` reads on the caller's session. Two or
+ * more distinct pids mean a pooler handed out a new backend. A direct
+ * session keeps one pid.
+ *
+ * Warm-and-hold for LIFO PgBouncer (`server_round_robin=0`) needs extra
+ * connections and deadlocks a single-connection target (PGlite wire) when
+ * apply/seed already hold `max: 1`. That path stays in the PgBouncer test
+ * via {@link holdBackendBetweenReads}; production keeps URL heuristics plus
+ * these eight reads.
  */
 
-import { open } from "../../adapters/pg/postgresjs.js";
-import { driverUrl } from "./driver-url.js";
-import { assertStableBackend } from "./policy.js";
+import { assertStableBackend, type StableBackendOptions } from "./policy.js";
 
 /**
  * Refuses a session whose backend pid changes across eight reads.
  *
- * When `allowPooler` is false, warms two backends on `url` and holds one
- * between reads so a LIFO pooler cannot reuse a single server.
- *
- * @param url - Target URL (pooler hints are stripped for the disruptor)
+ * @param _url - Target URL (unused; kept for call-site stability)
  * @param readPid - Reads `pg_backend_pid()` on the session under test
  * @param allowPooler - The invocation opted in
+ * @param options - Optional hold between reads (PgBouncer tests)
  */
 export async function probeStableBackend(
-  url: string,
+  _url: string,
   readPid: () => Promise<string>,
   allowPooler: boolean,
+  options?: StableBackendOptions,
 ): Promise<void> {
-  if (allowPooler) return;
-  const cleaned = driverUrl(url);
-  await warmTwoBackends(cleaned);
-  const disrupt = open({ url: cleaned, max: 1 });
-  try {
-    if (disrupt.reserve === undefined) {
-      await assertStableBackend(readPid, false);
-      return;
-    }
-    await assertStableBackend(readPid, false, {
-      holdBackend: async () => {
-        const held = await disrupt.reserve!();
-        await held.execute("begin");
-        return async () => {
-          await held.execute("rollback").catch(() => undefined);
-          await held.release();
-        };
-      },
-    });
-  } finally {
-    await disrupt.close();
-  }
-}
-
-async function warmTwoBackends(url: string): Promise<void> {
-  const first = open({ url, max: 1 });
-  const second = open({ url, max: 1 });
-  try {
-    await Promise.all([
-      first.execute("select pg_sleep(0.25)"),
-      second.execute("select pg_sleep(0.25)"),
-    ]);
-  } finally {
-    await Promise.all([first.close(), second.close()]);
-  }
+  await assertStableBackend(readPid, allowPooler, options);
 }

@@ -153,7 +153,20 @@ postgresTest(
     for (const roundRobin of [0, 1] as const) {
       for (let attempt = 0; attempt < 5; attempt += 1) {
         await withPgbouncer(roundRobin, async (url) => {
+          // Warm two backends, then hold one between pid reads so LIFO
+          // (`server_round_robin=0`) cannot reuse a single server.
+          const warmA = open({ url, max: 1 });
+          const warmB = open({ url, max: 1 });
+          try {
+            await Promise.all([
+              warmA.execute("select pg_sleep(0.25)"),
+              warmB.execute("select pg_sleep(0.25)"),
+            ]);
+          } finally {
+            await Promise.all([warmA.close(), warmB.close()]);
+          }
           const pool = open({ url, max: 1 });
+          const disrupt = open({ url, max: 1 });
           try {
             const reserved = await pool.reserve!();
             try {
@@ -164,6 +177,16 @@ postgresTest(
                   return String(result.rows[0]?.[0] ?? "");
                 },
                 false,
+                {
+                  holdBackend: async () => {
+                    const held = await disrupt.reserve!();
+                    await held.execute("begin");
+                    return async () => {
+                      await held.execute("rollback").catch(() => undefined);
+                      await held.release();
+                    };
+                  },
+                },
               ).then(
                 () => undefined,
                 (caught: unknown) => caught,
@@ -174,7 +197,7 @@ postgresTest(
               await reserved.release();
             }
           } finally {
-            await pool.close();
+            await Promise.all([pool.close(), disrupt.close()]);
           }
         });
       }

@@ -161,6 +161,10 @@ async function ensureSetOption(connection: DriverConnection, role: string): Prom
   const current = who.rows[0]?.[0];
   if (typeof current !== "string" || current === role) return;
   if (roleFlag(who.rows[0]?.[1])) return;
+  // `pg_auth_members.set_option` and `GRANT … WITH SET` are Postgres 16+.
+  const version = await connection.execute("show server_version_num");
+  const versionNum = Number(version.rows[0]?.[0] ?? 0);
+  if (!Number.isFinite(versionNum) || versionNum < 160_000) return;
   const option = await connection.execute(
     `select am.set_option
        from pg_auth_members am
