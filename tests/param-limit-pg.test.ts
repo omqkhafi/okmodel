@@ -1,5 +1,8 @@
 /**
  * Parameter budget against real Postgres (B-40).
+ *
+ * Uses node-postgres: postgres.js refuses at 65,534 parameters in the
+ * driver, below the protocol limit of 65,535 that OKM1126 enforces.
  */
 
 import { expect } from "bun:test";
@@ -11,7 +14,7 @@ import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres
 import { withPostgresSchema } from "../packages/harness/src/postgres.js";
 import { primaryUrl } from "../packages/harness/src/topology.js";
 import { PG_PARAM_LIMIT } from "../src/runtime/param-limit.js";
-import { connect } from "../src/runtime/pg/postgresjs.js";
+import { connect } from "../src/runtime/pg/pg.js";
 
 const notes = table("notes", {
   id: id({ default: "none" }),
@@ -21,11 +24,9 @@ const app = schema({ casing: "snake", tables: [notes] });
 const gate = await loadPostgresGate();
 
 function ids(count: number): string[] {
-  const out = new Array<string>(count);
-  for (let index = 0; index < count; index += 1) {
-    out[index] = `01890c5a-8f0e-7c3a-9b2d-${String(index).padStart(12, "0")}`;
-  }
-  return out;
+  return Array.from({ length: count }, (_, index) => {
+    return `01890c5a-8f0e-7c3a-9b2d-${String(index).padStart(12, "0")}`;
+  });
 }
 
 postgresTest(

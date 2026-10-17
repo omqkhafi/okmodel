@@ -16,31 +16,43 @@ const notes = table("notes", {
 });
 const app = schema({ casing: "snake", tables: [notes] });
 
-const pool = {
-  capabilities: {
-    transactions: "interactive",
-    stream: false,
-    listen: false,
-    cancel: false,
-    prepared: "unnamed",
-    describe: false,
-  },
-  execute: () => Promise.resolve({ rows: [], count: 0, notices: [] }),
-  batch: () => Promise.resolve([]),
-  stats: () => ({ size: 1, idle: 1, inflight: 0, waiting: 0 }),
-  close: () => Promise.resolve(),
-} as DriverPool;
+function stubPool(): DriverPool {
+  let checked = false;
+  return {
+    capabilities: {
+      transactions: "interactive",
+      stream: false,
+      listen: false,
+      cancel: false,
+      prepared: "unnamed",
+      describe: false,
+    },
+    execute: () => {
+      if (!checked) {
+        checked = true;
+        return Promise.resolve({
+          rows: [["170000", "PostgreSQL 17"]],
+          count: 1,
+          notices: [],
+        });
+      }
+      return Promise.resolve({ rows: [], count: 0, notices: [] });
+    },
+    batch: () => Promise.resolve([]),
+    stats: () => ({ size: 1, idle: 1, inflight: 0, waiting: 0 }),
+    close: () => Promise.resolve(),
+  } as DriverPool;
+}
 
 function ids(count: number): string[] {
-  const out = new Array<string>(count);
-  for (let index = 0; index < count; index += 1) {
-    out[index] = `01890c5a-8f0e-7c3a-9b2d-${String(index).padStart(12, "0")}`;
-  }
+  const out = Array.from({ length: count }, (_, index) => {
+    return `01890c5a-8f0e-7c3a-9b2d-${String(index).padStart(12, "0")}`;
+  });
   return out;
 }
 
 test("B-40: exactly 65535 parameters run; 65536 is OKM1126 with the count", async () => {
-  const db = connect(pool, { schema: app });
+  const db = connect(stubPool(), { schema: app });
   await db.connected;
 
   const atLimit = await db.notes.find({
@@ -49,12 +61,10 @@ test("B-40: exactly 65535 parameters run; 65536 is OKM1126 with the count", asyn
   });
   expect(Array.isArray(atLimit)).toBe(true);
 
-  const over = await db.notes
-    .find({ where: { id: inList(ids(PG_PARAM_LIMIT)) }, limit: 1 })
-    .then(
-      () => undefined,
-      (error: unknown) => error,
-    );
+  const over = await db.notes.find({ where: { id: inList(ids(PG_PARAM_LIMIT)) }, limit: 1 }).then(
+    () => undefined,
+    (error: unknown) => error,
+  );
   expect(over).toBeInstanceOf(OkmError);
   if (over instanceof OkmError) {
     expect(over.code).toBe("OKM1126");
@@ -67,7 +77,7 @@ test("B-40: exactly 65535 parameters run; 65536 is OKM1126 with the count", asyn
 });
 
 test("B-40: inList plus other filters counts every parameter", async () => {
-  const db = connect(pool, { schema: app });
+  const db = connect(stubPool(), { schema: app });
   await db.connected;
 
   const ok = await db.notes.find({

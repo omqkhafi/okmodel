@@ -28,7 +28,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### runtime
 
-- A statement with more than 65,535 parameters fails with OKM1126 (count and limit in the message) instead of a retryable `unavailable`. The limit is for the whole statement, including filters and `inList` (B-40, D292).
+- A statement with more than 65,535 parameters fails with OKM1126 (count and limit in the message) instead of a retryable `unavailable`. The limit is for the whole statement, including filters and `inList` (B-40, D292). Split from the write-safety work on #339 when the combined change grew the featureless app by more than 100 B.
 
 #### adapters
 
