@@ -31,13 +31,13 @@ postgresTest(
   gate,
   "guide roles apply as superuser and as CREATEROLE; PUBLIC has no execute",
   async () => {
-    await withGuideRoles("superuser", async ({ url, sql }) => {
-      await applyGuide(url);
-      await assertFunctionAcls(sql);
+    await withGuideRoles("superuser", async ({ url, sql, roles }) => {
+      await applyGuide(url, roles);
+      await assertFunctionAcls(sql, roles);
     });
-    await withGuideRoles("createrole", async ({ url, sql }) => {
-      await applyGuide(url);
-      await assertFunctionAcls(sql);
+    await withGuideRoles("createrole", async ({ url, sql, roles }) => {
+      await applyGuide(url, roles);
+      await assertFunctionAcls(sql, roles);
     });
   },
   120_000,
@@ -47,8 +47,8 @@ postgresTest(
   gate,
   "a failing role step leaves a re-runnable target",
   async () => {
-    await withGuideRoles("superuser", async ({ url, sql }) => {
-      const steps = guideSteps();
+    await withGuideRoles("superuser", async ({ url, sql, roles }) => {
+      const steps = guideSteps(roles);
       const broken = steps.map((step, index) =>
         index === steps.findIndex((item) => /grant usage on schema/i.test(item.sql))
           ? { ...step, sql: "grant usage on schema public to okm_missing_role" }
@@ -60,8 +60,8 @@ postgresTest(
           url,
           target: "default",
           protected: false,
-          migrationRole: "okm_migrate",
-          appRole: "okm_app",
+          migrationRole: roles.migrate,
+          appRole: roles.app,
           migrations: [{ id: "0001_init", catalogHash: "x", steps: broken }],
         });
       } catch (error) {
@@ -72,8 +72,8 @@ postgresTest(
         select count(*)::text as n from okm_history
       `.catch(() => [{ n: "0" }]);
       expect(history[0]?.n ?? "0").toBe("0");
-      await applyGuide(url);
-      await assertFunctionAcls(sql);
+      await applyGuide(url, roles);
+      await assertFunctionAcls(sql, roles);
     });
   },
   120_000,
@@ -238,22 +238,39 @@ postgresTest(gate, "assertStableBackend still fails when two of eight pids diffe
   if (error instanceof OkmError) expect(error.code).toBe("OKM1854");
 });
 
-async function applyGuide(url: string): Promise<void> {
+type GuideRoles = {
+  readonly migrate: string;
+  readonly app: string;
+  readonly report: string;
+  readonly admin: string;
+};
+
+function freshGuideRoles(): GuideRoles {
+  const id = crypto.randomUUID().replaceAll("-", "").slice(0, 10);
+  return {
+    migrate: `okm_m_${id}`,
+    app: `okm_a_${id}`,
+    report: `okm_r_${id}`,
+    admin: `okm_d_${id}`,
+  };
+}
+
+async function applyGuide(url: string, roles: GuideRoles): Promise<void> {
   await applyTarget({
     url,
     target: "default",
     protected: false,
-    migrationRole: "okm_migrate",
-    appRole: "okm_app",
-    migrations: [{ id: "0001_init", catalogHash: "x", steps: guideSteps() }],
+    migrationRole: roles.migrate,
+    appRole: roles.app,
+    migrations: [{ id: "0001_init", catalogHash: "x", steps: guideSteps(roles) }],
   });
 }
 
-function guideSteps() {
-  return planMigration({ before: catalog([]), after: guideCatalog(), name: "init" }).steps;
+function guideSteps(roles: GuideRoles) {
+  return planMigration({ before: catalog([]), after: guideCatalog(roles), name: "init" }).steps;
 }
 
-function guideCatalog() {
+function guideCatalog(roles: GuideRoles) {
   const tasks = table("tasks", {
     id: t.identity(),
     title: t.text().hidden(),
@@ -269,11 +286,11 @@ function guideCatalog() {
   return attachRoles(
     schema({ tables: [tasks], functions: [isOpen] }).catalog,
     {
-      migration: "okm_migrate",
-      app: "okm_app",
-      reporting: "okm_report",
-      managed: [{ name: "okm_migrate" }, { name: "okm_report", login: true }],
-      columns: [{ role: "okm_report", on: "tasks", select: ["title"] }],
+      migration: roles.migrate,
+      app: roles.app,
+      reporting: roles.report,
+      managed: [{ name: roles.migrate }, { name: roles.report, login: true }],
+      columns: [{ role: roles.report, on: "tasks", select: ["title"] }],
     },
     [
       {
@@ -288,54 +305,67 @@ function guideCatalog() {
   );
 }
 
-async function assertFunctionAcls(sql: ReturnType<typeof openPostgres>): Promise<void> {
-  const rows = await sql<{ p: boolean; a: boolean; r: boolean }[]>`
+async function assertFunctionAcls(
+  sql: ReturnType<typeof openPostgres>,
+  roles: GuideRoles,
+): Promise<void> {
+  const rows = (await sql.unsafe(`
     select
       has_function_privilege('public', 'is_open(text)', 'execute') as p,
-      has_function_privilege('okm_app', 'is_open(text)', 'execute') as a,
-      has_function_privilege('okm_report', 'is_open(text)', 'execute') as r
-  `;
+      has_function_privilege(${sqlLiteral(roles.app)}, 'is_open(text)', 'execute') as a,
+      has_function_privilege(${sqlLiteral(roles.report)}, 'is_open(text)', 'execute') as r
+  `)) as { p: boolean; a: boolean; r: boolean }[];
   expect(rows[0]?.p).toBe(false);
   expect(rows[0]?.a).toBe(true);
   expect(rows[0]?.r).toBe(false);
 }
 
+function sqlLiteral(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
 async function withGuideRoles(
   mode: "superuser" | "createrole",
-  body: (context: { url: string; sql: ReturnType<typeof openPostgres> }) => Promise<void>,
+  body: (context: {
+    url: string;
+    sql: ReturnType<typeof openPostgres>;
+    roles: GuideRoles;
+  }) => Promise<void>,
 ): Promise<void> {
-  await dropGuideRoles();
+  const roles = freshGuideRoles();
   const database = await createIsolatedDatabase();
   const sql = openPostgres(database.url);
   try {
     await sql.unsafe(
-      `create role okm_app login password 'secret' nosuperuser nocreatedb nocreaterole`,
+      `create role ${quoteIdent(roles.app)} login password 'secret' nosuperuser nocreatedb nocreaterole`,
     );
     let url = database.url;
     if (mode === "createrole") {
       await sql.unsafe(
-        `create role okm_admin login password 'admin' nosuperuser createdb createrole`,
+        `create role ${quoteIdent(roles.admin)} login password 'admin' nosuperuser createdb createrole`,
       );
       const dbname = new URL(database.url).pathname.slice(1);
-      await sql.unsafe(`grant connect, create on database ${quoteIdent(dbname)} to okm_admin`);
-      await sql.unsafe(`alter schema public owner to okm_admin`);
+      await sql.unsafe(
+        `grant connect, create on database ${quoteIdent(dbname)} to ${quoteIdent(roles.admin)}`,
+      );
+      await sql.unsafe(`alter schema public owner to ${quoteIdent(roles.admin)}`);
       const parsed = new URL(database.url);
-      parsed.username = "okm_admin";
+      parsed.username = roles.admin;
       parsed.password = "admin";
       url = parsed.toString();
     }
-    await body({ url, sql });
+    await body({ url, sql, roles });
   } finally {
     await sql.end({ timeout: 5 });
     await database.close();
-    await dropGuideRoles();
+    await dropGuideRoles(roles);
   }
 }
 
-async function dropGuideRoles(): Promise<void> {
+async function dropGuideRoles(roles: GuideRoles): Promise<void> {
   const sql = openPostgres(primaryUrl());
   try {
-    for (const role of ["okm_migrate", "okm_app", "okm_report", "okm_admin"]) {
+    for (const role of [roles.migrate, roles.app, roles.report, roles.admin]) {
       await sql.unsafe(`reassign owned by ${quoteIdent(role)} to current_user`).catch(() => {});
       await sql.unsafe(`drop owned by ${quoteIdent(role)}`).catch(() => {});
       await sql.unsafe(`drop role if exists ${quoteIdent(role)}`);
