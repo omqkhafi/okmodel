@@ -29,7 +29,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Bun.sql no longer parks a reserved handle for the next checkout, so concurrent scoped units after a backend kill keep separate sessions and tenant settings (B-03, D288).
 - A reset or release failure after a statement or `COMMIT` completed destroys the connection and does not fail the call on Bun.sql, node-postgres, or Neon, so a committed write is reported as committed and `afterCommit` still runs (B-04, D288).
 - node-postgres maps `Client has encountered a connection error and is not queryable` to a lost connection (`CONNECTION_CLOSED`), matching Bun.sql's message-only closed texts (D288).
-- `mapDriverError` stamps Bun.sql's code-less closed-socket texts (`Connection closed`, `connection must be a PostgresSQLConnection`) with SQLSTATE `08006`, including on `reserve()` failure, so they classify as `unavailable` instead of `driver` (B-03, D288).
+- Bun.sql `reserve()` stamps code-less closed-socket texts (`Connection closed`, `connection must be a PostgresSQLConnection`) with SQLSTATE `08006`, so a checkout that fails before the reserved-handle guard classifies as `unavailable` instead of `driver` (B-03, D288).
 
 #### tooling
 

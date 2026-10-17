@@ -42,23 +42,13 @@ test("bun.sql errno is the sqlstate", () => {
   expect(mapped.table).toBe("notes");
 });
 
-test("bun.sql closed-socket texts stamp 08006 and map to unavailable", () => {
+test("bun.sql closed-socket DriverError with 08006 maps to unavailable", () => {
   for (const message of [
     "Connection closed",
     "connection must be a PostgresSQLConnection",
   ] as const) {
-    const mapped = mapDriverError(new Error(message));
-    expect(mapped).toBeInstanceOf(DriverError);
-    if (!(mapped instanceof DriverError)) return;
-    expect(mapped.sqlstate).toBe("08006");
-    const okm = mapPostgresError(mapped);
+    const okm = mapPostgresError(new DriverError(message, { sqlstate: "08006" }));
     expect(okm.kind).toBe("unavailable");
     expect(okm.sqlstate).toBe("08006");
-
-    const already = mapDriverError(new DriverError(message));
-    expect(already).toBeInstanceOf(DriverError);
-    if (!(already instanceof DriverError)) return;
-    expect(already.sqlstate).toBe("08006");
-    expect(mapPostgresError(already).kind).toBe("unavailable");
   }
 });

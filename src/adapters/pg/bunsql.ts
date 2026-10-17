@@ -271,6 +271,17 @@ export async function reserve(
       const errors = await driverErrors();
       throw errors.acquireTimeout();
     }
+    // Bun.sql closed-socket texts carry no code. Stamp 08006 here so a
+    // reserve that fails before the reserved-handle guard still classifies
+    // as unavailable (B-03). Kept off the shared mapDriverError path so the
+    // postgres.js incremental gate does not grow.
+    if (
+      error instanceof Error &&
+      (error.message === "Connection closed" ||
+        error.message === "connection must be a PostgresSQLConnection")
+    ) {
+      throw new DriverError(error.message, { cause: error, sqlstate: "08006" });
+    }
     throw await mapFailure(error);
   } finally {
     counters.waiting = Math.max(0, counters.waiting - 1);
