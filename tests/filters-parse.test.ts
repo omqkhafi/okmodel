@@ -132,6 +132,26 @@ test("a hidden relation field is OKM1123 when filters() is called", () => {
   expect(() => hidden.filters({ allow: { title: ["eq"] } })).toThrow(OkmError);
 });
 
+test("redefining a table name does not keep a prior hidden mark on filters()", async () => {
+  table("tasks", { id: t.text().primaryKey(), title: t.text().hidden() });
+  const open = table("tasks", {
+    id: t.text().primaryKey(),
+    title: t.text(),
+    rank: t.integer(),
+  });
+  const parsed = await open.filters({ allow: { title: ["eq"] }, sort: ["title"] }).parse({
+    title: "a",
+    sort: "title",
+  });
+  expect(parsed).toEqual({ where: { title: "a" }, orderBy: { title: "asc" } });
+  const stillHidden = table("tasks", {
+    id: t.text().primaryKey(),
+    title: t.text().hidden(),
+  });
+  expect(() => stillHidden.filters({ allow: { title: ["eq"] } })).toThrow(OkmError);
+  expect(() => readers.filters({ relations: { list: ["title"] } })).toThrow(OkmError);
+});
+
 test("request text through parse never becomes SQL", async () => {
   const db = await connect(stub(), { schema: app });
   const safe = fc.string({ minLength: 1, maxLength: 24 }).filter((value) => {
