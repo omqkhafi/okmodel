@@ -997,6 +997,7 @@ Specified before M1 and tested on every driver through the conformance suite:
 | `one()` without `orderBy` | fetches at most 2 rows; 0 → `null` (`not_found` with `.required()`), more than 1 → `not_unique` |
 | `one()` with `orderBy` | the first row in that order |
 | `inList([])` | matches nothing (compiled to `false`), never a SQL error; `notIn([])` matches everything |
+| Statement parameter count | over 65,535 parameters is OKM1126 (`invalid`, not retryable); the limit is for the whole statement (filters, `inList`, `limit`, values), not `inList` alone; chunk or use `= any(array)` (D292) |
 | `has()` / `none()` / `every()` | `every()` is true when there are no related rows; `none()` is true when there are none |
 | null ordering | `asc` → nulls last, `desc` → nulls first unless `nulls` is set; identical on every dialect (emulated where needed) |
 | `startsWith`, `contains`, `endsWith` | literal: `%`, `_` and `\` in the value are escaped; case-sensitive; `iStartsWith`, `iContains`, `iEndsWith` for case-insensitive are not in 0.2 (D176); use `ilike()` with an escaped pattern |

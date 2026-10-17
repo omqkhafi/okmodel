@@ -690,7 +690,7 @@ The lookup is a second statement and does not set isolation. A second request th
 
 ### List
 
-`update` of a list writes those rows in one statement. A long list is split so the parameters stay inside the budget.
+`update` of a list writes those rows in one statement. A long list is split so the parameters stay inside the budget. A finished statement over 65,535 parameters is OKM1126 (count and limit in the message). The limit is for the whole statement — filters, `inList`, `limit`, and values — not for `inList` alone. Chunk the work, or filter with `= any(array)`.
 
 | Input | Result |
 | --- | --- |

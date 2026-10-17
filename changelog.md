@@ -26,6 +26,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### 🐛 Fixed
 
+#### runtime
+
+- A statement with more than 65,535 parameters fails with OKM1126 (count and limit in the message) instead of a retryable `unavailable`. The limit is for the whole statement, including filters and `inList` (B-40, D292). Split from the write-safety work on #339 when the combined change grew the featureless app by more than 100 B.
+
 #### adapters
 
 - Bun.sql no longer parks a reserved handle for the next checkout, so concurrent scoped units after a backend kill keep separate sessions and tenant settings (B-03, D288).
@@ -50,6 +54,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Known limits record that Bun.sql does not park reserved handles, that a post-commit reset failure does not fail the call, and that a send-without-result is OKM1401 with no `afterCommit` (D288).
 - `okm push` docs say it applies the live schema diff as `push-<n>`, and known-limits cover external re-stamp and domain-check sealing (D289).
 - Sensitive docs cover redaction in logs, errors, `cause`, and spans; writes docs cover unknown keys (D291).
+- Queries and the error reference document OKM1126 when a finished statement exceeds 65,535 parameters (D292).
 
 ## v0.9.0 — 2026-10-16
 
