@@ -632,6 +632,9 @@ export function readHandle(
   const run = async (): Promise<unknown> => {
     await session.connected;
     const { plan, params } = await prepare();
+    if (params.length > 65_535) {
+      (await import("./param-limit.js")).refuseParamLimit(params.length);
+    }
     try {
       const result = await session.pool.execute(
         plan.text,

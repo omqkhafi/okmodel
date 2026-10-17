@@ -201,6 +201,13 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     fix: "Interpolate a string, number, boolean, null, ident(name), fragment.column, or another fragment. Keep parentheses and quotes balanced. Pass a value that needs a backslash as an interpolation. A select fragment is a numeric expression named with as().",
   },
   {
+    code: "OKM1126",
+    title: "Parameter limit",
+    summary:
+      "The finished statement has more than 65,535 parameters. The limit is for the whole statement (filters, inList, limit, values), not for inList alone.",
+    fix: "Chunk the work, or filter with = any(array) instead of a long inList.",
+  },
+  {
     code: "OKM1130",
     title: "Cursor order",
     summary:
