@@ -39,11 +39,7 @@ import { expandProvisioned, installSnapshot, provisionMark } from "./snapshot.js
 import { planMigration, type PlanStep } from "./plan.js";
 import type { StoredMigration } from "./files.js";
 import { finishQuiet } from "./lost.js";
-import {
-  catalogQuery,
-  managedRoleOptions,
-  sealDomainChecks,
-} from "./drift.js";
+import { catalogQuery, managedRoleOptions, sealDomainChecks } from "./drift.js";
 import {
   assertDirectConnection,
   assertStableBackend,
@@ -600,8 +596,7 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
         retries: DEFAULT_RETRIES,
         lockTimeoutMs: DEFAULT_LOCK_MS,
         statementTimeoutMs: DEFAULT_STATEMENT_MS,
-        backfillStatementTimeoutMs:
-          request.backfillStatementTimeoutMs ?? DEFAULT_STATEMENT_MS,
+        backfillStatementTimeoutMs: request.backfillStatementTimeoutMs ?? DEFAULT_STATEMENT_MS,
         ...(request.backfillPauseMs !== undefined
           ? { backfillPauseMs: request.backfillPauseMs }
           : {}),
@@ -634,15 +629,17 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
  */
 async function restampHeadHash(
   connection: DriverConnection,
-  request: { readonly target: string; readonly protected: boolean; readonly allowProtected?: boolean },
+  request: {
+    readonly target: string;
+    readonly protected: boolean;
+    readonly allowProtected?: boolean;
+  },
   migrationId: string,
   catalogHash: string,
 ): Promise<readonly string[]> {
   const present = await connection.execute("select to_regclass('okm_meta') is not null");
   if (!wireTrue(present.rows[0]?.[0])) return [];
-  const current = await connection.execute(
-    "select catalog_hash from okm_meta where id = 'head'",
-  );
+  const current = await connection.execute("select catalog_hash from okm_meta where id = 'head'");
   const stored = current.rows[0]?.[0];
   if (typeof stored === "string" && stored === catalogHash) return [];
   assertTargetPolicy(

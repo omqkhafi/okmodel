@@ -89,10 +89,7 @@ export async function assertAuthorDrift(
  * @param source - Catalog whose domain checks may still be author SQL
  * @returns A catalog whose domain checks carry the server reprint
  */
-export async function sealDomainChecks(
-  runner: CatalogQuery,
-  source: Catalog,
-): Promise<Catalog> {
+export async function sealDomainChecks(runner: CatalogQuery, source: Catalog): Promise<Catalog> {
   const objects: CatalogObject[] = [];
   let changed = false;
   for (const object of source.objects) {

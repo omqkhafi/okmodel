@@ -341,7 +341,11 @@ function splitFlags(args: readonly string[], command: CommandKey): Parsed {
     if (arg === "--replace" || arg.startsWith("--replace=")) {
       refuseUnknown(command, "--replace", allowed);
       const value = arg === "--replace" ? args[index + 1] : arg.slice("--replace=".length);
-      if (value === undefined || value.length === 0 || (arg === "--replace" && value.startsWith("--"))) {
+      if (
+        value === undefined ||
+        value.length === 0 ||
+        (arg === "--replace" && value.startsWith("--"))
+      ) {
         throw new OkmError("OKM1541", "--replace needs table.column.old=new.", {
           fix: { summary: "Pass --replace <table>.<column>.<old>=<new>." },
         });
@@ -372,7 +376,11 @@ function splitFlags(args: readonly string[], command: CommandKey): Parsed {
     if (arg === "--target" || arg.startsWith("--target=")) {
       refuseUnknown(command, "--target", allowed);
       const value = arg === "--target" ? args[index + 1] : arg.slice("--target=".length);
-      if (value === undefined || value.length === 0 || (arg === "--target" && value.startsWith("--"))) {
+      if (
+        value === undefined ||
+        value.length === 0 ||
+        (arg === "--target" && value.startsWith("--"))
+      ) {
         throw new OkmError("OKM1853", "--target needs a name.", {
           fix: { summary: "Pass --target <name>." },
         });
@@ -473,7 +481,10 @@ function flagsForHelp(commandLine: string): readonly string[] {
 }
 
 function helpCommandKey(commandLine: string): CommandKey | undefined {
-  const name = commandLine.replace(/\s+\[.*?\]/g, "").replace(/\s+<.*?>/g, "").trim();
+  const name = commandLine
+    .replace(/\s+\[.*?\]/g, "")
+    .replace(/\s+<.*?>/g, "")
+    .trim();
   if (name in COMMAND_FLAGS) return name as CommandKey;
   if (name.startsWith("ext ")) return "ext";
   return undefined;

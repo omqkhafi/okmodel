@@ -27,7 +27,11 @@ postgresTest(
       writeConfig(cwd, database.url);
       const first = await cli(cwd, ["push"]);
       expect(first).toMatch(/applied push-1/);
-      writeSchema(cwd, ["id: t.integer().primaryKey()", "title: t.text()", "note: t.text().nullable()"]);
+      writeSchema(cwd, [
+        "id: t.integer().primaryKey()",
+        "title: t.text()",
+        "note: t.text().nullable()",
+      ]);
       const second = await cli(cwd, ["push"]);
       expect(second).toMatch(/applied push-2/);
       writeSchema(cwd, [
@@ -132,7 +136,7 @@ postgresTest(
           `import { fn, trigger } from ${source("src/dialects/pg/fn/index.ts")};`,
           `import { timestamps } from ${source("src/runtime/traits/index.ts")};`,
           'const tasks = table("tasks", { id: t.integer().primaryKey(), title: t.text() }, { traits: [timestamps({ enforce: "trigger" })] });',
-          "const touch = fn(\"touch\", {",
+          'const touch = fn("touch", {',
           '  returns: "trigger",',
           '  language: "plpgsql",',
           '  body: "begin return new; end",',
@@ -316,9 +320,11 @@ async function connectOk(cwd: string, url: string): Promise<void> {
 async function cli(cwd: string, argv: readonly string[]): Promise<string> {
   const result = await invoke(cwd, argv);
   if (result.code !== undefined) {
-    throw new OkmError(result.code, result.message ?? "", {
-      ...(result.kind === undefined ? {} : { kind: result.kind }),
-    });
+    throw new OkmError(
+      result.code,
+      result.message ?? "",
+      result.kind === undefined ? undefined : { kind: result.kind },
+    );
   }
   return result.stdout;
 }
@@ -326,9 +332,11 @@ async function cli(cwd: string, argv: readonly string[]): Promise<string> {
 async function rejected(cwd: string, argv: readonly string[]): Promise<OkmError> {
   const result = await invoke(cwd, argv);
   if (result.code === undefined) throw new Error(`${argv.join(" ")} should have failed`);
-  return new OkmError(result.code, result.message ?? "", {
-    ...(result.kind === undefined ? {} : { kind: result.kind }),
-  });
+  return new OkmError(
+    result.code,
+    result.message ?? "",
+    result.kind === undefined ? undefined : { kind: result.kind },
+  );
 }
 
 type InvokeResult = {
