@@ -15,7 +15,7 @@ This file is the single source of rules for this repository. `CLAUDE.md` imports
 
 - The published package is `okmodel` at the repository root: ESM only, Apache-2.0, `sideEffects: false`.
 - Other packages live under `packages/*` as Bun workspaces. Their dependencies never go into the root `package.json`.
-- Normative docs are draft 26 (`docs/okmodel-api-design.md`) and decisions D1–D294. The repository implements that spec through the 0.9.0 release. The M0 spike implementations are on the `m0-spikes` tag. `packages/spikes` keeps the row-type and operator fixtures the type ceilings measure. Findings stay in `docs/m0-findings.md`.
+- Normative docs are draft 26 (`docs/okmodel-api-design.md`) and decisions D1–D296. The repository implements that spec through the 0.9.0 release. The M0 spike implementations are on the `m0-spikes` tag. `packages/spikes` keeps the row-type and operator fixtures the type ceilings measure. Findings stay in `docs/m0-findings.md`.
 
 ## Errors
 

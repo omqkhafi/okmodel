@@ -113,7 +113,7 @@ bunx okm import drizzle ./src/db/schema.ts --out ./adopted
 
 ## catalog export
 
-`okm catalog export` writes the snapshot of the schema this project owns. It does not connect. `--json` prints the JSON. `--out <file>` writes that file and prints the path. With neither, the JSON is printed. `--json` and `--out` together print the JSON and write the file.
+`okm catalog export` writes the column snapshot of the schema this project owns: table names plus each column's name, type, and nullability. It is not the full catalog; that is [`describe(schema)`](/docs/reference/schema-api). It does not connect. `--json` prints the JSON. `--out <file>` writes that file and prints the path. With neither, the JSON is printed. `--json` and `--out` together print the JSON and write the file.
 
 The file has `catalogHash` and `logical` (`namespace`, `name`, `format`). A table is a namespace, a name, and columns. There is no function and no connection URL. A dependent lists the path in [`external`](/docs/define/config/external).
 
@@ -131,9 +131,7 @@ With one configured target, or with `--target`, a database that already has `okm
 
 ## dev
 
-`okm dev` looks for a target named `dev`. It prints `target dev` when that target is configured. With no such target it creates a PGlite database at `<out>/dev-db`, runs `select 1`, closes it, and prints that directory. The default `out` is `.okm`. The command then returns.
-
-The help line is `Watch the schema and reload.` This command does not stay running.
+`okm dev` looks for a target named `dev`. It prints `target dev` when that target is configured. With no such target it creates a PGlite database at `<out>/dev-db`, runs `select 1`, closes it, and prints that directory. The default `out` is `.okm`. The command then returns. It does not watch the schema, does not reload, and does not apply migrations.
 
 ```sh
 bunx okm dev

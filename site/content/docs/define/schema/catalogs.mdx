@@ -7,7 +7,7 @@ description: "Two catalogs on one database. external() keeps a table the other c
 
 `external(users)` marks a table the other catalog exported. The plan does not create, alter, or drop it. A managed table in the same database may reference it. A key that points at another database is OKM1842.
 
-`okm catalog export` writes the snapshot. The dependent lists that file in `external`. `okm check` and `okm migrate check` compare the declaration and the database with the file. A stale or missing snapshot is OKM1841. `okm check` lists a cross-catalog foreign key as `coupling`.
+`okm catalog export` writes the column snapshot (names, types, nullability). The dependent lists that file in `external`. `okm check` and `okm migrate check` compare the declaration and the database with the file. A stale or missing snapshot is OKM1841. `okm check` lists a cross-catalog foreign key as `coupling`. The full catalog JSON is [`describe(schema)`](/docs/reference/schema-api), not the export.
 
 `connect()` reads `okm_meta` in that namespace. `okm build` writes `.okm/namespace` when the name is not `public`. A missing table still skips the check. A hash that does not match is OKM1520.
 

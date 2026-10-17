@@ -50,7 +50,15 @@ bun add okmodel @electric-sql/pglite
 bun add okmodel
 ```
 
-postgres.js is the default on Node and Bun. node-postgres is for a project that already has `pg`. PGlite runs Postgres in the process. The last line is Bun.sql, built into Bun, and it runs only there.
+postgres.js is the default on Node and Bun. node-postgres is for a project that already has `pg`. PGlite runs Postgres in the process. The last line is Bun.sql, built into Bun 1.4+, and it runs only there.
+
+Date and time columns need a `Temporal` global. Bun and Node 26 have it. On Node 22 and 24 assign a polyfill before those columns run (OKM1210 when it is missing):
+
+```ts
+import { Temporal } from "temporal-polyfill";
+
+globalThis.Temporal = Temporal;
+```
 
 ## Quick start
 

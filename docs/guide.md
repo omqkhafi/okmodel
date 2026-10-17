@@ -80,7 +80,15 @@ bun add okmodel @electric-sql/pglite
 
 Bun.sql needs no extra package: `import { connect } from "okmodel/pg/bun"`. okmodel has no runtime dependencies. Each installed driver is an optional peer.
 
-The `okm` bin's shebang is node, so `bunx okm` runs it with Node even inside a Bun project. Run `bun --bun okm` when the command must use the Bun runtime (Bun.sql runs only there). A `.ts` config file under plain Node needs Node 22.18 or newer for type stripping.
+The `okm` bin's shebang is node, so `bunx okm` runs it with Node even inside a Bun project. Run `bun --bun okm` when the command must use the Bun runtime (Bun.sql runs only on Bun 1.4+). A `.ts` config file under plain Node needs Node 22.18 or newer for type stripping.
+
+Date and time columns need a `Temporal` global. Bun and Node 26 have it. Node 22 and 24 need a polyfill assigned before those codecs run. okmodel does not ship one. A missing global is OKM1210:
+
+```ts
+import { Temporal } from "temporal-polyfill";
+
+globalThis.Temporal = Temporal;
+```
 
 ## Quickstart
 
@@ -483,7 +491,7 @@ export async function grant(url: string): Promise<void> {
 
 ### Sensitive
 
-A token can be stored and returned, and it still must not appear in a log or an error. `.sensitive()` shows `[redacted]` in logs, errors, and `inspect()`. The value in the database stays the same.
+A token can be stored and returned, and it still must not appear in a log or an error. `.sensitive()` shows `[redacted]` in logs, errors, `inspect()`, and OpenTelemetry spans. On a table that has a sensitive column, a unique, foreign-key, or check failure keeps the value out of `error.cause` (`detail`, parameters, `where`, and `internalQuery` stay off). Tables with no sensitive column keep today's cause. `connect({ errors: { includeValues: true } })` is the explicit opt-in. The value in the database stays the same.
 
 `sensitive.ts`:
 
@@ -492,7 +500,7 @@ import { schema, table, t } from "okmodel/pg";
 
 const sessions = table("sessions", {
   id: t.identity(),
-  // Stored as written. Logs, errors, and inspect show [redacted].
+  // Stored as written. Logs, errors, inspect, and spans show [redacted].
   token: t.text().sensitive(),
 });
 export const app = schema({ tables: [sessions] });
@@ -1276,14 +1284,14 @@ The worked example is a project tracker: workspaces as tenants, archive, a funct
 | Command                   | What it does                                                                                                                                                                                             |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `okm build`               | Validates the schema and writes `.okm/`. Does not connect.                                                                                                                                               |
-| `okm check`               | Lints the schema and, after `okm_meta` exists, compares the database. Drift is OKM1520. Allowed on a protected target.                                                                                   |
+| `okm check`               | Lints the schema and, with one target or `--target`, compares the database after `okm_meta` exists. Drift is OKM1520. Several targets and no `--target` only lint and print `ok`. Allowed on a protected target. |
 | `okm generate [name]`     | Writes a SQL migration and `.okm/`. Prints lint findings and still writes the file. Offline.                                                                                                             |
-| `okm dev`                 | Opens a PGlite database in `.okm/dev-db`, or a target named `dev`. It does not apply migrations.                                                                                                         |
+| `okm dev`                 | Opens a PGlite database in `.okm/dev-db`, or prints a target named `dev`. It does not watch, reload, or apply migrations.                                                                                 |
 | `okm push`                | Applies the schema directly. OKM1850 on a protected target unless `--allow-protected`.                                                                                                                   |
 | `okm migrate plan <name>` | Prints each step's class and lock, plus a row estimate when the target answers. Read-only on a protected target. An error finding exits non-zero.                                                        |
 | `okm migrate apply`       | Installs the head snapshot on an empty database, or runs pending files. Expand is allowed on a protected target. Contract, unclassified SQL, and backfill need `--allow-protected`.                      |
 | `okm migrate check`       | Replays the history in a scratch schema and checks the previous catalog, the head, and the linter. Prints `ok N migrations`. Refused on a protected target, and `--allow-protected` does not apply.      |
-| `okm migrate status`      | Prints version, catalog hash, and state. Read-only on a protected target. An unfinished backfill is listed under the table.                                                                              |
+| `okm migrate status`      | Queries every target; does not require `--target`. Stops at the first unreachable one. Read-only on a protected target. An unfinished backfill is listed under the table.                                |
 | `okm seed <file>`         | Runs the file's default export against the migrated target. OKM1850 on a protected target unless `--allow-protected`.                                                                                    |
 | `okm ext list`            | Prints extensions the server can install. Read-only on a protected target.                                                                                                                               |
 | `okm ext check`           | Compares installed extensions with the schema. OKM1811 if one is missing, OKM1812 if the pin is not met. Read-only on a protected target.                                                                 |

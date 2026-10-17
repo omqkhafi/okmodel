@@ -7,6 +7,8 @@ description: "describe() and buildCatalog() on okmodel/migrate turn a schema int
 
 `describe(schema)` returns JSON. `logical` is the schema identity: `namespace`, `name`, and `format`. That identity is `public`, the namespace `schema()` compiles. `defineConfig({ namespace })` places the catalog into another Postgres schema. That placement changes the catalog hash and does not change `logical`. `catalog` is the catalog document. Object keys are sorted. There are no functions in it.
 
+`okm catalog export` (including `--json`) is a different artifact: the column snapshot a dependent verifies (table names plus each column's name, type, and nullability). It is not this description.
+
 `buildCatalog` reads a description, including one that came back from `JSON.parse`. The catalog hash matches the catalog `schema()` built.
 
 Codecs, client generators (`uuidv4`, `uuidv7`, `okid`), and relation helpers stay on the schema. The catalog hash does not include them.

@@ -328,6 +328,14 @@ Infinity and NaN are refused when the value is encoded.
 
 The value is a `Temporal` object. The schema [timestamps codec](/docs/define/schema/codecs) is `"temporal"`. [Fractional seconds](#fractional-seconds) apply to `timestamptz`, `timestamp`, `time`, and `timetz`.
 
+Bun and Node 26 provide a `Temporal` global. Node 22 and 24 need a polyfill assigned to `globalThis.Temporal` before these columns run. okmodel does not ship one. A missing global is OKM1210.
+
+```ts title="polyfill.ts"
+import { Temporal } from "temporal-polyfill";
+
+globalThis.Temporal = Temporal;
+```
+
 #### Instant
 
 `t.timestamptz()` is `timestamptz`. The TypeScript value is `Temporal.Instant`. Postgres stores it in UTC. Storage is 8 bytes. A created time or an event uses it.
