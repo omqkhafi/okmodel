@@ -110,6 +110,7 @@ drop trigger "prices_amount_sync" on "public"."prices";
 
 ```sql
 -- class: contract
+-- okm-allow OKM1515: dual-write trigger removed
 drop function "public"."prices_amount_sync"();
 ```
 

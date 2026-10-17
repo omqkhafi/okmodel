@@ -74,8 +74,10 @@ export async function sealViews(runner: CatalogQuery, source: Catalog): Promise<
   const previous = await runner.query(`select current_setting('search_path') as path`);
   const saved = cellText(previous[0]?.path);
   const path = await scratchSearchPath(runner, source);
+  let installed: readonly string[] = [];
   try {
     await runner.query(`select set_config('search_path', $1, false)`, [path]);
+    installed = await createExtensions(runner, source);
     await createObjects(runner, source, "type");
     for (const object of source.objects) {
       if (object.kind !== "table") continue;
@@ -133,6 +135,7 @@ export async function sealViews(runner: CatalogQuery, source: Catalog): Promise<
       .query(`select set_config('search_path', $1, false)`, [saved])
       .catch(() => undefined);
     await dropScratch(runner);
+    await dropInstalledExtensions(runner, installed);
   }
 }
 
@@ -177,6 +180,49 @@ async function createObjects(
     if (object.kind !== kind) continue;
     const statement = createObjectSql(object, SCRATCH);
     if (statement !== undefined) await runner.query(statement);
+  }
+}
+
+/**
+ * Creates catalog extensions that are missing, before stub tables need them.
+ *
+ * Extensions are database-wide. Only names this seal created are returned so
+ * {@link dropInstalledExtensions} can remove them after the scratch schema
+ * drops — otherwise a later `CREATE EXTENSION` in the real plan fails.
+ *
+ * @param runner - Database connection
+ * @param source - Catalog that may declare extensions such as `citext`
+ * @returns Extension names created for this seal
+ */
+async function createExtensions(runner: CatalogQuery, source: Catalog): Promise<readonly string[]> {
+  const installed: string[] = [];
+  for (const object of source.objects) {
+    if (object.kind !== "extension") continue;
+    const name = object.identity.name;
+    const present = await runner.query(`select 1 as ok from pg_extension where extname = $1`, [
+      name,
+    ]);
+    if (present.length > 0) continue;
+    const statement = createObjectSql(object, SCRATCH);
+    if (statement === undefined) continue;
+    await runner.query(statement);
+    installed.push(name);
+  }
+  return installed;
+}
+
+/**
+ * Drops extensions this seal created.
+ *
+ * @param runner - Database connection
+ * @param names - Names {@link createExtensions} returned
+ */
+async function dropInstalledExtensions(
+  runner: CatalogQuery,
+  names: readonly string[],
+): Promise<void> {
+  for (const name of names) {
+    await runner.query(`drop extension if exists ${quoteIdent(name)}`).catch(() => undefined);
   }
 }
 

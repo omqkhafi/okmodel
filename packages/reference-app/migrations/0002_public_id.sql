@@ -31,7 +31,6 @@ alter table "public"."tasks" add constraint "tasks_public_id_notnull" check ("pu
 -- kind: validate-constraint
 -- action: ddl
 -- lock: SHARE UPDATE EXCLUSIVE
--- okm-allow OKM1531: the backfill in step 3 fills every null and the default covers new rows
 alter table "public"."tasks" validate constraint "tasks_public_id_notnull";
 
 -- class: expand

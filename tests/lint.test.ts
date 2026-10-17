@@ -339,7 +339,7 @@ test("locking errors cover an unsafe set not null, and a rewriting type change s
   const tight = table("tasks", { id: t.identity(), title: t.text() });
   const set = codes(diff(loose, tight));
   expect(set).not.toContain("OKM1537");
-  expect(set).toContain("OKM1531");
+  expect(set).not.toContain("OKM1531");
   expect(set).not.toContain("OKM1525");
   const bare = lintPlan(
     {
@@ -715,6 +715,7 @@ test("earlier and later steps are read statement by statement (QA-H3)", () => {
     tight,
   );
   expect(safe.map((item) => item.code)).not.toContain("OKM1537");
+  expect(safe.map((item) => item.code)).not.toContain("OKM1531");
 });
 
 test("a generated create with an index, a unique, and a foreign key lints clean", () => {

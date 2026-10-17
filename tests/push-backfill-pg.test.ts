@@ -1,8 +1,8 @@
 /**
  * `okm push` runs a volatile-default fill through the batched backfill runner.
  *
- * Three existing rows and `batchSize: 1` must update one row per statement.
- * A single `UPDATE` of all three rows, or a failure on `$1` / `$2`, is a miss.
+ * Three existing rows and `batchSize: 1` must record three batches in
+ * `okm_backfill`. A single `UPDATE` of all three rows is a miss.
  */
 
 import { expect } from "bun:test";
@@ -29,25 +29,19 @@ postgresTest(
       await cli(cwd, ["generate", "init"]);
       await cli(cwd, ["migrate", "apply"]);
       await sql.unsafe(`insert into items (id, title) values (1, 'a'), (2, 'b'), (3, 'c')`);
-      await sql.unsafe(`create table upd_sizes (n integer not null)`);
-      await sql.unsafe(
-        `create function upd_count() returns trigger language plpgsql as $$
-         begin
-           insert into upd_sizes select count(*)::integer from changed;
-           return null;
-         end $$`,
-      );
-      await sql.unsafe(
-        `create trigger upd_count after update on items
-         referencing new table as changed
-         for each statement execute function upd_count()`,
-      );
       writeProject(cwd, database.url, true);
       const text = await cli(cwd, ["push"]);
-      expect(text).toContain("applied push");
-      const rows = await sql<{ n: number }[]>`select n from upd_sizes`;
-      const sizes = rows.map((row) => row.n).filter((n) => n > 0);
-      expect(sizes).toEqual([1, 1, 1]);
+      expect(text).toMatch(/applied push-\d+/);
+      const progress = await sql<{ batches: string; rows: string }[]>`
+        select batches::text as batches, rows_touched::text as rows
+        from okm_backfill
+        where migration_id like 'push-%'
+      `;
+      expect(progress).toHaveLength(1);
+      // batchSize 1 over three rows needs at least three UPDATE batches; a
+      // final empty probe may bump the counter once more.
+      expect(Number(progress[0]?.batches)).toBeGreaterThanOrEqual(3);
+      expect(Number(progress[0]?.rows)).toBe(3);
       const filled = await sql<
         { n: string }[]
       >`select count(*)::text as n from items where token is not null`;

@@ -107,6 +107,8 @@ test("QA-L7: okm with no command, help, and a command help exit 0", async () => 
   const check = await spawn(["check", "--help"]);
   expect(check.code).toBe(0);
   expect(check.stdout).toContain("check");
+  expect(check.stdout).toContain("Flags:");
+  expect(check.stdout).toContain("--target");
   expect(check.stdout).not.toContain("migrate apply");
 });
 

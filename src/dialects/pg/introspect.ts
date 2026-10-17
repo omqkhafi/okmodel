@@ -371,7 +371,7 @@ export async function introspectSchema(
         events: triggerEvents(bits),
         level: (bits & 1) === 1 ? "row" : "statement",
         calls: {
-          namespace: staticNamespace(text(row, "function_schema")),
+          namespace: referencedNamespace(text(row, "function_schema"), concrete, namespace),
           name: text(row, "function"),
           argTypes,
         },
@@ -855,6 +855,35 @@ export async function reprintCheck(runner: CatalogQuery, expression: string): Pr
     "select pg_get_constraintdef(oid) as definition from pg_constraint where conname = 'okm_expr_check'",
   );
   await runner.query("drop table okm_expr");
+  return checkExpression(text(rows[0] ?? {}, "definition"));
+}
+
+/**
+ * Creates a temporary domain and reads the check Postgres stores.
+ *
+ * Domain checks use `VALUE`, which is not valid on a table check. Two
+ * authoring spellings of the same domain predicate compare equal after this.
+ *
+ * @param runner - Database connection
+ * @param base - Domain base type, as Postgres `format_type` spells it
+ * @param expression - Check expression without the `CHECK` keyword
+ * @returns The reprinted expression, without the `CHECK` keyword
+ */
+export async function reprintDomainCheck(
+  runner: CatalogQuery,
+  base: string,
+  expression: string,
+): Promise<string> {
+  await runner.query("drop domain if exists okm_expr_domain");
+  await runner.query(`create domain okm_expr_domain as ${base} check (${expression})`);
+  const rows = await runner.query(
+    `select pg_get_constraintdef(c.oid) as definition
+     from pg_constraint c
+     join pg_type t on t.oid = c.contypid
+     join pg_namespace n on n.oid = t.typnamespace
+     where t.typname = 'okm_expr_domain' and n.nspname = current_schema()`,
+  );
+  await runner.query("drop domain okm_expr_domain");
   return checkExpression(text(rows[0] ?? {}, "definition"));
 }
 
