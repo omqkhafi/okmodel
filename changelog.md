@@ -37,7 +37,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - A reset or release failure after a statement or `COMMIT` completed destroys the connection and does not fail the call on Bun.sql, node-postgres, or Neon, so a committed write is reported as committed and `afterCommit` still runs (B-04, D288).
 - node-postgres maps `Client has encountered a connection error and is not queryable` to a lost connection (`CONNECTION_CLOSED`), matching Bun.sql's message-only closed texts (D288).
 - Bun.sql `reserve()` stamps code-less closed-socket texts (`Connection closed`, `connection must be a PostgresSQLConnection`) with SQLSTATE `08006`, so a checkout that fails before the reserved-handle guard classifies as `unavailable` instead of `driver` (B-03, D288).
-- postgres.js caps reconnect backoff under 1 s with jitter, defaults `timeouts.acquire` to 10 s (OKM1846), swallows `nextWrite` on a null socket (Bun and Node), and rebuilds the pool so a kill storm's first OK read arrives within 3 s (B-02, B-43, D294).
+- postgres.js caps reconnect backoff under 1 s with jitter, defaults `timeouts.acquire` to 10 s (OKM1846), swallows `nextWrite` on a null socket (Bun and Node), and rebuilds the pool so a kill storm's first OK read arrives within 3 s (B-02, B-43, D294). Other uncaught exceptions still print and leave a non-zero exit so `okm migrate check` / `apply` refusals are not reported as success on Bun.
 - node-postgres defaults `timeouts.acquire` to 10 s and keeps an idle/checked-out client `error` listener that logs on the notice path without throwing, so a backend kill of an idle client does not crash Node (B-44, D294).
 
 #### tooling

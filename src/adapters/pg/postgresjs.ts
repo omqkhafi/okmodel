@@ -182,14 +182,19 @@ type Live = { on: boolean; sql: Sql; m(): Sql };
 const lives: Live[] = [];
 
 // D241 / D294: contain Bun/Node nextWrite on null and rebuild stuck pools.
+// Bun exits 0 when a listener returns; print + exitCode so CLI keeps stderr.
 process.on("uncaughtException", (e: unknown) => {
-  if (!(e instanceof TypeError && /socket\.write|reading 'write'/.test(e.message))) return;
-  for (const x of lives) {
-    if (!x.on) continue;
-    const prev = x.sql;
-    x.m();
-    void prev.end({ timeout: 0 }).catch(() => {});
+  if (e instanceof TypeError && /socket\.write|reading 'write'/.test(e.message)) {
+    for (const x of lives) {
+      if (!x.on) continue;
+      const prev = x.sql;
+      x.m();
+      void prev.end({ timeout: 0 }).catch(() => {});
+    }
+    return;
   }
+  console.error(e);
+  process.exitCode = 1;
 });
 
 /**
