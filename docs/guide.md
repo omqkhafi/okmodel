@@ -82,9 +82,9 @@ Bun.sql needs no extra package: `import { connect } from "okmodel/pg/bun"`. okmo
 
 The `okm` bin's shebang is node, so `bunx okm` runs it with Node even inside a Bun project. Run `bun --bun okm` when the command must use the Bun runtime (Bun.sql runs only on Bun 1.4+). A `.ts` config file under plain Node needs Node 22.18 or newer for type stripping.
 
-Date and time columns need a `Temporal` global. Bun and Node 26 have it. Node 22 and 24 need a polyfill assigned before those codecs run. okmodel does not ship one. A missing global is OKM1210:
+Date and time columns need a `Temporal` global. Bun and Node 26 have it. Node 22 and 24 need a polyfill assigned before those codecs run. okmodel does not ship one. A missing global is OKM1210. Example with `temporal-polyfill` (not part of the quickstart script):
 
-```ts
+```typescript
 import { Temporal } from "temporal-polyfill";
 
 globalThis.Temporal = Temporal;
