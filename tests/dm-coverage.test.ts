@@ -151,8 +151,9 @@ test("testing helpers still export factories and isolation", async () => {
       notes: (x) => ({ title: x.words(2) }),
     });
     const row = await factories.notes.create();
-    expect(typeof row.title).toBe("string");
-    expect(row.title.length).toBeGreaterThan(0);
+    const title = row.title;
+    expect(typeof title).toBe("string");
+    expect((title as string).length).toBeGreaterThan(0);
   } finally {
     await harness.close();
   }
