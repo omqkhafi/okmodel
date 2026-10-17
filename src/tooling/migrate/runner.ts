@@ -179,10 +179,7 @@ async function ensureSetOption(connection: DriverConnection, role: string): Prom
     await connection.execute(`grant ${quoteIdent(role)} to ${quoteIdent(current)} with set true`);
     return;
   }
-  const member = await connection.execute("select pg_has_role($1, $2, 'MEMBER')", [
-    current,
-    role,
-  ]);
+  const member = await connection.execute("select pg_has_role($1, $2, 'MEMBER')", [current, role]);
   if (roleFlag(member.rows[0]?.[0])) return;
   await connection.execute(`grant ${quoteIdent(role)} to ${quoteIdent(current)}`);
 }
