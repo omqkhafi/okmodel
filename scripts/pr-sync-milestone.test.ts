@@ -11,9 +11,7 @@ test("closesIssueNumber reads the last Closes line", () => {
 });
 
 test("closesIssueNumber ignores the Cursor agent footer", () => {
-  expect(
-    closesIssueNumber("Closes #344\n<!-- CURSOR_AGENT_PR_BODY_END -->\n\n<footer>"),
-  ).toBe(344);
+  expect(closesIssueNumber("Closes #344\n<!-- CURSOR_AGENT_PR_BODY_END -->\n\n<footer>")).toBe(344);
 });
 
 test("closesIssueNumber returns undefined without a closing line", () => {
