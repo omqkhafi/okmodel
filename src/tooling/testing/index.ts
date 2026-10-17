@@ -121,7 +121,6 @@ export async function testing<const S extends TestingSchema>(
     facts,
     rng: rng(seed),
     cache: new Map(),
-    creating: new Set(),
     created: new Map(),
     definitions: new Map(),
   };

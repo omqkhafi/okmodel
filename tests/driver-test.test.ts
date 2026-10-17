@@ -8,6 +8,7 @@
 import { expect, test } from "bun:test";
 
 import { OkmError } from "../src/contracts/error.js";
+import { bunAtLeast, MIN_BUN } from "../packages/harness/src/driver-run.js";
 import { run } from "../src/tooling/migrate/commands.js";
 
 test("okm driver test is a command", async () => {
@@ -32,6 +33,15 @@ async function expectFailure(argv: readonly string[], pattern: RegExp): Promise<
   }
   throw new Error(`${argv.join(" ")} did not fail`);
 }
+
+test("bunAtLeast matches engines.bun and refuses older majors", () => {
+  expect(MIN_BUN).toBe("1.4.0");
+  expect(bunAtLeast("1.4.0", MIN_BUN)).toBe(true);
+  expect(bunAtLeast("1.4.2", MIN_BUN)).toBe(true);
+  expect(bunAtLeast("1.3.13", MIN_BUN)).toBe(false);
+  expect(bunAtLeast("1.3.99", MIN_BUN)).toBe(false);
+  expect(bunAtLeast("", MIN_BUN)).toBe(false);
+});
 
 test("pglite conformance reports pass, fail, and unsupported", async () => {
   const lines: string[] = [];

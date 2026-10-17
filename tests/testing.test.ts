@@ -10,7 +10,7 @@ import { OkmError } from "../src/contracts/error.js";
 import { open as openPglite } from "../src/adapters/pg/pglite.js";
 import { boolean, id, integer, many, schema, table, text, uuid } from "../src/dialects/pg/index.js";
 import { materializedView, view } from "../src/dialects/pg/view/index.js";
-import { columnTenancy, global } from "../src/runtime/tenancy/index.js";
+import { columnTenancy, compositeTenancy, global } from "../src/runtime/tenancy/index.js";
 import { tenantProbe } from "../src/tooling/testing/facts.js";
 import { testing } from "../src/tooling/testing/index.js";
 import { gateApp, TENANT_TABLES } from "./gate-schema.js";
@@ -325,6 +325,60 @@ test("QA-M8: isolation passes twice, after existing rows, and names a missing fa
     expect(failure instanceof OkmError ? failure.message : "").toContain("Factory lists");
   } finally {
     await partial.close();
+  }
+});
+
+test("factories and isolation work under compositeTenancy", async () => {
+  const notes = table(
+    "notes",
+    { id: id({ default: "none" }), body: text() },
+    { relations: { items: many("items", "noteId") } },
+  );
+  const items = table("items", {
+    id: id({ default: "none" }),
+    noteId: uuid().references("notes"),
+    title: text(),
+  });
+  const composite = schema({
+    tables: [notes, items],
+    tenancy: compositeTenancy({ key: ["organizationId", "workspaceId"], type: "uuid" }),
+  });
+  const harness = await testing(composite, { driver: openPglite() });
+  try {
+    const factories = harness.factories({
+      notes: (x) => ({ body: x.words(2) }),
+      items: (x) => ({ title: x.words(2), noteId: x.ref("notes") }),
+    });
+    const parent = await factories.notes.create();
+    expect(typeof parent.organizationId).toBe("string");
+    expect(parent.workspaceId).toBe(parent.organizationId);
+    const scope = {
+      organizationId: parent.organizationId,
+      workspaceId: parent.workspaceId,
+    };
+    const child = await factories.items.create(scope);
+    expect(child.noteId).toBe(parent.id);
+    expect(child.organizationId).toBe(parent.organizationId);
+    const report = await harness.isolation();
+    expect([...report.checked].sort()).toEqual(["items", "notes"]);
+    await Promise.all(Array.from({ length: 20 }, () => factories.items.create(scope)));
+  } finally {
+    await harness.close();
+  }
+});
+
+test("concurrent factory creates of related rows do not report a factory cycle", async () => {
+  const harness = await testing(plain, { driver: openPglite() });
+  try {
+    const factories = harness.factories({
+      lists: (x) => ({ name: x.words(2) }),
+      tasks: (x) => ({ title: x.words(3), listId: x.ref("lists") }),
+      notes: () => ({}),
+    });
+    await Promise.all(Array.from({ length: 20 }, () => factories.tasks.create()));
+    expect(await harness.db.tasks.count()).toBe(20);
+  } finally {
+    await harness.close();
   }
 });
 

@@ -60,13 +60,58 @@ type Target = {
  * @param argv - Arguments after `driver test`
  * @returns The report
  */
+/** Lowest Bun that may run `okm driver test` (B-42). Declared in package.json engines.bun. */
+export const MIN_BUN = "1.4.0";
+
 export async function executeDriverTest(argv: readonly string[]): Promise<DriverReport> {
   process.env.TZ = "UTC";
+  refuseOldBun();
   const parsed = parseArgs(argv);
   const target = await loadTarget(parsed.driver, parsed.url);
   const rows = await runTarget(target);
   const failed = rows.filter((row) => row.result === "fail").length;
   return { text: render(target.name, rows), failed };
+}
+
+/**
+ * Stops when this process is Bun below {@link MIN_BUN}.
+ *
+ * Bun 1.3.13 reported wire cases as pass without running them. A case that
+ * does not execute must not be counted as pass.
+ */
+function refuseOldBun(): void {
+  if (typeof Bun === "undefined") return;
+  const version = typeof Bun.version === "string" ? Bun.version : "";
+  if (bunAtLeast(version, MIN_BUN)) return;
+  throw new Error(
+    `okm driver test needs Bun >=${MIN_BUN} (package.json engines.bun). This process is ${version === "" ? "Bun (unknown version)" : `Bun ${version}`}.`,
+  );
+}
+
+/**
+ * Whether `version` is at least `minimum` (major.minor.patch).
+ *
+ * @param version - `Bun.version`
+ * @param minimum - Floor such as `1.4.0`
+ * @returns `true` when version meets the floor
+ */
+export function bunAtLeast(version: string, minimum: string): boolean {
+  const left = parseSemver(version);
+  const right = parseSemver(minimum);
+  if (left === undefined || right === undefined) return false;
+  for (let index = 0; index < 3; index += 1) {
+    const a = left[index] ?? 0;
+    const b = right[index] ?? 0;
+    if (a > b) return true;
+    if (a < b) return false;
+  }
+  return true;
+}
+
+function parseSemver(value: string): readonly [number, number, number] | undefined {
+  const match = /^(\d+)\.(\d+)\.(\d+)/.exec(value.trim());
+  if (match === null) return undefined;
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
 }
 
 if (import.meta.main) {
@@ -392,6 +437,7 @@ function recorder(driver: string, group: string, jobs: Job[]): SuiteTest {
 async function runJob(job: Job): Promise<Row> {
   const identified = identify(job.group, job.title);
   if (job.fn === undefined) {
+    // Skipped / unsupported cases must not be reported as pass (B-42).
     return {
       id: identified.id,
       behavior: identified.behavior,

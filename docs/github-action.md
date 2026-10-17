@@ -20,7 +20,7 @@ A fork pull request receives no secrets. Preview mode is for a pull request in t
 
 ## Plan
 
-`target` is required. `working-directory` defaults to the workspace root. `version` empty runs the okmodel source checked out with the action. Set `version` to a published release that supports `okm migrate plan --json` to install that package instead. `comment` defaults to `true`. On a pull request the comment body contains `<!-- okmodel-migrate-plan -->` and is updated in place on the next push.
+`target` is required. `working-directory` defaults to the workspace root. `version` empty runs the okmodel source checked out with the action. Set `version` to a published release that supports `okm migrate plan --json` to install that package instead. `comment` defaults to `true`. On a pull request the comment body contains `<!-- okmodel-migrate-plan -->` and is updated in place on the next push when that comment was posted by `github-actions[bot]` (or `GITHUB_ACTOR`). A comment with the same marker from another author is left alone and a new bot comment is created (D295).
 
 ```yaml
 name: Plan

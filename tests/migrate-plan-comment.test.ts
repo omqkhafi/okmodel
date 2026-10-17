@@ -8,6 +8,7 @@
 import { expect, test } from "bun:test";
 
 import {
+  PLAN_COMMENT_BOT,
   PLAN_COMMENT_MARKER,
   planCommentBody,
   renderPlanComment,
@@ -74,12 +75,26 @@ test("a missing plan file records exit codes and keeps the marker", () => {
 test("the first marked comment is the one a later push updates", () => {
   expect(
     stickyCommentTarget([
-      { id: 4, body: "other" },
-      { id: 9, body: `${PLAN_COMMENT_MARKER}\n## expand\n` },
-      { id: 10, body: PLAN_COMMENT_MARKER },
+      { id: 4, body: "other", author: PLAN_COMMENT_BOT },
+      { id: 9, body: `${PLAN_COMMENT_MARKER}\n## expand\n`, author: PLAN_COMMENT_BOT },
+      { id: 10, body: PLAN_COMMENT_MARKER, author: PLAN_COMMENT_BOT },
     ]),
   ).toEqual({ updateId: 9 });
-  expect(stickyCommentTarget([{ id: 1, body: "none" }])).toBeUndefined();
+  expect(stickyCommentTarget([{ id: 1, body: "none", author: PLAN_COMMENT_BOT }])).toBeUndefined();
+});
+
+test("a marked comment by another author is not updated", () => {
+  expect(
+    stickyCommentTarget([
+      { id: 4, body: `${PLAN_COMMENT_MARKER}\n## expand\n`, author: "someone-else" },
+      { id: 9, body: `${PLAN_COMMENT_MARKER}\n## contract\n`, author: PLAN_COMMENT_BOT },
+    ]),
+  ).toEqual({ updateId: 9 });
+  expect(
+    stickyCommentTarget([
+      { id: 4, body: `${PLAN_COMMENT_MARKER}\n## expand\n`, author: "someone-else" },
+    ]),
+  ).toBeUndefined();
 });
 
 function plan(overrides: Partial<PlanDocument>): PlanDocument {

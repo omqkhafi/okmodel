@@ -100,7 +100,7 @@ export type PreparedWrite = {
   readonly statements: readonly Statement[];
   readonly options: ExecuteOptions | undefined;
   /** Set when `finish` can refuse a statement that already ran. `batch` refuses such a write (D183). */
-  readonly checked?: "restore" | "expect" | "parent";
+  readonly checked?: "restore" | "expect" | "parent" | "tree";
   finish(results: readonly ExecuteResult[]): unknown;
   /**
    * More statements once the planned ones have run.
@@ -128,6 +128,11 @@ type Planned = {
   readonly parent?: number;
   /** The statement returns matched and updated counts. A shortfall is OKM1705. */
   readonly parentGuard?: boolean;
+  /**
+   * The statement returns matched and updated counts. A shortfall is a tree cycle
+   * (OKM1120): the new parent is this row or one of its descendants.
+   */
+  readonly treeGuard?: boolean;
   /**
    * Statement indexes whose rows are not part of the write result.
    *
@@ -279,9 +284,11 @@ async function prepareWrite(
       options: callOptions(options),
       ...(planned.parentGuard === true
         ? { checked: "parent" as const }
-        : planned.expect !== undefined
-          ? { checked: "expect" as const }
-          : {}),
+        : planned.treeGuard === true
+          ? { checked: "tree" as const }
+          : planned.expect !== undefined
+            ? { checked: "expect" as const }
+            : {}),
       ...(planned.recover === undefined
         ? {}
         : {
@@ -515,7 +522,7 @@ function planUpdate(
     });
     rejectDuplicateTargets(table, rows);
     rejectMixedSets(rows);
-    for (const row of rows) refuseTreeCycle(table, row.where, row.set, schema.tenancy?.key);
+    for (const row of rows) refuseTreeCycle(table, row.where, row.set, tenantKeys(schema.tenancy));
     const moves = rows.some(
       (row) => pathField(schema.tenancy, table.model.name, row.set) !== undefined,
     );
@@ -545,7 +552,8 @@ function planUpdate(
   const set = writeSet(table, input.set, allow, schema.tenancy);
   requireFilter(table, input.where, mods, "update");
   if (Object.keys(set).length === 0) fail("OKM1120", "update set is empty.");
-  refuseTreeCycle(table, input.where, set, schema.tenancy?.key);
+  const keys = tenantKeys(schema.tenancy);
+  const cycle = refuseTreeCycle(table, input.where, set, keys);
   const where = stack(input.where, mods.presets);
   const moved = pathAssignment(schema.tenancy, table.model.name, set, scope);
   if (moved !== undefined && claim !== undefined) {
@@ -574,6 +582,17 @@ function planUpdate(
       expect,
       keys: undefined,
       keyColumns: undefined,
+    };
+  }
+  if (cycle !== undefined) {
+    return {
+      statements: [treeSetUpdate(schema, table, where, set, cycle, returning)],
+      outputs: parentOutputs(returning),
+      shape: returning === undefined ? "count" : "rows",
+      expect,
+      keys: undefined,
+      keyColumns: undefined,
+      treeGuard: true,
     };
   }
   const sql = new Sql();
@@ -637,6 +656,7 @@ function planDelete(
 function finish(results: readonly ExecuteResult[], planned: Planned, table: string): unknown {
   if (planned.versioned !== undefined) return finishVersioned(results, planned, table);
   if (planned.parentGuard === true) return finishParent(results, planned, table);
+  if (planned.treeGuard === true) return finishTree(results, planned, table);
   if (planned.shape === "count") {
     let count = 0;
     for (const result of results) count += result.count;
@@ -667,6 +687,29 @@ function finishParent(results: readonly ExecuteResult[], planned: Planned, table
       fix: { summary: "Point the foreign key at a parent in this tenant." },
     });
   }
+  return finishGuarded(results, planned, table, updated);
+}
+
+function finishTree(results: readonly ExecuteResult[], planned: Planned, table: string): unknown {
+  const row = results[0]?.rows[0];
+  const matched = countCell(row?.[0]);
+  const updated = countCell(row?.[1]);
+  if (updated < matched) {
+    fail(
+      "OKM1120",
+      `update on ${table} cannot point a tree row at itself or its descendant.`,
+      "Set the parent to another row that is not under this one. A filter that is not the primary key is not checked.",
+    );
+  }
+  return finishGuarded(results, planned, table, updated);
+}
+
+function finishGuarded(
+  results: readonly ExecuteResult[],
+  planned: Planned,
+  table: string,
+  updated: number,
+): unknown {
   if (planned.shape === "count") {
     checkExpect(updated, planned.expect, table, "write");
     return { count: updated };
@@ -1654,8 +1697,17 @@ export function writeSet(
   return set;
 }
 
+/** A tree parent move that needs a descendant check at execute time. */
+type TreeCycleCheck = {
+  readonly own: string;
+  readonly parent: string;
+  readonly column: ColumnModel;
+  readonly identity: ColumnModel;
+};
+
 /**
- * Refuses a tree parent that points at the row being updated.
+ * Refuses a tree parent that points at the row being updated, and returns a
+ * check for a multi-hop cycle when the new parent is another row.
  *
  * The check runs only when `where` is that row's primary key. A filter that
  * is not the key can match many rows, so it is not checked.
@@ -1663,15 +1715,18 @@ export function writeSet(
  * @param table - The table being updated
  * @param where - The caller's filter, before presets
  * @param set - Fields the update writes
+ * @param scopeKeys - Tenancy columns the scope fills
+ * @returns A descendant check when the parent is another id, else `undefined`
  */
 function refuseTreeCycle(
   table: Indexed,
   where: unknown,
   set: Record<string, unknown>,
-  scopeKey: string | undefined,
-): void {
-  const own = keyedId(table, where, scopeKey);
-  if (own === undefined) return;
+  scopeKeys: readonly string[],
+): TreeCycleCheck | undefined {
+  const keyed = keyedId(table, where, scopeKeys);
+  if (keyed === undefined) return undefined;
+  let found: TreeCycleCheck | undefined;
   for (const relation of table.model.relations) {
     if (
       relation.kind !== "many" ||
@@ -1688,14 +1743,18 @@ function refuseTreeCycle(
       if (typeof value !== "string" && typeof value !== "number" && typeof value !== "bigint") {
         continue;
       }
-      if ((typeof value === "string" ? value : value.toString()) !== own) continue;
-      fail(
-        "OKM1120",
-        `update on ${table.model.name}.${column.field} cannot point a tree row at itself.`,
-        "Set the parent to another row. A filter that is not the primary key is not checked.",
-      );
+      const parent = typeof value === "string" ? value : value.toString();
+      if (parent === keyed.own) {
+        fail(
+          "OKM1120",
+          `update on ${table.model.name}.${column.field} cannot point a tree row at itself.`,
+          "Set the parent to another row. A filter that is not the primary key is not checked.",
+        );
+      }
+      found = { own: keyed.own, parent, column, identity: keyed.identity };
     }
   }
+  return found;
 }
 
 /**
@@ -1705,13 +1764,17 @@ function refuseTreeCycle(
  *
  * @param table - The table being updated
  * @param where - The caller's filter
- * @param scopeKey - Tenancy column the scope fills, when it is part of the key
- * @returns The key text, or `undefined` when the filter is not that key
+ * @param scopeKeys - Tenancy columns the scope fills, when they are part of the key
+ * @returns The key text and identity column, or `undefined` when the filter is not that key
  */
-function keyedId(table: Indexed, where: unknown, scopeKey: string | undefined): string | undefined {
+function keyedId(
+  table: Indexed,
+  where: unknown,
+  scopeKeys: readonly string[],
+): { readonly own: string; readonly identity: ColumnModel } | undefined {
   if (!isRecord(where)) return undefined;
   const primary = table.model.primary;
-  const required = primary.filter((field) => field !== scopeKey);
+  const required = primary.filter((field) => !scopeKeys.includes(field));
   const field = required.length === 1 ? required[0] : undefined;
   if (field === undefined || !Object.hasOwn(where, field)) return undefined;
   for (const key of Object.keys(where)) {
@@ -1721,7 +1784,73 @@ function keyedId(table: Indexed, where: unknown, scopeKey: string | undefined): 
   if (typeof value !== "string" && typeof value !== "number" && typeof value !== "bigint") {
     return undefined;
   }
-  return String(value);
+  const identity = table.columns.get(field);
+  if (identity === undefined) return undefined;
+  return { own: String(value), identity };
+}
+
+function tenantKeys(tenancy: QuerySchema["tenancy"]): readonly string[] {
+  if (tenancy === undefined) return [];
+  if (tenancy.keys !== undefined && tenancy.keys.length > 0) return tenancy.keys;
+  return [tenancy.key];
+}
+
+/**
+ * Updates a tree parent and refuses when the new parent is a descendant.
+ *
+ * Matched and updated counts come back like a path parent check. A shortfall
+ * is OKM1120 (cycle), not a missing parent.
+ *
+ * @param schema - Query schema
+ * @param table - Table being updated
+ * @param where - Filter already stacked with presets
+ * @param set - Fields to write
+ * @param cycle - Own id, new parent, and columns
+ * @param returning - Optional returning columns
+ * @returns The guarded update statement
+ */
+function treeSetUpdate(
+  schema: QuerySchema,
+  table: Indexed,
+  where: unknown,
+  set: Record<string, unknown>,
+  cycle: TreeCycleCheck,
+  returning: readonly ColumnModel[] | undefined,
+): Statement {
+  const sql = new Sql();
+  sql.text("with matched as (select ");
+  sql.text(rowId("t"));
+  sql.text(" from ");
+  sql.text(quote(table.model.sql));
+  sql.text(" as t");
+  emitFilter(schema, table, where, sql, "t");
+  sql.text("), updated as (update ");
+  sql.text(quote(table.model.sql));
+  sql.text(" as t set ");
+  emitSet(sql, table, set, "t");
+  sql.text(" where (");
+  sql.text(rowId("t"));
+  sql.text(
+    ") in (select tableoid, ctid from matched) and not exists (with recursive d as (select ",
+  );
+  sql.text(quote(cycle.identity.sql));
+  sql.text(" as k from ");
+  sql.text(quote(table.model.sql));
+  sql.text(" where ");
+  sql.text(quote(cycle.column.sql));
+  sql.text(" = ");
+  sql.param(cycle.own, cycle.identity.dataType);
+  sql.text(" union all select c.");
+  sql.text(quote(cycle.identity.sql));
+  sql.text(" from ");
+  sql.text(quote(table.model.sql));
+  sql.text(" c join d on c.");
+  sql.text(quote(cycle.column.sql));
+  sql.text(" = d.k) select 1 from d where d.k = ");
+  sql.param(cycle.parent, cycle.identity.dataType);
+  sql.text(")");
+  endParent(sql, returning);
+  return sql.statement();
 }
 
 /**

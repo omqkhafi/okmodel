@@ -77,6 +77,12 @@ export async function batch(
           { fix: { summary: "Use update({ where, set }) inside tx()." } },
         );
       }
+      if (item.checked === "tree") {
+        fail(
+          "OKM1121",
+          "batch does not take an update that sets a tree parent. The cycle is checked in the statement, and a batch cannot report that after it commits. Use update({ where, set }) inside tx().",
+        );
+      }
       if (item.checked !== undefined) {
         fail(
           "OKM1121",

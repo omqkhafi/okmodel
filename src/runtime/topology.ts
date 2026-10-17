@@ -1932,7 +1932,11 @@ function lowerLatency(endpoint: Endpoint, best: Endpoint): boolean {
 }
 
 /**
- * Runs a custom select. A throw leaves this function unchanged.
+ * Runs a custom select.
+ *
+ * An {@link OkmError} throw keeps its kind. Any other throw becomes kind
+ * `invalid` with that value as `cause`, so the client does not map it as a
+ * driver error.
  *
  * @param handle - Supplies each candidate's byte lag
  * @param select - The caller's function
@@ -1958,7 +1962,14 @@ function fromSelect(
       lag: byteLagNumber(handle, endpoint),
     });
   }
-  const returned: unknown = select(offered, { op: "read" });
+  let returned: unknown;
+  try {
+    returned = select(offered, { op: "read" });
+  } catch (error) {
+    if (error instanceof OkmError) throw error;
+    const message = error instanceof Error ? error.message : "routing.select threw.";
+    throw new OkmError("invalid", message, { kind: "invalid", cause: error });
+  }
   if (typeof returned === "string") {
     const endpoint = endpoints.find((item) => item.name === returned);
     if (endpoint !== undefined) return endpoint;

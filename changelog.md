@@ -30,6 +30,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 #### runtime
 
 - A statement with more than 65,535 parameters fails with OKM1126 (count and limit in the message) instead of a retryable `unavailable`. The limit is for the whole statement, including filters and `inList` (B-40, D292). Split from the write-safety work on #339 when the combined change grew the featureless app by more than 100 B.
+- An `update` that would set a tree parent to the row itself or to a descendant is OKM1120 when `where` is the primary key (B-10, D295).
+- A throw from a custom `routing.select` keeps an `OkmError`'s kind; a plain throw becomes kind `invalid` instead of `driver` (B-35, D295).
 
 #### adapters
 
@@ -42,6 +44,9 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### tooling
 
+- The sticky migrate-plan comment matches the marker and the bot author, so another author's marked comment is not edited (B-22, D295).
+- `okm driver test` drops leftover `okm_*` tables after each wire and error case, refuses Bun below `1.4.0`, and never reports an unrun case as `pass` (B-05, B-06, B-42, D295).
+- `okmodel/testing` factories and `isolation()` work under `compositeTenancy()`; concurrent creates no longer false-positive as a factory cycle; matviews are refreshed in `isolation()` and documented otherwise (B-32, B-28, B-34, D295).
 - The Bun.sql kill-storm test (B-03) retries post-storm scoped reads on `unavailable`/closed (bounded) so a dying reserved handle after the storm does not fail CI, without relaxing storm `short`/`leaks`/`readOnly`/`nested` asserts.
 - `okm push` plans from the live catalog and applies each change under a fresh `push-<n>` id, so a second push is no longer skipped (D289).
 - When the schema hash moves with no DDL (an external table the dependent already verified), `okm push` and `okm migrate apply` re-stamp `okm_meta` instead of leaving `connect()` on OKM1520 (D289).
@@ -57,6 +62,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### docs
 
+- Tree, testing, driver-test, and Action docs cover cycle refusal, composite factories, minimum Bun, cleanup, and sticky-comment author matching (D295).
 - Known limits record that Bun.sql does not park reserved handles, that a post-commit reset failure does not fail the call, and that a send-without-result is OKM1401 with no `afterCommit` (D288).
 - `okm push` docs say it applies the live schema diff as `push-<n>`, and known-limits cover external re-stamp and domain-check sealing (D289).
 - Sensitive docs cover redaction in logs, errors, `cause`, and spans; writes docs cover unknown keys (D291).

@@ -13,10 +13,15 @@ import { parsePlanJson, type PlanDocument } from "../migrate/plan-json.js";
  */
 export const PLAN_COMMENT_MARKER = "<!-- okmodel-migrate-plan -->";
 
+/** Default login that posts the Action comment with `GITHUB_TOKEN`. */
+export const PLAN_COMMENT_BOT = "github-actions[bot]";
+
 /** A comment the sticky update may replace. */
 export type StickyComment = {
   readonly id: number;
   readonly body: string;
+  /** GitHub login of the comment author. */
+  readonly author: string;
 };
 
 /**
@@ -80,17 +85,23 @@ export function planCommentBody(
 }
 
 /**
- * The comment to update, when one already carries the marker.
+ * The comment to update, when one already carries the marker and an allowed author.
  *
  * The first match wins. A missing match means the caller creates a comment.
+ * A marker on another author's comment is ignored so the Action never edits it.
  *
  * @param comments - Comments already on the pull request
+ * @param authors - Logins allowed to own the sticky comment. Default is the Actions bot
  * @returns The id to update, or `undefined` to create one
  */
 export function stickyCommentTarget(
   comments: readonly StickyComment[],
+  authors: readonly string[] = [PLAN_COMMENT_BOT],
 ): { readonly updateId: number } | undefined {
-  const found = comments.find((comment) => comment.body.includes(PLAN_COMMENT_MARKER));
+  const allowed = new Set(authors);
+  const found = comments.find(
+    (comment) => comment.body.includes(PLAN_COMMENT_MARKER) && allowed.has(comment.author),
+  );
   if (found === undefined) return undefined;
   return { updateId: found.id };
 }
