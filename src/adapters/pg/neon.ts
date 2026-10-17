@@ -38,6 +38,7 @@ import { runCall } from "./call.js";
 import { noTimeout } from "./no-inflight-timeout.js";
 import { noticeBuffer, WireSession, type WireQuery } from "./session.js";
 import { EMPTY_NOTICES, resultFrom } from "./result.js";
+import { driverUrl } from "./url.js";
 
 export {
   NEON_WEBSOCKET_CAPABILITIES as capabilities,
@@ -213,7 +214,7 @@ async function openWebSocket(config: NeonConfig): Promise<DriverPool> {
   const isClosed = (): boolean => closed;
   const named = config.prepared === "named";
   const pool = new Pool({
-    connectionString: config.url,
+    connectionString: driverUrl(config.url),
     max,
     idleTimeoutMillis: 0,
     allowExitOnIdle: true,
@@ -277,7 +278,7 @@ function openHttp(config: NeonConfig): DriverPool {
   const max = config.max ?? 10;
   const counters: Counters = { reserved: 0, busy: 0, reservedBusy: 0, waiting: 0 };
   let closed = false;
-  const sql: HttpSql = neon(config.url, { arrayMode: true, fullResults: true });
+  const sql: HttpSql = neon(driverUrl(config.url), { arrayMode: true, fullResults: true });
   const run = async (
     text: string,
     params: readonly WireValue[] | undefined,

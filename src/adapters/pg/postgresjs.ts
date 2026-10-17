@@ -22,6 +22,7 @@ import { mapFailure, rejectClosed } from "../failure.js";
 import type { BatchSession } from "./batch.js";
 import { nextTransactionDepth, runCall, type Watch } from "./call.js";
 import { EMPTY_NOTICES, resultFrom } from "./result.js";
+import { driverUrl } from "./url.js";
 
 export {
   POSTGRESJS_CAPABILITIES as capabilities,
@@ -221,7 +222,7 @@ export function open(config: PostgresJsConfig): DriverPool {
   const plain = config.ssl === undefined;
   const sockets = new PoolSockets();
   const sql = postgres(
-    config.url,
+    driverUrl(config.url),
     driverOptions(config, {
       max,
       named,

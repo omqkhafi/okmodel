@@ -11,7 +11,7 @@ import type { DriverConnection } from "../../contracts/driver.js";
 import { OkmError } from "../../contracts/error.js";
 import { quoteIdent } from "../../dialects/pg/ddl.js";
 import { roleExists } from "../../dialects/pg/role/check.js";
-import { createdRoleName, createRoleOnce } from "../../dialects/pg/role/sql.js";
+import { changesRole, createdRoleName, createRoleOnce } from "../../dialects/pg/role/sql.js";
 import {
   boundaryQuery,
   checkedCast,
@@ -127,7 +127,9 @@ export async function runTarget(
 /**
  * Assumes `role` for the rest of this connection.
  *
- * A second call with the same role does nothing.
+ * A second call with the same role does nothing. A non-superuser that created
+ * the role with `CREATEROLE` gets `WITH SET TRUE` first: Postgres 16+ grants
+ * `ADMIN` without `SET` on that membership.
  *
  * @param connection - Reserved connection
  * @param role - Migration role
@@ -139,8 +141,90 @@ export async function assumeRole(
   session: { setRole?: string },
 ): Promise<void> {
   if (session.setRole === role) return;
+  await ensureSetOption(connection, role);
   await connection.execute(`set role ${quoteIdent(role)}`);
   session.setRole = role;
+}
+
+/**
+ * Grants the connecting role `SET` on `role` when it lacks that option.
+ *
+ * Superusers skip the grant. A role that is already `current_user` skips it.
+ *
+ * @param connection - Reserved connection, before `SET ROLE`
+ * @param role - Role to assume
+ */
+async function ensureSetOption(connection: DriverConnection, role: string): Promise<void> {
+  const who = await connection.execute(
+    "select current_user, rolsuper from pg_roles where rolname = current_user",
+  );
+  const current = who.rows[0]?.[0];
+  if (typeof current !== "string" || current === role) return;
+  if (roleFlag(who.rows[0]?.[1])) return;
+  const option = await connection.execute(
+    `select am.set_option
+       from pg_auth_members am
+       join pg_roles r on r.oid = am.roleid
+       join pg_roles m on m.oid = am.member
+      where r.rolname = $1 and m.rolname = $2`,
+    [role, current],
+  );
+  if (roleFlag(option.rows[0]?.[0])) return;
+  await connection.execute(`grant ${quoteIdent(role)} to ${quoteIdent(current)} with set true`);
+}
+
+/**
+ * Maps a Postgres role-privilege refusal to a clear `OkmError`.
+ *
+ * @param error - Driver failure
+ * @param role - Role named in the step, when known
+ * @returns A forbidden error that names CREATEROLE or the SET option, or
+ *   `undefined` when the failure is something else
+ */
+export function rolePrivilegeError(error: unknown, role?: string): OkmError | undefined {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/permission denied to create role/i.test(message)) {
+    return new OkmError(
+      "forbidden",
+      "CREATEROLE is required to create roles. Nothing was changed.",
+      {
+        kind: "forbidden",
+        cause: error,
+        fix: {
+          summary: "Grant CREATEROLE to the connecting role, or connect as a superuser.",
+        },
+      },
+    );
+  }
+  if (/permission denied to set role/i.test(message)) {
+    const name = role ?? "the migration role";
+    return new OkmError(
+      "forbidden",
+      `Cannot SET ROLE ${name}: the connecting role lacks the SET option on that membership.`,
+      {
+        kind: "forbidden",
+        cause: error,
+        fix: {
+          summary: `Grant ${name} to the connecting role WITH SET TRUE, or connect as a superuser.`,
+        },
+      },
+    );
+  }
+  if (/must be able to SET ROLE|not a member/i.test(message)) {
+    const name = role ?? "the migration role";
+    return new OkmError(
+      "forbidden",
+      `Cannot SET ROLE ${name}: the connecting role is not a member with the SET option.`,
+      {
+        kind: "forbidden",
+        cause: error,
+        fix: {
+          summary: `Grant ${name} to the connecting role WITH SET TRUE, or connect as a superuser.`,
+        },
+      },
+    );
+  }
+  return undefined;
 }
 
 /**
@@ -183,6 +267,46 @@ export async function grantSchema(
   );
 }
 
+/**
+ * Makes `role` the owner of `schema` when the connecting role can.
+ *
+ * Grants on the schema to reporting and other roles need the migration role
+ * to own it. A connecting role that is not the owner leaves the schema as is.
+ *
+ * @param connection - Reserved connection, before `SET ROLE`
+ * @param schema - Schema the migration writes
+ * @param role - Migration role that was just created
+ */
+export async function ownSchema(
+  connection: DriverConnection,
+  schema: string,
+  role: string,
+): Promise<void> {
+  // Postgres 16+ requires SET on the new owner before OWNER TO. The new
+  // owner also needs CREATE on the database.
+  await ensureSetOption(connection, role);
+  await connection.execute("savepoint okm_own_schema");
+  try {
+    const database = await databaseName(connection);
+    await connection.execute(
+      `grant create on database ${quoteIdent(database)} to ${quoteIdent(role)}`,
+    );
+    await connection.execute(`alter schema ${quoteIdent(schema)} owner to ${quoteIdent(role)}`);
+    await connection.execute("release savepoint okm_own_schema");
+  } catch {
+    // The connecting role is not the owner (or cannot grant on the database).
+    // Roll back only this attempt so the surrounding unit transaction stays
+    // open. Grants that need ownership fail later with OKM1825 and the same fix.
+    await connection.execute("rollback to savepoint okm_own_schema");
+  }
+}
+
+async function databaseName(connection: DriverConnection): Promise<string> {
+  const result = await connection.execute("select current_database()");
+  const name = result.rows[0]?.[0];
+  return typeof name === "string" ? name : "postgres";
+}
+
 async function runUnit(
   connection: DriverConnection,
   unit: RunnableUnit,
@@ -204,6 +328,17 @@ async function runUnit(
       }
       for (const item of unit.steps) {
         current = item.index;
+        // Create every managed role as the connecting user first. SET ROLE to
+        // the migration role waits until a later non-role step so a second
+        // CREATE ROLE is not refused (the migration role has NOCREATEROLE).
+        if (
+          run.migrationRole !== undefined &&
+          !changesRole(item.step.sql) &&
+          session.setRole !== run.migrationRole &&
+          (await roleExists(connection, run.migrationRole))
+        ) {
+          await assumeRole(connection, run.migrationRole, session);
+        }
         await rebuildInvalidIndex(connection, item.step.sql);
         const created = createdRoleName(item.step.sql);
         const existed = created !== undefined && (await roleExists(connection, created));
@@ -211,14 +346,12 @@ async function runUnit(
           await connection.execute(item.step.sql);
           await assertSchemaUsageLanded(connection, item.step.sql);
         } else if (!existed) await connection.execute(createRoleOnce(item.step.sql));
-        if (created !== undefined && created === run.migrationRole) {
-          if (!existed) {
-            await grantSchema(connection, run.schema ?? "public", created);
-            await connection.execute(
-              `grant select, insert, update on okm_meta, okm_history, okm_backfill to ${quoteIdent(created)}`,
-            );
-          }
-          await assumeRole(connection, created, session);
+        if (created !== undefined && created === run.migrationRole && !existed) {
+          await grantSchema(connection, run.schema ?? "public", created);
+          await ownSchema(connection, run.schema ?? "public", created);
+          await connection.execute(
+            `grant select, insert, update on okm_meta, okm_history, okm_backfill to ${quoteIdent(created)}`,
+          );
         }
         if (!unit.transactional) {
           await connection.execute("begin");
@@ -228,6 +361,13 @@ async function runUnit(
           await connection.execute("commit");
           began = false;
         }
+      }
+      if (
+        run.migrationRole !== undefined &&
+        session.setRole !== run.migrationRole &&
+        (await roleExists(connection, run.migrationRole))
+      ) {
+        await assumeRole(connection, run.migrationRole, session);
       }
       if (unit.transactional) {
         for (const item of unit.steps) await writeStep(connection, unit, item);
@@ -522,8 +662,7 @@ export async function assertSchemaUsageLanded(
      )`,
     [schema, role],
   );
-  const landed = found.rows[0]?.[0];
-  if (landed === "t" || landed === "true") return;
+  if (roleFlag(found.rows[0]?.[0])) return;
   throw new OkmError("OKM1825", `Grant usage on schema ${schema} to ${role} did not take effect.`, {
     kind: "forbidden",
     fix: {
@@ -539,6 +678,14 @@ function failStep(unit: RunnableUnit, index: number, error: unknown): OkmError {
       lost.code,
       `Migration ${unit.migrationId} failed at step ${String(index + 1)}: ${lost.message}`,
       { kind: lost.kind, cause: error, fix: lost.fix },
+    );
+  }
+  const privilege = rolePrivilegeError(error, undefined);
+  if (privilege !== undefined) {
+    return new OkmError(
+      privilege.code,
+      `Migration ${unit.migrationId} failed at step ${String(index + 1)}: ${privilege.message}`,
+      { kind: privilege.kind, cause: error, fix: privilege.fix },
     );
   }
   if (error instanceof OkmError) return error;
@@ -562,6 +709,10 @@ function isLockTimeout(error: unknown): boolean {
 
 function wireTrue(value: string | null | undefined): boolean {
   return value === "t" || value === "true";
+}
+
+function roleFlag(value: unknown): boolean {
+  return value === true || value === "t" || value === "true";
 }
 
 function unquote(token: string): string {

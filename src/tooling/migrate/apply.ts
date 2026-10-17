@@ -42,11 +42,11 @@ import { finishQuiet } from "./lost.js";
 import { catalogQuery, managedRoleOptions, sealDomainChecks } from "./drift.js";
 import {
   assertDirectConnection,
-  assertStableBackend,
   assertTargetPolicy,
   selectTarget,
   type InvokeFlags,
 } from "./policy.js";
+import { probeStableBackend } from "./pooler-probe.js";
 import type { DeclaredRename } from "../../dialects/pg/declarations.js";
 import postgres from "postgres";
 
@@ -284,7 +284,11 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
   const connection = reserved;
   let locked = false;
   try {
-    await assertStableBackend(() => backendPid(connection), request.allowPooler === true);
+    await probeStableBackend(
+      request.url,
+      () => backendPid(connection),
+      request.allowPooler === true,
+    );
     await assertStandardStrings(connection);
     await setTimeouts(connection, request);
     await lockTarget(connection, request.target);
@@ -513,7 +517,11 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
   const connection = await pool.reserve();
   let locked = false;
   try {
-    await assertStableBackend(() => backendPid(connection), request.allowPooler === true);
+    await probeStableBackend(
+      request.url,
+      () => backendPid(connection),
+      request.allowPooler === true,
+    );
     await assertStandardStrings(connection);
     await setTimeouts(connection, {
       url: request.url,

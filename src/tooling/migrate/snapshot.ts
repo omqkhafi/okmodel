@@ -21,7 +21,7 @@ import type {
 import type { DriverConnection } from "../../contracts/driver.js";
 import { quoteIdent } from "../../dialects/pg/ddl.js";
 import { roleExists } from "../../dialects/pg/role/check.js";
-import { createdRoleName, createRoleOnce } from "../../dialects/pg/role/sql.js";
+import { changesRole, createdRoleName, createRoleOnce } from "../../dialects/pg/role/sql.js";
 import { catalogsEqual } from "./equal.js";
 import { omitManagedObjects } from "./managed.js";
 import { planMigration } from "./plan.js";
@@ -31,6 +31,7 @@ import {
   assertSchemaUsageLanded,
   assumeRole,
   grantSchema,
+  ownSchema,
   statementOutsideTransaction,
 } from "./runner.js";
 import { canonicalTypeName } from "./type-name.js";
@@ -148,12 +149,18 @@ export async function installSnapshot(
   try {
     for (const step of plan.steps) {
       if (step.backfill !== undefined) continue;
+      if (
+        migrationRole !== undefined &&
+        !changesRole(step.sql) &&
+        session.setRole !== migrationRole &&
+        (await roleExists(connection, migrationRole))
+      ) {
+        await flush();
+        await assumeRole(connection, migrationRole, session);
+      }
       const created = createdRoleName(step.sql);
       const existed = created !== undefined && (await roleExists(connection, created));
-      if (created !== undefined && existed) {
-        if (created === migrationRole) await assumeRole(connection, created, session);
-        continue;
-      }
+      if (created !== undefined && existed) continue;
       const sql = created === undefined ? step.sql : createRoleOnce(step.sql);
       if (step.transactional && !statementOutsideTransaction(step.sql)) {
         batch.push(sql);
@@ -165,11 +172,19 @@ export async function installSnapshot(
       if (created !== undefined && created === migrationRole) {
         await flush();
         await grantSchema(connection, schema, created);
+        await ownSchema(connection, schema, created);
         await connection.execute(
           `grant select, insert, update on okm_meta, okm_history, okm_backfill to ${quoteIdent(created)}`,
         );
-        await assumeRole(connection, created, session);
       }
+    }
+    if (
+      migrationRole !== undefined &&
+      session.setRole !== migrationRole &&
+      (await roleExists(connection, migrationRole))
+    ) {
+      await flush();
+      await assumeRole(connection, migrationRole, session);
     }
     await flush();
     for (const sql of referenceInserts(reference, schema)) {

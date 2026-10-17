@@ -27,6 +27,7 @@ import { driverErrors, mapFailure, rejectClosed } from "../failure.js";
 import { runCall, type Watch } from "./call.js";
 import { noTimeout } from "./no-inflight-timeout.js";
 import { noticeBuffer, WireSession, type WireQuery } from "./session.js";
+import { driverUrl } from "./url.js";
 
 export {
   BUNSQL_CAPABILITIES as capabilities,
@@ -117,7 +118,7 @@ export function open(config: BunSqlConfig): DriverPool {
   let dropped = 0;
   let closures = 0;
 
-  const sql = new BunSQL(config.url, {
+  const sql = new BunSQL(driverUrl(config.url), {
     max,
     idleTimeout: 0,
     maxLifetime: 0,

@@ -22,6 +22,7 @@ import { NODE_POSTGRES_CAPABILITIES } from "../capabilities.js";
 import { driverErrors, mapFailure, rejectClosed } from "../failure.js";
 import { runCall } from "./call.js";
 import { noticeBuffer, WireSession, type WireQuery } from "./session.js";
+import { driverUrl } from "./url.js";
 
 export {
   hasCapability,
@@ -108,7 +109,7 @@ export function open(config: NodePostgresConfig): DriverPool {
   const named = config.prepared === "named";
 
   const pool = new pg.Pool({
-    connectionString: config.url,
+    connectionString: driverUrl(config.url),
     max,
     idleTimeoutMillis: 0,
     allowExitOnIdle: true,

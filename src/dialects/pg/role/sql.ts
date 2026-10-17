@@ -114,6 +114,8 @@ export function privilegeSql(
       if (previous !== undefined && (target === undefined || !recreated.has(target))) continue;
       const tighten = tightenColumnSelect(object, after, schema);
       if (tighten !== undefined) grant.push(tighten);
+      const fromPublic = revokePublicExecute(object, schema);
+      if (fromPublic !== undefined) grant.push(fromPublic);
       grant.push({ sql: grantStatement(object, schema, false), kind: "grant" });
       const writes = revokeMatviewWrites(object, after, schema);
       if (writes !== undefined) grant.push(writes);
@@ -121,6 +123,8 @@ export function privilegeSql(
     }
     if (previous !== undefined) continue;
     if (object.kind === "defaultPrivilege") {
+      const fromPublic = revokePublicDefaultExecute(object, schema);
+      if (fromPublic !== undefined) defaults.push(fromPublic);
       defaults.push({ sql: defaultStatement(object, schema, false), kind: "grant-default" });
     }
   }
@@ -209,6 +213,36 @@ function tightenColumnSelect(
   return {
     sql: `revoke select on ${grantTarget(target, schema)} from ${quoteIdent(object.identity.role)}`,
     kind: "revoke",
+  };
+}
+
+/**
+ * Revokes `EXECUTE` from `PUBLIC` when the plan grants it to the app role.
+ *
+ * Postgres grants `EXECUTE` to `PUBLIC` on new functions. With `roles` set,
+ * only the application role should execute managed functions.
+ */
+function revokePublicExecute(object: GrantObject, schema: string): PrivilegeStatement | undefined {
+  if (object.identity.privilege.toUpperCase() !== "EXECUTE") return undefined;
+  if (object.identity.object.kind !== "function") return undefined;
+  return {
+    sql: `revoke execute on ${grantTarget(object.identity.object, schema)} from public`,
+    kind: "revoke",
+  };
+}
+
+/**
+ * Revokes default `EXECUTE` from `PUBLIC` for functions the migration role creates.
+ */
+function revokePublicDefaultExecute(
+  object: DefaultPrivilegeObject,
+  schema: string,
+): PrivilegeStatement | undefined {
+  if (object.identity.objectKind !== "function") return undefined;
+  if (object.identity.privilege.toUpperCase() !== "EXECUTE") return undefined;
+  return {
+    sql: `alter default privileges for role ${quoteIdent(object.identity.forRole)} in schema ${quoteIdent(schema)} revoke execute on functions from public`,
+    kind: "grant-default",
   };
 }
 
