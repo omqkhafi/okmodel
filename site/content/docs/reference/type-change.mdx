@@ -72,11 +72,22 @@ alter table "public"."prices" drop constraint "prices_amount_not_null";
 
 ## Drop the old column
 
-Ship this only after every release reads and writes `amount`. Dropping the column is OKM1512, so the step needs a reason. Drop the trigger first.
+Ship this only after every release reads and writes `amount`. Dropping the column is OKM1512. Dropping the dual-write function is OKM1515. Each needs a reason on its own step. Dropping the trigger is not a linter finding. Put the trigger first. Use a name header and a blank line so the first statement is a step, not part of the file header:
 
 ```sql
--- okm-allow OKM1512: readers and writers use amount
+-- name: 0006_drop_cents
+-- class: contract
+
+-- class: contract
 drop trigger "prices_amount_sync" on "public"."prices";
+
+-- class: contract
+-- okm-allow OKM1515: dual-write trigger removed
 drop function "public"."prices_amount_sync"();
+
+-- class: contract
+-- okm-allow OKM1512: readers and writers use amount
 alter table "public"."prices" drop column "cents";
 ```
+
+An `-- okm-allow OKM1512` on the drop-trigger step is OKM1510 and apply refuses before any statement.

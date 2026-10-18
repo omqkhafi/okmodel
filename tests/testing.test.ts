@@ -8,7 +8,17 @@ import { expect, test } from "bun:test";
 
 import { OkmError } from "../src/contracts/error.js";
 import { open as openPglite } from "../src/adapters/pg/pglite.js";
-import { boolean, id, integer, many, schema, table, text, uuid } from "../src/dialects/pg/index.js";
+import {
+  boolean,
+  id,
+  identity,
+  integer,
+  many,
+  schema,
+  table,
+  text,
+  uuid,
+} from "../src/dialects/pg/index.js";
 import { materializedView, view } from "../src/dialects/pg/view/index.js";
 import { columnTenancy, compositeTenancy, global } from "../src/runtime/tenancy/index.js";
 import { tenantProbe } from "../src/tooling/testing/facts.js";
@@ -128,6 +138,38 @@ test("isolation passes on the fixture schemas and fails when the predicate is dr
     if (!(failure instanceof OkmError)) return;
     expect(failure.message).toContain("Isolation leak on notes.find");
     expect(failure.message).toContain("body");
+  } finally {
+    await harness.close();
+  }
+}, 30_000);
+
+test("B-34: testing populates concurrent matviews so refresh() works", async () => {
+  const app = schema({
+    casing: "snake",
+    tenancy: columnTenancy({ key: "workspaceId", type: "uuid" }),
+    tables: [table("projects", { id: id({ default: "none" }), name: text() })],
+    views: [
+      materializedView("project_titles", {
+        columns: [
+          { name: "workspace_id", type: "uuid" },
+          { name: "name", type: "text" },
+        ],
+        query: "select workspace_id, name from projects",
+        refresh: "concurrently",
+        indexes: [{ columns: ["workspace_id"], unique: true }],
+      }),
+    ],
+  });
+  const harness = await testing(app, { driver: openPglite() });
+  try {
+    const factories = harness.factories({
+      projects: (x) => ({ name: x.words(2) }),
+    });
+    await factories.projects.create();
+    // Without the setup populate this is "not populated" (B-34).
+    await harness.db.views.projectTitles.refresh();
+    const report = await harness.isolation();
+    expect([...report.views]).toEqual(["projectTitles"]);
   } finally {
     await harness.close();
   }
@@ -351,14 +393,30 @@ test("factories and isolation work under compositeTenancy", async () => {
     });
     const parent = await factories.notes.create();
     expect(typeof parent.organizationId).toBe("string");
-    expect(parent.workspaceId).toBe(parent.organizationId);
+    expect(typeof parent.workspaceId).toBe("string");
+    // B-32: each composite key gets its own generated uuid.
+    expect(parent.workspaceId).not.toBe(parent.organizationId);
+    const org = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const ws = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const explicit = await factories.notes.create({ organizationId: org, workspaceId: ws });
+    expect(explicit.organizationId).toBe(org);
+    expect(explicit.workspaceId).toBe(ws);
+    let partial: unknown;
+    try {
+      await factories.notes.create({ organizationId: org });
+    } catch (error) {
+      partial = error;
+    }
+    expect(partial).toBeInstanceOf(OkmError);
+    expect(partial instanceof OkmError ? partial.message : "").toContain("Missing workspaceId");
     const scope = {
-      organizationId: parent.organizationId,
-      workspaceId: parent.workspaceId,
+      organizationId: parent.organizationId as string,
+      workspaceId: parent.workspaceId as string,
     };
     const child = await factories.items.create(scope);
     expect(child.noteId).toBe(parent.id);
     expect(child.organizationId).toBe(parent.organizationId);
+    expect(child.workspaceId).toBe(parent.workspaceId);
     const report = await harness.isolation();
     expect([...report.checked].sort()).toEqual(["items", "notes"]);
     await Promise.all(Array.from({ length: 20 }, () => factories.items.create(scope)));
@@ -366,6 +424,22 @@ test("factories and isolation work under compositeTenancy", async () => {
     await harness.close();
   }
 });
+
+test("B-32: isolation under compositeTenancy with identity primary keys", async () => {
+  const lists = table("lists", { id: identity() });
+  const app = schema({
+    tables: [lists],
+    tenancy: compositeTenancy({ key: ["organizationId", "workspaceId"], type: "uuid" }),
+  });
+  const harness = await testing(app, { driver: openPglite() });
+  try {
+    harness.factories({ lists: () => ({}) });
+    const report = await harness.isolation();
+    expect([...report.checked]).toEqual(["lists"]);
+  } finally {
+    await harness.close();
+  }
+}, 30_000);
 
 test("concurrent factory creates of related rows do not report a factory cycle", async () => {
   const harness = await testing(plain, { driver: openPglite() });

@@ -1,5 +1,5 @@
 /**
- * A statement over 65,535 parameters is OKM1126 before it reaches the driver (B-40).
+ * A statement over 65,533 parameters is OKM1126 before it reaches the driver (B-40, B-48).
  */
 
 import { expect, test } from "bun:test";
@@ -51,7 +51,7 @@ function ids(count: number): string[] {
   return out;
 }
 
-test("B-40: exactly 65535 parameters run; 65536 is OKM1126 with the count", async () => {
+test("B-48: exactly 65533 parameters run; 65534 is OKM1126 with the count", async () => {
   const db = connect(stubPool(), { schema: app });
   await db.connected;
 
