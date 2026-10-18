@@ -204,7 +204,7 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     code: "OKM1126",
     title: "Parameter limit",
     summary:
-      "The finished statement has more than 65,535 parameters. The limit is for the whole statement (filters, inList, limit, values), not for inList alone.",
+      "The finished statement has more than 65,533 parameters. The limit is for the whole statement (filters, inList, limit, values), not for inList alone. It matches postgres.js (which refuses at 65,534) so OKM1126 fires before that driver's MAX_PARAMETERS_EXCEEDED.",
     fix: "Chunk the work, or filter with = any(array) instead of a long inList.",
   },
   {

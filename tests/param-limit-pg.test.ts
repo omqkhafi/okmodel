@@ -2,7 +2,7 @@
  * Parameter budget against real Postgres (B-40).
  *
  * Uses node-postgres: postgres.js refuses at 65,534 parameters in the
- * driver, below the protocol limit of 65,535 that OKM1126 enforces.
+ * driver, below the shared limit of 65,533 that OKM1126 enforces (B-48).
  */
 
 import { expect } from "bun:test";
@@ -31,7 +31,7 @@ function ids(count: number): string[] {
 
 postgresTest(
   gate,
-  "B-40: 65535 parameters work; 65536 is OKM1126; filters count toward the limit",
+  "B-48: 65533 parameters work; 65534 is OKM1126; filters count toward the limit",
   async () => {
     await withPostgresSchema(async (sql, schemaName) => {
       for (const statement of renderCatalog(app.catalog, schemaName)) await sql.unsafe(statement);
