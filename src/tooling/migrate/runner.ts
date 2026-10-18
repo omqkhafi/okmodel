@@ -296,13 +296,30 @@ export async function ownSchema(
   // Postgres 16+ requires SET on the new owner before OWNER TO. The new
   // owner also needs CREATE on the database.
   await ensureSetOption(connection, role);
-  await connection.execute("savepoint okm_own_schema");
-  try {
-    const database = await databaseName(connection);
+  const database = await databaseName(connection);
+  const attempt = async (): Promise<void> => {
     await connection.execute(
       `grant create on database ${quoteIdent(database)} to ${quoteIdent(role)}`,
     );
     await connection.execute(`alter schema ${quoteIdent(schema)} owner to ${quoteIdent(role)}`);
+  };
+  // Provision commits CREATE ROLE before this call (installSnapshot flush), so
+  // there may be no open transaction. SAVEPOINT only works inside one; outside,
+  // a failed GRANT/ALTER does not poison later statements.
+  try {
+    await connection.execute("savepoint okm_own_schema");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/savepoint can only be used in transaction blocks/i.test(message)) throw error;
+    try {
+      await attempt();
+    } catch {
+      // Connecting role cannot own the schema (or grant on the database).
+    }
+    return;
+  }
+  try {
+    await attempt();
     await connection.execute("release savepoint okm_own_schema");
   } catch {
     // The connecting role is not the owner (or cannot grant on the database).

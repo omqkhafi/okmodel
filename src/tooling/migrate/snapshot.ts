@@ -176,7 +176,19 @@ export async function installSnapshot(
       }
       const created = createdRoleName(step.sql);
       const existed = created !== undefined && (await roleExists(connection, created));
-      if (created !== undefined && existed) continue;
+      if (created !== undefined && existed) {
+        // A prior partial provision may have created the role and left grants
+        // incomplete. Re-apply schema ownership and meta grants idempotently.
+        if (created === migrationRole) {
+          await flush();
+          await grantSchema(connection, schema, created);
+          await ownSchema(connection, schema, created);
+          await connection.execute(
+            `grant select, insert, update on okm_meta, okm_history, okm_backfill to ${quoteIdent(created)}`,
+          );
+        }
+        continue;
+      }
       const sql = created === undefined ? step.sql : createRoleOnce(step.sql);
       if (step.transactional && !statementOutsideTransaction(step.sql)) {
         batch.push(sql);

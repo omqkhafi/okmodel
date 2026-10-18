@@ -41,6 +41,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okm migrate check` reprints domain checks before planning, so a non-canonical author check such as `VALUE > 0` is OKM1552 only and not permanent OKM1547 when `generate` says no changes (B-37).
 - A trigger `WHEN` that names `OLD` and `NEW` no longer fails `okm check` / `okm migrate check` with "expression contains variables of more than one relation"; introspection reads the predicate from `pg_get_triggerdef`, and those columns are ordinary table dependencies (B-46).
 - `defineConfig({ namespace })` places a trigger's called function with the catalog, so generate/apply/check no longer fail OKM1020 for a missing function in `public` (B-47).
+- The guide roles flow on a fresh database no longer fails with `SAVEPOINT can only be used in transaction blocks` during provision: schema ownership runs without a savepoint when no transaction is open, `CREATEROLE` is checked on the connecting user (not the managed migration role), and a failed provision drops empty bootstrap tables so a retry is clean (B-30).
 
 ## v0.9.1 — 2026-10-17
 
