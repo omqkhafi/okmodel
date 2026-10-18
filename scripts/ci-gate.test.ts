@@ -7,19 +7,20 @@ import { expect, test } from "bun:test";
 import { gateFailures, parseGateSlices, type GateSlice } from "./ci-gate.js";
 
 const ALWAYS: readonly GateSlice[] = [
-  { name: "lint", result: "success", postgres: false },
-  { name: "types", result: "success", postgres: false },
-  { name: "test", result: "success", postgres: false },
-  { name: "runtimes", result: "success", postgres: false },
-  { name: "temporal", result: "success", postgres: false },
-  { name: "package", result: "success", postgres: false },
+  { name: "lint", result: "success", postgres: false, filtered: false },
+  { name: "types", result: "success", postgres: false, filtered: false },
+  { name: "test", result: "success", postgres: false, filtered: true },
+  { name: "test-dist", result: "success", postgres: false, filtered: true },
+  { name: "runtimes", result: "success", postgres: false, filtered: true },
+  { name: "temporal", result: "success", postgres: false, filtered: true },
+  { name: "package", result: "success", postgres: false, filtered: false },
 ];
 
 function withPostgres(suite: string, tarball: string): readonly GateSlice[] {
   return [
     ...ALWAYS,
-    { name: "suite", result: suite, postgres: true },
-    { name: "tarball", result: tarball, postgres: true },
+    { name: "suite", result: suite, postgres: true, filtered: true },
+    { name: "tarball", result: tarball, postgres: true, filtered: true },
   ];
 }
 
@@ -49,10 +50,32 @@ test("an always-on slice must be success even when Postgres is off", () => {
 });
 
 test("parseGateSlices marks suite and tarball as Postgres slices", () => {
-  expect(parseGateSlices(["lint=success", "suite=skipped", "tarball=success"])).toEqual([
-    { name: "lint", result: "success", postgres: false },
-    { name: "suite", result: "skipped", postgres: true },
-    { name: "tarball", result: "success", postgres: true },
+  expect(
+    parseGateSlices(["lint=success", "suite=skipped", "tarball=success", "--runtime"]),
+  ).toEqual([
+    { name: "lint", result: "success", postgres: false, filtered: false },
+    { name: "suite", result: "skipped", postgres: true, filtered: true },
+    { name: "tarball", result: "success", postgres: true, filtered: true },
   ]);
-  expect(() => parseGateSlices(["lint"])).toThrow(/usage/);
+  expect(() => parseGateSlices(["lint="])).toThrow(/usage/);
+});
+
+test("a docs-only filter allows a skipped runtime slice and a labelled Postgres skip", () => {
+  const skipped = withPostgres("skipped", "skipped").map((slice) =>
+    slice.name === "test" || slice.name === "test-dist" ? { ...slice, result: "skipped" } : slice,
+  );
+  expect(gateFailures(skipped, true, false)).toEqual([]);
+  expect(gateFailures(skipped, true, true).map((slice) => slice.name)).toEqual([
+    "test",
+    "test-dist",
+    "suite",
+    "tarball",
+  ]);
+});
+
+test("a filtered slice that failed still fails when the filter says it is irrelevant", () => {
+  const slices = withPostgres("skipped", "skipped").map((slice) =>
+    slice.name === "test" ? { ...slice, result: "failure" } : slice,
+  );
+  expect(gateFailures(slices, false, false).map((slice) => slice.name)).toEqual(["test"]);
 });

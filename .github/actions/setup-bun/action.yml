@@ -1,0 +1,42 @@
+name: Setup Bun
+description: Install the pinned Bun, restore the install cache, and install dependencies.
+
+inputs:
+  working-directory:
+    description: Directory `bun install` runs in.
+    required: false
+    default: "."
+  lockfile:
+    description: Lockfile hashed into the cache key, from the workspace root.
+    required: false
+    default: bun.lock
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      with:
+        bun-version: 1.4.2
+
+    # hashFiles does not expand action inputs, so each known lockfile is a step.
+    - name: Cache Bun
+      if: inputs.lockfile == 'bun.lock'
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      with:
+        path: ~/.bun/install/cache
+        key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+        restore-keys: bun-${{ runner.os }}-
+
+    - name: Cache Bun site
+      if: inputs.lockfile == 'site/bun.lock'
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      with:
+        path: ~/.bun/install/cache
+        key: bun-${{ runner.os }}-site-${{ hashFiles('site/bun.lock') }}
+        restore-keys: bun-${{ runner.os }}-
+
+    - name: Install
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: bun install --frozen-lockfile

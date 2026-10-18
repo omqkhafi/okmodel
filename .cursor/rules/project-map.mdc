@@ -20,6 +20,7 @@ contracts → dialects → adapters → runtime → tooling. Adapters import con
 - `src/tooling/migrate/` — apply, check (sandbox), lint (`lint-rules.ts`), SQL lexer `sql-lex.ts`, files, status, provision, runner.
 - `src/tooling/cli.ts` — `okm` CLI; `src/tooling/driver-test.ts` — `okm driver test` (the suites stay in `packages/harness`); `src/tooling/errors/registry.ts` — doctor text for every OKM code; `src/tooling/testing/`; `src/tooling/github/` — plan comment for the GitHub Action.
 - `.github/actions/migrate/` — official composite GitHub Action (`action.yml`). Dogfood workflow: `.github/workflows/github-action.yml`.
+- `.github/actions/setup-bun/` — pinned Bun, the install cache, and `bun install --frozen-lockfile`.
 - `tests/` — flat: `*.test.ts`, `*-pg.test.ts` (real Postgres), `*.test-d.ts` (expect-type), `*.property.test.ts`, `*.worker.ts` (spawned by a test).
 - `packages/harness/src/` — Docker topology (`docker-cli.ts`, `topology.ts`), `postgres-test.ts`, driver/error/tx suites. Others: `packages/bench`, `attest`, `spikes`, `reference-app`.
 - `scripts/` — every check script (size, type-cost, postgres-suite, verify, bump, release-check…).
@@ -40,7 +41,7 @@ contracts → dialects → adapters → runtime → tooling. Adapters import con
 
 ## Working order
 1. Core work with a focused test per item, then commit locally.
-2. Focused tests for touched files; when they pass, push the branch (so work is never only in a worktree, and CI never sees code that fails its own tests). If the change touches an adapter, an entry point or anything under a size gate, run `bun run size` now.
+2. Focused tests for touched files; when they pass, run `bun run verify:fast` and push the branch once (so work is never only in a worktree, and CI never sees code that fails its own tests). If the change touches an adapter, an entry point or anything under a size gate, run `bun run size` now. On a CI failure, read only `bun run ci:fail <pull>`, fix once, run `verify:fast`, and push. After two failed rounds, stop and report. While waiting, one `gh pr checks <pull> --watch`.
 3. Secondary work: audits, docs, site, cleanup.
 4. `bun run check` once at the end (one foreground command), then the self-review.
 - A fix needs a reproduction (with a timeout when it can hang) and proof its test fails without the fix.

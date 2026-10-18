@@ -17,6 +17,13 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 ### ✨ Added
 
 - `bun run ci:report` prints job and step duration, queue time, the critical path, and re-run counts for recent `main` runs, and why each 0.9.1 pull failed a push.
+- `bun run verify:fast` checks format, lint, types, layers, purity, docs, and the readme, then runs only the tests related to files changed since the merge-base with `origin/main`.
+- `bun run ci:fail <pull>` prints the first failing job, its failing step, the last 60 log lines, and the one local command that reproduces it.
+
+### ♻️ Changed
+
+- A pull request that only changes `docs/` or `site/` skips the runtime test matrix, Postgres, the type-cost step, and attest. `gate / check` stays the required status and counts that skip as a pass only when the filter says those jobs are irrelevant.
+- CI builds `dist` once and uploads it. Jobs that need the build download it. Jobs that do not need it skip the build. Bun's install cache is on every install, and typecheck keeps a TypeScript incremental build.
 
 ### 🔥 Removed
 

@@ -15,6 +15,11 @@ on:
         required: false
         default: ""
         type: string
+      dist_artifact:
+        description: Artifact name of a prebuilt dist. Empty builds inside the job when it packs.
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -33,13 +38,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: 1.4.2
+      - name: Setup
+        uses: ./.github/actions/setup-bun
 
-      - name: Install
-        run: bun install --frozen-lockfile
+      - name: Download dist
+        if: inputs.dist_artifact != '' && inputs.tarball_artifact == ''
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ inputs.dist_artifact }}
+          path: dist
+
+      - name: Dist is present
+        if: inputs.dist_artifact != '' && inputs.tarball_artifact == ''
+        run: test -f dist/contracts/index.js
 
       - name: Download tarball
         if: inputs.tarball_artifact != ''
@@ -49,7 +60,7 @@ jobs:
           path: packed
 
       - name: Build
-        if: inputs.tarball_artifact == ''
+        if: inputs.tarball_artifact == '' && inputs.dist_artifact == ''
         run: bun run build
 
       - name: Start Postgres

@@ -1,0 +1,84 @@
+/**
+ * Decides whether a pull request needs the runtime test matrix.
+ *
+ * Docs-only, site-only, and docs-plus-site changes do not. Any other path
+ * does. An empty diff runs the matrix, so a missing range fails closed.
+ *
+ *   bun ./scripts/ci-paths.ts --base <sha> --head <sha>
+ *
+ * Writes `runtime=true` or `runtime=false` to `GITHUB_OUTPUT` when that
+ * file is set, and always prints the same line.
+ */
+
+import { appendFileSync } from "node:fs";
+import { parseArgs } from "node:util";
+
+import { repoRoot } from "./root.js";
+
+/**
+ * Whether the runtime test matrix, Postgres, type-cost, and attest apply.
+ *
+ * @param paths - Paths from the repository root, as `git diff --name-only` prints them
+ * @returns False only when every path is under `docs/` or `site/`
+ */
+export function runtimeRelevant(paths: readonly string[]): boolean {
+  if (paths.length === 0) return true;
+  return paths.some((path) => !isDocsPath(path) && !isSitePath(path));
+}
+
+function isDocsPath(path: string): boolean {
+  return path === "docs" || path.startsWith("docs/");
+}
+
+function isSitePath(path: string): boolean {
+  return path === "site" || path.startsWith("site/");
+}
+
+/**
+ * File list from `git diff --name-only base...head` (the merge-base range).
+ *
+ * @param root - Repository root
+ * @param base - Base commit
+ * @param head - Head commit
+ * @returns Paths, without blanks
+ */
+export function diffPaths(root: string, base: string, head: string): readonly string[] {
+  const proc = Bun.spawnSync(["git", "diff", "--name-only", `${base}...${head}`], {
+    cwd: root,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  if (proc.exitCode !== 0) {
+    throw new Error(proc.stderr.toString().trim() || "git diff failed");
+  }
+  return proc.stdout
+    .toString()
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+function writeRuntime(relevant: boolean): void {
+  const line = `runtime=${relevant ? "true" : "false"}\n`;
+  const output = process.env.GITHUB_OUTPUT;
+  if (output !== undefined && output.length > 0) appendFileSync(output, line);
+  process.stdout.write(line);
+}
+
+if (import.meta.main) {
+  const { values } = parseArgs({
+    options: { base: { type: "string" }, head: { type: "string" } },
+    args: process.argv.slice(2),
+    strict: true,
+  });
+  if (values.base === undefined || values.head === undefined) {
+    console.error("usage: bun ./scripts/ci-paths.ts --base <sha> --head <sha>");
+    process.exit(1);
+  }
+  try {
+    writeRuntime(runtimeRelevant(diffPaths(repoRoot(), values.base, values.head)));
+  } catch (error: unknown) {
+    console.error("[ci-paths]", error instanceof Error ? error.message : error);
+    process.exit(1);
+  }
+}
