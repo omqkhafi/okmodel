@@ -22,12 +22,19 @@ import {
 import type { MigrationClass } from "./plan.js";
 import type { StoredMigration } from "./files.js";
 import { loadMigrations } from "./files.js";
-import { projectPath } from "./paths.js";
+import { asProject, projectPath, type ProjectContext } from "./paths.js";
 import { assertTargetPolicy, listTargets, type InvokeFlags, type TargetRecord } from "./policy.js";
 import { loadConfig } from "./project.js";
 import { catalogNamespace } from "./export.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
 import { expandProvisioned, isRestampHistoryId, provisionHistoryIsKnown } from "./snapshot.js";
+
+/**
+ * Coarse compatibility for the programmatic `status()` API (D298).
+ *
+ * CLI status still prints the detailed {@link TargetStatus.state} words.
+ */
+export type CompatibilityState = "up to date" | "pending" | "ahead by expand" | "diverged";
 
 /** One status row. `protected` is its own column, not a state. */
 export type TargetStatus = {
@@ -38,6 +45,13 @@ export type TargetStatus = {
   readonly protected: boolean;
   /** Unfinished `okm_backfill` rows for this target. A finished step is absent. */
   readonly backfills: readonly BackfillProgress[];
+  /**
+   * Stable pending step ids (`${migrationId}:${stepIndex}`), including a
+   * mid-run failure that apply will resume.
+   */
+  readonly pending: readonly string[];
+  /** Coarse state for programmatic consumers. */
+  readonly compatibility: CompatibilityState;
 };
 
 /** One backfill that has committed at least one batch and is not done. */
@@ -76,13 +90,19 @@ export function describeStatus(
   migrations: readonly StoredMigration[],
   history: readonly StatusHistory[],
   recorded: { readonly hash: string; readonly version: string } | undefined,
-): { readonly version: string; readonly catalogHash: string; readonly state: string } {
+): {
+  readonly version: string;
+  readonly catalogHash: string;
+  readonly state: string;
+  readonly pending: readonly string[];
+} {
   const known = new Set(migrations.map((migration) => migration.id));
   const done = expandProvisioned(
     migrations,
     new Set(history.map((row) => `${row.migrationId}:${String(row.stepIndex)}`)),
     history.map((row) => row.migrationId),
   );
+  const pendingIds = pendingStepIds(migrations, done);
   for (const migration of migrations) {
     let have = 0;
     let missing = -1;
@@ -95,6 +115,7 @@ export function describeStatus(
         version: migration.id,
         catalogHash: recorded?.hash ?? "-",
         state: failedAt(missing),
+        pending: pendingIds,
       };
     }
   }
@@ -105,7 +126,9 @@ export function describeStatus(
   const version = recorded?.version ?? finished ?? "-";
   const catalogHash = recorded?.hash ?? "-";
   const extra = history.some((row) => !provisionHistoryIsKnown(row.migrationId, known));
-  if (extra) return { version, catalogHash, state: aheadState(history, known) };
+  if (extra) {
+    return { version, catalogHash, state: aheadState(history, known), pending: pendingIds };
+  }
   if (pending.length > 0) {
     const contract = pending.some((migration) =>
       migration.steps.some((step) => step.class !== "expand"),
@@ -114,6 +137,7 @@ export function describeStatus(
       version,
       catalogHash,
       state: contract ? BEHIND_CONTRACT : BEHIND_EXPAND,
+      pending: pendingIds,
     };
   }
   const last = migrations.at(-1);
@@ -121,15 +145,53 @@ export function describeStatus(
     // A re-stamp moves okm_meta to the live schema hash with no migration
     // file (external columns). generate says no changes; status stays current.
     if (isRestampHistoryId(recorded.version)) {
-      return { version, catalogHash, state: CURRENT };
+      return { version, catalogHash, state: CURRENT, pending: pendingIds };
     }
-    return { version, catalogHash, state: aheadState(history, known) };
+    return { version, catalogHash, state: aheadState(history, known), pending: pendingIds };
   }
   return {
     version: recorded?.version ?? last?.id ?? "-",
     catalogHash: recorded?.hash ?? last?.catalogHash ?? "-",
     state: CURRENT,
+    pending: pendingIds,
   };
+}
+
+/**
+ * Maps a detailed status state to the programmatic compatibility state.
+ *
+ * @param state - Detailed state from {@link describeStatus}
+ * @returns Coarse compatibility
+ */
+export function compatibilityOf(state: string): CompatibilityState {
+  if (state === CURRENT) return "up to date";
+  if (state === AHEAD_EXPAND) return "ahead by expand";
+  if (state === AHEAD_CONTRACT) return "diverged";
+  if (state === BEHIND_EXPAND || state === BEHIND_CONTRACT || state.startsWith("failed at step")) {
+    return "pending";
+  }
+  return "diverged";
+}
+
+/**
+ * Stable ids for steps not yet in history.
+ *
+ * @param migrations - Files in apply order
+ * @param done - Keys already recorded
+ * @returns `${migrationId}:${stepIndex}` in apply order
+ */
+export function pendingStepIds(
+  migrations: readonly StoredMigration[],
+  done: ReadonlySet<string>,
+): readonly string[] {
+  const ids: string[] = [];
+  for (const migration of migrations) {
+    for (let index = 0; index < migration.steps.length; index += 1) {
+      const id = `${migration.id}:${String(index)}`;
+      if (!done.has(id)) ids.push(id);
+    }
+  }
+  return ids;
 }
 
 /**
@@ -167,6 +229,8 @@ export async function readTargetStatus(input: {
       state: described.state,
       protected: input.protected,
       backfills: await readBackfills(pool),
+      pending: described.pending,
+      compatibility: compatibilityOf(described.state),
     };
   } catch (error) {
     throw sessionFailure(error) ?? error;
@@ -180,12 +244,30 @@ export async function readTargetStatus(input: {
  *
  * Several targets do not require `--target` here: the command lists them.
  *
- * @param cwd - Project directory
+ * @param project - Project directory or {@link ProjectContext}
  * @param flags - Optional target name
  * @returns Tab-separated text, with a header
  */
-export async function statusProject(cwd: string, flags: InvokeFlags): Promise<string> {
-  const config = await loadConfig(cwd);
+export async function statusProject(
+  project: string | ProjectContext,
+  flags: InvokeFlags,
+): Promise<string> {
+  return formatStatus(await statusProjectRows(project, flags));
+}
+
+/**
+ * Reads status rows for every selected target (D298).
+ *
+ * @param project - Project directory or {@link ProjectContext}
+ * @param flags - Optional target name
+ * @returns One row per target
+ */
+export async function statusProjectRows(
+  project: string | ProjectContext,
+  flags: InvokeFlags,
+): Promise<readonly TargetStatus[]> {
+  const { cwd } = asProject(project);
+  const config = await loadConfig(project);
   const namespace = catalogNamespace(config);
   const targets = chosen(listTargets(config), flags.target);
   const migrations = loadMigrations(projectPath(cwd, config.migrations ?? "migrations"));
@@ -201,7 +283,7 @@ export async function statusProject(cwd: string, flags: InvokeFlags): Promise<st
       }),
     );
   }
-  return formatStatus(rows);
+  return rows;
 }
 
 /**

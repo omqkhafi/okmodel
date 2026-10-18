@@ -90,6 +90,8 @@ test("status keeps the target columns and lists an unfinished backfill", () => {
     state: "current",
     protected: false,
     backfills: [],
+    pending: [],
+    compatibility: "up to date" as const,
   };
   expect(formatStatus([row])).toBe(
     "target\tversion\tcatalog\tstate\tprotected\ndefault\t0001\th\tcurrent\tfalse\n",

@@ -1267,6 +1267,18 @@
   ],
   "okmodel/migrate": [
     {
+      "name": "ApplyOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "ApplyResult",
+      "kind": "stable"
+    },
+    {
+      "name": "CompatibilityState",
+      "kind": "stable"
+    },
+    {
       "name": "LogicalIdentity",
       "kind": "stable"
     },
@@ -1275,11 +1287,35 @@
       "kind": "stable"
     },
     {
+      "name": "MigrateOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "PlanOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "PlanResult",
+      "kind": "stable"
+    },
+    {
+      "name": "PlanStepResult",
+      "kind": "stable"
+    },
+    {
       "name": "SchemaDescription",
       "kind": "stable"
     },
     {
+      "name": "StatusResult",
+      "kind": "stable"
+    },
+    {
       "name": "TargetInput",
+      "kind": "stable"
+    },
+    {
+      "name": "apply",
       "kind": "stable"
     },
     {
@@ -1295,7 +1331,15 @@
       "kind": "stable"
     },
     {
+      "name": "plan",
+      "kind": "stable"
+    },
+    {
       "name": "provision",
+      "kind": "stable"
+    },
+    {
+      "name": "status",
       "kind": "stable"
     }
   ],

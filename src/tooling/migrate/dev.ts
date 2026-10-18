@@ -7,7 +7,7 @@
 
 import { mkdirSync } from "node:fs";
 
-import { projectPath } from "./paths.js";
+import { asProject, projectPath, type ProjectContext } from "./paths.js";
 import { listTargets } from "./policy.js";
 import { loadConfig } from "./project.js";
 
@@ -20,8 +20,9 @@ import { loadConfig } from "./project.js";
  * @param cwd - Project directory
  * @returns The target line, or the data directory
  */
-export async function devProject(cwd: string): Promise<string> {
-  const config = await loadConfig(cwd);
+export async function devProject(project: string | ProjectContext): Promise<string> {
+  const { cwd } = asProject(project);
+  const config = await loadConfig(project);
   const named = listTargets(config).find((target) => target.name === "dev");
   if (named !== undefined) return `target ${named.name}\n`;
   const directory = projectPath(cwd, config.out ?? ".okm", "dev-db");
