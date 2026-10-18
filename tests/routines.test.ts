@@ -44,6 +44,51 @@ test("plpgsql without dependsOn is OKM1824 and security definer without search_p
   expect(definer.code).toBe("OKM1823");
 });
 
+test("a when that names OLD and NEW tracks those columns (B-46)", () => {
+  const touch = fn("touch", {
+    returns: "trigger",
+    language: "plpgsql",
+    body: "begin return new; end",
+    dependsOn: [tasks],
+  });
+  const fired = trigger("tasks_when", {
+    on: tasks,
+    timing: "before",
+    events: ["update"],
+    level: "row",
+    calls: touch,
+    when: "OLD.title IS DISTINCT FROM NEW.title",
+  });
+  const app = schema({ tables: [tasks], functions: [touch], triggers: [fired] });
+  const object = app.catalog.objects.find((item) => item.kind === "trigger");
+  expect(object?.kind).toBe("trigger");
+  if (object?.kind !== "trigger") throw new Error("expected trigger");
+  expect(object.definition.when).toBe("OLD.title IS DISTINCT FROM NEW.title");
+  const columns = object.dependencies
+    .filter((edge) => edge.target.kind === "column")
+    .map((edge) => (edge.target.kind === "column" ? edge.target.name : ""));
+  expect(columns).toEqual(["title"]);
+  const missing = capture(
+    () =>
+      schema({
+        tables: [tasks],
+        functions: [touch],
+        triggers: [
+          trigger("bad_when", {
+            on: tasks,
+            timing: "before",
+            events: ["update"],
+            level: "row",
+            calls: touch,
+            when: "OLD.missing IS DISTINCT FROM NEW.missing",
+          }),
+        ],
+      }).catalog,
+  );
+  expect(missing.code).toBe("OKM1020");
+  expect(missing.message).toContain("missing");
+});
+
 test("overloads are distinct and a plan creates tables, then functions, then triggers", () => {
   const byText = fn("slugify", {
     arguments: [{ name: "title", type: "text" }],

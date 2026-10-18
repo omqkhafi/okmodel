@@ -4,7 +4,9 @@
 
 import { expect, test } from "bun:test";
 
+import { parseCatalog, serializeCatalog } from "../src/contracts/catalog/document.js";
 import { external, schema, t, table, type AnyTable } from "../src/dialects/pg/index.js";
+import { fn, trigger } from "../src/dialects/pg/fn/index.js";
 import { stampOwnership } from "../src/dialects/pg/owner.js";
 import {
   assertSnapshots,
@@ -22,6 +24,35 @@ const users = table("users", {
 test("a public catalog with no external namespace is the same object", () => {
   const catalog = schema({ tables: [users] }).catalog;
   expect(placeCatalog(catalog, "public", new Map())).toBe(catalog);
+});
+
+test("placeCatalog moves a trigger calls namespace and survives serialize (B-47)", () => {
+  const tasks = table("tasks", { id: t.integer().primaryKey(), title: t.text() });
+  const touch = fn("touch", {
+    returns: "trigger",
+    language: "plpgsql",
+    body: "begin return new; end",
+    dependsOn: [tasks],
+  });
+  const fired = trigger("tasks_touch", {
+    on: tasks,
+    timing: "before",
+    events: ["update"],
+    level: "row",
+    calls: touch,
+    when: "old.title is distinct from new.title",
+  });
+  const placed = placeCatalog(
+    schema({ tables: [tasks], functions: [touch], triggers: [fired] }).catalog,
+    "app",
+    new Map(),
+  );
+  const trig = placed.objects.find((object) => object.kind === "trigger");
+  expect(trig?.kind).toBe("trigger");
+  if (trig?.kind !== "trigger") throw new Error("expected trigger");
+  expect(trig.definition.calls.namespace).toEqual({ form: "static", name: "app" });
+  const round = parseCatalog(serializeCatalog(placed));
+  expect(round.objects.some((object) => object.kind === "trigger")).toBe(true);
 });
 
 test("the same source serializes to the same bytes and the same hash", () => {
