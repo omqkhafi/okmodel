@@ -9,6 +9,7 @@
 import { expect, test } from "bun:test";
 
 import { open } from "../src/adapters/pg/pglite.js";
+import { openPreparedPglite } from "../packages/harness/src/pglite-template.js";
 import type { DriverPool } from "../src/contracts/driver.js";
 import { OkmError } from "../src/contracts/error.js";
 import type { Catalog } from "../src/contracts/catalog/types.js";
@@ -209,8 +210,7 @@ test("a stream stays on the replica the first batch chose", async () => {
 });
 
 test("a plain client serves route primary and route replica from its endpoint", async () => {
-  const pool = await open({ dataDir: memory("plain") });
-  for (const statement of renderCatalog(app.catalog, "public")) await pool.execute(statement);
+  const pool = await openPreparedPglite(renderCatalog(app.catalog, "public"));
   const db = await connect(pool, { schema: app });
   try {
     await db.connected;
@@ -415,8 +415,7 @@ async function openTopology<S extends QuerySchema>(
       ...(input.onRoute !== undefined ? { onRoute: input.onRoute } : {}),
     },
     async (config) => {
-      const pool = await open({ dataDir: config.dataDir });
-      for (const statement of renderCatalog(catalog, "public")) await pool.execute(statement);
+      const pool = await openPreparedPglite(renderCatalog(catalog, "public"));
       if (input.seed !== undefined) await input.seed(pool);
       return watch(config.url, hits, pool);
     },

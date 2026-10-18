@@ -8,8 +8,8 @@
 
 import { expect, test } from "bun:test";
 
-import { open } from "../src/adapters/pg/pglite.js";
 import { open as openPostgres } from "../src/adapters/pg/postgresjs.js";
+import { openPreparedPglite } from "../packages/harness/src/pglite-template.js";
 import type { Catalog } from "../src/contracts/catalog/types.js";
 import type { DriverPool, ExecuteResult } from "../src/contracts/driver.js";
 import { OkmError } from "../src/contracts/error.js";
@@ -953,8 +953,7 @@ async function openTopology<S extends QuerySchema>(
       ...(input.onRoute !== undefined ? { onRoute: input.onRoute } : {}),
     },
     async (config) => {
-      const pool = await open({ dataDir: config.dataDir });
-      for (const statement of renderCatalog(catalog, "public")) await pool.execute(statement);
+      const pool = await openPreparedPglite(renderCatalog(catalog, "public"));
       const role = config.url.includes("primary") ? "primary" : "replica";
       return watch(config.url, hits, pool, {
         position: input.position?.(role) ?? true,

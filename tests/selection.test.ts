@@ -7,7 +7,7 @@
 
 import { expect, test } from "bun:test";
 
-import { open } from "../src/adapters/pg/pglite.js";
+import { openPreparedPglite } from "../packages/harness/src/pglite-template.js";
 import type { DriverPool, DriverStats } from "../src/contracts/driver.js";
 import { OkmError } from "../src/contracts/error.js";
 import type { Catalog } from "../src/contracts/catalog/types.js";
@@ -582,8 +582,7 @@ async function openTopology(
       ...(options.onRoute !== undefined ? { onRoute: options.onRoute } : {}),
     },
     async (config) => {
-      const pool = await open({ dataDir: config.dataDir });
-      for (const statement of renderCatalog(catalog, "public")) await pool.execute(statement);
+      const pool = await openPreparedPglite(renderCatalog(catalog, "public"));
       const name = labelOf(config.url);
       const replica = replicas.find((item) => item.name === name);
       if (replica === undefined) return pool;
