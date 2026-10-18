@@ -191,9 +191,7 @@ jobs:
             echo "no test files"
             exit 1
           fi
-          # One process per file. The topology group is two shards so the
-          # slow files do not share a job.
-          bun test --parallel $files
+          bun test $files
 
   test-dist:
     name: test / ${{ matrix.group }}
@@ -225,7 +223,7 @@ jobs:
             echo "no test files"
             exit 1
           fi
-          bun test --parallel $files
+          bun test $files
 
   runtimes:
     name: runtimes / portable

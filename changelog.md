@@ -24,7 +24,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - A pull request that only changes `docs/` or `site/` skips the runtime test matrix, Postgres, the type-cost step, and attest. `gate / check` stays the required status and counts that skip as a pass only when the filter says those jobs are irrelevant.
 - CI builds `dist` once and uploads it. Jobs that need the build download it. Jobs that do not need it skip the build. Bun's install cache is on every install, and typecheck keeps a TypeScript incremental build.
-- The topology CI group is two shards, and test files in a group run in parallel. Topology tests open PGlite from a prepared data directory instead of running initdb on every database.
+- The topology CI group is two shards. Topology tests open PGlite from a prepared data directory instead of running initdb on every database.
 
 ### 🔥 Removed
 
