@@ -17,7 +17,9 @@ name: CI
 # it. Test groups that need it download it. The others do not build. Release
 # and weekly call the suite and tarball workflows themselves, on every major.
 # A push to main is one concurrency group per commit, so a later commit
-# does not cancel it. A pull request cancels the older run on that branch.
+# does not cancel it. A new push on a pull request cancels the older run.
+# Adding a label does not: that run is a different group, and only
+# `full-ci` starts tier 2.
 on:
   push:
     branches:
@@ -26,8 +28,8 @@ on:
     types: [opened, synchronize, reopened, labeled, unlabeled]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || format('{0}-{1}-{2}', github.head_ref, github.event.action, github.event.label.name) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.event.action != 'labeled' && github.event.action != 'unlabeled' }}
 
 permissions:
   contents: read
@@ -443,23 +445,16 @@ jobs:
         tarball,
         drivers-conformance,
       ]
-    if: always()
+    if: always() && (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'full-ci')
     runs-on: ubuntu-24.04
     steps:
-      - name: Unrelated label
-        if: github.event.action == 'labeled' && github.event.label.name != 'full-ci' || github.event.action == 'unlabeled' && github.event.label.name != 'full-ci'
-        run: echo "label ${{ github.event.label.name }} does not start a tier"
-
       - name: Checkout
-        if: github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'full-ci'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup
-        if: github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'full-ci'
         uses: ./.github/actions/setup-bun
 
       - name: Require the slices
-        if: github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'full-ci'
         run: >
           bun ./scripts/ci-gate.ts --postgres
           ${{ github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'needs: postgres') && '1' || '0' }}
