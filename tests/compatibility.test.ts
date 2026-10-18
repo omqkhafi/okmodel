@@ -1,8 +1,9 @@
 /**
  * The compatibility page matches a fresh conformance run.
  *
- * PGlite always runs. postgres.js runs when the topology is up, which the
- * postgres CI job provides.
+ * Separate CI group (`drivers-conformance`). The cheap case-list sync is
+ * `compatibility-sync.test.ts`. PGlite always runs. postgres.js runs when
+ * the topology is up, which the postgres CI job provides.
  */
 
 import { expect, test } from "bun:test";

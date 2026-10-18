@@ -22,6 +22,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### ♻️ Changed
 
+- The drivers CI group is three shards (`drivers suite`, `drivers rest`, `drivers-conformance`). The pglite conformance report and the live compatibility table check sit on the conformance shard; the fast path keeps a cheap case-list sync. Driver and error suites open PGlite from a prepared data directory instead of running initdb on every pool.
 - postgres.js kill-storm uncaught exceptions are documented as an upstream limit (B-02): a minimal postgres.js-only reproduction lives in `docs/postgresjs-kill-storm.md`, known-limits and the Drivers page recommend `okmodel/pg/pg` or `okmodel/pg/bun` where failover is expected, and the adapter's process listener is described as damage control rather than a fix.
 - A pull request that only changes `docs/` or `site/` skips the runtime test matrix, Postgres, the type-cost step, and attest. `gate / check` stays the required status and counts that skip as a pass only when the filter says those jobs are irrelevant.
 - CI builds `dist` once and uploads it. Jobs that need the build download it. Jobs that do not need it skip the build. Bun's install cache is on every install, and typecheck keeps a TypeScript incremental build.

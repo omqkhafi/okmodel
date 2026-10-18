@@ -12,10 +12,8 @@ import {
   requirePostgresWhenAsked,
 } from "../packages/harness/src/postgres-test.js";
 import { primaryUrl } from "../packages/harness/src/topology.js";
-import {
-  open as openPglite,
-  capabilities as pgliteCapabilities,
-} from "../src/adapters/pg/pglite.js";
+import { capabilities as pgliteCapabilities } from "../src/adapters/pg/pglite.js";
+import { openPreparedPglite } from "../packages/harness/src/pglite-template.js";
 import {
   open as openPostgres,
   capabilities as postgresCapabilities,
@@ -38,7 +36,7 @@ bunTest.skip = (name, fn, timeoutMs) => {
 
 registerErrorMappingSuite({
   name: "pglite",
-  open: () => openPglite(),
+  open: () => openPreparedPglite([]),
   capabilities: pgliteCapabilities,
   test: bunTest,
 });

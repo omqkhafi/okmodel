@@ -7,13 +7,11 @@
 import { registerErrorMappingSuite } from "../packages/harness/src/error-suite.js";
 import { registerDriverSuite, type SuiteTest } from "../packages/harness/src/driver-suite.js";
 import { postgresDecision } from "../packages/harness/src/docker-gate.js";
+import { openPreparedPglite } from "../packages/harness/src/pglite-template.js";
 import { primaryUrl } from "../packages/harness/src/topology.js";
 import { POSTGRES_VERSIONS } from "../packages/harness/src/version.js";
 import type { DriverCapabilities, DriverPool } from "../src/contracts/driver.js";
-import {
-  capabilities as pgliteCapabilities,
-  open as openPglite,
-} from "../src/adapters/pg/pglite.js";
+import { capabilities as pgliteCapabilities } from "../src/adapters/pg/pglite.js";
 import {
   capabilities as postgresCapabilities,
   open as openPostgres,
@@ -77,13 +75,42 @@ export function renderCompatibility(cells: readonly CompatibilityCell[]): string
  *
  * @returns One cell per case per driver that ran
  */
+/**
+ * Case titles the suites register for one driver, without running them.
+ *
+ * Used by the cheap sync check so the committed table stays aligned with the
+ * suite list when the full conformance comparison is off the fast path.
+ *
+ * @returns Titles in registration order, driver prefix already stripped
+ */
+export function listCompatibilityCaseNames(): readonly string[] {
+  const jobs: { readonly name: string }[] = [];
+  const test = recorder("pglite", jobs);
+  registerDriverSuite({
+    name: "pglite",
+    open: () => openPreparedPglite([]),
+    openLimited: () => openPreparedPglite([], { acquire: 100 }),
+    openOther: () => openPreparedPglite([]),
+    size: 1,
+    capabilities: pgliteCapabilities,
+    test,
+  });
+  registerErrorMappingSuite({
+    name: "pglite",
+    open: () => openPreparedPglite([]),
+    capabilities: pgliteCapabilities,
+    test,
+  });
+  return jobs.map((job) => job.name);
+}
+
 export async function collectCompatibility(): Promise<readonly CompatibilityCell[]> {
   process.env.TZ = "UTC";
   const cells: CompatibilityCell[] = [];
   await runDriver("pglite", "PGlite", cells, {
-    open: () => openPglite({ timeouts: { acquire: 5_000 } }),
-    openLimited: () => openPglite({ timeouts: { acquire: 100 } }),
-    openOther: () => openPglite(),
+    open: () => openPreparedPglite([], { acquire: 5_000 }),
+    openLimited: () => openPreparedPglite([], { acquire: 100 }),
+    openOther: () => openPreparedPglite([]),
     size: 1,
     capabilities: pgliteCapabilities,
   });
