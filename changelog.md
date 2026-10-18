@@ -14,6 +14,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+### ✨ Added
+
+- `bun run ci:report` prints job and step duration, queue time, the critical path, and re-run counts for recent `main` runs, and why each 0.9.1 pull failed a push.
+
 ### 🔥 Removed
 
 - Deno is not a supported runtime. Portable checks run on Node and Bun, and the runtime entry is imported as an edge bundle on Node (D297).
