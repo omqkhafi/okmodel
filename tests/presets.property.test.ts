@@ -11,6 +11,8 @@
 import { expect, test } from "bun:test";
 import fc from "fast-check";
 
+import { gateRuns } from "./gate-property.js";
+
 import { open as openPglite } from "../src/adapters/pg/pglite.js";
 import { renderCatalog } from "../src/dialects/pg/ddl.js";
 import { connect } from "../src/runtime/pg/pglite.js";
@@ -135,7 +137,7 @@ test("random preset compositions keep the tenant predicate and the active set", 
         const input: SafetyInput = { contributions: inspected.rules };
         expect(safetyProperty([input])[0]).toEqual([]);
       }),
-      { numRuns: 120 },
+      { numRuns: gateRuns(120) },
     );
   } finally {
     for (const undo of stop) undo();
@@ -159,7 +161,7 @@ test("random preset compositions never return another tenant's or an archived ro
         expect(rows.length).toBeLessThanOrEqual(plain.length);
         expect(await compose(a, chain).count()).toBe(rows.length);
       }),
-      { numRuns: 80 },
+      { numRuns: gateRuns(80) },
     );
   } finally {
     await db.close();
@@ -186,7 +188,7 @@ test("random preset compositions keep the tenant predicate on writes", async () 
           expect(statement.text).toContain('t."id" = $');
         }
       }),
-      { numRuns: 80 },
+      { numRuns: gateRuns(80) },
     );
   } finally {
     await db.close();

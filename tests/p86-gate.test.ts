@@ -8,6 +8,8 @@
 import { expect, test } from "bun:test";
 import fc from "fast-check";
 
+import { gateRuns } from "./gate-property.js";
+
 import type { DriverPool } from "../src/contracts/driver.js";
 import { OkmError } from "../src/contracts/error.js";
 import { many, schema, t, table } from "../src/dialects/pg/index.js";
@@ -157,7 +159,7 @@ test("hostile JSON through parse fails closed or stays a parameter", async () =>
         const probe: { polluted?: boolean } = {};
         expect(probe.polluted).toBeUndefined();
       }),
-      { numRuns: 40 },
+      { numRuns: gateRuns(40) },
     );
   } finally {
     await db.close();

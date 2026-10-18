@@ -43,7 +43,7 @@ import {
   type TxOp,
   type WriteOp,
 } from "./gate-ops.js";
-import { assertGate, GATE_SEED } from "./gate-property.js";
+import { assertGate, GATE_SEED, gateRuns } from "./gate-property.js";
 import { tenantProblems } from "./gate-recorder.js";
 import { gateApp, key, TENANT_TABLES, TENANTS } from "./gate-schema.js";
 
@@ -330,7 +330,10 @@ for (const [label, mutate] of MUTATIONS) {
       await withGate({ max: 1, mutate }, async (env) => {
         let caught = false;
         try {
-          await fc.assert(mixedProperty(env, emptyStats()), { seed: GATE_SEED, numRuns: 60 });
+          await fc.assert(mixedProperty(env, emptyStats()), {
+            seed: GATE_SEED,
+            numRuns: gateRuns(60),
+          });
         } catch {
           caught = true;
         }

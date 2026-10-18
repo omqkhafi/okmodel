@@ -27,6 +27,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - A pull request that only changes `docs/` or `site/` skips the runtime test matrix, Postgres, the type-cost step, and attest. `gate / check` stays the required status and counts that skip as a pass only when the filter says those jobs are irrelevant.
 - CI builds `dist` once and uploads it. Jobs that need the build download it. Jobs that do not need it skip the build. Bun's install cache is on every install, and typecheck keeps a TypeScript incremental build.
 - The topology CI group is two shards. Topology tests open PGlite from a prepared data directory instead of running initdb on every database.
+- Tier 1 runs on every pull request push: format, lint, typecheck, the unit tests, property tests at a quarter of their count (`OKM_PROPERTY_SCALE`), and the size gate. Tier 2 (type cost, the editor check, attest, runtimes, the temporal matrix, package checks, Windows, Postgres 15 and 18, and the `drivers-conformance` group) runs with the `full-ci` label and on every push to `main`. A later commit on `main` does not cancel the run in progress. A failed `gate / check` on `main` opens an issue.
 - Docs: `connect({ hookm })` is an array; a single observer object or a `hooks` key does not register observers.
 
 ### 🔥 Removed
