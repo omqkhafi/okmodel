@@ -133,6 +133,38 @@ test("isolation passes on the fixture schemas and fails when the predicate is dr
   }
 }, 30_000);
 
+test("B-34: testing populates concurrent matviews so refresh() works", async () => {
+  const app = schema({
+    casing: "snake",
+    tenancy: columnTenancy({ key: "workspaceId", type: "uuid" }),
+    tables: [table("projects", { id: id({ default: "none" }), name: text() })],
+    views: [
+      materializedView("project_titles", {
+        columns: [
+          { name: "workspace_id", type: "uuid" },
+          { name: "name", type: "text" },
+        ],
+        query: "select workspace_id, name from projects",
+        refresh: "concurrently",
+        indexes: [{ columns: ["workspace_id"], unique: true }],
+      }),
+    ],
+  });
+  const harness = await testing(app, { driver: openPglite() });
+  try {
+    const factories = harness.factories({
+      projects: (x) => ({ name: x.words(2) }),
+    });
+    await factories.projects.create();
+    // Without the setup populate this is "not populated" (B-34).
+    await harness.db.views.projectTitles.refresh();
+    const report = await harness.isolation();
+    expect([...report.views]).toEqual(["projectTitles"]);
+  } finally {
+    await harness.close();
+  }
+}, 30_000);
+
 test("isolation reads a tenant view and a materialized view, and skips a global view", async () => {
   const withView = (tenancy: ReturnType<typeof columnTenancy>) =>
     schema({

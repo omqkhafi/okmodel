@@ -7,6 +7,7 @@
 
 import { OkmError } from "../../contracts/error.js";
 import type { Catalog } from "../../contracts/catalog/types.js";
+import type { DriverPool } from "../../contracts/driver.js";
 import type { Connected } from "../../runtime/types.js";
 import {
   isRequired,
@@ -111,6 +112,8 @@ export function createdOf(
 export type FactoryHost = {
   readonly schema: TestingSchema;
   readonly db: Connected<TestingSchema>;
+  /** Driver pool. Isolation uses it for a plain matview populate (B-34). */
+  readonly pool: DriverPool;
   readonly facts: ReadonlyMap<string, TableFacts>;
   readonly rng: Rng;
   /** Latest row of a table in one tenant. Isolation uses its own map. */

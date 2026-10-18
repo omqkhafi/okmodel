@@ -422,7 +422,7 @@ async function checkView(
           fix: { summary: "A materialized view refreshes before the isolation read." },
         });
       }
-      await handle.refresh();
+      await refreshMaterialized(host, handle, view.sql);
     }
     await readView(view, handle, keys, tenantB, seeded);
   } finally {
@@ -609,6 +609,32 @@ function viewHandle(client: object, name: string): ViewQuery {
     });
   }
   return handle;
+}
+
+/**
+ * Refreshes a materialized view for the isolation read.
+ *
+ * `refresh: "concurrently"` fails while the view is still `WITH NO DATA`.
+ * `testing()` plain-populates after migrate; with `migrate: false` this path
+ * falls back to one plain refresh then retries (B-34).
+ *
+ * @param host - Open harness (pool for the plain populate)
+ * @param handle - View handle with `refresh()`
+ * @param sqlName - SQL name of the materialized view
+ */
+async function refreshMaterialized(
+  host: FactoryHost,
+  handle: ViewQuery,
+  sqlName: string,
+): Promise<void> {
+  try {
+    await handle.refresh!();
+  } catch (error) {
+    if (!(error instanceof OkmError) || error.fieldReason !== "not_populated") throw error;
+    const quoted = sqlName.replaceAll('"', '""');
+    await host.pool.execute(`refresh materialized view "${quoted}"`);
+    await handle.refresh!();
+  }
 }
 
 function isViewQuery(value: unknown): value is ViewQuery {

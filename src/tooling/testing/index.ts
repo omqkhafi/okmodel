@@ -5,6 +5,7 @@
  * The database is never mocked. Pass a driver pool from `open()`.
  */
 
+import type { Catalog } from "../../contracts/catalog/types.js";
 import { OkmError } from "../../contracts/error.js";
 import type { DriverPool } from "../../contracts/driver.js";
 import { renderCatalog } from "../../dialects/pg/ddl.js";
@@ -110,6 +111,9 @@ export async function testing<const S extends TestingSchema>(
       if (statement.trim().length === 0) continue;
       await pool.execute(statement);
     }
+    // Materialized views are created WITH NO DATA. A later refresh:
+    // "concurrently" needs one plain populate first (B-34).
+    await populateMaterializedViews(pool, schema.catalog);
   }
   const recording = record(pool);
   const db = createClient(schema, recording.pool, { ownsPool: true });
@@ -118,6 +122,7 @@ export async function testing<const S extends TestingSchema>(
   const host: FactoryHost = {
     schema,
     db: db as Connected<TestingSchema>,
+    pool: recording.pool,
     facts,
     rng: rng(seed),
     cache: new Map(),
@@ -162,4 +167,21 @@ export async function testing<const S extends TestingSchema>(
   };
   attachHost(harness, host);
   return harness;
+}
+
+/**
+ * Plain-populates every materialized view after catalog apply.
+ *
+ * Creation is `WITH NO DATA`. `refresh: "concurrently"` then fails with
+ * "not populated" until one non-concurrent refresh has run (B-34).
+ *
+ * @param pool - Driver pool that just received the catalog DDL
+ * @param catalog - Schema catalog
+ */
+async function populateMaterializedViews(pool: DriverPool, catalog: Catalog): Promise<void> {
+  for (const object of catalog.objects) {
+    if (object.kind !== "materializedView") continue;
+    const name = object.identity.name.replaceAll('"', '""');
+    await pool.execute(`refresh materialized view "${name}"`);
+  }
 }
