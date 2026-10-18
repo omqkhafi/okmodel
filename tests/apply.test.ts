@@ -222,6 +222,16 @@ test("status states from history", () => {
   ).toBe("ahead by contract");
   expect(
     describeStatus(
+      [expand],
+      [
+        { migrationId: "0001_init", stepIndex: 0, class: "expand" },
+        { migrationId: "restamp-1", stepIndex: 0, class: "expand" },
+      ],
+      { hash: "live-after-external", version: "restamp-1" },
+    ).state,
+  ).toBe("current");
+  expect(
+    describeStatus(
       [migration("0003_two", "c", [step("select 1"), step("select 2")])],
       [{ migrationId: "0003_two", stepIndex: 0, class: "expand" }],
       undefined,
