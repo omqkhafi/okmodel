@@ -5,6 +5,7 @@ import {
   buildCatalog,
   describe,
   type LogicalIdentity,
+  type RequiredExtension,
   type SchemaDescription,
 } from "../src/tooling/migrate/index.js";
 
@@ -21,4 +22,6 @@ const description = describe(app);
 
 expectTypeOf(description).toEqualTypeOf<SchemaDescription>();
 expectTypeOf(description.logical).toEqualTypeOf<LogicalIdentity>();
+expectTypeOf(description.minPostgres).toEqualTypeOf<15 | 16 | 17 | 18>();
+expectTypeOf(description.extensions).toEqualTypeOf<readonly RequiredExtension[]>();
 expectTypeOf(buildCatalog(description)).toEqualTypeOf(app.catalog);

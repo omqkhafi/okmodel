@@ -26,6 +26,7 @@ test("public barrels do not export the moved helpers", () => {
   expect(migrate).toEqual([
     "LogicalIdentity",
     "MigrateConfig",
+    "RequiredExtension",
     "SchemaDescription",
     "TargetInput",
     "buildCatalog",

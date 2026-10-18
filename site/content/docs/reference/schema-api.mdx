@@ -7,24 +7,41 @@ description: "describe() and buildCatalog() on okmodel/migrate turn a schema int
 
 `describe(schema)` returns JSON. `logical` is the schema identity: `namespace`, `name`, and `format`. That identity is `public`, the namespace `schema()` compiles. `defineConfig({ namespace })` places the catalog into another Postgres schema. That placement changes the catalog hash and does not change `logical`. `catalog` is the catalog document. Object keys are sorted. There are no functions in it.
 
+`minPostgres` is the lowest major that supports every feature the schema uses. A plain schema is `15`, the project floor. An explicit `uuidv7()` default raises it to `18`. `schema({ minPostgres })` (or the deprecated `requires: { postgres }`) raises it when that floor is higher. `extensions` lists each required extension and why it is needed: an `extension(...)` declaration, a column or function that depends on it, or an index that uses an operator class from it. `okm doctor` and `okm check` compare the connected server to these fields (OKM1802 / OKM1803 for the major, OKM1811 for a missing extension).
+
 `okm catalog export` (including `--json`) is a different artifact: the column snapshot a dependent verifies (table names plus each column's name, type, and nullability). It is not this description.
 
-`buildCatalog` reads a description, including one that came back from `JSON.parse`. The catalog hash matches the catalog `schema()` built.
+`buildCatalog` reads a description, including one that came back from `JSON.parse`. The catalog hash matches the catalog `schema()` built. Extra description fields such as `minPostgres` are not part of that catalog.
 
 Codecs, client generators (`uuidv4`, `uuidv7`, `okid`), and relation helpers stay on the schema. The catalog hash does not include them.
 
 ```ts title="describe.ts"
 import { schema, t, table } from "okmodel/pg";
+import { pgTrgm } from "okmodel/pg/pg_trgm";
 import { buildCatalog, describe } from "okmodel/migrate";
+
+const trgm = pgTrgm();
 
 const users = table("users", {
   id: t.id(),
   email: t.text(),
 });
 
-export const app = schema({ tables: [users] });
+const docs = table(
+  "docs",
+  { id: t.id(), body: t.text() },
+  { indexes: (c) => [trgm.gin(c.body.name)] },
+);
+
+export const app = schema({
+  tables: [users, docs],
+  extensions: [trgm],
+});
 
 export const description = describe(app);
+// description.minPostgres === 15
+// description.extensions names pg_trgm
+// t.id({ default: "uuidv7" }) would raise minPostgres to 18
 
 export const catalog = buildCatalog(JSON.parse(JSON.stringify(description)));
 ```
