@@ -25,7 +25,7 @@ import { classOf, strictestClass, type MigrationClass } from "./classify.js";
 import type { MigrateConfig } from "./config.js";
 import { catalogsEqual } from "./equal.js";
 import { loadMigrations, readMigrationPlan } from "./files.js";
-import { projectPath } from "./paths.js";
+import { asProject, projectPath, type ProjectContext } from "./paths.js";
 import {
   formatFindings,
   hasError,
@@ -82,11 +82,12 @@ type CheckFailure = {
  * @returns One summary line, ending in a newline
  */
 export async function checkMigrations(
-  cwd: string,
+  project: string | ProjectContext,
   flags: InvokeFlags,
   options?: { readonly provision?: boolean },
 ): Promise<string> {
-  const opened = await openProject(cwd);
+  const { cwd } = asProject(project);
+  const opened = await openProject(project);
   const target = selectTarget(opened.config, flags.target);
   const allowPooler = flags.allowPooler || opened.config.allowPooler === true;
   assertDirectConnection(target.url, allowPooler);

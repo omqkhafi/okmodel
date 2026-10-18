@@ -24,14 +24,25 @@ test("public barrels do not export the moved helpers", () => {
   expect(pg).not.toContain("mapPostgresError");
   expect(pg).not.toContain("isOperator");
   expect(migrate).toEqual([
+    "ApplyOptions",
+    "ApplyResult",
+    "CompatibilityState",
     "LogicalIdentity",
     "MigrateConfig",
+    "MigrateOptions",
+    "PlanOptions",
+    "PlanResult",
+    "PlanStepResult",
     "SchemaDescription",
+    "StatusResult",
     "TargetInput",
+    "apply",
     "buildCatalog",
     "defineConfig",
     "describe",
+    "plan",
     "provision",
+    "status",
   ]);
 });
 

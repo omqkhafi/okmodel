@@ -19,7 +19,7 @@ import { catalog } from "../../contracts/catalog/build.js";
 import type { Catalog, CatalogObject } from "../../contracts/catalog/types.js";
 import { driverUrl } from "./driver-url.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
-import { projectPath } from "./paths.js";
+import { asProject, projectPath, type ProjectContext } from "./paths.js";
 import { assertTargetPolicy, selectTarget } from "./policy.js";
 import {
   emitPull,
@@ -55,9 +55,13 @@ export type PullResult = {
  * @param argv - Arguments after `pull`
  * @returns The report
  */
-export async function pullProject(cwd: string, argv: readonly string[]): Promise<PullResult> {
+export async function pullProject(
+  project: string | ProjectContext,
+  argv: readonly string[],
+): Promise<PullResult> {
+  const { cwd } = asProject(project);
   const flags = parsePullArgs(argv);
-  const config = await loadConfig(cwd);
+  const config = await loadConfig(project);
   const target = selectTarget(config, flags.target);
   assertTargetPolicy(target, "pull", flags.allowProtected);
   const layout = layoutOf(cwd, config.schema, config.tables, flags.out);

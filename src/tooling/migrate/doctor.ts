@@ -16,6 +16,7 @@ import { omitManagedObjects } from "./managed.js";
 import { assertTargetPolicy, selectTarget, type InvokeFlags } from "./policy.js";
 import { driverUrl } from "./driver-url.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
+import type { ProjectContext } from "./paths.js";
 import { openProject } from "./project.js";
 
 /**
@@ -29,7 +30,7 @@ import { openProject } from "./project.js";
  * @returns Text for stdout, including the trailing newline
  */
 export async function doctorProject(
-  cwd: string,
+  project: string | ProjectContext,
   code: string | undefined,
   flags?: InvokeFlags,
 ): Promise<string> {
@@ -42,7 +43,7 @@ export async function doctorProject(
     }
     return `${doc.code}: ${doc.title}\n${doc.summary}\n${doc.fix}\n`;
   }
-  const opened = await openProject(cwd);
+  const opened = await openProject(project);
   const objects = omitManagedObjects(opened.built.catalog).objects;
   if (opened.config.roles !== undefined) {
     const target = selectTarget(opened.config, flags?.target);

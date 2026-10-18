@@ -9,7 +9,7 @@
 import { existsSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-import { projectPath } from "./paths.js";
+import { asProject, projectPath, type ProjectContext } from "./paths.js";
 
 import { OkmError } from "../../contracts/error.js";
 import { open } from "../../adapters/pg/postgresjs.js";
@@ -37,8 +37,13 @@ import { loadConfig, loadSchema } from "./project.js";
  * @param flags - `--target`, `--allow-protected`, and `--allow-pooler`
  * @returns Text for stdout
  */
-export async function seedProject(cwd: string, file: string, flags: InvokeFlags): Promise<string> {
-  const config = await loadConfig(cwd);
+export async function seedProject(
+  project: string | ProjectContext,
+  file: string,
+  flags: InvokeFlags,
+): Promise<string> {
+  const { cwd } = asProject(project);
+  const config = await loadConfig(project);
   const target = selectTarget(config, flags.target);
   assertTargetPolicy(target, "seed", flags.allowProtected);
   const path = projectPath(cwd, file);

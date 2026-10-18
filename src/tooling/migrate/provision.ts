@@ -6,7 +6,7 @@
  * Tenant registry creation is M5.
  */
 
-import { projectPath } from "./paths.js";
+import { asProject, projectPath, type ProjectContext } from "./paths.js";
 
 import { OkmError } from "../../contracts/error.js";
 import { applyTarget, backfillTiming } from "./apply.js";
@@ -25,8 +25,12 @@ import { readReference } from "./reference.js";
  * @param cwd - Project directory. Defaults to the process working directory
  * @returns The same text `okm migrate apply` prints for that run
  */
-export async function provision(target: string, cwd = process.cwd()): Promise<string> {
-  const config = await loadConfig(cwd);
+export async function provision(
+  target: string,
+  project: string | ProjectContext = process.cwd(),
+): Promise<string> {
+  const { cwd } = asProject(project);
+  const config = await loadConfig(project);
   const selected = selectTarget(config, target);
   assertTargetPolicy(selected, "provision");
   const directory = projectPath(cwd, config.migrations ?? "migrations");

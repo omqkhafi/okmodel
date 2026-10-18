@@ -55,7 +55,7 @@ import {
   selectTarget,
   type InvokeFlags,
 } from "./policy.js";
-import { projectPath } from "./paths.js";
+import { asProject, CONFIG_FILE, projectPath, type ProjectContext } from "./paths.js";
 import { formatPlanJson } from "./plan-json.js";
 import {
   formatPlan,
@@ -67,6 +67,8 @@ import {
 import { hasError, lintCatalog, lintPlan, lintRefusal, type Finding } from "./lint.js";
 import { parseReplace } from "./values.js";
 
+export type { ProjectContext };
+
 type Built = BuiltSchema<readonly AnyTable[]>;
 
 type Previous = {
@@ -76,11 +78,12 @@ type Previous = {
 /**
  * Validates the schema and writes `.okm/`.
  *
- * @param cwd - Project directory
+ * @param project - Project directory or {@link ProjectContext}
  * @returns The output directory
  */
-export async function buildProject(cwd: string): Promise<string> {
-  const config = await loadConfig(cwd);
+export async function buildProject(project: string | ProjectContext): Promise<string> {
+  const { cwd } = asProject(project);
+  const config = await loadConfig(project);
   const built = await loadSchema(cwd, config.schema);
   return writeArtifact(cwd, config, withRoles(built, config, cwd));
 }
@@ -90,17 +93,18 @@ export async function buildProject(cwd: string): Promise<string> {
  *
  * An empty plan writes nothing. The file is SQL, not TypeScript.
  *
- * @param cwd - Project directory
+ * @param project - Project directory or {@link ProjectContext}
  * @param name - Migration name
  * @param flags - `--replace` values
  * @returns The SQL path and lint findings, or `undefined` when nothing changed
  */
 export async function generateProject(
-  cwd: string,
+  project: string | ProjectContext,
   name: string,
   flags: readonly string[],
 ): Promise<{ readonly path: string; readonly findings: readonly Finding[] } | undefined> {
-  const prepared = await prepare(cwd, name, flags);
+  const { cwd } = asProject(project);
+  const prepared = await prepare(project, name, flags);
   if (name === "init") writeGitAttributes(cwd);
   writeArtifact(cwd, prepared.config, prepared.built);
   if (prepared.plan.steps.length === 0) return undefined;
@@ -121,14 +125,14 @@ export async function generateProject(
  * target, several targets without `--target`, or a target that cannot be
  * reached leaves the text identical to {@link formatPlan}.
  *
- * @param cwd - Project directory
+ * @param project - Project directory or {@link ProjectContext}
  * @param name - Plan name
  * @param flags - `--replace` values
  * @param invoke - Target and protection flags, when the command passed them
  * @returns The plan, its lint findings, the human text, and the `--json` document. Both forms use the same lock lines
  */
 export async function planProject(
-  cwd: string,
+  project: string | ProjectContext,
   name: string,
   flags: readonly string[],
   invoke?: InvokeFlags,
@@ -138,7 +142,7 @@ export async function planProject(
   readonly text: string;
   readonly json: string;
 }> {
-  const prepared = await prepare(cwd, name, flags);
+  const prepared = await prepare(project, name, flags);
   const findings = lintPrepared(prepared);
   const lockText = await planLockText(prepared.config, prepared.plan, invoke);
   return {
@@ -160,12 +164,16 @@ export async function planProject(
  * Lint findings are computed from the plan and the catalog before any
  * connection. An error finding is OKM1510. Warnings are returned.
  *
- * @param cwd - Project directory
+ * @param project - Project directory or {@link ProjectContext}
  * @param flags - `--target`, when the caller passed one
  * @returns Warning findings. Errors throw
  */
-export async function checkProject(cwd: string, flags?: InvokeFlags): Promise<readonly Finding[]> {
-  const opened = await openProject(cwd);
+export async function checkProject(
+  project: string | ProjectContext,
+  flags?: InvokeFlags,
+): Promise<readonly Finding[]> {
+  const opened = await openProject(project);
+  const { cwd } = opened;
   assertValidation(opened.built);
   if (schemaRequestsValidation(opened.built) && !projectImportsValidate(cwd)) {
     const doc = errorDoc("OKM1201");
@@ -229,20 +237,20 @@ export function unlistedTableFiles(
 /**
  * The catalogs `okm push` diffs, after stale renames are refused.
  *
- * @param cwd - Project directory
+ * @param project - Project directory or {@link ProjectContext}
  * @returns The previous snapshot, the current catalog, and declared renames
  */
-export async function projectHead(cwd: string): Promise<{
+export async function projectHead(project: string | ProjectContext): Promise<{
   readonly previous: Catalog;
   readonly catalog: Catalog;
   readonly renames: readonly DeclaredRename[];
 }> {
-  const opened = await openProject(cwd);
+  const opened = await openProject(project);
   return { previous: opened.previous, catalog: opened.built.catalog, renames: opened.renames };
 }
 
 async function prepare(
-  cwd: string,
+  project: string | ProjectContext,
   name: string,
   flags: readonly string[],
 ): Promise<{
@@ -252,7 +260,7 @@ async function prepare(
   readonly before: Catalog;
   readonly after: Catalog;
 }> {
-  const opened = await openProject(cwd);
+  const opened = await openProject(project);
   const plan = planMigration({
     before: opened.previous,
     after: opened.built.catalog,
@@ -340,16 +348,18 @@ function lintOpened(opened: {
  *
  * A `renamedFrom` that the previous catalog does not contain is OKM1020.
  *
- * @param cwd - Project directory
+ * @param project - Project directory or {@link ProjectContext}
  * @returns The loaded project
  */
-export async function openProject(cwd: string): Promise<{
+export async function openProject(project: string | ProjectContext): Promise<{
+  readonly cwd: string;
   readonly config: MigrateConfig;
   readonly built: Built;
   readonly previous: Catalog;
   readonly renames: readonly DeclaredRename[];
 }> {
-  const config = await loadConfig(cwd);
+  const { cwd } = asProject(project);
+  const config = await loadConfig(project);
   const built = await loadBuiltSchema(cwd, config);
   const declarations = schemaDeclarations(built);
   const previous = readPrevious(projectPath(cwd, config.migrations ?? "migrations"));
@@ -360,6 +370,7 @@ export async function openProject(cwd: string): Promise<{
     });
   }
   return {
+    cwd,
     config,
     built,
     previous: previous?.catalog ?? catalog([]),
@@ -541,25 +552,36 @@ export async function loadBuiltSchema(cwd: string, config: MigrateConfig): Promi
  * @param args - Arguments after `export`
  * @returns Stdout
  */
-export async function exportProject(cwd: string, args: readonly string[]): Promise<string> {
-  const config = await loadConfig(cwd);
+export async function exportProject(
+  project: string | ProjectContext,
+  args: readonly string[],
+): Promise<string> {
+  const { cwd } = asProject(project);
+  const config = await loadConfig(project);
   const built = await loadBuiltSchema(cwd, config);
   return renderExport(cwd, config, built.catalog, args);
 }
 
 /**
- * Loads `okmodel.config.ts`.
+ * Loads `okmodel.config.ts` (or the path from `--config`).
  *
- * @param cwd - Project directory
+ * @param project - Project directory or {@link ProjectContext}
  * @returns The config object
  */
-export async function loadConfig(cwd: string): Promise<MigrateConfig> {
-  const path = projectPath(cwd, "okmodel.config.ts");
-  const imported: unknown = await import(`${pathToFileURL(path).href}?okm=${Date.now()}`);
+export async function loadConfig(project: string | ProjectContext): Promise<MigrateConfig> {
+  const { configPath } = asProject(project);
+  if (!existsSync(configPath)) {
+    throw new OkmError("invalid", `Missing ${CONFIG_FILE} at ${configPath}.`, {
+      fix: {
+        summary: `Create ${CONFIG_FILE} in the project directory, or pass --config <path>.`,
+      },
+    });
+  }
+  const imported: unknown = await import(`${pathToFileURL(configPath).href}?okm=${Date.now()}`);
   const record = isRecord(imported) ? imported : {};
   const config = record.default ?? record.config;
   if (!isConfig(config)) {
-    throw new OkmError("invalid", "okmodel.config.ts must default-export defineConfig(...).");
+    throw new OkmError("invalid", `${CONFIG_FILE} must default-export defineConfig(...).`);
   }
   return config;
 }

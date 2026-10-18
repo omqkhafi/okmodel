@@ -31,7 +31,7 @@ import {
 import { assertExtensionsAvailable } from "./extensions.js";
 import { assertUuidV7Available } from "./engine.js";
 import { assertSnapshots } from "./export.js";
-import { projectPath } from "./paths.js";
+import { asProject, projectPath, type ProjectContext } from "./paths.js";
 import { loadBuiltSchema, loadConfig, projectHead } from "./project.js";
 import { loadHeadSnapshot, loadMigrations } from "./files.js";
 import { readReference, referenceInserts, type ReferenceTable } from "./reference.js";
@@ -372,23 +372,66 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
  * Pending migrations are linted after `okm_history` is read and before any
  * DDL. A migration the target already applied is left as it ran.
  *
- * @param cwd - Project directory
+ * @param project - Project directory or {@link ProjectContext}
  * @param flags - `--target`, protection, pooler, and timeouts
  * @param write - Receives each backfill progress line, including the newline
  * @returns Text for stdout, including the target name
  */
 export async function applyProject(
-  cwd: string,
+  project: string | ProjectContext,
   flags: InvokeFlags,
   write?: (text: string) => void,
 ): Promise<string> {
-  const config = await loadConfig(cwd);
+  return (await applyProjectResult(project, flags, write)).text;
+}
+
+/**
+ * Applies pending migrations and returns the report plus CLI text (D298).
+ *
+ * @param project - Project directory or {@link ProjectContext}
+ * @param flags - Target, protection, pooler, and timeouts
+ * @param write - Optional progress sink (each line already ends with `\n` when used from the CLI)
+ * @returns Target name, applied migration ids, and stdout text
+ */
+export async function applyProjectResult(
+  project: string | ProjectContext,
+  flags: InvokeFlags,
+  write?: (text: string) => void,
+): Promise<{ readonly report: ApplyReport; readonly text: string }> {
+  const result = await runApply(project, flags, write);
+  if (result.kind === "empty") {
+    return {
+      report: { target: result.target, applied: [] },
+      text: `target ${result.target}\nnothing to apply\n`,
+    };
+  }
+  const summary = formatApplyText(result.report);
+  const text =
+    write !== undefined || result.progress.length === 0
+      ? summary
+      : `${result.progress.join("\n")}\n${summary}`;
+  return { report: result.report, text };
+}
+
+async function runApply(
+  project: string | ProjectContext,
+  flags: InvokeFlags,
+  write?: (text: string) => void,
+): Promise<
+  | { readonly kind: "empty"; readonly target: string }
+  | {
+      readonly kind: "ran";
+      readonly report: ApplyReport;
+      readonly progress: readonly string[];
+    }
+> {
+  const { cwd } = asProject(project);
+  const config = await loadConfig(project);
   const target = selectTarget(config, flags.target);
   const directory = joinMigrations(cwd, config.migrations);
   const migrations = loadMigrations(directory);
   const head = loadHeadSnapshot(directory);
-  if (migrations.length === 0 || head === undefined)
-    return `target ${target.name}\nnothing to apply\n`;
+  if (migrations.length === 0 || head === undefined) return { kind: "empty", target: target.name };
   const built = await loadBuiltSchema(cwd, config).catch((error: unknown) => {
     if (error instanceof OkmError && error.message.endsWith("must export a schema()."))
       return undefined;
@@ -433,9 +476,7 @@ export async function applyProject(
       else progress.push(line);
     },
   });
-  const summary = formatReport(report);
-  if (write !== undefined || progress.length === 0) return summary;
-  return `${progress.join("\n")}\n${summary}`;
+  return { kind: "ran", report, progress };
 }
 
 /**
@@ -445,15 +486,19 @@ export async function applyProject(
  * applies under a fresh `push-<n>` id from `okm_history`, and re-stamps
  * `okm_meta` when the schema hash moved with no DDL (B-29, B-21).
  *
- * @param cwd - Project directory
+ * @param project - Project directory or {@link ProjectContext}
  * @param flags - Target and protection flags
  * @returns Text for stdout
  */
-export async function pushProject(cwd: string, flags: InvokeFlags): Promise<string> {
-  const config = await loadConfig(cwd);
+export async function pushProject(
+  project: string | ProjectContext,
+  flags: InvokeFlags,
+): Promise<string> {
+  const { cwd } = asProject(project);
+  const config = await loadConfig(project);
   const target = selectTarget(config, flags.target);
   assertTargetPolicy(target, "push", flags.allowProtected);
-  const head = await projectHead(cwd);
+  const head = await projectHead(project);
   assertSnapshots(cwd, config, head.catalog);
   const catalogHash = startupHash(head.catalog);
   const report = await pushTarget({
@@ -475,7 +520,7 @@ export async function pushProject(cwd: string, flags: InvokeFlags): Promise<stri
   if (report.applied.length === 0 && (report.restamped ?? []).length === 0) {
     return `target ${target.name}\nno changes\n`;
   }
-  return formatReport(report);
+  return formatApplyText(report);
 }
 
 type PushRequest = {
@@ -501,7 +546,7 @@ type PushRequest = {
  * Plans from the connected catalog and applies or re-stamps under one lock.
  *
  * @param request - Target, schema catalog, and push options
- * @returns Apply report for {@link formatReport}
+ * @returns Apply report for {@link formatApplyText}
  */
 async function pushTarget(request: PushRequest): Promise<ApplyReport> {
   assertDirectConnection(request.url, request.allowPooler === true);
@@ -730,7 +775,13 @@ export function backfillTiming(
   };
 }
 
-function formatReport(report: ApplyReport): string {
+/**
+ * The stdout `okm migrate apply` and {@link apply} share (D298).
+ *
+ * @param report - Target and the migrations that ran
+ * @returns Text ending in a newline
+ */
+export function formatApplyText(report: ApplyReport): string {
   const role = report.setRole !== undefined ? `set role ${report.setRole}\n` : "";
   const restamped = (report.restamped ?? []).map((id) => `restamped ${id}\n`).join("");
   if (report.applied.length === 0) {

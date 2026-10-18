@@ -19,6 +19,7 @@ import type { CatalogObject, ExtensionObject } from "../../contracts/catalog/typ
 import { assertTargetPolicy, selectTarget, type InvokeFlags } from "./policy.js";
 import { driverUrl } from "./driver-url.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
+import { asProject, type ProjectContext } from "./paths.js";
 import { openProject } from "./project.js";
 import {
   extensionsFromModule,
@@ -37,11 +38,11 @@ import {
  * @returns Text for stdout, including the trailing newline
  */
 export async function extProject(
-  cwd: string,
+  project: string | ProjectContext,
   command: "list" | "check",
   flags: InvokeFlags,
 ): Promise<string> {
-  const opened = await openProject(cwd);
+  const opened = await openProject(project);
   const target = selectTarget(opened.config, flags.target);
   assertTargetPolicy(target, "check", flags.allowProtected);
   const pool = open({ url: driverUrl(target.url), max: 1 });
@@ -154,11 +155,12 @@ function extensionNeeds(name: string, want: string, have: string): string {
  * @returns The definition, or a one-line wrote message
  */
 export async function extScaffold(
-  cwd: string,
+  project: string | ProjectContext,
   name: string,
   flags: InvokeFlags,
   out?: string,
 ): Promise<string> {
+  const { cwd } = asProject(project);
   if (out !== undefined) {
     const path = isAbsolute(out) ? out : join(cwd, out);
     if (existsSync(path)) {
@@ -169,7 +171,7 @@ export async function extScaffold(
       );
     }
   }
-  const text = await withServer(cwd, flags, async (pool) =>
+  const text = await withServer(project, flags, async (pool) =>
     renderScaffold(await readSurface(pool, name)),
   );
   if (out === undefined) return text;
@@ -189,7 +191,12 @@ export async function extScaffold(
  * @param flags - Target and protection flags
  * @returns `ok <name>` for each definition
  */
-export async function extTest(cwd: string, file: string, flags: InvokeFlags): Promise<string> {
+export async function extTest(
+  project: string | ProjectContext,
+  file: string,
+  flags: InvokeFlags,
+): Promise<string> {
+  const { cwd } = asProject(project);
   const path = isAbsolute(file) ? file : join(cwd, file);
   const imported: unknown = await import(pathToFileURL(path).href);
   const declared = extensionsFromModule(imported);
@@ -198,7 +205,7 @@ export async function extTest(cwd: string, file: string, flags: InvokeFlags): Pr
       fix: { summary: "Export the value extension() returns." },
     });
   }
-  return withServer(cwd, flags, async (pool) => {
+  return withServer(project, flags, async (pool) => {
     const lines: string[] = [];
     for (const extension of declared) {
       const server = await readSurface(pool, extension.name);
@@ -210,11 +217,11 @@ export async function extTest(cwd: string, file: string, flags: InvokeFlags): Pr
 }
 
 async function withServer(
-  cwd: string,
+  project: string | ProjectContext,
   flags: InvokeFlags,
   body: (pool: DriverPool) => Promise<string>,
 ): Promise<string> {
-  const opened = await openProject(cwd);
+  const opened = await openProject(project);
   const target = selectTarget(opened.config, flags.target);
   assertTargetPolicy(target, "check", flags.allowProtected);
   const pool = open({ url: driverUrl(target.url), max: 1 });

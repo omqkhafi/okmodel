@@ -2,7 +2,7 @@
 title: "CLI"
 description: "okm reads okmodel.config.ts. okmodel is the same program."
 ---
-`okm` reads `okmodel.config.ts` from the directory it starts in. The `okmodel` bin is the same program. The file default-exports `defineConfig` from `okmodel/migrate`. Each option is a page under [Config](/docs/define/config).
+`okm` reads `okmodel.config.ts` from the directory it starts in. Pass `--config <path>` to load another file (absolute, or relative to the working directory); the project root is that file's directory. The `okmodel` bin is the same program. The file default-exports `defineConfig` from `okmodel/migrate`. Each option is a page under [Config](/docs/define/config). `plan`, `apply`, and `status` from `okmodel/migrate` share the same engine as the migrate commands.
 
 `okm push` is for a database you can recreate. A shared database uses reviewed migrations: `okm generate init`, then `okm migrate apply`.
 
@@ -63,6 +63,7 @@ An unknown command is `Unknown command <name>.` `okm migrate` with a subcommand 
 
 | Flag | Read by |
 | --- | --- |
+| `--config <path>`, `--config=<path>` | Every command that loads a config. Loads that file instead of `okmodel.config.ts` in the working directory. |
 | `--target <name>`, `--target=<name>` | `check`, `migrate plan`, `migrate apply`, `migrate status`, `migrate check`, `push`, `pull`, `seed`, `ext`, and `doctor` when [roles](/docs/define/config/roles) is set. Who requires it is [Database](/docs/define/config/database). |
 | `--allow-protected` | `migrate apply`, `push`, and `seed`. One invocation. Blocked work is [Protection](/docs/define/config/database#protection). `migrate check` ignores the flag. |
 | `--allow-pooler` | `migrate apply`, `push`, `seed`, `migrate check`, and `check` when it compares a database. Same opt-in as [allowPooler](/docs/define/config/pooler). Either one is enough. |

@@ -8,14 +8,9 @@
 import { OkmError } from "../../contracts/error.js";
 import { formatFindings, hasError, lintRefusal } from "./lint.js";
 import { sessionFailure } from "./lost.js";
+import { projectContext, type ProjectContext } from "./paths.js";
 import type { InvokeFlags } from "./policy.js";
-import {
-  buildProject,
-  checkProject,
-  exportProject,
-  generateProject,
-  planProject,
-} from "./project.js";
+import { buildProject, checkProject, exportProject, generateProject } from "./project.js";
 
 /** Where a command reads the project and writes its text. */
 export type CommandIo = {
@@ -52,19 +47,23 @@ export function formatFailure(error: unknown, verbose = false): string {
  * @param io - Working directory and stdout. Defaults to the process
  */
 export async function run(argv: readonly string[], io?: CommandIo): Promise<void> {
-  const cwd = io?.cwd ?? process.cwd();
+  const base = io?.cwd ?? process.cwd();
   const stdout = io?.stdout ?? ((text: string) => process.stdout.write(text));
   if (argv.length === 0 || argv[0] === "help" || argv[0] === "--help" || argv[0] === "-h") {
     stdout(commandsTable());
     return;
   }
   if (argv.includes("--help") || argv.includes("-h")) {
-    stdout(commandHelp(argv.filter((arg) => arg !== "--help" && arg !== "-h")));
+    stdout(
+      commandHelp(argv.filter((arg) => arg !== "--help" && arg !== "-h" && !isConfigArg(arg))),
+    );
     return;
   }
-  const [command, ...rest] = argv;
+  const project = projectFrom(base, argv);
+  const args = stripConfig(argv);
+  const [command, ...rest] = args;
   if (command === "build") {
-    const directory = await buildProject(cwd);
+    const directory = await buildProject(project);
     stdout(`${directory}\n`);
     return;
   }
@@ -75,11 +74,11 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
         fix: { summary: "Use okm catalog export." },
       });
     }
-    stdout(await exportProject(cwd, rest.slice(1)));
+    stdout(await exportProject(project, rest.slice(1)));
     return;
   }
   if (command === "check") {
-    const findings = await checkProject(cwd, invoke(splitFlags(rest, "check")));
+    const findings = await checkProject(project, invoke(splitFlags(rest, "check")));
     const warnings = formatFindings(findings);
     if (warnings.length > 0) stdout(warnings);
     stdout("ok\n");
@@ -87,24 +86,24 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
   }
   if (command === "generate") {
     const parsed = splitFlags(rest, "generate");
-    const written = await generateProject(cwd, parsed.name ?? "migration", parsed.flags);
+    const written = await generateProject(project, parsed.name ?? "migration", parsed.flags);
     stdout(written === undefined ? "no changes\n" : `${written.path}\n`);
     if (written !== undefined) stdout(formatFindings(written.findings));
     return;
   }
   if (command === "dev") {
     const { devProject } = await import("./dev.js");
-    stdout(await devProject(cwd));
+    stdout(await devProject(project));
     return;
   }
   if (command === "push") {
     const { pushProject } = await import("./apply.js");
-    stdout(await pushProject(cwd, invoke(splitFlags(rest, "push"))));
+    stdout(await pushProject(project, invoke(splitFlags(rest, "push"))));
     return;
   }
   if (command === "pull") {
     const { pullProject } = await import("./pull.js");
-    stdout((await pullProject(cwd, rest)).text);
+    stdout((await pullProject(project, rest)).text);
     return;
   }
   if (command === "import") {
@@ -115,7 +114,7 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
       });
     }
     const { importDrizzle } = await import("./import-drizzle.js");
-    stdout((await importDrizzle(cwd, rest.slice(1))).text);
+    stdout((await importDrizzle(project.cwd, rest.slice(1))).text);
     return;
   }
   if (command === "migrate") {
@@ -144,28 +143,46 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
       if (parsed.name === undefined) {
         throw new OkmError("invalid", "okm migrate plan needs a name.");
       }
-      const planned = await planProject(cwd, parsed.name, parsed.flags, invoke(parsed));
+      const { plan } = await import("./api.js");
+      const planned = await plan(parsed.name, {
+        cwd: project.cwd,
+        config: project.configPath,
+        ...invoke(parsed),
+        ...(parsed.flags.length > 0 ? { replace: parsed.flags } : {}),
+      });
       if (migrateArgs.includes("--json")) stdout(planned.json);
       else {
         stdout(planned.text);
-        stdout(formatFindings(planned.findings));
+        stdout(formatFindings(planned.lint));
       }
-      if (hasError(planned.findings)) throw lintRefusal(planned.findings);
+      if (hasError(planned.lint)) throw lintRefusal(planned.lint);
       return;
     }
     if (sub === "apply") {
-      const { applyProject } = await import("./apply.js");
-      stdout(await applyProject(cwd, invoke(parsed), stdout));
+      const { apply } = await import("./api.js");
+      const flags = invoke(parsed);
+      const result = await apply({
+        cwd: project.cwd,
+        config: project.configPath,
+        ...flags,
+        onProgress: stdout,
+      });
+      stdout(result.text);
       return;
     }
     if (sub === "status") {
-      const { statusProject } = await import("./status.js");
-      stdout(await statusProject(cwd, invoke(parsed)));
+      const { status } = await import("./api.js");
+      const rows = await status({
+        cwd: project.cwd,
+        config: project.configPath,
+        ...invoke(parsed),
+      });
+      stdout(rows[0]?.text ?? "");
       return;
     }
     if (sub === "check") {
       const { checkMigrations } = await import("./check.js");
-      stdout(await checkMigrations(cwd, invoke(parsed), { provision: parsed.provision }));
+      stdout(await checkMigrations(project, invoke(parsed), { provision: parsed.provision }));
       return;
     }
   }
@@ -177,13 +194,13 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
       });
     }
     const { seedProject } = await import("./seed.js");
-    stdout(await seedProject(cwd, parsed.name, invoke(parsed)));
+    stdout(await seedProject(project, parsed.name, invoke(parsed)));
     return;
   }
   if (command === "doctor") {
     const parsed = splitFlags(rest, "doctor");
     const { doctorProject } = await import("./doctor.js");
-    stdout(await doctorProject(cwd, parsed.name, invoke(parsed)));
+    stdout(await doctorProject(project, parsed.name, invoke(parsed)));
     return;
   }
   if (command === "driver") {
@@ -207,18 +224,18 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
       const text =
         sub === "scaffold"
           ? await extScaffold(
-              cwd,
+              project,
               requireName(parsed, "okm ext scaffold <name>"),
               parsed.flags,
               parsed.out,
             )
-          : await extTest(cwd, requireName(parsed, "okm ext test <file>"), parsed.flags);
+          : await extTest(project, requireName(parsed, "okm ext test <file>"), parsed.flags);
       stdout(text);
       return;
     }
     if (sub === "list" || sub === "check") {
       const { extProject } = await import("./ext.js");
-      stdout(await extProject(cwd, sub, invoke(splitFlags(rest.slice(1), "ext"))));
+      stdout(await extProject(project, sub, invoke(splitFlags(rest.slice(1), "ext"))));
       return;
     }
     throw new OkmError("invalid", `Unknown command ext ${sub ?? ""}.`, {
@@ -263,6 +280,53 @@ function extInvocation(args: readonly string[]): ExtParsed {
   }
   const parsed = splitFlags(rest, "ext");
   return { name: parsed.name, out, flags: invoke(parsed) };
+}
+
+function isConfigArg(arg: string): boolean {
+  return arg === "--config" || arg.startsWith("--config=");
+}
+
+/**
+ * Reads a global `--config` and returns the project it names.
+ *
+ * @param cwd - Working directory of the invocation
+ * @param argv - Arguments after the program name
+ * @returns Project root and absolute config path
+ */
+function projectFrom(cwd: string, argv: readonly string[]): ProjectContext {
+  let config: string | undefined;
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index] ?? "";
+    if (arg === "--config" || arg.startsWith("--config=")) {
+      const value = arg === "--config" ? argv[index + 1] : arg.slice("--config=".length);
+      if (value === undefined || value.length === 0 || value.startsWith("--")) {
+        throw new OkmError("invalid", "--config needs a path.", {
+          fix: { summary: "Pass --config <path> to okmodel.config.ts." },
+        });
+      }
+      if (config !== undefined && config !== value) {
+        throw new OkmError("invalid", "--config was passed more than once.", {
+          fix: { summary: "Pass --config once." },
+        });
+      }
+      config = value;
+    }
+  }
+  return projectContext(cwd, config);
+}
+
+function stripConfig(argv: readonly string[]): readonly string[] {
+  const rest: string[] = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index] ?? "";
+    if (arg === "--config") {
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith("--config=")) continue;
+    rest.push(arg);
+  }
+  return rest;
 }
 
 function invoke(parsed: Parsed): InvokeFlags {
@@ -455,7 +519,12 @@ const COMMANDS: readonly (readonly [string, string])[] = [
 function commandsTable(): string {
   const lines = ["okm <command>", ""];
   for (const [name, summary] of COMMANDS) lines.push(`  ${name.padEnd(24)} ${summary}`);
-  lines.push("", "okm <command> --help prints that command.", "");
+  lines.push(
+    "",
+    "okm <command> --help prints that command.",
+    "--config <path> loads that file instead of okmodel.config.ts.",
+    "",
+  );
   return `${lines.join("\n")}\n`;
 }
 
@@ -467,8 +536,9 @@ function commandHelp(argv: readonly string[]): string {
   }
   const flags = flagsForHelp(found[0]);
   const lines = [found[0], found[1]];
+  lines.push("", "Flags:");
+  lines.push("  --config <path>");
   if (flags.length > 0) {
-    lines.push("", "Flags:");
     for (const flag of flags) lines.push(`  ${flag}`);
   }
   return `${lines.join("\n")}\n`;
