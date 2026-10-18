@@ -12,6 +12,7 @@ import type { SchemaDescription } from "../src/tooling/migrate/schema-api.js";
 import { repoRoot } from "../scripts/root.js";
 
 const imports: readonly (readonly [string, string])[] = [
+  ["okmodel/pg/pg_trgm", join(repoRoot(), "src/dialects/pg/ext/pg-trgm.ts")],
   ["okmodel/pg", join(repoRoot(), "src/dialects/pg/index.ts")],
   ["okmodel/migrate", join(repoRoot(), "src/tooling/migrate/index.ts")],
 ];

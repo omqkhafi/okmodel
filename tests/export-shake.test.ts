@@ -33,6 +33,7 @@ test("public barrels do not export the moved helpers", () => {
     "PlanOptions",
     "PlanResult",
     "PlanStepResult",
+    "RequiredExtension",
     "SchemaDescription",
     "StatusResult",
     "TargetInput",

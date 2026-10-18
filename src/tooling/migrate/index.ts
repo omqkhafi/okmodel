@@ -10,7 +10,12 @@
 export { baseline } from "./baseline.js";
 export { defineConfig, type MigrateConfig, type TargetInput } from "./config.js";
 export { type LogicalIdentity } from "./export.js";
-export { buildCatalog, describe, type SchemaDescription } from "./schema-api.js";
+export {
+  buildCatalog,
+  describe,
+  type RequiredExtension,
+  type SchemaDescription,
+} from "./schema-api.js";
 export { provision } from "./provision.js";
 export {
   apply,
