@@ -3,6 +3,7 @@
   "pages": [
     "index",
     "basic-usage",
-    "from-drizzle"
+    "from-drizzle",
+    "from-existing"
   ]
 }

@@ -1380,6 +1380,7 @@ The rest of the measurements are in [size](https://github.com/omqkhafi/okmodel/b
 - [Linter](https://github.com/omqkhafi/okmodel/blob/main/docs/linter.md)
 - [Backfill](https://github.com/omqkhafi/okmodel/blob/main/docs/backfill.md)
 - [Provisioning](https://github.com/omqkhafi/okmodel/blob/main/docs/provisioning.md)
+- [Adopt an existing database](https://github.com/omqkhafi/okmodel/blob/main/docs/adopt-existing.md)
 - [Testing](https://github.com/omqkhafi/okmodel/blob/main/docs/testing.md)
 - [Topology](https://github.com/omqkhafi/okmodel/blob/main/docs/topology.md)
 - [Check migrations](https://github.com/omqkhafi/okmodel/blob/main/docs/migrate-check.md)

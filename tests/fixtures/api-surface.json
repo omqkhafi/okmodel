@@ -1319,6 +1319,10 @@
       "kind": "stable"
     },
     {
+      "name": "baseline",
+      "kind": "stable"
+    },
+    {
       "name": "buildCatalog",
       "kind": "stable"
     },

@@ -39,6 +39,9 @@ import { canonicalTypeName } from "./type-name.js";
 /** History id prefix for a target installed from the head snapshot. */
 export const PROVISION_PREFIX = "provisioned@";
 
+/** History id prefix when an existing database is baselined at the head. */
+export const BASELINE_PREFIX = "baselined@";
+
 /**
  * History id written when a target is provisioned at `migrationId`.
  *
@@ -50,19 +53,37 @@ export function provisionMark(migrationId: string): string {
 }
 
 /**
+ * History id written when a target is baselined at `migrationId`.
+ *
+ * @param migrationId - Head migration id
+ * @returns `baselined@` plus that id
+ */
+export function baselineMark(migrationId: string): string {
+  return `${BASELINE_PREFIX}${migrationId}`;
+}
+
+/**
  * Migration id stored inside a provision mark.
  *
  * @param migrationId - A history migration id
  * @returns The id after the prefix, or `undefined` when it is not a mark
  */
 export function provisionedMigrationId(migrationId: string): string | undefined {
-  if (!migrationId.startsWith(PROVISION_PREFIX)) return undefined;
-  const id = migrationId.slice(PROVISION_PREFIX.length);
-  return id.length > 0 ? id : undefined;
+  return markedMigrationId(migrationId, PROVISION_PREFIX);
 }
 
 /**
- * Marks every step up through a provisioned migration as done.
+ * Migration id stored inside a baseline mark.
+ *
+ * @param migrationId - A history migration id
+ * @returns The id after the prefix, or `undefined` when it is not a mark
+ */
+export function baselinedMigrationId(migrationId: string): string | undefined {
+  return markedMigrationId(migrationId, BASELINE_PREFIX);
+}
+
+/**
+ * Marks every step up through a provisioned or baselined migration as done.
  *
  * A later file stays pending. A mark whose id is not in `migrations` is left
  * for the caller to treat as history this project does not contain.
@@ -80,7 +101,7 @@ export function expandProvisioned(
   const next = new Set(done);
   let covered = -1;
   for (const historyId of historyIds) {
-    const id = provisionedMigrationId(historyId);
+    const id = provisionedMigrationId(historyId) ?? baselinedMigrationId(historyId);
     if (id === undefined) continue;
     const index = migrations.findIndex((migration) => migration.id === id);
     if (index > covered) covered = index;
@@ -93,6 +114,12 @@ export function expandProvisioned(
     }
   }
   return next;
+}
+
+function markedMigrationId(migrationId: string, prefix: string): string | undefined {
+  if (!migrationId.startsWith(prefix)) return undefined;
+  const id = migrationId.slice(prefix.length);
+  return id.length > 0 ? id : undefined;
 }
 
 /** History id written when apply re-stamps `okm_meta` with no DDL (B-21, B-45). */
@@ -111,9 +138,9 @@ export function isRestampHistoryId(migrationId: string): boolean {
 /**
  * Reports whether a history id belongs to this project's files.
  *
- * A `provisioned@` mark belongs when the id after the prefix is a file. A
- * `restamp-<n>` row is the hash-only stamp after an external snapshot moved
- * (B-45); it is not ahead of the files.
+ * A `provisioned@` or `baselined@` mark belongs when the id after the prefix
+ * is a file. A `restamp-<n>` row is the hash-only stamp after an external
+ * snapshot moved (B-45); it is not ahead of the files.
  *
  * @param migrationId - History migration id
  * @param known - File ids
@@ -122,7 +149,7 @@ export function isRestampHistoryId(migrationId: string): boolean {
 export function provisionHistoryIsKnown(migrationId: string, known: ReadonlySet<string>): boolean {
   if (known.has(migrationId)) return true;
   if (isRestampHistoryId(migrationId)) return true;
-  const id = provisionedMigrationId(migrationId);
+  const id = provisionedMigrationId(migrationId) ?? baselinedMigrationId(migrationId);
   return id !== undefined && known.has(id);
 }
 

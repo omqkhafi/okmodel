@@ -766,6 +766,18 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     summary: "okm import drizzle could not resolve drizzle-orm from the project.",
     fix: "Install drizzle-orm in the project that owns the schema.",
   },
+  {
+    code: "OKM1857",
+    title: "Already has history",
+    summary: "okm migrate baseline was asked to write history on a target that already has it.",
+    fix: "Baseline is for a database with no OKModel history. Use okm migrate status, or point at another target.",
+  },
+  {
+    code: "OKM1858",
+    title: "Baseline mismatch",
+    summary: "The live database does not match the model snapshot that baseline would record.",
+    fix: "Change the schema or the database until they match, then run okm migrate baseline again.",
+  },
 ];
 
 let byCode: ReadonlyMap<string, ErrorDoc> | undefined;

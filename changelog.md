@@ -18,6 +18,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - Global `--config <path>` on every `okm` command that loads a config; default discovery stays `okmodel.config.ts`. A missing file names that path and `--config`.
 - `plan`, `apply`, and `status` on `okmodel/migrate` share the CLI migrate engine for CI and deploy without shelling out (D298).
+- `okm migrate baseline` and `baseline(target)` from `okmodel/migrate` record the head snapshot as applied history on an existing database without DDL (D299). A managed mismatch is OKM1858 with the reconcile plan; unmanaged objects are reported and left alone; existing history is OKM1857; a protected target needs `--allow-protected`.
+- Docs: [Adopt an existing database](docs/adopt-existing.md) and the handbook page cover pull, generate, then baseline.
 - `bun run ci:report` prints job and step duration, queue time, the critical path, and re-run counts for recent `main` runs, and why each 0.9.1 pull failed a push.
 - `bun run verify:fast` checks format, lint, types, layers, purity, docs, and the readme, then runs only the tests related to files changed since the merge-base with `origin/main`.
 - `bun run ci:fail <pull>` prints the first failing job, its failing step, the last 60 log lines, and the one local command that reproduces it.
