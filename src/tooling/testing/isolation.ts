@@ -91,9 +91,8 @@ async function checkTable(
       fix: { summary: `Add ${facts.name} to factories().` },
     });
   }
-  const overrides: Record<string, unknown> = {};
-  for (const key of keys) overrides[key] = tenantB;
-  const row = await insertRow(host, facts.name, overrides, undefined, tenantB);
+  const scope = scopeFor(keys, tenantB);
+  const row = await insertRow(host, facts.name, scope, undefined, scope);
   const where = primaryWhere(facts, row, keys);
   const client = openTenant(host, tenantA);
   const handle = tableHandle(client, facts.name);
@@ -115,7 +114,7 @@ async function checkTable(
   } finally {
     const owner = tableHandle(openTenant(host, tenantB), facts.name);
     await owner.delete({ where }).catch(() => undefined);
-    forgetCached(host, facts.name, tenantB);
+    forgetCached(host, facts.name, scope);
   }
 }
 
@@ -263,9 +262,16 @@ async function checkFlips(
   tenantA: string,
   tenantB: string,
 ): Promise<void> {
-  const template = await insertRow(host, facts.name, undefined, undefined, tenantB);
-  const data: Record<string, unknown> = { ...template };
-  for (const key of keys) delete data[key];
+  const scopeB = scopeFor(keys, tenantB);
+  const template = await insertRow(host, facts.name, undefined, undefined, scopeB);
+  // Identity / generated / guarded columns cannot be written on the flip insert (B-32).
+  const data: Record<string, unknown> = {};
+  for (const column of facts.columns) {
+    if (keys.includes(column.field)) continue;
+    if (!column.writable || column.guarded || column.identity || column.generated) continue;
+    if (!Object.hasOwn(template, column.field)) continue;
+    data[column.field] = template[column.field];
+  }
   const clientA = openTenant(host, scopeFor(keys, tenantA));
   try {
     for (let index = 0; index < keys.length; index += 1) {
@@ -295,7 +301,7 @@ async function checkFlips(
     await tableHandle(openTenant(host, tenantB), facts.name)
       .delete({ where })
       .catch(() => undefined);
-    forgetCached(host, facts.name, tenantB);
+    forgetCached(host, facts.name, scopeB);
   }
 }
 
@@ -315,7 +321,8 @@ async function checkPath(
   const created: { readonly table: string; readonly where: Record<string, unknown> }[] = [];
   const last = hops[hops.length - 1];
   if (last === undefined) return;
-  let parent = await insertRow(host, last.parent, undefined, undefined, tenantB);
+  const scopeB = scopeFor(keys, tenantB);
+  let parent = await insertRow(host, last.parent, undefined, undefined, scopeB);
   created.push({
     table: last.parent,
     where: primaryWhere(requireFacts(host, last.parent), parent, keys),
@@ -328,7 +335,7 @@ async function checkPath(
       hop.child,
       { [hop.localField]: parent[hop.remoteField] },
       undefined,
-      tenantB,
+      scopeB,
     );
     parent = row;
     created.push({
@@ -354,7 +361,7 @@ async function checkPath(
       await tableHandle(openTenant(host, tenantB), item.table)
         .delete({ where: item.where })
         .catch(() => undefined);
-      forgetCached(host, item.table, tenantB);
+      forgetCached(host, item.table, scopeB);
     }
   }
 }
@@ -406,11 +413,12 @@ async function checkView(
   const seeded: Record<string, unknown>[] = [];
   try {
     for (const tenant of [tenantA, tenantB]) {
+      const scope = scopeFor(keys, tenant);
       for (const name of sources) {
         const facts = requireFacts(host, name);
         const overrides = markerFor(view, facts, keys, tenant);
         for (const key of keys) overrides[key] = tenant;
-        const row = await insertRow(host, name, overrides, undefined, tenant);
+        const row = await insertRow(host, name, overrides, undefined, scope);
         if (tenant === tenantB) seeded.push(row);
       }
     }
@@ -569,11 +577,10 @@ async function dropNewRows(
   for (let index = added.length - 1; index >= 0; index -= 1) {
     const item = added[index];
     if (item === undefined) continue;
-    const colon = item.key.indexOf(":");
-    const scope = item.key.slice(0, colon);
+    const colon = item.key.lastIndexOf(":");
     const table = item.key.slice(colon + 1);
     const facts = host.facts.get(table);
-    const tenant = scope === "*" ? undefined : scope;
+    const tenant = scopeFromRow(item.row, keys);
     if (facts !== undefined) {
       try {
         const where = primaryWhere(facts, item.row, keys);
@@ -583,10 +590,23 @@ async function dropNewRows(
         // The row may already be gone.
       }
     }
-    forgetCached(host, table, tenant);
+    host.cache.delete(item.key);
   }
 }
 
+function scopeFromRow(
+  row: Record<string, unknown>,
+  keys: readonly string[],
+): Record<string, string> | undefined {
+  if (keys.length === 0) return undefined;
+  const scope: Record<string, string> = {};
+  for (const key of keys) {
+    const value = row[key];
+    if (typeof value !== "string" || value.length === 0) return undefined;
+    scope[key] = value;
+  }
+  return scope;
+}
 type ViewQuery = {
   find(options: object): Streamed;
   one(options: object): Promise<unknown>;
