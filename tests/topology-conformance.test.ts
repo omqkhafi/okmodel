@@ -9,7 +9,7 @@
 
 import { expect, test } from "bun:test";
 
-import { open as openPglite } from "../src/adapters/pg/pglite.js";
+import { openPreparedPglite } from "../packages/harness/src/pglite-template.js";
 import type { Catalog } from "../src/contracts/catalog/types.js";
 import { OkmError } from "../src/contracts/error.js";
 import { renderCatalog } from "../src/dialects/pg/ddl.js";
@@ -326,13 +326,12 @@ test.serial(
           events.push(event);
         },
       },
-      async (config) => {
-        const pool = await openPglite({ dataDir: config.dataDir, timeouts: { acquire: 300 } });
+      async (_config) => {
         const stored = Reflect.get(app, "catalog");
         if (typeof stored !== "object" || stored === null) throw new Error("schema has no catalog");
-        for (const statement of renderCatalog(stored as Catalog, "public")) {
-          await pool.execute(statement);
-        }
+        const pool = await openPreparedPglite(renderCatalog(stored as Catalog, "public"), {
+          acquire: 300,
+        });
         return pool;
       },
     );

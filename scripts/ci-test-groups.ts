@@ -79,6 +79,16 @@ const ROWS = ["pg-read", "pg-write", "pg-rows", "pg-bundle", "collation"] as con
 
 const TOPOLOGY = ["topology", "routing", "replication", "selection", "consistency"] as const;
 
+/**
+ * Files on the selection shard.
+ *
+ * The other topology files share `topology consistency`. The split is the
+ * profile after the PGlite template: selection plus routing on one side,
+ * consistency plus the short files on the other. A new topology file joins
+ * the consistency shard.
+ */
+const TOPOLOGY_SELECTION = new Set(["tests/selection.test.ts", "tests/routing.test.ts"]);
+
 const CONTRACTS = [
   "client-id",
   "engine-version",
@@ -153,7 +163,8 @@ const GROUP_NAMES = [
   "migrate pg",
   "drivers",
   "rows",
-  "topology",
+  "topology selection",
+  "topology consistency",
   "schema",
   "columns",
   "schema pg",
@@ -174,7 +185,9 @@ function groupName(file: string): (typeof GROUP_NAMES)[number] {
   if (startsWithOne(base, MIGRATE)) return pg ? "migrate pg" : "migrate";
   if (startsWithOne(base, DRIVERS)) return "drivers";
   if (startsWithOne(base, ROWS)) return "rows";
-  if (startsWithOne(base, TOPOLOGY)) return "topology";
+  if (startsWithOne(base, TOPOLOGY)) {
+    return TOPOLOGY_SELECTION.has(file) ? "topology selection" : "topology consistency";
+  }
   if (startsWithOne(base, SCHEMA)) {
     if (pg) return "schema pg";
     if (base.startsWith("pg-")) return "columns";
