@@ -132,6 +132,129 @@ postgresTest(
 
 postgresTest(
   gate,
+  "triggers with when at each timing pass check (B-46)",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const cwd = project("check-trigger-when");
+    try {
+      writeFileSync(
+        join(cwd, "schema.ts"),
+        [
+          `import { schema, t, table } from ${source("src/dialects/pg/index.ts")};`,
+          `import { fn, trigger } from ${source("src/dialects/pg/fn/index.ts")};`,
+          'const tasks = table("tasks", { id: t.integer().primaryKey(), title: t.text() });',
+          'const touch = fn("touch", {',
+          '  returns: "trigger",',
+          '  language: "plpgsql",',
+          '  body: "begin return new; end",',
+          "  dependsOn: [tasks],",
+          "});",
+          // before / after on tables (instead-of needs a view; trigger() is table-only).
+          'const beforeInsert = trigger("tasks_before_insert", {',
+          "  on: tasks,",
+          '  timing: "before",',
+          '  events: ["insert"],',
+          '  level: "row",',
+          "  calls: touch,",
+          // WHEN text matches pg_get_triggerdef so check does not plan a reprint.
+          '  when: "new.title IS NOT NULL",',
+          "});",
+          'const beforeUpdate = trigger("tasks_before_update", {',
+          "  on: tasks,",
+          '  timing: "before",',
+          '  events: ["update"],',
+          '  level: "row",',
+          "  calls: touch,",
+          '  when: "old.title IS DISTINCT FROM new.title",',
+          "});",
+          'const afterUpdate = trigger("tasks_after_update", {',
+          "  on: tasks,",
+          '  timing: "after",',
+          '  events: ["update"],',
+          '  level: "row",',
+          "  calls: touch,",
+          '  when: "old.title IS DISTINCT FROM new.title",',
+          "});",
+          'const afterDelete = trigger("tasks_after_delete", {',
+          "  on: tasks,",
+          '  timing: "after",',
+          '  events: ["delete"],',
+          '  level: "row",',
+          "  calls: touch,",
+          '  when: "old.title IS NOT NULL",',
+          "});",
+          "export const app = schema({",
+          "  tables: [tasks],",
+          "  functions: [touch],",
+          "  triggers: [beforeInsert, beforeUpdate, afterUpdate, afterDelete],",
+          "});",
+          "",
+        ].join("\n"),
+      );
+      writeConfig(cwd, database.url);
+      await cli(cwd, ["generate", "init"]);
+      await cli(cwd, ["migrate", "apply"]);
+      expect(await cli(cwd, ["migrate", "check"])).toContain("ok");
+      expect(await cli(cwd, ["check"])).toContain("ok");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  120_000,
+);
+
+postgresTest(
+  gate,
+  "a trigger with defineConfig namespace generates, applies, and checks (B-47)",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const cwd = project("trigger-namespace");
+    try {
+      writeFileSync(
+        join(cwd, "schema.ts"),
+        [
+          `import { schema, t, table } from ${source("src/dialects/pg/index.ts")};`,
+          `import { fn, trigger } from ${source("src/dialects/pg/fn/index.ts")};`,
+          'const tasks = table("tasks", { id: t.integer().primaryKey(), title: t.text() });',
+          'const touch = fn("touch", {',
+          '  returns: "trigger",',
+          '  language: "plpgsql",',
+          '  body: "begin return new; end",',
+          "  dependsOn: [tasks],",
+          "});",
+          'const fired = trigger("tasks_touch", {',
+          "  on: tasks,",
+          '  timing: "before",',
+          '  events: ["update"],',
+          '  level: "row",',
+          "  calls: touch,",
+          '  when: "old.title IS DISTINCT FROM new.title",',
+          "});",
+          "export const app = schema({",
+          "  tables: [tasks],",
+          "  functions: [touch],",
+          "  triggers: [fired],",
+          "});",
+          "",
+        ].join("\n"),
+      );
+      writeConfig(cwd, database.url, { namespace: "app" });
+      await cli(cwd, ["generate", "init"]);
+      await cli(cwd, ["migrate", "apply"]);
+      expect(await cli(cwd, ["migrate", "check"])).toContain("ok");
+      expect(await cli(cwd, ["check"])).toContain("ok");
+      await connectOk(cwd, database.url);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  120_000,
+);
+
+postgresTest(
+  gate,
   "migrate check accepts timestamps triggers and hand-written triggers",
   async () => {
     const database = await createIsolatedDatabase();

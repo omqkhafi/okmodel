@@ -132,8 +132,9 @@ export function functionObject(input: FunctionInput): FunctionObject {
 /**
  * Builds a trigger record.
  *
- * Dependencies are the table, the function, and each `UPDATE OF` column.
- * Events are stored in a fixed order.
+ * Dependencies are the table, the function, each `UPDATE OF` column, and each
+ * column named through `OLD` / `NEW` in `when`. Events are stored in a fixed
+ * order.
  *
  * @param input - Timing, events, and the function it calls
  * @returns The catalog object
@@ -169,6 +170,8 @@ export function triggerObject(input: TriggerInput): TriggerObject {
   assertIdentifier(input.calls.name, "trigger function");
   assertNamespace(input.calls.namespace);
   for (const typeName of input.calls.argTypes) assertTypeName(typeName, `trigger ${input.name}`);
+  const whenColumns = whenColumnNames(input.when);
+  for (const column of whenColumns) assertIdentifier(column, "trigger when column");
   const edges: ObjectIdentity[] = [
     { kind: "table", namespace: input.parent.namespace, name: input.parent.name },
     {
@@ -178,6 +181,11 @@ export function triggerObject(input: TriggerInput): TriggerObject {
       argTypes: input.calls.argTypes,
     },
     ...(updateOf ?? []).map((column): ObjectIdentity => ({
+      kind: "column",
+      parent: input.parent,
+      name: column,
+    })),
+    ...whenColumns.map((column): ObjectIdentity => ({
       kind: "column",
       parent: input.parent,
       name: column,
@@ -204,6 +212,32 @@ export function triggerObject(input: TriggerInput): TriggerObject {
     dependencies: normaliseEdges(edges),
     provenance: input.provenance,
   };
+}
+
+/**
+ * Column names referenced as `OLD.col` / `NEW.col` in a trigger `WHEN`.
+ *
+ * `OLD` and `NEW` are transition relations on the trigger's table, not catalog
+ * tables. The columns become ordinary column edges on that table (B-46).
+ *
+ * @param when - Predicate text, when the trigger has one
+ * @returns Distinct SQL column names, in first-seen order
+ */
+export function whenColumnNames(when: string | undefined): readonly string[] {
+  if (when === undefined || when.length === 0) return [];
+  const found: string[] = [];
+  const seen = new Set<string>();
+  const pattern = /\b(?:OLD|NEW|old|new)\.(?:"((?:[^"]|"")*)"|([A-Za-z_][A-Za-z0-9_]*))/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(when)) !== null) {
+    const quoted = match[1];
+    const bare = match[2];
+    const name = quoted !== undefined ? quoted.replaceAll('""', '"') : (bare ?? "");
+    if (name.length === 0 || seen.has(name)) continue;
+    seen.add(name);
+    found.push(name);
+  }
+  return found;
 }
 
 function readArgument(fn: string, argument: FunctionArgument): FunctionArgument {

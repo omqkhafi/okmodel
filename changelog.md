@@ -39,6 +39,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - A node-postgres call with `timeout` or `signal` removes its checkout `error` listener, so repeated timed calls do not stack listeners on a pooled client. A call that reaches its deadline while waiting for a connection is refused and does not run. A cancel that does not settle destroys that client, so the pool can serve the next call after a kill storm.
 - After an external-table re-stamp, `okm migrate status` stays `current`, `generate` stays `no changes`, and `okm migrate check` no longer fails with OKM1549 when the only catalog drift is external columns (B-45).
 - `okm migrate check` reprints domain checks before planning, so a non-canonical author check such as `VALUE > 0` is OKM1552 only and not permanent OKM1547 when `generate` says no changes (B-37).
+- A trigger `WHEN` that names `OLD` and `NEW` no longer fails `okm check` / `okm migrate check` with "expression contains variables of more than one relation"; introspection reads the predicate from `pg_get_triggerdef`, and those columns are ordinary table dependencies (B-46).
+- `defineConfig({ namespace })` places a trigger's called function with the catalog, so generate/apply/check no longer fail OKM1020 for a missing function in `public` (B-47).
 
 ## v0.9.1 — 2026-10-17
 

@@ -98,8 +98,55 @@ function relocateObject(
       dependencies,
     } as CatalogObject;
   }
+  if (object.kind === "trigger") {
+    const calls = relocateCalls(object.definition.calls, namespace);
+    if (
+      identity === object.identity &&
+      dependencies === object.dependencies &&
+      calls === object.definition.calls
+    ) {
+      return object;
+    }
+    if (calls === object.definition.calls) {
+      return { ...object, identity, dependencies } as CatalogObject;
+    }
+    return {
+      ...object,
+      identity,
+      definition: { ...object.definition, calls },
+      dependencies,
+    } as CatalogObject;
+  }
   if (identity === object.identity && dependencies === object.dependencies) return object;
   return { ...object, identity, dependencies } as CatalogObject;
+}
+
+/**
+ * Moves a trigger's called function into the placed namespace.
+ *
+ * Dependency edges relocate separately. The call record must move too, or a
+ * serialize/parse round trip rebuilds the edge from `calls.namespace` and
+ * raises OKM1020 against the placed function (B-47).
+ *
+ * @param calls - Trigger call record from `schema()` (`public`)
+ * @param namespace - Namespace from `defineConfig`
+ * @returns The same record, or one with a moved namespace
+ */
+function relocateCalls(
+  calls: {
+    readonly namespace: Namespace;
+    readonly name: string;
+    readonly argTypes: readonly string[];
+  },
+  namespace: string,
+): {
+  readonly namespace: Namespace;
+  readonly name: string;
+  readonly argTypes: readonly string[];
+} {
+  const moved = moveNamespace(calls.namespace, namespace);
+  if (moved === calls.namespace) return calls;
+  return { ...calls, namespace: moved };
 }
 
 function relocateReferences(
