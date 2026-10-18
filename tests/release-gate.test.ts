@@ -23,7 +23,6 @@ import {
   discoverTestFiles,
   postgresSuitePlan,
 } from "../scripts/postgres-suite.js";
-import { ciTestGroups } from "../scripts/ci-test-groups.js";
 import { repoRoot } from "../scripts/root.js";
 
 const root = repoRoot();
@@ -283,17 +282,24 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   expect(prMeta).not.toContain("synchronize");
   expect(prMeta).not.toContain("opened");
   expect(jsonVersionLists(pullRequest, "versions")).toEqual([[floor, newest], [newest]]);
-  expect(ci).toContain("needs: [lint, types, test, runtimes, temporal, package, suite, tarball]");
+  expect(ci).toContain(
+    "needs: [changes, lint, types, test, test-dist, runtimes, temporal, package, suite, tarball]",
+  );
   expect(ci).toContain("bun ./scripts/ci-gate.ts");
   expect(suite).toContain("fail-fast: false");
   expect(suite).toContain("bun ./scripts/postgres-suite.ts --shard");
   expect(suite).toContain("bun ./scripts/pooler-proof.ts");
   expect(suite).toContain("docker pull");
-  expect(suite).toContain("actions/cache@caa296126883cff596d87d8935842f9db880ef25");
+  const setupBun = readFileSync(join(root, ".github/actions/setup-bun/action.yml"), "utf8");
+  expect(setupBun).toContain("actions/cache@caa296126883cff596d87d8935842f9db880ef25");
+  expect(unpinnedActions(setupBun)).toEqual([]);
   for (const shard of ["isolation", "selection", "consistency", "tx"]) {
     expect(suite).toContain(`- ${shard}\n`);
   }
   expect(ci).toContain("name: test / ${{ matrix.group }}");
+  expect(ci).toContain("bun ./scripts/ci-test-groups.ts --matrix");
+  expect(ci).toContain("fromJSON(needs.changes.outputs.source)");
+  expect(ci).toContain("fromJSON(needs.changes.outputs.built)");
   expect(ci).toContain("name: lint / static");
   expect(ci).toContain("name: types / compiler");
   expect(ci).toContain("name: runtimes / portable");
@@ -301,9 +307,6 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   expect(ci).toContain("name: package / checks");
   expect(ci).toContain("name: gate / check");
   expect(ci).toContain("name: attest / measure");
-  for (const group of ciTestGroups(root)) {
-    expect(ci).toContain(`- ${group.name}\n`);
-  }
   const checkScript = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
     scripts: { check: string };
   };

@@ -36,6 +36,7 @@ A layer may import layers below it. It must not import a layer above it. Adapter
 ## Scripts
 
 - `bun run check` runs format, lint, typecheck, `editor-check`, `type-cost`, `layers-check`, `core-purity`, `docs:check`, `readme:check`, the compiler-API scan, `bundle-purity`, build, tests, publint, arethetypeswrong, and the size budget. It does not run `@ark/attest`. CI runs those steps in parallel. Each check is `area / piece` (`CI / lint / static`, `CI / test / migrate pg`, and the rest). The required status is `gate / check`.
+- `bun run verify:fast` is the check before a push: format, lint, typecheck, layers, purity, docs, the readme, then `bun test --changed` against the merge-base with `origin/main`. Push once. On a CI failure, `bun run ci:fail <pull>` prints the first failing job, its step, the last 60 log lines, and the local command that reproduces it. Fix once, run `verify:fast`, and push. After two failed rounds, stop and report. While waiting, one `gh pr checks <pull> --watch` and nothing else.
 - `bun run build` writes JavaScript with `bun build --target node` and declarations with `tsc` (`emitDeclarationOnly`).
 - `bun run typecheck` runs `tsc --noEmit`.
 - `bun run lint` uses oxlint with type-aware rules. `bun run format:check` uses oxfmt. `bun run format` rewrites formatting.

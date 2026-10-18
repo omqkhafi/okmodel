@@ -5,10 +5,15 @@
  * `test / <group>`.
  *
  *   bun ./scripts/ci-test-groups.ts "reference app"
+ *   bun ./scripts/ci-test-groups.ts --matrix
  *
- * Prints that group's files, one path per line.
+ * The first prints that group's files, one path per line. `--matrix` writes
+ * `source` and `built` JSON arrays to `GITHUB_OUTPUT` (and to stdout).
  */
 
+import { appendFileSync } from "node:fs";
+
+import { postgresFileNeedsBuild } from "./ci-postgres-shards.js";
 import { discoverTestFiles } from "./postgres-suite.js";
 import { repoRoot } from "./root.js";
 
@@ -96,6 +101,36 @@ const PACKAGE = [
 ] as const;
 
 /**
+ * Whether any file in the group imports `dist/` or the package name.
+ *
+ * Those groups download the `dist` artifact. The others skip the build.
+ *
+ * @param files - Paths in one group
+ * @returns True when the group must have `dist/`
+ */
+export function groupNeedsDist(files: readonly string[]): boolean {
+  return files.some((file) => postgresFileNeedsBuild(file));
+}
+
+/**
+ * Splits the group names into those that need `dist/` and those that do not.
+ *
+ * @param root - Repository root
+ * @returns JSON-ready name lists, in job order
+ */
+export function ciTestMatrix(root: string): {
+  readonly source: readonly string[];
+  readonly built: readonly string[];
+} {
+  const source: string[] = [];
+  const built: string[] = [];
+  for (const group of ciTestGroups(root)) {
+    (groupNeedsDist(group.files) ? built : source).push(group.name);
+  }
+  return { source, built };
+}
+
+/**
  * Groups for one repository, in job order.
  *
  * @param root - Repository root
@@ -158,10 +193,18 @@ function startsWithOne(name: string, prefixes: readonly string[]): boolean {
 }
 
 if (import.meta.main) {
+  if (process.argv[2] === "--matrix") {
+    const matrix = ciTestMatrix(repoRoot());
+    const lines = `source=${JSON.stringify(matrix.source)}\nbuilt=${JSON.stringify(matrix.built)}\n`;
+    const output = process.env.GITHUB_OUTPUT;
+    if (output !== undefined && output.length > 0) appendFileSync(output, lines);
+    process.stdout.write(lines);
+    process.exit(0);
+  }
   const name = process.argv[2];
   const group = ciTestGroups(repoRoot()).find((item) => item.name === name);
   if (group === undefined) {
-    console.error(`usage: bun ./scripts/ci-test-groups.ts <${GROUP_NAMES.join("|")}>`);
+    console.error(`usage: bun ./scripts/ci-test-groups.ts <${GROUP_NAMES.join("|")}> | --matrix`);
     process.exit(1);
   }
   if (group.files.length === 0) {

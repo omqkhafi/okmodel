@@ -1,4 +1,5 @@
 node_modules
+.cache/
 reports/
 .okm-pull-*
 .okm-import-*

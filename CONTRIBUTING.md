@@ -10,7 +10,9 @@ End the pull request body with `Closes #N`, naming the roadmap issue. Merging cl
 
 ## Checks
 
-Run `bun run check` before opening a pull request. It formats, lints, typechecks, runs the repository checks, builds, tests, and checks the package.
+Run `bun run verify:fast` before every push, then push once. It checks format, lint, types, layers, purity, docs, and the readme, then runs `bun test --changed` against the merge-base with `origin/main` (Bun 1.4, the flag landed in 1.3.13). A docs-only diff passes with no tests. `bun run check` is still the full local suite: format, lint, typecheck, the repository checks, the build, every test, and the package checks.
+
+When CI fails, read only `bun run ci:fail <pull request number>`. It prints the first failing job, the failing step, the last 60 log lines, and the one local command that reproduces it. Fix that, run `bun run verify:fast`, and push. After two failed rounds, stop and report. While a run is in progress, watch it with one `gh pr checks <pull request number> --watch` and nothing else.
 
 A pull request fails CI when `package.json`'s version equals the base branch, or when `changelog.md` has no new lines under `## Unreleased`. A release that promotes Unreleased into a dated heading is allowed.
 
