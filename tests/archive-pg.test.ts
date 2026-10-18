@@ -66,12 +66,12 @@ postgresTest(
         expect(hasSql.text).toContain('"archived_at" is null');
 
         await db.users.archive({ where: { id: USER } });
-        const hiddenOwner = await db.tasks.find({
+        const absentOwner = await db.tasks.find({
           where: { id: TASK },
           limit: 1,
           include: { owner: true },
         });
-        expect(hiddenOwner[0]?.owner).toBeNull();
+        expect(absentOwner[0]?.owner).toBeNull();
         const shownOwner = await db.tasks.withArchived().find({
           where: { id: TASK },
           limit: 1,

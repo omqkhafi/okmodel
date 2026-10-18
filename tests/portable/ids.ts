@@ -1,5 +1,5 @@
 /**
- * OKID and UUID checks that Node, Bun, and Deno can all run.
+ * OKID and UUID checks that Node and Bun can both run.
  *
  * The vectors follow okengine's `src/okid.test.ts`. The public `okid()`
  * returns a generator; these checks call the vendored function for the vectors

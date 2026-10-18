@@ -1,7 +1,7 @@
 /**
  * Runs the unit checks that each runtime can run.
  *
- * Bun runs `bun test`. This script runs the portable checks on Node and Deno,
+ * Bun runs `bun test`. This script runs the portable checks on Node,
  * imports the runtime entry as an edge bundle, and prints a skip with a reason
  * for every test file a runtime cannot execute.
  */
@@ -24,18 +24,14 @@ if (import.meta.main) {
 }
 
 /**
- * Runs Node, Deno, and the edge import. Prints every skip.
+ * Runs Node and the edge import. Prints every skip.
  *
  * @param root - Repository root
  * @returns Problem lines. Empty when every runnable check passed
  */
 export function runtimeProblems(root: string): readonly string[] {
-  const problems: string[] = [];
   const files = testFiles(root);
-  problems.push(...runRuntime(root, "node", files));
-  problems.push(...runRuntime(root, "deno", files));
-  problems.push(...edgeProblems(root, files));
-  return problems;
+  return [...runNode(root, files), ...edgeProblems(root, files)];
 }
 
 function testFiles(root: string): readonly string[] {
@@ -45,41 +41,33 @@ function testFiles(root: string): readonly string[] {
     .sort();
 }
 
-function runRuntime(
-  root: string,
-  runtime: "node" | "deno",
-  files: readonly string[],
-): readonly string[] {
-  const found = commandVersion(runtime);
+function runNode(root: string, files: readonly string[]): readonly string[] {
+  const found = commandVersion("node");
   if (found === undefined) {
-    const reason = `${runtime} is not on PATH`;
-    console.log(`skip ${runtime}: ${reason}`);
+    const reason = "node is not on PATH";
+    console.log(`skip node: ${reason}`);
     if (process.env.CI === "true" || process.env.CI === "1") {
       return [`runtimes: ${reason}, and CI must run it`];
     }
     return [];
   }
-  if (runtime === "node" && !nodeSupportsConfigTypes(nodeVersion(found))) {
+  if (!nodeSupportsConfigTypes(nodeVersion(found))) {
     const reason = `node ${found} is older than engines.node >=22.18`;
     console.log(`skip node: ${reason}`);
     if (process.env.CI === "true" || process.env.CI === "1") return [`runtimes: ${reason}`];
     return [];
   }
-  console.log(
-    `skip ${runtime}: ${String(files.length)} files under tests/*.test.ts import bun:test`,
-  );
+  console.log(`skip node: ${String(files.length)} files under tests/*.test.ts import bun:test`);
   const dir = mkdtempSync(join(tmpdir(), "okm-runtime-"));
   const outfile = join(dir, "ids.mjs");
   try {
     const built = bunBuild(root, join(root, PORTABLE), outfile, "node");
     if (built !== undefined) return [built];
-    const ran = spawn(
-      runtime === "node" ? ["node", outfile] : ["deno", "run", "--allow-env", outfile],
-    );
+    const ran = spawn(["node", outfile]);
     if (ran.code !== 0) {
-      return [`runtimes: ${runtime} portable checks failed\n${ran.stderr}${ran.stdout}`];
+      return [`runtimes: node portable checks failed\n${ran.stderr}${ran.stdout}`];
     }
-    console.log(`runtimes: ${runtime} ${found} ran ${PORTABLE}`);
+    console.log(`runtimes: node ${found} ran ${PORTABLE}`);
     return [];
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -106,18 +94,6 @@ function edgeProblems(root: string, files: readonly string[]): readonly string[]
       return [`runtimes: node could not import the edge bundle\n${ran.stderr}${ran.stdout}`];
     }
     console.log("runtimes: edge bundle of the runtime entry imported on node");
-    if (commandVersion("deno") === undefined) {
-      console.log("skip edge deno: deno is not on PATH");
-      if (process.env.CI === "true" || process.env.CI === "1") {
-        return ["runtimes: edge import on deno did not run, and CI must run it"];
-      }
-      return [];
-    }
-    const deno = spawn(["deno", "run", "--allow-env", outfile]);
-    if (deno.code !== 0) {
-      return [`runtimes: deno could not import the edge bundle\n${deno.stderr}${deno.stdout}`];
-    }
-    console.log("runtimes: edge bundle of the runtime entry imported on deno");
     return [];
   } finally {
     rmSync(dir, { recursive: true, force: true });

@@ -1,5 +1,5 @@
 /**
- * OKID vectors, on Bun. Node and Deno run the same function from the portable entry.
+ * OKID vectors, on Bun. Node runs the same function from the portable entry.
  */
 
 import { expect, test } from "bun:test";

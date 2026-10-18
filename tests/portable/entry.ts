@@ -1,5 +1,5 @@
 /**
- * Entry the runtime script bundles for Node and Deno.
+ * Entry the runtime script bundles for Node.
  */
 
 import { runIdChecks } from "./ids.js";
