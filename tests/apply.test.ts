@@ -209,6 +209,13 @@ test("status states from history", () => {
     ).state,
   ).toBe("current");
   expect(
+    describeStatus(
+      [expand],
+      [{ migrationId: "baselined@0001_init", stepIndex: 0, class: "expand" }],
+      { hash: "a", version: "baselined@0001_init" },
+    ).state,
+  ).toBe("current");
+  expect(
     describeStatus([expand], [{ migrationId: "0009_future", stepIndex: 0, class: "expand" }], {
       hash: "z",
       version: "0009_future",

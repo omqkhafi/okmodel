@@ -12,7 +12,7 @@ Stable exports are the application API this release commits to. Experimental exp
 
 `okmodel/pg/postgresjs`, `okmodel/pg/pglite`, `okmodel/pg/pg`, `okmodel/pg/bun`, and `okmodel/pg/neon` export `connect` and the pool opener for that driver. Neon `connect` returns a promise for a string, a pool, and a topology. `httpCapabilities` is the HTTP mode. The client has `close()`. A second `close()` waits on the same call. When the runtime defines `Symbol.asyncDispose`, the client implements it, and `await using` calls `close()`. A client that adopted an existing pool resolves `close()` without ending that pool.
 
-`okmodel/migrate` exports `defineConfig`, `MigrateConfig`, and `TargetInput`. The CLI imports the planning and apply helpers from the package. Those helpers are not exports.
+`okmodel/migrate` exports `defineConfig`, `MigrateConfig`, `TargetInput`, `provision`, `baseline`, `describe`, and `buildCatalog`. The CLI imports the planning and apply helpers from the package. Those helpers are not exports.
 
 `okmodel/testing` exports `testing`. It opens a real driver pool and returns factories, `expectQueries`, and `isolation`. See [testing](testing.md).
 

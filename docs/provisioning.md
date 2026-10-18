@@ -50,6 +50,10 @@ The statements are insert-if-missing. They are not migration steps, so OKM1542 d
 
 Creating a schema per tenant, creating a database per tenant, and a tenant registry are M5.
 
+## Adopting a non-empty database
+
+A database that already has objects and no OKModel history is OKM1851 for apply and provision. Use [`okm migrate baseline`](adopt-existing.md) after `okm pull` and `okm generate` so the head snapshot is recorded without DDL (D299).
+
 ## Equivalence
 
 `okm migrate check` still replays the history. It does not provision.

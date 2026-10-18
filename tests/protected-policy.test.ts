@@ -9,8 +9,8 @@
  * target (OKM1851 otherwise, section 19.6).
  *
  * `verify`, `pull`, `catalog-export`, and `inspect` are allowed by the table
- * and have no command in 0.4. History repair has no command either; the
- * policy blocks that class.
+ * and have no command in 0.4. History repair is `okm migrate baseline`
+ * (D298); the policy blocks that class without `--allow-protected`.
  */
 
 import { expect } from "bun:test";

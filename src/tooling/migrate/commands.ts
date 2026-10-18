@@ -41,7 +41,8 @@ export function formatFailure(error: unknown, verbose = false): string {
  * `--version` stays in the bin. This function handles `build`, `check`,
  * `generate`, `dev`, `push`, `seed`, `ext list`, `ext check`, `ext scaffold`,
  * `ext test`, `doctor`,
- * `driver test`, and `migrate plan`, `apply`, `status`, and `check`.
+ * `driver test`, and `migrate plan`, `apply`, `status`, `check`, and
+ * `baseline`.
  *
  * @param argv - Arguments after the program name
  * @param io - Working directory and stdout. Defaults to the process
@@ -129,14 +130,18 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
             ? "migrate status"
             : sub === "check"
               ? "migrate check"
-              : undefined;
+              : sub === "baseline"
+                ? "migrate baseline"
+                : undefined;
     if (commandKey === undefined) {
       throw new OkmError("invalid", `Unknown command migrate ${sub ?? ""}.`, {
-        fix: { summary: "Use okm migrate plan, apply, status, or check." },
+        fix: { summary: "Use okm migrate plan, apply, status, check, or baseline." },
       });
     }
     const parsed = splitFlags(
-      sub === "plan" ? migrateArgs.filter((arg) => arg !== "--json") : migrateArgs,
+      sub === "plan" || sub === "baseline"
+        ? migrateArgs.filter((arg) => arg !== "--json")
+        : migrateArgs,
       commandKey,
     );
     if (sub === "plan") {
@@ -183,6 +188,17 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
     if (sub === "check") {
       const { checkMigrations } = await import("./check.js");
       stdout(await checkMigrations(project, invoke(parsed), { provision: parsed.provision }));
+      return;
+    }
+    if (sub === "baseline") {
+      const { baselineProject } = await import("./baseline.js");
+      stdout(
+        await baselineProject(project, {
+          ...invoke(parsed),
+          dryRun: parsed.dryRun,
+          json: migrateArgs.includes("--json"),
+        }),
+      );
       return;
     }
   }
@@ -348,6 +364,7 @@ type Parsed = {
   readonly allowProtected: boolean;
   readonly allowPooler: boolean;
   readonly provision: boolean;
+  readonly dryRun: boolean;
   readonly lockTimeoutMs: number | undefined;
   readonly statementTimeoutMs: number | undefined;
 };
@@ -362,7 +379,8 @@ type CommandKey =
   | "migrate plan"
   | "migrate apply"
   | "migrate status"
-  | "migrate check";
+  | "migrate check"
+  | "migrate baseline";
 
 const COMMAND_FLAGS: Readonly<Record<CommandKey, readonly string[]>> = {
   check: ["--target", "--allow-pooler", "--lock-timeout", "--statement-timeout"],
@@ -388,6 +406,7 @@ const COMMAND_FLAGS: Readonly<Record<CommandKey, readonly string[]>> = {
     "--lock-timeout",
     "--statement-timeout",
   ],
+  "migrate baseline": ["--target", "--allow-protected", "--allow-pooler", "--dry-run", "--json"],
 };
 
 function splitFlags(args: readonly string[], command: CommandKey): Parsed {
@@ -398,6 +417,7 @@ function splitFlags(args: readonly string[], command: CommandKey): Parsed {
   let allowProtected = false;
   let allowPooler = false;
   let provision = false;
+  let dryRun = false;
   let lockTimeoutMs: number | undefined;
   let statementTimeoutMs: number | undefined;
   for (let index = 0; index < args.length; index += 1) {
@@ -431,6 +451,11 @@ function splitFlags(args: readonly string[], command: CommandKey): Parsed {
     if (arg === "--provision") {
       refuseUnknown(command, arg, allowed);
       provision = true;
+      continue;
+    }
+    if (arg === "--dry-run") {
+      refuseUnknown(command, arg, allowed);
+      dryRun = true;
       continue;
     }
     if (arg === "--json") {
@@ -477,6 +502,7 @@ function splitFlags(args: readonly string[], command: CommandKey): Parsed {
     allowProtected,
     allowPooler,
     provision,
+    dryRun,
     lockTimeoutMs,
     statementTimeoutMs,
   };
@@ -511,6 +537,10 @@ const COMMANDS: readonly (readonly [string, string])[] = [
   ["migrate apply", "Apply pending migrations."],
   ["migrate status", "Print whether the target is current."],
   ["migrate check", "Replay migration history in a scratch schema."],
+  [
+    "migrate baseline",
+    "Record the head snapshot as applied on an existing database. No schema changes.",
+  ],
   ["push", "Apply the schema diff to one target."],
   ["pull", "Write table files and a schema from one database."],
   ["seed <file>", "Run a seed file on one target."],

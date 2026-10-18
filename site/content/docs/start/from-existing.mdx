@@ -1,0 +1,27 @@
+---
+title: "Adopt an existing database"
+description: "Pull a live database, generate the first migration, then baseline without running DDL."
+---
+
+A live database with no OKModel history can be adopted without replaying DDL.
+
+```sh
+bunx okm pull
+bunx okm generate init
+bunx okm migrate baseline
+```
+
+[`okm pull`](/docs/reference/cli#pull) writes table files and the schema from the database. `okm generate init` writes the head snapshot. [`okm migrate baseline`](/docs/reference/cli#migrate-baseline) records that snapshot as applied history: it writes `okm_meta` and `okm_history` only. It does not create, alter, or drop user objects.
+
+Before it writes, baseline introspects the target. A difference on managed objects is OKM1858 and prints the plan that would reconcile them. Objects the model does not name are listed as unmanaged and are left alone. A target that already has OKModel history is OKM1857. A protected target needs `--allow-protected`.
+
+After a successful baseline, `okm generate` prints `no changes` when the schema still matches, and `okm migrate check` passes. Later changes use generate and apply as usual.
+
+```sh
+bunx okm migrate baseline --dry-run
+bunx okm migrate baseline --json
+```
+
+`--dry-run` prints what would be recorded. `--json` includes the unmanaged list. Running baseline again on the same mark prints `already baselined` and changes nothing.
+
+`baseline(target)` from `okmodel/migrate` is the programmatic entry. `default` is the `database` target.
