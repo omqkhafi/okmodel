@@ -43,12 +43,14 @@ function expectedStormLeak(message: string): boolean {
 
 process.on("uncaughtException", (error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
+  // postgres.js B-02: nextWrite on null is upstream (docs/postgresjs-kill-storm.md).
+  // Recovery still asserts; those leaks are not counted as product crashes.
   if (expectedStormLeak(message)) return;
   crashes.push(message);
 });
 process.on("unhandledRejection", (error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
-  // Known upstream leaks during a kill storm (D263 typarray; 57P01 text).
+  // Known upstream leaks during a kill storm (B-02; D263 typarray; 57P01 text).
   if (expectedStormLeak(message)) return;
   crashes.push(message);
 });

@@ -125,3 +125,7 @@ Bun.sql, PGlite, and Neon refuse a positive `timeout` on a call, on `tx()`, and 
 ### A lost connection
 
 The first call after a backend kill on an idle connection is `unavailable` and retryable. Bun.sql retries a client read once at transaction depth 0. postgres.js and node-postgres do not. A reserved Bun.sql handle whose backend was killed fails the next statement with `unavailable` instead of running it on a new connection. On postgres.js, a wait with no call deadline is rejected when every slot in that pool has closed, or when the reserved connection it uses closes. A queued reserve is started again after a close. A wait that already has a deadline ends at that deadline. A kill during connect can still surface an unhandled rejection from the driver's own type-catalog query.
+
+### postgres.js kill storms (B-02)
+
+postgres.js 3.4.9 can raise an uncaught `TypeError` from `nextWrite` (`socket.write` on a null socket) and unhandled `CONNECTION_CLOSED` / 57P01 rejections when backends are terminated while queries run. That happens with postgres.js alone; OKModel cannot stop the driver's own scheduled write. Prefer `okmodel/pg/pg` or `okmodel/pg/bun` where failover or kill storms are expected. The limit and a minimal reproduction are in the repository at `docs/postgresjs-kill-storm.md`.
