@@ -18,6 +18,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - Global `--config <path>` on every `okm` command that loads a config; default discovery stays `okmodel.config.ts`. A missing file names that path and `--config`.
 - `plan`, `apply`, and `status` on `okmodel/migrate` share the CLI migrate engine for CI and deploy without shelling out (D298).
+- `describe(schema)` on `okmodel/migrate` reports `minPostgres` and `extensions` (each with a reason). `okm doctor` and `okm check` refuse a server below that floor (OKM1802 / OKM1803) or missing a required extension (OKM1811) (D299).
 - `bun run ci:report` prints job and step duration, queue time, the critical path, and re-run counts for recent `main` runs, and why each 0.9.1 pull failed a push.
 - `bun run verify:fast` checks format, lint, types, layers, purity, docs, and the readme, then runs only the tests related to files changed since the merge-base with `origin/main`.
 - `bun run ci:fail <pull>` prints the first failing job, its failing step, the last 60 log lines, and the one local command that reproduces it.

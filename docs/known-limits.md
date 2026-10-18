@@ -28,7 +28,7 @@ Not imported, each with the table and the reason: a composite foreign key, `rela
 
 ## Programmatic schema API
 
-`describe(schema)` and `buildCatalog(description)` are on `okmodel/migrate` (D284). The description is JSON: `logical` (`namespace`, `name`, `format`) and the catalog document. `logical` stays `public` when `defineConfig({ namespace })` places the catalog. The catalog hash changes with that placement. Codecs, client generators, and relation helpers are not in the description. `okm catalog export` (including `--json`) is still the column snapshot a dependent verifies: table names plus each column's name, type, and nullability. It is not the full catalog. The full catalog is `describe(schema)`. There is no sync API.
+`describe(schema)` and `buildCatalog(description)` are on `okmodel/migrate` (D284, D299). The description is JSON: `logical` (`namespace`, `name`, `format`), the catalog document, `minPostgres`, and `extensions` (each with a reason). `logical` stays `public` when `defineConfig({ namespace })` places the catalog. The catalog hash changes with that placement. Codecs, client generators, and relation helpers are not in the description. `okm catalog export` (including `--json`) is still the column snapshot a dependent verifies: table names plus each column's name, type, and nullability. It is not the full catalog. The full catalog is `describe(schema)`. There is no sync API.
 
 The CLI loads `okmodel.config.ts` (not `okm.config.ts`). Pass `--config <path>` (or `options.config` on `plan` / `apply` / `status`) to load another file; a missing file names `okmodel.config.ts` and `--config`.
 

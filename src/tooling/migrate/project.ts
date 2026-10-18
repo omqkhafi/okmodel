@@ -205,6 +205,8 @@ export async function checkProject(
   const { assertAuthorDrift } = await import("./drift.js");
   const allowPooler = flags?.allowPooler === true || opened.config.allowPooler === true;
   await assertLiveExternal(target.url, opened.built.catalog, loadSnapshots(cwd, opened.config));
+  const { assertSchemaRequirements } = await import("./server-requirements.js");
+  await assertSchemaRequirements(target.url, opened.built);
   await assertAuthorDrift(target.url, opened.built.catalog, opened.config.roles, allowPooler);
   return findings;
 }
