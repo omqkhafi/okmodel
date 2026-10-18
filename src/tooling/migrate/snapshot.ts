@@ -95,10 +95,25 @@ export function expandProvisioned(
   return next;
 }
 
+/** History id written when apply re-stamps `okm_meta` with no DDL (B-21, B-45). */
+const RESTAMP_ID = /^restamp-\d+$/;
+
+/**
+ * Reports whether a history id is an apply re-stamp, not a foreign migration.
+ *
+ * @param migrationId - History migration id
+ * @returns `true` for `restamp-<n>`
+ */
+export function isRestampHistoryId(migrationId: string): boolean {
+  return RESTAMP_ID.test(migrationId);
+}
+
 /**
  * Reports whether a history id belongs to this project's files.
  *
- * A `provisioned@` mark belongs when the id after the prefix is a file.
+ * A `provisioned@` mark belongs when the id after the prefix is a file. A
+ * `restamp-<n>` row is the hash-only stamp after an external snapshot moved
+ * (B-45); it is not ahead of the files.
  *
  * @param migrationId - History migration id
  * @param known - File ids
@@ -106,6 +121,7 @@ export function expandProvisioned(
  */
 export function provisionHistoryIsKnown(migrationId: string, known: ReadonlySet<string>): boolean {
   if (known.has(migrationId)) return true;
+  if (isRestampHistoryId(migrationId)) return true;
   const id = provisionedMigrationId(migrationId);
   return id !== undefined && known.has(id);
 }

@@ -27,7 +27,7 @@ import { assertTargetPolicy, listTargets, type InvokeFlags, type TargetRecord } 
 import { loadConfig } from "./project.js";
 import { catalogNamespace } from "./export.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
-import { expandProvisioned, provisionHistoryIsKnown } from "./snapshot.js";
+import { expandProvisioned, isRestampHistoryId, provisionHistoryIsKnown } from "./snapshot.js";
 
 /** One status row. `protected` is its own column, not a state. */
 export type TargetStatus = {
@@ -118,6 +118,11 @@ export function describeStatus(
   }
   const last = migrations.at(-1);
   if (last !== undefined && recorded !== undefined && recorded.hash !== last.catalogHash) {
+    // A re-stamp moves okm_meta to the live schema hash with no migration
+    // file (external columns). generate says no changes; status stays current.
+    if (isRestampHistoryId(recorded.version)) {
+      return { version, catalogHash, state: CURRENT };
+    }
     return { version, catalogHash, state: aheadState(history, known) };
   }
   return {
