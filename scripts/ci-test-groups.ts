@@ -89,6 +89,25 @@ const TOPOLOGY = ["topology", "routing", "replication", "selection", "consistenc
  */
 const TOPOLOGY_SELECTION = new Set(["tests/selection.test.ts", "tests/routing.test.ts"]);
 
+/**
+ * Heavy conformance cases (`drivers-conformance`).
+ *
+ * Replaced on the fast path by `compatibility-sync.test.ts`.
+ */
+const DRIVERS_CONFORMANCE = new Set([
+  "tests/driver-conformance.test.ts",
+  "tests/compatibility.test.ts",
+]);
+
+/**
+ * Files on the `drivers suite` shard.
+ *
+ * Local totals after the PGlite template: suite plus error-mapping on one
+ * side, the rest (close, harness, sync, and the short files) on the other.
+ * A new driver file joins `drivers rest` unless it is conformance.
+ */
+const DRIVERS_SUITE = new Set(["tests/driver-suite.test.ts", "tests/error-suite.test.ts"]);
+
 const CONTRACTS = [
   "client-id",
   "engine-version",
@@ -161,7 +180,9 @@ const GROUP_NAMES = [
   "reference app",
   "migrate",
   "migrate pg",
-  "drivers",
+  "drivers suite",
+  "drivers rest",
+  "drivers-conformance",
   "rows",
   "topology selection",
   "topology consistency",
@@ -183,7 +204,10 @@ function groupName(file: string): (typeof GROUP_NAMES)[number] {
   const base = file.slice(file.lastIndexOf("/") + 1);
   const pg = file.endsWith("-pg.test.ts");
   if (startsWithOne(base, MIGRATE)) return pg ? "migrate pg" : "migrate";
-  if (startsWithOne(base, DRIVERS)) return "drivers";
+  if (startsWithOne(base, DRIVERS)) {
+    if (DRIVERS_CONFORMANCE.has(file)) return "drivers-conformance";
+    return DRIVERS_SUITE.has(file) ? "drivers suite" : "drivers rest";
+  }
   if (startsWithOne(base, ROWS)) return "rows";
   if (startsWithOne(base, TOPOLOGY)) {
     return TOPOLOGY_SELECTION.has(file) ? "topology selection" : "topology consistency";

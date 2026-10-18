@@ -10,10 +10,10 @@ import { join } from "node:path";
 
 import type { DriverPool, ExecuteResult } from "../src/contracts/driver.js";
 import { POSTGRESJS_CAPABILITIES } from "../src/adapters/capabilities.js";
-import { open as openPglite } from "../src/adapters/pg/pglite.js";
 import { open } from "../src/adapters/pg/postgresjs.js";
 import { open as openPg } from "../src/adapters/pg/nodepostgres.js";
 import { open as openBun } from "../src/adapters/pg/bunsql.js";
+import { openPreparedPglite } from "../packages/harness/src/pglite-template.js";
 import { connect as connectPglite } from "../src/runtime/pg/pglite.js";
 import { connect as connectPg } from "../src/runtime/pg/pg.js";
 import { connect as connectBun } from "../src/runtime/pg/bun.js";
@@ -55,7 +55,7 @@ test("close is idempotent and await using calls it once", async () => {
 });
 
 test("pglite connect(pool) then close marks the client closed", async () => {
-  const pool = await openPglite();
+  const pool = await openPreparedPglite([]);
   try {
     const db = await connectPglite(pool, { schema: app });
     await db.connected;

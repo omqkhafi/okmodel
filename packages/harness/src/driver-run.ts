@@ -193,6 +193,7 @@ async function firstParty(driver: string, url: string | undefined): Promise<Targ
   if (driver === "pglite") {
     const adapter = await import("../../../src/adapters/pg/pglite.js");
     const runtime = await import("../../../src/runtime/pg/pglite.js");
+    const { openPreparedPglite } = await import("./pglite-template.js");
     return {
       name: "pglite",
       capabilities: adapter.capabilities,
@@ -201,9 +202,10 @@ async function firstParty(driver: string, url: string | undefined): Promise<Targ
       size: 1,
       cut: true,
       open: (config) =>
-        config.timeouts === undefined
-          ? adapter.open()
-          : adapter.open({ timeouts: config.timeouts }),
+        openPreparedPglite(
+          [],
+          config.timeouts?.acquire !== undefined ? { acquire: config.timeouts.acquire } : undefined,
+        ),
       connect: (pool, options) => runtime.connect(pool, options),
     };
   }

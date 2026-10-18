@@ -11,10 +11,8 @@ import {
   requirePostgresWhenAsked,
 } from "../packages/harness/src/postgres-test.js";
 import { primaryUrl } from "../packages/harness/src/topology.js";
-import {
-  open as openPglite,
-  capabilities as pgliteCapabilities,
-} from "../src/adapters/pg/pglite.js";
+import { capabilities as pgliteCapabilities } from "../src/adapters/pg/pglite.js";
+import { openPreparedPglite } from "../packages/harness/src/pglite-template.js";
 import {
   open as openPostgres,
   capabilities as postgresCapabilities,
@@ -37,9 +35,9 @@ bunTest.skip = (name, fn, timeoutMs) => {
 
 registerDriverSuite({
   name: "pglite",
-  open: () => openPglite({ timeouts: { acquire: 5_000 } }),
-  openLimited: () => openPglite({ timeouts: { acquire: 100 } }),
-  openOther: () => openPglite(),
+  open: () => openPreparedPglite([], { acquire: 5_000 }),
+  openLimited: () => openPreparedPglite([], { acquire: 100 }),
+  openOther: () => openPreparedPglite([]),
   size: 1,
   capabilities: pgliteCapabilities,
   test: bunTest,
