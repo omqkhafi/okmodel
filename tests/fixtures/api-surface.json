@@ -1303,6 +1303,10 @@
       "kind": "stable"
     },
     {
+      "name": "RequiredExtension",
+      "kind": "stable"
+    },
+    {
       "name": "SchemaDescription",
       "kind": "stable"
     },
