@@ -45,6 +45,74 @@ postgresTest(
 
 postgresTest(
   gate,
+  "guide roles provision as superuser on a fresh database (B-30)",
+  async () => {
+    await withGuideRoles("superuser", async ({ url, sql, roles }) => {
+      await applyGuideProvision(url, roles);
+      await assertFunctionAcls(sql, roles);
+      const tables = await sql<{ tablename: string }[]>`
+        select tablename from pg_tables
+        where schemaname = 'public'
+        order by 1
+      `;
+      expect(tables.map((row) => row.tablename)).toEqual([
+        "okm_backfill",
+        "okm_history",
+        "okm_meta",
+        "tasks",
+      ]);
+      const owner = await sql<{ n: string }[]>`
+        select pg_get_userbyid(nspowner)::text as n
+        from pg_namespace where nspname = 'public'
+      `;
+      expect(owner[0]?.n).toBe(roles.migrate);
+      // A second apply on the provisioned target is a no-op (tracked history).
+      await applyGuideProvision(url, roles);
+    });
+  },
+  120_000,
+);
+
+postgresTest(
+  gate,
+  "a failed guide provision leaves no stranded bootstrap tables (B-30)",
+  async () => {
+    const roles = freshGuideRoles();
+    const database = await createIsolatedDatabase();
+    const sql = openPostgres(database.url);
+    try {
+      // App is external in the guide; omit it so provision fails on GRANT.
+      let failed: unknown;
+      try {
+        await applyGuideProvision(database.url, roles);
+      } catch (error) {
+        failed = error;
+      }
+      expect(failed).toBeInstanceOf(Error);
+      expect(String(failed)).toMatch(/does not exist/i);
+      const tables = await sql<{ tablename: string }[]>`
+        select tablename from pg_tables
+        where schemaname = 'public'
+        order by 1
+      `;
+      expect(tables.map((row) => row.tablename)).toEqual([]);
+      await sql.unsafe(
+        `create role ${quoteIdent(roles.app)} login password 'secret' nosuperuser nocreatedb nocreaterole`,
+      );
+      // Retry succeeds even though managed roles already exist from the failure.
+      await applyGuideProvision(database.url, roles);
+      await assertFunctionAcls(sql, roles);
+    } finally {
+      await sql.end({ timeout: 5 });
+      await database.close();
+      await dropGuideRoles(roles);
+    }
+  },
+  120_000,
+);
+
+postgresTest(
+  gate,
   "a failing role step leaves a re-runnable target",
   async () => {
     await withGuideRoles("superuser", async ({ url, sql, roles }) => {
@@ -263,6 +331,28 @@ async function applyGuide(url: string, roles: GuideRoles): Promise<void> {
     migrationRole: roles.migrate,
     appRole: roles.app,
     migrations: [{ id: "0001_init", catalogHash: "x", steps: guideSteps(roles) }],
+  });
+}
+
+/**
+ * Applies the guide catalog the way `okm migrate apply` does on an empty
+ * database: head snapshot provision, not file replay.
+ */
+async function applyGuideProvision(url: string, roles: GuideRoles): Promise<void> {
+  const head = guideCatalog(roles);
+  await applyTarget({
+    url,
+    target: "default",
+    protected: false,
+    migrationRole: roles.migrate,
+    appRole: roles.app,
+    migrations: [{ id: "0001_init", catalogHash: "x", steps: guideSteps(roles) }],
+    snapshot: {
+      catalog: head,
+      migrationId: "0001_init",
+      catalogHash: "x",
+      reference: [],
+    },
   });
 }
 

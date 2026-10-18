@@ -11,15 +11,20 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { catalog } from "../src/contracts/catalog/build.js";
 import { tenantPolicyExpression } from "../src/contracts/catalog/policy.js";
 import { OkmError } from "../src/contracts/error.js";
 import { quoteIdent } from "../src/dialects/pg/ddl.js";
+import { schema, table, text } from "../src/dialects/pg/index.js";
 import { assertCreateRole, assertRoleHealth } from "../src/dialects/pg/role/check.js";
+import { attachRoles } from "../src/dialects/pg/role/index.js";
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
 import { createIsolatedDatabase, openPostgres } from "../packages/harness/src/postgres.js";
 import { open } from "../src/adapters/pg/postgresjs.js";
 import { repoRoot } from "../scripts/root.js";
+import { applyTarget } from "../src/tooling/migrate/apply.js";
 import { run } from "../src/tooling/migrate/commands.js";
+import { planMigration } from "../src/tooling/migrate/plan.js";
 
 const gate = await loadPostgresGate();
 const root = repoRoot();
@@ -161,14 +166,10 @@ postgresTest(
     const report = roleName("report");
     const database = await createIsolatedDatabase();
     const sql = openPostgres(database.url);
-    const cwd = project(
-      database.url,
-      `import { schema, table, text } from ${pg};
-export const app = schema({ tables: [table("people", { email: text() })] });
-`,
-      rolesConfig(mig, app, report),
-    );
     try {
+      // File apply (no provision): a pre-created migration role skips ownSchema,
+      // so GRANT USAGE ON SCHEMA for reporting is a silent no-op when that role
+      // does not own public. Provision as superuser would transfer ownership.
       await sql.unsafe(
         `create role ${quoteIdent(mig)} login password 'secret' nosuperuser nocreatedb createrole`,
       );
@@ -179,20 +180,35 @@ export const app = schema({ tables: [table("people", { email: text() })] });
       await sql.unsafe(
         `create role ${quoteIdent(report)} login password 'secret' nosuperuser nocreatedb nocreaterole`,
       );
+      const declared = attachRoles(
+        schema({ tables: [table("people", { email: text() })] }).catalog,
+        {
+          migration: mig,
+          app,
+          reporting: report,
+          managed: [{ name: mig }, { name: app }, { name: report }],
+        },
+      );
+      const steps = planMigration({ before: catalog([]), after: declared, name: "init" }).steps;
       let caught: unknown;
       try {
-        await run(["generate", "init"], { cwd, stdout: () => {} });
-        await run(["migrate", "apply"], { cwd, stdout: () => {} });
+        await applyTarget({
+          url: database.url,
+          target: "default",
+          protected: false,
+          migrationRole: mig,
+          appRole: app,
+          migrations: [{ id: "0001_init", catalogHash: "x", steps }],
+        });
       } catch (error) {
         caught = error;
       }
       expect(caught).toBeInstanceOf(OkmError);
       const error = caught as OkmError;
       expect(error.code).toBe("OKM1825");
-      expect(error.fix.summary).toContain("OWNER TO");
+      expect(error.fix?.summary ?? "").toContain("OWNER TO");
     } finally {
       await sql.end({ timeout: 5 });
-      rmSync(cwd, { recursive: true, force: true });
       await database.close();
       await dropRoles([mig, app, report]);
     }

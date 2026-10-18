@@ -932,37 +932,72 @@ async function provisionEmpty(
   }
   const schema = concreteSchema(request);
   await ensureMigrationTables((sql) => connection.execute(sql));
-  await installSnapshot(
-    connection,
-    snapshot.catalog,
-    schema,
-    snapshot.reference,
-    session,
-    request.migrationRole,
-  );
-  await grantAppMeta(connection, request.appRole, session);
-  const mark = provisionMark(snapshot.migrationId);
-  await connection.execute("begin");
   try {
-    await connection.execute(
-      "insert into okm_history (migration_id, step_index, class, catalog_hash) values ($1, 0, 'expand', $2)",
-      [mark, snapshot.catalogHash],
+    await installSnapshot(
+      connection,
+      snapshot.catalog,
+      schema,
+      snapshot.reference,
+      session,
+      request.migrationRole,
     );
-    await connection.execute(
-      `insert into okm_meta (id, catalog_hash, migration_id) values ('head', $1, $2)
-       on conflict (id) do update set catalog_hash = excluded.catalog_hash, migration_id = excluded.migration_id`,
-      [snapshot.catalogHash, mark],
-    );
-    await connection.execute("commit");
+    await grantAppMeta(connection, request.appRole, session);
+    const mark = provisionMark(snapshot.migrationId);
+    await connection.execute("begin");
+    try {
+      await connection.execute(
+        "insert into okm_history (migration_id, step_index, class, catalog_hash) values ($1, 0, 'expand', $2)",
+        [mark, snapshot.catalogHash],
+      );
+      await connection.execute(
+        `insert into okm_meta (id, catalog_hash, migration_id) values ('head', $1, $2)
+         on conflict (id) do update set catalog_hash = excluded.catalog_hash, migration_id = excluded.migration_id`,
+        [snapshot.catalogHash, mark],
+      );
+      await connection.execute("commit");
+    } catch (error) {
+      await connection.execute("rollback").catch(() => undefined);
+      throw error;
+    }
+    return {
+      target: request.target,
+      applied: [mark],
+      ...(session.setRole !== undefined ? { setRole: session.setRole } : {}),
+    };
   } catch (error) {
-    await connection.execute("rollback").catch(() => undefined);
+    // Drop empty bootstrap tables so a retry starts clean. Roles are cluster
+    // objects and stay; createRoleOnce and the ownership grants tolerate that.
+    // RESET ROLE first: bootstrap tables were created as the connecting user.
+    if (session.setRole !== undefined) {
+      await connection.execute("reset role").catch(() => undefined);
+      delete session.setRole;
+    }
+    await dropEmptyBootstrapTables(connection).catch(() => undefined);
     throw error;
   }
-  return {
-    target: request.target,
-    applied: [mark],
-    ...(session.setRole !== undefined ? { setRole: session.setRole } : {}),
-  };
+}
+
+/**
+ * Drops `okm_meta`, `okm_history`, and `okm_backfill` when they have no rows
+ * and the schema has no other user objects.
+ *
+ * Used after a failed provision so a retry that left nothing behind sees an
+ * empty target. When another object remains (for example a table from a
+ * mid-provision failure), the bootstrap tables stay so the next apply reports
+ * OKM1851 and names what was left.
+ *
+ * @param connection - Reserved connection
+ */
+async function dropEmptyBootstrapTables(connection: DriverConnection): Promise<void> {
+  if ((await namespaceObject(connection)) !== undefined) return;
+  for (const name of ["okm_meta", "okm_history", "okm_backfill"] as const) {
+    const present = await connection.execute(`select to_regclass('${name}') is not null`);
+    if (!wireTrue(present.rows[0]?.[0])) continue;
+    const counted = await connection.execute(`select count(*)::text from ${name}`);
+    const text = counted.rows[0]?.[0];
+    if (text !== "0") continue;
+    await connection.execute(`drop table if exists ${name}`);
+  }
 }
 
 async function insertReference(connection: DriverConnection, request: ApplyRequest): Promise<void> {
@@ -1107,14 +1142,18 @@ async function prepareMigrationRole(
   const changes = request.migrations.some((migration) =>
     migration.steps.some((step) => changesRole(step.sql)),
   );
+  // Role DDL runs as the connecting user before SET ROLE (D293). The managed
+  // migration role is NOSUPERUSER NOCREATEROLE, so never check it for CREATEROLE.
   if (role === undefined) {
     if (changes) await assertCreateRole(connection, await currentUser(connection));
     return;
   }
   const current = await currentUser(connection);
   const exists = await roleExists(connection, role);
-  if (changes) await assertCreateRole(connection, exists && current !== role ? role : current);
-  if (exists && current !== role) await assumeRole(connection, role, session);
+  if (changes) await assertCreateRole(connection, current);
+  // Defer SET ROLE while the plan still creates or alters roles; otherwise a
+  // managed migration role (NOCREATEROLE) would refuse later CREATE ROLE steps.
+  if (exists && current !== role && !changes) await assumeRole(connection, role, session);
 }
 
 function wireTrue(value: string | null | undefined): boolean {
