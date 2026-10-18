@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 import * as fc from "fast-check";
 
+import { gateRuns } from "./gate-property.js";
+
 import { OkmError } from "../src/contracts/index.js";
 import {
   POSTGRES_IDENTIFIER_MAX_BYTES,
@@ -64,7 +66,7 @@ test("hash is stable when inputs are reordered", () => {
         expect(catalogHash(forward)).toBe(catalogHash(backward));
       },
     ),
-    { numRuns: 40 },
+    { numRuns: gateRuns(40) },
   );
 });
 
@@ -75,7 +77,7 @@ test("identities in one catalog are unique", () => {
       const built = catalog(names.map((name) => table({ namespace, name, provenance })));
       expect(built.objects).toHaveLength(names.length);
     }),
-    { numRuns: 40 },
+    { numRuns: gateRuns(40) },
   );
 
   fc.assert(
@@ -92,7 +94,7 @@ test("identities in one catalog are unique", () => {
         }
       }
     }),
-    { numRuns: 20 },
+    { numRuns: gateRuns(20) },
   );
 });
 
@@ -119,7 +121,7 @@ test("template identity round-trips without a concrete name", () => {
         expect(serializeCatalog(parsed)).toBe(text);
       },
     ),
-    { numRuns: 40 },
+    { numRuns: gateRuns(40) },
   );
 });
 
@@ -147,7 +149,7 @@ test("serialize and parse round-trip", () => {
         expect(catalogHash(parsed)).toBe(catalogHash(built));
       },
     ),
-    { numRuns: 40 },
+    { numRuns: gateRuns(40) },
   );
 });
 
@@ -158,7 +160,7 @@ test("deterministic names stay within the length limit", () => {
       expect(utf8ByteLength(name)).toBeLessThanOrEqual(bytes);
       expect(deterministicName({ parent, purpose: kind, nameKey, limit: bytes })).toBe(name);
     }),
-    { numRuns: 80 },
+    { numRuns: gateRuns(80) },
   );
 
   fc.assert(
@@ -174,7 +176,7 @@ test("deterministic names stay within the length limit", () => {
         expect(utf8ByteLength(fittedRight)).toBeLessThanOrEqual(POSTGRES_IDENTIFIER_MAX_BYTES);
       },
     ),
-    { numRuns: 40 },
+    { numRuns: gateRuns(40) },
   );
 });
 

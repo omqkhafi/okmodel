@@ -4,7 +4,8 @@
  * CI uses the fixed seed below, so a red run is the same red run on a rerun and
  * on a laptop. A failure prints the seed and the replay command. Set
  * `OKM_PROPERTY_SEED` to try another seed and `OKM_PROPERTY_SCALE` to multiply
- * the run counts (a soak run uses 10 or more).
+ * the run counts (a soak run uses 10 or more). The fast CI tier sets the scale
+ * to 0.25. The full tier leaves it at 1.
  */
 
 import fc from "fast-check";

@@ -1,17 +1,14 @@
 name: Windows
 
-# Not a required status, and not part of `gate / check`. This workflow does
-# not change branch protection. `windows-latest` is intentional: the job
-# exists to run on current Windows. The Ubuntu hash job only publishes
-# `catalog.hash` so the Windows job can compare it.
+# Called from CI on the full tier (a `full-ci` pull request, or a push to
+# main). `gate / check` requires this workflow then. `windows-latest` is
+# intentional: the job exists to run on current Windows. The Ubuntu hash
+# job only publishes `catalog.hash` so the Windows job can compare it.
 #
 # A step that needs a TCP Postgres URL prints SKIP. It does not start a
 # service container.
 on:
-  push:
-    branches:
-      - main
-  pull_request:
+  workflow_call:
 
 concurrency:
   group: windows-${{ github.workflow }}-${{ github.ref }}

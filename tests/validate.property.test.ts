@@ -7,6 +7,8 @@
 import { expect, test } from "bun:test";
 import fc from "fast-check";
 
+import { gateRuns } from "./gate-property.js";
+
 import type { ValidationIssue } from "../src/contracts/index.js";
 import type { DriverPool } from "../src/contracts/driver.js";
 import { schema, table, text, integer, varchar } from "../src/dialects/pg/index.js";
@@ -157,6 +159,6 @@ test("random bodies match the rule model", async () => {
         expect(issues).toEqual(model(body));
       },
     ),
-    { numRuns: 80 },
+    { numRuns: gateRuns(80) },
   );
 });

@@ -16,6 +16,16 @@ When CI fails, read only `bun run ci:fail <pull request number>`. It prints the 
 
 A pull request fails CI when `package.json`'s version equals the base branch, or when `changelog.md` has no new lines under `## Unreleased`. A release that promotes Unreleased into a dated heading is allowed.
 
+Every push on a pull request runs tier 1: format, lint, typecheck, layers, purity, docs, the unit tests, property tests at a quarter of their run count (`OKM_PROPERTY_SCALE=0.25`), the size gate, the release-flow check, and, when the pull request has `needs: postgres`, the suite on 15 and 18 and the tarball on 18.
+
+Add the label `full-ci` when the branch is final and tier 1 is green. That starts tier 2: type cost, the editor check, attest, the portable runtimes, the temporal matrix, the package checks, Windows, Postgres 15 and 18, the `drivers-conformance` group, and property tests at full count. A push to `main` always runs tier 2. A later commit on `main` does not cancel the run already in progress. A failure of `gate / check` on `main` opens an issue.
+
+`gate / check` is the required status. It passes tier 1, and it also requires tier 2 when `full-ci` is on the pull request or the push is to `main`. A skipped tier 2 job is a pass only when that tier was not requested.
+
+Finish a brief when tier 1 is green and, when `full-ci` is on, tier 2 is green too.
+
+Release and the weekly run are tier 3. They still cover every Postgres major, the tarball smoke, and the soak.
+
 `bun run db:up` starts the Postgres topology (one primary and two streaming replicas). Set `POSTGRES_VERSION` to 15, 16, 17, or 18. `bun run db:down` stops it and removes its data. Tests that need Postgres skip when Docker is not running, and fail when `REQUIRE_DOCKER=1`. `bun run test:postgres` runs every test file on that topology. A file that cannot run there is named, with the reason, in `scripts/postgres-suite.ts`. `bun run verify` runs that suite here, one version by default and every supported version with `--all`. A pull request does not run it. Add the label `needs: postgres` when GitHub should: the suite on 15 and 18, and the tarball on 18. CI remains the authority for a release.
 
 `bun run format` rewrites formatting. `bun run format:check` only reports it.

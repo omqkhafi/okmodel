@@ -8,6 +8,8 @@
 import { expect } from "bun:test";
 import fc from "fast-check";
 
+import { gateRuns } from "./gate-property.js";
+
 import { renderCatalog } from "../src/dialects/pg/ddl.js";
 import { boolean, id, integer, schema, table, text } from "../src/dialects/pg/index.js";
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
@@ -373,7 +375,7 @@ postgresTest(
             });
             expect(Array.from(together)).toEqual(model);
           }),
-          { numRuns: 40 },
+          { numRuns: gateRuns(40) },
         );
       } finally {
         await db.close();

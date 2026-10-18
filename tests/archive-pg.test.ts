@@ -5,6 +5,8 @@
 import { expect } from "bun:test";
 import fc from "fast-check";
 
+import { gateRuns } from "./gate-property.js";
+
 import { OkmError } from "../src/contracts/error.js";
 import { every, has, id, none, schema, table, text } from "../src/dialects/pg/index.js";
 import { renderCatalog } from "../src/dialects/pg/ddl.js";
@@ -331,7 +333,7 @@ postgresTest(
               }
             },
           ),
-          { numRuns: 5 },
+          { numRuns: gateRuns(5) },
         );
       } finally {
         await db.close();

@@ -8,6 +8,8 @@
 import { expect } from "bun:test";
 import fc from "fast-check";
 
+import { gateRuns } from "./gate-property.js";
+
 import { OkmError } from "../src/contracts/error.js";
 import {
   contains,
@@ -606,7 +608,7 @@ postgresTest(
             expect(got.length - expected.length).toBeLessThanOrEqual(inserted ? 1 : 0);
           },
         ),
-        { numRuns: 30 },
+        { numRuns: gateRuns(30) },
       );
     });
   },

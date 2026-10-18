@@ -7,6 +7,7 @@ import fc from "fast-check";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { gateRuns } from "./gate-property.js";
 import { repoRoot } from "../scripts/root.js";
 import { parsePlan } from "../src/tooling/migrate/plan.js";
 import { sqlIdentifiers, sqlQuoteOpen, sqlStatements } from "../src/tooling/migrate/sql-lex.js";
@@ -104,7 +105,7 @@ test("random input never throws", () => {
       const open = sqlQuoteOpen(sql);
       return Array.isArray(statements) && typeof open === "boolean";
     }),
-    { numRuns: 200 },
+    { numRuns: gateRuns(200) },
   );
 });
 

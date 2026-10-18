@@ -7,6 +7,8 @@
 import { expect, test } from "bun:test";
 import fc from "fast-check";
 
+import { gateRuns } from "./gate-property.js";
+
 import type { DriverPool } from "../src/contracts/driver.js";
 import { OkmError } from "../src/contracts/error.js";
 import {
@@ -369,7 +371,7 @@ test("values stay parameters", async () => {
       expect(described.text.includes(marker)).toBe(false);
       expect(described.text.includes(";")).toBe(false);
     }),
-    { numRuns: 20 },
+    { numRuns: gateRuns(20) },
   );
   await db.close();
 });

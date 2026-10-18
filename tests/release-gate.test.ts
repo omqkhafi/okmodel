@@ -265,8 +265,12 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   expect(ci).not.toContain("tests/harness.test.ts");
   expect(ci).toMatch(/push:\n {4}branches:\n {6}- main\n/);
   expect(ci).toContain("pull_request:");
-  expect(ci).toContain("cancel-in-progress: true");
-  expect(ci).toContain("${{ github.workflow }}-${{ github.ref }}");
+  expect(ci).toContain(
+    "cancel-in-progress: ${{ github.event_name == 'pull_request' && github.event.action != 'labeled' && github.event.action != 'unlabeled' }}",
+  );
+  expect(ci).toContain(
+    "${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || format('{0}-{1}-{2}', github.head_ref, github.event.action, github.event.label.name) }}",
+  );
   const floor = POSTGRES_VERSIONS[0];
   const newest = POSTGRES_VERSIONS[POSTGRES_VERSIONS.length - 1];
   if (floor === undefined || newest === undefined) throw new Error("no postgres versions");
@@ -282,9 +286,29 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   expect(prMeta).not.toContain("synchronize");
   expect(prMeta).not.toContain("opened");
   expect(jsonVersionLists(pullRequest, "versions")).toEqual([[floor, newest], [newest]]);
-  expect(ci).toContain(
-    "needs: [changes, lint, types, test, test-dist, runtimes, temporal, package, suite, tarball]",
+  const gateNeeds = ci.slice(
+    ci.indexOf("name: gate / check"),
+    ci.indexOf("name: attest / measure"),
   );
+  for (const slice of [
+    "changes",
+    "lint",
+    "types",
+    "types-full",
+    "test",
+    "test-dist",
+    "runtimes",
+    "temporal",
+    "size",
+    "package",
+    "attest",
+    "windows",
+    "suite",
+    "tarball",
+    "drivers-conformance",
+  ]) {
+    expect(gateNeeds).toContain(slice);
+  }
   expect(ci).toContain("bun ./scripts/ci-gate.ts");
   expect(suite).toContain("fail-fast: false");
   expect(suite).toContain("bun ./scripts/postgres-suite.ts --shard");
@@ -298,8 +322,8 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   }
   expect(ci).toContain("name: test / ${{ matrix.group }}");
   expect(ci).toContain("bun ./scripts/ci-test-groups.ts --matrix");
-  expect(ci).toContain("fromJSON(needs.changes.outputs.source)");
-  expect(ci).toContain("fromJSON(needs.changes.outputs.built)");
+  expect(ci).toContain("fromJSON(needs.changes.outputs.source || '[]')");
+  expect(ci).toContain("fromJSON(needs.changes.outputs.built || '[]')");
   expect(ci).toContain("name: lint / static");
   expect(ci).toContain("name: types / compiler");
   expect(ci).toContain("name: runtimes / portable");

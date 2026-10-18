@@ -7,6 +7,8 @@
 import { expect, test } from "bun:test";
 import fc from "fast-check";
 
+import { gateRuns } from "./gate-property.js";
+
 import type { DriverPool } from "../src/contracts/driver.js";
 import { OkmError } from "../src/contracts/error.js";
 import { parseQuery } from "../src/dialects/pg/filter-parse.js";
@@ -179,7 +181,7 @@ test("request text through parse never becomes SQL", async () => {
         ),
       ).toBe("OKM1121");
     }),
-    { numRuns: 20 },
+    { numRuns: gateRuns(20) },
   );
   await db.close();
 });
