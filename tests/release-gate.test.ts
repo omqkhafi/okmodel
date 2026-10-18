@@ -287,7 +287,7 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   expect(prMeta).not.toContain("opened");
   expect(jsonVersionLists(pullRequest, "versions")).toEqual([[floor, newest], [newest]]);
   expect(ci).toContain(
-    "needs: [changes, lint, types, test, test-dist, runtimes, temporal, package, suite, tarball]",
+    "needs: [changes, lint, types, types-full, test, test-dist, runtimes, temporal, size, package, attest, windows, suite, tarball, drivers-conformance]",
   );
   expect(ci).toContain("bun ./scripts/ci-gate.ts");
   expect(suite).toContain("fail-fast: false");
@@ -302,8 +302,8 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   }
   expect(ci).toContain("name: test / ${{ matrix.group }}");
   expect(ci).toContain("bun ./scripts/ci-test-groups.ts --matrix");
-  expect(ci).toContain("fromJSON(needs.changes.outputs.source)");
-  expect(ci).toContain("fromJSON(needs.changes.outputs.built)");
+  expect(ci).toContain("fromJSON(needs.changes.outputs.source || '[]')");
+  expect(ci).toContain("fromJSON(needs.changes.outputs.built || '[]')");
   expect(ci).toContain("name: lint / static");
   expect(ci).toContain("name: types / compiler");
   expect(ci).toContain("name: runtimes / portable");
