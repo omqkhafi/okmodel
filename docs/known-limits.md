@@ -67,6 +67,7 @@ Also not in this version:
 - **`listen` is a driver capability, not a client member.** The driver contract may set `listen: true` or `false`. There is no `db.listen` / `client.listen` in this version. Spec text that lists `listen` next to `tx()` on the client type is describing the capability flag only.
 - **`inspect()` on a string or a pool reports `single-endpoint`.** That call stays synchronous. On a topology client, `inspect().routing.reason` is the same string `onRoute` receives, including `auto:<name>`, `fallback:behind`, and `fallback:saturated`. The preview does not call `onRoute` and does not move the selector (D268). A string or pool client has no `using` and serves either `route` from its one endpoint. See [topology](topology.md).
 - **Minimum Bun for `okmodel/pg/bun` is 1.4.** CI installs Bun 1.4.2. `Query.cancel()` does not abort an in-flight statement on Bun 1.4, and notices are not surfaced. Older Bun is not a supported floor.
+- **Deno is not supported.**
 
 ## Topology
 
