@@ -286,9 +286,29 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   expect(prMeta).not.toContain("synchronize");
   expect(prMeta).not.toContain("opened");
   expect(jsonVersionLists(pullRequest, "versions")).toEqual([[floor, newest], [newest]]);
-  expect(ci).toContain(
-    "needs: [changes, lint, types, types-full, test, test-dist, runtimes, temporal, size, package, attest, windows, suite, tarball, drivers-conformance]",
+  const gateNeeds = ci.slice(
+    ci.indexOf("name: gate / check"),
+    ci.indexOf("name: attest / measure"),
   );
+  for (const slice of [
+    "changes",
+    "lint",
+    "types",
+    "types-full",
+    "test",
+    "test-dist",
+    "runtimes",
+    "temporal",
+    "size",
+    "package",
+    "attest",
+    "windows",
+    "suite",
+    "tarball",
+    "drivers-conformance",
+  ]) {
+    expect(gateNeeds).toContain(slice);
+  }
   expect(ci).toContain("bun ./scripts/ci-gate.ts");
   expect(suite).toContain("fail-fast: false");
   expect(suite).toContain("bun ./scripts/postgres-suite.ts --shard");

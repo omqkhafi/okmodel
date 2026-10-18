@@ -427,7 +427,24 @@ jobs:
 
   check:
     name: gate / check
-    needs: [changes, lint, types, types-full, test, test-dist, runtimes, temporal, size, package, attest, windows, suite, tarball, drivers-conformance]
+    needs:
+      [
+        changes,
+        lint,
+        types,
+        types-full,
+        test,
+        test-dist,
+        runtimes,
+        temporal,
+        size,
+        package,
+        attest,
+        windows,
+        suite,
+        tarball,
+        drivers-conformance,
+      ]
     if: always() && (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'full-ci')
     runs-on: ubuntu-24.04
     steps:
