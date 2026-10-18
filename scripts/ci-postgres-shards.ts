@@ -62,6 +62,7 @@ const HEAVY: Readonly<Record<string, PostgresShard>> = {
  * A reference-app test always lands on {@link POSTGRES_BUILD_SHARD} by prefix.
  */
 const BUILD_FILES: ReadonlySet<string> = new Set([
+  "tests/baseline-pg.test.ts",
   "tests/client-close.test.ts",
   "tests/early-close.test.ts",
   "tests/package.test.ts",

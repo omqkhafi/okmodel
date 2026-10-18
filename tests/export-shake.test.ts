@@ -37,6 +37,7 @@ test("public barrels do not export the moved helpers", () => {
     "StatusResult",
     "TargetInput",
     "apply",
+    "baseline",
     "buildCatalog",
     "defineConfig",
     "describe",
