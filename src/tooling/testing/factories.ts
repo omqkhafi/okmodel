@@ -481,8 +481,7 @@ async function writeRow(
   data: Record<string, unknown>,
   tenant: TenantScope | undefined,
 ): Promise<Record<string, unknown>> {
-  const client =
-    facts.tenant && tenant !== undefined ? openScope(host.db, tenant) : host.db;
+  const client = facts.tenant && tenant !== undefined ? openScope(host.db, tenant) : host.db;
   const handle = tableHandle(client, facts.name);
   const inserted: unknown = await handle.insert(data);
   if (!isRow(inserted)) {
