@@ -11,7 +11,14 @@ import { catalogError } from "../../contracts/error.js";
 import { canonicalJson, type Json } from "../../contracts/catalog/json.js";
 import { parseCatalog, serializeCatalog } from "../../contracts/catalog/document.js";
 import type { Catalog } from "../../contracts/catalog/types.js";
+import type { PostgresMajor } from "../../dialects/pg/floor.js";
 import { LOGICAL_FORMAT, type LogicalIdentity } from "./export.js";
+import {
+  declaredFloor,
+  requiredExtensions,
+  schemaMinPostgres,
+  type RequiredExtension,
+} from "./requirements.js";
 
 /**
  * Namespace `schema()` compiles.
@@ -26,11 +33,17 @@ const LOGICAL_NAMESPACE = "public";
  *
  * `logical` names the schema. It is not the catalog hash. `catalog` is the
  * catalog document: no functions, and object keys in sorted order.
+ * `minPostgres` is the lowest major that supports every feature the schema
+ * uses. `extensions` lists each required extension and why it is needed.
  */
 export type SchemaDescription = {
   readonly logical: LogicalIdentity;
   readonly catalog: Catalog;
+  readonly minPostgres: PostgresMajor;
+  readonly extensions: readonly RequiredExtension[];
 };
+
+export type { RequiredExtension };
 
 /**
  * Describes a schema as JSON.
@@ -42,16 +55,23 @@ export type SchemaDescription = {
  * @param schema - A `schema()` result, or any value that carries its catalog
  * @returns A description `JSON.stringify` can store
  */
-export function describe(schema: { readonly catalog: Catalog }): SchemaDescription {
+export function describe(schema: {
+  readonly catalog: Catalog;
+  readonly requires?: { readonly postgres?: string } | undefined;
+}): SchemaDescription {
   const source = schemaCatalog(schema);
   const document = JSON.parse(serializeCatalog(source)) as Json;
+  const floor = schemaMinPostgres(source, declaredFloor(schema.requires));
+  const extensions = requiredExtensions(source);
   const text = canonicalJson({
     catalog: document,
+    extensions,
     logical: {
       format: LOGICAL_FORMAT,
       name: LOGICAL_NAMESPACE,
       namespace: LOGICAL_NAMESPACE,
     },
+    minPostgres: floor,
   });
   return JSON.parse(text) as SchemaDescription;
 }

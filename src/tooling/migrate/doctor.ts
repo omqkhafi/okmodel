@@ -2,9 +2,11 @@
  * `okm doctor`.
  *
  * A code prints the registry entry. With no code, the project is loaded and
- * each table's triggers are listed. When `roles` is set, the command also
- * connects and checks that those roles exist, that a managed role can be
- * created, and that the application role can reach each managed object.
+ * each table's triggers are listed. When a target is configured, the command
+ * also connects and checks `minPostgres` and required extensions from
+ * `describe()` (D298). When `roles` is set, it checks that those roles exist,
+ * that a managed role can be created, and that the application role can reach
+ * each managed object.
  */
 
 import { open } from "../../adapters/pg/postgresjs.js";
@@ -13,10 +15,11 @@ import type { CatalogObject } from "../../contracts/catalog/types.js";
 import { assertRoleHealth } from "../../dialects/pg/role/check.js";
 import { errorDoc } from "../errors/registry.js";
 import { omitManagedObjects } from "./managed.js";
-import { assertTargetPolicy, selectTarget, type InvokeFlags } from "./policy.js";
+import { assertTargetPolicy, listTargets, selectTarget, type InvokeFlags } from "./policy.js";
 import { driverUrl } from "./driver-url.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
 import { openProject } from "./project.js";
+import { assertSchemaRequirements } from "./server-requirements.js";
 
 /**
  * Explains one code, or lists the triggers on each table.
@@ -44,6 +47,12 @@ export async function doctorProject(
   }
   const opened = await openProject(cwd);
   const objects = omitManagedObjects(opened.built.catalog).objects;
+  const targets = listTargets(opened.config);
+  if (targets.length === 1 || (targets.length > 1 && flags?.target !== undefined)) {
+    const target = selectTarget(opened.config, flags?.target);
+    assertTargetPolicy(target, "check", flags?.allowProtected ?? false);
+    await assertSchemaRequirements(target.url, opened.built);
+  }
   if (opened.config.roles !== undefined) {
     const target = selectTarget(opened.config, flags?.target);
     assertTargetPolicy(target, "check", flags?.allowProtected ?? false);

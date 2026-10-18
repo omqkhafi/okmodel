@@ -5,6 +5,9 @@
 import { expect, test } from "bun:test";
 
 import { catalogHash } from "../src/contracts/catalog/document.js";
+import { citext } from "../src/dialects/pg/ext/citext.js";
+import { extension } from "../src/dialects/pg/ext/index.js";
+import { pgTrgm } from "../src/dialects/pg/ext/pg-trgm.js";
 import { external, schema, t, table } from "../src/dialects/pg/index.js";
 import { stampOwnership } from "../src/dialects/pg/owner.js";
 import { buildCatalog, describe } from "../src/tooling/migrate/index.js";
@@ -24,11 +27,65 @@ for (const [name, app] of apps) {
   test(`${name} round-trips through JSON to the same catalog hash`, () => {
     const description = describe(app);
     expect(description.logical).toEqual({ format: 1, name: "public", namespace: "public" });
+    expect(description.minPostgres).toBe(15);
+    expect(description.extensions).toEqual([]);
     assertPlainJson(description);
     const catalog = buildCatalog(JSON.parse(JSON.stringify(description)));
     expect(catalogHash(catalog)).toBe(catalogHash(app.catalog));
   });
 }
+
+test("describe() reports minPostgres 18 for uuidv7()", () => {
+  const app = schema({
+    tables: [table("users", { id: t.id({ default: "uuidv7" }), name: t.text() })],
+  });
+  const description = describe(app);
+  expect(description.minPostgres).toBe(18);
+  expect(description.extensions).toEqual([]);
+});
+
+test("describe() reports a declared minPostgres floor", () => {
+  const app = schema({
+    minPostgres: 17,
+    tables: [table("users", { id: t.id(), name: t.text() })],
+  });
+  expect(describe(app).minPostgres).toBe(17);
+});
+
+test("describe() lists pg_trgm from an index and the declaration", () => {
+  const trgm = pgTrgm();
+  const app = schema({
+    tables: [
+      table("docs", { id: t.id(), body: t.text() }, { indexes: (c) => [trgm.gin(c.body.name)] }),
+    ],
+    extensions: [trgm],
+  });
+  expect(describe(app).extensions).toEqual([
+    {
+      name: "pg_trgm",
+      reason: "extension(pg_trgm); index docs.docs_body_idx uses pg_trgm",
+    },
+  ]);
+});
+
+test("describe() lists citext from a column and the declaration", () => {
+  const app = schema({
+    tables: [table("people", { email: t.citext() })],
+    extensions: [citext()],
+  });
+  expect(describe(app).extensions).toEqual([
+    { name: "citext", reason: "column people.email; extension(citext)" },
+  ]);
+});
+
+test("describe() lists a bare extension() declaration such as vector", () => {
+  const app = schema({
+    tables: [table("users", { id: t.id() })],
+    extensions: [extension("vector")],
+  });
+  expect(describe(app).minPostgres).toBe(15);
+  expect(describe(app).extensions).toEqual([{ name: "vector", reason: "extension(vector)" }]);
+});
 
 test("placement changes the catalog hash and not the logical identity", () => {
   const users = external(
