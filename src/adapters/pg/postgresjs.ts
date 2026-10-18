@@ -181,8 +181,12 @@ type Live = { on: boolean; sql: Sql; m(): Sql };
 
 const lives: Live[] = [];
 
-// D241 / D294: contain Bun/Node nextWrite on null and rebuild stuck pools.
-// Bun exits 0 when a listener returns; print + exitCode so CLI keeps stderr.
+// D241 / D294 / B-02: postgres.js nextWrite on a null socket is upstream
+// (docs/postgresjs-kill-storm.md). This listener is damage control only: it
+// rebuilds stuck pools so the next read is not dead-queued. It does not stop
+// the exception from firing. Prefer pg or Bun.sql where kill storms are
+// expected. Bun exits 0 when a listener returns; print + exitCode so CLI
+// refusals keep stderr and fail.
 process.on("uncaughtException", (e: unknown) => {
   if (e instanceof TypeError && /socket\.write|reading 'write'/.test(e.message)) {
     for (const x of lives) {
