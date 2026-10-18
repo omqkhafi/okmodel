@@ -193,7 +193,7 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
     if (sub === "baseline") {
       const { baselineProject } = await import("./baseline.js");
       stdout(
-        await baselineProject(cwd, {
+        await baselineProject(project, {
           ...invoke(parsed),
           dryRun: parsed.dryRun,
           json: migrateArgs.includes("--json"),

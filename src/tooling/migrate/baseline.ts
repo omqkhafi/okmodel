@@ -27,7 +27,7 @@ import { catalogNamespace } from "./export.js";
 import { loadHeadSnapshot } from "./files.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
 import { omitManagedObjects } from "./managed.js";
-import { projectPath } from "./paths.js";
+import { projectContext, projectPath, type ProjectContext } from "./paths.js";
 import { formatPlan, planMigration } from "./plan.js";
 import {
   assertDirectConnection,
@@ -68,12 +68,15 @@ export type BaselineFlags = InvokeFlags & {
  * Same rules as `okm migrate baseline`. `default` is the `database` target.
  *
  * @param target - Configured target name
- * @param cwd - Project directory. Defaults to the process working directory
+ * @param project - Project directory or context. Defaults to the process cwd
  * @returns The same text the CLI prints for a successful write
  */
-export async function baseline(target: string, cwd = process.cwd()): Promise<string> {
+export async function baseline(
+  target: string,
+  project: string | ProjectContext = process.cwd(),
+): Promise<string> {
   return formatBaseline(
-    await runBaseline(cwd, {
+    await runBaseline(project, {
       target,
       allowProtected: false,
       allowPooler: false,
@@ -84,18 +87,25 @@ export async function baseline(target: string, cwd = process.cwd()): Promise<str
 /**
  * Runs `okm migrate baseline` for the selected target.
  *
- * @param cwd - Project directory
+ * @param project - Project directory or context (supports `--config`)
  * @param flags - Target, protection, pooler, dry-run, and json
  * @returns Text for stdout, including the trailing newline
  */
-export async function baselineProject(cwd: string, flags: BaselineFlags): Promise<string> {
-  const report = await runBaseline(cwd, flags);
+export async function baselineProject(
+  project: string | ProjectContext,
+  flags: BaselineFlags,
+): Promise<string> {
+  const report = await runBaseline(project, flags);
   if (flags.json === true) return `${JSON.stringify(reportJson(report), null, 2)}\n`;
   return formatBaseline(report);
 }
 
-async function runBaseline(cwd: string, flags: BaselineFlags): Promise<BaselineReport> {
-  const config = await loadConfig(cwd);
+async function runBaseline(
+  project: string | ProjectContext,
+  flags: BaselineFlags,
+): Promise<BaselineReport> {
+  const { cwd } = typeof project === "string" ? projectContext(project) : project;
+  const config = await loadConfig(project);
   const target = selectTarget(config, flags.target);
   assertTargetPolicy(target, "history-repair", flags.allowProtected);
   const allowPooler = flags.allowPooler || config.allowPooler === true;
