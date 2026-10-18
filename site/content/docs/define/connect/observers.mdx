@@ -2,7 +2,7 @@
 title: "Observers"
 description: "hookm is a list of read-only observers."
 ---
-`hookm` is a list of read-only observers. Omitted, no observer runs. Each method is optional. They run in list order. They are events only. They cannot change a query, a commit, or a rollback. An error a hook throws is dropped and never reaches the call. The next observer still runs.
+`hookm` is a list of read-only observers. Omitted, no observer runs. Pass an array: `hookm: [observer]`. A single observer object is not a list — wrap it. There is no `hooks` connect option; that key is ignored. Each method is optional. They run in list order. They are events only. They cannot change a query, a commit, or a rollback. An error a hook throws is dropped and never reaches the call. The next observer still runs.
 
 | Method | When |
 | --- | --- |

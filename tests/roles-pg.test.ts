@@ -394,6 +394,75 @@ postgresTest(
 
 postgresTest(
   gate,
+  "guide roles flow from a superuser on a fresh database (B-30)",
+  async () => {
+    const migrate = roleName("mig");
+    const app = roleName("app");
+    const report = roleName("rpt");
+    const database = await createIsolatedDatabase();
+    const sql = openPostgres(database.url);
+    const cwd = mkdtempSync(join(tmpdir(), "okm-roles-guide-"));
+    try {
+      // Guide: okm_app is external — create it first (or list it in managed).
+      await sql.unsafe(
+        `create role ${quoteIdent(app)} login password 'secret' nosuperuser nocreatedb nocreaterole`,
+      );
+      const source = (path: string): string => JSON.stringify(join(root, path));
+      writeFileSync(
+        join(cwd, "schema.ts"),
+        [
+          `import { schema, table, t } from ${source("src/dialects/pg/index.ts")};`,
+          `import { fn } from ${source("src/dialects/pg/fn/index.ts")};`,
+          `const tasks = table("tasks", { id: t.identity(), title: t.text().hidden(), status: t.text() });`,
+          `const isOpen = fn("is_open", { arguments: [{ name: "status", type: "text" }], returns: "boolean", language: "sql", volatility: "immutable", body: "select status <> 'done'" });`,
+          "export const app = schema({ tables: [tasks], functions: [isOpen] });",
+          "",
+        ].join("\n"),
+      );
+      writeFileSync(
+        join(cwd, "okmodel.config.ts"),
+        [
+          `import { defineConfig } from ${source("src/tooling/migrate/index.ts")};`,
+          "export default defineConfig({",
+          '  schema: "./schema.ts",',
+          '  migrations: "./migrations",',
+          `  database: ${JSON.stringify(database.url)},`,
+          "  roles: {",
+          `    migration: ${JSON.stringify(migrate)},`,
+          `    app: ${JSON.stringify(app)},`,
+          `    reporting: ${JSON.stringify(report)},`,
+          `    managed: [{ name: ${JSON.stringify(migrate)} }, { name: ${JSON.stringify(report)}, login: true }],`,
+          `    columns: [{ role: ${JSON.stringify(report)}, on: "tasks", select: ["title"] }],`,
+          "  },",
+          "});",
+          "",
+        ].join("\n"),
+      );
+      await output(["generate", "init"], cwd);
+      expect(await output(["migrate", "apply"], cwd)).toContain(`provisioned@`);
+      expect(await output(["migrate", "check"], cwd)).toBe("ok 1 migrations\n");
+      expect(await output(["check"], cwd)).toBe("ok\n");
+      const pub = await sql<{ p: boolean }[]>`
+        select has_function_privilege('public', 'is_open(text)', 'execute') as p
+      `;
+      expect(pub[0]?.p).toBe(false);
+      const owner = await sql<{ n: string }[]>`
+        select pg_get_userbyid(nspowner)::text as n
+        from pg_namespace where nspname = 'public'
+      `;
+      expect(owner[0]?.n).toBe(migrate);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      await sql.end({ timeout: 5 });
+      await database.close();
+      await dropRoles([migrate, app, report]);
+    }
+  },
+  120_000,
+);
+
+postgresTest(
+  gate,
   "databases provisioned at once with a missing managed role all apply, round after round",
   async () => {
     const app = roleName("app");

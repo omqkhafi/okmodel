@@ -22,9 +22,11 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### ♻️ Changed
 
+- postgres.js kill-storm uncaught exceptions are documented as an upstream limit (B-02): a minimal postgres.js-only reproduction lives in `docs/postgresjs-kill-storm.md`, known-limits and the Drivers page recommend `okmodel/pg/pg` or `okmodel/pg/bun` where failover is expected, and the adapter's process listener is described as damage control rather than a fix.
 - A pull request that only changes `docs/` or `site/` skips the runtime test matrix, Postgres, the type-cost step, and attest. `gate / check` stays the required status and counts that skip as a pass only when the filter says those jobs are irrelevant.
 - CI builds `dist` once and uploads it. Jobs that need the build download it. Jobs that do not need it skip the build. Bun's install cache is on every install, and typecheck keeps a TypeScript incremental build.
 - The topology CI group is two shards. Topology tests open PGlite from a prepared data directory instead of running initdb on every database.
+- Docs: `connect({ hookm })` is an array; a single observer object or a `hooks` key does not register observers.
 
 ### 🔥 Removed
 
@@ -42,6 +44,11 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okm migrate check` reprints domain checks before planning, so a non-canonical author check such as `VALUE > 0` is OKM1552 only and not permanent OKM1547 when `generate` says no changes (B-37).
 - A trigger `WHEN` that names `OLD` and `NEW` no longer fails `okm check` / `okm migrate check` with "expression contains variables of more than one relation"; introspection reads the predicate from `pg_get_triggerdef`, and those columns are ordinary table dependencies (B-46).
 - `defineConfig({ namespace })` places a trigger's called function with the catalog, so generate/apply/check no longer fail OKM1020 for a missing function in `public` (B-47).
+- The guide roles flow on a fresh database no longer fails with `SAVEPOINT can only be used in transaction blocks` during provision: schema ownership runs without a savepoint when no transaction is open, `CREATEROLE` is checked on the connecting user (not the managed migration role), and a failed provision drops empty bootstrap tables so a retry is clean (B-30).
+
+### 🔒 Security
+
+- A postgres.js generic or aborted-connection failure on a statement whose table has a sensitive column no longer leaves `parameters` or `args` on `error.cause` when the driver omits `table` (B-33 residual, #364).
 
 ## v0.9.1 — 2026-10-17
 

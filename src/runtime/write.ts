@@ -237,14 +237,20 @@ export async function executeWrite(
   scope?: CallScope,
   plan?: true,
 ): Promise<unknown> {
-  const prepared = await prepareWrite(host, op, table, input, options, mods, scope);
-  if (plan !== undefined) return prepared;
-  if (prepared.statements.length === 0) return prepared.finish([]);
-  const results = await runWrite(host, prepared.statements, prepared.options);
-  const more = prepared.follow?.(results);
-  if (more === undefined || more.length === 0) return prepared.finish(results);
-  const extra = await runWrite(host, more, prepared.options);
-  return prepared.finish(results.concat(extra));
+  try {
+    const prepared = await prepareWrite(host, op, table, input, options, mods, scope);
+    if (plan !== undefined) return prepared;
+    if (prepared.statements.length === 0) return prepared.finish([]);
+    const results = await runWrite(host, prepared.statements, prepared.options);
+    const more = prepared.follow?.(results);
+    if (more === undefined || more.length === 0) return prepared.finish(results);
+    const extra = await runWrite(host, more, prepared.options);
+    return prepared.finish(results.concat(extra));
+  } catch (error) {
+    // B-33: postgres.js omits `table` on generic / aborted failures but keeps parameters.
+    if (typeof error === "object" && error !== null) Reflect.set(error, "okmTable", table);
+    throw error;
+  }
 }
 
 /**

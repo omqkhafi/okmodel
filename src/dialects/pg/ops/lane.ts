@@ -158,6 +158,8 @@ export async function explain(handle: object, query: object): Promise<ExplainRes
 }
 
 async function raise(lane: Lane, error: unknown): Promise<never> {
+  // B-33: stamp the handle's table when the driver omitted it on the error.
+  if (typeof error === "object" && error !== null) Reflect.set(error, "okmTable", lane.table);
   const mapped = await lane.fail(lane.session, error);
   lane.session.logger?.error?.({ code: mapped.code, summary: mapped.summary });
   throw mapped;

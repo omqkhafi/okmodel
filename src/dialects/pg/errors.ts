@@ -57,6 +57,14 @@ export type MapPostgresErrorOptions = {
    * An index keeps its full name.
    */
   readonly schema?: MapPostgresErrorSchema;
+  /**
+   * Table the statement targeted.
+   *
+   * postgres.js omits `table` on generic and aborted-connection failures while
+   * still attaching `parameters` and `args` on the cause. The runtime passes the
+   * handle's table so a sensitive column on that statement still redacts (B-33).
+   */
+  readonly table?: string;
 };
 
 /**
@@ -86,7 +94,13 @@ export function mapPostgresError(error: unknown, options?: MapPostgresErrorOptio
   const values = options?.includeValues === true ? valuesOf(error.detail, columns) : undefined;
   const code = kind === "outcome_unknown" ? "OKM1401" : kind;
   const redactCause =
-    options?.includeValues !== true && needsSafeCause(options?.schema, error.table, columns);
+    options?.includeValues !== true &&
+    needsSafeCause(
+      options?.schema,
+      error.table,
+      columns,
+      options?.table ?? statementTableOf(error),
+    );
   return new OkmError(code, summaryOf(kind, error, columns, fieldReason), {
     kind,
     fieldReason,
@@ -107,21 +121,22 @@ export function mapPostgresError(error: unknown, options?: MapPostgresErrorOptio
 /**
  * Whether this failure may carry a sensitive value in the driver cause (B-33).
  *
- * True when the error's table has a sensitive column, or when a named column is
- * sensitive on any table in the schema.
+ * True when the error's table or the statement's table has a sensitive column,
+ * or when a named column is sensitive on any table in the schema.
  *
  * @param schema - Connected schema, when `connect` passed one
  * @param table - SQL table from the driver error
  * @param columns - SQL column names parsed from the error
+ * @param statementTable - Table the statement targeted, when the driver omitted it
  */
 function needsSafeCause(
   schema: MapPostgresErrorSchema | undefined,
   table: string | undefined,
   columns: readonly string[],
+  statementTable?: string,
 ): boolean {
   if (schema === undefined) return false;
-  const model = modelForTable(schema, table);
-  if (model !== undefined && model.columns.some((column) => column.sensitive === true)) {
+  if (tableHasSensitive(schema, table) || tableHasSensitive(schema, statementTable)) {
     return true;
   }
   if (columns.length === 0) return false;
@@ -134,6 +149,23 @@ function needsSafeCause(
     }
   }
   return false;
+}
+
+function tableHasSensitive(schema: MapPostgresErrorSchema, table: string | undefined): boolean {
+  const model = modelForTable(schema, table);
+  return model !== undefined && model.columns.some((column) => column.sensitive === true);
+}
+
+/**
+ * Table the runtime stamped on a driver error when the server omitted `table`.
+ *
+ * Write and `raw` set `okmTable` before {@link mapPostgresError} runs (B-33).
+ *
+ * @param error - Normalised driver error
+ */
+function statementTableOf(error: DriverShape): string | undefined {
+  const marked = Reflect.get(error, "okmTable");
+  return typeof marked === "string" && marked.length > 0 ? marked : undefined;
 }
 
 /**
@@ -229,7 +261,12 @@ function searchInputError(
   const message = error.message;
   const cause =
     options?.includeValues !== true &&
-    needsSafeCause(options?.schema, error.table, columnsOf(error))
+    needsSafeCause(
+      options?.schema,
+      error.table,
+      columnsOf(error),
+      options?.table ?? statementTableOf(error),
+    )
       ? safeCause(error)
       : (error.cause ?? error);
   if (sqlstate === "42601" && (message.includes("tsquery") || searchQuery(error))) {

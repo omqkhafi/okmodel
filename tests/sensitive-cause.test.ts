@@ -104,3 +104,48 @@ test("B-33: includeValues keeps the full cause as an opt-in", () => {
   expect(mapped.values()).toEqual({ secret: SECRET });
   expect(inspect(mapped.cause, { depth: 10 })).toContain(SECRET);
 });
+
+function pgjsCause(message: string, code: string, value: string): Error {
+  const cause = Object.assign(new Error(message), { code });
+  Object.defineProperty(cause, "parameters", { value: [value], enumerable: false });
+  Object.defineProperty(cause, "args", { value: [value], enumerable: false });
+  return cause;
+}
+
+test("B-33 residual: generic driver error with statement table strips parameters and args", () => {
+  const mapped = mapPostgresError(
+    new DriverError('invalid input syntax for type integer: "x"', {
+      sqlstate: "22P02",
+      cause: pgjsCause('invalid input syntax for type integer: "x"', "22P02", SECRET),
+    }),
+    { schema: app, table: "secrets" },
+  );
+  expect(mapped.kind).toBe("invalid");
+  leakNowhere(mapped, SECRET);
+  expect(mapped.cause).not.toHaveProperty("parameters");
+  expect(mapped.cause).not.toHaveProperty("args");
+});
+
+test("B-33 residual: aborted connection stamped okmTable strips parameters and args", () => {
+  const driver = new DriverError("write CONNECTION_CLOSED 127.0.0.1:55432", {
+    sqlstate: "08006",
+    cause: pgjsCause("write CONNECTION_CLOSED 127.0.0.1:55432", "CONNECTION_CLOSED", SECRET),
+  });
+  Reflect.set(driver, "okmTable", "secrets");
+  const mapped = mapPostgresError(driver, { schema: app });
+  expect(mapped.kind).toBe("unavailable");
+  leakNowhere(mapped, SECRET);
+  expect(mapped.cause).not.toHaveProperty("parameters");
+  expect(mapped.cause).not.toHaveProperty("args");
+});
+
+test("B-33 residual: generic error on a non-sensitive statement still keeps parameters", () => {
+  const driver = new DriverError('invalid input syntax for type integer: "x"', {
+    sqlstate: "22P02",
+    cause: pgjsCause('invalid input syntax for type integer: "x"', "22P02", "ada@example.com"),
+  });
+  Reflect.set(driver, "okmTable", "plain");
+  const mapped = mapPostgresError(driver, { schema: app });
+  expect(mapped.kind).toBe("invalid");
+  expect(inspect(mapped.cause, { depth: 10, showHidden: true })).toContain("ada@example.com");
+});
