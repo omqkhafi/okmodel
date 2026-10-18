@@ -33,6 +33,17 @@ test("QA-M6: port 6432 is a pooler URL", async () => {
   expect(doctor.stdout).toContain("--allow-pooler");
 });
 
+test("B-41: non-default pooler port needs ?pgbouncer=true or a host hint", () => {
+  // Port 6433 is the pooler-proof listen port and is not in the URL heuristic.
+  expect(() => assertDirectConnection("postgres://u@127.0.0.1:6433/app", false)).not.toThrow();
+  expect(() =>
+    assertDirectConnection("postgres://u@127.0.0.1:6433/app?pgbouncer=true", false),
+  ).toThrow(OkmError);
+  expect(() => assertDirectConnection("postgres://u@pgbouncer.example:6433/app", false)).toThrow(
+    OkmError,
+  );
+});
+
 test("QA-M6: a backend pid that changes between the two statements is OKM1854", async () => {
   let pid = "11";
   let started!: () => void;

@@ -253,7 +253,7 @@ The registry has 110 codes, in numeric order. Ranges are schema `OKM1000`, queri
 | `OKM1123` | Hidden field allowlist | A hidden field was added to a filter or sort allowlist. |
 | `OKM1124` | Operator mismatch | An operator does not apply to the column type. |
 | `OKM1125` | Bad SQL fragment | A composed fragment is empty, unbalanced, includes a backslash, or interpolates a value it cannot bind. A select fragment that is not a number is the same code. |
-| `OKM1126` | Parameter limit | The finished statement has more than 65,535 parameters. The limit is for the whole statement (filters, inList, limit, values), not for inList alone. |
+| `OKM1126` | Parameter limit | The finished statement has more than 65,533 parameters. The limit matches postgres.js (which refuses at 65,534) so OKM1126 fires first. The limit is for the whole statement (filters, inList, limit, values), not for inList alone. |
 | `OKM1130` | Cursor order | A cursor was reused with a different orderBy than the one that created it, or is not a cursor page() returned. |
 | `OKM1190` | Safety violation | A query composition broke a core invariant. violations lists every broken rule in stable order. |
 | `OKM1191` | No snapshot plan | A multi-statement read was requested inside READ COMMITTED and no single-statement plan exists. |

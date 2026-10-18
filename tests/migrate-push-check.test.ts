@@ -74,7 +74,7 @@ alter table "public"."prices" drop constraint "prices_amount_not_null";
   }
 });
 
-test("the type-change drop recipe allows OKM1515 on the dual-write function", () => {
+test("B-36: the type-change drop recipe lints clean with a name header", () => {
   const before = schema({
     tables: [
       table("prices", {
@@ -87,8 +87,12 @@ test("the type-change drop recipe allows OKM1515 on the dual-write function", ()
   const after = schema({
     tables: [table("prices", { id: t.integer().primaryKey(), amount: t.numeric(12, 2) })],
   }).catalog;
-  const sql = `-- class: contract
--- okm-allow OKM1512: readers and writers use amount
+  // A name header and a blank line keep drop trigger as step 1. An OKM1512
+  // allow on that step is OKM1510 (B-36); the trigger needs no allow.
+  const sql = `-- name: 0006_drop_cents
+-- class: contract
+
+-- class: contract
 drop trigger "prices_amount_sync" on "public"."prices";
 
 -- class: contract
@@ -99,7 +103,38 @@ drop function "public"."prices_amount_sync"();
 -- okm-allow OKM1512: readers and writers use amount
 alter table "public"."prices" drop column "cents";
 `;
-  expect(lintPlan(parsePlan(sql), before, after).map((item) => item.code)).toEqual([]);
+  const plan = parsePlan(sql);
+  expect(plan.steps.map((step) => step.sql.split("\n")[0])).toEqual([
+    'drop trigger "prices_amount_sync" on "public"."prices"',
+    'drop function "public"."prices_amount_sync"()',
+    'alter table "public"."prices" drop column "cents"',
+  ]);
+  expect(lintPlan(plan, before, after).map((item) => item.code)).toEqual([]);
+});
+
+test("B-36: OKM1512 on drop trigger is OKM1510", () => {
+  const before = schema({
+    tables: [
+      table("prices", {
+        id: t.integer().primaryKey(),
+        cents: t.integer(),
+        amount: t.numeric(12, 2),
+      }),
+    ],
+  }).catalog;
+  const after = schema({
+    tables: [table("prices", { id: t.integer().primaryKey(), amount: t.numeric(12, 2) })],
+  }).catalog;
+  const sql = `-- name: 0006_drop_cents
+-- class: contract
+
+-- class: contract
+-- okm-allow OKM1512: readers and writers use amount
+drop trigger "prices_amount_sync" on "public"."prices";
+`;
+  const findings = lintPlan(parsePlan(sql), before, after);
+  expect(findings.map((item) => item.code)).toContain("OKM1510");
+  expect(findings.some((item) => item.reason.includes("OKM1512"))).toBe(true);
 });
 
 async function capture(

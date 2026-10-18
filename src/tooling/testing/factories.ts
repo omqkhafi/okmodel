@@ -7,6 +7,7 @@
 
 import { OkmError } from "../../contracts/error.js";
 import type { Catalog } from "../../contracts/catalog/types.js";
+import type { DriverPool } from "../../contracts/driver.js";
 import type { Connected } from "../../runtime/types.js";
 import {
   isRequired,
@@ -111,6 +112,8 @@ export function createdOf(
 export type FactoryHost = {
   readonly schema: TestingSchema;
   readonly db: Connected<TestingSchema>;
+  /** Driver pool. Isolation uses it for a plain matview populate (B-34). */
+  readonly pool: DriverPool;
   readonly facts: ReadonlyMap<string, TableFacts>;
   readonly rng: Rng;
   /** Latest row of a table in one tenant. Isolation uses its own map. */
@@ -146,6 +149,9 @@ export function bindFactories(
   return bound;
 }
 
+/** Tenant keys for `for()` / cache. One entry per tenancy key (B-32). */
+export type TenantScope = Readonly<Record<string, string>>;
+
 /**
  * Inserts one row, filling required columns. Used by factories and by isolation.
  *
@@ -153,7 +159,7 @@ export function bindFactories(
  * @param table - Table name
  * @param overrides - Column values and the tenant key
  * @param children - Child counts from `with`
- * @param inherited - Tenant from the parent row, when this row is a child
+ * @param inherited - Tenant scope from the parent row, when this row is a child
  * @returns The inserted row
  */
 export async function insertRow(
@@ -161,7 +167,7 @@ export async function insertRow(
   table: string,
   overrides: Readonly<Record<string, unknown>> | undefined,
   children: Readonly<Record<string, number>> | undefined,
-  inherited: string | undefined,
+  inherited: TenantScope | string | undefined,
   creating?: Set<string>,
 ): Promise<Record<string, unknown>> {
   // Each top-level create gets its own set. Concurrent creates do not share it,
@@ -185,7 +191,7 @@ async function insertPrepared(
   table: string,
   overrides: Readonly<Record<string, unknown>> | undefined,
   children: Readonly<Record<string, number>> | undefined,
-  inherited: string | undefined,
+  inherited: TenantScope | string | undefined,
   creating: Set<string>,
 ): Promise<Record<string, unknown>> {
   const facts = requireTable(host, table);
@@ -193,8 +199,9 @@ async function insertPrepared(
   const merged: Record<string, unknown> = { ...defined, ...overrides };
   const keys = tenantKeyNames(host);
   const taken = takeTenant(merged, facts.tenant ? keys : []);
-  const requested = taken.tenant ?? inherited;
-  const tenant = facts.tenant ? (requested ?? host.rng.uuid()) : undefined;
+  const tenant = facts.tenant
+    ? (taken.scope ?? asScope(keys, inherited) ?? freshScope(host, keys))
+    : undefined;
   const resolved = await resolveRefs(host, taken.rest, tenant, creating);
   await fillRequired(host, facts, resolved, tenant, creating);
   const row = await writeRow(host, facts, resolved, tenant);
@@ -274,10 +281,11 @@ function context(host: FactoryHost): FactoryContext {
 function takeTenant(
   row: Record<string, unknown>,
   keys: readonly string[],
-): { readonly tenant: string | undefined; readonly rest: Record<string, unknown> } {
-  if (keys.length === 0) return { tenant: undefined, rest: row };
+): { readonly scope: TenantScope | undefined; readonly rest: Record<string, unknown> } {
+  if (keys.length === 0) return { scope: undefined, rest: row };
   const rest = { ...row };
-  let tenant: string | undefined;
+  const scope: Record<string, string> = {};
+  let seen = 0;
   for (const key of keys) {
     if (!Object.hasOwn(rest, key)) continue;
     const value = rest[key];
@@ -287,15 +295,48 @@ function takeTenant(
         fix: { summary: `Pass create({ ${key} }) the tenant uuid.` },
       });
     }
-    tenant ??= value;
+    scope[key] = value;
+    seen += 1;
   }
-  return { tenant, rest };
+  if (seen === 0) return { scope: undefined, rest };
+  if (seen !== keys.length) {
+    const missing = keys.filter((key) => !Object.hasOwn(scope, key));
+    throw new OkmError(
+      "invalid",
+      `Composite tenancy needs every key. Missing ${missing.join(", ")}.`,
+      {
+        fix: {
+          summary: `Pass create({ ${keys.join(", ")} }) or omit every tenancy key.`,
+        },
+      },
+    );
+  }
+  return { scope, rest };
+}
+
+function asScope(
+  keys: readonly string[],
+  inherited: TenantScope | string | undefined,
+): TenantScope | undefined {
+  if (inherited === undefined || keys.length === 0) return undefined;
+  if (typeof inherited === "string") {
+    const scope: Record<string, string> = {};
+    for (const key of keys) scope[key] = inherited;
+    return scope;
+  }
+  return inherited;
+}
+
+function freshScope(host: FactoryHost, keys: readonly string[]): TenantScope {
+  const scope: Record<string, string> = {};
+  for (const key of keys) scope[key] = host.rng.uuid();
+  return scope;
 }
 
 async function resolveRefs(
   host: FactoryHost,
   row: Readonly<Record<string, unknown>>,
-  tenant: string | undefined,
+  tenant: TenantScope | undefined,
   creating: Set<string>,
 ): Promise<Record<string, unknown>> {
   const resolved: Record<string, unknown> = {};
@@ -319,7 +360,7 @@ async function fillRequired(
   host: FactoryHost,
   facts: TableFacts,
   row: Record<string, unknown>,
-  tenant: string | undefined,
+  tenant: TenantScope | undefined,
   creating: Set<string>,
 ): Promise<void> {
   for (const column of facts.columns) {
@@ -358,7 +399,7 @@ function assignForeign(
 async function referenced(
   host: FactoryHost,
   table: string,
-  tenant: string | undefined,
+  tenant: TenantScope | undefined,
   creating: Set<string>,
 ): Promise<Record<string, unknown>> {
   const facts = requireTable(host, table);
@@ -368,19 +409,11 @@ async function referenced(
   return insertRow(
     host,
     table,
-    scope === undefined ? undefined : tenantOverride(host, scope),
+    scope === undefined ? undefined : { ...scope },
     undefined,
     scope,
     creating,
   );
-}
-
-function tenantOverride(host: FactoryHost, tenant: string): Record<string, unknown> | undefined {
-  const keys = tenantKeyNames(host);
-  if (keys.length === 0) return undefined;
-  const overrides: Record<string, unknown> = {};
-  for (const key of keys) overrides[key] = tenant;
-  return overrides;
 }
 
 function tenantKeyNames(host: FactoryHost): readonly string[] {
@@ -446,12 +479,9 @@ async function writeRow(
   host: FactoryHost,
   facts: TableFacts,
   data: Record<string, unknown>,
-  tenant: string | undefined,
+  tenant: TenantScope | undefined,
 ): Promise<Record<string, unknown>> {
-  const client =
-    facts.tenant && tenant !== undefined
-      ? openScope(host.db, host.schema.tenancy, tenant)
-      : host.db;
+  const client = facts.tenant && tenant !== undefined ? openScope(host.db, tenant) : host.db;
   const handle = tableHandle(client, facts.name);
   const inserted: unknown = await handle.insert(data);
   if (!isRow(inserted)) {
@@ -582,8 +612,13 @@ function fieldOf(facts: TableFacts, sql: string): string | undefined {
   return facts.columns.find((column) => column.sql === sql)?.field;
 }
 
-function cacheKey(table: string, tenant: string | undefined): string {
-  return `${tenant ?? "*"}:${table}`;
+function cacheKey(table: string, tenant: TenantScope | string | undefined): string {
+  if (tenant === undefined) return `*:${table}`;
+  if (typeof tenant === "string") return `${tenant}:${table}`;
+  const parts = Object.keys(tenant)
+    .sort()
+    .map((key) => `${key}=${tenant[key] ?? ""}`);
+  return `${parts.join("&")}:${table}`;
 }
 
 /**
@@ -595,7 +630,11 @@ function cacheKey(table: string, tenant: string | undefined): string {
  * @param table - Table name
  * @param tenant - Tenant scope, when the table is tenanted
  */
-export function forgetCached(host: FactoryHost, table: string, tenant: string | undefined): void {
+export function forgetCached(
+  host: FactoryHost,
+  table: string,
+  tenant: TenantScope | string | undefined,
+): void {
   host.cache.delete(cacheKey(table, tenant));
 }
 
@@ -605,20 +644,13 @@ function refOf(value: unknown): string | undefined {
   return typeof table === "string" ? table : undefined;
 }
 
-function openScope(
-  db: object,
-  tenancy: { readonly key: string; readonly keys?: readonly string[] } | undefined,
-  tenant: string,
-): object {
+function openScope(db: object, tenant: TenantScope): object {
   if (!("for" in db) || typeof db.for !== "function") {
     throw new OkmError("invalid", "This schema has no for().", {
       fix: { summary: "Pass columnTenancy() to schema({ tenancy })." },
     });
   }
-  const keys = tenancy?.keys ?? [tenancy?.key ?? "tenantId"];
-  const input: Record<string, string> = {};
-  for (const key of keys) input[key] = tenant;
-  const opened: unknown = db.for(input);
+  const opened: unknown = db.for(tenant);
   if (typeof opened !== "object" || opened === null) {
     throw new OkmError("invalid", "for() did not return a client.", {
       fix: { summary: "The tenant key must be a uuid." },
