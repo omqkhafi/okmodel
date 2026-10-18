@@ -204,7 +204,7 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     code: "OKM1126",
     title: "Parameter limit",
     summary:
-      "The finished statement has more than 65,535 parameters. The limit is for the whole statement (filters, inList, limit, values), not for inList alone.",
+      "The finished statement has more than 65,533 parameters. The limit is for the whole statement (filters, inList, limit, values), not for inList alone. It matches postgres.js (which refuses at 65,534) so OKM1126 fires before that driver's MAX_PARAMETERS_EXCEEDED.",
     fix: "Chunk the work, or filter with = any(array) instead of a long inList.",
   },
   {
@@ -526,7 +526,7 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     title: "Reprinted declaration",
     summary:
       "A domain check or a LANGUAGE sql function body is stored differently from the text in the migration catalog.",
-    fix: "Write the check or the body the way Postgres prints it, or allow OKM1552 with a reason. The warning does not fail apply. A domain whose check differs is still OKM1547.",
+    fix: "Write the check or the body the way Postgres prints it, or allow OKM1552 with a reason. The warning does not fail apply or migrate check. A reprinted domain check is sealed before the OKM1547 plan.",
   },
   {
     code: "OKM1601",

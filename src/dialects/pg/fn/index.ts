@@ -8,7 +8,11 @@
 import { assertIdentifier } from "../../../contracts/catalog/identifier.js";
 import { OkmError } from "../../../contracts/error.js";
 import { staticNamespace } from "../../../contracts/catalog/identity.js";
-import { functionObject, triggerObject } from "../../../contracts/catalog/routine.js";
+import {
+  functionObject,
+  triggerObject,
+  whenColumnNames,
+} from "../../../contracts/catalog/routine.js";
 import type {
   CatalogObject,
   FunctionLanguage,
@@ -418,6 +422,16 @@ export function trigger(name: string, options: TriggerOptions): TriggerDeclarati
           );
         }
       }
+      const when = options.when === undefined ? undefined : bodyText(options.when);
+      for (const column of whenColumnNames(when)) {
+        if (!hasIdentity(built, { kind: "column", parent, name: column })) {
+          throw new OkmError(
+            "OKM1020",
+            `Trigger ${name} when names column ${column}, which ${parent.name} does not have.`,
+            { fix: { summary: "Name a column of the table the trigger is on." } },
+          );
+        }
+      }
       return [
         triggerObject({
           parent,
@@ -427,7 +441,7 @@ export function trigger(name: string, options: TriggerOptions): TriggerDeclarati
           level: options.level,
           calls,
           ...(options.updateOf !== undefined ? { updateOf: options.updateOf } : {}),
-          ...(options.when !== undefined ? { when: bodyText(options.when) } : {}),
+          ...(when !== undefined ? { when } : {}),
           provenance: { origin: "file", name },
         }),
       ];

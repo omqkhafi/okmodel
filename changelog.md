@@ -32,7 +32,16 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### 🐛 Fixed
 
+- The expand/contract type-change drop recipe no longer puts `-- okm-allow OKM1512` on `DROP TRIGGER` (that code does not fire there and was OKM1510). The trigger needs no allow; the function keeps OKM1515 and the column keeps OKM1512, under a name header so the first statement is a step (B-36).
+- `testing()` plain-populates materialized views after migrate, and `isolation()` falls back to a plain refresh when a concurrent refresh says the view is not populated, so `refresh: "concurrently"` works inside the harness (B-34).
+- Composite tenancy factories generate a distinct uuid per key, honour an explicit full key, and refuse a partial one instead of copying one key onto another; `isolation()` flip inserts skip identity columns so `lists.id cannot be written` no longer fails (B-32).
+- Documented that LIFO PgBouncer on a non-heuristic port can pass the pid probe: mark it with `?pgbouncer=true` (or a `pooler` / `pgbouncer` host). Apply does not warm-and-hold a second backend (B-41).
+- The statement parameter ceiling is 65,533 so OKM1126 fires before postgres.js's `MAX_PARAMETERS_EXCEEDED` at 65,534 (B-48).
 - A node-postgres call with `timeout` or `signal` removes its checkout `error` listener, so repeated timed calls do not stack listeners on a pooled client. A call that reaches its deadline while waiting for a connection is refused and does not run. A cancel that does not settle destroys that client, so the pool can serve the next call after a kill storm.
+- After an external-table re-stamp, `okm migrate status` stays `current`, `generate` stays `no changes`, and `okm migrate check` no longer fails with OKM1549 when the only catalog drift is external columns (B-45).
+- `okm migrate check` reprints domain checks before planning, so a non-canonical author check such as `VALUE > 0` is OKM1552 only and not permanent OKM1547 when `generate` says no changes (B-37).
+- A trigger `WHEN` that names `OLD` and `NEW` no longer fails `okm check` / `okm migrate check` with "expression contains variables of more than one relation"; introspection reads the predicate from `pg_get_triggerdef`, and those columns are ordinary table dependencies (B-46).
+- `defineConfig({ namespace })` places a trigger's called function with the catalog, so generate/apply/check no longer fail OKM1020 for a missing function in `public` (B-47).
 
 ## v0.9.1 — 2026-10-17
 
@@ -81,11 +90,11 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okm push` plans from the live catalog and applies each change under a fresh `push-<n>` id, so a second push is no longer skipped (B-29, D289).
 - When the schema hash moves with no DDL (an external table the dependent already verified), `okm push` and `okm migrate apply` re-stamp `okm_meta` instead of leaving `connect()` on OKM1520 (B-21, D289).
 - `okm migrate check` keeps a trigger's function in the logical namespace, so schemas with `timestamps({ enforce: "trigger" })` or hand-written triggers no longer fail OKM1020 (B-24, D289).
-- `okm check` and `okm push` reprint domain checks on the connected server before planning, so a non-canonical author check is not permanent live drift (B-36, D289).
+- `okm check` and `okm push` reprint domain checks on the connected server before planning, so a non-canonical author check is not permanent live drift (B-37, D289).
 - The guide's `roles` block applies as a superuser and as a `CREATEROLE` schema owner: managed roles are created before `SET ROLE`, schema ownership is transferred when possible, and a failed role unit stays re-runnable with a clear privilege error. On Postgres 15, apply grants itself membership after `CREATE ROLE` (which leaves none); on Postgres 16+ it grants `WITH SET TRUE` (B-30, D293).
 - Migrate strips the `pgbouncer` query parameter before the URL becomes a startup parameter; other pooler hints are not interpreted (B-25, D293). Provider-specific role-admin checks (RDS, Cloud SQL, Supabase) follow in M-4.
 - The pooler pid probe uses eight reads on the apply session (OKM1854 when the backend pid changes). Warm-and-hold for LIFO PgBouncer is kept out of apply/seed so single-connection targets do not hang; URL heuristics still refuse typical pooler hosts and ports (B-41, D293).
-- The type-change recipe's temporary `IS NOT NULL` validate is no longer OKM1531 (B-37, D289).
+- The type-change recipe's temporary `IS NOT NULL` validate is no longer OKM1531 (B-36, D289).
 - An unknown CLI flag is an error; `okm <command> --help` lists that command's flags (B-26, D289).
 - Backfill progress prints a 1-based step index (B-27, D289).
 - `okm pull` and `okm import drizzle` write foreign keys with the exported table binding, keep file stems unique on case-insensitive volumes, and never write a Windows-reserved stem (`con`, `aux`, `nul`, `com1`, …). A column `__proto__` is a computed key. Composite primary-key columns stay not null on Drizzle import. Missing `oxfmt` prints a notice and still writes the report. `okm ext scaffold` includes composite types (B-14 to B-19, B-38, D290).

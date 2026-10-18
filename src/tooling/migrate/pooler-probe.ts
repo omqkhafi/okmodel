@@ -3,13 +3,16 @@
  *
  * Eight separate `pg_backend_pid()` reads on the caller's session. Two or
  * more distinct pids mean a pooler handed out a new backend. A direct
- * session keeps one pid.
+ * session keeps one pid. A rotating pooler (`server_round_robin=1`) is
+ * refused on any port. Default LIFO PgBouncer on a non-heuristic port can
+ * keep one pid for all eight reads; mark that URL with `?pgbouncer=true`
+ * (or a `pooler` / `pgbouncer` host) so the URL guard refuses it.
  *
- * Warm-and-hold for LIFO PgBouncer (`server_round_robin=0`) needs extra
- * connections and deadlocks a single-connection target (PGlite wire) when
- * apply/seed already hold `max: 1`. That path stays in the PgBouncer test
- * via {@link holdBackendBetweenReads}; production keeps URL heuristics plus
- * these eight reads.
+ * Warm-and-hold for LIFO needs extra connections and deadlocks a
+ * single-connection target (PGlite wire) when apply/seed already hold
+ * `max: 1`. That path stays in the PgBouncer test via the optional
+ * `holdBackend` option; production keeps URL heuristics plus these eight
+ * reads.
  */
 
 import { assertStableBackend, type StableBackendOptions } from "./policy.js";

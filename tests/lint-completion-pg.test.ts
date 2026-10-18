@@ -206,8 +206,9 @@ postgresTest(
       `const people = table("people", { n: t.domain("pos", t.integer(), "VALUE > 0") });`,
       "export const app = schema({ tables: [people] });",
     ]);
-    expect(domain.code).not.toBe(0);
-    expect(domain.text).toContain("OKM1547");
+    // Sealed like okm check / LANGUAGE sql: warning only, not OKM1547 (B-37).
+    expect(domain.code).toBe(0);
+    expect(domain.text.startsWith("ok 1 migrations\n")).toBe(true);
     expect(domain.text).toContain("warning OKM1552");
     expect(domain.text).toContain("domain pos check reprints differently");
 

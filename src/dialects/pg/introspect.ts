@@ -361,7 +361,7 @@ export async function introspectSchema(
   for (const row of triggers) {
     const bits = Number(text(row, "tgtype"));
     const updateOf = list(text(row, "update_of"));
-    const when = text(row, "predicate");
+    const when = unwrapTriggerWhen(text(row, "predicate"));
     const argTypes = splitTypes(text(row, "arg_types"));
     objects.push(
       triggerObject({
@@ -1073,7 +1073,13 @@ const TRIGGERS = `
       select coalesce(string_agg(format_type(x.oid, null), '|' order by x.ord), '')
       from unnest(p.proargtypes) with ordinality as x(oid, ord)
     ) as arg_types,
-    coalesce(pg_get_expr(t.tgqual, t.tgrelid), '') as predicate,
+    case
+      when t.tgqual is null then ''
+      else coalesce(
+        substring(pg_get_triggerdef(t.oid) from 'WHEN \\((.*)\\) EXECUTE'),
+        ''
+      )
+    end as predicate,
     (
       select coalesce(string_agg(a.attname, ',' order by cols.ord), '')
       from unnest(t.tgattr) with ordinality as cols(attnum, ord)
@@ -1222,6 +1228,34 @@ function sequenceType(value: string): "smallint" | "integer" | "bigint" {
 
 function checkExpression(definition: string): string {
   return definition.trim().replace(/^check\s+/i, "");
+}
+
+/**
+ * Drops one balanced outer paren pair from a trigger `WHEN` extract.
+ *
+ * `pg_get_triggerdef` prints `WHEN ((…))` when the author wrote `WHEN (…)`.
+ * The substring capture keeps the inner wrap. Stripping it once matches the
+ * text `trigger({ when })` stored, so a round trip does not plan a change.
+ * `pg_get_expr(tgqual, tgrelid)` cannot be used: `OLD` and `NEW` are two
+ * relations and Postgres raises "expression contains variables of more than
+ * one relation" (B-46).
+ *
+ * @param expression - Capture from `pg_get_triggerdef`, or empty
+ * @returns The predicate stored on the catalog trigger
+ */
+function unwrapTriggerWhen(expression: string): string {
+  const body = expression.trim();
+  if (!body.startsWith("(") || !body.endsWith(")")) return body;
+  let depth = 0;
+  for (let index = 0; index < body.length; index += 1) {
+    const char = body[index];
+    if (char === "(") depth += 1;
+    else if (char === ")") {
+      depth -= 1;
+      if (depth === 0) return index === body.length - 1 ? body.slice(1, -1).trim() : body;
+    }
+  }
+  return body;
 }
 
 function actionAfter(

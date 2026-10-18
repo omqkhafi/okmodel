@@ -1,6 +1,6 @@
 /**
  * Postgres coverage for migrate push, external hash re-stamp, check with
- * triggers, and domain-check drift (B-29, B-21, B-24, B-37).
+ * triggers, and domain-check drift (B-29, B-21, B-24, B-37, B-45).
  */
 
 import { expect } from "bun:test";
@@ -101,6 +101,14 @@ postgresTest(
       expect(applied).toContain("nothing to apply");
       await connectOk(billing, database.url);
 
+      // Full loop after re-stamp: status, apply, generate, and migrate check agree (B-45).
+      const status = await cli(billing, ["migrate", "status"]);
+      expect(status).toContain("current");
+      expect(status).not.toContain("ahead by expand");
+      expect(await cli(billing, ["migrate", "apply"])).toContain("nothing to apply");
+      expect(await cli(billing, ["generate"])).toBe("no changes\n");
+      expect(await cli(billing, ["migrate", "check"])).toContain("ok");
+
       const snapshotPath = join(identity, "identity.okm.json");
       const original = readFileSync(snapshotPath, "utf8");
       const edited = JSON.parse(original) as {
@@ -120,6 +128,129 @@ postgresTest(
     }
   },
   180_000,
+);
+
+postgresTest(
+  gate,
+  "triggers with when at each timing pass check (B-46)",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const cwd = project("check-trigger-when");
+    try {
+      writeFileSync(
+        join(cwd, "schema.ts"),
+        [
+          `import { schema, t, table } from ${source("src/dialects/pg/index.ts")};`,
+          `import { fn, trigger } from ${source("src/dialects/pg/fn/index.ts")};`,
+          'const tasks = table("tasks", { id: t.integer().primaryKey(), title: t.text() });',
+          'const touch = fn("touch", {',
+          '  returns: "trigger",',
+          '  language: "plpgsql",',
+          '  body: "begin return new; end",',
+          "  dependsOn: [tasks],",
+          "});",
+          // before / after on tables (instead-of needs a view; trigger() is table-only).
+          'const beforeInsert = trigger("tasks_before_insert", {',
+          "  on: tasks,",
+          '  timing: "before",',
+          '  events: ["insert"],',
+          '  level: "row",',
+          "  calls: touch,",
+          // WHEN text matches pg_get_triggerdef so check does not plan a reprint.
+          '  when: "new.title IS NOT NULL",',
+          "});",
+          'const beforeUpdate = trigger("tasks_before_update", {',
+          "  on: tasks,",
+          '  timing: "before",',
+          '  events: ["update"],',
+          '  level: "row",',
+          "  calls: touch,",
+          '  when: "old.title IS DISTINCT FROM new.title",',
+          "});",
+          'const afterUpdate = trigger("tasks_after_update", {',
+          "  on: tasks,",
+          '  timing: "after",',
+          '  events: ["update"],',
+          '  level: "row",',
+          "  calls: touch,",
+          '  when: "old.title IS DISTINCT FROM new.title",',
+          "});",
+          'const afterDelete = trigger("tasks_after_delete", {',
+          "  on: tasks,",
+          '  timing: "after",',
+          '  events: ["delete"],',
+          '  level: "row",',
+          "  calls: touch,",
+          '  when: "old.title IS NOT NULL",',
+          "});",
+          "export const app = schema({",
+          "  tables: [tasks],",
+          "  functions: [touch],",
+          "  triggers: [beforeInsert, beforeUpdate, afterUpdate, afterDelete],",
+          "});",
+          "",
+        ].join("\n"),
+      );
+      writeConfig(cwd, database.url);
+      await cli(cwd, ["generate", "init"]);
+      await cli(cwd, ["migrate", "apply"]);
+      expect(await cli(cwd, ["migrate", "check"])).toContain("ok");
+      expect(await cli(cwd, ["check"])).toContain("ok");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  120_000,
+);
+
+postgresTest(
+  gate,
+  "a trigger with defineConfig namespace generates, applies, and checks (B-47)",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const cwd = project("trigger-namespace");
+    try {
+      writeFileSync(
+        join(cwd, "schema.ts"),
+        [
+          `import { schema, t, table } from ${source("src/dialects/pg/index.ts")};`,
+          `import { fn, trigger } from ${source("src/dialects/pg/fn/index.ts")};`,
+          'const tasks = table("tasks", { id: t.integer().primaryKey(), title: t.text() });',
+          'const touch = fn("touch", {',
+          '  returns: "trigger",',
+          '  language: "plpgsql",',
+          '  body: "begin return new; end",',
+          "  dependsOn: [tasks],",
+          "});",
+          'const fired = trigger("tasks_touch", {',
+          "  on: tasks,",
+          '  timing: "before",',
+          '  events: ["update"],',
+          '  level: "row",',
+          "  calls: touch,",
+          '  when: "old.title IS DISTINCT FROM new.title",',
+          "});",
+          "export const app = schema({",
+          "  tables: [tasks],",
+          "  functions: [touch],",
+          "  triggers: [fired],",
+          "});",
+          "",
+        ].join("\n"),
+      );
+      writeConfig(cwd, database.url, { namespace: "app" });
+      await cli(cwd, ["generate", "init"]);
+      await cli(cwd, ["migrate", "apply"]);
+      expect(await cli(cwd, ["migrate", "check"])).toContain("ok");
+      expect(await cli(cwd, ["check"])).toContain("ok");
+      await connectOk(cwd, database.url);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  120_000,
 );
 
 postgresTest(
@@ -204,6 +335,40 @@ postgresTest(
     }
   },
   60_000,
+);
+
+postgresTest(
+  gate,
+  "migrate loop agrees for a non-canonical domain check (B-37)",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const cwd = project("domain-migrate-loop");
+    try {
+      writeFileSync(
+        join(cwd, "schema.ts"),
+        [
+          `import { schema, t, table } from ${source("src/dialects/pg/index.ts")};`,
+          'export const app = schema({ tables: [table("people", { n: t.domain("pos", t.integer(), "VALUE > 0") })] });',
+          "",
+        ].join("\n"),
+      );
+      writeConfig(cwd, database.url);
+      await cli(cwd, ["generate", "init"]);
+      await cli(cwd, ["migrate", "apply"]);
+      expect(await cli(cwd, ["check"])).toContain("ok");
+      expect(await cli(cwd, ["generate"])).toBe("no changes\n");
+      expect(await cli(cwd, ["migrate", "apply"])).toContain("nothing to apply");
+      const status = await cli(cwd, ["migrate", "status"]);
+      expect(status).toContain("current");
+      const checked = await cli(cwd, ["migrate", "check"]);
+      expect(checked.startsWith("ok 1 migrations\n")).toBe(true);
+      expect(checked).not.toContain("history differs");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  120_000,
 );
 
 function project(name: string): string {

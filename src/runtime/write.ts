@@ -50,7 +50,7 @@ import { writeWouldValidate } from "./validate/places.js";
 
 registerFailFix("OKM1102", "Pass where, or call .all(reason) to match every row.");
 registerFailFix("OKM1190", "Remove the guarded field. Input cannot set it.");
-/** Statements in one insert stay under this many parameters. The protocol limit is 65535. */
+/** Statements in one insert stay under this many parameters. The shared driver ceiling is 65533 (B-48). */
 export const WRITE_PARAM_BUDGET = 2048;
 
 const REDACTED = "[redacted]";

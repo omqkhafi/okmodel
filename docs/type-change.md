@@ -100,22 +100,24 @@ alter table "public"."prices" drop constraint "prices_amount_not_null";
 
 ## 5. Drop the old column
 
-Contract. Ship this only after every release reads and writes `amount`. Dropping the column is OKM1512. The reason on the step is required. The trigger goes first, because it still names `cents`.
+Contract. Ship this only after every release reads and writes `amount`. Dropping the column is OKM1512. Dropping the dual-write function is OKM1515. Each needs a reason on its own step. Dropping the trigger is not a linter finding: it needs no `-- okm-allow`. Put the trigger first, because the function still names `cents`.
+
+A file that starts with `-- class:` and has no blank line before the first statement treats that block as the migration header, so the first statement never becomes a step. Use a name header and a blank line, then the three steps:
 
 ```sql
+-- name: 0006_drop_cents
 -- class: contract
--- okm-allow OKM1512: readers and writers use amount
-drop trigger "prices_amount_sync" on "public"."prices";
-```
 
-```sql
+-- class: contract
+drop trigger "prices_amount_sync" on "public"."prices";
+
 -- class: contract
 -- okm-allow OKM1515: dual-write trigger removed
 drop function "public"."prices_amount_sync"();
-```
 
-```sql
 -- class: contract
 -- okm-allow OKM1512: readers and writers use amount
 alter table "public"."prices" drop column "cents";
 ```
+
+An `-- okm-allow OKM1512` on the drop-trigger step is OKM1510: that code does not fire for `DROP TRIGGER`, and apply refuses before any statement runs.

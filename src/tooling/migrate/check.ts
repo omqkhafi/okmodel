@@ -234,6 +234,9 @@ function previousFailures(history: readonly HistoryEntry[]): readonly CheckFailu
 function staleFailure(history: readonly HistoryEntry[], head: Catalog): readonly CheckFailure[] {
   const last = history.at(-1)?.catalog ?? catalog([]);
   if (catalogsEqual(last, head)) return [];
+  // Align with generate: an empty plan (external-only drift after a re-stamp)
+  // is not a stale head (B-45).
+  if (planMigration({ before: last, after: head, name: "stale" }).steps.length === 0) return [];
   return [
     {
       code: STALE_CODE,
