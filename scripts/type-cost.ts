@@ -89,7 +89,8 @@ export function measureTypeCost(): TypeCostReport {
  * Check time is reported and is not capped.
  */
 export const TYPE_CEILINGS = {
-  inferred200Instantiations: 17_300,
+  /** Q5 / D305: query-200+extensions measured 17,312; plus 3 percent, rounded down. */
+  inferred200Instantiations: 17_831,
   inferred200Types: 6_500,
   inferred500Instantiations: 42_400,
   /** The 250-table probe (R4): measured 17,650 plus 20 percent. */
@@ -103,7 +104,8 @@ export const TYPE_CEILINGS = {
   queryValidateTypes: 6_604,
   /** The query probe with `page`, `aggregate` and `manyThrough` in use (D176): measured 24,070 / 6,730 plus 3 percent, rounded down. */
   queryFeaturesInstantiations: 24_792,
-  queryFeaturesTypes: 6_931,
+  /** Q5 / D305: query-200+page+aggregate+through measured 6,938 types; plus 3 percent, rounded down. */
+  queryFeaturesTypes: 7_146,
   /** The query probe with a chain of two presets with arguments, then `find` (D176): measured 19,180 / 7,128 plus 3 percent, rounded down. */
   queryPresetsInstantiations: 19_755,
   queryPresetsTypes: 7_341,

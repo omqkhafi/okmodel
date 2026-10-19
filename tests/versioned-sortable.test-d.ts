@@ -40,7 +40,6 @@ expectTypeOf<(typeof app)["~byName"]["tasks"]>().toMatchTypeOf<{
 expectTypeOf<(typeof app)["~byName"]["plain"]>().not.toMatchTypeOf<{
   readonly "~versioned": true;
 }>();
-
 expectTypeOf<keyof (typeof app)["~byName"]["tasks"]["~insert"]>().toEqualTypeOf<
   "id" | "title" | "laneId"
 >();

@@ -645,8 +645,8 @@ type AllowedSet<
   Allow extends readonly (keyof RowOf<S, K> & string)[],
 > = UpdateSet<S, K> & Partial<Pick<RowOf<S, K>, Allow[number]>>;
 
-/** Allowed update with optional `version` (non-versioned tables). */
-type AllowedUpdateBase<
+/** One update, or a per-row list, when `{ allow }` opens guarded fields. */
+type AllowedUpdate<
   S extends QuerySchema,
   K extends keyof S["~byName"],
   Allow extends readonly (keyof RowOf<S, K> & string)[],
@@ -682,36 +682,28 @@ type AllowedUpdateVersioned<
     }[];
 
 /**
- * One update, or a per-row list, when `{ allow }` opens guarded fields.
+ * One update, or a per-row list in one statement.
  *
- * Deferred on `~versioned` so non-versioned tables keep the pre-Q5 shape (D305).
+ * `lock: "skip"` with `limit` claims that many matching rows and leaves rows
+ * another transaction already holds. It is not valid on a list.
+ *
+ * `version` is optional on this alias. {@link TableApi.update} selects the
+ * required-version form when the table is `versioned()` (D305).
  */
-type AllowedUpdate<
-  S extends QuerySchema,
-  K extends keyof S["~byName"],
-  Allow extends readonly (keyof RowOf<S, K> & string)[],
-> = S["~byName"][K] extends { readonly "~versioned": true }
-  ? AllowedUpdateVersioned<S, K, Allow>
-  : AllowedUpdateBase<S, K, Allow>;
-
-/**
- * One update, or a per-row list (optional `version`). Deferred false branch of
- * {@link UpdateTarget} so the 200-table probe matches the pre-Q5 shape (D305).
- */
-type UpdateTargetBase<S extends QuerySchema, K extends keyof S["~byName"]> =
+export type UpdateTarget<S extends QuerySchema, K extends keyof S["~byName"]> =
   | {
       readonly where?: WhereOf<S, K>;
       readonly set: UpdateSet<S, K>;
       readonly limit?: number;
       readonly lock?: "skip";
-      /** Version read from the row. Refused at runtime unless the table is `versioned()`. */
+      /** Version read from the row. Required when the table is `versioned()`. */
       readonly version?: number;
     }
   | readonly {
       readonly id?: unknown;
       readonly where?: WhereOf<S, K>;
       readonly set: UpdateSet<S, K>;
-      /** Version read from the row. Refused at runtime unless the table is `versioned()`. */
+      /** Version read from the row. Required when the table is `versioned()`. */
       readonly version?: number;
     }[];
 
@@ -733,19 +725,21 @@ type UpdateTargetVersioned<S extends QuerySchema, K extends keyof S["~byName"]> 
       readonly version: number;
     }[];
 
-/**
- * One update, or a per-row list in one statement.
- *
- * `lock: "skip"` with `limit` claims that many matching rows and leaves rows
- * another transaction already holds. It is not valid on a list.
- *
- * On a `versioned()` table, `version` is required (the version read from the
- * row). The runtime check remains the backstop when types are bypassed (D305).
- */
-export type UpdateTarget<S extends QuerySchema, K extends keyof S["~byName"]> =
-  S["~byName"][K] extends { readonly "~versioned": true }
-    ? UpdateTargetVersioned<S, K>
-    : UpdateTargetBase<S, K>;
+/** `update` target: required `version` on versioned tables, else {@link UpdateTarget}. */
+type UpdateArg<S extends QuerySchema, K extends keyof S["~byName"]> = S["~byName"][K] extends {
+  readonly "~versioned": true;
+}
+  ? UpdateTargetVersioned<S, K>
+  : UpdateTarget<S, K>;
+
+/** `{ allow }` update target: required `version` on versioned tables. */
+type AllowedUpdateArg<
+  S extends QuerySchema,
+  K extends keyof S["~byName"],
+  Allow extends readonly (keyof RowOf<S, K> & string)[],
+> = S["~byName"][K] extends { readonly "~versioned": true }
+  ? AllowedUpdateVersioned<S, K, Allow>
+  : AllowedUpdate<S, K, Allow>;
 
 /** `{ count, archiveId }` from one `archive()` call. */
 export type ArchiveCount = {
@@ -878,20 +872,21 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
    * Updates matching rows, or a per-row list in one statement. `where` is required.
    *
    * `{ allow, returning: true }` returns the written rows. `{ allow }` without
-   * `returning: true` returns `{ count }`.
+   * `returning: true` returns `{ count }`. On a `versioned()` table, `version`
+   * is required (D305).
    */
   update<
     const Allow extends readonly (keyof RowOf<S, K> & string)[],
     const Opt extends WriteOptions<S, K> & { readonly allow: Allow },
   >(
-    target: AllowedUpdate<S, K, Allow>,
+    target: AllowedUpdateArg<S, K, Allow>,
     options: Opt,
   ): [Opt["returning"]] extends [true] ? Write<readonly Show<RowOf<S, K>>[]> : Write<WriteCount>;
   update(
-    target: UpdateTarget<S, K>,
+    target: UpdateArg<S, K>,
     options: WriteOptions<S, K> & { readonly returning: true },
   ): Write<readonly Show<RowOf<S, K>>[]>;
-  update(target: UpdateTarget<S, K>, options?: WriteOptions<S, K>): Write<WriteCount>;
+  update(target: UpdateArg<S, K>, options?: WriteOptions<S, K>): Write<WriteCount>;
   /**
    * Deletes matching rows. `where` is required.
    *
