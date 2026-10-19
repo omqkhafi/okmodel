@@ -27,6 +27,7 @@ import {
 import { primaryUrl } from "../packages/harness/src/topology.js";
 import { repoRoot } from "../scripts/root.js";
 import { applyTarget } from "../src/tooling/migrate/apply.js";
+import { sealTableChecks } from "../src/tooling/migrate/drift.js";
 import type { StoredMigration } from "../src/tooling/migrate/files.js";
 import { lintMigrationDirectory } from "../src/tooling/migrate/lint.js";
 import { planMigration, type PlanStep } from "../src/tooling/migrate/plan.js";
@@ -174,16 +175,10 @@ postgresTest(
       expect(await constraintValidated(sql, schemaName, "tasks_token_notnull")).toBeUndefined();
 
       const live = await introspectSchema(queryOf(sql), schemaName, "public");
-      const drift = planMigration({ before: live, after: done.catalog, name: "check" });
-      // Postgres reprints `IN ('a', 'b')` as `= ANY (ARRAY[...])` (D128). That
-      // reprint is the only difference. Every other object matches.
-      expect(drift.steps.map((step) => step.sql)).toEqual([
-        'alter table "public"."tasks" drop constraint "tasks_title_check"',
-        `alter table "public"."tasks" add constraint "tasks_title_check" check ((title IN ('a', 'b'))) not valid`,
-        'alter table "public"."tasks" validate constraint "tasks_title_check"',
-      ]);
-      const aligned = alignCheckExpression(done.catalog, live);
-      expect(planMigration({ before: live, after: aligned, name: "aligned" }).steps).toEqual([]);
+      const sealed = await sealTableChecks(queryOf(sql), done.catalog);
+      // Postgres reprints `IN ('a', 'b')` as `= ANY (ARRAY[...])` (D128). The
+      // sealed author catalog matches the live catalog, so okm check is empty.
+      expect(planMigration({ before: live, after: sealed, name: "check" }).steps).toEqual([]);
     });
   },
   60_000,
@@ -331,14 +326,16 @@ postgresTest(
       });
       const generated = await okm(root, cwd, ["generate", "add_status"]);
       expect(generated).toContain("add_status");
-      // Offline lint is the migrate-check gate for OKM1531. Full
-      // `migrate check` still fails OKM1547 on the picklist reprint (R2).
       const findings = lintMigrationDirectory(join(cwd, "migrations"));
       expect(findings.map((item) => item.code)).not.toContain("OKM1531");
+      expect(await okm(root, cwd, ["migrate", "check"])).toMatch(/^ok \d+ migrations/);
       expect(await okm(root, cwd, ["migrate", "apply"])).toContain("applied");
       const statuses = await sql<{ status: string }[]>`select status from tasks order by id`;
       expect(statuses.map((row) => row.status)).toEqual(["draft", "draft"]);
       expect(await constraintValidated(sql, "public", "tasks_status_check")).toBe(true);
+      expect(await okm(root, cwd, ["migrate", "check"])).toMatch(/^ok \d+ migrations/);
+      expect(await okm(root, cwd, ["check"])).toContain("ok");
+      expect(await okm(root, cwd, ["generate"])).toBe("no changes\n");
 
       writeTasksProject(cwd, root, database.url, {
         id: "t.integer().primaryKey()",
@@ -499,25 +496,6 @@ function writeTasksProject(
       "",
     ].join("\n"),
   );
-}
-
-function alignCheckExpression(author: Catalog, live: Catalog): Catalog {
-  return {
-    ...author,
-    objects: author.objects.map((object) => {
-      if (object.kind !== "constraint" || object.definition.constraintKind !== "check") {
-        return object;
-      }
-      const found = live.objects.find(
-        (item) => item.kind === "constraint" && item.identity.name === object.identity.name,
-      );
-      if (found?.kind !== "constraint" || found.definition.expression === undefined) return object;
-      return {
-        ...object,
-        definition: { ...object.definition, expression: found.definition.expression },
-      };
-    }),
-  };
 }
 
 async function okm(root: string, cwd: string, args: readonly string[]): Promise<string> {

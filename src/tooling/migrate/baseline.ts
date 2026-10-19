@@ -22,7 +22,7 @@ import { sealViews } from "../../dialects/pg/view/scratch.js";
 import type { RolesInput } from "../../dialects/pg/role/index.js";
 import { ensureMigrationTables } from "./apply.js";
 import { driverUrl } from "./driver-url.js";
-import { catalogQuery, managedRoleOptions, sealDomainChecks } from "./drift.js";
+import { catalogQuery, managedRoleOptions, sealDomainChecks, sealTableChecks } from "./drift.js";
 import { catalogNamespace } from "./export.js";
 import { loadHeadSnapshot } from "./files.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
@@ -276,7 +276,10 @@ async function compareLive(
       await sql.unsafe(`set search_path to ${quoteIdent(namespace)}`);
     }
     const runner = catalogQuery(sql);
-    const authorOnServer = await sealDomainChecks(runner, await sealViews(runner, model));
+    const authorOnServer = await sealTableChecks(
+      runner,
+      await sealDomainChecks(runner, await sealViews(runner, model)),
+    );
     const live = omitManagedObjects(
       await introspectSchema(runner, namespace, namespace, managedRoleOptions(roles)),
     );

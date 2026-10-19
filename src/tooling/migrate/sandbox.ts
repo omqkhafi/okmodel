@@ -21,7 +21,7 @@ import { changesRole, createdRoleName, createRoleOnce } from "../../dialects/pg/
 import { sealViews } from "../../dialects/pg/view/scratch.js";
 import { ensureMigrationTables } from "./apply.js";
 import type { MigrateConfig } from "./config.js";
-import { catalogQuery, managedRoleOptions, sealDomainChecks } from "./drift.js";
+import { catalogQuery, managedRoleOptions, sealDomainChecks, sealTableChecks } from "./drift.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
 import { lintReprints, type Finding } from "./lint.js";
 import { planMigration, type MigrationPlan, type PlanStep } from "./plan.js";
@@ -91,9 +91,13 @@ export async function replayCheckHistory(
       for (const item of lintReprints(migration.catalog, live, migration.steps)) {
         reprints.push({ ...item, place: `${migration.id} ${item.place}` });
       }
-      // Seal views and domain checks the way this server stores them so a
-      // non-canonical author spelling is not OKM1547 when generate is empty (B-37).
-      const sealed = await sealDomainChecks(runner, await sealViews(runner, migration.catalog));
+      // Seal views, domain checks, and table checks the way this server stores
+      // them so a non-canonical author spelling is not OKM1547 when generate is
+      // empty (B-37, D128).
+      const sealed = await sealTableChecks(
+        runner,
+        await sealDomainChecks(runner, await sealViews(runner, migration.catalog)),
+      );
       const back = planMigration({ before: live, after: sealed, name: migration.id });
       if (back.steps.length === 0) continue;
       stop = { index, back };

@@ -1745,8 +1745,11 @@ function sameDefinition(left: CatalogObject, right: CatalogObject): boolean {
  * `char(n)`. The catalog stores the text
  * that was written. Everything else is compared as stored. A constraint or
  * index `nameKey` is not here: Postgres does not store it, and introspection
- * reprints the SQL column list. A materialized view's `refresh` is not here:
- * Postgres does not store it, so {@link sameDefinition} ignores it.
+ * reprints the SQL column list. A check constraint's `columns` is not here:
+ * an author check may omit column handles while `pg_constraint.conkey` lists
+ * them, and comparison uses the sealed expression instead (D128). A
+ * materialized view's `refresh` is not here: Postgres does not store it, so
+ * {@link sameDefinition} ignores it.
  *
  * @param object - One side of the diff
  * @returns The definition, with type names in the long spelling
@@ -1783,7 +1786,11 @@ function forComparison(object: CatalogObject): unknown {
     case "type":
       if (!isDomain(object.definition)) return object.definition;
       return { ...object.definition, base: canonicalTypeName(object.definition.base) };
-    case "constraint":
+    case "constraint": {
+      const definition = withoutNameKey(object.definition);
+      if (object.definition.constraintKind === "check") delete definition.columns;
+      return definition;
+    }
     case "index":
       return withoutNameKey(object.definition);
     default:

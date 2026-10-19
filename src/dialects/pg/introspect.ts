@@ -837,19 +837,38 @@ function indexExpression(
   return `using ${method} (${body.length > 0 ? body : stored})`;
 }
 
+/** Column shape used when {@link reprintCheck} builds a scratch table. */
+export type ReprintCheckColumn = {
+  readonly name: string;
+  readonly dataType: string;
+};
+
 /**
  * Applies one expression as a check and reads Postgres's reprint.
  *
  * Two authoring spellings of the same predicate compare equal after this.
- * A different predicate does not.
+ * A different predicate does not. Column types matter: `IN (...)` on
+ * `varchar(n)` reprints differently from the same list on `text`.
  *
  * @param runner - Database connection
  * @param expression - Check expression without the `CHECK` keyword
+ * @param columns - Scratch columns. Defaults to `id integer` and `title text`
  * @returns The reprinted expression, without the `CHECK` keyword
  */
-export async function reprintCheck(runner: CatalogQuery, expression: string): Promise<string> {
+export async function reprintCheck(
+  runner: CatalogQuery,
+  expression: string,
+  columns: readonly ReprintCheckColumn[] = [
+    { name: "id", dataType: "integer" },
+    { name: "title", dataType: "text" },
+  ],
+): Promise<string> {
   await runner.query("drop table if exists okm_expr");
-  await runner.query("create table okm_expr (id integer, title text)");
+  const defs =
+    columns.length > 0
+      ? columns.map((column) => `${quoteIdent(column.name)} ${column.dataType}`).join(", ")
+      : "id integer";
+  await runner.query(`create table okm_expr (${defs})`);
   await runner.query(`alter table okm_expr add constraint okm_expr_check check (${expression})`);
   const rows = await runner.query(
     "select pg_get_constraintdef(oid) as definition from pg_constraint where conname = 'okm_expr_check'",
