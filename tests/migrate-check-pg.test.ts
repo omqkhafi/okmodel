@@ -48,6 +48,42 @@ postgresTest(
 
 postgresTest(
   gate,
+  "a declared citext extension passes migrate check before and after apply",
+  async () => {
+    await withProject(async ({ cwd, url }) => {
+      const sql = openPostgres(url);
+      try {
+        const ready = await sql<{ ok: boolean }[]>`
+          select exists (select 1 from pg_available_extensions where name = 'citext') as ok
+        `;
+        if (ready[0]?.ok !== true) throw new Error("citext is not available on this server");
+        writeCitextSchema(cwd);
+        await cli(cwd, ["generate", "citext"]);
+        const before = await capture(["migrate", "check"], cwd);
+        expect(before.startsWith("ok 1 migrations\n")).toBe(true);
+        await cli(cwd, ["migrate", "apply"]);
+        const after = await capture(["migrate", "check"], cwd);
+        expect(after.startsWith("ok 1 migrations\n")).toBe(true);
+        const provision = await capture(["migrate", "check", "--provision"], cwd);
+        expect(provision.startsWith("ok 1 migrations\n")).toBe(true);
+        const placed = await sql<{ schema: string }[]>`
+          select n.nspname as schema
+          from pg_extension e
+          join pg_namespace n on n.oid = e.extnamespace
+          where e.extname = 'citext'
+        `;
+        expect(placed.map((row) => row.schema)).toEqual(["public"]);
+        expect(await scratchSchemas(cwd)).toEqual([]);
+      } finally {
+        await sql.end({ timeout: 5 });
+      }
+    });
+  },
+  90_000,
+);
+
+postgresTest(
+  gate,
   "an edited stored catalog fails history verification and names the steps",
   async () => {
     await withProject(async ({ cwd }) => {
@@ -511,6 +547,22 @@ function writeSchema(
 ): void {
   writeModule(cwd, `export const app = schema({\n  tables: [${tables}],\n});`);
   if (options?.protected === true) writeConfig(cwd, { protected: true });
+}
+
+function writeCitextSchema(cwd: string): void {
+  const source = (path: string): string => JSON.stringify(join(root, path));
+  writeFileSync(
+    join(cwd, "schema.ts"),
+    [
+      `import { schema, t, table } from ${source("src/dialects/pg/index.ts")};`,
+      `import { citext } from ${source("src/dialects/pg/ext/citext.ts")};`,
+      "export const app = schema({",
+      '  tables: [table("people", { email: t.citext() })],',
+      "  extensions: [citext()],",
+      "});",
+      "",
+    ].join("\n"),
+  );
 }
 
 function writeModule(cwd: string, body: string): void {

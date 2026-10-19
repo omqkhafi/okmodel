@@ -119,7 +119,8 @@ function formatCheck(
         fix: { summary: "Install a version the declaration accepts, or change the pin." },
       });
     }
-    lines.push([name, want ?? "-", have].join("\t"));
+    // An omitted pin still names the extension. "-" read as "not declared".
+    lines.push([name, want ?? name, have].join("\t"));
   }
   return `${lines.join("\n")}\n`;
 }

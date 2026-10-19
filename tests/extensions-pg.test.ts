@@ -165,7 +165,54 @@ postgresTest(
       expect(installed?.split("\t")[2]?.length).toBeGreaterThan(0);
       const checked: string[] = [];
       await run(["ext", "check"], { cwd, stdout: (text) => checked.push(text) });
-      expect(checked.join("")).toContain("pg_trgm\t-\t");
+      const declared = checked
+        .join("")
+        .split("\n")
+        .find((line) => line.startsWith("pg_trgm\t"));
+      const cells = declared?.split("\t") ?? [];
+      expect(cells[1]).toBe("pg_trgm");
+      expect(cells[2]).toBe(installed?.split("\t")[2]);
+      expect(cells[1]).not.toBe("-");
+    } finally {
+      await sql.end({ timeout: 5 });
+      await database.close();
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  },
+  30_000,
+);
+
+postgresTest(
+  gate,
+  "okm ext check prints an exact pin in the declared column",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const sql = openPostgres(database.url);
+    const cwd = mkdtempSync(join(tmpdir(), "okm-ext-pin-match-"));
+    try {
+      if (!(await available(sql, "pg_trgm"))) return;
+      const app = schema({
+        tables: [table("notes", { title: t.text() })],
+        extensions: [pgTrgm()],
+      });
+      const plan = planMigration({ before: catalog([]), after: app.catalog, name: "trgm" });
+      for (const step of plan.steps) await sql.unsafe(step.sql);
+      const installed = await sql<{ version: string }[]>`
+        select extversion as version from pg_extension where extname = 'pg_trgm'
+      `;
+      const version = installed[0]?.version;
+      if (version === undefined || version.length === 0) {
+        throw new Error("pg_trgm installed without a version");
+      }
+      writeProject(
+        cwd,
+        database.url,
+        `pgTrgm({ version: ${JSON.stringify(version)} })`,
+        "schema.ts",
+      );
+      const checked: string[] = [];
+      await run(["ext", "check"], { cwd, stdout: (text) => checked.push(text) });
+      expect(checked.join("")).toContain(`pg_trgm\t${version}\t${version}`);
     } finally {
       await sql.end({ timeout: 5 });
       await database.close();
