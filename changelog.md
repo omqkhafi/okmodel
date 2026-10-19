@@ -81,6 +81,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 ### 🔒 Security
 
 - A postgres.js generic or aborted-connection failure on a statement whose table has a sensitive column no longer leaves `parameters` or `args` on `error.cause` when the driver omits `table` (B-33 residual, #364).
+- `SECURITY.md` names the disclosure address, the report policy, and supported lines (the current 0.x minor and the previous minor, 0.10.x and 0.9.x). [Using OKModel safely](docs/using-okmodel-safely.md) covers lockfile pinning, a minimum release age, and what provenance does not prove.
 
 ## v0.9.1 — 2026-10-17
 
