@@ -60,6 +60,12 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - A postgres.js generic or aborted-connection failure on a statement whose table has a sensitive column no longer leaves `parameters` or `args` on `error.cause` when the driver omits `table` (B-33 residual, #364).
 
+## v0.10.0
+
+### behaviour changes
+
+- `okm generate` exits 1 when an error finding exists; the migration file is still written; stderr says `okm migrate apply` will refuse until it is fixed (Q8, #395). A warning-only finding stays exit 0.
+
 ## v0.9.1 — 2026-10-17
 
 ### 💥 Breaking Changes

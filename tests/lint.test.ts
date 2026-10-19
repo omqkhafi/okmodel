@@ -5,7 +5,7 @@
  */
 
 import { expect, test } from "bun:test";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -516,11 +516,17 @@ test("generate writes the file, and plan and check fail on an error", async () =
     expect(checked.message).toContain("error OKM1511");
 
     lines.length = 0;
-    await run(["generate"], { cwd: dropDir, stdout: (text) => lines.push(text) });
-    const generated = lines.join("");
-    const sqlPath = generated.split("\n")[0] ?? "";
+    const generated = await rejected(async () => {
+      await run(["generate"], { cwd: dropDir, stdout: (text) => lines.push(text) });
+    });
+    expect(generated.code).toBe("OKM1510");
+    expect(generated.fix.summary).toContain("apply will refuse until it is fixed");
+    const written = lines.join("");
+    const sqlPath = written.split("\n")[0] ?? "";
     expect(sqlPath.endsWith(".sql")).toBe(true);
-    expect(generated).toContain("error OKM1511");
+    expect(existsSync(sqlPath)).toBe(true);
+    expect(written).toContain("error OKM1511");
+    expect(generated.message).toContain("error OKM1511");
 
     const drop = plans(
       schema({ tables: [tasks(), table("notes", { id: t.identity() })] }),
@@ -539,6 +545,85 @@ test("generate writes the file, and plan and check fail on an error", async () =
     rmSync(cwd, { recursive: true, force: true });
     rmSync(dropDir, { recursive: true, force: true });
     rmSync(applyDir, { recursive: true, force: true });
+  }
+});
+
+test("okm generate exits 1 on an error finding and still writes the file", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "okm-gen-err-"));
+  try {
+    writeProject(cwd, repoRoot(), 'table("notes", { id: identity(), name: text() })');
+    mkdirSync(join(cwd, "migrations"));
+    writeFileSync(
+      join(cwd, "migrations", "0001_base.catalog.json"),
+      serializeCatalog(
+        schema({
+          tables: [tasks(), table("notes", { id: t.identity(), name: t.text() })],
+        }).catalog,
+      ),
+    );
+    const proc = Bun.spawnSync(
+      ["bun", join(repoRoot(), "src/tooling/cli.ts"), "generate", "drop"],
+      {
+        cwd,
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    expect(proc.exitCode).toBe(1);
+    const stdout = proc.stdout.toString();
+    const stderr = proc.stderr.toString();
+    const sqlPath = stdout.split("\n")[0] ?? "";
+    expect(sqlPath.endsWith(".sql")).toBe(true);
+    expect(existsSync(sqlPath)).toBe(true);
+    expect(readFileSync(sqlPath, "utf8")).toContain("drop");
+    expect(stdout).toContain("error OKM1511");
+    expect(stderr).toContain("error OKM1510:");
+    expect(stderr).toContain("apply will refuse until it is fixed");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("okm generate exits 0 on a warning-only finding", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "okm-gen-warn-"));
+  const root = repoRoot();
+  try {
+    writeFileSync(
+      join(cwd, "schema.ts"),
+      [
+        `import { identity, schema, table, t } from ${JSON.stringify(join(root, "src/dialects/pg/index.ts"))};`,
+        'export const app = schema({ tables: [table("tasks", { id: identity(), title: t.char(8) })] });',
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(cwd, "okmodel.config.ts"),
+      [
+        `import { defineConfig } from ${JSON.stringify(join(root, "src/tooling/migrate/index.ts"))};`,
+        'export default defineConfig({ schema: "./schema.ts", migrations: "./migrations" });',
+        "",
+      ].join("\n"),
+    );
+    mkdirSync(join(cwd, "migrations"));
+    writeFileSync(
+      join(cwd, "migrations", "0001_base.catalog.json"),
+      serializeCatalog(
+        schema({ tables: [table("tasks", { id: t.identity(), title: t.char(3) })] }).catalog,
+      ),
+    );
+    const proc = Bun.spawnSync(["bun", join(root, "src/tooling/cli.ts"), "generate", "widen"], {
+      cwd,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expect(proc.exitCode).toBe(0);
+    const stdout = proc.stdout.toString();
+    expect(stdout.split("\n")[0]?.endsWith(".sql")).toBe(true);
+    expect(stdout).toContain("warning OKM1538");
+    expect(stdout).not.toContain("error OKM");
+    expect(proc.stderr.toString()).not.toContain("apply will refuse");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
   }
 });
 
