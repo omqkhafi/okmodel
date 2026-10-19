@@ -201,7 +201,7 @@ jobs:
     if: >-
       (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'full-ci') &&
       needs.changes.outputs.runtime != 'false' &&
-      needs.changes.outputs.full == 'true'
+      (github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'full-ci'))
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -294,7 +294,7 @@ jobs:
     if: >-
       (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'full-ci') &&
       needs.changes.outputs.runtime != 'false' &&
-      needs.changes.outputs.full == 'true'
+      (github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'full-ci'))
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -327,7 +327,7 @@ jobs:
     if: >-
       (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'full-ci') &&
       needs.changes.outputs.runtime != 'false' &&
-      needs.changes.outputs.full == 'true'
+      (github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'full-ci'))
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -350,7 +350,7 @@ jobs:
     if: >-
       (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'full-ci') &&
       needs.changes.outputs.runtime != 'false' &&
-      needs.changes.outputs.full == 'true'
+      (github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'full-ci'))
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -406,7 +406,7 @@ jobs:
     needs: [build, changes]
     if: >-
       (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'full-ci') &&
-      needs.changes.outputs.full == 'true'
+      (github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'full-ci'))
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -504,7 +504,7 @@ jobs:
     if: >-
       (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'full-ci') &&
       needs.changes.outputs.runtime != 'false' &&
-      needs.changes.outputs.full == 'true'
+      (github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'full-ci'))
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -595,7 +595,7 @@ jobs:
     if: >-
       (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'full-ci') &&
       needs.changes.outputs.runtime == 'true' &&
-      (needs.changes.outputs.full == 'true' || contains(github.event.pull_request.labels.*.name, 'needs: postgres'))
+      ((github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'full-ci')) || contains(github.event.pull_request.labels.*.name, 'needs: postgres'))
     permissions:
       contents: read
       actions: read
@@ -626,7 +626,7 @@ jobs:
     if: >-
       (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'full-ci') &&
       needs.changes.outputs.runtime != 'false' &&
-      needs.changes.outputs.full == 'true'
+      (github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'full-ci'))
     permissions:
       contents: read
     uses: ./.github/workflows/windows.yml
