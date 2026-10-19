@@ -274,9 +274,7 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   expect(ci).toMatch(/name: gate \/ check[\s\S]*?if: always\(\)/);
   expect(ci).toContain("bun ./scripts/ci-tier.ts");
   expect(ci).toContain("bun ./scripts/ci-gate-mirror.ts");
-  expect(ci).toMatch(
-    /name: package \/ checks\n\s+needs: \[build, changes\]/,
-  );
+  expect(ci).toMatch(/name: package \/ checks\n\s+needs: \[build, changes\]/);
   const floor = POSTGRES_VERSIONS[0];
   const newest = POSTGRES_VERSIONS[POSTGRES_VERSIONS.length - 1];
   if (floor === undefined || newest === undefined) throw new Error("no postgres versions");
