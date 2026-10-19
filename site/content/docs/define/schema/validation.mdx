@@ -4,7 +4,7 @@ description: "Turns rules on for the schema. schema() does not run them."
 ---
 `validation` is stored as you pass it. `schema()` does not read the rules. `okm check` does, and the engine does on the first validated call. Import `okmodel/validate` before that call, or a write that would validate is refused. The rules themselves are [on the table](/docs/define/table/validation).
 
-Omitted and `false` are off. `true` is on. An object is on unless `enabled` is `false`. Omitting `enabled` inside an object leaves it on. Insert and update run the rules, including when those writes sit in `batch()`. A read does not. `{ validate: false }` skips that call. `onRead` is stored. The write path does not read it.
+Omitted and `false` are off. `true` is on. An object is on unless `enabled` is `false`. Omitting `enabled` inside an object leaves it on. Insert and update run the rules, including when those writes sit in `batch()`. An unknown write key is OKM1120 and names the key and the table, the same as when validation is off. A read does not run the rules. `{ validate: false }` skips that call. `onRead` is stored. The write path does not read it.
 
 `style` chooses where a rule may live. `"inline"` is `.validate()` on the column. `"section"` is the table `validate` section. Omitted, either place is accepted, and the same field in both is refused.
 
