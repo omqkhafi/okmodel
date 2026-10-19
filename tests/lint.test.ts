@@ -264,6 +264,30 @@ test("unique, check, and foreign key rules see existing rows only", () => {
   expect(checkCodes).toContain("OKM1531");
   expect(checkCodes).not.toContain("OKM1535");
   expect(codes(fromEmpty(checked))).not.toContain("OKM1531");
+
+  const withStatus = table("tasks", {
+    id: t.identity(),
+    title: t.text(),
+    status: t.varchar(20).picklist(["draft", "active", "done"]).default("draft"),
+  });
+  const addedPicklist = diff(open, withStatus);
+  expect(addedPicklist.plan.steps.map((step) => step.sql).join("\n")).toContain("not valid");
+  expect(codes(addedPicklist)).not.toContain("OKM1531");
+  expect(codes(addedPicklist)).not.toContain("OKM1535");
+
+  const nullableStatus = table("tasks", {
+    id: t.identity(),
+    title: t.text(),
+    status: t.varchar(20).nullable().picklist(["draft", "active", "done"]),
+  });
+  expect(codes(diff(open, nullableStatus))).not.toContain("OKM1531");
+
+  const volatileToken = table("tasks", {
+    id: t.identity(),
+    title: t.text(),
+    token: t.uuid().picklist(["a"]).defaultSql("gen_random_uuid()"),
+  });
+  expect(codes(diff(open, volatileToken))).toContain("OKM1531");
   const bareCheck = lintPlan(
     {
       name: "hand-check",

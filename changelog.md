@@ -41,6 +41,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### 🐛 Fixed
 
+- The linter no longer refuses the planner's own `NOT VALID` then `VALIDATE` pair when the check is on a column added in the same migration with a constant default (or nullable without a default). A validate on an existing column, or after a volatile default, stays OKM1531 (D301).
 - The expand/contract type-change drop recipe no longer puts `-- okm-allow OKM1512` on `DROP TRIGGER` (that code does not fire there and was OKM1510). The trigger needs no allow; the function keeps OKM1515 and the column keeps OKM1512, under a name header so the first statement is a step (B-36).
 - `testing()` plain-populates materialized views after migrate, and `isolation()` falls back to a plain refresh when a concurrent refresh says the view is not populated, so `refresh: "concurrently"` works inside the harness (B-34).
 - Composite tenancy factories generate a distinct uuid per key, honour an explicit full key, and refuse a partial one instead of copying one key onto another; `isolation()` flip inserts skip identity columns so `lists.id cannot be written` no longer fails (B-32).
