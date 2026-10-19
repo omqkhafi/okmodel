@@ -403,7 +403,7 @@ jobs:
 
   package:
     name: package / checks
-    needs: build
+    needs: [build, changes]
     if: >-
       (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'full-ci') &&
       needs.changes.outputs.full == 'true'

@@ -39,7 +39,7 @@ export function fullTierRequested(input: FullTierInput): boolean {
   return false;
 }
 
-function flag01(name: string, value: string | undefined): boolean {
+function flag01(value: string | undefined): boolean {
   if (value !== "0" && value !== "1") {
     throw new Error(
       `usage: bun ./scripts/ci-tier.ts --event <name> --full-ci <0|1> --workflows <0|1>`,
@@ -74,8 +74,8 @@ if (import.meta.main) {
     writeFull(
       fullTierRequested({
         eventName: values.event,
-        fullCiLabel: flag01("full-ci", values["full-ci"]),
-        workflowsChanged: flag01("workflows", values.workflows),
+        fullCiLabel: flag01(values["full-ci"]),
+        workflowsChanged: flag01(values.workflows),
         title: process.env.OKM_PR_TITLE ?? "",
       }),
     );
