@@ -996,9 +996,16 @@ function importLine(needsTable: boolean, needsIndex: boolean, needsSql: boolean)
   return `import { ${names.join(", ")} } from "okmodel/pg";`;
 }
 
+/**
+ * Relative import path from one pulled file to another, including the `.ts`
+ * extension so Node type stripping and `bunx okm` can resolve the module.
+ *
+ * @param fromFile - Absolute path of the importing file
+ * @param toFile - Absolute path of the imported file
+ * @returns A relative specifier that starts with `.` and ends with `.ts`
+ */
 function importSpecifier(fromFile: string, toFile: string): string {
   let spec = relative(dirname(fromFile), toFile).replaceAll("\\", "/");
-  if (spec.endsWith(".ts")) spec = spec.slice(0, -3);
   if (!spec.startsWith(".")) spec = `./${spec}`;
   return spec;
 }
