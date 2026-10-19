@@ -18,9 +18,9 @@ A pull request fails CI when `package.json`'s version equals the base branch, or
 
 Every push on a pull request runs tier 1: format, lint, typecheck, layers, purity, docs, the unit tests, property tests at a quarter of their run count (`OKM_PROPERTY_SCALE=0.25`), the size gate, the release-flow check, and, when the pull request has `needs: postgres`, the suite on 15 and 18 and the tarball on 18.
 
-Add the label `full-ci` when the branch is final and tier 1 is green. That starts tier 2: type cost, the editor check, attest, the portable runtimes, the temporal matrix, the package checks, Windows, Postgres 15 and 18, the `drivers-conformance` group, and property tests at full count. A push to `main` always runs tier 2. A later commit on `main` does not cancel the run already in progress. A failure of `gate / check` on `main` opens an issue.
+Add the label `full-ci` when the branch is final and tier 1 is green. That starts tier 2: type cost, the editor check, attest, the portable runtimes, the temporal matrix, the package checks, Windows, Postgres 15 and 18, the `drivers-conformance` group, and property tests at full count. Tier 2 is also required for a `chore(release)` title and for any pull request that changes `.github/workflows`. A push to `main` always runs tier 2. A later commit on `main` does not cancel the run already in progress. A failure of `gate / check` on `main` opens an issue.
 
-`gate / check` is the required status. It passes tier 1, and it also requires tier 2 when `full-ci` is on the pull request or the push is to `main`. A skipped tier 2 job is a pass only when that tier was not requested.
+`gate / check` is the required status. It always runs. It passes tier 1, and it also requires tier 2 when that tier was requested. A skipped tier 2 job is a pass only when that tier was not requested. See [docs/ci-and-test-cycle-plan.md](docs/ci-and-test-cycle-plan.md).
 
 Finish a brief when tier 1 is green and, when `full-ci` is on, tier 2 is green too.
 

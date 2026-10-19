@@ -4,7 +4,7 @@
 
 import { expect, test } from "bun:test";
 
-import { runtimeRelevant } from "./ci-paths.js";
+import { runtimeRelevant, workflowsChanged } from "./ci-paths.js";
 
 test("docs-only and site-only diffs skip the runtime matrix", () => {
   expect(runtimeRelevant(["docs/github.md"])).toBe(false);
@@ -17,4 +17,11 @@ test("any other path, or an empty diff, keeps the runtime matrix", () => {
   expect(runtimeRelevant(["CONTRIBUTING.md"])).toBe(true);
   expect(runtimeRelevant([".github/workflows/ci.yml"])).toBe(true);
   expect(runtimeRelevant([])).toBe(true);
+});
+
+test("workflow path changes are detected for the full tier", () => {
+  expect(workflowsChanged([".github/workflows/ci.yml"])).toBe(true);
+  expect(workflowsChanged([".github/workflows/windows.yml", "docs/github.md"])).toBe(true);
+  expect(workflowsChanged([".github/actions/setup-bun/action.yml"])).toBe(false);
+  expect(workflowsChanged(["docs/github.md"])).toBe(false);
 });

@@ -3,12 +3,13 @@
  *
  * Every always-on slice must be `success`. A Postgres slice (`suite`,
  * `tarball`) must be `success` when the pull request carries
- * `needs: postgres`. The full tier (`full-ci`, or a push to `main`) also
- * requires `suite` and the tier-2 slices. Without that request a skip is
- * allowed. `tarball` stays on the Postgres label only. A docs-only or
- * site-only change may also skip the runtime test jobs and Postgres; that
- * skip is a pass only when `--runtime 0` says the filter marked them
- * irrelevant. A failure is not. D213, D230.
+ * `needs: postgres`. The full tier (`full-ci`, a `chore(release)` title, a
+ * change under `.github/workflows`, or a push to `main`) also requires
+ * `suite` and the tier-2 slices. Without that request a skip is allowed.
+ * `tarball` stays on the Postgres label only. A docs-only or site-only
+ * change may also skip the runtime test jobs and Postgres; that skip is a
+ * pass only when `--runtime 0` says the filter marked them irrelevant. A
+ * failure is not. D213, D230.
  *
  *   bun ./scripts/ci-gate.ts --postgres 0 --runtime 1 --full 0 lint=success suite=skipped
  */
@@ -22,8 +23,9 @@ export type GateSlice = {
   /** True when the job runs with `needs: postgres`. */
   readonly postgres: boolean;
   /**
-   * True when the job runs on the full tier (`full-ci`, or a push to `main`).
-   * A slice that is both `postgres` and `full` runs when either is requested.
+   * True when the job runs on the full tier (`full-ci`, release title,
+   * workflow path change, or a push to `main`). A slice that is both
+   * `postgres` and `full` runs when either is requested.
    */
   readonly full: boolean;
   /**
@@ -73,7 +75,7 @@ const FILTERED_SLICES: ReadonlySet<string> = new Set([
  * @param slices - Every job the gate needs, in workflow order
  * @param postgresRequested - True when the event is a pull request with `needs: postgres`
  * @param runtimeRelevant - False when every changed file is under `docs/` or `site/`
- * @param fullRequested - True when the pull request has `full-ci`, or the push is to `main`
+ * @param fullRequested - True when the full tier is required for this event
  * @returns The slices that fail the gate
  */
 export function gateFailures(
