@@ -32,6 +32,7 @@ const STEP_COMMANDS: Readonly<Record<string, string>> = {
   Publint: "bun run publint",
   "Are the types wrong": "bun run attw",
   "Packed files are tracked": "bun run pack-tracked",
+  "Pack contract": "bun run pack-contract",
   Size: "bun run size",
   Build: "bun run build",
   Attest: "bun run attest",

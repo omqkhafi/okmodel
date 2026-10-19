@@ -31,6 +31,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `bun run ci:report` prints job and step duration, queue time, the critical path, and re-run counts for recent `main` runs, and why each 0.9.1 pull failed a push.
 - `bun run verify:fast` checks format, lint, types, layers, purity, docs, and the readme, then runs only the tests related to files changed since the merge-base with `origin/main`.
 - `bun run ci:fail <pull>` prints the first failing job, its failing step, the last 60 log lines, and the one local command that reproduces it.
+- `gate / check` compares `npm pack --dry-run --json` to a committed snapshot of packed files and the `exports` map (`scripts/pack-contract.ts`). A forbidden install script, a dependency, a required peer, or a missing `files` allowlist fails the check. Update the snapshot with `bun ./scripts/pack-contract.ts --update`.
 
 ### 💥 Breaking Changes
 
