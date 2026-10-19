@@ -17,6 +17,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { catalog } from "../src/contracts/catalog/build.js";
@@ -43,6 +44,7 @@ import {
 } from "../packages/harness/src/fixtures.js";
 import { repoRoot } from "../scripts/root.js";
 import { moduleSpecifiers } from "../scripts/specifiers.js";
+import { pack } from "./doc-run.js";
 
 const gate = await loadPostgresGate();
 const root = repoRoot();
@@ -472,12 +474,25 @@ postgresTest(
       throw new Error("dist/okm.js is missing. bun run build writes it.");
     }
     const database = await createIsolatedDatabase();
-    const cwd = tempProject();
+    const cwd = mkdtempSync(join(tmpdir(), "okm-pull-ext-"));
+    const tarball = pack(root);
     try {
       await apply(database.url, [
         "create table parents (id integer primary key)",
         "create table kids (id integer primary key, parent_id integer not null references parents (id))",
       ]);
+      writeFileSync(
+        join(cwd, "package.json"),
+        `${JSON.stringify({ name: "okm-pull-ext", private: true, type: "module" })}\n`,
+      );
+      const install = Bun.spawnSync(["bun", "add", tarball, "postgres"], {
+        cwd,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      if (install.exitCode !== 0) {
+        throw new Error(`bun add failed\n${install.stdout.toString()}${install.stderr.toString()}`);
+      }
       writeConfig(cwd, database.url);
       await pullProject(cwd, []);
       const relativeImports: string[] = [];
@@ -496,12 +511,11 @@ postgresTest(
       expect(relativeImports.every((specifier) => specifier.endsWith(".ts"))).toBe(true);
       expect(relativeImports).toEqual(["./tables/kids.ts", "./tables/parents.ts"]);
 
-      linkOkmodel(cwd);
-      const nodeCheck = Bun.spawnSync(["node", join(root, "dist/okm.js"), "check"], {
-        cwd,
-        stdout: "pipe",
-        stderr: "pipe",
-      });
+      const binPath = `${join(cwd, "node_modules", ".bin")}:${process.env.PATH ?? ""}`;
+      const nodeCheck = Bun.spawnSync(
+        ["node", join(cwd, "node_modules/okmodel/dist/okm.js"), "check"],
+        { cwd, stdout: "pipe", stderr: "pipe", env: { ...process.env, PATH: binPath } },
+      );
       const nodeOut = `${nodeCheck.stdout.toString()}${nodeCheck.stderr.toString()}`;
       expect(nodeCheck.exitCode, nodeOut).toBe(0);
       expect(nodeOut).toContain("ok");
@@ -510,10 +524,7 @@ postgresTest(
         cwd,
         stdout: "pipe",
         stderr: "pipe",
-        env: {
-          ...process.env,
-          PATH: `${join(cwd, "node_modules", ".bin")}:${process.env.PATH ?? ""}`,
-        },
+        env: { ...process.env, PATH: binPath },
       });
       const bunxOut = `${bunxCheck.stdout.toString()}${bunxCheck.stderr.toString()}`;
       expect(bunxCheck.exitCode, bunxOut).toBe(0);
@@ -533,10 +544,11 @@ postgresTest(
       });
     } finally {
       rmSync(cwd, { recursive: true, force: true });
+      rmSync(tarball, { force: true });
       await database.close();
     }
   },
-  60_000,
+  180_000,
 );
 
 postgresTest(
@@ -580,26 +592,6 @@ function linkPackage(): void {
   if (existsSync(link)) return;
   mkdirSync(directory, { recursive: true });
   symlinkSync(root, link);
-}
-
-function linkOkmodel(cwd: string): void {
-  writeFileSync(
-    join(cwd, "package.json"),
-    `${JSON.stringify({
-      name: "okm-pull-ext",
-      private: true,
-      type: "module",
-      dependencies: { okmodel: `file:${root}` },
-    })}\n`,
-  );
-  const install = Bun.spawnSync(["bun", "install"], {
-    cwd,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  if (install.exitCode !== 0) {
-    throw new Error(`bun install failed\n${install.stdout.toString()}${install.stderr.toString()}`);
-  }
 }
 
 function expectTsc(
