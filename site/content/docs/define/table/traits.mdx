@@ -287,7 +287,7 @@ export async function edit(url: string, id: string) {
 ```
 
 <Callout type="error" title="OKM1120">
-Leaving `version` out is refused, and so is `version` on a table that is not versioned. An upsert and `.all()` are refused.
+Leaving `version` out is a TypeScript error on a versioned table, and OKM1120 at runtime when types are bypassed. `version` on a table that is not versioned is refused. An upsert and `.all()` are refused.
 </Callout>
 
 #### Sortable

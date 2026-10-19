@@ -645,8 +645,8 @@ type AllowedSet<
   Allow extends readonly (keyof RowOf<S, K> & string)[],
 > = UpdateSet<S, K> & Partial<Pick<RowOf<S, K>, Allow[number]>>;
 
-/** One update, or a per-row list, when `{ allow }` opens guarded fields. */
-type AllowedUpdate<
+/** Allowed update with optional `version` (non-versioned tables). */
+type AllowedUpdateBase<
   S extends QuerySchema,
   K extends keyof S["~byName"],
   Allow extends readonly (keyof RowOf<S, K> & string)[],
@@ -663,28 +663,89 @@ type AllowedUpdate<
       readonly version?: number;
     }[];
 
+/** Allowed update with `version` required (versioned tables, D305). */
+type AllowedUpdateVersioned<
+  S extends QuerySchema,
+  K extends keyof S["~byName"],
+  Allow extends readonly (keyof RowOf<S, K> & string)[],
+> =
+  | {
+      readonly where?: WhereOf<S, K>;
+      readonly set: AllowedSet<S, K, Allow>;
+      readonly version: number;
+    }
+  | readonly {
+      readonly id?: unknown;
+      readonly where?: WhereOf<S, K>;
+      readonly set: AllowedSet<S, K, Allow>;
+      readonly version: number;
+    }[];
+
 /**
- * One update, or a per-row list in one statement.
+ * One update, or a per-row list, when `{ allow }` opens guarded fields.
  *
- * `lock: "skip"` with `limit` claims that many matching rows and leaves rows
- * another transaction already holds. It is not valid on a list.
+ * Deferred on `~versioned` so non-versioned tables keep the pre-Q5 shape (D305).
  */
-export type UpdateTarget<S extends QuerySchema, K extends keyof S["~byName"]> =
+type AllowedUpdate<
+  S extends QuerySchema,
+  K extends keyof S["~byName"],
+  Allow extends readonly (keyof RowOf<S, K> & string)[],
+> = S["~byName"][K] extends { readonly "~versioned": true }
+  ? AllowedUpdateVersioned<S, K, Allow>
+  : AllowedUpdateBase<S, K, Allow>;
+
+/**
+ * One update, or a per-row list (optional `version`). Deferred false branch of
+ * {@link UpdateTarget} so the 200-table probe matches the pre-Q5 shape (D305).
+ */
+type UpdateTargetBase<S extends QuerySchema, K extends keyof S["~byName"]> =
   | {
       readonly where?: WhereOf<S, K>;
       readonly set: UpdateSet<S, K>;
       readonly limit?: number;
       readonly lock?: "skip";
-      /** Version read from the row. Required at runtime when the table is `versioned()`. */
+      /** Version read from the row. Refused at runtime unless the table is `versioned()`. */
       readonly version?: number;
     }
   | readonly {
       readonly id?: unknown;
       readonly where?: WhereOf<S, K>;
       readonly set: UpdateSet<S, K>;
-      /** Version read from the row. Required at runtime when the table is `versioned()`. */
+      /** Version read from the row. Refused at runtime unless the table is `versioned()`. */
       readonly version?: number;
     }[];
+
+/** Update target with `version` required (versioned tables, D305). */
+type UpdateTargetVersioned<S extends QuerySchema, K extends keyof S["~byName"]> =
+  | {
+      readonly where?: WhereOf<S, K>;
+      readonly set: UpdateSet<S, K>;
+      readonly limit?: number;
+      readonly lock?: "skip";
+      /** Version read from the row. */
+      readonly version: number;
+    }
+  | readonly {
+      readonly id?: unknown;
+      readonly where?: WhereOf<S, K>;
+      readonly set: UpdateSet<S, K>;
+      /** Version read from the row. */
+      readonly version: number;
+    }[];
+
+/**
+ * One update, or a per-row list in one statement.
+ *
+ * `lock: "skip"` with `limit` claims that many matching rows and leaves rows
+ * another transaction already holds. It is not valid on a list.
+ *
+ * On a `versioned()` table, `version` is required (the version read from the
+ * row). The runtime check remains the backstop when types are bypassed (D305).
+ */
+export type UpdateTarget<S extends QuerySchema, K extends keyof S["~byName"]> =
+  S["~byName"][K] extends { readonly "~versioned": true }
+    ? UpdateTargetVersioned<S, K>
+    : UpdateTargetBase<S, K>;
 
 /** `{ count, archiveId }` from one `archive()` call. */
 export type ArchiveCount = {

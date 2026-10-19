@@ -54,7 +54,14 @@ import {
 import { definition, unavailable } from "./misuse.js";
 import { isRelationCall, type ManyThroughRelation, type RelationEdge } from "./relations.js";
 import { decodeText, encodeText } from "./text.js";
-import type { FieldsOfList, HasArchive, PresetsOfList, Trait, TraitModel } from "./trait.js";
+import type {
+  FieldsOfList,
+  HasArchive,
+  HasVersioned,
+  PresetsOfList,
+  Trait,
+  TraitModel,
+} from "./trait.js";
 import { type ColumnTenancy, type TenantFields, readTenancy } from "./tenancy.js";
 import {
   type AnyTable,
@@ -252,6 +259,7 @@ type ApplySchemaTraits<TTable, TFields, TTraits> = TTable extends {
       readonly "~insert": InsertFrom<TFields>;
       readonly "~update": UpdateFrom<TFields>;
     } & HasArchive<TTraits> &
+      HasVersioned<TTraits> &
       PresetsOfList<TTraits>;
 
 const SCHEMA_KNOWN = new Set([

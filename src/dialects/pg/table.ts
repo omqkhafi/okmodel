@@ -12,7 +12,13 @@ import { openFilters } from "./filters.js";
 import { definition, unavailable } from "./misuse.js";
 import { type RelationCall } from "./relations.js";
 import type { PresetMap } from "./preset.js";
-import { type FieldsOfList, type HasArchive, type PresetsOfList, type Trait } from "./trait.js";
+import {
+  type FieldsOfList,
+  type HasArchive,
+  type HasVersioned,
+  type PresetsOfList,
+  type Trait,
+} from "./trait.js";
 
 /**
  * A column as seen by `indexes` and `checks`.
@@ -444,16 +450,17 @@ type PathFlag<TOptions> = TOptions extends {
   : unknown;
 
 type TraitShapes<TColumns, TOptions> = TOptions extends { readonly traits: infer TTraits }
-  ? TTraits extends readonly { readonly fields: Readonly<Record<string, object>> }[]
-    ? keyof FieldsOfList<TTraits> extends never
-      ? unknown
-      : {
-          readonly "~row": RowFrom<TColumns> & RowFrom<FieldsOfList<TTraits>>;
-          readonly "~insert": InsertFrom<TColumns> & InsertFrom<FieldsOfList<TTraits>>;
-          readonly "~update": UpdateFrom<TColumns, PrimaryOf<TOptions>> &
-            UpdateFrom<FieldsOfList<TTraits>>;
-        }
-    : unknown
+  ? (TTraits extends readonly { readonly fields: Readonly<Record<string, object>> }[]
+      ? keyof FieldsOfList<TTraits> extends never
+        ? unknown
+        : {
+            readonly "~row": RowFrom<TColumns> & RowFrom<FieldsOfList<TTraits>>;
+            readonly "~insert": InsertFrom<TColumns> & InsertFrom<FieldsOfList<TTraits>>;
+            readonly "~update": UpdateFrom<TColumns, PrimaryOf<TOptions>> &
+              UpdateFrom<FieldsOfList<TTraits>>;
+          }
+      : unknown) &
+      HasVersioned<TTraits>
   : unknown;
 
 /**

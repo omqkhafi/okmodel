@@ -274,12 +274,15 @@ export function archivable(options?: ArchivableOptions) {
  * @returns The versioned trait
  */
 export function versioned() {
-  return trait("versioned", {
-    fields: {
-      version: integer().defaultSql("1").guarded(),
-    },
-    sealed: ["version"],
-  });
+  return {
+    ...trait("versioned", {
+      fields: {
+        version: integer().defaultSql("1").guarded(),
+      },
+      sealed: ["version"],
+    }),
+    "~versioned": true as const,
+  };
 }
 
 /**
