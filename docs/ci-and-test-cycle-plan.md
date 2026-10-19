@@ -53,3 +53,5 @@ Bun `>=1.4.0`.
 There is no merge queue on this repository (personal account). There are no
 manual required checks; anything that used to be a manual check becomes a CI
 job in a later item when it is automated.
+
+<!-- h1 proof b -->
