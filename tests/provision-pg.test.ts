@@ -18,7 +18,7 @@ import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres
 import { createIsolatedDatabase, openPostgres } from "../packages/harness/src/postgres.js";
 import { repoRoot } from "../scripts/root.js";
 import { applyTarget } from "../src/tooling/migrate/apply.js";
-import { CHECK_SCHEMA_PREFIX } from "../src/tooling/migrate/check.js";
+import { CHECK_REPLAY_LIMIT, CHECK_SCHEMA_PREFIX } from "../src/tooling/migrate/check.js";
 import { run } from "../src/tooling/migrate/commands.js";
 import { catalogQuery } from "../src/tooling/migrate/drift.js";
 import { loadMigrations } from "../src/tooling/migrate/files.js";
@@ -170,7 +170,9 @@ postgresTest(
     await withProject(async ({ cwd }) => {
       writeSchema(cwd, `table("items", { id: t.integer().primaryKey(), title: t.text() })`);
       await cli(cwd, ["generate", "init"]);
-      expect(await capture(["migrate", "check", "--provision"], cwd)).toBe("ok 1 migrations\n");
+      expect(await capture(["migrate", "check", "--provision"], cwd)).toBe(
+        `ok 1 migrations\n${CHECK_REPLAY_LIMIT}\n`,
+      );
       expect(await scratchSchemas(cwd)).toEqual([]);
       const path = migrationPath(cwd, ".catalog.json");
       const stored = parseCatalog(readFileSync(path, "utf8"));

@@ -43,6 +43,15 @@ import { transactionControl } from "./sql-lex.js";
 /** Prefix of the scratch schema. The random suffix makes the name unique. */
 export const CHECK_SCHEMA_PREFIX = "okm_check_";
 
+/**
+ * Line printed after `ok N migrations`.
+ *
+ * The scratch schema starts empty. A step that fails only when rows already
+ * exist is not caught by this command.
+ */
+export const CHECK_REPLAY_LIMIT =
+  "This check replays empty tables. A step that only fails on real data is not caught: NOT NULL on a populated column, a unique index over duplicates, or a check over existing rows.";
+
 const HISTORY_CODE = "OKM1547";
 const PREVIOUS_CODE = "OKM1548";
 const STALE_CODE = "OKM1549";
@@ -79,7 +88,8 @@ type CheckFailure = {
  * @param cwd - Project directory
  * @param flags - `--target` and pooler. Protection is ignored
  * @param options - `--provision` also compares a snapshot install with a full replay
- * @returns One summary line, ending in a newline
+ * @returns `ok N migrations`, then {@link CHECK_REPLAY_LIMIT}, then skipped
+ *   statements and reprint warnings
  */
 export async function checkMigrations(
   project: string | ProjectContext,
@@ -126,7 +136,7 @@ export async function checkMigrations(
     failures.push({ code: refusal.code, message: refusal.message, fix: refusal.fix.summary });
   }
   if (failures.length > 0) throwFailure(failures, reprintWarnings);
-  const summary = `ok ${String(history.length)} migrations\n`;
+  const summary = `ok ${String(history.length)} migrations\n${CHECK_REPLAY_LIMIT}\n`;
   const skipped = replayed.skips.length === 0 ? "" : `${replayed.skips.join("\n")}\n`;
   return `${summary}${skipped}${formatFindings(reprintWarnings)}`;
 }

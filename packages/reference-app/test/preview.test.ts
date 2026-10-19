@@ -10,6 +10,7 @@ import { expect } from "bun:test";
 
 import { loadPostgresGate, postgresTest } from "../../harness/src/postgres-test.js";
 import { openPostgres } from "../../harness/src/postgres.js";
+import { CHECK_REPLAY_LIMIT } from "../../../src/tooling/migrate/check.js";
 import { appRoleUrl, loadApp, okmOk, previewDatabase } from "./support.js";
 
 const gate = await loadPostgresGate();
@@ -70,7 +71,7 @@ postgresTest(
         await okmOk(["migrate", "check", "--provision", "--target", "preview"], {
           PREVIEW_DATABASE_URL: a.url,
         }),
-      ).toBe("ok 4 migrations\n");
+      ).toBe(`ok 4 migrations\n${CHECK_REPLAY_LIMIT}\n`);
     } finally {
       await Promise.all(databases.map((database) => database.close()));
     }

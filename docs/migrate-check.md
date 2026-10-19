@@ -1,6 +1,6 @@
 # Check a history in CI
 
-`okm migrate check` proves a migration history is sound. It is a CI command: no prompts, and the result does not depend on colour. Exit zero prints `ok N migrations`. A reprinted domain check or `LANGUAGE sql` body adds warning OKM1552 on the following lines (D276). Any failure exits non-zero. One failure prints its code, the message, and the fix. Several failures print one greppable line per failure.
+`okm migrate check` proves a migration history is sound. It is a CI command: no prompts, and the result does not depend on colour. Exit zero prints `ok N migrations`, then one line that this command replays empty tables and does not catch a step that fails only on real data. A reprinted domain check or `LANGUAGE sql` body adds warning OKM1552 on the following lines (D276). Any failure exits non-zero. One failure prints its code, the message, and the fix. Several failures print one greppable line per failure.
 
 The command writes a scratch schema, so point it at a throwaway Postgres. Run it as a non-superuser. A superuser replay executes each step as written, and a step can reach `COPY ... PROGRAM` and `lo_import`. A `NOSUPERUSER` owner of the database cannot. `CREATEROLE` is not required. A protected target is refused. `--allow-protected` does not apply.
 
@@ -12,6 +12,22 @@ The command writes a scratch schema, so point it at a throwaway Postgres. Run it
 4. **Lint.** The whole history is linted. An error fails. An override with a reason is respected. Apply is unchanged: it still lints only migrations that are pending on the target.
 
 `defineConfig({ lintFrom: "<migration id>" })` is the adoption baseline. Files before that id are not linted by `okm migrate check`. The id itself is linted. Use it when older migrations have unreasoned drops and the linter is being turned on now.
+
+## What check does not prove
+
+The scratch schema starts empty. The replay runs the migration files, not a copy of the selected database's rows. A step that fails only when rows are already stored is not caught:
+
+- `NOT NULL` on a populated column, including `SET NOT NULL` and a not-null check
+- a unique index over duplicate values
+- a check constraint over existing rows that violate it
+
+A passing run prints that limit on the line after `ok N migrations`:
+
+```text
+This check replays empty tables. A step that only fails on real data is not caught: NOT NULL on a populated column, a unique index over duplicates, or a check over existing rows.
+```
+
+The first line stays `ok N migrations`. Skipped statements and OKM1552 warnings follow the limit. A data-aware `--with-data` mode is not this command. See [known limits](known-limits.md#migrations).
 
 ## `--provision`
 

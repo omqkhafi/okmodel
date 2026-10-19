@@ -13,7 +13,7 @@ import { OkmError } from "../src/contracts/error.js";
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
 import { createIsolatedDatabase, openPostgres } from "../packages/harness/src/postgres.js";
 import { repoRoot } from "../scripts/root.js";
-import { CHECK_SCHEMA_PREFIX } from "../src/tooling/migrate/check.js";
+import { CHECK_REPLAY_LIMIT, CHECK_SCHEMA_PREFIX } from "../src/tooling/migrate/check.js";
 import { run } from "../src/tooling/migrate/commands.js";
 
 const gate = await loadPostgresGate();
@@ -37,7 +37,9 @@ postgresTest(
       );
       await cli(cwd, ["generate", "note"]);
       const text = await capture(["migrate", "check"], cwd);
-      expect(text).toBe("ok 2 migrations\n");
+      expect(text.startsWith("ok 2 migrations\n")).toBe(true);
+      expect(text).toContain(CHECK_REPLAY_LIMIT);
+      expect(text).toBe(`ok 2 migrations\n${CHECK_REPLAY_LIMIT}\n`);
       expect(await scratchSchemas(cwd)).toEqual([]);
     });
   },
@@ -114,7 +116,9 @@ postgresTest(
       expect(expand.message).toContain("0002_drop");
       expect(expand.message).toContain("classified expand");
       writeFileSync(sqlPath, original);
-      expect(await capture(["migrate", "check"], cwd)).toBe("ok 2 migrations\n");
+      expect(await capture(["migrate", "check"], cwd)).toBe(
+        `ok 2 migrations\n${CHECK_REPLAY_LIMIT}\n`,
+      );
     });
   },
   60_000,
@@ -150,7 +154,9 @@ postgresTest(
       expect(bare.message).toContain("OKM1512");
       const sqlPath = join(cwd, "migrations", "0002_drop.sql");
       writeFileSync(sqlPath, allowDrop(readFileSync(sqlPath, "utf8")));
-      expect(await capture(["migrate", "check"], cwd)).toBe("ok 2 migrations\n");
+      expect(await capture(["migrate", "check"], cwd)).toBe(
+        `ok 2 migrations\n${CHECK_REPLAY_LIMIT}\n`,
+      );
     });
   },
   60_000,
@@ -170,7 +176,7 @@ postgresTest(
       const bare = await rejected(["migrate", "check"], cwd);
       expect(bare.code).toBe("OKM1510");
       writeConfig(cwd, { lintFrom: "0003_restore" });
-      expect(await cli(cwd, ["migrate", "check"])).toBe("ok 3 migrations\n");
+      expect(await cli(cwd, ["migrate", "check"])).toBe(`ok 3 migrations\n${CHECK_REPLAY_LIMIT}\n`);
     });
   },
   60_000,
@@ -210,7 +216,9 @@ postgresTest(
     await withProject(async ({ cwd }) => {
       writeSchema(cwd, `table("tasks", { id: t.identity(), title: t.text() })`);
       await cli(cwd, ["generate", "tasks"]);
-      expect(await capture(["migrate", "check"], cwd)).toBe("ok 1 migrations\n");
+      expect(await capture(["migrate", "check"], cwd)).toBe(
+        `ok 1 migrations\n${CHECK_REPLAY_LIMIT}\n`,
+      );
     });
   },
   60_000,
@@ -232,7 +240,9 @@ postgresTest(
         ].join("\n"),
       );
       await cli(cwd, ["generate", "init"]);
-      expect(await capture(["migrate", "check"], cwd)).toBe("ok 1 migrations\n");
+      expect(await capture(["migrate", "check"], cwd)).toBe(
+        `ok 1 migrations\n${CHECK_REPLAY_LIMIT}\n`,
+      );
       expect(await scratchSchemas(cwd)).toEqual([]);
     });
   },
@@ -253,7 +263,9 @@ postgresTest(
         ].join("\n"),
       );
       await cli(cwd, ["generate", "init"]);
-      expect(await capture(["migrate", "check"], cwd)).toBe("ok 1 migrations\n");
+      expect(await capture(["migrate", "check"], cwd)).toBe(
+        `ok 1 migrations\n${CHECK_REPLAY_LIMIT}\n`,
+      );
     });
   },
   60_000,
@@ -279,7 +291,9 @@ postgresTest(
       await cli(cwd, ["generate", "init"]);
       await capture(["migrate", "apply"], cwd);
       expect(await capture(["check"], cwd)).toBe("ok\n");
-      expect(await capture(["migrate", "check"], cwd)).toBe("ok 1 migrations\n");
+      expect(await capture(["migrate", "check"], cwd)).toBe(
+        `ok 1 migrations\n${CHECK_REPLAY_LIMIT}\n`,
+      );
     });
   },
   60_000,
@@ -294,7 +308,9 @@ postgresTest(
       await cli(cwd, ["generate", "init"]);
       await capture(["migrate", "apply"], cwd);
       expect(await capture(["check"], cwd)).toBe("ok\n");
-      expect(await capture(["migrate", "check"], cwd)).toBe("ok 1 migrations\n");
+      expect(await capture(["migrate", "check"], cwd)).toBe(
+        `ok 1 migrations\n${CHECK_REPLAY_LIMIT}\n`,
+      );
     });
   },
   60_000,
@@ -382,7 +398,7 @@ postgresTest(
       expect(sql).toContain('"workspace_id"');
       expect(sql).toContain("projects");
       expect(await cli(cwd, ["migrate", "apply"])).toContain("applied");
-      expect(await cli(cwd, ["migrate", "check"])).toBe("ok 1 migrations\n");
+      expect(await cli(cwd, ["migrate", "check"])).toBe(`ok 1 migrations\n${CHECK_REPLAY_LIMIT}\n`);
     });
   },
   60_000,

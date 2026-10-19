@@ -406,7 +406,14 @@ async function runUnit(
       return;
     } catch (error) {
       if (began) await connection.execute("rollback").catch(() => undefined);
-      if (!isLockTimeout(error) || attempt === run.retries) throw failStep(unit, current, error);
+      if (!isLockTimeout(error) || attempt === run.retries) {
+        const failed = unit.steps.find((item) => item.index === current);
+        const leftover =
+          failed === undefined
+            ? undefined
+            : await dropFailedConcurrentIndex(connection, failed.step.sql);
+        throw annotateInvalidIndex(failStep(unit, current, error), leftover);
+      }
       await delay(BACKOFF_MS * 2 ** attempt);
     }
   }
@@ -636,8 +643,57 @@ async function writeMeta(connection: DriverConnection, unit: RunnableUnit): Prom
 }
 
 async function rebuildInvalidIndex(connection: DriverConnection, sql: string): Promise<void> {
-  const name = concurrentIndexName(sql);
+  const name = await invalidConcurrentIndex(connection, sql);
   if (name === undefined) return;
+  await connection.execute(`drop index concurrently if exists ${quoteIdent(name)}`);
+}
+
+/**
+ * Drops an INVALID index left by a failed `CREATE INDEX CONCURRENTLY`.
+ *
+ * Postgres keeps that index, and the same statement then fails with "already
+ * exists". Dropping it here is what makes a re-run safe. When the drop fails,
+ * the name is returned so the error can give `DROP INDEX CONCURRENTLY`.
+ *
+ * @param connection - Reserved connection, not inside a transaction
+ * @param sql - The step that just failed
+ * @returns The index name when it is still INVALID
+ */
+async function dropFailedConcurrentIndex(
+  connection: DriverConnection,
+  sql: string,
+): Promise<string | undefined> {
+  let name: string | undefined;
+  try {
+    name = await invalidConcurrentIndex(connection, sql);
+  } catch {
+    return undefined;
+  }
+  if (name === undefined) return undefined;
+  try {
+    await connection.execute(`drop index concurrently if exists ${quoteIdent(name)}`);
+  } catch {
+    return name;
+  }
+  return undefined;
+}
+
+/**
+ * Name of a concurrent index from `sql` when `pg_index.indisvalid` is false.
+ *
+ * A missing index and a valid index are both `undefined`. The lookup uses
+ * `current_schema()`, which apply sets to the migration schema.
+ *
+ * @param connection - Reserved connection
+ * @param sql - One statement
+ * @returns The index name, or `undefined` when it is missing or valid
+ */
+async function invalidConcurrentIndex(
+  connection: DriverConnection,
+  sql: string,
+): Promise<string | undefined> {
+  const name = concurrentIndexName(sql);
+  if (name === undefined) return undefined;
   const found = await connection.execute(
     `select i.indisvalid
      from pg_class c
@@ -647,8 +703,28 @@ async function rebuildInvalidIndex(connection: DriverConnection, sql: string): P
     [name],
   );
   const valid = found.rows[0]?.[0];
-  if (valid === undefined || wireTrue(valid)) return;
-  await connection.execute(`drop index concurrently if exists ${quoteIdent(name)}`);
+  if (valid === undefined || wireTrue(valid)) return undefined;
+  return name;
+}
+
+/**
+ * Adds the leftover index and the exact drop to an apply failure.
+ *
+ * @param error - The step failure
+ * @param name - INVALID index the drop did not remove
+ * @returns `error` when `name` is omitted
+ */
+function annotateInvalidIndex(error: OkmError, name: string | undefined): OkmError {
+  if (name === undefined) return error;
+  const quoted = quoteIdent(name);
+  return new OkmError(error.code, `${error.message} Index ${quoted} is INVALID.`, {
+    kind: error.kind,
+    cause: error.cause,
+    fix: {
+      summary: `DROP INDEX CONCURRENTLY ${quoted}; then run apply again. Finished steps are not repeated.`,
+    },
+    ...(error.sqlstate !== undefined ? { sqlstate: error.sqlstate } : {}),
+  });
 }
 
 function concurrentIndexName(sql: string): string | undefined {

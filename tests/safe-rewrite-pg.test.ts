@@ -214,7 +214,7 @@ postgresTest(
         applyTo(schemaName, [migration("0002_key", "hash", steps)]),
       );
       expect(messageOf(failed)).toContain("failed at step 2");
-      expect(await indexValid(sql, schemaName, "items_id_key")).toBe(false);
+      expect(await indexValid(sql, schemaName, "items_id_key")).toBeUndefined();
       const once = await sql<{ n: number }[]>`select n from marker`;
       expect(once).toHaveLength(1);
       await sql.unsafe(`delete from items where ctid <> (select min(ctid) from items)`);
