@@ -76,6 +76,88 @@ export type RelFilter<S extends QuerySchema, Rel> = Rel extends {
 /** Known relation names. A string index (no declared relations) adds none. */
 type RelationKeys<R> = string extends keyof R ? never : keyof R;
 
+/** The column when it is `hidden({ filterable: true })`, otherwise `never`. */
+type FilterBit<C> = C extends { "~flags": { "~filter": true } } ? C : never;
+
+/**
+ * Columns `where` and `orderBy` share.
+ *
+ * The row, plus `hidden({ filterable: true })`. A table with none of those
+ * columns keeps {@link RowOf}. The extra keys are built only for a table that
+ * opted in. The check distributes over the column union.
+ */
+type FilterableOf<S extends QuerySchema, K extends keyof S["~byName"]> = S["~byName"][K] extends {
+  "~columns": infer C;
+}
+  ? FilterBit<C[keyof C]> extends never
+    ? RowOf<S, K>
+    : RowOf<S, K> & {
+        readonly [P in keyof C as FilterBit<C[P]> extends never ? never : P]: unknown;
+      }
+  : RowOf<S, K>;
+
+/** Column filters plus `hidden({ filterable: true })`, and relation filters. */
+type FilterFiltersOf<S extends QuerySchema, K extends keyof S["~byName"]> = FieldWhere<
+  FilterableOf<S, K>
+> & {
+  readonly [R in RelationKeys<RelationsOf<S, K>>]?: RelFilter<S, RelationsOf<S, K>[R]> | undefined;
+};
+
+/**
+ * `Shape`, plus `never` for any key `T` adds.
+ *
+ * Lives in a later overload's constraint, so a call an earlier overload
+ * accepts does not build it. An intersection parameter would allow those keys.
+ */
+type ExactConstraint<T, Shape> = Shape & Record<Exclude<keyof T, keyof Shape>, never>;
+
+/** `Fields`, plus `never` for a key `W` adds. A plain hidden column stays out. */
+type ClosedWhere<W, Fields> = Fields & Record<Exclude<keyof NonNullable<W>, keyof Fields>, never>;
+
+/** `where` for a later overload: filterable hidden columns, and no other extra key. */
+type FilterWhereOf<S extends QuerySchema, K extends keyof S["~byName"], W> =
+  | ClosedWhere<W, FilterFiltersOf<S, K>>
+  | Or<FilterFiltersOf<S, K>>;
+
+/** `find` options whose `where` and `orderBy` include `hidden({ filterable: true })`. */
+type FindFilterOptions<S extends QuerySchema, K extends keyof S["~byName"], L> = Omit<
+  FindOptions<S, K>,
+  "where" | "orderBy" | "search"
+> &
+  L & {
+    readonly where?: FilterFiltersOf<S, K> | Or<FilterFiltersOf<S, K>>;
+    readonly orderBy?: OrderBy<FilterableOf<S, K>>;
+    readonly search?: TextSearch<FilterableOf<S, K>>;
+  };
+
+/** `one` and `page` options with the same filterable key set. */
+type ReadFilterOptions<S extends QuerySchema, K extends keyof S["~byName"]> = Omit<
+  ReadOptions<S, K>,
+  "where" | "orderBy"
+> & {
+  readonly where?: FilterFiltersOf<S, K> | Or<FilterFiltersOf<S, K>>;
+  readonly orderBy?: OrderBy<FilterableOf<S, K>>;
+};
+
+/** `count` options with the same filterable key set. */
+type CountFilterOptions<S extends QuerySchema, K extends keyof S["~byName"]> = CallOptions & {
+  readonly where?: FilterFiltersOf<S, K> | Or<FilterFiltersOf<S, K>>;
+  readonly search?: TextSearch<FilterableOf<S, K>>;
+};
+
+/** One `update` object whose `where` includes `hidden({ filterable: true })`. */
+type UpdateFilterTarget<S extends QuerySchema, K extends keyof S["~byName"], W> = Omit<
+  Extract<UpdateArg<S, K>, { readonly set: unknown }>,
+  "where"
+> & {
+  readonly where?: FilterWhereOf<S, K, W>;
+};
+
+/** One `delete` object whose `where` includes `hidden({ filterable: true })`. */
+type DeleteFilterTarget<S extends QuerySchema, K extends keyof S["~byName"], W> = {
+  readonly where?: FilterWhereOf<S, K, W>;
+};
+
 /** Column and relation filters for one table. */
 type FiltersOf<S extends QuerySchema, K extends keyof S["~byName"]> = FieldWhere<RowOf<S, K>> & {
   readonly [R in RelationKeys<RelationsOf<S, K>>]?: RelFilter<S, RelationsOf<S, K>[R]> | undefined;
@@ -86,7 +168,12 @@ export type WhereOf<S extends QuerySchema, K extends keyof S["~byName"]> =
   | FiltersOf<S, K>
   | Or<FiltersOf<S, K>>;
 
-/** `orderBy`. `asc` is nulls last and `desc` is nulls first unless `nulls` is set. */
+/**
+ * `orderBy`. `asc` is nulls last and `desc` is nulls first unless `nulls` is set.
+ *
+ * A `hidden({ filterable: true })` column is a key, the same set `where` uses.
+ * A plain `.hidden()` column is not. The row stays the select list.
+ */
 export type OrderBy<Row> = {
   readonly [K in keyof Row]?:
     | "asc"
@@ -794,10 +881,17 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   find<const O extends FindOptions<S, K> & L & { readonly limit: number }>(
     options: O,
   ): Read<readonly ResultRow<S, K, O>[]>;
+  find<const O extends FindFilterOptions<S, K, L> & { readonly limit: number }>(
+    options: O,
+  ): Read<readonly ResultRow<S, K, O>[]>;
+  find<const O extends FindFilterOptions<S, K, L>>(
+    options: O,
+  ): { all(reason: string): Read<readonly ResultRow<S, K, O>[]> };
   find<const O extends FindOptions<S, K> & L>(
     options: O,
   ): { all(reason: string): Read<readonly ResultRow<S, K, O>[]> };
   one<const O extends ReadOptions<S, K>>(options?: O): Read<ResultRow<S, K, O> | null>;
+  one<const O extends ReadFilterOptions<S, K>>(options?: O): Read<ResultRow<S, K, O> | null>;
   /**
    * One page of rows and the cursor for the next.
    *
@@ -805,6 +899,9 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
    * are inserted. Pass `next` back as `after` with the same `orderBy`.
    */
   page<const O extends PageOptions<S, K>>(options: O): Query<Page<ResultRow<S, K, O>>>;
+  page<const O extends Omit<PageOptions<S, K>, "where" | "orderBy"> & ReadFilterOptions<S, K>>(
+    options: O,
+  ): Query<Page<ResultRow<S, K, O>>>;
   /**
    * Counts, sums, averages, and finds extremes, per group.
    *
@@ -825,6 +922,7 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
       readonly search?: TextSearch<RowOf<S, K>>;
     },
   ): Read<number>;
+  count<const O extends CountFilterOptions<S, K>>(options?: O): Read<number>;
   exists(options?: CallOptions & { readonly where?: WhereOf<S, K> }): Read<boolean>;
   /**
    * Inserts one row. Unknown keys are dropped. `{ allow }` may set guarded fields.
@@ -887,6 +985,14 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
     options: WriteOptions<S, K> & { readonly returning: true },
   ): Write<readonly Show<RowOf<S, K>>[]>;
   update(target: UpdateArg<S, K>, options?: WriteOptions<S, K>): Write<WriteCount>;
+  update<const T extends ExactConstraint<T, UpdateFilterTarget<S, K, T["where"]>>>(
+    target: T,
+    options: WriteOptions<S, K> & { readonly returning: true },
+  ): Write<readonly Show<RowOf<S, K>>[]>;
+  update<const T extends ExactConstraint<T, UpdateFilterTarget<S, K, T["where"]>>>(
+    target: T,
+    options?: WriteOptions<S, K>,
+  ): Write<WriteCount>;
   /**
    * Deletes matching rows. `where` is required.
    *
@@ -895,6 +1001,12 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
    */
   delete(
     target: { readonly where?: WhereOf<S, K> },
+    options?: Omit<WriteOptions<S, K>, "returning"> & {
+      readonly returning?: Exclude<WriteOptions<S, K>["returning"], true>;
+    },
+  ): Write<WriteCount>;
+  delete<const T extends ExactConstraint<T, DeleteFilterTarget<S, K, T["where"]>>>(
+    target: T,
     options?: Omit<WriteOptions<S, K>, "returning"> & {
       readonly returning?: Exclude<WriteOptions<S, K>["returning"], true>;
     },

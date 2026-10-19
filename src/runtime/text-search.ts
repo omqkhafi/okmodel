@@ -17,15 +17,7 @@ import {
   type SearchMatch,
 } from "../dialects/pg/operators.js";
 import { searchValue, type SearchOptions } from "../dialects/pg/ops/search-query.js";
-import {
-  fail,
-  indexes,
-  isRecord,
-  list,
-  refuseHidden,
-  type Indexed,
-  type ReadCall,
-} from "./plan.js";
+import { fail, indexes, isRecord, list, type Indexed, type ReadCall } from "./plan.js";
 
 const MATCHES: readonly SearchMatch[] = ["natural", "all-words", "phrase", "advanced"];
 
@@ -146,6 +138,9 @@ function columnFor(table: Indexed, name: string | undefined): ColumnModel {
     const only = columns[0];
     if (columns.length === 1 && only !== undefined) return only;
     if (columns.length === 0) {
+      const hidden = hiddenSearch(table);
+      const hiddenNames = hidden.map((column) => column.field);
+      if (hiddenNames.length > 0) refuseSearchHidden(hiddenNames);
       fail(
         "OKM1120",
         `Table ${table.model.name} has no column you can search.`,
@@ -176,7 +171,7 @@ function columnFor(table: Indexed, name: string | undefined): ColumnModel {
         : `Search one of: ${list(names)}.`,
     );
   }
-  if (column.hidden === true) refuseHidden(column);
+  if (column.hidden === true) refuseSearchHidden([column.field]);
   return column;
 }
 
@@ -186,6 +181,31 @@ function searchable(table: Indexed): ColumnModel[] {
     if (column.dataType === "tsvector" && column.hidden !== true) found.push(column);
   }
   return found;
+}
+
+/** tsvector columns closed by `.hidden()` with no `filterable` opt-in. */
+function hiddenSearch(table: Indexed): ColumnModel[] {
+  const found: ColumnModel[] = [];
+  for (const column of table.model.columns) {
+    if (column.dataType === "tsvector" && column.hidden === true) found.push(column);
+  }
+  return found;
+}
+
+/**
+ * Refuses a search of a plain hidden column and names the opt-in.
+ *
+ * @param fields - Hidden search columns the caller hit
+ */
+function refuseSearchHidden(fields: readonly string[]): never {
+  const only = fields.length === 1 ? fields[0] : undefined;
+  const named = only !== undefined ? `Field ${only} is` : `Fields ${list(fields)} are`;
+  const target = only !== undefined ? "it" : "them";
+  fail(
+    "OKM1120",
+    `${named} hidden. Call hidden({ filterable: true }) to search ${target}.`,
+    "Call hidden({ filterable: true }).",
+  );
 }
 
 function withMatch(

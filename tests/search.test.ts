@@ -262,3 +262,54 @@ test("a call with no search key returns every row", async () => {
     await pool.close();
   }
 });
+
+test("search of a plain hidden column names hidden({ filterable: true })", async () => {
+  const sealed = table("sealed", {
+    id: id({ default: "none" }),
+    body: tsvector().hidden(),
+  });
+  const ranked = table("ranked", {
+    id: id({ default: "none" }),
+    body: tsvector().hidden({ filterable: true }),
+  });
+  const db = await connectPglite(stub(), {
+    schema: schema({ casing: "snake", tables: [sealed, ranked] }),
+  });
+
+  try {
+    await db.sealed.find({ search: "deploy", limit: 1 });
+    expect(false).toBe(true);
+  } catch (error) {
+    expect(error).toBeInstanceOf(OkmError);
+    if (error instanceof OkmError) {
+      expect(error.code).toBe("OKM1120");
+      expect(error.message).toContain("hidden({ filterable: true })");
+      expect(error.message).toContain("body");
+    }
+  }
+
+  try {
+    await db.sealed.find({
+      search: { for: "deploy", in: "body" } as never,
+      limit: 1,
+    });
+    expect(false).toBe(true);
+  } catch (error) {
+    expect(error).toBeInstanceOf(OkmError);
+    if (error instanceof OkmError) {
+      expect(error.message).toContain("hidden({ filterable: true })");
+    }
+  }
+
+  const found = await sql(
+    db.ranked.find({
+      search: "deploy",
+      orderBy: { body: relevance("deploy") },
+      limit: 1,
+    }),
+  );
+  expect(found.text).toContain(`t."body" @@ websearch_to_tsquery($1)`);
+  expect(found.text).toContain("ts_rank");
+
+  await db.close();
+});
