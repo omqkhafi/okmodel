@@ -47,11 +47,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### 🐛 Fixed
 
-<<<<<<< HEAD
-- The archivable unique-predicate migrate-check case tolerates `okm generate` exiting 1 on OKM1529 so the allow line can be written before apply (follow-up to Q8).
-=======
 - `okm check` checks the Postgres major before author drift and required extensions after it, so a pending migration that creates an extension still surfaces OKM1520 instead of OKM1811. An extension an applied or pending migration creates is not refused as a missing install; when the package is absent from the server, OKM1811 points at `okm migrate apply`. Several targets and no `--target` print `server checks skipped: N targets, pass --target <name>` from `okm doctor` and `okm check` (#400).
->>>>>>> e67818f (fix(migrate): OKM1811 after drift, honor pending creates (#400))
+- The archivable unique-predicate migrate-check case tolerates `okm generate` exiting 1 on OKM1529 so the allow line can be written before apply (follow-up to Q8).
 - Validated `insert` / `update` handles expose `~plan` again, so `batch()` and `isolation()` work with `validation: true`. A failing rule inside a batch rolls everything back and reports OKM1200 with `issues` and `batchIndex` (D302, Q1).
 - The linter no longer refuses the planner's own `NOT VALID` then `VALIDATE` pair when the check is on a column added in the same migration with a constant default (or nullable without a default). A validate on an existing column, or after a volatile default, stays OKM1531 (D301).
 - The expand/contract type-change drop recipe no longer puts `-- okm-allow OKM1512` on `DROP TRIGGER` (that code does not fire there and was OKM1510). The trigger needs no allow; the function keeps OKM1515 and the column keeps OKM1512, under a name header so the first statement is a step (B-36).
