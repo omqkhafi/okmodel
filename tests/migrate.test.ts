@@ -28,11 +28,42 @@ import { schemaDeclarations } from "../src/dialects/pg/declarations.js";
 import { index, schema, sql, table, t } from "../src/dialects/pg/index.js";
 import { repoRoot } from "../scripts/root.js";
 import { run } from "../src/tooling/migrate/commands.js";
-import { planMigration, staleRenames, type MigrationPlan } from "../src/tooling/migrate/plan.js";
+import {
+  planMigration,
+  staleRenames,
+  type MigrationPlan,
+  type PlanStep,
+} from "../src/tooling/migrate/plan.js";
+import { retargetSteps } from "../src/tooling/migrate/sandbox.js";
 import { unlistedTableFiles } from "../src/tooling/migrate/project.js";
 import { parseReplace } from "../src/tooling/migrate/values.js";
 
 const namespace = staticNamespace("public");
+
+test("check replay retargets CREATE EXTENSION schema", () => {
+  const scratch = "okm_check_abc";
+  const steps = retargetSteps(
+    [
+      replayStep('create extension "citext" schema "public"'),
+      replayStep('alter default privileges in schema "public" grant select on tables to "app"'),
+      replayStep('grant usage on schema "public" to "app"'),
+      replayStep('create table "public"."people" ("email" citext not null)'),
+    ],
+    scratch,
+  );
+  expect(steps.map((item) => item.sql)).toEqual([
+    `create extension "citext" schema "${scratch}"`,
+    `alter default privileges in schema "${scratch}" grant select on tables to "app"`,
+    `grant usage on schema "${scratch}" to "app"`,
+    `create table "${scratch}"."people" ("email" citext not null)`,
+  ]);
+  const moved = retargetSteps(
+    [replayStep('create extension "citext" schema "tenant"')],
+    scratch,
+    "tenant",
+  );
+  expect(moved[0]?.sql).toBe(`create extension "citext" schema "${scratch}"`);
+});
 
 test("rename rewrites expression text and the plan does not recreate the check", () => {
   const before = schema({
@@ -516,6 +547,16 @@ test("okm build keeps a jsonb type argument", async () => {
     rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+function replayStep(sql: string): PlanStep {
+  return {
+    sql,
+    class: "expand",
+    action: "ddl",
+    lock: "AccessShareLock",
+    transactional: true,
+  };
+}
 
 function sqlOf(plan: MigrationPlan): string {
   return plan.steps
