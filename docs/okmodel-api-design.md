@@ -738,7 +738,7 @@ Row types are emitted by default into `.okm/types.d.ts` by `okm build` and `okm 
 |---|---|---|
 | `timestamps()` | `createdAt`, `updatedAt` | set in all lanes; `{ enforce: "trigger" }` adds a DB trigger |
 | `archivable(opts?)` | `archivedAt`, `archiveId` (column strategy) | enables `archive()` and `restore()`; reads target the active set by default, `withArchived()` / `onlyArchived()` widen it; uniques become partial unique indexes (`WHERE archived_at IS NULL`; the primary key stays a full constraint; generated-column form on MySQL); `cascade: [...]` names the children archived and restored with the row |
-| `versioned()` | `version` | optimistic locking; every update passes the version it read and the write bumps it; a stale write is category `conflict` and changes nothing |
+| `versioned()` | `version` | optimistic locking; an ordinary update passes the version it read and the write bumps it; a stale write is category `conflict` and changes nothing; `version: "any"` with `lock: "skip"` and `limit` skips the check, bumps `version`, and returns the claimed rows |
 | `sortable(groupBy?)` | `position` | new rows go at the end of the group; `move(id, { before \| after })` renumbers that group; `find` and `page` order by `position` when `orderBy` is omitted |
 | `auditable()` | history table | before/after snapshots |
 
@@ -759,11 +759,45 @@ Project traits: `trait(name, { fields, presets, methods, requires })`, the same 
 
 #### Version contract
 
-- **The column.** `versioned()` adds `version integer not null default 1`. Input cannot set it, including `{ allow }` (OKM1190). An insert leaves it out and the database default applies. The catalog hash of a schema that calls `versioned()` changes because the column is real. The hash function does not change. A schema that does not call it keeps its hash.
-- **The check.** `update` takes `version` beside `where` and `set`, and each item of a per-row list takes its own. The version is the one the caller read. The statement locks the matching rows, and it writes only when every matched row is still at that version. It then sets `version` to `version + 1`, including when `set` uses `inc` or another atomic operator. One statement, so a list is all or nothing.
-- **A miss is not a conflict.** A `where` that matches nothing returns `{ count: 0 }`. A matched row at a different version throws `OkmError` category `conflict` (no new error kind) and writes nothing. The message names the fields and the version that was sent, and the fix is to reread and retry. `returning` includes the new version. Without `returning` the result is `{ count }`.
-- **What composes.** A per-row list, `returning`, column and composite tenancy, `lock: "skip"` with `limit`, and `onConflict: "ignore"` or `{ on, return: true }`. A claim updates rows that are free and still at that version. Locked rows are skipped. A conflict is raised only when nothing was updated and a free row matches at a different version. First-or-create does not change the existing row, so it does not bump `version`. A new row starts at 1.
-- **What does not.** `onConflict: { on, update }` is OKM1120: an upsert does not check the version you read. `.all()` is OKM1120: one version cannot describe every row. Passing `version` on a table that is not `versioned()` is OKM1120. Omitting `version` on a versioned table is OKM1120. Changing a path-tenancy parent column in the same update is OKM1120. `delete`, `archive`, and `restore` do not check or bump `version`.
+- **The column.** `versioned()` adds `version integer not null default 1`. Input cannot set it, including `{ allow }`. An update that names `version` in `set` is OKM1120. An insert that names it is OKM1190. An insert that leaves it out takes the database default. The catalog hash of a schema that calls `versioned()` changes because the column is real. The hash function does not change. A schema that does not call it keeps its hash.
+- **The check.** `update` takes `version` beside `where` and `set`, and each item of a per-row list takes its own. The version is the one the caller read. The statement locks the matching rows, and it writes only when every matched row is still at that version. It then sets `version` to `version + 1`, including when `set` uses `inc` or another atomic operator. One statement, so a list is all or nothing. The check is the trait. Raw SQL that updates the row does not check or bump `version`.
+- **Check versus bump.** An ordinary update does both: it refuses a row that is not at the version you read, then stores `version + 1`. `version: "any"` skips the check and still bumps. `conflict` means the write did not happen. It does not say whether the row is stale or deleted. Read it again before retrying.
+- **A miss is not a conflict.** A `where` that matches nothing returns `{ count: 0 }`. A matched row at a different version throws `OkmError` category `conflict` (no new error kind) and writes nothing. The message names the fields and the version that was sent, and the fix is to reread and retry. `returning` includes the new version. Without `returning` the result is `{ count }`. A `version: "any"` claim that matches nothing returns `[]`.
+- **What composes.** A per-row list, `returning`, column and composite tenancy, `lock: "skip"` with `limit`, and `onConflict: "ignore"` or `{ on, return: true }`. A claim that passes an integer `version` updates rows that are free and still at that version. Locked rows are skipped. A conflict is raised only when nothing was updated and a free row matches at a different version. `version: "any"` with `lock: "skip"` and `limit` skips that check. The statement selects the primary key with `ORDER BY` that key, `LIMIT`, and `FOR UPDATE SKIP LOCKED`, then `UPDATE ... FROM` that set and repeats the caller's predicate, so the lock runs once and the write never changes more than `limit` rows. It sets `version` to `version + 1` and returns those rows, including the new version. A miss is an empty array, not `conflict`. Run it in `READ COMMITTED` (the default). Under `REPEATABLE READ` or `SERIALIZABLE` the same race can raise SQLSTATE 40001 (kind `serialization`) instead of dropping the row. First-or-create does not change the existing row, so it does not bump `version`. A new row starts at 1. Delivery of a claimed row is at least once: the handler has to be idempotent. A hot queue whose heartbeat rewrites the row on a short interval fits a table that is not `versioned()`.
+- **What does not.** `onConflict: { on, update }` is OKM1120: an upsert does not check the version you read. `.all()` is OKM1120: one version cannot describe every row. Passing `version` on a table that is not `versioned()` is OKM1120. Omitting `version` on a versioned table is OKM1120. `version: "any"` without `lock: "skip"` and `limit` is OKM1120. An unrecognised version string is OKM1120. A `version` key in `set` is OKM1120. Changing a path-tenancy parent column in the same update is OKM1120. `delete`, `archive`, and `restore` do not check or bump `version`.
+- **A queue.** Claim with `version: "any"`. Heartbeat, complete, and fail fence on `id`, `status: "running"`, and `attempt`, and each passes the `version` from the worker's own last write. Rescue is another `version: "any"` claim. A hot heartbeat belongs on a table that is not `versioned()`.
+
+```ts no-check="queue sketch; jobs, inc, and the timestamp values are defined by the caller"
+const [job] = await db.jobs.update({
+  where: { status: "pending" },
+  set: { status: "running", attempt: inc(1), claimedAt, owner },
+  limit: 1,
+  lock: "skip",
+  version: "any",
+});
+if (job === undefined) return;
+const [beat] = await db.jobs.update(
+  {
+    where: { id: job.id, status: "running", attempt: job.attempt },
+    set: { heartbeatAt },
+    version: job.version,
+  },
+  { returning: true },
+);
+if (beat === undefined) return;
+await db.jobs.update({
+  where: { id: beat.id, status: "running", attempt: beat.attempt },
+  set: { status: "done" },
+  version: beat.version,
+});
+await db.jobs.update({
+  where: { status: "running", heartbeatAt: lt(staleBefore) },
+  set: { status: "running", attempt: inc(1), claimedAt, owner },
+  limit: 1,
+  lock: "skip",
+  version: "any",
+});
+```
 
 #### Position contract
 
@@ -987,7 +1021,7 @@ await scoped.tasks.restore({ archiveId });
 await scoped.tasks.onlyArchived().delete({ where: { archivedAt: lt(retentionCutoff) } });   // purge
 ```
 
-Atomic operators: `inc(n)`, `json.set(path, v)`, `arr.append(v)`, `arr.remove(v)`. `inc` adds to a number column (`smallint`, `integer`, `bigint`, `numeric`, `real`, `double precision`). A null number stays null. A column that is not a number is OKM1124. A per-row list that sets one field with an operator in one row and a plain value, or a different operator, in another is OKM1120. `dec` and `mul` are not in this version. `lock: "skip"` needs `limit`. That update changes up to that many matching rows and leaves rows another transaction already holds. The statement is the claim, so it runs inside `tx()` or on its own. `wait` is not an update option. A read uses `lock: "update" | "share"` and `wait: "nowait" | "skip"` inside `tx()` (section 15). There is no `findMany`; `find` returns the list. On a `versioned()` table every update passes `version`, the integer it read, and the write bumps that column in the same statement. `inc` still bumps it. A stale row is category `conflict`. `sortable()` does not take a position in `set`; `move(id, { before })` or `{ after }` places the row (section 8).
+Atomic operators: `inc(n)`, `json.set(path, v)`, `arr.append(v)`, `arr.remove(v)`. `inc` adds to a number column (`smallint`, `integer`, `bigint`, `numeric`, `real`, `double precision`). A null number stays null. A column that is not a number is OKM1124. A per-row list that sets one field with an operator in one row and a plain value, or a different operator, in another is OKM1120. `dec` and `mul` are not in this version. `lock: "skip"` needs `limit`. That update changes up to that many matching rows and leaves rows another transaction already holds. The statement is the claim, so it runs inside `tx()` or on its own. `wait` is not an update option. A read uses `lock: "update" | "share"` and `wait: "nowait" | "skip"` inside `tx()` (section 15). There is no `findMany`; `find` returns the list. On a `versioned()` table every ordinary update passes `version`, the integer it read, and the write bumps that column in the same statement. `version: "any"` with `lock: "skip"` and `limit` skips the check, bumps `version`, and returns the claimed rows. `inc` still bumps it. A stale row is category `conflict`. `sortable()` does not take a position in `set`; `move(id, { before })` or `{ after }` places the row (section 8).
 
 ## 12. Semantics of small APIs
 

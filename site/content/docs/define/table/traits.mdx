@@ -260,7 +260,7 @@ export async function retire(url: string, id: string) {
 
 #### Versioned
 
-`version` starts at 1. A stale write is a conflict and changes nothing. A miss stays `{ count: 0 }`. `inc` and the other atomic writes still bump `version`. `delete`, `archive`, and `restore` do not check it. Read the row, then pass `version` back on the update. The write bumps it.
+`version` starts at 1. A stale write is a conflict and changes nothing. A miss stays `{ count: 0 }`. `inc` and the other atomic writes still bump `version`. `delete`, `archive`, and `restore` do not check it. Read the row, then pass `version` back on the update. The write bumps it. The check is this trait: raw SQL that updates the row does not check or bump `version`. `conflict` does not say whether the row is stale or deleted.
 
 ```ts title="versioned.ts"
 import { connect } from "okmodel/pg/postgresjs";
@@ -287,8 +287,71 @@ export async function edit(url: string, id: string) {
 ```
 
 <Callout type="error" title="OKM1120">
-Leaving `version` out is a TypeScript error on a versioned table, and OKM1120 at runtime when types are bypassed. `version` on a table that is not versioned is refused. An upsert and `.all()` are refused.
+Leaving `version` out is a TypeScript error on a versioned table, and OKM1120 at runtime when types are bypassed. `version: "any"` is allowed only with `lock: "skip"` and `limit`. An unrecognised version string, and a `version` key in `set`, are OKM1120. `version` on a table that is not versioned is refused. An upsert and `.all()` are refused.
 </Callout>
+
+`version: "any"` skips the check and still stores `version + 1`. The call returns the claimed rows, including that new version. Nothing claimed is `[]`, not a conflict. The statement locks the primary key once and repeats your `where` on the update, so a row whose state changed is left alone and the claim never takes more than `limit` rows. Run it in `READ COMMITTED`. `REPEATABLE READ` and `SERIALIZABLE` can raise SQLSTATE 40001 instead of dropping that row.
+
+A queue claims, then fences the worker's own later writes on the version from that worker's last write. Heartbeat, complete, and fail pass that integer plus the id, the running status, and the attempt. Fail uses the same fence as complete and sets a failed status. Rescue is another `version: "any"` claim. Handlers run at least once, so they have to be idempotent. A hot queue that heartbeats on a short interval fits a table that is not `versioned()`.
+
+```ts title="queue.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { inc, lt, schema, table, t } from "okmodel/pg";
+import { versioned } from "okmodel/traits";
+
+const jobs = table(
+  "jobs",
+  {
+    id: t.text().primaryKey(),
+    status: t.text(),
+    attempt: t.integer().default(0),
+    owner: t.text().nullable(),
+    claimedAt: t.timestamptz().nullable(),
+    heartbeatAt: t.timestamptz().nullable(),
+  },
+  { traits: [versioned()] },
+);
+const app = schema({ tables: [jobs] });
+
+export async function work(url: string, owner: string) {
+  await using db = connect(url, { schema: app });
+  const now = Temporal.Now.instant();
+  const [job] = await db.jobs.update({
+    where: { status: "pending" },
+    set: { status: "running", attempt: inc(1), claimedAt: now, owner },
+    limit: 1,
+    lock: "skip",
+    version: "any",
+  });
+  if (job === undefined) return;
+  const [beat] = await db.jobs.update(
+    {
+      where: { id: job.id, status: "running", attempt: job.attempt },
+      set: { heartbeatAt: now },
+      version: job.version,
+    },
+    { returning: true },
+  );
+  if (beat === undefined) return;
+  await db.jobs.update({
+    where: { id: beat.id, status: "running", attempt: beat.attempt },
+    set: { status: "done" },
+    version: beat.version,
+  });
+}
+
+export async function rescue(url: string, owner: string) {
+  await using db = connect(url, { schema: app });
+  const now = Temporal.Now.instant();
+  await db.jobs.update({
+    where: { status: "running", heartbeatAt: lt(now.subtract({ minutes: 5 })) },
+    set: { status: "running", attempt: inc(1), claimedAt: now, owner },
+    limit: 1,
+    lock: "skip",
+    version: "any",
+  });
+}
+```
 
 #### Sortable
 

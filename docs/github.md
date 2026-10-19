@@ -21,7 +21,7 @@ Every issue and every pull request has exactly one `type:` label and at least on
 - Title: `type(scope): summary`. The type is one of the `type:` names. The scope is a short lowercase name, such as `runtime`, `ci`, or `docs`.
 - Branch: `pNN-short-name`, the same name as the plan row.
 - The body ends with `Closes #N`.
-- The pull request milestone is the milestone of that issue.
+- The pull request milestone is the milestone of that issue. When that issue has none, CI assigns the open milestone for the train in `package.json` (`0.10.0-next.N` is `0.10`) to the issue and the pull request.
 - The path labeler adds `area:` from the files that changed. Set `type:` yourself.
 
 A pull request update starts one Actions run, `CI`. `label / paths` adds `area:` labels from the changed files. `lint / pull request` then checks the title, the closing line, one `type:` label, at least one `area:` label, and a milestone. It checks out the base branch and runs `scripts/pr-lint.ts`. Neither job checks out pull request code. A title edit, a label change, or a milestone change starts `pr-meta.yml` instead, which runs the same lint. A label added with `GITHUB_TOKEN` does not start another workflow.

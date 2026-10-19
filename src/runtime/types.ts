@@ -776,6 +776,7 @@ type AllowedUpdateVersioned<
  *
  * `version` is optional on this alias. {@link TableApi.update} picks the
  * required-version form when the table is `versioned()` (D305).
+ * `version: "any"` is accepted only with `lock: "skip"` and `limit`.
  */
 export type UpdateTarget<S extends QuerySchema, K extends keyof S["~byName"]> =
   | {
@@ -793,6 +794,28 @@ export type UpdateTarget<S extends QuerySchema, K extends keyof S["~byName"]> =
       /** Version read from the row. Required when the table is `versioned()`. */
       readonly version?: number;
     }[];
+
+/**
+ * `version: "any"` claim.
+ *
+ * `lock: "skip"` and `limit` are required. The call returns the claimed rows.
+ * A miss is an empty array (O-5). Kept off {@link UpdateTargetVersioned} so
+ * `Omit` on that union cannot treat `lock` and `limit` as optional.
+ *
+ * A later `update` overload accepts it. An earlier overload is built for
+ * every update and pushes the query-200-validate type ceiling over.
+ */
+type VersionAnyArg<S extends QuerySchema, K extends keyof S["~byName"]> = S["~byName"][K] extends {
+  readonly "~versioned": true;
+}
+  ? {
+      readonly where?: FilterFiltersOf<S, K> | Or<FilterFiltersOf<S, K>>;
+      readonly set: UpdateSet<S, K>;
+      readonly limit: number;
+      readonly lock: "skip";
+      readonly version: "any";
+    }
+  : never;
 
 /** Update target with `version` required (versioned tables, D305). */
 type UpdateTargetVersioned<S extends QuerySchema, K extends keyof S["~byName"]> =
@@ -971,7 +994,8 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
    *
    * `{ allow, returning: true }` returns the written rows. `{ allow }` without
    * `returning: true` returns `{ count }`. On a `versioned()` table, `version`
-   * is required (D305).
+   * is required (D305), except `version: "any"` with `lock: "skip"` and `limit`,
+   * which returns the claimed rows. A miss is an empty array.
    */
   update<
     const Allow extends readonly (keyof RowOf<S, K> & string)[],
@@ -989,10 +1013,14 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
     target: T,
     options: WriteOptions<S, K> & { readonly returning: true },
   ): Write<readonly Show<RowOf<S, K>>[]>;
-  update<const T extends ExactConstraint<T, UpdateFilterTarget<S, K, T["where"]>>>(
+  update<
+    const T extends ExactConstraint<T, UpdateFilterTarget<S, K, T["where"]> | VersionAnyArg<S, K>>,
+  >(
     target: T,
     options?: WriteOptions<S, K>,
-  ): Write<WriteCount>;
+  ): [T] extends [{ readonly version: "any" }]
+    ? Write<readonly Show<RowOf<S, K>>[]>
+    : Write<WriteCount>;
   /**
    * Deletes matching rows. `where` is required.
    *

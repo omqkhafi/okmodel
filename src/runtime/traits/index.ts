@@ -269,7 +269,8 @@ export function archivable(options?: ArchivableOptions) {
  *
  * The column starts at 1. An update passes the version it read and the write
  * bumps it. A stale version is category `conflict` and changes nothing.
- * Input cannot set `version`.
+ * `version: "any"` with `lock: "skip"` and `limit` skips the check, bumps
+ * `version`, and returns the claimed rows. Input cannot set `version`.
  *
  * @returns The versioned trait
  */

@@ -196,6 +196,100 @@ test("an update checks the read version and refuses a write that cannot", async 
   expect(group.message).toContain("laneId");
 });
 
+test('version: "any" claims with one lock and repeats the predicate', async () => {
+  const planned = await explainWrite(
+    app,
+    "update",
+    "tasks",
+    {
+      where: { id: "1" },
+      set: { title: "b" },
+      limit: 1,
+      lock: "skip",
+      version: "any",
+    },
+    {},
+    {},
+  );
+  const text = planned.statements[0]?.text ?? "";
+  expect(text.startsWith('with claimed as (select s."id" as okm_0 from "tasks" as s')).toBe(true);
+  expect(text).toContain('order by s."id" limit $2::integer for update of s skip locked');
+  expect(text).toContain('update "tasks" as t set ');
+  expect(text).toContain('"version" = t."version" + 1');
+  expect(text).toContain('from claimed where t."id" = claimed.okm_0 and ');
+  expect(occurrences(text, 't."id" = ')).toBe(2);
+  expect(occurrences(text, '"id" = $')).toBe(2);
+  expect(occurrences(text, "for update")).toBe(1);
+  expect(text).not.toContain("stale_free");
+  expect(text).toContain('returning t."id"');
+  expect(text).toContain('t."version"');
+
+  const numbered = await explainWrite(
+    app,
+    "update",
+    "tasks",
+    { where: { id: "1" }, set: { title: "b" }, limit: 1, lock: "skip", version: 1 },
+    {},
+    {},
+  );
+  const checked = numbered.statements[0]?.text ?? "";
+  expect(occurrences(checked, "for update")).toBe(2);
+  expect(checked).toContain("stale_free");
+
+  const bare = await captureAsync(() =>
+    explainWrite(
+      app,
+      "update",
+      "tasks",
+      { where: { id: "1" }, set: { title: "b" }, version: "any" },
+      {},
+      {},
+    ),
+  );
+  expect(bare.code).toBe("OKM1120");
+  expect(bare.message).toContain('version: "any"');
+  expect(bare.fix?.summary).toContain('lock: "skip"');
+
+  const word = await captureAsync(() =>
+    explainWrite(
+      app,
+      "update",
+      "tasks",
+      { where: { id: "1" }, set: { title: "b" }, version: "latest" },
+      {},
+      {},
+    ),
+  );
+  expect(word.code).toBe("OKM1120");
+  expect(word.message).toContain("latest");
+  expect(word.fix?.summary.length).toBeGreaterThan(0);
+
+  const assigned = await captureAsync(() =>
+    explainWrite(
+      app,
+      "update",
+      "tasks",
+      { where: { id: "1" }, set: { title: "b", version: 2 }, version: 1 },
+      {},
+      {},
+    ),
+  );
+  expect(assigned.code).toBe("OKM1120");
+  expect(assigned.message).toContain("cannot set version");
+  expect(assigned.fix?.summary).toContain("bumps");
+});
+
+function occurrences(text: string, needle: string): number {
+  let count = 0;
+  let from = 0;
+  for (;;) {
+    const at = text.indexOf(needle, from);
+    if (at < 0) return count;
+    count += 1;
+    from = at + needle.length;
+  }
+}
+
 test("an insert locks before it reads the group's max position", async () => {
   const planned = await explainWrite(
     app,
