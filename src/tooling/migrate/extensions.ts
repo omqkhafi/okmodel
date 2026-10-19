@@ -41,6 +41,18 @@ const UPDATE_EXTENSION =
   /^\s*alter\s+extension\s+(?:"([^"]+)"|([A-Za-z_][\w$]*))\s+update\s+to\s+'([^']*)'/i;
 
 /**
+ * Extension name a statement creates, when it is `CREATE EXTENSION`.
+ *
+ * @param sql - One plan step
+ * @returns The extension name, or `undefined`
+ */
+export function createExtensionName(sql: string): string | undefined {
+  const created = CREATE_EXTENSION.exec(sql);
+  const name = created?.[1] ?? created?.[2];
+  return name === undefined ? undefined : name.replaceAll('""', '"');
+}
+
+/**
  * Upgrade and move steps for extensions whose definition changed.
  *
  * Exact downgrades and moves of a non-relocatable extension are OKM1814.
@@ -88,9 +100,8 @@ export async function assertExtensionsAvailable(
   const updates: { readonly name: string; readonly version: string }[] = [];
   for (const migration of migrations) {
     for (const step of migration.steps) {
-      const created = CREATE_EXTENSION.exec(step.sql);
-      const name = created?.[1] ?? created?.[2];
-      if (name !== undefined) creates.add(name.replaceAll('""', '"'));
+      const name = createExtensionName(step.sql);
+      if (name !== undefined) creates.add(name);
       const updated = UPDATE_EXTENSION.exec(step.sql);
       const updateName = updated?.[1] ?? updated?.[2];
       const version = updated?.[3];

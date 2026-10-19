@@ -11,11 +11,27 @@ import { OkmError } from "../src/contracts/error.js";
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
 import { createIsolatedDatabase, openPostgres } from "../packages/harness/src/postgres.js";
 import { repoRoot } from "../scripts/root.js";
+import { run } from "../src/tooling/migrate/commands.js";
 import { doctorProject } from "../src/tooling/migrate/doctor.js";
 import { checkProject } from "../src/tooling/migrate/project.js";
 
 const gate = await loadPostgresGate();
 const root = repoRoot();
+
+async function cli(cwd: string, argv: readonly string[]): Promise<string> {
+  const script = [
+    `import { run } from ${JSON.stringify(join(root, "src/tooling/migrate/commands.ts"))};`,
+    "const lines = [];",
+    `await run(${JSON.stringify(argv)}, { cwd: ${JSON.stringify(cwd)}, stdout: (text) => lines.push(text) });`,
+    "process.stdout.write(lines.join(''));",
+  ].join("\n");
+  const proc = Bun.spawn(["bun", "-e", script], { stdout: "pipe", stderr: "pipe" });
+  const stdout = await new Response(proc.stdout).text();
+  const stderr = await new Response(proc.stderr).text();
+  const code = await proc.exited;
+  if (code !== 0) throw new Error(stderr.length > 0 ? stderr : stdout);
+  return stdout;
+}
 
 postgresTest(
   gate,
@@ -25,8 +41,9 @@ postgresTest(
     const cwd = project(database.url, plainSchema());
     try {
       expect(await doctorProject(cwd, undefined)).toBe("no triggers\n");
-      const findings = await checkProject(cwd);
-      expect(findings).toEqual([]);
+      const checked = await checkProject(cwd);
+      expect(checked.findings).toEqual([]);
+      expect(checked.notice).toBeUndefined();
     } finally {
       rmSync(cwd, { recursive: true, force: true });
       await database.close();
@@ -53,7 +70,7 @@ postgresTest(
           expect(check.code).toBe("OKM1802");
         } else {
           expect(await doctorProject(cwd, undefined)).toBe("no triggers\n");
-          expect(await checkProject(cwd)).toEqual([]);
+          expect((await checkProject(cwd)).findings).toEqual([]);
         }
       } finally {
         rmSync(cwd, { recursive: true, force: true });
@@ -77,6 +94,7 @@ postgresTest(
       expect(error.code).toBe("OKM1811");
       expect(error.message).toContain("vector");
       expect(error.fix.summary).toContain("extension(vector)");
+      expect(error.fix.summary).toContain("Install the extension");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
       await database.close();
@@ -103,6 +121,89 @@ postgresTest(
     } finally {
       await sql.end({ timeout: 5 });
       await database.close();
+    }
+  },
+  60_000,
+);
+
+postgresTest(
+  gate,
+  "fresh database with pgTrgm and a pending create migration is ok",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const sql = openPostgres(database.url);
+    try {
+      if (!(await extensionAvailable(sql, "pg_trgm"))) return;
+      const cwd = project(database.url, trigramSchema());
+      try {
+        await cli(cwd, ["generate", "init"]);
+        expect(await doctorProject(cwd, undefined)).toBe("no triggers\n");
+        const checked = await checkProject(cwd);
+        expect(checked.findings).toEqual([]);
+        expect(checked.notice).toBeUndefined();
+      } finally {
+        rmSync(cwd, { recursive: true, force: true });
+      }
+    } finally {
+      await sql.end({ timeout: 5 });
+      await database.close();
+    }
+  },
+  60_000,
+);
+
+postgresTest(
+  gate,
+  "pending pg_trgm migration still reports OKM1520 drift before OKM1811",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const sql = openPostgres(database.url);
+    try {
+      if (!(await extensionAvailable(sql, "pg_trgm"))) return;
+      const cwd = project(database.url, plainSchema());
+      try {
+        await cli(cwd, ["generate", "init"]);
+        await cli(cwd, ["migrate", "apply"]);
+        writeFileSync(join(cwd, "schema.ts"), plainPlusTrigramSchema());
+        const generated = await cli(cwd, ["generate", "trgm"]);
+        expect(generated).toContain("0002_trgm.sql");
+        const error = await refused(() => checkProject(cwd));
+        expect(error.code).toBe("OKM1520");
+        expect(error.message).toContain("create extension");
+      } finally {
+        rmSync(cwd, { recursive: true, force: true });
+      }
+    } finally {
+      await sql.end({ timeout: 5 });
+      await database.close();
+    }
+  },
+  90_000,
+);
+
+postgresTest(
+  gate,
+  "several targets without --target print the server checks skipped notice",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const second = await createIsolatedDatabase();
+    const cwd = multiTargetProject(database.url, second.url, plainSchema());
+    try {
+      const notice = "server checks skipped: 2 targets, pass --target <name>\n";
+      expect(await doctorProject(cwd, undefined)).toBe(`${notice}no triggers\n`);
+      const checked = await checkProject(cwd);
+      expect(checked.notice).toBe(notice);
+      expect(checked.findings).toEqual([]);
+      const printed: string[] = [];
+      await run(["check"], { cwd, stdout: (text) => printed.push(text) });
+      expect(printed.join("")).toBe(`${notice}ok\n`);
+      const doctorOut: string[] = [];
+      await run(["doctor"], { cwd, stdout: (text) => doctorOut.push(text) });
+      expect(doctorOut.join("")).toBe(`${notice}no triggers\n`);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+      await second.close();
     }
   },
   60_000,
@@ -152,6 +253,28 @@ function project(url: string, schemaSource: string): string {
   return cwd;
 }
 
+function multiTargetProject(urlA: string, urlB: string, schemaSource: string): string {
+  const cwd = mkdtempSync(join(tmpdir(), "okm-doctor-multi-"));
+  writeFileSync(join(cwd, "schema.ts"), schemaSource);
+  writeFileSync(
+    join(cwd, "okmodel.config.ts"),
+    [
+      `import { defineConfig } from ${JSON.stringify(join(root, "src/tooling/migrate/index.ts"))};`,
+      `export default defineConfig({`,
+      `  schema: "./schema.ts",`,
+      `  migrations: "./migrations",`,
+      `  targets: {`,
+      `    a: { url: ${JSON.stringify(urlA)} },`,
+      `    b: { url: ${JSON.stringify(urlB)} },`,
+      `  },`,
+      `});`,
+      "",
+    ].join("\n"),
+  );
+  mkdirSync(join(cwd, "migrations"));
+  return cwd;
+}
+
 function plainSchema(): string {
   return [
     `import { schema, table, t } from ${JSON.stringify(join(root, "src/dialects/pg/index.ts"))};`,
@@ -187,6 +310,18 @@ function trigramSchema(): string {
     "const trgm = pgTrgm();",
     'const docs = table("docs", { id: t.id(), body: t.text() }, { indexes: (c) => [trgm.gin(c.body.name)] });',
     "export const app = schema({ tables: [docs], extensions: [trgm] });",
+    "",
+  ].join("\n");
+}
+
+function plainPlusTrigramSchema(): string {
+  return [
+    `import { pgTrgm } from ${JSON.stringify(join(root, "src/dialects/pg/ext/pg-trgm.ts"))};`,
+    `import { schema, table, t } from ${JSON.stringify(join(root, "src/dialects/pg/index.ts"))};`,
+    "const trgm = pgTrgm();",
+    'const users = table("users", { id: t.id(), name: t.text() });',
+    'const docs = table("docs", { id: t.id(), body: t.text() }, { indexes: (c) => [trgm.gin(c.body.name)] });',
+    "export const app = schema({ tables: [users, docs], extensions: [trgm] });",
     "",
   ].join("\n");
 }

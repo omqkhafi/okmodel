@@ -154,24 +154,41 @@ export async function planProject(
 }
 
 /**
+ * Lint warnings from {@link checkProject}, plus an optional server-check notice.
+ */
+export type CheckProjectResult = {
+  readonly findings: readonly Finding[];
+  /**
+   * Printed when several targets exist and `--target` was omitted.
+   * Server major, extension, and drift checks did not run.
+   */
+  readonly notice?: string;
+};
+
+/**
  * Validates the schema, then reports stale renames and unlisted table files.
  *
  * When exactly one target is configured, or `--target` names one, the
  * read-only `check` and `drift` classes are allowed and a database that
  * already has `okm_meta` is compared with the schema. A difference is
- * OKM1520. Several targets and no `--target` skip that comparison.
+ * OKM1520. Several targets and no `--target` skip that comparison and print
+ * {@link serverChecksSkippedNotice}.
+ *
+ * The Postgres major (OKM1802 / OKM1803) is checked before author drift. A
+ * missing extension is OKM1811 only when no applied or pending migration
+ * creates it; that check runs after drift (#400).
  *
  * Lint findings are computed from the plan and the catalog before any
  * connection. An error finding is OKM1510. Warnings are returned.
  *
  * @param project - Project directory or {@link ProjectContext}
  * @param flags - `--target`, when the caller passed one
- * @returns Warning findings. Errors throw
+ * @returns Warning findings and an optional skip notice. Errors throw
  */
 export async function checkProject(
   project: string | ProjectContext,
   flags?: InvokeFlags,
-): Promise<readonly Finding[]> {
+): Promise<CheckProjectResult> {
   const opened = await openProject(project);
   const { cwd } = opened;
   assertValidation(opened.built);
@@ -197,18 +214,26 @@ export async function checkProject(
   const findings = [...lintOpened(opened), ...couplingFindings(opened.built.catalog)];
   if (hasError(findings)) throw lintRefusal(findings);
   const named = flags?.target;
-  if (targets.length === 0) return findings;
-  if (targets.length > 1 && named === undefined) return findings;
+  if (targets.length === 0) return { findings };
+  if (targets.length > 1 && named === undefined) {
+    const { serverChecksSkippedNotice } = await import("./server-requirements.js");
+    return { findings, notice: serverChecksSkippedNotice(targets.length) };
+  }
   const target = selectTarget(opened.config, named);
   assertTargetPolicy(target, "check", flags?.allowProtected ?? false);
   assertTargetPolicy(target, "drift", flags?.allowProtected ?? false);
   const { assertAuthorDrift } = await import("./drift.js");
   const allowPooler = flags?.allowPooler === true || opened.config.allowPooler === true;
   await assertLiveExternal(target.url, opened.built.catalog, loadSnapshots(cwd, opened.config));
-  const { assertSchemaRequirements } = await import("./server-requirements.js");
-  await assertSchemaRequirements(target.url, opened.built);
+  const { assertSchemaMajor, assertSchemaExtensions, extensionsCreatedByMigrations } =
+    await import("./server-requirements.js");
+  const created = extensionsCreatedByMigrations(
+    projectPath(cwd, opened.config.migrations ?? "migrations"),
+  );
+  await assertSchemaMajor(target.url, opened.built);
   await assertAuthorDrift(target.url, opened.built.catalog, opened.config.roles, allowPooler);
-  return findings;
+  await assertSchemaExtensions(target.url, opened.built, created);
+  return { findings };
 }
 
 /**

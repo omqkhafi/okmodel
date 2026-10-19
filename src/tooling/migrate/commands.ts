@@ -79,8 +79,9 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
     return;
   }
   if (command === "check") {
-    const findings = await checkProject(project, invoke(splitFlags(rest, "check")));
-    const warnings = formatFindings(findings);
+    const checked = await checkProject(project, invoke(splitFlags(rest, "check")));
+    if (checked.notice !== undefined) stdout(checked.notice);
+    const warnings = formatFindings(checked.findings);
     if (warnings.length > 0) stdout(warnings);
     stdout("ok\n");
     return;
