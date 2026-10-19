@@ -46,6 +46,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The topology CI group is two shards. Topology tests open PGlite from a prepared data directory instead of running initdb on every database.
 - Tier 1 runs on every pull request push: format, lint, typecheck, the unit tests, property tests at a quarter of their count (`OKM_PROPERTY_SCALE`), and the size gate. Tier 2 (type cost, the editor check, attest, runtimes, the temporal matrix, package checks, Windows, Postgres 15 and 18, and the `drivers-conformance` group) runs with the `full-ci` label and on every push to `main`. A later commit on `main` does not cancel the run in progress. A failed `gate / check` on `main` opens an issue.
 - Docs: `connect({ hookm })` is an array; a single observer object or a `hooks` key does not register observers.
+- The Release workflow runs on a `v*` tag. Before any build it requires the tagged commit to be an ancestor of `origin/main`, the tag to match `package.json`, and a `## v` changelog section. It then runs the Postgres suite, the pack contract, and `npm stage publish` with provenance (npm 11.15 or newer, Node 22.14 or newer). A dispatch with `publish` false checks `main` and refuses a tag that is not on `main`. The publish job is the only one with `id-token: write` and `contents: write`, and it uses the `release` environment. No npm token is stored.
 
 ### 🔥 Removed
 
@@ -53,6 +54,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### 🐛 Fixed
 
+- `describe()` keeps a numeric `minPostgres` already on the input (`max` with the computed floor), and index opclass scan reads every `*_ops` token case-insensitively, so `describe(describe(s))` keeps 17 and 18, a description's floor does not fall to 15, and a later `gist_trgm_ops` after `text_pattern_ops` still reports `pg_trgm` (R5, #402).
 - `okm migrate check` and `okm check` reprint table checks (including picklists) on the connected server before planning, so an author `IN (...)` spelling is not permanent OKM1547 or a NOT VALID/VALIDATE swap against `pg_get_constraintdef` (R2, #399, D128). Check `columns` are left out of the plan comparison when an author check omits column handles.
 - `okm check` checks the Postgres major before author drift and required extensions after it, so a pending migration that creates an extension still surfaces OKM1520 instead of OKM1811. An extension an applied or pending migration creates is not refused as a missing install; when the package is absent from the server, OKM1811 points at `okm migrate apply`. Several targets and no `--target` print `server checks skipped: N targets, pass --target <name>` from `okm doctor` and `okm check` (#400).
 - The archivable unique-predicate migrate-check case tolerates `okm generate` exiting 1 on OKM1529 so the allow line can be written before apply (follow-up to Q8).

@@ -24,7 +24,10 @@ import {
   tagCommitProblem,
 } from "../scripts/deploy-ref.js";
 import {
+  mainAncestorStatus,
   releaseCommitProblem,
+  releaseGuardProblems,
+  releasePublishRequested,
   releaseRefProblem,
   releaseTagCommitProblem,
 } from "../scripts/release-ref.js";
@@ -495,10 +498,95 @@ test("readme check accepts the repository readme", () => {
   expect(checkReadme(readFileSync(join(root, "README.md"), "utf8"))).toEqual([]);
 });
 
+test("a dry run accepts main and refuses a branch tag", () => {
+  expect(releasePublishRequested(undefined)).toBe(false);
+  expect(releasePublishRequested("false")).toBe(false);
+  expect(releasePublishRequested("true")).toBe(true);
+
+  const dir = mkdtempSync(join(tmpdir(), "okm-release-"));
+  const git = (args: readonly string[]): void => {
+    const proc = Bun.spawnSync(["git", ...args], { cwd: dir, stdout: "pipe", stderr: "pipe" });
+    if (proc.exitCode !== 0) {
+      throw new Error(proc.stderr.toString());
+    }
+  };
+  try {
+    git(["init", "-b", "main"]);
+    git(["config", "user.email", "release@example.com"]);
+    git(["config", "user.name", "Release test"]);
+    const version = "0.10.0-next.1";
+    writeFileSync(join(dir, "package.json"), `${JSON.stringify({ version })}\n`);
+    const changelog = `## Unreleased\n\n## v${version} — 2026-10-19\n\n- Staged.\n`;
+    writeFileSync(join(dir, "changelog.md"), changelog);
+    git(["add", "package.json", "changelog.md"]);
+    git(["commit", "-m", "main"]);
+    git(["update-ref", "refs/remotes/origin/main", "HEAD"]);
+    expect(mainAncestorStatus(dir)).toBe(0);
+    expect(
+      releaseGuardProblems({
+        ref: "refs/heads/main",
+        version,
+        changelog,
+        onMain: mainAncestorStatus(dir) === 0,
+        publish: false,
+      }),
+    ).toEqual([]);
+    git(["tag", `v${version}`]);
+    expect(
+      releaseGuardProblems({
+        ref: `refs/tags/v${version}`,
+        version,
+        changelog,
+        onMain: true,
+        publish: true,
+      }),
+    ).toEqual([]);
+    expect(
+      releaseGuardProblems({
+        ref: `refs/tags/v${version}`,
+        version,
+        changelog: "## Unreleased\n",
+        onMain: true,
+        publish: true,
+      }).join("\n"),
+    ).toContain(`## v${version}`);
+    expect(
+      releaseGuardProblems({
+        ref: "refs/heads/main",
+        version,
+        changelog,
+        onMain: true,
+        publish: true,
+      }).join("\n"),
+    ).toContain(`v${version}`);
+
+    git(["checkout", "-b", "side"]);
+    const side = "0.10.0-next.2";
+    writeFileSync(join(dir, "package.json"), `${JSON.stringify({ version: side })}\n`);
+    const sideLog = `## Unreleased\n\n## v${side} — 2026-10-19\n\n- Branch.\n`;
+    writeFileSync(join(dir, "changelog.md"), sideLog);
+    git(["add", "package.json", "changelog.md"]);
+    git(["commit", "-m", "side"]);
+    git(["tag", `v${side}`]);
+    expect(mainAncestorStatus(dir)).not.toBe(0);
+    const refused = releaseGuardProblems({
+      ref: `refs/tags/v${side}`,
+      version: side,
+      changelog: sideLog,
+      onMain: mainAncestorStatus(dir) === 0,
+      publish: false,
+    });
+    expect(refused.join("\n")).toContain("git merge-base --is-ancestor");
+    expect(refused.join("\n")).toContain("not on main");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("release ref accepts v plus the package version and refuses anything else", () => {
   expect(releaseRefProblem("refs/tags/v0.1.1", "0.1.1")).toBeUndefined();
   expect(releaseRefProblem("refs/tags/v0.1.0", "0.1.1")).toBe(
-    'Refusing to publish from refs/tags/v0.1.0. package.json is 0.1.1, so the tag must be v0.1.1. Run: gh workflow run release.yml --ref "v0.1.1" -f commit=<sha>',
+    'Refusing to publish from refs/tags/v0.1.0. package.json is 0.1.1, so the tag must be v0.1.1. Run: git push origin "v0.1.1"',
   );
   expect(releaseRefProblem(undefined, "0.1.1")).toContain("Refusing to publish from (unset)");
 });

@@ -77,8 +77,9 @@ export function requiredExtensions(catalog: Catalog): readonly RequiredExtension
       pushReason(reasons, edge.target.name, useReason(object));
     }
     if (object.kind === "index" && object.definition.expression !== undefined) {
-      const owner = opclassOwner.get(opclassOf(object.definition.expression) ?? "");
-      if (owner !== undefined) {
+      for (const opclass of opclassOf(object.definition.expression)) {
+        const owner = opclassOwner.get(opclass);
+        if (owner === undefined) continue;
         pushReason(
           reasons,
           owner,
@@ -131,9 +132,24 @@ function opclassExtensions(): ReadonlyMap<string, string> {
   return owners;
 }
 
-function opclassOf(expression: string): string | undefined {
-  const match = /\b([a-z_][a-z0-9_]*_ops)\b/.exec(expression);
-  return match?.[1];
+/**
+ * Every `*_ops` token in an index `using` tail, lowercased.
+ *
+ * A multi-column index may list several operator classes. The first token
+ * can be a built-in class (`text_pattern_ops`); later tokens still need a
+ * pack. Matching is case-insensitive so `GIN_TRGM_OPS` is the same as
+ * `gin_trgm_ops`.
+ *
+ * @param expression - Catalog index expression
+ * @returns Operator class names in left-to-right order
+ */
+function opclassOf(expression: string): readonly string[] {
+  const names: string[] = [];
+  for (const match of expression.matchAll(/\b([a-z_][a-z0-9_]*_ops)\b/gi)) {
+    const name = match[1];
+    if (name !== undefined) names.push(name.toLowerCase());
+  }
+  return names;
 }
 
 function pushReason(reasons: Map<string, string[]>, name: string, reason: string): void {
