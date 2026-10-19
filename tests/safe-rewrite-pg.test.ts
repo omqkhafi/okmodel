@@ -345,7 +345,8 @@ postgresTest(
         title: 't.text().picklist(["a", "b"])',
         status: 't.varchar(20).picklist(["draft", "active", "done"]).default("draft")',
       });
-      await okm(root, cwd, ["generate", "title_picklist"]);
+      const picklist = await catchError(() => okm(root, cwd, ["generate", "title_picklist"]));
+      expect(messageOf(picklist)).toContain("OKM1531");
       expect(lintMigrationDirectory(join(cwd, "migrations")).map((item) => item.code)).toContain(
         "OKM1531",
       );
@@ -521,10 +522,19 @@ function alignCheckExpression(author: Catalog, live: Catalog): Catalog {
 
 async function okm(root: string, cwd: string, args: readonly string[]): Promise<string> {
   const script = [
+    `import { OkmError } from ${JSON.stringify(join(root, "src/contracts/error.ts"))};`,
     `import { run } from ${JSON.stringify(join(root, "src/tooling/migrate/commands.ts"))};`,
     "const lines = [];",
-    `await run(${JSON.stringify(args)}, { cwd: ${JSON.stringify(cwd)}, stdout: (text) => lines.push(text) });`,
-    "process.stdout.write(lines.join(''));",
+    "try {",
+    `  await run(${JSON.stringify(args)}, { cwd: ${JSON.stringify(cwd)}, stdout: (text) => lines.push(text) });`,
+    "  process.stdout.write(lines.join(''));",
+    "} catch (error) {",
+    "  process.stdout.write(lines.join(''));",
+    "  if (error instanceof OkmError) {",
+    "    process.stderr.write(`error ${error.code}: ${error.message}\\n${error.fix.summary}\\n`);",
+    "  }",
+    "  process.exitCode = 1;",
+    "}",
   ].join("\n");
   const proc = Bun.spawn(["bun", "-e", script], { stdout: "pipe", stderr: "pipe" });
   const stdout = await new Response(proc.stdout).text();

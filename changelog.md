@@ -14,6 +14,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+### behaviour changes
+
+- `okm generate` exits 1 when an error finding exists; the migration file is still written; stderr says `okm migrate apply` will refuse until it is fixed (Q8, #395). A warning-only finding stays exit 0.
+
 ### ✨ Added
 
 - Global `--config <path>` on every `okm` command that loads a config; default discovery stays `okmodel.config.ts`. A missing file names that path and `--config`.

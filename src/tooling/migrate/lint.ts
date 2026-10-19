@@ -148,7 +148,7 @@ export function formatFindings(findings: readonly Finding[]): string {
  * Reports whether any finding is an error.
  *
  * @param findings - Findings to scan
- * @returns `true` when plan, check, or apply must fail
+ * @returns `true` when generate, plan, check, or apply must fail
  */
 export function hasError(findings: readonly Finding[]): boolean {
   return findings.some((item) => item.severity === "error");
