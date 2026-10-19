@@ -383,7 +383,7 @@ test("writes stamp the scope and refuse the tenant key", async () => {
 });
 
 test("tenancy definition errors name the column, the index, and the reference", () => {
-  const tenancy = columnTenancy({ key: "tenantId", type: "uuid" });
+  const tenancy = columnTenancy({ key: "tenantId", type: "uuid", indexes: false });
   expect(() =>
     schema({
       tenancy,

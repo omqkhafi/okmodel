@@ -124,7 +124,7 @@ Spike code lives in the private workspace package `packages/spikes`; what proves
 | P54 | `p54-testing-package` | shipped: `okmodel/testing` (`testing`, factories, `expectQueries`, `isolation`) and `okm seed <file>` (D199). The full `protected.policy` enumeration stays in P55 |
 | P55 | `p55-gate-0.4` | shipped: `protected.policy` runs every spec 19.7 class against a protected and an unprotected target, through the CLI, the engine, backfill, `okm seed`, the runner, and `provision` (D200). A column default matches the cast Postgres reprints for that column's type. Release 0.4 |
 
-Open after 0.4, not built in this train: typed function calls and builder views (D190); a lint when a domain check or a `LANGUAGE sql` body reprints differently (D189, D190); `okm ext test` and `okm ext scaffold`; column-level grants; RLS in M2. OKM1706 and OKM1823 stay declaration-time. M5 still owns tenant iteration, the control database, bounded concurrency, canary, class flags, and registry provisioning.
+Open after 0.4, not built in this train: typed function calls and builder views (D190); a lint when a domain check or a `LANGUAGE sql` body reprints differently (D189, D190); `okm ext test` and `okm ext scaffold`; column-level grants; RLS in M2. OKM1706 (when tenant index prefixing is off) and OKM1823 stay declaration-time. M5 still owns tenant iteration, the control database, bounded concurrency, canary, class flags, and registry provisioning.
 
 ### Phase 6 — Train 0.5 Topology
 

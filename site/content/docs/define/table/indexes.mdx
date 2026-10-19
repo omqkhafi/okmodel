@@ -192,3 +192,7 @@ export const notes = table(
 <Callout type="warning" title="Not a constraint">
 A unique constraint and a unique index are different objects. A constraint belongs on [keys](/docs/define/table/keys). A foreign key waits for that constraint. `.unique()` here does not create it.
 </Callout>
+
+### Tenant tables
+
+On a tenant table the schema puts the tenant key first, unless this index calls `.global("reason")` or the table sets `tenantIndexes: false`. `.scoped()` puts the key first anyway. A unique index is then unique inside one tenant: two tenants may store the same value. See [tenancy](/docs/define/schema/tenancy).

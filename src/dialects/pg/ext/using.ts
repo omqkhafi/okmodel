@@ -5,7 +5,7 @@
  * `using` field. `pg_trgm` and the generated packs share this helper.
  */
 
-import type { IndexCall } from "../table.js";
+import { buildIndex, type IndexCall } from "../table.js";
 
 /**
  * Quotes one identifier the extension wrote, not a caller string from SQL.
@@ -26,13 +26,8 @@ export function quotedIdent(name: string): string {
  * @returns The index call
  */
 export function usingIndex(column: string, method: string, opclass: string): IndexCall {
-  const call: IndexCall = {
+  return buildIndex({
     columns: [column],
-    isUnique: false,
     expression: `using ${method} (${quotedIdent(column)} ${opclass})`,
-    unique() {
-      return call;
-    },
-  };
-  return call;
+  });
 }

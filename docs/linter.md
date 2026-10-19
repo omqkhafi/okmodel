@@ -86,7 +86,7 @@ On a table that already exists, the planner writes the form these rules accept. 
 
 A `VALIDATE` that follows a `widen-check` (a picklist that gained a value) does not fire OKM1531. Narrowing a check still does. `VALIDATE` of the temporary `CHECK (col IS NOT NULL) NOT VALID` from the safe `SET NOT NULL` rewrite also does not: that scan is intentional and paired with the lock-safe sequence (D289). `VALIDATE` of a check whose `NOT VALID` add is earlier in the same migration on a column added in that migration with a constant default (or a nullable column without a default) does not fire either: existing rows only see that default or null (D301). A volatile default, or a check on a column that already existed, stays OKM1531. OKM1528 fires on the concurrent unique index that a later `USING INDEX` consumes, and on a plain `ADD CONSTRAINT UNIQUE` or `PRIMARY KEY` that is not `USING INDEX`. It does not fire on the `USING INDEX` step, which does not scan. OKM1529 fires on a unique index that no later step consumes.
 
-OKM1706 and OKM1823 are not rules in this table. A tenant index that does not lead with the tenant key fails when the schema is built. `security: "definer"` without `searchPath` fails on `fn()`. Both are declaration-time checks.
+OKM1706 and OKM1823 are not rules in this table. With `indexes: false` or `tenantIndexes: false`, a tenant index that does not lead with the tenant key fails when the schema is built. The default prefixes the key (D306). `.global("reason")` does not raise OKM1706. `security: "definer"` without `searchPath` fails on `fn()`. Both are declaration-time checks.
 
 ## Codes
 

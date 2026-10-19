@@ -569,8 +569,9 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
   {
     code: "OKM1706",
     title: "Tenant index",
-    summary: "An index on a tenant table does not lead with the tenant key.",
-    fix: "Put the tenant key first in the index columns.",
+    summary:
+      'An index on a tenant table does not lead with the tenant key, and the schema is not prefixing indexes. Prefixing is on unless indexes: false or tenantIndexes: false. index().global("reason") is the opt-out that does not raise this.',
+    fix: 'Put the tenant key first, or leave indexes on so the schema adds it. index().global("reason") opts one index out.',
   },
   {
     code: "OKM1707",
