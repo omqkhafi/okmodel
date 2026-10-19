@@ -2,7 +2,8 @@
  * `version` and `position` are on the row, not on insert or update.
  *
  * `move` appears because this file imports `okmodel/traits`. On a versioned
- * table, `version` is required on `update` (Q5 / D305). A non-versioned table
+ * table, `version` is required on `update` (Q5 / D305). `version: "any"`
+ * compiles only with `lock: "skip"` and `limit`. A non-versioned table
  * keeps `version` optional in the type.
  */
 
@@ -27,7 +28,17 @@ const plain = table("plain", {
   title: t.text(),
 });
 
-const app = schema({ tables: [tasks, plain] });
+const queued = table(
+  "queued",
+  {
+    id: t.text().primaryKey(),
+    title: t.text(),
+    state: t.text().hidden({ filterable: true }),
+  },
+  { traits: [versioned()] },
+);
+
+const app = schema({ tables: [tasks, plain, queued] });
 
 expectTypeOf<keyof (typeof app)["~byName"]["tasks"]["~row"]>().toEqualTypeOf<
   "id" | "title" | "laneId" | "version" | "position"
@@ -59,11 +70,66 @@ declare const plainUpdate: PlainApi["update"];
 void update({ where: { id: "1" }, set: { title: "b" }, version: 1 });
 void update([{ id: "1", set: { title: "b" }, version: 2 }]);
 
+const claimed = update({
+  where: { id: "1" },
+  set: { title: "b" },
+  limit: 1,
+  lock: "skip",
+  version: "any",
+});
+expectTypeOf(claimed).resolves.toEqualTypeOf<
+  readonly {
+    readonly id: string;
+    readonly title: string;
+    readonly laneId: string;
+    readonly version: number;
+    readonly position: number;
+  }[]
+>();
+
+expectTypeOf(
+  update({ where: { id: "1" }, set: { title: "b" }, version: 1 }),
+).resolves.toEqualTypeOf<{ readonly count: number }>();
+
 // @ts-expect-error versioned update needs the version read from the row
 void update({ where: { id: "1" }, set: { title: "b" } });
 // @ts-expect-error each list item needs version on a versioned table
 void update([{ id: "1", set: { title: "b" } }]);
+// @ts-expect-error version: "any" needs lock: "skip" and limit
+void update({ where: { id: "1" }, set: { title: "b" }, version: "any" });
+// @ts-expect-error version: "any" needs limit
+void update({ where: { id: "1" }, set: { title: "b" }, lock: "skip", version: "any" });
+// @ts-expect-error version: "any" needs lock: "skip"
+void update({ where: { id: "1" }, set: { title: "b" }, limit: 1, version: "any" });
 
 void plainUpdate({ where: { id: "1" }, set: { title: "b" } });
 void plainUpdate([{ id: "1", set: { title: "b" } }]);
 void plainUpdate({ where: { id: "1" }, set: { title: "b" }, version: 1 });
+void plainUpdate({
+  where: { id: "1" },
+  set: { title: "b" },
+  limit: 1,
+  lock: "skip",
+  // @ts-expect-error version: "any" is only on a versioned table
+  version: "any",
+});
+
+declare const claimHidden: TableApi<typeof app, "queued">["update"];
+void claimHidden({
+  where: { state: "pending" },
+  set: { title: "b" },
+  limit: 1,
+  lock: "skip",
+  version: "any",
+});
+void claimHidden({
+  where: {
+    state: "pending",
+    // @ts-expect-error a claim where rejects a column that is not filterable
+    missing: "x",
+  },
+  set: { title: "b" },
+  limit: 1,
+  lock: "skip",
+  version: "any",
+});

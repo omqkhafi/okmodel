@@ -23,15 +23,24 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### ✨ Added
 
+#### runtime
+
+- `update({ where, set, limit, lock: "skip", version: "any" })` on a `versioned()` table skips the version check, bumps `version` by 1, and returns the claimed rows. A miss is an empty array. `version` stays required on every other versioned update. `version: "any"` without `lock: "skip"` and `limit`, an unrecognised version string, and a `version` key in `set` are OKM1120 (Q6, O-5, #393).
+
+#### tooling
+
 - Global `--config <path>` on every `okm` command that loads a config; default discovery stays `okmodel.config.ts`. A missing file names that path and `--config`.
 - `plan`, `apply`, and `status` on `okmodel/migrate` share the CLI migrate engine for CI and deploy without shelling out (D298).
 - `okm migrate baseline` and `baseline(target)` from `okmodel/migrate` record the head snapshot as applied history on an existing database without DDL (D299). A managed mismatch is OKM1858 with the reconcile plan; unmanaged objects are reported and left alone; existing history is OKM1857; a protected target needs `--allow-protected`.
-- Docs: [Adopt an existing database](docs/adopt-existing.md) and the handbook page cover pull, generate, then baseline.
 - `describe(schema)` on `okmodel/migrate` reports `minPostgres` and `extensions` (each with a reason). `okm doctor` and `okm check` refuse a server below that floor (OKM1802 / OKM1803) or missing a required extension (OKM1811) (D300).
 - `bun run ci:report` prints job and step duration, queue time, the critical path, and re-run counts for recent `main` runs, and why each 0.9.1 pull failed a push.
 - `bun run verify:fast` checks format, lint, types, layers, purity, docs, and the readme, then runs only the tests related to files changed since the merge-base with `origin/main`.
 - `bun run ci:fail <pull>` prints the first failing job, its failing step, the last 60 log lines, and the one local command that reproduces it.
 - `gate / check` compares `npm pack --dry-run --json` to a committed snapshot of packed files and the `exports` map (`scripts/pack-contract.ts`). A forbidden install script, a dependency, a required peer, or a missing `files` allowlist fails the check. Update the snapshot with `bun ./scripts/pack-contract.ts --update`.
+
+#### docs
+
+- Docs: [Adopt an existing database](docs/adopt-existing.md) and the handbook page cover pull, generate, then baseline.
 
 ### 💥 Breaking Changes
 

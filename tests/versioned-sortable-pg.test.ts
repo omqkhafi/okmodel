@@ -6,6 +6,7 @@
  */
 
 import { expect, test } from "bun:test";
+import postgres from "postgres";
 
 import { open as openPglite } from "../src/adapters/pg/pglite.js";
 import { OkmError } from "../src/contracts/error.js";
@@ -111,6 +112,8 @@ postgresTest(
         await proveTenancy(scoped);
         await proveCrowd(wide);
         await proveWaiter(wide, contender, sql);
+        await proveAnyRace(wide);
+        await proveReadCommittedRecheck(schemaName);
       } finally {
         await db.close();
         await other.close();
@@ -263,6 +266,161 @@ async function prove(db: Db, other: Db): Promise<void> {
   expect(added.position).toBe(4);
 
   expect(await db.tasks.delete({ where: { id: "e" } })).toEqual({ count: 1 });
+  await proveAny(db);
+}
+
+async function proveAny(db: Db): Promise<void> {
+  await db.tasks.insert(
+    Array.from({ length: 6 }, (_, index) => ({
+      id: `cap${String(index)}`,
+      title: "pending",
+      laneId: "cap",
+    })),
+  );
+  const first = await db.tasks.update({
+    where: { laneId: "cap", title: "pending" },
+    set: { title: "running" },
+    limit: 2,
+    lock: "skip",
+    version: "any",
+  });
+  const taken = rows(first);
+  expect(taken).toHaveLength(2);
+  expect(new Set(taken.map((row) => row.id)).size).toBe(2);
+  for (const row of taken) expect(row.version).toBe(2);
+  const second = rows(
+    await db.tasks.update({
+      where: { laneId: "cap", title: "pending" },
+      set: { title: "running" },
+      limit: 2,
+      lock: "skip",
+      version: "any",
+    }),
+  );
+  expect(second).toHaveLength(2);
+  expect(second.every((row) => row.version === 2)).toBe(true);
+  const ids = [...taken, ...second].map((row) => {
+    const id = row.id;
+    if (typeof id !== "string") throw new Error("expected a claimed id");
+    return id;
+  });
+  expect(new Set(ids).size).toBe(4);
+
+  const sample = ids[0];
+  if (sample === undefined) throw new Error("expected a claimed id");
+  const stale = await conflict(() =>
+    db.tasks.update({ where: { id: sample }, set: { title: "done" }, version: 1 }),
+  );
+  expect(stale.category).toBe("conflict");
+  await db.tasks.update({ where: { id: sample }, set: { title: "done" }, version: 2 });
+  expect((await one(db, sample)).version).toBe(3);
+
+  await db.tasks.insert({ id: "re", title: "pending", laneId: "re" });
+  await db.tasks.update({ where: { id: "re" }, set: { title: "cancelled" }, version: 1 });
+  const dropped = await db.tasks.update({
+    where: { laneId: "re", title: "pending" },
+    set: { title: "running" },
+    limit: 1,
+    lock: "skip",
+    version: "any",
+  });
+  expect(dropped).toEqual([]);
+  const left = await one(db, "re");
+  expect(left.title).toBe("cancelled");
+  expect(left.version).toBe(2);
+
+  const empty = await db.tasks.update({
+    where: { laneId: "cap", title: "absent" },
+    set: { title: "running" },
+    limit: 1,
+    lock: "skip",
+    version: "any",
+  });
+  expect(empty).toEqual([]);
+}
+
+async function proveAnyRace(db: Db): Promise<void> {
+  const count = 8;
+  await db.tasks.insert(
+    Array.from({ length: count }, (_, index) => ({
+      id: `race${String(index)}`,
+      title: "pending",
+      laneId: "race",
+    })),
+  );
+  const claimed = await Promise.all(
+    Array.from({ length: count }, () =>
+      db.tasks.update({
+        where: { laneId: "race", title: "pending" },
+        set: { title: "running" },
+        limit: 1,
+        lock: "skip",
+        version: "any",
+      }),
+    ),
+  );
+  const flat = claimed.flatMap((item) => rows(item));
+  expect(flat.length).toBeLessThanOrEqual(count);
+  expect(flat.length).toBe(count);
+  expect(new Set(flat.map((row) => row.id)).size).toBe(flat.length);
+  expect(claimed.every((item) => rows(item).length <= 1)).toBe(true);
+  for (const row of flat) expect(row.version).toBe(2);
+  const again = await db.tasks.update({
+    where: { laneId: "race", title: "pending" },
+    set: { title: "running" },
+    limit: 1,
+    lock: "skip",
+    version: "any",
+  });
+  expect(again).toEqual([]);
+}
+
+/**
+ * Under READ COMMITTED the outer predicate drops a row whose status changed
+ * while the claim waited for the lock. `version: "any"` adds `SKIP LOCKED`,
+ * so this statement waits on purpose: the same CTE and the repeated predicate
+ * are what the planner emits.
+ */
+async function proveReadCommittedRecheck(schemaName: string): Promise<void> {
+  const raw = postgres(primaryUrl(), {
+    max: 2,
+    connect_timeout: 5,
+    idle_timeout: 1,
+    onnotice: () => {},
+  });
+  const holder = await raw.reserve();
+  const claimer = await raw.reserve();
+  try {
+    await holder.unsafe(`set search_path to ${schemaName}`);
+    await claimer.unsafe(`set search_path to ${schemaName}`);
+    await holder.unsafe(
+      `insert into tasks (id, title, lane_id, position) values ('epq', 'pending', 'epq', 1)`,
+    );
+    await holder.unsafe(`begin isolation level read committed`);
+    await holder.unsafe(
+      `update tasks set title = 'cancelled', version = version + 1 where id = 'epq'`,
+    );
+    const claim = claimer.unsafe(
+      `with claimed as (select s.id as okm_0 from tasks as s where s.title = 'pending' and s.lane_id = 'epq' order by s.id limit 1 for update of s) update tasks as t set title = 'running', version = t.version + 1 from claimed where t.id = claimed.okm_0 and t.title = 'pending' and t.lane_id = 'epq' returning t.id, t.version`,
+    );
+    const waiting = await Promise.race([
+      claim.then(() => "done" as const),
+      Bun.sleep(1500).then(() => "wait" as const),
+    ]);
+    expect(waiting).toBe("wait");
+    await holder.unsafe(`commit`);
+    const rows = await claim;
+    expect(rows).toHaveLength(0);
+    const after = await claimer.unsafe(`select title, version from tasks where id = 'epq'`);
+    expect(after[0]?.title).toBe("cancelled");
+    expect(Number(after[0]?.version)).toBe(2);
+  } finally {
+    await holder.unsafe(`rollback`).catch(() => undefined);
+    await claimer.unsafe(`rollback`).catch(() => undefined);
+    holder.release();
+    claimer.release();
+    await raw.end({ timeout: 5 });
+  }
 }
 
 async function proveTenancy(db: TenantDb): Promise<void> {
