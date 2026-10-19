@@ -68,6 +68,83 @@ test("describe() lists pg_trgm from an index and the declaration", () => {
   ]);
 });
 
+test("describe() reports pg_trgm when a later opclass owns it", () => {
+  const app = schema({
+    tables: [
+      table(
+        "docs",
+        { id: t.id(), a: t.text(), b: t.text() },
+        {
+          indexes: () => [
+            {
+              columns: ["b", "a"],
+              isUnique: false,
+              expression: 'using gist ("b" text_pattern_ops, "a" gist_trgm_ops)',
+              unique() {
+                return this;
+              },
+            },
+          ],
+        },
+      ),
+    ],
+  });
+  expect(describe(app).extensions).toEqual([
+    { name: "pg_trgm", reason: "index docs.docs_b_a_idx uses pg_trgm" },
+  ]);
+});
+
+test("describe() detects an uppercase GIN_TRGM_OPS opclass", () => {
+  const app = schema({
+    tables: [
+      table(
+        "docs",
+        { id: t.id(), body: t.text() },
+        {
+          indexes: () => [
+            {
+              columns: ["body"],
+              isUnique: false,
+              expression: 'using gin ("body" GIN_TRGM_OPS)',
+              unique() {
+                return this;
+              },
+            },
+          ],
+        },
+      ),
+    ],
+  });
+  expect(describe(app).extensions).toEqual([
+    { name: "pg_trgm", reason: "index docs.docs_body_idx uses pg_trgm" },
+  ]);
+});
+
+test("describe(describe(s)) keeps a declared floor of 17 and a uuidv7 floor of 18", () => {
+  const declared = schema({
+    minPostgres: 17,
+    tables: [table("users", { id: t.id(), name: t.text() })],
+  });
+  expect(describe(describe(declared)).minPostgres).toBe(17);
+
+  const uuidv7 = schema({
+    tables: [table("users", { id: t.id({ default: "uuidv7" }), name: t.text() })],
+  });
+  expect(describe(describe(uuidv7)).minPostgres).toBe(18);
+});
+
+test("describe({ catalog }) of a minPostgres 18 description keeps 18", () => {
+  const app = schema({
+    minPostgres: 18,
+    tables: [table("users", { id: t.id(), name: t.text() })],
+  });
+  const description = describe(app);
+  expect(description.minPostgres).toBe(18);
+  expect(
+    describe({ catalog: description.catalog, minPostgres: description.minPostgres }).minPostgres,
+  ).toBe(18);
+});
+
 test("describe() lists citext from a column and the declaration", () => {
   const app = schema({
     tables: [table("people", { email: t.citext() })],
