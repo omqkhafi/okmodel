@@ -687,7 +687,7 @@ type AllowedUpdateVersioned<
  * `lock: "skip"` with `limit` claims that many matching rows and leaves rows
  * another transaction already holds. It is not valid on a list.
  *
- * `version` is optional on this alias. {@link TableApi.update} selects the
+ * `version` is optional on this alias. {@link TableApi.update} picks the
  * required-version form when the table is `versioned()` (D305).
  */
 export type UpdateTarget<S extends QuerySchema, K extends keyof S["~byName"]> =
