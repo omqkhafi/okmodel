@@ -11,7 +11,7 @@ import { catalogError } from "../../contracts/error.js";
 import { canonicalJson, type Json } from "../../contracts/catalog/json.js";
 import { parseCatalog, serializeCatalog } from "../../contracts/catalog/document.js";
 import type { Catalog } from "../../contracts/catalog/types.js";
-import type { PostgresMajor } from "../../dialects/pg/floor.js";
+import { isPostgresMajor, type PostgresMajor } from "../../dialects/pg/floor.js";
 import { LOGICAL_FORMAT, type LogicalIdentity } from "./export.js";
 import {
   declaredFloor,
@@ -52,16 +52,22 @@ export type { RequiredExtension };
  * namespace does not change it. The catalog document keeps the namespaces
  * the catalog already has, so the catalog hash still changes with placement.
  *
- * @param schema - A `schema()` result, or any value that carries its catalog
+ * @param schema - A `schema()` result, a prior {@link SchemaDescription}, or any
+ *   value that carries its catalog (and optionally a numeric `minPostgres`)
  * @returns A description `JSON.stringify` can store
  */
 export function describe(schema: {
   readonly catalog: Catalog;
   readonly requires?: { readonly postgres?: string } | undefined;
+  readonly minPostgres?: PostgresMajor;
 }): SchemaDescription {
   const source = schemaCatalog(schema);
   const document = JSON.parse(serializeCatalog(source)) as Json;
-  const floor = schemaMinPostgres(source, declaredFloor(schema.requires));
+  const computed = schemaMinPostgres(source, declaredFloor(schema.requires));
+  const carried = schema.minPostgres;
+  const floor = isPostgresMajor(carried)
+    ? (Math.max(carried, computed) as PostgresMajor)
+    : computed;
   const extensions = requiredExtensions(source);
   const text = canonicalJson({
     catalog: document,

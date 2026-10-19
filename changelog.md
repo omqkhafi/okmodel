@@ -50,6 +50,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### 🐛 Fixed
 
+- `describe()` keeps a numeric `minPostgres` already on the input (`max` with the computed floor), and index opclass scan reads every `*_ops` token case-insensitively, so `describe(describe(s))` keeps 17 and 18, a description's floor does not fall to 15, and a later `gist_trgm_ops` after `text_pattern_ops` still reports `pg_trgm` (R5, #402).
 - `okm migrate check` and `okm check` reprint table checks (including picklists) on the connected server before planning, so an author `IN (...)` spelling is not permanent OKM1547 or a NOT VALID/VALIDATE swap against `pg_get_constraintdef` (R2, #399, D128). Check `columns` are left out of the plan comparison when an author check omits column handles.
 - `okm check` checks the Postgres major before author drift and required extensions after it, so a pending migration that creates an extension still surfaces OKM1520 instead of OKM1811. An extension an applied or pending migration creates is not refused as a missing install; when the package is absent from the server, OKM1811 points at `okm migrate apply`. Several targets and no `--target` print `server checks skipped: N targets, pass --target <name>` from `okm doctor` and `okm check` (#400).
 - The archivable unique-predicate migrate-check case tolerates `okm generate` exiting 1 on OKM1529 so the allow line can be written before apply (follow-up to Q8).
