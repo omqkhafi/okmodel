@@ -41,6 +41,15 @@ postgresTest(
       const other = await reprintCheck(runner, "id > 1");
       expect(left).toBe(right);
       expect(left).not.toBe(other);
+      const onText = await reprintCheck(runner, "(status IN ('a', 'b'))", [
+        { name: "status", dataType: "text" },
+      ]);
+      const onVarchar = await reprintCheck(runner, "(status IN ('a', 'b'))", [
+        { name: "status", dataType: "varchar(20)" },
+      ]);
+      expect(onText).toContain("ARRAY");
+      expect(onVarchar).toContain("character varying");
+      expect(onText).not.toBe(onVarchar);
     });
   },
   30_000,

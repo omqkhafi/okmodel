@@ -39,7 +39,7 @@ import { expandProvisioned, installSnapshot, provisionMark } from "./snapshot.js
 import { planMigration, type PlanStep } from "./plan.js";
 import type { StoredMigration } from "./files.js";
 import { finishQuiet } from "./lost.js";
-import { catalogQuery, managedRoleOptions, sealDomainChecks } from "./drift.js";
+import { catalogQuery, managedRoleOptions, sealDomainChecks, sealTableChecks } from "./drift.js";
 import {
   assertDirectConnection,
   assertTargetPolicy,
@@ -600,7 +600,7 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
         await sql.unsafe(`set search_path to ${quoteIdent(schema)}`);
       }
       const authorViews = await sealViews(runner, request.after);
-      const author = await sealDomainChecks(runner, authorViews);
+      const author = await sealTableChecks(runner, await sealDomainChecks(runner, authorViews));
       const live = await introspectSchema(
         runner,
         schema,

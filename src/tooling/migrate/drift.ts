@@ -17,9 +17,11 @@ import { isDomain } from "../../contracts/catalog/enum.js";
 import type { CatalogObject } from "../../contracts/catalog/types.js";
 import {
   introspectSchema,
+  reprintCheck,
   reprintDomainCheck,
   type CatalogQuery,
   type IntrospectOptions,
+  type ReprintCheckColumn,
 } from "../../dialects/pg/introspect.js";
 import { sealViews } from "../../dialects/pg/view/scratch.js";
 import type { RolesInput } from "../../dialects/pg/role/index.js";
@@ -64,7 +66,10 @@ export async function assertAuthorDrift(
     `;
     if (present[0]?.reg == null) return;
     const runner = catalogQuery(sql);
-    const authorOnServer = await sealDomainChecks(runner, await sealViews(runner, author));
+    const authorOnServer = await sealTableChecks(
+      runner,
+      await sealDomainChecks(runner, await sealViews(runner, author)),
+    );
     const live = await introspectSchema(runner, schema, schema, managedRoleOptions(roles));
     const plan = planMigration({ before: live, after: authorOnServer, name: "check" });
     if (plan.steps.length === 0) return;
@@ -119,6 +124,62 @@ export async function sealDomainChecks(runner: CatalogQuery, source: Catalog): P
     });
   }
   return changed ? { version: source.version, objects } : source;
+}
+
+/**
+ * Reprints each table check the way this server stores it.
+ *
+ * Picklists and `IN (...)` checks become `= ANY (ARRAY[...])` (and
+ * `varchar(n)` adds its casts), so a plan against a live catalog does not
+ * treat the reprint as a permanent drop/add. The catalog hash still uses the
+ * author text (D128, §19.3).
+ *
+ * @param runner - Database connection
+ * @param source - Catalog whose table checks may still be author SQL
+ * @returns A catalog whose table-check expressions carry the server reprint
+ */
+export async function sealTableChecks(runner: CatalogQuery, source: Catalog): Promise<Catalog> {
+  const columnsByTable = tableColumns(source);
+  const objects: CatalogObject[] = [];
+  let changed = false;
+  for (const object of source.objects) {
+    if (
+      object.kind !== "constraint" ||
+      object.definition.constraintKind !== "check" ||
+      object.definition.expression === undefined
+    ) {
+      objects.push(object);
+      continue;
+    }
+    const parent = object.identity.parent.name;
+    const reprinted = await reprintCheck(
+      runner,
+      object.definition.expression,
+      columnsByTable.get(parent) ?? [],
+    );
+    if (reprinted === object.definition.expression) {
+      objects.push(object);
+      continue;
+    }
+    changed = true;
+    objects.push({
+      ...object,
+      definition: { ...object.definition, expression: reprinted },
+    });
+  }
+  return changed ? { version: source.version, objects } : source;
+}
+
+function tableColumns(source: Catalog): ReadonlyMap<string, readonly ReprintCheckColumn[]> {
+  const grouped = new Map<string, ReprintCheckColumn[]>();
+  for (const object of source.objects) {
+    if (object.kind !== "column") continue;
+    const parent = object.identity.parent.name;
+    const list = grouped.get(parent) ?? [];
+    list.push({ name: object.identity.name, dataType: object.definition.dataType });
+    grouped.set(parent, list);
+  }
+  return grouped;
 }
 
 /**
