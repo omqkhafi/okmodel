@@ -1,13 +1,15 @@
 /**
- * Decides whether a pull request needs the runtime test matrix.
+ * Decides whether a pull request needs the runtime test matrix, and whether
+ * it touches workflow files (which requires the full CI tier).
  *
- * Docs-only, site-only, and docs-plus-site changes do not. Any other path
- * does. An empty diff runs the matrix, so a missing range fails closed.
+ * Docs-only, site-only, and docs-plus-site changes do not need the runtime
+ * matrix. Any other path does. An empty diff runs the matrix, so a missing
+ * range fails closed.
  *
  *   bun ./scripts/ci-paths.ts --base <sha> --head <sha>
  *
- * Writes `runtime=true` or `runtime=false` to `GITHUB_OUTPUT` when that
- * file is set, and always prints the same line.
+ * Writes `runtime=` and `workflows=` lines to `GITHUB_OUTPUT` when that
+ * file is set, and always prints the same lines.
  */
 
 import { appendFileSync } from "node:fs";
@@ -24,6 +26,18 @@ import { repoRoot } from "./root.js";
 export function runtimeRelevant(paths: readonly string[]): boolean {
   if (paths.length === 0) return true;
   return paths.some((path) => !isDocsPath(path) && !isSitePath(path));
+}
+
+/**
+ * Whether the diff changes a file under `.github/workflows`.
+ *
+ * @param paths - Paths from the repository root
+ * @returns True when a workflow file changed
+ */
+export function workflowsChanged(paths: readonly string[]): boolean {
+  return paths.some(
+    (path) => path === ".github/workflows" || path.startsWith(".github/workflows/"),
+  );
 }
 
 function isDocsPath(path: string): boolean {
@@ -58,11 +72,13 @@ export function diffPaths(root: string, base: string, head: string): readonly st
     .filter((line) => line.length > 0);
 }
 
-function writeRuntime(relevant: boolean): void {
-  const line = `runtime=${relevant ? "true" : "false"}\n`;
+function writeOutputs(paths: readonly string[]): void {
+  const text =
+    `runtime=${runtimeRelevant(paths) ? "true" : "false"}\n` +
+    `workflows=${workflowsChanged(paths) ? "true" : "false"}\n`;
   const output = process.env.GITHUB_OUTPUT;
-  if (output !== undefined && output.length > 0) appendFileSync(output, line);
-  process.stdout.write(line);
+  if (output !== undefined && output.length > 0) appendFileSync(output, text);
+  process.stdout.write(text);
 }
 
 if (import.meta.main) {
@@ -76,7 +92,7 @@ if (import.meta.main) {
     process.exit(1);
   }
   try {
-    writeRuntime(runtimeRelevant(diffPaths(repoRoot(), values.base, values.head)));
+    writeOutputs(diffPaths(repoRoot(), values.base, values.head));
   } catch (error: unknown) {
     console.error("[ci-paths]", error instanceof Error ? error.message : error);
     process.exit(1);

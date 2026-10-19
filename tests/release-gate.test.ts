@@ -269,8 +269,11 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
     "cancel-in-progress: ${{ github.event_name == 'pull_request' && github.event.action != 'labeled' && github.event.action != 'unlabeled' }}",
   );
   expect(ci).toContain(
-    "${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || format('{0}-{1}-{2}', github.head_ref, github.event.action, github.event.label.name) }}",
+    "${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}",
   );
+  expect(ci).toMatch(/name: gate \/ check[\s\S]*?if: always\(\)/);
+  expect(ci).toContain("bun ./scripts/ci-tier.ts");
+  expect(ci).toContain("bun ./scripts/ci-gate-mirror.ts");
   const floor = POSTGRES_VERSIONS[0];
   const newest = POSTGRES_VERSIONS[POSTGRES_VERSIONS.length - 1];
   if (floor === undefined || newest === undefined) throw new Error("no postgres versions");
