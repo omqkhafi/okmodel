@@ -32,6 +32,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `bun run verify:fast` checks format, lint, types, layers, purity, docs, and the readme, then runs only the tests related to files changed since the merge-base with `origin/main`.
 - `bun run ci:fail <pull>` prints the first failing job, its failing step, the last 60 log lines, and the one local command that reproduces it.
 
+### 💥 Breaking Changes
+
+- A typed `hidden({ filterable: false })` is refused. Call `hidden()` with no argument. Passing `false` from JavaScript still leaves the column hidden and not filterable.
+
 ### ♻️ Changed
 
 - `gate / check` always runs (`if: always()`), keys concurrency on the pull request number (or the commit on `main`), and requires the full tier for `full-ci`, a `chore(release)` title, a change under `.github/workflows`, or a push to `main`. A no-op label event mirrors the last gate result for that commit instead of reporting Success from a skipped job. Plan: [docs/ci-and-test-cycle-plan.md](docs/ci-and-test-cycle-plan.md).
@@ -65,6 +69,11 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - A trigger `WHEN` that names `OLD` and `NEW` no longer fails `okm check` / `okm migrate check` with "expression contains variables of more than one relation"; introspection reads the predicate from `pg_get_triggerdef`, and those columns are ordinary table dependencies (B-46).
 - `defineConfig({ namespace })` places a trigger's called function with the catalog, so generate/apply/check no longer fail OKM1020 for a missing function in `public` (B-47).
 - The guide roles flow on a fresh database no longer fails with `SAVEPOINT can only be used in transaction blocks` during provision: schema ownership runs without a savepoint when no transaction is open, `CREATEROLE` is checked on the connecting user (not the managed migration role), and a failed provision drops empty bootstrap tables so a retry is clean (B-30).
+
+#### runtime
+
+- `where`, `orderBy` (including `relevance()`), and search accept `hidden({ filterable: true })` in the type. A plain `.hidden()` column stays a type error there, and the column stays off the row (Q7, #394).
+- Search of a plain hidden column names the opt-in: `hidden({ filterable: true })`.
 
 ### 🔒 Security
 

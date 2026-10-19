@@ -76,8 +76,30 @@ export type RelFilter<S extends QuerySchema, Rel> = Rel extends {
 /** Known relation names. A string index (no declared relations) adds none. */
 type RelationKeys<R> = string extends keyof R ? never : keyof R;
 
+/** The column when it is `hidden({ filterable: true })`, otherwise `never`. */
+type FilterBit<C> = C extends { readonly "~flags": { readonly "~filter": true } } ? C : never;
+
+/**
+ * Columns `where` and `orderBy` share.
+ *
+ * The row, plus `hidden({ filterable: true })`. A table with none of those
+ * columns keeps {@link RowOf}. The extra keys are built only for a table that
+ * opted in. The check distributes over the column union.
+ */
+type FilterableOf<S extends QuerySchema, K extends keyof S["~byName"]> = S["~byName"][K] extends {
+  readonly "~columns": infer C;
+}
+  ? FilterBit<C[keyof C]> extends never
+    ? RowOf<S, K>
+    : RowOf<S, K> & {
+        readonly [P in keyof C as FilterBit<C[P]> extends never ? never : P]: unknown;
+      }
+  : RowOf<S, K>;
+
 /** Column and relation filters for one table. */
-type FiltersOf<S extends QuerySchema, K extends keyof S["~byName"]> = FieldWhere<RowOf<S, K>> & {
+type FiltersOf<S extends QuerySchema, K extends keyof S["~byName"]> = FieldWhere<
+  FilterableOf<S, K>
+> & {
   readonly [R in RelationKeys<RelationsOf<S, K>>]?: RelFilter<S, RelationsOf<S, K>[R]> | undefined;
 };
 
@@ -86,7 +108,12 @@ export type WhereOf<S extends QuerySchema, K extends keyof S["~byName"]> =
   | FiltersOf<S, K>
   | Or<FiltersOf<S, K>>;
 
-/** `orderBy`. `asc` is nulls last and `desc` is nulls first unless `nulls` is set. */
+/**
+ * `orderBy`. `asc` is nulls last and `desc` is nulls first unless `nulls` is set.
+ *
+ * A `hidden({ filterable: true })` column is a key, the same set `where` uses.
+ * A plain `.hidden()` column is not. The row stays the select list.
+ */
 export type OrderBy<Row> = {
   readonly [K in keyof Row]?:
     | "asc"
@@ -262,7 +289,7 @@ export type ReadOptions<S extends QuerySchema, K extends keyof S["~byName"]> = C
   readonly where?: WhereOf<S, K>;
   /** Field names, or a window helper (`rowNumber`, `rank`, `denseRank`, `runningTotal`). */
   readonly select?: readonly ((keyof RowOf<S, K> & string) | Window<string, string | number>)[];
-  readonly orderBy?: OrderBy<RowOf<S, K>>;
+  readonly orderBy?: OrderBy<FilterableOf<S, K>>;
   readonly include?: IncludeOf<S, K>;
 };
 
@@ -282,7 +309,7 @@ export type LockOptions = {
 export type FindOptions<S extends QuerySchema, K extends keyof S["~byName"]> = ReadOptions<S, K> & {
   readonly limit?: number;
   /** Text to look for. The closest matches come first unless `orderBy` is set. */
-  readonly search?: TextSearch<RowOf<S, K>>;
+  readonly search?: TextSearch<FilterableOf<S, K>>;
 };
 
 /**
@@ -295,7 +322,7 @@ export type FindOptions<S extends QuerySchema, K extends keyof S["~byName"]> = R
 export type TreeOptions<S extends QuerySchema, K extends keyof S["~byName"]> = CallOptions & {
   readonly where?: WhereOf<S, K>;
   readonly select?: readonly (keyof RowOf<S, K> & string)[];
-  readonly orderBy?: OrderBy<RowOf<S, K>>;
+  readonly orderBy?: OrderBy<FilterableOf<S, K>>;
   readonly depth?: number;
   /** Include the starting row. Omitted leaves it out. */
   readonly self?: boolean;
@@ -822,7 +849,7 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   count(
     options?: CallOptions & {
       readonly where?: WhereOf<S, K>;
-      readonly search?: TextSearch<RowOf<S, K>>;
+      readonly search?: TextSearch<FilterableOf<S, K>>;
     },
   ): Read<number>;
   exists(options?: CallOptions & { readonly where?: WhereOf<S, K> }): Read<boolean>;

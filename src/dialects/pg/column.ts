@@ -588,15 +588,20 @@ export class ColumnBuilder<TValue, TFlags extends ColumnFlags> {
    *
    * A named `select` still returns it. Includes never do. `where` and
    * `orderBy` refuse it (OKM1120) unless `filterable` is set. `filters()`
-   * still refuses it.
+   * still refuses it. `filterable: true` keeps the column in those two
+   * clauses and off the row.
    *
    * @param options - `filterable` allows the column in `where` and `orderBy`
    * @returns The same column, hidden
    */
+  hidden(): ColumnBuilder<TValue, FlagTrue<TFlags, "hidden">>;
+  hidden(options: {
+    readonly filterable: true;
+  }): ColumnBuilder<TValue, FlagTrue<TFlags, "hidden"> & { readonly "~filter": true }>;
   hidden(options?: {
     readonly filterable?: boolean;
   }): ColumnBuilder<TValue, FlagTrue<TFlags, "hidden">> {
-    return rebuild<TValue, FlagTrue<TFlags, "hidden">>(this.state, {
+    return rebuild(this.state, {
       hidden: true,
       ...(options?.filterable === true ? { filterable: true as const } : {}),
     });
