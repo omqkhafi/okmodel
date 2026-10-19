@@ -9,7 +9,11 @@ import { join } from "node:path";
 import { POSTGRES_VERSIONS } from "../packages/harness/src/version.js";
 import { renderCompatibility, supportSentence } from "../scripts/compatibility.js";
 import { verifyVersions } from "../scripts/verify.js";
-import { changelogReleaseNotes, milestoneTitle } from "../scripts/github-release.js";
+import {
+  changelogReleaseNotes,
+  closesMilestone,
+  milestoneTitle,
+} from "../scripts/github-release.js";
 import {
   ATTEMPTS,
   WAIT_MS,
@@ -23,7 +27,14 @@ import {
   discoverTestFiles,
   postgresSuitePlan,
 } from "../scripts/postgres-suite.js";
+import { releaseWorkflowProblems } from "../scripts/release-workflow.js";
 import { repoRoot } from "../scripts/root.js";
+import {
+  NPM_FLOOR,
+  NODE_FLOOR,
+  stagePublishCommand,
+  versionBelow,
+} from "../scripts/stage-publish.js";
 
 const root = repoRoot();
 
@@ -92,6 +103,44 @@ test("a release milestone drops a trailing .0", () => {
   expect(milestoneTitle("0.2.0")).toBe("0.2");
   expect(milestoneTitle("0.1.1")).toBe("0.1.1");
   expect(milestoneTitle("0.10.0")).toBe("0.10");
+  expect(closesMilestone("0.10.0")).toBe(true);
+  expect(closesMilestone("0.10.0-next.1")).toBe(false);
+});
+
+test("stage publish uses an explicit path and the next tag for a prerelease", () => {
+  expect(stagePublishCommand("./packed/okmodel.tgz", "0.10.0")).toEqual([
+    "npm",
+    "stage",
+    "publish",
+    "./packed/okmodel.tgz",
+    "--access",
+    "public",
+    "--provenance",
+  ]);
+  expect(stagePublishCommand("./packed/okmodel.tgz", "0.10.0-next.1")).toEqual([
+    "npm",
+    "stage",
+    "publish",
+    "./packed/okmodel.tgz",
+    "--access",
+    "public",
+    "--provenance",
+    "--tag",
+    "next",
+  ]);
+  expect(() => stagePublishCommand("packed/okmodel.tgz", "0.10.0")).toThrow(/git shorthand/);
+  expect(versionBelow("11.14.9", NPM_FLOOR)).toBe(true);
+  expect(versionBelow("11.15.0", NPM_FLOOR)).toBe(false);
+  expect(versionBelow("22.13.1", NODE_FLOOR)).toBe(true);
+  expect(versionBelow("22.14.0", NODE_FLOOR)).toBe(false);
+  expect(versionBelow("24.0.0", NODE_FLOOR)).toBe(false);
+});
+
+test("the release workflow is SHA-pinned and scopes publish permissions", () => {
+  const release = readFileSync(join(root, ".github/workflows/release.yml"), "utf8");
+  expect(releaseWorkflowProblems(release)).toEqual([]);
+  const dependabot = readFileSync(join(root, ".github/dependabot.yml"), "utf8");
+  expect(dependabot).toContain("package-ecosystem: github-actions");
 });
 
 test("npm smoke waits out registry processing and skips bun's manifest cache", () => {
@@ -103,9 +152,6 @@ test("npm smoke waits out registry processing and skips bun's manifest cache", (
     "okmodel@0.8.0",
     "postgres",
   ]);
-  const release = readFileSync(join(root, ".github/workflows/release.yml"), "utf8");
-  const smoke = release.slice(release.indexOf("name: smoke / quickstart"));
-  expect(smoke).toContain("timeout-minutes: 45");
   expect(readFileSync(join(root, "docs/release.md"), "utf8")).toContain(
     "at most 31 times, 30 seconds apart",
   );
@@ -156,17 +202,19 @@ test("published provenance must record the QA'd commit", () => {
   expect(provenanceCommitProblem(provenanceDocument([sha], true), sha)).toBeUndefined();
 });
 
-test("the release workflow requires the QA'd commit on the tag job and the smoke job", () => {
+test("the release workflow checks the tag before any build", () => {
   const release = readFileSync(join(root, ".github/workflows/release.yml"), "utf8");
-  expect(release).toContain("description: Full 40-hex SHA of the QA'd commit");
-  expect(release).toContain("required: true");
   expect(release).toContain("fetch-depth: 0");
   expect(release).toContain("fetch-tags: true");
-  expect(release.match(/RELEASE_COMMIT: \$\{\{ inputs\.commit \}\}/g)).toEqual([
-    "RELEASE_COMMIT: ${{ inputs.commit }}",
-    "RELEASE_COMMIT: ${{ inputs.commit }}",
-  ]);
-  expect(release).toContain("bun ./scripts/npm-smoke.ts");
+  expect(release).toContain("git fetch origin main");
+  expect(release).toContain("git merge-base --is-ancestor HEAD origin/main");
+  expect(release).toContain("bun ./scripts/release-ref.ts");
+  expect(release).not.toContain("inputs.commit");
+  expect(release).not.toContain("pull_request_target");
+  const guard = release.indexOf("git merge-base --is-ancestor");
+  const build = release.indexOf("run: bun run build");
+  expect(guard).toBeGreaterThan(-1);
+  expect(build).toBeGreaterThan(guard);
 });
 
 test("the site deploys only after a successful release of a stable tag", () => {
@@ -208,7 +256,6 @@ test("the site deploys only after a successful release of a stable tag", () => {
   const vercel = JSON.parse(readFileSync(join(root, "site/vercel.json"), "utf8")) as unknown;
   expect(vercel).toEqual({ git: { deploymentEnabled: { main: false } } });
   const release = readFileSync(join(root, ".github/workflows/release.yml"), "utf8");
-  expect(release).toContain("name: smoke / quickstart");
   expect(release).not.toContain("deploy-vercel");
 });
 
@@ -241,18 +288,18 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   expect(release).toContain("uses: ./.github/workflows/postgres-tarball.yml");
   expect(release).toContain("needs: tag");
   expect(release).toContain("needs: gate");
-  expect(release).toContain("needs: publish");
-  expect(release).toContain("needs: smoke");
+  expect(release).toContain("name: publish / npm");
   const releaseRef = release.indexOf("bun ./scripts/release-ref.ts");
   const gate = release.indexOf("uses: ./.github/workflows/postgres-suite.yml");
   expect(releaseRef).toBeGreaterThan(-1);
   expect(releaseRef).toBeLessThan(gate);
   expect(release.indexOf("bun ./scripts/release-ref.ts", releaseRef + 1)).toBe(-1);
   expect(release).toContain("tarball_artifact: release-tarball");
-  expect(release).toContain("npm publish ./packed/okmodel.tgz --access public");
+  expect(release).toContain("bun ./scripts/stage-publish.ts ./packed/okmodel.tgz");
   expect(release).toContain('NPM_CONFIG_PROVENANCE: "true"');
-  expect(release).toContain("bun ./scripts/npm-smoke.ts");
+  expect(release).toContain("environment: release");
   expect(release).toContain("bun ./scripts/github-release.ts");
+  expect(release).not.toContain("bun ./scripts/npm-smoke.ts");
   expect(jsonVersionLists(release, "versions")).toEqual([
     [...POSTGRES_VERSIONS],
     [...POSTGRES_VERSIONS],
@@ -363,10 +410,13 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
  */
 function bareNpmPublishTargets(yaml: string): readonly string[] {
   const bare: string[] = [];
-  for (const match of yaml.matchAll(/\bnpm publish\s+([^\s]+)/g)) {
-    const target = match[1] ?? "";
-    if (target.startsWith("-") || target.startsWith("./") || target.startsWith("/")) continue;
-    bare.push(target);
+  for (const line of yaml.split("\n")) {
+    if (line.trimStart().startsWith("#")) continue;
+    for (const match of line.matchAll(/\bnpm(?:[ \t]+stage)?[ \t]+publish[ \t]+([^\s]+)/g)) {
+      const target = match[1] ?? "";
+      if (target.startsWith("-") || target.startsWith("./") || target.startsWith("/")) continue;
+      bare.push(target);
+    }
   }
   return bare;
 }
@@ -387,6 +437,12 @@ test("npm publish is given the tarball by explicit path, never a bare name", () 
   );
   expect(bareNpmPublishTargets("run: npm publish /tmp/okmodel.tgz")).toEqual([]);
   expect(bareNpmPublishTargets("run: npm publish --access public")).toEqual([]);
+  expect(bareNpmPublishTargets("run: npm stage publish packed/okmodel.tgz")).toEqual([
+    "packed/okmodel.tgz",
+  ]);
+  expect(bareNpmPublishTargets("run: npm stage publish ./packed/okmodel.tgz --provenance")).toEqual(
+    [],
+  );
 });
 
 test("every job that runs bun run check sets up Node the way ci.yml does", () => {
@@ -394,7 +450,7 @@ test("every job that runs bun run check sets up Node the way ci.yml does", () =>
   const release = readFileSync(join(root, ".github/workflows/release.yml"), "utf8");
   expect(checkSetupProblems(ci, ci)).toEqual([]);
   expect(checkSetupProblems(release, ci)).toEqual([]);
-  expect(checkJobs(release).map(([name]) => name)).toContain("publish");
+  expect(checkJobs(release)).toEqual([]);
 });
 
 test("the setup guard names a check job without Node, or with Node after Check", () => {
@@ -415,9 +471,6 @@ test("the setup guard names a check job without Node, or with Node after Check",
   expect(checkSetupProblems(late, ci)).toEqual([
     "publish: runs bun run check without setup-node 22 before it, as ci.yml has",
   ]);
-  const release = readFileSync(join(root, ".github/workflows/release.yml"), "utf8");
-  const otherVersion = ci.replace("node-version: 22", "node-version: 20");
-  expect(checkSetupProblems(release, otherVersion)).toHaveLength(1);
 });
 
 test("verify runs one version unless --all", () => {

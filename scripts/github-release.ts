@@ -55,6 +55,18 @@ export function milestoneTitle(version: string): string {
   return version.endsWith(".0") ? version.slice(0, -2) : version;
 }
 
+/**
+ * A prerelease tag has no train milestone to close.
+ *
+ * `0.10.0` closes milestone `0.10`. `0.10.0-next.1` does not.
+ *
+ * @param version - `package.json` version
+ * @returns True when the release should close {@link milestoneTitle}
+ */
+export function closesMilestone(version: string): boolean {
+  return !version.includes("-");
+}
+
 interface Milestone {
   readonly number: number;
   readonly title: string;
@@ -139,7 +151,7 @@ if (import.meta.main) {
     if (code === null || code !== 0) {
       throw new Error(`gh release create ${tag} exited ${String(code)}`);
     }
-    closeMilestone(version);
+    if (closesMilestone(version)) closeMilestone(version);
   } finally {
     rmSync(notesPath, { force: true });
   }

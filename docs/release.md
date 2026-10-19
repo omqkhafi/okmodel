@@ -1,10 +1,16 @@
 # Release
 
-Nothing in this repository publishes on push. Ali publishes after the release commit is on `main`.
+A push of a tag `v*` starts the Release workflow. Nothing publishes from a branch push or a pull request. The tag is `v` plus the `package.json` version, and that commit is already on `main`. The changelog section is `## v` plus that version.
 
-The tag is `v` plus the `package.json` version. The changelog section is `## v` plus that version. The Release workflow takes the commit that was QA'd and reads `package.json` at that commit. It accepts only `refs/tags/v` plus that version, and only when the tag peels to that commit. Any other ref is refused, and the message names the command to run.
+The first job fails before any build when any of these is wrong:
 
-The workflow checks the tag first, packs one tarball, then runs the Postgres matrix. The tarball job tests that same file. Supported majors are 15, 16, 17, and 18. This workflow and a weekly run (Monday 06:00 UTC) cover every supported major, suite and tarball. The suite deals the same test files across four shards per major (`isolation`, `selection`, `consistency`, `tx`). Each shard starts its own database. The pgbouncer proof runs beside the shards, not after them. A pull request runs that matrix only with the label `needs: postgres`: the shards on 15 and 18 and the tarball job on 18, and that job packs its own tarball. `gate / check` needs those jobs and fails if one is skipped while the label is present (D230). `bun run verify` runs the suite on this machine for one version, or every supported version with `--all`. CI is the authority for a release. The tarball job installs the package in a fresh directory and runs the README and the quickstart. PGlite and the in-process wire server stay in `bun run check`. Two releases cannot run at the same time. Third-party actions are pinned by commit SHA.
+- the tagged commit is not an ancestor of `origin/main` (`git merge-base --is-ancestor`)
+- the tag is not `v` plus the `package.json` version at that commit
+- `changelog.md` has no `## v` section for that version
+
+It then builds with Bun, runs the pack contract (`scripts/pack-tracked.ts --release`), and runs the Postgres matrix against that one tarball. Supported majors are 15, 16, 17, and 18. This workflow and a weekly run (Monday 06:00 UTC) cover every supported major, suite and tarball. The suite deals the same test files across four shards per major (`isolation`, `selection`, `consistency`, `tx`). Each shard starts its own database. The pgbouncer proof runs beside the shards, not after them. A pull request runs that matrix only with the label `needs: postgres`: the shards on 15 and 18 and the tarball job on 18, and that job packs its own tarball. `gate / check` needs those jobs and fails if one is skipped while the label is present (D230). `bun run verify` runs the suite on this machine for one version, or every supported version with `--all`. CI is the authority for a release. The tarball job installs the package in a fresh directory and runs the README and the quickstart. PGlite and the in-process wire server stay in `bun run check`. Two releases cannot run at the same time. Third-party actions are pinned by commit SHA. Dependabot opens weekly pull requests for those actions.
+
+A dry run is `workflow_dispatch` with `publish` left false. That runs the tag job on the selected ref and does not build or stage. On `main` the ancestor check passes. A tag of a commit that is not on `main` fails.
 
 ## Tag
 
@@ -18,30 +24,35 @@ git push origin "v${version}"
 
 ## Publish
 
-npm needs a trusted publisher for `okmodel`: repository `omqkhafi/okmodel`, workflow `release.yml`. No token is stored in the repository.
+npm needs a trusted publisher for `okmodel`: repository `omqkhafi/okmodel`, workflow filename `release.yml`, environment `release`. The publisher is allowed to `npm stage publish` and is not allowed to `npm publish`. No token is stored in the repository. `bun publish` is not used: it has no OIDC exchange, no provenance, and no staging.
 
-`<sha>` is the commit that was QA'd: `git rev-parse "v${version}^{commit}"`. Run the Release workflow on that tag and pass the SHA:
+Pushing the tag starts the run. A dispatch can stage as well, with `publish` set true:
 
 ```sh
-gh workflow run release.yml --ref "v${version}" -f commit=<sha>
+gh workflow run release.yml --ref "v${version}" -f publish=true
 ```
 
-The same run can be started from the GitHub Actions page: open Actions, choose Release, run the workflow, select the `v` plus version tag, and paste that SHA into `commit`.
+Leave `publish` false to dry-run the tag checks:
 
-The tag job refuses the run when:
+```sh
+gh workflow run release.yml --ref main -f publish=false
+```
 
-- `commit` is missing or is not a full 40-hex SHA
-- the tag does not peel to that commit (`v${version}^{commit}`)
-- the checkout is a different commit, so the tarball would not be built from the QA'd commit
-- `package.json` at that commit is not the version in the tag, or the ref is not `refs/tags/v` plus that version
+The publish job runs only after the Postgres gate. It uses the `release` Environment. It is the only job with `id-token: write` and `contents: write`. It installs Node 22.14 or newer and npm 11.15.0 or newer, then stages the tested tarball:
 
-It then packs one tarball and runs the Postgres matrix against that file. `bun pm pack` writes no `gitHead`, so the commit is not in the tarball. The publish job runs `bun run check`, then `scripts/pack-tracked.ts --release`, which refuses a dirty worktree (including untracked files) and any packed path outside `dist/` that git does not track. It publishes the tag job's tarball with `npm publish ./packed/okmodel.tgz --access public` and `NPM_CONFIG_PROVENANCE=true`. `npm` performs the trusted-publisher login.
+```sh
+npm stage publish ./packed/okmodel.tgz --access public --provenance
+```
 
-After publish, a smoke job installs `okmodel` at that version from npm in a fresh directory and runs the README quickstart against Postgres 17. It fails when the version or its provenance attestation is missing. `npm view` only returns the predicate type. The smoke job then reads the document at `dist.attestations.url` and fails when the SLSA statement's `gitCommit` (`resolvedDependencies[].digest.gitCommit`) is not `<sha>`. A different SHA fails immediately. npm can return from publish while the version is still processing. The smoke job asks again at most 31 times, 30 seconds apart, and each install runs `bun add --no-cache` so a manifest cached before the version existed is not reused.
+`NPM_CONFIG_PROVENANCE` is `true`. A prerelease version also passes `--tag next`, because npm refuses a prerelease without a tag. The publish step is skipped when a dispatch leaves `publish` false. Trusted publishing performs the OIDC login. The staged version is not installable until a maintainer approves it with 2FA (`npm stage approve` or the Staged Packages tab on npmjs.com).
 
-The same run then creates a GitHub Release on that tag and closes the milestone (`0.2.0` closes `0.2`, and `0.1.1` closes `0.1.1`). The notes are the body of the `## v` plus version section in `changelog.md`.
+`scripts/pack-tracked.ts --release` runs in the build job, before the tarball is uploaded. It refuses a dirty worktree (including untracked files) and any packed path outside `dist/` that git does not track. `bun pm pack` writes no `gitHead`, so the commit is not in the tarball. The tarball job tests the uploaded file. Publish uploads that same file.
 
-Provenance is the npm attestation that GitHub Actions built the tarball. The workflow sets `permissions.id-token` to `write` so npm can attach it. The signed statement records the commit the runner built.
+After a maintainer approves the staged version, `scripts/npm-smoke.ts` installs `okmodel` at that version from npm in a fresh directory and runs the README quickstart against Postgres 17. It fails when the version or its provenance attestation is missing. `npm view` only returns the predicate type. The script then reads the document at `dist.attestations.url` and fails when the SLSA statement's `gitCommit` (`resolvedDependencies[].digest.gitCommit`) is not the tagged commit. A different SHA fails immediately. npm can return from approval while the version is still processing. The script asks again at most 31 times, 30 seconds apart, and each install runs `bun add --no-cache` so a manifest cached before the version existed is not reused. Set `RELEASE_COMMIT` to the full SHA of the tag.
+
+The same workflow run creates a GitHub Release on that tag. A stable version closes the milestone (`0.2.0` closes `0.2`, and `0.1.1` closes `0.1.1`). A prerelease does not. The notes are the body of the `## v` plus version section in `changelog.md`.
+
+Provenance is the npm attestation that GitHub Actions built the tarball. The publish job sets `permissions.id-token` to `write` so npm can attach it. The signed statement records the commit the runner built.
 
 ## Site
 
