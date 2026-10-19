@@ -6,7 +6,7 @@ description: "A field's rules live in one place. They run when validation is ena
 The column has a type. A rule here rejects a value that type still allows. It runs only when validation is on and the engine has loaded. [References](/docs/define/table/references) point a column at another table.
 </Callout>
 
-A field's rules live in one place. Insert and update run them when validation is on and `okmodel/validate` is loaded. A read does not. `{ validate: false }` skips that call. A delete does not validate.
+A field's rules live in one place. Insert and update run them when validation is on and `okmodel/validate` is loaded. A read does not. `{ validate: false }` skips that call. A delete does not validate. The same insert and update handles work inside `batch()`: rules run before the plan executes, and a failing rule rolls the whole batch back with OKM1200, `issues`, and `batchIndex`.
 
 ### Inline
 

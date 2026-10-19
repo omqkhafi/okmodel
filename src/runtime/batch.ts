@@ -61,7 +61,9 @@ export async function batch(
       }
     }
     const prepared: PreparedWrite[] = [];
-    for (const op of ops as readonly Op[]) {
+    const list = ops as readonly Op[];
+    for (let index = 0; index < list.length; index += 1) {
+      const op = list[index];
       const plan = typeof op === "object" && op !== null ? op["~plan"] : undefined;
       if (plan === undefined) {
         fail(
@@ -69,7 +71,12 @@ export async function batch(
           "batch takes write operations: insert, update, delete, and archive. Pass them without awaiting.",
         );
       }
-      const item = await plan();
+      let item: PreparedWrite;
+      try {
+        item = await plan();
+      } catch (error) {
+        throw stampValidation(error, index);
+      }
       if (item.checked === "parent") {
         throw new OkmError(
           "OKM1705",
@@ -197,4 +204,33 @@ function at(error: unknown, starts: readonly number[]): unknown {
   let index = 0;
   while (index + 1 < starts.length && (starts[index + 1] ?? Infinity) <= failed) index += 1;
   return index === failed ? error : move.call(error, index);
+}
+
+/**
+ * Attaches `batchIndex` to a validation failure that happened while planning.
+ *
+ * Nothing has been sent yet, so the batch has not written. The index still
+ * names the operation whose rules failed.
+ *
+ * @param error - Thrown while planning one operation
+ * @param index - That operation's place in the batch
+ * @returns The same error, or OKM1200 with `batchIndex` set
+ */
+function stampValidation(error: unknown, index: number): unknown {
+  if (!(error instanceof OkmError) || error.code !== "OKM1200" || error.batchIndex !== null) {
+    return error;
+  }
+  return new OkmError(error.code, error.message, {
+    kind: error.kind,
+    retryable: error.retryable,
+    fix: error.fix,
+    batchIndex: index,
+    fieldReason: error.fieldReason,
+    ...(error.table !== undefined ? { table: error.table } : {}),
+    ...(error.columns.length > 0 ? { columns: error.columns } : {}),
+    ...(error.constraint !== undefined ? { constraint: error.constraint } : {}),
+    ...(error.sqlstate !== undefined ? { sqlstate: error.sqlstate } : {}),
+    ...(error.issues !== undefined ? { issues: error.issues } : {}),
+    ...(error.cause !== undefined ? { cause: error.cause } : {}),
+  });
 }
