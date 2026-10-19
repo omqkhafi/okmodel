@@ -585,13 +585,21 @@ function linkPackage(): void {
 function linkOkmodel(cwd: string): void {
   writeFileSync(
     join(cwd, "package.json"),
-    `${JSON.stringify({ name: "okm-pull-ext", private: true, type: "module" })}\n`,
+    `${JSON.stringify({
+      name: "okm-pull-ext",
+      private: true,
+      type: "module",
+      dependencies: { okmodel: `file:${root}` },
+    })}\n`,
   );
-  const modules = join(cwd, "node_modules");
-  const bin = join(modules, ".bin");
-  mkdirSync(bin, { recursive: true });
-  symlinkSync(root, join(modules, "okmodel"));
-  symlinkSync(join(root, "dist/okm.js"), join(bin, "okm"));
+  const install = Bun.spawnSync(["bun", "install"], {
+    cwd,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  if (install.exitCode !== 0) {
+    throw new Error(`bun install failed\n${install.stdout.toString()}${install.stderr.toString()}`);
+  }
 }
 
 function expectTsc(
