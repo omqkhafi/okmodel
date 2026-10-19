@@ -2,7 +2,8 @@
  * Compares `describe()` requirements with a connected server.
  *
  * Doctor and `okm check` share this. Codes stay OKM1802 / OKM1803 for the
- * major and OKM1811 for a missing extension (D300).
+ * major and OKM1811 for a missing extension (D300). An extension an applied
+ * or pending migration creates is not OKM1811; apply installs it (#400).
  */
 
 import { open } from "../../adapters/pg/postgresjs.js";
@@ -15,6 +16,8 @@ import {
   type PostgresMajor,
 } from "../../dialects/pg/floor.js";
 import { driverUrl } from "./driver-url.js";
+import { createExtensionName } from "./extensions.js";
+import { loadMigrations } from "./files.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
 import { describe } from "./schema-api.js";
 
@@ -30,19 +33,92 @@ export type RequirementsSchema = {
 };
 
 /**
- * Refuses when the server is older than `minPostgres` or lacks an extension.
+ * Notice when several targets exist and `--target` was omitted.
+ *
+ * @param count - Number of configured targets
+ * @returns One line, including the trailing newline
+ */
+export function serverChecksSkippedNotice(count: number): string {
+  return `server checks skipped: ${String(count)} targets, pass --target <name>\n`;
+}
+
+/**
+ * Extension names `CREATE EXTENSION` steps in the migrations directory create.
+ *
+ * Applied and pending files both count: doctor and check must not raise
+ * OKM1811 for those names (#400).
+ *
+ * @param directory - Migrations directory
+ * @returns Extension names the history will install
+ */
+export function extensionsCreatedByMigrations(directory: string): ReadonlySet<string> {
+  const names = new Set<string>();
+  for (const migration of loadMigrations(directory)) {
+    for (const step of migration.steps) {
+      const name = createExtensionName(step.sql);
+      if (name !== undefined) names.add(name);
+    }
+  }
+  return names;
+}
+
+/**
+ * Refuses when the server is older than `minPostgres`.
  *
  * @param url - Target URL
  * @param schema - Schema `describe` reads
+ * @throws OkmError OKM1802 or OKM1803
+ */
+export async function assertSchemaMajor(url: string, schema: RequirementsSchema): Promise<void> {
+  const pool = open({ url: driverUrl(url), max: 1 });
+  try {
+    await assertMajorAgainstPool(pool, schema);
+  } catch (error) {
+    throw sessionFailure(error) ?? error;
+  } finally {
+    await finishQuiet(() => pool.close());
+  }
+}
+
+/**
+ * Refuses when a required extension is missing and no migration creates it.
+ *
+ * @param url - Target URL
+ * @param schema - Schema `describe` reads
+ * @param createdByMigrations - Names applied or pending migrations create
+ * @throws OkmError OKM1811
+ */
+export async function assertSchemaExtensions(
+  url: string,
+  schema: RequirementsSchema,
+  createdByMigrations: ReadonlySet<string> = new Set(),
+): Promise<void> {
+  const pool = open({ url: driverUrl(url), max: 1 });
+  try {
+    await assertExtensionsAgainstPool(pool, schema, createdByMigrations);
+  } catch (error) {
+    throw sessionFailure(error) ?? error;
+  } finally {
+    await finishQuiet(() => pool.close());
+  }
+}
+
+/**
+ * Major then extensions. Prefer the split helpers when drift runs between.
+ *
+ * @param url - Target URL
+ * @param schema - Schema `describe` reads
+ * @param createdByMigrations - Names applied or pending migrations create
  * @throws OkmError OKM1802, OKM1803, or OKM1811
  */
 export async function assertSchemaRequirements(
   url: string,
   schema: RequirementsSchema,
+  createdByMigrations: ReadonlySet<string> = new Set(),
 ): Promise<void> {
   const pool = open({ url: driverUrl(url), max: 1 });
   try {
-    await assertAgainstPool(pool, schema);
+    await assertAgainstPool(pool, schema, createdByMigrations);
   } catch (error) {
     throw sessionFailure(error) ?? error;
   } finally {
@@ -55,21 +131,51 @@ export async function assertSchemaRequirements(
  *
  * @param pool - Open connection
  * @param schema - Schema `describe` reads
+ * @param createdByMigrations - Names applied or pending migrations create
  */
 export async function assertAgainstPool(
   pool: DriverPool,
   schema: RequirementsSchema,
+  createdByMigrations: ReadonlySet<string> = new Set(),
 ): Promise<void> {
+  await assertMajorAgainstPool(pool, schema);
+  await assertExtensionsAgainstPool(pool, schema, createdByMigrations);
+}
+
+async function assertMajorAgainstPool(pool: DriverPool, schema: RequirementsSchema): Promise<void> {
   const description = describe(schema);
   const major = await serverMajor(pool);
   refuseMajor(major, description.minPostgres, schema.requires?.postgres !== undefined);
+}
+
+async function assertExtensionsAgainstPool(
+  pool: DriverPool,
+  schema: RequirementsSchema,
+  createdByMigrations: ReadonlySet<string>,
+): Promise<void> {
+  const description = describe(schema);
   if (description.extensions.length === 0) return;
-  const installed = await installedExtensions(
-    pool,
-    description.extensions.map((item) => item.name),
+  const names = description.extensions.map((item) => item.name);
+  const installed = await installedExtensions(pool, names);
+  const missingCreated = names.filter(
+    (name) => !installed.has(name) && createdByMigrations.has(name),
   );
+  const available =
+    missingCreated.length === 0
+      ? new Set<string>()
+      : await availableExtensions(pool, missingCreated);
   for (const item of description.extensions) {
     if (installed.has(item.name)) continue;
+    if (createdByMigrations.has(item.name)) {
+      // Not installed yet; an applied or pending migration creates it. Refuse
+      // only when the server cannot install that package (#400).
+      if (available.has(item.name)) continue;
+      throw new OkmError("OKM1811", `Extension ${item.name} is not available on the server.`, {
+        fix: {
+          summary: `Run okm migrate apply after the extension package is on the server, or remove the declaration. Needed because ${item.reason}.`,
+        },
+      });
+    }
     throw new OkmError("OKM1811", `Extension ${item.name} is not installed on the server.`, {
       fix: {
         summary: `Install the extension, or remove the declaration. Needed because ${item.reason}.`,
@@ -102,6 +208,23 @@ async function installedExtensions(
   if (names.length === 0) return new Set();
   const result = await pool.execute(
     "select extname from pg_extension where extname = any($1::text[])",
+    [encodeTextArray(names)],
+  );
+  const found = new Set<string>();
+  for (const row of result.rows) {
+    const name = cell(row[0]);
+    if (name.length > 0) found.add(name);
+  }
+  return found;
+}
+
+async function availableExtensions(
+  pool: DriverPool,
+  names: readonly string[],
+): Promise<ReadonlySet<string>> {
+  if (names.length === 0) return new Set();
+  const result = await pool.execute(
+    "select name from pg_available_extensions where name = any($1::text[])",
     [encodeTextArray(names)],
   );
   const found = new Set<string>();

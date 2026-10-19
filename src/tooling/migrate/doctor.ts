@@ -4,9 +4,10 @@
  * A code prints the registry entry. With no code, the project is loaded and
  * each table's triggers are listed. When a target is configured, the command
  * also connects and checks `minPostgres` and required extensions from
- * `describe()` (D300). When `roles` is set, it checks that those roles exist,
- * that a managed role can be created, and that the application role can reach
- * each managed object.
+ * `describe()` (D300). An extension an applied or pending migration creates
+ * is not OKM1811 (#400). When `roles` is set, it checks that those roles
+ * exist, that a managed role can be created, and that the application role
+ * can reach each managed object.
  */
 
 import { open } from "../../adapters/pg/postgresjs.js";
@@ -18,15 +19,22 @@ import { omitManagedObjects } from "./managed.js";
 import { assertTargetPolicy, listTargets, selectTarget, type InvokeFlags } from "./policy.js";
 import { driverUrl } from "./driver-url.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
-import type { ProjectContext } from "./paths.js";
+import { projectPath, type ProjectContext } from "./paths.js";
 import { openProject } from "./project.js";
-import { assertSchemaRequirements } from "./server-requirements.js";
+import {
+  assertSchemaExtensions,
+  assertSchemaMajor,
+  extensionsCreatedByMigrations,
+  serverChecksSkippedNotice,
+} from "./server-requirements.js";
 
 /**
  * Explains one code, or lists the triggers on each table.
  *
  * A role check connects as the read-only `check` class. A protected target
- * is allowed. The command does not change the database.
+ * is allowed. The command does not change the database. Several targets and
+ * no `--target` skip the server checks and print
+ * {@link serverChecksSkippedNotice}.
  *
  * @param cwd - Project directory
  * @param code - Spec code, when the caller passed one
@@ -49,10 +57,17 @@ export async function doctorProject(
   const opened = await openProject(project);
   const objects = omitManagedObjects(opened.built.catalog).objects;
   const targets = listTargets(opened.config);
-  if (targets.length === 1 || (targets.length > 1 && flags?.target !== undefined)) {
+  let notice = "";
+  if (targets.length > 1 && flags?.target === undefined) {
+    notice = serverChecksSkippedNotice(targets.length);
+  } else if (targets.length === 1 || (targets.length > 1 && flags?.target !== undefined)) {
     const target = selectTarget(opened.config, flags?.target);
     assertTargetPolicy(target, "check", flags?.allowProtected ?? false);
-    await assertSchemaRequirements(target.url, opened.built);
+    const created = extensionsCreatedByMigrations(
+      projectPath(opened.cwd, opened.config.migrations ?? "migrations"),
+    );
+    await assertSchemaMajor(target.url, opened.built);
+    await assertSchemaExtensions(target.url, opened.built, created);
   }
   if (opened.config.roles !== undefined) {
     const target = selectTarget(opened.config, flags?.target);
@@ -66,7 +81,7 @@ export async function doctorProject(
       await finishQuiet(() => pool.close());
     }
   }
-  return formatTriggers(objects);
+  return `${notice}${formatTriggers(objects)}`;
 }
 
 /**
