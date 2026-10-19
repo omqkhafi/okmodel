@@ -1,29 +1,31 @@
 name: Release
 
-# Runner: every job runs on ubuntu-24.04, not ubuntu-latest. The image is
-# pinned, so moving to a newer Ubuntu is a deliberate change made in a pull
-# request, not something GitHub does when it moves the latest label.
+# Runner: every job runs on ubuntu-24.04, not ubuntu-latest.
 #
-# Manual. Ali runs this on the tag v<package.json version> and passes the
-# QA'd commit as `commit` (a full 40-hex SHA). This file does not run on
-# push. scripts/release-ref.ts refuses any other ref, a tag that does not
-# peel to that commit, a checkout of a different commit, or a package.json
-# at that commit that does not match the tag. That check runs before the
-# Postgres gate.
+# A push of a tag v* is the only publish trigger. The tag job refuses the
+# run, before any build, unless the tagged commit is an ancestor of
+# origin/main (`git merge-base --is-ancestor`), the tag equals the
+# package.json version, and changelog.md has a ## v section for it.
 #
-# The gate tests one packed tarball. Publish uploads that same file.
-# Two releases cannot run at the same time.
+# workflow_dispatch with publish left false is a dry run of that tag job.
+# It passes on main and fails when the selected ref is a tag of a commit
+# that is not on main. The publish step does not run.
 #
-# Provenance: id-token write lets npm attach a statement that this
-# workflow built the tarball. The package needs a trusted publisher for
-# this repository and this workflow. No npm token is stored here.
+# Publish stages the tested tarball with npm stage publish (npm >= 11.15.0,
+# Node >= 22.14). Bun builds and tests. bun publish has no OIDC, provenance,
+# or staging. No npm token is stored. The publish job is the release
+# Environment and is the only job with id-token: write and contents: write.
 on:
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
-      commit:
-        description: Full 40-hex SHA of the QA'd commit
-        required: true
-        type: string
+      publish:
+        description: Stage the package on npm. False runs the tag checks only.
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: release
@@ -36,9 +38,6 @@ jobs:
   tag:
     name: tag / version
     runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      actions: write
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -51,16 +50,34 @@ jobs:
         with:
           bun-version: 1.4.2
 
-      - name: Require the version tag
-        run: bun ./scripts/release-ref.ts
+      - name: Require the tag on main
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "HEAD is not an ancestor of origin/main"
+            exit 1
+          fi
+          bun ./scripts/release-ref.ts
         env:
-          RELEASE_COMMIT: ${{ inputs.commit }}
+          RELEASE_PUBLISH: ${{ github.event_name == 'push' || inputs.publish == true }}
+
+  build:
+    name: build / pack
+    needs: tag
+    if: github.event_name == 'push' || inputs.publish == true
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup
         uses: ./.github/actions/setup-bun
 
       - name: Build
         run: bun run build
+
+      - name: Pack contract
+        run: bun ./scripts/pack-tracked.ts --release
 
       - name: Pack
         run: |
@@ -77,10 +94,33 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  suite:
+    name: suite
+    needs: tag
+    if: github.event_name == 'push' || inputs.publish == true
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/postgres-suite.yml
+    with:
+      versions: '["15", "16", "17", "18"]'
+
+  tarball:
+    name: tarball
+    needs: build
+    if: github.event_name == 'push' || inputs.publish == true
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/postgres-tarball.yml
+    with:
+      versions: '["15", "16", "17", "18"]'
+      tarball_artifact: release-tarball
+
   gate:
     name: gate / passed
     needs: [suite, tarball]
-    if: always()
+    if: always() && (github.event_name == 'push' || inputs.publish == true)
     runs-on: ubuntu-24.04
     steps:
       - name: Require the matrix
@@ -96,35 +136,16 @@ jobs:
           done
           exit "$fail"
 
-  suite:
-    name: suite
-    needs: tag
-    permissions:
-      contents: read
-      actions: read
-    uses: ./.github/workflows/postgres-suite.yml
-    with:
-      versions: '["15", "16", "17", "18"]'
-
-  tarball:
-    name: tarball
-    needs: tag
-    permissions:
-      contents: read
-      actions: read
-    uses: ./.github/workflows/postgres-tarball.yml
-    with:
-      versions: '["15", "16", "17", "18"]'
-      tarball_artifact: release-tarball
-
   publish:
     name: publish / npm
     needs: gate
+    if: github.event_name == 'push' || inputs.publish == true
+    environment: release
     runs-on: ubuntu-24.04
     permissions:
-      contents: read
+      contents: write
       id-token: write
-      actions: read
+      issues: write
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -135,18 +156,10 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: "22.14"
 
-      - name: Check
-        run: bun run check
-
-      - name: Packed files are tracked
-        run: bun ./scripts/pack-tracked.ts --release
-
-      - name: Setup Node for publish
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 24
+      - name: Require npm 11.15
+        run: npm install -g npm@11.15.0
 
       - name: Download tarball
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -154,62 +167,11 @@ jobs:
           name: release-tarball
           path: packed
 
-      - name: Publish
-        run: npm publish ./packed/okmodel.tgz --access public
+      - name: npm stage publish
+        if: github.event_name == 'push' || inputs.publish == true
+        run: bun ./scripts/stage-publish.ts ./packed/okmodel.tgz
         env:
           NPM_CONFIG_PROVENANCE: "true"
-
-  smoke:
-    name: smoke / quickstart
-    needs: publish
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Setup
-        uses: ./.github/actions/setup-bun
-
-      - name: Setup Node
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 24
-
-      - name: Start Postgres
-        run: bun run db:up
-        env:
-          POSTGRES_VERSION: "17"
-
-      - name: Smoke
-        run: bun ./scripts/npm-smoke.ts
-        env:
-          POSTGRES_VERSION: "17"
-          RELEASE_COMMIT: ${{ inputs.commit }}
-
-      - name: Stop Postgres
-        if: always()
-        run: bun run db:down
-        env:
-          POSTGRES_VERSION: "17"
-
-  github-release:
-    name: github / release
-    needs: smoke
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-      issues: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: 1.4.2
 
       - name: GitHub Release
         run: bun ./scripts/github-release.ts
