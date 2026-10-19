@@ -663,11 +663,32 @@ type AllowedUpdate<
       readonly version?: number;
     }[];
 
+/** Allowed update with `version` required (versioned tables, D305). */
+type AllowedUpdateVersioned<
+  S extends QuerySchema,
+  K extends keyof S["~byName"],
+  Allow extends readonly (keyof RowOf<S, K> & string)[],
+> =
+  | {
+      readonly where?: WhereOf<S, K>;
+      readonly set: AllowedSet<S, K, Allow>;
+      readonly version: number;
+    }
+  | readonly {
+      readonly id?: unknown;
+      readonly where?: WhereOf<S, K>;
+      readonly set: AllowedSet<S, K, Allow>;
+      readonly version: number;
+    }[];
+
 /**
  * One update, or a per-row list in one statement.
  *
  * `lock: "skip"` with `limit` claims that many matching rows and leaves rows
  * another transaction already holds. It is not valid on a list.
+ *
+ * `version` is optional on this alias. {@link TableApi.update} picks the
+ * required-version form when the table is `versioned()` (D305).
  */
 export type UpdateTarget<S extends QuerySchema, K extends keyof S["~byName"]> =
   | {
@@ -675,16 +696,50 @@ export type UpdateTarget<S extends QuerySchema, K extends keyof S["~byName"]> =
       readonly set: UpdateSet<S, K>;
       readonly limit?: number;
       readonly lock?: "skip";
-      /** Version read from the row. Required at runtime when the table is `versioned()`. */
+      /** Version read from the row. Required when the table is `versioned()`. */
       readonly version?: number;
     }
   | readonly {
       readonly id?: unknown;
       readonly where?: WhereOf<S, K>;
       readonly set: UpdateSet<S, K>;
-      /** Version read from the row. Required at runtime when the table is `versioned()`. */
+      /** Version read from the row. Required when the table is `versioned()`. */
       readonly version?: number;
     }[];
+
+/** Update target with `version` required (versioned tables, D305). */
+type UpdateTargetVersioned<S extends QuerySchema, K extends keyof S["~byName"]> =
+  | {
+      readonly where?: WhereOf<S, K>;
+      readonly set: UpdateSet<S, K>;
+      readonly limit?: number;
+      readonly lock?: "skip";
+      /** Version read from the row. */
+      readonly version: number;
+    }
+  | readonly {
+      readonly id?: unknown;
+      readonly where?: WhereOf<S, K>;
+      readonly set: UpdateSet<S, K>;
+      /** Version read from the row. */
+      readonly version: number;
+    }[];
+
+/** `update` target: required `version` on versioned tables, else {@link UpdateTarget}. */
+type UpdateArg<S extends QuerySchema, K extends keyof S["~byName"]> = S["~byName"][K] extends {
+  readonly "~versioned": true;
+}
+  ? UpdateTargetVersioned<S, K>
+  : UpdateTarget<S, K>;
+
+/** `{ allow }` update target: required `version` on versioned tables. */
+type AllowedUpdateArg<
+  S extends QuerySchema,
+  K extends keyof S["~byName"],
+  Allow extends readonly (keyof RowOf<S, K> & string)[],
+> = S["~byName"][K] extends { readonly "~versioned": true }
+  ? AllowedUpdateVersioned<S, K, Allow>
+  : AllowedUpdate<S, K, Allow>;
 
 /** `{ count, archiveId }` from one `archive()` call. */
 export type ArchiveCount = {
@@ -817,20 +872,21 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
    * Updates matching rows, or a per-row list in one statement. `where` is required.
    *
    * `{ allow, returning: true }` returns the written rows. `{ allow }` without
-   * `returning: true` returns `{ count }`.
+   * `returning: true` returns `{ count }`. On a `versioned()` table, `version`
+   * is required (D305).
    */
   update<
     const Allow extends readonly (keyof RowOf<S, K> & string)[],
     const Opt extends WriteOptions<S, K> & { readonly allow: Allow },
   >(
-    target: AllowedUpdate<S, K, Allow>,
+    target: AllowedUpdateArg<S, K, Allow>,
     options: Opt,
   ): [Opt["returning"]] extends [true] ? Write<readonly Show<RowOf<S, K>>[]> : Write<WriteCount>;
   update(
-    target: UpdateTarget<S, K>,
+    target: UpdateArg<S, K>,
     options: WriteOptions<S, K> & { readonly returning: true },
   ): Write<readonly Show<RowOf<S, K>>[]>;
-  update(target: UpdateTarget<S, K>, options?: WriteOptions<S, K>): Write<WriteCount>;
+  update(target: UpdateArg<S, K>, options?: WriteOptions<S, K>): Write<WriteCount>;
   /**
    * Deletes matching rows. `where` is required.
    *

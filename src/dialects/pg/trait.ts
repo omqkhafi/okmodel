@@ -106,6 +106,23 @@ export type HasArchive<TTraits> = [
   ? unknown
   : { readonly "~archive": true };
 
+/**
+ * `{ "~versioned": true }` when a trait list includes `versioned()`.
+ *
+ * An empty match contributes `unknown`, so a table without the trait does
+ * not gain the key. `UpdateTarget` reads this flag to require `version`.
+ *
+ * @typeParam TTraits - Trait list, or a single trait object
+ */
+export type HasVersioned<TTraits> = [
+  Extract<
+    TTraits extends readonly (infer TItem)[] ? TItem : TTraits,
+    { readonly "~versioned": true }
+  >,
+] extends [never]
+  ? unknown
+  : { readonly "~versioned": true };
+
 /** The `presets` maps of a trait list, as a union. Empty when no trait has any. */
 type TraitPresetUnion<TTraits> = TTraits extends readonly (infer TItem)[]
   ? TItem extends { readonly presets: infer TPresets }
