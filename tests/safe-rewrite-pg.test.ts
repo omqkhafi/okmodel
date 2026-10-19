@@ -28,6 +28,7 @@ import { primaryUrl } from "../packages/harness/src/topology.js";
 import { repoRoot } from "../scripts/root.js";
 import { applyTarget } from "../src/tooling/migrate/apply.js";
 import type { StoredMigration } from "../src/tooling/migrate/files.js";
+import { lintMigrationDirectory } from "../src/tooling/migrate/lint.js";
 import { planMigration, type PlanStep } from "../src/tooling/migrate/plan.js";
 
 const gate = await loadPostgresGate();
@@ -306,6 +307,59 @@ postgresTest(
   60_000,
 );
 
+postgresTest(
+  gate,
+  "a picklist on a new column with a constant default generates, checks, and applies with rows",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const root = repoRoot();
+    const cwd = mkdtempSync(join(tmpdir(), "okm-own-check-"));
+    const sql = openPostgres(database.url);
+    try {
+      writeTasksProject(cwd, root, database.url, {
+        id: "t.integer().primaryKey()",
+        title: "t.text()",
+      });
+      expect(await okm(root, cwd, ["generate", "init"])).toContain(".sql");
+      expect(await okm(root, cwd, ["migrate", "apply"])).toContain("applied");
+      await sql.unsafe(`insert into tasks (id, title) values (1, 'a'), (2, 'b')`);
+
+      writeTasksProject(cwd, root, database.url, {
+        id: "t.integer().primaryKey()",
+        title: "t.text()",
+        status: 't.varchar(20).picklist(["draft", "active", "done"]).default("draft")',
+      });
+      const generated = await okm(root, cwd, ["generate", "add_status"]);
+      expect(generated).toContain("add_status");
+      // Offline lint is the migrate-check gate for OKM1531. Full
+      // `migrate check` still fails OKM1547 on the picklist reprint (R2).
+      const findings = lintMigrationDirectory(join(cwd, "migrations"));
+      expect(findings.map((item) => item.code)).not.toContain("OKM1531");
+      expect(await okm(root, cwd, ["migrate", "apply"])).toContain("applied");
+      const statuses = await sql<{ status: string }[]>`select status from tasks order by id`;
+      expect(statuses.map((row) => row.status)).toEqual(["draft", "draft"]);
+      expect(await constraintValidated(sql, "public", "tasks_status_check")).toBe(true);
+
+      writeTasksProject(cwd, root, database.url, {
+        id: "t.integer().primaryKey()",
+        title: 't.text().picklist(["a", "b"])',
+        status: 't.varchar(20).picklist(["draft", "active", "done"]).default("draft")',
+      });
+      await okm(root, cwd, ["generate", "title_picklist"]);
+      expect(lintMigrationDirectory(join(cwd, "migrations")).map((item) => item.code)).toContain(
+        "OKM1531",
+      );
+      const refused = await catchError(() => okm(root, cwd, ["migrate", "apply"]));
+      expect(messageOf(refused)).toContain("OKM1531");
+    } finally {
+      await sql.end({ timeout: 5 });
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  90_000,
+);
+
 async function applyPlan(
   schemaName: string,
   id: string,
@@ -392,6 +446,42 @@ function writeProject(cwd: string, root: string, database: string, withIndex: bo
       "export const app = schema({",
       "  tables: [",
       `    table("tasks", { id: t.integer().primaryKey(), title: t.text()${note} }${indexes}),`,
+      "  ],",
+      "});",
+      "",
+    ].join("\n"),
+  );
+  writeFileSync(
+    join(cwd, "okmodel.config.ts"),
+    [
+      `import { defineConfig } from ${migrate};`,
+      "export default defineConfig({",
+      '  schema: "./schema.ts",',
+      `  database: ${JSON.stringify(database)},`,
+      "});",
+      "",
+    ].join("\n"),
+  );
+}
+
+function writeTasksProject(
+  cwd: string,
+  root: string,
+  database: string,
+  columns: Record<string, string>,
+): void {
+  const pg = JSON.stringify(join(root, "src/dialects/pg/index.ts"));
+  const migrate = JSON.stringify(join(root, "src/tooling/migrate/index.ts"));
+  const fields = Object.entries(columns)
+    .map(([name, type]) => `${name}: ${type}`)
+    .join(", ");
+  writeFileSync(
+    join(cwd, "schema.ts"),
+    [
+      `import { schema, table, t } from ${pg};`,
+      "export const app = schema({",
+      "  tables: [",
+      `    table("tasks", { ${fields} }),`,
       "  ],",
       "});",
       "",

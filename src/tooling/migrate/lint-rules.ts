@@ -12,6 +12,7 @@ import type {
   TypeObject,
 } from "../../contracts/catalog/types.js";
 import type { PlanStep, StepKind } from "./plan.js";
+import { volatileDefault } from "./safe.js";
 import { transactionControl } from "./sql-lex.js";
 import { canonicalTypeName } from "./type-name.js";
 
@@ -655,6 +656,7 @@ function foreignKeyWithoutNotValid(input: StepInput): boolean {
 function validatingCheck(input: StepInput): boolean {
   if (widenValidate(input)) return false;
   if (notNullFloorValidate(input)) return false;
+  if (ownColumnCheckValidate(input)) return false;
   if (validates(input, "check")) return true;
   return checkWithoutNotValid(input);
 }
@@ -679,6 +681,73 @@ function notNullFloorValidate(input: StepInput): boolean {
     if (!prior.includes(`add constraint ${constraint} `)) return false;
     return /check\s*\(\s*\S+\s+is not null\s*\)\s*not valid/.test(prior);
   });
+}
+
+/**
+ * `VALIDATE` of a check whose column was added earlier in this migration.
+ *
+ * The planner pairs `ADD COLUMN` (constant default, or nullable with no
+ * default) with `ADD CONSTRAINT … NOT VALID` then `VALIDATE`. Existing rows
+ * only see the new column's default or null, so that scan is not OKM1531.
+ * A volatile default, or a check on a column that already existed, stays an
+ * error (D301).
+ */
+function ownColumnCheckValidate(input: StepInput): boolean {
+  const text = normalizedSql(input.step.sql);
+  const matched = /^alter table\s+(\S+)\s+validate constraint\s+(\S+)/.exec(text);
+  if (matched === null) return false;
+  const tableSql = matched[1];
+  const constraintSql = matched[2];
+  if (tableSql === undefined || constraintSql === undefined) return false;
+  const tableName = lastName(tableSql);
+  const constraintName = lastName(constraintSql);
+  if (tableName === undefined || constraintName === undefined) return false;
+  const paired = input.earlier.some((step) => {
+    const prior = normalizedSql(step.sql);
+    if (!prior.startsWith(`alter table ${tableSql} `)) return false;
+    if (!prior.includes(`add constraint ${constraintSql} `)) return false;
+    return /\bcheck\b/.test(prior) && /\bnot valid\b/.test(prior);
+  });
+  if (!paired) return false;
+  const constraint = findConstraint(input.after, constraintName);
+  if (constraint === undefined || constraint.definition.constraintKind !== "check") {
+    return false;
+  }
+  const columns = constraint.definition.columns;
+  if (columns.length === 0) return false;
+  return columns.every((column) => ownColumnSafe(input, tableSql, tableName, column));
+}
+
+/**
+ * Whether one check column was added in this migration with a safe default.
+ *
+ * @param input - Step context with earlier SQL and the after catalog
+ * @param tableSql - Qualified table token from the validate statement
+ * @param tableName - Unquoted table name
+ * @param column - Column the check names
+ * @returns `true` when the column add is constant-default or nullable
+ */
+function ownColumnSafe(
+  input: StepInput,
+  tableSql: string,
+  tableName: string,
+  column: string,
+): boolean {
+  const added = input.earlier.some((step) => {
+    const prior = normalizedSql(step.sql);
+    const match = /^alter table\s+(\S+)\s+add column\s+(\S+)\b/.exec(prior);
+    if (match === null) return false;
+    if (match[1] !== tableSql) return false;
+    return lastName(match[2]) === column;
+  });
+  if (!added) return false;
+  const found = findColumn(input.after, tableName, column);
+  if (found === undefined) return false;
+  if (volatileDefault(found.definition.defaultExpression, [input.before, input.after])) {
+    return false;
+  }
+  if (found.definition.defaultExpression !== undefined) return true;
+  return found.definition.nullable;
 }
 
 function widenValidate(input: StepInput): boolean {
