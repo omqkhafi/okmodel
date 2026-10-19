@@ -85,13 +85,11 @@ if (import.meta.main) {
   const problems = [...manifestProblems(manifest)];
   if (problems.length > 0) exitOnProblems(problems);
 
-  let packed: readonly string[];
-  try {
-    packed = await packedFiles(root);
-  } catch (error) {
+  const packed = await packedFiles(root).catch((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     exitOnProblems([`pack-contract: ${message}`]);
-  }
+    throw error;
+  });
   const exportsField = isRecord(manifest) && "exports" in manifest ? manifest.exports : null;
   const next: PackSnapshot = { files: packed, exports: exportsField ?? null };
   if (values.update) {
