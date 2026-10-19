@@ -105,6 +105,6 @@ if (import.meta.main) {
     process.exit(1);
   }
   const args = stagePublishCommand(tarball, readVersion(repoRoot()));
-  const proc = Bun.spawnSync(args, { stdout: "inherit", stderr: "inherit" });
+  const proc = Bun.spawnSync([...args], { stdout: "inherit", stderr: "inherit" });
   process.exit(proc.exitCode ?? 1);
 }
