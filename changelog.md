@@ -90,6 +90,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### tooling
 
+- `lint / pull request` assigns the open train milestone when `Closes #N` has none. `0.10.0-next.N` uses milestone `0.10`. The issue and the pull request both receive it.
 - A failed `CREATE INDEX CONCURRENTLY` is dropped before apply returns, so the target does not keep an INVALID index. When that drop fails, the error names the index and `DROP INDEX CONCURRENTLY`. A later apply still drops a leftover invalid index and rebuilds it (Q4, #391).
 
 ### 🔒 Security

@@ -70,8 +70,20 @@ jobs:
           fi
           mil="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${n}" --jq '.milestone.number // empty')"
           if [ -z "${mil}" ]; then
-            echo "issue #${n} has no milestone"
-            exit 0
+            # Same rule as trainMilestoneTitle: 0.10.0-next.N is milestone 0.10.
+            version="$(jq -r '.version' package.json)"
+            release="${version%%-*}"
+            title="${release}"
+            if printf '%s' "${release}" | grep -Eq '^[0-9]+\.[0-9]+\.0$'; then
+              title="${release%.0}"
+            fi
+            mil="$(gh api "repos/${GITHUB_REPOSITORY}/milestones?state=open&per_page=100" --jq ".[] | select(.title==\"${title}\") | .number" | head -n 1)"
+            if [ -z "${mil}" ]; then
+              echo "issue #${n} has no milestone and no open milestone ${title}"
+              exit 0
+            fi
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/${n}" -f "milestone=${mil}"
+            echo "set issue #${n} milestone ${title}"
           fi
           gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}" -f "milestone=${mil}"
           echo "set milestone ${mil} from #${n}"
