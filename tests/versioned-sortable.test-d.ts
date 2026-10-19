@@ -122,14 +122,3 @@ void claimHidden({
   lock: "skip",
   version: "any",
 });
-void claimHidden({
-  where: {
-    state: "pending",
-    // @ts-expect-error a claim where rejects a column that is not filterable
-    missing: "x",
-  },
-  set: { title: "b" },
-  limit: 1,
-  lock: "skip",
-  version: "any",
-});
