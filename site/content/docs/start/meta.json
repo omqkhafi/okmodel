@@ -4,6 +4,7 @@
     "index",
     "basic-usage",
     "from-drizzle",
-    "from-existing"
+    "from-existing",
+    "safely"
   ]
 }

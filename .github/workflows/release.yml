@@ -76,8 +76,11 @@ jobs:
       - name: Build
         run: bun run build
 
-      - name: Pack contract
+      - name: Pack tracked
         run: bun ./scripts/pack-tracked.ts --release
+
+      - name: Pack contract
+        run: bun run pack-contract
 
       - name: Pack
         run: |

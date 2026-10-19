@@ -159,26 +159,28 @@ This release is the tooling train. `okm pull` writes schema files from a databas
 
 ## Next
 
-| Want…                       | Go to                                                                                    |
-| --------------------------- | ---------------------------------------------------------------------------------------- |
-| One example per client call | [Basic usage](https://okm.omqkhafi.dev/docs/start/basic-usage)                           |
-| Tables, keys, and relations | [Define](https://okm.omqkhafi.dev/docs/define)                                           |
-| Every feature in one file   | [Guide](https://github.com/omqkhafi/okmodel/blob/main/docs/guide.md)                     |
-| Run it in production        | [Production checklist](https://github.com/omqkhafi/okmodel/blob/main/docs/production.md) |
-| What is not built yet       | [Known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md)       |
+| Want…                       | Go to                                                                                              |
+| --------------------------- | -------------------------------------------------------------------------------------------------- |
+| One example per client call | [Basic usage](https://okm.omqkhafi.dev/docs/start/basic-usage)                                     |
+| Tables, keys, and relations | [Define](https://okm.omqkhafi.dev/docs/define)                                                     |
+| Every feature in one file   | [Guide](https://github.com/omqkhafi/okmodel/blob/main/docs/guide.md)                               |
+| Run it in production        | [Production checklist](https://github.com/omqkhafi/okmodel/blob/main/docs/production.md)           |
+| Install it safely           | [Using OKModel safely](https://github.com/omqkhafi/okmodel/blob/main/docs/using-okmodel-safely.md) |
+| What is not built yet       | [Known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md)                 |
 
 ## Documentation
 
-| Resource     | Link                                                                               |
-| ------------ | ---------------------------------------------------------------------------------- |
-| Docs site    | [okm.omqkhafi.dev](https://okm.omqkhafi.dev)                                       |
-| Get started  | [/docs/start](https://okm.omqkhafi.dev/docs/start)                                 |
-| Handbook     | [/docs](https://okm.omqkhafi.dev/docs)                                             |
-| Changelog    | [/changelog](https://okm.omqkhafi.dev/changelog)                                   |
-| Agents index | [/llms.txt](https://okm.omqkhafi.dev/llms.txt)                                     |
-| Size         | [`docs/size.md`](https://github.com/omqkhafi/okmodel/blob/main/docs/size.md)       |
-| Security     | [`SECURITY.md`](https://github.com/omqkhafi/okmodel/blob/main/SECURITY.md)         |
-| Contributing | [`CONTRIBUTING.md`](https://github.com/omqkhafi/okmodel/blob/main/CONTRIBUTING.md) |
+| Resource     | Link                                                                                               |
+| ------------ | -------------------------------------------------------------------------------------------------- |
+| Docs site    | [okm.omqkhafi.dev](https://okm.omqkhafi.dev)                                                       |
+| Get started  | [/docs/start](https://okm.omqkhafi.dev/docs/start)                                                 |
+| Handbook     | [/docs](https://okm.omqkhafi.dev/docs)                                                             |
+| Changelog    | [/changelog](https://okm.omqkhafi.dev/changelog)                                                   |
+| Agents index | [/llms.txt](https://okm.omqkhafi.dev/llms.txt)                                                     |
+| Size         | [`docs/size.md`](https://github.com/omqkhafi/okmodel/blob/main/docs/size.md)                       |
+| Security     | [`SECURITY.md`](https://github.com/omqkhafi/okmodel/blob/main/SECURITY.md)                         |
+| Safe install | [Using OKModel safely](https://github.com/omqkhafi/okmodel/blob/main/docs/using-okmodel-safely.md) |
+| Contributing | [`CONTRIBUTING.md`](https://github.com/omqkhafi/okmodel/blob/main/CONTRIBUTING.md)                 |
 
 ## License
 

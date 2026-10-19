@@ -31,6 +31,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `bun run ci:report` prints job and step duration, queue time, the critical path, and re-run counts for recent `main` runs, and why each 0.9.1 pull failed a push.
 - `bun run verify:fast` checks format, lint, types, layers, purity, docs, and the readme, then runs only the tests related to files changed since the merge-base with `origin/main`.
 - `bun run ci:fail <pull>` prints the first failing job, its failing step, the last 60 log lines, and the one local command that reproduces it.
+- `gate / check` compares `npm pack --dry-run --json` to a committed snapshot of packed files and the `exports` map (`scripts/pack-contract.ts`). A forbidden install script, a dependency, a required peer, or a missing `files` allowlist fails the check. Update the snapshot with `bun ./scripts/pack-contract.ts --update`.
 
 ### 💥 Breaking Changes
 
@@ -80,6 +81,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 ### 🔒 Security
 
 - A postgres.js generic or aborted-connection failure on a statement whose table has a sensitive column no longer leaves `parameters` or `args` on `error.cause` when the driver omits `table` (B-33 residual, #364).
+- `SECURITY.md` names the disclosure address, the report policy, and supported lines (the current 0.x minor and the previous minor, 0.10.x and 0.9.x). [Using OKModel safely](docs/using-okmodel-safely.md) covers lockfile pinning, a minimum release age, and what provenance does not prove.
 
 ## v0.9.1 — 2026-10-17
 
