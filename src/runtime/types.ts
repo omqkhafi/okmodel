@@ -799,18 +799,16 @@ export type UpdateTarget<S extends QuerySchema, K extends keyof S["~byName"]> =
  * `version: "any"` claim.
  *
  * `lock: "skip"` and `limit` are required. The call returns the claimed rows.
- * A miss is an empty array (O-5). An ordinary versioned update stays on
- * {@link UpdateTargetVersioned}.
+ * A miss is an empty array (O-5). Kept off {@link UpdateTargetVersioned} so
+ * `Omit` on that union cannot treat `lock` and `limit` as optional.
+ *
+ * A later `update` overload accepts it. An earlier overload is built for
+ * every update and pushes the query-200-validate type ceiling over.
  */
 type VersionAnyArg<S extends QuerySchema, K extends keyof S["~byName"]> = S["~byName"][K] extends {
   readonly "~versioned": true;
 }
   ? {
-      /**
-       * Includes `hidden({ filterable: true })`. A second exact overload
-       * would also accept those keys, and that signature pushes the
-       * validated 200-table probe over its type ceiling.
-       */
       readonly where?: FilterFiltersOf<S, K> | Or<FilterFiltersOf<S, K>>;
       readonly set: UpdateSet<S, K>;
       readonly limit: number;
@@ -999,10 +997,6 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
    * is required (D305), except `version: "any"` with `lock: "skip"` and `limit`,
    * which returns the claimed rows. A miss is an empty array.
    */
-  update(
-    target: VersionAnyArg<S, K>,
-    options?: WriteOptions<S, K>,
-  ): Write<readonly Show<RowOf<S, K>>[]>;
   update<
     const Allow extends readonly (keyof RowOf<S, K> & string)[],
     const Opt extends WriteOptions<S, K> & { readonly allow: Allow },
@@ -1019,10 +1013,14 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
     target: T,
     options: WriteOptions<S, K> & { readonly returning: true },
   ): Write<readonly Show<RowOf<S, K>>[]>;
-  update<const T extends ExactConstraint<T, UpdateFilterTarget<S, K, T["where"]>>>(
+  update<
+    const T extends ExactConstraint<T, UpdateFilterTarget<S, K, T["where"]> | VersionAnyArg<S, K>>,
+  >(
     target: T,
     options?: WriteOptions<S, K>,
-  ): Write<WriteCount>;
+  ): [T] extends [{ readonly version: "any" }]
+    ? Write<readonly Show<RowOf<S, K>>[]>
+    : Write<WriteCount>;
   /**
    * Deletes matching rows. `where` is required.
    *
