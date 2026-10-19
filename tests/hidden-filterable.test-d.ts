@@ -46,6 +46,25 @@ async function shapes(url: string): Promise<void> {
     },
     limit: 1,
   });
+  await db.pages.one({
+    where: { body: matches("deploy") },
+    orderBy: { body: relevance("deploy") },
+  });
+  await db.pages.update({ where: { body: matches("deploy") }, set: { body: null } });
+  await db.pages.delete({ where: { body: matches("deploy") } });
+  await db.pages.update({
+    where: { id: "a" },
+    set: { body: null },
+    // @ts-expect-error wait is a read option
+    wait: "skip",
+  });
+  await db.pages.update({
+    where: {
+      // @ts-expect-error a plain hidden column is not a where key
+      secret: matches("deploy"),
+    },
+    set: { body: null },
+  });
 }
 
 void shapes;
