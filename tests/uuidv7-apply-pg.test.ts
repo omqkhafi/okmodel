@@ -78,6 +78,35 @@ postgresTest(
 
 postgresTest(
   gate,
+  "migrate check reports OKM1812 for uuidv7 below 18 and replays it on 18",
+  async () => {
+    await inDatabase(EXPLICIT, async ({ cwd, major, sql }) => {
+      await run(["generate"], { cwd, stdout: () => undefined });
+      if (major >= 18) {
+        const lines: string[] = [];
+        await run(["migrate", "check"], { cwd, stdout: (text) => lines.push(text) });
+        expect(lines.join("")).toContain("ok 1 migrations");
+        return;
+      }
+      const error = await failure(() =>
+        run(["migrate", "check"], { cwd, stdout: () => undefined }),
+      );
+      expect(error.code).toBe("OKM1812");
+      expect(error.message).toContain("uuidv7() needs PostgreSQL 18 or higher");
+      expect(error.message).toContain("minPostgres: 18");
+      expect(error.message).not.toContain("does not exist");
+      expect(error.fix.summary).toContain("minPostgres: 18");
+      const scratch = await sql<{ nspname: string }[]>`
+        select nspname from pg_namespace where nspname like 'okm_check_%'
+      `;
+      expect(scratch).toHaveLength(0);
+    });
+  },
+  60_000,
+);
+
+postgresTest(
+  gate,
   "the error names the column, the version, and minPostgres",
   async () => {
     await inDatabase(EXPLICIT, async ({ cwd, major, sql }) => {

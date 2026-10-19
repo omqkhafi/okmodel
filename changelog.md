@@ -91,6 +91,9 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### tooling
 
+- `okm migrate check` reuses an extension that is already installed. The replay moves it into the scratch schema for the transaction, and `ROLLBACK` restores the schema apply left, so a declared extension still passes after apply (R6, #403).
+- `okm ext check` prints the extension name in the declared column when the pin is omitted. A pin still prints that version or floor (R6, #403).
+- `okm migrate check` refuses a `uuidv7()` default on PostgreSQL 15, 16, and 17 with OKM1812 and the fix `uuidv7() needs PostgreSQL 18 or higher. minPostgres: 18.` PostgreSQL 18 replays that default (R6, #403).
 - `lint / pull request` assigns the open train milestone when `Closes #N` has none. `0.10.0-next.N` uses milestone `0.10`. The issue and the pull request both receive it.
 - A failed `CREATE INDEX CONCURRENTLY` is dropped before apply returns, so the target does not keep an INVALID index. When that drop fails, the error names the index and `DROP INDEX CONCURRENTLY`. A later apply still drops a leftover invalid index and rebuilds it (Q4, #391).
 
