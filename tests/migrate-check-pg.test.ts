@@ -322,7 +322,7 @@ postgresTest(
       const pending = await rejected(["check"], cwd);
       expect(pending.code).toBe("OKM1510");
       expect(pending.message).toContain("OKM1529");
-      await cli(cwd, ["generate", "archive_predicate"]);
+      await generateWithErrors(cwd, ["generate", "archive_predicate"]);
       const upgrade = migrationPath(cwd, ".sql");
       expect(upgrade).toContain("0002_archive_predicate");
       writeFileSync(
