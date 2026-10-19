@@ -50,7 +50,10 @@ export function gateConclusion(jobs: readonly RunJob[]): string | undefined {
 }
 
 /**
- * Newest completed run other than the current one.
+ * Newest completed CI run other than the current one.
+ *
+ * A cancelled run did not finish `gate / check`. Label events can cancel
+ * each other, so the mirror keeps looking for a run that completed.
  *
  * @param runs - Runs for this commit, newest first
  * @param currentRunId - This workflow run
@@ -64,6 +67,7 @@ export function priorCompletedRun(
     if (run.id === currentRunId) continue;
     if (run.name !== "CI") continue;
     if (run.status !== "completed") continue;
+    if (run.conclusion === "cancelled") continue;
     return run;
   }
   return undefined;
