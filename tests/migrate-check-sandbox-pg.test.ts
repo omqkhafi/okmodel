@@ -24,6 +24,7 @@ import {
   openPostgres,
 } from "../packages/harness/src/postgres.js";
 import { repoRoot } from "../scripts/root.js";
+import { CHECK_REPLAY_LIMIT } from "../src/tooling/migrate/check.js";
 
 const gate = await loadPostgresGate();
 const root = repoRoot();
@@ -78,7 +79,9 @@ for (const who of ["superuser", "owner"] as const) {
           } else if (quoted) {
             await expectCheckCode(cwd, "OKM1547");
           } else {
-            expect(await cli(cwd, ["migrate", "check"])).toBe("ok 1 migrations\n");
+            expect(await cli(cwd, ["migrate", "check"])).toBe(
+              `ok 1 migrations\n${CHECK_REPLAY_LIMIT}\n`,
+            );
           }
           expect(await fingerprint(admin)).toBe(before);
           expect(await publicAcl(admin)).toBe(acl);
@@ -103,7 +106,9 @@ for (const who of ["superuser", "owner"] as const) {
       try {
         writeProject(cwd, url);
         await cli(cwd, ["generate", "init"]);
-        expect(await cli(cwd, ["migrate", "check"])).toBe("ok 1 migrations\n");
+        expect(await cli(cwd, ["migrate", "check"])).toBe(
+          `ok 1 migrations\n${CHECK_REPLAY_LIMIT}\n`,
+        );
       } finally {
         rmSync(cwd, { recursive: true, force: true });
         await database.close();
@@ -148,7 +153,7 @@ postgresTest(
       expect(await cli(cwd, ["migrate", "apply"])).toContain("applied ");
       const afterProvision = await fingerprint(admin);
       writeAtomicMigration(cwd);
-      expect(await cli(cwd, ["migrate", "check"])).toBe("ok 2 migrations\n");
+      expect(await cli(cwd, ["migrate", "check"])).toBe(`ok 2 migrations\n${CHECK_REPLAY_LIMIT}\n`);
       expect(await fingerprint(admin)).toBe(afterProvision);
       expect(await cli(cwd, ["migrate", "apply"])).toContain("applied 0002_atomic");
       const defs = await admin<{ def: string }[]>`
@@ -238,7 +243,7 @@ postgresTest(
     try {
       writeProject(cwd, url);
       await cli(cwd, ["generate", "init"]);
-      expect(await cli(cwd, ["migrate", "check"])).toBe("ok 1 migrations\n");
+      expect(await cli(cwd, ["migrate", "check"])).toBe(`ok 1 migrations\n${CHECK_REPLAY_LIMIT}\n`);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
       await database.close();

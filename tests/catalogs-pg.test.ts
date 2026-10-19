@@ -11,6 +11,7 @@ import { OkmError } from "../src/contracts/error.js";
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
 import { createIsolatedDatabase, openPostgres } from "../packages/harness/src/postgres.js";
 import { repoRoot } from "../scripts/root.js";
+import { CHECK_REPLAY_LIMIT } from "../src/tooling/migrate/check.js";
 
 const gate = await loadPostgresGate();
 const root = repoRoot();
@@ -54,7 +55,9 @@ postgresTest(
       const before = await columns(database.url, "identity", "users");
       await cli(billing, ["migrate", "apply"]);
       expect(await columns(database.url, "identity", "users")).toEqual(before);
-      expect(await cli(billing, ["migrate", "check"])).toBe("ok 1 migrations\n");
+      expect(await cli(billing, ["migrate", "check"])).toBe(
+        `ok 1 migrations\n${CHECK_REPLAY_LIMIT}\n`,
+      );
       const check = await cli(billing, ["check"]);
       expect(check).toContain("warning coupling");
       expect(check).toContain("identity.users");

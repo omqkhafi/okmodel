@@ -3,6 +3,7 @@
  */
 
 import { expect } from "bun:test";
+import type { Sql } from "postgres";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -167,6 +168,7 @@ postgresTest(
         applyTo(schemaName, [migration("0001_idx", "hash-idx", [step(create, false)])]),
       );
       expect(messageOf(failed)).toContain("failed at step 1");
+      expect(await invalidIndexes(sql, schemaName, "items_id_idx")).toEqual([]);
       await sql.unsafe(
         `delete from ${q(schemaName)}.items where ctid <> (select min(ctid) from ${q(schemaName)}.items)`,
       );
@@ -177,6 +179,29 @@ postgresTest(
       where c.relname = 'items_id_idx'
     `;
       expect(valid[0]?.indisvalid).toBe(true);
+    });
+  },
+  20_000,
+);
+
+postgresTest(
+  gate,
+  "a clean concurrent unique index stays valid",
+  async () => {
+    await withPostgresSchema(async (sql, schemaName) => {
+      await sql.unsafe(`create table ${q(schemaName)}.items (id integer)`);
+      await sql.unsafe(`insert into ${q(schemaName)}.items values (1), (2)`);
+      const create = `create unique index concurrently items_id_idx on ${q(schemaName)}.items (id)`;
+      await applyTo(schemaName, [migration("0001_idx", "hash-idx", [step(create, false)])]);
+      const rows = await sql<{ indisvalid: boolean }[]>`
+        select i.indisvalid
+        from pg_index i
+        join pg_class c on c.oid = i.indexrelid
+        join pg_namespace n on n.oid = c.relnamespace
+        where c.relname = 'items_id_idx' and n.nspname = ${schemaName}
+      `;
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.indisvalid).toBe(true);
     });
   },
   20_000,
@@ -497,4 +522,18 @@ async function catchError(run: () => Promise<unknown>): Promise<unknown> {
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : "";
+}
+
+async function invalidIndexes(
+  sql: Sql,
+  schemaName: string,
+  indexName: string,
+): Promise<readonly { readonly indisvalid: boolean }[]> {
+  return sql<{ indisvalid: boolean }[]>`
+    select i.indisvalid
+    from pg_index i
+    join pg_class c on c.oid = i.indexrelid
+    join pg_namespace n on n.oid = c.relnamespace
+    where c.relname = ${indexName} and n.nspname = ${schemaName} and i.indisvalid = false
+  `;
 }

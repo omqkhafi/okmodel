@@ -1290,7 +1290,7 @@ The worked example is a project tracker: workspaces as tenants, archive, a funct
 | `okm push`                | Applies the schema directly. OKM1850 on a protected target unless `--allow-protected`.                                                                                                                   |
 | `okm migrate plan <name>` | Prints each step's class and lock, plus a row estimate when the target answers. Read-only on a protected target. An error finding exits non-zero.                                                        |
 | `okm migrate apply`       | Installs the head snapshot on an empty database, or runs pending files. Expand is allowed on a protected target. Contract, unclassified SQL, and backfill need `--allow-protected`.                      |
-| `okm migrate check`       | Replays the history in a scratch schema and checks the previous catalog, the head, and the linter. Prints `ok N migrations`. Refused on a protected target, and `--allow-protected` does not apply.      |
+| `okm migrate check`       | Replays the history in a scratch schema and checks the previous catalog, the head, and the linter. Prints `ok N migrations`, then the empty-table limit. Refused on a protected target, and `--allow-protected` does not apply.      |
 | `okm migrate status`      | Queries every target; does not require `--target`. Stops at the first unreachable one. Read-only on a protected target. An unfinished backfill is listed under the table.                                |
 | `okm seed <file>`         | Runs the file's default export against the migrated target. OKM1850 on a protected target unless `--allow-protected`.                                                                                    |
 | `okm ext list`            | Prints extensions the server can install. Read-only on a protected target.                                                                                                                               |
@@ -1304,7 +1304,7 @@ The worked example is a project tracker: workspaces as tenants, archive, a funct
 
 ## Check a history in CI
 
-`okm migrate check` is the command for a pipeline. It applies every migration into a scratch schema, plans each result back to that file's catalog, checks the previous catalog, requires the last catalog to match the schema, and lints the history. Success prints `ok N migrations`. A failure exits non-zero.
+`okm migrate check` is the command for a pipeline. It applies every migration into a scratch schema, plans each result back to that file's catalog, checks the previous catalog, requires the last catalog to match the schema, and lints the history. Success prints `ok N migrations`, then one line that the replay uses empty tables and does not catch a step that fails only on real data. A failure exits non-zero.
 
 Point it at a throwaway Postgres. A protected target is refused, and `--allow-protected` does not apply. Run it as a non-superuser. A superuser replay can execute `COPY ... PROGRAM` and `lo_import`. `defineConfig({ lintFrom: "<migration id>" })` skips lint for files before that id, which is how a project adopts the linter without failing on old migrations. Apply still lints pending migrations only.
 

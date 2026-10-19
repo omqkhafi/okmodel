@@ -14,6 +14,7 @@ import type { Sql } from "postgres";
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
 import { createIsolatedDatabase, openPostgres } from "../packages/harness/src/postgres.js";
 import { repoRoot } from "../scripts/root.js";
+import { CHECK_REPLAY_LIMIT } from "../src/tooling/migrate/check.js";
 
 const gate = await loadPostgresGate();
 const root = repoRoot();
@@ -217,7 +218,7 @@ postgresTest(
       "export const app = schema({ tables: [people] });",
     ]);
     expect(matchingDomain.code).toBe(0);
-    expect(matchingDomain.text).toBe("ok 1 migrations\n");
+    expect(matchingDomain.text).toBe(`ok 1 migrations\n${CHECK_REPLAY_LIMIT}\n`);
 
     const fn = await checkProject([
       `const tasks = table("tasks", { id: t.text().primaryKey(), title: t.text() });`,
@@ -234,7 +235,7 @@ postgresTest(
       "export const app = schema({ tables: [], functions: [answer] });",
     ]);
     expect(plain.code).toBe(0);
-    expect(plain.text).toBe("ok 1 migrations\n");
+    expect(plain.text).toBe(`ok 1 migrations\n${CHECK_REPLAY_LIMIT}\n`);
 
     const allowed = await checkProject(
       [
@@ -245,7 +246,7 @@ postgresTest(
       (sql) => sql.replace(/^(create function )/m, "-- okm-allow OKM1552: reviewed\n$1"),
     );
     expect(allowed.code).toBe(0);
-    expect(allowed.text).toBe("ok 1 migrations\n");
+    expect(allowed.text).toBe(`ok 1 migrations\n${CHECK_REPLAY_LIMIT}\n`);
 
     const unused = await checkProject(
       [

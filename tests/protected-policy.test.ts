@@ -28,6 +28,7 @@ import {
   type IsolatedDatabase,
 } from "../packages/harness/src/postgres.js";
 import { repoRoot } from "../scripts/root.js";
+import { CHECK_REPLAY_LIMIT } from "../src/tooling/migrate/check.js";
 import { applyTarget } from "../src/tooling/migrate/apply.js";
 import { run } from "../src/tooling/migrate/commands.js";
 import type { PlanStep } from "../src/tooling/migrate/plan.js";
@@ -124,7 +125,9 @@ postgresTest(
       await capture(["generate", "init"], cwd);
       expect(await capture(["migrate", "apply"], cwd)).toContain("applied provisioned@0001_init");
       await readOnly(cwd, false);
-      expect(await capture(["migrate", "check"], cwd)).toBe("ok 1 migrations\n");
+      expect(await capture(["migrate", "check"], cwd)).toBe(
+        `ok 1 migrations\n${CHECK_REPLAY_LIMIT}\n`,
+      );
       expect(await capture(["push"], cwd)).toContain("no changes");
       expect(await capture(["seed", "seed.ts"], cwd)).toBe("target default\nnotes 1\n");
 

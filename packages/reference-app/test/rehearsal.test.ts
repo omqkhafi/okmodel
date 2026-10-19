@@ -12,6 +12,7 @@ import { expect } from "bun:test";
 
 import { loadPostgresGate, postgresTest } from "../../harness/src/postgres-test.js";
 import { createIsolatedDatabase, openPostgres } from "../../harness/src/postgres.js";
+import { CHECK_REPLAY_LIMIT } from "../../../src/tooling/migrate/check.js";
 import { okm, okmOk, projectAt, removeProject } from "./support.js";
 
 const gate = await loadPostgresGate();
@@ -30,7 +31,7 @@ postgresTest(
       await withClone(original, async (clone) => {
         const env = { REHEARSAL_DATABASE_URL: clone };
         expect(await okmOk(["migrate", "check", "--target", "rehearsal"], env)).toBe(
-          "ok 4 migrations\n",
+          `ok 4 migrations\n${CHECK_REPLAY_LIMIT}\n`,
         );
         const applied = await okmOk(["migrate", "apply", "--target", "rehearsal"], env);
         expect(applied).toContain("applied 0002_public_id");

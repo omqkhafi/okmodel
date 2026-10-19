@@ -263,7 +263,10 @@ export function applyUnits(
  * The connection is reserved for the whole run so the advisory lock stays
  * session-scoped. Lock timeout retries that step, including `NOT VALID`,
  * `VALIDATE CONSTRAINT`, `SET NOT NULL`, `ADD CONSTRAINT … USING INDEX`, and
- * a concurrent index create or drop. Any other failure stops at that step.
+ * a concurrent index create or drop. A failed concurrent index is dropped
+ * before the error returns, so the target does not keep an INVALID index.
+ * When that drop fails, the error names the index and
+ * `DROP INDEX CONCURRENTLY`. Any other failure stops at that step.
  *
  * @param request - Target, flags, and the migrations to consider
  * @returns The target and the migration ids that ran

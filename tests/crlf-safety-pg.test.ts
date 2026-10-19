@@ -12,6 +12,7 @@ import { serializeCatalog } from "../src/contracts/catalog/document.js";
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
 import { createIsolatedDatabase, openPostgres } from "../packages/harness/src/postgres.js";
 import { repoRoot } from "../scripts/root.js";
+import { CHECK_REPLAY_LIMIT } from "../src/tooling/migrate/check.js";
 
 const gate = await loadPostgresGate();
 const root = repoRoot();
@@ -34,7 +35,7 @@ postgresTest(
       const original = readFileSync(sqlPath, "utf8");
       expect(original).not.toContain("\r");
       writeFileSync(sqlPath, `\uFEFF${original.replaceAll("\n", "\r\n")}`);
-      expect(await cli(cwd, ["migrate", "check"])).toBe("ok 2 migrations\n");
+      expect(await cli(cwd, ["migrate", "check"])).toBe(`ok 2 migrations\n${CHECK_REPLAY_LIMIT}\n`);
       expect(await cli(cwd, ["migrate", "status"])).toContain("behind by expand");
       expect(await cli(cwd, ["migrate", "apply"])).toContain("applied 0002_title");
       expect(await columns(sql, "items")).toContain("title");

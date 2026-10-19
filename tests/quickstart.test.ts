@@ -16,6 +16,7 @@ import { openPostgres } from "../packages/harness/src/postgres.js";
 import { compareLsn } from "../packages/harness/src/lsn.js";
 import { primaryUrl, replicaUrl, type ReplicaName } from "../packages/harness/src/topology.js";
 import { repoRoot } from "../scripts/root.js";
+import { CHECK_REPLAY_LIMIT } from "../src/tooling/migrate/check.js";
 import {
   command,
   fenceFileName,
@@ -346,7 +347,7 @@ async function runReadme(
       const history = await command(dir, ["bunx", "okm", "migrate", "check"], {
         DATABASE_URL: applyUrl,
       });
-      expect(history.trim()).toBe("ok 2 migrations");
+      expect(history.trim()).toBe(`ok 2 migrations\n${CHECK_REPLAY_LIMIT}`);
     }
   });
   const postgresInstall = installs.filter((line) => line.includes("postgres"));

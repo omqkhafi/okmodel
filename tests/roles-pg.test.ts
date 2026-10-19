@@ -22,6 +22,7 @@ import { attachRoles } from "../src/dialects/pg/role/index.js";
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
 import { createIsolatedDatabase, openPostgres } from "../packages/harness/src/postgres.js";
 import { repoRoot } from "../scripts/root.js";
+import { CHECK_REPLAY_LIMIT } from "../src/tooling/migrate/check.js";
 import { connect } from "../src/runtime/pg/postgresjs.js";
 import { applyTarget } from "../src/tooling/migrate/apply.js";
 import { run } from "../src/tooling/migrate/commands.js";
@@ -299,8 +300,12 @@ postgresTest(
       await output(["generate", "init"], cwd);
       await output(["migrate", "apply"], cwd);
       expect(await output(["check"], cwd)).toBe("ok\n");
-      expect(await output(["migrate", "check"], cwd)).toBe("ok 1 migrations\n");
-      expect(await output(["migrate", "check", "--provision"], cwd)).toBe("ok 1 migrations\n");
+      expect(await output(["migrate", "check"], cwd)).toBe(
+        `ok 1 migrations\n${CHECK_REPLAY_LIMIT}\n`,
+      );
+      expect(await output(["migrate", "check", "--provision"], cwd)).toBe(
+        `ok 1 migrations\n${CHECK_REPLAY_LIMIT}\n`,
+      );
     });
   },
   90_000,
@@ -313,7 +318,9 @@ postgresTest(
     await withRolesProject(TASKS, async ({ cwd, sql }) => {
       await output(["generate", "init"], cwd);
       const before = await targetAcl(sql);
-      expect(await output(["migrate", "check"], cwd)).toBe("ok 1 migrations\n");
+      expect(await output(["migrate", "check"], cwd)).toBe(
+        `ok 1 migrations\n${CHECK_REPLAY_LIMIT}\n`,
+      );
       expect(await targetAcl(sql)).toBe(before);
     });
   },
@@ -333,7 +340,9 @@ postgresTest(
         `create function is_open(status text) returns boolean language sql immutable as $$ select status <> 'done' $$`,
       );
       const before = await targetAcl(sql);
-      expect(await output(["migrate", "check", "--provision"], cwd)).toBe("ok 1 migrations\n");
+      expect(await output(["migrate", "check", "--provision"], cwd)).toBe(
+        `ok 1 migrations\n${CHECK_REPLAY_LIMIT}\n`,
+      );
       expect(await targetAcl(sql)).toBe(before);
     });
   },
@@ -440,7 +449,9 @@ postgresTest(
       );
       await output(["generate", "init"], cwd);
       expect(await output(["migrate", "apply"], cwd)).toContain(`provisioned@`);
-      expect(await output(["migrate", "check"], cwd)).toBe("ok 1 migrations\n");
+      expect(await output(["migrate", "check"], cwd)).toBe(
+        `ok 1 migrations\n${CHECK_REPLAY_LIMIT}\n`,
+      );
       expect(await output(["check"], cwd)).toBe("ok\n");
       const pub = await sql<{ p: boolean }[]>`
         select has_function_privilege('public', 'is_open(text)', 'execute') as p
