@@ -5,7 +5,7 @@
  * rejects that call. Nothing here runs when validation is off.
  */
 
-import { OkmError, type ValidationIssue } from "../../contracts/error.js";
+import { OkmError, throwNamed, type ValidationIssue } from "../../contracts/error.js";
 import type { ColumnModel, TableModel, ValidationModel } from "../../dialects/pg/model.js";
 import { isOperator } from "../../dialects/pg/operators.js";
 import type { AnyTable } from "../../dialects/pg/table.js";
@@ -221,7 +221,7 @@ function acceptKeys(
   const row: Record<string, unknown> = {};
   for (const key of Object.keys(input)) {
     const column = findColumn(model, key);
-    if (column === undefined) continue;
+    if (column === undefined) refuseUnknown(model, key);
     const blocked = (op === "update" && column.guardUpdate) || !column.writable;
     if (blocked) {
       if (strict) {
@@ -239,6 +239,25 @@ function acceptKeys(
     if (input[key] !== undefined) row[key] = input[key];
   }
   return row;
+}
+
+/**
+ * Same OKM1120 as the core write path (B-39 / D291). Validation does not
+ * pass unknown keys through; the check lives here when validation runs.
+ *
+ * @param model - Table being written
+ * @param key - Caller key
+ */
+function refuseUnknown(model: TableModel, key: string): never {
+  const names: string[] = [];
+  for (const column of model.columns) names.push(column.field);
+  const accepted = names.length === 0 ? "(none)" : names.join(", ");
+  throwNamed(
+    "OKM1120",
+    key,
+    names,
+    `Field ${key} is not on ${model.name}. Accepted names: ${accepted}.`,
+  );
 }
 
 function refuse(table: string, field: string, reason: string): never {
