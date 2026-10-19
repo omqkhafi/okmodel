@@ -18,6 +18,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - With `validation: true`, an unknown key on `insert`, `update`, upsert / `onConflict`, or first-or-create is OKM1120 and names the key and the table (R1, D304). A typo-only `update` names the key instead of saying "update set is empty."
 - `okm generate` exits 1 when an error finding exists; the migration file is still written; stderr says `okm migrate apply` will refuse until it is fixed (Q8, #395). A warning-only finding stays exit 0.
+- `okm pull` and `okm import drizzle` write relative imports with the `.ts` extension so Node type stripping and `bunx okm` can load the schema (R4, #401). `tsc` needs `allowImportingTsExtensions` with `noEmit`, or `rewriteRelativeImportExtensions`.
 
 ### ✨ Added
 

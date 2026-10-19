@@ -42,6 +42,7 @@ import {
   type FixtureTable,
 } from "../packages/harness/src/fixtures.js";
 import { repoRoot } from "../scripts/root.js";
+import { moduleSpecifiers } from "../scripts/specifiers.js";
 
 const gate = await loadPostgresGate();
 const root = repoRoot();
@@ -465,6 +466,81 @@ export default defineConfig({
 
 postgresTest(
   gate,
+  "pull keeps .ts on relative imports; node and bunx check print ok; tsc accepts the output",
+  async () => {
+    if (!existsSync(join(root, "dist", "okm.js"))) {
+      throw new Error("dist/okm.js is missing. bun run build writes it.");
+    }
+    const database = await createIsolatedDatabase();
+    const cwd = tempProject();
+    try {
+      await apply(database.url, [
+        "create table parents (id integer primary key)",
+        "create table kids (id integer primary key, parent_id integer not null references parents (id))",
+      ]);
+      writeConfig(cwd, database.url);
+      await pullProject(cwd, []);
+      const relativeImports: string[] = [];
+      for (const name of [
+        "schema.ts",
+        ...readdirSync(join(cwd, "tables")).map((n) => `tables/${n}`),
+      ]) {
+        const path = join(cwd, name);
+        if (!path.endsWith(".ts")) continue;
+        const text = readFileSync(path, "utf8");
+        for (const specifier of moduleSpecifiers(text, path)) {
+          if (specifier.startsWith(".")) relativeImports.push(specifier);
+        }
+      }
+      expect(relativeImports.length).toBeGreaterThan(0);
+      expect(relativeImports.every((specifier) => specifier.endsWith(".ts"))).toBe(true);
+      expect(relativeImports).toEqual(["./tables/kids.ts", "./tables/parents.ts"]);
+
+      linkOkmodel(cwd);
+      const nodeCheck = Bun.spawnSync(["node", join(root, "dist/okm.js"), "check"], {
+        cwd,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const nodeOut = `${nodeCheck.stdout.toString()}${nodeCheck.stderr.toString()}`;
+      expect(nodeCheck.exitCode, nodeOut).toBe(0);
+      expect(nodeOut).toContain("ok");
+
+      const bunxCheck = Bun.spawnSync(["bunx", "okm", "check"], {
+        cwd,
+        stdout: "pipe",
+        stderr: "pipe",
+        env: {
+          ...process.env,
+          PATH: `${join(cwd, "node_modules", ".bin")}:${process.env.PATH ?? ""}`,
+        },
+      });
+      const bunxOut = `${bunxCheck.stdout.toString()}${bunxCheck.stderr.toString()}`;
+      expect(bunxCheck.exitCode, bunxOut).toBe(0);
+      expect(bunxOut).toContain("ok");
+
+      expectTsc(cwd, {
+        module: "esnext",
+        moduleResolution: "bundler",
+        allowImportingTsExtensions: true,
+        noEmit: true,
+      });
+      expectTsc(cwd, {
+        module: "nodenext",
+        moduleResolution: "nodenext",
+        allowImportingTsExtensions: true,
+        noEmit: true,
+      });
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  60_000,
+);
+
+postgresTest(
+  gate,
   "pull without oxfmt on PATH still writes the report",
   async () => {
     const database = await createIsolatedDatabase();
@@ -504,6 +580,48 @@ function linkPackage(): void {
   if (existsSync(link)) return;
   mkdirSync(directory, { recursive: true });
   symlinkSync(root, link);
+}
+
+function linkOkmodel(cwd: string): void {
+  writeFileSync(
+    join(cwd, "package.json"),
+    `${JSON.stringify({ name: "okm-pull-ext", private: true, type: "module" })}\n`,
+  );
+  const modules = join(cwd, "node_modules");
+  const bin = join(modules, ".bin");
+  mkdirSync(bin, { recursive: true });
+  symlinkSync(root, join(modules, "okmodel"));
+  symlinkSync(join(root, "dist/okm.js"), join(bin, "okm"));
+}
+
+function expectTsc(
+  cwd: string,
+  options: {
+    readonly module: string;
+    readonly moduleResolution: string;
+    readonly allowImportingTsExtensions: boolean;
+    readonly noEmit: boolean;
+  },
+): void {
+  writeFileSync(
+    join(cwd, "tsconfig.json"),
+    `${JSON.stringify({
+      compilerOptions: {
+        strict: true,
+        skipLibCheck: true,
+        target: "es2023",
+        ...options,
+      },
+      files: ["schema.ts"],
+    })}\n`,
+  );
+  const proc = Bun.spawnSync(["bunx", "tsc", "--pretty", "false", "-p", cwd], {
+    cwd: root,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const output = `${proc.stdout.toString()}${proc.stderr.toString()}`;
+  expect(proc.exitCode, output).toBe(0);
 }
 
 function schemaExport(value: unknown): { readonly catalog: Catalog } {

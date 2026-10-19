@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { catalog } from "../src/contracts/catalog/build.js";
 import { column, constraint, table } from "../src/contracts/catalog/object.js";
 import type { CatalogObject, Namespace } from "../src/contracts/catalog/types.js";
+import { moduleSpecifiers } from "../scripts/specifiers.js";
 import { emitPull } from "../src/tooling/migrate/pull-emit.js";
 
 const ns: Namespace = { form: "static", name: "public" };
@@ -77,6 +78,14 @@ test("pull emitter uses export names in references and keeps sqlName", () => {
     expect(child?.text).not.toContain('.references("my-parent"');
     const parent = emitted.files.find((file) => file.path.endsWith("my_parent.ts"));
     expect(parent?.text).toContain('sqlName: "my-parent"');
+    const relativeImports = emitted.files.flatMap((file) =>
+      moduleSpecifiers(file.text, file.path).filter((specifier) => specifier.startsWith(".")),
+    );
+    expect(relativeImports.length).toBeGreaterThan(0);
+    expect(relativeImports).toEqual(["./tables/my_child.ts", "./tables/my_parent.ts"]);
+    for (const specifier of relativeImports) {
+      expect(specifier.endsWith(".ts")).toBe(true);
+    }
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

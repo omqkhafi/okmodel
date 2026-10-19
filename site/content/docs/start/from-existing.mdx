@@ -11,7 +11,7 @@ bunx okm generate init
 bunx okm migrate baseline
 ```
 
-[`okm pull`](/docs/reference/cli#pull) writes table files and the schema from the database. `okm generate init` writes the head snapshot. [`okm migrate baseline`](/docs/reference/cli#migrate-baseline) records that snapshot as applied history: it writes `okm_meta` and `okm_history` only. It does not create, alter, or drop user objects.
+[`okm pull`](/docs/reference/cli#pull) writes table files and the schema from the database. Relative imports keep the `.ts` extension. When `tsc` typechecks that output, set `allowImportingTsExtensions` with `noEmit`, or set `rewriteRelativeImportExtensions`. `okm generate init` writes the head snapshot. [`okm migrate baseline`](/docs/reference/cli#migrate-baseline) records that snapshot as applied history: it writes `okm_meta` and `okm_history` only. It does not create, alter, or drop user objects.
 
 Before it writes, baseline introspects the target. A difference on managed objects is OKM1858 and prints the plan that would reconcile them. Objects the model does not name are listed as unmanaged and are left alone. A target that already has OKModel history is OKM1857. A protected target needs `--allow-protected`.
 
