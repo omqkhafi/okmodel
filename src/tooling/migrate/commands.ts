@@ -89,7 +89,14 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
     const parsed = splitFlags(rest, "generate");
     const written = await generateProject(project, parsed.name ?? "migration", parsed.flags);
     stdout(written === undefined ? "no changes\n" : `${written.path}\n`);
-    if (written !== undefined) stdout(formatFindings(written.findings));
+    if (written !== undefined) {
+      stdout(formatFindings(written.findings));
+      if (hasError(written.findings)) {
+        throw new OkmError("OKM1510", formatFindings(written.findings).trim(), {
+          fix: { summary: "okm migrate apply will refuse until it is fixed." },
+        });
+      }
+    }
     return;
   }
   if (command === "dev") {

@@ -14,9 +14,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
-### 💥 Breaking Changes
+### behaviour changes
 
-- Breaking-ish: now refused — with `validation: true`, an unknown key on `insert`, `update`, upsert / `onConflict`, or first-or-create is OKM1120 and names the key and the table (R1, D303). A typo-only `update` names the key instead of saying "update set is empty."
+- With `validation: true`, an unknown key on `insert`, `update`, upsert / `onConflict`, or first-or-create is OKM1120 and names the key and the table (R1, D304). A typo-only `update` names the key instead of saying "update set is empty."
+- `okm generate` exits 1 when an error finding exists; the migration file is still written; stderr says `okm migrate apply` will refuse until it is fixed (Q8, #395). A warning-only finding stays exit 0.
 
 ### ✨ Added
 

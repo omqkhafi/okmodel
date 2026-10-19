@@ -197,7 +197,7 @@ bunx okm ext check
 
 The file is `<number>_<name>.sql` in the [migrations](/docs/define/config/migrations) directory, with `<number>_<name>.catalog.json` beside it. The number is one higher than the highest numeric prefix, at least four digits. An empty directory starts at `0001`. The name `init` also writes `.gitattributes` in the project when that file is missing.
 
-An empty plan writes no SQL file and prints `no changes`. The [out](/docs/define/config/out) catalog is still written. A written file prints its path, then one line per lint finding. An error finding does not fail this command. `migrate plan` and `check` exit 1 on the same finding.
+An empty plan writes no SQL file and prints `no changes`. The [out](/docs/define/config/out) catalog is still written. A written file prints its path, then one line per lint finding. An error finding still writes the file, then exits 1; stderr says `okm migrate apply` will refuse until it is fixed. A warning does not change the exit code. `migrate plan` and `check` also exit 1 on an error finding.
 
 `--replace` records a removed picklist or enum value. The schema stores no replacement. A chain, a value replaced by another removed value, is OKM1541. `=null` on a column that is not nullable is OKM1541.
 

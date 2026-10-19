@@ -105,7 +105,7 @@ postgresTest(
       );
       await cli(cwd, ["generate", "init"]);
       writeSchema(cwd, `table("items", { id: t.integer().primaryKey() })`);
-      await cli(cwd, ["generate", "drop"]);
+      await generateWithErrors(cwd, ["generate", "drop"]);
       const sqlPath = join(cwd, "migrations", "0002_drop.sql");
       const original = allowDrop(readFileSync(sqlPath, "utf8"));
       writeFileSync(sqlPath, original.replaceAll("-- class: contract", "-- class: expand"));
@@ -424,7 +424,7 @@ async function writeDrop(cwd: string): Promise<void> {
   writeSchema(cwd, `table("items", { id: t.integer().primaryKey(), note: t.text().nullable() })`);
   await cli(cwd, ["generate", "init"]);
   writeSchema(cwd, `table("items", { id: t.integer().primaryKey() })`);
-  await cli(cwd, ["generate", "drop"]);
+  await generateWithErrors(cwd, ["generate", "drop"]);
 }
 
 function allowDrop(sql: string): string {
@@ -543,10 +543,19 @@ function writeConfig(
 
 async function cli(cwd: string, argv: readonly string[]): Promise<string> {
   const script = [
+    `import { OkmError } from ${JSON.stringify(join(root, "src/contracts/error.ts"))};`,
     `import { run } from ${JSON.stringify(join(root, "src/tooling/migrate/commands.ts"))};`,
     "const lines = [];",
-    `await run(${JSON.stringify(argv)}, { cwd: ${JSON.stringify(cwd)}, stdout: (text) => lines.push(text) });`,
-    "process.stdout.write(lines.join(''));",
+    "try {",
+    `  await run(${JSON.stringify(argv)}, { cwd: ${JSON.stringify(cwd)}, stdout: (text) => lines.push(text) });`,
+    "  process.stdout.write(lines.join(''));",
+    "} catch (error) {",
+    "  process.stdout.write(lines.join(''));",
+    "  if (error instanceof OkmError) {",
+    "    process.stderr.write(`error ${error.code}: ${error.message}\\n${error.fix.summary}\\n`);",
+    "  }",
+    "  process.exitCode = 1;",
+    "}",
   ].join("\n");
   const proc = Bun.spawn(["bun", "-e", script], { stdout: "pipe", stderr: "pipe" });
   const stdout = await new Response(proc.stdout).text();
@@ -554,6 +563,24 @@ async function cli(cwd: string, argv: readonly string[]): Promise<string> {
   const code = await proc.exited;
   if (code !== 0) throw new Error(stderr.length > 0 ? stderr : stdout);
   return stdout;
+}
+
+/**
+ * `okm generate` writes the file then exits 1 on an error finding.
+ * Callers that need the file use this instead of {@link cli}.
+ */
+async function generateWithErrors(cwd: string, argv: readonly string[]): Promise<string> {
+  try {
+    return await cli(cwd, argv);
+  } catch (error) {
+    const directory = join(cwd, "migrations");
+    const sql = readdirSync(directory)
+      .filter((file) => file.endsWith(".sql"))
+      .sort()
+      .at(-1);
+    if (sql === undefined) throw error;
+    return join(directory, sql) + "\n";
+  }
 }
 
 async function capture(argv: readonly string[], cwd: string): Promise<string> {
