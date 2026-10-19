@@ -22,6 +22,10 @@ type Handle = Promise<unknown> & {
   sql: () => Promise<unknown>;
   expect: (count: number) => Handle;
   all: (reason: string) => Handle;
+  /** Plans the write without running it. `batch` reads this. */
+  "~plan": () => Promise<unknown>;
+  /** Present when the underlying write exposes it. */
+  inspect?: () => unknown;
 };
 
 type Write = (data: unknown, options?: object) => Handle;
@@ -138,10 +142,11 @@ function guardWrite(
  * A write handle that waits for validation, then forwards to the real handle.
  *
  * The real handle is a thenable. A native promise would unwrap it, so the
- * handle is stored in a slot and never passed to `resolve`.
+ * handle is stored in a slot and never passed to `resolve`. `batch` plans
+ * through `~plan` after the same validation step, before any statement runs.
  *
  * @param start - Delivers the handle after validation
- * @returns A handle with `sql`, `expect`, and `all`
+ * @returns A handle with `~plan`, `sql`, `expect`, and `all`
  */
 function chain(start: Deliver): Handle {
   let slot: Handle | undefined;
@@ -160,7 +165,17 @@ function chain(start: Deliver): Handle {
     return slot;
   };
   return queryHandle(() => ready().then(() => taken()), {
+    "~plan": () => ready().then(() => taken()["~plan"]()),
     sql: () => ready().then(() => taken().sql()),
+    inspect() {
+      return ready().then(() => {
+        const inspect = taken().inspect;
+        if (typeof inspect !== "function") {
+          return taken().sql();
+        }
+        return inspect.call(taken());
+      });
+    },
     expect(count: number) {
       return chain((ok, fail) => {
         void ready().then(() => ok(taken().expect(count)), fail);

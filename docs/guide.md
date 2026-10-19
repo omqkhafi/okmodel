@@ -628,7 +628,7 @@ export const app = schema({ tables: [tasks] });
 
 ### Validation
 
-A title can be checked before it is written. `.validate()` stores the rules on the column. They run on insert and update when the schema sets `validation: true` and the file imports `okmodel/validate`. A failed check is OKM1200. `onRead` is stored and is not applied. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
+A title can be checked before it is written. `.validate()` stores the rules on the column. They run on insert and update when the schema sets `validation: true` and the file imports `okmodel/validate`. A failed check is OKM1200. The same rules run when those writes sit in `batch()`: validation finishes before the plan executes, and a failing rule rolls the whole batch back with OKM1200, `issues`, and `batchIndex`. `{ validate: false }`, delete, and archive stay unchanged. `onRead` is stored and is not applied. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
 
 `validation.ts`:
 
@@ -668,7 +668,7 @@ export async function save(url: string, title: string): Promise<void> {
 
 ### Batch and locks
 
-`batch` sends several writes as one unit. It will not run `restore`, and it will not run a write that uses `expect` (OKM1121). Inside `tx()`, `lock: "update"` makes other transactions wait to change that row, and `advisoryLock` holds a named lock until the transaction ends. A row lock outside `tx()` is OKM1830. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
+`batch` sends several writes as one unit. It will not run `restore`, and it will not run a write that uses `expect` (OKM1121). Validated inserts and updates belong in the same unit: their rules run while the batch plans, before any statement, and a failure is OKM1200 with `batchIndex`. Inside `tx()`, `lock: "update"` makes other transactions wait to change that row, and `advisoryLock` holds a named lock until the transaction ends. A row lock outside `tx()` is OKM1830. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
 
 `batch.ts`:
 
