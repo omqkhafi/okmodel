@@ -121,6 +121,19 @@ export function releaseWorkflowProblems(yaml: string): readonly string[] {
       problems.push(`${name} sets id-token`);
     }
   }
+  const verify = jobs.verify;
+  if (!isRecord(verify)) problems.push("verify job is missing");
+  else {
+    const needs = verify.needs;
+    const needsPublish = needs === "publish" || (Array.isArray(needs) && needs.includes("publish"));
+    if (!needsPublish) problems.push("verify job does not need publish");
+    const verifySteps = Array.isArray(verify.steps) ? verify.steps : [];
+    const runsVerify = verifySteps.some(
+      (step) =>
+        isRecord(step) && typeof step.run === "string" && step.run.includes("verify-release.ts"),
+    );
+    if (!runsVerify) problems.push("verify job does not run verify-release.ts");
+  }
   const tag = jobs.tag;
   if (!isRecord(tag) || !Array.isArray(tag.steps)) problems.push("tag job is missing");
   else if (tag.steps.some((step) => isRecord(step) && step.run === "bun run build")) {

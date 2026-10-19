@@ -54,6 +54,12 @@ The same workflow run creates a GitHub Release on that tag. A stable version clo
 
 Provenance is the npm attestation that GitHub Actions built the tarball. The publish job sets `permissions.id-token` to `write` so npm can attach it. The signed statement records the commit the runner built.
 
+The last job runs `scripts/verify-release.ts` with the `package.json` version. It downloads that version from the registry and packs a clean `git archive` of the tag (`bun install --frozen-lockfile`, `bun run build`, `bun pm pack`, with the pinned Bun). It fails when the sha256 values differ, when the tarball's `package.json` version differs, or when the packed paths differ from the pack-contract snapshot on that tag. A tag with no snapshot warns. `npm audit signatures` must report a verified attestation. That is the provenance check. `npm view --json` shows the predicate type and does not verify the signature. Tag `v0.9.1` is not an ancestor of `main`, and that known fact is a warning. Any other tag off `main` fails. A staged version is not on the registry until a maintainer approves it, so this job fails until the version is public and the job is run again.
+
+```sh
+bun ./scripts/verify-release.ts 0.10.0
+```
+
 ## Site
 
 The production site changes only after a release is published. A push to `main` does not deploy it. The Vercel production branch is `release`. Set that in the Vercel project under Settings, Environments, Production, Branch Tracking. `site/vercel.json` sets `git.deploymentEnabled.main` to false, so a forgotten production-branch setting still does not publish `main`. Pull requests still get preview deployments.

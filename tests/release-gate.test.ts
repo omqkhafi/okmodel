@@ -299,6 +299,13 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   expect(release).toContain('NPM_CONFIG_PROVENANCE: "true"');
   expect(release).toContain("environment: release");
   expect(release).toContain("bun ./scripts/github-release.ts");
+  expect(release).toContain("name: verify / published");
+  expect(release).toContain("needs: publish");
+  expect(release).toContain("bun ./scripts/verify-release.ts");
+  const publishAt = release.indexOf("name: publish / npm");
+  const verifyAt = release.indexOf("bun ./scripts/verify-release.ts");
+  expect(publishAt).toBeGreaterThan(-1);
+  expect(verifyAt).toBeGreaterThan(publishAt);
   expect(release).not.toContain("bun ./scripts/npm-smoke.ts");
   expect(jsonVersionLists(release, "versions")).toEqual([
     [...POSTGRES_VERSIONS],
