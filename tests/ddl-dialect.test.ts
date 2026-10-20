@@ -3,6 +3,8 @@
  */
 
 import { expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import { OkmError } from "../src/contracts/error.js";
 import type { DdlDialect } from "../src/dialects/ddl.js";
@@ -11,6 +13,12 @@ import { fn } from "../src/dialects/pg/fn/index.js";
 import { index, schema, table, t } from "../src/dialects/pg/index.js";
 import { formatPlan, parsePlan, planMigration } from "../src/tooling/migrate/plan.js";
 import { postgresDialect } from "../src/tooling/migrate/postgres-dialect.js";
+import { repoRoot } from "../scripts/root.js";
+
+test("the planner does not import the postgres dialect", () => {
+  const source = readFileSync(join(repoRoot(), "src/tooling/migrate/plan.ts"), "utf8");
+  expect(source.includes("dialects/pg")).toBe(false);
+});
 
 test("postgres support is native for a registry key and absent otherwise", () => {
   expect(postgresDialect.support("schema.core")).toBe("native");

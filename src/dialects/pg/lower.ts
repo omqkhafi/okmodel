@@ -2,9 +2,9 @@
  * Postgres DDL lowering.
  *
  * Table, column, constraint, index, type, extension, routine, view, policy,
- * and privilege changes return every physical statement for that one logical
- * change. Other families stay in the planner until they move here. Output for
- * a catalog pair stays the recorded plan.
+ * privilege, sequence, check, and row-rewrite changes return every physical
+ * statement for that one logical change. Output for a catalog pair stays the
+ * recorded plan.
  */
 
 import { isDomain } from "../../contracts/catalog/enum.js";
@@ -18,6 +18,7 @@ import type {
   ExtensionObject,
   FunctionObject,
   IndexObject,
+  SequenceObject,
   MaterializedViewObject,
   PolicyObject,
   TriggerObject,
@@ -47,6 +48,7 @@ import { notNullSteps } from "./table-safe.js";
 const ACCESS = "ACCESS EXCLUSIVE";
 const SHARE = "SHARE";
 const SHARE_UPDATE = "SHARE UPDATE EXCLUSIVE";
+const ROW = "ROW EXCLUSIVE";
 
 /**
  * Lowers one logical change to Postgres statements.
@@ -174,6 +176,23 @@ export function lowerPostgres(change: LogicalChange): readonly DdlStep[] {
         change.schema,
         change.recreated,
       );
+    case "create-sequence":
+      return createRoutine(change.object, change.schema, "create-sequence");
+    case "drop-sequence":
+      return dropRoutine(change.object, change.schema, "drop-sequence");
+    case "rename-sequence":
+      return [
+        ddlStep(
+          `alter sequence ${qualify(change.schema, change.from)} rename to ${quoteIdent(change.to)}`,
+          "rename-sequence",
+          "ddl",
+          ACCESS,
+        ),
+      ];
+    case "swap-check":
+      return swapCheck(change.schema, change.table, change.name, change.expression, change.kind);
+    case "rewrite-values":
+      return rewriteValues(change);
     case "alter-column":
       return alterColumn(change.before, change.after, change.schema, change.catalogs);
     default:
@@ -419,7 +438,7 @@ function updateExtension(name: string, version: string): readonly DdlStep[] {
 }
 
 function createRoutine(
-  object: FunctionObject | TriggerObject | ViewObject | MaterializedViewObject,
+  object: FunctionObject | TriggerObject | ViewObject | MaterializedViewObject | SequenceObject,
   schema: string,
   kind: StepKind,
 ): readonly DdlStep[] {
@@ -429,7 +448,7 @@ function createRoutine(
 }
 
 function dropRoutine(
-  object: FunctionObject | TriggerObject | ViewObject | MaterializedViewObject,
+  object: FunctionObject | TriggerObject | ViewObject | MaterializedViewObject | SequenceObject,
   schema: string,
   kind: StepKind,
 ): readonly DdlStep[] {
@@ -563,6 +582,43 @@ function identityChangeSql(
     return `alter table ${table} alter column ${name} add generated ${generated} as identity`;
   }
   return `alter table ${table} alter column ${name} set generated ${next.always ? "always" : "by default"}`;
+}
+
+function swapCheck(
+  schema: string,
+  tableName: string,
+  name: string,
+  expression: string,
+  kind: "narrow-check" | "widen-check",
+): readonly DdlStep[] {
+  const table = qualify(schema, tableName);
+  const constraint = quoteIdent(name);
+  return [
+    ddlStep(`alter table ${table} drop constraint ${constraint}`, kind, "ddl", ACCESS),
+    ddlStep(
+      `alter table ${table} add constraint ${constraint} check (${expression}) not valid`,
+      kind,
+      "ddl",
+      ACCESS,
+    ),
+    ddlStep(`alter table ${table} validate constraint ${constraint}`, kind, "ddl", SHARE_UPDATE),
+  ];
+}
+
+function rewriteValues(
+  change: Extract<LogicalChange, { readonly op: "rewrite-values" }>,
+): readonly DdlStep[] {
+  const qualified = qualify(change.schema, change.table);
+  const column = quoteIdent(change.column);
+  const value = change.to === null ? "null" : quoteLiteral(change.to);
+  const compare = change.cast ? `${column}::text` : column;
+  const sql = `update ${qualified} set ${column} = ${value} where ${compare} = ${quoteLiteral(change.from)} and ${change.predicate}`;
+  return [
+    {
+      ...ddlStep(sql, change.kind, "backfill", ROW, false),
+      backfill: { table: qualified, key: change.key, batch: change.batch },
+    },
+  ];
 }
 
 function canonical(value: unknown): string {
