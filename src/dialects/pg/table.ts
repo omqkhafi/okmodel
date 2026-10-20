@@ -49,12 +49,71 @@ export type IndexCall = {
    */
   readonly expression?: string;
   /**
+   * Set by {@link IndexCall.global}. The catalog does not store it.
+   *
+   * A tenant schema leaves this index unprefixed.
+   */
+  readonly tenantGlobal?: string;
+  /**
+   * Set by {@link IndexCall.scoped}. The catalog does not store it.
+   *
+   * A tenant schema prefixes this index even when the table opted out.
+   */
+  readonly tenantScoped?: boolean;
+  /**
    * Marks the index unique.
+   *
+   * On a tenant table the unique includes the tenant key, so two tenants may
+   * share a value. `.global("reason")` keeps the unique global.
    *
    * @returns The same columns, unique
    */
   unique(): IndexCall;
+  /**
+   * Opts this index out of the tenant prefix.
+   *
+   * Present on {@link index}. A hand-built call may omit it. The reason is
+   * required. An empty reason is OKM1060. The index does not gain the tenant
+   * key, and OKM1706 does not apply. A later {@link IndexCall.scoped} wins.
+   *
+   * @param reason - Why this index is shared across tenants
+   * @returns The same columns, unprefixed
+   */
+  global?(reason: string): IndexCall;
+  /**
+   * Opts this index into the tenant prefix.
+   *
+   * Present on {@link index}. It wins over `indexes: false` and
+   * `tenantIndexes: false`. A later {@link IndexCall.global} wins. An index
+   * that already leads with the tenant key is not prefixed twice.
+   *
+   * @returns The same columns, prefixed when the table is a tenant table
+   */
+  scoped?(): IndexCall;
 };
+
+/**
+ * `index()` return, with the tenant scope methods always present.
+ *
+ * A hand-built {@link IndexCall} may omit them. Chaining stays on this type.
+ */
+export interface IndexChain extends IndexCall {
+  /** @returns The same columns, unique */
+  unique(): IndexChain;
+  /**
+   * Opts this index out of the tenant prefix.
+   *
+   * @param reason - Why this index is shared across tenants
+   * @returns The same columns, unprefixed
+   */
+  global(reason: string): IndexChain;
+  /**
+   * Opts this index into the tenant prefix.
+   *
+   * @returns The same columns, prefixed when the table is a tenant table
+   */
+  scoped(): IndexChain;
+}
 
 /**
  * Text stored for a check constraint.
@@ -134,6 +193,15 @@ export type TableOptions<TColumns> = {
   readonly reference?: ReferenceOption;
   /** `one` and `many`. Other relation kinds stay reserved. */
   readonly relations?: unknown;
+  /**
+   * Turns the tenant prefix off or on for indexes on this table.
+   *
+   * `false` leaves each index as written, and one that does not lead with
+   * the tenant key is OKM1706. `true` prefixes them. Omitted follows
+   * `indexes` on the tenancy config, which defaults to true. An index
+   * `.global("reason")` or `.scoped()` still wins.
+   */
+  readonly tenantIndexes?: boolean;
 };
 
 /**
@@ -295,6 +363,7 @@ const TABLE_KNOWN = new Set([
   "renamedFrom",
   "sqlName",
   "tenancy",
+  "tenantIndexes",
   "traits",
   "unique",
   "validate",
@@ -355,9 +424,7 @@ export function table<
   if (name.length === 0) {
     definition(withLocation("table() needs a name.", source));
   }
-  if (options !== undefined) {
-    rejectLater(options, TABLE_KNOWN, TABLE_LATER, `Table ${name}`);
-  }
+  if (options !== undefined) rejectLater(options, TABLE_KNOWN, TABLE_LATER, `Table ${name}`);
   remember(name, columns);
   return {
     name,
@@ -469,11 +536,66 @@ type TraitShapes<TColumns, TOptions> = TOptions extends { readonly traits: infer
  * @param columns - Columns in index order
  * @returns An index call `schema()` compiles
  */
-export function index(...columns: readonly ColumnHandle[]): IndexCall {
-  return indexCall(
-    columns.map((column) => column.name),
-    false,
-  );
+export function index(...columns: readonly ColumnHandle[]): IndexChain {
+  return buildIndex({ columns: columns.map((column) => column.name) });
+}
+
+/**
+ * Builds an index call, including `.unique()`, `.global()`, and `.scoped()`.
+ *
+ * Extension `using` tails and trait rewrites share this so the methods stay
+ * one implementation. It is not on the `okmodel/pg` barrel.
+ *
+ * @param input - Columns, uniqueness, and an optional predicate or expression
+ * @returns The index call `schema()` compiles
+ */
+export function buildIndex(input: {
+  readonly columns: readonly string[];
+  readonly isUnique?: boolean;
+  readonly predicate?: string | undefined;
+  readonly expression?: string | undefined;
+  readonly tenantGlobal?: string | undefined;
+  readonly tenantScoped?: boolean | undefined;
+}): IndexChain {
+  const columns = input.columns;
+  const isUnique = input.isUnique === true;
+  const predicate = input.predicate;
+  const expression = input.expression;
+  const tenantGlobal = input.tenantGlobal;
+  const tenantScoped = input.tenantScoped === true ? true : undefined;
+  return {
+    columns,
+    isUnique,
+    ...(predicate !== undefined ? { predicate } : {}),
+    ...(expression !== undefined ? { expression } : {}),
+    ...(tenantGlobal !== undefined ? { tenantGlobal } : {}),
+    ...(tenantScoped === true ? { tenantScoped: true } : {}),
+    unique() {
+      return buildIndex({
+        columns,
+        isUnique: true,
+        predicate,
+        expression,
+        tenantGlobal,
+        tenantScoped,
+      });
+    },
+    global(reason: string) {
+      if (typeof reason !== "string" || reason.trim().length === 0) {
+        definition("index().global() needs a reason.");
+      }
+      return buildIndex({
+        columns,
+        isUnique,
+        predicate,
+        expression,
+        tenantGlobal: reason.trim(),
+      });
+    },
+    scoped() {
+      return buildIndex({ columns, isUnique, predicate, expression, tenantScoped: true });
+    },
+  };
 }
 
 /**
@@ -537,9 +659,8 @@ export function emittedTypeName(name: string): string {
     out += char;
     capitalize = false;
   }
-  if (out.length === 0) {
-    return "Table";
-  }
+  // Empty name. `length === 0` is the same check and spends the app startup gate.
+  if (!out) return "Table";
   const first = out[0] ?? "";
   if (first >= "0" && first <= "9") {
     return `T${out}`;
@@ -582,17 +703,6 @@ export function rejectLater(
       );
     }
   }
-}
-
-function indexCall(columns: readonly string[], isUnique: boolean, predicate?: string): IndexCall {
-  return {
-    columns,
-    isUnique,
-    ...(predicate !== undefined ? { predicate } : {}),
-    unique() {
-      return indexCall(columns, true, predicate);
-    },
-  };
 }
 
 function sqlValue(value: SqlValue | undefined): string {

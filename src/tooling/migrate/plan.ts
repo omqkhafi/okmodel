@@ -325,6 +325,7 @@ export function planMigration(input: PlanRequest): MigrationPlan {
   const deferred = new Set(picklists.map((change) => identityKey(change.before.identity)));
   const typeDrops: CatalogObject[] = [];
   const extensionDrops: CatalogObject[] = [];
+  const replacementDrops: PlanStep[] = [];
   const reverse = [...uniqueBeforeForeignKey(creationOrder(renamed))].reverse();
   const emitDrop = (object: CatalogObject): void => {
     const key = identityKey(object.identity);
@@ -333,12 +334,17 @@ export function planMigration(input: PlanRequest): MigrationPlan {
     const kind = dropKind(object);
     if (sql === undefined || kind === undefined) return;
     if (object.kind === "index" && hasTable(renamed, object.identity.parent.name)) {
-      steps.push({
+      const planned: PlanStep = {
         ...step(concurrentDropIndexSql(sql), "drop-index", "ddl", SHARE_UPDATE, false, [
           object.identity.parent.name,
         ]),
         safeRewrite: true,
-      });
+      };
+      // A different name can be built first. The old index stays until that
+      // build finishes, so the swap is not a blocking rebuild. A same-name
+      // change still drops first: Postgres will not create the name twice.
+      if (deferIndexDrop(object, createKeys, afterBy)) replacementDrops.push(planned);
+      else steps.push(planned);
       return;
     }
     steps.push(step(sql, kind, "ddl", ACCESS));
@@ -477,6 +483,7 @@ export function planMigration(input: PlanRequest): MigrationPlan {
     }
     steps.push(step(sql, kind, "ddl", object.kind === "index" ? SHARE : ACCESS));
   }
+  steps.push(...replacementDrops);
   for (const object of creationOrder(request.after)) {
     if (object.kind !== "policy") continue;
     const key = identityKey(object.identity);
@@ -1896,6 +1903,36 @@ function backfillStep(
     ...step(planned.sql, kind, "backfill", ROW, false),
     backfill: planned.backfill,
   };
+}
+
+/**
+ * An index drop waits until the new index on that table has been built.
+ *
+ * The names differ, so `CREATE INDEX CONCURRENTLY` can run while the old
+ * index still exists. A recreate of the same name returns false and drops
+ * first.
+ *
+ * @param object - Index the plan is dropping
+ * @param createKeys - Objects the plan is creating
+ * @param afterBy - Catalog after the plan
+ * @returns Whether the drop belongs after those creates
+ */
+function deferIndexDrop(
+  object: CatalogObject & { readonly kind: "index" },
+  createKeys: ReadonlySet<string>,
+  afterBy: ReadonlyMap<string, CatalogObject>,
+): boolean {
+  const parent = object.identity.parent.name;
+  const name = object.identity.name;
+  let replacement = false;
+  for (const key of createKeys) {
+    const created = afterBy.get(key);
+    if (created === undefined || created.kind !== "index") continue;
+    if (created.identity.parent.name !== parent) continue;
+    if (created.identity.name === name) return false;
+    replacement = true;
+  }
+  return replacement;
 }
 
 function hasTable(source: Catalog, name: string): boolean {

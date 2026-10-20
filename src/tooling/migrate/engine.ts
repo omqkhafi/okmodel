@@ -1,5 +1,6 @@
 /**
- * Engine-version checks `okm migrate apply` runs before the first statement.
+ * Engine-version checks `okm migrate apply` and `okm migrate check` run
+ * before the first statement.
  *
  * An explicit `uuidv7()` database default needs {@link UUIDV7_POSTGRES}.
  * A bare `t.id()` stores `gen_random_uuid()` and does not match here.
@@ -9,7 +10,12 @@
 import type { DriverConnection } from "../../contracts/driver.js";
 import { OkmError } from "../../contracts/error.js";
 import { UUIDV7_POSTGRES, uuidv7NeedsPostgres } from "../../dialects/pg/floor.js";
-import type { StoredMigration } from "./files.js";
+
+/** A migration the `uuidv7()` scan can read. Apply and check both pass this. */
+type UuidV7Source = {
+  readonly id: string;
+  readonly steps: readonly { readonly sql: string }[];
+};
 
 /** Where a migration sets a `uuidv7()` default. */
 export type UuidV7Default = {
@@ -35,9 +41,7 @@ const COLUMN = new RegExp(String.raw`(${IDENT})\s+(?:uuid\b|set\s+default\b)`, "
  * @param migrations - Migrations in apply order
  * @returns The first hit, or `undefined`
  */
-export function findUuidV7Default(
-  migrations: readonly StoredMigration[],
-): UuidV7Default | undefined {
+export function findUuidV7Default(migrations: readonly UuidV7Source[]): UuidV7Default | undefined {
   for (const migration of migrations) {
     for (let stepIndex = 0; stepIndex < migration.steps.length; stepIndex += 1) {
       const sql = migration.steps[stepIndex]?.sql ?? "";
@@ -54,14 +58,17 @@ export function findUuidV7Default(
  * The server is asked only when a step needs it, so a schema without the
  * default costs no round trip. A server below 18 that already has a
  * `uuidv7()` function, such as one the application defined, is accepted.
+ * `okm migrate apply` and `okm migrate check` both call this before they
+ * send a statement, so a missing function is OKM1812 rather than the raw
+ * driver error.
  *
- * @param connection - The reserved apply connection
+ * @param connection - The reserved apply or check connection
  * @param migrations - Migrations in apply order
  * @throws OkmError OKM1812, before any statement of the plan runs
  */
 export async function assertUuidV7Available(
   connection: DriverConnection,
-  migrations: readonly StoredMigration[],
+  migrations: readonly UuidV7Source[],
 ): Promise<void> {
   const found = findUuidV7Default(migrations);
   if (found === undefined) return;

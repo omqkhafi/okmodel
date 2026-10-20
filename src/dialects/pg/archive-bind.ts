@@ -9,7 +9,7 @@ import { catalogError, OkmError, throwNamed } from "../../contracts/error.js";
 import { compareText } from "../../contracts/catalog/object.js";
 import { ColumnBuilder, retarget, type ReferenceModifier } from "./column.js";
 import type { ArchiveLink, ArchiveModel } from "./model.js";
-import { type AnyTable, type IndexCall, snakeCase } from "./table.js";
+import { buildIndex, type AnyTable, type IndexCall, snakeCase } from "./table.js";
 import { pathEndpoint } from "./path-endpoint.js";
 
 type TableOptions = {
@@ -325,14 +325,7 @@ function nextOptions(options: object | undefined, indexes: TableOptions["indexes
 }
 
 function partialIndex(columns: readonly string[], predicate: string): IndexCall {
-  return {
-    columns,
-    isUnique: true,
-    predicate,
-    unique() {
-      return partialIndex(columns, predicate);
-    },
-  };
+  return buildIndex({ columns, isUnique: true, predicate });
 }
 
 function primaryFields(item: AnyTable): string[] {

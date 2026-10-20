@@ -16,6 +16,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### behaviour changes
 
+- Indexes on a tenant table lead with the tenant key (`indexes: true`, the default). A unique index is unique per tenant, so two tenants may share a value. `tenantIndexes: false` turns the prefix off for one table. `.global("reason")` opts one index out (an empty reason is refused) and `.scoped()` opts one index in. The nearest level wins. An index that already leads with the key is unchanged, and the next `okm generate` writes nothing. An index that does not is replaced once: `CREATE INDEX CONCURRENTLY` for the new index, then `DROP INDEX CONCURRENTLY` for the old one. That is not a blocking rebuild, and `okm migrate check` accepts it (Q3, D306, #390). OKM1706 stays when prefixing is off.
 - With `validation: true`, an unknown key on `insert`, `update`, upsert / `onConflict`, or first-or-create is OKM1120 and names the key and the table (R1, D304). A typo-only `update` names the key instead of saying "update set is empty."
 - `okm generate` exits 1 when an error finding exists; the migration file is still written; stderr says `okm migrate apply` will refuse until it is fixed (Q8, #395). A warning-only finding stays exit 0.
 - `okm pull` and `okm import drizzle` write relative imports with the `.ts` extension so Node type stripping and `bunx okm` can load the schema (R4, #401). `tsc` needs `allowImportingTsExtensions` with `noEmit`, or `rewriteRelativeImportExtensions`.
@@ -96,6 +97,9 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### tooling
 
+- `okm migrate check` reuses an extension that is already installed. The replay moves it into the scratch schema for the transaction, and `ROLLBACK` restores the schema apply left, so a declared extension still passes after apply (R6, #403).
+- `okm ext check` prints the extension name in the declared column when the pin is omitted. A pin still prints that version or floor (R6, #403).
+- `okm migrate check` refuses a `uuidv7()` default on PostgreSQL 15, 16, and 17 with OKM1812 and the fix `uuidv7() needs PostgreSQL 18 or higher. minPostgres: 18.` PostgreSQL 18 replays that default (R6, #403).
 - `lint / pull request` assigns the open train milestone when `Closes #N` has none. `0.10.0-next.N` uses milestone `0.10`. The issue and the pull request both receive it.
 - A no-op CI event mirrors the last finished `gate / check` and skips a cancelled run, so two label events that cancel each other do not fail the gate when an earlier run succeeded.
 - A failed `CREATE INDEX CONCURRENTLY` is dropped before apply returns, so the target does not keep an INVALID index. When that drop fails, the error names the index and `DROP INDEX CONCURRENTLY`. A later apply still drops a leftover invalid index and rebuilds it (Q4, #391).
