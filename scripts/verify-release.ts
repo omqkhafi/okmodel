@@ -1,34 +1,31 @@
 /**
- * Checks a published npm tarball against a clean pack of its git tag.
+ * Checks a published npm tarball against the record from the release pack.
  *
- * The tarball is downloaded from the registry. The pack is `git archive` of
- * `v` plus the version, then `bun install --frozen-lockfile`, `bun run build`,
- * and `bun pm pack`. The tarball sha256 must match, or every file byte must
- * match when the gzip wrapper differs. The tarball's `package.json` version
- * must be that version, and its file list must match the pack-contract
- * snapshot on the tag. Provenance is `npm audit signatures`, which verifies
- * the registry attestation. `npm view --json` shows the predicate type and
- * does not verify the signature.
+ * The release workflow packs once, writes this record (sha256 and file
+ * list), publishes that tarball, and passes it with `--recorded`. The
+ * registry copy must match that record. The tarball's `package.json`
+ * version must be the requested version, and its file list must match the
+ * pack-contract snapshot on the tag. Provenance is `npm audit signatures`,
+ * which verifies the registry attestation. `npm view --json` shows the
+ * predicate type and does not verify the signature.
+ *
+ * A hand run without `--recorded` still checks the version, the snapshot,
+ * and the attestation. It also packs the tag and prints whether that
+ * rebuild matches the published tarball. That line is a warning. A rebuild
+ * is not a gate: the pack is not byte-stable across machines, and this
+ * repository does not claim reproducible builds.
  *
  * Tag `v0.9.1` is not an ancestor of `origin/main`. That known fact is a
  * warning. Any other tag off main fails the run.
  *
- *   bun ./scripts/verify-release.ts 0.10.0
+ *   bun ./scripts/verify-release.ts 0.10.0 --recorded release-record.json
+ *   bun ./scripts/verify-release.ts --write-record okmodel.tgz release-record.json
  */
 
 import { createHash } from "node:crypto";
-import {
-  lstatSync,
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  readlinkSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative, sep } from "node:path";
+import { join } from "node:path";
 
 import { DEFAULT_SNAPSHOT, packedFileDiff } from "./pack-contract.js";
 import { exitOnProblems } from "./report.js";
@@ -60,196 +57,150 @@ export function sha256Hex(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-/**
- * Why a published tarball is not the pack of `tag`.
- *
- * @param published - Bytes downloaded from the registry
- * @param packed - Bytes from the clean pack
- * @param tag - Tag that was packed, such as `v0.9.1`
- * @returns The problem, or undefined when the sha256 values match
- */
-export function tarballHashProblem(
-  published: Uint8Array,
-  packed: Uint8Array,
-  tag: string,
-): string | undefined {
-  const left = sha256Hex(published);
-  const right = sha256Hex(packed);
-  if (left === right) return undefined;
-  return `sha256 ${left} does not match the pack of ${tag} (${right})`;
-}
+/** sha256 and file list of the one tarball the release job packed. */
+export type ReleaseRecord = {
+  /** Lowercase hex sha256 of the tarball bytes. */
+  readonly sha256: string;
+  /** Packed paths, without the `package/` prefix, sorted. */
+  readonly files: readonly string[];
+};
 
-/**
- * Line printed when the published tarball matches the pack.
- *
- * @param published - Bytes downloaded from the registry
- * @param tag - Tag that was packed
- * @returns The report line
- */
-export function tarballHashLine(published: Uint8Array, tag: string): string {
-  return `sha256 ${sha256Hex(published)} matches the pack of ${tag}`;
-}
-
-/** One file or link inside an extracted npm tarball. */
-type ArchiveEntry = {
-  /** Path relative to the extract root, slash-separated. */
-  readonly path: string;
-  /** `f` for a file, `l` for a symlink. */
-  readonly kind: "f" | "l";
-  /** Permission bits, octal, without the file type. */
-  readonly mode: string;
-  /** File bytes, or the symlink target. */
-  readonly data: Uint8Array;
+/** Printed lines and the lines that fail a recorded-tarball check. */
+export type RecordedAssessment = {
+  /** Report lines, including the failures. */
+  readonly lines: readonly string[];
+  /** Failures. Empty when the tarball matches the record and the version. */
+  readonly problems: readonly string[];
 };
 
 /**
- * sha256 of file bytes in a tarball, ignoring gzip headers and tar metadata.
+ * Warning for a hand-run rebuild of the tag.
  *
- * `bun pm pack` can wrap the same files in different gzip bytes. Paths, modes,
- * and bytes are the comparison.
- *
- * @param bytes - Gzip tarball
- * @returns Hex digest of the sorted entries
- */
-export async function archiveContentDigest(bytes: Uint8Array): Promise<string> {
-  const entries = await archiveEntries(bytes);
-  return digestEntries(entries);
-}
-
-/**
- * Report line when file bytes match and the tarball bytes do not.
- *
- * @param digest - {@link archiveContentDigest} of either tarball
- * @param tag - Tag that was packed
- * @returns The report line
- */
-export function tarballContentLine(digest: string, tag: string): string {
-  return `contents sha256 ${digest} matches the pack of ${tag}`;
-}
-
-/**
- * Why the published files are not the packed files.
- *
- * A matching tarball sha256 skips this. A gzip-only difference is not a problem.
+ * A match and a mismatch both warn. Neither is a failure.
  *
  * @param published - Bytes downloaded from the registry
- * @param packed - Bytes from the clean pack
- * @param tag - Tag that was packed
- * @returns The problem and the report line. `problem` is set only on failure.
+ * @param packed - Bytes from a pack of the tag on this machine
+ * @returns The warning line
  */
-export async function tarballMatch(
-  published: Uint8Array,
-  packed: Uint8Array,
-  tag: string,
-): Promise<{ readonly problem?: string; readonly line: string }> {
-  const raw = tarballHashProblem(published, packed, tag);
-  if (raw === undefined) return { line: tarballHashLine(published, tag) };
-  let publishedEntries: readonly ArchiveEntry[];
-  let packedEntries: readonly ArchiveEntry[];
-  try {
-    publishedEntries = await archiveEntries(published);
-    packedEntries = await archiveEntries(packed);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const problem = `${raw}\n${message}`;
-    return { problem, line: problem };
+export function rebuildWarning(published: Uint8Array, packed: Uint8Array): string {
+  const left = sha256Hex(published);
+  const right = sha256Hex(packed);
+  if (left === right) {
+    return `warning: rebuild sha256 ${left} matches the published tarball (not a gate)`;
   }
-  const digest = digestEntries(publishedEntries);
-  if (digest === digestEntries(packedEntries)) return { line: tarballContentLine(digest, tag) };
-  const problem = `${raw}\n${entryDiff(publishedEntries, packedEntries)}`;
-  return { problem, line: problem };
+  return `warning: rebuild sha256 ${right} does not match the published tarball ${left} (not a gate)`;
 }
 
 /**
- * Extracts a gzip tarball and lists each file and symlink.
+ * Why the registry tarball is not the recorded one.
  *
- * @param bytes - Gzip tarball
- * @returns Entries sorted by path
+ * A missing sha256 fails before the file list. A sha256 match with a
+ * different file list still fails.
+ *
+ * @param published - Bytes downloaded from the registry
+ * @param version - Version the command was asked to verify
+ * @param record - Parsed release record. A missing sha256 is a failure
+ * @returns Report lines and problems
  */
-async function archiveEntries(bytes: Uint8Array): Promise<readonly ArchiveEntry[]> {
-  const root = await withTarball(bytes, async (tarball) => {
-    const dir = mkdtempSync(join(tmpdir(), "okm-verify-files-"));
-    const extracted = await command(dir, ["tar", "-xzf", tarball, "-C", dir]);
-    if (extracted.code !== 0) {
-      rmSync(dir, { recursive: true, force: true });
-      throw new Error(`could not extract the tarball\n${tail(extracted.stderr)}`);
-    }
-    return dir;
-  });
+export async function assessRecorded(
+  published: Uint8Array,
+  version: string,
+  record: unknown,
+): Promise<RecordedAssessment> {
+  const lines: string[] = [];
+  const problems: string[] = [];
+  const actual = sha256Hex(published);
+  const recordedSha = recordedSha256(record);
+  if (recordedSha === undefined) {
+    const problem = "recorded tarball has no sha256";
+    problems.push(problem);
+    lines.push(problem);
+  } else if (recordedSha !== actual) {
+    const problem = `sha256 ${actual} does not match the recorded tarball (${recordedSha})`;
+    problems.push(problem);
+    lines.push(problem);
+  } else lines.push(`sha256 ${actual} matches the recorded tarball`);
+
+  let listing: string;
+  let manifestText: string;
   try {
-    return collectEntries(root);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
+    listing = await tarballListing(published);
+    manifestText = await tarballText(published, "package/package.json");
+  } catch (error) {
+    if (recordedSha !== actual) return { lines, problems };
+    const message = error instanceof Error ? error.message : String(error);
+    problems.push(message);
+    lines.push(message);
+    return { lines, problems };
   }
+
+  const recordedFiles = recordedFilesOf(record);
+  if (recordedFiles === undefined) {
+    const problem = "recorded tarball has no file list";
+    problems.push(problem);
+    lines.push(problem);
+  } else {
+    const diff = recordedFileListProblem(packedEntryPaths(listing), recordedFiles);
+    if (diff !== undefined) {
+      problems.push(diff);
+      lines.push(diff);
+    } else lines.push("file list matches the recorded tarball");
+  }
+
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(manifestText) as unknown;
+  } catch {
+    const problem = "package.json in the tarball is not JSON";
+    problems.push(problem);
+    lines.push(problem);
+    return { lines, problems };
+  }
+  const versionLine = versionProblem(version, manifest);
+  if (versionLine !== undefined) {
+    problems.push(versionLine);
+    lines.push(versionLine);
+  } else lines.push(`package.json version ${version}`);
+  return { lines, problems };
 }
 
 /**
- * @param root - Directory that contains the extracted tarball
- * @returns Files and symlinks under `root`
+ * Why a file list is not the recorded list.
+ *
+ * @param actual - Paths in the tarball, without the `package/` prefix
+ * @param recorded - Paths in the release record
+ * @returns The problem, or undefined when the lists match
  */
-function collectEntries(root: string): readonly ArchiveEntry[] {
-  const entries: ArchiveEntry[] = [];
-  const walk = (dir: string): void => {
-    for (const name of readdirSync(dir)) {
-      const abs = join(dir, name);
-      const st = lstatSync(abs);
-      if (st.isDirectory()) {
-        walk(abs);
-        continue;
-      }
-      const path = relative(root, abs).split(sep).join("/");
-      const mode = (st.mode & 0o777).toString(8);
-      if (st.isSymbolicLink()) {
-        entries.push({ path, kind: "l", mode, data: Buffer.from(readlinkSync(abs)) });
-        continue;
-      }
-      if (!st.isFile()) continue;
-      entries.push({ path, kind: "f", mode, data: new Uint8Array(readFileSync(abs)) });
-    }
-  };
-  walk(root);
-  entries.sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
-  return entries;
-}
-
-/**
- * @param entries - Sorted archive entries
- * @returns Stable digest of paths, modes, and bytes
- */
-function digestEntries(entries: readonly ArchiveEntry[]): string {
-  const hash = createHash("sha256");
-  for (const entry of entries) {
-    hash.update(entry.kind);
-    hash.update("\0");
-    hash.update(entry.mode);
-    hash.update("\0");
-    hash.update(entry.path);
-    hash.update("\0");
-    hash.update(entry.data);
-    hash.update("\0");
-  }
-  return hash.digest("hex");
-}
-
-/**
- * @param published - Entries from the registry tarball
- * @param packed - Entries from the clean pack
- * @returns A short list of paths that differ
- */
-function entryDiff(published: readonly ArchiveEntry[], packed: readonly ArchiveEntry[]): string {
-  const packedByPath = new Map(packed.map((entry) => [entry.path, digestEntries([entry])]));
-  const lines = ["file bytes differ"];
-  const seen = new Set<string>();
-  for (const entry of published) {
-    seen.add(entry.path);
-    const other = packedByPath.get(entry.path);
-    if (other === undefined) lines.push(`  - ${entry.path}`);
-    else if (other !== digestEntries([entry])) lines.push(`  ~ ${entry.path}`);
-  }
-  for (const entry of packed) {
-    if (!seen.has(entry.path)) lines.push(`  + ${entry.path}`);
-  }
+export function recordedFileListProblem(
+  actual: readonly string[],
+  recorded: readonly string[],
+): string | undefined {
+  const diff = packedFileDiff(actual, recorded);
+  if (diff.extra.length === 0 && diff.missing.length === 0) return undefined;
+  const lines = ["file list differs from the recorded tarball"];
+  for (const path of diff.extra) lines.push(`  + ${path}`);
+  for (const path of diff.missing) lines.push(`  - ${path}`);
   return lines.join("\n");
+}
+
+/**
+ * Writes the sha256 and file list of one packed tarball.
+ *
+ * @param tarballPath - Path to the `.tgz` the release job will publish
+ * @param outPath - Where to write the JSON record
+ * @returns The record that was written
+ */
+export async function writeReleaseRecord(
+  tarballPath: string,
+  outPath: string,
+): Promise<ReleaseRecord> {
+  const bytes = new Uint8Array(readFileSync(tarballPath));
+  const record: ReleaseRecord = {
+    sha256: sha256Hex(bytes),
+    files: packedEntryPaths(await tarballListing(bytes)),
+  };
+  writeFileSync(outPath, `${JSON.stringify(record, null, 2)}\n`);
+  return record;
 }
 
 /**
@@ -372,15 +323,49 @@ export function isReleaseVersion(version: string): boolean {
   return VERSION.test(version);
 }
 
+const USAGE = "usage: bun ./scripts/verify-release.ts <version> [--recorded <path>]";
+
 if (import.meta.main) {
-  const version = process.argv[2];
-  if (version === undefined || !isReleaseVersion(version)) {
-    exitOnProblems(["usage: bun ./scripts/verify-release.ts <version>"]);
+  const args = process.argv.slice(2);
+  if (args[0] === "--write-record") {
+    const tarball = args[1];
+    const out = args[2];
+    if (tarball === undefined || out === undefined || args.length !== 3) {
+      exitOnProblems(["usage: bun ./scripts/verify-release.ts --write-record <tarball> <out>"]);
+    } else {
+      const record = await writeReleaseRecord(tarball, out);
+      console.log(record.sha256);
+    }
   } else {
-    const report = await verifyRelease(version);
-    console.log(report.lines.join("\n"));
-    exitOnProblems(report.problems);
+    const version = args[0];
+    if (version === undefined || !isReleaseVersion(version)) {
+      exitOnProblems([USAGE]);
+    } else {
+      const recorded = recordedArg(args.slice(1));
+      const report = await verifyRelease(version, recorded);
+      console.log(report.lines.join("\n"));
+      exitOnProblems(report.problems);
+    }
   }
+}
+
+/**
+ * @param args - Arguments after the version
+ * @returns The `--recorded` path, or undefined when the run is by hand
+ */
+function recordedArg(args: readonly string[]): string | undefined {
+  if (args.length === 0) return undefined;
+  const path = args[1];
+  if (
+    args.length === 2 &&
+    args[0] === "--recorded" &&
+    path !== undefined &&
+    !path.startsWith("-")
+  ) {
+    return path;
+  }
+  exitOnProblems([USAGE]);
+  return undefined;
 }
 
 /** Printed report and the lines that make the process exit non-zero. */
@@ -395,9 +380,13 @@ type VerifyReport = {
  * Verifies one published version and returns the report.
  *
  * @param version - Version argument, already checked with {@link isReleaseVersion}
+ * @param recordedPath - Release record. Absent on a hand run, which warns about a rebuild
  * @returns Report lines and problems
  */
-async function verifyRelease(version: string): Promise<VerifyReport> {
+async function verifyRelease(
+  version: string,
+  recordedPath: string | undefined,
+): Promise<VerifyReport> {
   const tag = `v${version}`;
   const lines: string[] = [`verify-release ${PACKAGE_NAME}@${version}`];
   const problems: string[] = [];
@@ -443,25 +432,36 @@ async function verifyRelease(version: string): Promise<VerifyReport> {
     return { lines, problems };
   }
 
-  let packed: Uint8Array;
-  try {
-    packed = await packTag(root, tag);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    problems.push(message);
-    lines.push(message);
-    return { lines, problems };
+  if (recordedPath === undefined) {
+    try {
+      const packed = await packTag(root, tag);
+      lines.push(rebuildWarning(published, packed));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      problems.push(message);
+      lines.push(message);
+      return { lines, problems };
+    }
+    const manifestProblem = await manifestVersionProblem(published, version);
+    if (manifestProblem !== undefined) {
+      problems.push(manifestProblem);
+      lines.push(manifestProblem);
+    } else lines.push(`package.json version ${version}`);
+  } else {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(readFileSync(recordedPath, "utf8")) as unknown;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const problem = `could not read the recorded tarball\n${message}`;
+      problems.push(problem);
+      lines.push(problem);
+      return { lines, problems };
+    }
+    const assessed = await assessRecorded(published, version, parsed);
+    lines.push(...assessed.lines);
+    problems.push(...assessed.problems);
   }
-
-  const hash = await tarballMatch(published, packed, tag);
-  if (hash.problem !== undefined) problems.push(hash.problem);
-  lines.push(hash.line);
-
-  const manifestProblem = await manifestVersionProblem(published, version);
-  if (manifestProblem !== undefined) {
-    problems.push(manifestProblem);
-    lines.push(manifestProblem);
-  } else lines.push(`package.json version ${version}`);
 
   const files = await fileListReport(root, tag, published);
   if (files.problem !== undefined) {
@@ -477,6 +477,31 @@ async function verifyRelease(version: string): Promise<VerifyReport> {
   } else if (attestation.line !== undefined) lines.push(attestation.line);
 
   return { lines, problems };
+}
+
+/**
+ * @param record - Parsed release record
+ * @returns The sha256, or undefined when it is missing or not 64 hex characters
+ */
+function recordedSha256(record: unknown): string | undefined {
+  if (!isRecord(record)) return undefined;
+  const sha = record.sha256;
+  if (typeof sha !== "string" || !/^[0-9a-f]{64}$/.test(sha)) return undefined;
+  return sha;
+}
+
+/**
+ * @param record - Parsed release record
+ * @returns The file list, or undefined when `files` is not an array of strings
+ */
+function recordedFilesOf(record: unknown): readonly string[] | undefined {
+  if (!isRecord(record) || !Array.isArray(record.files)) return undefined;
+  const files: string[] = [];
+  for (const file of record.files) {
+    if (typeof file !== "string") return undefined;
+    files.push(file);
+  }
+  return files;
 }
 
 /**

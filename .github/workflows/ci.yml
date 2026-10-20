@@ -16,8 +16,10 @@ name: CI
 # `needs: postgres` still runs the suite on 15 and 18 and the tarball on 18.
 # The full tier also runs the suite on 15 and 18, including a push to main.
 # The tarball stays on the Postgres label. One job builds `dist` and uploads
-# it. Test groups that need it download it. The others do not build. Release
-# and weekly call the suite and tarball workflows themselves, on every major.
+# it. Test groups that need it download it. The others do not build.
+# `inform / pack` builds twice on one runner and checks published 0.9.1.
+# It is not a `gate / check` slice. Release and weekly call the suite and
+# tarball workflows themselves, on every major.
 # Concurrency is the pull request number, or the commit sha on main. A new
 # push on a pull request cancels the older run. A label event does not.
 # A later commit on main never cancels an earlier main run.
@@ -653,6 +655,24 @@ jobs:
     permissions:
       contents: read
     uses: ./.github/workflows/windows.yml
+
+  inform:
+    name: inform / pack
+    if: github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'full-ci'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup
+        uses: ./.github/actions/setup-bun
+
+      - name: Pack twice on this runner
+        run: bun ./scripts/pack-stability.ts
+
+      - name: Published 0.9.1
+        continue-on-error: true
+        run: bun ./scripts/verify-release.ts 0.9.1
 
   issue:
     name: gate / issue

@@ -1,20 +1,20 @@
 /**
- * The published 0.9.1 tarball matches a clean pack of v0.9.1.
- * A tampered tarball does not.
+ * Recorded-tarball checks use fixture archives. Nothing here contacts the registry.
  */
 
 import { expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { repoRoot } from "../scripts/root.js";
 import {
   ancestryProblem,
   ancestryWarning,
-  archiveContentDigest,
-  tarballHashProblem,
-  tarballMatch,
+  assessRecorded,
+  rebuildWarning,
+  writeReleaseRecord,
+  type ReleaseRecord,
 } from "../scripts/verify-release.js";
 
 const root = repoRoot();
@@ -29,84 +29,136 @@ test("v0.9.1 off main is the known warning", () => {
   expect(ancestryWarning("0.10.0", false)).toBeUndefined();
 });
 
-test("a tampered tarball fails the hash check", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "okm-verify-tamper-"));
+test("a rebuild comparison warns and does not throw", () => {
+  const published = new Uint8Array([1, 2, 3]);
+  const packed = new Uint8Array([1, 2, 4]);
+  const mismatch = rebuildWarning(published, packed);
+  expect(mismatch.startsWith("warning:")).toBe(true);
+  expect(mismatch).toContain("does not match the published tarball");
+  expect(mismatch).toContain("not a gate");
+  const match = rebuildWarning(published, published);
+  expect(match.startsWith("warning:")).toBe(true);
+  expect(match).toContain("matches the published tarball");
+  expect(match).toContain("not a gate");
+});
+
+test("a recorded tarball matches sha256, file list, and version", async () => {
+  const bytes = await fixtureTarball({
+    "package/package.json": `${JSON.stringify({ name: "okmodel", version: "0.0.1" })}\n`,
+    "package/note.txt": "ok\n",
+  });
+  const record = await recordOf(bytes);
+  const result = await assessRecorded(bytes, "0.0.1", record);
+  expect(result.problems).toEqual([]);
+  expect(result.lines.join("\n")).toContain("matches the recorded tarball");
+  expect(result.lines.join("\n")).toContain("file list matches the recorded tarball");
+  expect(result.lines.join("\n")).toContain("package.json version 0.0.1");
+});
+
+test("a tampered tarball fails the recorded hash", async () => {
+  const bytes = await fixtureTarball({
+    "package/package.json": `${JSON.stringify({ name: "okmodel", version: "0.0.1" })}\n`,
+    "package/note.txt": "ok\n",
+  });
+  const record = await recordOf(bytes);
+  const published = new Uint8Array(bytes);
+  const last = published.length - 1;
+  const byte = published[last];
+  if (byte === undefined) throw new Error("tarball is empty");
+  published[last] = byte ^ 0xff;
+  const result = await assessRecorded(published, "0.0.1", record);
+  const text = result.problems.join("\n");
+  expect(text).toContain("sha256");
+  expect(text).toContain("does not match the recorded tarball");
+});
+
+test("the wrong package.json version fails", async () => {
+  const bytes = await fixtureTarball({
+    "package/package.json": `${JSON.stringify({ name: "okmodel", version: "0.0.1" })}\n`,
+    "package/note.txt": "ok\n",
+  });
+  const record = await recordOf(bytes);
+  const result = await assessRecorded(bytes, "9.9.9", record);
+  const text = result.problems.join("\n");
+  expect(text).toContain("package.json version is 0.0.1, expected 9.9.9");
+  expect(text).not.toContain("does not match the recorded tarball");
+  expect(text).not.toContain("file list differs");
+});
+
+test("a recorded file list that differs fails", async () => {
+  const bytes = await fixtureTarball({
+    "package/package.json": `${JSON.stringify({ name: "okmodel", version: "0.0.1" })}\n`,
+    "package/note.txt": "ok\n",
+  });
+  const record = await recordOf(bytes);
+  const mismatched: ReleaseRecord = { sha256: record.sha256, files: ["missing.txt"] };
+  const result = await assessRecorded(bytes, "0.0.1", mismatched);
+  const text = result.problems.join("\n");
+  expect(text).toContain("file list differs from the recorded tarball");
+  expect(text).toContain("note.txt");
+  expect(text).toContain("missing.txt");
+  expect(result.lines.join("\n")).toContain("matches the recorded tarball");
+  expect(text).not.toContain("does not match the recorded tarball");
+});
+
+test("a record without a sha256 fails", async () => {
+  const bytes = await fixtureTarball({
+    "package/package.json": `${JSON.stringify({ name: "okmodel", version: "0.0.1" })}\n`,
+    "package/note.txt": "ok\n",
+  });
+  const record = await recordOf(bytes);
+  const result = await assessRecorded(bytes, "0.0.1", { files: record.files });
+  expect(result.problems).toContain("recorded tarball has no sha256");
+});
+
+test("the hand command documents --recorded", async () => {
+  const proc = Bun.spawn(["bun", "./scripts/verify-release.ts"], {
+    cwd: root,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const stderr = await new Response(proc.stderr).text();
+  expect(await proc.exited).toBe(1);
+  expect(stderr).toContain("usage: bun ./scripts/verify-release.ts <version> [--recorded <path>]");
+});
+
+/**
+ * @param files - Paths and text inside the archive
+ * @returns Gzip tarball bytes
+ */
+async function fixtureTarball(files: Readonly<Record<string, string>>): Promise<Uint8Array> {
+  const dir = mkdtempSync(join(tmpdir(), "okm-verify-fixture-"));
   try {
-    writeFileSync(join(dir, "note.txt"), "ok\n");
-    const proc = Bun.spawn(["tar", "-czf", "good.tgz", "note.txt"], {
+    for (const [path, text] of Object.entries(files)) {
+      const abs = join(dir, path);
+      mkdirSync(dirname(abs), { recursive: true });
+      writeFileSync(abs, text);
+    }
+    const proc = Bun.spawn(["tar", "-czf", "pack.tgz", "package"], {
       cwd: dir,
       stdout: "pipe",
       stderr: "pipe",
     });
     const stderr = await new Response(proc.stderr).text();
     expect(await proc.exited, stderr).toBe(0);
-    const packed = new Uint8Array(readFileSync(join(dir, "good.tgz")));
-    const published = new Uint8Array(packed);
-    const last = published.length - 1;
-    const byte = published[last];
-    if (byte === undefined) throw new Error("tarball is empty");
-    published[last] = byte ^ 0xff;
-    expect(tarballHashProblem(packed, packed, "v0.0.0")).toBeUndefined();
-    const problem = tarballHashProblem(published, packed, "v0.0.0");
-    expect(problem).toContain("sha256");
-    expect(problem).toContain("does not match the pack of v0.0.0");
+    return new Uint8Array(readFileSync(join(dir, "pack.tgz")));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
-});
+}
 
-test("a gzip header change still matches file bytes", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "okm-verify-gzip-"));
+/**
+ * @param bytes - Tarball bytes
+ * @returns The release record for those bytes
+ */
+async function recordOf(bytes: Uint8Array): Promise<ReleaseRecord> {
+  const dir = mkdtempSync(join(tmpdir(), "okm-verify-record-"));
   try {
-    writeFileSync(join(dir, "note.txt"), "ok\n");
-    const proc = Bun.spawn(["tar", "-czf", "good.tgz", "note.txt"], {
-      cwd: dir,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    expect(await proc.exited).toBe(0);
-    const packed = new Uint8Array(readFileSync(join(dir, "good.tgz")));
-    const published = new Uint8Array(packed);
-    const header = published[4];
-    if (header === undefined) throw new Error("gzip header is short");
-    published[4] = header ^ 0xff;
-    expect(tarballHashProblem(published, packed, "v0.0.0")).toContain("does not match");
-    expect(await archiveContentDigest(published)).toBe(await archiveContentDigest(packed));
-    const match = await tarballMatch(published, packed, "v0.0.0");
-    expect(match.problem).toBeUndefined();
-    expect(match.line).toContain("contents sha256");
-    expect(match.line).toContain("matches the pack of v0.0.0");
-    writeFileSync(join(dir, "note.txt"), "changed\n");
-    const again = Bun.spawn(["tar", "-czf", "other.tgz", "note.txt"], {
-      cwd: dir,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    expect(await again.exited).toBe(0);
-    const changed = new Uint8Array(readFileSync(join(dir, "other.tgz")));
-    const broken = await tarballMatch(changed, packed, "v0.0.0");
-    expect(broken.problem).toContain("file bytes differ");
-    expect(broken.problem).toContain("note.txt");
+    const tarball = join(dir, "okmodel.tgz");
+    const out = join(dir, "release-record.json");
+    writeFileSync(tarball, bytes);
+    return await writeReleaseRecord(tarball, out);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
-});
-
-test("published 0.9.1 matches a pack of v0.9.1 and warns that the tag is not on main", async () => {
-  const proc = Bun.spawn(["bun", "./scripts/verify-release.ts", "0.9.1"], {
-    cwd: root,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const stdout = await new Response(proc.stdout).text();
-  const stderr = await new Response(proc.stderr).text();
-  const code = await proc.exited;
-  expect(code, `${stdout}\n${stderr}`).toBe(0);
-  expect(stdout).toContain("sha256");
-  expect(stdout).toContain("matches the pack of v0.9.1");
-  expect(stdout).toContain("known tag-not-on-main");
-  expect(stdout).toContain("package.json version 0.9.1");
-  expect(stdout).toContain("npm audit signatures verified the attestation");
-  expect(stdout).toContain("warning: tag v0.9.1 has no pack-contract snapshot");
-  expect(stderr).toBe("");
-}, 240_000);
+}

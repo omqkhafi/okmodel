@@ -133,7 +133,24 @@ export function releaseWorkflowProblems(yaml: string): readonly string[] {
         isRecord(step) && typeof step.run === "string" && step.run.includes("verify-release.ts"),
     );
     if (!runsVerify) problems.push("verify job does not run verify-release.ts");
+    const verifyRun = verifySteps.find(
+      (step) =>
+        isRecord(step) && typeof step.run === "string" && step.run.includes("verify-release.ts"),
+    );
+    if (
+      isRecord(verifyRun) &&
+      typeof verifyRun.run === "string" &&
+      !verifyRun.run.includes("--recorded")
+    ) {
+      problems.push("verify job does not pass --recorded");
+    }
   }
+  if (!yaml.includes("name: release-record")) problems.push("release record artifact is missing");
+  if (!yaml.includes("GITHUB_STEP_SUMMARY")) {
+    problems.push("the pack job does not write the job summary");
+  }
+  const packCount = commands.match(/\bbun pm pack\b/g)?.length ?? 0;
+  if (packCount !== 1) problems.push("the release workflow must pack once");
   const tag = jobs.tag;
   if (!isRecord(tag) || !Array.isArray(tag.steps)) problems.push("tag job is missing");
   else if (tag.steps.some((step) => isRecord(step) && step.run === "bun run build")) {

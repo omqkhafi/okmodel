@@ -302,8 +302,12 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   expect(release).toContain("name: verify / published");
   expect(release).toContain("needs: publish");
   expect(release).toContain("bun ./scripts/verify-release.ts");
+  expect(release).toContain("--recorded");
+  expect(release).toContain("name: release-record");
+  expect(release).toContain("GITHUB_STEP_SUMMARY");
+  expect(release).toContain("bun pm pack");
   const publishAt = release.indexOf("name: publish / npm");
-  const verifyAt = release.indexOf("bun ./scripts/verify-release.ts");
+  const verifyAt = release.indexOf("--recorded");
   expect(publishAt).toBeGreaterThan(-1);
   expect(verifyAt).toBeGreaterThan(publishAt);
   expect(release).not.toContain("bun ./scripts/npm-smoke.ts");
