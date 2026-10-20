@@ -149,12 +149,14 @@ jobs:
         # `server_reset_query` stays the image default (`DISCARD ALL`) and is
         # not run in transaction mode (`server_reset_query_always` off), so a
         # `SET` outside a transaction remains on the one server connection.
+        # Host port 6434: the PGDG pgbouncer unit installed for the rotation
+        # proof already binds 6432.
         run: |
           docker pull "$PGBOUNCER_IMAGE"
           docker rm -f okm-pgbouncer >/dev/null 2>&1 || true
           docker run -d --name okm-pgbouncer \
             --network okmodel_default \
-            --publish 127.0.0.1:6432:5432 \
+            --publish 127.0.0.1:6434:5432 \
             -e DATABASE_URL="postgres://okm:okm@primary:5432/okm" \
             -e POOL_MODE=transaction \
             -e DEFAULT_POOL_SIZE=1 \
@@ -184,7 +186,7 @@ jobs:
         env:
           REQUIRE_DOCKER: "1"
           POSTGRES_VERSION: ${{ matrix.version }}
-          OKM_POOLER_URL: postgres://okm:okm@127.0.0.1:6432/okm
+          OKM_POOLER_URL: postgres://okm:okm@127.0.0.1:6434/okm
 
       - name: Stop Postgres
         if: always()
