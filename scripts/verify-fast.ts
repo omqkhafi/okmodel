@@ -9,6 +9,9 @@
  *   bun ./scripts/verify-fast.ts
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { repoRoot } from "./root.js";
 
 /** Commands before the changed-test run, in order. */
@@ -41,6 +44,39 @@ export function changedTestCommand(base: string): readonly string[] {
  * @param root - Repository root
  * @returns The commit `--changed` should use
  */
+/**
+ * Warning when the running Bun is not the version in `.bun-version`.
+ *
+ * An empty string means the versions match. The check does not fail.
+ *
+ * @param local - `Bun.version`
+ * @param pinned - The trimmed contents of `.bun-version`
+ * @returns The warning line, or undefined when they match
+ */
+export function bunPinWarning(local: string, pinned: string): string | undefined {
+  if (local === pinned) return undefined;
+  return `verify:fast: local Bun ${local} differs from the pinned ${pinned} in .bun-version`;
+}
+
+/**
+ * Prints {@link bunPinWarning} for this checkout.
+ *
+ * A missing pin file is a warning too. The process still continues.
+ *
+ * @param root - Repository root
+ */
+export function warnBunPin(root: string): void {
+  let pinned: string;
+  try {
+    pinned = readFileSync(join(root, ".bun-version"), "utf8").trim();
+  } catch {
+    console.error("verify:fast: .bun-version is missing");
+    return;
+  }
+  const warning = bunPinWarning(Bun.version, pinned);
+  if (warning !== undefined) console.error(warning);
+}
+
 export function verifyFastBase(root: string): string {
   for (const ref of ["origin/main", "main"]) {
     const base = mergeBase(root, ref);
@@ -73,6 +109,7 @@ async function run(root: string, command: readonly string[]): Promise<number> {
 
 async function main(): Promise<void> {
   const root = repoRoot();
+  warnBunPin(root);
   for (const step of VERIFY_FAST_STEPS) {
     const code = await run(root, step);
     if (code !== 0) process.exit(code);
