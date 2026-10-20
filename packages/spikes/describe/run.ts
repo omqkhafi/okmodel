@@ -12,7 +12,7 @@
 import { gzipSync } from "node:zlib";
 import { readFileSync, writeFileSync } from "node:fs";
 
-import { probePglite, probeTcp, type ServerReport } from "./probe.ts";
+import { probePglite, probeTcp, type ServerReport } from "./probe.js";
 
 const VERSIONS = [15, 16, 17, 18] as const;
 const PGBOUNCER =

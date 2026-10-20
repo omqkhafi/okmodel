@@ -11,8 +11,8 @@ import { neonConfig, Pool } from "@neondatabase/serverless";
 import pg from "pg";
 import postgres from "postgres";
 
-import { parseTarget } from "./protocol.ts";
-import { startBridge, type WsBridge } from "./ws-bridge.ts";
+import { parseTarget } from "./protocol.js";
+import { startBridge, type WsBridge } from "./ws-bridge.js";
 
 /** Where a field comes from. */
 export type DescribeRoute = "public" | "internal" | "not-possible" | "untested";
@@ -171,7 +171,7 @@ export function nodePostgresSession(): DriverSession {
     tableOidAttnum: "internal",
     note: "No public describe. pg.Connection.parse, describe({ type: 'S' }), and sync are reached through the undocumented query submit hook. RowDescription fields include tableID and columnID. client.query() itself always Bind and Execute.",
     async open(url) {
-      const Ctor = pg.Client as new (config: { connectionString: string }) => PgConnectable;
+      const Ctor = clientCtor();
       client = new Ctor({ connectionString: url });
       await client.connect();
     },
@@ -257,7 +257,7 @@ export function pgliteSession(): DriverSession {
     },
     async scalar(text) {
       const live = required(db, "PGlite");
-      const result = await live.query(text);
+      const result = await live.query<{ [key: string]: unknown }>(text);
       const row = result.rows[0];
       if (row === undefined) return null;
       const value = Object.values(row)[0];
@@ -482,7 +482,7 @@ async function describeOnPglite(db: PGlite, text: string): Promise<ProbedDescrib
       const wrapped = new Error(error.message ?? "PGlite describe failed") as Error & {
         code?: string;
       };
-      wrapped.code = error.code;
+      if (error.code !== undefined) wrapped.code = error.code;
       throw wrapped;
     }
   }
@@ -510,6 +510,19 @@ function methodNames(value: object): readonly string[] {
     current = Object.getPrototypeOf(current) as object | null;
   }
   return [...names].sort();
+}
+
+/**
+ * `pg` ships a `Client` at runtime. The local declaration file only names `Pool`.
+ *
+ * @returns The `pg.Client` constructor
+ */
+function clientCtor(): new (config: { connectionString: string }) => PgConnectable {
+  const bag = pg as unknown as {
+    Client?: new (config: { connectionString: string }) => PgConnectable;
+  };
+  if (bag.Client === undefined) throw new Error("pg.Client is missing");
+  return bag.Client;
 }
 
 function required<T>(value: T | undefined, name: string): T {

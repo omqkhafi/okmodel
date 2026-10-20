@@ -17,15 +17,15 @@ import {
   type DescribeRoute,
   type DriverSession,
   type ProbedColumn,
-} from "./drivers.ts";
+} from "./drivers.js";
 import {
   NULLABILITY_SQL,
   NOT_NULL_CONSTRAINT_SQL,
   TYPE_LOOKUP_SQL,
   provenNotNull,
   type NullabilityRow,
-} from "./nullability.ts";
-import { connectDescribe, type DescribeColumn, type DescribeOutcome } from "./protocol.ts";
+} from "./nullability.js";
+import { connectDescribe, type DescribeColumn, type DescribeOutcome } from "./protocol.js";
 
 /** One statement in the edge list. */
 export type Edge = {
@@ -331,7 +331,7 @@ export async function probePglite(): Promise<ServerReport> {
       version,
       builtin,
       drivers: [
-        {
+        packDriver({
           name: session.name,
           routes: routesOf(session),
           note: session.note,
@@ -340,7 +340,7 @@ export async function probePglite(): Promise<ServerReport> {
           canonical: statements.find((item) => item.label === "canonical"),
           mismatches: [],
           warmDescribeMs: builtin.warmMs,
-        },
+        }),
       ],
       nullability,
       types,
@@ -405,13 +405,13 @@ async function statementOnSession(
   } catch (error) {
     const after = await countsOf(session, edge.label, url);
     const parsed = errorOf(error);
-    return {
+    return packStatement({
       label: edge.label,
       ok: false,
       code: parsed.code,
       message: parsed.message,
       ...countFields(before, after),
-    };
+    });
   }
 }
 
@@ -451,16 +451,18 @@ async function probeDrivers(
       }
       const statements: StatementReport[] = [];
       for (const edge of EDGES) statements.push(await statementOnSession(session, edge, url));
-      reports.push({
-        name: session.name,
-        routes: routesOf(session),
-        note: session.note,
-        canonical: statements.find((item) => item.label === "canonical"),
-        sideEffect: statements.find((item) => item.label === "side-effect"),
-        statements,
-        mismatches: mismatches(ground, statements),
-        warmDescribeMs: await warm(session, canonicalText()),
-      });
+      reports.push(
+        packDriver({
+          name: session.name,
+          routes: routesOf(session),
+          note: session.note,
+          canonical: statements.find((item) => item.label === "canonical"),
+          sideEffect: statements.find((item) => item.label === "side-effect"),
+          statements,
+          mismatches: mismatches(ground, statements),
+          warmDescribeMs: await warm(session, canonicalText()),
+        }),
+      );
     } finally {
       await session.close();
     }
@@ -784,6 +786,34 @@ function nullabilityOf(row: Record<string, unknown>): NullabilityRow {
   };
 }
 
+/**
+ * Drops properties whose value is `undefined` so optional fields stay absent.
+ *
+ * @param fields - Report fields, including ones that may be missing
+ * @returns A report with only the fields that have a value
+ */
+function packDriver(fields: Loose<DriverReport>): DriverReport {
+  return pack(fields);
+}
+
+/**
+ * @param fields - Statement fields, including ones that may be missing
+ * @returns A statement report with only the fields that have a value
+ */
+function packStatement(fields: Loose<StatementReport>): StatementReport {
+  return pack(fields);
+}
+
+type Loose<T> = { [K in keyof T]: T[K] | undefined };
+
+function pack<T>(fields: Loose<T>): T {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(fields)) {
+    if (value !== undefined) out[key] = value;
+  }
+  return out as T;
+}
+
 function routesOf(session: DriverSession): DriverReport["routes"] {
   return {
     parameterOids: session.parameterOids,
@@ -852,6 +882,7 @@ function errorOf(error: unknown): { code?: string; message: string } {
     const code = "code" in error && typeof error.code === "string" ? error.code : undefined;
     const message =
       "message" in error && typeof error.message === "string" ? error.message : text(error);
+    if (code === undefined) return { message };
     return { code, message };
   }
   return { message: String(error) };

@@ -81,20 +81,21 @@ export function connectDescribe(url: string): Promise<DescribeClient> {
  * until ReadyForQuery. The statement is not bound and not executed.
  */
 export class DescribeClient {
-  private buf = Buffer.alloc(0);
+  private buf: Buffer<ArrayBufferLike> = Buffer.alloc(0);
   private queue: Backend[] = [];
   private waiter: ((msg: Backend) => void) | undefined;
   private failed: Error | undefined;
+  private readonly socket: Socket;
+  private readonly target: DescribeTarget;
 
   /**
    * @param socket - Connected or connecting TCP socket
    * @param target - Startup and auth parameters
    */
-  constructor(
-    private readonly socket: Socket,
-    private readonly target: DescribeTarget,
-  ) {
-    socket.on("data", (chunk: Buffer) => {
+  constructor(socket: Socket, target: DescribeTarget) {
+    this.socket = socket;
+    this.target = target;
+    socket.on("data", (chunk: Buffer<ArrayBufferLike>) => {
       this.buf = this.buf.length === 0 ? chunk : Buffer.concat([this.buf, chunk]);
       this.drain();
     });
@@ -137,9 +138,9 @@ export class DescribeClient {
     for (;;) {
       const msg = await this.next();
       if (msg.tag === READY) {
-        return code === undefined
-          ? { parameterOids, columns }
-          : { parameterOids, columns, code, message };
+        if (code === undefined) return { parameterOids, columns };
+        if (message === undefined) return { parameterOids, columns, code };
+        return { parameterOids, columns, code, message };
       }
       if (msg.tag === PARAM) parameterOids.push(...parameterOidsOf(msg.body));
       else if (msg.tag === ROW) columns.push(...columnsOf(msg.body));
@@ -424,7 +425,7 @@ function errorOf(body: Buffer): Error & { code?: string } {
     index = end + 1;
   }
   const error = new Error(message) as Error & { code?: string };
-  error.code = code;
+  if (code !== undefined) error.code = code;
   return error;
 }
 
