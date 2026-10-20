@@ -7,6 +7,7 @@ import { expect, test } from "bun:test";
 import { OkmError } from "../src/contracts/error.js";
 import type { DdlDialect } from "../src/dialects/ddl.js";
 import { ddlStep } from "../src/dialects/ddl-step.js";
+import { fn } from "../src/dialects/pg/fn/index.js";
 import { index, schema, table, t } from "../src/dialects/pg/index.js";
 import { formatPlan, parsePlan, planMigration } from "../src/tooling/migrate/plan.js";
 import { postgresDialect } from "../src/tooling/migrate/postgres-dialect.js";
@@ -160,6 +161,33 @@ test("one logical enum add can lower to two physical steps", () => {
   expect(added).toHaveLength(2);
   expect(added.every((item) => item.transactional === false)).toBe(true);
   expect(added.map((item) => item.class)).toEqual(["expand", "expand"]);
+  const parsed = parsePlan(formatPlan(plan));
+  expect(parsed.steps.map((item) => item.sql)).toEqual(plan.steps.map((item) => item.sql));
+  expect(parsed.class).toBe(plan.class);
+});
+
+test("one logical function create can lower to two physical steps", () => {
+  const read = fn("read_tasks", { returns: "integer", language: "sql", body: "select 1" });
+  const before = schema({ tables: [] }).catalog;
+  const after = schema({ tables: [], functions: [read] }).catalog;
+  const dialect: DdlDialect = {
+    ...postgresDialect,
+    lower(change) {
+      if (change.op !== "create-function") return postgresDialect.lower(change);
+      return [1, 2].map((part) =>
+        ddlStep(
+          `create function read_tasks_${String(part)}() returns integer language sql as $$ select 1 $$`,
+          "create-function",
+          "ddl",
+          "ACCESS EXCLUSIVE",
+        ),
+      );
+    },
+  };
+  const plan = planMigration({ before, after, name: "fn" }, dialect);
+  const created = plan.steps.filter((item) => item.kind === "create-function");
+  expect(created).toHaveLength(2);
+  expect(created.map((item) => item.class)).toEqual(["expand", "expand"]);
   const parsed = parsePlan(formatPlan(plan));
   expect(parsed.steps.map((item) => item.sql)).toEqual(plan.steps.map((item) => item.sql));
   expect(parsed.class).toBe(plan.class);

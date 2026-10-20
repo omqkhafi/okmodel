@@ -1,9 +1,10 @@
 /**
  * Postgres DDL lowering.
  *
- * Table, column, constraint, index, type, and extension changes return every
- * physical statement for that one logical change. Other families stay in the
- * planner until they move here. Output for a catalog pair stays the recorded plan.
+ * Table, column, constraint, index, type, extension, routine, view, policy,
+ * and privilege changes return every physical statement for that one logical
+ * change. Other families stay in the planner until they move here. Output for
+ * a catalog pair stays the recorded plan.
  */
 
 import { isDomain } from "../../contracts/catalog/enum.js";
@@ -15,20 +16,31 @@ import type {
   ColumnObject,
   ConstraintObject,
   ExtensionObject,
+  FunctionObject,
   IndexObject,
+  MaterializedViewObject,
+  PolicyObject,
+  TriggerObject,
   TypeObject,
+  ViewObject,
 } from "../../contracts/catalog/types.js";
 import { ddlStep } from "../ddl-step.js";
 import type { DdlStep, LogicalChange } from "../ddl.js";
-import type { StepKind } from "../step-class.js";
+import { classOf, type StepKind } from "../step-class.js";
 import {
   alterColumnSql,
   createObjectSql,
   createTableSql,
   dropObjectSql,
+  functionSql,
+  policyCreatePlan,
+  policyDropPlan,
   qualify,
   quoteIdent,
+  refreshMaterializedViewSql,
+  viewSql,
 } from "./ddl.js";
+import { privilegeSql } from "./role/sql.js";
 import { quoteLiteral } from "./quote.js";
 import { notNullSteps } from "./table-safe.js";
 
@@ -121,6 +133,47 @@ export function lowerPostgres(change: LogicalChange): readonly DdlStep[] {
       return moveExtension(change.name, change.schema);
     case "update-extension":
       return updateExtension(change.name, change.version);
+    case "create-function":
+      return createRoutine(change.object, change.schema, "create-function");
+    case "drop-function":
+      return dropRoutine(change.object, change.schema, "drop-function");
+    case "replace-function":
+      return replaceRoutine(functionSql(change.object, change.schema, true), "replace-function");
+    case "create-trigger":
+      return createRoutine(change.object, change.schema, "create-trigger");
+    case "drop-trigger":
+      return dropRoutine(change.object, change.schema, "drop-trigger");
+    case "create-view":
+      return createRoutine(change.object, change.schema, "create-view");
+    case "drop-view":
+      return dropRoutine(change.object, change.schema, "drop-view");
+    case "replace-view":
+      return replaceRoutine(viewSql(change.object, change.schema, true), "replace-view");
+    case "create-matview":
+      return createRoutine(change.object, change.schema, "create-matview");
+    case "drop-matview":
+      return dropRoutine(change.object, change.schema, "drop-matview");
+    case "refresh-matview":
+      return [
+        ddlStep(
+          refreshMaterializedViewSql(change.object, change.schema, false),
+          "refresh-matview",
+          "backfill",
+          ACCESS,
+        ),
+      ];
+    case "create-policy":
+      return policySteps(policyCreatePlan(change.object, change.schema), change.object);
+    case "drop-policy":
+      return policySteps(policyDropPlan(change.object, change.schema), change.object);
+    case "privileges":
+      return privilegeSteps(
+        change.phase,
+        change.before,
+        change.after,
+        change.schema,
+        change.recreated,
+      );
     case "alter-column":
       return alterColumn(change.before, change.after, change.schema, change.catalogs);
     default:
@@ -363,6 +416,65 @@ function updateExtension(name: string, version: string): readonly DdlStep[] {
       path: "unverified",
     },
   ];
+}
+
+function createRoutine(
+  object: FunctionObject | TriggerObject | ViewObject | MaterializedViewObject,
+  schema: string,
+  kind: StepKind,
+): readonly DdlStep[] {
+  const sql = createObjectSql(object, schema);
+  if (sql === undefined) return [];
+  return [ddlStep(sql, kind, "ddl", ACCESS)];
+}
+
+function dropRoutine(
+  object: FunctionObject | TriggerObject | ViewObject | MaterializedViewObject,
+  schema: string,
+  kind: StepKind,
+): readonly DdlStep[] {
+  const sql = dropObjectSql(object, schema);
+  if (sql === undefined) return [];
+  return [ddlStep(sql, kind, "ddl", ACCESS)];
+}
+
+function replaceRoutine(
+  sql: string,
+  kind: "replace-function" | "replace-view",
+): readonly DdlStep[] {
+  return [
+    {
+      sql,
+      kind,
+      class: classOf(kind),
+      action: "ddl",
+      lock: ACCESS,
+      transactional: true,
+      behavior: "change",
+    },
+  ];
+}
+
+function policySteps(
+  planned: readonly { readonly sql: string; readonly kind: StepKind }[],
+  object: PolicyObject,
+): readonly DdlStep[] {
+  return planned.map((item) =>
+    ddlStep(item.sql, item.kind, "ddl", ACCESS, true, [object.identity.parent.name]),
+  );
+}
+
+function privilegeSteps(
+  phase: "revoke" | "prepare" | "grant",
+  before: readonly CatalogObject[],
+  after: readonly CatalogObject[],
+  schema: string,
+  recreated: readonly string[],
+): readonly DdlStep[] {
+  const planned = privilegeSql(before, after, schema, new Set(recreated));
+  const statements =
+    phase === "revoke" ? planned.revoke : phase === "prepare" ? planned.prepare : planned.grant;
+  return statements.map((item) => ddlStep(item.sql, item.kind, "ddl", ACCESS));
 }
 
 function requiredColumn(column: ColumnObject): boolean {

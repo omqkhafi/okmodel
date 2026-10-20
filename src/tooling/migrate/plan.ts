@@ -32,19 +32,13 @@ import type { DeclaredRename } from "../../dialects/pg/declarations.js";
 import {
   createObjectSql,
   dropObjectSql,
-  functionSql,
   identitySequence,
-  policyCreatePlan,
-  policyDropPlan,
   ownedByView,
   qualify,
   quoteIdent,
   uniqueBeforeForeignKey,
-  refreshMaterializedViewSql,
-  viewSql,
 } from "../../dialects/pg/ddl.js";
 import { quoteLiteral } from "../../dialects/pg/quote.js";
-import { privilegeSql } from "../../dialects/pg/role/sql.js";
 import {
   formatBackfillHeader,
   keyRangePredicate,
@@ -53,13 +47,7 @@ import {
   resolveBatchSize,
   type BackfillSpec,
 } from "./backfill.js";
-import {
-  classOf,
-  isStepKind,
-  strictestClass,
-  type MigrationClass,
-  type StepKind,
-} from "./classify.js";
+import { isStepKind, strictestClass, type MigrationClass, type StepKind } from "./classify.js";
 import { extensionAlterSteps } from "./extensions.js";
 import { omitManagedObjects } from "./managed.js";
 import { stepsForExistingTable, type SafeStep } from "./safe.js";
@@ -313,10 +301,21 @@ export function planMigration(
   for (const key of createKeys) {
     if (dropKeys.has(key)) recreated.add(key);
   }
-  const privileges = privilegeSql(renamed.objects, request.after.objects, schema, recreated);
+  const recreatedIds = [...recreated];
   const steps: PlanStep[] = [];
   steps.push(...renameSteps(request.before, renames, schema, dialect));
-  for (const item of privileges.revoke) steps.push(step(item.sql, item.kind, "ddl", ACCESS));
+  steps.push(
+    ...take(
+      dialect.lower({
+        op: "privileges",
+        phase: "revoke",
+        before: renamed.objects,
+        after: request.after.objects,
+        schema,
+        recreated: recreatedIds,
+      }),
+    ),
+  );
   steps.push(...keptNames.map((item) => renameShapeStep(item, schema, dialect)));
   steps.push(...enumAddSteps(enums, schema, dialect));
   steps.push(...domainCheckSteps(beforeBy, afterBy, schema, dialect));
@@ -366,6 +365,22 @@ export function planMigration(
       } else steps.push(...lowered);
       return;
     }
+    if (object.kind === "function") {
+      steps.push(...take(dialect.lower({ op: "drop-function", object, schema })));
+      return;
+    }
+    if (object.kind === "trigger") {
+      steps.push(...take(dialect.lower({ op: "drop-trigger", object, schema })));
+      return;
+    }
+    if (object.kind === "view") {
+      steps.push(...take(dialect.lower({ op: "drop-view", object, schema })));
+      return;
+    }
+    if (object.kind === "materializedView") {
+      steps.push(...take(dialect.lower({ op: "drop-matview", object, schema })));
+      return;
+    }
     steps.push(step(sql, kind, "ddl", ACCESS));
   };
   // Triggers drop before functions even when the table drop would remove them.
@@ -380,9 +395,7 @@ export function planMigration(
     if (object.kind !== "policy") continue;
     const key = identityKey(object.identity);
     if (!dropKeys.has(key) || deferred.has(key)) continue;
-    for (const item of policyDropPlan(object, schema)) {
-      steps.push(step(item.sql, item.kind, "ddl", ACCESS, true, [object.identity.parent.name]));
-    }
+    steps.push(...take(dialect.lower({ op: "drop-policy", object, schema })));
   }
   for (const object of reverse) {
     if (
@@ -439,7 +452,18 @@ export function planMigration(
       .map((object) => object.identity.name),
   );
   const emitted = new Set<string>();
-  for (const item of privileges.prepare) steps.push(step(item.sql, item.kind, "ddl", ACCESS));
+  steps.push(
+    ...take(
+      dialect.lower({
+        op: "privileges",
+        phase: "prepare",
+        before: renamed.objects,
+        after: request.after.objects,
+        schema,
+        recreated: recreatedIds,
+      }),
+    ),
+  );
   for (const object of creationOrder(request.after)) {
     if (object.kind !== "extension") continue;
     const key = identityKey(object.identity);
@@ -525,28 +549,19 @@ export function planMigration(
     const key = identityKey(object.identity);
     if (!createKeys.has(key) || emitted.has(key)) continue;
     emitted.add(key);
-    for (const item of policyCreatePlan(object, schema)) {
-      steps.push(step(item.sql, item.kind, "ddl", ACCESS, true, [object.identity.parent.name]));
-    }
+    steps.push(...take(dialect.lower({ op: "create-policy", object, schema })));
   }
   for (const change of replaces) {
     if (sameDefinition(change.before, change.after)) continue;
     const key = identityKey(change.after.identity);
     if (dropKeys.has(key) && createKeys.has(key)) continue;
-    const sql =
-      change.kind === "function"
-        ? functionSql(change.after, schema, true)
-        : viewSql(change.after, schema, true);
-    const kind = change.kind === "function" ? "replace-function" : "replace-view";
-    steps.push({
-      sql,
-      kind,
-      class: classOf(kind),
-      action: "ddl",
-      lock: ACCESS,
-      transactional: true,
-      behavior: "change",
-    });
+    if (change.kind === "function" && change.after.kind === "function") {
+      steps.push(...take(dialect.lower({ op: "replace-function", object: change.after, schema })));
+      continue;
+    }
+    if (change.kind === "view" && change.after.kind === "view") {
+      steps.push(...take(dialect.lower({ op: "replace-view", object: change.after, schema })));
+    }
   }
   for (const kind of ["function", "trigger", "view", "materializedView"] as const) {
     for (const object of creationOrder(request.after)) {
@@ -554,10 +569,15 @@ export function planMigration(
       const key = identityKey(object.identity);
       if (!createKeys.has(key) || emitted.has(key)) continue;
       emitted.add(key);
-      const sql = createObjectSql(object, schema);
-      const created = createKind(object, false);
-      if (sql === undefined || created === undefined) continue;
-      steps.push(step(sql, created, "ddl", ACCESS));
+      if (object.kind === "function") {
+        steps.push(...take(dialect.lower({ op: "create-function", object, schema })));
+      } else if (object.kind === "trigger") {
+        steps.push(...take(dialect.lower({ op: "create-trigger", object, schema })));
+      } else if (object.kind === "view") {
+        steps.push(...take(dialect.lower({ op: "create-view", object, schema })));
+      } else {
+        steps.push(...take(dialect.lower({ op: "create-matview", object, schema })));
+      }
     }
   }
   for (const object of creationOrder(request.after)) {
@@ -574,17 +594,21 @@ export function planMigration(
     const key = identityKey(object.identity);
     if (!createKeys.has(key)) continue;
     assertConcurrentRefresh(object, request.after);
-    steps.push(
-      step(
-        refreshMaterializedViewSql(object, schema, false),
-        "refresh-matview",
-        "backfill",
-        ACCESS,
-      ),
-    );
+    steps.push(...take(dialect.lower({ op: "refresh-matview", object, schema })));
   }
 
-  for (const item of privileges.grant) steps.push(step(item.sql, item.kind, "ddl", ACCESS));
+  steps.push(
+    ...take(
+      dialect.lower({
+        op: "privileges",
+        phase: "grant",
+        before: renamed.objects,
+        after: request.after.objects,
+        schema,
+        recreated: recreatedIds,
+      }),
+    ),
+  );
   steps.push(
     ...contractSwaps(
       picklists,
