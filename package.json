@@ -1,6 +1,6 @@
 {
   "name": "okmodel",
-  "version": "0.10.0-next.34",
+  "version": "0.10.0-next.35",
   "description": "okmodel is a catalog-first TypeScript ORM, PostgreSQL first.",
   "keywords": [
     "migrations",
@@ -28,6 +28,7 @@
   ],
   "files": [
     "dist",
+    "schemas",
     "README.md",
     "LICENSE"
   ],

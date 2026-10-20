@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://okmodel.dev/schemas/cli-1/schema.json",
+  "title": "okm schema data",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "$schema",
+    "$id",
+    "title"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "$id": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    }
+  }
+}

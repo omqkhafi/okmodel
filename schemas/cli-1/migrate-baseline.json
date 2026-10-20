@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://okmodel.dev/schemas/cli-1/migrate-baseline.json",
+  "title": "okm migrate baseline data",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "target",
+    "migrationId",
+    "catalogHash",
+    "status",
+    "unmanaged"
+  ],
+  "properties": {
+    "target": {
+      "type": "string"
+    },
+    "migrationId": {
+      "type": "string"
+    },
+    "catalogHash": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "baselined",
+        "already-baselined",
+        "dry-run"
+      ]
+    },
+    "unmanaged": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "name"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

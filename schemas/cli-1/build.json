@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://okmodel.dev/schemas/cli-1/build.json",
+  "title": "okm build data",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "directory"
+  ],
+  "properties": {
+    "directory": {
+      "type": "string"
+    },
+    "emulation": {
+      "type": "string",
+      "description": "Emulated features, when the schema uses any."
+    }
+  }
+}

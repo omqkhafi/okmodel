@@ -26,7 +26,7 @@ export type PlanFindingJson = {
 };
 
 /**
- * What `okm migrate plan --json` prints.
+ * Plan fields inside the `okm.cli/1` envelope `data` for `okm migrate plan --json`.
  *
  * `class` is the strictest class, the same value as the human header.
  */
@@ -38,7 +38,7 @@ export type PlanDocument = {
 };
 
 /**
- * Builds the document `okm migrate plan --json` prints.
+ * Builds the plan document stored in envelope `data`.
  *
  * `lockText` is the same callback {@link formatPlan} uses, so a lock line
  * that includes a row estimate is the same string in both outputs.
@@ -103,10 +103,17 @@ export function parsePlanJson(text: string): PlanDocument {
   } catch {
     throw new Error("okm migrate plan --json did not print JSON.");
   }
-  if (!isPlanDocument(parsed)) {
+  const body = planBody(parsed);
+  if (!isPlanDocument(body)) {
     throw new Error("okm migrate plan --json did not print a plan document.");
   }
-  return parsed;
+  return body;
+}
+
+function planBody(value: unknown): unknown {
+  if (!isRecord(value)) return value;
+  if (value.schema !== "okm.cli/1") return value;
+  return value.data;
 }
 
 function isPlanDocument(value: unknown): value is PlanDocument {

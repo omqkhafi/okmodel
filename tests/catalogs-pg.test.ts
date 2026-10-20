@@ -31,9 +31,13 @@ postgresTest(
       await cli(identity, ["generate", "init"]);
       await cli(identity, ["migrate", "apply"]);
       const exported = await cli(identity, ["catalog", "export", "--out", "identity.okm.json"]);
-      const again = await cli(identity, ["catalog", "export", "--json"]);
+      const again = JSON.parse(await cli(identity, ["catalog", "export", "--json"])) as {
+        schema: string;
+        data: unknown;
+      };
       const file = readFileSync(join(identity, "identity.okm.json"), "utf8");
-      expect(again).toBe(file);
+      expect(again.schema).toBe("okm.cli/1");
+      expect(again.data).toEqual(JSON.parse(file));
       expect(exported).toBe("identity.okm.json\n");
       const snapshot = JSON.parse(file) as {
         catalogHash: string;

@@ -3,7 +3,7 @@ title: GitHub Action
 description: The official action posts the migration plan on a pull request and can apply a preview database.
 ---
 
-The composite action `.github/actions/migrate` runs `okm migrate check` and `okm migrate plan --json` against a named target and posts one sticky pull-request comment. The heading is the strictest class. Each step shows its class and lock, including the row estimate the plan prints. Lint findings keep their codes. A lint error or a failed check fails the job with that command's exit code.
+The composite action `.github/actions/migrate` runs `okm migrate check` and `okm migrate plan --json` against a named target and posts one sticky pull-request comment. The plan fields are the envelope's `data`. The heading is the strictest class. Each step shows its class and lock, including the row estimate the plan prints. Lint findings keep their codes. A lint error or a failed check fails the job with that command's exit code.
 
 `preview: true` runs `okm migrate apply` on the target you named, then `okm seed` when `seed` is set. The action does not infer the target. A protected target is refused by the existing policy. The action never creates or drops a database.
 

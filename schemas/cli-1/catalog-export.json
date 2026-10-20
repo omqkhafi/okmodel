@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://okmodel.dev/schemas/cli-1/catalog-export.json",
+  "title": "okm catalog export data",
+  "description": "The snapshot, or an empty object when --out wrote the bytes to a file.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format",
+        "logical",
+        "catalogHash",
+        "tables"
+      ],
+      "properties": {
+        "format": {
+          "type": "number"
+        },
+        "logical": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "namespace",
+            "name",
+            "format"
+          ],
+          "properties": {
+            "namespace": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "format": {
+              "type": "number"
+            }
+          }
+        },
+        "catalogHash": {
+          "type": "string"
+        },
+        "database": {
+          "type": "string"
+        },
+        "tables": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "namespace",
+              "name",
+              "columns"
+            ],
+            "properties": {
+              "namespace": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "columns": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "type",
+                    "nullable"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    },
+                    "nullable": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    }
+  ]
+}

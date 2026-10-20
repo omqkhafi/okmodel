@@ -14,6 +14,7 @@ import { delimiter, dirname, join } from "node:path";
 import postgres, { type Sql } from "postgres";
 
 import { OkmError } from "../../contracts/error.js";
+import { cliNotice } from "../cli/notices.js";
 import { introspectSchema, type CatalogQuery } from "../../dialects/pg/introspect.js";
 import { catalog } from "../../contracts/catalog/build.js";
 import type { Catalog, CatalogObject } from "../../contracts/catalog/types.js";
@@ -329,7 +330,7 @@ function formatFiles(files: readonly string[]): void {
       result.error?.message ||
       "oxfmt failed"
     ).trim();
-    process.stderr.write(`notice: oxfmt missing or failed; wrote unformatted files. ${detail}\n`);
+    cliNotice(`notice: oxfmt missing or failed; wrote unformatted files. ${detail}`);
   }
 }
 
