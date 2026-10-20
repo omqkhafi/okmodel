@@ -111,7 +111,11 @@ test("an index that does not lead with the first composite key is OKM1706", () =
   expect(() =>
     schema({
       casing: "snake",
-      tenancy: compositeTenancy({ key: ["organizationId", "workspaceId"], type: "uuid" }),
+      tenancy: compositeTenancy({
+        key: ["organizationId", "workspaceId"],
+        type: "uuid",
+        indexes: false,
+      }),
       tables: [
         table(
           "documents",

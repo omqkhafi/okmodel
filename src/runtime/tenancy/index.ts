@@ -22,6 +22,7 @@ import type {
   TenantCall,
 } from "../../dialects/pg/tenancy.js";
 import { quote } from "../plan.js";
+import { readIndexPolicy, shapeTenantIndexes } from "./index-shape.js";
 
 export type { ColumnTenancy };
 
@@ -31,8 +32,12 @@ type TableOptions = {
   readonly tenancy?: unknown;
   readonly unique?: Readonly<Record<string, readonly string[]>>;
   readonly primaryKey?: readonly string[];
+  readonly tenantIndexes?: boolean;
   readonly indexes?: (columns: Readonly<Record<string, { readonly name: string }>>) => readonly {
     readonly columns: readonly string[];
+    readonly expression?: string;
+    readonly tenantGlobal?: string;
+    readonly tenantScoped?: boolean;
   }[];
 };
 
@@ -59,7 +64,11 @@ export function global(reason: string): { readonly kind: "global"; readonly reas
  * filter on it. A list of keys is `compositeTenancy()`.
  *
  * @typeParam Key - Field name of the tenant key
- * @param input - Field name and `uuid`
+ * `indexes` defaults to true: every index on a tenant table leads with the
+ * key. `false` keeps OKM1706 for an index that does not. A table's
+ * `tenantIndexes` and an index `.global()` / `.scoped()` win over this.
+ *
+ * @param input - Field name, `uuid`, and whether indexes are prefixed
  * @returns The object `schema()` applies
  */
 export function columnTenancy<const Key>(input: {
@@ -69,6 +78,8 @@ export function columnTenancy<const Key>(input: {
       ? Key
       : "columnTenancy() key must be a field name.";
   readonly type: "uuid";
+  /** Prefix indexes with the tenant key. Omitted is true. */
+  readonly indexes?: boolean;
 }): ColumnTenancy & { readonly key: Key extends string ? Key : string } {
   if (input === undefined || typeof input !== "object") {
     definition("columnTenancy() needs { key, type }.");
@@ -80,6 +91,7 @@ export function columnTenancy<const Key>(input: {
     definition("columnTenancy() key must be a field name.");
   }
   assertIdentifier(input.key, "tenancy key");
+  const prefixIndexes = readIndexPolicy(input.indexes, "columnTenancy()");
   const key = input.key;
   const column = uuid().guarded();
   const encode = column.state.encode;
@@ -94,7 +106,17 @@ export function columnTenancy<const Key>(input: {
       tenants.clear();
       globals.clear();
       exemptions.clear();
-      return rewriteTables(key, column, encode, api, tables, tenants, globals, exemptions);
+      return rewriteTables(
+        key,
+        column,
+        encode,
+        api,
+        tables,
+        tenants,
+        globals,
+        exemptions,
+        prefixIndexes,
+      );
     },
     column: () => column,
     predicate(spec) {
@@ -158,6 +180,7 @@ function rewriteTables(
   tenants: Set<string>,
   globals: Map<string, string>,
   exemptions: Map<string, { name: string; reason: string }[]>,
+  prefixIndexes: boolean,
 ): readonly AnyTable[] {
   const kind = new Map<string, Kind>();
   const swapped = new Map<string, AnyTable>();
@@ -197,7 +220,17 @@ function rewriteTables(
       if (kind.get(item.name) === "global") refuseGlobalReference(item, kind);
       return item;
     }
-    return rewriteTenant(key, column, item, tables, kind, tenants, exemptions, extras);
+    return rewriteTenant(
+      key,
+      column,
+      item,
+      tables,
+      kind,
+      tenants,
+      exemptions,
+      extras,
+      prefixIndexes,
+    );
   });
 }
 
@@ -223,6 +256,7 @@ function rewriteTenant(
   tenants: Set<string>,
   exemptions: Map<string, { name: string; reason: string }[]>,
   extras: ReadonlyMap<string, readonly string[]>,
+  prefixIndexes: boolean,
 ): AnyTable {
   if (Object.hasOwn(item.columns, key)) {
     throw new OkmError(
@@ -280,7 +314,10 @@ function rewriteTenant(
   columns[key] = column;
   tenants.add(item.name);
   if (notes.length > 0) exemptions.set(item.name, notes);
-  const indexes = wrapIndexes(key, item.name, options?.indexes);
+  const indexes = shapeTenantIndexes(key, item.name, options?.indexes, {
+    indexes: prefixIndexes,
+    tenantIndexes: options?.tenantIndexes,
+  });
   const rewritten = {
     ...item,
     columns,
@@ -335,27 +372,6 @@ function primaryFields(item: AnyTable): string[] {
     if (builder instanceof ColumnBuilder && builder.state.primaryKey === true) fields.push(field);
   }
   return fields;
-}
-
-function wrapIndexes(
-  key: string,
-  table: string,
-  build: TableOptions["indexes"],
-): TableOptions["indexes"] {
-  if (build === undefined) return undefined;
-  return (columns) => {
-    const calls = build(columns);
-    const tenantSql = columns[key]?.name;
-    if (!Array.isArray(calls) || tenantSql === undefined) return calls;
-    for (const call of calls) {
-      if (call.columns[0] === tenantSql) continue;
-      throw new OkmError(
-        "OKM1706",
-        `Index on ${table} starts with ${call.columns[0] ?? "no column"}. Put ${tenantSql} first.`,
-      );
-    }
-    return calls;
-  };
 }
 
 function writePredicate(

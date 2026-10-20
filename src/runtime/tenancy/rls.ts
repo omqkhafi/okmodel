@@ -26,6 +26,7 @@ import { quoteLiteral } from "../../dialects/pg/quote.js";
 import type { ColumnTenancy } from "../../dialects/pg/tenancy.js";
 import type { SchemaHookCtx } from "../../dialects/pg/model.js";
 import { columnTenancy } from "./index.js";
+import { readIndexPolicy } from "./index-shape.js";
 
 /** Why {@link RlsRoleError} refused the role. */
 export type RlsRoleReason = "owner" | "superuser" | "bypassrls";
@@ -144,12 +145,17 @@ type ScopeHooks = {
 const guardChecks = new WeakMap<object, Map<number, Promise<void>>>();
 const scopeStates = new WeakMap<object, ScopeState>();
 
-function openColumn(key: string): ColumnTenancy {
+function openColumn(key: string, indexes: boolean | undefined): ColumnTenancy {
   return (
-    columnTenancy as (input: { readonly key: string; readonly type: "uuid" }) => ColumnTenancy
+    columnTenancy as (input: {
+      readonly key: string;
+      readonly type: "uuid";
+      readonly indexes?: boolean;
+    }) => ColumnTenancy
   )({
     key,
     type: "uuid",
+    ...(indexes !== undefined ? { indexes } : {}),
   });
 }
 
@@ -165,7 +171,10 @@ function statementOf(text: string, params: readonly WireValue[] | undefined): St
  * `via()` or `compositeTenancy()` is a definition error.
  *
  * @typeParam Key - Field name of the tenant key
- * @param input - Field name and `uuid`
+ * `indexes` is the same flag as `columnTenancy`: omitted prefixes tenant
+ * indexes with the key.
+ *
+ * @param input - Field name, `uuid`, and whether indexes are prefixed
  * @returns The object `schema()` applies
  */
 export function rlsTenancy<const Key>(input: {
@@ -175,6 +184,8 @@ export function rlsTenancy<const Key>(input: {
       ? Key
       : "rlsTenancy() key must be a field name.";
   readonly type: "uuid";
+  /** Prefix indexes with the tenant key. Omitted is true. */
+  readonly indexes?: boolean;
 }): ColumnTenancy & { readonly key: Key extends string ? Key : string } {
   if (input === undefined || typeof input !== "object") {
     throw new OkmError("OKM1060", "rlsTenancy() needs { key, type }.", {
@@ -193,7 +204,8 @@ export function rlsTenancy<const Key>(input: {
       },
     );
   }
-  const base = openColumn(input.key as string);
+  const prefixIndexes = readIndexPolicy(input.indexes, "rlsTenancy()");
+  const base = openColumn(input.key as string, prefixIndexes);
   const key = base.key;
   let checker: (() => Promise<void>) | undefined;
   let armedFor: object | undefined;

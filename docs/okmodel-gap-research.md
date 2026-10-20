@@ -21,7 +21,7 @@ The research confirms 12 of the 15 gaps and adds four new findings. The three mo
 **Recommendation.** Confirmed as designed in the gap review:
 - `.unique()` on a tenant table becomes `UNIQUE (tenant_key, …)`; opt-out `.unique({ global: "reason" })`.
 - Every tenant table gets `UNIQUE (id, tenant_key)`; FKs between tenant tables become composite.
-- Lint (OKM1706): an index on a tenant table that does not lead with the tenant key.
+- Lint (OKM1706): an index on a tenant table that does not lead with the tenant key when prefixing is off. The default prefixes the key (D306).
 
 ## 2. Soft delete
 

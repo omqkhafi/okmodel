@@ -16,6 +16,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### behaviour changes
 
+- Indexes on a tenant table lead with the tenant key (`indexes: true`, the default). A unique index is unique per tenant, so two tenants may share a value. `tenantIndexes: false` turns the prefix off for one table. `.global("reason")` opts one index out (an empty reason is refused) and `.scoped()` opts one index in. The nearest level wins. An index that already leads with the key is unchanged, and the next `okm generate` writes nothing. An index that does not is replaced once: `CREATE INDEX CONCURRENTLY` for the new index, then `DROP INDEX CONCURRENTLY` for the old one. That is not a blocking rebuild, and `okm migrate check` accepts it (Q3, D306, #390). OKM1706 stays when prefixing is off.
 - With `validation: true`, an unknown key on `insert`, `update`, upsert / `onConflict`, or first-or-create is OKM1120 and names the key and the table (R1, D304). A typo-only `update` names the key instead of saying "update set is empty."
 - `okm generate` exits 1 when an error finding exists; the migration file is still written; stderr says `okm migrate apply` will refuse until it is fixed (Q8, #395). A warning-only finding stays exit 0.
 - `okm pull` and `okm import drizzle` write relative imports with the `.ts` extension so Node type stripping and `bunx okm` can load the schema (R4, #401). `tsc` needs `allowImportingTsExtensions` with `noEmit`, or `rewriteRelativeImportExtensions`.

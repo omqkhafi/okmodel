@@ -6,7 +6,7 @@
  */
 
 import { definition } from "../dialects/pg/misuse.js";
-import type { AnyTable, IndexCall } from "../dialects/pg/table.js";
+import { buildIndex, type AnyTable, type IndexCall } from "../dialects/pg/table.js";
 
 /**
  * Adds the position unique index on tables this trait applies to.
@@ -126,13 +126,5 @@ function marked(value: object): boolean {
 }
 
 function uniqueIndex(columns: readonly string[], predicate: string | undefined): IndexCall {
-  const call: IndexCall = {
-    columns,
-    isUnique: true,
-    ...(predicate !== undefined ? { predicate } : {}),
-    unique() {
-      return call;
-    },
-  };
-  return call;
+  return buildIndex({ columns, isUnique: true, predicate });
 }
