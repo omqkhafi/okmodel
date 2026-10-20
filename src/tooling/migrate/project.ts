@@ -31,6 +31,7 @@ import { assertSupported, formatEmulation } from "../capabilities/check.js";
 import { POSTGRES_FEATURES } from "../capabilities/postgres.js";
 import { featuresUsed } from "../capabilities/used.js";
 import { errorDoc } from "../errors/registry.js";
+import { attachCliDetail } from "../errors/shape.js";
 import { assertValidation, writeWouldValidate } from "../../runtime/validate/places.js";
 import { schemaDeclarations, type DeclaredRename } from "../../dialects/pg/declarations.js";
 import { emitRowTypes, jsonColumnTypes } from "../../dialects/pg/emit.js";
@@ -220,9 +221,12 @@ export async function checkProject(
     const source = readFileSync(projectPath(cwd, opened.config.schema), "utf8");
     const missing = unlistedTableFiles(source, files);
     if (missing.length > 0) {
-      throw new OkmError("OKM1024", `Table file not in schema: ${missing.join(", ")}.`, {
-        fix: { summary: "Add the file's table to the schema() call that okm check reads." },
-      });
+      throw attachCliDetail(
+        new OkmError("OKM1024", `Table file not in schema: ${missing.join(", ")}.`, {
+          fix: { summary: "Add the file's table to the schema() call that okm check reads." },
+        }),
+        { location: { file: projectPath(cwd, opened.config.schema) } },
+      );
     }
   }
   assertSnapshots(cwd, opened.config, opened.built.catalog);

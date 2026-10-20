@@ -37,7 +37,7 @@ import {
   type Sink,
 } from "./plan.js";
 
-registerFailFix("OKM1105", "Pass limit on the include, or call .all(reason).");
+registerFailFix("OKM1105", "Pass a limit on the include.");
 
 const INCLUDE_OPTIONS = ["all", "include", "limit", "orderBy", "select", "where"] as const;
 
@@ -370,10 +370,7 @@ function parseInclude(
   if (relation.morph?.direction === "to") return parseMorph(schema, name, relation, value);
   if (value === true) {
     if (relation.kind === "many" && all === undefined) {
-      fail(
-        "OKM1105",
-        `Include ${name} is to-many and has no limit. Pass limit, or call .all(reason).`,
-      );
+      fail("OKM1105", `Include ${name} is to-many and has no limit. Pass a limit.`);
     }
     const child = childIndex(schema, relation);
     const columns = omitHidden(selectedColumns(child, undefined));
@@ -396,10 +393,7 @@ function parseInclude(
   let limit: number | undefined;
   if (value.limit !== undefined) limit = readLimit(value.limit);
   if (relation.kind === "many" && limit === undefined && reason === undefined) {
-    fail(
-      "OKM1105",
-      `Include ${name} is to-many and has no limit. Pass limit, or call .all(reason).`,
-    );
+    fail("OKM1105", `Include ${name} is to-many and has no limit. Pass a limit.`);
   }
   const child = childIndex(schema, relation);
   const columns = includeColumns(child, value.select);

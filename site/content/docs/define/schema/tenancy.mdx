@@ -93,7 +93,7 @@ An update is `Field notes.tenantId is the tenant key. An update cannot change it
 </Callout>
 
 <Callout type="error" title="OKM1701">
-No scope is `Table notes is tenant-scoped. Call for({ tenantId }) or unscoped("reason").` Insert without one is `insert on notes has no tenant. Call for({ tenantId }) so the scope can set it.` `for()` needs `{ tenantId }`, and the value must be a uuid: `for() needs { tenantId } as a uuid.` Another field is `for() accepts tenantId. organizationId is not the tenant key.` An empty reason is `unscoped() needs a reason.`
+No scope is `Table notes is tenant-scoped. Call for({ tenantId }).` Insert without one is `insert on notes has no tenant. Call for({ tenantId }) so the scope can set it.` `for()` needs `{ tenantId }`, and the value must be a uuid: `for() needs { tenantId } as a uuid.` Another field is `for() accepts tenantId. organizationId is not the tenant key.` An empty reason is `unscoped() needs a reason.`
 </Callout>
 
 <Callout type="error" title="OKM1705">

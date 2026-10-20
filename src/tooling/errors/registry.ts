@@ -3,6 +3,7 @@ import {
   VALIDATION_NOT_IMPORTED,
   VALIDATION_NOT_IMPORTED_FIX,
 } from "../../runtime/validate/closed.js";
+import type { CliEscapeHatch, CliSafeAlternative } from "./shape.js";
 
 /**
  * Doctor text for every OKM code in spec §21.
@@ -18,11 +19,37 @@ export type ErrorDoc = {
   readonly code: string;
   /** Short name. */
   readonly title: string;
-  /** What went wrong. */
+  /** What went wrong. Never names a bypass. */
   readonly summary: string;
-  /** What to do. */
+  /** The primary remedy. Never names a bypass. */
   readonly fix: string;
+  /** Remedies that do not bypass the check. */
+  readonly safeAlternatives?: readonly CliSafeAlternative[];
+  /** Bypasses. Each one requires a human-written reason. */
+  readonly escapeHatches?: readonly CliEscapeHatch[];
 };
+
+/**
+ * One safe alternative on a code's page.
+ *
+ * @param code - Spec code
+ * @param text - What to do instead
+ * @returns The alternative, pointing at `#page`
+ */
+function alt(code: string, text: string): CliSafeAlternative {
+  return { text, docs: `docs/errors/${code}.md#page` };
+}
+
+/**
+ * One escape hatch. `requiresHumanReason` is always true.
+ *
+ * @param code - Spec code
+ * @param name - Hatch the page names, kept out of `fix`
+ * @returns The hatch, pointing at `#escape`
+ */
+function hatch(code: string, name: string): CliEscapeHatch {
+  return { name, requiresHumanReason: true, docs: `docs/errors/${code}.md#escape` };
+}
 
 /**
  * Every OKM code spec §21 names, in numeric order.
@@ -127,13 +154,16 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     code: "OKM1101",
     title: "Find without limit",
     summary: "find was called without a limit.",
-    fix: "Pass limit, or call .all(reason) when the full set is intentional.",
+    fix: "Pass a limit.",
+    safeAlternatives: [alt("OKM1101", "Use page() with a cursor.")],
+    escapeHatches: [hatch("OKM1101", "all()")],
   },
   {
     code: "OKM1102",
     title: "Unfiltered write",
     summary: "A write with no effective predicate, including undefined values, is OKM1102.",
-    fix: "Pass a predicate, or .all(reason). An undefined-only where is the same as {}.",
+    fix: "Pass a predicate. An undefined-only where is the same as an empty filter.",
+    escapeHatches: [hatch("OKM1102", "all()")],
   },
   {
     code: "OKM1104",
@@ -145,7 +175,8 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     code: "OKM1105",
     title: "Include without limit",
     summary: "A to-many include has no limit.",
-    fix: "Pass limit on the include, or call .all(reason).",
+    fix: "Pass a limit on the include.",
+    escapeHatches: [hatch("OKM1105", "all()")],
   },
   {
     code: "OKM1110",
@@ -219,14 +250,20 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     title: "Safety violation",
     summary:
       "A query composition broke a core invariant. violations lists every broken rule in stable order.",
-    fix: "Change the contribution named on the first violation, or pass an explicit escape hatch (unscoped, all, trusted, allow) and record the reason.",
+    fix: "Change the contribution named on the first violation.",
+    escapeHatches: [
+      hatch("OKM1190", "unscoped()"),
+      hatch("OKM1190", "all()"),
+      hatch("OKM1190", "trusted()"),
+      hatch("OKM1190", "allow"),
+    ],
   },
   {
     code: "OKM1191",
     title: "No snapshot plan",
     summary:
       "A multi-statement read was requested inside READ COMMITTED and no single-statement plan exists.",
-    fix: "Run the read in REPEATABLE READ or SERIALIZABLE, or shape it so it is one statement.",
+    fix: "Use REPEATABLE READ or SERIALIZABLE, or shape the read so it is one statement.",
   },
   {
     code: "OKM1200",
@@ -260,62 +297,72 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     title: "Unsafe migration",
     summary:
       "A migration has an unresolved lint error, or an override with an empty reason or a code no statement in the step triggered.",
-    fix: "Put `-- okm-allow OKM15xx: reason` on the step. The code must be one a statement in that step triggered, and the reason must not be empty. The line silences that code on every statement of the step.",
+    fix: "Change the statement so the finding is gone. An override must name a code that a statement in the step triggered, and the reason must not be empty.",
+    escapeHatches: [hatch("OKM1510", "-- okm-allow")],
   },
   {
     code: "OKM1511",
     title: "Drop table",
     summary: "A statement drops a table. The rows and anything that reads them are gone.",
-    fix: "Stop reading the table in an expand migration, then drop it in a later contract. Or allow OKM1511 with a reason.",
+    fix: "Stop reading the table in an expand migration, then drop it in a later contract.",
+    escapeHatches: [hatch("OKM1511", "-- okm-allow")],
   },
   {
     code: "OKM1512",
     title: "Drop column",
     summary: "A statement drops a column. Stored values and the code that reads them are gone.",
-    fix: "Stop reading the column in an expand migration, then drop it in a later contract. Or allow OKM1512 with a reason.",
+    fix: "Stop reading the column in an expand migration, then drop it in a later contract.",
+    escapeHatches: [hatch("OKM1512", "-- okm-allow")],
   },
   {
     code: "OKM1513",
     title: "Drop enum",
     summary: "A statement drops an enum that columns or code may still depend on.",
-    fix: "Move every column off the enum first. Or allow OKM1513 with a reason.",
+    fix: "Move every column off the enum first.",
+    escapeHatches: [hatch("OKM1513", "-- okm-allow")],
   },
   {
     code: "OKM1514",
     title: "Drop domain",
     summary: "A statement drops a domain that columns or code may still depend on.",
-    fix: "Move every column off the domain first. Or allow OKM1514 with a reason.",
+    fix: "Move every column off the domain first.",
+    escapeHatches: [hatch("OKM1514", "-- okm-allow")],
   },
   {
     code: "OKM1515",
     title: "Drop function",
     summary: "A statement drops a function that queries or triggers may still call.",
-    fix: "Remove the callers in an expand migration, then drop the function. Or allow OKM1515 with a reason.",
+    fix: "Remove the callers in an expand migration, then drop the function.",
+    escapeHatches: [hatch("OKM1515", "-- okm-allow")],
   },
   {
     code: "OKM1516",
     title: "Drop view",
     summary: "A statement drops a view that queries may still read.",
-    fix: "Stop reading the view in an expand migration, then drop it. Or allow OKM1516 with a reason.",
+    fix: "Stop reading the view in an expand migration, then drop it.",
+    escapeHatches: [hatch("OKM1516", "-- okm-allow")],
   },
   {
     code: "OKM1517",
     title: "Drop extension",
     summary:
       "A statement drops an extension. A dependent still in the catalog is refused before this finding.",
-    fix: "Confirm nothing outside the catalog uses the extension. Or allow OKM1517 with a reason.",
+    fix: "Confirm nothing outside the catalog uses the extension.",
+    escapeHatches: [hatch("OKM1517", "-- okm-allow")],
   },
   {
     code: "OKM1518",
     title: "Drop materialized view",
     summary: "A statement drops a materialized view and the rows it stores.",
-    fix: "Stop reading the view in an expand migration, then drop it. Or allow OKM1518 with a reason.",
+    fix: "Stop reading the view in an expand migration, then drop it.",
+    escapeHatches: [hatch("OKM1518", "-- okm-allow")],
   },
   {
     code: "OKM1519",
     title: "Rename column",
     summary: "A statement renames a column. Existing queries still use the old name.",
-    fix: "Add the new column, backfill, and switch readers before dropping the old name. Or allow OKM1519 with a reason.",
+    fix: "Add the new column, backfill, and switch readers before dropping the old name.",
+    escapeHatches: [hatch("OKM1519", "-- okm-allow")],
   },
   {
     code: "OKM1520",
@@ -339,46 +386,53 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     code: "OKM1523",
     title: "Rename table",
     summary: "A statement renames a table. Existing queries still use the old name.",
-    fix: "Create the new table, backfill, and switch readers before dropping the old name. Or allow OKM1523 with a reason.",
+    fix: "Create the new table, backfill, and switch readers before dropping the old name.",
+    escapeHatches: [hatch("OKM1523", "-- okm-allow")],
   },
   {
     code: "OKM1524",
     title: "Column type change",
     summary:
       "A statement changes a column type. Existing readers and writers may not accept the new type.",
-    fix: "Add a new column, backfill, and switch readers before dropping the old one. Or allow OKM1524 with a reason.",
+    fix: "Add a new column, backfill, and switch readers before dropping the old one.",
+    escapeHatches: [hatch("OKM1524", "-- okm-allow")],
   },
   {
     code: "OKM1525",
     title: "Required column",
     summary: "A statement adds a NOT NULL column with no default to a table that already has rows.",
-    fix: "Add the column nullable, backfill, then set it NOT NULL. Or allow OKM1525 with a reason.",
+    fix: "Add the column nullable, backfill, then set it NOT NULL.",
+    escapeHatches: [hatch("OKM1525", "-- okm-allow")],
   },
   {
     code: "OKM1526",
     title: "Drop default",
     summary: "A statement removes a column default. Writers that omitted the column will fail.",
-    fix: "Update writers to send the column, then drop the default. Or allow OKM1526 with a reason.",
+    fix: "Update writers to send the column, then drop the default.",
+    escapeHatches: [hatch("OKM1526", "-- okm-allow")],
   },
   {
     code: "OKM1527",
     title: "Shrink length",
     summary:
       "A statement shortens a character length. Values longer than the new limit no longer fit.",
-    fix: "Shorten the stored values first, or keep the old length. Or allow OKM1527 with a reason.",
+    fix: "Shorten the stored values first, or keep the old length.",
+    escapeHatches: [hatch("OKM1527", "-- okm-allow")],
   },
   {
     code: "OKM1528",
     title: "Unique constraint",
     summary:
       "A statement adds a unique or primary-key constraint on a table that already has rows.",
-    fix: "Deduplicate the rows first. Or allow OKM1528 with a reason.",
+    fix: "Deduplicate the rows first.",
+    escapeHatches: [hatch("OKM1528", "-- okm-allow")],
   },
   {
     code: "OKM1529",
     title: "Unique index",
     summary: "A statement creates a unique index on a table that already has rows.",
-    fix: "Deduplicate the rows first. Or allow OKM1529 with a reason.",
+    fix: "Deduplicate the rows first.",
+    escapeHatches: [hatch("OKM1529", "-- okm-allow")],
   },
   {
     code: "OKM1530",
@@ -390,20 +444,23 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     code: "OKM1531",
     title: "Validating check",
     summary: "A statement adds or validates a check against rows already stored.",
-    fix: "Add the check NOT VALID, repair the rows, then validate it. Or allow OKM1531 with a reason.",
+    fix: "Add the check NOT VALID, repair the rows, then validate it.",
+    escapeHatches: [hatch("OKM1531", "-- okm-allow")],
   },
   {
     code: "OKM1532",
     title: "Validating foreign key",
     summary: "A statement adds or validates a foreign key against rows already stored.",
-    fix: "Add the foreign key NOT VALID, repair the rows, then validate it. Or allow OKM1532 with a reason.",
+    fix: "Add the foreign key NOT VALID, repair the rows, then validate it.",
+    escapeHatches: [hatch("OKM1532", "-- okm-allow")],
   },
   {
     code: "OKM1533",
     title: "Narrowing type",
     summary:
       "A statement narrows a numeric or integer type. Values outside the new range no longer fit.",
-    fix: "Rewrite the values into the new range first. Or allow OKM1533 with a reason.",
+    fix: "Rewrite the values into the new range first.",
+    escapeHatches: [hatch("OKM1533", "-- okm-allow")],
   },
   {
     code: "OKM1534",
@@ -461,7 +518,8 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     title: "Data statement",
     summary:
       "A migration contains a data statement outside backfill(), or a DO or CALL whose body is not analysed.",
-    fix: "Move insert, update, delete, merge, and truncate into backfill(). DO and CALL are refused because the body is not analysed. Allow OKM1542 with a reason to keep one.",
+    fix: "Move insert, update, delete, merge, and truncate into backfill(). DO and CALL are refused because the body is not analysed.",
+    escapeHatches: [hatch("OKM1542", "-- okm-allow")],
   },
   {
     code: "OKM1543",
@@ -505,28 +563,31 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     code: "OKM1549",
     title: "Stale head",
     summary: "The last migration's catalog does not match the schema.",
-    fix: "Run okm generate.",
+    fix: "okm generate writes the next migration.",
   },
   {
     code: "OKM1550",
     title: "Row-level security weakened",
     summary:
       "A statement disables row-level security, drops or widens a policy, grants BYPASSRLS, or changes the owner of a tenant table.",
-    fix: "Remove the statement, or allow OKM1550 with a reason when the change is reviewed.",
+    fix: "Remove the statement.",
+    escapeHatches: [hatch("OKM1550", "-- okm-allow")],
   },
   {
     code: "OKM1551",
     title: "Transaction control in a step",
     summary:
       "A step contains COMMIT, ROLLBACK, or other transaction control, including inside a DO body. A function or procedure body is not this.",
-    fix: "Remove the transaction control. okm migrate check replays one transaction and rolls it back. Apply accepts the step only with -- okm-allow OKM1551: reason.",
+    fix: "Remove the transaction control. okm migrate check replays one transaction and rolls it back.",
+    escapeHatches: [hatch("OKM1551", "-- okm-allow")],
   },
   {
     code: "OKM1552",
     title: "Reprinted declaration",
     summary:
       "A domain check or a LANGUAGE sql function body is stored differently from the text in the migration catalog.",
-    fix: "Write the check or the body the way Postgres prints it, or allow OKM1552 with a reason. The warning does not fail apply or migrate check. A reprinted domain check is sealed before the OKM1547 plan.",
+    fix: "Write the check or the body the way Postgres prints it. The warning does not fail apply or migrate check. A reprinted domain check is sealed before the OKM1547 plan.",
+    escapeHatches: [hatch("OKM1552", "-- okm-allow")],
   },
   {
     code: "OKM1601",
@@ -545,14 +606,16 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     code: "OKM1701",
     title: "Tenant context missing",
     summary: "A tenant table was used on a client that has no tenant context.",
-    fix: "Open the client with the tenant context before reading or writing that table.",
+    fix: "Open the client with for() before reading or writing that table.",
+    escapeHatches: [hatch("OKM1701", "unscoped()")],
   },
   {
     code: "OKM1702",
     title: "Unverifiable tenant SQL",
     summary:
       "Raw SQL on a tenant table cannot prove the tenant predicate. A raw write is this. A raw read that does not select the primary key with ident is this.",
-    fix: 'Use update or delete, or select the primary key with ident(name). unscoped("reason") is the reviewed hatch.',
+    fix: "Use update or delete, or select the primary key with ident(name).",
+    escapeHatches: [hatch("OKM1702", "unscoped()")],
   },
   {
     code: "OKM1704",
@@ -684,7 +747,7 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     code: "OKM1840",
     title: "Replica not allowed",
     summary: "A replica route was used on an operation that requires the primary, or inside tx().",
-    fix: "Run the operation on the primary. Writes, batch, locks, and tx() never go to a replica.",
+    fix: "Use the primary. Writes, batch, locks, and tx() never go to a replica.",
   },
   {
     code: "OKM1841",
@@ -726,8 +789,9 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
   {
     code: "OKM1850",
     title: "Protected target",
-    summary: "The operation is blocked on a protected target and --allow-protected was not passed.",
-    fix: "Run a read-only command or an expand migration, or pass --allow-protected for this invocation.",
+    summary: "The operation is blocked on a protected target.",
+    fix: "Use a read-only command or an expand migration.",
+    escapeHatches: [hatch("OKM1850", "--allow-protected")],
   },
   {
     code: "OKM1851",
@@ -753,7 +817,8 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     title: "Pooler session",
     summary:
       "Two statements on the same connection saw different backend pids. A transaction-mode pooler is in the way.",
-    fix: "Use a direct connection, or pass --allow-pooler.",
+    fix: "Use a direct connection.",
+    escapeHatches: [hatch("OKM1854", "--allow-pooler")],
   },
   {
     code: "OKM1855",
@@ -777,7 +842,7 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     code: "OKM1858",
     title: "Baseline mismatch",
     summary: "The live database does not match the model snapshot that baseline would record.",
-    fix: "Change the schema or the database until they match, then run okm migrate baseline again.",
+    fix: "Change the schema or the database until they match, then okm migrate baseline records the match.",
   },
   // Reserved, not registered (no raising path): version OKM1804–OKM1809,
   // extension OKM1815–OKM1819, feature refusal OKM1861–OKM1879, adapter

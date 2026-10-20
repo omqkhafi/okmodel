@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://okmodel.dev/schemas/cli-1/errors.json",
+  "title": "okm.cli/1 errors",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "code",
+      "kind",
+      "category",
+      "summary",
+      "fix",
+      "retryable"
+    ],
+    "properties": {
+      "code": {
+        "type": "string"
+      },
+      "kind": {
+        "enum": [
+          "invalid",
+          "not_null",
+          "check",
+          "foreign_key",
+          "unique",
+          "exclusion",
+          "conflict",
+          "not_found",
+          "not_unique",
+          "forbidden",
+          "serialization",
+          "deadlock",
+          "lock_timeout",
+          "timeout",
+          "cancelled",
+          "unavailable",
+          "schema_drift",
+          "driver",
+          "read_only",
+          "outcome_unknown"
+        ]
+      },
+      "category": {
+        "enum": [
+          "input",
+          "conflict",
+          "not_found",
+          "forbidden",
+          "transient",
+          "internal"
+        ]
+      },
+      "summary": {
+        "type": "string"
+      },
+      "fix": {
+        "type": "string"
+      },
+      "retryable": {
+        "type": "boolean"
+      },
+      "location": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [],
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "line": {
+            "type": "number"
+          },
+          "step": {
+            "type": "string"
+          }
+        }
+      },
+      "fixEdit": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "file",
+              "insert"
+            ],
+            "properties": {
+              "file": {
+                "type": "string"
+              },
+              "insert": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "file",
+              "replace"
+            ],
+            "properties": {
+              "file": {
+                "type": "string"
+              },
+              "replace": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "safeAlternatives": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "text",
+            "docs"
+          ],
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "docs": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "docs": {
+        "type": "string"
+      },
+      "escapeHatches": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "requiresHumanReason",
+            "docs"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "requiresHumanReason": {
+              "const": true
+            },
+            "docs": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

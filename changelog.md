@@ -51,11 +51,13 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `gate / check` compares `npm pack --dry-run --json` to a committed snapshot of packed files and the `exports` map (`scripts/pack-contract.ts`). A forbidden install script, a dependency, a required peer, or a missing `files` allowlist fails the check. Update the snapshot with `bun ./scripts/pack-contract.ts --update`.
 - `bun ./scripts/verify-release.ts <version> [--recorded <path>]` downloads the published tarball and checks its version, the pack-contract file list, and `npm audit signatures`. With `--recorded` it fails unless the sha256 and file list match the record the release pack job wrote. Without `--recorded`, a rebuild of the tag is a warning and does not fail. The release workflow packs once, prints that sha256 in the job summary, uploads the record, publishes that tarball, and verifies against the record. `v0.9.1` not being on main is a warning.
 - Postgres CI starts PgBouncer 1.26.1 (`edoburu/pgbouncer` v1.26.1-p0, pinned by digest) in transaction mode with pool size 1, in front of the topology, on the `needs: postgres` label and the full tier. Tests opt in with `OKM_POOLER_URL`. Suite shards keep the direct URL. A smoke test runs a query on each TCP adapter, checks that two sequential transactions share one server connection, and checks that a `SET` outside a transaction is visible to the next client. PgBouncer 1.26.1 supports `max_prepared_statements` in transaction mode (default 200).
+- `okm --json` errors keep the six `okm.cli/1` fields and add `location`, `fixEdit`, `safeAlternatives`, `docs`, and `escapeHatches` when the producer or the registry has them. `fix` stays a string. A kind-only error such as `driver` stays at the six fields. `schemas/cli-1/errors.json` is the array schema. `okm doctor <code>` prints `docs/errors/<code>.md`.
 
 #### docs
 
 - Docs: [Adopt an existing database](docs/adopt-existing.md) and the handbook page cover pull, generate, then baseline.
 - A describe spike records, per driver and Postgres 15–18, whether parameter OIDs, column names, column type OIDs, and table OID plus attnum can be read without executing the statement. The notes are `docs/describe-spike.md`. The scripts under `packages/spikes/describe/` are not packed.
+- `bun run docs:errors` writes `docs/errors/<code>.md` for every registry code. `docs:check` fails when a page is missing or differs from the registry. A code that needs a server says `Example: needs a database`.
 
 ### 💥 Breaking Changes
 
@@ -76,14 +78,23 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okm migrate check` prints, after `ok N migrations`, that an empty-table replay does not catch a step that fails only on real data: `NOT NULL` on a populated column, a unique index over duplicates, or a check over existing rows (Q4, #391).
 - The Release workflow runs on a `v*` tag. Before any build it requires the tagged commit to be an ancestor of `origin/main`, the tag to match `package.json`, and a `## v` changelog section. It then runs the Postgres suite, the pack contract, and `npm stage publish` with provenance (npm 11.15 or newer, Node 22.14 or newer). A dispatch with `publish` false checks `main` and refuses a tag that is not on `main`. The publish job is the only one with `id-token: write` and `contents: write`, and it uses the `release` environment. No npm token is stored.
 
+#### runtime
+
+- Thrown `summary` and `fix` text no longer names a bypass. `all()`, `unscoped()`, `--allow-protected`, and `--allow-pooler` stay on `escapeHatches`, which requires a human-written reason.
+
 #### tooling
 
+- Registry `fix` is the primary remedy. A bypass moves to `escapeHatches`.
 - The migration planner takes a dialect lowering object. Postgres plans stay the same. Feature support and refusal are questions on that object, so the planner does not import the feature registry.
 - Table, column, and constraint changes lower through that dialect. One logical change can be several statements. Postgres plans stay the same, including a validated check before `SET NOT NULL` on an existing column.
 - Index create, drop, and rename lower through that dialect. Postgres still builds and drops an index on an existing table concurrently. The planner still waits to drop a replaced index until the new one is built. Plans stay the same.
 - Enum, domain, and extension changes lower through that dialect. Adding labels, replacing an enum, and swapping a domain check can be several statements. Postgres plans stay the same, including a non-transactional `ADD VALUE` and an unverified extension upgrade.
 - Function, trigger, view, policy, role, and grant changes lower through that dialect. One policy can be several statements. Postgres plans stay the same, including `CREATE OR REPLACE` for a compatible function or view body.
 - The planner no longer imports Postgres SQL. Sequences, check swaps, and backfill `UPDATE`s lower through the dialect. Postgres plans stay the same.
+
+#### docs
+
+- Handbook quotes of OKM1101, OKM1102, OKM1105, OKM1701, and OKM1850 match the remedy text.
 
 ### 🔥 Removed
 

@@ -24,6 +24,51 @@
         },
         "fix": {
           "type": "string"
+        },
+        "safeAlternatives": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "text",
+              "docs"
+            ],
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "docs": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "docs": {
+          "type": "string"
+        },
+        "escapeHatches": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "requiresHumanReason",
+              "docs"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "requiresHumanReason": {
+                "const": true
+              },
+              "docs": {
+                "type": "string"
+              }
+            }
+          }
         }
       }
     },

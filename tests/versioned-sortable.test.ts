@@ -153,7 +153,7 @@ test("an update checks the read version and refuses a write that cannot", async 
     ),
   );
   expect(all.code).toBe("OKM1120");
-  expect(all.message).toContain(".all()");
+  expect(all.message).toContain("cannot use all() with versioned().");
 
   const upsert = await captureAsync(() =>
     explainWrite(

@@ -1,0 +1,1318 @@
+[
+  {
+    "code": "OKM1012",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A trait added a field that the table already declares.",
+    "fix": "Rename the table field or drop the trait that introduces it. The error names both.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1012.md"
+  },
+  {
+    "code": "OKM1020",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A table, dependency, or catalog object is missing or does not match its identity.",
+    "fix": "Use a name that is in the schema. The error lists the accepted names and a nearest-name hint when one is close.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1020.md"
+  },
+  {
+    "code": "OKM1021",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A foreign key is missing its target table or column, or the target is ambiguous.",
+    "fix": "Name the referenced table and columns. The error lists the columns that exist on the target.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1021.md"
+  },
+  {
+    "code": "OKM1022",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A foreign key column and the column it references have different types.",
+    "fix": "Give both columns the same type. The error names the type that is accepted.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1022.md"
+  },
+  {
+    "code": "OKM1023",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "Two catalog objects share an identity, or two tables emit the same type name.",
+    "fix": "Rename one of them. Table names and emitted type names must be unique in the schema.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1023.md"
+  },
+  {
+    "code": "OKM1024",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A table file is not passed to schema().",
+    "fix": "Add the file's table to the schema() call that okm check reads.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1024.md"
+  },
+  {
+    "code": "OKM1025",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "More than one Register augmentation is in the project.",
+    "fix": "Keep a single declare module \"okmodel\" that sets schema. Pass an explicit schema type everywhere else.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1025.md"
+  },
+  {
+    "code": "OKM1026",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "The catalog dependency graph contains a cycle, so objects cannot be ordered.",
+    "fix": "Break the cycle. The error is raised while ordering the catalog.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1026.md"
+  },
+  {
+    "code": "OKM1027",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "The catalog document is malformed or uses a version this build cannot read.",
+    "fix": "Regenerate the catalog with this version of okmodel. Do not hand-edit the document.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1027.md"
+  },
+  {
+    "code": "OKM1030",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A field is validated both on the column and somewhere else.",
+    "fix": "Keep one validation for the field. The error names the field.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1030.md"
+  },
+  {
+    "code": "OKM1040",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A preset uses the name of a client method or a reserved name, or a table and its traits (or two traits) define the same preset.",
+    "fix": "Rename the preset. The error names both sources when two define it. okm upgrade renames a preset when a later release claims its name.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1040.md"
+  },
+  {
+    "code": "OKM1051",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A foreign key into a table-strategy archivable table uses CASCADE, SET NULL, or SET DEFAULT and is not listed in cascade.",
+    "fix": "List the child table, the foreign key, and its action in cascade, or use RESTRICT or NO ACTION.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1051.md"
+  },
+  {
+    "code": "OKM1052",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "archive or restore was called on a table that is not archivable.",
+    "fix": "Call it only on an archivable table. The methods are absent from the types of other tables.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1052.md"
+  },
+  {
+    "code": "OKM1060",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A column definition has a bad length, precision, scale, array rank, interval qualifier, or an empty or repeated picklist or enum.",
+    "fix": "Use a value the error lists as accepted.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1060.md"
+  },
+  {
+    "code": "OKM1061",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "The option exists in the types but this version does not implement it.",
+    "fix": "Remove the option until the prompt or milestone named in the error adds it.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1061.md"
+  },
+  {
+    "code": "OKM1101",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "find was called without a limit.",
+    "fix": "Pass a limit.",
+    "retryable": false,
+    "safeAlternatives": [
+      {
+        "text": "Use page() with a cursor.",
+        "docs": "docs/errors/OKM1101.md#page"
+      }
+    ],
+    "docs": "docs/errors/OKM1101.md",
+    "escapeHatches": [
+      {
+        "name": "all()",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1101.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM1102",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A write with no effective predicate, including undefined values, is OKM1102.",
+    "fix": "Pass a predicate. An undefined-only where is the same as an empty filter.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1102.md",
+    "escapeHatches": [
+      {
+        "name": "all()",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1102.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM1104",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "onConflict names columns that are not a unique constraint.",
+    "fix": "Set on to the columns of a unique constraint or the primary key.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1104.md"
+  },
+  {
+    "code": "OKM1105",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A to-many include has no limit.",
+    "fix": "Pass a limit on the include.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1105.md",
+    "escapeHatches": [
+      {
+        "name": "all()",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1105.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM1110",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A feature needs a newer PostgreSQL than minPostgres allows. The message names the feature, the version it needs, and this schema's minimum.",
+    "fix": "Raise minPostgres, or stop using the feature. The error names both versions.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1110.md"
+  },
+  {
+    "code": "OKM1111",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "The call needs a driver capability this driver does not have.",
+    "fix": "Use a driver that declares the capability, or drop the call. The error names the flag.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1111.md"
+  },
+  {
+    "code": "OKM1120",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "The name is not a field or an option on a write, read, or update. An unknown key on insert, update, upsert, or first-or-create is refused and names the key and the table. timeout and signal go in the second argument of update. Options go first: tx(options, fn).",
+    "fix": "Use a field from the catalog, or move the option. The error includes a nearest-name hint when one is close.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1120.md"
+  },
+  {
+    "code": "OKM1121",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "An empty or() branch is OKM1121. or() takes one array: or([a, b]). A plain object was passed where a value is required.",
+    "fix": "Give every or() branch a predicate. Pass an array: or([a, b]). Wrap a json value with eq.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1121.md"
+  },
+  {
+    "code": "OKM1122",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "An identifier is empty, too long, contains NUL or another control character, or is an unquoted reserved word.",
+    "fix": "Use a shorter name without control characters. Quote is not accepted here. The error names the rule that failed.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1122.md"
+  },
+  {
+    "code": "OKM1123",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A hidden field was added to a filter or sort allowlist.",
+    "fix": "Remove the hidden field from the allowlist. Hidden fields stay out of caller filters and sorts.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1123.md"
+  },
+  {
+    "code": "OKM1124",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "An operator does not apply to the column type.",
+    "fix": "Use an operator the error lists for that column type. Search needs a column built for search, not a plain text column.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1124.md"
+  },
+  {
+    "code": "OKM1125",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A composed fragment is empty, unbalanced, includes a backslash, or interpolates a value it cannot bind. A select fragment that is not a number is the same code.",
+    "fix": "Interpolate a string, number, boolean, null, ident(name), fragment.column, or another fragment. Keep parentheses and quotes balanced. Pass a value that needs a backslash as an interpolation. A select fragment is a numeric expression named with as().",
+    "retryable": false,
+    "docs": "docs/errors/OKM1125.md"
+  },
+  {
+    "code": "OKM1126",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "The finished statement has more than 65,533 parameters. The limit is for the whole statement (filters, inList, limit, values), not for inList alone. It matches postgres.js (which refuses at 65,534) so OKM1126 fires before that driver's MAX_PARAMETERS_EXCEEDED.",
+    "fix": "Chunk the work, or filter with = any(array) instead of a long inList.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1126.md"
+  },
+  {
+    "code": "OKM1130",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A cursor was reused with a different orderBy than the one that created it, or is not a cursor page() returned.",
+    "fix": "Request the next page with the same orderBy and the exact next value the previous page returned. The cursor encodes that order.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1130.md"
+  },
+  {
+    "code": "OKM1190",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A query composition broke a core invariant. violations lists every broken rule in stable order.",
+    "fix": "Change the contribution named on the first violation.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1190.md",
+    "escapeHatches": [
+      {
+        "name": "unscoped()",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1190.md#escape"
+      },
+      {
+        "name": "all()",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1190.md#escape"
+      },
+      {
+        "name": "trusted()",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1190.md#escape"
+      },
+      {
+        "name": "allow",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1190.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM1191",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A multi-statement read was requested inside READ COMMITTED and no single-statement plan exists.",
+    "fix": "Use REPEATABLE READ or SERIALIZABLE, or shape the read so it is one statement.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1191.md"
+  },
+  {
+    "code": "OKM1200",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A write or a standalone check failed a validation rule. issues lists each path and message key.",
+    "fix": "Fix the fields named in issues. Each issue message is a key, not display text.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1200.md"
+  },
+  {
+    "code": "OKM1201",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "Validation is enabled but `okmodel/validate` was not imported.",
+    "fix": "Import \"okmodel/validate\" before schema().",
+    "retryable": false,
+    "docs": "docs/errors/OKM1201.md"
+  },
+  {
+    "code": "OKM1210",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A codec refused a value: not numeric text, not a valid temporal value, or the wrong shape.",
+    "fix": "Pass a value the error lists as accepted. A missing Temporal global tells you to assign one to globalThis.Temporal.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1210.md"
+  },
+  {
+    "code": "OKM1401",
+    "kind": "outcome_unknown",
+    "category": "internal",
+    "summary": "A commit or batch was sent and its result never arrived, so the write may or may not have happened.",
+    "fix": "Check whether the write landed, using an idempotency key, before retrying. This error is never retried automatically.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1401.md"
+  },
+  {
+    "code": "OKM1510",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A migration has an unresolved lint error, or an override with an empty reason or a code no statement in the step triggered.",
+    "fix": "Change the statement so the finding is gone. An override must name a code that a statement in the step triggered, and the reason must not be empty.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1510.md",
+    "escapeHatches": [
+      {
+        "name": "-- okm-allow",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1510.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM1511",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A statement drops a table. The rows and anything that reads them are gone.",
+    "fix": "Stop reading the table in an expand migration, then drop it in a later contract.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1511.md",
+    "escapeHatches": [
+      {
+        "name": "-- okm-allow",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1511.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM1512",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A statement drops a column. Stored values and the code that reads them are gone.",
+    "fix": "Stop reading the column in an expand migration, then drop it in a later contract.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1512.md",
+    "escapeHatches": [
+      {
+        "name": "-- okm-allow",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1512.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM1513",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A statement drops an enum that columns or code may still depend on.",
+    "fix": "Move every column off the enum first.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1513.md",
+    "escapeHatches": [
+      {
+        "name": "-- okm-allow",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1513.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM1514",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A statement drops a domain that columns or code may still depend on.",
+    "fix": "Move every column off the domain first.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1514.md",
+    "escapeHatches": [
+      {
+        "name": "-- okm-allow",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1514.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM1515",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A statement drops a function that queries or triggers may still call.",
+    "fix": "Remove the callers in an expand migration, then drop the function.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1515.md",
+    "escapeHatches": [
+      {
+        "name": "-- okm-allow",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1515.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM1516",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A statement drops a view that queries may still read.",
+    "fix": "Stop reading the view in an expand migration, then drop it.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1516.md",
+    "escapeHatches": [
+      {
+        "name": "-- okm-allow",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1516.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM1517",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A statement drops an extension. A dependent still in the catalog is refused before this finding.",
+    "fix": "Confirm nothing outside the catalog uses the extension.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1517.md",
+    "escapeHatches": [
+      {
+        "name": "-- okm-allow",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1517.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM1518",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A statement drops a materialized view and the rows it stores.",
+    "fix": "Stop reading the view in an expand migration, then drop it.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1518.md",
+    "escapeHatches": [
+      {
+        "name": "-- okm-allow",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1518.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM1519",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A statement renames a column. Existing queries still use the old name.",
+    "fix": "Add the new column, backfill, and switch readers before dropping the old name.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1519.md",
+    "escapeHatches": [
+      {
+        "name": "-- okm-allow",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1519.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM1520",
+    "kind": "schema_drift",
+    "category": "internal",
+    "summary": "The database has drifted past what an expand migration can repair.",
+    "fix": "Inspect the diff and repair the database, or generate a migration that matches the drift.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1520.md"
+  },
+  {
+    "code": "OKM1521",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "Provisioning from the snapshot does not match the replayed migration history.",
+    "fix": "Regenerate the snapshot from the history. okm migrate check --provision is the command that reports this.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1521.md"
+  },
+  {
+    "code": "OKM1522",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "Another apply already holds the target's migration lock.",
+    "fix": "Wait for that apply to finish. Do not start a second apply against the same target.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1522.md"
+  },
+  {
+    "code": "OKM1523",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A statement renames a table. Existing queries still use the old name.",
+    "fix": "Create the new table, backfill, and switch readers before dropping the old name.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1523.md",
+    "escapeHatches": [
+      {
+        "name": "-- okm-allow",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1523.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM1524",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A statement changes a column type. Existing readers and writers may not accept the new type.",
+    "fix": "Add a new column, backfill, and switch readers before dropping the old one.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1524.md",
+    "escapeHatches": [
+      {
+        "name": "-- okm-allow",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1524.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM1525",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A statement adds a NOT NULL column with no default to a table that already has rows.",
+    "fix": "Add the column nullable, backfill, then set it NOT NULL.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1525.md",
+    "escapeHatches": [
+      {
+        "name": "-- okm-allow",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1525.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM1526",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A statement removes a column default. Writers that omitted the column will fail.",
+    "fix": "Update writers to send the column, then drop the default.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1526.md",
+    "escapeHatches": [
+      {
+        "name": "-- okm-allow",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1526.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM1527",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A statement shortens a character length. Values longer than the new limit no longer fit.",
+    "fix": "Shorten the stored values first, or keep the old length.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1527.md",
+    "escapeHatches": [
+      {
+        "name": "-- okm-allow",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1527.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM1528",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A statement adds a unique or primary-key constraint on a table that already has rows.",
+    "fix": "Deduplicate the rows first.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1528.md",
+    "escapeHatches": [
+      {
+        "name": "-- okm-allow",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1528.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM1529",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A statement creates a unique index on a table that already has rows.",
+    "fix": "Deduplicate the rows first.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1529.md",
+    "escapeHatches": [
+      {
+        "name": "-- okm-allow",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1529.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM1530",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A rename could match more than one object.",
+    "fix": "Declare the rename explicitly so the plan has one pairing.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1530.md"
+  },
+  {
+    "code": "OKM1531",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A statement adds or validates a check against rows already stored.",
+    "fix": "Add the check NOT VALID, repair the rows, then validate it.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1531.md",
+    "escapeHatches": [
+      {
+        "name": "-- okm-allow",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1531.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM1532",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A statement adds or validates a foreign key against rows already stored.",
+    "fix": "Add the foreign key NOT VALID, repair the rows, then validate it.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1532.md",
+    "escapeHatches": [
+      {
+        "name": "-- okm-allow",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1532.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM1533",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A statement narrows a numeric or integer type. Values outside the new range no longer fit.",
+    "fix": "Rewrite the values into the new range first.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1533.md",
+    "escapeHatches": [
+      {
+        "name": "-- okm-allow",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1533.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM1534",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A statement creates an index on an existing table without CONCURRENTLY.",
+    "fix": "Create the index with CREATE INDEX CONCURRENTLY, outside a transaction. The planner does this on an existing table.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1534.md"
+  },
+  {
+    "code": "OKM1535",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A statement adds a check on an existing table without NOT VALID.",
+    "fix": "Add the check NOT VALID, then validate it in its own step. The planner does this on an existing table.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1535.md"
+  },
+  {
+    "code": "OKM1536",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A statement adds a foreign key on an existing table without NOT VALID.",
+    "fix": "Add the foreign key NOT VALID, then validate it in its own step. The planner does this on an existing table.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1536.md"
+  },
+  {
+    "code": "OKM1537",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A statement sets NOT NULL on a column that already exists.",
+    "fix": "Add CHECK (column IS NOT NULL) NOT VALID, validate it, then SET NOT NULL and drop the check. The planner does this on an existing column.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1537.md"
+  },
+  {
+    "code": "OKM1538",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A statement changes a column type in a way that rewrites the table. Binary-coercible changes, varchar widening, varchar to text, and a numeric precision increase at the same scale do not.",
+    "fix": "There is no safe form for a rewriting type change in this version. A column swap is expand and contract work for a later step. OKM1524 already requires a reason for the type change.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1538.md"
+  },
+  {
+    "code": "OKM1539",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A column is timestamp without time zone. The instant depends on the session time zone.",
+    "fix": "Use timestamptz.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1539.md"
+  },
+  {
+    "code": "OKM1540",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A column is varchar(n). text stores the same values without a length limit in the type.",
+    "fix": "Use text, and check the length in the application when one is required.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1540.md"
+  },
+  {
+    "code": "OKM1541",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A picklist or enum value was removed and the replacement was not given.",
+    "fix": "Pass --replace <table>.<column>.<old>=<new>, or =null on a nullable column. The replacement must be in the new list.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1541.md"
+  },
+  {
+    "code": "OKM1542",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A migration contains a data statement outside backfill(), or a DO or CALL whose body is not analysed.",
+    "fix": "Move insert, update, delete, merge, and truncate into backfill(). DO and CALL are refused because the body is not analysed.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1542.md",
+    "escapeHatches": [
+      {
+        "name": "-- okm-allow",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1542.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM1543",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A column uses serial or a nextval default. Identity is the form this repo generates.",
+    "fix": "Use an identity column generated always.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1543.md"
+  },
+  {
+    "code": "OKM1544",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A column is json. jsonb is available and stores the same documents in binary.",
+    "fix": "Use jsonb.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1544.md"
+  },
+  {
+    "code": "OKM1545",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "An identity column is generated by default. The repo default is generated always.",
+    "fix": "Declare the identity as generated always.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1545.md"
+  },
+  {
+    "code": "OKM1546",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A backfill step targets a table that has no primary key.",
+    "fix": "Add a primary key. A backfill walks that key and does not scan the table.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1546.md"
+  },
+  {
+    "code": "OKM1547",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "Replaying a migration does not match its stored catalog, or the file was generated from a different parent than the previous migration.",
+    "fix": "Regenerate the migration from the previous catalog so the SQL and the stored catalog describe the same schema.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1547.md"
+  },
+  {
+    "code": "OKM1548",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "An expand migration drops or changes a table, column, constraint, or type the previous catalog relies on.",
+    "fix": "Keep every table, column, constraint, and type the previous catalog relies on, or classify the migration as contract.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1548.md"
+  },
+  {
+    "code": "OKM1549",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "The last migration's catalog does not match the schema.",
+    "fix": "okm generate writes the next migration.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1549.md"
+  },
+  {
+    "code": "OKM1550",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A statement disables row-level security, drops or widens a policy, grants BYPASSRLS, or changes the owner of a tenant table.",
+    "fix": "Remove the statement.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1550.md",
+    "escapeHatches": [
+      {
+        "name": "-- okm-allow",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1550.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM1551",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A step contains COMMIT, ROLLBACK, or other transaction control, including inside a DO body. A function or procedure body is not this.",
+    "fix": "Remove the transaction control. okm migrate check replays one transaction and rolls it back.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1551.md",
+    "escapeHatches": [
+      {
+        "name": "-- okm-allow",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1551.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM1552",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A domain check or a LANGUAGE sql function body is stored differently from the text in the migration catalog.",
+    "fix": "Write the check or the body the way Postgres prints it. The warning does not fail apply or migrate check. A reprinted domain check is sealed before the OKM1547 plan.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1552.md",
+    "escapeHatches": [
+      {
+        "name": "-- okm-allow",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1552.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM1601",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A typed SQL signature no longer matches the database.",
+    "fix": "Regenerate the typed SQL and commit the new signature.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1601.md"
+  },
+  {
+    "code": "OKM1602",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A raw statement is missing its class, is not one select or one write, or the result class has no column initializers.",
+    "fix": "Pass \"read\" or \"write\", a fragment`...`, and a class with an initializer on every column. Identifiers are ident(name).",
+    "retryable": false,
+    "docs": "docs/errors/OKM1602.md"
+  },
+  {
+    "code": "OKM1701",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A tenant table was used on a client that has no tenant context.",
+    "fix": "Open the client with for() before reading or writing that table.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1701.md",
+    "escapeHatches": [
+      {
+        "name": "unscoped()",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1701.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM1702",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "Raw SQL on a tenant table cannot prove the tenant predicate. A raw write is this. A raw read that does not select the primary key with ident is this.",
+    "fix": "Use update or delete, or select the primary key with ident(name).",
+    "retryable": false,
+    "docs": "docs/errors/OKM1702.md",
+    "escapeHatches": [
+      {
+        "name": "unscoped()",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1702.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM1704",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "An update tried to change the tenant key.",
+    "fix": "Remove the tenant key from the update. Moving a row between tenants is not an update.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1704.md"
+  },
+  {
+    "code": "OKM1705",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A global table references a tenant table.",
+    "fix": "Drop the reference, or make the referencing table a tenant table.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1705.md"
+  },
+  {
+    "code": "OKM1706",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "An index on a tenant table does not lead with the tenant key, and the schema is not prefixing indexes. Prefixing is on unless indexes: false or tenantIndexes: false. index().global(\"reason\") is the opt-out that does not raise this.",
+    "fix": "Put the tenant key first, or leave indexes on so the schema adds it. index().global(\"reason\") opts one index out.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1706.md"
+  },
+  {
+    "code": "OKM1707",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A scoped call under rls ran as a role that owns the tenant tables, is a superuser, or has BYPASSRLS. The reason field says which. The message names the endpoint.",
+    "fix": "Connect as a role that is not the table owner, a superuser, or BYPASSRLS. okm seed under rlsTenancy runs as the application role. The owner gets this error.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1707.md"
+  },
+  {
+    "code": "OKM1708",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A scoped call under rls found a tenant table whose row-level security is missing, not forced, or whose policies are not the ones okm generate emits. The message names the table and the endpoint.",
+    "fix": "Restore the policies okm generate emits for this rls schema.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1708.md"
+  },
+  {
+    "code": "OKM1801",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "The schema dialect and the driver dialect are not the same.",
+    "fix": "Open the schema with the driver package that matches it.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1801.md"
+  },
+  {
+    "code": "OKM1802",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "The connected server is older than this schema's minPostgres.",
+    "fix": "Upgrade the server, or lower minPostgres to a major the server meets.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1802.md"
+  },
+  {
+    "code": "OKM1803",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "The connected server is older than PostgreSQL 15.",
+    "fix": "Upgrade the server to PostgreSQL 15 or higher.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1803.md"
+  },
+  {
+    "code": "OKM1810",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "An extension builder was used but the extension is not declared on the schema.",
+    "fix": "Declare the extension next to the schema that uses it.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1810.md"
+  },
+  {
+    "code": "OKM1811",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A declared extension is not installed on the server.",
+    "fix": "Install the extension, or remove the declaration. okm doctor reports this against the connected server.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1811.md"
+  },
+  {
+    "code": "OKM1812",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A feature needs a newer PostgreSQL than minPostgres, or an extension version the server does not have. The message names the feature and the version.",
+    "fix": "Raise minPostgres, or avoid the feature. uuidv7() needs PostgreSQL 18 or higher. minPostgres: 18. An extension pin names the version to install. Core features are never gated on an extension.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1812.md"
+  },
+  {
+    "code": "OKM1813",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "The same extension definition was registered twice.",
+    "fix": "Keep one definition. A second copy fails at build.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1813.md"
+  },
+  {
+    "code": "OKM1814",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "The plan would downgrade an extension, move a non-relocatable one, or drop one that still has dependents.",
+    "fix": "Drop or move the dependents first. Postgres cannot lower an extension version.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1814.md"
+  },
+  {
+    "code": "OKM1820",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A view over tenant tables does not expose the tenant key and is not marked global.",
+    "fix": "Expose the tenant key so the predicate can be applied, or declare global(reason).",
+    "retryable": false,
+    "docs": "docs/errors/OKM1820.md"
+  },
+  {
+    "code": "OKM1821",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "An incompatible replace would have to recreate dependents. CASCADE is never used.",
+    "fix": "Review the dependents the plan lists and recreate them explicitly.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1821.md"
+  },
+  {
+    "code": "OKM1822",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "REFRESH CONCURRENTLY was declared without a unique index on the materialized view.",
+    "fix": "Add a unique index, or refresh without CONCURRENTLY.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1822.md"
+  },
+  {
+    "code": "OKM1823",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A SECURITY DEFINER function has no search_path.",
+    "fix": "Set search_path on the function to the schemas it is allowed to see.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1823.md"
+  },
+  {
+    "code": "OKM1824",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A plpgsql function has no dependsOn. Postgres does not record dependencies inside the body.",
+    "fix": "List dependsOn. LANGUAGE sql with BEGIN ATOMIC is inferred and does not need the list.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1824.md"
+  },
+  {
+    "code": "OKM1825",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A role lacks a privilege on a managed object.",
+    "fix": "Grant the privilege, or change the role. okm doctor reports the object and the privilege.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1825.md"
+  },
+  {
+    "code": "OKM1830",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "find was called with a row lock outside tx().",
+    "fix": "Take the lock inside tx(). Advisory locks are transaction-scoped too.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1830.md"
+  },
+  {
+    "code": "OKM1840",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A replica route was used on an operation that requires the primary, or inside tx().",
+    "fix": "Use the primary. Writes, batch, locks, and tx() never go to a replica.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1840.md"
+  },
+  {
+    "code": "OKM1841",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "An external object does not match the owner's exported catalog.",
+    "fix": "Update the dependency's export, or stop treating the object as external.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1841.md"
+  },
+  {
+    "code": "OKM1842",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A foreign key points at a table in another database.",
+    "fix": "Keep the foreign key inside one database. Cross-catalog keys are allowed only there.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1842.md"
+  },
+  {
+    "code": "OKM1843",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A replica was required and none is eligible: unhealthy, behind the session, or none configured.",
+    "fix": "Configure a replica or drop the route. This call does not read the primary.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1843.md"
+  },
+  {
+    "code": "OKM1844",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "An automatic read found no eligible replica and fallback is error.",
+    "fix": "Restore a replica, or set fallback to primary if the primary should absorb the read.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1844.md"
+  },
+  {
+    "code": "OKM1845",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "The target could not be resolved. The tenant is unknown or the resolver failed.",
+    "fix": "Check the tenant id and the resolver. Connection details are not guessed.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1845.md"
+  },
+  {
+    "code": "OKM1846",
+    "kind": "timeout",
+    "category": "transient",
+    "summary": "The pool did not hand out a connection within timeouts.acquire.",
+    "fix": "Raise timeouts.acquire, or stop holding connections. The wait does not spill into another pool.",
+    "retryable": true,
+    "docs": "docs/errors/OKM1846.md"
+  },
+  {
+    "code": "OKM1850",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "The operation is blocked on a protected target.",
+    "fix": "Use a read-only command or an expand migration.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1850.md",
+    "escapeHatches": [
+      {
+        "name": "--allow-protected",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1850.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM1851",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "Provisioning was asked to fill a target that already has objects.",
+    "fix": "Provision an empty schema or an empty database. A non-empty target is refused.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1851.md"
+  },
+  {
+    "code": "OKM1852",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "Targets that resolve to the same database disagree about protection, or tenants of one schema-per-tenant database do.",
+    "fix": "Give those targets the same protection flag. okm check and okm doctor both report this.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1852.md"
+  },
+  {
+    "code": "OKM1853",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "Several targets are configured and the command was not given --target.",
+    "fix": "Pass --target <name>. The command does not guess.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1853.md"
+  },
+  {
+    "code": "OKM1854",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "Two statements on the same connection saw different backend pids. A transaction-mode pooler is in the way.",
+    "fix": "Use a direct connection.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1854.md",
+    "escapeHatches": [
+      {
+        "name": "--allow-pooler",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1854.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM1855",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "okm pull or okm import drizzle found a file it would replace. It writes nothing.",
+    "fix": "Pass --out <directory> to write somewhere else, or move the file.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1855.md"
+  },
+  {
+    "code": "OKM1856",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "okm import drizzle could not resolve drizzle-orm from the project.",
+    "fix": "Install drizzle-orm in the project that owns the schema.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1856.md"
+  },
+  {
+    "code": "OKM1857",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "okm migrate baseline was asked to write history on a target that already has it.",
+    "fix": "Baseline is for a database with no OKModel history. Use okm migrate status, or point at another target.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1857.md"
+  },
+  {
+    "code": "OKM1858",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "The live database does not match the model snapshot that baseline would record.",
+    "fix": "Change the schema or the database until they match, then okm migrate baseline records the match.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1858.md"
+  },
+  {
+    "code": "OKM1860",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "The configured dialect refuses a feature this schema uses.",
+    "fix": "Use the portable alternative named in the error. The message names the dialect, the feature, and the first version that would support it when one exists.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1860.md"
+  }
+]

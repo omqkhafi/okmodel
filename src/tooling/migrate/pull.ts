@@ -147,7 +147,7 @@ export function parsePullArgs(argv: readonly string[]): {
       continue;
     }
     throw new OkmError("invalid", `Unknown flag ${arg}.`, {
-      fix: { summary: "okm pull accepts --target, --schema, --out, and --allow-protected." },
+      fix: { summary: "okm pull accepts --target, --schema, and --out." },
     });
   }
   return { target, allowProtected, out, schemas };
