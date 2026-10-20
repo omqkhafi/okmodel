@@ -9,7 +9,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { repoRoot } from "../scripts/root.js";
-import { ancestryProblem, ancestryWarning, tarballHashProblem } from "../scripts/verify-release.js";
+import {
+  ancestryProblem,
+  ancestryWarning,
+  archiveContentDigest,
+  tarballHashProblem,
+  tarballMatch,
+} from "../scripts/verify-release.js";
 
 const root = repoRoot();
 
@@ -44,6 +50,43 @@ test("a tampered tarball fails the hash check", async () => {
     const problem = tarballHashProblem(published, packed, "v0.0.0");
     expect(problem).toContain("sha256");
     expect(problem).toContain("does not match the pack of v0.0.0");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a gzip header change still matches file bytes", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "okm-verify-gzip-"));
+  try {
+    writeFileSync(join(dir, "note.txt"), "ok\n");
+    const proc = Bun.spawn(["tar", "-czf", "good.tgz", "note.txt"], {
+      cwd: dir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expect(await proc.exited).toBe(0);
+    const packed = new Uint8Array(readFileSync(join(dir, "good.tgz")));
+    const published = new Uint8Array(packed);
+    const header = published[4];
+    if (header === undefined) throw new Error("gzip header is short");
+    published[4] = header ^ 0xff;
+    expect(tarballHashProblem(published, packed, "v0.0.0")).toContain("does not match");
+    expect(await archiveContentDigest(published)).toBe(await archiveContentDigest(packed));
+    const match = await tarballMatch(published, packed, "v0.0.0");
+    expect(match.problem).toBeUndefined();
+    expect(match.line).toContain("contents sha256");
+    expect(match.line).toContain("matches the pack of v0.0.0");
+    writeFileSync(join(dir, "note.txt"), "changed\n");
+    const again = Bun.spawn(["tar", "-czf", "other.tgz", "note.txt"], {
+      cwd: dir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expect(await again.exited).toBe(0);
+    const changed = new Uint8Array(readFileSync(join(dir, "other.tgz")));
+    const broken = await tarballMatch(changed, packed, "v0.0.0");
+    expect(broken.problem).toContain("file bytes differ");
+    expect(broken.problem).toContain("note.txt");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -3,11 +3,12 @@
  *
  * The tarball is downloaded from the registry. The pack is `git archive` of
  * `v` plus the version, then `bun install --frozen-lockfile`, `bun run build`,
- * and `bun pm pack`. The sha256 values must match. The tarball's
- * `package.json` version must be that version, and its file list must match
- * the pack-contract snapshot on the tag. Provenance is `npm audit signatures`,
- * which verifies the registry attestation. `npm view --json` shows the
- * predicate type and does not verify the signature.
+ * and `bun pm pack`. The tarball sha256 must match, or every file byte must
+ * match when the gzip wrapper differs. The tarball's `package.json` version
+ * must be that version, and its file list must match the pack-contract
+ * snapshot on the tag. Provenance is `npm audit signatures`, which verifies
+ * the registry attestation. `npm view --json` shows the predicate type and
+ * does not verify the signature.
  *
  * Tag `v0.9.1` is not an ancestor of `origin/main`. That known fact is a
  * warning. Any other tag off main fails the run.
@@ -16,9 +17,18 @@
  */
 
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
 
 import { DEFAULT_SNAPSHOT, packedFileDiff } from "./pack-contract.js";
 import { exitOnProblems } from "./report.js";
@@ -78,6 +88,168 @@ export function tarballHashProblem(
  */
 export function tarballHashLine(published: Uint8Array, tag: string): string {
   return `sha256 ${sha256Hex(published)} matches the pack of ${tag}`;
+}
+
+/** One file or link inside an extracted npm tarball. */
+type ArchiveEntry = {
+  /** Path relative to the extract root, slash-separated. */
+  readonly path: string;
+  /** `f` for a file, `l` for a symlink. */
+  readonly kind: "f" | "l";
+  /** Permission bits, octal, without the file type. */
+  readonly mode: string;
+  /** File bytes, or the symlink target. */
+  readonly data: Uint8Array;
+};
+
+/**
+ * sha256 of file bytes in a tarball, ignoring gzip headers and tar metadata.
+ *
+ * `bun pm pack` can wrap the same files in different gzip bytes. Paths, modes,
+ * and bytes are the comparison.
+ *
+ * @param bytes - Gzip tarball
+ * @returns Hex digest of the sorted entries
+ */
+export async function archiveContentDigest(bytes: Uint8Array): Promise<string> {
+  const entries = await archiveEntries(bytes);
+  return digestEntries(entries);
+}
+
+/**
+ * Report line when file bytes match and the tarball bytes do not.
+ *
+ * @param digest - {@link archiveContentDigest} of either tarball
+ * @param tag - Tag that was packed
+ * @returns The report line
+ */
+export function tarballContentLine(digest: string, tag: string): string {
+  return `contents sha256 ${digest} matches the pack of ${tag}`;
+}
+
+/**
+ * Why the published files are not the packed files.
+ *
+ * A matching tarball sha256 skips this. A gzip-only difference is not a problem.
+ *
+ * @param published - Bytes downloaded from the registry
+ * @param packed - Bytes from the clean pack
+ * @param tag - Tag that was packed
+ * @returns The problem and the report line. `problem` is set only on failure.
+ */
+export async function tarballMatch(
+  published: Uint8Array,
+  packed: Uint8Array,
+  tag: string,
+): Promise<{ readonly problem?: string; readonly line: string }> {
+  const raw = tarballHashProblem(published, packed, tag);
+  if (raw === undefined) return { line: tarballHashLine(published, tag) };
+  let publishedEntries: readonly ArchiveEntry[];
+  let packedEntries: readonly ArchiveEntry[];
+  try {
+    publishedEntries = await archiveEntries(published);
+    packedEntries = await archiveEntries(packed);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const problem = `${raw}\n${message}`;
+    return { problem, line: problem };
+  }
+  const digest = digestEntries(publishedEntries);
+  if (digest === digestEntries(packedEntries)) return { line: tarballContentLine(digest, tag) };
+  const problem = `${raw}\n${entryDiff(publishedEntries, packedEntries)}`;
+  return { problem, line: problem };
+}
+
+/**
+ * Extracts a gzip tarball and lists each file and symlink.
+ *
+ * @param bytes - Gzip tarball
+ * @returns Entries sorted by path
+ */
+async function archiveEntries(bytes: Uint8Array): Promise<readonly ArchiveEntry[]> {
+  const root = await withTarball(bytes, async (tarball) => {
+    const dir = mkdtempSync(join(tmpdir(), "okm-verify-files-"));
+    const extracted = await command(dir, ["tar", "-xzf", tarball, "-C", dir]);
+    if (extracted.code !== 0) {
+      rmSync(dir, { recursive: true, force: true });
+      throw new Error(`could not extract the tarball\n${tail(extracted.stderr)}`);
+    }
+    return dir;
+  });
+  try {
+    return collectEntries(root);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+/**
+ * @param root - Directory that contains the extracted tarball
+ * @returns Files and symlinks under `root`
+ */
+function collectEntries(root: string): readonly ArchiveEntry[] {
+  const entries: ArchiveEntry[] = [];
+  const walk = (dir: string): void => {
+    for (const name of readdirSync(dir)) {
+      const abs = join(dir, name);
+      const st = lstatSync(abs);
+      if (st.isDirectory()) {
+        walk(abs);
+        continue;
+      }
+      const path = relative(root, abs).split(sep).join("/");
+      const mode = (st.mode & 0o777).toString(8);
+      if (st.isSymbolicLink()) {
+        entries.push({ path, kind: "l", mode, data: Buffer.from(readlinkSync(abs)) });
+        continue;
+      }
+      if (!st.isFile()) continue;
+      entries.push({ path, kind: "f", mode, data: new Uint8Array(readFileSync(abs)) });
+    }
+  };
+  walk(root);
+  entries.sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
+  return entries;
+}
+
+/**
+ * @param entries - Sorted archive entries
+ * @returns Stable digest of paths, modes, and bytes
+ */
+function digestEntries(entries: readonly ArchiveEntry[]): string {
+  const hash = createHash("sha256");
+  for (const entry of entries) {
+    hash.update(entry.kind);
+    hash.update("\0");
+    hash.update(entry.mode);
+    hash.update("\0");
+    hash.update(entry.path);
+    hash.update("\0");
+    hash.update(entry.data);
+    hash.update("\0");
+  }
+  return hash.digest("hex");
+}
+
+/**
+ * @param published - Entries from the registry tarball
+ * @param packed - Entries from the clean pack
+ * @returns A short list of paths that differ
+ */
+function entryDiff(published: readonly ArchiveEntry[], packed: readonly ArchiveEntry[]): string {
+  const packedByPath = new Map(packed.map((entry) => [entry.path, digestEntries([entry])]));
+  const lines = ["file bytes differ"];
+  const seen = new Set<string>();
+  for (const entry of published) {
+    seen.add(entry.path);
+    const other = packedByPath.get(entry.path);
+    if (other === undefined) lines.push(`  - ${entry.path}`);
+    else if (other !== digestEntries([entry])) lines.push(`  ~ ${entry.path}`);
+  }
+  for (const entry of packed) {
+    if (!seen.has(entry.path)) lines.push(`  + ${entry.path}`);
+  }
+  return lines.join("\n");
 }
 
 /**
@@ -281,11 +453,9 @@ async function verifyRelease(version: string): Promise<VerifyReport> {
     return { lines, problems };
   }
 
-  const hash = tarballHashProblem(published, packed, tag);
-  if (hash !== undefined) {
-    problems.push(hash);
-    lines.push(hash);
-  } else lines.push(tarballHashLine(published, tag));
+  const hash = await tarballMatch(published, packed, tag);
+  if (hash.problem !== undefined) problems.push(hash.problem);
+  lines.push(hash.line);
 
   const manifestProblem = await manifestVersionProblem(published, version);
   if (manifestProblem !== undefined) {

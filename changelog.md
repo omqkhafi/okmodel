@@ -38,7 +38,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `bun run verify:fast` checks format, lint, types, layers, purity, docs, and the readme, then runs only the tests related to files changed since the merge-base with `origin/main`.
 - `bun run ci:fail <pull>` prints the first failing job, its failing step, the last 60 log lines, and the one local command that reproduces it.
 - `gate / check` compares `npm pack --dry-run --json` to a committed snapshot of packed files and the `exports` map (`scripts/pack-contract.ts`). A forbidden install script, a dependency, a required peer, or a missing `files` allowlist fails the check. Update the snapshot with `bun ./scripts/pack-contract.ts --update`.
-- `bun ./scripts/verify-release.ts <version>` downloads the published tarball, checks its sha256 against a clean pack of the tag, checks `package.json` and the pack-contract file list, and requires `npm audit signatures` to verify the provenance attestation. The release workflow runs it after publish. `v0.9.1` not being on main is a warning.
+- `bun ./scripts/verify-release.ts <version>` downloads the published tarball, checks it against a clean pack of the tag (sha256, or file bytes when the gzip wrapper differs), checks `package.json` and the pack-contract file list, and requires `npm audit signatures` to verify the provenance attestation. The release workflow runs it after publish. `v0.9.1` not being on main is a warning.
 
 #### docs
 
@@ -97,6 +97,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### tooling
 
+- `verify-release` accepts a pack whose gzip wrapper differs when every file byte matches, so a Bun packer change does not fail a published tarball. A changed file still fails.
 - `okm migrate check` reuses an extension that is already installed. The replay moves it into the scratch schema for the transaction, and `ROLLBACK` restores the schema apply left, so a declared extension still passes after apply (R6, #403).
 - `okm ext check` prints the extension name in the declared column when the pin is omitted. A pin still prints that version or floor (R6, #403).
 - `okm migrate check` refuses a `uuidv7()` default on PostgreSQL 15, 16, and 17 with OKM1812 and the fix `uuidv7() needs PostgreSQL 18 or higher. minPostgres: 18.` PostgreSQL 18 replays that default (R6, #403).
