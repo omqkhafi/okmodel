@@ -1,6 +1,6 @@
 # GitHub Action
 
-The composite action `.github/actions/migrate` runs `okm migrate check` and `okm migrate plan --json` against a named target and posts one sticky pull-request comment (D279, §19.8). The comment heading is the strictest class. Each step shows its class and lock, including the row estimate the plan already prints. Lint findings keep their codes. A lint error or a failed check fails the job with that command's exit code.
+The composite action `.github/actions/migrate` runs `okm migrate check` and `okm migrate plan --json` against a named target and posts one sticky pull-request comment (D279, §19.8). `okm migrate plan --json` prints an `okm.cli/1` envelope. The plan fields are `data`. `parsePlanJson` reads that field and still accepts a bare plan document. The comment heading is the strictest class. Each step shows its class and lock, including the row estimate the plan already prints. Lint findings keep their codes. A lint error or a failed check fails the job with that command's exit code.
 
 `preview: true` runs `okm migrate apply --target <name>` and, when `seed` is set, `okm seed <file>`. The name is the `target` input. The action does not infer it (OKM1853) and does not hardcode `preview`. A protected target is refused by the existing policy. The action never creates or drops a database. Infrastructure creates the empty database and deletes it when the pull request closes.
 

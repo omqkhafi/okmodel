@@ -63,6 +63,9 @@ test("okm migrate plan --json prints a document and matches the human plan", asy
   try {
     const human = await capture(cwd, ["migrate", "plan", "review"]);
     const json = await capture(cwd, ["migrate", "plan", "--json", "review"]);
+    const envelope = JSON.parse(json) as { schema: string; data: { name: string } };
+    expect(envelope.schema).toBe("okm.cli/1");
+    expect(envelope.data.name).toBe("review");
     const document = parsePlanJson(json);
     expect(isPlanDocument(document)).toBe(true);
     expect(document.name).toBe("review");
@@ -107,7 +110,15 @@ test("an error finding exits after the json document", async () => {
       { cwd, stdout: "pipe", stderr: "pipe" },
     );
     expect(proc.exitCode).toBe(1);
-    expect(proc.stderr.toString()).toContain("error OKM1510:");
+    expect(proc.stderr.toString()).toBe("");
+    const envelope = JSON.parse(proc.stdout.toString()) as {
+      schema: string;
+      exit: number;
+      errors: { code: string }[];
+    };
+    expect(envelope.schema).toBe("okm.cli/1");
+    expect(envelope.exit).toBe(1);
+    expect(envelope.errors[0]?.code).toBe("OKM1510");
     const document = parsePlanJson(proc.stdout.toString());
     expect(document.findings.some((finding) => finding.code === "OKM1512")).toBe(true);
     expect(document.class).toBe("contract");

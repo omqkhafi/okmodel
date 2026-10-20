@@ -12,6 +12,7 @@
 
 import { open } from "../../adapters/pg/postgresjs.js";
 import { OkmError } from "../../contracts/error.js";
+import { tagOutcome } from "../cli/outcome.js";
 import type { CatalogObject } from "../../contracts/catalog/types.js";
 import { assertRoleHealth } from "../../dialects/pg/role/check.js";
 import { assertSupported, formatEmulation } from "../capabilities/check.js";
@@ -51,9 +52,12 @@ export async function doctorProject(
   if (code !== undefined) {
     const doc = errorDoc(code);
     if (doc === undefined) {
-      throw new OkmError("invalid", `Unknown code ${code}.`, {
-        fix: { summary: "Pass a code from the registry, or run okm doctor with no argument." },
-      });
+      throw tagOutcome(
+        new OkmError("invalid", `Unknown code ${code}.`, {
+          fix: { summary: "Pass a code from the registry, or run okm doctor with no argument." },
+        }),
+        "usage",
+      );
     }
     return `${doc.code}: ${doc.title}\n${doc.summary}\n${doc.fix}\n`;
   }
