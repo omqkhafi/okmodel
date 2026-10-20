@@ -19,6 +19,7 @@ import type {
   IndexObject,
   MaterializedViewObject,
   PolicyObject,
+  SequenceObject,
   TableObject,
   TriggerObject,
   TypeObject,
@@ -120,9 +121,9 @@ export type DdlStep = {
  * One logical catalog change.
  *
  * A dialect returns zero or more physical steps for one variant. Table,
- * column, constraint, index, type, extension, routine, view, policy, and
- * privilege changes are the first families. Other families stay `pending`
- * until they move.
+ * column, constraint, index, type, extension, routine, view, policy,
+ * privilege, sequence, check, and row-rewrite changes lower here. `pending`
+ * stays for a change a dialect has nothing to emit for.
  */
 export type LogicalChange =
   | { readonly op: "pending" }
@@ -343,6 +344,45 @@ export type LogicalChange =
       readonly schema: string;
       /** Identity keys this plan drops and creates again. */
       readonly recreated: readonly string[];
+    }
+  | {
+      readonly op: "create-sequence";
+      readonly object: SequenceObject;
+      readonly schema: string;
+    }
+  | {
+      readonly op: "drop-sequence";
+      readonly object: SequenceObject;
+      readonly schema: string;
+    }
+  | {
+      readonly op: "rename-sequence";
+      readonly schema: string;
+      readonly from: string;
+      readonly to: string;
+    }
+  | {
+      readonly op: "swap-check";
+      readonly schema: string;
+      readonly table: string;
+      readonly name: string;
+      readonly expression: string;
+      readonly kind: "narrow-check" | "widen-check";
+    }
+  | {
+      readonly op: "rewrite-values";
+      readonly schema: string;
+      readonly table: string;
+      readonly column: string;
+      readonly from: string;
+      readonly to: string | null;
+      readonly cast: boolean;
+      /** Batch predicate. The planner owns the `$1` / `$2` header. */
+      readonly predicate: string;
+      /** Quoted key columns, in primary-key order. */
+      readonly key: readonly string[];
+      readonly batch: number;
+      readonly kind: "backfill-expand" | "backfill-contract";
     };
 
 /**

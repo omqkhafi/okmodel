@@ -5,19 +5,12 @@
  * schema because a rename is an author declaration, not a stored object.
  */
 
+import type { DeclaredRename } from "../../contracts/catalog/rename.js";
 import { ColumnBuilder } from "./column.js";
 import type { AnyTable } from "./table.js";
 import { snakeCase } from "./table.js";
 
-/** A rename the author declared on a table or a column. */
-export type DeclaredRename =
-  | { readonly kind: "table"; readonly from: string; readonly to: string }
-  | {
-      readonly kind: "column";
-      readonly table: string;
-      readonly from: string;
-      readonly to: string;
-    };
+export type { DeclaredRename };
 
 /** Renames collected from one schema. */
 export type SchemaDeclarations = {

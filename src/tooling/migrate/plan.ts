@@ -17,6 +17,12 @@ import { isDomain, sameEnumLabels } from "../../contracts/catalog/enum.js";
 import { fitIdentifier } from "../../contracts/catalog/identifier.js";
 import { identityKey, identityLabel, staticNamespace } from "../../contracts/catalog/identity.js";
 import { compareText } from "../../contracts/catalog/object.js";
+import {
+  identitySequence,
+  ownedByView,
+  uniqueBeforeForeignKey,
+} from "../../contracts/catalog/plan-order.js";
+import type { DeclaredRename } from "../../contracts/catalog/rename.js";
 import type {
   Catalog,
   CatalogObject,
@@ -28,17 +34,6 @@ import type {
   ViewColumn,
   ViewObject,
 } from "../../contracts/catalog/types.js";
-import type { DeclaredRename } from "../../dialects/pg/declarations.js";
-import {
-  createObjectSql,
-  dropObjectSql,
-  identitySequence,
-  ownedByView,
-  qualify,
-  quoteIdent,
-  uniqueBeforeForeignKey,
-} from "../../dialects/pg/ddl.js";
-import { quoteLiteral } from "../../dialects/pg/quote.js";
 import {
   formatBackfillHeader,
   keyRangePredicate,
@@ -191,10 +186,6 @@ type EnumEdit =
       readonly columns: readonly EnumColumn[];
     };
 
-const ACCESS = "ACCESS EXCLUSIVE";
-const SHARE_UPDATE = "SHARE UPDATE EXCLUSIVE";
-const ROW = "ROW EXCLUSIVE";
-
 /**
  * Builds a plan from catalog `before` to catalog `after`.
  *
@@ -320,7 +311,15 @@ export function planMigration(
   steps.push(...enumAddSteps(enums, schema, dialect));
   steps.push(...domainCheckSteps(beforeBy, afterBy, schema, dialect));
   steps.push(
-    ...expandBackfills(picklists, enums, replacements, schema, [renamed, request.after], batchSize),
+    ...expandBackfills(
+      picklists,
+      enums,
+      replacements,
+      schema,
+      [renamed, request.after],
+      batchSize,
+      dialect,
+    ),
   );
 
   const droppedTables = new Set(
@@ -337,9 +336,7 @@ export function planMigration(
   const emitDrop = (object: CatalogObject): void => {
     const key = identityKey(object.identity);
     if (!dropKeys.has(key) || deferred.has(key) || covered(object, droppedTables)) return;
-    const sql = dropObjectSql(object, schema);
-    const kind = dropKind(object);
-    if (sql === undefined || kind === undefined) return;
+    if (object.owner === "ignored" || dropKind(object) === undefined) return;
     if (object.kind === "table") {
       steps.push(...take(dialect.lower({ op: "drop-table", object, schema })));
       return;
@@ -381,7 +378,9 @@ export function planMigration(
       steps.push(...take(dialect.lower({ op: "drop-matview", object, schema })));
       return;
     }
-    steps.push(step(sql, kind, "ddl", ACCESS));
+    if (object.kind === "sequence") {
+      steps.push(...take(dialect.lower({ op: "drop-sequence", object, schema })));
+    }
   };
   // Triggers drop before functions even when the table drop would remove them.
   // View indexes, then views, drop before the tables they read. Never CASCADE.
@@ -531,17 +530,9 @@ export function planMigration(
       );
       continue;
     }
-    const sql = createObjectSql(object, schema);
-    const kind = createKind(object, tableIsNew);
-    if (sql === undefined || kind === undefined) continue;
-    if (!tableIsNew && parent !== undefined && hasTable(renamed, parent)) {
-      const safe = stepsForExistingTable(object, schema, [renamed, request.after], batchSize);
-      if (safe !== undefined) {
-        pushSafe(steps, safe);
-        continue;
-      }
+    if (object.kind === "sequence") {
+      steps.push(...take(dialect.lower({ op: "create-sequence", object, schema })));
     }
-    steps.push(step(sql, kind, "ddl", ACCESS));
   }
   steps.push(...replacementDrops);
   for (const object of creationOrder(request.after)) {
@@ -851,7 +842,7 @@ function renameSteps(
     steps.push(
       ...take(dialect.lower({ op: "rename-table", schema, from: rename.from, to: rename.to })),
     );
-    steps.push(...sequenceRenames(source, rename, schema));
+    steps.push(...sequenceRenames(source, rename, schema, dialect));
   }
   for (const rename of renames) {
     if (rename.kind !== "column") continue;
@@ -876,6 +867,7 @@ function sequenceRenames(
   source: Catalog,
   rename: { readonly from: string; readonly to: string },
   schema: string,
+  dialect: DdlDialect,
 ): PlanStep[] {
   const steps: PlanStep[] = [];
   for (const object of source.objects) {
@@ -889,12 +881,7 @@ function sequenceRenames(
     );
     if (!owned) continue;
     steps.push(
-      step(
-        `alter sequence ${qualify(schema, fromName)} rename to ${quoteIdent(toName)}`,
-        "rename-sequence",
-        "ddl",
-        ACCESS,
-      ),
+      ...take(dialect.lower({ op: "rename-sequence", schema, from: fromName, to: toName })),
     );
   }
   return steps;
@@ -1239,8 +1226,9 @@ function expandBackfills(
   schema: string,
   catalogs: readonly Catalog[],
   batchSize: number,
+  dialect: DdlDialect,
 ): PlanStep[] {
-  return dataSteps(picklists, enums, replacements, schema, catalogs, batchSize, "expand");
+  return dataSteps(picklists, enums, replacements, schema, catalogs, batchSize, "expand", dialect);
 }
 
 function contractSwaps(
@@ -1253,22 +1241,22 @@ function contractSwaps(
   dialect: DdlDialect,
 ): PlanStep[] {
   const steps: PlanStep[] = [];
-  steps.push(...dataSteps(picklists, enums, replacements, schema, catalogs, batchSize, "contract"));
+  steps.push(
+    ...dataSteps(picklists, enums, replacements, schema, catalogs, batchSize, "contract", dialect),
+  );
   for (const change of picklists) {
-    const table = qualify(schema, change.after.identity.parent.name);
-    const name = quoteIdent(change.after.identity.name);
-    const kind = change.removed.length > 0 ? "narrow-check" : "widen-check";
-    steps.push(step(`alter table ${table} drop constraint ${name}`, kind, "ddl", ACCESS));
-    const expression = change.after.definition.expression ?? "true";
     steps.push(
-      step(
-        `alter table ${table} add constraint ${name} check (${expression}) not valid`,
-        kind,
-        "ddl",
-        ACCESS,
+      ...take(
+        dialect.lower({
+          op: "swap-check",
+          schema,
+          table: change.after.identity.parent.name,
+          name: change.after.identity.name,
+          expression: change.after.definition.expression ?? "true",
+          kind: change.removed.length > 0 ? "narrow-check" : "widen-check",
+        }),
       ),
     );
-    steps.push(step(`alter table ${table} validate constraint ${name}`, kind, "ddl", SHARE_UPDATE));
   }
   for (const change of enums) {
     if (change.kind !== "replace") continue;
@@ -1298,21 +1286,43 @@ function dataSteps(
   catalogs: readonly Catalog[],
   batchSize: number,
   phase: "expand" | "contract",
+  dialect: DdlDialect,
 ): PlanStep[] {
   const steps: PlanStep[] = [];
   const kind = phase === "expand" ? "backfill-expand" : "backfill-contract";
+  const rewrite = (
+    table: string,
+    column: string,
+    from: string,
+    to: string | null,
+    cast: boolean,
+  ): void => {
+    const key = primaryKeyColumns(catalogs, table);
+    steps.push(
+      ...take(
+        dialect.lower({
+          op: "rewrite-values",
+          schema,
+          table,
+          column,
+          from,
+          to,
+          cast,
+          predicate: keyRangePredicate(key),
+          key: key.map((item) => item.quoted),
+          batch: batchSize,
+          kind,
+        }),
+      ),
+    );
+  };
   for (const change of picklists) {
     if (change.removed.length === 0) continue;
     const table = change.after.identity.parent.name;
     for (const value of change.removed) {
       const replacement = findReplacement(replacements, table, change.column, value);
       if (replacement === undefined) continue;
-      steps.push(
-        backfillStep(
-          updateSql(schema, table, change.column, value, replacement.to, catalogs, batchSize),
-          kind,
-        ),
-      );
+      rewrite(table, change.column, value, replacement.to, false);
     }
   }
   for (const change of enums) {
@@ -1322,21 +1332,7 @@ function dataSteps(
       for (const value of change.removed) {
         const replacement = findReplacement(replacements, column.table, column.column, value);
         if (replacement === undefined) continue;
-        steps.push(
-          backfillStep(
-            updateSql(
-              schema,
-              column.table,
-              column.column,
-              value,
-              replacement.to,
-              catalogs,
-              batchSize,
-              true,
-            ),
-            kind,
-          ),
-        );
+        rewrite(column.table, column.column, value, replacement.to, true);
       }
     }
   }
@@ -1885,42 +1881,6 @@ function overall(steps: readonly PlanStep[]): MigrationClass {
   return strictestClass(steps.map((item) => item.class));
 }
 
-function updateSql(
-  schema: string,
-  table: string,
-  column: string,
-  from: string,
-  to: string | null,
-  catalogs: readonly Catalog[],
-  batchSize: number,
-  cast = false,
-): { readonly sql: string; readonly backfill: BackfillSpec } {
-  const key = primaryKeyColumns(catalogs, table);
-  const qualified = qualify(schema, table);
-  const value = to === null ? "null" : quoteLiteral(to);
-  const compare = cast ? `${quoteIdent(column)}::text` : quoteIdent(column);
-  const where = `${compare} = ${quoteLiteral(from)}`;
-  const backfill: BackfillSpec = {
-    table: qualified,
-    key: key.map((item) => item.quoted),
-    batch: batchSize,
-  };
-  return {
-    sql: `update ${qualified} set ${quoteIdent(column)} = ${value} where ${where} and ${keyRangePredicate(key)}`,
-    backfill,
-  };
-}
-
-function backfillStep(
-  planned: { readonly sql: string; readonly backfill: BackfillSpec },
-  kind: StepKind,
-): PlanStep {
-  return {
-    ...step(planned.sql, kind, "backfill", ROW, false),
-    backfill: planned.backfill,
-  };
-}
-
 /**
  * An index drop waits until the new index on that table has been built.
  *
@@ -1978,35 +1938,6 @@ function pushSafe(steps: PlanStep[], safe: readonly SafeStep[]): void {
   }
 }
 
-function createKind(object: CatalogObject, tableIsNew: boolean): StepKind | undefined {
-  switch (object.kind) {
-    case "table":
-      return "create-table";
-    case "column":
-      return requiredColumn(object) && !tableIsNew ? "add-column-required" : "add-column";
-    case "index":
-      return "create-index";
-    case "constraint":
-      return "add-constraint";
-    case "sequence":
-      return "create-sequence";
-    case "type":
-      return isDomain(object.definition) ? "create-domain" : "create-enum";
-    case "extension":
-      return "create-extension";
-    case "function":
-      return "create-function";
-    case "trigger":
-      return "create-trigger";
-    case "view":
-      return "create-view";
-    case "materializedView":
-      return "create-matview";
-    default:
-      return undefined;
-  }
-}
-
 function dropKind(object: CatalogObject): StepKind | undefined {
   switch (object.kind) {
     case "table":
@@ -2034,16 +1965,6 @@ function dropKind(object: CatalogObject): StepKind | undefined {
     default:
       return undefined;
   }
-}
-
-function requiredColumn(column: ColumnObject): boolean {
-  const definition = column.definition;
-  return (
-    !definition.nullable &&
-    definition.defaultExpression === undefined &&
-    definition.identity === undefined &&
-    definition.generated === undefined
-  );
 }
 
 function stable(value: unknown): string {
