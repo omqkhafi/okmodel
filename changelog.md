@@ -137,6 +137,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `lint / pull request` assigns the open train milestone when `Closes #N` has none. `0.10.0-next.N` uses milestone `0.10`. The issue and the pull request both receive it.
 - A no-op CI event mirrors the last finished `gate / check` and skips a cancelled run, so two label events that cancel each other do not fail the gate when an earlier run succeeded.
 - A failed `CREATE INDEX CONCURRENTLY` is dropped before apply returns, so the target does not keep an INVALID index. When that drop fails, the error names the index and `DROP INDEX CONCURRENTLY`. A later apply still drops a leftover invalid index and rebuilds it (Q4, #391).
+- `testing()` drops the catalog it applied when the harness finishes, in reverse dependency order. An `ignored` object is left in place. `migrate: false` drops nothing (Q9, #396).
 
 ### 🔒 Security
 
