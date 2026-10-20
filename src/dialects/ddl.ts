@@ -13,6 +13,7 @@ import type {
   Catalog,
   ColumnObject,
   ConstraintObject,
+  IndexObject,
   TableObject,
 } from "../contracts/catalog/types.js";
 import type { MigrationClass, StepKind } from "./step-class.js";
@@ -111,8 +112,8 @@ export type DdlStep = {
  * One logical catalog change.
  *
  * A dialect returns zero or more physical steps for one variant. Table,
- * column, and constraint changes are the first family. Other families stay
- * `pending` until they move.
+ * column, constraint, and index changes are the first families. Other
+ * families stay `pending` until they move.
  */
 export type LogicalChange =
   | { readonly op: "pending" }
@@ -133,6 +134,12 @@ export type LogicalChange =
       readonly op: "rename-constraint";
       readonly schema: string;
       readonly table: string;
+      readonly from: string;
+      readonly to: string;
+    }
+  | {
+      readonly op: "rename-index";
+      readonly schema: string;
       readonly from: string;
       readonly to: string;
     }
@@ -170,6 +177,29 @@ export type LogicalChange =
       readonly schema: string;
       /** True when the parent table is created in this same plan. */
       readonly tableIsNew: boolean;
+    }
+  | {
+      readonly op: "create-index";
+      readonly index: IndexObject;
+      readonly schema: string;
+      /**
+       * True when the parent table already exists.
+       *
+       * The dialect chooses a non-blocking build when it can.
+       */
+      readonly onExistingTable: boolean;
+    }
+  | {
+      readonly op: "drop-index";
+      readonly index: IndexObject;
+      readonly schema: string;
+      /**
+       * True when the parent table remains.
+       *
+       * The dialect chooses a non-blocking drop when it can. The planner
+       * still decides whether that drop waits for a replacement build.
+       */
+      readonly onExistingTable: boolean;
     }
   | {
       readonly op: "alter-column";

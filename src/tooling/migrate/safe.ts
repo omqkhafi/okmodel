@@ -2,10 +2,9 @@
  * Safe DDL for a table that already exists (D193).
  *
  * A new table keeps the plain statements from `ddl.ts`. These shapes are only
- * for a table in the before-catalog: concurrent indexes, `NOT VALID` plus
- * `VALIDATE`, `SET NOT NULL` through a validated check, a volatile default
- * split from column creation, and a unique or primary key built from a
- * concurrent unique index.
+ * for a table in the before-catalog: `NOT VALID` plus `VALIDATE`, a volatile
+ * default split from column creation, and a unique or primary key built from
+ * a concurrent unique index. Index create and drop are lowered by the dialect.
  *
  * The volatile-default fill is a backfill: one idempotent `UPDATE` per batch,
  * limited to rows where the new column is still null (D195).
@@ -16,7 +15,6 @@ import type {
   CatalogObject,
   ColumnObject,
   ConstraintObject,
-  IndexObject,
 } from "../../contracts/catalog/types.js";
 import { createObjectSql, qualify, quoteIdent } from "../../dialects/pg/ddl.js";
 import { notNullSteps } from "../../dialects/pg/table-safe.js";
@@ -95,38 +93,11 @@ export function stepsForExistingTable(
   catalogs: readonly Catalog[],
   batchSize: number,
 ): readonly SafeStep[] | undefined {
-  if (object.kind === "index") return [concurrentIndexStep(object, schema)];
   if (object.kind === "constraint") return constraintSteps(object, schema);
   if (object.kind === "column" && volatileDefault(object.definition.defaultExpression, catalogs)) {
     return volatileColumnSteps(object, schema, catalogs, batchSize);
   }
   return undefined;
-}
-
-/**
- * Inserts `CONCURRENTLY` into a `CREATE INDEX` statement.
- *
- * @param sql - Plain `create index` or `create unique index` from `ddl.ts`
- * @returns The same statement, concurrent
- */
-export function concurrentIndexSql(sql: string): string {
-  const unique = "create unique index ";
-  const plain = "create index ";
-  if (sql.startsWith(unique)) return `create unique index concurrently ${sql.slice(unique.length)}`;
-  if (sql.startsWith(plain)) return `create index concurrently ${sql.slice(plain.length)}`;
-  return sql;
-}
-
-/**
- * Inserts `CONCURRENTLY` into a `DROP INDEX` statement.
- *
- * @param sql - Plain `drop index` from `ddl.ts`
- * @returns The same statement, concurrent
- */
-export function concurrentDropIndexSql(sql: string): string {
-  const prefix = "drop index ";
-  if (!sql.startsWith(prefix)) return sql;
-  return `drop index concurrently ${sql.slice(prefix.length)}`;
 }
 
 /**
@@ -153,17 +124,6 @@ export function volatileDefault(
     if (known.get(lower) === "volatile") return true;
   }
   return false;
-}
-
-function concurrentIndexStep(object: IndexObject, schema: string): SafeStep {
-  const plain = createObjectSql(object, schema) ?? "";
-  return {
-    sql: concurrentIndexSql(plain),
-    kind: "create-index",
-    action: "ddl",
-    lock: SHARE_UPDATE,
-    transactional: false,
-  };
 }
 
 function constraintSteps(object: ConstraintObject, schema: string): readonly SafeStep[] {
