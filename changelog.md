@@ -81,6 +81,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Table, column, and constraint changes lower through that dialect. One logical change can be several statements. Postgres plans stay the same, including a validated check before `SET NOT NULL` on an existing column.
 - Index create, drop, and rename lower through that dialect. Postgres still builds and drops an index on an existing table concurrently. The planner still waits to drop a replaced index until the new one is built. Plans stay the same.
 - Enum, domain, and extension changes lower through that dialect. Adding labels, replacing an enum, and swapping a domain check can be several statements. Postgres plans stay the same, including a non-transactional `ADD VALUE` and an unverified extension upgrade.
+- Function, trigger, view, policy, role, and grant changes lower through that dialect. One policy can be several statements. Postgres plans stay the same, including `CREATE OR REPLACE` for a compatible function or view body.
 
 ### 🔥 Removed
 

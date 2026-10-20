@@ -11,12 +11,18 @@
 
 import type {
   Catalog,
+  CatalogObject,
   ColumnObject,
   ConstraintObject,
   ExtensionObject,
+  FunctionObject,
   IndexObject,
+  MaterializedViewObject,
+  PolicyObject,
   TableObject,
+  TriggerObject,
   TypeObject,
+  ViewObject,
 } from "../contracts/catalog/types.js";
 import type { MigrationClass, StepKind } from "./step-class.js";
 
@@ -114,8 +120,9 @@ export type DdlStep = {
  * One logical catalog change.
  *
  * A dialect returns zero or more physical steps for one variant. Table,
- * column, constraint, index, type, and extension changes are the first
- * families. Other families stay `pending` until they move.
+ * column, constraint, index, type, extension, routine, view, policy, and
+ * privilege changes are the first families. Other families stay `pending`
+ * until they move.
  */
 export type LogicalChange =
   | { readonly op: "pending" }
@@ -262,6 +269,80 @@ export type LogicalChange =
       readonly op: "update-extension";
       readonly name: string;
       readonly version: string;
+    }
+  | {
+      readonly op: "create-function";
+      readonly object: FunctionObject;
+      readonly schema: string;
+    }
+  | {
+      readonly op: "drop-function";
+      readonly object: FunctionObject;
+      readonly schema: string;
+    }
+  | {
+      readonly op: "replace-function";
+      readonly object: FunctionObject;
+      readonly schema: string;
+    }
+  | {
+      readonly op: "create-trigger";
+      readonly object: TriggerObject;
+      readonly schema: string;
+    }
+  | {
+      readonly op: "drop-trigger";
+      readonly object: TriggerObject;
+      readonly schema: string;
+    }
+  | {
+      readonly op: "create-view";
+      readonly object: ViewObject;
+      readonly schema: string;
+    }
+  | {
+      readonly op: "drop-view";
+      readonly object: ViewObject;
+      readonly schema: string;
+    }
+  | {
+      readonly op: "replace-view";
+      readonly object: ViewObject;
+      readonly schema: string;
+    }
+  | {
+      readonly op: "create-matview";
+      readonly object: MaterializedViewObject;
+      readonly schema: string;
+    }
+  | {
+      readonly op: "drop-matview";
+      readonly object: MaterializedViewObject;
+      readonly schema: string;
+    }
+  | {
+      readonly op: "refresh-matview";
+      readonly object: MaterializedViewObject;
+      readonly schema: string;
+    }
+  | {
+      readonly op: "create-policy";
+      readonly object: PolicyObject;
+      readonly schema: string;
+    }
+  | {
+      readonly op: "drop-policy";
+      readonly object: PolicyObject;
+      readonly schema: string;
+    }
+  | {
+      readonly op: "privileges";
+      readonly phase: "revoke" | "prepare" | "grant";
+      readonly before: readonly CatalogObject[];
+      readonly after: readonly CatalogObject[];
+      readonly schema: string;
+      /** Identity keys this plan drops and creates again. */
+      readonly recreated: readonly string[];
     };
 
 /**
