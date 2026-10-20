@@ -72,6 +72,8 @@ import {
 } from "./safe.js";
 import { sqlQuoteOpen } from "./sql-lex.js";
 import { canonicalTypeName } from "./type-name.js";
+import type { DdlDialect } from "../../dialects/ddl.js";
+import { postgresDialect } from "./postgres-dialect.js";
 import { assertNoChains, type Replacement } from "./values.js";
 
 export type { MigrationClass, StepKind };
@@ -210,15 +212,23 @@ const ROW = "ROW EXCLUSIVE";
 /**
  * Builds a plan from catalog `before` to catalog `after`.
  *
- * @param request - Catalogs, declared renames, and `--replace` flags
+ * `dialect` lowers logical changes and answers feature questions.
+ * The default is Postgres. Callers that omit it keep the Postgres plan.
+ *
+ * @param input - Catalogs, declared renames, and `--replace` flags
+ * @param dialect - DDL lowering. Defaults to Postgres
  * @returns Steps in apply order, with one class for the plan
  */
-export function planMigration(input: PlanRequest): MigrationPlan {
+export function planMigration(
+  input: PlanRequest,
+  dialect: DdlDialect = postgresDialect,
+): MigrationPlan {
   const request: PlanRequest = {
     ...input,
     before: omitManagedObjects(input.before),
     after: omitManagedObjects(input.after),
   };
+  askDialect(dialect, request.after);
   const schema = request.schema ?? "public";
   const batchSize = resolveBatchSize(request.batchSize);
   const renames = request.renames ?? [];
@@ -558,6 +568,21 @@ export function planMigration(input: PlanRequest): MigrationPlan {
     class: overall(steps),
     steps,
   };
+}
+
+/**
+ * Asks the dialect which features `catalog` uses.
+ *
+ * A refused feature throws OKM1860 from the dialect. Native features do not
+ * change the plan. The planner does not import the feature registry.
+ *
+ * @param dialect - Lowering object for this plan
+ * @param catalog - Catalog after managed tables are omitted
+ */
+function askDialect(dialect: DdlDialect, catalog: Catalog): void {
+  const features = dialect.featuresUsed(catalog);
+  const refused = features.filter((feature) => dialect.support(feature) === "refused");
+  dialect.refuseUnsupported(refused.length > 0 ? refused : features);
 }
 
 /**
