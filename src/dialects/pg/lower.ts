@@ -1,9 +1,9 @@
 /**
  * Postgres DDL lowering.
  *
- * Table, column, and constraint changes return every physical statement
- * for that one logical change. Other families stay in the planner until
- * they move here. Output for a catalog pair stays the recorded plan.
+ * Table, column, constraint, and index changes return every physical
+ * statement for that one logical change. Other families stay in the planner
+ * until they move here. Output for a catalog pair stays the recorded plan.
  */
 
 import { OkmError } from "../../contracts/error.js";
@@ -12,6 +12,7 @@ import type {
   CatalogObject,
   ColumnObject,
   ConstraintObject,
+  IndexObject,
 } from "../../contracts/catalog/types.js";
 import { ddlStep } from "../ddl-step.js";
 import type { DdlStep, LogicalChange } from "../ddl.js";
@@ -27,6 +28,8 @@ import {
 import { notNullSteps } from "./table-safe.js";
 
 const ACCESS = "ACCESS EXCLUSIVE";
+const SHARE = "SHARE";
+const SHARE_UPDATE = "SHARE UPDATE EXCLUSIVE";
 
 /**
  * Lowers one logical change to Postgres statements.
@@ -65,6 +68,15 @@ export function lowerPostgres(change: LogicalChange): readonly DdlStep[] {
           ACCESS,
         ),
       ];
+    case "rename-index":
+      return [
+        ddlStep(
+          `alter index ${qualify(change.schema, change.from)} rename to ${quoteIdent(change.to)}`,
+          "rename-index",
+          "ddl",
+          SHARE_UPDATE,
+        ),
+      ];
     case "drop-table":
     case "drop-column":
     case "drop-constraint":
@@ -82,6 +94,10 @@ export function lowerPostgres(change: LogicalChange): readonly DdlStep[] {
       return addColumn(change.column, change.schema, change.tableIsNew);
     case "add-constraint":
       return addConstraint(change.constraint, change.schema);
+    case "create-index":
+      return createIndex(change.index, change.schema, change.onExistingTable);
+    case "drop-index":
+      return dropIndex(change.index, change.schema, change.onExistingTable);
     case "alter-column":
       return alterColumn(change.before, change.after, change.schema, change.catalogs);
     default:
@@ -118,6 +134,54 @@ function addConstraint(constraint: ConstraintObject, schema: string): readonly D
   const sql = createObjectSql(constraint, schema);
   if (sql === undefined) return [];
   return [ddlStep(sql, "add-constraint", "ddl", ACCESS)];
+}
+
+function createIndex(
+  index: IndexObject,
+  schema: string,
+  onExistingTable: boolean,
+): readonly DdlStep[] {
+  const sql = createObjectSql(index, schema);
+  if (sql === undefined) return [];
+  if (!onExistingTable) return [ddlStep(sql, "create-index", "ddl", SHARE)];
+  return [
+    {
+      ...ddlStep(concurrentIndexSql(sql), "create-index", "ddl", SHARE_UPDATE, false),
+      safeRewrite: true,
+    },
+  ];
+}
+
+function dropIndex(
+  index: IndexObject,
+  schema: string,
+  onExistingTable: boolean,
+): readonly DdlStep[] {
+  const sql = dropObjectSql(index, schema);
+  if (sql === undefined) return [];
+  if (!onExistingTable) return [ddlStep(sql, "drop-index", "ddl", ACCESS)];
+  return [
+    {
+      ...ddlStep(concurrentDropIndexSql(sql), "drop-index", "ddl", SHARE_UPDATE, false, [
+        index.identity.parent.name,
+      ]),
+      safeRewrite: true,
+    },
+  ];
+}
+
+function concurrentIndexSql(sql: string): string {
+  const unique = "create unique index ";
+  const plain = "create index ";
+  if (sql.startsWith(unique)) return `create unique index concurrently ${sql.slice(unique.length)}`;
+  if (sql.startsWith(plain)) return `create index concurrently ${sql.slice(plain.length)}`;
+  return sql;
+}
+
+function concurrentDropIndexSql(sql: string): string {
+  const prefix = "drop index ";
+  if (!sql.startsWith(prefix)) return sql;
+  return `drop index concurrently ${sql.slice(prefix.length)}`;
 }
 
 function requiredColumn(column: ColumnObject): boolean {

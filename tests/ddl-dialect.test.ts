@@ -7,7 +7,7 @@ import { expect, test } from "bun:test";
 import { OkmError } from "../src/contracts/error.js";
 import type { DdlDialect } from "../src/dialects/ddl.js";
 import { ddlStep } from "../src/dialects/ddl-step.js";
-import { schema, table, t } from "../src/dialects/pg/index.js";
+import { index, schema, table, t } from "../src/dialects/pg/index.js";
 import { formatPlan, parsePlan, planMigration } from "../src/tooling/migrate/plan.js";
 import { postgresDialect } from "../src/tooling/migrate/postgres-dialect.js";
 
@@ -72,6 +72,52 @@ test("one logical column add can lower to three physical steps", () => {
   expect(plan.steps.indexOf(notes[0]!)).toBeLessThan(plan.steps.indexOf(flags[0]!));
   expect(notes.map((item) => item.class)).toEqual(["expand", "expand", "expand"]);
   expect(notes[2]?.lock).toBe("SHARE");
+  const parsed = parsePlan(formatPlan(plan));
+  expect(parsed.steps.map((item) => item.sql)).toEqual(plan.steps.map((item) => item.sql));
+  expect(parsed.class).toBe(plan.class);
+});
+
+test("one logical index create can lower to two steps and a deferred drop stays after them", () => {
+  const before = schema({
+    tables: [
+      table(
+        "tasks",
+        { id: t.integer().primaryKey(), title: t.text() },
+        { indexes: (columns) => [index(columns.title)] },
+      ),
+    ],
+  }).catalog;
+  const after = schema({
+    tables: [
+      table(
+        "tasks",
+        { id: t.integer().primaryKey(), title: t.text() },
+        { indexes: (columns) => [index(columns.id)] },
+      ),
+    ],
+  }).catalog;
+  const dialect: DdlDialect = {
+    ...postgresDialect,
+    lower(change) {
+      if (change.op !== "create-index") return postgresDialect.lower(change);
+      const name = change.index.identity.name;
+      return [1, 2].map((part) =>
+        ddlStep(
+          `create index "${name}_${String(part)}" on "public"."tasks" ("title")`,
+          "create-index",
+          "ddl",
+          "SHARE",
+        ),
+      );
+    },
+  };
+  const plan = planMigration({ before, after, name: "swap" }, dialect);
+  const creates = plan.steps.filter((item) => item.kind === "create-index");
+  const drops = plan.steps.filter((item) => item.kind === "drop-index");
+  expect(creates).toHaveLength(2);
+  expect(drops).toHaveLength(1);
+  expect(plan.steps.indexOf(creates[1]!)).toBeLessThan(plan.steps.indexOf(drops[0]!));
+  expect(creates.map((item) => item.class)).toEqual(["expand", "expand"]);
   const parsed = parsePlan(formatPlan(plan));
   expect(parsed.steps.map((item) => item.sql)).toEqual(plan.steps.map((item) => item.sql));
   expect(parsed.class).toBe(plan.class);

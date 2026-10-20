@@ -62,7 +62,7 @@ import {
 } from "./classify.js";
 import { extensionAlterSteps } from "./extensions.js";
 import { omitManagedObjects } from "./managed.js";
-import { concurrentDropIndexSql, stepsForExistingTable, type SafeStep } from "./safe.js";
+import { stepsForExistingTable, type SafeStep } from "./safe.js";
 import { sqlQuoteOpen } from "./sql-lex.js";
 import { canonicalTypeName } from "./type-name.js";
 import type { DdlDialect, DdlStep } from "../../dialects/ddl.js";
@@ -199,7 +199,6 @@ type EnumEdit =
     };
 
 const ACCESS = "ACCESS EXCLUSIVE";
-const SHARE = "SHARE";
 const SHARE_UPDATE = "SHARE UPDATE EXCLUSIVE";
 const ROW = "ROW EXCLUSIVE";
 
@@ -349,18 +348,17 @@ export function planMigration(
       steps.push(...take(dialect.lower({ op: "drop-constraint", object, schema })));
       return;
     }
-    if (object.kind === "index" && hasTable(renamed, object.identity.parent.name)) {
-      const planned: PlanStep = {
-        ...step(concurrentDropIndexSql(sql), "drop-index", "ddl", SHARE_UPDATE, false, [
-          object.identity.parent.name,
-        ]),
-        safeRewrite: true,
-      };
+    if (object.kind === "index") {
+      const onExistingTable = hasTable(renamed, object.identity.parent.name);
+      const lowered = take(
+        dialect.lower({ op: "drop-index", index: object, schema, onExistingTable }),
+      );
       // A different name can be built first. The old index stays until that
       // build finishes, so the swap is not a blocking rebuild. A same-name
       // change still drops first: Postgres will not create the name twice.
-      if (deferIndexDrop(object, createKeys, afterBy)) replacementDrops.push(planned);
-      else steps.push(planned);
+      if (onExistingTable && deferIndexDrop(object, createKeys, afterBy)) {
+        replacementDrops.push(...lowered);
+      } else steps.push(...lowered);
       return;
     }
     steps.push(step(sql, kind, "ddl", ACCESS));
@@ -480,6 +478,13 @@ export function planMigration(
       );
       continue;
     }
+    if (object.kind === "index") {
+      const onExistingTable = !tableIsNew && parent !== undefined && hasTable(renamed, parent);
+      steps.push(
+        ...take(dialect.lower({ op: "create-index", index: object, schema, onExistingTable })),
+      );
+      continue;
+    }
     if (object.kind === "column" || object.kind === "constraint") {
       if (!tableIsNew && parent !== undefined && hasTable(renamed, parent)) {
         const safe = stepsForExistingTable(object, schema, [renamed, request.after], batchSize);
@@ -507,7 +512,7 @@ export function planMigration(
         continue;
       }
     }
-    steps.push(step(sql, kind, "ddl", object.kind === "index" ? SHARE : ACCESS));
+    steps.push(step(sql, kind, "ddl", ACCESS));
   }
   steps.push(...replacementDrops);
   for (const object of creationOrder(request.after)) {
@@ -551,14 +556,13 @@ export function planMigration(
     }
   }
   for (const object of creationOrder(request.after)) {
-    if (!ownedByView(object)) continue;
+    if (object.kind !== "index" || !ownedByView(object)) continue;
     const key = identityKey(object.identity);
     if (!createKeys.has(key) || emitted.has(key)) continue;
     emitted.add(key);
-    const sql = createObjectSql(object, schema);
-    const kind = createKind(object, false);
-    if (sql === undefined || kind === undefined) continue;
-    steps.push(step(sql, kind, "ddl", SHARE));
+    steps.push(
+      ...take(dialect.lower({ op: "create-index", index: object, schema, onExistingTable: false })),
+    );
   }
   for (const object of creationOrder(request.after)) {
     if (object.kind !== "materializedView") continue;
@@ -917,12 +921,20 @@ function renameShapeStep(
   dialect: DdlDialect,
 ): PlanStep {
   if (pair.from.kind === "index" && pair.to.kind === "index") {
-    return step(
-      `alter index ${qualify(schema, pair.from.identity.name)} rename to ${quoteIdent(pair.to.identity.name)}`,
-      "rename-index",
-      "ddl",
-      SHARE_UPDATE,
+    const [planned] = take(
+      dialect.lower({
+        op: "rename-index",
+        schema,
+        from: pair.from.identity.name,
+        to: pair.to.identity.name,
+      }),
     );
+    if (planned === undefined) {
+      throw new OkmError("invalid", "An index rename did not lower to a statement.", {
+        fix: { summary: "The dialect returns one rename statement for an index." },
+      });
+    }
+    return planned;
   }
   if (pair.from.kind !== "constraint" || pair.to.kind !== "constraint") {
     throw new OkmError("invalid", "A same-shape rename is an index or a constraint.", {
