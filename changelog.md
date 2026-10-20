@@ -51,7 +51,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### ♻️ Changed
 
-- CI installs Bun 1.4.3. The kill-storm wedge in Bun.sql is still there on that version. The pack snapshot matches a Bun 1.4.3 build.
+- CI reads Bun `1.4.3` from `.bun-version`. The kill-storm wedge in Bun.sql is still there on that version.
+- `bun run pack-contract` stores Bun content-hash chunks as `dist/shared/*.js` and `dist/tooling/shared/*.js`. The count of each name stays exact, so a different hash passes and a new or removed chunk fails. `bun run verify:fast` warns when the local Bun differs and still exits 0.
 - `gate / check` always runs (`if: always()`), keys concurrency on the pull request number (or the commit on `main`), and requires the full tier for `full-ci`, a `chore(release)` title, a change under `.github/workflows`, or a push to `main`. A no-op label event mirrors the last gate result for that commit instead of reporting Success from a skipped job. Plan: [docs/ci-and-test-cycle-plan.md](docs/ci-and-test-cycle-plan.md).
 - The drivers CI group is three shards (`drivers suite`, `drivers rest`, `drivers-conformance`). The pglite conformance report and the live compatibility table check sit on the conformance shard; the fast path keeps a cheap case-list sync. Driver and error suites open PGlite from a prepared data directory instead of running initdb on every pool.
 - postgres.js kill-storm uncaught exceptions are documented as an upstream limit (B-02): a minimal postgres.js-only reproduction lives in `docs/postgresjs-kill-storm.md`, known-limits and the Drivers page recommend `okmodel/pg/pg` or `okmodel/pg/bun` where failover is expected, and the adapter's process listener is described as damage control rather than a fix.
