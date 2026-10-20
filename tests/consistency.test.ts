@@ -1065,8 +1065,6 @@ function recordingPool(): DriverPool {
       stream: false,
       listen: false,
       cancel: false,
-      prepared: "unnamed",
-      describe: false,
     },
     execute(text) {
       if (text.startsWith("select current_setting")) {

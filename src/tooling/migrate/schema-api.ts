@@ -12,6 +12,10 @@ import { canonicalJson, type Json } from "../../contracts/catalog/json.js";
 import { parseCatalog, serializeCatalog } from "../../contracts/catalog/document.js";
 import type { Catalog } from "../../contracts/catalog/types.js";
 import { isPostgresMajor, type PostgresMajor } from "../../dialects/pg/floor.js";
+import { emulationOf } from "../capabilities/check.js";
+import { POSTGRES_FEATURES } from "../capabilities/postgres.js";
+import type { EmulatedNote } from "../capabilities/types.js";
+import { featuresUsed } from "../capabilities/used.js";
 import { LOGICAL_FORMAT, type LogicalIdentity } from "./export.js";
 import {
   declaredFloor,
@@ -36,11 +40,27 @@ const LOGICAL_NAMESPACE = "public";
  * `minPostgres` is the lowest major that supports every feature the schema
  * uses. `extensions` lists each required extension and why it is needed.
  */
+/**
+ * What a schema needs from one dialect.
+ *
+ * `minVersion.postgres` is {@link SchemaDescription.minPostgres}. `extensions`
+ * is the same list as {@link SchemaDescription.extensions}. `features` is
+ * recomputed from the catalog. `emulated` is empty when every used feature
+ * is native.
+ */
+export type SchemaRequirements = {
+  readonly minVersion: { readonly postgres: PostgresMajor };
+  readonly extensions: readonly RequiredExtension[];
+  readonly features: readonly string[];
+  readonly emulated: readonly EmulatedNote[];
+};
+
 export type SchemaDescription = {
   readonly logical: LogicalIdentity;
   readonly catalog: Catalog;
   readonly minPostgres: PostgresMajor;
   readonly extensions: readonly RequiredExtension[];
+  readonly requirements: SchemaRequirements;
 };
 
 export type { RequiredExtension };
@@ -69,6 +89,13 @@ export function describe(schema: {
     ? (Math.max(carried, computed) as PostgresMajor)
     : computed;
   const extensions = requiredExtensions(source);
+  const features = featuresUsed(source);
+  const requirements: SchemaRequirements = {
+    emulated: emulationOf(features, POSTGRES_FEATURES),
+    extensions,
+    features,
+    minVersion: { postgres: floor },
+  };
   const text = canonicalJson({
     catalog: document,
     extensions,
@@ -78,6 +105,7 @@ export function describe(schema: {
       namespace: LOGICAL_NAMESPACE,
     },
     minPostgres: floor,
+    requirements,
   });
   return JSON.parse(text) as SchemaDescription;
 }

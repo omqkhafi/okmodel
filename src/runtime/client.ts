@@ -197,6 +197,7 @@ export function openClient<S extends QuerySchema>(session: Session): Connected<S
     },
     close,
     connected: session.connected,
+    capabilities: session.pool.capabilities,
     tx: (...args: unknown[]) => import("./transaction.js").then((mod) => mod.tx(session, args)),
     batch: (ops: unknown, options?: object) => batchHandle(session, ops, options),
     ...session.tx?.extras,

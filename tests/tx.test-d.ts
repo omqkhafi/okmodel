@@ -4,6 +4,7 @@
 
 import { expectTypeOf } from "expect-type";
 
+import type { DriverCapabilities } from "../src/contracts/driver.js";
 import { schema, table, t } from "../src/dialects/pg/index.js";
 import type { Connected, TxClient, TxOptions } from "../src/runtime/types.js";
 import { tenantApp } from "./presets-schema.js";
@@ -11,6 +12,8 @@ import { tenantApp } from "./presets-schema.js";
 const accounts = table("accounts", { id: t.text().primaryKey(), balance: t.integer() });
 const app = schema({ casing: "snake", tables: [accounts] });
 type Db = Connected<typeof app>;
+
+expectTypeOf<Db["capabilities"]>().toEqualTypeOf<DriverCapabilities>();
 type Tx = TxClient<typeof app>;
 type Has<T, K extends string> = K extends keyof T ? true : false;
 

@@ -27,8 +27,6 @@ const pool = {
     stream: false,
     listen: false,
     cancel: false,
-    prepared: "unnamed",
-    describe: false,
   },
   execute: () => Promise.resolve({ rows: [], count: 0, notices: [] }),
   batch: () => Promise.resolve([]),

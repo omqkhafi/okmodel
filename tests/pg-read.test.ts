@@ -352,8 +352,6 @@ test("values stay parameters", async () => {
       stream: false,
       listen: false,
       cancel: false,
-      prepared: "unnamed",
-      describe: false,
     },
     execute: () => Promise.resolve({ rows: [["170000", "PostgreSQL 17"]], count: 1, notices: [] }),
     batch: () => Promise.resolve([]),
@@ -383,8 +381,6 @@ test("requireMeta makes a missing okm_meta OKM1520 and toHttp uses connect statu
       stream: false,
       listen: false,
       cancel: false,
-      prepared: "unnamed",
-      describe: false,
     },
     execute: () =>
       Promise.resolve({ rows: [["170000", "PostgreSQL 17", null]], count: 1, notices: [] }),

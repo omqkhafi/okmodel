@@ -275,7 +275,7 @@ import { table, t } from "okmodel/sql";   // common subset
 |---|---|---|
 | Dialect | import path | types |
 | Engine version | `minPostgres: 17` — the minimum gates features. Omitted means 15. `requires: { postgres: ">=17" }` is deprecated | types (OKM1110) + connect (OKM1802). In 0.2 nothing is gated in types: an explicit `uuidv7()` below 18 fails when the schema is built (OKM1812). A bare `t.id()` stores `gen_random_uuid()` (D262). OKM1110 is not thrown yet (D183, D261) |
-| Driver | execution capabilities only: `transactions: "interactive" \| "batch"`, `stream`, `listen`, `cancel`, `prepared: "named" \| "unnamed" \| "none"`, `describe`. Atomic `batch` is not a flag: every driver provides it (section 15). `stream` means the driver can open a server cursor. `.stream()` does not read it (section 10, D256). `listen` is a capability flag on the driver contract only; there is no `client.listen` / `db.listen` in this version | types (`tx()` and cancellation are absent from the client type when the driver lacks them; a dynamic call fails with an OKM error at runtime). `.stream()` is on every driver |
+| Driver | execution capabilities only: `transactions: "interactive" \| "batch" \| "none"`, `stream`, `listen`, `cancel`. The connected client exposes that frozen object as `client.capabilities`. Atomic `batch` is not a flag: every driver provides it (section 15). `stream` means the driver can open a server cursor. `.stream()` does not read it (section 10, D256). `listen` is a capability flag on the driver contract only; there is no `client.listen` / `db.listen` in this version. Prepared-statement mode is a connect option (`prepared: "named" \| "unnamed" \| "none"`), not a capability flag. Statement describe is `pool.describe` when the driver has it, and is not a flag | `tx()` throws OKM1111 at runtime when `transactions` is not `"interactive"`. `.stream()` is on every driver. Server version is unknown at type-check time, so `tx` is not omitted from the client type |
 
 Dialect and driver are different axes: SQL capabilities (`lateral`, `returning`, `SKIP LOCKED`, generated columns) belong to the dialect and engine version; every driver on one dialect sends the same SQL. Neon over HTTP is `transactions: "batch"` on the same Postgres dialect. Reading WAL positions (`pg_current_wal_insert_lsn()`, `pg_last_wal_replay_lsn()`) is plain SQL, so it is a dialect and engine capability (`replication.position`), not a driver flag.
 
@@ -1674,6 +1674,7 @@ test("today view runs one query", async () => {
 | `okm import drizzle` cannot resolve `drizzle-orm` from the project | CLI | OKM1856 |
 | `okm migrate baseline` on a target that already has OKModel history | CLI / engine | OKM1857 |
 | `okm migrate baseline` when the live database does not match the model snapshot | CLI / engine | OKM1858 |
+| Dialect registry refuses a feature the schema uses | `okm build` / `okm check` / `okm doctor` | OKM1860 |
 
 ## 22. Non-goals
 

@@ -26,6 +26,9 @@ import {
 } from "../../contracts/catalog/document.js";
 import { sha256 } from "../../contracts/sha256.js";
 import { OkmError } from "../../contracts/error.js";
+import { assertSupported, formatEmulation } from "../capabilities/check.js";
+import { POSTGRES_FEATURES } from "../capabilities/postgres.js";
+import { featuresUsed } from "../capabilities/used.js";
 import { errorDoc } from "../errors/registry.js";
 import { assertValidation, writeWouldValidate } from "../../runtime/validate/places.js";
 import { schemaDeclarations, type DeclaredRename } from "../../dialects/pg/declarations.js";
@@ -79,13 +82,18 @@ type Previous = {
  * Validates the schema and writes `.okm/`.
  *
  * @param project - Project directory or {@link ProjectContext}
- * @returns The output directory
+ * @returns The output directory and emulation notes. Notes are empty when every used feature is native
  */
-export async function buildProject(project: string | ProjectContext): Promise<string> {
+export async function buildProject(
+  project: string | ProjectContext,
+): Promise<{ readonly directory: string; readonly emulation: string }> {
   const { cwd } = asProject(project);
   const config = await loadConfig(project);
-  const built = await loadSchema(cwd, config.schema);
-  return writeArtifact(cwd, config, withRoles(built, config, cwd));
+  const built = withRoles(await loadSchema(cwd, config.schema), config, cwd);
+  return {
+    directory: writeArtifact(cwd, config, built),
+    emulation: featureNotes(built.catalog),
+  };
 }
 
 /**
@@ -163,6 +171,11 @@ export type CheckProjectResult = {
    * Server major, extension, and drift checks did not run.
    */
   readonly notice?: string;
+  /**
+   * Emulated features this schema uses. Absent when there are none.
+   * A refused feature throws OKM1860 before this returns.
+   */
+  readonly emulation?: string;
 };
 
 /**
@@ -191,6 +204,7 @@ export async function checkProject(
 ): Promise<CheckProjectResult> {
   const opened = await openProject(project);
   const { cwd } = opened;
+  const emulation = featureNotes(opened.built.catalog);
   assertValidation(opened.built);
   if (schemaRequestsValidation(opened.built) && !projectImportsValidate(cwd)) {
     const doc = errorDoc("OKM1201");
@@ -214,10 +228,10 @@ export async function checkProject(
   const findings = [...lintOpened(opened), ...couplingFindings(opened.built.catalog)];
   if (hasError(findings)) throw lintRefusal(findings);
   const named = flags?.target;
-  if (targets.length === 0) return { findings };
+  if (targets.length === 0) return checked({ findings }, emulation);
   if (targets.length > 1 && named === undefined) {
     const { serverChecksSkippedNotice } = await import("./server-requirements.js");
-    return { findings, notice: serverChecksSkippedNotice(targets.length) };
+    return checked({ findings, notice: serverChecksSkippedNotice(targets.length) }, emulation);
   }
   const target = selectTarget(opened.config, named);
   assertTargetPolicy(target, "check", flags?.allowProtected ?? false);
@@ -233,7 +247,22 @@ export async function checkProject(
   await assertSchemaMajor(target.url, opened.built);
   await assertAuthorDrift(target.url, opened.built.catalog, opened.config.roles, allowPooler);
   await assertSchemaExtensions(target.url, opened.built, created);
-  return { findings };
+  return checked({ findings }, emulation);
+}
+
+/**
+ * Postgres features this catalog uses, or OKM1860 when one is refused.
+ *
+ * @param catalog - Catalog about to be written or checked
+ * @returns Emulation notes, or `""` when every used feature is native
+ */
+function featureNotes(catalog: Catalog): string {
+  return formatEmulation(assertSupported(featuresUsed(catalog), POSTGRES_FEATURES, "postgres"));
+}
+
+function checked(result: CheckProjectResult, emulation: string): CheckProjectResult {
+  if (emulation.length === 0) return result;
+  return { ...result, emulation };
 }
 
 /**

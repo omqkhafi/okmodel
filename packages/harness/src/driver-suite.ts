@@ -86,6 +86,12 @@ export type DriverSuite = {
   /** Flags the opener declares. Undeclared cases are skipped. */
   readonly capabilities: DriverCapabilities;
   /**
+   * The pool can describe a statement without running it.
+   *
+   * This is not a capability flag. Omitted skips the describe case.
+   */
+  readonly statementDescribe?: boolean;
+  /**
    * When false, the notice case is skipped.
    *
    * Omitted means the driver returns server notices. Bun.sql does not.
@@ -379,14 +385,17 @@ export function registerDriverSuite(suite: DriverSuite): void {
     }
   }, 10_000);
 
-  optional(suite.capabilities.describe, "describe")(`${name} describes a statement`, async () => {
-    await using(suite.open, async (pool) => {
-      if (pool.describe === undefined) throw new DriverError("describe is not on the pool");
-      const described = await pool.describe("SELECT $1::int AS n");
-      expect(described.columns).toEqual(["n"]);
-      expect(described.parameterCount).toBe(1);
-    });
-  });
+  optional(suite.statementDescribe === true, "describe")(
+    `${name} describes a statement`,
+    async () => {
+      await using(suite.open, async (pool) => {
+        if (pool.describe === undefined) throw new DriverError("describe is not on the pool");
+        const described = await pool.describe("SELECT $1::int AS n");
+        expect(described.columns).toEqual(["n"]);
+        expect(described.parameterCount).toBe(1);
+      });
+    },
+  );
 
   optional(suite.capabilities.stream, "stream")(`${name} streams rows`, async () => {
     await using(suite.open, async (pool) => {

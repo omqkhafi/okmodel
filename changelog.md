@@ -14,6 +14,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+### 💥 Breaking Changes
+
+- `DriverCapabilities` no longer includes `prepared` or `describe`. Prepared-statement mode stays a connect option. A driver that can describe a statement still exposes `pool.describe`.
+
 ### behaviour changes
 
 - Indexes on a tenant table lead with the tenant key (`indexes: true`, the default). A unique index is unique per tenant, so two tenants may share a value. `tenantIndexes: false` turns the prefix off for one table. `.global("reason")` opts one index out (an empty reason is refused) and `.scoped()` opts one index in. The nearest level wins. An index that already leads with the key is unchanged, and the next `okm generate` writes nothing. An index that does not is replaced once: `CREATE INDEX CONCURRENTLY` for the new index, then `DROP INDEX CONCURRENTLY` for the old one. That is not a blocking rebuild, and `okm migrate check` accepts it (Q3, D306, #390). OKM1706 stays when prefixing is off.
@@ -26,10 +30,12 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### runtime
 
+- A connected client exposes `capabilities`, the same frozen object as the pool (`transactions`, `stream`, `listen`, `cancel`).
 - `update({ where, set, limit, lock: "skip", version: "any" })` on a `versioned()` table skips the version check, bumps `version` by 1, and returns the claimed rows. A miss is an empty array. `version` stays required on every other versioned update. `version: "any"` without `lock: "skip"` and `limit`, an unrecognised version string, and a `version` key in `set` are OKM1120 (Q6, O-5, #393).
 
 #### tooling
 
+- `describe(schema).requirements` reports `minVersion.postgres` (the same floor as `minPostgres`), the extension list, the catalog features the schema uses, and a cost line for each emulated feature. `okm build`, `okm check`, and `okm doctor` compare that list with the Postgres registry exported from `okmodel/migrate`. A refused feature stops with OKM1860 and names the dialect, the feature, the first version that would support it, and the portable alternative.
 - Global `--config <path>` on every `okm` command that loads a config; default discovery stays `okmodel.config.ts`. A missing file names that path and `--config`.
 - `plan`, `apply`, and `status` on `okmodel/migrate` share the CLI migrate engine for CI and deploy without shelling out (D298).
 - `okm migrate baseline` and `baseline(target)` from `okmodel/migrate` record the head snapshot as applied history on an existing database without DDL (D299). A managed mismatch is OKM1858 with the reconcile plan; unmanaged objects are reported and left alone; existing history is OKM1857; a protected target needs `--allow-protected`.

@@ -14,6 +14,9 @@ import { open } from "../../adapters/pg/postgresjs.js";
 import { OkmError } from "../../contracts/error.js";
 import type { CatalogObject } from "../../contracts/catalog/types.js";
 import { assertRoleHealth } from "../../dialects/pg/role/check.js";
+import { assertSupported, formatEmulation } from "../capabilities/check.js";
+import { POSTGRES_FEATURES } from "../capabilities/postgres.js";
+import { featuresUsed } from "../capabilities/used.js";
 import { errorDoc } from "../errors/registry.js";
 import { omitManagedObjects } from "./managed.js";
 import { assertTargetPolicy, listTargets, selectTarget, type InvokeFlags } from "./policy.js";
@@ -55,6 +58,9 @@ export async function doctorProject(
     return `${doc.code}: ${doc.title}\n${doc.summary}\n${doc.fix}\n`;
   }
   const opened = await openProject(project);
+  const emulation = formatEmulation(
+    assertSupported(featuresUsed(opened.built.catalog), POSTGRES_FEATURES, "postgres"),
+  );
   const objects = omitManagedObjects(opened.built.catalog).objects;
   const targets = listTargets(opened.config);
   let notice = "";
@@ -81,7 +87,7 @@ export async function doctorProject(
       await finishQuiet(() => pool.close());
     }
   }
-  return `${notice}${formatTriggers(objects)}`;
+  return `${emulation}${notice}${formatTriggers(objects)}`;
 }
 
 /**

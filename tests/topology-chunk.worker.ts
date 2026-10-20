@@ -21,8 +21,6 @@ const pool = {
     stream: false,
     listen: false,
     cancel: false,
-    prepared: "unnamed",
-    describe: false,
   },
   execute: (text: string) => {
     if (text.startsWith("select current_setting")) {

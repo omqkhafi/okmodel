@@ -373,8 +373,6 @@ function recording(calls: Call[], rows: () => readonly (readonly (string | null)
       stream: false,
       listen: false,
       cancel: false,
-      prepared: "unnamed",
-      describe: false,
     },
     stats: () => ({ size: 1, idle: 1, inflight: 0, waiting: 0 }),
     close: () => Promise.resolve(),
@@ -404,8 +402,6 @@ function recordingPool(sql: string[]): DriverPool {
       stream: false,
       listen: false,
       cancel: false,
-      prepared: "unnamed",
-      describe: false,
     },
     stats: () => ({ size: 1, idle: 1, inflight: 0, waiting: 0 }),
     execute(text) {

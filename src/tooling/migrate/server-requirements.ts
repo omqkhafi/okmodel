@@ -145,7 +145,11 @@ export async function assertAgainstPool(
 async function assertMajorAgainstPool(pool: DriverPool, schema: RequirementsSchema): Promise<void> {
   const description = describe(schema);
   const major = await serverMajor(pool);
-  refuseMajor(major, description.minPostgres, schema.requires?.postgres !== undefined);
+  refuseMajor(
+    major,
+    description.requirements.minVersion.postgres,
+    schema.requires?.postgres !== undefined,
+  );
 }
 
 async function assertExtensionsAgainstPool(
@@ -154,8 +158,8 @@ async function assertExtensionsAgainstPool(
   createdByMigrations: ReadonlySet<string>,
 ): Promise<void> {
   const description = describe(schema);
-  if (description.extensions.length === 0) return;
-  const names = description.extensions.map((item) => item.name);
+  if (description.requirements.extensions.length === 0) return;
+  const names = description.requirements.extensions.map((item) => item.name);
   const installed = await installedExtensions(pool, names);
   const missingCreated = names.filter(
     (name) => !installed.has(name) && createdByMigrations.has(name),
@@ -164,7 +168,7 @@ async function assertExtensionsAgainstPool(
     missingCreated.length === 0
       ? new Set<string>()
       : await availableExtensions(pool, missingCreated);
-  for (const item of description.extensions) {
+  for (const item of description.requirements.extensions) {
     if (installed.has(item.name)) continue;
     if (createdByMigrations.has(item.name)) {
       // Not installed yet; an applied or pending migration creates it. Refuse

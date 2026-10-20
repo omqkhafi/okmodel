@@ -24,8 +24,6 @@ const pool = {
     stream: false,
     listen: false,
     cancel: false,
-    prepared: "unnamed",
-    describe: false,
   },
   execute: (text: string) => {
     seen.push(text);

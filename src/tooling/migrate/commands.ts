@@ -64,8 +64,9 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
   const args = stripConfig(argv);
   const [command, ...rest] = args;
   if (command === "build") {
-    const directory = await buildProject(project);
-    stdout(`${directory}\n`);
+    const built = await buildProject(project);
+    if (built.emulation.length > 0) stdout(built.emulation);
+    stdout(`${built.directory}\n`);
     return;
   }
   if (command === "catalog") {
@@ -80,6 +81,7 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
   }
   if (command === "check") {
     const checked = await checkProject(project, invoke(splitFlags(rest, "check")));
+    if (checked.emulation !== undefined) stdout(checked.emulation);
     if (checked.notice !== undefined) stdout(checked.notice);
     const warnings = formatFindings(checked.findings);
     if (warnings.length > 0) stdout(warnings);
