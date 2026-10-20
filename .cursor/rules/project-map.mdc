@@ -13,8 +13,8 @@ contracts → dialects → adapters → runtime → tooling. Adapters import con
 ## Folders
 - `src/contracts/` — lowest layer, runtime entry `src/contracts/index.ts`; `OkmError`, `ErrorKind` (`error.ts`), pure-TS SHA-256 (`sha256.ts`), no `node:*`.
 - `src/contracts/catalog/` — catalog model (tables, policy, privilege, view, routine…); `catalogHash` in `document.ts`.
-- `src/dialects/ddl.ts` — DDL lowering interface (`DdlDialect`). Step classes live in `src/dialects/step-class.ts` and are re-exported from `src/tooling/migrate/classify.ts`.
-- `src/dialects/pg/` — Postgres schema DSL, compile/emit, DDL (`ddl.ts`), lowering (`lower.ts`), introspect, quoting, roles (`role/`), `ext/`, `fn/`, `ops/`.
+- `src/dialects/ddl.ts` — DDL lowering interface (`DdlDialect`). One physical step is `ddlStep` in `src/dialects/ddl-step.ts`. Step classes live in `src/dialects/step-class.ts` and are re-exported from `src/tooling/migrate/classify.ts`.
+- `src/dialects/pg/` — Postgres schema DSL, compile/emit, DDL (`ddl.ts`), lowering (`lower.ts`, `table-safe.ts`), introspect, quoting, roles (`role/`), `ext/`, `fn/`, `ops/`.
 - `src/adapters/pg/` — one file per driver: `postgresjs.ts`, `nodepostgres.ts`, `bunsql.ts`, `pglite.ts`, `pglite-wire.ts`, `neon.ts` (+ `*-extra.ts`, `batch.ts`, `session.ts`).
 - `src/adapters/` — `error.ts`, `failure.ts` (driver error mapping), `capabilities.ts`.
 - `src/runtime/` — client, planner (`plan.ts`), predicates, include, write, archive, batch, drift, text search (`text-search.ts`), parameter budget (`param-limit.ts`); `pg/` connect entries per driver; `otel.ts` (`okmodel/otel`); `ids/`, `safety/`, `tenancy/`, `traits/`, `validate/`.
