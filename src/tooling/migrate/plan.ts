@@ -189,7 +189,12 @@ type EnumColumn = {
 };
 
 type EnumEdit =
-  | { readonly kind: "add"; readonly name: string; readonly statements: readonly string[] }
+  | {
+      readonly kind: "add";
+      readonly name: string;
+      readonly before: readonly string[];
+      readonly after: readonly string[];
+    }
   | {
       readonly kind: "replace";
       readonly name: string;
@@ -293,7 +298,7 @@ export function planMigration(
 
   const keptNames = pairSameShape(beforeBy, afterBy, dropKeys, createKeys);
   const picklists = picklistChanges(beforeBy, afterBy, request.after);
-  const enums = enumEdits(beforeBy, afterBy, schema);
+  const enums = enumEdits(beforeBy, afterBy);
   requireReplacements(picklists, enums, replacements);
   recreateDependents(beforeList, afterList, alters, dropKeys, createKeys, picklists);
   recreateRoutineDependents(afterList, dropKeys, createKeys);
@@ -313,8 +318,8 @@ export function planMigration(
   steps.push(...renameSteps(request.before, renames, schema, dialect));
   for (const item of privileges.revoke) steps.push(step(item.sql, item.kind, "ddl", ACCESS));
   steps.push(...keptNames.map((item) => renameShapeStep(item, schema, dialect)));
-  steps.push(...enumAddSteps(enums));
-  steps.push(...domainCheckSteps(beforeBy, afterBy, schema));
+  steps.push(...enumAddSteps(enums, schema, dialect));
+  steps.push(...domainCheckSteps(beforeBy, afterBy, schema, dialect));
   steps.push(
     ...expandBackfills(picklists, enums, replacements, schema, [renamed, request.after], batchSize),
   );
@@ -402,9 +407,15 @@ export function planMigration(
     }
     emitDrop(object);
   }
-  for (const object of typeDrops) pushDrop(steps, object, schema);
-  for (const object of extensionDrops) pushDrop(steps, object, schema);
-  steps.push(...extensionAlterSteps(beforeBy, afterBy, dropKeys));
+  for (const object of typeDrops) {
+    if (object.kind !== "type") continue;
+    steps.push(...take(dialect.lower({ op: "drop-type", object, schema })));
+  }
+  for (const object of extensionDrops) {
+    if (object.kind !== "extension") continue;
+    steps.push(...take(dialect.lower({ op: "drop-extension", object, schema })));
+  }
+  steps.push(...extensionAlterSteps(beforeBy, afterBy, dropKeys, dialect));
 
   for (const change of alters) {
     const aligned = alignedColumnType(change.before, change.after);
@@ -434,20 +445,14 @@ export function planMigration(
     const key = identityKey(object.identity);
     if (!createKeys.has(key) || emitted.has(key)) continue;
     emitted.add(key);
-    const sql = createObjectSql(object, schema);
-    const kind = createKind(object, false);
-    if (sql === undefined || kind === undefined) continue;
-    steps.push(step(sql, kind, "ddl", ACCESS));
+    steps.push(...take(dialect.lower({ op: "create-extension", object, schema })));
   }
   for (const object of creationOrder(request.after)) {
     if (object.kind !== "type") continue;
     const key = identityKey(object.identity);
     if (!createKeys.has(key) || emitted.has(key)) continue;
     emitted.add(key);
-    const sql = createObjectSql(object, schema);
-    const kind = createKind(object, false);
-    if (sql === undefined || kind === undefined) continue;
-    steps.push(step(sql, kind, "ddl", ACCESS));
+    steps.push(...take(dialect.lower({ op: "create-type", object, schema })));
   }
   for (const object of uniqueBeforeForeignKey(creationOrder(request.after))) {
     if (
@@ -581,7 +586,15 @@ export function planMigration(
 
   for (const item of privileges.grant) steps.push(step(item.sql, item.kind, "ddl", ACCESS));
   steps.push(
-    ...contractSwaps(picklists, enums, replacements, schema, [renamed, request.after], batchSize),
+    ...contractSwaps(
+      picklists,
+      enums,
+      replacements,
+      schema,
+      [renamed, request.after],
+      batchSize,
+      dialect,
+    ),
   );
   return {
     name: request.name ?? "migration",
@@ -1176,13 +1189,21 @@ function assertConcurrentRefresh(object: MaterializedViewObject, source: Catalog
   );
 }
 
-function enumAddSteps(enums: readonly EnumEdit[]): PlanStep[] {
+function enumAddSteps(enums: readonly EnumEdit[], schema: string, dialect: DdlDialect): PlanStep[] {
   const steps: PlanStep[] = [];
   for (const change of enums) {
     if (change.kind !== "add") continue;
-    for (const sql of change.statements) {
-      steps.push(step(sql, "add-enum-value", "ddl", ACCESS, false));
-    }
+    steps.push(
+      ...take(
+        dialect.lower({
+          op: "add-enum-values",
+          schema,
+          name: change.name,
+          before: change.before,
+          after: change.after,
+        }),
+      ),
+    );
   }
   return steps;
 }
@@ -1205,6 +1226,7 @@ function contractSwaps(
   schema: string,
   catalogs: readonly Catalog[],
   batchSize: number,
+  dialect: DdlDialect,
 ): PlanStep[] {
   const steps: PlanStep[] = [];
   steps.push(...dataSteps(picklists, enums, replacements, schema, catalogs, batchSize, "contract"));
@@ -1226,25 +1248,19 @@ function contractSwaps(
   }
   for (const change of enums) {
     if (change.kind !== "replace") continue;
-    const type = qualify(schema, change.name);
-    const old = quoteIdent(`${change.name}_old`);
-    const labels = change.labels.map((label) => quoteLiteral(label)).join(", ");
-    steps.push(step(`alter type ${type} rename to ${old}`, "rename-enum", "ddl", ACCESS));
-    steps.push(step(`create type ${type} as enum (${labels})`, "recreate-enum", "ddl", ACCESS));
-    for (const column of change.columns) {
-      const table = qualify(schema, column.table);
-      const name = quoteIdent(column.column);
-      steps.push(
-        step(
-          `alter table ${table} alter column ${name} type ${type} using ${name}::text::${type}`,
-          "set-enum-column",
-          "ddl",
-          ACCESS,
-        ),
-      );
-    }
     steps.push(
-      step(`drop type ${qualify(schema, `${change.name}_old`)}`, "drop-enum", "ddl", ACCESS),
+      ...take(
+        dialect.lower({
+          op: "replace-enum",
+          schema,
+          name: change.name,
+          labels: change.labels,
+          columns: change.columns.map((column) => ({
+            table: column.table,
+            column: column.column,
+          })),
+        }),
+      ),
     );
   }
   return steps;
@@ -1434,6 +1450,7 @@ function domainCheckSteps(
   beforeBy: ReadonlyMap<string, CatalogObject>,
   afterBy: ReadonlyMap<string, CatalogObject>,
   schema: string,
+  dialect: DdlDialect,
 ): PlanStep[] {
   const steps: PlanStep[] = [];
   for (const [key, next] of afterBy) {
@@ -1443,36 +1460,14 @@ function domainCheckSteps(
       continue;
     }
     if (previous.definition.check === next.definition.check) continue;
-    const name = next.identity.name;
-    const type = qualify(schema, name);
-    const current = quoteIdent(fitIdentifier(`${name}_check`));
-    const upcoming = quoteIdent(fitIdentifier(`${name}_check_next`));
-    const expression = next.definition.check;
     steps.push(
-      step(
-        `alter domain ${type} add constraint ${upcoming} check (${expression}) not valid`,
-        "add-domain-check",
-        "ddl",
-        ACCESS,
-      ),
-    );
-    steps.push(
-      step(
-        `alter domain ${type} validate constraint ${upcoming}`,
-        "validate-domain-check",
-        "ddl",
-        ACCESS,
-      ),
-    );
-    steps.push(
-      step(`alter domain ${type} drop constraint ${current}`, "drop-domain-check", "ddl", ACCESS),
-    );
-    steps.push(
-      step(
-        `alter domain ${type} rename constraint ${upcoming} to ${current}`,
-        "rename-domain-check",
-        "ddl",
-        ACCESS,
+      ...take(
+        dialect.lower({
+          op: "alter-domain-check",
+          schema,
+          name: next.identity.name,
+          expression: next.definition.check,
+        }),
       ),
     );
   }
@@ -1482,7 +1477,6 @@ function domainCheckSteps(
 function enumEdits(
   beforeBy: ReadonlyMap<string, CatalogObject>,
   afterBy: ReadonlyMap<string, CatalogObject>,
-  schema: string,
 ): EnumEdit[] {
   const edits: EnumEdit[] = [];
   for (const [key, next] of afterBy) {
@@ -1500,7 +1494,8 @@ function enumEdits(
       edits.push({
         kind: "add",
         name: next.identity.name,
-        statements: addValueStatements(schema, next.identity.name, beforeLabels, afterLabels),
+        before: beforeLabels,
+        after: afterLabels,
       });
       continue;
     }
@@ -1550,46 +1545,6 @@ function labelSubsequence(before: readonly string[], after: readonly string[]): 
     if (before[index] === label) index += 1;
   }
   return index === before.length;
-}
-
-function addValueStatements(
-  schema: string,
-  name: string,
-  before: readonly string[],
-  after: readonly string[],
-): string[] {
-  const present = new Set(before);
-  const statements: string[] = [];
-  const type = qualify(schema, name);
-  for (let index = 0; index < after.length; index += 1) {
-    const label = after[index];
-    if (label === undefined || present.has(label)) continue;
-    let beforeNeighbor: string | undefined;
-    for (let cursor = index + 1; cursor < after.length; cursor += 1) {
-      const next = after[cursor];
-      if (next !== undefined && present.has(next)) {
-        beforeNeighbor = next;
-        break;
-      }
-    }
-    let sql = `alter type ${type} add value ${quoteLiteral(label)}`;
-    if (beforeNeighbor !== undefined) {
-      sql += ` before ${quoteLiteral(beforeNeighbor)}`;
-    } else {
-      let afterNeighbor: string | undefined;
-      for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
-        const previous = after[cursor];
-        if (previous !== undefined && present.has(previous)) {
-          afterNeighbor = previous;
-          break;
-        }
-      }
-      if (afterNeighbor !== undefined) sql += ` after ${quoteLiteral(afterNeighbor)}`;
-    }
-    statements.push(sql);
-    present.add(label);
-  }
-  return statements;
 }
 
 function parseInList(expression: string): { column: string; values: string[] } | undefined {
@@ -1997,13 +1952,6 @@ function pushSafe(steps: PlanStep[], safe: readonly SafeStep[]): void {
       ...(item.backfill !== undefined ? { backfill: item.backfill } : {}),
     });
   }
-}
-
-function pushDrop(steps: PlanStep[], object: CatalogObject, schema: string): void {
-  const sql = dropObjectSql(object, schema);
-  const kind = dropKind(object);
-  if (sql === undefined || kind === undefined) return;
-  steps.push(step(sql, kind, "ddl", ACCESS));
 }
 
 function createKind(object: CatalogObject, tableIsNew: boolean): StepKind | undefined {

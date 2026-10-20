@@ -13,8 +13,10 @@ import type {
   Catalog,
   ColumnObject,
   ConstraintObject,
+  ExtensionObject,
   IndexObject,
   TableObject,
+  TypeObject,
 } from "../contracts/catalog/types.js";
 import type { MigrationClass, StepKind } from "./step-class.js";
 
@@ -112,8 +114,8 @@ export type DdlStep = {
  * One logical catalog change.
  *
  * A dialect returns zero or more physical steps for one variant. Table,
- * column, constraint, and index changes are the first families. Other
- * families stay `pending` until they move.
+ * column, constraint, index, type, and extension changes are the first
+ * families. Other families stay `pending` until they move.
  */
 export type LogicalChange =
   | { readonly op: "pending" }
@@ -209,6 +211,57 @@ export type LogicalChange =
       readonly schema: string;
       /** Before and after catalogs, for the not-null check name. */
       readonly catalogs: readonly Catalog[];
+    }
+  | {
+      readonly op: "create-type";
+      readonly object: TypeObject;
+      readonly schema: string;
+    }
+  | {
+      readonly op: "drop-type";
+      readonly object: TypeObject;
+      readonly schema: string;
+    }
+  | {
+      readonly op: "add-enum-values";
+      readonly schema: string;
+      readonly name: string;
+      readonly before: readonly string[];
+      readonly after: readonly string[];
+    }
+  | {
+      readonly op: "replace-enum";
+      readonly schema: string;
+      readonly name: string;
+      readonly labels: readonly string[];
+      /** Columns that must be cast onto the recreated type, in planner order. */
+      readonly columns: readonly { readonly table: string; readonly column: string }[];
+    }
+  | {
+      readonly op: "alter-domain-check";
+      readonly schema: string;
+      readonly name: string;
+      readonly expression: string;
+    }
+  | {
+      readonly op: "create-extension";
+      readonly object: ExtensionObject;
+      readonly schema: string;
+    }
+  | {
+      readonly op: "drop-extension";
+      readonly object: ExtensionObject;
+      readonly schema: string;
+    }
+  | {
+      readonly op: "move-extension";
+      readonly name: string;
+      readonly schema: string;
+    }
+  | {
+      readonly op: "update-extension";
+      readonly name: string;
+      readonly version: string;
     };
 
 /**
