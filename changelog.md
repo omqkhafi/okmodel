@@ -75,6 +75,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okm migrate check` prints, after `ok N migrations`, that an empty-table replay does not catch a step that fails only on real data: `NOT NULL` on a populated column, a unique index over duplicates, or a check over existing rows (Q4, #391).
 - The Release workflow runs on a `v*` tag. Before any build it requires the tagged commit to be an ancestor of `origin/main`, the tag to match `package.json`, and a `## v` changelog section. It then runs the Postgres suite, the pack contract, and `npm stage publish` with provenance (npm 11.15 or newer, Node 22.14 or newer). A dispatch with `publish` false checks `main` and refuses a tag that is not on `main`. The publish job is the only one with `id-token: write` and `contents: write`, and it uses the `release` environment. No npm token is stored.
 
+#### tooling
+
+- The migration planner takes a dialect lowering object. Postgres plans stay the same. Feature support and refusal are questions on that object, so the planner does not import the feature registry.
+
 ### 🔥 Removed
 
 - Deno is not a supported runtime. Portable checks run on Node and Bun, and the runtime entry is imported as an edge bundle on Node (D297).
