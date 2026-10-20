@@ -9,7 +9,12 @@
  * {@link DdlDialect} later without a planner edit.
  */
 
-import type { Catalog } from "../contracts/catalog/types.js";
+import type {
+  Catalog,
+  ColumnObject,
+  ConstraintObject,
+  TableObject,
+} from "../contracts/catalog/types.js";
 import type { MigrationClass, StepKind } from "./step-class.js";
 
 /** How a dialect provides a feature. Matches the feature registry. */
@@ -105,13 +110,76 @@ export type DdlStep = {
 /**
  * One logical catalog change.
  *
- * Variants are added as each statement family moves behind {@link DdlDialect.lower}.
- * A dialect returns zero or more physical steps for one variant.
+ * A dialect returns zero or more physical steps for one variant. Table,
+ * column, and constraint changes are the first family. Other families stay
+ * `pending` until they move.
  */
-export type LogicalChange = {
-  /** Placeholder until the first statement family moves. */
-  readonly op: "pending";
-};
+export type LogicalChange =
+  | { readonly op: "pending" }
+  | {
+      readonly op: "rename-table";
+      readonly schema: string;
+      readonly from: string;
+      readonly to: string;
+    }
+  | {
+      readonly op: "rename-column";
+      readonly schema: string;
+      readonly table: string;
+      readonly from: string;
+      readonly to: string;
+    }
+  | {
+      readonly op: "rename-constraint";
+      readonly schema: string;
+      readonly table: string;
+      readonly from: string;
+      readonly to: string;
+    }
+  | {
+      readonly op: "drop-table";
+      readonly object: TableObject;
+      readonly schema: string;
+    }
+  | {
+      readonly op: "drop-column";
+      readonly object: ColumnObject;
+      readonly schema: string;
+    }
+  | {
+      readonly op: "drop-constraint";
+      readonly object: ConstraintObject;
+      readonly schema: string;
+    }
+  | {
+      readonly op: "create-table";
+      readonly table: TableObject;
+      readonly catalog: Catalog;
+      readonly schema: string;
+    }
+  | {
+      readonly op: "add-column";
+      readonly column: ColumnObject;
+      readonly schema: string;
+      /** True when the parent table is created in this same plan. */
+      readonly tableIsNew: boolean;
+    }
+  | {
+      readonly op: "add-constraint";
+      readonly constraint: ConstraintObject;
+      readonly schema: string;
+      /** True when the parent table is created in this same plan. */
+      readonly tableIsNew: boolean;
+    }
+  | {
+      readonly op: "alter-column";
+      /** Column already applied, with alias spellings aligned to `after`. */
+      readonly before: ColumnObject;
+      readonly after: ColumnObject;
+      readonly schema: string;
+      /** Before and after catalogs, for the not-null check name. */
+      readonly catalogs: readonly Catalog[];
+    };
 
 /**
  * Dialect DDL lowering and the feature questions the planner is allowed to ask.

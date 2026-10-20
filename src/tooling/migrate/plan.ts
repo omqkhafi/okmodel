@@ -30,9 +30,7 @@ import type {
 } from "../../contracts/catalog/types.js";
 import type { DeclaredRename } from "../../dialects/pg/declarations.js";
 import {
-  alterColumnSql,
   createObjectSql,
-  createTableSql,
   dropObjectSql,
   functionSql,
   identitySequence,
@@ -64,15 +62,11 @@ import {
 } from "./classify.js";
 import { extensionAlterSteps } from "./extensions.js";
 import { omitManagedObjects } from "./managed.js";
-import {
-  concurrentDropIndexSql,
-  notNullSteps,
-  stepsForExistingTable,
-  type SafeStep,
-} from "./safe.js";
+import { concurrentDropIndexSql, stepsForExistingTable, type SafeStep } from "./safe.js";
 import { sqlQuoteOpen } from "./sql-lex.js";
 import { canonicalTypeName } from "./type-name.js";
-import type { DdlDialect } from "../../dialects/ddl.js";
+import type { DdlDialect, DdlStep } from "../../dialects/ddl.js";
+import { ddlStep as step } from "../../dialects/ddl-step.js";
 import { postgresDialect } from "./postgres-dialect.js";
 import { assertNoChains, type Replacement } from "./values.js";
 
@@ -317,9 +311,9 @@ export function planMigration(
   }
   const privileges = privilegeSql(renamed.objects, request.after.objects, schema, recreated);
   const steps: PlanStep[] = [];
-  steps.push(...renameSteps(request.before, renames, schema));
+  steps.push(...renameSteps(request.before, renames, schema, dialect));
   for (const item of privileges.revoke) steps.push(step(item.sql, item.kind, "ddl", ACCESS));
-  steps.push(...keptNames.map((item) => renameShapeStep(item, schema)));
+  steps.push(...keptNames.map((item) => renameShapeStep(item, schema, dialect)));
   steps.push(...enumAddSteps(enums));
   steps.push(...domainCheckSteps(beforeBy, afterBy, schema));
   steps.push(
@@ -343,6 +337,18 @@ export function planMigration(
     const sql = dropObjectSql(object, schema);
     const kind = dropKind(object);
     if (sql === undefined || kind === undefined) return;
+    if (object.kind === "table") {
+      steps.push(...take(dialect.lower({ op: "drop-table", object, schema })));
+      return;
+    }
+    if (object.kind === "column") {
+      steps.push(...take(dialect.lower({ op: "drop-column", object, schema })));
+      return;
+    }
+    if (object.kind === "constraint") {
+      steps.push(...take(dialect.lower({ op: "drop-constraint", object, schema })));
+      return;
+    }
     if (object.kind === "index" && hasTable(renamed, object.identity.parent.name)) {
       const planned: PlanStep = {
         ...step(concurrentDropIndexSql(sql), "drop-index", "ddl", SHARE_UPDATE, false, [
@@ -404,26 +410,17 @@ export function planMigration(
 
   for (const change of alters) {
     const aligned = alignedColumnType(change.before, change.after);
-    const statements = alterColumnSql(aligned, change.after, schema);
-    const kinds = columnAlterKinds(aligned, change.after);
-    for (let index = 0; index < statements.length; index += 1) {
-      const sql = statements[index];
-      const kind = kinds[index];
-      if (sql === undefined || kind === undefined) continue;
-      if (kind === "set-not-null") {
-        pushSafe(
-          steps,
-          notNullSteps(change.after, schema, "set-not-null", [renamed, request.after]),
-        );
-        continue;
-      }
-      steps.push(step(sql, kind, "ddl", ACCESS));
-    }
-    const identitySql = identityChangeSql(change.before, change.after, schema);
-    const identity = identityKind(change.before, change.after);
-    if (identitySql !== undefined && identity !== undefined) {
-      steps.push(step(identitySql, identity, "ddl", ACCESS));
-    }
+    steps.push(
+      ...take(
+        dialect.lower({
+          op: "alter-column",
+          before: aligned,
+          after: change.after,
+          schema,
+          catalogs: [renamed, request.after],
+        }),
+      ),
+    );
   }
 
   const createdTables = new Set(
@@ -477,7 +474,26 @@ export function planMigration(
     emitted.add(key);
     if (object.kind === "table") {
       steps.push(
-        step(createTableSql(object, request.after, schema), "create-table", "ddl", ACCESS),
+        ...take(
+          dialect.lower({ op: "create-table", table: object, catalog: request.after, schema }),
+        ),
+      );
+      continue;
+    }
+    if (object.kind === "column" || object.kind === "constraint") {
+      if (!tableIsNew && parent !== undefined && hasTable(renamed, parent)) {
+        const safe = stepsForExistingTable(object, schema, [renamed, request.after], batchSize);
+        if (safe !== undefined) {
+          pushSafe(steps, safe);
+          continue;
+        }
+      }
+      steps.push(
+        ...take(
+          object.kind === "column"
+            ? dialect.lower({ op: "add-column", column: object, schema, tableIsNew })
+            : dialect.lower({ op: "add-constraint", constraint: object, schema, tableIsNew }),
+        ),
       );
       continue;
     }
@@ -579,6 +595,10 @@ export function planMigration(
  * @param dialect - Lowering object for this plan
  * @param catalog - Catalog after managed tables are omitted
  */
+function take(lowered: readonly DdlStep[]): readonly PlanStep[] {
+  return lowered;
+}
+
 function askDialect(dialect: DdlDialect, catalog: Catalog): void {
   const features = dialect.featuresUsed(catalog);
   const refused = features.filter((feature) => dialect.support(feature) === "refused");
@@ -780,6 +800,7 @@ function renameSteps(
   source: Catalog,
   renames: readonly DeclaredRename[],
   schema: string,
+  dialect: DdlDialect,
 ): PlanStep[] {
   const steps: PlanStep[] = [];
   const tables = new Map<string, string>();
@@ -787,12 +808,7 @@ function renameSteps(
     if (rename.kind !== "table" || !hasTable(source, rename.from)) continue;
     tables.set(rename.to, rename.from);
     steps.push(
-      step(
-        `alter table ${qualify(schema, rename.from)} rename to ${quoteIdent(rename.to)}`,
-        "rename-table",
-        "ddl",
-        ACCESS,
-      ),
+      ...take(dialect.lower({ op: "rename-table", schema, from: rename.from, to: rename.to })),
     );
     steps.push(...sequenceRenames(source, rename, schema));
   }
@@ -801,11 +817,14 @@ function renameSteps(
     const previousTable = tables.get(rename.table) ?? rename.table;
     if (!hasColumn(source, previousTable, rename.from)) continue;
     steps.push(
-      step(
-        `alter table ${qualify(schema, rename.table)} rename column ${quoteIdent(rename.from)} to ${quoteIdent(rename.to)}`,
-        "rename-column",
-        "ddl",
-        ACCESS,
+      ...take(
+        dialect.lower({
+          op: "rename-column",
+          schema,
+          table: rename.table,
+          from: rename.from,
+          to: rename.to,
+        }),
       ),
     );
   }
@@ -895,6 +914,7 @@ function withoutNameKey(value: object): Record<string, unknown> {
 function renameShapeStep(
   pair: { readonly from: CatalogObject; readonly to: CatalogObject },
   schema: string,
+  dialect: DdlDialect,
 ): PlanStep {
   if (pair.from.kind === "index" && pair.to.kind === "index") {
     return step(
@@ -909,12 +929,21 @@ function renameShapeStep(
       fix: { summary: "The planner only renames an index or a constraint in place." },
     });
   }
-  return step(
-    `alter table ${qualify(schema, pair.from.identity.parent.name)} rename constraint ${quoteIdent(pair.from.identity.name)} to ${quoteIdent(pair.to.identity.name)}`,
-    "rename-constraint",
-    "ddl",
-    ACCESS,
+  const [planned] = take(
+    dialect.lower({
+      op: "rename-constraint",
+      schema,
+      table: pair.from.identity.parent.name,
+      from: pair.from.identity.name,
+      to: pair.to.identity.name,
+    }),
   );
+  if (planned === undefined) {
+    throw new OkmError("invalid", "A constraint rename did not lower to a statement.", {
+      fix: { summary: "The dialect returns one rename statement for a constraint." },
+    });
+  }
+  return planned;
 }
 
 function assertUnambiguous(
@@ -1604,35 +1633,6 @@ function columnAlterable(before: ColumnObject, after: ColumnObject): boolean {
   return stable(before.definition.generated) === stable(after.definition.generated);
 }
 
-/**
- * In-place identity add, drop, or always/by-default change.
- *
- * The sequence is created or dropped by this statement. {@link omitOwnedSequences}
- * keeps the planner from emitting a second sequence statement.
- *
- * @param before - Column already applied
- * @param after - Column the plan must reach
- * @param schema - Concrete schema name
- * @returns The statement, or `undefined` when identity is unchanged
- */
-function identityChangeSql(
-  before: ColumnObject,
-  after: ColumnObject,
-  schema: string,
-): string | undefined {
-  if (stable(before.definition.identity) === stable(after.definition.identity)) return undefined;
-  const table = qualify(schema, after.identity.parent.name);
-  const name = quoteIdent(after.identity.name);
-  const next = after.definition.identity;
-  const previous = before.definition.identity;
-  if (next === undefined) return `alter table ${table} alter column ${name} drop identity`;
-  if (previous === undefined) {
-    const generated = next.always ? "always" : "by default";
-    return `alter table ${table} alter column ${name} add generated ${generated} as identity`;
-  }
-  return `alter table ${table} alter column ${name} set generated ${next.always ? "always" : "by default"}`;
-}
-
 function omitOwnedSequences(
   keys: Set<string>,
   by: ReadonlyMap<string, CatalogObject>,
@@ -1977,26 +1977,6 @@ function index(source: Catalog): Indexed[] {
   return source.objects.map((object) => ({ key: identityKey(object.identity), object }));
 }
 
-function step(
-  sql: string,
-  kind: StepKind,
-  action: PlanStep["action"],
-  lock: string,
-  transactional = true,
-  extraTables?: readonly string[],
-): PlanStep {
-  const tables = touchedTables(sql, lock, extraTables);
-  return {
-    sql,
-    kind,
-    class: classOf(kind),
-    action,
-    lock,
-    transactional,
-    ...(tables.length > 0 ? { tables } : {}),
-  };
-}
-
 function pushSafe(steps: PlanStep[], safe: readonly SafeStep[]): void {
   for (const item of safe) {
     steps.push({
@@ -2005,76 +1985,6 @@ function pushSafe(steps: PlanStep[], safe: readonly SafeStep[]): void {
       ...(item.backfill !== undefined ? { backfill: item.backfill } : {}),
     });
   }
-}
-
-const TABLE_PREFIX =
-  /\b(?:create|alter|drop)\s+table(?:\s+if\s+exists)?\s+|\bupdate\s+|\binsert\s+into\s+|\breferences\s+|\bon\s+table\s+|\bon\s+/gi;
-
-/**
- * Tables named by a statement or by a lock comment.
- *
- * A schema-qualified identifier after a table keyword counts. A following dot
- * is a column (`"public"."tasks"."id"`) and is skipped. `rename to` is not a
- * keyword here, so the new name of a rename is not treated as a second table.
- *
- * @param sql - Statement text
- * @param lock - Lock comment, which may name a second relation
- * @param extra - Tables the SQL does not name, such as the parent of a dropped index
- * @returns Names in first-seen order, without duplicates
- */
-function touchedTables(
-  sql: string,
-  lock: string,
-  extra: readonly string[] | undefined,
-): readonly string[] {
-  const names: string[] = [];
-  const text = `${sql}\n${lock}`;
-  TABLE_PREFIX.lastIndex = 0;
-  for (let match = TABLE_PREFIX.exec(text); match !== null; match = TABLE_PREFIX.exec(text)) {
-    const found = readQualified(text, match.index + match[0].length);
-    if (found !== undefined) pushTable(names, found.name);
-  }
-  for (const name of extra ?? []) pushTable(names, name);
-  return names;
-}
-
-function pushTable(names: string[], name: string): void {
-  if (!names.includes(name)) names.push(name);
-}
-
-function readQualified(
-  text: string,
-  start: number,
-): { readonly name: string; readonly end: number } | undefined {
-  const schema = readIdent(text, start);
-  if (schema === undefined) return undefined;
-  if (text[schema.end] !== "." || text[schema.end + 1] !== '"') return undefined;
-  const name = readIdent(text, schema.end + 1);
-  if (name === undefined || text[name.end] === ".") return undefined;
-  return name;
-}
-
-function readIdent(
-  text: string,
-  start: number,
-): { readonly name: string; readonly end: number } | undefined {
-  if (text[start] !== '"') return undefined;
-  let value = "";
-  let index = start + 1;
-  while (index < text.length) {
-    const char = text[index];
-    if (char === '"') {
-      if (text[index + 1] === '"') {
-        value += '"';
-        index += 2;
-        continue;
-      }
-      return { name: value, end: index + 1 };
-    }
-    value += char ?? "";
-    index += 1;
-  }
-  return undefined;
 }
 
 function pushDrop(steps: PlanStep[], object: CatalogObject, schema: string): void {
@@ -2150,32 +2060,6 @@ function requiredColumn(column: ColumnObject): boolean {
     definition.identity === undefined &&
     definition.generated === undefined
   );
-}
-
-function columnAlterKinds(before: ColumnObject, after: ColumnObject): readonly StepKind[] {
-  const kinds: StepKind[] = [];
-  if (
-    before.definition.dataType !== after.definition.dataType ||
-    before.definition.collation !== after.definition.collation
-  ) {
-    kinds.push("set-column-type");
-  }
-  if (before.definition.nullable !== after.definition.nullable) {
-    kinds.push(after.definition.nullable ? "drop-not-null" : "set-not-null");
-  }
-  if (before.definition.defaultExpression !== after.definition.defaultExpression) {
-    kinds.push(after.definition.defaultExpression === undefined ? "drop-default" : "set-default");
-  }
-  return kinds;
-}
-
-function identityKind(before: ColumnObject, after: ColumnObject): StepKind | undefined {
-  if (stable(before.definition.identity) === stable(after.definition.identity)) return undefined;
-  const next = after.definition.identity;
-  const previous = before.definition.identity;
-  if (next === undefined) return "drop-identity";
-  if (previous === undefined) return "add-identity";
-  return next.always ? "set-identity-always" : "set-identity-by-default";
 }
 
 function stable(value: unknown): string {
