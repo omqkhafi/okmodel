@@ -59,6 +59,7 @@ postgresTest(
         "okm_backfill",
         "okm_history",
         "okm_meta",
+        "okm_steps",
         "tasks",
       ]);
       const owner = await sql<{ n: string }[]>`

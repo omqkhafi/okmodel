@@ -529,6 +529,31 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     fix: "Write the check or the body the way Postgres prints it, or allow OKM1552 with a reason. The warning does not fail apply or migrate check. A reprinted domain check is sealed before the OKM1547 plan.",
   },
   {
+    code: "OKM1553",
+    title: "Step needs a human",
+    summary:
+      "A committed step failed and the probe cannot tell whether it is applied. Apply will not run it again until someone decides.",
+    fix: "Inspect the database. Record the step as applied when the change is in place, or mark it to run again. okm migrate resolve takes the step id from okm migrate status.",
+  },
+  {
+    code: "OKM1554",
+    title: "Step is not applied",
+    summary: "Resolve refused to record the step because the probe says it is not applied.",
+    fix: "Finish the change in the database, or mark the step to run again.",
+  },
+  {
+    code: "OKM1555",
+    title: "Unverified step",
+    summary: "Resolve refused to record the step because this kind has no probe.",
+    fix: "Confirm the change in the database, then record the step with explicit acceptance.",
+  },
+  {
+    code: "OKM1556",
+    title: "Step statement changed",
+    summary: "The migration file's statement changed after the committed step started.",
+    fix: "Restore the statement that started, or replace the file only after the database matches it.",
+  },
+  {
     code: "OKM1601",
     title: "Stale typed SQL",
     summary: "A typed SQL signature no longer matches the database.",

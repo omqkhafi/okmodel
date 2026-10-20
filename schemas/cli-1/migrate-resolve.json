@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://okmodel.dev/schemas/cli-1/migrate-resolve.json",
+  "title": "okm migrate resolve data",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "target",
+    "step",
+    "action",
+    "result"
+  ],
+  "properties": {
+    "target": {
+      "type": "string"
+    },
+    "step": {
+      "type": "string"
+    },
+    "action": {
+      "enum": [
+        "applied",
+        "retry"
+      ]
+    },
+    "result": {
+      "enum": [
+        "recorded",
+        "retry"
+      ]
+    }
+  }
+}

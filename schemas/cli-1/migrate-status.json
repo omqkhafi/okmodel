@@ -5,11 +5,43 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "text"
+    "text",
+    "steps"
   ],
   "properties": {
     "text": {
       "type": "string"
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "kind",
+          "state",
+          "attempt",
+          "nextAction"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "attempt": {
+            "type": "number"
+          },
+          "nextAction": {
+            "type": "string"
+          }
+        }
+      }
     }
   }
 }

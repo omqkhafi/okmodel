@@ -1,14 +1,38 @@
 /**
- * Tables OKModel owns: `okm_meta`, `okm_history`, and `okm_backfill`.
+ * Tables OKModel owns: `okm_meta`, `okm_history`, `okm_backfill`, and `okm_steps`.
  *
  * Apply creates them. They are not part of the author schema. Plan, push,
  * check, and doctor omit them on both sides, so a diff neither drops them
- * nor creates them.
+ * nor creates them. `okm_steps` holds a committed step only while it is in
+ * flight or broken.
  */
 
 import type { Catalog, CatalogObject } from "../../contracts/catalog/types.js";
+import { quoteIdent } from "../../dialects/pg/ddl.js";
 
-const MANAGED_TABLES: ReadonlySet<string> = new Set(["okm_meta", "okm_history", "okm_backfill"]);
+const MANAGED_TABLES: ReadonlySet<string> = new Set([
+  "okm_meta",
+  "okm_history",
+  "okm_backfill",
+  "okm_steps",
+]);
+
+/**
+ * Grants the migration role the writes apply needs on its own tables.
+ *
+ * `okm_steps` also needs `DELETE`: that row is removed in the transaction
+ * that inserts `okm_history`.
+ *
+ * @param role - Migration role name
+ * @returns Statements, in order
+ */
+export function migrationJournalGrants(role: string): readonly string[] {
+  const quoted = quoteIdent(role);
+  return [
+    `grant select, insert, update on okm_meta, okm_history, okm_backfill, okm_steps to ${quoted}`,
+    `grant delete on okm_steps to ${quoted}`,
+  ];
+}
 
 /**
  * Removes the migration history tables and the objects that belong to them.
@@ -63,8 +87,10 @@ function managedSequence(name: string): boolean {
     name === "okm_meta" ||
     name === "okm_history" ||
     name === "okm_backfill" ||
+    name === "okm_steps" ||
     name.startsWith("okm_meta_") ||
     name.startsWith("okm_history_") ||
-    name.startsWith("okm_backfill_")
+    name.startsWith("okm_backfill_") ||
+    name.startsWith("okm_steps_")
   );
 }

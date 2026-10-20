@@ -39,6 +39,7 @@ import { expandProvisioned, installSnapshot, provisionMark } from "./snapshot.js
 import { planMigration, type PlanStep } from "./plan.js";
 import type { StoredMigration } from "./files.js";
 import { finishQuiet } from "./lost.js";
+import type { StepBoundary } from "./step-engine.js";
 import { catalogQuery, managedRoleOptions, sealDomainChecks, sealTableChecks } from "./drift.js";
 import {
   assertDirectConnection,
@@ -146,6 +147,12 @@ export type ApplyRequest = {
   readonly headHash?: string;
   /** When true, an empty apply may re-stamp `okm_meta` to {@link headHash}. */
   readonly restampHead?: boolean;
+  /**
+   * Stops a committed step at one crash boundary.
+   *
+   * Tests use this. A stop does not write `failed`. The next apply resumes.
+   */
+  readonly failAt?: StepBoundary;
 };
 
 /** Migrations that ran at least one step in this invocation. */
@@ -188,8 +195,24 @@ const BACKFILL = `create table if not exists okm_backfill (
   primary key (migration_id, step_index)
 )`;
 
+const STEPS = `create table if not exists okm_steps (
+  migration_id text not null,
+  step_index integer not null,
+  kind text not null,
+  sql_hash text not null,
+  state text not null,
+  attempt integer not null,
+  started_at timestamptz not null,
+  finished_at timestamptz,
+  runner text,
+  error_code text,
+  error_text text,
+  primary key (migration_id, step_index),
+  constraint okm_steps_state check (state in ('started', 'failed', 'retry'))
+)`;
+
 /**
- * Creates `okm_meta`, `okm_history`, and `okm_backfill` when they are absent.
+ * Creates `okm_meta`, `okm_history`, `okm_backfill`, and `okm_steps` when they are absent.
  *
  * @param execute - Runs one statement on the apply or check connection
  */
@@ -199,6 +222,7 @@ export async function ensureMigrationTables(
   await execute(META);
   await execute(HISTORY);
   await execute(BACKFILL);
+  await execute(STEPS);
 }
 
 /**
@@ -263,10 +287,11 @@ export function applyUnits(
  * The connection is reserved for the whole run so the advisory lock stays
  * session-scoped. Lock timeout retries that step, including `NOT VALID`,
  * `VALIDATE CONSTRAINT`, `SET NOT NULL`, `ADD CONSTRAINT … USING INDEX`, and
- * a concurrent index create or drop. A failed concurrent index is dropped
- * before the error returns, so the target does not keep an INVALID index.
- * When that drop fails, the error names the index and
- * `DROP INDEX CONCURRENTLY`. Any other failure stops at that step.
+ * a concurrent index create or drop. A committed step writes `okm_steps`
+ * before its statement and deletes that row in the same transaction as its
+ * history row. The next apply probes. When cleanup of an INVALID index
+ * fails, the error names the index and `DROP INDEX CONCURRENTLY`. Any other
+ * failure stops at that step.
  *
  * @param request - Target, flags, and the migrations to consider
  * @returns The target and the migration ids that ran
@@ -339,6 +364,7 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
         ...(request.schema !== undefined ? { schema: request.schema } : {}),
         ...(request.onProgress !== undefined ? { onProgress: request.onProgress } : {}),
         ...(request.afterBatch !== undefined ? { afterBatch: request.afterBatch } : {}),
+        ...(request.failAt !== undefined ? { failAt: request.failAt } : {}),
       },
       session,
     );
@@ -883,7 +909,7 @@ async function setTimeouts(connection: DriverConnection, request: ApplyRequest):
   ]);
 }
 
-async function lockTarget(connection: DriverConnection, target: string): Promise<void> {
+export async function lockTarget(connection: DriverConnection, target: string): Promise<void> {
   const result = await connection.execute("select pg_try_advisory_lock(hashtext($1))", [
     lockKey(target),
   ]);
@@ -898,7 +924,7 @@ async function lockTarget(connection: DriverConnection, target: string): Promise
   }
 }
 
-function lockKey(target: string): string {
+export function lockKey(target: string): string {
   return `okm:${target}`;
 }
 
@@ -1032,7 +1058,7 @@ async function provisionEmpty(
 }
 
 /**
- * Drops `okm_meta`, `okm_history`, and `okm_backfill` when they have no rows
+ * Drops `okm_meta`, `okm_history`, `okm_backfill`, and `okm_steps` when they have no rows
  * and the schema has no other user objects.
  *
  * Used after a failed provision so a retry that left nothing behind sees an
@@ -1044,7 +1070,7 @@ async function provisionEmpty(
  */
 async function dropEmptyBootstrapTables(connection: DriverConnection): Promise<void> {
   if ((await namespaceObject(connection)) !== undefined) return;
-  for (const name of ["okm_meta", "okm_history", "okm_backfill"] as const) {
+  for (const name of ["okm_meta", "okm_history", "okm_backfill", "okm_steps"] as const) {
     const present = await connection.execute(`select to_regclass('${name}') is not null`);
     if (!wireTrue(present.rows[0]?.[0])) continue;
     const counted = await connection.execute(`select count(*)::text from ${name}`);
@@ -1105,7 +1131,8 @@ async function targetState(connection: DriverConnection): Promise<TargetShape> {
   const meta = await connection.execute(
     `select to_regclass('okm_meta') is not null
          or to_regclass('okm_history') is not null
-         or to_regclass('okm_backfill') is not null`,
+         or to_regclass('okm_backfill') is not null
+         or to_regclass('okm_steps') is not null`,
   );
   if (wireTrue(meta.rows[0]?.[0])) {
     const historyRows = await tableRows(connection, "okm_history");
@@ -1144,7 +1171,7 @@ async function namespaceObject(connection: DriverConnection): Promise<string | u
          join pg_namespace n on n.oid = c.relnamespace
         where n.nspname = $1
           and c.relkind in ('r', 'p', 'v', 'm', 'S', 'f')
-          and c.relname not in ('okm_meta', 'okm_history', 'okm_backfill')
+          and c.relname not in ('okm_meta', 'okm_history', 'okm_backfill', 'okm_steps')
        union all
        select t.typname from pg_type t
          join pg_namespace n on n.oid = t.typnamespace

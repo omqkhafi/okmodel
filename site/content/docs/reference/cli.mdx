@@ -33,7 +33,7 @@ A process that cannot load a `.ts` config exits 2. The line is `okm needs Node.j
 
 An unknown command is `Unknown command <name>.` A group without its subcommand (`okm migrate`, `okm ext`, `okm catalog`, `okm import`, `okm driver`) names the subcommands. A close spelling adds `Did you mean`.
 
-Exit codes are by outcome. `0` is done, or nothing to do. `1` is a command that ran and failed, including an error finding and an unexpected internal error. `2` is usage or configuration: an unknown flag, a missing config, a missing flag value. `3` is a decision the command will not ask for (OKM1530). `4` is a guard: a protected target without `--allow-protected` (OKM1850), two targets that alias one database and disagree about protection (OKM1852), or a file the user already has (OKM1855). `5` is a target that cannot be reached or a refused feature: no connection, a server older than the floor (OKM1803), a missing extension (OKM1811), a pooler host, or OKM1860. A code with no outcome in that list stays `1`.
+Exit codes are by outcome. `0` is done, or nothing to do. `1` is a command that ran and failed, including an error finding and an unexpected internal error. `2` is usage or configuration: an unknown flag, a missing config, a missing flag value. `3` is a decision the command will not ask for (OKM1530), or a committed step that needs a person (OKM1553, OKM1555). `4` is a guard: a protected target without `--allow-protected` (OKM1850), two targets that alias one database and disagree about protection (OKM1852), or a file the user already has (OKM1855). `5` is a target that cannot be reached or a refused feature: no connection, a server older than the floor (OKM1803), a missing extension (OKM1811), a pooler host, or OKM1860. A code with no outcome in that list stays `1`.
 
 `--json` on every command prints one `okm.cli/1` document on stdout and nothing else. Stderr is empty on success. A failure still prints that document; a terminal also gets one terse stderr line, and a pipe does not, so `2>&1` stays one JSON document. There are no prompts and no color. The keys, in order, are `schema`, `command`, `okmVersion`, `capabilities`, `ok`, `exit`, `target` (omitted when the command did not select a database), `data`, `errors`, `warnings`, `truncated`, `outFile`. `ok` is true only when `exit` is 0. `target.fingerprint.hostDb` is the SHA-256 of lower-cased `host:port/database`. `identity` is null. The fingerprint has no URL, host, or credential. `--out <file>` writes `data` to that file (`-` keeps it on stdout) and the envelope records `outFile` (`path`, `bytes`). Commands that already used `--out` for their own file or directory keep that meaning.
 
@@ -56,6 +56,7 @@ Exit codes are by outcome. `0` is done, or nothing to do. `1` is a command that 
 | `migrate plan <name>` | Prints the plan. Adds lock estimates when one target answers. `--json` prints a document. |
 | `migrate apply` | Applies pending migrations. |
 | `migrate status` | Prints each target's version and state. |
+| `migrate resolve <step>` | Records a committed step, or marks it to run again. |
 | `migrate check` | Replays migration history in a scratch schema and rolls it back. |
 | `migrate baseline` | Records the head snapshot as applied on an existing database. No schema changes. |
 | `push` | Applies the schema diff. Writes no SQL file. |
@@ -70,9 +71,9 @@ Every command parses the flags in this table. An unknown flag is a usage error, 
 | Flag | Read by |
 | --- | --- |
 | `--config <path>`, `-c <path>` | Every command that loads a config. Loads that file instead of `okmodel.config.ts` in the working directory. |
-| `--target <name>`, `-t <name>` | `check`, `migrate plan`, `migrate apply`, `migrate status`, `migrate check`, `migrate baseline`, `push`, `pull`, `seed`, `ext`, and `doctor`. Who requires it is [Database](/docs/define/config/database). |
-| `--allow-protected` | `migrate apply`, `migrate baseline`, `push`, and `seed`. One invocation. Blocked work is [Protection](/docs/define/config/database#protection). `migrate check` ignores the flag. |
-| `--allow-pooler` | `migrate apply`, `migrate baseline`, `push`, `seed`, `migrate check`, and `check` when it compares a database. Same opt-in as [allowPooler](/docs/define/config/pooler). Either one is enough. |
+| `--target <name>`, `-t <name>` | `check`, `migrate plan`, `migrate apply`, `migrate status`, `migrate resolve`, `migrate check`, `migrate baseline`, `push`, `pull`, `seed`, `ext`, and `doctor`. Who requires it is [Database](/docs/define/config/database). |
+| `--allow-protected` | `migrate apply`, `migrate resolve`, `migrate baseline`, `push`, and `seed`. One invocation. Blocked work is [Protection](/docs/define/config/database#protection). `migrate check` ignores the flag. |
+| `--allow-pooler` | `migrate apply`, `migrate resolve`, `migrate baseline`, `push`, `seed`, `migrate check`, and `check` when it compares a database. Same opt-in as [allowPooler](/docs/define/config/pooler). Either one is enough. |
 | `--lock-timeout <milliseconds>` | `migrate apply`. Overrides [timeouts.lock](/docs/define/config/timeouts). `0` disables it. |
 | `--statement-timeout <milliseconds>` | `migrate apply`. Overrides [timeouts.statement](/docs/define/config/timeouts). |
 | `--json` | Every command. Prints one `okm.cli/1` document. The command's previous JSON is `data`. |
@@ -263,6 +264,8 @@ bunx okm migrate apply --target prod
 
 The columns are tab-separated: `target`, `version`, `catalog`, `state`, `protected`. `protected` is `true` or `false`. The state is `current`, `behind by expand`, `behind by contract`, `ahead by expand`, `ahead by contract`, or `failed at step <n> (resume with okm migrate apply)`.
 
+A committed step that is in flight or broken follows as its own section: a line `steps`, then the tab-separated header `id`, `kind`, `state`, `attempt`, `next`. `id` is `<migration>:<step>` with a 0-based step index.
+
 An unfinished backfill follows as its own section: a line `backfill`, then the tab-separated header `migration`, `step`, `rows`, `key`, `state`.
 
 A pooler host is not refused. The command is read-only, including on a protected target.
@@ -270,6 +273,25 @@ A pooler host is not refused. The command is read-only, including on a protected
 ```sh
 bunx okm migrate status
 ```
+
+`--json` keeps that text in `data.text` and adds `data.steps` (`id`, `kind`, `state`, `attempt`, `nextAction`). The array is empty when no committed step is in flight.
+
+## migrate resolve
+
+`okm migrate resolve <migration>:<step>` records a committed step a person finished, or marks it so the next apply tries it. The operand is the 0-based id from `okm migrate status`. The command needs an `okm_steps` row for that step. Pass one of the two actions.
+
+Recording the step as applied writes the history row and deletes the `okm_steps` row. Where Postgres can probe the kind, a probe that is not applied is OKM1554. Where no probe exists, the command is OKM1555 until `--accept-unverified` is passed. That flag has no short form.
+
+Marking the step to run again sets the row to `retry`. The next apply probes first where a probe exists, and otherwise runs the statement.
+
+There is no skip. A protected target is a history repair and needs `--allow-protected`. A pooler host is refused the same way apply refuses one.
+
+```sh
+bunx okm migrate resolve 0001_init:2 --retry
+bunx okm migrate resolve 0001_init:2 --applied
+```
+
+`--json` puts `target`, `step`, `action` (`applied` or `retry`), and `result` (`recorded` or `retry`) in `data`.
 
 ## migrate baseline
 

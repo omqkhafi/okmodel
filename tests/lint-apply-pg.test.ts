@@ -39,7 +39,13 @@ postgresTest(
       writeMigration(cwd, "0002_add", add.plan, serializeCatalog(noted.catalog));
       await markApplied(sql, "0001_drop", drop.plan.steps.length);
       await run(["migrate", "apply"], { cwd, stdout: () => undefined });
-      expect(await tables(sql)).toEqual(["notes", "okm_backfill", "okm_history", "okm_meta"]);
+      expect(await tables(sql)).toEqual([
+        "notes",
+        "okm_backfill",
+        "okm_history",
+        "okm_meta",
+        "okm_steps",
+      ]);
       expect(await history(sql)).toContain("0001_drop");
       expect(await history(sql)).toContain("0002_add");
     });

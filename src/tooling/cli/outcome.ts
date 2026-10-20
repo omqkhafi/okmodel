@@ -28,6 +28,8 @@ const PARTIAL = Symbol.for("okm.cli.partial");
 const CODE_EXIT: Readonly<Record<string, ExitCode>> = {
   OKM1201: 2,
   OKM1530: 3,
+  OKM1553: 3,
+  OKM1555: 3,
   OKM1802: 5,
   OKM1803: 5,
   OKM1811: 5,

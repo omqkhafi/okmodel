@@ -18,6 +18,7 @@ import { quoteIdent } from "../../dialects/pg/ddl.js";
 import { introspectSchema } from "../../dialects/pg/introspect.js";
 import { roleExists } from "../../dialects/pg/role/check.js";
 import { changesRole, createdRoleName, createRoleOnce } from "../../dialects/pg/role/sql.js";
+import { migrationJournalGrants } from "./managed.js";
 import { sealViews } from "../../dialects/pg/view/scratch.js";
 import { ensureMigrationTables } from "./apply.js";
 import type { MigrateConfig } from "./config.js";
@@ -474,9 +475,7 @@ async function runSteps(
       if (created !== undefined && created === migrationRole && !existed) {
         await grantSchema(connection, scratch, created);
         await ownSchema(connection, scratch, created);
-        await connection.execute(
-          `grant select, insert, update on okm_meta, okm_history, okm_backfill to ${quoteIdent(created)}`,
-        );
+        for (const grant of migrationJournalGrants(created)) await connection.execute(grant);
       }
     } catch (error) {
       throw failStep(migration.id, index, error);

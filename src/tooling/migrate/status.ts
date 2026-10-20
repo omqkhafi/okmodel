@@ -28,6 +28,8 @@ import { loadConfig } from "./project.js";
 import { catalogNamespace } from "./export.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
 import { expandProvisioned, isRestampHistoryId, provisionHistoryIsKnown } from "./snapshot.js";
+import { postgresHasProbe } from "./pg-probe.js";
+import { nextApplyAction, stepId, type MarkerState } from "./step-engine.js";
 
 /**
  * Coarse compatibility for the programmatic `status()` API (D298).
@@ -52,6 +54,24 @@ export type TargetStatus = {
   readonly pending: readonly string[];
   /** Coarse state for programmatic consumers. */
   readonly compatibility: CompatibilityState;
+  /**
+   * Committed steps that are in flight or broken.
+   *
+   * Empty when every committed step is in `okm_history` or has not started.
+   */
+  readonly steps: readonly StepProgress[];
+};
+
+/** One `okm_steps` row, as `okm migrate status` reports it. */
+export type StepProgress = {
+  /** `${migrationId}:${stepIndex}`, 0-based. */
+  readonly id: string;
+  readonly kind: string;
+  /** `started`, `failed`, or `retry`. */
+  readonly state: string;
+  readonly attempt: number;
+  /** What the next apply will do. */
+  readonly nextAction: string;
 };
 
 /** One backfill that has committed at least one batch and is not done. */
@@ -230,6 +250,7 @@ export async function readTargetStatus(input: {
       protected: input.protected,
       backfills: await readBackfills(pool),
       pending: described.pending,
+      steps: await readSteps(pool, input.migrations),
       compatibility: compatibilityOf(described.state),
     };
   } catch (error) {
@@ -298,6 +319,7 @@ export async function statusProjectRows(
 export function formatStatus(rows: readonly TargetStatus[]): string {
   const lines = ["target\tversion\tcatalog\tstate\tprotected"];
   const backfills: BackfillProgress[] = [];
+  const steps: StepProgress[] = [];
   for (const row of rows) {
     lines.push(
       [row.target, row.version, row.catalogHash, row.state, row.protected ? "true" : "false"].join(
@@ -305,6 +327,16 @@ export function formatStatus(rows: readonly TargetStatus[]): string {
       ),
     );
     backfills.push(...row.backfills);
+    steps.push(...row.steps);
+  }
+  if (steps.length > 0) {
+    lines.push("steps");
+    lines.push("id\tkind\tstate\tattempt\tnext");
+    for (const item of steps) {
+      lines.push(
+        [item.id, item.kind, item.state, String(item.attempt), item.nextAction].join("\t"),
+      );
+    }
   }
   if (backfills.length > 0) {
     lines.push("backfill");
@@ -414,6 +446,53 @@ async function readBackfills(pool: {
     });
   }
   return rows;
+}
+
+async function readSteps(
+  pool: {
+    execute: (text: string) => Promise<{ rows: readonly (readonly (string | null)[])[] }>;
+  },
+  migrations: readonly StoredMigration[],
+): Promise<StepProgress[]> {
+  const present = await pool.execute("select to_regclass('okm_steps') is not null");
+  if (!wireTrue(present.rows[0]?.[0] ?? null)) return [];
+  const result = await pool.execute(
+    `select migration_id, step_index::text, kind, state, attempt::text
+     from okm_steps
+     order by migration_id, step_index`,
+  );
+  const rows: StepProgress[] = [];
+  for (const row of result.rows) {
+    const migrationId = row[0];
+    const index = row[1];
+    const kind = row[2];
+    const state = row[3];
+    const attempt = row[4];
+    if (migrationId == null || index == null || kind == null || state == null || attempt == null) {
+      continue;
+    }
+    const stepIndex = Number(index);
+    const file = migrations.find((migration) => migration.id === migrationId)?.steps[stepIndex];
+    const probed = postgresHasProbe(kind, file?.sql ?? "");
+    const marker = markerState(state);
+    rows.push({
+      id: stepId(migrationId, stepIndex),
+      kind,
+      state,
+      attempt: Number(attempt),
+      nextAction: nextApplyAction({
+        stepNumber: stepIndex + 1,
+        state: marker,
+        probed,
+      }),
+    });
+  }
+  return rows;
+}
+
+function markerState(value: string): MarkerState {
+  if (value === "started" || value === "failed" || value === "retry") return value;
+  return "failed";
 }
 
 function wireTrue(value: string | null): boolean {

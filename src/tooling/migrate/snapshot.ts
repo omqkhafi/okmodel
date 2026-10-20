@@ -19,9 +19,9 @@ import type {
   ViewObject,
 } from "../../contracts/catalog/types.js";
 import type { DriverConnection } from "../../contracts/driver.js";
-import { quoteIdent } from "../../dialects/pg/ddl.js";
 import { roleExists } from "../../dialects/pg/role/check.js";
 import { changesRole, createdRoleName, createRoleOnce } from "../../dialects/pg/role/sql.js";
+import { migrationJournalGrants } from "./managed.js";
 import { catalogsEqual } from "./equal.js";
 import { omitManagedObjects } from "./managed.js";
 import { planMigration } from "./plan.js";
@@ -210,9 +210,7 @@ export async function installSnapshot(
           await flush();
           await grantSchema(connection, schema, created);
           await ownSchema(connection, schema, created);
-          await connection.execute(
-            `grant select, insert, update on okm_meta, okm_history, okm_backfill to ${quoteIdent(created)}`,
-          );
+          for (const grant of migrationJournalGrants(created)) await connection.execute(grant);
         }
         continue;
       }
@@ -228,9 +226,7 @@ export async function installSnapshot(
         await flush();
         await grantSchema(connection, schema, created);
         await ownSchema(connection, schema, created);
-        await connection.execute(
-          `grant select, insert, update on okm_meta, okm_history, okm_backfill to ${quoteIdent(created)}`,
-        );
+        for (const grant of migrationJournalGrants(created)) await connection.execute(grant);
       }
     }
     if (
