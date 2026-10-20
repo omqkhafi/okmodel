@@ -320,17 +320,18 @@ async function expectIsolation<S extends Parameters<typeof testing>[0]>(
     try {
       const report = await harness.isolation();
       for (const name of checked) expect(report.checked).toContain(name);
+      // Finishing the applying harness removes the schema this leak check reads.
+      const leaking = await testing(build(dropPredicate(fresh())), {
+        driver: open({ url: database.url }),
+        migrate: false,
+      });
+      try {
+        await expectLeak(leaking.isolation());
+      } finally {
+        await leaking.close();
+      }
     } finally {
       await harness.close();
-    }
-    const leaking = await testing(build(dropPredicate(fresh())), {
-      driver: open({ url: database.url }),
-      migrate: false,
-    });
-    try {
-      await expectLeak(leaking.isolation());
-    } finally {
-      await leaking.close();
     }
   } finally {
     await database.close();

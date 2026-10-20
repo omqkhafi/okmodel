@@ -10,6 +10,7 @@ import { OkmError } from "../../contracts/error.js";
 import type { DriverPool } from "../../contracts/driver.js";
 import { renderCatalog } from "../../dialects/pg/ddl.js";
 import { createClient } from "../../runtime/client.js";
+import { dropAppliedCatalog } from "./cleanup.js";
 import type { Connected } from "../../runtime/types.js";
 import { attachHost, bindFactories, type FactoryHost, type TableFactory } from "./factories.js";
 import { readFacts, type TestingSchema } from "./facts.js";
@@ -88,7 +89,12 @@ export type Testing<S extends TestingSchema = TestingSchema> = {
    * @returns Checked tenant tables and views, and skipped global objects
    */
   isolation(): Promise<IsolationReport>;
-  /** Closes the client and the pool. */
+  /**
+   * Drops the objects this harness applied, then closes the client and the pool.
+   *
+   * `migrate: false` drops nothing. A drop the database rejects is reported
+   * after the pool is closed, and a later failure does not replace it.
+   */
   close(): Promise<void>;
 };
 
@@ -106,7 +112,8 @@ export async function testing<const S extends TestingSchema>(
 ): Promise<Testing<S>> {
   const seed = options.seed ?? 1;
   const pool = await options.driver;
-  if (options.migrate !== false) {
+  const applied = options.migrate !== false;
+  if (applied) {
     for (const statement of renderCatalog(schema.catalog, "public")) {
       if (statement.trim().length === 0) continue;
       await pool.execute(statement);
@@ -163,7 +170,24 @@ export async function testing<const S extends TestingSchema>(
       );
     },
     isolation: () => runIsolation(host),
-    close: () => db.close(),
+    async close() {
+      let dropError: OkmError | undefined;
+      if (applied) {
+        try {
+          dropError = await dropAppliedCatalog(recording.pool, schema.catalog);
+        } catch (error) {
+          dropError = error instanceof OkmError ? error : OkmError.from(error);
+        }
+      }
+      let closeError: unknown;
+      try {
+        await db.close();
+      } catch (error) {
+        closeError = error;
+      }
+      if (dropError !== undefined) throw dropError;
+      if (closeError !== undefined) throw closeError;
+    },
   };
   attachHost(harness, host);
   return harness;
