@@ -45,7 +45,7 @@ earlier main run.
 
 ## Bun
 
-CI installs Bun 1.4.2 (or newer when the pin moves). Local tooling expects
+CI installs Bun 1.4.3 (or newer when the pin moves). Local tooling expects
 Bun `>=1.4.0`.
 
 ## Out of scope here

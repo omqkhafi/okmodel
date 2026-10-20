@@ -49,6 +49,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### ♻️ Changed
 
+- CI installs Bun 1.4.3. The kill-storm wedge in Bun.sql is still there on that version.
 - `gate / check` always runs (`if: always()`), keys concurrency on the pull request number (or the commit on `main`), and requires the full tier for `full-ci`, a `chore(release)` title, a change under `.github/workflows`, or a push to `main`. A no-op label event mirrors the last gate result for that commit instead of reporting Success from a skipped job. Plan: [docs/ci-and-test-cycle-plan.md](docs/ci-and-test-cycle-plan.md).
 - The drivers CI group is three shards (`drivers suite`, `drivers rest`, `drivers-conformance`). The pglite conformance report and the live compatibility table check sit on the conformance shard; the fast path keeps a cheap case-list sync. Driver and error suites open PGlite from a prepared data directory instead of running initdb on every pool.
 - postgres.js kill-storm uncaught exceptions are documented as an upstream limit (B-02): a minimal postgres.js-only reproduction lives in `docs/postgresjs-kill-storm.md`, known-limits and the Drivers page recommend `okmodel/pg/pg` or `okmodel/pg/bun` where failover is expected, and the adapter's process listener is described as damage control rather than a fix.
@@ -86,7 +87,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### adapters
 
-- A Bun.sql pool that answers `connection must be a PostgresSQLConnection` after `pg_terminate_backend` is replaced. The next call dials again, and `close()` is on that new pool. The wedged client is dropped: its `close()` does not return (oven-sh/bun#46166).
+- A Bun.sql pool that answers `connection must be a PostgresSQLConnection` after `pg_terminate_backend` is replaced. The next call dials again. Pool `close()` returns within a second when Bun's own `close()` does not (oven-sh/bun#46166). Still present on Bun 1.4.3.
 
 #### runtime
 

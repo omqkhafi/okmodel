@@ -274,7 +274,23 @@ export function open(config: BunSqlConfig): DriverPool {
     stats: () => statsOf(counters, max),
     async close() {
       closed = true;
-      await slot.sql.close();
+      // Bun 1.4.2 and 1.4.3 can leave close() pending after a kill storm
+      // (oven-sh/bun#46166). The caller still gets the pool back.
+      const pending = slot.sql.close();
+      pending.catch(() => undefined);
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, 1_000);
+        pending.then(
+          () => {
+            clearTimeout(timer);
+            resolve();
+          },
+          () => {
+            clearTimeout(timer);
+            resolve();
+          },
+        );
+      });
     },
   };
   return pool;
