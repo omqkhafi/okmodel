@@ -71,7 +71,37 @@ export type HeldPool = {
   readonly isClosed: () => boolean;
   /** Sockets this pool has closed. The count never returns to zero. */
   readonly closures: () => number;
+  /**
+   * Drops a pool Bun has wedged.
+   *
+   * `connection must be a PostgresSQLConnection` does not recover on the same
+   * client, and `close()` on that client does not return. The next call uses
+   * the replacement. A checkout still holding the dead client, or a `dead`
+   * client that was already replaced, leaves the current client in place.
+   *
+   * @param dead - The client that rejected the statement
+   * @returns The client the next statement should use, or `undefined` when the pool is closed
+   */
+  readonly replaceDead: (dead: SQL) => SQL | undefined;
 };
+
+/**
+ * Bun.sql's wrapper is gone.
+ *
+ * The text carries no SQLSTATE. A closed socket (`Connection closed`) is not
+ * this: that one still dials on the same client.
+ *
+ * @param error - A rejection from `Bun.SQL`
+ * @returns `true` when the client cannot serve another statement
+ */
+export function bunWrapperDead(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  if (error.message === "connection must be a PostgresSQLConnection") return true;
+  return (
+    error.cause instanceof Error &&
+    error.cause.message === "connection must be a PostgresSQLConnection"
+  );
+}
 
 const clientPools = new WeakSet<DriverPool>();
 
@@ -117,26 +147,37 @@ export function open(config: BunSqlConfig): DriverPool {
   let dropped = 0;
   let closures = 0;
 
-  const sql = new BunSQL(config.url, {
-    max,
-    idleTimeout: 0,
-    maxLifetime: 0,
-    prepare: named,
-    bigint: false,
-    connectionTimeout: 5,
-    connection: {
-      application_name: "okmodel",
-      ...(config.searchPath !== undefined ? { search_path: config.searchPath } : {}),
-    },
-    ...(config.ssl !== undefined ? { tls: config.ssl } : {}),
-    onclose() {
-      dropped += 1;
-      closures += 1;
-    },
-  });
+  const make = (): SQL =>
+    new BunSQL(config.url, {
+      max,
+      idleTimeout: 0,
+      maxLifetime: 0,
+      prepare: named,
+      bigint: false,
+      connectionTimeout: 5,
+      connection: {
+        application_name: "okmodel",
+        ...(config.searchPath !== undefined ? { search_path: config.searchPath } : {}),
+      },
+      ...(config.ssl !== undefined ? { tls: config.ssl } : {}),
+      onclose() {
+        dropped += 1;
+        closures += 1;
+      },
+    });
+  const slot = { sql: make() };
+  const replaceDead = (dead: SQL): SQL | undefined => {
+    if (closed) return undefined;
+    if (slot.sql !== dead || counters.reserved !== 0) return slot.sql;
+    // The wedged client is not closed: close() does not return (oven-sh/bun#46166).
+    slot.sql = make();
+    dropped = 0;
+    closures += 1;
+    return slot.sql;
+  };
 
   const root = new WireSession(
-    (text, params) => send(sql, text, params),
+    (text, params) => send(slot.sql, text, params),
     notices,
     isClosed,
     false,
@@ -149,12 +190,15 @@ export function open(config: BunSqlConfig): DriverPool {
   );
 
   const held: HeldPool = {
-    sql,
+    get sql() {
+      return slot.sql;
+    },
     acquireMs,
     counters,
     notices,
     isClosed,
     closures: () => closures,
+    replaceDead,
   };
 
   const run = (
@@ -167,8 +211,15 @@ export function open(config: BunSqlConfig): DriverPool {
       .query(text, params, watch)
       .catch((error: unknown) =>
         import("./bunsql-extra.js").then((mod) =>
-          mod.recover(sql, error, text, root.depth(), clientPools.has(pool), dropped > sent, () =>
-            root.query(text, params, watch),
+          mod.recover(
+            slot.sql,
+            error,
+            text,
+            root.depth(),
+            clientPools.has(pool),
+            dropped > sent,
+            () => root.query(text, params, watch),
+            replaceDead,
           ),
         ),
       );
@@ -182,7 +233,7 @@ export function open(config: BunSqlConfig): DriverPool {
     if (dropped === 0) return run(text, params, watch);
     const seen = dropped;
     return import("./bunsql-extra.js").then((mod) =>
-      mod.drainClosed(sql).then(() => {
+      mod.drainClosed(slot.sql, replaceDead).then(() => {
         if (dropped === seen) dropped = 0;
         return run(text, params, watch);
       }),
@@ -216,12 +267,14 @@ export function open(config: BunSqlConfig): DriverPool {
       })();
     },
     listen(channel, onNotify) {
-      return import("./bunsql-extra.js").then((mod) => mod.listen(sql, closed, channel, onNotify));
+      return import("./bunsql-extra.js").then((mod) =>
+        mod.listen(slot.sql, closed, channel, onNotify),
+      );
     },
     stats: () => statsOf(counters, max),
     async close() {
       closed = true;
-      await sql.close();
+      await slot.sql.close();
     },
   };
   return pool;
@@ -261,11 +314,17 @@ export async function reserve(
   sql: SQL,
   acquireMs: number | undefined,
   counters: Counters,
+  replaceDead?: (dead: SQL) => SQL | undefined,
 ): Promise<ReservedSQL> {
   counters.waiting += 1;
   try {
-    if (acquireMs === undefined) return await sql.reserve();
-    return await sql.reserve({ signal: AbortSignal.timeout(acquireMs) });
+    try {
+      return await take(sql, acquireMs);
+    } catch (error) {
+      const next = bunWrapperDead(error) ? replaceDead?.(sql) : undefined;
+      if (next === undefined || next === sql) throw error;
+      return await take(next, acquireMs);
+    }
   } catch (error) {
     if (isAbort(error)) {
       const errors = await driverErrors();
@@ -286,6 +345,11 @@ export async function reserve(
   } finally {
     counters.waiting = Math.max(0, counters.waiting - 1);
   }
+}
+
+function take(sql: SQL, acquireMs: number | undefined): Promise<ReservedSQL> {
+  if (acquireMs === undefined) return sql.reserve();
+  return sql.reserve({ signal: AbortSignal.timeout(acquireMs) });
 }
 
 /**

@@ -13,7 +13,7 @@ import { DriverError } from "../error.js";
 import { rejectClosed } from "../failure.js";
 import { runCall, type Watch } from "./call.js";
 import { noTimeout } from "./no-inflight-timeout.js";
-import { releaseReserved, reserve, send, type HeldPool } from "./bunsql.js";
+import { bunWrapperDead, releaseReserved, reserve, send, type HeldPool } from "./bunsql.js";
 import { refuseWhenLost, resetSession, type Lost } from "./reserved.js";
 import { cursorStream } from "./cursor.js";
 import { WireSession } from "./session.js";
@@ -44,6 +44,7 @@ import { WireSession } from "./session.js";
  * @param clientRead - The pool was opened for a client, which retries a read once
  * @param closedDuring - `onclose` ran after this statement was sent
  * @param again - The same statement, on whatever connection the pool hands out next
+ * @param replaceDead - Installs a new client when this one is wedged
  * @returns The retried result, or a rejection of `error`
  */
 export async function recover<T>(
@@ -54,15 +55,16 @@ export async function recover<T>(
   clientRead: boolean,
   closedDuring: boolean,
   again: () => Promise<T>,
+  replaceDead?: (dead: SQL) => SQL | undefined,
 ): Promise<T> {
   if (!lostQuery(error)) throw error;
-  await flushClosed(sql);
+  await flushClosed(sql, replaceDead);
   const alreadyDead = closedDuring || socketClosed(error);
   if ((!clientRead && !alreadyDead) || depth !== 0 || !readStatement(text)) throw error;
   try {
     return await again();
   } catch (next) {
-    if (lostQuery(next)) await flushClosed(sql);
+    if (lostQuery(next)) await flushClosed(sql, replaceDead);
     throw next;
   }
 }
@@ -71,9 +73,10 @@ export async function recover<T>(
  * Spends a closed socket before the caller's statement is sent.
  *
  * @param sql - The pool
+ * @param replaceDead - Installs a new client when this one is wedged
  */
-export function drainClosed(sql: SQL): Promise<void> {
-  return flushClosed(sql).then(() => undefined);
+export function drainClosed(sql: SQL, replaceDead?: (dead: SQL) => SQL | undefined): Promise<void> {
+  return flushClosed(sql, replaceDead).then(() => undefined);
 }
 
 /**
@@ -128,7 +131,7 @@ export async function listen(
 export async function checkout(held: HeldPool): Promise<DriverConnection & { evict(): void }> {
   const { counters, isClosed } = held;
   if (isClosed()) return rejectClosed();
-  const reserved = await reserve(held.sql, held.acquireMs, counters);
+  const reserved = await reserve(held.sql, held.acquireMs, counters, held.replaceDead);
   counters.reserved += 1;
   const session = new WireSession(
     (text, params) => send(reserved, text, params),
@@ -220,7 +223,7 @@ export async function checkout(held: HeldPool): Promise<DriverConnection & { evi
           }
           // A pool probe while another checkout holds a session can land on that
           // backend. Drain only when we are the last reservation.
-          if (counters.reserved === 0) await flushClosed(held.sql);
+          if (counters.reserved === 0) await flushClosed(held.sql, held.replaceDead);
         } else {
           try {
             await releaseReserved(reserved);
@@ -231,7 +234,7 @@ export async function checkout(held: HeldPool): Promise<DriverConnection & { evi
             } catch {
               // Bun already dropped the handle.
             }
-            if (counters.reserved === 0) await flushClosed(held.sql);
+            if (counters.reserved === 0) await flushClosed(held.sql, held.replaceDead);
           }
         }
       }
@@ -260,15 +263,21 @@ function reportsClosed(reserved: ReservedSQL): boolean {
  * @param sql - The pool
  * @returns `true` when a statement got a live connection
  */
-async function flushClosed(sql: SQL): Promise<boolean> {
+async function flushClosed(
+  sql: SQL,
+  replaceDead?: (dead: SQL) => SQL | undefined,
+): Promise<boolean> {
+  let wedged = false;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       await sql.unsafe("select 1");
       return true;
-    } catch {
-      // The closed socket rejects once.
+    } catch (error) {
+      // A closed socket rejects once. A wedged client rejects every probe.
+      if (bunWrapperDead(error)) wedged = true;
     }
   }
+  if (wedged) replaceDead?.(sql);
   return false;
 }
 

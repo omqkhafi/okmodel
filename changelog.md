@@ -84,6 +84,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `defineConfig({ namespace })` places a trigger's called function with the catalog, so generate/apply/check no longer fail OKM1020 for a missing function in `public` (B-47).
 - The guide roles flow on a fresh database no longer fails with `SAVEPOINT can only be used in transaction blocks` during provision: schema ownership runs without a savepoint when no transaction is open, `CREATEROLE` is checked on the connecting user (not the managed migration role), and a failed provision drops empty bootstrap tables so a retry is clean (B-30).
 
+#### adapters
+
+- A Bun.sql pool that answers `connection must be a PostgresSQLConnection` after `pg_terminate_backend` is replaced. The next call dials again, and `close()` is on that new pool. The wedged client is dropped: its `close()` does not return (oven-sh/bun#46166).
+
 #### runtime
 
 - `where`, `orderBy` (including `relevance()`), and search accept `hidden({ filterable: true })` in the type. A plain `.hidden()` column stays a type error there, and the column stays off the row (Q7, #394).
