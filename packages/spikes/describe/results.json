@@ -4,10 +4,10 @@
   "neonUrl": "unset",
   "notes": [],
   "size": {
-    "sourceBytes": 13812,
-    "sourceGzip": 4099,
-    "minifiedBytes": 5694,
-    "minifiedGzip": 2188
+    "sourceBytes": 14034,
+    "sourceGzip": 4141,
+    "minifiedBytes": 5772,
+    "minifiedGzip": 2201
   },
   "servers": [
     {

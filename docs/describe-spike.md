@@ -66,12 +66,12 @@ The built-in client is [packages/spikes/describe/protocol.ts](../packages/spikes
 
 | Measure | Bytes |
 | --- | ---: |
-| Source | 13,812 |
-| Source gzip | 4,099 |
-| Minified (`bun build --minify --target node`) | 5,694 |
-| Minified gzip | 2,188 |
+| Source | 14,034 |
+| Source gzip | 4,141 |
+| Minified (`bun build --minify --target node`) | 5,772 |
+| Minified gzip | 2,201 |
 
-It fits a tooling subpath as a lazy module. It does not fit the runtime entry: that gate is 6,100 minified and 2,250 gzip, and this file would spend almost all of it. Tooling stays off `src/contracts/index.ts`. The sample speaks trust, cleartext, MD5, and SCRAM-SHA-256. It does not negotiate TLS. A host that requires SSL needs that before this client can be the fallback, and TLS would add bytes.
+It fits a tooling subpath as a lazy module. It does not fit the runtime entry: that gate is 6,100 minified and 2,250 gzip, and this file would spend almost all of it (5,772 and 2,201). The counts were measured again after the typecheck edit. The statement matrix in `results.json` is from the run before that edit; the protocol messages did not change. Tooling stays off `src/contracts/index.ts`. The sample speaks trust, cleartext, MD5, and SCRAM-SHA-256. It does not negotiate TLS. A host that requires SSL needs that before this client can be the fallback, and TLS would add bytes.
 
 ## What typed `raw()` may rely on
 
