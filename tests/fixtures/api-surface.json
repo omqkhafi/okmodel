@@ -1279,6 +1279,10 @@
       "kind": "stable"
     },
     {
+      "name": "FeatureEntry",
+      "kind": "stable"
+    },
+    {
       "name": "LogicalIdentity",
       "kind": "stable"
     },
@@ -1288,6 +1292,10 @@
     },
     {
       "name": "MigrateOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "POSTGRES_FEATURES",
       "kind": "stable"
     },
     {
@@ -1303,6 +1311,14 @@
       "kind": "stable"
     },
     {
+      "name": "PostgresFeature",
+      "kind": "stable"
+    },
+    {
+      "name": "Registry",
+      "kind": "stable"
+    },
+    {
       "name": "RequiredExtension",
       "kind": "stable"
     },
@@ -1311,7 +1327,15 @@
       "kind": "stable"
     },
     {
+      "name": "SchemaRequirements",
+      "kind": "stable"
+    },
+    {
       "name": "StatusResult",
+      "kind": "stable"
+    },
+    {
+      "name": "Support",
       "kind": "stable"
     },
     {
