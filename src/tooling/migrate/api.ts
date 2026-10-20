@@ -66,7 +66,7 @@ export type PlanResult = {
   readonly lint: readonly Finding[];
   /** The same text `okm migrate plan` prints, before findings. */
   readonly text: string;
-  /** The same document `okm migrate plan --json` prints, including the trailing newline. */
+  /** Plan document. `okm migrate plan --json` prints it as envelope `data`. */
   readonly json: string;
 };
 

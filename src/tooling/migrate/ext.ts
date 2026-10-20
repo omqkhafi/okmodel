@@ -13,6 +13,7 @@ import { pathToFileURL } from "node:url";
 
 import { open } from "../../adapters/pg/postgresjs.js";
 import { OkmError } from "../../contracts/error.js";
+import { tagOutcome } from "../cli/outcome.js";
 import { compareExtensionVersions, isExactVersion } from "../../contracts/catalog/extension.js";
 import type { DriverPool, WireValue } from "../../contracts/driver.js";
 import type { CatalogObject, ExtensionObject } from "../../contracts/catalog/types.js";
@@ -165,10 +166,11 @@ export async function extScaffold(
   if (out !== undefined) {
     const path = isAbsolute(out) ? out : join(cwd, out);
     if (existsSync(path)) {
-      throw new OkmError(
-        "invalid",
-        `okm ext scaffold would overwrite ${path}. Nothing was written.`,
-        { fix: { summary: "Pass a path that does not exist. The command never overwrites." } },
+      throw tagOutcome(
+        new OkmError("invalid", `okm ext scaffold would overwrite ${path}. Nothing was written.`, {
+          fix: { summary: "Pass a path that does not exist. The command never overwrites." },
+        }),
+        "guard",
       );
     }
   }

@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://okmodel.dev/schemas/cli-1/migrate-plan.json",
+  "title": "okm migrate plan data",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "name",
+    "class",
+    "steps",
+    "findings"
+  ],
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "class": {
+      "enum": [
+        "expand",
+        "contract",
+        "unclassified"
+      ]
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "class",
+          "lock",
+          "sql"
+        ],
+        "properties": {
+          "class": {
+            "enum": [
+              "expand",
+              "contract",
+              "unclassified"
+            ]
+          },
+          "lock": {
+            "type": "string"
+          },
+          "sql": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "severity",
+          "code",
+          "place",
+          "reason",
+          "fix"
+        ],
+        "properties": {
+          "severity": {
+            "enum": [
+              "error",
+              "warning"
+            ]
+          },
+          "code": {
+            "type": "string"
+          },
+          "place": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "fix": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

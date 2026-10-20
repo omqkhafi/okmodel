@@ -22,6 +22,6 @@ bunx okm migrate baseline --dry-run
 bunx okm migrate baseline --json
 ```
 
-`--dry-run` prints what would be recorded. `--json` includes the unmanaged list. Running baseline again on the same mark prints `already baselined` and changes nothing.
+`--dry-run` prints what would be recorded. `--json` puts the unmanaged list in envelope `data`. Running baseline again on the same mark prints `already baselined` and changes nothing.
 
 `baseline(target)` from `okmodel/migrate` is the programmatic entry. `default` is the `database` target.

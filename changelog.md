@@ -25,6 +25,9 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okm generate` exits 1 when an error finding exists; the migration file is still written; stderr says `okm migrate apply` will refuse until it is fixed (Q8, #395). A warning-only finding stays exit 0.
 - `okm pull` and `okm import drizzle` write relative imports with the `.ts` extension so Node type stripping and `bunx okm` can load the schema (R4, #401). `tsc` needs `allowImportingTsExtensions` with `noEmit`, or `rewriteRelativeImportExtensions`.
 - An `update` on a `versioned()` table without `version` is a TypeScript error; the runtime OKM1120 stays when types are bypassed (Q5, D305, #392). Non-versioned tables are unchanged. Type-cost ceilings: inferred-200 instantiations 17,831; query-features types 7,146 (measured plus 3 percent).
+- `okm` exit codes follow the outcome. `0` is done or nothing to do. `1` is a command that ran and failed. `2` is usage or configuration (unknown flag, missing config, a Node older than 22.18). `3` is a decision the command will not ask (OKM1530). `4` is a guard (OKM1850, OKM1852, OKM1855). `5` is a target that cannot be reached or a refused feature (OKM1802, OKM1803, OKM1811, OKM1812, OKM1843, OKM1844, OKM1846, OKM1854, OKM1860, and a lost connection). Every other code, including OKM1401, planner OKM1541, OKM1851, OKM1857, and OKM1858, stays `1`. A script that only checked non-zero still fails. A script that treated every failure as `1` now sees `2` through `5`.
+- `okm migrate plan --json`, `okm migrate baseline --json`, and `okm catalog export --json` keep their previous fields inside the `okm.cli/1` envelope `data`. `parsePlanJson` reads `data` and still accepts a bare plan document.
+- `okm build` and `okm dev` reject an unknown flag. They used to leave the rest of the line unread.
 
 ### ✨ Added
 
@@ -35,6 +38,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### tooling
 
+- `okm --json` on every command prints one `okm.cli/1` document and nothing else. `--out <file>` writes a large `data` payload (`-` keeps it on stdout). `okm schema <command>` prints the JSON Schema for that `data`. The same files ship under `schemas/cli-1/`.
+- Short flags for flags that already exist: `-h` help, `-V` version, `-v` verbose, `-c` config, `-t` target, `-o` out, `-n` dry-run on `migrate baseline`. `-f` is not a flag. `--allow-protected`, `--allow-pooler`, and `--replace` have no short form and are not read from the environment.
 - `describe(schema).requirements` reports `minVersion.postgres` (the same floor as `minPostgres`), the extension list, the catalog features the schema uses, and a cost line for each emulated feature. `okm build`, `okm check`, and `okm doctor` compare that list with the Postgres registry exported from `okmodel/migrate`. A refused feature stops with OKM1860 and names the dialect, the feature, the first version that would support it, and the portable alternative.
 - Global `--config <path>` on every `okm` command that loads a config; default discovery stays `okmodel.config.ts`. A missing file names that path and `--config`.
 - `plan`, `apply`, and `status` on `okmodel/migrate` share the CLI migrate engine for CI and deploy without shelling out (D298).
@@ -70,6 +75,15 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Docs: `connect({ hookm })` is an array; a single observer object or a `hooks` key does not register observers.
 - `okm migrate check` prints, after `ok N migrations`, that an empty-table replay does not catch a step that fails only on real data: `NOT NULL` on a populated column, a unique index over duplicates, or a check over existing rows (Q4, #391).
 - The Release workflow runs on a `v*` tag. Before any build it requires the tagged commit to be an ancestor of `origin/main`, the tag to match `package.json`, and a `## v` changelog section. It then runs the Postgres suite, the pack contract, and `npm stage publish` with provenance (npm 11.15 or newer, Node 22.14 or newer). A dispatch with `publish` false checks `main` and refuses a tag that is not on `main`. The publish job is the only one with `id-token: write` and `contents: write`, and it uses the `release` environment. No npm token is stored.
+
+#### tooling
+
+- The migration planner takes a dialect lowering object. Postgres plans stay the same. Feature support and refusal are questions on that object, so the planner does not import the feature registry.
+- Table, column, and constraint changes lower through that dialect. One logical change can be several statements. Postgres plans stay the same, including a validated check before `SET NOT NULL` on an existing column.
+- Index create, drop, and rename lower through that dialect. Postgres still builds and drops an index on an existing table concurrently. The planner still waits to drop a replaced index until the new one is built. Plans stay the same.
+- Enum, domain, and extension changes lower through that dialect. Adding labels, replacing an enum, and swapping a domain check can be several statements. Postgres plans stay the same, including a non-transactional `ADD VALUE` and an unverified extension upgrade.
+- Function, trigger, view, policy, role, and grant changes lower through that dialect. One policy can be several statements. Postgres plans stay the same, including `CREATE OR REPLACE` for a compatible function or view body.
+- The planner no longer imports Postgres SQL. Sequences, check swaps, and backfill `UPDATE`s lower through the dialect. Postgres plans stay the same.
 
 ### 🔥 Removed
 
