@@ -73,6 +73,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 #### tooling
 
 - The migration planner takes a dialect lowering object. Postgres plans stay the same. Feature support and refusal are questions on that object, so the planner does not import the feature registry.
+- Table, column, and constraint changes lower through that dialect. One logical change can be several statements. Postgres plans stay the same, including a validated check before `SET NOT NULL` on an existing column.
 
 ### 🔥 Removed
 
