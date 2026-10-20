@@ -1,6 +1,6 @@
 # Contributing
 
-OKModel is built one prompt at a time. Use Bun only (`bun`, `bunx`). Do not use npm, pnpm, yarn, or another package manager.
+OKModel is built one prompt at a time. Use Bun only (`bun`, `bunx`). Do not use npm, pnpm, yarn, or another package manager. The repository pins one Bun version in `.bun-version` (currently `1.4.3`). CI reads that file. `bun run verify:fast` prints a warning when the local Bun differs and still continues.
 
 ## Branches
 

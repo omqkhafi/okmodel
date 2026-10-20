@@ -233,7 +233,9 @@ test("the site deploys only after a successful release of a stable tag", () => {
   expect(yaml).not.toContain("secrets.");
   expect(yaml).toContain("bun ./scripts/deploy-ref.ts");
   expect(yaml).toContain("bun ./scripts/deploy-ref.ts --confirm");
-  expect(yaml).toContain("bun-version: 1.4.3");
+  expect(readFileSync(join(root, ".bun-version"), "utf8").trim()).toBe("1.4.3");
+  expect(yaml).toContain(".bun-version");
+  expect(yaml).toContain("bun-version: ${{ steps.bun-pin.outputs.version }}");
   expect(yaml).toContain("actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1");
   expect(yaml).toContain("oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2");
   expect(yaml).not.toContain("type: choice");

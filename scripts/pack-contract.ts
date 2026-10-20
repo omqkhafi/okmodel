@@ -3,6 +3,11 @@
  *
  * `bunx npm pack --dry-run --json` is the file list. The snapshot is
  * committed, so a change to either list is a diff in the pull request.
+ * Bun names split chunks `dist/shared/<hash>.js` and
+ * `dist/tooling/shared/<hash>.js` (`--chunk-naming=shared/[hash].js`).
+ * Those paths are stored as `dist/shared/*.js` and
+ * `dist/tooling/shared/*.js`. The count of each name stays exact.
+ * A different hash with the same count passes. A new or removed chunk fails.
  * `package.json` must have no `preinstall`, `install`, `postinstall`, or
  * `prepare` script, empty `dependencies`, a `files` allowlist, and optional
  * peer dependencies.
@@ -51,7 +56,38 @@ export function manifestProblems(manifest: unknown): readonly string[] {
 }
 
 /**
+ * Bun's content-hash chunk names.
+ *
+ * The basename is the hash from `--chunk-naming=shared/[hash].js`. There is
+ * no stable chunk name in front of it. `dist/runtime/ids/okid-shared.d.ts`
+ * does not match: the directory is `dist/shared` or `dist/tooling/shared`,
+ * and the file is `<hash>.js`.
+ */
+const CHUNK_PATH = /^dist\/((?:tooling\/)?shared)\/[0-9a-z]+\.js$/;
+
+/**
+ * Replaces a content-hash chunk basename with `*`.
+ *
+ * `dist/shared/0212d69d.js` becomes `dist/shared/*.js`.
+ * `dist/tooling/shared/016qrjk3.js` becomes `dist/tooling/shared/*.js`.
+ * Any other path is unchanged. A path that is already normalised stays
+ * unchanged, because `*` is not a hash character.
+ *
+ * @param path - One packed path
+ * @returns The path the snapshot stores
+ */
+export function normalizePackedPath(path: string): string {
+  const match = CHUNK_PATH.exec(path);
+  if (match === null) return path;
+  return `dist/${match[1]}/*.js`;
+}
+
+/**
  * Paths present on one side of the snapshot only.
+ *
+ * Chunk hashes are compared by the count of each normalised name. Two lists
+ * with the same files and different hashes match. One more or one fewer
+ * chunk does not.
  *
  * @param actual - Paths from `npm pack`
  * @param expected - Paths in the snapshot
@@ -61,12 +97,33 @@ export function packedFileDiff(
   actual: readonly string[],
   expected: readonly string[],
 ): { readonly extra: readonly string[]; readonly missing: readonly string[] } {
-  const actualSet = new Set(actual);
-  const expectedSet = new Set(expected);
-  return {
-    extra: actual.filter((path) => !expectedSet.has(path)),
-    missing: expected.filter((path) => !actualSet.has(path)),
-  };
+  const actualCounts = pathCounts(actual);
+  const expectedCounts = pathCounts(expected);
+  const names = [...new Set([...actualCounts.keys(), ...expectedCounts.keys()])].sort();
+  const extra: string[] = [];
+  const missing: string[] = [];
+  for (const name of names) {
+    const got = actualCounts.get(name) ?? 0;
+    const want = expectedCounts.get(name) ?? 0;
+    for (let index = 0; index < got - want; index += 1) extra.push(name);
+    for (let index = 0; index < want - got; index += 1) missing.push(name);
+  }
+  return { extra, missing };
+}
+
+/**
+ * Counts normalised packed paths.
+ *
+ * @param paths - Packed or snapshot paths
+ * @returns How many files share each normalised name
+ */
+function pathCounts(paths: readonly string[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const path of paths) {
+    const name = normalizePackedPath(path);
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  return counts;
 }
 
 if (import.meta.main) {
@@ -91,7 +148,10 @@ if (import.meta.main) {
     throw error;
   });
   const exportsField = isRecord(manifest) && "exports" in manifest ? manifest.exports : null;
-  const next: PackSnapshot = { files: packed, exports: exportsField ?? null };
+  const next: PackSnapshot = {
+    files: packed.map((path) => normalizePackedPath(path)).sort(),
+    exports: exportsField ?? null,
+  };
   if (values.update) {
     writeFileSync(snapshotPath, `${canonical(next)}\n`);
     console.log(`pack-contract: wrote ${snapshotPath}`);
