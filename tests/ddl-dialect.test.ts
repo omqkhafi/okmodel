@@ -123,6 +123,48 @@ test("one logical index create can lower to two steps and a deferred drop stays 
   expect(parsed.class).toBe(plan.class);
 });
 
+test("one logical enum add can lower to two physical steps", () => {
+  const before = schema({
+    tables: [
+      table("tasks", {
+        id: t.integer().primaryKey(),
+        status: t.enum("color", ["red", "blue"]),
+      }),
+    ],
+  }).catalog;
+  const after = schema({
+    tables: [
+      table("tasks", {
+        id: t.integer().primaryKey(),
+        status: t.enum("color", ["red", "green", "blue"]),
+      }),
+    ],
+  }).catalog;
+  const dialect: DdlDialect = {
+    ...postgresDialect,
+    lower(change) {
+      if (change.op !== "add-enum-values") return postgresDialect.lower(change);
+      return [1, 2].map((part) =>
+        ddlStep(
+          `alter type "public"."color" add value 'green_${String(part)}'`,
+          "add-enum-value",
+          "ddl",
+          "ACCESS EXCLUSIVE",
+          false,
+        ),
+      );
+    },
+  };
+  const plan = planMigration({ before, after, name: "add" }, dialect);
+  const added = plan.steps.filter((item) => item.kind === "add-enum-value");
+  expect(added).toHaveLength(2);
+  expect(added.every((item) => item.transactional === false)).toBe(true);
+  expect(added.map((item) => item.class)).toEqual(["expand", "expand"]);
+  const parsed = parsePlan(formatPlan(plan));
+  expect(parsed.steps.map((item) => item.sql)).toEqual(plan.steps.map((item) => item.sql));
+  expect(parsed.class).toBe(plan.class);
+});
+
 test("a dialect that refuses a used feature is OKM1860", () => {
   const after = schema({
     tables: [table("tasks", { id: t.integer().primaryKey() })],

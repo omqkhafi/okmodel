@@ -1,18 +1,22 @@
 /**
  * Postgres DDL lowering.
  *
- * Table, column, constraint, and index changes return every physical
- * statement for that one logical change. Other families stay in the planner
- * until they move here. Output for a catalog pair stays the recorded plan.
+ * Table, column, constraint, index, type, and extension changes return every
+ * physical statement for that one logical change. Other families stay in the
+ * planner until they move here. Output for a catalog pair stays the recorded plan.
  */
 
+import { isDomain } from "../../contracts/catalog/enum.js";
+import { fitIdentifier } from "../../contracts/catalog/identifier.js";
 import { OkmError } from "../../contracts/error.js";
 import type {
   Catalog,
   CatalogObject,
   ColumnObject,
   ConstraintObject,
+  ExtensionObject,
   IndexObject,
+  TypeObject,
 } from "../../contracts/catalog/types.js";
 import { ddlStep } from "../ddl-step.js";
 import type { DdlStep, LogicalChange } from "../ddl.js";
@@ -25,6 +29,7 @@ import {
   qualify,
   quoteIdent,
 } from "./ddl.js";
+import { quoteLiteral } from "./quote.js";
 import { notNullSteps } from "./table-safe.js";
 
 const ACCESS = "ACCESS EXCLUSIVE";
@@ -98,6 +103,24 @@ export function lowerPostgres(change: LogicalChange): readonly DdlStep[] {
       return createIndex(change.index, change.schema, change.onExistingTable);
     case "drop-index":
       return dropIndex(change.index, change.schema, change.onExistingTable);
+    case "create-type":
+      return createType(change.object, change.schema);
+    case "drop-type":
+      return dropType(change.object, change.schema);
+    case "add-enum-values":
+      return addEnumValues(change.schema, change.name, change.before, change.after);
+    case "replace-enum":
+      return replaceEnum(change.schema, change.name, change.labels, change.columns);
+    case "alter-domain-check":
+      return alterDomainCheck(change.schema, change.name, change.expression);
+    case "create-extension":
+      return createExtension(change.object, change.schema);
+    case "drop-extension":
+      return dropExtension(change.object, change.schema);
+    case "move-extension":
+      return moveExtension(change.name, change.schema);
+    case "update-extension":
+      return updateExtension(change.name, change.version);
     case "alter-column":
       return alterColumn(change.before, change.after, change.schema, change.catalogs);
     default:
@@ -182,6 +205,164 @@ function concurrentDropIndexSql(sql: string): string {
   const prefix = "drop index ";
   if (!sql.startsWith(prefix)) return sql;
   return `drop index concurrently ${sql.slice(prefix.length)}`;
+}
+
+function createType(object: TypeObject, schema: string): readonly DdlStep[] {
+  const sql = createObjectSql(object, schema);
+  if (sql === undefined) return [];
+  const kind = isDomain(object.definition) ? "create-domain" : "create-enum";
+  return [ddlStep(sql, kind, "ddl", ACCESS)];
+}
+
+function dropType(object: TypeObject, schema: string): readonly DdlStep[] {
+  const sql = dropObjectSql(object, schema);
+  if (sql === undefined) return [];
+  const kind = isDomain(object.definition) ? "drop-domain" : "drop-enum";
+  return [ddlStep(sql, kind, "ddl", ACCESS)];
+}
+
+function addEnumValues(
+  schema: string,
+  name: string,
+  before: readonly string[],
+  after: readonly string[],
+): readonly DdlStep[] {
+  return addValueStatements(schema, name, before, after).map((sql) =>
+    ddlStep(sql, "add-enum-value", "ddl", ACCESS, false),
+  );
+}
+
+function addValueStatements(
+  schema: string,
+  name: string,
+  before: readonly string[],
+  after: readonly string[],
+): string[] {
+  const present = new Set(before);
+  const statements: string[] = [];
+  const type = qualify(schema, name);
+  for (let index = 0; index < after.length; index += 1) {
+    const label = after[index];
+    if (label === undefined || present.has(label)) continue;
+    let beforeNeighbor: string | undefined;
+    for (let cursor = index + 1; cursor < after.length; cursor += 1) {
+      const next = after[cursor];
+      if (next !== undefined && present.has(next)) {
+        beforeNeighbor = next;
+        break;
+      }
+    }
+    let sql = `alter type ${type} add value ${quoteLiteral(label)}`;
+    if (beforeNeighbor !== undefined) {
+      sql += ` before ${quoteLiteral(beforeNeighbor)}`;
+    } else {
+      let afterNeighbor: string | undefined;
+      for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+        const previous = after[cursor];
+        if (previous !== undefined && present.has(previous)) {
+          afterNeighbor = previous;
+          break;
+        }
+      }
+      if (afterNeighbor !== undefined) sql += ` after ${quoteLiteral(afterNeighbor)}`;
+    }
+    statements.push(sql);
+    present.add(label);
+  }
+  return statements;
+}
+
+function replaceEnum(
+  schema: string,
+  name: string,
+  labels: readonly string[],
+  columns: readonly { readonly table: string; readonly column: string }[],
+): readonly DdlStep[] {
+  const type = qualify(schema, name);
+  const old = quoteIdent(`${name}_old`);
+  const listed = labels.map((label) => quoteLiteral(label)).join(", ");
+  const steps: DdlStep[] = [
+    ddlStep(`alter type ${type} rename to ${old}`, "rename-enum", "ddl", ACCESS),
+    ddlStep(`create type ${type} as enum (${listed})`, "recreate-enum", "ddl", ACCESS),
+  ];
+  for (const column of columns) {
+    const table = qualify(schema, column.table);
+    const columnName = quoteIdent(column.column);
+    steps.push(
+      ddlStep(
+        `alter table ${table} alter column ${columnName} type ${type} using ${columnName}::text::${type}`,
+        "set-enum-column",
+        "ddl",
+        ACCESS,
+      ),
+    );
+  }
+  steps.push(ddlStep(`drop type ${qualify(schema, `${name}_old`)}`, "drop-enum", "ddl", ACCESS));
+  return steps;
+}
+
+function alterDomainCheck(schema: string, name: string, expression: string): readonly DdlStep[] {
+  const type = qualify(schema, name);
+  const current = quoteIdent(fitIdentifier(`${name}_check`));
+  const upcoming = quoteIdent(fitIdentifier(`${name}_check_next`));
+  return [
+    ddlStep(
+      `alter domain ${type} add constraint ${upcoming} check (${expression}) not valid`,
+      "add-domain-check",
+      "ddl",
+      ACCESS,
+    ),
+    ddlStep(
+      `alter domain ${type} validate constraint ${upcoming}`,
+      "validate-domain-check",
+      "ddl",
+      ACCESS,
+    ),
+    ddlStep(`alter domain ${type} drop constraint ${current}`, "drop-domain-check", "ddl", ACCESS),
+    ddlStep(
+      `alter domain ${type} rename constraint ${upcoming} to ${current}`,
+      "rename-domain-check",
+      "ddl",
+      ACCESS,
+    ),
+  ];
+}
+
+function createExtension(object: ExtensionObject, schema: string): readonly DdlStep[] {
+  const sql = createObjectSql(object, schema);
+  if (sql === undefined) return [];
+  return [ddlStep(sql, "create-extension", "ddl", ACCESS)];
+}
+
+function dropExtension(object: ExtensionObject, schema: string): readonly DdlStep[] {
+  const sql = dropObjectSql(object, schema);
+  if (sql === undefined) return [];
+  return [ddlStep(sql, "drop-extension", "ddl", ACCESS)];
+}
+
+function moveExtension(name: string, schema: string): readonly DdlStep[] {
+  return [
+    ddlStep(
+      `alter extension ${quoteIdent(name)} set schema ${quoteIdent(schema)}`,
+      "move-extension",
+      "ddl",
+      ACCESS,
+    ),
+  ];
+}
+
+function updateExtension(name: string, version: string): readonly DdlStep[] {
+  return [
+    {
+      ...ddlStep(
+        `alter extension ${quoteIdent(name)} update to ${quoteLiteral(version)}`,
+        "update-extension",
+        "ddl",
+        ACCESS,
+      ),
+      path: "unverified",
+    },
+  ];
 }
 
 function requiredColumn(column: ColumnObject): boolean {

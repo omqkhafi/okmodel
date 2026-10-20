@@ -16,20 +16,7 @@ import {
 import { identityKey } from "../../contracts/catalog/identity.js";
 import type { CatalogObject, ExtensionObject } from "../../contracts/catalog/types.js";
 import type { DriverConnection } from "../../contracts/driver.js";
-import { quoteIdent } from "../../dialects/pg/ddl.js";
-import { quoteLiteral } from "../../dialects/pg/quote.js";
-import { classOf, type StepKind } from "./classify.js";
-
-/** One extension alter. The planner stores it as a plan step. */
-export type ExtensionStep = {
-  readonly sql: string;
-  readonly kind: StepKind;
-  readonly class: "expand" | "contract";
-  readonly action: "ddl";
-  readonly lock: string;
-  readonly transactional: boolean;
-  readonly path?: "unverified";
-};
+import type { DdlDialect, DdlStep } from "../../dialects/ddl.js";
 
 /** Migrations the preflight reads. Only the statement text is used. */
 type MigrationSql = {
@@ -62,21 +49,23 @@ export function createExtensionName(sql: string): string | undefined {
  * @param beforeBy - Previous objects, keyed by identity
  * @param afterBy - Next objects, keyed by identity
  * @param dropKeys - Identities the plan drops
+ * @param dialect - Lowers a move or an upgrade the planner has accepted
  * @returns Alter steps. Creates and drops stay in the main planner
  */
 export function extensionAlterSteps(
   beforeBy: ReadonlyMap<string, CatalogObject>,
   afterBy: ReadonlyMap<string, CatalogObject>,
   dropKeys: ReadonlySet<string>,
-): ExtensionStep[] {
+  dialect: DdlDialect,
+): readonly DdlStep[] {
   refuseDrops(beforeBy, afterBy, dropKeys);
-  const steps: ExtensionStep[] = [];
+  const steps: DdlStep[] = [];
   for (const after of afterBy.values()) {
     if (after.kind !== "extension") continue;
     const before = beforeBy.get(identityKey(after.identity));
     if (before === undefined || before.kind !== "extension") continue;
     if (sameExtensionDefinition(before, after)) continue;
-    steps.push(...alterExtension(before, after));
+    steps.push(...alterExtension(before, after, dialect));
   }
   return steps;
 }
@@ -181,9 +170,12 @@ function refuseDrops(
   }
 }
 
-function alterExtension(before: ExtensionObject, after: ExtensionObject): ExtensionStep[] {
-  const steps: ExtensionStep[] = [];
-  const name = quoteIdent(after.identity.name);
+function alterExtension(
+  before: ExtensionObject,
+  after: ExtensionObject,
+  dialect: DdlDialect,
+): readonly DdlStep[] {
+  const steps: DdlStep[] = [];
   if (before.definition.schema !== after.definition.schema) {
     if (!after.definition.relocatable) {
       throw new OkmError(
@@ -198,10 +190,11 @@ function alterExtension(before: ExtensionObject, after: ExtensionObject): Extens
       );
     }
     steps.push(
-      extensionStep(
-        `alter extension ${name} set schema ${quoteIdent(after.definition.schema)}`,
-        "move-extension",
-      ),
+      ...dialect.lower({
+        op: "move-extension",
+        name: after.identity.name,
+        schema: after.definition.schema,
+      }),
     );
   }
   const previous = before.definition.version;
@@ -219,33 +212,9 @@ function alterExtension(before: ExtensionObject, after: ExtensionObject): Extens
     );
   }
   steps.push(
-    extensionStep(`alter extension ${name} update to ${quoteLiteral(next)}`, "update-extension", {
-      path: "unverified",
-    }),
+    ...dialect.lower({ op: "update-extension", name: after.identity.name, version: next }),
   );
   return steps;
-}
-
-function extensionStep(
-  sql: string,
-  kind: "move-extension" | "update-extension",
-  extra?: { readonly path: "unverified" },
-): ExtensionStep {
-  const classification = classOf(kind);
-  if (classification === "unclassified") {
-    throw new OkmError("invalid", `Extension step ${kind} has no class.`, {
-      fix: { summary: "Classify the extension step as expand or contract." },
-    });
-  }
-  return {
-    sql,
-    kind,
-    class: classification,
-    action: "ddl",
-    lock: "ACCESS EXCLUSIVE",
-    transactional: true,
-    ...(extra?.path !== undefined ? { path: extra.path } : {}),
-  };
 }
 
 async function availableExtensions(
