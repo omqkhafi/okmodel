@@ -4,7 +4,10 @@ name: Postgres
 # `Postgres / suite / 15 / isolation`. A pull request with `needs: postgres`
 # passes the floor and the newest. Release and weekly pass every supported
 # major. Each shard has its own topology. The pooler proof is its own job,
-# so apt-get is not on the suite path. `versions` is unchanged (D230).
+# so apt-get is not on the suite path. That job also starts a PgBouncer
+# service container (transaction mode, pool size 1) and runs the opt-in
+# smoke test. Callers run this workflow on the `needs: postgres` label or
+# the full tier, not on every pull request. `versions` is unchanged (D230).
 on:
   workflow_call:
     inputs:
@@ -128,8 +131,65 @@ jobs:
           REQUIRE_DOCKER: "1"
           POSTGRES_VERSION: ${{ matrix.version }}
 
+      - name: Start PgBouncer
+        # Service container in front of the compose primary. A workflow
+        # `services:` block starts before `db:up`, so this container joins
+        # the compose network (`okmodel_default`, hostname `primary`) after
+        # Postgres is healthy.
+        #
+        # Image: edoburu/pgbouncer v1.26.1-p0, PgBouncer 1.26.1.
+        # Pinned by the multi-arch index digest. ubuntu-24.04 resolves the
+        # linux/amd64 manifest sha256:a26a00a576e248e73230eff35c8fbe77279bf0d8b6550d3007c56ee69287c664.
+        # PgBouncer 1.21 and newer implement `max_prepared_statements` in
+        # transaction mode. 1.26.1 leaves it at the default of 200, so
+        # protocol-level prepared statements are enabled. The ini omits the
+        # key and keeps that default.
+        #
+        # `pool_mode=transaction`, `default_pool_size=1`, `reserve_pool_size=0`.
+        # `server_reset_query` stays the image default (`DISCARD ALL`) and is
+        # not run in transaction mode (`server_reset_query_always` off), so a
+        # `SET` outside a transaction remains on the one server connection.
+        run: |
+          docker pull "$PGBOUNCER_IMAGE"
+          docker rm -f okm-pgbouncer >/dev/null 2>&1 || true
+          docker run -d --name okm-pgbouncer \
+            --network okmodel_default \
+            --publish 127.0.0.1:6432:5432 \
+            -e DATABASE_URL="postgres://okm:okm@primary:5432/okm" \
+            -e POOL_MODE=transaction \
+            -e DEFAULT_POOL_SIZE=1 \
+            -e RESERVE_POOL_SIZE=0 \
+            -e AUTH_TYPE=scram-sha-256 \
+            "$PGBOUNCER_IMAGE"
+          docker exec okm-pgbouncer pgbouncer --version
+          docker exec okm-pgbouncer cat /etc/pgbouncer/pgbouncer.ini
+          ready=0
+          for _ in $(seq 1 50); do
+            if docker exec okm-pgbouncer pg_isready -h 127.0.0.1 -p 5432 -U okm -d okm; then
+              ready=1
+              break
+            fi
+            sleep 0.2
+          done
+          if [ "$ready" != 1 ]; then
+            docker logs okm-pgbouncer || true
+            exit 1
+          fi
+        env:
+          PGBOUNCER_IMAGE: edoburu/pgbouncer:v1.26.1-p0@sha256:488422e38cff912895d0d65d8963fcd306e6ac589a724398b6eb8e294e94d624
+
+      - name: Pooler smoke
+        # OKM_POOLER_URL is set only here. Suite shards keep the direct URL.
+        run: bun test tests/pooler-service-pg.test.ts
+        env:
+          REQUIRE_DOCKER: "1"
+          POSTGRES_VERSION: ${{ matrix.version }}
+          OKM_POOLER_URL: postgres://okm:okm@127.0.0.1:6432/okm
+
       - name: Stop Postgres
         if: always()
-        run: bun run db:down
+        run: |
+          docker rm -f okm-pgbouncer >/dev/null 2>&1 || true
+          bun run db:down
         env:
           POSTGRES_VERSION: ${{ matrix.version }}
