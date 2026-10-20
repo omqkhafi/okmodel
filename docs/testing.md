@@ -25,7 +25,7 @@ test("today view runs one query", async () => {
 });
 ```
 
-`open()` is async and returns a driver pool. `open({ url })` from `okmodel/pg/postgresjs` is synchronous and is accepted the same way. `testing` applies the schema's catalog first, which is what an empty PGlite database needs. Pass `migrate: false` when the database already has its tables. `okm seed` does that.
+`open()` is async and returns a driver pool. `open({ url })` from `okmodel/pg/postgresjs` is synchronous and is accepted the same way. `testing` applies the schema's catalog first, which is what an empty PGlite database needs. Pass `migrate: false` when the database already has its tables. `okm seed` does that. `close()` drops the objects that apply created, in reverse dependency order, and drops nothing when `migrate` is false.
 
 `tenants` in the example is a global table (`global("tenant directory")`). Its `id` is the value passed to `for({ tenantId })`. `users` and `tasks` are tenant tables. `lists` is the table `x.ref("lists")` inserts or reuses. `loadToday` is the application's read; the count is how many statements that read sends.
 
