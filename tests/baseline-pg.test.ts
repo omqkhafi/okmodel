@@ -79,11 +79,15 @@ postgresTest(
       expect(await present(url, "public.junk")).toBe(true);
 
       await seed(url, `alter table items drop column note`);
-      const dry = await cli(cwd, ["migrate", "baseline", "--dry-run", "--json"]);
-      const parsed = JSON.parse(dry) as {
-        status: string;
-        unmanaged: { kind: string; name: string }[];
+      const dry = JSON.parse(await cli(cwd, ["migrate", "baseline", "--dry-run", "--json"])) as {
+        schema: string;
+        data: {
+          status: string;
+          unmanaged: { kind: string; name: string }[];
+        };
       };
+      expect(dry.schema).toBe("okm.cli/1");
+      const parsed = dry.data;
       expect(parsed.status).toBe("dry-run");
       expect(
         parsed.unmanaged.some((item) => item.kind === "table" && item.name.includes("junk")),

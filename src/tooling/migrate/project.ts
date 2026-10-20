@@ -26,6 +26,7 @@ import {
 } from "../../contracts/catalog/document.js";
 import { sha256 } from "../../contracts/sha256.js";
 import { OkmError } from "../../contracts/error.js";
+import { tagOutcome } from "../cli/outcome.js";
 import { assertSupported, formatEmulation } from "../capabilities/check.js";
 import { POSTGRES_FEATURES } from "../capabilities/postgres.js";
 import { featuresUsed } from "../capabilities/used.js";
@@ -627,17 +628,23 @@ export async function exportProject(
 export async function loadConfig(project: string | ProjectContext): Promise<MigrateConfig> {
   const { configPath } = asProject(project);
   if (!existsSync(configPath)) {
-    throw new OkmError("invalid", `Missing ${CONFIG_FILE} at ${configPath}.`, {
-      fix: {
-        summary: `Create ${CONFIG_FILE} in the project directory, or pass --config <path>.`,
-      },
-    });
+    throw tagOutcome(
+      new OkmError("invalid", `Missing ${CONFIG_FILE} at ${configPath}.`, {
+        fix: {
+          summary: `Create ${CONFIG_FILE} in the project directory, or pass --config <path>.`,
+        },
+      }),
+      "usage",
+    );
   }
   const imported: unknown = await import(`${pathToFileURL(configPath).href}?okm=${Date.now()}`);
   const record = isRecord(imported) ? imported : {};
   const config = record.default ?? record.config;
   if (!isConfig(config)) {
-    throw new OkmError("invalid", `${CONFIG_FILE} must default-export defineConfig(...).`);
+    throw tagOutcome(
+      new OkmError("invalid", `${CONFIG_FILE} must default-export defineConfig(...).`),
+      "usage",
+    );
   }
   return config;
 }
@@ -706,7 +713,10 @@ function nextNumber(directory: string): string {
 
 function safeName(name: string): string {
   if (!/^[A-Za-z0-9_-]+$/.test(name)) {
-    throw new OkmError("invalid", `Migration name ${name} must be letters, digits, _ or -.`);
+    throw tagOutcome(
+      new OkmError("invalid", `Migration name ${name} must be letters, digits, _ or -.`),
+      "usage",
+    );
   }
   return name;
 }

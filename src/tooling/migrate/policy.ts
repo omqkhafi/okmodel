@@ -6,6 +6,7 @@
  */
 
 import { OkmError } from "../../contracts/error.js";
+import { tagOutcome } from "../cli/outcome.js";
 import type { MigrateConfig, TargetInput } from "./config.js";
 
 /** An operation the policy table allows or blocks. */
@@ -150,10 +151,11 @@ export function assertDirectConnection(url: string, allowPooler: boolean): void 
     endpoint.port === "6432" ||
     parsed.searchParams.get("pgbouncer") === "true"
   ) {
-    throw new OkmError(
-      "invalid",
-      `Refusing pooler host ${host}. Apply needs a direct connection.`,
-      { fix: { summary: "Use a direct connection, or pass --allow-pooler." } },
+    throw tagOutcome(
+      new OkmError("invalid", `Refusing pooler host ${host}. Apply needs a direct connection.`, {
+        fix: { summary: "Use a direct connection, or pass --allow-pooler." },
+      }),
+      "unreachable",
     );
   }
 }
