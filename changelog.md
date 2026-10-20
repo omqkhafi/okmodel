@@ -51,11 +51,13 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `gate / check` compares `npm pack --dry-run --json` to a committed snapshot of packed files and the `exports` map (`scripts/pack-contract.ts`). A forbidden install script, a dependency, a required peer, or a missing `files` allowlist fails the check. Update the snapshot with `bun ./scripts/pack-contract.ts --update`.
 - `bun ./scripts/verify-release.ts <version> [--recorded <path>]` downloads the published tarball and checks its version, the pack-contract file list, and `npm audit signatures`. With `--recorded` it fails unless the sha256 and file list match the record the release pack job wrote. Without `--recorded`, a rebuild of the tag is a warning and does not fail. The release workflow packs once, prints that sha256 in the job summary, uploads the record, publishes that tarball, and verifies against the record. `v0.9.1` not being on main is a warning.
 - Postgres CI starts PgBouncer 1.26.1 (`edoburu/pgbouncer` v1.26.1-p0, pinned by digest) in transaction mode with pool size 1, in front of the topology, on the `needs: postgres` label and the full tier. Tests opt in with `OKM_POOLER_URL`. Suite shards keep the direct URL. A smoke test runs a query on each TCP adapter, checks that two sequential transactions share one server connection, and checks that a `SET` outside a transaction is visible to the next client. PgBouncer 1.26.1 supports `max_prepared_statements` in transaction mode (default 200).
+- Conformance cases are tagged portable or gated on a registry key or an adapter gate. A refused registry entry asserts that entry's code and alternative instead of running the body. A false adapter flag on a feature the registry still provides stays unsupported. `okm driver test` prints portable, gated, refusal, and unsupported counts. A test-only profile refuses every Postgres feature and turns the adapter flags off, and the portable minimum (connect, a read and write, error mapping) still passes on it.
 
 #### docs
 
 - Docs: [Adopt an existing database](docs/adopt-existing.md) and the handbook page cover pull, generate, then baseline.
 - A describe spike records, per driver and Postgres 15–18, whether parameter OIDs, column names, column type OIDs, and table OID plus attnum can be read without executing the statement. The notes are `docs/describe-spike.md`. The scripts under `packages/spikes/describe/` are not packed.
+- The testing notes describe the portable and gated conformance split, the profile that refuses every capability, and what a new dialect ships before it claims a gated feature.
 
 ### 💥 Breaking Changes
 
