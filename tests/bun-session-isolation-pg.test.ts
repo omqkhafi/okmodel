@@ -245,6 +245,63 @@ postgresTest(
 
 postgresTest(
   gate,
+  "a wedged Bun.sql pool is replaced after pg_terminate_backend",
+  async () => {
+    await withAppRole(async (admin, schemaName, role, appUrl) => {
+      for (let wave = 1; wave <= 4; wave += 1) {
+        const pools = [0, 1, 2, 3].map(() =>
+          openBun({ url: appUrl, searchPath: schemaName, max: 4 }),
+        );
+        let stop = false;
+        const killer = (async () => {
+          while (!stop) {
+            await admin
+              .unsafe(
+                `select pg_terminate_backend(pid) from pg_stat_activity where usename = '${role}'`,
+              )
+              .catch(() => undefined);
+            await Bun.sleep(10);
+          }
+        })();
+        const deadline = Date.now() + 3_000;
+        await Promise.all(
+          pools.map(async (pool) => {
+            while (Date.now() < deadline) {
+              await pool.execute("select 1").catch(() => undefined);
+            }
+          }),
+        );
+        stop = true;
+        await killer;
+        for (const pool of pools) {
+          let last = "";
+          let ok = false;
+          for (let attempt = 1; attempt <= 5; attempt += 1) {
+            try {
+              await pool.execute("select 1");
+              ok = true;
+              last = "";
+              break;
+            } catch (error) {
+              last = error instanceof Error ? error.message : String(error);
+            }
+          }
+          expect(last).toBe("");
+          expect(ok).toBe(true);
+          const closed = await Promise.race([
+            pool.close().then(() => "closed"),
+            Bun.sleep(5_000).then(() => "timeout"),
+          ]);
+          expect(closed).toBe("closed");
+        }
+      }
+    });
+  },
+  60_000,
+);
+
+postgresTest(
+  gate,
   "two concurrent scoped units after a write keep their own tenant settings",
   async () => {
     await withAppRole(async (_admin, schemaName, _role, appUrl) => {

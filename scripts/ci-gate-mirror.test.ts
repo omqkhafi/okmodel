@@ -38,4 +38,13 @@ test("priorCompletedRun skips the current run, other workflows, and unfinished r
   expect(
     priorCompletedRun([{ id: 9, name: "CI", status: "completed", conclusion: "success" }], 9),
   ).toBeUndefined();
+  expect(
+    priorCompletedRun(
+      [
+        { id: 5, name: "CI", status: "completed", conclusion: "cancelled" },
+        { id: 2, name: "CI", status: "completed", conclusion: "success" },
+      ],
+      9,
+    ),
+  ).toEqual({ id: 2, name: "CI", status: "completed", conclusion: "success" });
 });

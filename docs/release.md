@@ -54,6 +54,16 @@ The same workflow run creates a GitHub Release on that tag. A stable version clo
 
 Provenance is the npm attestation that GitHub Actions built the tarball. The publish job sets `permissions.id-token` to `write` so npm can attach it. The signed statement records the commit the runner built.
 
+The build job packs once (`bun pm pack`). It writes that tarball's sha256 and file list to `release-record.json`, prints the sha256 in the job summary, and uploads the tarball and the record. Publish stages that same tarball. Compare the job-summary sha256 with the staged package before approving it.
+
+The last job downloads the record and runs `scripts/verify-release.ts` with `--recorded`. It downloads that version from the registry and fails when the sha256 or the file list differs from the record, when the tarball's `package.json` version differs, or when the packed paths differ from the pack-contract snapshot on that tag. A tag with no snapshot warns. `npm audit signatures` must report a verified attestation. That is the provenance check. `npm view --json` shows the predicate type and does not verify the signature. Tag `v0.9.1` is not an ancestor of `main`, and that known fact is a warning. Any other tag off `main` fails. A staged version is not on the registry until a maintainer approves it, so this job fails until the version is public and the job is run again.
+
+A hand run without `--recorded` still checks the version, the snapshot, the tag, and the attestation. It also packs the tag and prints whether that rebuild matches the published tarball. That line is a warning and does not fail the run. A rebuild is not byte-stable across machines, and this repository does not claim reproducible builds. `inform / pack` on pull requests prints a same-runner double pack and a hand check of published 0.9.1. That job is not a `gate / check` slice.
+
+```sh
+bun ./scripts/verify-release.ts 0.10.0 --recorded release-record.json
+```
+
 ## Site
 
 The production site changes only after a release is published. A push to `main` does not deploy it. The Vercel production branch is `release`. Set that in the Vercel project under Settings, Environments, Production, Branch Tracking. `site/vercel.json` sets `git.deploymentEnabled.main` to false, so a forgotten production-branch setting still does not publish `main`. Pull requests still get preview deployments.

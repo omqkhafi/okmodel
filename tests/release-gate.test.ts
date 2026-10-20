@@ -233,7 +233,7 @@ test("the site deploys only after a successful release of a stable tag", () => {
   expect(yaml).not.toContain("secrets.");
   expect(yaml).toContain("bun ./scripts/deploy-ref.ts");
   expect(yaml).toContain("bun ./scripts/deploy-ref.ts --confirm");
-  expect(yaml).toContain("bun-version: 1.4.2");
+  expect(yaml).toContain("bun-version: 1.4.3");
   expect(yaml).toContain("actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1");
   expect(yaml).toContain("oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2");
   expect(yaml).not.toContain("type: choice");
@@ -299,6 +299,17 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   expect(release).toContain('NPM_CONFIG_PROVENANCE: "true"');
   expect(release).toContain("environment: release");
   expect(release).toContain("bun ./scripts/github-release.ts");
+  expect(release).toContain("name: verify / published");
+  expect(release).toContain("needs: publish");
+  expect(release).toContain("bun ./scripts/verify-release.ts");
+  expect(release).toContain("--recorded");
+  expect(release).toContain("name: release-record");
+  expect(release).toContain("GITHUB_STEP_SUMMARY");
+  expect(release).toContain("bun pm pack");
+  const publishAt = release.indexOf("name: publish / npm");
+  const verifyAt = release.indexOf("--recorded");
+  expect(publishAt).toBeGreaterThan(-1);
+  expect(verifyAt).toBeGreaterThan(publishAt);
   expect(release).not.toContain("bun ./scripts/npm-smoke.ts");
   expect(jsonVersionLists(release, "versions")).toEqual([
     [...POSTGRES_VERSIONS],
