@@ -32,8 +32,6 @@ const pool: DriverPool = {
     stream: false,
     listen: false,
     cancel: false,
-    prepared: "none",
-    describe: false,
   },
   execute: () =>
     Promise.resolve({

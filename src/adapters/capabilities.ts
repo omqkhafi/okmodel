@@ -13,14 +13,7 @@
 import type { DriverCapabilities } from "../contracts/driver.js";
 
 /** Capability names a caller can read. */
-export const CAPABILITY_NAMES = [
-  "transactions",
-  "stream",
-  "listen",
-  "cancel",
-  "prepared",
-  "describe",
-] as const;
+export const CAPABILITY_NAMES = ["transactions", "stream", "listen", "cancel"] as const;
 
 /** One name in {@link DriverCapabilities}. */
 export type CapabilityName = (typeof CAPABILITY_NAMES)[number];
@@ -28,41 +21,37 @@ export type CapabilityName = (typeof CAPABILITY_NAMES)[number];
 /**
  * postgres.js execution flags.
  *
- * Interactive transactions, streaming, listen, cancel, and describe.
- * Statements use the unnamed extended protocol so a plain execute is one
- * round trip. Named prepares are a later opt-in.
+ * Interactive transactions, streaming, listen, and cancel. Statements use
+ * the unnamed extended protocol so a plain execute is one round trip.
+ * Named prepares are a connect option, not a flag.
  */
 export const POSTGRESJS_CAPABILITIES = {
   transactions: "interactive",
   stream: true,
   listen: true,
   cancel: true,
-  prepared: "unnamed",
-  describe: true,
 } as const satisfies DriverCapabilities;
 
 /**
  * PGlite execution flags.
  *
- * A pool of one with interactive transactions, listen, and describe.
- * `cancel` is false: an in-flight statement cannot be aborted, and
- * `statement_timeout` is not enforced.
+ * A pool of one with interactive transactions and listen. `cancel` is
+ * false: an in-flight statement cannot be aborted, and `statement_timeout`
+ * is not enforced. The pool can describe a statement; that is not a flag.
  */
 export const PGLITE_CAPABILITIES = {
   transactions: "interactive",
   stream: false,
   listen: true,
   cancel: false,
-  prepared: "unnamed",
-  describe: true,
 } as const satisfies DriverCapabilities;
 
 /**
  * node-postgres execution flags.
  *
  * Interactive transactions, cursor streaming, listen, and cancel are set
- * because the conformance suite passes them. Describe is false: `pg` cannot
- * describe a statement without running it, and that case is skipped.
+ * because the conformance suite passes them. `pg` cannot describe a
+ * statement without running it, so the suite skips that case.
  * Parameterized queries use the unnamed extended protocol.
  */
 export const NODE_POSTGRES_CAPABILITIES = {
@@ -70,8 +59,6 @@ export const NODE_POSTGRES_CAPABILITIES = {
   stream: true,
   listen: true,
   cancel: true,
-  prepared: "unnamed",
-  describe: false,
 } as const satisfies DriverCapabilities;
 
 /**
@@ -80,7 +67,7 @@ export const NODE_POSTGRES_CAPABILITIES = {
  * Interactive transactions, cursor streaming, and listen pass the conformance
  * suite. `cancel` is false: `Query.cancel()` does not abort the backend
  * (Bun 1.4), so the cancel and in-flight timeout cases are skipped.
- * `describe` is false: Bun.sql has no describe API. RAISE NOTICE is not
+ * Bun.sql has no describe API, so that case is skipped. RAISE NOTICE is not
  * surfaced, so the notice case is skipped. `prepare` is off, so a
  * parameterized query does not leave a named statement.
  */
@@ -89,26 +76,22 @@ export const BUNSQL_CAPABILITIES = {
   stream: true,
   listen: true,
   cancel: false,
-  prepared: "unnamed",
-  describe: false,
 } as const satisfies DriverCapabilities;
 
 /**
  * Neon WebSocket pool execution flags.
  *
  * Interactive transactions pass on a direct connection. `stream`, `listen`,
- * `cancel`, and `describe` stay false: a server cursor, `LISTEN`, and a
- * side-channel cancel are session features the pooler does not keep, and the
- * client has no describe API. Statements use the unnamed protocol.
- * `prepared: "named"` is not for a transaction-mode pooler.
+ * and `cancel` stay false: a server cursor, `LISTEN`, and a side-channel
+ * cancel are session features the pooler does not keep. The client has no
+ * describe API. Statements use the unnamed protocol. `prepared: "named"`
+ * is a connect option and is not for a transaction-mode pooler.
  */
 export const NEON_WEBSOCKET_CAPABILITIES = {
   transactions: "interactive",
   stream: false,
   listen: false,
   cancel: false,
-  prepared: "unnamed",
-  describe: false,
 } as const satisfies DriverCapabilities;
 
 /**
@@ -123,8 +106,6 @@ export const NEON_HTTP_CAPABILITIES = {
   stream: false,
   listen: false,
   cancel: false,
-  prepared: "none",
-  describe: false,
 } as const satisfies DriverCapabilities;
 
 /**
@@ -144,16 +125,15 @@ export function readCapability<Name extends CapabilityName>(
 /**
  * Reports whether a boolean capability is set.
  *
- * `transactions` and `prepared` are not boolean. Use {@link readCapability}
- * for those.
+ * `transactions` is not boolean. Use {@link readCapability} for it.
  *
  * @param flags - Declared capabilities
- * @param name - `stream`, `listen`, `cancel`, or `describe`
+ * @param name - `stream`, `listen`, or `cancel`
  * @returns The flag
  */
 export function hasCapability(
   flags: DriverCapabilities,
-  name: "stream" | "listen" | "cancel" | "describe",
+  name: "stream" | "listen" | "cancel",
 ): boolean {
   return flags[name];
 }

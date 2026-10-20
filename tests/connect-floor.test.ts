@@ -63,8 +63,6 @@ function fakePool(versionNum: string, label: string): DriverPool {
       stream: false,
       listen: false,
       cancel: false,
-      prepared: "none",
-      describe: false,
     },
     execute() {
       return Promise.resolve({ rows: [[versionNum, label, null]], count: 1, notices: [] });

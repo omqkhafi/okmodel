@@ -21,8 +21,6 @@ const pool = {
     stream: false,
     listen: false,
     cancel: false,
-    prepared: "unnamed",
-    describe: false,
   },
   execute() {
     this.calls += 1;

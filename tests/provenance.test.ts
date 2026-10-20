@@ -76,8 +76,6 @@ function fakePool(): DriverPool {
       stream: false,
       listen: false,
       cancel: false,
-      prepared: "none",
-      describe: false,
     },
     execute() {
       return Promise.resolve({

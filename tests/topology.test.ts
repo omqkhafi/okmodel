@@ -233,8 +233,6 @@ function recordingPool(sql: string[], onClose?: () => void): DriverPool {
       stream: false,
       listen: false,
       cancel: false,
-      prepared: "unnamed",
-      describe: false,
     },
     execute(text) {
       sql.push(text);

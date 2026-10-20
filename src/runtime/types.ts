@@ -5,7 +5,7 @@
  * A plain object is not a where value when the column type is an object.
  */
 
-import type { DriverTimeouts, Notice } from "../contracts/driver.js";
+import type { DriverCapabilities, DriverTimeouts, Notice } from "../contracts/driver.js";
 import type { SafeResult } from "../contracts/error.js";
 import type { QuerySchema } from "../dialects/pg/model.js";
 import type { Bucket } from "../dialects/pg/ops/bucket.js";
@@ -1289,6 +1289,8 @@ type ScopedClient<S extends QuerySchema> = {
   close(): Promise<void>;
   /** Resolves when the dialect and `requires` checks have finished. */
   readonly connected: Promise<void>;
+  /** The adapter's frozen capability flags. */
+  readonly capabilities: DriverCapabilities;
 } & TxApi<S, false> &
   ViewsClient<S> &
   IfAsyncDisposable<typeof Symbol>;
@@ -1332,6 +1334,8 @@ export type Connected<S extends QuerySchema> = {
   close(): Promise<void>;
   /** Resolves when the dialect and `requires` checks have finished. */
   readonly connected: Promise<void>;
+  /** The adapter's frozen capability flags. */
+  readonly capabilities: DriverCapabilities;
 } & TxApi<S, true> &
   ScopeMethods<S> &
   ViewsClient<S> &

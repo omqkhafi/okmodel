@@ -779,6 +779,15 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     summary: "The live database does not match the model snapshot that baseline would record.",
     fix: "Change the schema or the database until they match, then run okm migrate baseline again.",
   },
+  // Reserved, not registered (no raising path): version OKM1804–OKM1809,
+  // extension OKM1815–OKM1819, feature refusal OKM1861–OKM1879, adapter
+  // capability refusal OKM1880–OKM1889. OKM1140–OKM1179 stay reserved (D291).
+  {
+    code: "OKM1860",
+    title: "Feature refused",
+    summary: "The configured dialect refuses a feature this schema uses.",
+    fix: "Use the portable alternative named in the error. The message names the dialect, the feature, and the first version that would support it when one exists.",
+  },
 ];
 
 let byCode: ReadonlyMap<string, ErrorDoc> | undefined;

@@ -312,8 +312,6 @@ test("outcome_unknown on a lost commit", async () => {
       stream: false,
       listen: false,
       cancel: false,
-      prepared: "unnamed",
-      describe: false,
     },
     execute: () => Promise.resolve({ rows: [["170000", "PostgreSQL 17"]], count: 1, notices: [] }),
     batch: (statements: readonly Statement[]) => runAtomicBatch(session, statements, undefined),

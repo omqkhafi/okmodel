@@ -37,8 +37,6 @@ const pool = {
     stream: false,
     listen: false,
     cancel: false,
-    prepared: "unnamed",
-    describe: false,
   },
   execute: (text: string) => {
     statements.push(text);
@@ -64,7 +62,8 @@ function names(value: object): string[] {
  * The public surface a call can reach, and what each name takes.
  *
  * - Client: table names, `for`, `unscoped(reason)`, `tx`, `batch`, `close`, `connected`,
- *   `table`. `tx` and `batch` take callbacks and builders. None takes SQL text.
+ *   `table`, and `capabilities` (the adapter's frozen flags). `tx` and `batch` take
+ *   callbacks and builders. None takes SQL text.
  * - Transaction client: the same, plus `advisoryLock(key)` (a key, bound as a parameter),
  *   and `afterCommit(fn)`.
  * - Table: the query and write methods, the archive views, and the presets. They take
@@ -72,8 +71,8 @@ function names(value: object): string[] {
  *   id and options, not SQL text.
  * - Query handle: `sql()` and `inspect()` return the statement; they take nothing.
  */
-const CLIENT = ["batch", "close", "connected", "for", "table", "tx", "unscoped"];
-const SCOPED_EXTRA = ["batch", "close", "connected", "table", "tx"];
+const CLIENT = ["batch", "capabilities", "close", "connected", "for", "table", "tx", "unscoped"];
+const SCOPED_EXTRA = ["batch", "capabilities", "close", "connected", "table", "tx"];
 const TX_EXTRA = ["advisoryLock", "afterCommit"];
 const TABLE_BASE = [
   "aggregate",

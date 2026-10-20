@@ -24,8 +24,6 @@ function stubPool(): DriverPool {
       stream: false,
       listen: false,
       cancel: false,
-      prepared: "unnamed",
-      describe: false,
     },
     execute: () => {
       if (!checked) {

@@ -40,6 +40,7 @@ registerDriverSuite({
   openOther: () => openPreparedPglite([]),
   size: 1,
   capabilities: pgliteCapabilities,
+  statementDescribe: true,
   test: bunTest,
 });
 
@@ -57,6 +58,7 @@ registerDriverSuite({
   openOther: () => openPostgres({ url: primaryUrl(), max: 2 }),
   size: 4,
   capabilities: postgresCapabilities,
+  statementDescribe: true,
   test: postgresCases,
 });
 

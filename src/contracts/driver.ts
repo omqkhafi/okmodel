@@ -19,16 +19,12 @@ export type PreparedMode = "named" | "unnamed" | "none";
 export type DriverCapabilities = {
   /** `reserve` exists only when this is `"interactive"`. */
   readonly transactions: TransactionMode;
-  /** Rows can be pulled in chunks. */
+  /** The driver can open a server cursor. `.stream()` does not read this flag. */
   readonly stream: boolean;
   /** `LISTEN` / `NOTIFY`. */
   readonly listen: boolean;
   /** An in-flight statement can be aborted. */
   readonly cancel: boolean;
-  /** Prepared-statement mode this driver uses. */
-  readonly prepared: PreparedMode;
-  /** The server can describe a statement without running it. */
-  readonly describe: boolean;
 };
 
 /** A Postgres wire value. Null is SQL NULL. */
@@ -150,8 +146,10 @@ export type DriverConnection = {
 /**
  * One endpoint's pool.
  *
- * `reserve`, `stream`, `describe`, `listen`, and `cancel` are present only
- * when the matching capability is set.
+ * `reserve` is present when `transactions` is `"interactive"`. `stream`,
+ * `listen`, and `cancel` are present when that flag is set. `describe` is
+ * present when the driver can describe a statement. Prepared-statement mode
+ * is a connect option, not a capability flag.
  */
 export type DriverPool = {
   /** Declared execution capabilities. */
@@ -173,7 +171,7 @@ export type DriverPool = {
   /** Checks out one connection. Present when `transactions` is `"interactive"`. */
   reserve?(): Promise<DriverConnection>;
 
-  /** Describes a statement without running it. Present when `describe` is set. */
+  /** Describes a statement without running it, when the driver can. */
   describe?(text: string, params?: readonly WireValue[]): Promise<DescribeResult>;
 
   /** Yields row chunks. Present when `stream` is set. */

@@ -275,8 +275,6 @@ test("a stored unclassified class is ahead by contract", async () => {
       stream: false,
       listen: false,
       cancel: false,
-      prepared: "unnamed",
-      describe: false,
     },
     execute: () =>
       Promise.resolve({

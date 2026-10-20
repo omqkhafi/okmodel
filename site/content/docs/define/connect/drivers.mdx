@@ -16,9 +16,11 @@ A string or a pool returns the client for postgres.js, node-postgres, and Bun.sq
 
 When the schema names no floor, a server below 15 is OKM1803. [minPostgres](/docs/define/schema/min-postgres) is that floor. The test suite runs on 15, 16, 17, and 18.
 
+`db.capabilities` is that adapter's frozen flags: `transactions`, `stream`, `listen`, and `cancel`. `prepared` is a connect option (`"named"`, `"unnamed"`, or `"none"`). A driver that can describe a statement exposes `pool.describe`.
+
 ### postgres.js
 
-`describe` is true. `cancel` is true. The peer package is `postgres`.
+`pool.describe` is present. `capabilities.cancel` is true. The peer package is `postgres`.
 
 ```ts title="postgresjs.ts"
 import { connect } from "okmodel/pg/postgresjs"; // [!code focus]
@@ -36,7 +38,7 @@ export const db = connect(process.env.DATABASE_URL!, { schema: app });
 
 ### node-postgres
 
-`describe` is false. It cannot describe a statement without running it. `cancel` is true. The peer package is `pg`.
+There is no `pool.describe`. It cannot describe a statement without running it. `capabilities.cancel` is true. The peer package is `pg`.
 
 ```ts title="pg.ts"
 import { connect } from "okmodel/pg/pg"; // [!code focus]
@@ -54,7 +56,7 @@ export const db = connect(process.env.DATABASE_URL!, { schema: app });
 
 ### Bun.sql
 
-Another runtime cannot load the `bun` import. There is no package to install. `describe` is false. `RAISE NOTICE` is not surfaced. `cancel` is false.
+Another runtime cannot load the `bun` import. There is no package to install. There is no `pool.describe`. `RAISE NOTICE` is not surfaced. `capabilities.cancel` is false.
 
 ```ts title="bun.ts"
 import { connect } from "okmodel/pg/bun"; // [!code focus]
@@ -72,7 +74,7 @@ export const db = connect(process.env.DATABASE_URL!, { schema: app });
 
 ### PGlite
 
-PGlite runs in this process. The pool size is one. A statement issued while a `tx()` is open waits until that transaction ends, unless `timeouts.acquire` is set. `describe` is true. `cancel` is false. The peer package is `@electric-sql/pglite`. A string is a data directory. A pool and omitted memory are promises too. Omitted opens `memory://`.
+PGlite runs in this process. The pool size is one. A statement issued while a `tx()` is open waits until that transaction ends, unless `timeouts.acquire` is set. `pool.describe` is present. `capabilities.cancel` is false. The peer package is `@electric-sql/pglite`. A string is a data directory. A pool and omitted memory are promises too. Omitted opens `memory://`.
 
 ```ts title="pglite.ts"
 import { connect } from "okmodel/pg/pglite"; // [!code focus]
@@ -92,9 +94,9 @@ export const db = await connect("./data", { schema: app }); // [!code focus]
 
 The peer package is `@neondatabase/serverless`. `connect` and `open` return a promise. `mode` is `websocket` or `http`. Omitted is `websocket`.
 
-WebSocket mode is a pool. `transactions` is `interactive`, so `tx()` works on a direct connection. `prepared` is `unnamed`. `stream`, `listen`, `cancel`, and `describe` are false. A positive `timeout` is refused.
+WebSocket mode is a pool. `transactions` is `interactive`, so `tx()` works on a direct connection. `prepared` defaults to `unnamed`. `stream`, `listen`, and `cancel` are false, and there is no `pool.describe`. A positive `timeout` is refused.
 
-HTTP mode sends one request per statement. `transactions` is `batch`. `batch()` is one atomic HTTP transaction. `tx()` is OKM1111. There is no `reserve`. `prepared` is `none`.
+HTTP mode sends one request per statement. `transactions` is `batch`. `batch()` is one atomic HTTP transaction. `tx()` is OKM1111. There is no `reserve`. `prepared` defaults to `none`.
 
 A transaction-mode pooler does not promise session state. Advisory locks, `SET`, `LISTEN`, and prepared statements belong to one server session. With one small compute, that pooler reused a backend: a custom `SET`, `LISTEN`, and `PREPARE` were still visible on the next statement, and a second connection saw the `SET`. That reuse is not a guarantee. Do not rely on it. `prepared: "named"` is not for that pooler.
 

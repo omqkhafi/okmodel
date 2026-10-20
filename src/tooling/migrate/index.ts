@@ -15,7 +15,10 @@ export {
   describe,
   type RequiredExtension,
   type SchemaDescription,
+  type SchemaRequirements,
 } from "./schema-api.js";
+export { POSTGRES_FEATURES, type PostgresFeature } from "../capabilities/postgres.js";
+export type { FeatureEntry, Registry, Support } from "../capabilities/types.js";
 export { provision } from "./provision.js";
 export {
   apply,

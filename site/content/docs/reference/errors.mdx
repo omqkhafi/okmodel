@@ -215,7 +215,7 @@ The registry is not on the runtime entry. A process that never explains a code d
 
 ## Registry
 
-The registry has 110 codes, in numeric order. Ranges are schema `OKM1000`, queries and capabilities `OKM1100`, validation `OKM1200`, mapped database errors `OKM1300`, transactions `OKM1400`, migrations `OKM1500`, typed SQL `OKM1600`, tenancy and policies `OKM1700`, drivers and versions `OKM1800`, and CLI `OKM1900`. Mapped database errors use the kind as the code, so `OKM1300` has no entry. `OKM1900` has no entry. The tables below are every code the registry holds.
+The registry has 119 codes, in numeric order. Ranges are schema `OKM1000`, queries and capabilities `OKM1100`, validation `OKM1200`, mapped database errors `OKM1300`, transactions `OKM1400`, migrations `OKM1500`, typed SQL `OKM1600`, tenancy and policies `OKM1700`, drivers and versions `OKM1800`, and CLI `OKM1900`. Mapped database errors use the kind as the code, so `OKM1300` has no entry. `OKM1900` has no entry. The tables below are every code the registry holds.
 
 ### Schema
 
@@ -374,3 +374,4 @@ The registry has 110 codes, in numeric order. Ranges are schema `OKM1000`, queri
 | `OKM1854` | Pooler session | Two statements on the same connection saw different backend pids. A transaction-mode pooler is in the way. |
 | `OKM1855` | Pull would overwrite | okm pull or okm import drizzle found a file it would replace. It writes nothing. |
 | `OKM1856` | Drizzle is not installed | okm import drizzle could not resolve drizzle-orm from the project. Install it in that project. |
+| `OKM1860` | Feature refused | The configured dialect refuses a feature this schema uses. Use the portable alternative named in the error. The message names the dialect, the feature, and the first version that would support it when one exists. |

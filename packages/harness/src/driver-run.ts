@@ -43,6 +43,8 @@ type Target = {
   readonly url?: string;
   /** False when the TCP commit-cut proxy cannot sit on this driver. */
   readonly cut: boolean;
+  /** The pool can describe a statement. Not a capability flag. */
+  readonly statementDescribe?: boolean;
   open(config: {
     readonly schema: string;
     readonly max: number;
@@ -201,6 +203,7 @@ async function firstParty(driver: string, url: string | undefined): Promise<Targ
       notices: true,
       size: 1,
       cut: true,
+      statementDescribe: true,
       open: (config) =>
         openPreparedPglite(
           [],
@@ -213,20 +216,23 @@ async function firstParty(driver: string, url: string | undefined): Promise<Targ
   if (driver === "postgresjs") {
     const adapter = await import("../../../src/adapters/pg/postgresjs.js");
     const runtime = await import("../../../src/runtime/pg/postgresjs.js");
-    return networked(
-      "postgres.js",
-      adapter.capabilities,
-      true,
-      url,
-      (config) =>
-        adapter.open({
-          url: config.url ?? url,
-          max: config.max,
-          searchPath: config.schema,
-          ...(config.timeouts !== undefined ? { timeouts: config.timeouts } : {}),
-        }),
-      (pool, options) => runtime.connect(pool, options),
-    );
+    return {
+      ...networked(
+        "postgres.js",
+        adapter.capabilities,
+        true,
+        url,
+        (config) =>
+          adapter.open({
+            url: config.url ?? url,
+            max: config.max,
+            searchPath: config.schema,
+            ...(config.timeouts !== undefined ? { timeouts: config.timeouts } : {}),
+          }),
+        (pool, options) => runtime.connect(pool, options),
+      ),
+      statementDescribe: true,
+    };
   }
   if (driver === "pg") {
     const adapter = await import("../../../src/adapters/pg/nodepostgres.js");
@@ -356,9 +362,7 @@ function isCapabilities(value: unknown): value is DriverCapabilities {
       value.transactions === "none") &&
     typeof value.stream === "boolean" &&
     typeof value.listen === "boolean" &&
-    typeof value.cancel === "boolean" &&
-    (value.prepared === "named" || value.prepared === "unnamed" || value.prepared === "none") &&
-    typeof value.describe === "boolean"
+    typeof value.cancel === "boolean"
   );
 }
 
@@ -391,6 +395,7 @@ async function runTarget(target: Target): Promise<readonly Row[]> {
     openOther: () => target.open({ schema: "public", max: target.memory ? 1 : 2 }),
     size: target.size,
     capabilities: target.capabilities,
+    ...(target.statementDescribe === true ? { statementDescribe: true } : {}),
     ...(target.notices ? {} : { notices: false }),
     test: wire,
   });

@@ -93,6 +93,7 @@ export function listCompatibilityCaseNames(): readonly string[] {
     openOther: () => openPreparedPglite([]),
     size: 1,
     capabilities: pgliteCapabilities,
+    statementDescribe: true,
     test,
   });
   registerErrorMappingSuite({
@@ -113,6 +114,7 @@ export async function collectCompatibility(): Promise<readonly CompatibilityCell
     openOther: () => openPreparedPglite([]),
     size: 1,
     capabilities: pgliteCapabilities,
+    statementDescribe: true,
   });
   const decision = await postgresDecision();
   if (decision.run) {
@@ -122,6 +124,7 @@ export async function collectCompatibility(): Promise<readonly CompatibilityCell
       openOther: () => openPostgres({ url: primaryUrl(), max: 2 }),
       size: 4,
       capabilities: postgresCapabilities,
+      statementDescribe: true,
     });
     await runDriver("node-postgres", "node-postgres", cells, {
       open: () => openNodePostgres({ url: primaryUrl(), max: 4, timeouts: { acquire: 5_000 } }),
@@ -153,6 +156,7 @@ type Openers = {
   readonly size: number;
   readonly capabilities: DriverCapabilities;
   readonly notices?: boolean;
+  readonly statementDescribe?: boolean;
 };
 
 async function runDriver(
@@ -170,6 +174,7 @@ async function runDriver(
     openOther: openers.openOther,
     size: openers.size,
     capabilities: openers.capabilities,
+    ...(openers.statementDescribe === true ? { statementDescribe: true } : {}),
     ...(openers.notices !== undefined ? { notices: openers.notices } : {}),
     test,
   });

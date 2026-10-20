@@ -42,6 +42,10 @@ test("describe() reports minPostgres 18 for uuidv7()", () => {
   const description = describe(app);
   expect(description.minPostgres).toBe(18);
   expect(description.extensions).toEqual([]);
+  expect(description.requirements.minVersion.postgres).toBe(18);
+  expect(description.requirements.extensions).toEqual([]);
+  expect(description.requirements.features).toContain("type.uuidv7");
+  expect(description.requirements.emulated).toEqual([]);
 });
 
 test("describe() reports a declared minPostgres floor", () => {
@@ -49,7 +53,10 @@ test("describe() reports a declared minPostgres floor", () => {
     minPostgres: 17,
     tables: [table("users", { id: t.id(), name: t.text() })],
   });
-  expect(describe(app).minPostgres).toBe(17);
+  const description = describe(app);
+  expect(description.minPostgres).toBe(17);
+  expect(description.requirements.minVersion.postgres).toBe(17);
+  expect(description.requirements.features).not.toContain("type.uuidv7");
 });
 
 test("describe() lists pg_trgm from an index and the declaration", () => {
@@ -125,12 +132,17 @@ test("describe(describe(s)) keeps a declared floor of 17 and a uuidv7 floor of 1
     minPostgres: 17,
     tables: [table("users", { id: t.id(), name: t.text() })],
   });
-  expect(describe(describe(declared)).minPostgres).toBe(17);
+  const again = describe(describe(declared));
+  expect(again.minPostgres).toBe(17);
+  expect(again.requirements).toEqual(describe(declared).requirements);
 
   const uuidv7 = schema({
     tables: [table("users", { id: t.id({ default: "uuidv7" }), name: t.text() })],
   });
-  expect(describe(describe(uuidv7)).minPostgres).toBe(18);
+  const raised = describe(describe(uuidv7));
+  expect(raised.minPostgres).toBe(18);
+  expect(raised.requirements.minVersion.postgres).toBe(18);
+  expect(raised.requirements.features).toEqual(describe(uuidv7).requirements.features);
 });
 
 test("describe({ catalog }) of a minPostgres 18 description keeps 18", () => {

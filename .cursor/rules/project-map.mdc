@@ -17,6 +17,7 @@ contracts → dialects → adapters → runtime → tooling. Adapters import con
 - `src/adapters/pg/` — one file per driver: `postgresjs.ts`, `nodepostgres.ts`, `bunsql.ts`, `pglite.ts`, `pglite-wire.ts`, `neon.ts` (+ `*-extra.ts`, `batch.ts`, `session.ts`).
 - `src/adapters/` — `error.ts`, `failure.ts` (driver error mapping), `capabilities.ts`.
 - `src/runtime/` — client, planner (`plan.ts`), predicates, include, write, archive, batch, drift, text search (`text-search.ts`), parameter budget (`param-limit.ts`); `pg/` connect entries per driver; `otel.ts` (`okmodel/otel`); `ids/`, `safety/`, `tenancy/`, `traits/`, `validate/`.
+- `src/tooling/capabilities/` — dialect feature registry (Postgres), proof check, schema feature detection. Not in the runtime entry.
 - `src/tooling/migrate/` — apply, check (sandbox), lint (`lint-rules.ts`), SQL lexer `sql-lex.ts`, files, status, provision, runner.
 - `src/tooling/cli.ts` — `okm` CLI; `src/tooling/driver-test.ts` — `okm driver test` (the suites stay in `packages/harness`); `src/tooling/errors/registry.ts` — doctor text for every OKM code; `src/tooling/testing/`; `src/tooling/github/` — plan comment for the GitHub Action.
 - `.github/actions/migrate/` — official composite GitHub Action (`action.yml`). Dogfood workflow: `.github/workflows/github-action.yml`.

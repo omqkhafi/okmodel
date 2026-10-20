@@ -17,8 +17,6 @@ test("websocket mode is interactive and does not claim session features", () => 
     stream: false,
     listen: false,
     cancel: false,
-    prepared: "unnamed",
-    describe: false,
   });
 });
 
@@ -28,8 +26,6 @@ test("http mode is batch and has no interactive transaction", async () => {
     stream: false,
     listen: false,
     cancel: false,
-    prepared: "none",
-    describe: false,
   });
   const pool = await open({ url: "postgres://localhost/okm", mode: "http" });
   expect("reserve" in pool).toBe(false);
