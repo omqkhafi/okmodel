@@ -345,6 +345,7 @@ test("refusal:query.window", () => refuse("query.window"));
 test("refusal:query.countDistinct", () => refuse("query.countDistinct"));
 test("refusal:query.distinct", () => refuse("query.distinct"));
 test("refusal:query.distinctOn", () => refuse("query.distinctOn"));
+test("refusal:query.namedAggregates", () => refuse("query.namedAggregates"));
 test("refusal:query.rawTyped", () => refuse("query.rawTyped"));
 test("refusal:query.upsert", () => refuse("query.upsert"));
 test("refusal:returning.write", () => refuse("returning.write"));

@@ -298,6 +298,14 @@ test("proof:query.distinctOn", async () => {
   expect(described.text).toContain("select distinct on (");
 });
 
+test("proof:query.namedAggregates", async () => {
+  const db = await connect(stub(), { schema: notesSchema });
+  const described = await db.notes
+    .aggregate({ select: { total: { countDistinct: "body" } }, limit: 1 })
+    .sql();
+  expect(described.text).toContain("count(distinct ");
+});
+
 test("proof:query.upsert", async () => {
   const db = await connect(stub(), { schema: notesSchema });
   const described = await db.notes.insert({ id: "a", body: "x" }, { onConflict: "ignore" }).sql();

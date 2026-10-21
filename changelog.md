@@ -59,10 +59,11 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `writeObserver({ tag })` and `queryObserver({ tag })` copy a tag onto each event. A tag is 1–64 characters from `[A-Za-z0-9_.:/-]`. Anything else is `invalid` when the helper is built.
 - `aggregate({ countDistinct: [fields] })` counts the different non-null values of each field per group and returns them as `countDistinct.<field>`. A group with only NULLs, and the one total row of an empty table, count 0. It takes the column types `min` and `max` take (D309, #506).
 - `find({ distinct: true, select })` keeps one row per different combination of the selected fields, and NULL is one value. `find({ distinctOn: [fields], orderBy })` is Postgres only and keeps the first row of each key; `orderBy` must start with the same keys. Neither takes `include` or `search`, and `page` and `one` refuse them (D310, #507).
+- `aggregate({ select: { name: { sum: "field" } } })` gives each aggregate its own flat, typed result key. An entry is one of `count: true`, `countDistinct`, `sum`, `avg`, `min`, or `max`, so one call can hold several aggregates of the same function and column. The list forms keep working beside it. A name that is a group field, a bucket `as`, a list-form key, or a prototype key is OKM1120 (D311, #508).
 
 #### tooling
 
-- Capability key `query.countDistinct` is native on Postgres (D309), and `query.distinct` and `query.distinctOn` are native on Postgres (D310).
+- Capability key `query.countDistinct` is native on Postgres (D309), `query.distinct` and `query.distinctOn` are native on Postgres (D310), and `query.namedAggregates` is native on Postgres (D311).
 - Capability keys `writeObserver.unit` (`transaction | batch`), `writeObserver.keys` (`returning`; closed profile `none`), and `writeObserver.rowCount` (`mixed`; closed profile `unknown`) are in the Postgres registry with proofs and closed-profile refusals.
 - `queryObserver.timing` is native on Postgres with cost `query|decode`. Pool-queue wait is not measured, so `queueMs` stays null. The closed profile cost is `none`.
 - OKM1890 refuses `writeObserver({ keys })` when a named table has no primary key or is not in the schema. OKM2200 warns when the write-observer pending-event buffer overflows.
