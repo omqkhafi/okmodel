@@ -11,9 +11,11 @@ import type {
   ConstraintObject,
   TypeObject,
 } from "../../contracts/catalog/types.js";
+import { postgresProbeParses } from "./pg-probe.js";
 import type { PlanStep, StepKind } from "./plan.js";
 import { volatileDefault } from "./safe.js";
-import { transactionControl } from "./sql-lex.js";
+import { statementOutsideTransaction } from "./runner.js";
+import { sqlStatements, transactionControl } from "./sql-lex.js";
 import { canonicalTypeName } from "./type-name.js";
 
 /** Destructive, compatibility, data, locking, or a schema type preference. */
@@ -274,6 +276,24 @@ export const STEP_RULES: readonly StepRule[] = [
       return word === undefined ? [] : [`contains ${word}`];
     },
   ),
+  rule(
+    "OKM1557",
+    "locking",
+    "error",
+    "A committed step with no built-in probe and no declared probe cannot be resumed.",
+    (input) =>
+      hit(
+        needsDeclaredProbe(input.step) && input.step.probe === undefined,
+        "committed step has no probe",
+      ),
+  ),
+  rule(
+    "OKM1558",
+    "locking",
+    "error",
+    "A probe must be one read-only SELECT on a committed step.",
+    (input) => probeFindings(input.step),
+  ),
 ];
 
 /**
@@ -336,6 +356,147 @@ function rule(
 
 function hit(matched: boolean, reason: string): readonly string[] {
   return matched ? [reason] : [];
+}
+
+/**
+ * A committed step that the built-in probe cannot read.
+ *
+ * A backfill keeps its own checkpoint. A transactional step rolls back with
+ * its history row. `statementOutsideTransaction` matches apply: a statement
+ * Postgres cannot run inside a transaction is committed even when the header
+ * still says it can share one.
+ *
+ * @param step - One plan step, or one statement of a step
+ * @returns `true` when the step needs a `-- probe:` line
+ */
+function needsDeclaredProbe(step: PlanStep): boolean {
+  if (step.action === "backfill" || step.backfill !== undefined) return false;
+  const committed = !step.transactional || statementOutsideTransaction(step.sql);
+  if (!committed) return false;
+  return !postgresProbeParses(step.kind ?? "raw-sql", step.sql);
+}
+
+/**
+ * Problems in a declared probe.
+ *
+ * An empty probe, a probe that is not one read-only `SELECT`, and a probe
+ * on a step that never leaves the migration transaction are each a reason.
+ *
+ * @param step - One plan step
+ * @returns One reason per problem
+ */
+function probeFindings(step: PlanStep): readonly string[] {
+  if (step.probe === undefined) return [];
+  const reasons: string[] = [];
+  if (step.action === "backfill" || step.backfill !== undefined) {
+    reasons.push("probe is on a backfill step");
+  } else if (step.transactional && !statementOutsideTransaction(step.sql)) {
+    reasons.push("probe is on a transactional step");
+  }
+  reasons.push(...probeTextProblems(step.probe));
+  return reasons;
+}
+
+const WRITE_WORD = new Set([
+  "insert",
+  "update",
+  "delete",
+  "merge",
+  "into",
+  "truncate",
+  "copy",
+  "call",
+]);
+
+function probeTextProblems(probe: string): readonly string[] {
+  if (probe.trim().length === 0) return ["probe is empty"];
+  const statements = sqlStatements(probe);
+  if (statements.length !== 1) return ["probe has more than one statement"];
+  const statement = statements[0] ?? "";
+  if (!isReadOnlySelect(statement)) return ["probe is not one read-only select"];
+  return [];
+}
+
+function isReadOnlySelect(sql: string): boolean {
+  if (!/^(?:select|with)\b/i.test(sql.trim())) return false;
+  const words = sqlWords(sql);
+  if (words.length === 0) return false;
+  const head = words[0];
+  if (head !== "select" && head !== "with") return false;
+  if (head === "with" && !words.includes("select")) return false;
+  for (const word of words) {
+    if (WRITE_WORD.has(word)) return false;
+  }
+  return !locksRows(words);
+}
+
+function locksRows(words: readonly string[]): boolean {
+  for (let index = 0; index < words.length; index += 1) {
+    if (words[index] !== "for") continue;
+    const next = words[index + 1];
+    if (next === "update" || next === "share") return true;
+    if (next === "no" && words[index + 2] === "key" && words[index + 3] === "update") return true;
+    if (next === "key" && words[index + 2] === "share") return true;
+  }
+  return false;
+}
+
+function sqlWords(sql: string): readonly string[] {
+  const words: string[] = [];
+  let index = 0;
+  while (index < sql.length) {
+    const char = sql[index] ?? "";
+    if (char === "-" && sql[index + 1] === "-") {
+      const end = sql.indexOf("\n", index);
+      index = end === -1 ? sql.length : end + 1;
+      continue;
+    }
+    if (char === "/" && sql[index + 1] === "*") {
+      const end = sql.indexOf("*/", index + 2);
+      index = end === -1 ? sql.length : end + 2;
+      continue;
+    }
+    if (char === "'") {
+      index = skipQuote(sql, index, "'");
+      continue;
+    }
+    if (char === '"') {
+      index = skipQuote(sql, index, '"');
+      continue;
+    }
+    const dollar = /^\$[A-Za-z0-9_]*\$/.exec(sql.slice(index));
+    if (dollar !== null) {
+      const tag = dollar[0];
+      const close = sql.indexOf(tag, index + tag.length);
+      index = close === -1 ? sql.length : close + tag.length;
+      continue;
+    }
+    if (/[A-Za-z_]/.test(char)) {
+      const match = /^[A-Za-z_][\w$]*/.exec(sql.slice(index));
+      if (match !== null) {
+        words.push(match[0].toLowerCase());
+        index += match[0].length;
+        continue;
+      }
+    }
+    index += 1;
+  }
+  return words;
+}
+
+function skipQuote(sql: string, index: number, quote: "'" | '"'): number {
+  let cursor = index + 1;
+  while (cursor < sql.length) {
+    if (sql[cursor] === quote) {
+      if (sql[cursor + 1] === quote) {
+        cursor += 2;
+        continue;
+      }
+      return cursor + 1;
+    }
+    cursor += 1;
+  }
+  return sql.length;
 }
 
 /**

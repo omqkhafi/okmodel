@@ -60,6 +60,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okm --json` errors keep the six `okm.cli/1` fields and add `location`, `fixEdit`, `safeAlternatives`, `docs`, and `escapeHatches` when the producer or the registry has them. `fix` stays a string. A kind-only error such as `driver` stays at the six fields. `schemas/cli-1/errors.json` is the array schema. `okm doctor <code>` prints `docs/errors/<code>.md`.
 - `okm protect add`, `okm protect remove`, and `okm protect list` read and write the user fingerprint store. `add` records the selected target. `remove` requires a terminal. `list` prints the stored fingerprints. The JSON data is the fingerprint, with `identity` null, and does not include the URL.
 - Conformance cases are tagged portable or gated on a registry key or an adapter gate. A refused registry entry asserts that entry's code and alternative instead of running the body. A false adapter flag on a feature the registry still provides stays unsupported. `okm driver test` prints portable, gated, refusal, and unsupported counts. A test-only profile refuses every Postgres feature and turns the adapter flags off, and the portable minimum (connect, a read and write, error mapping) still passes on it.
+- A committed step may declare `-- probe: <SELECT>` above its statement. The probe is one read-only `SELECT` that returns a single boolean: true means the step is already applied. It runs inside `begin read only` and is rolled back. A built-in probe for the step's kind still wins, and a declared probe has no cleanup. `okm migrate resolve --applied` uses that probe. The probe is not part of the step's SQL hash or the plan hash.
+- OKM1557 refuses a committed step that has no built-in probe and no declared probe, so a failure cannot tell whether the change is already in place. OKM1558 refuses an empty probe, a probe that is not one read-only `SELECT`, more than one statement, or a probe on a step that stays inside a transaction. `-- okm-allow` with a reason records that a failure in that step needs a person.
 
 #### docs
 
@@ -69,6 +71,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `bun run docs:errors` writes `docs/errors/<code>.md` for every registry code. `docs:check` fails when a page is missing or differs from the registry. A code that needs a server says `Example: needs a database`.
 - [Untrusted text](docs/untrusted.md) records the bound, the origins, and the plan hash.
 - The testing notes describe the portable and gated conformance split, the profile that refuses every capability, and what a new dialect ships before it claims a gated feature.
+- The linter page, [When a migration fails](docs/migration-failure.md), and the OKM1557 and OKM1558 error pages describe a declared `-- probe:` and when a committed step must have one.
 
 ### 💥 Breaking Changes
 
