@@ -715,11 +715,43 @@
       "kind": "experimental"
     },
     {
+      "name": "OnQuery",
+      "kind": "experimental"
+    },
+    {
       "name": "OnWrite",
       "kind": "experimental"
     },
     {
+      "name": "OtelQuery",
+      "kind": "experimental"
+    },
+    {
       "name": "OutcomeEvent",
+      "kind": "experimental"
+    },
+    {
+      "name": "QueryError",
+      "kind": "experimental"
+    },
+    {
+      "name": "QueryEvent",
+      "kind": "experimental"
+    },
+    {
+      "name": "QueryLimit",
+      "kind": "experimental"
+    },
+    {
+      "name": "QueryObserver",
+      "kind": "experimental"
+    },
+    {
+      "name": "QueryObserverOptions",
+      "kind": "experimental"
+    },
+    {
+      "name": "QueryRoute",
       "kind": "experimental"
     },
     {
@@ -748,6 +780,14 @@
     },
     {
       "name": "observerBufferOverflow",
+      "kind": "experimental"
+    },
+    {
+      "name": "queryObserver",
+      "kind": "experimental"
+    },
+    {
+      "name": "toOtel",
       "kind": "experimental"
     },
     {
