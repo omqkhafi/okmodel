@@ -97,6 +97,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - [Threat model](docs/threat-model.md) records what agent use is defended against and what is not. Each defense names the feature or the test behind it.
 - The site skill page reads `skills/okmodel/SKILL.md`. That file is the copy an install finds at `node_modules/okmodel/skills/okmodel/SKILL.md`.
 - The linter page, [When a migration fails](docs/migration-failure.md), and the OKM1557 and OKM1558 error pages describe a declared `-- probe:` and when a committed step must have one.
+- The guide awaits `userFilters.parse(request.query)` and passes the result to `find` with a limit. `parse` is asynchronous because the parser loads on first use (Q10, #397).
 
 ### 💥 Breaking Changes
 
