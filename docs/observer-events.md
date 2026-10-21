@@ -21,7 +21,7 @@ Anything that must survive a crash is an outbox table plus a relay.
 | Term | Meaning |
 | --- | --- |
 | `unit` | Opaque string id from the library (not the database). One `tx()`, one `batch()`, or one autocommit statement. |
-| `seq` | 0-based per unit, in the order statements were sent. |
+| `seq` | 0-based per unit, in the order statements were sent. A rolled-back savepoint leaves a gap: the surviving writes keep the `seq` they had. |
 | `dialect` | `"postgres"`. |
 | `op` | `insert` \| `update` \| `delete` \| `upsert` \| `archive` \| `restore` \| `raw`. |
 | `rowCountMode` | `changed` \| `matched` \| `returned` \| `unknown`. |
@@ -97,13 +97,20 @@ write in that batch shares the wall time of the whole batch.
 3. Outcome is tri-state: `committed` (COMMIT acknowledged), `rolled_back`
    (explicit rollback, or a failed statement that ended the unit), `unknown`
    (COMMIT sent and the connection lost: `outcome_unknown`, OKM1401). Consumers
-   treat `unknown` as "maybe committed" and must be idempotent.
+   treat `unknown` as "maybe committed" and must be idempotent. The writes of
+   an `unknown` unit keep the counts their statements reported before COMMIT.
+   The outcome says only that the commit may or may not have landed: the
+   database can hold the rows (the COMMIT ran and its answer was lost) or not
+   (the backend died before it finished). A connection lost before COMMIT is
+   sent is `rolled_back`, never `unknown`.
 4. Autocommit: a single statement is a unit of one write; `outcome` follows its
    result.
 5. `batch()` on a driver with no per-statement signal: one unit, one outcome for
    the whole batch; `seq` still orders the statements.
 6. A process crash yields no event (see above).
-7. No global order across units.
+7. No global order across units. Units are per transaction or batch, not per
+   client: two units running at once on one client keep their own events,
+   `seq`, and outcome.
 8. A handler that throws or rejects is caught and sent to
    `onObserverError(err, event)`; it never reaches the write path and never
    changes an outcome. Handlers are not awaited on the write path; returned
@@ -228,6 +235,12 @@ type QueryEvent = {
   stack?: string; // only when queryObserver({ stack: true })
 };
 ```
+
+`route` says where the statement ran. `role` is `replica` when the router sent a
+read to a replica, and `endpoint` is then that replica's configured name. A read
+on the primary, inside a transaction, or on a client with no replicas is
+`primary`. Inside a transaction a read shares the `unit` of the transaction's
+writes at every savepoint depth.
 
 `summary` is `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `UPSERT`, or `SQL`, plus the
 table name when the statement has one. `text` keeps `$n` placeholders. String and

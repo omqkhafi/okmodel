@@ -227,6 +227,9 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - `where`, `orderBy` (including `relevance()`), and search accept `hidden({ filterable: true })` in the type. A plain `.hidden()` column stays a type error there, and the column stays off the row (Q7, #394).
 - Search of a plain hidden column names the opt-in: `hidden({ filterable: true })`.
+- A write observer unit is tracked per transaction, batch, or autocommit statement instead of per client. Two transactions that overlap on one client no longer mix their events or lose an outcome (G-8, #525).
+- `onQuery` reads inside a savepoint share the transaction's unit id, and the `params` of a successful write statement are redacted for hidden and sensitive columns (G-8, #525).
+- A read the topology serves from a replica is labelled `{ endpoint: <name>, role: "replica" }` in `onQuery`, not `primary` (G-8, #525).
 
 #### tooling
 
@@ -244,6 +247,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 #### docs
 
 - Known limits names `postgresjs-kill-storm.md` again. The name is text, not a link, and the file stays out of the published tarball.
+- The observer page says `seq` has gaps after a savepoint rollback, that a unit is one transaction, batch, or statement, and how a replica route is labelled (G-8, #525).
 
 ### 🔒 Security
 

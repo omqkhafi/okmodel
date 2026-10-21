@@ -254,7 +254,7 @@ async function once(
   const emit = session.o !== undefined ? await import("./observe-emit.js") : undefined;
   const observer =
     emit !== undefined && session.o !== undefined ? emit.resolveObserver(session.o) : undefined;
-  const host = { hookm: session.hookm, observer };
+  const host = { hookm: session.hookm, observer, scope: frame };
   const hear =
     session.hookm !== undefined || session.logger !== undefined
       ? await import("./hookm.js")
@@ -392,7 +392,7 @@ async function nested(
   const emit = session.o !== undefined ? await import("./observe-emit.js") : undefined;
   const observer =
     emit !== undefined && session.o !== undefined ? emit.resolveObserver(session.o) : undefined;
-  const host = { hookm: session.hookm, observer };
+  const host = { hookm: session.hookm, observer, scope: frame };
   const hear =
     emit === undefined && session.hookm !== undefined ? await import("./hookm.js") : undefined;
   const saved = frame.failed;
