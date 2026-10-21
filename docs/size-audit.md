@@ -4075,3 +4075,17 @@ function 8d99d4876c9b ~42 minified bytes
   src/tooling/migrate/doctor.ts:115 (arrow)
   src/tooling/migrate/requirements.ts:92 (arrow)
 
+## Decision
+
+Decided on 2026-10-21 after this audit. The gates are spike detectors, not targets. A number moves only by a decision with an attribution, and this section is that decision, limited to what is written here.
+
+The attribution is the [per-graph table](#per-graph-totals): the postgres.js incremental was 15,909 of 16,000 (91 left) and the PGlite incremental was 11,923 of 12,010 (87 left). Neither adapter graph carries `sha256.ts`, so the identifier-overflow saving (candidate 1, done in #497) frees the featureless app and nothing in the adapters.
+
+| Graph | Measured (min) | Gate before | Left before | Gate after | Left after |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `adapter:src/adapters/pg/postgresjs.ts` | 15,909 | 16,000 | 91 | 17,000 | 1,091 |
+| `adapter:src/adapters/pg/pglite.ts` | 11,923 | 12,010 | 87 | 12,700 | 777 |
+
+One-time increase. Unchanged: the featureless app gate (90,900 / 30,170; 88,348 / 28,426 measured after #497, 2,552 / 1,744 left) and the runtime entry gate (6,100 / 2,250; 5,288 / 2,026 measured).
+
+Not decided here, and moved to the 0.10.x notes: candidates 2 and 3 (lazy relation, tenancy, and archive compilers inside `schema.ts` and `plan.ts`), and candidates 4 and 5 (dead-export and clone removal). They are too risky for a gate reset.

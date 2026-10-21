@@ -152,6 +152,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### tooling
 
+- The adapter incremental size gates are raised by decision on 2026-10-21 after the size audit: postgres.js 16,000 to 17,000 and PGlite 12,010 to 12,700 minified bytes. One-time increase. The featureless app and runtime entry gates are unchanged.
 - Registry `fix` is the primary remedy. A bypass moves to `escapeHatches`.
 - The migration planner takes a dialect lowering object. Postgres plans stay the same. Feature support and refusal are questions on that object, so the planner does not import the feature registry.
 - Table, column, and constraint changes lower through that dialect. One logical change can be several statements. Postgres plans stay the same, including a validated check before `SET NOT NULL` on an existing column.
