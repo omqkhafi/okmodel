@@ -591,7 +591,8 @@ export type AggregateOptions<S extends QuerySchema, K extends keyof S["~byName"]
   readonly min?: readonly (keyof RowOf<S, K> & string)[];
   readonly max?: readonly (keyof RowOf<S, K> & string)[];
   /**
-   * Orders the groups. A `groupBy` field or a bucket `as`.
+   * Orders the groups. A `groupBy` field, a bucket `as`, `count`, or a `select` name.
+   * `{ dir, nulls }` places NULLs; `asc` puts them last and `desc` first.
    * Without it, groups come in `groupBy` order.
    */
   readonly orderBy?: OrderBy<RowOf<S, K>> | { readonly [key: string]: SortDir | undefined };

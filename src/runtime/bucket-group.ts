@@ -9,17 +9,7 @@
 import { throwNamed } from "../contracts/error.js";
 import type { ColumnModel } from "../dialects/pg/model.js";
 import { isBucket, type BucketUnit } from "../dialects/pg/ops/bucket.js";
-import {
-  fail,
-  isRecord,
-  list,
-  parseOrder,
-  projectExpr,
-  quote,
-  type Built,
-  type Indexed,
-  type Sink,
-} from "./plan.js";
+import { fail, list, projectExpr, quote, type Built, type Indexed, type Sink } from "./plan.js";
 import { refusePrototypeKey } from "./result-name.js";
 
 /** One bucket in a group list. */
@@ -52,7 +42,7 @@ export type BucketChunk = {
     wrote: { at: number },
     group: BucketGroup,
   ): void;
-  writeGrouped(sink: Sink, names: readonly string[], orderBy: unknown, having?: () => void): void;
+  writeGrouped(sink: Sink, names: readonly string[]): void;
 };
 
 /**
@@ -168,45 +158,16 @@ export function writeBucket(
 }
 
 /**
- * Groups and orders by select-list ordinals.
+ * Groups by select-list ordinals.
  *
  * The bucket expression is written once, in the select list. A second copy
  * would bind a new `$n`, and Postgres treats that as a different expression.
  *
  * @param sink - Statement buffer
  * @param names - Group names, in select order
- * @param orderBy - Caller order, or the default group order
- * @param having - Writes the `having` clause between `group by` and `order by`
  */
-export function writeGrouped(
-  sink: Sink,
-  names: readonly string[],
-  orderBy: unknown,
-  having?: () => void,
-): void {
+export function writeGrouped(sink: Sink, names: readonly string[]): void {
   sink.text(ordinals(names.length));
-  having?.();
-  if (isRecord(orderBy) && Object.keys(orderBy).length > 0) {
-    sink.text(" order by ");
-    const keys = Object.keys(orderBy);
-    for (let index = 0; index < keys.length; index += 1) {
-      const key = keys[index];
-      if (key === undefined) continue;
-      const parsed = parseOrder(key, orderBy[key]);
-      if (index > 0) sink.text(", ");
-      sink.text(String(names.indexOf(key) + 1));
-      sink.text(parsed.dir === "asc" ? " asc" : " desc");
-      sink.text(parsed.nulls === "first" ? " nulls first" : " nulls last");
-      sink.mark(`o:${key}:${parsed.dir}:${parsed.nulls}`);
-    }
-    return;
-  }
-  sink.text(" order by ");
-  const parts: string[] = [];
-  for (let index = 1; index <= names.length; index += 1) {
-    parts.push(`${String(index)} asc nulls last`);
-  }
-  sink.text(parts.join(", "));
 }
 
 function unitOf(value: unknown): BucketUnit | undefined {
