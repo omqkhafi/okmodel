@@ -24,6 +24,10 @@
       "import": "./dist/tooling/migrate/index.js",
       "types": "./dist/tooling/migrate/index.d.ts"
     },
+    "./observe": {
+      "import": "./dist/runtime/observe.js",
+      "types": "./dist/runtime/observe.d.ts"
+    },
     "./otel": {
       "import": "./dist/runtime/otel.js",
       "types": "./dist/runtime/otel.d.ts"
@@ -324,6 +328,8 @@
     "dist/runtime/lock.d.ts",
     "dist/runtime/observe-emit.d.ts",
     "dist/runtime/observe-types.d.ts",
+    "dist/runtime/observe.d.ts",
+    "dist/runtime/observe.js",
     "dist/runtime/operator-sql.d.ts",
     "dist/runtime/otel.d.ts",
     "dist/runtime/otel.js",
@@ -546,6 +552,11 @@
     "dist/tooling/cli/schema.d.ts",
     "dist/tooling/cli/spec.d.ts",
     "dist/tooling/cli/version.d.ts",
+    "dist/tooling/describe/nullability.d.ts",
+    "dist/tooling/describe/protocol.d.ts",
+    "dist/tooling/describe/provider.d.ts",
+    "dist/tooling/describe/screen.d.ts",
+    "dist/tooling/describe/types.d.ts",
     "dist/tooling/driver-run.js",
     "dist/tooling/driver-test.d.ts",
     "dist/tooling/errors/body.d.ts",

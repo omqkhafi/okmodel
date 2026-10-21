@@ -44,6 +44,7 @@ export type {
 } from "./rows.js";
 
 export type {
+  DescribeField,
   DescribeResult,
   DriverCapabilities,
   DriverConnection,

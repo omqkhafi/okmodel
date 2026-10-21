@@ -86,10 +86,10 @@ write in that batch shares the wall time of the whole batch.
 8. A handler that throws or rejects is caught and sent to
    `onObserverError(err, event)`; it never reaches the write path and never
    changes an outcome. Handlers are not awaited on the write path; returned
-   promises are tracked. `await db.flush()` (settles tracked handler promises,
-   never throws on handler errors) is provided by `okmodel/observe` — attaching
-   `flush` on every connected client overflows the featureless app size gate
-   (measured: slot alone leaves ~7 bytes of headroom under 90,900).
+   promises are tracked; `await observer.flush()` (from `writeObserver()`)
+   resolves when all tracked handler promises have settled and never throws on
+   handler errors. Attaching `flush` on every connected client overflows the
+   featureless app size gate, so the helper owns `flush`.
 9. Backpressure: the buffer is bounded per client (default 10,000 pending
    events). Overflow drops the oldest unit's events and emits one
    `onObserverError` with OKM2200; the write path never waits.
@@ -110,7 +110,21 @@ writeObserver({
 `connect({ onWrite: writeObserver({ ... }) })` also accepts the raw low-level
 handler. The helper buffers per unit and calls exactly one of
 `committed` | `rolledBack` | `unknown` once per unit. A unit with zero surviving
-writes calls nothing. An observer cannot veto or alter a write.
+writes calls nothing. An observer cannot veto or alter a write. `keys` is
+accepted and ignored until G-5.
+
+```ts
+import { writeObserver } from "okmodel/observe";
+
+const onWrite = writeObserver({
+  committed: ({ unit, writes }) => {
+    /* …
+     */
+  },
+});
+const db = connect(url, { schema, onWrite });
+await onWrite.flush();
+```
 
 ## Capability keys
 

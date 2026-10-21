@@ -10,12 +10,37 @@ import type { DriverConnection, DriverPool, ExecuteResult } from "../src/contrac
 import { OkmError } from "../src/contracts/error.js";
 import { schema, table, t } from "../src/dialects/pg/index.js";
 import { createClient } from "../src/runtime/client.js";
+import { createObserver, type WriteDraft } from "../src/runtime/observe-emit.js";
+import {
+  OBSERVE_BUFFER_MAX,
+  observerBufferOverflow,
+  writeObserver,
+} from "../src/runtime/observe.js";
 import type { ObserveEvent, OutcomeEvent, WriteEvent } from "../src/runtime/observe-types.js";
+import { columnTenancy } from "../src/runtime/tenancy/index.js";
 import type { Hookm } from "../src/runtime/types.js";
 import { POSTGRES_FEATURES } from "../src/tooling/capabilities/postgres.js";
 
-const notes = table("notes", { id: t.text().primaryKey(), body: t.text() });
+const notes = table("notes", {
+  id: t.text().primaryKey(),
+  body: t.text(),
+});
+const secrets = table("secrets", {
+  id: t.text().primaryKey(),
+  body: t.text(),
+  secret: t.text().sensitive().hidden(),
+});
 const app = schema({ casing: "snake", tables: [notes] });
+const secretApp = schema({ casing: "snake", tables: [secrets] });
+const TENANT_A = "11111111-1111-4111-8111-111111111111";
+const draft = (seq = 0): WriteDraft => ({
+  table: "notes",
+  op: "insert",
+  tenant: null,
+  settings: [],
+  durationMs: seq,
+  source: "client",
+});
 
 const VERSION: ExecuteResult = {
   rows: [["170000", "PostgreSQL 17.0", null]],
@@ -321,4 +346,175 @@ test("a throwing onWrite never changes the write result", async () => {
     },
   });
   expect(await Promise.resolve(db.notes.delete({ where: { id: "a" } }))).toEqual({ count: 1 });
+});
+
+test("zero cost: no observer builds no event and takes no timestamp", async () => {
+  let nowCalls = 0;
+  const realNow = Date.now.bind(Date);
+  Date.now = (() => {
+    nowCalls += 1;
+    return realNow();
+  }) as typeof Date.now;
+  try {
+    const bare = createClient(app, recording({}), { ownsPool: false });
+    nowCalls = 0;
+    await bare.notes.delete({ where: { id: "a" } });
+    expect(nowCalls).toBe(0);
+
+    const seen = collect();
+    const watched = createClient(app, recording({}), {
+      ownsPool: false,
+      onWrite: seen.onWrite,
+    });
+    nowCalls = 0;
+    await watched.notes.delete({ where: { id: "b" } });
+    expect(nowCalls).toBeGreaterThan(0);
+    expect(seen.events.length).toBeGreaterThan(0);
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+test("error isolation: throwing and rejecting handlers, flush, and overflow", async () => {
+  const observerErrors: unknown[] = [];
+  let committed = 0;
+  const onWrite = writeObserver({
+    maxPending: 3,
+    committed: () => {
+      committed += 1;
+      throw new Error("committed boom");
+    },
+    onObserverError: (err) => {
+      observerErrors.push(err);
+    },
+    onEvent: (event): void | Promise<void> => {
+      if (event.type === "write" && event.seq === 0) {
+        return Promise.reject(new Error("reject boom"));
+      }
+      return undefined;
+    },
+  });
+  const pool = recording({});
+  const db = createClient(app, pool, { ownsPool: false, onWrite });
+  expect(await Promise.resolve(db.notes.delete({ where: { id: "a" } }))).toEqual({ count: 1 });
+  await onWrite.flush();
+  expect(committed).toBe(1);
+  expect(
+    observerErrors.some((err) => err instanceof Error && err.message === "committed boom"),
+  ).toBe(true);
+  expect(observerErrors.some((err) => err instanceof Error && err.message === "reject boom")).toBe(
+    true,
+  );
+
+  const overflowErrors: OkmError[] = [];
+  const bounded = writeObserver({
+    maxPending: 3,
+    onObserverError: (err) => {
+      if (err instanceof OkmError) overflowErrors.push(err);
+    },
+  });
+  const controller = createObserver(bounded);
+  controller.onPhase("start", 0, undefined);
+  controller.recordWrites([draft(0), draft(1)]);
+  controller.onPhase("start", 0, undefined);
+  controller.recordWrites([draft(0), draft(1)]);
+  expect(overflowErrors.some((err) => err.code === "OKM2200")).toBe(true);
+  expect(observerBufferOverflow().code).toBe("OKM2200");
+  expect(OBSERVE_BUFFER_MAX).toBe(10_000);
+});
+
+test("writeObserver calls committed, rolledBack, and unknown once per unit", async () => {
+  const committed: string[] = [];
+  const rolled: string[] = [];
+  const unknown: string[] = [];
+  const onWrite = writeObserver({
+    committed: ({ unit, writes }) => {
+      committed.push(`${unit}:${writes.length}`);
+    },
+    rolledBack: ({ unit }) => {
+      rolled.push(unit);
+    },
+    unknown: ({ unit, writes }) => {
+      unknown.push(`${unit}:${writes.length}`);
+    },
+  });
+  const { pool } = interactive();
+  const db = createClient(app, pool, { ownsPool: false, onWrite });
+  await db.connected;
+  await db.tx(async (tx) => {
+    await tx.notes.insert({ id: "1", body: "a" });
+  });
+  expect(committed).toHaveLength(1);
+  expect(rolled).toHaveLength(0);
+
+  await rejection(
+    db.tx(async (tx) => {
+      await tx.notes.delete({ where: { id: "1" } });
+      throw new Error("rollback");
+    }),
+  );
+  expect(rolled).toHaveLength(1);
+
+  const lost = interactive({
+    onCommit: () => Promise.reject(new DriverError("connection lost", { sqlstate: "08006" })),
+  });
+  const lostDb = createClient(app, lost.pool, { ownsPool: false, onWrite });
+  await lostDb.connected;
+  await rejection(
+    lostDb.tx(async (tx) => {
+      await tx.notes.delete({ where: { id: "z" } });
+    }),
+  );
+  expect(unknown).toHaveLength(1);
+  await onWrite.flush();
+});
+
+test("no-leak: bound values and hidden/sensitive columns stay out of events", async () => {
+  const secretBody = "bound-secret-body-value-9f3a";
+  const secretCol = "hidden-sensitive-column-value-7c2b";
+  const events: ObserveEvent[] = [];
+  const onWrite = writeObserver({
+    onEvent: (event) => {
+      events.push(event);
+    },
+  });
+  const pool = recording({});
+  const db = createClient(secretApp, pool, { ownsPool: false, onWrite });
+  await db.secrets.insert({ id: "row-1", body: secretBody, secret: secretCol });
+  await onWrite.flush();
+  const blob = JSON.stringify(events);
+  expect(blob).not.toContain(secretBody);
+  expect(blob).not.toContain(secretCol);
+  expect(blob).not.toContain("row-1");
+  expect(writes(events)[0]?.table).toBe("secrets");
+  expect(writes(events)[0]?.tenant).toBeNull();
+});
+
+test("no-leak: tenant appears only as scope keys and values", async () => {
+  const tenants = table("tenants_notes", {
+    id: t.text().primaryKey(),
+    body: t.text(),
+  });
+  const tenantApp = schema({
+    casing: "snake",
+    tables: [tenants],
+    tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
+  });
+  const events: ObserveEvent[] = [];
+  const onWrite = writeObserver({
+    onEvent: (event) => {
+      events.push(event);
+    },
+  });
+  const pool = recording({});
+  const root = createClient(tenantApp, pool, { ownsPool: false, onWrite });
+  const db = root.for({ tenantId: TENANT_A });
+  await db.tenants_notes.insert({ id: "n1", body: "hello-tenant-body" });
+  await onWrite.flush();
+  const write = writes(events)[0];
+  expect(write?.tenant).toEqual({ tenantId: TENANT_A });
+  const blob = JSON.stringify(events);
+  expect(blob).not.toContain("hello-tenant-body");
+  expect(blob).not.toContain("n1");
+  expect(blob).toContain(TENANT_A);
 });

@@ -933,6 +933,13 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     summary: "Tenancy schema or database is not supported by init yet.",
     fix: "Pass --tenancy none, or --tenancy column.",
   },
+  {
+    code: "OKM2200",
+    title: "Observer buffer overflow",
+    summary:
+      "The write-observer buffer dropped the oldest unit because it exceeded the pending-event ceiling.",
+    fix: "Drain handlers with flush() more often, or raise maxPending on writeObserver. The write path does not wait.",
+  },
   // Reserved, not registered (no raising path): version OKM1804–OKM1809,
   // extension OKM1815–OKM1819, feature refusal OKM1861 and OKM1868–OKM1879,
   // adapter capability refusal OKM1880–OKM1889. OKM1140–OKM1179 stay reserved (D291).
