@@ -150,6 +150,10 @@ close, an archive CTE) are not rewritten. They fill `keys` only when the
 caller already returns every primary-key column. A sortable lock statement is
 not a key statement. A first-or-create lookup does not attach keys.
 
+## Typed raw
+
+A typed `raw(db, sql, params)` write statement emits a write event with `source: "raw"`, `op: "raw"`, and `table: null`. Inside `trusted(client, "reason")` the event `tag` is `trusted: <reason>`. A typed raw read emits no event.
+
 ## Row counts
 
 `rowCount` is the command-tag count the driver reported (`ExecuteResult.reported`).
