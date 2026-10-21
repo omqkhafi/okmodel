@@ -1420,6 +1420,60 @@
     "docs": "docs/errors/OKM1860.md"
   },
   {
+    "code": "OKM1862",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A driver package is already installed and the driver flag names a different one.",
+    "fix": "Drop the driver flag, or remove the installed driver package before choosing another.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1862.md"
+  },
+  {
+    "code": "OKM1863",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "okm init needs a choice and this invocation is not interactive.",
+    "fix": "Pass the flag named in the message. The flags are --driver, --tenancy, and --install.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1863.md"
+  },
+  {
+    "code": "OKM1864",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A file init recorded was edited, so init leaves it unchanged.",
+    "fix": "Keep the file, or pass the force-file flag with that path to replace it.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1864.md"
+  },
+  {
+    "code": "OKM1865",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "The directory has no package.json, cannot be written, or a path leaves it.",
+    "fix": "Use a package directory that can be written, and keep paths inside it.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1865.md"
+  },
+  {
+    "code": "OKM1866",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "The plan hash does not match this directory anymore.",
+    "fix": "Print the plan again and pass the new plan-hash.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1866.md"
+  },
+  {
+    "code": "OKM1867",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "Tenancy schema or database is not supported by init yet.",
+    "fix": "Pass --tenancy none, or --tenancy column.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1867.md"
+  },
+  {
     "code": "OKM2200",
     "kind": "invalid",
     "category": "input",

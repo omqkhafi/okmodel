@@ -509,17 +509,29 @@ const GIT_ATTRIBUTES = [
 ].join("\n");
 
 /**
+ * Text `okm generate init` and `okm init` write for LF migration files.
+ *
+ * An existing `.gitattributes` is left unchanged. These commands do not
+ * append to a file the project already has.
+ *
+ * @returns The file body, including the trailing newline
+ */
+export function migrationGitAttributes(): string {
+  return GIT_ATTRIBUTES;
+}
+
+/**
  * Writes `.gitattributes` for LF migration and catalog files.
  *
  * An existing file is left unchanged, including one that does not list these
- * patterns. `okm generate init` is the only caller.
+ * patterns.
  *
  * @param cwd - Project directory
  */
 function writeGitAttributes(cwd: string): void {
   const path = projectPath(cwd, ".gitattributes");
   if (existsSync(path)) return;
-  writeFileSync(path, GIT_ATTRIBUTES);
+  writeFileSync(path, migrationGitAttributes());
 }
 
 /**

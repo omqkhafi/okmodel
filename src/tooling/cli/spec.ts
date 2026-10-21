@@ -500,6 +500,47 @@ export const COMMANDS: readonly CommandSpec[] = [
     ownOut: false,
     flags: [],
   }),
+  spec({
+    id: "init",
+    policy: "none",
+    words: ["init"],
+    summary: "Write starter files for one package. Does not connect. This is not generate init.",
+    usage: "init [dir]",
+    minOperands: 0,
+    maxOperands: 1,
+    usesDatabase: false,
+    ownOut: false,
+    flags: [
+      { name: "yes", short: "y", type: "boolean", hint: "Accept defaults and do not prompt." },
+      { name: "dry-run", type: "boolean", hint: "Print the plan and write nothing." },
+      { name: "dialect", type: "string", hint: "<postgres>." },
+      {
+        name: "driver",
+        type: "string",
+        hint: "<postgresjs|pg|bun-sql|pglite|neon>.",
+      },
+      { name: "dir", type: "string", hint: "<path> base directory for db files. Default db." },
+      { name: "pm", type: "string", hint: "<bun|npm|pnpm|yarn>." },
+      {
+        name: "tenancy",
+        type: "string",
+        hint: "<none|column|schema|database>. Default none.",
+      },
+      { name: "install", type: "boolean", hint: "Install dependencies." },
+      { name: "no-install", type: "boolean", hint: "Do not install dependencies." },
+      {
+        name: "force-file",
+        type: "string",
+        multiple: true,
+        hint: "<path> replaces that one user-modified file. No short form.",
+      },
+      {
+        name: "plan-hash",
+        type: "string",
+        hint: "<hash> from a previous plan. Apply refuses a different plan.",
+      },
+    ],
+  }),
 ];
 
 /** Command ids that have a JSON Schema for `data`. */

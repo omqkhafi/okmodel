@@ -42,6 +42,26 @@ export type ParsedCli = {
   readonly acceptUnverified: boolean;
   /** `okm raw sync --check`. Do not write the lock. */
   readonly check: boolean;
+  /** `okm init --yes`. Other commands leave this false. */
+  readonly yes: boolean;
+  /** `okm init --dialect`. */
+  readonly dialect: string | undefined;
+  /** `okm init --driver`. */
+  readonly driver: string | undefined;
+  /** `okm init --dir`. The db directory, not the project operand. */
+  readonly dbDir: string | undefined;
+  /** `okm init --pm`. */
+  readonly pm: string | undefined;
+  /** `okm init --tenancy`. */
+  readonly tenancy: string | undefined;
+  /** `okm init --install`. */
+  readonly install: boolean;
+  /** `okm init --no-install`. */
+  readonly noInstall: boolean;
+  /** `okm init --force-file`. */
+  readonly forceFile: readonly string[];
+  /** `okm init --plan-hash`. */
+  readonly planHash: string | undefined;
   /** Positionals after the command words. */
   readonly operands: readonly string[];
 };
@@ -56,7 +76,7 @@ const GROUP_FIX: Readonly<Record<string, string>> = {
 };
 
 const VALUE_SHORTS = new Set(["c", "t", "o"]);
-const BOOLEAN_SHORTS = new Set(["h", "V", "v", "n"]);
+const BOOLEAN_SHORTS = new Set(["h", "V", "v", "n", "y"]);
 
 /**
  * Whether `argv` contains `--json` as a flag, not as another flag's value.
@@ -172,6 +192,16 @@ export function parseCli(argv: readonly string[]): ParsedCli {
     retry: values.retry === true,
     acceptUnverified: values["accept-unverified"] === true,
     check: values.check === true,
+    yes: values.yes === true,
+    dialect: stringValue(values.dialect),
+    driver: stringValue(values.driver),
+    dbDir: stringValue(values.dir),
+    pm: stringValue(values.pm),
+    tenancy: stringValue(values.tenancy),
+    install: values.install === true,
+    noInstall: values["no-install"] === true,
+    forceFile: stringList(values["force-file"]),
+    planHash: stringValue(values["plan-hash"]),
     operands,
   };
 }
@@ -200,6 +230,16 @@ function blank(flags: { readonly help: boolean; readonly json: boolean }): Parse
     retry: false,
     acceptUnverified: false,
     check: false,
+    yes: false,
+    dialect: undefined,
+    driver: undefined,
+    dbDir: undefined,
+    pm: undefined,
+    tenancy: undefined,
+    install: false,
+    noInstall: false,
+    forceFile: [],
+    planHash: undefined,
     operands: [],
   };
 }
@@ -337,6 +377,21 @@ function missingValue(name: string): OkmError {
   if (name === "lock-timeout" || name === "statement-timeout") {
     return usage(`--${name} needs a number of milliseconds.`, `Pass --${name} <milliseconds>.`);
   }
+  if (name === "dialect") return usage("--dialect needs a name.", "Pass --dialect postgres.");
+  if (name === "driver") {
+    return usage(
+      "--driver needs a name.",
+      "Pass --driver postgresjs, pg, bun-sql, pglite, or neon.",
+    );
+  }
+  if (name === "dir") return usage("--dir needs a path.", "Pass --dir <path>.");
+  if (name === "pm") return usage("--pm needs a name.", "Pass --pm bun, npm, pnpm, or yarn.");
+  if (name === "tenancy") {
+    return usage("--tenancy needs a mode.", "Pass --tenancy none, column, schema, or database.");
+  }
+  if (name === "force-file")
+    return usage("--force-file needs a path.", "Pass --force-file <path>.");
+  if (name === "plan-hash") return usage("--plan-hash needs a hash.", "Pass --plan-hash <hash>.");
   return usage(`--${name} needs a value.`, `Pass --${name} <value>.`);
 }
 

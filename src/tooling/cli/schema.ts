@@ -312,6 +312,60 @@ const SCHEMAS: Readonly<Record<string, JsonSchema>> = {
       title: { type: "string" },
     },
   },
+  init: object(
+    "init",
+    "okm init data",
+    ["status", "detection", "files", "packageEdits", "nextSteps", "planHash", "install"],
+    {
+      status: { enum: ["planned", "applied", "unchanged"] },
+      detection: objectNode(
+        [
+          "pm",
+          "driver",
+          "runtime",
+          "databaseEnv",
+          "git",
+          "okmodel",
+          "typescript",
+          "orm",
+          "ancestorConfig",
+        ],
+        {
+          pm: { enum: ["bun", "pnpm", "yarn", "npm"] },
+          driver: { enum: ["postgresjs", "pg", "bun-sql", "pglite", "neon"] },
+          runtime: { enum: ["bun", "workers", "next", "node"] },
+          packageName: untrustedSchema(),
+          databaseEnv: { const: "DATABASE_URL" },
+          git: { type: "boolean" },
+          okmodel: { type: "boolean" },
+          typescript: { enum: ["absent", "ok", "warn"] },
+          orm: { type: "array", items: { type: "string" } },
+          ancestorConfig: { type: "boolean" },
+        },
+      ),
+      files: {
+        type: "array",
+        items: objectNode(["path", "state", "action"], {
+          path: { type: "string" },
+          state: { enum: ["absent", "identical", "managed-diff", "user-modified"] },
+          action: { enum: ["create", "update", "skip", "overwrite", "append"] },
+          diff: { type: "string" },
+        }),
+      },
+      packageEdits: {
+        type: "array",
+        items: objectNode(["key", "action"], {
+          key: { type: "string" },
+          action: { enum: ["add", "skip"] },
+          value: { type: "string" },
+        }),
+      },
+      nextSteps: { type: "array", items: { type: "string" } },
+      planHash: { type: "string" },
+      install: { type: "boolean" },
+      note: { type: "string" },
+    },
+  ),
 };
 
 /**

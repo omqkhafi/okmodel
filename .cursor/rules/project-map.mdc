@@ -21,6 +21,7 @@ contracts → dialects → adapters → runtime → tooling. Adapters import con
 - `src/tooling/capabilities/` — dialect feature registry (Postgres), proof check, schema feature detection. Not in the runtime entry.
 - `src/tooling/migrate/` — apply, check (sandbox), lint (`lint-rules.ts`), SQL lexer `sql-lex.ts`, files, status, provision, runner. The planner takes `postgresDialect` from `postgres-dialect.ts`.
 - `src/tooling/describe/` — statement describe for typed raw SQL: wire client, nullability, type lookup. Not in the runtime entry.
+- `src/tooling/init/` — `okm init` file plan for one package: detect, diff, apply, `.okm/init.json`. It writes files only and does not connect. `okm generate init` is the first migration and stays in `migrate/`.
 - `src/tooling/cli.ts` — `okm` CLI; machine contract `okm.cli/1` in `src/tooling/cli/` (envelope, parseArgs spec, exit codes, JSON Schema); `src/tooling/driver-test.ts` — `okm driver test` (the suites stay in `packages/harness`); `src/tooling/errors/registry.ts` — doctor text for every OKM code, pages in `docs/errors/` (`bun run docs:errors`); `src/tooling/describe/` — statement describe, nullability, and `okm raw sync` (`.okm/raw.lock.json`, `.okm/raw.d.ts`); `src/tooling/testing/`; `src/tooling/github/` — plan comment for the GitHub Action.
 - `.github/actions/migrate/` — official composite GitHub Action (`action.yml`). Dogfood workflow: `.github/workflows/github-action.yml`.
 - `.github/actions/setup-bun/` — pinned Bun, the install cache, and `bun install --frozen-lockfile`.

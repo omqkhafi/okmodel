@@ -52,6 +52,12 @@ const EXIT_BY_CODE: Readonly<Record<string, 0 | 1 | 2 | 3 | 4 | 5>> = {
   OKM1856: 2,
   OKM1859: 4,
   OKM1860: 5,
+  OKM1862: 4,
+  OKM1863: 3,
+  OKM1864: 4,
+  OKM1865: 5,
+  OKM1866: 4,
+  OKM1867: 3,
 };
 
 test("every registry code maps to one exit, and the rest stay 1", () => {

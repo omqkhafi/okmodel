@@ -69,6 +69,14 @@ import {
 import { checkProject } from "../migrate/project.js";
 import { parseReplace } from "../migrate/values.js";
 import { reprintHits } from "../migrate/reprint.js";
+import {
+  refuseDifferentDriver,
+  refuseMissingDecision,
+  refusePlanHash,
+  refuseTenancy,
+  refuseUnsupported,
+  refuseUserModified,
+} from "../init/guards.js";
 import { resumeCommittedStep, stepSqlHash } from "../migrate/step-engine.js";
 import type { CommittedStep, StepEngine, StepJournal } from "../migrate/step-engine.js";
 import type { PageExample } from "./page.js";
@@ -1719,6 +1727,66 @@ function tableProject(extra: boolean): string {
   );
   return cwd;
 }
+
+thrown(
+  "OKM1862",
+  () => {
+    refuseDifferentDriver("postgresjs", "pg");
+  },
+  () => {
+    refuseDifferentDriver("pg", "pg");
+  },
+);
+
+thrown(
+  "OKM1863",
+  () => {
+    refuseMissingDecision(["--driver"]);
+  },
+  () => {
+    refuseMissingDecision([]);
+  },
+);
+
+thrown(
+  "OKM1864",
+  () => {
+    refuseUserModified(["db/schema.ts"]);
+  },
+  () => {
+    refuseUserModified([]);
+  },
+);
+
+thrown(
+  "OKM1865",
+  () => {
+    refuseUnsupported("okm init needs a package.json in the project directory.");
+  },
+  () => {
+    refuseUnsupported(undefined);
+  },
+);
+
+thrown(
+  "OKM1866",
+  () => {
+    refusePlanHash("aaaa", "bbbb");
+  },
+  () => {
+    refusePlanHash("aaaa", "aaaa");
+  },
+);
+
+thrown(
+  "OKM1867",
+  () => {
+    refuseTenancy("schema");
+  },
+  () => {
+    refuseTenancy("none");
+  },
+);
 
 function withColumn(
   source: Catalog,
