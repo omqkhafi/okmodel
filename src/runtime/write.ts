@@ -254,23 +254,51 @@ export async function executeWrite(
     const prepared = await prepareWrite(host, op, table, input, options, mods, scope);
     if (plan !== undefined) return prepared;
     if (prepared.statements.length === 0) return prepared.finish([]);
-    const observe = statementObserve(host.o !== undefined, prepared);
+    const meta = host.o !== undefined || host.q !== undefined;
+    const querying = host.q !== undefined;
+    if (querying && wantsQueryParams(host.q)) {
+      const { rememberSecrets } = await import("./observe-query.js");
+      rememberSecrets(prepared.statements, host.schema, scope, input);
+    }
+    const observe = statementObserve(meta, prepared);
     const results = await runWrite(host, prepared.statements, prepared.options, undefined, observe);
     const more = prepared.follow?.(results);
-    if (more === undefined || more.length === 0) return prepared.finish(results);
+    if (more === undefined || more.length === 0)
+      return finishQuery(host, querying, [results], () => prepared.finish(results));
+    if (querying && wantsQueryParams(host.q)) {
+      const { rememberSecrets } = await import("./observe-query.js");
+      rememberSecrets(more, host.schema, scope, input);
+    }
     const followObserve =
-      host.o !== undefined && prepared.observe !== undefined
+      meta && prepared.observe !== undefined
         ? more.map((statement) =>
             withStatementReturning(prepared.observe as WriteObserveMeta, statement.text),
           )
         : undefined;
     const extra = await runWrite(host, more, prepared.options, undefined, followObserve);
-    return prepared.finish(results.concat(extra));
+    return finishQuery(host, querying, [results, extra], () =>
+      prepared.finish(results.concat(extra)),
+    );
   } catch (error) {
     // B-33: postgres.js omits `table` on generic / aborted failures but keeps parameters.
     if (typeof error === "object" && error !== null) Reflect.set(error, "okmTable", table);
     throw error;
   }
+}
+
+function wantsQueryParams(handler: object | undefined): boolean {
+  return (handler as { observeParams?: boolean } | undefined)?.observeParams === true;
+}
+
+async function finishQuery<T>(
+  host: WriteHost,
+  querying: boolean,
+  groups: readonly (readonly ExecuteResult[])[],
+  decode: () => T,
+): Promise<T> {
+  if (!querying) return decode();
+  const { finishObserved } = await import("./observe-query.js");
+  return finishObserved(host, groups, decode);
 }
 
 /**

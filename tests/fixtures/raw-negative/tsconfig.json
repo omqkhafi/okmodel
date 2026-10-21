@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "target": "es2023",
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": [],
+    "paths": {
+      "okmodel/pg": ["../../../src/dialects/pg/index.ts"]
+    }
+  },
+  "files": ["missing.ts"]
+}

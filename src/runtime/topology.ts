@@ -428,6 +428,7 @@ export async function connectTopology<S extends QuerySchema>(
       hookm: options.hookm,
       onWrite: options.onWrite,
       warnings: options.warnings,
+      onQuery: options.onQuery,
       catalog: options.catalog,
       catalogDir: options.catalogDir,
       requireMeta: options.requireMeta,

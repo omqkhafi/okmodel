@@ -155,10 +155,13 @@ export function otel(options: OtelOptions): OtelObservers {
       found.span.end();
     },
     onError(error: unknown): void {
-      const span = begin(tracer, "error", {
+      const attributes: Record<string, OtelAttribute> = {
         "db.system.name": SYSTEM,
         "error.type": errorType(error),
-      });
+      };
+      const sqlstate = sqlStateOf(error);
+      if (sqlstate !== undefined) attributes["db.response.status_code"] = sqlstate;
+      const span = begin(tracer, "error", attributes);
       span.recordException(recordedException(error));
       span.setStatus({ code: STATUS_ERROR });
       span.end();
@@ -180,6 +183,7 @@ export function otel(options: OtelOptions): OtelObservers {
       const table = inspection.intent.table;
       const attributes: Record<string, OtelAttribute> = {
         "db.system.name": SYSTEM,
+        "db.namespace": "public",
         "db.operation.name": op,
         "db.collection.name": table,
         "db.query.summary": inspection.plan.fingerprint,
@@ -226,6 +230,12 @@ function latest(open: readonly OpenTx[], depth: number): number {
  *
  * @param error - What `onError` received
  */
+function sqlStateOf(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null || !("sqlstate" in error)) return undefined;
+  const sqlstate = error.sqlstate;
+  return typeof sqlstate === "string" && sqlstate.length > 0 ? sqlstate : undefined;
+}
+
 function errorType(error: unknown): string {
   return error instanceof Error && error.name.length > 0 ? error.name : "error";
 }

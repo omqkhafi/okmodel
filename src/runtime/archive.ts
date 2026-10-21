@@ -73,9 +73,22 @@ export async function executeArchive(
   scope: CallScope | undefined,
 ): Promise<{ readonly count: number; readonly archiveId?: string }> {
   const prepared = prepareArchive(host.schema, op, table, input, options, mods, scope);
-  const observe = statementObserve(host.o !== undefined, prepared);
+  const watching = host.o !== undefined || host.q !== undefined;
+  if (host.q !== undefined && wantsQueryParams(host.q)) {
+    const { rememberSecrets } = await import("./observe-query.js");
+    rememberSecrets(prepared.statements, host.schema, scope, input);
+  }
+  const observe = statementObserve(watching, prepared);
   const results = await runWrite(host, prepared.statements, prepared.options, undefined, observe);
-  return prepared.finish(results) as { readonly count: number; readonly archiveId?: string };
+  const decode = (): { readonly count: number; readonly archiveId?: string } =>
+    prepared.finish(results) as { readonly count: number; readonly archiveId?: string };
+  if (host.q === undefined) return decode();
+  const { finishObserved } = await import("./observe-query.js");
+  return finishObserved(host, [results], decode);
+}
+
+function wantsQueryParams(handler: object | undefined): boolean {
+  return (handler as { observeParams?: boolean } | undefined)?.observeParams === true;
 }
 
 /**
