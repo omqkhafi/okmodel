@@ -63,7 +63,7 @@ A cursor this call did not return is `after is not a cursor that page() returned
 
 ### Aggregate
 
-`aggregate` counts, sums, averages, and finds extremes. There is no `having`.
+`aggregate` counts, sums, averages, and finds extremes. There is no `having`. `select` names each aggregate.
 
 | Input | Result |
 | --- | --- |
@@ -72,6 +72,7 @@ A cursor this call did not return is `after is not a cursor that page() returned
 | `sum`, `avg`, `min`, `max` | A list of field names. |
 | `count: true` | The row count. |
 | `countDistinct` | A list of field names. Different non-null values, as `countDistinct.<field>`. |
+| `select` | `{ name: { sum: "field" } }`. One function per entry, and the result key is `name`. |
 
 #### count
 
@@ -124,6 +125,37 @@ export async function byStatus(url: string) {
 <Callout type="error" title="OKM1101">
 `aggregate() with groupBy needs a limit.`
 </Callout>
+
+#### named
+
+`select` gives each aggregate its own flat result key. An entry is one of `count: true`, `countDistinct`, `sum`, `avg`, `min`, or `max`, with one field. The list forms work in the same call. A name that is a group field, `count`, `sum`, `avg`, `min`, `max`, or `countDistinct` is OKM1120.
+
+```ts title="named.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const tasks = table("tasks", {
+  id: t.identity(),
+  status: t.text(),
+  amount: t.integer().nullable(),
+});
+const app = schema({ tables: [tasks] });
+
+export async function byStatus(url: string) {
+  await using db = connect(url, { schema: app });
+  const rows = await db.tasks.aggregate({
+    groupBy: ["status"],
+    select: { // [!code focus]
+      tasks: { count: true }, // [!code focus]
+      revenue: { sum: "amount" }, // [!code focus]
+      smallest: { min: "amount" }, // [!code focus]
+      largest: { max: "amount" }, // [!code focus]
+    }, // [!code focus]
+    limit: 20,
+  });
+  return rows.map((row) => `${row.status}: ${row.tasks} tasks, ${row.revenue ?? 0} total`);
+}
+```
 
 ### Distinct
 

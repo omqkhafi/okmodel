@@ -1,8 +1,8 @@
 /**
  * Grouped aggregates (spec section 10).
  *
- * `count`, `sum`, `avg`, `min`, and `max` over the rows a `where` selects, per
- * `groupBy` group. The statement is written here and the `where` is written by
+ * `count`, `countDistinct`, `sum`, `avg`, `min`, and `max` over the rows a
+ * `where` selects, per `groupBy` group, as lists or as named entries in `select`. The statement is written here and the `where` is written by
  * the planner's `emitWhere`, so the tenant and active-set predicates apply to
  * every aggregate exactly as they apply to a `find`. This module loads on the
  * first `aggregate()`.
@@ -28,6 +28,7 @@ import {
   type Session,
 } from "./client.js";
 import type { BucketChunk, BucketGroup } from "./bucket-group.js";
+import { refusePrototypeKey } from "./result-name.js";
 import {
   cell,
   emitOrder,
@@ -71,6 +72,7 @@ const OPTIONS = [
   "avg",
   "min",
   "max",
+  "select",
   "orderBy",
   "limit",
   "ignore",
@@ -112,9 +114,12 @@ type Spec = {
   readonly bucketed: boolean;
   readonly count: boolean;
   readonly calls: readonly {
-    readonly option: "countDistinct" | "sum" | "avg" | "min" | "max";
+    readonly option: "count" | "countDistinct" | "sum" | "avg" | "min" | "max";
     readonly tag: string;
-    readonly column: ColumnModel;
+    /** Absent for a named `count`. */
+    readonly column: ColumnModel | undefined;
+    /** The flat result key of a `select` entry. The list forms have none. */
+    readonly name: string | undefined;
     /** How the result is read: the column's codec, or the exact text or number of a sum. */
     readonly decode: ((wire: string) => unknown) | undefined;
   }[];
@@ -248,26 +253,89 @@ function parse(table: Indexed, record: Record<string, unknown>, buckets?: Bucket
   const calls: Spec["calls"][number][] = [];
   for (const { option, tag, numeric } of FUNCTIONS) {
     for (const column of columns(table, record[option], option)) {
-      const fits = numeric ? NUMERIC.test(column.dataType) : !UNORDERED.test(column.dataType);
-      if (!fits) {
-        fail(
-          "OKM1124",
-          `${option} does not apply to ${column.dataType} column ${column.field}. ${
-            numeric
-              ? "sum and avg take integer, real, and numeric columns."
-              : "countDistinct, min, and max need an ordered type."
-          }`,
-        );
-      }
-      const decode =
-        option === "countDistinct" ? AS_NUMBER : numeric ? sumDecode(column) : column.decode;
-      calls.push({ option, tag, column, decode });
+      calls.push(call(option, tag, numeric, column, undefined));
     }
   }
+  calls.push(...named(table, record.select, groupNames(grouped.groups)));
   if (!count && calls.length === 0 && grouped.groups.length === 0) {
-    fail("OKM1120", "aggregate() needs count, countDistinct, sum, avg, min, max, or groupBy.");
+    fail(
+      "OKM1120",
+      "aggregate() needs count, countDistinct, sum, avg, min, max, select, or groupBy.",
+    );
   }
   return { groups: grouped.groups, bucketed: grouped.bucketed, count, calls };
+}
+
+/** Checks that the function takes the column's type, and picks how the result is read. */
+function call(
+  option: (typeof FUNCTIONS)[number]["option"],
+  tag: string,
+  numeric: boolean,
+  column: ColumnModel,
+  name: string | undefined,
+): Spec["calls"][number] {
+  const fits = numeric ? NUMERIC.test(column.dataType) : !UNORDERED.test(column.dataType);
+  if (!fits) {
+    fail(
+      "OKM1124",
+      `${option} does not apply to ${column.dataType} column ${column.field}. ${
+        numeric
+          ? "sum and avg take integer, real, and numeric columns."
+          : "countDistinct, min, and max need an ordered type."
+      }`,
+    );
+  }
+  const decode =
+    option === "countDistinct" ? AS_NUMBER : numeric ? sumDecode(column) : column.decode;
+  return { option, tag, column, name, decode };
+}
+
+/** Names `select` cannot take: the list-form result keys. */
+const RESERVED = ["count", "countDistinct", "sum", "avg", "min", "max"];
+
+/**
+ * Reads `select: { name: { sum: "field" } }`.
+ *
+ * Each entry is one function and gives one flat result key. A name that is a
+ * group field, a bucket `as`, a list-form result key, or a prototype key is
+ * refused before any SQL.
+ */
+function named(
+  table: Indexed,
+  value: unknown,
+  groupKeys: readonly string[],
+): readonly Spec["calls"][number][] {
+  if (value === undefined) return [];
+  if (!isRecord(value)) fail("OKM1120", "select must be an object of named aggregates.");
+  const out: Spec["calls"][number][] = [];
+  for (const [name, entry] of Object.entries(value)) {
+    refusePrototypeKey(name, "select name");
+    if (RESERVED.includes(name) || groupKeys.includes(name)) {
+      fail(
+        "OKM1120",
+        `select name ${name} is already a result key of this call.`,
+        "Use another name. A group field, a bucket as, and count, countDistinct, sum, avg, min, and max are taken.",
+      );
+    }
+    const keys = isRecord(entry) ? Object.keys(entry) : [];
+    const option = keys[0];
+    const fn = FUNCTIONS.find((item) => item.option === option);
+    if (keys.length !== 1 || (option !== "count" && fn === undefined)) {
+      fail(
+        "OKM1120",
+        `select ${name} needs exactly one of count, countDistinct, sum, avg, min, or max.`,
+      );
+    }
+    const arg = (entry as Record<string, unknown>)[option as string];
+    if (fn === undefined) {
+      if (arg !== true) fail("OKM1120", `select ${name}: count is true when you want a row count.`);
+      out.push({ option: "count", tag: "c", column: undefined, name, decode: AS_NUMBER });
+      continue;
+    }
+    const [column] = columns(table, [arg], fn.option);
+    out.push(call(fn.option, fn.tag, fn.numeric, column as ColumnModel, name));
+  }
+  return out;
 }
 
 /**
@@ -359,7 +427,11 @@ function statement(spec: Spec, buckets: BucketChunk | undefined): ReadBuild {
   return (schema, table, sink, outputs, call) => {
     sink.mark(
       `aggregate|${table.model.name}|g:${groupMark(spec.groups)}|c:${String(spec.count)}|${spec.calls
-        .map((item) => `${item.tag}:${item.column.field}`)
+        .map((item) =>
+          item.name === undefined
+            ? `${item.tag}:${item.column?.field}`
+            : `m${item.tag}:${JSON.stringify(item.name)}:${item.column?.field ?? ""}`,
+        )
         .join(",")}|`,
     );
     sink.text("select ");
@@ -383,15 +455,18 @@ function statement(spec: Spec, buckets: BucketChunk | undefined): ReadBuild {
     }
     if (spec.count) put(sink, outputs, wrote, "count(*)::text", { key: "c:", decode: undefined });
     for (const item of spec.calls) {
-      const ref = `t.${quote(item.column.sql)}`;
+      const column = item.column;
+      const ref = column === undefined ? "*" : `t.${quote(column.sql)}`;
       const expr =
-        item.option === "countDistinct"
-          ? `count(distinct ${ref})::text`
-          : item.option === "sum" || item.option === "avg"
-            ? `${item.option}(${ref})::text`
-            : projectExpr(`${item.option}(${ref})`, item.column.dataType);
+        column === undefined
+          ? "count(*)::text"
+          : item.option === "countDistinct"
+            ? `count(distinct ${ref})::text`
+            : item.option === "sum" || item.option === "avg"
+              ? `${item.option}(${ref})::text`
+              : projectExpr(`${item.option}(${ref})`, column.dataType);
       put(sink, outputs, wrote, expr, {
-        key: `${item.tag}:${item.column.field}`,
+        key: item.name === undefined ? `${item.tag}:${column?.field}` : `m:${item.name}`,
         decode: item.decode,
       });
     }
@@ -470,6 +545,8 @@ function decode(
         item[name] = cell(value, field.decode);
       } else if (tag === "c:") {
         item.count = Number(value ?? 0);
+      } else if (tag === "m:") {
+        item[name] = cell(value, field.decode);
       } else {
         const group = GROUPS[tag] ?? "max";
         const into = (item[group] ??= {}) as Record<string, unknown>;
