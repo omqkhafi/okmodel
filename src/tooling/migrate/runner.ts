@@ -411,7 +411,12 @@ async function runCommitted(
     postgresStepJournal(connection),
     postgresStepEngine(
       connection,
-      { kind: step.kind, sql: item.step.sql, lockTimeoutMs: run.lockTimeoutMs },
+      {
+        kind: step.kind,
+        sql: item.step.sql,
+        lockTimeoutMs: run.lockTimeoutMs,
+        ...(item.step.probe !== undefined ? { probe: item.step.probe } : {}),
+      },
       () => executePlanStep(connection, item, run, session),
     ),
     {

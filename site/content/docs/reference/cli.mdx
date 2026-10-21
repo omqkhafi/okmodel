@@ -283,7 +283,7 @@ bunx okm migrate status
 
 `okm migrate resolve <migration>:<step>` records a committed step a person finished, or marks it so the next apply tries it. The operand is the 0-based id from `okm migrate status`. The command needs an `okm_steps` row for that step. Pass one of the two actions.
 
-Recording the step as applied writes the history row and deletes the `okm_steps` row. Where Postgres can probe the kind, a probe that is not applied is OKM1554. Where no probe exists, the command is OKM1555 until `--accept-unverified` is passed. That flag has no short form.
+Recording the step as applied writes the history row and deletes the `okm_steps` row. Where Postgres can probe the kind, or the step declares `-- probe:`, a probe that is not applied is OKM1554. Where no probe exists, the command is OKM1555 until `--accept-unverified` is passed. That flag has no short form. A declared probe is a probe, so that step does not need it.
 
 Marking the step to run again sets the row to `retry`. The next apply probes first where a probe exists, and otherwise runs the statement.
 

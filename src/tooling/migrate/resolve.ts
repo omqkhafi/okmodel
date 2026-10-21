@@ -190,7 +190,7 @@ async function resolveOnTarget(input: {
       );
       return { target: input.target, step: id, action: "retry", result: "retry" };
     }
-    await acceptApplied(connection, step, input.acceptUnverified);
+    await acceptApplied(connection, step, input.planStep.probe, input.acceptUnverified);
     return { target: input.target, step: id, action: "applied", result: "recorded" };
   } catch (error) {
     throw sessionFailure(error) ?? error;
@@ -208,11 +208,17 @@ async function resolveOnTarget(input: {
 async function acceptApplied(
   connection: DriverConnection,
   step: CommittedStep,
+  probe: string | undefined,
   acceptUnverified: boolean,
 ): Promise<void> {
   const engine = postgresStepEngine(
     connection,
-    { kind: step.kind, sql: step.sql, lockTimeoutMs: 5_000 },
+    {
+      kind: step.kind,
+      sql: step.sql,
+      lockTimeoutMs: 5_000,
+      ...(probe !== undefined ? { probe } : {}),
+    },
     () => Promise.resolve(),
   );
   if (!engine.probed) {
