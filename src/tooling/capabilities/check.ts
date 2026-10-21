@@ -6,8 +6,9 @@
  * tests pass a fixture registry to prove the refusal path.
  */
 
+import { CAPABILITY_NAMES } from "../../adapters/capabilities.js";
 import { OkmError } from "../../contracts/error.js";
-import type { EmulatedNote, FeatureEntry, Registry } from "./types.js";
+import type { CapabilityGate, EmulatedNote, FeatureEntry, Registry } from "./types.js";
 
 /** Doctor page for a feature the dialect refuses. */
 export const FEATURE_REFUSAL_DOCS = "https://okm.omqkhafi.dev/docs/reference/errors#okm1860";
@@ -90,6 +91,43 @@ export function registryProblems(
       problems.push(`${key}: refused entry has no alternative`);
     }
     if (entry.code === undefined) problems.push(`${key}: refused entry has no code`);
+  }
+  return problems;
+}
+
+/**
+ * Problems in the link between registry gates and gated conformance cases.
+ *
+ * A gate on an entry needs a case that names that gate or names a key whose
+ * entry uses it. A gated case that names neither a registry key nor a
+ * capability gate fails. Proof and refusal titles stay in {@link registryProblems}.
+ *
+ * @param registry - Dialect table, or a fixture
+ * @param gatedFeatures - Keys and gates passed to `gated`
+ * @returns Problem lines. Empty when every gate has a case and every case names a real key
+ */
+export function gateCoverageProblems(
+  registry: Registry,
+  gatedFeatures: readonly string[],
+): readonly string[] {
+  const problems: string[] = [];
+  const gates = new Set<CapabilityGate>();
+  for (const entry of Object.values(registry)) {
+    if (entry.gate !== undefined) gates.add(entry.gate);
+  }
+  for (const name of CAPABILITY_NAMES) gates.add(name);
+  for (const gate of gates) {
+    const consumed = gatedFeatures.some((feature) => {
+      if (feature === gate) return true;
+      return registry[feature]?.gate === gate;
+    });
+    if (!consumed) problems.push(`${gate}: gate has no conformance case`);
+  }
+  for (const feature of gatedFeatures) {
+    if ((CAPABILITY_NAMES as readonly string[]).includes(feature)) continue;
+    if (registry[feature] === undefined) {
+      problems.push(`${feature}: gated case names a key that is not in the registry`);
+    }
   }
   return problems;
 }

@@ -21,7 +21,8 @@ import type { QuerySchema } from "../../../src/dialects/pg/model.js";
 import { uuidv4 } from "../../../src/runtime/ids/index.js";
 import type { Connected, ConnectOptions, Hookm, TxClient } from "../../../src/runtime/types.js";
 import { columnTenancy } from "../../../src/runtime/tenancy/index.js";
-import { skipFor, type SuiteTest } from "./driver-suite.js";
+import type { Registry } from "../../../src/tooling/capabilities/types.js";
+import { conformanceProfile, gated, skipFor, type SuiteTest } from "./driver-suite.js";
 import { expect } from "./expect.js";
 import { startCutProxy } from "./proxy.js";
 import { isolatedSchemaName } from "./schema-name.js";
@@ -33,6 +34,10 @@ export type TxSuite = {
   readonly name: string;
   /** Flags the adapter declares. */
   readonly capabilities: DriverCapabilities;
+  /** Dialect feature table. Omitted uses the Postgres registry. */
+  readonly registry?: Registry;
+  /** Name used in a refusal. Omitted uses `postgres`. */
+  readonly dialect?: string;
   /** Opens a pool whose search path is `schema`. The suite closes it. */
   readonly open: (config: {
     readonly schema: string;
@@ -116,9 +121,16 @@ type Env<S extends QuerySchema> = {
  */
 export function registerTxSuite(suite: TxSuite): void {
   const { name } = suite;
-  const test = suite.test;
+  const profile = conformanceProfile(suite);
+  const raw = suite.test;
+  const test = gated(raw, "tx.interactive", profile);
   const needsSecond = suite.memory ? skipped(test, "one connection") : test;
-  const cancels = suite.capabilities.cancel && !suite.memory ? test : skipped(test, "no cancel");
+  const cancels = gated(
+    raw,
+    "cancel",
+    profile,
+    suite.capabilities.cancel && !suite.memory ? undefined : "no cancel",
+  );
   const race = needsSecond;
   const proxied = suite.memory || suite.cut === false ? skipped(test, "no socket to cut") : test;
 

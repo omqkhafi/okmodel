@@ -4,6 +4,8 @@
  * `okm driver test` spawns this file. The cases stay in the harness suites.
  * Each row is a case id, the behavior, and pass, fail, or unsupported.
  * An unsupported row names the capability. The dialect column is `postgres`.
+ * The last line counts portable runs, gated runs, refusal assertions, and
+ * unsupported cases.
  */
 
 import { pathToFileURL } from "node:url";
@@ -14,7 +16,12 @@ import type {
   DriverPool,
   DriverTimeouts,
 } from "../../../src/contracts/driver.js";
-import { registerDriverSuite, type SuiteTest } from "./driver-suite.js";
+import {
+  formatConformanceCounts,
+  registerDriverSuite,
+  type ConformanceCounts,
+  type SuiteTest,
+} from "./driver-suite.js";
 import { registerErrorMappingSuite } from "./error-suite.js";
 import { registerTxSuite, type TxSuite } from "./tx-suite.js";
 
@@ -70,9 +77,9 @@ export async function executeDriverTest(argv: readonly string[]): Promise<Driver
   refuseOldBun();
   const parsed = parseArgs(argv);
   const target = await loadTarget(parsed.driver, parsed.url);
-  const rows = await runTarget(target);
+  const { rows, counts } = await runTarget(target);
   const failed = rows.filter((row) => row.result === "fail").length;
-  return { text: render(target.name, rows), failed };
+  return { text: render(target.name, rows, counts), failed };
 }
 
 /**
@@ -378,11 +385,15 @@ type Job = {
   readonly capability?: string;
 };
 
-async function runTarget(target: Target): Promise<readonly Row[]> {
+async function runTarget(target: Target): Promise<{
+  readonly rows: readonly Row[];
+  readonly counts: ConformanceCounts;
+}> {
   const jobs: Job[] = [];
-  const wire = recorder(target.name, "wire", jobs);
-  const errors = recorder(target.name, "error", jobs);
-  const tx = recorder(target.name, "tx", jobs);
+  const counts = { portable: 0, gated: 0, refusal: 0, unsupported: 0 };
+  const wire = recorder(target.name, "wire", jobs, counts);
+  const errors = recorder(target.name, "error", jobs, counts);
+  const tx = recorder(target.name, "tx", jobs, counts);
   registerDriverSuite({
     name: target.name,
     open: () => target.open({ schema: "public", max: target.size, timeouts: { acquire: 5_000 } }),
@@ -420,10 +431,15 @@ async function runTarget(target: Target): Promise<readonly Row[]> {
   for (const job of jobs) {
     rows.push(await runJob(job));
   }
-  return rows;
+  return { rows, counts };
 }
 
-function recorder(driver: string, group: string, jobs: Job[]): SuiteTest {
+function recorder(
+  driver: string,
+  group: string,
+  jobs: Job[],
+  counts: { portable: number; gated: number; refusal: number; unsupported: number },
+): SuiteTest {
   const register: SuiteTest = (title, fn, timeoutMs) => {
     jobs.push({
       title: strip(driver, title),
@@ -437,6 +453,12 @@ function recorder(driver: string, group: string, jobs: Job[]): SuiteTest {
   };
   register.unsupported = (title, capability) => {
     jobs.push({ title: strip(driver, title), group, capability });
+  };
+  register.note = (_title, tier, outcome) => {
+    if (outcome === "refusal") counts.refusal += 1;
+    else if (outcome === "unsupported") counts.unsupported += 1;
+    else if (tier.kind === "portable") counts.portable += 1;
+    else counts.gated += 1;
   };
   return register;
 }
@@ -513,11 +535,12 @@ function strip(driver: string, title: string): string {
   return title.startsWith(lead) ? title.slice(lead.length) : title;
 }
 
-function render(driver: string, rows: readonly Row[]): string {
+function render(driver: string, rows: readonly Row[], counts: ConformanceCounts): string {
   const lines = [`driver ${driver}`, "dialect postgres", "id\tbehavior\tresult\tcapability"];
   for (const row of rows) {
     lines.push(`${row.id}\t${row.behavior}\t${row.result}\t${row.capability}`);
     if (row.detail !== undefined) lines.push(`  ${row.detail}`);
   }
+  lines.push(formatConformanceCounts(counts));
   return `${lines.join("\n")}\n`;
 }

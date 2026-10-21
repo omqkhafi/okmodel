@@ -9,7 +9,8 @@
 import type { DriverCapabilities, DriverPool, Statement } from "../../../src/contracts/driver.js";
 import { OkmError, type ErrorKind } from "../../../src/contracts/error.js";
 import { mapPostgresError } from "../../../src/dialects/pg/errors.js";
-import { skipFor, type SuiteTest } from "./driver-suite.js";
+import type { Registry } from "../../../src/tooling/capabilities/types.js";
+import { conformanceProfile, gated, type SuiteTest } from "./driver-suite.js";
 import { expect } from "./expect.js";
 
 /** What one adapter run needs. */
@@ -20,6 +21,10 @@ export type ErrorSuite = {
   readonly open: () => DriverPool | Promise<DriverPool>;
   /** Flags. An in-flight timeout runs only when `cancel` is set. */
   readonly capabilities: DriverCapabilities;
+  /** Dialect feature table. Omitted uses the Postgres registry. */
+  readonly registry?: Registry;
+  /** Name used in a refusal. Omitted uses `postgres`. */
+  readonly dialect?: string;
   /** Test registrar. Postgres passes the shared skip rule. */
   readonly test: SuiteTest;
 };
@@ -30,9 +35,10 @@ export type ErrorSuite = {
  * @param suite - The adapter under test
  */
 export function registerErrorMappingSuite(suite: ErrorSuite): void {
-  const { name, test } = suite;
-  const optional = (flag: boolean, capability: string): SuiteTest =>
-    flag ? test : skipFor(test, capability);
+  const { name } = suite;
+  const profile = conformanceProfile(suite);
+  const test = gated(suite.test, "schema.core", profile);
+  const cancels = gated(suite.test, "cancel", profile);
 
   test(`${name} maps a unique violation`, async () => {
     await using(suite.open, async (pool) => {
@@ -135,7 +141,7 @@ export function registerErrorMappingSuite(suite: ErrorSuite): void {
     });
   });
 
-  optional(suite.capabilities.cancel, "cancel")(
+  cancels(
     `${name} maps an in-flight statement timeout`,
     async () => {
       await using(suite.open, async (pool) => {
