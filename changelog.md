@@ -164,6 +164,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - A failed `CREATE INDEX CONCURRENTLY` is dropped before apply returns, so the target does not keep an INVALID index. When that drop fails, the error names the index and `DROP INDEX CONCURRENTLY`. A later apply still drops a leftover invalid index and rebuilds it (Q4, #391).
 - `testing()` drops the catalog it applied when the harness finishes, in reverse dependency order. An `ignored` object is left in place. `migrate: false` drops nothing (Q9, #396).
 
+#### docs
+
+- Known limits names `postgresjs-kill-storm.md` again. The name is text, not a link, and the file stays out of the published tarball.
+
 ### 🔒 Security
 
 - A store fingerprint blocks a state-changing command when there is no terminal (OKM1859, exit 4), including when that invocation passed `--allow-protected`. Project-config protection still honors `--allow-protected`. Deleting `protected: true` does not delete the stored fingerprint. A terminal is friction, not proof of a human. The ceiling is [Protection](docs/protection.md).
