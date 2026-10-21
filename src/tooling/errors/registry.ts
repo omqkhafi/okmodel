@@ -973,6 +973,70 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     fix: "Pass --tenancy none, or --tenancy column.",
   },
   {
+    code: "OKM1881",
+    title: "Agent files drifted",
+    summary:
+      "okm agents status found an agent file that is not current: the AGENTS.md block, the CLAUDE.md import, or a skill file is stale, missing, or modified.",
+    fix: "Use okm agents update to rewrite the block and any unmodified skill, or okm init --agents when the files were never written.",
+    since: "0.10",
+  },
+  {
+    code: "OKM1882",
+    title: "Agent markers damaged",
+    summary:
+      "A file has a BEGIN OKMODEL or END OKMODEL line that is malformed, unpaired, or out of order, so okm cannot tell which text it owns. It does not repair markers.",
+    fix: "Restore one BEGIN OKMODEL line and one END OKMODEL line, or delete both and the text between them, then repeat the command.",
+    since: "0.10",
+  },
+  {
+    code: "OKM1883",
+    title: "Agent block duplicated",
+    summary:
+      "A file has more than one OKMODEL block, so okm cannot tell which one it owns. It does not merge blocks.",
+    fix: "Keep one OKMODEL block and delete the others, then repeat the command.",
+    since: "0.10",
+  },
+  {
+    code: "OKM1884",
+    title: "Agent files need a yes",
+    summary:
+      "The plan changes an existing file, and okm cannot ask: there is no terminal, or --json is on, and --yes was not passed.",
+    fix: "Read the plan with the dry flag, then pass --yes. Or answer the prompt on a terminal.",
+    since: "0.10",
+  },
+  {
+    code: "OKM1885",
+    title: "Agent content refused",
+    summary:
+      "The skill files in the installed package are missing, are not markdown, are a symlink, or contain a hidden character. okm copies agent files only from its own package, and only when they pass these checks.",
+    fix: "Reinstall okmodel from the registry.",
+    since: "0.10",
+  },
+  {
+    code: "OKM1886",
+    title: "Agent path refused",
+    summary:
+      "An agent file path is not on the list okm may write, resolves outside the project directory, is not a regular file, or could not be written.",
+    fix: "Keep the agent files as regular files inside the project directory.",
+    since: "0.10",
+  },
+  {
+    code: "OKM1887",
+    title: "Agent file changed",
+    summary:
+      "A file changed after the plan was made and before it was replaced, so okm stopped. Files already written stay.",
+    fix: "Repeat the command so the diff matches the file.",
+    since: "0.10",
+  },
+  {
+    code: "OKM1888",
+    title: "Init record damaged",
+    summary:
+      ".okm/init.json is not a JSON object, so okm cannot record the hashes of the agent files it writes.",
+    fix: "Restore .okm/init.json from version control, or delete it and use okm init again.",
+    since: "0.10",
+  },
+  {
     code: "OKM1890",
     title: "Observer keys",
     summary: "writeObserver keys named a table that has no primary key or is not in the schema.",
@@ -1014,7 +1078,8 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
   },
   // Reserved, not registered (no raising path): version OKM1804–OKM1809,
   // extension OKM1815–OKM1819, feature refusal OKM1861 and OKM1868–OKM1879,
-  // adapter capability refusal OKM1880–OKM1889. OKM1890–OKM1893 are registered.
+  // adapter capability refusal OKM1880 and OKM1889. OKM1881–OKM1888 (agent files) and
+  // OKM1890–OKM1893 are registered.
   // OKM1140–OKM1179 stay reserved (D291).
 ];
 
