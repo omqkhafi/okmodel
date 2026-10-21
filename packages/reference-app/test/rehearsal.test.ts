@@ -30,13 +30,16 @@ postgresTest(
       expect(before.columns).not.toContain("public_id");
       await withClone(original, async (clone) => {
         const env = { REHEARSAL_DATABASE_URL: clone };
-        expect(await okmOk(["migrate", "check", "--target", "rehearsal"], env)).toBe(
+        expect(await okmOk(["migrate", "check", "--target", "rehearsal"], env)).toStartWith(
           `ok 4 migrations\n${CHECK_REPLAY_LIMIT}\n`,
         );
         const applied = await okmOk(["migrate", "apply", "--target", "rehearsal"], env);
         expect(applied).toContain("applied 0002_public_id");
         expect(applied).toContain("applied 0003_drop_share_token");
-        expect(schemaChecked(await okmOk(["check", "--target", "rehearsal"], env))).toBe("ok\n");
+        const checked = schemaChecked(await okmOk(["check", "--target", "rehearsal"], env));
+        expect(checked).toContain("allow 0003_drop_share_token step 1 OKM1512 destructive");
+        expect(checked).not.toContain("OKM2300");
+        expect(checked.endsWith("ok\n")).toBe(true);
         const after = await fingerprint(clone);
         expect(after.columns).toContain("public_id");
         expect(after.columns).not.toContain("share_token");

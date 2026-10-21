@@ -1680,5 +1680,14 @@
     "fix": "Drain handlers with flush() more often, or raise maxPending on writeObserver. The write path does not wait.",
     "retryable": false,
     "docs": "docs/errors/OKM2200.md"
+  },
+  {
+    "code": "OKM2300",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A migration override gives a reason that is shorter than 12 characters, only stop-list words, or only the code repeated. This is a warning: nothing is refused.",
+    "fix": "Write one sentence that says why this step is safe here: what was checked, and who agreed.",
+    "retryable": false,
+    "docs": "docs/errors/OKM2300.md"
   }
 ]

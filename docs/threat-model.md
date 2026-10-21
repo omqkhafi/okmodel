@@ -19,7 +19,7 @@ Feature: `untrustedText` in `src/tooling/untrusted.ts`. Contract: [untrusted tex
 
 ## Destructive migrations
 
-Dropping a table, renaming a column, or adding a unique constraint on a table that already exists is an error finding, OKM1510. `okm generate` still writes the file and exits 1. `okm migrate plan` and `okm check` exit non-zero. `okm migrate apply` refuses with OKM1510 before any statement. A plan whose operation class is `destructive` sets `requiresAck`. Apply does not ask, and it does not read that flag.
+Dropping a table, renaming a column, or adding a unique constraint on a table that already exists is an error finding, OKM1510. `okm generate` still writes the file and exits 1. `okm migrate plan` and `okm check` exit non-zero. `okm migrate apply` refuses with OKM1510 before any statement. A plan whose operation class is `destructive` sets `requiresAck`. Apply does not ask, and it does not read that flag. The only way past a destructive step is a `-- okm-allow CODE: reason` line in the committed migration file. No command-line flag does it. `okm check` and `okm migrate check` list those lines, and a boilerplate reason is warning OKM2300. A person reviews the line in the pull request, and a protected target still needs a terminal.
 
 Feature: the migration linter and `operationClass`. Tests: `tests/lint.test.ts` (OKM1510 on the plan, on check, and on generate) and `tests/canonical-json.test.ts` (`operationClass` is `destructive`).
 

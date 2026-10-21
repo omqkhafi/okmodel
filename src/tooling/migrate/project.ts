@@ -72,6 +72,7 @@ import {
   type MigrationPlan,
   type PlanStep,
 } from "./plan.js";
+import { allowFindings, listAllows, type AllowEntry } from "./allows.js";
 import { projectFilterUses } from "./filter-scan.js";
 import { hasError, lintCatalog, lintPlan, lintRefusal, type Finding } from "./lint.js";
 import {
@@ -205,6 +206,13 @@ export type CheckProjectResult = {
    * instead.
    */
   readonly advice?: readonly SchemaAdvice[];
+  /**
+   * Every `-- okm-allow` line in the migrations directory.
+   *
+   * Empty when there are none. A weak reason is already a warning in
+   * `findings`.
+   */
+  readonly allows: readonly AllowEntry[];
 };
 
 /**
@@ -258,12 +266,14 @@ export async function checkProject(
   }
   assertSnapshots(cwd, opened.config, opened.built.catalog);
   const { rawOfflineFindings, rawOnlineCheck } = await import("../describe/command.js");
+  const allows = listAllows(projectPath(cwd, opened.config.migrations ?? "migrations"));
   const findings = [
     ...lintOpened(opened),
     ...couplingFindings(opened.built.catalog),
     ...(await rawOfflineFindings(cwd, opened.config)),
   ];
   if (hasError(findings)) throw lintRefusal(findings);
+  findings.push(...allowFindings(allows));
   const { advice, ignores } = schemaAdvice(
     opened.built,
     projectFilterUses(cwd, opened.config),
@@ -272,11 +282,12 @@ export async function checkProject(
   const refusal = adviceRefusal(advice);
   if (refusal !== undefined) throw refusal;
   const named = flags?.target;
-  const finish = (result: CheckProjectResult): CheckProjectResult => {
+  const finish = (result: Omit<CheckProjectResult, "allows">): CheckProjectResult => {
     const listed = {
       ...result,
       ...(advice.length > 0 ? { advice } : {}),
       ...(ignores.length > 0 ? { ignores } : {}),
+      allows,
     };
     return checked(listed, emulation);
   };

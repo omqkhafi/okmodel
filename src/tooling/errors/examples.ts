@@ -61,6 +61,7 @@ import { assertObserveKeys } from "../../runtime/observe-keys.js";
 import { assertSupported } from "../capabilities/check.js";
 import type { Registry } from "../capabilities/types.js";
 import { primaryKeyColumns } from "../migrate/backfill.js";
+import { allowFindings } from "../migrate/allows.js";
 import { lintCatalog, lintPlan, type Finding } from "../migrate/lint.js";
 import { parsePlan, planMigration } from "../migrate/plan.js";
 import {
@@ -790,6 +791,30 @@ reported(
   "OKM1510",
   () => hand("-- okm-allow OKM1511:\ndrop table notes"),
   () => hand("create table notes (id int)"),
+);
+
+function weakAllows(sql: string): readonly string[] {
+  const plan = parsePlan(`-- class: contract\n\n${sql}\n`);
+  const entries = plan.steps.flatMap((step, index) =>
+    (step.allows ?? []).map((allow) => ({
+      migration: "0002_drop_notes",
+      step: index + 1,
+      code: allow.code,
+      ruleClass: "destructive" as const,
+      destructive: true,
+      reason: allow.reason,
+    })),
+  );
+  return allowFindings(entries).map((item) => item.code);
+}
+
+reported(
+  "OKM2300",
+  () => weakAllows("-- okm-allow OKM1511: ok\ndrop table notes"),
+  () =>
+    weakAllows(
+      "-- okm-allow OKM1511: notes moved to the archive schema and the export was verified\ndrop table notes",
+    ),
 );
 
 reported(

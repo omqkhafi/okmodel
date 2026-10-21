@@ -57,7 +57,7 @@ Pointer index for the docs in this package. Open one page. Do not fetch the webs
 
 ## Errors
 
-- `docs/errors/OKM1012.md` through `docs/errors/OKM2200.md` - one page per code - Read `docs/errors/<code>.md` when a command or a client throws that code.
+- `docs/errors/OKM1012.md` through `docs/errors/OKM2300.md` - one page per code - Read `docs/errors/<code>.md` when a command or a client throws that code.
 
 ## Commands
 

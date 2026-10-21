@@ -27,7 +27,7 @@ Finish each command before the next one.
 
 ## Never
 
-- Never bypass guards (`--allow-protected`, `--accept-unverified`, `--accept-destructive`, `--allow-pooler`) unless the human said so in this conversation.
+- Never bypass guards (`--allow-protected`, `--accept-unverified`, `--allow-pooler`) or add a `-- okm-allow` line to a migration file unless the human said so in this conversation.
 - Never write raw SQL strings to get around the typed API.
 - Never edit committed migrations or `.okm` files by hand.
 - Never run `okm migrate apply` against a protected target.

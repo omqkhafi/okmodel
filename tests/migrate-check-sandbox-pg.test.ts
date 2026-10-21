@@ -79,7 +79,7 @@ for (const who of ["superuser", "owner"] as const) {
           } else if (quoted) {
             await expectCheckCode(cwd, "OKM1547");
           } else {
-            expect(await cli(cwd, ["migrate", "check"])).toBe(
+            expect(await cli(cwd, ["migrate", "check"])).toStartWith(
               `ok 1 migrations\n${CHECK_REPLAY_LIMIT}\n`,
             );
           }

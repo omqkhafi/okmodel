@@ -12,7 +12,7 @@ Safe command order. Finish each one before the next:
 okm check lints the schema and compares it with one target. okm migrate plan prints the plan and its lock estimates. okm migrate check replays migration history in a scratch schema and does not change the target. okm migrate apply is the step that writes the target.
 
 Never:
-- Never bypass guards (--allow-protected, --accept-unverified, --accept-destructive, --allow-pooler) without the human saying so in this conversation.
+- Never bypass guards (--allow-protected, --accept-unverified, --allow-pooler) or add a -- okm-allow line to a migration file without the human saying so in this conversation.
 - Never write raw SQL strings to get around the typed API.
 - Never edit committed migrations or .okm files by hand.
 - Never run okm migrate apply against a protected target.
