@@ -187,6 +187,12 @@ export const INDEX_ENTRIES: readonly IndexEntry[] = [
     group: "operate",
   },
   {
+    path: "docs/observer-events.md",
+    purpose: "Event shape for connect onWrite.",
+    when: "Read this when attaching a write observer.",
+    group: "operate",
+  },
+  {
     path: "docs/untrusted.md",
     purpose: "How text from the database or an error is bounded.",
     when: "Read this when handling an error or plan JSON.",

@@ -58,6 +58,7 @@ export const PUBLIC_DOCS = [
   "linter.md",
   "migrate-check.md",
   "migration-failure.md",
+  "observer-events.md",
   "production.md",
   "protection.md",
   "provisioning.md",

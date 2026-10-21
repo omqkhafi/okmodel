@@ -1,3 +1,9 @@
+---
+okmVersion: "0.10.0"
+since: "0.10"
+dialects: [postgres]
+codes: [OKM1401, OKM2200]
+---
 # Observer events (`okm.observe/1`)
 
 Normative event shape for write observers (G-0). Additive-only changes inside

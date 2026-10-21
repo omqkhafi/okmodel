@@ -45,6 +45,7 @@ Pointer index for the docs in this package. Open one page. Do not fetch the webs
 - `docs/production.md` - Protected targets, requireMeta, and pooler refusal. - Read this before pointing a command at production.
 - `docs/protection.md` - How a protected target is recorded and refused. - Read this before using a protection bypass flag.
 - `docs/example-app.md` - What the reference app proves end to end. - Read this for a full project shape.
+- `docs/observer-events.md` - Event shape for connect onWrite. - Read this when attaching a write observer.
 - `docs/untrusted.md` - How text from the database or an error is bounded. - Read this when handling an error or plan JSON.
 
 ## Errors
