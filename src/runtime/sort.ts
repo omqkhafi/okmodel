@@ -192,10 +192,22 @@ export async function move(
     moveStatements(host.schema, table, key, id, anchor.id, moved, anchor.side, group),
   );
   const results = await runWrite(host, statements, callOptions(host));
+  const finish = (): { readonly position: number } => readMove(results, tableName, id, anchor.id);
+  if (host.q === undefined) return finish();
+  const { finishObserved } = await import("./observe-query.js");
+  return finishObserved(host, [results], finish);
+}
+
+function readMove(
+  results: readonly import("../contracts/driver.js").ExecuteResult[],
+  tableName: string,
+  id: unknown,
+  anchorId: unknown,
+): { readonly position: number } {
   // Index 0 takes the advisory lock and is not the move's counts.
   const row = results[1]?.rows[0];
   if (count(row?.[0]) !== 1) missing(tableName, id);
-  if (count(row?.[1]) !== 1) missing(tableName, anchor.id);
+  if (count(row?.[1]) !== 1) missing(tableName, anchorId);
   return { position: count(row?.[2]) };
 }
 
