@@ -141,7 +141,7 @@ export async function removeNote(id: string) {
 }
 ```
 
-`okm push` is for a database you can recreate. A shared database uses reviewed migrations: `okm generate init`, then `okm migrate apply`. `okm init` writes starter files for one package and does not connect; `okm generate init` writes the first migration and is a different command.
+`okm push` is for a database you can recreate. A shared database uses reviewed migrations: `okm generate init`, then `okm migrate apply`. `okm init` writes starter files for one package, or for the workspace packages you select, and does not connect; `okm generate init` writes the first migration and is a different command.
 
 ## 0.9
 

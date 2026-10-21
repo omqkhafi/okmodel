@@ -30,6 +30,7 @@ export type PackageVersions = {
  * @param pm - Package manager that prefixes scripts
  * @param driver - Driver to add when it has a package and is missing
  * @param versions - Versions to write
+ * @param okmodelSpec - Dependency spec for `okmodel`. A plain range when omitted
  * @returns The file text and the edits
  */
 export function patchPackageJson(
@@ -37,6 +38,7 @@ export function patchPackageJson(
   pm: InitPackageManager,
   driver: InitDriver,
   versions: PackageVersions,
+  okmodelSpec?: string,
 ): { readonly text: string; readonly edits: readonly PackageEdit[] } {
   const parsed = parsePackage(text);
   const deps = record(parsed.dependencies);
@@ -47,7 +49,8 @@ export function patchPackageJson(
   let scriptsChanged = false;
 
   depsChanged =
-    addDep(parsed, deps, edits, "okmodel", range(versions.okmodel, caret)) || depsChanged;
+    addDep(parsed, deps, edits, "okmodel", okmodelSpec ?? range(versions.okmodel, caret)) ||
+    depsChanged;
   const driverPackage = DRIVER_PACKAGES[driver];
   if (driverPackage !== undefined) {
     const peer = versions.peers[driverPackage] ?? "";
@@ -156,6 +159,31 @@ function usesCaret(parsed: Readonly<Record<string, unknown>>): boolean {
 function range(bare: string, caret: boolean): string {
   const version = bare.replace(/^[\^~]/, "");
   return caret ? `^${version}` : version;
+}
+
+/**
+ * Adds scripts and leaves dependencies and `workspaces` unchanged.
+ *
+ * @param text - Current `package.json`
+ * @param commands - Script name to command. Existing names are skipped
+ * @returns The file text and the edits
+ */
+export function patchRootScripts(
+  text: string,
+  commands: Readonly<Record<string, string>>,
+): { readonly text: string; readonly edits: readonly PackageEdit[] } {
+  const parsed = parsePackage(text);
+  const scripts = record(parsed.scripts);
+  const edits: PackageEdit[] = [];
+  let scriptsChanged = false;
+  for (const [name, command] of Object.entries(commands)) {
+    scriptsChanged = addScript(scripts, edits, name, command) || scriptsChanged;
+  }
+  if (!scriptsChanged) return { text, edits };
+  parsed.scripts = scripts;
+  const newline = text.endsWith("\n") || text.endsWith("\r\n") || !text.includes("\n");
+  const body = `${JSON.stringify(parsed, null, indentOf(text))}${newline ? "\n" : ""}`;
+  return { text: body, edits };
 }
 
 function indentOf(text: string): string | number {

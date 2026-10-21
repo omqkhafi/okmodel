@@ -1,0 +1,6 @@
+{
+  "name": "@acme/api",
+  "dependencies": {
+    "@acme/db": "workspace:*"
+  }
+}

@@ -62,6 +62,12 @@ export type ParsedCli = {
   readonly forceFile: readonly string[];
   /** `okm init --plan-hash`. */
   readonly planHash: string | undefined;
+  /** `okm init --workspace`. Repeatable package name or path. */
+  readonly workspace: readonly string[];
+  /** `okm init --all-workspaces`. */
+  readonly allWorkspaces: boolean;
+  /** `okm init --shared`. One database package. */
+  readonly shared: boolean;
   /** Positionals after the command words. */
   readonly operands: readonly string[];
 };
@@ -202,6 +208,9 @@ export function parseCli(argv: readonly string[]): ParsedCli {
     noInstall: values["no-install"] === true,
     forceFile: stringList(values["force-file"]),
     planHash: stringValue(values["plan-hash"]),
+    workspace: stringList(values.workspace),
+    allWorkspaces: values["all-workspaces"] === true,
+    shared: values.shared === true,
     operands,
   };
 }
@@ -240,6 +249,9 @@ function blank(flags: { readonly help: boolean; readonly json: boolean }): Parse
     noInstall: false,
     forceFile: [],
     planHash: undefined,
+    workspace: [],
+    allWorkspaces: false,
+    shared: false,
     operands: [],
   };
 }
@@ -392,6 +404,9 @@ function missingValue(name: string): OkmError {
   if (name === "force-file")
     return usage("--force-file needs a path.", "Pass --force-file <path>.");
   if (name === "plan-hash") return usage("--plan-hash needs a hash.", "Pass --plan-hash <hash>.");
+  if (name === "workspace") {
+    return usage("--workspace needs a name or path.", "Pass --workspace <name>.");
+  }
   return usage(`--${name} needs a value.`, `Pass --${name} <value>.`);
 }
 
