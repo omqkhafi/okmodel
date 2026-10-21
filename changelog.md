@@ -98,6 +98,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `bun ./scripts/size-attribution.ts` prints minified bytes and a gzip share for each source module on every gated graph from `scripts/size.ts`. It fails when a total differs from that script. `--update` rewrites `tests/fixtures/size-attribution.json`. The pull-request job `inform / size` prints the delta and is not a required check.
 - `bun ./scripts/dead-exports.ts` lists exports under `src/` that nothing in `src/`, `tests/`, or `scripts/` imports and that are not on the public API surface.
 - `bun ./scripts/duplicates.ts` lists duplicate and near-duplicate function bodies and repeated large literals under `src/`.
+- `okm check` and `okm migrate check` list every `-- okm-allow` line in the migrations directory: migration id, step, code, rule class, and reason. A destructive rule (a drop, a row-level-security weakening, a shortening or narrowing type change) is marked `DESTRUCTIVE`. `okm.cli/1` data adds `allows[]` for both commands (additive; `schemas/cli-1/check.json` and `migrate-check.json`). The reason is marked untrusted. OKM2300 warns on a reason shorter than 12 characters, made only of stop-list words (`ok`, `fix`, `test`, `todo`, `needed`, `temp`, `tmp`, `none`, `na`), or made only of the code repeated. It is an audit: nothing is refused and the exit code does not change. There is no new flag.
 
 #### docs
 
@@ -199,6 +200,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### tooling
 
+- The managed `AGENTS.md` block and `skills/okmodel/SKILL.md` no longer name `--accept-destructive`, a flag that does not exist. They name the guards that do: `--allow-protected`, `--accept-unverified`, `--allow-pooler`, and `-- okm-allow` lines in migration files. `renderAgentsBlock` and `docs:check` now refuse a long flag no command accepts, so the text cannot drift again. The threat model, roles, and protection pages say that a destructive step is allowed only by its `-- okm-allow` line.
 - A protected-target refusal names the match: project config, a store fingerprint, or both.
 - `okm migrate check` reuses an extension that is already installed. The replay moves it into the scratch schema for the transaction, and `ROLLBACK` restores the schema apply left, so a declared extension still passes after apply (R6, #403).
 - `okm ext check` prints the extension name in the declared column when the pin is omitted. A pin still prints that version or floor (R6, #403).

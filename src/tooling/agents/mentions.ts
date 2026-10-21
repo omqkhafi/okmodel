@@ -5,7 +5,7 @@
  * `okm` are not commands. The longest command in {@link COMMANDS} wins.
  */
 
-import { COMMANDS } from "../cli/spec.js";
+import { COMMANDS, GLOBAL_FLAGS } from "../cli/spec.js";
 
 /**
  * `okm` commands named in `text`, longest match first.
@@ -39,6 +39,26 @@ export function okmMentions(text: string): {
     bad.push(phrase?.[1]?.trim() ?? "");
   }
   return { ids, bad };
+}
+
+/**
+ * Long flags named in text that ships to an agent.
+ *
+ * A flag is `--` followed by a lowercase name. `-- okm-allow` is a
+ * migration comment, not a flag. A flag counts as real when the global set
+ * or any command in {@link COMMANDS} accepts it.
+ *
+ * @param text - Block, skill, or doc source
+ * @returns The flags found, and those no command accepts
+ */
+export function flagMentions(text: string): {
+  readonly flags: readonly string[];
+  readonly bad: readonly string[];
+} {
+  const known = new Set<string>(GLOBAL_FLAGS.map((flag) => flag.name));
+  for (const command of COMMANDS) for (const flag of command.flags) known.add(flag.name);
+  const flags = [...text.matchAll(/(?<![\w-])--([a-z][a-z0-9-]*)/g)].map((match) => match[1] ?? "");
+  return { flags, bad: flags.filter((flag) => !known.has(flag)).map((flag) => `--${flag}`) };
 }
 
 function matchesWords(rest: string, words: readonly string[]): boolean {

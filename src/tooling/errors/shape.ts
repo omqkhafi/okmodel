@@ -54,7 +54,6 @@ export const BYPASS_TOKENS = [
   "--allow-protected",
   "--allow-pooler",
   "--accept-unverified",
-  "--accept-destructive",
   "-- okm-allow",
   "okm-allow",
   "unscoped",

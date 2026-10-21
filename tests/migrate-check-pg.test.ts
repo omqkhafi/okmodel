@@ -152,7 +152,7 @@ postgresTest(
       expect(expand.message).toContain("0002_drop");
       expect(expand.message).toContain("classified expand");
       writeFileSync(sqlPath, original);
-      expect(await capture(["migrate", "check"], cwd)).toBe(
+      expect(await capture(["migrate", "check"], cwd)).toStartWith(
         `ok 2 migrations\n${CHECK_REPLAY_LIMIT}\n`,
       );
     });
@@ -190,9 +190,10 @@ postgresTest(
       expect(bare.message).toContain("OKM1512");
       const sqlPath = join(cwd, "migrations", "0002_drop.sql");
       writeFileSync(sqlPath, allowDrop(readFileSync(sqlPath, "utf8")));
-      expect(await capture(["migrate", "check"], cwd)).toBe(
-        `ok 2 migrations\n${CHECK_REPLAY_LIMIT}\n`,
-      );
+      const allowed = await capture(["migrate", "check"], cwd);
+      expect(allowed).toStartWith(`ok 2 migrations\n${CHECK_REPLAY_LIMIT}\n`);
+      expect(allowed).toContain("allow 0002_drop step 1 OKM1512 destructive DESTRUCTIVE: ");
+      expect(allowed).not.toContain("OKM2300");
     });
   },
   60_000,
@@ -213,6 +214,37 @@ postgresTest(
       expect(bare.code).toBe("OKM1510");
       writeConfig(cwd, { lintFrom: "0003_restore" });
       expect(await cli(cwd, ["migrate", "check"])).toBe(`ok 3 migrations\n${CHECK_REPLAY_LIMIT}\n`);
+    });
+  },
+  60_000,
+);
+
+postgresTest(
+  gate,
+  "migrate check lists every okm-allow line and warns on a weak reason",
+  async () => {
+    await withProject(async ({ cwd }) => {
+      await writeDrop(cwd);
+      const sqlPath = migrationPath(cwd, ".sql");
+      writeFileSync(
+        sqlPath,
+        allowDrop(readFileSync(sqlPath, "utf8")).replace("the column is unused", "ok"),
+      );
+      const text = await capture(["migrate", "check"], cwd);
+      expect(text.startsWith(`ok 2 migrations\n${CHECK_REPLAY_LIMIT}\n`)).toBe(true);
+      expect(text).toContain(
+        "warning OKM2300 0002_drop step 1: override OKM1512 (destructive) reason is only stop-list words",
+      );
+      expect(text).toContain("allow 0002_drop step 1 OKM1512 destructive DESTRUCTIVE: ");
+      const json = await jsonOf(cwd, ["migrate", "check", "--json"]);
+      expect(json.exit).toBe(0);
+      expect(json.warnings.map((item) => item.code)).toEqual(["OKM2300"]);
+      expect(json.data.allows.map((item) => [item.migration, item.step, item.code])).toEqual([
+        ["0002_drop", 1, "OKM1512"],
+      ]);
+      expect(json.data.allows[0]?.reason.text).toBe("ok");
+      expect(json.data.text).toBe(text);
+      expect(await scratchSchemas(cwd)).toEqual([]);
     });
   },
   60_000,
@@ -385,7 +417,10 @@ postgresTest(
         ),
       );
       expect(await capture(["migrate", "apply"], cwd)).toContain("applied 0002_archive_predicate");
-      expect(await capture(["check"], cwd)).toBe("ok\n");
+      const listed = await capture(["check"], cwd);
+      expect(listed).toContain("allow 0002_archive_predicate step 2 OKM1529 data-dependent: ");
+      expect(listed.endsWith("ok\n")).toBe(true);
+      expect(listed).not.toContain("OKM2300");
 
       const history = await rejected(["migrate", "check"], cwd);
       expect(history.code).toBe("OKM1547");
@@ -655,6 +690,32 @@ async function capture(argv: readonly string[], cwd: string): Promise<string> {
   const lines: string[] = [];
   await run(argv, { cwd, stdout: (text) => lines.push(text) });
   return lines.join("");
+}
+
+async function jsonOf(
+  cwd: string,
+  argv: readonly string[],
+): Promise<{
+  readonly exit: number;
+  readonly warnings: readonly { readonly code?: string }[];
+  readonly data: {
+    readonly text: string;
+    readonly allows: readonly {
+      readonly migration: string;
+      readonly step: number;
+      readonly code: string;
+      readonly reason: { readonly text: string };
+    }[];
+  };
+}> {
+  const proc = Bun.spawn(["bun", join(root, "src/tooling/cli.ts"), ...argv], {
+    cwd,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const stdout = await new Response(proc.stdout).text();
+  await proc.exited;
+  return JSON.parse(stdout) as Awaited<ReturnType<typeof jsonOf>>;
 }
 
 async function rejected(argv: readonly string[], cwd: string): Promise<OkmError> {

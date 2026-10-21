@@ -72,6 +72,7 @@ import {
   type MigrationPlan,
   type PlanStep,
 } from "./plan.js";
+import { allowFindings, listAllows, type AllowEntry } from "./allows.js";
 import { hasError, lintCatalog, lintPlan, lintRefusal, type Finding } from "./lint.js";
 import { parseReplace } from "./values.js";
 
@@ -191,6 +192,13 @@ export type CheckProjectResult = {
    * Absent when the config lists none. `okm check` prints them.
    */
   readonly ignores?: readonly { readonly rule: string; readonly reason: string }[];
+  /**
+   * Every `-- okm-allow` line in the migrations directory.
+   *
+   * Empty when there are none. A weak reason is already a warning in
+   * `findings`.
+   */
+  readonly allows: readonly AllowEntry[];
 };
 
 /**
@@ -244,17 +252,19 @@ export async function checkProject(
   }
   assertSnapshots(cwd, opened.config, opened.built.catalog);
   const { rawOfflineFindings, rawOnlineCheck } = await import("../describe/command.js");
+  const allows = listAllows(projectPath(cwd, opened.config.migrations ?? "migrations"));
   const findings = [
     ...lintOpened(opened),
     ...couplingFindings(opened.built.catalog),
     ...(await rawOfflineFindings(cwd, opened.config)),
   ];
   if (hasError(findings)) throw lintRefusal(findings);
+  findings.push(...allowFindings(allows));
   const named = flags?.target;
-  const finish = (result: CheckProjectResult): CheckProjectResult => {
+  const finish = (result: Omit<CheckProjectResult, "allows">): CheckProjectResult => {
     const ignores = opened.config.warnings?.ignore;
     const listed = ignores === undefined || ignores.length === 0 ? result : { ...result, ignores };
-    return checked(listed, emulation);
+    return checked({ ...listed, allows }, emulation);
   };
   if (targets.length === 0) return finish({ findings });
   if (targets.length > 1 && named === undefined) {

@@ -34,6 +34,6 @@ Replace `public` with the schema `defineConfig` uses. The migrator must own that
 
 ## How protection fits
 
-Grants are the boundary a determined agent cannot step over without a richer role. `okm protect add` records a fingerprint of the target. `okm protect list` prints those fingerprints and does not print the URL. `okm protect remove` deletes one fingerprint and requires a terminal. A state-changing command against a protected target is refused (OKM1850) unless that invocation passes `--allow-protected`. `okm migrate check` stays refused on a protected target.
+Grants are the boundary a determined agent cannot step over without a richer role. `okm protect add` records a fingerprint of the target. `okm protect list` prints those fingerprints and does not print the URL. `okm protect remove` deletes one fingerprint and requires a terminal. A state-changing command against a protected target is refused (OKM1850) unless that invocation passes `--allow-protected`. `okm migrate check` stays refused on a protected target. A destructive migration step is separate: it runs only when its committed file carries a `-- okm-allow` line, which `okm check` lists.
 
 A role that lacks `CREATE` still cannot apply DDL when someone passes `--allow-protected`. Protection stops the accident. The grant stops the statement. The two are complements, and neither one is a session flag.

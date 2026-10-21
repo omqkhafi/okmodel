@@ -14,7 +14,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 
-import { okmMentions } from "../src/tooling/agents/mentions.js";
+import { flagMentions, okmMentions } from "../src/tooling/agents/mentions.js";
 import {
   classificationProblems,
   docClass,
@@ -99,7 +99,13 @@ export function publicPageProblems(root: string): readonly string[] {
     problems.push(...fenceProblems(text, path));
     problems.push(...internalLinkProblems(root, path, text));
   }
-  for (const path of ["docs/roles.md", "docs/threat-model.md", "docs/index.md"]) {
+  for (const path of [
+    "docs/roles.md",
+    "docs/threat-model.md",
+    "docs/protection.md",
+    "docs/migration-failure.md",
+    "docs/index.md",
+  ]) {
     const file = join(root, path);
     if (!existsSync(file)) continue;
     problems.push(...unknownCommandProblems(readFileSync(file, "utf8"), path));
@@ -264,7 +270,7 @@ export function internalLinkProblems(root: string, file: string, text: string): 
 }
 
 /**
- * `okm` phrases that are not in the command table.
+ * `okm` phrases that are not in the command table, and long flags no command accepts.
  *
  * @param text - Page source
  * @param where - Path printed in each problem
@@ -272,7 +278,10 @@ export function internalLinkProblems(root: string, file: string, text: string): 
  */
 export function unknownCommandProblems(text: string, where: string): readonly string[] {
   const mentions = okmMentions(text);
-  return mentions.bad.map((phrase) => `${where}: unknown command okm ${phrase}`.trim());
+  return [
+    ...mentions.bad.map((phrase) => `${where}: unknown command okm ${phrase}`.trim()),
+    ...flagMentions(text).bad.map((flag) => `${where}: unknown flag ${flag}`),
+  ];
 }
 
 function ignoreProblems(root: string): readonly string[] {

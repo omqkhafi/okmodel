@@ -119,6 +119,7 @@ const SCHEMAS: Readonly<Record<string, JsonSchema>> = {
         reason: untrustedSchema(),
       }),
     },
+    allows: allowsSchema(),
   }),
   dev: textData(idOf("dev"), "okm dev data"),
   doctor: {
@@ -250,7 +251,10 @@ const SCHEMAS: Readonly<Record<string, JsonSchema>> = {
       result: { enum: ["recorded", "retry"] },
     },
   ),
-  "migrate check": textData(idOf("migrate check"), "okm migrate check data"),
+  "migrate check": object("migrate check", "okm migrate check data", ["text"], {
+    text: { type: "string" },
+    allows: allowsSchema(),
+  }),
   "migrate baseline": object(
     "migrate baseline",
     "okm migrate baseline data",
@@ -548,6 +552,31 @@ function untrustedSchema(): JsonSchemaNode {
     truncated: { type: "boolean" },
     modified: { type: "boolean" },
   });
+}
+
+function allowsSchema(): JsonSchemaNode {
+  return {
+    type: "array",
+    description: "Every `-- okm-allow` line in the migrations directory.",
+    items: objectNode(["migration", "step", "code", "ruleClass", "destructive", "reason"], {
+      migration: { type: "string" },
+      step: { type: "number" },
+      code: { type: "string" },
+      ruleClass: {
+        enum: [
+          "destructive",
+          "backward-incompatible",
+          "data-dependent",
+          "locking",
+          "type-preference",
+          "reprint",
+          "unknown",
+        ],
+      },
+      destructive: { type: "boolean" },
+      reason: untrustedSchema(),
+    }),
+  };
 }
 
 function alternativesSchema(): JsonSchemaNode {

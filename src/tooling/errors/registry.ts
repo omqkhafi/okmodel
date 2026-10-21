@@ -997,6 +997,14 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
       "The write-observer buffer dropped the oldest unit because it exceeded the pending-event ceiling.",
     fix: "Drain handlers with flush() more often, or raise maxPending on writeObserver. The write path does not wait.",
   },
+  {
+    code: "OKM2300",
+    title: "Weak override reason",
+    summary:
+      "A migration override gives a reason that is shorter than 12 characters, only stop-list words, or only the code repeated. This is a warning: nothing is refused.",
+    fix: "Write one sentence that says why this step is safe here: what was checked, and who agreed.",
+    since: "0.10",
+  },
   // Reserved, not registered (no raising path): version OKM1804–OKM1809,
   // extension OKM1815–OKM1819, feature refusal OKM1861 and OKM1868–OKM1879,
   // adapter capability refusal OKM1880–OKM1889. OKM1890–OKM1893 are registered.

@@ -65,6 +65,8 @@ Each statement is linted. The place stays `step N` when the step has one stateme
 
 `-- okm-allow CODE: reason` stays a line on the step. It silences that code on every statement of the step that triggers it. A code that no statement triggers is OKM1510.
 
+`okm check` and `okm migrate check` list every override in the migrations directory, one line each: `allow <migration> step <n> <code> <class>: <reason>`. The class is the category of the silenced rule. A destructive rule (a drop, a row-level-security weakening, a shortening or narrowing type change) adds `DESTRUCTIVE` after the class. `--json` carries the same list as `allows[]` with `migration`, `step`, `code`, `ruleClass`, `destructive`, and `reason`. The reason is file text, so it is marked untrusted. A reason shorter than 12 characters, made only of `ok`, `fix`, `test`, `todo`, `needed`, `temp`, `tmp`, `none`, or `na`, or made only of the code repeated is warning OKM2300. The listing is an audit: nothing is refused, and a warning does not change the exit code. The reason still has to be non-empty, as OKM1510 requires.
+
 `DO` and `CALL` are data-touching statements. The body is not analysed, so each is OKM1542. Only `-- okm-allow OKM1542: reason` silences that finding. A dollar-quoted body inside `CREATE FUNCTION` or `CREATE PROCEDURE` stays inside that statement. It is not linted as its own statements. A SQL-standard `BEGIN ATOMIC` body does too: semicolons inside it do not split the statement, and a nested `CASE ... END` does not close the body.
 
 `ALTER TABLE … ALTER COLUMN … TYPE` is the same type change as `SET DATA TYPE`, with or without `USING`. OKM1524, OKM1527, OKM1533, and OKM1538 see both forms.

@@ -246,7 +246,8 @@ postgresTest(
       (sql) => sql.replace(/^(create function )/m, "-- okm-allow OKM1552: reviewed\n$1"),
     );
     expect(allowed.code).toBe(0);
-    expect(allowed.text).toBe(`ok 1 migrations\n${CHECK_REPLAY_LIMIT}\n`);
+    expect(allowed.text).toStartWith(`ok 1 migrations\n${CHECK_REPLAY_LIMIT}\n`);
+    expect(allowed.text).toContain("allow 0001_init step 2 OKM1552 reprint: ");
 
     const unused = await checkProject(
       [

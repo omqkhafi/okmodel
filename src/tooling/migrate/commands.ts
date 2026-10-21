@@ -37,11 +37,18 @@ import { argvHasJson, parseCli, type ParsedCli } from "../cli/parse.js";
 import { commandsTable, helpText } from "../cli/spec.js";
 import { schemaCommands, schemaFor, schemaText } from "../cli/schema.js";
 import { readPackageVersion } from "../cli/version.js";
+import {
+  allowFindings,
+  allowRecords,
+  formatAllows,
+  listAllows,
+  type AllowRecord,
+} from "./allows.js";
 import { formatFindings, hasError, lintRefusal, type Finding } from "./lint.js";
 import { sessionFailure } from "./lost.js";
 import { guardStoredDriverUrl } from "./policy.js";
 import { protectedStorePath } from "./protected-store.js";
-import { projectContext, type ProjectContext } from "./paths.js";
+import { asProject, projectContext, projectPath, type ProjectContext } from "./paths.js";
 import { listTargets, selectTarget, type InvokeFlags } from "./policy.js";
 import {
   buildProject,
@@ -379,6 +386,7 @@ async function check(
   if (checked.emulation !== undefined) text += checked.emulation;
   if (checked.notice !== undefined) text += checked.notice;
   text += formatFindings(checked.findings);
+  text += formatAllows(checked.allows);
   const listed = checked.ignores ?? [];
   for (const item of listed) {
     text += `ignore ${item.rule}: ${renderUntrusted(untrustedText(item.reason, "user.query"))}\n`;
@@ -393,7 +401,8 @@ async function check(
       readonly rule: string;
       readonly reason: ReturnType<typeof untrustedText>;
     }[];
-  } = { status: "ok" };
+    allows: readonly AllowRecord[];
+  } = { status: "ok", allows: allowRecords(checked.allows) };
   if (checked.notice !== undefined) data.notice = checked.notice;
   if (checked.emulation !== undefined) data.emulation = checked.emulation;
   if (listed.length > 0) {
@@ -664,9 +673,21 @@ async function migrateCheck(
   human: (text: string) => void,
 ): Promise<Produced> {
   const { checkMigrations } = await import("./check.js");
-  const text = await checkMigrations(project, invokeOf(parsed), { provision: parsed.provision });
+  const checked = await checkMigrations(project, invokeOf(parsed), {
+    provision: parsed.provision,
+  });
+  const { cwd } = asProject(project);
+  const config = await loadConfig(project);
+  const allows = listAllows(projectPath(cwd, config.migrations ?? "migrations"));
+  const findings = allowFindings(allows);
+  const text = `${checked}${formatFindings(findings)}${formatAllows(allows)}`;
   human(text);
-  return textData(text);
+  return {
+    text,
+    data: { text, allows: allowRecords(allows) },
+    warnings: warningsOf(findings),
+    outFile: null,
+  };
 }
 
 async function baselineCommand(

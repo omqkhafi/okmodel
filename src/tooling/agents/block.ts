@@ -2,13 +2,14 @@
  * The managed block an app pastes into `AGENTS.md`.
  *
  * The text names docs that ship inside the package, the safe command
- * order, and the never-list. It may name only commands in {@link COMMAND_IDS}.
+ * order, and the never-list. It may name only commands in {@link COMMAND_IDS}
+ * and long flags that some command accepts.
  * It records the version, the tenancy mode, and whether protection is
  * configured. It does not record a URL or a timestamp.
  */
 
 import { COMMAND_IDS } from "../cli/spec.js";
-import { okmMentions } from "./mentions.js";
+import { flagMentions, okmMentions } from "./mentions.js";
 
 /** Hard cap for the rendered block, in bytes. */
 export const AGENTS_BLOCK_CAP = 8192;
@@ -46,7 +47,7 @@ export function renderAgentsBlock(input: AgentsBlockInput): string {
     "okm check lints the schema and compares it with one target. okm migrate plan prints the plan and its lock estimates. okm migrate check replays migration history in a scratch schema and does not change the target. okm migrate apply is the step that writes the target.",
     "",
     "Never:",
-    "- Never bypass guards (--allow-protected, --accept-unverified, --accept-destructive, --allow-pooler) without the human saying so in this conversation.",
+    "- Never bypass guards (--allow-protected, --accept-unverified, --allow-pooler) or add a -- okm-allow line to a migration file without the human saying so in this conversation.",
     "- Never write raw SQL strings to get around the typed API.",
     "- Never edit committed migrations or .okm files by hand.",
     "- Never run okm migrate apply against a protected target.",
@@ -67,6 +68,10 @@ export function renderAgentsBlock(input: AgentsBlockInput): string {
     if (!COMMAND_IDS.includes(id)) {
       throw new Error(`agents block command is not in COMMAND_IDS: ${id}`);
     }
+  }
+  const flags = flagMentions(text);
+  if (flags.bad.length > 0) {
+    throw new Error(`agents block names a flag no command accepts: ${flags.bad.join(", ")}`);
   }
   if (Buffer.byteLength(text, "utf8") > AGENTS_BLOCK_CAP) {
     throw new Error(`agents block is over ${String(AGENTS_BLOCK_CAP)} bytes`);

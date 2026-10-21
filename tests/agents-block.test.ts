@@ -9,8 +9,8 @@ import { expect, test } from "bun:test";
 
 import { repoRoot } from "../scripts/root.js";
 import { AGENTS_BLOCK_CAP, renderAgentsBlock } from "../src/tooling/agents/block.js";
-import { okmMentions } from "../src/tooling/agents/mentions.js";
-import { COMMAND_IDS } from "../src/tooling/cli/spec.js";
+import { flagMentions, okmMentions } from "../src/tooling/agents/mentions.js";
+import { COMMAND_IDS, COMMANDS, GLOBAL_FLAGS } from "../src/tooling/cli/spec.js";
 
 const input = { version: "0.10.0-next.47", tenancy: "row", protectedConfigured: true } as const;
 
@@ -55,4 +55,39 @@ test("every okm token is a real command, and missing commands are refused", () =
   expect(okmMentions("okm agents").bad).toEqual(["agents"]);
   expect(okmMentions("leave .okm files alone").bad).toEqual([]);
   expect(okmMentions("okm migrate plan then stop").ids).toEqual(["migrate plan"]);
+});
+
+test("every long flag the block names exists in the CLI spec", () => {
+  const text = renderAgentsBlock(input);
+  const known = new Set<string>(GLOBAL_FLAGS.map((flag) => `--${flag.name}`));
+  for (const command of COMMANDS) for (const flag of command.flags) known.add(`--${flag.name}`);
+  const mentions = flagMentions(text);
+  expect(mentions.bad).toEqual([]);
+  expect(mentions.flags).toEqual(["allow-protected", "accept-unverified", "allow-pooler"]);
+  for (const flag of mentions.flags) expect(known.has(`--${flag}`)).toBe(true);
+});
+
+test("the block names the guards that exist and no flag that does not", () => {
+  const text = renderAgentsBlock(input);
+  expect(text).not.toContain("accept-destructive");
+  expect(text).toContain("-- okm-allow line to a migration file");
+  expect(flagMentions("okm migrate apply --accept-destructive").bad).toEqual([
+    "--accept-destructive",
+  ]);
+  expect(flagMentions("-- okm-allow OKM1511: reason").flags).toEqual([]);
+  expect(flagMentions("okm check --target a --json -t b").bad).toEqual([]);
+});
+
+test("the skill and the public safety pages name only flags the CLI accepts", () => {
+  for (const path of [
+    "skills/okmodel/SKILL.md",
+    "docs/threat-model.md",
+    "docs/roles.md",
+    "docs/protection.md",
+    "docs/migration-failure.md",
+  ]) {
+    const text = readFileSync(join(repoRoot(), path), "utf8");
+    expect([path, ...flagMentions(text).bad]).toEqual([path]);
+    expect(text).not.toContain("accept-destructive");
+  }
 });
