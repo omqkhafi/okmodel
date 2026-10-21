@@ -12,7 +12,7 @@ import type { QuerySchema } from "../../dialects/pg/model.js";
 import { open, seal, type PgliteConfig } from "../../adapters/pg/pglite.js";
 import { createClient } from "../client.js";
 import type { RoutedClient, TopologyInput, TopologyOptions } from "../topology.js";
-import type { ConnectOptions, Connected } from "../types.js";
+import type { Bounded, ConnectOptions, Connected, Limits, NoLimits } from "../types.js";
 
 export { open, type PgliteConfig } from "../../adapters/pg/pglite.js";
 export { capabilities, hasCapability, readCapability } from "../../adapters/pg/pglite.js";
@@ -22,7 +22,10 @@ export { DriverError } from "../../adapters/error.js";
 export type PgliteTarget = string | DriverPool | undefined;
 
 /** Driver options `connect` forwards to {@link open}. */
-export type PgliteConnectOptions<S extends QuerySchema> = ConnectOptions<S> &
+export type PgliteConnectOptions<S extends QuerySchema, D extends Limits = Limits> = ConnectOptions<
+  S,
+  D
+> &
   Omit<PgliteConfig, "dataDir"> &
   TopologyOptions;
 
@@ -34,18 +37,19 @@ export type PgliteConnectOptions<S extends QuerySchema> = ConnectOptions<S> &
  * endpoint's data directory.
  *
  * @typeParam S - Schema
+ * @typeParam D - The `limits` literal. It decides which reads need no `limit`
  * @param target - Data directory, existing pool, omitted for memory, or `{ primary, replicas }`
  * @param options - Schema, errors, and logger
  * @returns The client
  */
-export function connect<const S extends QuerySchema>(
+export function connect<const S extends QuerySchema, const D extends Limits = NoLimits>(
   target: TopologyInput,
-  options: PgliteConnectOptions<S>,
-): Promise<RoutedClient<S>>;
-export function connect<const S extends QuerySchema>(
+  options: PgliteConnectOptions<S, D>,
+): Promise<RoutedClient<Bounded<S, D>>>;
+export function connect<const S extends QuerySchema, const D extends Limits = NoLimits>(
   target: PgliteTarget,
-  options: PgliteConnectOptions<S>,
-): Promise<Connected<S>>;
+  options: PgliteConnectOptions<S, D>,
+): Promise<Connected<Bounded<S, D>>>;
 export async function connect<const S extends QuerySchema>(
   target: PgliteTarget | TopologyInput,
   options: PgliteConnectOptions<S>,

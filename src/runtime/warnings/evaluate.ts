@@ -7,6 +7,7 @@
 
 import { isOperator, operatorName, operatorValue } from "../../dialects/pg/operators.js";
 import type { QuerySchema, RelationModel, TableModel } from "../../dialects/pg/model.js";
+import type { IncludeOut, ReadDone } from "../plan.js";
 import {
   FANOUT_LIMIT,
   isWarningRecord,
@@ -26,6 +27,8 @@ export type WarningCall = {
   readonly include?: unknown;
   readonly ignore?: unknown;
   readonly build?: unknown;
+  /** Key and value of the root default `connect({ limits })` applied. */
+  readonly dl?: readonly [key: string, value: number];
 };
 
 const LIST_OPS = new Set([
@@ -41,17 +44,72 @@ const LIST_OPS = new Set([
 /**
  * Reports whether one rule matches this read.
  *
+ * A rule with `observed` evidence reads the finished read and needs `done`.
+ * The others read the planned read and never see `done`.
+ *
  * @param rule - Registered rule
  * @param schema - Connected schema
  * @param call - Planned read
- * @returns `true` when the rule should fire
+ * @param done - The plan and value of a finished read
+ * @returns The defaults that were reached for OKM2011, `true` for another rule that fires, or `false`
  */
-export function ruleFires(rule: WarningRule, schema: QuerySchema, call: WarningCall): boolean {
+export function ruleFires(
+  rule: WarningRule,
+  schema: QuerySchema,
+  call: WarningCall,
+  done?: ReadDone,
+): boolean | string {
+  if ((rule.evidence === "observed") !== (done !== undefined)) return false;
+  if (rule.code === "OKM2011") return defaultReached(call, done);
   if (rule.code === "OKM2004") return deepOffset(call);
   if (rule.code === "OKM2005") return unorderedLimit(schema, call);
   if (rule.code === "OKM2007") return largeList(call);
   if (rule.code === "OKM2008") return wideFanOut(schema, call);
   return false;
+}
+
+/**
+ * Names the defaults whose row count equals the default.
+ *
+ * `page()` is left out: it returns a cursor, so a full page is not a cut-off.
+ * An include counts when any parent got exactly the default.
+ */
+function defaultReached(call: WarningCall, done: ReadDone | undefined): false | string {
+  if (done === undefined) return false;
+  const rows = rowsOf(done.value);
+  const found: string[] = [];
+  const root = call.dl;
+  if (root !== undefined && root[0] !== "page" && rows.length === root[1]) {
+    found.push(`limits.${root[0]} = ${String(root[1])}`);
+  }
+  const limit = includeReached(done.plan.outputs.includes, rows);
+  if (limit !== undefined) found.push(`limits.include = ${String(limit)}`);
+  return found.length === 0 ? false : found.join(", ");
+}
+
+function rowsOf(value: unknown): readonly unknown[] {
+  if (Array.isArray(value)) return value;
+  if (!isWarningRecord(value)) return [];
+  return Array.isArray(value.items) ? value.items : [value];
+}
+
+function includeReached(
+  includes: readonly IncludeOut[],
+  rows: readonly unknown[],
+): number | undefined {
+  for (const include of includes) {
+    const children: unknown[] = [];
+    for (const row of rows) {
+      const value = isWarningRecord(row) ? row[include.name] : undefined;
+      if (Array.isArray(value)) {
+        if (include.dl !== undefined && value.length === include.dl) return include.dl;
+        children.push(...value);
+      } else if (isWarningRecord(value)) children.push(value);
+    }
+    const nested = includeReached(include.nested, children);
+    if (nested !== undefined) return nested;
+  }
+  return undefined;
 }
 
 function deepOffset(call: WarningCall): boolean {

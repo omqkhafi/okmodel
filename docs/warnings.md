@@ -2,7 +2,7 @@
 okmVersion: "0.10.0"
 since: "0.10"
 dialects: [postgres]
-codes: [OKM2004, OKM2005, OKM2007, OKM2008, OKM2101, OKM2102, OKM2103]
+codes: [OKM2004, OKM2005, OKM2007, OKM2008, OKM2011, OKM2101, OKM2102, OKM2103]
 ---
 # Warnings
 
@@ -54,8 +54,9 @@ A project ignore may carry a `target`: a table (`events`) or a column (`orders.u
 | OKM2005 | `unordered-limit` | `find` has a numeric `limit` and `orderBy` is missing or does not end in a primary key or unique column. |
 | OKM2007 | `large-in-list` | `inList`, `notIn`, an array operator, or a plain array is longer than 500 elements. `and`, `or`, `not`, and `between` are not value lists. |
 | OKM2008 | `wide-fan-out` | One include path multiplies the parent limit by nested limits above 10,000. A to-one include with no limit counts as 1. Sibling includes are separate products. |
+| OKM2011 | `default-limit-reached` | A read took a default from `connect({ limits })` and returned exactly that many rows. A `find` with a default, a to-many include with a default (at any depth), or an aggregate with `groupBy` and a default. A limit the call wrote, `.all(reason)`, `page()`, and `stream()` never fire it. |
 
-OKM2011 is not part of this channel yet.
+OKM2011 is a result rule (evidence `observed`): it needs the rows, so it runs after the read and never on `.inspect()` or `.sql()`. It exists only when `connect` has `limits` and `warnings`. The notice has a `limit` field that names the key and the value, for example `limits.find = 50`, and the console prints it as a `Limit:` line. Without `limits` nothing is applied and nothing fires. Defaults are opt-in: The handbook page Limits (Define, Connect) has the keys, `max`, and the list of calls they leave alone.
 
 ## Schema rules in `okm check`
 
@@ -91,6 +92,6 @@ A rule stays silent when it cannot decide:
 - `filters()` is read from source, because the call keeps nothing at runtime. `okm check` reads the `raw.include` files (default `src/**`), the schema file, and the `tables` directory. A call counts when its receiver is an identifier bound to one `table("name", ...)`. Only literal `allow` keys and literal `sort` strings are read. A spread, a computed key, an unknown receiver, or a name bound to two tables adds nothing.
 - An external or ignored table is not checked.
 
-The fix for a deep offset is `page()` with a cursor. The fix for a large list is `= any(array)`, so the list is one parameter. The fix for a wide include is a lower parent limit or a lower include limit. The fix for an unordered limit is an `orderBy` that ends with the primary key or a unique column.
+The fix for a deep offset is `page()` with a cursor. The fix for a large list is `= any(array)`, so the list is one parameter. The fix for a wide include is a lower parent limit or a lower include limit. The fix for a default limit that was reached is a limit that fits the call, `page()`, or `.all(reason)`. The fix for an unordered limit is an `orderBy` that ends with the primary key or a unique column.
 
-Pages: [OKM2004](errors/OKM2004.md), [OKM2005](errors/OKM2005.md), [OKM2007](errors/OKM2007.md), [OKM2008](errors/OKM2008.md), [OKM2101](errors/OKM2101.md), [OKM2102](errors/OKM2102.md), [OKM2103](errors/OKM2103.md).
+Pages: [OKM2004](errors/OKM2004.md), [OKM2005](errors/OKM2005.md), [OKM2007](errors/OKM2007.md), [OKM2008](errors/OKM2008.md), [OKM2011](errors/OKM2011.md), [OKM2101](errors/OKM2101.md), [OKM2102](errors/OKM2102.md), [OKM2103](errors/OKM2103.md).

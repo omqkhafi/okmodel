@@ -91,7 +91,7 @@ function statement(spec: Spec): ReadBuild {
     const includes =
       hooks === undefined || call.include === undefined
         ? []
-        : hooks.read(schema, table, call.include, call.all);
+        : hooks.read(schema, table, call.include, call.all, call.limits);
     sink.text("select ");
     let column = 0;
     for (const item of spec.items) {

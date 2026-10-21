@@ -74,7 +74,7 @@ export type QueryRoute = {
   readonly role: "primary" | "replica";
 };
 
-/** A caller-supplied limit. Default limits are not reported. */
+/** The limit a read used and where it came from: `caller`, or the `connect({ limits })` key such as `limits.find`. */
 export type QueryLimit = {
   readonly value: number;
   readonly source: string;

@@ -11,7 +11,7 @@ import type { QuerySchema } from "../../dialects/pg/model.js";
 import { open, type NeonConfig } from "../../adapters/pg/neon.js";
 import { createClient } from "../client.js";
 import type { RoutedClient, TopologyInput, TopologyOptions } from "../topology.js";
-import type { ConnectOptions, Connected } from "../types.js";
+import type { Bounded, ConnectOptions, Connected, Limits, NoLimits } from "../types.js";
 
 export { open, type NeonConfig, type NeonMode } from "../../adapters/pg/neon.js";
 export {
@@ -26,7 +26,10 @@ export { DriverError } from "../../adapters/error.js";
 export type NeonTarget = string | DriverPool;
 
 /** Driver options `connect` forwards to {@link open}. */
-export type NeonConnectOptions<S extends QuerySchema> = ConnectOptions<S> &
+export type NeonConnectOptions<S extends QuerySchema, D extends Limits = Limits> = ConnectOptions<
+  S,
+  D
+> &
   Omit<NeonConfig, "url"> &
   TopologyOptions;
 
@@ -43,18 +46,19 @@ export type NeonConnectOptions<S extends QuerySchema> = ConnectOptions<S> &
  * `prepared: "named"` is not for transaction-mode poolers.
  *
  * @typeParam S - Schema
+ * @typeParam D - The `limits` literal. It decides which reads need no `limit`
  * @param target - URL, an existing pool, or `{ primary, replicas }`
  * @param options - Schema, mode, errors, logger, and driver options
  * @returns The client. A topology returns a promise. Await `connected` for the dialect check
  */
-export function connect<const S extends QuerySchema>(
+export function connect<const S extends QuerySchema, const D extends Limits = NoLimits>(
   target: TopologyInput,
-  options: NeonConnectOptions<S>,
-): Promise<RoutedClient<S>>;
-export function connect<const S extends QuerySchema>(
+  options: NeonConnectOptions<S, D>,
+): Promise<RoutedClient<Bounded<S, D>>>;
+export function connect<const S extends QuerySchema, const D extends Limits = NoLimits>(
   target: NeonTarget,
-  options: NeonConnectOptions<S>,
-): Promise<Connected<S>>;
+  options: NeonConnectOptions<S, D>,
+): Promise<Connected<Bounded<S, D>>>;
 export function connect<const S extends QuerySchema>(
   target: NeonTarget | TopologyInput,
   options: NeonConnectOptions<S>,

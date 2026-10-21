@@ -138,12 +138,16 @@
     "code": "OKM1101",
     "kind": "invalid",
     "category": "input",
-    "summary": "find was called without a limit.",
-    "fix": "Pass a limit.",
+    "summary": "find was called without a limit, or a limit is above limits.max. connect({ limits }) can set a default for find, page, and groupBy.",
+    "fix": "Pass a limit. A limit must not be above limits.max.",
     "retryable": false,
     "safeAlternatives": [
       {
         "text": "Use page() with a cursor.",
+        "docs": "docs/errors/OKM1101.md#page"
+      },
+      {
+        "text": "Set limits.find in connect for a default row count.",
         "docs": "docs/errors/OKM1101.md#page"
       }
     ],
@@ -185,8 +189,8 @@
     "code": "OKM1105",
     "kind": "invalid",
     "category": "input",
-    "summary": "A to-many include has no limit.",
-    "fix": "Pass a limit on the include.",
+    "summary": "A to-many include has no limit. connect({ limits: { include } }) sets a default for includes that name none.",
+    "fix": "Pass a limit on the include, or set limits.include in connect.",
     "retryable": false,
     "docs": "docs/errors/OKM1105.md",
     "escapeHatches": [
@@ -1572,6 +1576,36 @@
         "name": "ignore",
         "requiresHumanReason": true,
         "docs": "docs/errors/OKM2008.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM2011",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A read that used a default limit from connect returned exactly that many rows, so more rows may exist.",
+    "fix": "Pass a limit that fits the call, or use page() with a cursor.",
+    "retryable": false,
+    "safeAlternatives": [
+      {
+        "text": "Pass a limit that fits the call.",
+        "docs": "docs/errors/OKM2011.md#page"
+      },
+      {
+        "text": "Use page() with a cursor.",
+        "docs": "docs/errors/OKM2011.md#page"
+      },
+      {
+        "text": "Call .all(reason) when every row is needed.",
+        "docs": "docs/errors/OKM2011.md#page"
+      }
+    ],
+    "docs": "docs/errors/OKM2011.md",
+    "escapeHatches": [
+      {
+        "name": "ignore",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM2011.md#escape"
       }
     ]
   },

@@ -48,6 +48,7 @@ import {
   type ReadBuild,
   type Sink,
 } from "./plan.js";
+import { capLimit } from "./limits.js";
 
 /**
  * Same symbol `bucket()` registers.
@@ -188,7 +189,10 @@ function plan(
   const indexed = indexes(session.schema).get(table);
   if (indexed === undefined) fail("OKM1120", `Table ${table} is not in the schema.`);
   const spec = parse(indexed, record, buckets);
-  if (spec.groups.length > 0 && record.limit === undefined && mods.all === undefined) {
+  const grouped = spec.groups.length > 0 && mods.all === undefined;
+  const dflt = grouped && record.limit === undefined ? session.l?.groupBy : undefined;
+  const limit = dflt ?? record.limit;
+  if (grouped && limit === undefined) {
     fail("OKM1101", "aggregate() with groupBy needs a limit.");
   }
   const names = groupNames(spec.groups);
@@ -208,14 +212,17 @@ function plan(
       }
     }
   }
-  if (record.limit !== undefined) readLimit(record.limit);
+  if (record.limit !== undefined) {
+    const written = readLimit(record.limit);
+    if (grouped) capLimit(written, session.l?.max);
+  }
   const base = readCall(
     "find",
     table,
     {
       where: record.where,
       orderBy,
-      limit: record.limit,
+      limit,
       ...(record.ignore !== undefined ? { ignore: record.ignore } : {}),
       signal: record.signal,
       timeout: record.timeout,
@@ -227,7 +234,13 @@ function plan(
     session.schema,
     view,
   );
-  const call = { ...base, op: "aggregate" as const, build: statement(spec, buckets) };
+  const call = {
+    ...base,
+    op: "aggregate" as const,
+    build: statement(spec, buckets),
+    ...(session.l !== undefined ? { limits: session.l } : {}),
+    ...(dflt !== undefined ? { dl: ["groupBy", dflt] as const } : {}),
+  };
   return readHandle(session, table, call, mods, (compiled, rows) => decode(compiled, rows));
 }
 

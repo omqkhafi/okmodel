@@ -32,6 +32,7 @@ import {
   type IncludeHooks,
   type Plan,
   type ReadCall,
+  type ReadDone,
   type CallScope,
   type ReadOp,
 } from "./plan.js";
@@ -40,6 +41,7 @@ import type {
   Connected,
   Hookm,
   Inspection,
+  Limits,
   RoutingDecision,
   TableApi,
   Timeouts,
@@ -79,7 +81,15 @@ export type Session = {
    * `undefined` when the caller did not pass one. The property stays present so
    * the assignment does not need a spread.
    */
-  readonly w: ((schema: QuerySchema, call: ReadCall, stack?: string) => void) | undefined;
+  readonly w:
+    | ((schema: QuerySchema, call: ReadCall, stack?: string, done?: ReadDone) => void)
+    | undefined;
+  /**
+   * Default limits from `connect({ limits })`.
+   *
+   * `undefined` when the caller did not pass any. Checked lazily when `connected` settles.
+   */
+  readonly l: Limits | undefined;
   /**
    * Query observer from `connect({ onQuery })`.
    *
@@ -139,8 +149,11 @@ export function createClient<S extends QuerySchema>(
     readonly timeouts?: Timeouts | undefined;
     readonly hookm?: readonly Hookm[] | undefined;
     readonly onWrite?: import("./observe-types.js").OnWrite | undefined;
-    readonly warnings?: ((schema: QuerySchema, call: ReadCall, stack?: string) => void) | undefined;
+    readonly warnings?:
+      | ((schema: QuerySchema, call: ReadCall, stack?: string, done?: ReadDone) => void)
+      | undefined;
     readonly onQuery?: object | undefined;
+    readonly limits?: Limits | undefined;
     readonly catalog?: CatalogArtifact | undefined;
     readonly catalogDir?: string | undefined;
     readonly requireMeta?: boolean | undefined;
@@ -191,6 +204,7 @@ export function createClient<S extends QuerySchema>(
     hookm: options.hookm,
     ...(options.onWrite !== undefined ? { o: { w: options.onWrite, c: undefined } } : {}),
     w: options.warnings,
+    l: options.limits,
     q: options.onQuery,
     closing,
   };
@@ -506,7 +520,7 @@ function start(
   return readHandle(
     session,
     table,
-    call,
+    session.l === undefined ? call : { ...call, limits: session.l },
     mods,
     async (plan, rows) => {
       const value = await decodeRows(plan, rows, table);
@@ -641,6 +655,11 @@ export function readHandle(
     if (call.build === undefined && selectHasWindow(call.select)) {
       call = (await import("./window.js")).attach(session.schema, call);
     }
+    if (call.limits !== undefined) {
+      const limits = await import("./limits.js");
+      call = limits.limit(session, call);
+      if (session.w !== undefined) decode = limits.watch(session, call, warnStack, decode);
+    }
     session.w?.(session.schema, call, warnStack);
     const bound = bindCall(session.schema, call, hooks);
     let plan = session.cache.get(bound.key);
@@ -658,6 +677,7 @@ export function readHandle(
   // True when the statement can be planned now: no include, no preset, no operator SQL to load.
   const sync = (): boolean =>
     !searched &&
+    call.limits === undefined &&
     call.include === undefined &&
     mods.uses === undefined &&
     !selectHasWindow(call.select) &&
@@ -891,7 +911,7 @@ function inspection(
 ): Inspection {
   return {
     intent: logicalIntent(call),
-    rules: appliedRules(call, source),
+    rules: appliedRules(call, source, plan.outputs.includes),
     plan: { strategy: "postgres:single-statement", statements: 1, fingerprint: plan.fingerprint },
     sql: { text: plan.text, params },
     routing: SINGLE_ENDPOINT,

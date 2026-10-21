@@ -21,6 +21,23 @@ import {
   type TableModel,
 } from "../dialects/pg/model.js";
 
+/**
+ * Opt-in default limits from `connect({ limits })`. Every key is optional and
+ * independent: `include` and `groupBy` never fall back to `find`.
+ */
+export type Limits = {
+  /** Rows of a `find` that has no `limit` and no `.all(reason)`. */
+  readonly find?: number;
+  /** Related rows of a to-many `include` that has no `limit` and no `.all(reason)`. */
+  readonly include?: number;
+  /** Page size of a `page()` that has no `limit`. */
+  readonly page?: number;
+  /** Groups of an `aggregate` with `groupBy` that has no `limit` and no `.all(reason)`. */
+  readonly groupBy?: number;
+  /** Ceiling for an explicit limit. Above it is OKM1101, unless the call uses `.all(reason)`. */
+  readonly max?: number;
+};
+
 /** A read the caller asked for. */
 export type ReadOp =
   | "find"
@@ -98,7 +115,16 @@ export type ReadCall = {
   readonly archive?: ArchiveView;
   /** Inspect lines for the archive set and for presets. Absent when neither applies. */
   readonly ruleLines?: readonly AppliedRule[];
+  /** `connect({ limits })`. Set on a read that can take a default or meet `max`. Never in the plan key. */
+  readonly limits?: Limits;
+  /** The key and the value of the root default that filled in `limit`. Absent when the caller wrote it. */
+  readonly dl?: readonly [key: string, value: number];
+  /** Rows in a `page()`. The call's `limit` is one more, to learn whether a next page exists. */
+  readonly size?: number;
 };
+
+/** What a finished read gives the warning slot: its plan and the decoded value. */
+export type ReadDone = { readonly plan: Plan; readonly value: unknown };
 
 /** How an archivable read or write chooses rows. Absent means the active set. */
 export type ArchiveView = "with" | "only";
@@ -188,6 +214,8 @@ export type MorphOut = {
 export type IncludeOut = {
   readonly name: string;
   readonly kind: "one" | "many";
+  /** The default `limits.include` that bounded this include. Absent when the caller wrote the limit. */
+  readonly dl?: number;
   readonly at: number;
   readonly fields: readonly ScalarOut[];
   readonly nested: readonly IncludeOut[];
@@ -216,6 +244,7 @@ export type IncludeHooks = {
     table: Indexed,
     include: unknown,
     all: string | undefined,
+    limits: Limits | undefined,
   ): readonly ParsedInclude[];
   select(
     include: ParsedInclude,
@@ -662,7 +691,11 @@ export function logicalIntent(call: ReadCall): {
  * @param source - `file.ts:line` of the table, when `table()` recorded it
  * @returns Provenance-tagged rules
  */
-export function appliedRules(call: ReadCall, source?: string): readonly AppliedRule[] {
+export function appliedRules(
+  call: ReadCall,
+  source?: string,
+  planned?: readonly IncludeOut[],
+): readonly AppliedRule[] {
   const rules: AppliedRule[] = [];
   for (const rule of BASE_RULES) {
     if (source !== undefined && rule.contribution === "catalog") {
@@ -675,11 +708,15 @@ export function appliedRules(call: ReadCall, source?: string): readonly AppliedR
     rules.push({ rule: "filter", contribution: "caller", provenance: "caller" });
   }
   if (call.op === "find" || hasMany(call.include)) {
+    const dl = call.dl;
     rules.push({
       rule: "bounded",
-      contribution: call.all ?? "limit",
-      provenance: "caller",
+      contribution: call.all ?? (dl === undefined ? "limit" : `limits.${dl[0]}`),
+      provenance: dl === undefined ? "caller" : "connect",
     });
+  }
+  if (planned?.some(defaulted)) {
+    rules.push({ rule: "bounded", contribution: "limits.include", provenance: "connect" });
   }
   if (call.tenancyRules !== undefined) {
     for (const rule of call.tenancyRules) rules.push(rule);
@@ -764,7 +801,7 @@ function emitRead(
   const includes =
     hooks === undefined || call.include === undefined
       ? []
-      : hooks.read(schema, table, call.include, call.all);
+      : hooks.read(schema, table, call.include, call.all, call.limits);
   if (selected.length === 0 && includes.length === 0) sink.text("1");
   for (let index = 0; index < includes.length; index += 1) {
     const include = includes[index];
@@ -1265,6 +1302,8 @@ export type ParsedInclude = {
   readonly where: unknown;
   readonly orderBy: unknown;
   readonly limit: number | undefined;
+  /** Set when `limits.include` filled in `limit`. */
+  readonly dl?: number;
   readonly columns: readonly ColumnModel[];
   readonly presence: ColumnModel | undefined;
   /** Index in the projected list that is null when the related row is missing. */
@@ -1565,6 +1604,10 @@ function plain(value: unknown): unknown {
     return out;
   }
   return value;
+}
+
+function defaulted(include: IncludeOut): boolean {
+  return include.dl !== undefined || include.nested.some(defaulted);
 }
 
 function hasMany(include: unknown): boolean {
