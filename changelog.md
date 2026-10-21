@@ -218,6 +218,11 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 #### contracts
 
 - `Insert` omits defaulted and nullable columns, and `Update` accepts any subset of the writable columns, matching `insert()` and `update()`. A missing required column and an unknown key stay type errors (R7, #404).
+- `ColumnDefinition` adds the optional `unvalidatedNotNull` (the constraint name). Introspection sets it on PostgreSQL 18 for a column whose NOT NULL constraint is `NOT VALID`. It is absent otherwise, so no existing catalog changes its document or hash (D316).
+
+#### dialects
+
+- Introspection reads a PostgreSQL 18 `NOT NULL … NOT VALID` constraint (`pg_constraint` `contype` `n`, `convalidated` false) instead of treating `attnotnull` as proof. The column stays NOT NULL and records the unvalidated constraint. When the schema says NOT NULL, the plan is one `VALIDATE CONSTRAINT` step. When it says nullable, the plan is `DROP NOT NULL`. PostgreSQL 15 through 17 read as before (D316).
 
 #### adapters
 
@@ -243,10 +248,12 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - A failed `CREATE INDEX CONCURRENTLY` is dropped before apply returns, so the target does not keep an INVALID index. When that drop fails, the error names the index and `DROP INDEX CONCURRENTLY`. A later apply still drops a leftover invalid index and rebuilds it (Q4, #391).
 - `testing()` drops the catalog it applied when the harness finishes, in reverse dependency order. An `ignored` object is left in place. `migrate: false` drops nothing (Q9, #396).
 - The packed-tarball size check runs for this repository. A fixture passed to `pack-contract` with `--root` does not need `tests/fixtures/pack-size.json`.
+- `okm check` reports a PostgreSQL 18 `NOT NULL … NOT VALID` constraint as drift (OKM1520) and names the column, even when no row holds NULL. `okm pull` writes that column `.nullable()` with a comment and lists it under `not validated`. A dependent catalog's `okm check` treats such an external column as stale (OKM1841). The linter reports its `VALIDATE CONSTRAINT` as OKM1531 with the reason `validates a NOT NULL constraint`.
 
 #### docs
 
 - Known limits names `postgresjs-kill-storm.md` again. The name is text, not a link, and the file stays out of the published tarball.
+- Known limits, the migrate-check page, the CLI reference, and the external-catalog page describe the PostgreSQL 18 `NOT NULL … NOT VALID` state. D316 records what each command does with it.
 - The observer page says `seq` has gaps after a savepoint rollback, that a unit is one transaction, batch, or statement, and how a replica route is labelled (G-8, #525).
 
 ### 🔒 Security

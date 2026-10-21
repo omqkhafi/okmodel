@@ -5,7 +5,7 @@ description: "external lists catalog snapshots this project verifies."
 
 `external` is a list of snapshot paths, one file per owning catalog. Omitted means this project owns every table it declares.
 
-Each path is what `okm catalog export` wrote. `okm check` and `okm migrate check` compare every `external()` table with those files. A missing file, a table the files do not list, or columns that differ is OKM1841. When a target is selected, the same commands also compare the file with that database.
+Each path is what `okm catalog export` wrote. `okm check` and `okm migrate check` compare every `external()` table with those files. A missing file, a table the files do not list, or columns that differ is OKM1841. On PostgreSQL 18 an external column that is `NOT NULL … NOT VALID` on the database is nullable for this comparison, and the message names the constraint. When a target is selected, the same commands also compare the file with that database.
 
 ```ts title="okmodel.config.ts"
 import { defineConfig } from "okmodel/migrate";

@@ -265,6 +265,15 @@ export type ColumnDefinition = {
    * generator is not stored here.
    */
   readonly collation?: string;
+  /**
+   * Name of a NOT NULL constraint that is not validated.
+   *
+   * Introspection sets it on PostgreSQL 18 when `nullable` is false and the
+   * constraint is `NOT VALID`, so rows with NULL may still exist. Absent
+   * otherwise, and never set on a nullable column. A schema does not declare
+   * it. The planner validates the constraint when the schema says NOT NULL.
+   */
+  readonly unvalidatedNotNull?: string;
 };
 
 /**

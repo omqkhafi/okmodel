@@ -90,21 +90,25 @@ for (const driver of ["postgresjs", "pg", "bun"] as const) {
 
           await admin.unsafe("begin");
           await admin.unsafe("lock table notes in access exclusive mode");
-          const waiting = db.tx(async (tx) => {
-            await tx.notes.find({ limit: 1 });
-          });
+          const waiting = rejection(
+            db.tx(async (tx) => {
+              await tx.notes.find({ limit: 1 });
+            }),
+          );
           await Bun.sleep(300);
           await killApp(admin);
-          const mid = await rejection(waiting);
+          const mid = await waiting;
           expect(kindOf(mid)).toBe("unavailable");
           await admin.unsafe("rollback");
           await db.notes.find({ limit: 1 });
 
-          const committing = db.tx(async (tx) => {
-            await tx.notes.insert({ id: 7, title: "commit" });
-          });
+          const committing = rejection(
+            db.tx(async (tx) => {
+              await tx.notes.insert({ id: 7, title: "commit" });
+            }),
+          );
           await killWhen(admin, "commit");
-          const commit = await rejection(committing);
+          const commit = await committing;
           expect(codeOf(commit)).toBe("OKM1401");
           expect(kindOf(commit)).toBe("outcome_unknown");
           await db.notes.find({ limit: 1 });

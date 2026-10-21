@@ -10,6 +10,7 @@
  * through 17 store no such row, so `attnotnull` alone still decides there.
  */
 
+import { unvalidatedNotNullSql } from "../../dialects/pg/not-null.js";
 import { statementBlocksNotNull } from "./screen.js";
 
 /**
@@ -66,14 +67,7 @@ SELECT
   c.relkind,
   c.relname,
   n.nspname,
-  EXISTS (
-    SELECT 1
-    FROM pg_constraint k
-    WHERE k.conrelid = a.attrelid
-      AND k.contype = 'n'
-      AND a.attnum = ANY (k.conkey)
-      AND k.convalidated = false
-  ) AS not_null_invalid
+  ${unvalidatedNotNullSql("a")} IS NOT NULL AS not_null_invalid
 FROM pg_attribute a
 JOIN pg_class c ON c.oid = a.attrelid
 JOIN pg_namespace n ON n.oid = c.relnamespace

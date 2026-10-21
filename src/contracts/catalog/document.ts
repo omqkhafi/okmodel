@@ -29,6 +29,7 @@ import { functionObject, triggerObject } from "./routine.js";
 import { policyObject } from "./policy.js";
 import { materializedViewIndex, materializedViewObject, viewObject } from "./view.js";
 import { column, compareText, constraint, index, sequence, table } from "./object.js";
+import { withUnvalidatedNotNull } from "./not-null.js";
 import { dependencyOrder } from "./order.js";
 import type {
   Catalog,
@@ -459,28 +460,36 @@ function rewriteColumn(
     sameRef(object.identity.parent, change.parent) && object.identity.name === change.from;
   const definition = object.definition;
   const local = sameRef(object.identity.parent, change.parent);
-  return column({
-    parent: object.identity.parent,
-    name: renamed ? change.to : object.identity.name,
-    dataType: definition.dataType,
-    nullable: definition.nullable,
-    owner: object.owner,
-    provenance: object.provenance,
-    dependencies,
-    ...(definition.defaultExpression !== undefined
-      ? { defaultExpression: rewriteExpr(definition.defaultExpression, change, local) }
-      : {}),
-    ...(definition.collation !== undefined ? { collation: definition.collation } : {}),
-    ...(definition.identity !== undefined ? { identity: definition.identity } : {}),
-    ...(definition.generated !== undefined
-      ? {
-          generated: {
-            stored: definition.generated.stored,
-            expression: rewriteExpr(definition.generated.expression, change, local),
-          },
-        }
-      : {}),
-  });
+  return keepMark(
+    object,
+    column({
+      parent: object.identity.parent,
+      name: renamed ? change.to : object.identity.name,
+      dataType: definition.dataType,
+      nullable: definition.nullable,
+      owner: object.owner,
+      provenance: object.provenance,
+      dependencies,
+      ...(definition.defaultExpression !== undefined
+        ? { defaultExpression: rewriteExpr(definition.defaultExpression, change, local) }
+        : {}),
+      ...(definition.collation !== undefined ? { collation: definition.collation } : {}),
+      ...(definition.identity !== undefined ? { identity: definition.identity } : {}),
+      ...(definition.generated !== undefined
+        ? {
+            generated: {
+              stored: definition.generated.stored,
+              expression: rewriteExpr(definition.generated.expression, change, local),
+            },
+          }
+        : {}),
+    }),
+  );
+}
+
+function keepMark(from: ColumnObject, to: ColumnObject): ColumnObject {
+  const mark = from.definition.unvalidatedNotNull;
+  return mark === undefined ? to : withUnvalidatedNotNull(to, mark);
 }
 
 function rewriteIndex(
@@ -663,33 +672,36 @@ function rewriteTableName(
     const parent = movedParent(object.identity.parent, change);
     const local = parent.name !== object.identity.parent.name;
     if (object.kind === "column") {
-      return column({
-        parent,
-        name: object.identity.name,
-        dataType: object.definition.dataType,
-        nullable: object.definition.nullable,
-        owner: object.owner,
-        provenance: object.provenance,
-        dependencies,
-        ...(object.definition.defaultExpression !== undefined
-          ? {
-              defaultExpression: rewriteExpr(
-                object.definition.defaultExpression,
-                { from: change.from, to: change.to },
-                local,
-              ),
-            }
-          : {}),
-        ...(object.definition.collation !== undefined
-          ? { collation: object.definition.collation }
-          : {}),
-        ...(object.definition.identity !== undefined
-          ? { identity: object.definition.identity }
-          : {}),
-        ...(object.definition.generated !== undefined
-          ? { generated: object.definition.generated }
-          : {}),
-      });
+      return keepMark(
+        object,
+        column({
+          parent,
+          name: object.identity.name,
+          dataType: object.definition.dataType,
+          nullable: object.definition.nullable,
+          owner: object.owner,
+          provenance: object.provenance,
+          dependencies,
+          ...(object.definition.defaultExpression !== undefined
+            ? {
+                defaultExpression: rewriteExpr(
+                  object.definition.defaultExpression,
+                  { from: change.from, to: change.to },
+                  local,
+                ),
+              }
+            : {}),
+          ...(object.definition.collation !== undefined
+            ? { collation: object.definition.collation }
+            : {}),
+          ...(object.definition.identity !== undefined
+            ? { identity: object.definition.identity }
+            : {}),
+          ...(object.definition.generated !== undefined
+            ? { generated: object.definition.generated }
+            : {}),
+        }),
+      );
     }
     if (object.kind === "index") {
       return indexAgain(object, parent, dependencies, {
@@ -1012,6 +1024,9 @@ function definitionToJson(object: CatalogObject): Json {
           ? { defaultExpression: definition.defaultExpression }
           : {}),
         ...(definition.collation !== undefined ? { collation: definition.collation } : {}),
+        ...(definition.unvalidatedNotNull !== undefined
+          ? { unvalidatedNotNull: definition.unvalidatedNotNull }
+          : {}),
         ...(definition.identity !== undefined
           ? { identity: { always: definition.identity.always } }
           : {}),
@@ -1235,12 +1250,21 @@ function parseColumn(
   }
   rejectUnknown(
     definition,
-    ["collation", "dataType", "defaultExpression", "generated", "identity", "nullable"],
+    [
+      "collation",
+      "dataType",
+      "defaultExpression",
+      "generated",
+      "identity",
+      "nullable",
+      "unvalidatedNotNull",
+    ],
     "column definition",
   );
   const generated = definition.generated;
   const columnIdentity = definition.identity;
-  return column({
+  const mark = definition.unvalidatedNotNull;
+  const built = column({
     parent: identity.parent,
     name: identity.name,
     dataType: requireString(definition.dataType, "data type"),
@@ -1257,6 +1281,9 @@ function parseColumn(
     ...(columnIdentity === undefined ? {} : { identity: parseAlways(columnIdentity) }),
     ...(generated === undefined ? {} : { generated: parseGenerated(generated) }),
   });
+  return mark === undefined
+    ? built
+    : withUnvalidatedNotNull(built, requireString(mark, "unvalidated NOT NULL"));
 }
 
 function parseIndex(

@@ -342,7 +342,27 @@ function dollarQuote(body: string): string {
 }
 
 /**
- * In-place column changes: type, nullability, and default.
+ * Whether the plan must validate a NOT NULL constraint the column already has.
+ *
+ * PostgreSQL 18 can hold `NOT NULL … NOT VALID`. When the schema says NOT NULL,
+ * the constraint is validated in place. When it says nullable, `DROP NOT NULL`
+ * removes the constraint, so no separate statement is needed.
+ *
+ * @param before - Column already applied
+ * @param after - Column the plan must reach
+ * @returns `true` when `VALIDATE CONSTRAINT` is the change
+ */
+export function validatesNotNull(before: ColumnObject, after: ColumnObject): boolean {
+  return (
+    before.definition.unvalidatedNotNull !== undefined &&
+    !before.definition.nullable &&
+    !after.definition.nullable &&
+    after.definition.unvalidatedNotNull === undefined
+  );
+}
+
+/**
+ * In-place column changes: type, nullability, validation, and default.
  *
  * @param before - Column already applied
  * @param after - Column the plan must reach
@@ -369,6 +389,10 @@ export function alterColumnSql(
     statements.push(
       `alter table ${table} alter column ${name} ${after.definition.nullable ? "drop not null" : "set not null"}`,
     );
+  }
+  if (validatesNotNull(before, after)) {
+    const constraint = quoteIdent(before.definition.unvalidatedNotNull ?? "");
+    statements.push(`alter table ${table} validate constraint ${constraint}`);
   }
   if (before.definition.defaultExpression !== after.definition.defaultExpression) {
     statements.push(

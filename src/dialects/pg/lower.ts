@@ -39,6 +39,7 @@ import {
   qualify,
   quoteIdent,
   refreshMaterializedViewSql,
+  validatesNotNull,
   viewSql,
 } from "./ddl.js";
 import { privilegeSql } from "./role/sql.js";
@@ -528,7 +529,7 @@ function alterColumn(
       }
       continue;
     }
-    steps.push(ddlStep(sql, kind, "ddl", ACCESS));
+    steps.push(ddlStep(sql, kind, "ddl", kind === "validate-constraint" ? SHARE_UPDATE : ACCESS));
   }
   const identitySql = identityChangeSql(before, after, schema);
   const identity = identityKind(before, after);
@@ -549,6 +550,7 @@ function columnAlterKinds(before: ColumnObject, after: ColumnObject): readonly S
   if (before.definition.nullable !== after.definition.nullable) {
     kinds.push(after.definition.nullable ? "drop-not-null" : "set-not-null");
   }
+  if (validatesNotNull(before, after)) kinds.push("validate-constraint");
   if (before.definition.defaultExpression !== after.definition.defaultExpression) {
     kinds.push(after.definition.defaultExpression === undefined ? "drop-default" : "set-default");
   }
