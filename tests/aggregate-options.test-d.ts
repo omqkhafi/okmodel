@@ -94,3 +94,15 @@ void db.sales.aggregate({
   having: { total: "ten" },
   limit: 1,
 });
+
+const ordered = db.sales.aggregate({
+  groupBy: ["region"],
+  select: { revenue: { sum: "amount" } },
+  orderBy: {
+    revenue: { dir: "desc", nulls: "last" },
+    count: "asc",
+    region: { dir: "asc", nulls: "first" },
+  },
+  limit: 1,
+});
+expectTypeOf<keyof Awaited<typeof ordered>[number]>().toEqualTypeOf<"region" | "revenue">();
