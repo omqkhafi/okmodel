@@ -24,6 +24,10 @@
       "import": "./dist/tooling/migrate/index.js",
       "types": "./dist/tooling/migrate/index.d.ts"
     },
+    "./observe": {
+      "import": "./dist/runtime/observe.js",
+      "types": "./dist/runtime/observe.d.ts"
+    },
     "./otel": {
       "import": "./dist/runtime/otel.js",
       "types": "./dist/runtime/otel.d.ts"
@@ -324,6 +328,8 @@
     "dist/runtime/lock.d.ts",
     "dist/runtime/observe-emit.d.ts",
     "dist/runtime/observe-types.d.ts",
+    "dist/runtime/observe.d.ts",
+    "dist/runtime/observe.js",
     "dist/runtime/operator-sql.d.ts",
     "dist/runtime/otel.d.ts",
     "dist/runtime/otel.js",

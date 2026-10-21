@@ -7,6 +7,7 @@
  * unit outcomes so they cannot disagree.
  */
 
+import { OkmError } from "../contracts/error.js";
 import type { Hookm, TransactionEvent } from "./types.js";
 import type {
   ObserveEvent,
@@ -15,6 +16,15 @@ import type {
   SavepointEvent,
   WriteEvent,
 } from "./observe-types.js";
+
+/** Default pending-event ceiling (mirrored by `okmodel/observe`). */
+const DEFAULT_MAX_PENDING = 10_000;
+
+/** Optional hooks carried on a {@link OnWrite} function from `writeObserver`. */
+type OnWriteExtras = OnWrite & {
+  readonly maxPending?: number;
+  onObserverError?: (err: unknown, event: WriteEvent | OutcomeEvent | SavepointEvent) => void;
+};
 
 /** Lazy slot shared by reference across session copies. */
 export type ObservingSlot = {
@@ -80,6 +90,12 @@ type Unit = {
 
 let unitSeq = 0;
 
+/** Open units in start order so overflow drops the oldest. */
+type Queue = {
+  readonly id: string;
+  unit: Unit;
+};
+
 /**
  * Builds a process-local opaque unit id.
  *
@@ -105,15 +121,22 @@ export function createObserver(onWrite: OnWrite): ObserverController {
  * tracks handler promises for `flush()`.
  */
 export class ObserverController {
-  private readonly onWrite: OnWrite;
+  private readonly onWrite: OnWriteExtras;
   private open: Unit | undefined;
   private readonly pending: Promise<unknown>[] = [];
+  private readonly queue: Queue[] = [];
+  private pendingEvents = 0;
+  private readonly maxPending: number;
 
   /**
-   * @param onWrite - Low-level handler
+   * @param onWrite - Low-level handler (may carry writeObserver extras)
    */
   constructor(onWrite: OnWrite) {
-    this.onWrite = onWrite;
+    this.onWrite = onWrite as OnWriteExtras;
+    this.maxPending =
+      typeof this.onWrite.maxPending === "number" && this.onWrite.maxPending > 0
+        ? this.onWrite.maxPending
+        : DEFAULT_MAX_PENDING;
   }
 
   /**
@@ -125,14 +148,49 @@ export class ObserverController {
    */
   ensureUnit(): string {
     if (this.open !== undefined) return this.open.id;
-    this.open = {
+    this.open = this.makeUnit();
+    return this.open.id;
+  }
+
+  private makeUnit(): Unit {
+    this.evictIfNeeded(0);
+    const unit: Unit = {
       id: nextUnitId(),
       writes: [],
       ordered: [],
       frames: [],
       seq: 0,
     };
-    return this.open.id;
+    this.queue.push({ id: unit.id, unit });
+    return unit;
+  }
+
+  private evictIfNeeded(incoming: number): void {
+    while (this.pendingEvents + incoming > this.maxPending && this.queue.length > 0) {
+      const oldest = this.queue[0];
+      if (oldest === undefined) return;
+      if (this.open?.id === oldest.id && this.queue.length === 1) return;
+      this.queue.shift();
+      const dropped = oldest.unit.ordered.length;
+      this.pendingEvents = Math.max(0, this.pendingEvents - dropped);
+      if (this.open?.id === oldest.id) this.open = undefined;
+      this.reportOverflow(oldest.unit);
+    }
+  }
+
+  private reportOverflow(unit: Unit): void {
+    const event: OutcomeEvent = {
+      type: "outcome",
+      unit: unit.id,
+      outcome: "rolled_back",
+      writes: 0,
+    };
+    const err = overflowError();
+    try {
+      this.onWrite.onObserverError?.(err, event);
+    } catch {
+      // Isolation.
+    }
   }
 
   /**
@@ -155,13 +213,7 @@ export class ObserverController {
     }
     if (depth === 0) {
       if (phase === "start") {
-        this.open = {
-          id: nextUnitId(),
-          writes: [],
-          ordered: [],
-          frames: [],
-          seq: 0,
-        };
+        this.open = this.makeUnit();
         return;
       }
       if (phase === "commit") {
@@ -218,6 +270,7 @@ export class ObserverController {
     this.ensureUnit();
     const unit = this.open;
     if (unit === undefined) return;
+    this.evictIfNeeded(drafts.length);
     for (const draft of drafts) {
       const event: WriteEvent = {
         type: "write",
@@ -237,6 +290,7 @@ export class ObserverController {
       unit.seq += 1;
       unit.writes.push(event);
       unit.ordered.push(event);
+      this.pendingEvents += 1;
     }
   }
 
@@ -266,6 +320,9 @@ export class ObserverController {
     const unit = this.open;
     this.open = undefined;
     if (unit === undefined) return;
+    const index = this.queue.findIndex((entry) => entry.id === unit.id);
+    if (index >= 0) this.queue.splice(index, 1);
+    this.pendingEvents = Math.max(0, this.pendingEvents - unit.ordered.length);
     const writes = unit.writes.length;
     const outcomeEvent: OutcomeEvent = {
       type: "outcome",
@@ -281,16 +338,43 @@ export class ObserverController {
     let result: void | Promise<void>;
     try {
       result = this.onWrite(event);
-    } catch {
-      // A throwing handler never reaches the write path (G-0 delivery rule 8).
-      // onObserverError lands with writeObserver() in a later change.
+    } catch (err) {
+      this.observerError(err, event);
       return;
     }
     if (result !== undefined && typeof (result as Promise<void>).then === "function") {
-      const tracked = Promise.resolve(result).catch(() => undefined);
+      const tracked = Promise.resolve(result).then(
+        () => undefined,
+        (err: unknown) => {
+          this.observerError(err, event);
+        },
+      );
       this.pending.push(tracked);
     }
   }
+
+  private observerError(err: unknown, event: ObserveEvent): void {
+    if (event.type === "savepoint") return;
+    try {
+      this.onWrite.onObserverError?.(err, event);
+    } catch {
+      // Isolation.
+    }
+  }
+}
+
+function overflowError(): OkmError {
+  return new OkmError(
+    "OKM2200",
+    "The write-observer buffer dropped the oldest unit because it exceeded the pending-event ceiling.",
+    {
+      kind: "driver",
+      fix: {
+        summary:
+          "Drain handlers with flush() more often, or raise maxPending on writeObserver. The write path does not wait.",
+      },
+    },
+  );
 }
 
 /**

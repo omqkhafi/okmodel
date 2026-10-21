@@ -181,32 +181,6 @@
       "kind": "stable"
     }
   ],
-  "okmodel/ids": [
-    {
-      "name": "ClientGenerator",
-      "kind": "stable"
-    },
-    {
-      "name": "IdGenerators",
-      "kind": "stable"
-    },
-    {
-      "name": "OkidOptions",
-      "kind": "stable"
-    },
-    {
-      "name": "okid",
-      "kind": "stable"
-    },
-    {
-      "name": "uuidv4",
-      "kind": "stable"
-    },
-    {
-      "name": "uuidv7",
-      "kind": "stable"
-    }
-  ],
   "okmodel/internal": [
     {
       "name": "AnchoredIdentity",
@@ -483,6 +457,506 @@
     {
       "name": "utf8ByteLength",
       "kind": "internal"
+    }
+  ],
+  "okmodel/ids": [
+    {
+      "name": "ClientGenerator",
+      "kind": "stable"
+    },
+    {
+      "name": "IdGenerators",
+      "kind": "stable"
+    },
+    {
+      "name": "OkidOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "okid",
+      "kind": "stable"
+    },
+    {
+      "name": "uuidv4",
+      "kind": "stable"
+    },
+    {
+      "name": "uuidv7",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/safety": [
+    {
+      "name": "SafetyContribution",
+      "kind": "stable"
+    },
+    {
+      "name": "SafetyError",
+      "kind": "stable"
+    },
+    {
+      "name": "SafetyHatch",
+      "kind": "stable"
+    },
+    {
+      "name": "SafetyInput",
+      "kind": "stable"
+    },
+    {
+      "name": "SafetyRule",
+      "kind": "stable"
+    },
+    {
+      "name": "SafetyViolation",
+      "kind": "stable"
+    },
+    {
+      "name": "registerArchive",
+      "kind": "stable"
+    },
+    {
+      "name": "registerFieldExposure",
+      "kind": "stable"
+    },
+    {
+      "name": "registerPresets",
+      "kind": "stable"
+    },
+    {
+      "name": "registerRule",
+      "kind": "stable"
+    },
+    {
+      "name": "registerTenancy",
+      "kind": "stable"
+    },
+    {
+      "name": "registerTimestamps",
+      "kind": "stable"
+    },
+    {
+      "name": "review",
+      "kind": "stable"
+    },
+    {
+      "name": "safetyProperty",
+      "kind": "stable"
+    },
+    {
+      "name": "verify",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/traits": [
+    {
+      "name": "ArchivableOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "TimestampsOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "Trait",
+      "kind": "stable"
+    },
+    {
+      "name": "TraitDefinition",
+      "kind": "stable"
+    },
+    {
+      "name": "archivable",
+      "kind": "stable"
+    },
+    {
+      "name": "sortable",
+      "kind": "stable"
+    },
+    {
+      "name": "timestamps",
+      "kind": "stable"
+    },
+    {
+      "name": "trait",
+      "kind": "stable"
+    },
+    {
+      "name": "versioned",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/tenancy": [
+    {
+      "name": "ColumnTenancy",
+      "kind": "stable"
+    },
+    {
+      "name": "RlsRoleError",
+      "kind": "stable"
+    },
+    {
+      "name": "RlsRoleReason",
+      "kind": "stable"
+    },
+    {
+      "name": "columnTenancy",
+      "kind": "stable"
+    },
+    {
+      "name": "compositeTenancy",
+      "kind": "stable"
+    },
+    {
+      "name": "global",
+      "kind": "stable"
+    },
+    {
+      "name": "rlsTenancy",
+      "kind": "stable"
+    },
+    {
+      "name": "via",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/testing": [
+    {
+      "name": "FactoryContext",
+      "kind": "stable"
+    },
+    {
+      "name": "FactoryDefinitions",
+      "kind": "stable"
+    },
+    {
+      "name": "IsolationReport",
+      "kind": "stable"
+    },
+    {
+      "name": "TableFactory",
+      "kind": "stable"
+    },
+    {
+      "name": "Testing",
+      "kind": "stable"
+    },
+    {
+      "name": "TestingOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "testing",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/validate": [
+    {
+      "name": "Rule",
+      "kind": "stable"
+    },
+    {
+      "name": "v",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/otel": [
+    {
+      "name": "OtelAttribute",
+      "kind": "experimental"
+    },
+    {
+      "name": "OtelObservers",
+      "kind": "experimental"
+    },
+    {
+      "name": "OtelOptions",
+      "kind": "experimental"
+    },
+    {
+      "name": "OtelSpan",
+      "kind": "experimental"
+    },
+    {
+      "name": "OtelSpanOptions",
+      "kind": "experimental"
+    },
+    {
+      "name": "OtelStatusCode",
+      "kind": "experimental"
+    },
+    {
+      "name": "OtelTracer",
+      "kind": "experimental"
+    },
+    {
+      "name": "otel",
+      "kind": "experimental"
+    }
+  ],
+  "okmodel/observe": [
+    {
+      "name": "OBSERVE_BUFFER_MAX",
+      "kind": "experimental"
+    },
+    {
+      "name": "ObserveDialect",
+      "kind": "experimental"
+    },
+    {
+      "name": "ObserveEvent",
+      "kind": "experimental"
+    },
+    {
+      "name": "ObserveKey",
+      "kind": "experimental"
+    },
+    {
+      "name": "OnWrite",
+      "kind": "experimental"
+    },
+    {
+      "name": "OutcomeEvent",
+      "kind": "experimental"
+    },
+    {
+      "name": "RowCountMode",
+      "kind": "experimental"
+    },
+    {
+      "name": "SavepointEvent",
+      "kind": "experimental"
+    },
+    {
+      "name": "WriteEvent",
+      "kind": "experimental"
+    },
+    {
+      "name": "WriteObserver",
+      "kind": "experimental"
+    },
+    {
+      "name": "WriteObserverOptions",
+      "kind": "experimental"
+    },
+    {
+      "name": "flush",
+      "kind": "experimental"
+    },
+    {
+      "name": "observerBufferOverflow",
+      "kind": "experimental"
+    },
+    {
+      "name": "writeObserver",
+      "kind": "experimental"
+    }
+  ],
+  "okmodel/ext": [
+    {
+      "name": "Extension",
+      "kind": "stable"
+    },
+    {
+      "name": "ExtensionFunction",
+      "kind": "stable"
+    },
+    {
+      "name": "ExtensionIndexMethod",
+      "kind": "stable"
+    },
+    {
+      "name": "ExtensionOperator",
+      "kind": "stable"
+    },
+    {
+      "name": "ExtensionOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "ExtensionProvides",
+      "kind": "stable"
+    },
+    {
+      "name": "ExtensionRequires",
+      "kind": "stable"
+    },
+    {
+      "name": "ExtensionType",
+      "kind": "stable"
+    },
+    {
+      "name": "extension",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/fn": [
+    {
+      "name": "DependsOn",
+      "kind": "stable"
+    },
+    {
+      "name": "FnCall",
+      "kind": "stable"
+    },
+    {
+      "name": "FunctionArgumentInput",
+      "kind": "stable"
+    },
+    {
+      "name": "FunctionOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "Routine",
+      "kind": "stable"
+    },
+    {
+      "name": "TriggerDeclaration",
+      "kind": "stable"
+    },
+    {
+      "name": "TriggerOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "fn",
+      "kind": "stable"
+    },
+    {
+      "name": "trigger",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/view": [
+    {
+      "name": "MaterializedViewDeclaration",
+      "kind": "stable"
+    },
+    {
+      "name": "MaterializedViewIndexInput",
+      "kind": "stable"
+    },
+    {
+      "name": "MaterializedViewOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "ViewBuilt",
+      "kind": "stable"
+    },
+    {
+      "name": "ViewColumnInput",
+      "kind": "stable"
+    },
+    {
+      "name": "ViewDeclaration",
+      "kind": "stable"
+    },
+    {
+      "name": "ViewFrom",
+      "kind": "stable"
+    },
+    {
+      "name": "ViewOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "materializedView",
+      "kind": "stable"
+    },
+    {
+      "name": "view",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/pg/citext": [
+    {
+      "name": "citext",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/pg/pg_trgm": [
+    {
+      "name": "PgTrgm",
+      "kind": "stable"
+    },
+    {
+      "name": "TrigramQuery",
+      "kind": "stable"
+    },
+    {
+      "name": "pgTrgm",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/pg/unaccent": [
+    {
+      "name": "Unaccent",
+      "kind": "stable"
+    },
+    {
+      "name": "unaccent",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/pg/hstore": [
+    {
+      "name": "Hstore",
+      "kind": "stable"
+    },
+    {
+      "name": "hstore",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/pg/ltree": [
+    {
+      "name": "Ltree",
+      "kind": "stable"
+    },
+    {
+      "name": "ltree",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/pg/btree_gist": [
+    {
+      "name": "BtreeGist",
+      "kind": "stable"
+    },
+    {
+      "name": "btreeGist",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/pg/btree_gin": [
+    {
+      "name": "BtreeGin",
+      "kind": "stable"
+    },
+    {
+      "name": "btreeGin",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/pg/fuzzystrmatch": [
+    {
+      "name": "Fuzzystrmatch",
+      "kind": "stable"
+    },
+    {
+      "name": "fuzzystrmatch",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/pg/pgcrypto": [
+    {
+      "name": "Pgcrypto",
+      "kind": "stable"
+    },
+    {
+      "name": "pgcrypto",
+      "kind": "stable"
     }
   ],
   "okmodel/pg": [
@@ -1373,422 +1847,6 @@
     {
       "name": "status",
       "kind": "stable"
-    }
-  ],
-  "okmodel/safety": [
-    {
-      "name": "SafetyContribution",
-      "kind": "stable"
-    },
-    {
-      "name": "SafetyError",
-      "kind": "stable"
-    },
-    {
-      "name": "SafetyHatch",
-      "kind": "stable"
-    },
-    {
-      "name": "SafetyInput",
-      "kind": "stable"
-    },
-    {
-      "name": "SafetyRule",
-      "kind": "stable"
-    },
-    {
-      "name": "SafetyViolation",
-      "kind": "stable"
-    },
-    {
-      "name": "registerArchive",
-      "kind": "stable"
-    },
-    {
-      "name": "registerFieldExposure",
-      "kind": "stable"
-    },
-    {
-      "name": "registerPresets",
-      "kind": "stable"
-    },
-    {
-      "name": "registerRule",
-      "kind": "stable"
-    },
-    {
-      "name": "registerTenancy",
-      "kind": "stable"
-    },
-    {
-      "name": "registerTimestamps",
-      "kind": "stable"
-    },
-    {
-      "name": "review",
-      "kind": "stable"
-    },
-    {
-      "name": "safetyProperty",
-      "kind": "stable"
-    },
-    {
-      "name": "verify",
-      "kind": "stable"
-    }
-  ],
-  "okmodel/tenancy": [
-    {
-      "name": "ColumnTenancy",
-      "kind": "stable"
-    },
-    {
-      "name": "RlsRoleError",
-      "kind": "stable"
-    },
-    {
-      "name": "RlsRoleReason",
-      "kind": "stable"
-    },
-    {
-      "name": "columnTenancy",
-      "kind": "stable"
-    },
-    {
-      "name": "compositeTenancy",
-      "kind": "stable"
-    },
-    {
-      "name": "global",
-      "kind": "stable"
-    },
-    {
-      "name": "rlsTenancy",
-      "kind": "stable"
-    },
-    {
-      "name": "via",
-      "kind": "stable"
-    }
-  ],
-  "okmodel/testing": [
-    {
-      "name": "FactoryContext",
-      "kind": "stable"
-    },
-    {
-      "name": "FactoryDefinitions",
-      "kind": "stable"
-    },
-    {
-      "name": "IsolationReport",
-      "kind": "stable"
-    },
-    {
-      "name": "TableFactory",
-      "kind": "stable"
-    },
-    {
-      "name": "Testing",
-      "kind": "stable"
-    },
-    {
-      "name": "TestingOptions",
-      "kind": "stable"
-    },
-    {
-      "name": "testing",
-      "kind": "stable"
-    }
-  ],
-  "okmodel/traits": [
-    {
-      "name": "ArchivableOptions",
-      "kind": "stable"
-    },
-    {
-      "name": "TimestampsOptions",
-      "kind": "stable"
-    },
-    {
-      "name": "Trait",
-      "kind": "stable"
-    },
-    {
-      "name": "TraitDefinition",
-      "kind": "stable"
-    },
-    {
-      "name": "archivable",
-      "kind": "stable"
-    },
-    {
-      "name": "sortable",
-      "kind": "stable"
-    },
-    {
-      "name": "timestamps",
-      "kind": "stable"
-    },
-    {
-      "name": "trait",
-      "kind": "stable"
-    },
-    {
-      "name": "versioned",
-      "kind": "stable"
-    }
-  ],
-  "okmodel/validate": [
-    {
-      "name": "Rule",
-      "kind": "stable"
-    },
-    {
-      "name": "v",
-      "kind": "stable"
-    }
-  ],
-  "okmodel/fn": [
-    {
-      "name": "DependsOn",
-      "kind": "stable"
-    },
-    {
-      "name": "FnCall",
-      "kind": "stable"
-    },
-    {
-      "name": "FunctionArgumentInput",
-      "kind": "stable"
-    },
-    {
-      "name": "FunctionOptions",
-      "kind": "stable"
-    },
-    {
-      "name": "Routine",
-      "kind": "stable"
-    },
-    {
-      "name": "TriggerDeclaration",
-      "kind": "stable"
-    },
-    {
-      "name": "TriggerOptions",
-      "kind": "stable"
-    },
-    {
-      "name": "fn",
-      "kind": "stable"
-    },
-    {
-      "name": "trigger",
-      "kind": "stable"
-    }
-  ],
-  "okmodel/ext": [
-    {
-      "name": "Extension",
-      "kind": "stable"
-    },
-    {
-      "name": "ExtensionFunction",
-      "kind": "stable"
-    },
-    {
-      "name": "ExtensionIndexMethod",
-      "kind": "stable"
-    },
-    {
-      "name": "ExtensionOperator",
-      "kind": "stable"
-    },
-    {
-      "name": "ExtensionOptions",
-      "kind": "stable"
-    },
-    {
-      "name": "ExtensionProvides",
-      "kind": "stable"
-    },
-    {
-      "name": "ExtensionRequires",
-      "kind": "stable"
-    },
-    {
-      "name": "ExtensionType",
-      "kind": "stable"
-    },
-    {
-      "name": "extension",
-      "kind": "stable"
-    }
-  ],
-  "okmodel/pg/citext": [
-    {
-      "name": "citext",
-      "kind": "stable"
-    }
-  ],
-  "okmodel/pg/pg_trgm": [
-    {
-      "name": "PgTrgm",
-      "kind": "stable"
-    },
-    {
-      "name": "TrigramQuery",
-      "kind": "stable"
-    },
-    {
-      "name": "pgTrgm",
-      "kind": "stable"
-    }
-  ],
-  "okmodel/pg/unaccent": [
-    {
-      "name": "Unaccent",
-      "kind": "stable"
-    },
-    {
-      "name": "unaccent",
-      "kind": "stable"
-    }
-  ],
-  "okmodel/pg/hstore": [
-    {
-      "name": "Hstore",
-      "kind": "stable"
-    },
-    {
-      "name": "hstore",
-      "kind": "stable"
-    }
-  ],
-  "okmodel/pg/ltree": [
-    {
-      "name": "Ltree",
-      "kind": "stable"
-    },
-    {
-      "name": "ltree",
-      "kind": "stable"
-    }
-  ],
-  "okmodel/pg/btree_gist": [
-    {
-      "name": "BtreeGist",
-      "kind": "stable"
-    },
-    {
-      "name": "btreeGist",
-      "kind": "stable"
-    }
-  ],
-  "okmodel/pg/btree_gin": [
-    {
-      "name": "BtreeGin",
-      "kind": "stable"
-    },
-    {
-      "name": "btreeGin",
-      "kind": "stable"
-    }
-  ],
-  "okmodel/pg/fuzzystrmatch": [
-    {
-      "name": "Fuzzystrmatch",
-      "kind": "stable"
-    },
-    {
-      "name": "fuzzystrmatch",
-      "kind": "stable"
-    }
-  ],
-  "okmodel/pg/pgcrypto": [
-    {
-      "name": "Pgcrypto",
-      "kind": "stable"
-    },
-    {
-      "name": "pgcrypto",
-      "kind": "stable"
-    }
-  ],
-  "okmodel/view": [
-    {
-      "name": "MaterializedViewDeclaration",
-      "kind": "stable"
-    },
-    {
-      "name": "MaterializedViewIndexInput",
-      "kind": "stable"
-    },
-    {
-      "name": "MaterializedViewOptions",
-      "kind": "stable"
-    },
-    {
-      "name": "ViewBuilt",
-      "kind": "stable"
-    },
-    {
-      "name": "ViewColumnInput",
-      "kind": "stable"
-    },
-    {
-      "name": "ViewDeclaration",
-      "kind": "stable"
-    },
-    {
-      "name": "ViewFrom",
-      "kind": "stable"
-    },
-    {
-      "name": "ViewOptions",
-      "kind": "stable"
-    },
-    {
-      "name": "materializedView",
-      "kind": "stable"
-    },
-    {
-      "name": "view",
-      "kind": "stable"
-    }
-  ],
-  "okmodel/otel": [
-    {
-      "name": "OtelAttribute",
-      "kind": "experimental"
-    },
-    {
-      "name": "OtelObservers",
-      "kind": "experimental"
-    },
-    {
-      "name": "OtelOptions",
-      "kind": "experimental"
-    },
-    {
-      "name": "OtelSpan",
-      "kind": "experimental"
-    },
-    {
-      "name": "OtelSpanOptions",
-      "kind": "experimental"
-    },
-    {
-      "name": "OtelStatusCode",
-      "kind": "experimental"
-    },
-    {
-      "name": "OtelTracer",
-      "kind": "experimental"
-    },
-    {
-      "name": "otel",
-      "kind": "experimental"
     }
   ]
 }
