@@ -78,7 +78,8 @@ const OP_KEYWORDS = new Set([
   "readonly",
 ]);
 
-type Token = {
+/** One lexed token. Comments and regex literals are skipped. */
+export type Token = {
   readonly kind: "ident" | "string" | "template" | "punct";
   readonly text: string;
   readonly index: number;
@@ -136,7 +137,7 @@ export function discoverProjectRaw(cwd: string, include?: readonly string[]): re
 function callsInFile(path: string, text: string): readonly RawCall[] {
   const jsx = path.endsWith(".tsx");
   const tokens = tokenize(text, jsx);
-  const names = importedRaw(tokens);
+  const names = importedNames(tokens, "raw", RAW_MODULE);
   if (names.size === 0) return [];
   const calls: RawCall[] = [];
   for (let index = 0; index < tokens.length; index += 1) {
@@ -185,14 +186,26 @@ function staticString(file: string, line: number): OkmError {
   );
 }
 
-function importedRaw(tokens: readonly Token[]): ReadonlySet<string> {
+/**
+ * Local names a file binds to one value import.
+ *
+ * @param tokens - Tokens of the file
+ * @param imported - Exported name, such as `raw`
+ * @param module - Required specifier, or `undefined` for any module
+ * @returns The local names, including an `as` alias
+ */
+export function importedNames(
+  tokens: readonly Token[],
+  imported: string,
+  module: string | undefined,
+): ReadonlySet<string> {
   const names = new Set<string>();
   for (let index = 0; index < tokens.length; index += 1) {
     const token = tokens[index];
     if (token === undefined || token.kind !== "ident" || token.text !== "import") continue;
     const next = tokens[index + 1];
     if (next?.kind === "punct" && (next.text === "(" || next.text === ".")) continue;
-    const bound = readImport(tokens, index + 1);
+    const bound = readImport(tokens, index + 1, imported, module);
     if (bound === undefined) continue;
     for (const name of bound.names) names.add(name);
     index = bound.end;
@@ -203,6 +216,8 @@ function importedRaw(tokens: readonly Token[]): ReadonlySet<string> {
 function readImport(
   tokens: readonly Token[],
   start: number,
+  wanted: string,
+  module: string | undefined,
 ): { readonly names: readonly string[]; readonly end: number } | undefined {
   let index = start;
   let typeOnly = false;
@@ -247,13 +262,13 @@ function readImport(
         local = alias.text;
         index += 2;
       }
-      if (!specifierType && imported.text === "raw") names.push(local);
+      if (!specifierType && imported.text === wanted) names.push(local);
       if (tokens[index]?.kind === "punct" && tokens[index]?.text === ",") index += 1;
     }
   }
   if (tokens[index]?.kind === "ident" && tokens[index]?.text === "from") index += 1;
   const specifier = tokens[index];
-  if (specifier?.kind !== "string" || specifier.text !== RAW_MODULE)
+  if (specifier?.kind !== "string" || (module !== undefined && specifier.text !== module))
     return { names: [], end: index };
   if (typeOnly) return { names: [], end: index };
   return { names, end: index };
@@ -277,7 +292,14 @@ function callParen(tokens: readonly Token[], index: number): number | undefined 
   return undefined;
 }
 
-function splitArgs(
+/**
+ * Splits call arguments at depth one.
+ *
+ * @param tokens - Tokens of the file
+ * @param start - Index after the opening `(`
+ * @returns The argument token lists and the index of the closing `)`
+ */
+export function splitArgs(
   tokens: readonly Token[],
   start: number,
 ): { readonly args: readonly (readonly Token[])[]; readonly end: number } {
@@ -312,7 +334,8 @@ function splitArgs(
   return { args, end: tokens.length - 1 };
 }
 
-function tokenize(source: string, jsx: boolean): readonly Token[] {
+/** Lexes a TypeScript or TSX source. */
+export function tokenize(source: string, jsx: boolean): readonly Token[] {
   const tokens: Token[] = [];
   lex(source, 0, source.length, tokens, jsx, 0);
   return tokens;
@@ -569,7 +592,8 @@ function skipNumber(source: string, index: number): number {
   return cursor;
 }
 
-function lineAt(source: string, index: number): number {
+/** One-based line of a source offset. */
+export function lineAt(source: string, index: number): number {
   let line = 1;
   for (let cursor = 0; cursor < index && cursor < source.length; cursor += 1) {
     if (source[cursor] === "\n") line += 1;

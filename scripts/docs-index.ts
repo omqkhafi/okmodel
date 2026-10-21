@@ -134,8 +134,8 @@ export const INDEX_ENTRIES: readonly IndexEntry[] = [
   },
   {
     path: "docs/warnings.md",
-    purpose: "Development warnings for offset, order, value lists, and includes.",
-    when: "Read this when a query should report OKM2xxx advice.",
+    purpose: "Development warnings and the okm check schema rules for keys and indexes.",
+    when: "Read this when a query or a schema should report OKM2xxx advice.",
     group: "query",
   },
   {

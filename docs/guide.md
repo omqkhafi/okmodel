@@ -131,7 +131,7 @@ Tested on PostgreSQL 15 to 18.
 `schema.ts`:
 
 ```ts
-import { one, schema, table, t } from "okmodel/pg";
+import { index, one, schema, table, t } from "okmodel/pg";
 
 const authors = table("authors", {
   id: t.identity(),
@@ -149,6 +149,8 @@ const notes = table(
   {
     // find({ include: { author: true } }) loads this.
     relations: { author: one("authors") },
+    // A foreign key needs an index that starts with its column (OKM2101).
+    indexes: (columns) => [index(columns.authorId)],
   },
 );
 

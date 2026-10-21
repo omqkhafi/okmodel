@@ -72,7 +72,14 @@ import {
   type MigrationPlan,
   type PlanStep,
 } from "./plan.js";
+import { projectFilterUses } from "./filter-scan.js";
 import { hasError, lintCatalog, lintPlan, lintRefusal, type Finding } from "./lint.js";
+import {
+  adviceRefusal,
+  schemaAdvice,
+  type IgnoreReport,
+  type SchemaAdvice,
+} from "./schema-rules.js";
 import { parseReplace } from "./values.js";
 
 export type { ProjectContext };
@@ -186,11 +193,18 @@ export type CheckProjectResult = {
    */
   readonly emulation?: string;
   /**
-   * Project ignores from `defineConfig({ warnings })`.
+   * Project ignores from `defineConfig({ warnings })`, with `applied` or
+   * `stale` on a rule `okm check` evaluates.
    *
    * Absent when the config lists none. `okm check` prints them.
    */
-  readonly ignores?: readonly { readonly rule: string; readonly reason: string }[];
+  readonly ignores?: readonly IgnoreReport[];
+  /**
+   * Schema rule findings (OKM2101 to OKM2103) that are not ignored and not
+   * `off`. Absent when there are none. A finding at level `error` throws
+   * instead.
+   */
+  readonly advice?: readonly SchemaAdvice[];
 };
 
 /**
@@ -250,10 +264,20 @@ export async function checkProject(
     ...(await rawOfflineFindings(cwd, opened.config)),
   ];
   if (hasError(findings)) throw lintRefusal(findings);
+  const { advice, ignores } = schemaAdvice(
+    opened.built,
+    projectFilterUses(cwd, opened.config),
+    opened.config.warnings ?? {},
+  );
+  const refusal = adviceRefusal(advice);
+  if (refusal !== undefined) throw refusal;
   const named = flags?.target;
   const finish = (result: CheckProjectResult): CheckProjectResult => {
-    const ignores = opened.config.warnings?.ignore;
-    const listed = ignores === undefined || ignores.length === 0 ? result : { ...result, ignores };
+    const listed = {
+      ...result,
+      ...(advice.length > 0 ? { advice } : {}),
+      ...(ignores.length > 0 ? { ignores } : {}),
+    };
     return checked(listed, emulation);
   };
   if (targets.length === 0) return finish({ findings });
