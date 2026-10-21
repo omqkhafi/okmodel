@@ -9,6 +9,7 @@
 import { OkmError, type ErrorCategory, type ErrorKind } from "../../contracts/error.js";
 import { sessionFailure } from "../migrate/lost.js";
 import type { CliNoticeLevel, CliNoticeSeverity, CliWarningBody } from "../cli/outcome.js";
+import { untrustedText, type UntrustedText } from "../untrusted.js";
 import { errorDoc, type ErrorDoc } from "./registry.js";
 import {
   errorDocsPath,
@@ -32,6 +33,7 @@ export type CliErrorBody = {
   readonly safeAlternatives?: readonly CliSafeAlternative[];
   readonly docs?: string;
   readonly escapeHatches?: readonly CliEscapeHatch[];
+  readonly detail?: UntrustedText;
 };
 
 /**
@@ -46,7 +48,8 @@ export type CliErrorBody = {
 export function errorBody(error: unknown): CliErrorBody {
   const mapped = sessionFailure(error) ?? OkmError.from(error);
   const doc = errorDoc(mapped.code);
-  const detail = readCliDetail(mapped) ?? readCliDetail(error);
+  const attached = readCliDetail(mapped) ?? readCliDetail(error);
+  const leaked = attached?.detail ?? databaseDetail(mapped);
   const body: {
     code: string;
     kind: ErrorKind;
@@ -59,16 +62,20 @@ export function errorBody(error: unknown): CliErrorBody {
     safeAlternatives?: readonly CliSafeAlternative[];
     docs?: string;
     escapeHatches?: readonly CliEscapeHatch[];
+    detail?: UntrustedText;
   } = {
     code: mapped.code,
     kind: mapped.kind,
     category: mapped.category,
-    summary: mapped.message,
-    fix: mapped.fix.summary,
+    summary:
+      leaked === undefined
+        ? mapped.message
+        : (doc?.summary ?? `A database error was returned (${mapped.kind}).`),
+    fix: fixOf(mapped, doc, leaked !== undefined),
     retryable: mapped.retryable,
   };
-  if (detail?.location !== undefined) body.location = detail.location;
-  if (detail?.fixEdit !== undefined) body.fixEdit = detail.fixEdit;
+  if (attached?.location !== undefined) body.location = attached.location;
+  if (attached?.fixEdit !== undefined) body.fixEdit = attached.fixEdit;
   if (doc !== undefined) {
     if (doc.safeAlternatives !== undefined && doc.safeAlternatives.length > 0) {
       body.safeAlternatives = doc.safeAlternatives;
@@ -78,7 +85,32 @@ export function errorBody(error: unknown): CliErrorBody {
       body.escapeHatches = doc.escapeHatches;
     }
   }
+  if (leaked !== undefined) body.detail = leaked;
   return body;
+}
+
+function databaseDetail(mapped: OkmError): UntrustedText | undefined {
+  const fromDriver =
+    mapped.code === "driver" ||
+    mapped.code === "unavailable" ||
+    mapped.sqlstate !== undefined ||
+    mapped.constraint !== undefined;
+  if (!fromDriver) return undefined;
+  const origin =
+    mapped.constraint !== undefined && mapped.message === mapped.constraint
+      ? "constraint.name"
+      : "db.error";
+  return untrustedText(mapped.message, origin);
+}
+
+function fixOf(mapped: OkmError, doc: ErrorDoc | undefined, leaked: boolean): string {
+  const thrown = mapped.fix.summary;
+  if (!leaked) return thrown;
+  const bits = [mapped.message, mapped.constraint, mapped.table].filter(
+    (bit): bit is string => bit !== undefined && bit.length > 0,
+  );
+  if (bits.some((bit) => thrown.includes(bit))) return doc?.fix ?? "See the detail.";
+  return thrown;
 }
 
 /**

@@ -7,6 +7,7 @@
 
 import { sha256 } from "../../contracts/sha256.js";
 import { errorBody as buildErrorBody, type CliErrorBody } from "../errors/body.js";
+import { renderUntrusted } from "../untrusted.js";
 import type { CliOutFile, CliTargetBody, CliWarningBody, ExitCode } from "./outcome.js";
 
 export type { CliErrorBody };
@@ -85,7 +86,9 @@ export function terseStderr(error: unknown, tty: boolean): string {
   if (!tty) return "";
   const body = errorBody(error);
   const summary = body.summary.split("\n")[0] ?? body.summary;
-  return `error ${body.code}: ${summary}\n`;
+  const line = `error ${body.code}: ${summary}\n`;
+  if (body.detail === undefined) return line;
+  return `${line}${renderUntrusted(body.detail)}\n`;
 }
 
 /**

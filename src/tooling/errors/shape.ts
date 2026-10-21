@@ -6,6 +6,8 @@
  * here, and the registry supplies the rest.
  */
 
+import type { UntrustedText } from "../untrusted.js";
+
 const DETAIL = Symbol.for("okm.cli.errorDetail");
 
 /** Where a producer can point, when it knows. */
@@ -33,10 +35,12 @@ export type CliEscapeHatch = {
   readonly docs: string;
 };
 
-/** Location and edit a producer attached to an error. */
+/** Location, edit, or database text a producer attached to an error. */
 export type CliErrorDetail = {
   readonly location?: CliErrorLocation;
   readonly fixEdit?: CliFixEdit;
+  /** Database or catalog text. It is not copied into `summary` or `fix`. */
+  readonly detail?: UntrustedText;
 };
 
 /**

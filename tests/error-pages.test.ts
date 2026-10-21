@@ -113,7 +113,17 @@ test("one error object per code matches the errors schema", () => {
     expect(bypassTokensIn(body.fix)).toEqual([]);
   }
   const driver = errorBody(new OkmError("driver", "driver error", { kind: "driver" }));
-  expect(Object.keys(driver)).toEqual(["code", "kind", "category", "summary", "fix", "retryable"]);
+  expect(Object.keys(driver)).toEqual([
+    "code",
+    "kind",
+    "category",
+    "summary",
+    "fix",
+    "retryable",
+    "detail",
+  ]);
+  expect(driver.summary.includes("driver error")).toBe(false);
+  expect(driver.detail?.text).toBe("driver error");
   expect(schemaProblems(schema, [driver])).toEqual([]);
   const bodies = ERROR_DOCS.map((doc) =>
     errorBody(new OkmError(doc.code, doc.summary, { fix: { summary: doc.fix } })),

@@ -6,11 +6,15 @@
  */
 
 export {
+  OPERATION_CLASS,
   STEP_CLASS,
   STEP_KINDS,
   classOf,
   isStepKind,
+  operationClassOf,
   strictestClass,
+  strictestOperation,
   type MigrationClass,
+  type OperationClass,
   type StepKind,
 } from "../../dialects/step-class.js";

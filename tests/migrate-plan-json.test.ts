@@ -56,6 +56,12 @@ test("json locks and classes match the human plan, including an estimate", () =>
   );
   expect(document.findings[0]?.code).toBe("OKM1540");
   expect(document.steps[0]?.lock).toContain("about 4.2M rows");
+  expect(document.steps[0]?.operationClass).toBe("additive");
+  expect(document.operationClass).toBe("additive");
+  expect(document.requiresAck).toBe(false);
+  const reason = document.findings[0]?.reason;
+  expect(typeof reason).toBe("object");
+  if (typeof reason === "object") expect(reason.text).toBe("is varchar");
 });
 
 test("okm migrate plan --json prints a document and matches the human plan", async () => {
@@ -79,6 +85,9 @@ test("okm migrate plan --json prints a document and matches the human plan", asy
       lockLines(human),
     );
     expect(document.steps.length).toBeGreaterThan(0);
+    expect(document.fromCatalogHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(document.toCatalogHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(document.planHash).toMatch(/^[0-9a-f]{64}$/);
     expect(json).not.toContain("-- class:");
   } finally {
     rmSync(cwd, { recursive: true, force: true });
