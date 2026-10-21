@@ -21,24 +21,26 @@ type TaskRow = {
 
 expectTypeOf<Row<"tasks", typeof appSchema>>().toEqualTypeOf<TaskRow>();
 
-expectTypeOf<Insert<"tasks", typeof appSchema>>().toEqualTypeOf<{
+type Flat<T> = { [K in keyof T]: T[K] };
+
+expectTypeOf<Flat<Insert<"tasks", typeof appSchema>>>().toEqualTypeOf<{
   readonly ownerId: string;
   readonly title: string;
-  readonly status: "draft" | "active" | "done" | undefined;
-  readonly notes: string | null | undefined;
-  readonly payload: unknown;
+  readonly status?: "draft" | "active" | "done" | undefined;
+  readonly notes?: string | null | undefined;
+  readonly payload?: unknown;
   readonly secret: string;
-  readonly position: number | undefined;
+  readonly position?: number | undefined;
 }>();
 
 expectTypeOf<Update<"tasks", typeof appSchema>>().toEqualTypeOf<{
-  readonly ownerId: string | undefined;
-  readonly title: string | undefined;
-  readonly status: "draft" | "active" | "done" | undefined;
-  readonly notes: string | null | undefined;
-  readonly payload: unknown;
-  readonly secret: string | undefined;
-  readonly position: number | undefined;
+  readonly ownerId?: string | undefined;
+  readonly title?: string | undefined;
+  readonly status?: "draft" | "active" | "done" | undefined;
+  readonly notes?: string | null | undefined;
+  readonly payload?: unknown;
+  readonly secret?: string | undefined;
+  readonly position?: number | undefined;
 }>();
 
 expectTypeOf<Row<"users", typeof appSchema>>().toEqualTypeOf<{
@@ -47,9 +49,9 @@ expectTypeOf<Row<"users", typeof appSchema>>().toEqualTypeOf<{
   readonly nickname: string | null;
 }>();
 
-expectTypeOf<Insert<"users", typeof appSchema>>().toEqualTypeOf<{
+expectTypeOf<Flat<Insert<"users", typeof appSchema>>>().toEqualTypeOf<{
   readonly email: string;
-  readonly nickname: string | null | undefined;
+  readonly nickname?: string | null | undefined;
 }>();
 
 expectTypeOf<Tasks>().toEqualTypeOf<Row<"tasks", typeof appSchema>>();

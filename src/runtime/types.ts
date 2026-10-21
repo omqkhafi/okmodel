@@ -7,6 +7,7 @@
 
 import type { DriverCapabilities, DriverTimeouts, Notice } from "../contracts/driver.js";
 import type { SafeResult } from "../contracts/error.js";
+import type { OptionalInsert, RequiredInsert } from "../contracts/rows.js";
 import type { QuerySchema } from "../dialects/pg/model.js";
 import type { Bucket } from "../dialects/pg/ops/bucket.js";
 import type { Window } from "../dialects/pg/ops/window.js";
@@ -615,26 +616,7 @@ export type Router = {
   }): RoutingDecision;
 };
 
-/**
- * Required keys of an insert row.
- *
- * A key whose value includes `undefined` is optional. Marking it required makes
- * the editor offer only the property under the cursor (D139).
- *
- * @typeParam T - Insert shape
- */
-export type RequiredInsert<T> = {
-  readonly [K in keyof T as undefined extends T[K] ? never : K]: T[K];
-};
-
-/**
- * Optional keys of an insert row.
- *
- * @typeParam T - Insert shape
- */
-export type OptionalInsert<T> = {
-  readonly [K in keyof T as undefined extends T[K] ? K : never]?: T[K];
-};
+export type { OptionalInsert, RequiredInsert };
 
 /** Insert shape of one table. */
 export type InsertOf<
