@@ -1571,6 +1571,76 @@
     ]
   },
   {
+    "code": "OKM2101",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "No index starts with the columns of this foreign key, so a parent delete or key change scans the child table.",
+    "fix": "Add an index that starts with the foreign key columns.",
+    "retryable": false,
+    "safeAlternatives": [
+      {
+        "text": "Add an index that starts with the foreign key columns.",
+        "docs": "docs/errors/OKM2101.md#page"
+      }
+    ],
+    "docs": "docs/errors/OKM2101.md",
+    "escapeHatches": [
+      {
+        "name": "ignore",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM2101.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM2102",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A table with no primary key has no stable row identity for updates and deletes.",
+    "fix": "Declare a primary key on the table.",
+    "retryable": false,
+    "safeAlternatives": [
+      {
+        "text": "Declare a primary key on the table.",
+        "docs": "docs/errors/OKM2102.md#page"
+      }
+    ],
+    "docs": "docs/errors/OKM2102.md",
+    "escapeHatches": [
+      {
+        "name": "ignore",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM2102.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM2103",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "Callers can filter or sort by this column and no index starts with it, so each read scans the table.",
+    "fix": "Add an index that starts with the column, or remove the column from the allowlist or preset.",
+    "retryable": false,
+    "safeAlternatives": [
+      {
+        "text": "Add an index that starts with the column.",
+        "docs": "docs/errors/OKM2103.md#page"
+      },
+      {
+        "text": "Remove the column from the filters allowlist, the sort list, or the preset.",
+        "docs": "docs/errors/OKM2103.md#page"
+      }
+    ],
+    "docs": "docs/errors/OKM2103.md",
+    "escapeHatches": [
+      {
+        "name": "ignore",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM2103.md#escape"
+      }
+    ]
+  },
+  {
     "code": "OKM2200",
     "kind": "invalid",
     "category": "input",

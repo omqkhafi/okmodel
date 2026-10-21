@@ -86,6 +86,7 @@ import type { CommittedStep, StepEngine, StepJournal } from "../migrate/step-eng
 import type { PageExample } from "./page.js";
 import { assertLocked, assertSignature, staleLockCodes } from "../describe/lock.js";
 import { discoverRawCalls } from "../describe/scan.js";
+import { schemaAdvice } from "../migrate/schema-rules.js";
 
 /** Codes whose producer reads a live server. */
 export const NEEDS_DATABASE = [
@@ -1878,6 +1879,73 @@ thrown(
       include: { comments: { limit: 100 } },
     });
   },
+);
+
+function adviceCodes(built: ReturnType<typeof schema>): readonly string[] {
+  return schemaAdvice(built, [], {}).advice.map((item) => item.code);
+}
+
+reported(
+  "OKM2101",
+  () =>
+    adviceCodes(
+      schema({
+        tables: [
+          table("users", { id: t.identity() }),
+          table("posts", { id: t.identity(), authorId: t.bigint().references("users") }),
+        ],
+      }),
+    ),
+  () =>
+    adviceCodes(
+      schema({
+        tables: [
+          table("users", { id: t.identity() }),
+          table(
+            "posts",
+            { id: t.identity(), authorId: t.bigint().references("users") },
+            { indexes: (columns) => [index(columns.authorId)] },
+          ),
+        ],
+      }),
+    ),
+);
+
+reported(
+  "OKM2102",
+  () => adviceCodes(schema({ tables: [table("events", { name: t.text() })] })),
+  () => adviceCodes(schema({ tables: [table("events", { id: t.identity(), name: t.text() })] })),
+);
+
+reported(
+  "OKM2103",
+  () =>
+    adviceCodes(
+      schema({
+        tables: [
+          table(
+            "tasks",
+            { id: t.identity(), status: t.text() },
+            { presets: { pending: (q) => q.where({ status: "pending" }) } },
+          ),
+        ],
+      }),
+    ),
+  () =>
+    adviceCodes(
+      schema({
+        tables: [
+          table(
+            "tasks",
+            { id: t.identity(), status: t.text() },
+            {
+              presets: { pending: (q) => q.where({ status: "pending" }) },
+              indexes: (columns) => [index(columns.status)],
+            },
+          ),
+        ],
+      }),
+    ),
 );
 
 function withColumn(

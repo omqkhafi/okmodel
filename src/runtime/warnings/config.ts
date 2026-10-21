@@ -79,19 +79,26 @@ export function parseWarningOptions(value: WarningOptions | undefined): ParsedWa
 export function readCallIgnore(value: unknown): readonly WarningIgnore[] {
   if (value === undefined) return [];
   const list = Array.isArray(value) ? value : [value];
-  return list.map(readIgnore);
+  return list.map((item) => readIgnore(item, false));
 }
 
 function readIgnoreList(value: unknown): readonly WarningIgnore[] {
   if (value === undefined) return [];
   if (!Array.isArray(value)) fail("warnings.ignore must be a list.");
-  return value.map(readIgnore);
+  return value.map((item) => readIgnore(item, true));
 }
 
-function readIgnore(value: unknown): WarningIgnore {
+function readIgnore(value: unknown, allowTarget: boolean): WarningIgnore {
   if (!isWarningRecord(value)) fail("An ignore is { rule, reason }.");
   for (const key of Object.keys(value)) {
-    if (key !== "rule" && key !== "reason") fail("An ignore only has rule and reason.");
+    if (key === "target" && allowTarget) continue;
+    if (key !== "rule" && key !== "reason") {
+      fail(
+        allowTarget
+          ? "An ignore only has rule, reason, and target."
+          : "An ignore only has rule and reason.",
+      );
+    }
   }
   if (typeof value.rule !== "string" || !RULE_ID.test(value.rule)) {
     fail("An ignore rule is a kebab-case id.");
@@ -99,7 +106,11 @@ function readIgnore(value: unknown): WarningIgnore {
   if (typeof value.reason !== "string" || value.reason.trim() === "") {
     fail("An ignore needs a reason.");
   }
-  return { rule: value.rule, reason: value.reason.trim() };
+  if (value.target === undefined) return { rule: value.rule, reason: value.reason.trim() };
+  if (typeof value.target !== "string" || value.target.trim() === "") {
+    fail("An ignore target is a table or table.column name.");
+  }
+  return { rule: value.rule, reason: value.reason.trim(), target: value.target.trim() };
 }
 
 function readLevels(value: unknown): Readonly<Record<string, WarningLevel>> | undefined {

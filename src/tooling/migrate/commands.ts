@@ -36,6 +36,7 @@ import { commandsTable, helpText } from "../cli/spec.js";
 import { schemaCommands, schemaFor, schemaText } from "../cli/schema.js";
 import { readPackageVersion } from "../cli/version.js";
 import { formatFindings, hasError, lintRefusal, type Finding } from "./lint.js";
+import { formatAdvice, type IgnoreReport } from "./schema-rules.js";
 import { sessionFailure } from "./lost.js";
 import { guardStoredDriverUrl } from "./policy.js";
 import { protectedStorePath } from "./protected-store.js";
@@ -326,10 +327,9 @@ async function check(
   if (checked.emulation !== undefined) text += checked.emulation;
   if (checked.notice !== undefined) text += checked.notice;
   text += formatFindings(checked.findings);
+  text += formatAdvice(checked.advice ?? []);
   const listed = checked.ignores ?? [];
-  for (const item of listed) {
-    text += `ignore ${item.rule}: ${renderUntrusted(untrustedText(item.reason, "user.query"))}\n`;
-  }
+  for (const item of listed) text += `${ignoreLine(item)}\n`;
   text += "ok\n";
   human(text);
   const data: {
@@ -339,6 +339,8 @@ async function check(
     ignores?: readonly {
       readonly rule: string;
       readonly reason: ReturnType<typeof untrustedText>;
+      readonly target?: string;
+      readonly status?: "applied" | "stale";
     }[];
   } = { status: "ok" };
   if (checked.notice !== undefined) data.notice = checked.notice;
@@ -347,6 +349,8 @@ async function check(
     data.ignores = listed.map((item) => ({
       rule: item.rule,
       reason: untrustedText(item.reason, "user.query"),
+      ...(item.target !== undefined ? { target: item.target } : {}),
+      ...(item.status !== undefined ? { status: item.status } : {}),
     }));
   }
   return {
@@ -354,17 +358,37 @@ async function check(
     data,
     warnings: [
       ...warningsOf(checked.findings),
+      ...(checked.advice ?? []).map((item) =>
+        warningBody({
+          code: item.code,
+          summary: item.reason,
+          place: item.target,
+          fix: item.fix,
+          level: item.level === "hint" ? "hint" : "warn",
+          severity: item.severity,
+          ...(item.location !== undefined ? { location: item.location } : {}),
+        }),
+      ),
       ...listed.map((item) =>
         warningBody({
-          summary: "A project rule is ignored.",
-          place: item.rule,
-          level: "hint",
+          summary:
+            item.status === "stale"
+              ? "A project ignore matched nothing."
+              : "A project rule is ignored.",
+          place: item.target === undefined ? item.rule : `${item.rule} ${item.target}`,
+          level: item.status === "stale" ? "warn" : "hint",
           severity: "low",
         }),
       ),
     ],
     outFile: null,
   };
+}
+
+function ignoreLine(item: IgnoreReport): string {
+  const head = item.target === undefined ? item.rule : `${item.rule} ${item.target}`;
+  const stale = item.status === "stale" ? " (stale: matched nothing)" : "";
+  return `ignore ${head}${stale}: ${renderUntrusted(untrustedText(item.reason, "user.query"))}`;
 }
 
 async function dev(project: ProjectContext, human: (text: string) => void): Promise<Produced> {

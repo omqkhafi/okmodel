@@ -91,6 +91,9 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `bun ./scripts/size-attribution.ts` prints minified bytes and a gzip share for each source module on every gated graph from `scripts/size.ts`. It fails when a total differs from that script. `--update` rewrites `tests/fixtures/size-attribution.json`. The pull-request job `inform / size` prints the delta and is not a required check.
 - `bun ./scripts/dead-exports.ts` lists exports under `src/` that nothing in `src/`, `tests/`, or `scripts/` imports and that are not on the public API surface.
 - `bun ./scripts/duplicates.ts` lists duplicate and near-duplicate function bodies and repeated large literals under `src/`.
+- `okm check` runs three schema warning rules offline: OKM2101 (`unindexed-foreign-key`, no index starts with a foreign key's columns, a composite index that starts with them counts), OKM2102 (`table-without-primary-key`), and OKM2103 (`unindexed-filter-column`, a column in a `filters()` allow or sort list or used by a preset with no index that starts with it; a primary key, a unique index, and the tenant prefix count). Each is medium severity, default level `warn`, phase `check`, evidence `static`. Findings print one per line and fill `warnings[]` with `place` set to `table` or `table.column`. Exit stays 0. `warnings.levels` sets `off`, `hint`, `warn`, or `error`; `error` exits non-zero with the rule code. A rule that cannot decide (an expression index, a preset that needs its arguments, a `filters()` field that is not a literal) stays silent.
+- `filters()` keeps nothing at runtime, so `okm check` reads it from source with the `okm raw sync` lexer: the `raw.include` files (default `src/**`), the schema file, and the `tables` directory. Only literal `allow` keys and `sort` strings on a receiver bound to one `table("name", ...)` count.
+- A project warning ignore takes an optional `target` (`events` or `orders.user_id`, SQL names). `okm check --json` adds `target` and `status` (`applied` or `stale`) to each `data.ignores` entry. An ignore for an OKM2101 to OKM2103 rule that matched nothing is `stale` and is also reported as a warning. `schemas/cli-1/check.json` gains those two optional fields.
 
 #### docs
 
@@ -111,6 +114,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - [Capabilities](docs/capabilities.md) is generated from the Postgres feature registry. A feature whose proof title does not pass the registry proof check is `unverified`. `docs:check` fails when that page, a `<!-- support: key -->` block, or the step-kind table in [When a migration fails](docs/migration-failure.md) disagrees with the code.
 - [Warnings](docs/warnings.md) records the levels, the development defaults, and the four static rules.
 - [Size audit](docs/size-audit.md) records where the gated bytes go, every unused export, and every duplicate group. It is an internal note and is not packed.
+- [Warnings](docs/warnings.md) lists OKM2101, OKM2102, and OKM2103, the `target` ignore, the stale report, and when each rule stays silent. Pages for the three codes are generated with the error pages.
 
 ### 💥 Breaking Changes
 
