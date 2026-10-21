@@ -40,6 +40,8 @@ export type ParsedCli = {
   readonly retry: boolean;
   /** `okm migrate resolve --accept-unverified`. Long form only. */
   readonly acceptUnverified: boolean;
+  /** `okm raw sync --check`. Do not write the lock. */
+  readonly check: boolean;
   /** Positionals after the command words. */
   readonly operands: readonly string[];
 };
@@ -48,6 +50,7 @@ const GROUP_FIX: Readonly<Record<string, string>> = {
   migrate: "Use okm migrate plan, apply, status, resolve, check, or baseline.",
   ext: "Use okm ext list, okm ext check, okm ext scaffold, or okm ext test.",
   catalog: "Use okm catalog export.",
+  raw: "Use okm raw sync.",
   import: "Use okm import drizzle <path>.",
   driver: "Use okm driver test <driver>.",
 };
@@ -168,6 +171,7 @@ export function parseCli(argv: readonly string[]): ParsedCli {
     applied: values.applied === true,
     retry: values.retry === true,
     acceptUnverified: values["accept-unverified"] === true,
+    check: values.check === true,
     operands,
   };
 }
@@ -195,6 +199,7 @@ function blank(flags: { readonly help: boolean; readonly json: boolean }): Parse
     applied: false,
     retry: false,
     acceptUnverified: false,
+    check: false,
     operands: [],
   };
 }

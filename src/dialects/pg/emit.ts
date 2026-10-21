@@ -245,7 +245,66 @@ function scalarLabel(state: ColumnState<unknown>, jsonArg: string | undefined): 
   if (state.typeLabel !== undefined) {
     return state.typeLabel;
   }
-  const base = baseName(state.baseType);
+  return pgScalarType(baseName(state.baseType), jsonArg) ?? "unknown";
+}
+
+/** Codec choices that change the TypeScript type of `bigint` and `numeric`. */
+export type PgTypescriptCodecs = {
+  readonly bigint?: "string" | "number" | "bigint";
+  readonly numeric?: "string" | "number";
+};
+
+/**
+ * TypeScript type for one Postgres type name.
+ *
+ * The scalar cases are {@link pgScalarType}, the same switch table columns
+ * use. An enum is a union of its labels. Each `[]` becomes `T[]`. A type
+ * with no codec is `string`, the text the driver returns.
+ *
+ * @param pgType - Dialect type name, such as `integer` or `mood[]`
+ * @param options - Enum labels and schema codecs
+ * @returns A TypeScript type expression
+ */
+export function typescriptForPgType(
+  pgType: string,
+  options?: {
+    readonly enumLabels?: readonly string[];
+    readonly codecs?: PgTypescriptCodecs;
+  },
+): string {
+  let rest = pgType.trim();
+  let ranks = 0;
+  while (rest.endsWith("[]")) {
+    ranks += 1;
+    rest = rest.slice(0, -2).trim();
+  }
+  const labels = options?.enumLabels;
+  let label =
+    labels !== undefined
+      ? labels.length === 0
+        ? "never"
+        : labels.map((item) => JSON.stringify(item)).join(" | ")
+      : (pgScalarType(baseName(rest), "unknown", options?.codecs) ?? "string");
+  if (ranks > 0 && label.includes(" | ")) label = `(${label})`;
+  for (let rank = 0; rank < ranks; rank += 1) label = `${label}[]`;
+  return label;
+}
+
+/**
+ * Scalar TypeScript type for a Postgres base name.
+ *
+ * `undefined` means the dialect has no codec for that name.
+ *
+ * @param base - Name from {@link baseName}
+ * @param jsonArg - Type argument for `json` and `jsonb`
+ * @param codecs - Schema codecs. Omitted, `bigint` and `numeric` are `string`
+ * @returns The type expression, or `undefined` when there is no codec
+ */
+function pgScalarType(
+  base: string,
+  jsonArg: string | undefined,
+  codecs?: PgTypescriptCodecs,
+): string | undefined {
   switch (base) {
     case "smallint":
     case "integer":
@@ -253,7 +312,9 @@ function scalarLabel(state: ColumnState<unknown>, jsonArg: string | undefined): 
     case "double precision":
       return "number";
     case "bigint":
+      return codecs?.bigint ?? "string";
     case "numeric":
+      return codecs?.numeric ?? "string";
     case "text":
     case "varchar":
     case "char":
@@ -300,7 +361,7 @@ function scalarLabel(state: ColumnState<unknown>, jsonArg: string | undefined): 
     case "line":
       return "{ readonly a: number; readonly b: number; readonly c: number }";
     default:
-      return "unknown";
+      return undefined;
   }
 }
 

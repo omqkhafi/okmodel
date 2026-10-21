@@ -235,7 +235,12 @@ export async function checkProject(
     }
   }
   assertSnapshots(cwd, opened.config, opened.built.catalog);
-  const findings = [...lintOpened(opened), ...couplingFindings(opened.built.catalog)];
+  const { rawOfflineFindings, rawOnlineCheck } = await import("../describe/command.js");
+  const findings = [
+    ...lintOpened(opened),
+    ...couplingFindings(opened.built.catalog),
+    ...(await rawOfflineFindings(cwd, opened.config)),
+  ];
   if (hasError(findings)) throw lintRefusal(findings);
   const named = flags?.target;
   if (targets.length === 0) return checked({ findings }, emulation);
@@ -257,6 +262,7 @@ export async function checkProject(
   await assertSchemaMajor(target.url, opened.built);
   await assertAuthorDrift(target.url, opened.built.catalog, opened.config.roles, allowPooler);
   await assertSchemaExtensions(target.url, opened.built, created);
+  await rawOnlineCheck(cwd, opened.config, target.url, allowPooler);
   return checked({ findings }, emulation);
 }
 
