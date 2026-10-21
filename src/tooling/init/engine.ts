@@ -81,6 +81,16 @@ export type InitData = {
   readonly planHash: string;
   readonly install: boolean;
   readonly note?: string;
+  /** `single` is one package. `per-service` and `shared` are monorepo layouts. */
+  readonly layout?: "single" | "per-service" | "shared";
+  /** Packages this init writes. Absent for one package. */
+  readonly workspaces?: readonly {
+    readonly path: string;
+    readonly driver: InitDriver;
+    readonly config: string;
+  }[];
+  /** `okmodel.base.ts`, when this init writes it. */
+  readonly base?: string;
 };
 
 /** One file apply may write. */
@@ -97,6 +107,8 @@ export type InitPlan = {
   readonly writes: readonly InitWrite[];
   readonly warnings: readonly { readonly summary: string }[];
   readonly install: boolean;
+  /** Set when two packages would share one migrations directory. */
+  readonly collision?: { readonly packages: readonly string[]; readonly directory: string };
 };
 
 /** Choices that select file bodies. */
@@ -111,6 +123,10 @@ export type InitChoices = {
   readonly install: boolean;
   readonly versions: PackageVersions;
   readonly dryRun: boolean;
+  /** Config body. The default is {@link configText} for `dir`. */
+  readonly configSource?: string;
+  /** Dependency spec for `okmodel`. The default is a plain range. */
+  readonly okmodelSpec?: string;
 };
 
 /**
@@ -255,11 +271,17 @@ export function buildPlan(choices: InitChoices): InitPlan {
   desired.set(`${choices.dir}/schema.ts`, schemaText(choices.tenancy));
   desired.set(`${choices.dir}/client.ts`, clientText(driver));
   desired.set("migrations/.gitkeep", "\n");
-  desired.set(CONFIG_FILE, configText(choices.dir));
+  desired.set(CONFIG_FILE, choices.configSource ?? configText(choices.dir));
 
   desired.set(".gitattributes", initGitAttributes());
 
-  const patched = patchPackageJson(scan.packageText, choices.pm, driver, choices.versions);
+  const patched = patchPackageJson(
+    scan.packageText,
+    choices.pm,
+    driver,
+    choices.versions,
+    choices.okmodelSpec,
+  );
   desired.set("package.json", patched.text);
 
   const files: Planned[] = [];
@@ -346,9 +368,15 @@ export function buildPlan(choices: InitChoices): InitPlan {
  * @param root - Project directory
  * @param dir - Base directory used for the allowlist
  * @param writes - Files in apply order
+ * @param allowList - Paths this call may write. The default is {@link initAllowlist}
  */
-export function applyWrites(root: string, dir: string, writes: readonly InitWrite[]): void {
-  const allow = new Set(initAllowlist(dir));
+export function applyWrites(
+  root: string,
+  dir: string,
+  writes: readonly InitWrite[],
+  allowList?: ReadonlySet<string>,
+): void {
+  const allow = allowList ?? new Set(initAllowlist(dir));
   for (let index = 0; index < writes.length; index += 1) {
     const file = writes[index];
     if (file === undefined) continue;
@@ -691,7 +719,12 @@ function renderHuman(data: InitData, quiet: boolean): string {
   if (data.detection.packageName !== undefined)
     lines.push(renderUntrusted(data.detection.packageName));
   lines.push(`database env: ${data.detection.databaseEnv}`);
-  if (data.detection.ancestorConfig) lines.push("An ancestor directory has okmodel.config.ts.");
+  lines.push(`config: ${CONFIG_FILE}`);
+  if (data.detection.ancestorConfig) {
+    lines.push(
+      "An ancestor directory has okmodel.config.ts. Share settings through okmodel.base.ts instead of a second root.",
+    );
+  }
   if (data.detection.orm.length > 0) lines.push(`orm: ${data.detection.orm.join(", ")}`);
   if (data.note !== undefined) lines.push(data.note);
   for (const file of data.files) {

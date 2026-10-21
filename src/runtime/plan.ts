@@ -580,7 +580,7 @@ export function compileCall(
   const includes: IncludeOut[] = [];
   emit(schema, call, sink, { fields, includes }, hooks);
   return {
-    fingerprint: fingerprint(key),
+    fingerprint: statementFingerprint(key),
     text: parts.join(""),
     mode: call.op,
     outputs: { fields, includes },
@@ -1477,7 +1477,7 @@ export function indexes(schema: QuerySchema): ReadonlyMap<string, Indexed> {
   return built;
 }
 
-function fingerprint(key: string): string {
+export function statementFingerprint(key: string): string {
   let hash = 0xcbf29ce484222325n;
   const prime = 0x100000001b3n;
   const mask = 0xffffffffffffffffn;

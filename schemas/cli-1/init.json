@@ -204,6 +204,45 @@
     },
     "note": {
       "type": "string"
+    },
+    "layout": {
+      "enum": [
+        "single",
+        "per-service",
+        "shared"
+      ]
+    },
+    "base": {
+      "type": "string"
+    },
+    "workspaces": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "driver",
+          "config"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "driver": {
+            "enum": [
+              "postgresjs",
+              "pg",
+              "bun-sql",
+              "pglite",
+              "neon"
+            ]
+          },
+          "config": {
+            "type": "string"
+          }
+        }
+      }
     }
   }
 }

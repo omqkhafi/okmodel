@@ -45,6 +45,7 @@ export const CLOSED_CAPABILITIES = {
 const CLOSED_COST: Readonly<Record<string, string>> = {
   "writeObserver.keys": "none",
   "writeObserver.rowCount": "unknown",
+  "queryObserver.timing": "none",
 };
 
 export function closedRegistry(): Registry {

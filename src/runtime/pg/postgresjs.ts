@@ -65,22 +65,7 @@ export function connect<const S extends QuerySchema>(
         ssl: options.ssl,
       } as PostgresJsConfig)
     : target;
-  return createClient(options.schema, pool, {
-    ownsPool: owned,
-    http: options.errors?.http,
-    includeValues: options.errors?.includeValues,
-    logger: options.logger,
-    signal: options.signal,
-    timeout: options.timeout,
-    timeouts: options.timeouts,
-    hookm: options.hookm,
-    onWrite: options.onWrite,
-    warnings: options.warnings,
-    catalog: options.catalog,
-    catalogDir: options.catalogDir,
-    requireMeta: options.requireMeta,
-    generators: options.generators,
-  });
+  return createClient(options.schema, pool, options, owned);
 }
 
 function isPool(target: PostgresTarget | TopologyInput): target is DriverPool {

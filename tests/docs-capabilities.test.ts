@@ -126,6 +126,7 @@ test("the committed capabilities page, markers, and step table match the registr
     ["docs/observer-events.md", "writeObserver.unit"],
     ["docs/observer-events.md", "writeObserver.keys"],
     ["docs/observer-events.md", "writeObserver.rowCount"],
+    ["docs/observer-events.md", "queryObserver.timing"],
   ] as const;
   for (const [file, key] of pages) {
     const text = readFileSync(join(root, file), "utf8");

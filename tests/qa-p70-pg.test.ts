@@ -61,10 +61,10 @@ postgresTest(
     const cwd = writeCitextProject(database.url);
     try {
       const pushed = await spawn(["push"], cwd);
-      expect(pushed.stderr).toBe("");
+      expect(pushed.stderr).toMatch(/^config: .+\n$/);
       expect(pushed.code).toBe(0);
       const checked = await spawn(["check"], cwd);
-      expect(checked.stderr).toBe("");
+      expect(checked.stderr).toMatch(/^config: .+\n$/);
       expect(checked.code).toBe(0);
       expect(checked.stdout).toContain("ok");
     } finally {

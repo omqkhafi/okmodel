@@ -27,7 +27,9 @@ import {
   attachPartial,
   CommandFinished,
   exitCodeFor,
+  readConfigPath,
   readPartial,
+  tagConfigPath,
   tagOutcome,
   type CliOutFile,
 } from "../cli/outcome.js";
@@ -76,6 +78,10 @@ type Produced = {
 export function formatFailure(error: unknown, verbose = false): string {
   const mapped = sessionFailure(error) ?? OkmError.from(error);
   let text = `error ${mapped.code}: ${mapped.message}\n${mapped.fix.summary}\n`;
+  if (typeof error === "object" && error !== null) {
+    const configPath = readConfigPath(error);
+    if (configPath !== undefined) text += `config: ${configPath}\n`;
+  }
   if (verbose && error instanceof Error && error.stack !== undefined) {
     text += `${error.stack}\n`;
   }
@@ -112,7 +118,8 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
     return;
   }
   try {
-    const body = (): Promise<Produced> => dispatch(parsed, cwd, stdout);
+    const reportConfig = io?.stdout === undefined && !parsed.json;
+    const body = (): Promise<Produced> => dispatch(parsed, cwd, stdout, reportConfig);
     const collected = parsed.json
       ? await collectNotices(body)
       : { result: await body(), notices: [] };
@@ -227,14 +234,42 @@ async function dispatch(
   parsed: ParsedCli,
   cwd: string,
   stdout: (text: string) => void,
+  reportConfig: boolean,
 ): Promise<Produced> {
   const spec = parsed.spec;
   if (spec === undefined) return empty("");
   const project = projectContext(cwd, parsed.config);
+  const announce = announcesConfig(spec.id, parsed.operands[0]);
   const human = (text: string): void => {
-    if (!parsed.json) stdout(text);
+    if (parsed.json) return;
+    stdout(text);
   };
-  const id = spec.id;
+  try {
+    const produced = await route(spec.id, project, parsed, cwd, human);
+    if (reportConfig && announce && project.ambiguous === undefined) {
+      process.stderr.write(`config: ${project.configPath}\n`);
+    }
+    return produced;
+  } catch (error) {
+    if (
+      announce &&
+      project.ambiguous === undefined &&
+      typeof error === "object" &&
+      error !== null
+    ) {
+      throw tagConfigPath(error, project.configPath);
+    }
+    throw error;
+  }
+}
+
+async function route(
+  id: string,
+  project: ProjectContext,
+  parsed: ParsedCli,
+  cwd: string,
+  human: (text: string) => void,
+): Promise<Produced> {
   if (id === "build") return build(project, human);
   if (id === "catalog export") return catalog(project, parsed, cwd, human);
   if (id === "check") return check(project, parsed, human);
@@ -265,6 +300,24 @@ async function dispatch(
   if (id === "protect list") return protectList(human);
   if (id === "schema") return schemaCommand(parsed, human);
   throw tagOutcome(new OkmError("invalid", `Unknown command ${id}.`), "usage");
+}
+
+/**
+ * Whether human output should name the config file this command loads.
+ *
+ * `okm init` names the files it writes. A doctor code, schema, and driver
+ * test do not load a project config.
+ *
+ * @param id - Command id
+ * @param operand - First operand, when the command has one
+ * @returns `true` when the resolved path is printed
+ */
+function announcesConfig(id: string, operand: string | undefined): boolean {
+  if (id === "init" || id === "schema" || id === "driver test" || id === "protect list") {
+    return false;
+  }
+  if (id === "doctor" && operand !== undefined) return false;
+  return true;
 }
 
 async function build(project: ProjectContext, human: (text: string) => void): Promise<Produced> {
