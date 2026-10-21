@@ -35,7 +35,7 @@ test("every docs file is public or internal, and the repository is clean", () =>
   expect(docClass("size.md")).toBe("internal");
   expect(docClass("errors/OKM1012.md")).toBe("public");
   expect(docClass("errors/README.md")).toBeUndefined();
-  expect(docClass("capabilities.md")).toBeUndefined();
+  expect(docClass("capabilities.md")).toBe("public");
   expect(classificationProblems(root)).toEqual([]);
   expect(hygieneProblems(root, "0.10.0-next.47")).toEqual([]);
 });

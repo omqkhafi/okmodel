@@ -15,6 +15,7 @@ Pointer index for the docs in this package. Open one page. Do not fetch the webs
 - `docs/api.md` - Which package exports are stable, experimental, or internal. - Read this before choosing an import.
 - `docs/compatibility.md` - Postgres majors and drivers that pass conformance. - Read this when picking a driver.
 - `docs/known-limits.md` - Behavior this version does not have. - Read this before assuming a feature exists.
+- `docs/capabilities.md` - Postgres feature support taken from the registry. - Read this before claiming a feature is native.
 - `docs/using-okmodel-safely.md` - Pin the lockfile and read a provenance attestation. - Read this before adding the dependency.
 - `docs/index.md` - This pointer index. - Read this to choose the next page.
 
@@ -47,6 +48,11 @@ Pointer index for the docs in this package. Open one page. Do not fetch the webs
 - `docs/example-app.md` - What the reference app proves end to end. - Read this for a full project shape.
 - `docs/observer-events.md` - Event shape for connect onWrite. - Read this when attaching a write observer.
 - `docs/untrusted.md` - How text from the database or an error is bounded. - Read this when handling an error or plan JSON.
+
+## Agents
+
+- `docs/roles.md` - Least-privilege roles for an agent login. - Read this before giving an agent a database role.
+- `docs/threat-model.md` - What agent use is defended against, and what is not. - Read this before trusting an agent with apply.
 
 ## Errors
 

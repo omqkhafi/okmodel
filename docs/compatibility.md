@@ -10,6 +10,10 @@ Generated from the conformance run (`tests/driver-suite.test.ts` and `tests/erro
 
 Supported majors are Postgres 15, 16, 17, and 18. The floor is 15: Postgres 13 is past end of life, 14 ends in November 2026, and 15 gives us features we can use later. `connect()` refuses an older server with OKM1803. `minPostgres` is 15, 16, 17, or 18. `requires: { postgres: ">=17" }` is the same floor and is deprecated. Identity columns need Postgres 10. A bare `t.id()` stores `gen_random_uuid()`, which is built in from Postgres 13. An explicit `uuidv7()` needs Postgres 18. A pull request runs real Postgres only with the label `needs: postgres`: the suite on 15 and 18 and the tarball job on 18. `bun run verify` runs the suite on this machine. The release and the weekly run cover each supported major. A failure on an older major in this list stays in the run.
 
+<!-- support: type.uuidv7 -->
+Postgres: native. Since 18. Proof passes (`proof:type.uuidv7`).
+<!-- /support -->
+
 PGlite runs in the check job. The in-process wire server runs in the check job. postgres.js, node-postgres, and Bun.sql run in the postgres job (`REQUIRE_DOCKER=1`). Bun.sql runs only under Bun. A skip means the adapter did not declare the capability that case needs. node-postgres and Bun.sql do not describe a statement without running it. Bun.sql does not surface RAISE NOTICE and does not abort an in-flight statement. PGlite has no socket to cut, so COMMIT loss (`r2.commit-loss`, `r2.batch-commit-loss`) is `unsupported` in `okm driver test`, with that reason. It is not a silent skip.
 
 Neon is not a column in this table. postgres.js and node-postgres pointed at Neon endpoints are not columns either, and those results stay unclassified (D269). `okmodel/pg/neon` has its own connect gate. It is checked locally when its credentials are set and skipped in CI. WebSocket mode is interactive. HTTP mode is `transactions: "batch"`: `tx()` is refused. A transaction-mode pooler does not promise session state. COMMIT loss is `unsupported` (`no socket to cut`) because the harness cut is a TCP relay. A result that never arrives is still `outcome_unknown`.

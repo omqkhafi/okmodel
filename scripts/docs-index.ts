@@ -79,6 +79,12 @@ export const INDEX_ENTRIES: readonly IndexEntry[] = [
     group: "start",
   },
   {
+    path: "docs/capabilities.md",
+    purpose: "Postgres feature support taken from the registry.",
+    when: "Read this before claiming a feature is native.",
+    group: "start",
+  },
+  {
     path: "docs/using-okmodel-safely.md",
     purpose: "Pin the lockfile and read a provenance attestation.",
     when: "Read this before adding the dependency.",
@@ -197,6 +203,18 @@ export const INDEX_ENTRIES: readonly IndexEntry[] = [
     purpose: "How text from the database or an error is bounded.",
     when: "Read this when handling an error or plan JSON.",
     group: "operate",
+  },
+  {
+    path: "docs/roles.md",
+    purpose: "Least-privilege roles for an agent login.",
+    when: "Read this before giving an agent a database role.",
+    group: "agents",
+  },
+  {
+    path: "docs/threat-model.md",
+    purpose: "What agent use is defended against, and what is not.",
+    when: "Read this before trusting an agent with apply.",
+    group: "agents",
   },
 ];
 

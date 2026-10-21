@@ -636,33 +636,30 @@ serial(
 serial(
   "consistency.position: idle primary lag is zero",
   async () => {
-    await withSchema(async (_admin, schemaName) => {
+    await withSchema(async (admin, schemaName) => {
       const events: RouteEvent[] = [];
       const db = await openDb(schemaName, events, {
         routing: { maxLag: "500ms", probe: 200 },
       });
       try {
         await db.notes.insert({ id: "idle", title: "idle" });
-        await poll(async () => {
-          events.length = 0;
-          await db.notes.find({ limit: 1 });
-          const event = events.at(-1);
-          return event?.reason.startsWith("auto:") === true;
-        });
-        const since = Date.now();
-        await poll(async () => Date.now() - since >= 800, 5_000);
+        // A fixed sleep past maxLag makes a replica look behind once any later
+        // WAL exists. Wait until both standbys have replayed the primary tip.
+        const lsn = await readInsertLsn(admin);
+        await waitForReplayLsn("a", lsn, 10_000);
+        await waitForReplayLsn("b", lsn, 10_000);
         events.length = 0;
         const rows = await db.notes.find({ where: { id: "idle" }, limit: 1 });
         expect(titleOf(rows)).toBe("idle");
         const event = events.at(-1);
-        expect(event?.endpoint === "a" || event?.endpoint === "b").toBe(true);
-        expect(event?.reason.startsWith("auto:")).toBe(true);
+        const where = `${event?.endpoint ?? "none"} ${event?.reason ?? "none"}`;
+        expect(where).toMatch(/^(a|b) auto:/);
       } finally {
         await db.close();
       }
     });
   },
-  30_000,
+  45_000,
 );
 
 serial(
