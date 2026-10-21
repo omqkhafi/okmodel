@@ -755,6 +755,36 @@
       "kind": "experimental"
     }
   ],
+  "okmodel/warnings": [
+    {
+      "name": "WarningIgnore",
+      "kind": "experimental"
+    },
+    {
+      "name": "WarningLevel",
+      "kind": "experimental"
+    },
+    {
+      "name": "WarningNotice",
+      "kind": "experimental"
+    },
+    {
+      "name": "WarningOptions",
+      "kind": "experimental"
+    },
+    {
+      "name": "WarningSeverity",
+      "kind": "experimental"
+    },
+    {
+      "name": "WarningSlot",
+      "kind": "experimental"
+    },
+    {
+      "name": "warnings",
+      "kind": "experimental"
+    }
+  ],
   "okmodel/ext": [
     {
       "name": "Extension",

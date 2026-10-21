@@ -30,6 +30,7 @@ Pointer index for the docs in this package. Open one page. Do not fetch the webs
 
 - `docs/testing.md` - Factories and a cross-tenant isolation check on a real database. - Read this when writing a test.
 - `docs/topology.md` - Primary and replica routing. - Read this when a read should use a replica.
+- `docs/warnings.md` - Development warnings for offset, order, value lists, and includes. - Read this when a query should report OKM2xxx advice.
 
 ## Migrate
 

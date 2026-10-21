@@ -30,7 +30,7 @@ export function renderErrorPage(doc: ErrorDoc, example?: PageExample): string {
   const lines: string[] = [
     "---",
     'okmVersion: "0.10.0"',
-    'since: "0.9"',
+    `since: "${doc.since ?? "0.9"}"`,
     "dialects: [postgres]",
     `codes: [${doc.code}]`,
     "---",
@@ -47,6 +47,20 @@ export function renderErrorPage(doc: ErrorDoc, example?: PageExample): string {
     doc.fix,
     "",
   ];
+  if (doc.rule !== undefined) lines.push("## Rule", "", `\`${doc.rule}\``, "");
+  if (
+    doc.defaultLevel !== undefined &&
+    doc.severity !== undefined &&
+    doc.phase !== undefined &&
+    doc.evidence !== undefined
+  ) {
+    lines.push(
+      "## Default",
+      "",
+      `Level \`${doc.defaultLevel}\`. Severity \`${doc.severity}\`. Phase \`${doc.phase}\`. Evidence \`${doc.evidence}\`.`,
+      "",
+    );
+  }
   if (doc.safeAlternatives !== undefined && doc.safeAlternatives.length > 0) {
     lines.push("## Safe alternatives", "");
     for (const item of doc.safeAlternatives) lines.push(`- ${item.text}`, "");

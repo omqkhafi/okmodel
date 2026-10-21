@@ -36,6 +36,7 @@ import {
   id,
   ident,
   index,
+  inList,
   many,
   or,
   raw,
@@ -43,10 +44,12 @@ import {
   table,
   t,
   text,
+  uuid,
 } from "../../dialects/pg/index.js";
 import type { AnyTable } from "../../dialects/pg/table.js";
 import { materializedView, view } from "../../dialects/pg/view/index.js";
 import { connect } from "../../runtime/pg/postgresjs.js";
+import { warnings } from "../../runtime/warnings/index.js";
 import { archivable, timestamps, trait } from "../../runtime/traits/index.js";
 import { columnTenancy, global } from "../../runtime/tenancy/index.js";
 import { refuseMissingValidation } from "../../runtime/validate/closed.js";
@@ -1800,6 +1803,80 @@ thrown(
   },
   () => {
     refuseTenancy("none");
+  },
+);
+
+function warnDb(rule: string) {
+  const comments = table("comments", {
+    id: id({ default: "none" }),
+    noteId: uuid().references("notes"),
+    body: text(),
+  });
+  const notes = table(
+    "notes",
+    { id: id({ default: "none" }), title: text() },
+    { relations: { comments: many("comments", "noteId") } },
+  );
+  return connect(pool, {
+    schema: schema({ tables: [notes, comments] }),
+    warnings: warnings({ env: "development", levels: { [rule]: "error" } }),
+  });
+}
+
+thrown(
+  "OKM2004",
+  async () => {
+    await warnDb("deep-offset").notes.find({ limit: 1, offset: 1001, orderBy: { id: "asc" } });
+  },
+  async () => {
+    await warnDb("deep-offset").notes.page({ limit: 1 });
+  },
+);
+
+thrown(
+  "OKM2005",
+  async () => {
+    await warnDb("unordered-limit").notes.find({ limit: 1 });
+  },
+  async () => {
+    await warnDb("unordered-limit").notes.find({ limit: 1, orderBy: { id: "asc" } });
+  },
+);
+
+thrown(
+  "OKM2007",
+  async () => {
+    const values = Array.from({ length: 501 }, (_, index) => String(index));
+    await warnDb("large-in-list").notes.find({
+      where: { title: inList(values) },
+      limit: 1,
+      orderBy: { id: "asc" },
+    });
+  },
+  async () => {
+    await warnDb("large-in-list").notes.find({
+      where: { title: inList(["1"]) },
+      limit: 1,
+      orderBy: { id: "asc" },
+    });
+  },
+);
+
+thrown(
+  "OKM2008",
+  async () => {
+    await warnDb("wide-fan-out").notes.find({
+      limit: 101,
+      orderBy: { id: "asc" },
+      include: { comments: { limit: 100 } },
+    });
+  },
+  async () => {
+    await warnDb("wide-fan-out").notes.find({
+      limit: 100,
+      orderBy: { id: "asc" },
+      include: { comments: { limit: 100 } },
+    });
   },
 );
 

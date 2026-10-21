@@ -15,16 +15,16 @@ Adapter incremental bytes are `bytesInOutput` for inputs that are not already in
 | Graph | Minified | Gzip | Min gate | Gzip gate | Min left | Gzip left |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | `runtime` | 5,288 | 2,026 | 6,100 | 2,250 | 812 | 224 |
-| `app` | 90,889 | 29,664 | 90,900 | 30,170 | 11 | 506 |
-| `connect:src/runtime/pg/postgresjs.ts` | 40,132 | 14,173 | 42,450 | 14,920 | 2,318 | 747 |
-| `connect:src/runtime/pg/pglite.ts` | 39,223 | 13,665 | 40,450 | 14,280 | 1,227 | 615 |
-| `connect:src/runtime/pg/pg.ts` | 40,970 | 14,272 | 42,850 | 15,070 | 1,880 | 798 |
-| `connect:src/runtime/pg/bun.ts` | 39,892 | 13,917 | 41,700 | 14,620 | 1,808 | 703 |
-| `connect:src/runtime/pg/neon.ts` | 40,742 | 14,112 | 42,000 | 14,500 | 1,258 | 388 |
+| `app` | 90,879 | 29,769 | 90,900 | 30,170 | 21 | 401 |
+| `connect:src/runtime/pg/postgresjs.ts` | 40,111 | 14,273 | 42,450 | 14,920 | 2,339 | 647 |
+| `connect:src/runtime/pg/pglite.ts` | 39,205 | 13,757 | 40,450 | 14,280 | 1,245 | 523 |
+| `connect:src/runtime/pg/pg.ts` | 40,952 | 14,368 | 42,850 | 15,070 | 1,898 | 702 |
+| `connect:src/runtime/pg/bun.ts` | 39,877 | 14,023 | 41,700 | 14,620 | 1,823 | 597 |
+| `connect:src/runtime/pg/neon.ts` | 40,725 | 14,206 | 42,000 | 14,500 | 1,275 | 294 |
 | `adapter:src/adapters/pg/postgresjs.ts` | 15,909 | 5,946 (estimate) | 16,000 | none | 91 |  |
 | `adapter:src/adapters/pg/pglite.ts` | 11,923 | 4,397 (estimate) | 12,010 | none | 87 |  |
 
-The tight minified gates are the featureless app (11 bytes) and the two adapter incrementals (91 and 87). Connect startup graphs have between 1,227 and 2,318 minified bytes left. The runtime entry has 812.
+The tight minified gates are the featureless app and the two adapter incrementals. Headroom is the Min left column. Connect startup graphs are every row whose id starts with `connect:`.
 
 ## Top modules
 
@@ -40,139 +40,139 @@ The script prints 25. The baseline lists every module.
 
 | Module | Minified | Gzip share |
 | --- | ---: | ---: |
-| `src/dialects/pg/schema.ts` | 17,250 | 5,630 |
-| `src/runtime/plan.ts` | 14,671 | 4,788 |
-| `src/runtime/client.ts` | 8,928 | 2,914 |
-| `src/contracts/catalog/object.ts` | 6,251 | 2,040 |
-| `src/contracts/error.ts` | 4,977 | 1,624 |
-| `src/dialects/pg/column.ts` | 4,943 | 1,613 |
-| `src/adapters/pg/postgresjs.ts` | 4,913 | 1,603 |
-| `src/contracts/catalog/identity.ts` | 2,658 | 868 |
-| `src/contracts/sha256.ts` | 2,023 | 660 |
-| `src/dialects/pg/array-literal.ts` | 1,847 | 603 |
-| `src/dialects/pg/compile.ts` | 1,743 | 569 |
-| `src/dialects/pg/table.ts` | 1,559 | 509 |
-| `src/contracts/catalog/json.ts` | 1,378 | 450 |
-| `src/contracts/catalog/identifier.ts` | 1,220 | 398 |
-| `src/adapters/pg/result.ts` | 1,146 | 374 |
-| `src/contracts/catalog/order.ts` | 1,143 | 373 |
-| `src/contracts/utf8.ts` | 1,114 | 364 |
-| `src/dialects/pg/keys.ts` | 1,021 | 333 |
-| `src/dialects/pg/decimal.ts` | 969 | 316 |
-| `src/contracts/nearest.ts` | 906 | 296 |
-| `scripts/app-startup.ts` | 861 | 281 |
-| `src/contracts/catalog/build.ts` | 829 | 271 |
-| `src/contracts/catalog/words.ts` | 805 | 263 |
-| `src/dialects/pg/temporal.ts` | 693 | 226 |
-| `src/dialects/pg/filters.ts` | 684 | 223 |
+| `src/dialects/pg/schema.ts` | 17,250 | 5,651 |
+| `src/runtime/plan.ts` | 14,743 | 4,829 |
+| `src/runtime/client.ts` | 8,826 | 2,891 |
+| `src/contracts/catalog/object.ts` | 6,251 | 2,048 |
+| `src/contracts/error.ts` | 4,977 | 1,630 |
+| `src/dialects/pg/column.ts` | 4,943 | 1,619 |
+| `src/adapters/pg/postgresjs.ts` | 4,913 | 1,609 |
+| `src/contracts/catalog/identity.ts` | 2,658 | 871 |
+| `src/contracts/sha256.ts` | 2,023 | 663 |
+| `src/dialects/pg/array-literal.ts` | 1,847 | 605 |
+| `src/dialects/pg/compile.ts` | 1,743 | 571 |
+| `src/dialects/pg/table.ts` | 1,559 | 511 |
+| `src/contracts/catalog/json.ts` | 1,378 | 451 |
+| `src/contracts/catalog/identifier.ts` | 1,220 | 400 |
+| `src/adapters/pg/result.ts` | 1,146 | 375 |
+| `src/contracts/catalog/order.ts` | 1,143 | 374 |
+| `src/contracts/utf8.ts` | 1,114 | 365 |
+| `src/dialects/pg/keys.ts` | 1,021 | 334 |
+| `src/dialects/pg/decimal.ts` | 969 | 317 |
+| `src/contracts/nearest.ts` | 906 | 297 |
+| `scripts/app-startup.ts` | 861 | 282 |
+| `src/contracts/catalog/build.ts` | 829 | 272 |
+| `src/contracts/catalog/words.ts` | 805 | 264 |
+| `src/dialects/pg/temporal.ts` | 693 | 227 |
+| `src/dialects/pg/filters.ts` | 684 | 224 |
 | 22 more, in the baseline | | |
 
 ### `connect:src/runtime/pg/postgresjs.ts`
 
 | Module | Minified | Gzip share |
 | --- | ---: | ---: |
-| `src/runtime/plan.ts` | 14,558 | 5,141 |
-| `src/runtime/client.ts` | 8,947 | 3,160 |
-| `src/adapters/pg/postgresjs.ts` | 4,948 | 1,747 |
-| `src/contracts/error.ts` | 4,937 | 1,744 |
-| `src/adapters/pg/result.ts` | 1,142 | 403 |
-| `src/contracts/nearest.ts` | 906 | 320 |
-| `src/contracts/catalog/words.ts` | 805 | 284 |
-| `src/contracts/catalog/identifier.ts` | 733 | 259 |
-| `src/adapters/error.ts` | 732 | 259 |
-| `src/runtime/pg/postgresjs.ts` | 706 | 249 |
-| `src/adapters/pg/call.ts` | 603 | 213 |
-| `src/contracts/utf8.ts` | 450 | 159 |
-| `src/adapters/failure.ts` | 325 | 115 |
+| `src/runtime/plan.ts` | 14,608 | 5,198 |
+| `src/runtime/client.ts` | 8,848 | 3,148 |
+| `src/adapters/pg/postgresjs.ts` | 4,948 | 1,761 |
+| `src/contracts/error.ts` | 4,941 | 1,758 |
+| `src/adapters/pg/result.ts` | 1,142 | 406 |
+| `src/contracts/nearest.ts` | 906 | 322 |
+| `src/contracts/catalog/words.ts` | 805 | 286 |
+| `src/contracts/catalog/identifier.ts` | 736 | 262 |
+| `src/adapters/error.ts` | 732 | 261 |
+| `src/runtime/pg/postgresjs.ts` | 726 | 258 |
+| `src/adapters/pg/call.ts` | 603 | 215 |
+| `src/contracts/utf8.ts` | 451 | 161 |
+| `src/adapters/failure.ts` | 325 | 116 |
 | `src/dialects/pg/operators.ts` | 150 | 53 |
-| `src/adapters/capabilities.ts` | 123 | 43 |
+| `src/adapters/capabilities.ts` | 123 | 44 |
 | `src/runtime/safety-hook.ts` | 67 | 24 |
 
 ### `connect:src/runtime/pg/pglite.ts`
 
 | Module | Minified | Gzip share |
 | --- | ---: | ---: |
-| `src/runtime/plan.ts` | 14,553 | 5,070 |
-| `src/runtime/client.ts` | 8,955 | 3,120 |
-| `src/contracts/error.ts` | 4,955 | 1,726 |
-| `src/adapters/pg/pglite.ts` | 3,942 | 1,373 |
-| `src/adapters/pg/result.ts` | 1,142 | 398 |
-| `src/contracts/nearest.ts` | 906 | 316 |
-| `src/contracts/catalog/words.ts` | 805 | 281 |
-| `src/contracts/catalog/identifier.ts` | 733 | 255 |
-| `src/adapters/error.ts` | 732 | 255 |
-| `src/runtime/pg/pglite.ts` | 715 | 249 |
-| `src/adapters/pg/call.ts` | 600 | 209 |
-| `src/contracts/utf8.ts` | 450 | 157 |
+| `src/runtime/plan.ts` | 14,602 | 5,124 |
+| `src/runtime/client.ts` | 8,856 | 3,108 |
+| `src/contracts/error.ts` | 4,959 | 1,740 |
+| `src/adapters/pg/pglite.ts` | 3,942 | 1,383 |
+| `src/adapters/pg/result.ts` | 1,146 | 402 |
+| `src/contracts/nearest.ts` | 906 | 318 |
+| `src/contracts/catalog/words.ts` | 805 | 282 |
+| `src/contracts/catalog/identifier.ts` | 736 | 258 |
+| `src/runtime/pg/pglite.ts` | 735 | 258 |
+| `src/adapters/error.ts` | 732 | 257 |
+| `src/adapters/pg/call.ts` | 600 | 211 |
+| `src/contracts/utf8.ts` | 451 | 158 |
 | `src/adapters/failure.ts` | 340 | 119 |
-| `src/dialects/pg/operators.ts` | 150 | 52 |
+| `src/dialects/pg/operators.ts` | 150 | 53 |
 | `src/adapters/capabilities.ts` | 123 | 43 |
-| `src/runtime/safety-hook.ts` | 67 | 23 |
+| `src/runtime/safety-hook.ts` | 67 | 24 |
 | `src/adapters/pg/no-inflight-timeout.ts` | 55 | 19 |
 
 ### `connect:src/runtime/pg/pg.ts`
 
 | Module | Minified | Gzip share |
 | --- | ---: | ---: |
-| `src/runtime/plan.ts` | 14,527 | 5,061 |
-| `src/runtime/client.ts` | 8,986 | 3,130 |
-| `src/contracts/error.ts` | 4,961 | 1,728 |
-| `src/adapters/pg/nodepostgres.ts` | 3,527 | 1,229 |
-| `src/adapters/pg/session.ts` | 2,098 | 731 |
-| `src/adapters/pg/result.ts` | 1,141 | 398 |
-| `src/contracts/nearest.ts` | 900 | 314 |
-| `src/runtime/pg/pg.ts` | 842 | 293 |
-| `src/contracts/catalog/words.ts` | 805 | 280 |
-| `src/contracts/catalog/identifier.ts` | 736 | 256 |
-| `src/adapters/error.ts` | 732 | 255 |
-| `src/adapters/pg/call.ts` | 601 | 209 |
-| `src/contracts/utf8.ts` | 451 | 157 |
+| `src/runtime/plan.ts` | 14,572 | 5,113 |
+| `src/runtime/client.ts` | 8,884 | 3,117 |
+| `src/contracts/error.ts` | 4,965 | 1,742 |
+| `src/adapters/pg/nodepostgres.ts` | 3,535 | 1,240 |
+| `src/adapters/pg/session.ts` | 2,100 | 737 |
+| `src/adapters/pg/result.ts` | 1,146 | 402 |
+| `src/contracts/nearest.ts` | 900 | 316 |
+| `src/runtime/pg/pg.ts` | 862 | 302 |
+| `src/contracts/catalog/words.ts` | 805 | 282 |
+| `src/contracts/catalog/identifier.ts` | 736 | 258 |
+| `src/adapters/error.ts` | 732 | 257 |
+| `src/adapters/pg/call.ts` | 601 | 211 |
+| `src/contracts/utf8.ts` | 451 | 158 |
 | `src/adapters/failure.ts` | 323 | 113 |
-| `src/dialects/pg/operators.ts` | 150 | 52 |
+| `src/dialects/pg/operators.ts` | 150 | 53 |
 | `src/adapters/capabilities.ts` | 123 | 43 |
-| `src/runtime/safety-hook.ts` | 67 | 23 |
+| `src/runtime/safety-hook.ts` | 67 | 24 |
 
 ### `connect:src/runtime/pg/bun.ts`
 
 | Module | Minified | Gzip share |
 | --- | ---: | ---: |
-| `src/runtime/plan.ts` | 14,575 | 5,085 |
-| `src/runtime/client.ts` | 8,938 | 3,118 |
-| `src/contracts/error.ts` | 4,949 | 1,727 |
-| `src/adapters/pg/bunsql.ts` | 2,335 | 815 |
-| `src/adapters/pg/session.ts` | 2,101 | 733 |
-| `src/adapters/pg/result.ts` | 1,116 | 389 |
-| `src/contracts/nearest.ts` | 906 | 316 |
-| `src/runtime/pg/bun.ts` | 884 | 308 |
-| `src/contracts/catalog/words.ts` | 805 | 281 |
-| `src/contracts/catalog/identifier.ts` | 736 | 257 |
-| `src/adapters/error.ts` | 732 | 255 |
-| `src/adapters/pg/call.ts` | 609 | 213 |
-| `src/contracts/utf8.ts` | 451 | 157 |
+| `src/runtime/plan.ts` | 14,625 | 5,143 |
+| `src/runtime/client.ts` | 8,841 | 3,109 |
+| `src/contracts/error.ts` | 4,953 | 1,742 |
+| `src/adapters/pg/bunsql.ts` | 2,337 | 822 |
+| `src/adapters/pg/session.ts` | 2,101 | 739 |
+| `src/adapters/pg/result.ts` | 1,116 | 392 |
+| `src/runtime/pg/bun.ts` | 909 | 320 |
+| `src/contracts/nearest.ts` | 906 | 319 |
+| `src/contracts/catalog/words.ts` | 805 | 283 |
+| `src/contracts/catalog/identifier.ts` | 736 | 259 |
+| `src/adapters/error.ts` | 732 | 257 |
+| `src/adapters/pg/call.ts` | 609 | 214 |
+| `src/contracts/utf8.ts` | 451 | 159 |
 | `src/adapters/failure.ts` | 360 | 126 |
-| `src/dialects/pg/operators.ts` | 150 | 52 |
+| `src/dialects/pg/operators.ts` | 150 | 53 |
 | `src/adapters/capabilities.ts` | 123 | 43 |
 | `src/runtime/safety-hook.ts` | 67 | 23 |
-| `src/adapters/pg/no-inflight-timeout.ts` | 55 | 19 |
+| `src/adapters/pg/no-inflight-timeout.ts` | 56 | 20 |
 
 ### `connect:src/runtime/pg/neon.ts`
 
 | Module | Minified | Gzip share |
 | --- | ---: | ---: |
-| `src/runtime/plan.ts` | 14,575 | 5,048 |
-| `src/runtime/client.ts` | 8,938 | 3,096 |
-| `src/contracts/error.ts` | 4,949 | 1,714 |
-| `src/adapters/pg/neon.ts` | 2,673 | 926 |
-| `src/adapters/pg/session.ts` | 2,097 | 726 |
-| `src/adapters/pg/result.ts` | 1,134 | 393 |
-| `src/runtime/pg/neon.ts` | 1,131 | 392 |
-| `src/contracts/nearest.ts` | 906 | 314 |
-| `src/adapters/error.ts` | 873 | 302 |
-| `src/contracts/catalog/words.ts` | 805 | 279 |
-| `src/contracts/catalog/identifier.ts` | 736 | 255 |
-| `src/adapters/pg/call.ts` | 608 | 211 |
-| `src/contracts/utf8.ts` | 451 | 156 |
-| `src/adapters/failure.ts` | 416 | 144 |
+| `src/runtime/plan.ts` | 14,620 | 5,100 |
+| `src/runtime/client.ts` | 8,843 | 3,085 |
+| `src/contracts/error.ts` | 4,953 | 1,728 |
+| `src/adapters/pg/neon.ts` | 2,676 | 933 |
+| `src/adapters/pg/session.ts` | 2,098 | 732 |
+| `src/runtime/pg/neon.ts` | 1,151 | 402 |
+| `src/adapters/pg/result.ts` | 1,138 | 397 |
+| `src/contracts/nearest.ts` | 906 | 316 |
+| `src/adapters/error.ts` | 873 | 305 |
+| `src/contracts/catalog/words.ts` | 805 | 281 |
+| `src/contracts/catalog/identifier.ts` | 736 | 257 |
+| `src/adapters/pg/call.ts` | 609 | 212 |
+| `src/contracts/utf8.ts` | 451 | 157 |
+| `src/adapters/failure.ts` | 416 | 145 |
 | `src/adapters/capabilities.ts` | 178 | 62 |
 | `src/dialects/pg/operators.ts` | 150 | 52 |
 | `src/runtime/safety-hook.ts` | 67 | 23 |
@@ -214,7 +214,7 @@ The script prints 25. The baseline lists every module.
 
 ## What the featureless app still carries that an app without relations, tenancy, archive or presets does not need
 
-`scripts/app-startup.ts` builds ten tables with `schema()`, then calls `connect().users.find()`. It does not use relations, tenancy, archive, or presets. The startup graph is 90,889 minified bytes and 47 modules.
+`scripts/app-startup.ts` builds ten tables with `schema()`, then calls `connect().users.find()`. It does not use relations, tenancy, archive, or presets. The startup graph is 90,879 minified bytes and 47 modules.
 
 These feature modules are already absent. Archive, presets, include decode, text search, window, and exposure are dynamic imports. Morph and through resolvers are tree-shaken. The tenancy methods behind the tenancy subpath are not on this graph.
 
@@ -222,55 +222,55 @@ What remains from those four features:
 
 | Module | Minified | Gzip share | Why it is still linked |
 | --- | ---: | ---: | --- |
-| `src/dialects/pg/tenancy.ts` | 265 | 86 | `schema()` calls `readTenancy` even when the schema has no tenancy. The file is the stub, not the tenancy implementation. |
+| `src/dialects/pg/tenancy.ts` | 265 | 87 | `schema()` calls `readTenancy` even when the schema has no tenancy. The file is the stub, not the tenancy implementation. |
 | `src/dialects/pg/relations.ts` | 169 | 55 | `schema()` calls `isRelationCall` while compiling every table. The rest of the relation module is shaken. |
-| `src/dialects/pg/schema.ts` | 17,250 | 5,630 | `resolveRelations`, the tenancy rewrite pass, and the archive, preset, and trait field copies live in this compiler. They run for a schema that sets none of them. |
-| `src/runtime/plan.ts` | 14,671 | 4,788 | `emitWhere` calls `holdArchive` on every read. Relation join and filter emitters stay because the calls are static. Archive phrases are already a hook and stay out. |
-| `src/runtime/client.ts` | 8,928 | 2,914 | The read handle checks tenancy, archive, and presets, then dynamic-imports presets and include only when the call uses them. The checks stay. |
+| `src/dialects/pg/schema.ts` | 17,250 | 5,651 | `resolveRelations`, the tenancy rewrite pass, and the archive, preset, and trait field copies live in this compiler. They run for a schema that sets none of them. |
+| `src/runtime/plan.ts` | 14,743 | 4,829 | `emitWhere` calls `holdArchive` on every read. Relation join and filter emitters stay because the calls are static. Archive phrases are already a hook and stay out. |
+| `src/runtime/client.ts` | 8,826 | 2,891 | The read handle checks tenancy, archive, and presets, then dynamic-imports presets and include only when the call uses them. The checks stay. |
 
-The rest of the 90,889 bytes is the catalog compiler, column builders, `OkmError`, SHA-256 for identifier overflow, and the postgres.js adapter `find()` needs. An app that does not call `find()` would drop the adapter, the client, and the planner. This fixture calls `find()`, and the connect gates are that same planner without `schema.ts`.
+The rest of the 90,879 bytes is the catalog compiler, column builders, `OkmError`, SHA-256 for identifier overflow, and the postgres.js adapter `find()` needs. An app that does not call `find()` would drop the adapter, the client, and the planner. This fixture calls `find()`, and the connect gates are that same planner without `schema.ts`.
 
 Every module on this graph:
 
 | Module | Minified | Gzip share |
 | --- | ---: | ---: |
-| `src/dialects/pg/schema.ts` | 17,250 | 5,630 |
-| `src/runtime/plan.ts` | 14,671 | 4,788 |
-| `src/runtime/client.ts` | 8,928 | 2,914 |
-| `src/contracts/catalog/object.ts` | 6,251 | 2,040 |
-| `src/contracts/error.ts` | 4,977 | 1,624 |
-| `src/dialects/pg/column.ts` | 4,943 | 1,613 |
-| `src/adapters/pg/postgresjs.ts` | 4,913 | 1,603 |
-| `src/contracts/catalog/identity.ts` | 2,658 | 868 |
-| `src/contracts/sha256.ts` | 2,023 | 660 |
-| `src/dialects/pg/array-literal.ts` | 1,847 | 603 |
-| `src/dialects/pg/compile.ts` | 1,743 | 569 |
-| `src/dialects/pg/table.ts` | 1,559 | 509 |
-| `src/contracts/catalog/json.ts` | 1,378 | 450 |
-| `src/contracts/catalog/identifier.ts` | 1,220 | 398 |
-| `src/adapters/pg/result.ts` | 1,146 | 374 |
-| `src/contracts/catalog/order.ts` | 1,143 | 373 |
-| `src/contracts/utf8.ts` | 1,114 | 364 |
-| `src/dialects/pg/keys.ts` | 1,021 | 333 |
-| `src/dialects/pg/decimal.ts` | 969 | 316 |
-| `src/contracts/nearest.ts` | 906 | 296 |
-| `scripts/app-startup.ts` | 861 | 281 |
-| `src/contracts/catalog/build.ts` | 829 | 271 |
-| `src/contracts/catalog/words.ts` | 805 | 263 |
-| `src/dialects/pg/temporal.ts` | 693 | 226 |
-| `src/dialects/pg/filters.ts` | 684 | 223 |
-| `src/contracts/catalog/enum.ts` | 648 | 211 |
-| `src/adapters/pg/call.ts` | 604 | 197 |
-| `src/runtime/pg/postgresjs.ts` | 593 | 194 |
+| `src/dialects/pg/schema.ts` | 17,250 | 5,651 |
+| `src/runtime/plan.ts` | 14,743 | 4,829 |
+| `src/runtime/client.ts` | 8,826 | 2,891 |
+| `src/contracts/catalog/object.ts` | 6,251 | 2,048 |
+| `src/contracts/error.ts` | 4,977 | 1,630 |
+| `src/dialects/pg/column.ts` | 4,943 | 1,619 |
+| `src/adapters/pg/postgresjs.ts` | 4,913 | 1,609 |
+| `src/contracts/catalog/identity.ts` | 2,658 | 871 |
+| `src/contracts/sha256.ts` | 2,023 | 663 |
+| `src/dialects/pg/array-literal.ts` | 1,847 | 605 |
+| `src/dialects/pg/compile.ts` | 1,743 | 571 |
+| `src/dialects/pg/table.ts` | 1,559 | 511 |
+| `src/contracts/catalog/json.ts` | 1,378 | 451 |
+| `src/contracts/catalog/identifier.ts` | 1,220 | 400 |
+| `src/adapters/pg/result.ts` | 1,146 | 375 |
+| `src/contracts/catalog/order.ts` | 1,143 | 374 |
+| `src/contracts/utf8.ts` | 1,114 | 365 |
+| `src/dialects/pg/keys.ts` | 1,021 | 334 |
+| `src/dialects/pg/decimal.ts` | 969 | 317 |
+| `src/contracts/nearest.ts` | 906 | 297 |
+| `scripts/app-startup.ts` | 861 | 282 |
+| `src/contracts/catalog/build.ts` | 829 | 272 |
+| `src/contracts/catalog/words.ts` | 805 | 264 |
+| `src/dialects/pg/temporal.ts` | 693 | 227 |
+| `src/dialects/pg/filters.ts` | 684 | 224 |
+| `src/contracts/catalog/enum.ts` | 648 | 212 |
+| `src/runtime/pg/postgresjs.ts` | 613 | 201 |
+| `src/adapters/pg/call.ts` | 604 | 198 |
 | `src/dialects/pg/integer.ts` | 499 | 163 |
-| `src/dialects/pg/json.ts` | 487 | 159 |
-| `src/contracts/location.ts` | 435 | 142 |
-| `src/contracts/generator.ts` | 332 | 108 |
+| `src/dialects/pg/json.ts` | 487 | 160 |
+| `src/contracts/location.ts` | 435 | 143 |
+| `src/contracts/generator.ts` | 332 | 109 |
 | `src/adapters/failure.ts` | 330 | 108 |
 | `src/dialects/pg/floor.ts` | 297 | 97 |
-| `src/dialects/pg/quote.ts` | 283 | 92 |
+| `src/dialects/pg/quote.ts` | 283 | 93 |
 | `src/dialects/pg/bool.ts` | 270 | 88 |
-| `src/dialects/pg/tenancy.ts` | 265 | 86 |
+| `src/dialects/pg/tenancy.ts` | 265 | 87 |
 | `src/dialects/pg/time.ts` | 224 | 73 |
 | `src/dialects/pg/operators.ts` | 190 | 62 |
 | `src/dialects/pg/relations.ts` | 169 | 55 |
@@ -286,21 +286,21 @@ Every module on this graph:
 
 Ranked by estimated minified bytes that could leave a gated graph. Gzip is the same graph's share, or the source-line fraction of that share when the saving is inside one module. A source-line fraction is an upper bound, not a measurement: the bundler was not rebuilt with the split.
 
-1. **Hash identifier overflow in a separate chunk.** Measured: `src/contracts/sha256.ts` is 2,023 minified and 660 gzip on the app, and on no connect graph. `identifier.ts` imports it to suffix a name that does not fit. The featureless schema never takes that branch. `utf8.ts` (1,114 / 364) stays, because every name goes through it. Risk: medium. `schema()` is synchronous, and the suffix is part of the stored name. A dynamic import would change that path for long names only.
+1. **Hash identifier overflow in a separate chunk.** Measured: `src/contracts/sha256.ts` is 2,023 minified and 663 gzip on the app, and on no connect graph. `identifier.ts` imports it to suffix a name that does not fit. The featureless schema never takes that branch. `utf8.ts` (1,114 / 365) stays, because every name goes through it. Risk: medium. `schema()` is synchronous, and the suffix is part of the stored name. A dynamic import would change that path for long names only.
 
-2. **Stop compiling relations, tenancy, archive, and presets inside a featureless `schema()`.** Measured leaves that would leave with the import: `relations.ts` 169 / 55 and `tenancy.ts` 265 / 86. The in-file compilers are about 240 lines of `schema.ts` (about 1,750 lines): `resolveRelations`, the rewrite pass, and the trait, archive, and preset helpers. That fraction of this module is about 2,370 minified and 770 gzip, and it double-counts helpers the catalog compiler still needs, so treat 2,370 as a ceiling. Adding the leaves, the ceiling is about 2,800 minified and 900 gzip, on the app only. Connect graphs do not include `schema.ts`. Risk: high. `schema()` is synchronous and always calls `resolveRelations`. The archive-phrase hook is the pattern that already keeps a feature off this path. The catalog shape is public.
+2. **Stop compiling relations, tenancy, archive, and presets inside a featureless `schema()`.** Measured leaves that would leave with the import: `relations.ts` 169 / 55 and `tenancy.ts` 265 / 87. The in-file compilers are about 240 lines of `schema.ts` (about 1,750 lines): `resolveRelations`, the rewrite pass, and the trait, archive, and preset helpers. That fraction of this module is about 2,366 minified and 775 gzip, and it double-counts helpers the catalog compiler still needs, so treat 2,366 as a ceiling. Adding the leaves, the ceiling is about 2,800 minified and 917 gzip, on the app only. Connect graphs do not include `schema.ts`. Risk: high. `schema()` is synchronous and always calls `resolveRelations`. The archive-phrase hook is the pattern that already keeps a feature off this path. The catalog shape is public.
 
-3. **Make the archive predicate and the relation SQL emitters lazy inside `plan.ts`.** `holdArchive`, `withRowFilters`, and the relation join and filter emitters are about 140 lines of about 1,550. That fraction is about 1,300 minified and 430 gzip, on the app and on every connect graph. Most of that is the relation SQL. `holdArchive` itself is about 12 lines, on the order of 100 bytes. A featureless `find()` does not filter on a relation and has no archive predicate. The include chunk is already lazy. Risk: high for the relation emitters, because a `where` on a relation still plans in this file. Risk: medium for turning `holdArchive` into the same kind of hook as the archive phrases.
+3. **Make the archive predicate and the relation SQL emitters lazy inside `plan.ts`.** `holdArchive`, `withRowFilters`, and the relation join and filter emitters are about 140 lines of about 1,550. That fraction is about 1,332 minified and 436 gzip, on the app and on every connect graph. Most of that is the relation SQL. `holdArchive` itself is about 12 lines, on the order of 100 bytes. A featureless `find()` does not filter on a relation and has no archive predicate. The include chunk is already lazy. Risk: high for the relation emitters, because a `where` on a relation still plans in this file. Risk: medium for turning `holdArchive` into the same kind of hook as the archive phrases.
 
-4. **Do not spend a gate on dead exports.** 268 exports are unused by `src/`, `tests/`, and `scripts/` and are not on the public surface. 194 are types. A value export nothing imports is already absent from the minified graph, including `cell` in `result.ts`, which its own file never calls. `needsWatch`, `sqlOf`, and `verifyRead` are used in the same file, so dropping the export saves no bytes. Four names are imported by the harness and must stay: `Counters` and `DriverError` in `src/adapters/pg/neon.ts` and `src/adapters/pg/nodepostgres.ts`, from `packages/harness/src/driver-run.ts`. Risk of deleting those four: the harness stops typechecking. Gated saving: none.
+4. **Do not spend a gate on dead exports.** 273 exports are unused by `src/`, `tests/`, and `scripts/` and are not on the public surface. 198 are types. A value export nothing imports is already absent from the minified graph, including `cell` in `result.ts`, which its own file never calls. `needsWatch`, `sqlOf`, and `verifyRead` are used in the same file, so dropping the export saves no bytes. Four names are imported by the harness and must stay: `Counters` and `DriverError` in `src/adapters/pg/neon.ts` and `src/adapters/pg/nodepostgres.ts`, from `packages/harness/src/driver-run.ts`. Risk of deleting those four: the harness stops typechecking. Gated saving: none.
 
-5. **Do not spend a gate on cross-adapter clones.** 928 duplicate windows. The largest are `checkout` and `open` across the Bun.sql, node-postgres, Neon, and postgres.js extras, about 700 to 1,500 whitespace-stripped bytes for one copy (names not mangled, so this is an upper bound). Each adapter is its own bundle. A shared helper of the same size is still linked into that bundle, so the incremental gate barely moves. The postgres.js extra module is 3,956 of the 15,909 incremental bytes. Risk of editing checkout: high, for a saving the gate would not see.
+5. **Do not spend a gate on cross-adapter clones.** 935 duplicate windows. The largest are `checkout` and `open` across the Bun.sql, node-postgres, Neon, and postgres.js extras, about 700 to 1,500 whitespace-stripped bytes for one copy (names not mangled, so this is an upper bound). Each adapter is its own bundle. A shared helper of the same size is still linked into that bundle, so the incremental gate barely moves. The postgres.js extra module is 3,956 of the 15,909 incremental bytes. Risk of editing checkout: high, for a saving the gate would not see.
 
 Nothing else on the featureless graph is a feature module waiting to be made lazy. `plan.ts` and `client.ts` are the cost of `find()`. `schema.ts` apart from the compilers in candidate 2 is the cost of `schema()`.
 
 ## Dead exports
 
-dead-exports: 268
+dead-exports: 273
 src/adapters/capabilities.ts:19 CapabilityName type
 src/adapters/pg/bun-sql.ts:42 SQLListen type
 src/adapters/pg/bun-sql.ts:10 SQLQuery type
@@ -404,12 +404,12 @@ src/runtime/ids/okid.ts:79 OKID_MAX_PREFIX_LENGTH
 src/runtime/ids/okid.ts:80 OKID_MIN_LENGTH
 src/runtime/ids/okid.ts:81 OKID_SORTABLE_ALPHABET
 src/runtime/ids/okid.ts:82 OKID_SORTABLE_MIN_LENGTH
-src/runtime/plan.ts:254 Bound type
-src/runtime/plan.ts:178 MorphOut type
-src/runtime/plan.ts:1224 ParsedMorphTarget type
+src/runtime/plan.ts:258 Bound type
+src/runtime/plan.ts:182 MorphOut type
+src/runtime/plan.ts:1254 ParsedMorphTarget type
 src/runtime/plan.ts:35 RouteConstraint type
-src/runtime/plan.ts:171 ScalarOut type
-src/runtime/plan.ts:486 verifyRead
+src/runtime/plan.ts:175 ScalarOut type
+src/runtime/plan.ts:518 verifyRead
 src/runtime/safety-hook.ts:23 SafetyHook type
 src/runtime/tenancy/index-shape.ts:16 IndexShapeCall type
 src/runtime/tenancy/path.ts:40 PathChain type
@@ -418,46 +418,46 @@ src/runtime/tenancy/path.ts:17 TableKind type
 src/runtime/tenancy/path.ts:392 declaredPrimary
 src/runtime/tenancy/rls.ts:260 runReadOnly
 src/runtime/tenancy/rls.ts:290 streamHeld
-src/runtime/types.ts:483 AggregateOptions type
-src/runtime/types.ts:534 AggregateRow type
-src/runtime/types.ts:867 ArchiveCount type
-src/runtime/types.ts:581 Endpoint type
-src/runtime/types.ts:27 FieldWhere type
-src/runtime/types.ts:370 FindOptions type
-src/runtime/types.ts:213 IncludeOf type
-src/runtime/types.ts:666 InsertOptions type
-src/runtime/types.ts:364 LockOptions type
-src/runtime/types.ts:656 OnConflict type
-src/runtime/types.ts:178 OrderBy type
-src/runtime/types.ts:461 PageOptions type
-src/runtime/types.ts:421 Query type
-src/runtime/types.ts:433 Read type
-src/runtime/types.ts:349 ReadOptions type
-src/runtime/types.ts:65 RelFilter type
-src/runtime/types.ts:37 RelationsOf type
-src/runtime/types.ts:329 ResultRow type
-src/runtime/types.ts:612 Router type
-src/runtime/types.ts:30 RowOf type
-src/runtime/types.ts:269 Selected type
-src/runtime/types.ts:406 SyncHandle type
-src/runtime/types.ts:401 SyncOptions type
-src/runtime/types.ts:395 SyncResult type
-src/runtime/types.ts:912 TableExtras type
-src/runtime/types.ts:606 Target type
-src/runtime/types.ts:193 TextSearch type
-src/runtime/types.ts:600 Topology type
-src/runtime/types.ts:383 TreeOptions type
-src/runtime/types.ts:648 UpdateSet type
-src/runtime/types.ts:793 UpdateTarget type
-src/runtime/types.ts:168 WhereOf type
-src/runtime/types.ts:27 WhereValue type
-src/runtime/types.ts:720 Write type
-src/runtime/types.ts:697 WriteColumn type
-src/runtime/types.ts:694 WriteColumnLabel type
-src/runtime/types.ts:691 WriteCount type
-src/runtime/types.ts:703 WriteDescription type
-src/runtime/types.ts:711 WriteInspection type
-src/runtime/types.ts:679 WriteOptions type
+src/runtime/types.ts:493 AggregateOptions type
+src/runtime/types.ts:546 AggregateRow type
+src/runtime/types.ts:879 ArchiveCount type
+src/runtime/types.ts:593 Endpoint type
+src/runtime/types.ts:28 FieldWhere type
+src/runtime/types.ts:376 FindOptions type
+src/runtime/types.ts:214 IncludeOf type
+src/runtime/types.ts:678 InsertOptions type
+src/runtime/types.ts:370 LockOptions type
+src/runtime/types.ts:668 OnConflict type
+src/runtime/types.ts:179 OrderBy type
+src/runtime/types.ts:471 PageOptions type
+src/runtime/types.ts:431 Query type
+src/runtime/types.ts:443 Read type
+src/runtime/types.ts:353 ReadOptions type
+src/runtime/types.ts:66 RelFilter type
+src/runtime/types.ts:38 RelationsOf type
+src/runtime/types.ts:330 ResultRow type
+src/runtime/types.ts:624 Router type
+src/runtime/types.ts:31 RowOf type
+src/runtime/types.ts:270 Selected type
+src/runtime/types.ts:416 SyncHandle type
+src/runtime/types.ts:411 SyncOptions type
+src/runtime/types.ts:405 SyncResult type
+src/runtime/types.ts:924 TableExtras type
+src/runtime/types.ts:618 Target type
+src/runtime/types.ts:194 TextSearch type
+src/runtime/types.ts:612 Topology type
+src/runtime/types.ts:391 TreeOptions type
+src/runtime/types.ts:660 UpdateSet type
+src/runtime/types.ts:805 UpdateTarget type
+src/runtime/types.ts:169 WhereOf type
+src/runtime/types.ts:28 WhereValue type
+src/runtime/types.ts:732 Write type
+src/runtime/types.ts:709 WriteColumn type
+src/runtime/types.ts:706 WriteColumnLabel type
+src/runtime/types.ts:703 WriteCount type
+src/runtime/types.ts:715 WriteDescription type
+src/runtime/types.ts:723 WriteInspection type
+src/runtime/types.ts:691 WriteOptions type
 src/runtime/validate/rules.ts:18 EmailRule type
 src/runtime/validate/rules.ts:15 LowerRule type
 src/runtime/validate/rules.ts:21 MinRule type
@@ -466,6 +466,11 @@ src/runtime/validate/rules.ts:24 PredicateRule type
 src/runtime/validate/rules.ts:12 TrimRule type
 src/runtime/validate/rules.ts:32 WhenRule type
 src/runtime/validate/surface.ts:44 ValidationOn type
+src/runtime/warnings/catalog.ts:28 WarningAlternative type
+src/runtime/warnings/catalog.ts:19 WarningEvidence type
+src/runtime/warnings/catalog.ts:34 WarningHatch type
+src/runtime/warnings/catalog.ts:16 WarningPhase type
+src/runtime/warnings/catalog.ts:152 warningRule
 src/tooling/agents/block.ts:17 AgentsBlockInput type
 src/tooling/capabilities/check.ts:14 FEATURE_REFUSAL_DOCS
 src/tooling/capabilities/index.ts:16 CapabilityGate type
@@ -492,8 +497,8 @@ src/tooling/describe/protocol.ts:17 DescribeTls type
 src/tooling/describe/provider.ts:15 DescribeSqlInput type
 src/tooling/describe/scan.ts:30 DEFAULT_RAW_INCLUDE
 src/tooling/describe/sync.ts:49 lockStatement
-src/tooling/errors/examples.ts:127 OfflineExample type
-src/tooling/errors/page.ts:98 errorPageFile
+src/tooling/errors/examples.ts:130 OfflineExample type
+src/tooling/errors/page.ts:112 errorPageFile
 src/tooling/errors/shape.ts:52 BYPASS_TOKENS
 src/tooling/errors/shape.ts:39 CliErrorDetail type
 src/tooling/github/post-comment.ts:29 postPlanComment
@@ -574,10 +579,10 @@ src/tooling/untrusted.ts:101 isCheckedIdentifier
 
 The minified size on a function group is `estimateMinified`: comments and whitespace removed, string contents kept, names not mangled. It is an upper bound on one copy, not a gated-graph measurement. A literal group uses the same estimate on the literal text.
 
-duplicates: 928
+duplicates: 935
 function 576ab327449d ~1534 minified bytes
   src/runtime/tenancy/rls.ts:489-550 wrapPool
-  src/runtime/topology.ts:1152-1175 routePool
+  src/runtime/topology.ts:1153-1176 routePool
 function 497aac35cf3d ~1474 minified bytes
   src/adapters/pg/bunsql-extra.ts:156-243 checkout
   src/adapters/pg/nodepostgres-extra.ts:81-113 checkout
@@ -626,11 +631,11 @@ function 2531b279b289 ~618 minified bytes
   src/runtime/tenancy/index.ts:270-292 rewriteTenant
 function 18cb8cd6b2d7 ~580 minified bytes
   src/dialects/pg/schema.ts:676-685 collectHooks
-  src/tooling/migrate/project.ts:559-586 readSchemaSource
+  src/tooling/migrate/project.ts:571-598 readSchemaSource
 function 8187437f33bd ~579 minified bytes
   src/dialects/pg/schema.ts:677-685 collectHooks
   src/runtime/sync.ts:434-440 joinSlots
-  src/tooling/migrate/project.ts:560-586 readSchemaSource
+  src/tooling/migrate/project.ts:572-598 readSchemaSource
 function 53af660fd2fa ~537 minified bytes
   src/dialects/pg/schema.ts:614-622 rewritePass
   src/tooling/testing/cleanup.ts:77-93 dropSteps
@@ -643,15 +648,19 @@ function e6a97673bd05 ~465 minified bytes
 function b1cc6fcdde14 ~455 minified bytes
   src/contracts/catalog/document.ts:1008-1026 definitionToJson
   src/contracts/catalog/object.ts:183-199 column
-function f5889e88723c ~427 minified bytes
-  src/runtime/tree.ts:102-108 open
-  src/tooling/migrate/apply.ts:364-372 applyTarget
+function ca318e4dc15f ~428 minified bytes
+  src/runtime/tree.ts:103-110 open
+  src/tooling/migrate/apply.ts:363-372 applyTarget
 function 5a158c8952b1 ~413 minified bytes
   src/runtime/tenancy/rls.ts:295-311 streamHeld
-  src/runtime/topology.ts:1365-1381 (function)
+  src/runtime/topology.ts:1366-1382 (function)
 function 0b137acdb314 ~412 minified bytes
   src/runtime/traits/index.ts:240-265 archivable
   src/runtime/traits/index.ts:313-338 sortable
+function 292a0df2ef3f ~410 minified bytes
+  src/runtime/pg/bun.ts:74-91 connect
+  src/runtime/pg/pg.ts:67-84 connect
+  src/runtime/pg/postgresjs.ts:67-84 connect
 function a79708b11f58 ~406 minified bytes
   src/dialects/pg/compile.ts:118-124 compileColumn
   src/tooling/migrate/apply.ts:363-371 applyTarget
@@ -661,16 +670,16 @@ function 1b34da10d954 ~405 minified bytes
 function 43fa73113cd8 ~401 minified bytes
   src/tooling/migrate/export.ts:335-348 exportTables
   src/tooling/migrate/export.ts:379-389 externalTables
+function 7f51812783be ~401 minified bytes
+  src/runtime/pg/bun.ts:75-90 connect
+  src/runtime/pg/neon.ts:87-102 (arrow)
+  src/runtime/pg/pg.ts:68-83 connect
+  src/runtime/pg/postgresjs.ts:68-83 connect
 function 17c2e467885d ~394 minified bytes
   src/runtime/tenancy/composite.ts:165-180 rewriteTables
   src/runtime/tenancy/index.ts:182-197 rewriteTables
-function 9662a6f7e1b2 ~392 minified bytes
-  src/dialects/pg/compile.ts:118-124 compileColumn
-  src/runtime/client.ts:739-745 readCall
-  src/tooling/migrate/apply.ts:363-371 applyTarget
 function 4fc3d00ec908 ~388 minified bytes
   src/dialects/pg/compile.ts:118-123 compileColumn
-  src/runtime/client.ts:739-744 readCall
   src/runtime/pg/bun.ts:67-72 connect
   src/runtime/pg/neon.ts:66-71 (arrow)
   src/runtime/pg/neon.ts:79-84 connect
@@ -682,30 +691,36 @@ function 84daef29751a ~386 minified bytes
 function a3b0d0e5f540 ~384 minified bytes
   src/runtime/tenancy/composite.ts:215-226 refuseGlobalReference
   src/runtime/tenancy/index.ts:234-245 refuseGlobalReference
-function f7df855ce35d ~384 minified bytes
-  src/runtime/pg/bun.ts:74-90 connect
-  src/runtime/pg/pg.ts:67-83 connect
-  src/runtime/pg/postgresjs.ts:67-83 connect
 function 1522c1fecc3e ~383 minified bytes
   src/runtime/pg/bun.ts:61-73 connect
   src/runtime/pg/pg.ts:55-67 connect
-function 46c4289cfd0a ~375 minified bytes
-  src/runtime/pg/bun.ts:75-89 connect
-  src/runtime/pg/neon.ts:87-101 (arrow)
-  src/runtime/pg/pg.ts:68-82 connect
-  src/runtime/pg/postgresjs.ts:68-82 connect
 function f4e200067e48 ~367 minified bytes
   src/tooling/testing/factories.ts:648-659 openScope
   src/tooling/testing/isolation.ts:683-694 openTenant
 function f4df580c7774 ~360 minified bytes
   src/contracts/catalog/extension.ts:113-123 alignExtensionVersions
   src/tooling/migrate/sandbox.ts:562-570 extensionsAsLogical
+function 1ae609e75728 ~355 minified bytes
+  src/runtime/pg/bun.ts:76-91 connect
+  src/runtime/pg/pg.ts:69-84 connect
+  src/runtime/pg/pglite.ts:63-78 connect
+  src/runtime/pg/postgresjs.ts:69-84 connect
 function 9336de690bce ~355 minified bytes
   src/runtime/write.ts:973-987 pathSetUpdate
   src/runtime/write.ts:2237-2251 treeSetUpdate
+function 0f08cd202b1b ~353 minified bytes
+  src/runtime/pg/neon.ts:88-102 (arrow)
+  src/runtime/pg/pglite.ts:63-77 connect
 function 016c1652f47b ~351 minified bytes
   src/runtime/tenancy/composite.ts:411-428 refuseKey
   src/runtime/tenancy/index.ts:410-427 refuseKey
+function 961d29f0fa9e ~351 minified bytes
+  src/runtime/pg/bun.ts:77-90 connect
+  src/runtime/pg/neon.ts:89-102 (arrow)
+  src/runtime/pg/pg.ts:70-83 connect
+  src/runtime/pg/pglite.ts:64-77 connect
+  src/runtime/pg/postgresjs.ts:70-83 connect
+  src/runtime/topology.ts:422-435 connectTopology
 function e37bbcc2b216 ~346 minified bytes
   src/contracts/catalog/extension.ts:114-123 alignExtensionVersions
   src/tooling/migrate/sandbox.ts:563-570 extensionsAsLogical
@@ -721,46 +736,31 @@ function 9e32bb001054 ~340 minified bytes
   src/runtime/pg/pg.ts:60-68 connect
 function 0fbb336bc1f9 ~331 minified bytes
   src/runtime/ids/okid-generator.ts:40-45 optionsRecord
-  src/runtime/plan.ts:1309-1314 rejectOptions
+  src/runtime/plan.ts:1339-1344 rejectOptions
 function c99d3e878749 ~331 minified bytes
   src/dialects/pg/fn/touch.ts:119-134 hasTrigger
   src/dialects/pg/fn/touch.ts:136-139 named
 function eb734696e13d ~331 minified bytes
   src/runtime/ids/okid-generator.ts:40-46 optionsRecord
   src/runtime/read-stream.ts:190-196 pageFields
-function 1f29d886eb43 ~329 minified bytes
-  src/runtime/pg/bun.ts:76-90 connect
-  src/runtime/pg/pg.ts:69-83 connect
-  src/runtime/pg/pglite.ts:63-77 connect
-  src/runtime/pg/postgresjs.ts:69-83 connect
 function 71171c844199 ~328 minified bytes
   src/tooling/migrate/pg-probe.ts:470-478 parseAddConstraint
   src/tooling/migrate/pg-probe.ts:516-524 constraintBody
-function 1d63eb237460 ~327 minified bytes
-  src/runtime/pg/neon.ts:88-101 (arrow)
-  src/runtime/pg/pglite.ts:63-76 connect
 function c33f082ab9c8 ~326 minified bytes
   src/tooling/migrate/apply.ts:303-314 applyTarget
   src/tooling/migrate/apply.ts:588-599 pushTarget
 function 4765855c0b18 ~325 minified bytes
   src/tooling/describe/command.ts:60-70 runRawSync
   src/tooling/migrate/apply.ts:483-493 runApply
-function 98b8989beb04 ~325 minified bytes
-  src/runtime/pg/bun.ts:77-89 connect
-  src/runtime/pg/neon.ts:89-101 (arrow)
-  src/runtime/pg/pg.ts:70-82 connect
-  src/runtime/pg/pglite.ts:64-76 connect
-  src/runtime/pg/postgresjs.ts:70-82 connect
-  src/runtime/topology.ts:422-434 connectTopology
 function d36d9b4876ac ~325 minified bytes
   src/runtime/pg/bun.ts:66-73 connect
   src/runtime/pg/neon.ts:78-85 connect
 function e018290c0495 ~324 minified bytes
-  src/tooling/errors/examples.ts:1140-1152 (arrow)
-  src/tooling/errors/examples.ts:1154-1166 (arrow)
+  src/tooling/errors/examples.ts:1143-1155 (arrow)
+  src/tooling/errors/examples.ts:1157-1169 (arrow)
 function 98feff67c27d ~322 minified bytes
-  src/runtime/plan.ts:718-729 emitRead
-  src/runtime/tree.ts:184-195 emitTree
+  src/runtime/plan.ts:750-761 emitRead
+  src/runtime/tree.ts:186-197 emitTree
 function 263e1e6d3199 ~310 minified bytes
   src/runtime/pg/bun.ts:67-73 connect
   src/runtime/pg/neon.ts:66-72 (arrow)
@@ -770,16 +770,19 @@ function 7ff9aba2965f ~306 minified bytes
   src/runtime/pg/neon.ts:66-72 (arrow)
   src/runtime/pg/neon.ts:79-85 connect
   src/runtime/pg/pg.ts:61-67 connect
-  src/runtime/tree.ts:102-108 open
+  src/runtime/tree.ts:104-110 open
 function f4cf53b44ae3 ~304 minified bytes
   src/runtime/batch.ts:272-277 stampValidation
-  src/runtime/tree.ts:103-108 open
+  src/runtime/tree.ts:105-110 open
   src/tooling/migrate/apply.ts:367-372 applyTarget
 function 7e0a1fd474c1 ~302 minified bytes
   src/dialects/pg/archive-bind.ts:331-339 primaryFields
   src/runtime/tenancy/composite.ts:354-362 primaryFields
   src/runtime/tenancy/index.ts:364-372 primaryFields
   src/runtime/tenancy/path.ts:392-400 declaredPrimary
+function 82e46a27aec9 ~301 minified bytes
+  src/runtime/warnings/evaluate.ts:137-146 wideFanOut
+  src/runtime/warnings/evaluate.ts:158-167 exceeds
 function b248bb94ee97 ~301 minified bytes
   src/adapters/pg/nodepostgres.ts:141-152 open
   src/adapters/pg/postgresjs.ts:210-224 open
@@ -802,7 +805,7 @@ function 7f4b87e3398f ~292 minified bytes
   src/tooling/migrate/export.ts:208-214 couplingFindings
   src/tooling/migrate/export.ts:458-464 hasCrossCatalogForeignKey
 function 791cd893830d ~284 minified bytes
-  src/tooling/errors/examples.ts:939-951 (arrow)
+  src/tooling/errors/examples.ts:942-954 (arrow)
   src/tooling/migrate/baseline.ts:303-313 compareLive
 function 8893c288acfc ~284 minified bytes
   src/contracts/catalog/document.ts:360-368 rewriteRenamed
@@ -812,8 +815,8 @@ function c88cb69c6251 ~283 minified bytes
   src/tooling/migrate/pg-probe.ts:450-459 parseDropIndex
   src/tooling/migrate/pg-probe.ts:650-659 alterTable
 function d51a852c7860 ~280 minified bytes
-  src/runtime/topology.ts:908-913 openEndpoint
-  src/runtime/tree.ts:103-108 open
+  src/runtime/topology.ts:909-914 openEndpoint
+  src/runtime/tree.ts:105-110 open
   src/tooling/migrate/apply.ts:367-372 applyTarget
 function 8b532e79e65b ~279 minified bytes
   src/runtime/batch.ts:272-277 stampValidation
@@ -823,7 +826,7 @@ function 8b532e79e65b ~279 minified bytes
 function 837801408ea6 ~277 minified bytes
   src/runtime/pg/neon.ts:80-86 connect
   src/runtime/pg/pg.ts:62-68 connect
-  src/runtime/topology.ts:908-914 openEndpoint
+  src/runtime/topology.ts:909-915 openEndpoint
 function ffd66018713f ~277 minified bytes
   src/runtime/ids/okid-generator.ts:41-46 optionsRecord
   src/tooling/errors/body.ts:145-150 warningBody
@@ -847,15 +850,15 @@ function a1dc27893c61 ~273 minified bytes
   src/runtime/observe-emit.ts:374-386 overflowError
   src/runtime/observe.ts:200-212 observerBufferOverflow
 function 585a01e769d5 ~272 minified bytes
-  src/runtime/plan.ts:1309-1314 rejectOptions
+  src/runtime/plan.ts:1339-1344 rejectOptions
   src/runtime/read-stream.ts:190-195 pageFields
 function b5eebaa76d02 ~271 minified bytes
   src/runtime/batch.ts:272-277 stampValidation
   src/runtime/pg/bun.ts:68-73 connect
-  src/runtime/topology.ts:908-913 openEndpoint
+  src/runtime/topology.ts:909-914 openEndpoint
 function 8f9b43513c4a ~270 minified bytes
   src/runtime/pg/neon.ts:67-72 (arrow)
-  src/runtime/topology.ts:908-913 openEndpoint
+  src/runtime/topology.ts:909-914 openEndpoint
 function c33c378d2b10 ~270 minified bytes
   src/runtime/batch.ts:272-277 stampValidation
   src/runtime/pg/neon.ts:67-72 (arrow)
@@ -863,7 +866,7 @@ function 051173e9cbf8 ~268 minified bytes
   src/tooling/testing/isolation.ts:133-145 readTenant
   src/tooling/testing/isolation.ts:552-563 readFiltered
 function e127db53b220 ~265 minified bytes
-  src/runtime/plan.ts:740-748 emitRead
+  src/runtime/plan.ts:772-780 emitRead
   src/runtime/window.ts:122-130 (arrow)
 function 948dd1422c48 ~264 minified bytes
   src/tooling/migrate/lint-rules.ts:832-838 notNullFloorValidate
@@ -884,19 +887,19 @@ function 29e9fe2ff7c7 ~257 minified bytes
   src/adapters/pg/postgres-extra.ts:132-144 describe
   src/tooling/describe/provider.ts:55-67 resultFromOutcome
 function a04d6abdca08 ~257 minified bytes
-  src/tooling/errors/examples.ts:1558-1569 (arrow)
-  src/tooling/errors/examples.ts:1571-1582 (arrow)
+  src/tooling/errors/examples.ts:1561-1572 (arrow)
+  src/tooling/errors/examples.ts:1574-1585 (arrow)
 function 72b1502ec281 ~253 minified bytes
   src/dialects/pg/errors.ts:179-183 safeCause
   src/runtime/ids/okid-generator.ts:40-44 optionsRecord
-  src/runtime/plan.ts:1309-1313 rejectOptions
+  src/runtime/plan.ts:1339-1343 rejectOptions
   src/runtime/read-stream.ts:190-194 pageFields
 function 96ded7aeedd8 ~253 minified bytes
   src/contracts/catalog/document.ts:472-478 rewriteColumn
   src/contracts/catalog/document.ts:1010-1016 definitionToJson
   src/contracts/catalog/object.ts:185-190 column
 function c8b7f439c2bf ~252 minified bytes
-  src/runtime/client.ts:334-340 batchHandle
+  src/runtime/client.ts:344-350 batchHandle
   src/runtime/sync.ts:145-152 build
 function 378ad3ff1284 ~251 minified bytes
   src/tooling/migrate/resolve.ts:251-262 committed
@@ -923,7 +926,6 @@ function 8cdf4fb8d816 ~246 minified bytes
 function 8f2c33925f4c ~246 minified bytes
   src/dialects/pg/compile.ts:118-121 compileColumn
   src/dialects/pg/fn/index.ts:237-240 (arrow)
-  src/runtime/client.ts:739-742 readCall
   src/runtime/pg/bun.ts:67-70 connect
   src/runtime/pg/neon.ts:66-69 (arrow)
   src/runtime/pg/neon.ts:79-82 connect
@@ -941,46 +943,49 @@ function 2d0bb1a3b1d7 ~243 minified bytes
   src/runtime/tenancy/rls.ts:638-648 (function)
 function 3e92ebc48c40 ~243 minified bytes
   src/contracts/catalog/document.ts:1031-1037 definitionToJson
-  src/tooling/migrate/commands.ts:733-741 invokeOf
+  src/tooling/migrate/commands.ts:766-774 invokeOf
 function f543071765c9 ~243 minified bytes
   src/runtime/archive-handle.ts:94-102 lifecycle
-  src/runtime/client.ts:416-424 writeHandle
+  src/runtime/client.ts:426-434 writeHandle
 function ddb5dd29911c ~242 minified bytes
   src/runtime/observe-emit.ts:292-297 (function)
-  src/tooling/migrate/commands.ts:733-740 invokeOf
+  src/tooling/migrate/commands.ts:766-773 invokeOf
 function 9f2ae02b08fa ~241 minified bytes
   src/dialects/pg/compile.ts:116-120 compileColumn
-  src/tooling/migrate/commands.ts:733-739 invokeOf
+  src/tooling/migrate/commands.ts:766-772 invokeOf
 function 6a9cdbb98476 ~240 minified bytes
   src/runtime/read-stream.ts:191-196 pageFields
   src/tooling/errors/body.ts:145-150 warningBody
 function 9e6513be5ecb ~239 minified bytes
   src/contracts/catalog/object.ts:184-189 column
   src/runtime/observe-emit.ts:293-296 (function)
-  src/tooling/migrate/commands.ts:734-739 invokeOf
+  src/tooling/migrate/commands.ts:767-772 invokeOf
+function 2ad5bba613be ~238 minified bytes
+  src/runtime/pg/bun.ts:81-90 connect
+  src/runtime/pg/neon.ts:93-102 (arrow)
+  src/runtime/pg/pg.ts:74-83 connect
+  src/runtime/pg/pglite.ts:68-77 connect
+  src/runtime/pg/postgresjs.ts:74-83 connect
+  src/runtime/topology.ts:464-473 (arrow)
 function 48c38ed9c5c3 ~238 minified bytes
   src/contracts/error.ts:643-647 fromDriver
-  src/runtime/topology.ts:907-911 openEndpoint
+  src/runtime/topology.ts:908-912 openEndpoint
+function 4fefde9298dd ~237 minified bytes
+  src/runtime/topology.ts:426-435 connectTopology
+  src/runtime/topology.ts:464-473 (arrow)
 function 01c7e899e8a3 ~236 minified bytes
-  src/tooling/errors/examples.ts:1588-1597 (arrow)
-  src/tooling/errors/examples.ts:1600-1607 (arrow)
+  src/tooling/errors/examples.ts:1591-1600 (arrow)
+  src/tooling/errors/examples.ts:1603-1610 (arrow)
 function 0a7cd31be37f ~235 minified bytes
   src/tooling/migrate/pull-emit.ts:226-239 emitPull
   src/tooling/migrate/pull-emit.ts:614-627 planTable
-function 2ad5bba613be ~234 minified bytes
-  src/runtime/pg/bun.ts:80-89 connect
-  src/runtime/pg/neon.ts:92-101 (arrow)
-  src/runtime/pg/pg.ts:73-82 connect
-  src/runtime/pg/pglite.ts:67-76 connect
-  src/runtime/pg/postgresjs.ts:73-82 connect
-  src/runtime/topology.ts:463-472 (arrow)
+function c1fa7af51ac5 ~235 minified bytes
+  src/dialects/pg/schema.ts:1465-1475 (arrow)
+  src/tooling/errors/registry.ts:993-1003 warningDoc
 function 280abd2bdee0 ~233 minified bytes
   src/tooling/migrate/pg-probe.ts:473-478 parseAddConstraint
   src/tooling/migrate/pg-probe.ts:485-490 parseValidate
   src/tooling/migrate/pg-probe.ts:519-524 constraintBody
-function 4fefde9298dd ~233 minified bytes
-  src/runtime/topology.ts:425-434 connectTopology
-  src/runtime/topology.ts:463-472 (arrow)
 function 3e1a1eabc566 ~232 minified bytes
   src/contracts/catalog/document.ts:1031-1036 definitionToJson
   src/runtime/observe-emit.ts:292-297 (function)
@@ -1001,7 +1006,6 @@ function 62c4ffbeccb0 ~227 minified bytes
   src/contracts/catalog/document.ts:1010-1016 definitionToJson
   src/contracts/catalog/object.ts:185-190 column
   src/dialects/pg/fn/index.ts:237-240 (arrow)
-  src/runtime/client.ts:739-742 readCall
   src/runtime/pg/bun.ts:67-70 connect
   src/runtime/pg/neon.ts:79-82 connect
   src/runtime/pg/pg.ts:61-64 connect
@@ -1009,8 +1013,8 @@ function 62c4ffbeccb0 ~227 minified bytes
   src/tooling/migrate/apply.ts:700-705 pushTarget
 function 692e2de3ae1b ~227 minified bytes
   src/runtime/batch.ts:273-277 stampValidation
-  src/runtime/topology.ts:909-913 openEndpoint
-  src/runtime/tree.ts:104-108 open
+  src/runtime/topology.ts:910-914 openEndpoint
+  src/runtime/tree.ts:106-110 open
   src/tooling/migrate/apply.ts:700-706 pushTarget
 function bc3879cf3086 ~225 minified bytes
   src/runtime/tenancy/composite.ts:332-339 widenReference
@@ -1018,11 +1022,8 @@ function bc3879cf3086 ~225 minified bytes
 function 722e7207b54a ~224 minified bytes
   src/dialects/pg/errors.ts:179-183 safeCause
   src/tooling/errors/body.ts:145-149 warningBody
-function fe2605b9ff78 ~224 minified bytes
-  src/dialects/pg/fn/index.ts:236-240 (arrow)
-  src/runtime/client.ts:738-742 readCall
 function 40a32117578a ~221 minified bytes
-  src/runtime/plan.ts:1309-1314 rejectOptions
+  src/runtime/plan.ts:1339-1344 rejectOptions
   src/tooling/errors/body.ts:145-150 warningBody
 function ca5364c5d1d5 ~221 minified bytes
   src/runtime/include.ts:583-591 decodeRowIncluded
@@ -1035,7 +1036,8 @@ function 30da436bb3d8 ~220 minified bytes
   src/runtime/include.ts:627-634 decodeJsonInclude
 function e0e22ee12797 ~220 minified bytes
   src/dialects/pg/schema.ts:1465-1474 (arrow)
-  src/runtime/topology.ts:462-471 (arrow)
+  src/runtime/topology.ts:463-472 (arrow)
+  src/tooling/errors/registry.ts:993-1002 warningDoc
 function 000c4e712580 ~219 minified bytes
   src/tooling/migrate/apply.ts:710-720 pushTarget
   src/tooling/migrate/baseline.ts:217-227 runBaseline
@@ -1043,7 +1045,7 @@ function cee998154ebc ~218 minified bytes
   src/contracts/catalog/document.ts:1032-1036 definitionToJson
   src/runtime/observe-emit.ts:293-297 (function)
   src/runtime/traits/index.ts:96-100 trait
-  src/tooling/migrate/commands.ts:734-740 invokeOf
+  src/tooling/migrate/commands.ts:767-773 invokeOf
 function 0b52a1c6ea94 ~217 minified bytes
   src/tooling/testing/factories.ts:390-394 assignForeign
   src/tooling/testing/factories.ts:463-467 paired
@@ -1054,11 +1056,11 @@ function 195e65c11f99 ~214 minified bytes
   src/tooling/migrate/place.ts:169-178 relocateEdges
   src/tooling/migrate/snapshot.ts:349-358 normaliseViewColumns
 function 214599331c9c ~213 minified bytes
-  src/tooling/errors/examples.ts:1545-1552 (arrow)
-  src/tooling/errors/examples.ts:1588-1596 (arrow)
-  src/tooling/errors/examples.ts:1600-1607 (arrow)
+  src/tooling/errors/examples.ts:1548-1555 (arrow)
+  src/tooling/errors/examples.ts:1591-1599 (arrow)
+  src/tooling/errors/examples.ts:1603-1610 (arrow)
 function e040b85c86c5 ~213 minified bytes
-  src/runtime/plan.ts:869-879 emitPredicate
+  src/runtime/plan.ts:901-911 emitPredicate
   src/runtime/window.ts:169-179 emitResultOrder
 function e56c1484f0aa ~213 minified bytes
   src/tooling/migrate/apply.ts:390-400 applyTarget
@@ -1074,11 +1076,14 @@ function e87be89c8e91 ~212 minified bytes
   src/adapters/pg/nodepostgres-extra.ts:97-111 (function)
 function 1b4fd7d92108 ~211 minified bytes
   src/dialects/pg/through.ts:27-32 (arrow)
-  src/runtime/plan.ts:758-763 emitJoin
+  src/runtime/plan.ts:790-795 emitJoin
 function a44606e4d426 ~211 minified bytes
   src/tooling/migrate/apply.ts:307-314 applyTarget
   src/tooling/migrate/apply.ts:592-599 pushTarget
   src/tooling/migrate/resolve.ts:149-156 resolveOnTarget
+function d229d5da9f44 ~211 minified bytes
+  src/contracts/catalog/document.ts:1041-1047 definitionToJson
+  src/tooling/errors/registry.ts:993-999 warningDoc
 function fdf7ca5c3bee ~210 minified bytes
   src/tooling/migrate/plan.ts:1344-1349 dataSteps
   src/tooling/migrate/plan.ts:1380-1385 requireReplacements
@@ -1104,11 +1109,12 @@ function 8deda5838a2e ~205 minified bytes
   src/contracts/catalog/document.ts:1041-1047 definitionToJson
   src/dialects/pg/schema.ts:1465-1471 (arrow)
   src/runtime/tenancy/via.ts:110-116 (arrow)
-  src/runtime/topology.ts:462-468 (arrow)
+  src/runtime/topology.ts:463-469 (arrow)
   src/tooling/cli/envelope.ts:102-108 serializeEnvelope
+  src/tooling/errors/registry.ts:993-999 warningDoc
 function d3a438f94abe ~205 minified bytes
-  src/runtime/topology.ts:1901-1906 leastConnections
-  src/runtime/topology.ts:1918-1923 latencyAware
+  src/runtime/topology.ts:1902-1907 leastConnections
+  src/runtime/topology.ts:1919-1924 latencyAware
 function d8c62753de6e ~205 minified bytes
   src/tooling/migrate/apply.ts:747-755 restampHeadHash
   src/tooling/migrate/apply.ts:868-876 restampLegacy
@@ -1119,13 +1125,13 @@ function a8829321245f ~204 minified bytes
   src/tooling/migrate/ext-surface.ts:136-144 readSurface
   src/tooling/migrate/pull-routines.ts:347-352 renderRoutines
 function e1209c6ac860 ~204 minified bytes
-  src/runtime/plan.ts:868-878 emitPredicate
-  src/runtime/plan.ts:1129-1139 emitOrder
+  src/runtime/plan.ts:900-910 emitPredicate
+  src/runtime/plan.ts:1161-1171 emitOrder
 function 1ab555f378e0 ~202 minified bytes
   src/runtime/observe-emit.ts:294-296 (function)
   src/runtime/pg/neon.ts:66-68 (arrow)
   src/runtime/traits/index.ts:97-99 trait
-  src/tooling/migrate/commands.ts:735-739 invokeOf
+  src/tooling/migrate/commands.ts:768-772 invokeOf
 function 40015c13ae18 ~202 minified bytes
   src/adapters/pg/neon-extra.ts:34-43 checkout
   src/adapters/pg/nodepostgres.ts:340-349 trackCheckout
@@ -1136,8 +1142,8 @@ function 7ef187b723b8 ~202 minified bytes
   src/tooling/migrate/ext.ts:45-50 extProject
   src/tooling/migrate/ext.ts:226-231 withServer
 function 8ffd6d9bf993 ~202 minified bytes
-  src/tooling/errors/examples.ts:728-737 (arrow)
-  src/tooling/errors/examples.ts:763-772 (arrow)
+  src/tooling/errors/examples.ts:731-740 (arrow)
+  src/tooling/errors/examples.ts:766-775 (arrow)
 function 6511ed9624be ~200 minified bytes
   src/tooling/migrate/apply.ts:1029-1037 provisionEmpty
   src/tooling/migrate/apply.ts:1112-1120 insertReference
@@ -1157,8 +1163,8 @@ function f55cf2af3c4a ~199 minified bytes
   src/runtime/conflict.ts:244-254 updateColumns
   src/runtime/sql-fragment.ts:153-162 writeIdent
 function 1ae815114148 ~198 minified bytes
-  src/runtime/topology.ts:1184-1189 (arrow)
-  src/runtime/topology.ts:1268-1273 (arrow)
+  src/runtime/topology.ts:1185-1190 (arrow)
+  src/runtime/topology.ts:1269-1274 (arrow)
 function e7d55dfde480 ~198 minified bytes
   src/runtime/archive.ts:506-512 expectOf
   src/runtime/sync.ts:726-732 expectOf
@@ -1176,8 +1182,8 @@ function 31752372b35b ~195 minified bytes
   src/contracts/catalog/document.ts:620-627 rewritePolicyColumn
   src/contracts/catalog/document.ts:807-814 rewriteTableName
 function a2c23aa64e8a ~194 minified bytes
-  src/tooling/errors/examples.ts:738-744 (arrow)
-  src/tooling/errors/examples.ts:773-779 (arrow)
+  src/tooling/errors/examples.ts:741-747 (arrow)
+  src/tooling/errors/examples.ts:776-782 (arrow)
 function a5f8a92f49cc ~194 minified bytes
   src/dialects/pg/archive-bind.ts:299-304 applies
   src/runtime/sort-bind.ts:45-50 applies
@@ -1199,7 +1205,7 @@ function 35d6b4989f4b ~192 minified bytes
   src/runtime/archive.ts:361-368 restoreSql
 function 87ea3a91a057 ~192 minified bytes
   src/dialects/pg/through.ts:27-31 (arrow)
-  src/runtime/plan.ts:758-762 emitJoin
+  src/runtime/plan.ts:790-794 emitJoin
   src/runtime/sync.ts:246-250 oneToMany
   src/runtime/sync.ts:447-451 joinSlots
 function 9b30bf8a9342 ~192 minified bytes
@@ -1213,7 +1219,7 @@ literal cddfeb861f13 ~192 minified bytes x2
   src/dialects/pg/temporal.ts:9
   src/runtime/bucket-group.ts:275
 function 6cca268e991a ~191 minified bytes
-  src/runtime/plan.ts:758-761 emitJoin
+  src/runtime/plan.ts:790-793 emitJoin
   src/tooling/testing/factories.ts:388-391 assignForeign
 function 893a84edbdef ~191 minified bytes
   src/adapters/pg/bunsql.ts:252-261 (function)
@@ -1230,7 +1236,7 @@ function 06ddc851cb54 ~188 minified bytes
   src/tooling/testing/cleanup.ts:95-100 dropSteps
 function a78a750228f3 ~188 minified bytes
   src/dialects/pg/compile.ts:155-159 compileColumn
-  src/runtime/topology.ts:907-911 openEndpoint
+  src/runtime/topology.ts:908-912 openEndpoint
 function 381e837a69a2 ~187 minified bytes
   src/contracts/catalog/document.ts:528-530 indexAgain
   src/contracts/catalog/object.ts:185-189 column
@@ -1239,7 +1245,6 @@ function 381e837a69a2 ~187 minified bytes
   src/dialects/pg/compile.ts:118-120 compileColumn
   src/dialects/pg/fn/index.ts:237-239 (arrow)
   src/dialects/pg/schema.ts:1275-1277 (arrow)
-  src/runtime/client.ts:739-741 readCall
   src/runtime/observe-emit.ts:294-296 (function)
   src/runtime/pg/bun.ts:67-69 connect
   src/runtime/pg/neon.ts:66-68 (arrow)
@@ -1247,7 +1252,7 @@ function 381e837a69a2 ~187 minified bytes
   src/runtime/pg/pg.ts:61-63 connect
   src/runtime/traits/index.ts:97-99 trait
   src/tooling/migrate/apply.ts:363-367 applyTarget
-  src/tooling/migrate/commands.ts:735-739 invokeOf
+  src/tooling/migrate/commands.ts:768-772 invokeOf
 function d991d78f04f0 ~187 minified bytes
   src/runtime/batch.ts:270-273 stampValidation
   src/runtime/write.ts:2678-2681 scrubWrite
@@ -1262,11 +1267,11 @@ function ac00b77e8311 ~186 minified bytes
   src/tooling/migrate/pull-verify.ts:170-176 copyMatview
 function 056729ef331c ~185 minified bytes
   src/runtime/conflict.ts:244-252 updateColumns
-  src/runtime/plan.ts:1272-1280 selectedColumns
+  src/runtime/plan.ts:1302-1310 selectedColumns
   src/runtime/sql-fragment.ts:153-161 writeIdent
 function 5835870878ea ~185 minified bytes
   src/runtime/tenancy/rls.ts:552-556 wrapPool
-  src/runtime/topology.ts:1279-1285 force
+  src/runtime/topology.ts:1280-1286 force
 function 6e76fbc60f05 ~185 minified bytes
   src/runtime/sort.ts:262-265 readOne
   src/runtime/sort.ts:328-331 moveStatement
@@ -1282,7 +1287,7 @@ function f9443a56919d ~185 minified bytes
   src/contracts/catalog/document.ts:1033-1036 definitionToJson
   src/contracts/catalog/object.ts:251-254 index
   src/runtime/observe-emit.ts:294-297 (function)
-  src/tooling/migrate/commands.ts:735-740 invokeOf
+  src/tooling/migrate/commands.ts:768-773 invokeOf
 function fe456be55cea ~185 minified bytes
   src/runtime/validate/engine.ts:296-302 applyTransforms
   src/runtime/validate/engine.ts:315-321 checkRules
@@ -1295,7 +1300,7 @@ function fcf8e61d0555 ~184 minified bytes
   src/runtime/observe-emit.ts:294-297 (function)
   src/runtime/traits/index.ts:97-100 trait
   src/tooling/migrate/apply.ts:651-654 pushTarget
-  src/tooling/migrate/commands.ts:735-740 invokeOf
+  src/tooling/migrate/commands.ts:768-773 invokeOf
 function 1dfb8674eaa9 ~183 minified bytes
   src/contracts/catalog/document.ts:869-875 rewriteType
   src/tooling/migrate/pull-verify.ts:134-140 copyFunction
@@ -1316,7 +1321,7 @@ function 47573489fa30 ~179 minified bytes
   src/contracts/catalog/document.ts:1033-1037 definitionToJson
   src/dialects/pg/schema.ts:1490-1494 tableModel
   src/tooling/migrate/api.ts:165-171 invokeOf
-  src/tooling/migrate/commands.ts:735-741 invokeOf
+  src/tooling/migrate/commands.ts:768-774 invokeOf
 function 8cae8a761d3c ~179 minified bytes
   src/tooling/migrate/lost.ts:51-58 sessionFailure
   src/tooling/migrate/pull.ts:361-368 unavailable
@@ -1338,9 +1343,9 @@ function 5645c63ea401 ~178 minified bytes
   src/contracts/catalog/object.ts:251-254 index
   src/dialects/pg/schema.ts:1490-1493 tableModel
   src/runtime/observe-emit.ts:294-297 (function)
-  src/runtime/tree.ts:105-108 open
+  src/runtime/tree.ts:107-110 open
   src/tooling/migrate/api.ts:165-170 invokeOf
-  src/tooling/migrate/commands.ts:735-740 invokeOf
+  src/tooling/migrate/commands.ts:768-773 invokeOf
 function cbaf42da77f6 ~178 minified bytes
   src/dialects/pg/introspect.ts:609-613 readPrivileges
   src/tooling/migrate/ext-surface.ts:123-127 readSurface
@@ -1349,9 +1354,10 @@ function 2dd2968d696b ~177 minified bytes
   src/dialects/pg/schema.ts:1465-1471 (arrow)
   src/runtime/tenancy/via.ts:133-139 (arrow)
   src/tooling/cli/envelope.ts:102-108 serializeEnvelope
+  src/tooling/errors/registry.ts:993-999 warningDoc
 function 3885c194814d ~177 minified bytes
-  src/tooling/errors/examples.ts:1294-1297 (arrow)
-  src/tooling/errors/examples.ts:1299-1302 (arrow)
+  src/tooling/errors/examples.ts:1297-1300 (arrow)
+  src/tooling/errors/examples.ts:1302-1305 (arrow)
 function 540255106877 ~177 minified bytes
   src/runtime/safety/index.ts:438-443 sameViolations
   src/tooling/migrate/plan.ts:1187-1193 columnsAppended
@@ -1382,13 +1388,13 @@ function cd09cfb6146f ~177 minified bytes
   src/runtime/pg/neon.ts:69-72 (arrow)
   src/runtime/pg/neon.ts:82-85 connect
   src/runtime/pg/pg.ts:64-67 connect
-  src/runtime/topology.ts:910-913 openEndpoint
+  src/runtime/topology.ts:911-914 openEndpoint
   src/runtime/traits/index.ts:97-100 trait
-  src/runtime/tree.ts:105-108 open
+  src/runtime/tree.ts:107-110 open
   src/tooling/migrate/api.ts:165-170 invokeOf
   src/tooling/migrate/apply.ts:369-372 applyTarget
   src/tooling/migrate/apply.ts:651-654 pushTarget
-  src/tooling/migrate/commands.ts:735-740 invokeOf
+  src/tooling/migrate/commands.ts:768-773 invokeOf
 function 1bc32b9b62d1 ~176 minified bytes
   src/tooling/migrate/apply.ts:867-873 restampLegacy
   src/tooling/migrate/apply.ts:1028-1034 provisionEmpty
@@ -1415,18 +1421,18 @@ function 3d5399f6a193 ~176 minified bytes
   src/dialects/pg/schema.ts:1276-1278 (arrow)
   src/dialects/pg/schema.ts:1491-1493 tableModel
   src/runtime/batch.ts:275-277 stampValidation
-  src/runtime/client.ts:138-140 createClient
+  src/runtime/client.ts:147-149 createClient
   src/runtime/observe-emit.ts:295-297 (function)
   src/runtime/pg/bun.ts:71-73 connect
   src/runtime/pg/neon.ts:70-72 (arrow)
   src/runtime/pg/neon.ts:83-85 connect
   src/runtime/pg/pg.ts:65-67 connect
-  src/runtime/topology.ts:911-913 openEndpoint
+  src/runtime/topology.ts:912-914 openEndpoint
   src/runtime/traits/index.ts:98-100 trait
-  src/runtime/tree.ts:106-108 open
+  src/runtime/tree.ts:108-110 open
   src/tooling/migrate/api.ts:166-170 invokeOf
   src/tooling/migrate/apply.ts:370-372 applyTarget
-  src/tooling/migrate/commands.ts:736-740 invokeOf
+  src/tooling/migrate/commands.ts:769-773 invokeOf
 function 4a4025bfb6c2 ~176 minified bytes
   src/dialects/pg/ops/fragment.ts:336-340 identName
   src/tooling/testing/factories.ts:641-645 refOf
@@ -1441,6 +1447,7 @@ function e4938420e20a ~176 minified bytes
   src/contracts/catalog/document.ts:1823-1829 parseDefaultPrivilege
   src/dialects/pg/schema.ts:1465-1471 (arrow)
   src/tooling/cli/envelope.ts:102-108 serializeEnvelope
+  src/tooling/errors/registry.ts:993-999 warningDoc
 function 1274e6da506b ~175 minified bytes
   src/tooling/migrate/import-drizzle.ts:671-676 columnOf
   src/tooling/migrate/plan.ts:771-775 parsePlan
@@ -1448,9 +1455,9 @@ function 3701327ef74e ~175 minified bytes
   src/tooling/migrate/apply.ts:1148-1152 enterCatalogSchema
   src/tooling/migrate/baseline.ts:433-437 enterCatalogSchema
 function 7edd8c963e96 ~175 minified bytes
-  src/tooling/errors/examples.ts:1534-1540 (arrow)
-  src/tooling/errors/examples.ts:1562-1568 (arrow)
-  src/tooling/errors/examples.ts:1575-1581 (arrow)
+  src/tooling/errors/examples.ts:1537-1543 (arrow)
+  src/tooling/errors/examples.ts:1565-1571 (arrow)
+  src/tooling/errors/examples.ts:1578-1584 (arrow)
 function 5ac4272e6b31 ~174 minified bytes
   src/dialects/pg/lower.ts:574-578 identityChangeSql
   src/tooling/migrate/safe.ts:137-142 notValidSteps
@@ -1458,8 +1465,8 @@ function 68846c2b0027 ~174 minified bytes
   src/runtime/exposure.ts:70-74 scrubCall
   src/runtime/write.ts:2676-2680 scrubWrite
 function 7d5f2af9bc2c ~174 minified bytes
-  src/tooling/errors/examples.ts:1262-1274 (arrow)
-  src/tooling/errors/examples.ts:1276-1288 (arrow)
+  src/tooling/errors/examples.ts:1265-1277 (arrow)
+  src/tooling/errors/examples.ts:1279-1291 (arrow)
 function a6c71cd64461 ~174 minified bytes
   src/contracts/catalog/document.ts:526-530 indexAgain
   src/dialects/pg/fn/index.ts:235-239 (arrow)
@@ -1469,7 +1476,7 @@ function b8af51469bdc ~174 minified bytes
 function cbc594074686 ~174 minified bytes
   src/dialects/pg/lower.ts:517-522 alterColumn
   src/dialects/pg/schema.ts:1252-1257 compileForeignKeys
-  src/runtime/page.ts:199-204 (arrow)
+  src/runtime/page.ts:201-206 (arrow)
 function e0ce51b3b3e5 ~174 minified bytes
   src/tooling/describe/lock.ts:307-312 stale
   src/tooling/describe/sync.ts:244-249 staleFiles
@@ -1480,9 +1487,9 @@ function 840d06bf7d9e ~173 minified bytes
   src/tooling/migrate/check.ts:135-137 checkMigrations
   src/tooling/migrate/pull-routines.ts:317-319 renderRoutines
 function 19cb82c32e62 ~172 minified bytes
-  src/runtime/aggregate.ts:186-189 plan
+  src/runtime/aggregate.ts:187-190 plan
   src/runtime/sync.ts:177-180 prepare
-  src/runtime/tree.ts:93-96 open
+  src/runtime/tree.ts:94-97 open
 function c3a6624cc52c ~172 minified bytes
   src/tooling/migrate/pull-verify.ts:140-144 copyFunction
   src/tooling/migrate/pull-verify.ts:156-160 copyView
@@ -1497,8 +1504,8 @@ function 009ad8db812a ~170 minified bytes
   src/runtime/sort.ts:262-265 readOne
   src/runtime/sort.ts:328-331 moveStatement
 function 036391d21b78 ~170 minified bytes
-  src/tooling/errors/examples.ts:1675-1682 (arrow)
-  src/tooling/errors/examples.ts:1688-1696 (arrow)
+  src/tooling/errors/examples.ts:1678-1685 (arrow)
+  src/tooling/errors/examples.ts:1691-1699 (arrow)
 function 7bb2fd99e01f ~170 minified bytes
   src/contracts/catalog/document.ts:1167-1170 parseObject
   src/contracts/catalog/document.ts:1587-1590 parsePolicy
@@ -1508,7 +1515,7 @@ function 7c3512d7efb8 ~170 minified bytes
   src/dialects/pg/lower.ts:517-521 alterColumn
   src/dialects/pg/schema.ts:1252-1256 compileForeignKeys
   src/runtime/archive.ts:442-446 joinOn
-  src/runtime/page.ts:199-203 (arrow)
+  src/runtime/page.ts:201-205 (arrow)
   src/tooling/testing/factories.ts:460-464 paired
 function f42173dfcef5 ~170 minified bytes
   src/contracts/catalog/document.ts:572-577 rewriteConstraint
@@ -1526,7 +1533,7 @@ function 53fb6a2926b4 ~169 minified bytes
   src/runtime/pg/neon.ts:69-72 (arrow)
   src/runtime/pg/neon.ts:82-85 connect
   src/runtime/pg/pg.ts:64-67 connect
-  src/runtime/topology.ts:910-913 openEndpoint
+  src/runtime/topology.ts:911-914 openEndpoint
   src/tooling/migrate/apply.ts:369-372 applyTarget
   src/tooling/migrate/apply.ts:702-706 pushTarget
 function d3c43a7c6bca ~169 minified bytes
@@ -1535,6 +1542,9 @@ function d3c43a7c6bca ~169 minified bytes
 function 5d0d02467171 ~168 minified bytes
   src/runtime/write.ts:857-863 finishGuarded
   src/runtime/write.ts:894-900 finishVersioned
+function ae3686c00534 ~168 minified bytes
+  src/runtime/topology.ts:429-435 connectTopology
+  src/tooling/cli/envelope.ts:103-109 serializeEnvelope
 function d8a480c0d9b9 ~168 minified bytes
   src/dialects/pg/errors.ts:559-564 valuesOf
   src/runtime/archive.ts:442-447 joinOn
@@ -1552,6 +1562,13 @@ function 1c216f6fa5d2 ~167 minified bytes
   src/dialects/pg/introspect.ts:1268-1274 unwrapTriggerWhen
   src/tooling/migrate/lint-rules.ts:591-597 unwrap
   src/tooling/migrate/pg-probe.ts:573-579 wrapped
+function 4a4f6a82cdf1 ~167 minified bytes
+  src/runtime/pg/bun.ts:84-90 connect
+  src/runtime/pg/neon.ts:96-102 (arrow)
+  src/runtime/pg/pg.ts:77-83 connect
+  src/runtime/pg/pglite.ts:71-77 connect
+  src/runtime/pg/postgresjs.ts:77-83 connect
+  src/tooling/cli/envelope.ts:103-109 serializeEnvelope
 function 7fe42931edb6 ~167 minified bytes
   src/dialects/pg/table.ts:567-572 buildIndex
   src/tooling/migrate/plan.ts:770-775 parsePlan
@@ -1575,7 +1592,7 @@ function 34fb209d0cc3 ~164 minified bytes
   src/tooling/migrate/plan.ts:491-500 planMigration
 function 75ca7a7042b2 ~164 minified bytes
   src/runtime/bucket-group.ts:190-194 writeGrouped
-  src/runtime/plan.ts:1157-1161 emitOrder
+  src/runtime/plan.ts:1189-1193 emitOrder
 function 7e4f89799c4c ~164 minified bytes
   src/runtime/write.ts:1432-1439 emitSet
   src/runtime/write.ts:1447-1454 emitTouch
@@ -1589,8 +1606,8 @@ function e226f0d7eb56 ~164 minified bytes
   src/tooling/testing/isolation.ts:660-664 isViewQuery
   src/tooling/testing/isolation.ts:730-734 isQueryHandle
 function 57e7abc9f672 ~163 minified bytes
-  src/runtime/plan.ts:844-851 emitAnd
-  src/runtime/plan.ts:1066-1073 emitOr
+  src/runtime/plan.ts:876-883 emitAnd
+  src/runtime/plan.ts:1098-1105 emitOr
 function 604fc6e45e63 ~163 minified bytes
   src/tooling/init/package-json.ts:136-140 hasDeclaration
   src/tooling/init/package-json.ts:145-149 usesCaret
@@ -1610,36 +1627,26 @@ function 843ec87e0d2c ~162 minified bytes
 function 9eed205ed59a ~162 minified bytes
   src/runtime/bucket-group.ts:184-189 writeGrouped
   src/runtime/window.ts:159-164 emitResultOrder
-function ae3686c00534 ~162 minified bytes
-  src/runtime/topology.ts:428-434 connectTopology
-  src/tooling/cli/envelope.ts:103-109 serializeEnvelope
 function ecff90e7325c ~162 minified bytes
   src/adapters/pg/postgresjs.ts:388-394 (function)
   src/adapters/pg/session.ts:175-181 (function)
 function fa165a5fa553 ~162 minified bytes
-  src/tooling/errors/examples.ts:1533-1539 (arrow)
-  src/tooling/errors/examples.ts:1545-1551 (arrow)
-  src/tooling/errors/examples.ts:1588-1594 (arrow)
-  src/tooling/errors/examples.ts:1600-1606 (arrow)
+  src/tooling/errors/examples.ts:1536-1542 (arrow)
+  src/tooling/errors/examples.ts:1548-1554 (arrow)
+  src/tooling/errors/examples.ts:1591-1597 (arrow)
+  src/tooling/errors/examples.ts:1603-1609 (arrow)
 function 2ca01a6c92d9 ~161 minified bytes
   src/runtime/write.ts:576-579 planInsert
   src/tooling/migrate/plan.ts:339-342 planMigration
-function 4a4f6a82cdf1 ~161 minified bytes
-  src/runtime/pg/bun.ts:83-89 connect
-  src/runtime/pg/neon.ts:95-101 (arrow)
-  src/runtime/pg/pg.ts:76-82 connect
-  src/runtime/pg/pglite.ts:70-76 connect
-  src/runtime/pg/postgresjs.ts:76-82 connect
-  src/tooling/cli/envelope.ts:103-109 serializeEnvelope
 function 934d346782b5 ~161 minified bytes
   src/adapters/pg/neon-extra.ts:48-56 (arrow)
   src/adapters/pg/nodepostgres-extra.ts:57-65 (arrow)
 function b1e5ad0138e9 ~161 minified bytes
-  src/tooling/errors/examples.ts:1546-1551 (arrow)
-  src/tooling/errors/examples.ts:1562-1567 (arrow)
-  src/tooling/errors/examples.ts:1575-1580 (arrow)
-  src/tooling/errors/examples.ts:1589-1594 (arrow)
-  src/tooling/errors/examples.ts:1601-1606 (arrow)
+  src/tooling/errors/examples.ts:1549-1554 (arrow)
+  src/tooling/errors/examples.ts:1565-1570 (arrow)
+  src/tooling/errors/examples.ts:1578-1583 (arrow)
+  src/tooling/errors/examples.ts:1592-1597 (arrow)
+  src/tooling/errors/examples.ts:1604-1609 (arrow)
 function ccc7a0320d6e ~161 minified bytes
   src/dialects/pg/errors.ts:559-563 valuesOf
   src/dialects/pg/lower.ts:517-521 alterColumn
@@ -1657,15 +1664,14 @@ function 6568e3d8dea4 ~160 minified bytes
   src/contracts/catalog/view.ts:165-167 materializedViewIndex
   src/dialects/pg/compile.ts:118-120 compileColumn
   src/dialects/pg/fn/index.ts:237-239 (arrow)
-  src/runtime/client.ts:739-741 readCall
   src/runtime/observe-emit.ts:294-296 (function)
   src/runtime/pg/neon.ts:66-68 (arrow)
   src/runtime/traits/index.ts:97-99 trait
   src/tooling/migrate/apply.ts:363-367 applyTarget
-  src/tooling/migrate/commands.ts:735-738 invokeOf
+  src/tooling/migrate/commands.ts:768-771 invokeOf
 function e3bf627766f4 ~160 minified bytes
-  src/runtime/aggregate.ts:283-288 columns
-  src/runtime/aggregate.ts:324-329 readGroups
+  src/runtime/aggregate.ts:285-290 columns
+  src/runtime/aggregate.ts:326-331 readGroups
 function 2ff7f061f6e1 ~159 minified bytes
   src/tooling/cli/outcome.ts:179-182 readPartial
   src/tooling/errors/shape.ts:107-110 readCliDetail
@@ -1689,7 +1695,7 @@ function 8c7cf49909e5 ~158 minified bytes
 literal 577db2ee59b6 ~158 minified bytes x3
   src/runtime/tenancy/rls.ts:61
   src/runtime/tenancy/rls.ts:824
-  src/tooling/errors/registry.ts:703
+  src/tooling/errors/registry.ts:716
 function 49f33ae049ee ~157 minified bytes
   src/tooling/testing/factories.ts:419-424 tenantKeyNames
   src/tooling/testing/isolation.ts:245-250 tenantKeys
@@ -1718,7 +1724,7 @@ function 04c632f22765 ~156 minified bytes
   src/runtime/tenancy/index.ts:467-472 (arrow)
 function 2f6342689b66 ~156 minified bytes
   src/dialects/pg/lower.ts:517-522 alterColumn
-  src/runtime/page.ts:199-204 (arrow)
+  src/runtime/page.ts:201-206 (arrow)
 function 3340e60abd80 ~156 minified bytes
   src/dialects/pg/decimal.ts:32-39 numeric
   src/dialects/pg/integer.ts:67-74 bigint
@@ -1751,9 +1757,6 @@ function d2d59d52378b ~156 minified bytes
   src/tooling/migrate/apply.ts:1019-1024 provisionEmpty
   src/tooling/migrate/apply.ts:1112-1117 insertReference
   src/tooling/migrate/runner.ts:824-829 assertUnitPolicy
-function 0be4546dd936 ~155 minified bytes
-  src/contracts/catalog/document.ts:527-530 indexAgain
-  src/runtime/client.ts:738-741 readCall
 function 1e3b08c4dd17 ~155 minified bytes
   src/runtime/include.ts:291-296 emitNestedAggregate
   src/runtime/window.ts:214-219 emitWindow
@@ -1786,9 +1789,9 @@ function e2e9e77bbd66 ~153 minified bytes
   src/tooling/migrate/server-requirements.ts:231-240 availableExtensions
 function e36930651044 ~153 minified bytes
   src/runtime/include.ts:191-196 emitIncludeJoin
-  src/runtime/plan.ts:719-724 emitRead
+  src/runtime/plan.ts:751-756 emitRead
   src/runtime/sync.ts:399-404 manyThrough
-  src/runtime/tree.ts:185-190 emitTree
+  src/runtime/tree.ts:187-192 emitTree
   src/runtime/write.ts:1109-1114 updateSliceBody
 function 1e9c7795a78c ~152 minified bytes
   src/runtime/sync.ts:400-404 manyThrough
@@ -1805,9 +1808,9 @@ function b382bcfc0bf2 ~152 minified bytes
   src/tooling/migrate/apply.ts:678-681 pushTarget
 function f720c4ba2626 ~152 minified bytes
   src/runtime/include.ts:192-196 emitIncludeJoin
-  src/runtime/plan.ts:720-724 emitRead
+  src/runtime/plan.ts:752-756 emitRead
   src/runtime/sync.ts:541-545 emitSetCase
-  src/runtime/tree.ts:186-190 emitTree
+  src/runtime/tree.ts:188-192 emitTree
 function fd62e9bfc354 ~152 minified bytes
   src/contracts/catalog/document.ts:824-828 rewriteTableName
   src/dialects/pg/view/scratch.ts:125-129 (arrow)
@@ -1844,8 +1847,8 @@ function 4020040782f5 ~150 minified bytes
   src/tooling/migrate/import-drizzle.ts:513-515 catalogOf
   src/tooling/migrate/pull-routines.ts:317-319 renderRoutines
 function 492f78709712 ~150 minified bytes
-  src/tooling/errors/examples.ts:1613-1620 (arrow)
-  src/tooling/errors/examples.ts:1626-1631 (arrow)
+  src/tooling/errors/examples.ts:1616-1623 (arrow)
+  src/tooling/errors/examples.ts:1629-1634 (arrow)
 function 8421c552290c ~150 minified bytes
   src/runtime/archive.ts:329-334 restoreSql
   src/runtime/version.ts:297-302 targetStatement
@@ -1860,6 +1863,7 @@ function b280d5ce749c ~150 minified bytes
   src/tooling/migrate/apply.ts:493-500 runApply
   src/tooling/migrate/provision.ts:49-56 provision
 function e7be89713683 ~150 minified bytes
+  src/runtime/warnings/config.ts:66-69 parseWarningOptions
   src/tooling/cli/parse.ts:196-199 parseCli
   src/tooling/describe/protocol.ts:367-370 parseTarget
 function 61b104223b74 ~149 minified bytes
@@ -1883,7 +1887,7 @@ function 226699842627 ~148 minified bytes
   src/tooling/describe/sync.ts:74-78 lockStatement
 function 844d4860e226 ~148 minified bytes
   src/contracts/catalog/view.ts:166-169 materializedViewIndex
-  src/runtime/client.ts:138-141 createClient
+  src/runtime/client.ts:147-150 createClient
   src/tooling/migrate/apply.ts:370-373 applyTarget
   src/tooling/migrate/apply.ts:679-682 pushTarget
 function c68f4aa4296b ~148 minified bytes
@@ -1902,7 +1906,7 @@ function ba37e82a8154 ~147 minified bytes
   src/dialects/pg/compile.ts:116-119 compileColumn
   src/dialects/pg/custom.ts:35-38 custom
   src/tooling/describe/sync.ts:75-78 lockStatement
-  src/tooling/migrate/commands.ts:733-736 invokeOf
+  src/tooling/migrate/commands.ts:766-769 invokeOf
   src/tooling/migrate/plan-json.ts:142-145 (arrow)
 function 44300ac5b993 ~146 minified bytes
   src/contracts/catalog/document.ts:527-531 indexAgain
@@ -1919,34 +1923,36 @@ function 48442bbaba3c ~146 minified bytes
   src/runtime/safety/index.ts:223-225 (function)
   src/runtime/safety/index.ts:266-268 (function)
   src/tooling/describe/sync.ts:76-78 lockStatement
-  src/tooling/migrate/commands.ts:734-736 invokeOf
+  src/tooling/migrate/commands.ts:767-769 invokeOf
   src/tooling/migrate/plan-json.ts:143-145 (arrow)
 function 9c2808b67ec0 ~146 minified bytes
   src/adapters/pg/postgresjs.ts:351-358 (function)
   src/adapters/pg/session.ts:93-100 (function)
 function ad4ac37301f7 ~146 minified bytes
   src/contracts/catalog/document.ts:1823-1829 parseDefaultPrivilege
-  src/runtime/topology.ts:462-468 (arrow)
+  src/runtime/topology.ts:463-469 (arrow)
+function b2bacabb2c1b ~146 minified bytes
+  src/runtime/aggregate.ts:217-223 plan
+  src/runtime/page.ts:128-134 plan
 function b79099372a12 ~146 minified bytes
   src/contracts/catalog/object.ts:250-253 index
   src/contracts/catalog/view.ts:164-167 materializedViewIndex
   src/dialects/pg/fn/index.ts:236-239 (arrow)
-  src/runtime/client.ts:738-741 readCall
 function c3e460a84810 ~146 minified bytes
   src/contracts/catalog/object.ts:371-375 constraint
   src/dialects/pg/schema.ts:1275-1279 (arrow)
 function d9cee0cbc9b7 ~146 minified bytes
-  src/tooling/errors/examples.ts:728-734 (arrow)
-  src/tooling/errors/examples.ts:738-743 (arrow)
-  src/tooling/errors/examples.ts:763-769 (arrow)
-  src/tooling/errors/examples.ts:773-778 (arrow)
+  src/tooling/errors/examples.ts:731-737 (arrow)
+  src/tooling/errors/examples.ts:741-746 (arrow)
+  src/tooling/errors/examples.ts:766-772 (arrow)
+  src/tooling/errors/examples.ts:776-781 (arrow)
 function e3dc5ed13d94 ~146 minified bytes
   src/tooling/migrate/apply.ts:764-771 restampHeadHash
   src/tooling/migrate/baseline.ts:205-212 runBaseline
 function 0c819a8590fb ~145 minified bytes
   src/dialects/pg/compile.ts:156-158 compileColumn
   src/dialects/pg/errors.ts:109-111 mapPostgresError
-  src/runtime/topology.ts:908-910 openEndpoint
+  src/runtime/topology.ts:909-911 openEndpoint
 function 3c232c4bdfa9 ~145 minified bytes
   src/contracts/catalog/document.ts:559-562 rewriteConstraint
   src/dialects/pg/schema.ts:1490-1493 tableModel
@@ -1955,8 +1961,8 @@ function 3c232c4bdfa9 ~145 minified bytes
   src/runtime/pg/neon.ts:69-72 (arrow)
   src/runtime/pg/neon.ts:82-85 connect
   src/runtime/pg/pg.ts:64-67 connect
-  src/runtime/topology.ts:910-913 openEndpoint
-  src/runtime/tree.ts:105-108 open
+  src/runtime/topology.ts:911-914 openEndpoint
+  src/runtime/tree.ts:107-110 open
   src/tooling/migrate/apply.ts:369-372 applyTarget
   src/tooling/migrate/apply.ts:703-706 pushTarget
 function 53256d42d40b ~145 minified bytes
@@ -1980,23 +1986,38 @@ function ad9bdc0a70d7 ~145 minified bytes
   src/tooling/migrate/apply.ts:369-372 applyTarget
 function dacc29cfe55c ~145 minified bytes
   src/tooling/migrate/doctor.ts:78-81 doctorProject
-  src/tooling/migrate/project.ts:260-263 checkProject
+  src/tooling/migrate/project.ts:272-275 checkProject
 function fe1671388fc3 ~145 minified bytes
   src/dialects/pg/ddl.ts:357-360 alterColumnSql
   src/tooling/migrate/safe.ts:137-140 notValidSteps
 function 030bf566ad20 ~144 minified bytes
   src/adapters/pg/neon.ts:171-176 (arrow)
   src/adapters/pg/nodepostgres.ts:398-403 (arrow)
+function 2765c0781b61 ~144 minified bytes
+  src/contracts/catalog/privilege.ts:119-125 defaultPrivilegeObject
+  src/runtime/pg/bun.ts:84-90 connect
+  src/runtime/pg/neon.ts:96-102 (arrow)
+  src/runtime/pg/pg.ts:77-83 connect
+  src/runtime/pg/pglite.ts:71-77 connect
+  src/runtime/pg/postgresjs.ts:60-66 connect
+  src/runtime/topology.ts:429-435 connectTopology
+  src/runtime/topology.ts:467-473 (arrow)
+  src/tooling/cli/envelope.ts:103-109 serializeEnvelope
+  src/tooling/init/engine.ts:315-321 buildPlan
 function 32615a46293c ~144 minified bytes
   src/adapters/pg/neon.ts:162-170 (arrow)
   src/adapters/pg/nodepostgres.ts:389-397 (arrow)
+function 663a0cacc1a3 ~144 minified bytes
+  src/dialects/pg/schema.ts:1465-1472 (arrow)
+  src/runtime/tenancy/via.ts:110-117 (arrow)
+  src/tooling/errors/registry.ts:993-1000 warningDoc
 function 80caa832cd8e ~144 minified bytes
   src/dialects/pg/fn/index.ts:238-241 (arrow)
   src/dialects/pg/schema.ts:1167-1170 (arrow)
 function ba43fc224fe0 ~144 minified bytes
   src/contracts/catalog/object.ts:372-374 constraint
   src/dialects/pg/schema.ts:1276-1278 (arrow)
-  src/runtime/client.ts:138-140 createClient
+  src/runtime/client.ts:147-149 createClient
   src/runtime/traits/index.ts:98-100 trait
 function db283cc114da ~144 minified bytes
   src/tooling/describe/sync.ts:75-79 lockStatement
@@ -2004,17 +2025,6 @@ function db283cc114da ~144 minified bytes
 function ea8619c41a46 ~144 minified bytes
   src/contracts/catalog/privilege.ts:119-126 defaultPrivilegeObject
   src/tooling/init/engine.ts:315-322 buildPlan
-function 2765c0781b61 ~143 minified bytes
-  src/contracts/catalog/privilege.ts:119-125 defaultPrivilegeObject
-  src/runtime/pg/bun.ts:83-89 connect
-  src/runtime/pg/neon.ts:95-101 (arrow)
-  src/runtime/pg/pg.ts:76-82 connect
-  src/runtime/pg/pglite.ts:70-76 connect
-  src/runtime/pg/postgresjs.ts:60-66 connect
-  src/runtime/topology.ts:428-434 connectTopology
-  src/runtime/topology.ts:466-472 (arrow)
-  src/tooling/cli/envelope.ts:103-109 serializeEnvelope
-  src/tooling/init/engine.ts:315-321 buildPlan
 function 42d3526c7b29 ~143 minified bytes
   src/adapters/pg/nodepostgres.ts:223-228 (arrow)
   src/adapters/pg/postgresjs.ts:388-393 (function)
@@ -2035,8 +2045,8 @@ function 7dfaa5970d00 ~143 minified bytes
   src/dialects/pg/filter-parse.ts:106-111 clauses
   src/dialects/pg/filter-parse.ts:193-198 relationClause
 function c5ae40646c7b ~143 minified bytes
-  src/tooling/errors/examples.ts:279-280 diffCodes
-  src/tooling/errors/examples.ts:287-288 schemaCodes
+  src/tooling/errors/examples.ts:282-283 diffCodes
+  src/tooling/errors/examples.ts:290-291 schemaCodes
 function c86a69e44b43 ~143 minified bytes
   src/tooling/migrate/lint-rules.ts:999-1006 lengthShrink
   src/tooling/migrate/lint-rules.ts:1010-1017 lengthGrow
@@ -2061,7 +2071,7 @@ function 27509be821e1 ~142 minified bytes
   src/contracts/catalog/document.ts:254-260 loadTrustedCatalog
   src/contracts/catalog/document.ts:308-314 parseCatalog
 function 403ab35ec113 ~142 minified bytes
-  src/runtime/client.ts:894-897 callOptions
+  src/runtime/client.ts:906-909 callOptions
   src/tooling/migrate/import-drizzle.ts:671-674 columnOf
 function 99a995e8768d ~142 minified bytes
   src/dialects/pg/ddl.ts:249-251 policyCreatePlan
@@ -2070,8 +2080,8 @@ function 99a995e8768d ~142 minified bytes
   src/tooling/migrate/safe.ts:138-140 notValidSteps
   src/tooling/migrate/safe.ts:168-170 usingIndexSteps
 function cdddac0ed039 ~142 minified bytes
-  src/runtime/topology.ts:2135-2139 byteLag
-  src/runtime/topology.ts:2161-2165 timeLag
+  src/runtime/topology.ts:2136-2140 byteLag
+  src/runtime/topology.ts:2162-2166 timeLag
 function d8759e8910b1 ~142 minified bytes
   src/dialects/pg/custom.ts:35-38 custom
   src/runtime/observe-emit.ts:292-295 (function)
@@ -2091,16 +2101,22 @@ function 105c4b70ee54 ~141 minified bytes
   src/dialects/pg/column.ts:658-661 (function)
   src/dialects/pg/ext/index.ts:136-139 extension
   src/dialects/pg/table.ts:568-571 buildIndex
-  src/runtime/client.ts:894-897 callOptions
+  src/runtime/client.ts:906-909 callOptions
   src/tooling/migrate/import-drizzle.ts:671-674 columnOf
 function 12dfe0390838 ~141 minified bytes
   src/runtime/tenancy/via.ts:110-117 (arrow)
-  src/runtime/topology.ts:462-469 (arrow)
+  src/runtime/topology.ts:463-470 (arrow)
 function 4295a846ad89 ~141 minified bytes
   src/runtime/include.ts:291-295 emitNestedAggregate
   src/runtime/include.ts:502-506 emitMorphJoin
   src/runtime/window.ts:214-218 emitWindow
   src/runtime/write.ts:1888-1892 shapeObserver
+function 62d3137ef3f9 ~141 minified bytes
+  src/dialects/pg/errors.ts:179-182 safeCause
+  src/runtime/ids/okid-generator.ts:40-43 optionsRecord
+  src/runtime/plan.ts:1339-1342 rejectOptions
+  src/runtime/read-stream.ts:190-193 pageFields
+  src/tooling/migrate/commands.ts:343-346 check
 function 8c2f5ce614ec ~141 minified bytes
   src/adapters/pg/neon.ts:362-368 statementName
   src/adapters/pg/nodepostgres.ts:288-294 statementName
@@ -2109,9 +2125,9 @@ function 8d2ed495e6ac ~141 minified bytes
   src/dialects/pg/schema.ts:1324-1331 resolveTarget
 function 99fe791d36f2 ~141 minified bytes
   src/runtime/include.ts:191-196 emitIncludeJoin
-  src/runtime/plan.ts:719-724 emitRead
+  src/runtime/plan.ts:751-756 emitRead
   src/runtime/sync.ts:502-507 emitDesired
-  src/runtime/tree.ts:185-190 emitTree
+  src/runtime/tree.ts:187-192 emitTree
   src/runtime/version.ts:282-287 targetStatement
   src/runtime/version.ts:407-412 anyClaimStatement
   src/runtime/write.ts:2060-2065 pathInsert
@@ -2133,15 +2149,15 @@ function 3ae58d3eaa5b ~140 minified bytes
   src/runtime/pg/bun.ts:70-73 connect
   src/runtime/pg/neon.ts:82-85 connect
   src/runtime/pg/pg.ts:64-67 connect
-  src/runtime/topology.ts:910-913 openEndpoint
+  src/runtime/topology.ts:911-914 openEndpoint
 function 674553b48931 ~140 minified bytes
   src/runtime/include.ts:192-196 emitIncludeJoin
-  src/runtime/plan.ts:720-724 emitRead
+  src/runtime/plan.ts:752-756 emitRead
   src/runtime/sync.ts:400-404 manyThrough
   src/runtime/sync.ts:486-490 emitSelectLocked
   src/runtime/sync.ts:503-507 emitDesired
   src/runtime/sync.ts:541-545 emitSetCase
-  src/runtime/tree.ts:186-190 emitTree
+  src/runtime/tree.ts:188-192 emitTree
   src/runtime/version.ts:283-287 targetStatement
   src/runtime/version.ts:408-412 anyClaimStatement
   src/runtime/write.ts:1110-1114 updateSliceBody
@@ -2152,6 +2168,9 @@ function 770144845677 ~140 minified bytes
 function 78f2d3e87f3f ~140 minified bytes
   src/dialects/pg/role/sql.ts:81-85 privilegeSql
   src/runtime/write.ts:1884-1888 shapeObserver
+function 8822521a8ba1 ~140 minified bytes
+  src/tooling/errors/body.ts:145-148 warningBody
+  src/tooling/migrate/commands.ts:343-346 check
 function acfecbad0995 ~140 minified bytes
   src/tooling/migrate/apply.ts:461-464 runApply
   src/tooling/migrate/apply.ts:532-535 pushProject
@@ -2183,10 +2202,10 @@ function 99e8ec21e20f ~139 minified bytes
   src/runtime/write.ts:1109-1114 updateSliceBody
   src/runtime/write.ts:2060-2065 pathInsert
 function a0e5fa3a1339 ~139 minified bytes
-  src/runtime/client.ts:786-791 errorFields
+  src/runtime/client.ts:797-802 errorFields
   src/runtime/exposure.ts:71-76 scrubCall
 function e30368d6c873 ~139 minified bytes
-  src/runtime/plan.ts:1125-1130 emitOrder
+  src/runtime/plan.ts:1157-1162 emitOrder
   src/runtime/window.ts:158-163 emitResultOrder
 function 1789c293c143 ~138 minified bytes
   src/contracts/catalog/document.ts:529-531 indexAgain
@@ -2196,7 +2215,7 @@ function 1789c293c143 ~138 minified bytes
   src/runtime/pg/neon.ts:70-72 (arrow)
   src/runtime/pg/neon.ts:83-85 connect
   src/runtime/pg/pg.ts:65-67 connect
-  src/runtime/topology.ts:911-913 openEndpoint
+  src/runtime/topology.ts:912-914 openEndpoint
   src/tooling/migrate/apply.ts:652-654 pushTarget
 function 1b213d552248 ~138 minified bytes
   src/runtime/tenancy/composite.ts:195-209 (arrow)
@@ -2207,11 +2226,14 @@ function 42275f6f7558 ~138 minified bytes
 function 5b3905986803 ~138 minified bytes
   src/dialects/pg/owner.ts:81-88 ownerFor
   src/tooling/migrate/place.ts:185-192 relocateIdentity
+function 7f623fbc5737 ~138 minified bytes
+  src/tooling/errors/registry.ts:992-998 warningDoc
+  src/tooling/migrate/baseline.ts:255-261 reportJson
 function 8b84f6bf689d ~138 minified bytes
   src/tooling/migrate/status.ts:431-438 readBackfills
   src/tooling/migrate/status.ts:462-469 readSteps
 function 9323452963c2 ~138 minified bytes
-  src/runtime/page.ts:199-203 (arrow)
+  src/runtime/page.ts:201-205 (arrow)
   src/runtime/safety/index.ts:438-442 sameViolations
   src/tooling/migrate/plan.ts:1187-1191 columnsAppended
 function 96e5050bb7a2 ~138 minified bytes
@@ -2230,15 +2252,12 @@ function 1acfac532a8d ~137 minified bytes
 function 23f245c52737 ~137 minified bytes
   src/dialects/pg/ddl.ts:248-251 policyCreatePlan
   src/tooling/migrate/safe.ts:167-170 usingIndexSteps
-function 663a0cacc1a3 ~137 minified bytes
-  src/dialects/pg/schema.ts:1465-1472 (arrow)
-  src/runtime/tenancy/via.ts:110-117 (arrow)
 function 8534a82017a1 ~137 minified bytes
   src/dialects/pg/schema.ts:1490-1493 tableModel
-  src/runtime/tree.ts:105-108 open
+  src/runtime/tree.ts:107-110 open
 function fc0cdb1c6b25 ~137 minified bytes
   src/runtime/batch.ts:270-272 stampValidation
-  src/runtime/client.ts:787-789 errorFields
+  src/runtime/client.ts:798-800 errorFields
   src/runtime/exposure.ts:72-74 scrubCall
 function 0e3a6dda2560 ~136 minified bytes
   src/runtime/sync.ts:523-527 emitChildMatch
@@ -2255,13 +2274,13 @@ function 78ed7a907843 ~136 minified bytes
   src/tooling/migrate/pg-probe.ts:296-300 probeValidate
 function a59ccf6fba84 ~136 minified bytes
   src/dialects/pg/role/index.ts:197-200 contributeRoles
-  src/runtime/client.ts:137-140 createClient
+  src/runtime/client.ts:146-149 createClient
 function 3696c2f6c20f ~135 minified bytes
   src/adapters/pg/nodepostgres.ts:158-161 open
   src/dialects/pg/schema.ts:1274-1277 (arrow)
   src/tooling/migrate/apply.ts:650-653 pushTarget
 function 6565d6cc1624 ~135 minified bytes
-  src/runtime/tree.ts:212-218 emitTree
+  src/runtime/tree.ts:214-220 emitTree
   src/runtime/window.ts:228-234 emitWindow
 function 972468f99f53 ~135 minified bytes
   src/tooling/canonical-json.ts:40-43 write
@@ -2324,15 +2343,15 @@ function 8be3be08827e ~133 minified bytes
   src/dialects/pg/archive-bind.ts:55-57 rewriteArchivable
   src/runtime/write.ts:1879-1881 shapeObserver
 function 9cde6ef9b2f0 ~133 minified bytes
-  src/tooling/errors/examples.ts:821-824 (arrow)
-  src/tooling/errors/examples.ts:826-829 (arrow)
-  src/tooling/errors/examples.ts:845-848 (arrow)
+  src/tooling/errors/examples.ts:824-827 (arrow)
+  src/tooling/errors/examples.ts:829-832 (arrow)
+  src/tooling/errors/examples.ts:848-851 (arrow)
 function a9854cdb0733 ~133 minified bytes
-  src/runtime/aggregate.ts:268-273 sumDecode
+  src/runtime/aggregate.ts:270-275 sumDecode
   src/runtime/window.ts:390-395 totalDecode
 function b0203a5aa4b2 ~133 minified bytes
-  src/tooling/errors/examples.ts:1022-1025 (arrow)
-  src/tooling/errors/examples.ts:1048-1051 (arrow)
+  src/tooling/errors/examples.ts:1025-1028 (arrow)
+  src/tooling/errors/examples.ts:1051-1054 (arrow)
 function 6941db9dbe20 ~132 minified bytes
   src/contracts/catalog/object.ts:364-369 constraint
   src/dialects/pg/fn/index.ts:441-444 (function)
@@ -2348,17 +2367,17 @@ function 98c5a1f263dd ~132 minified bytes
   src/tooling/migrate/runner.ts:130-132 runTarget
   src/tooling/migrate/sandbox.ts:445-447 runSteps
 function c3c3a294a23e ~132 minified bytes
-  src/tooling/migrate/commands.ts:732-735 invokeOf
+  src/tooling/migrate/commands.ts:765-768 invokeOf
   src/tooling/migrate/pg-probe.ts:509-512 parseAddEnum
 function ce5ca591696d ~132 minified bytes
-  src/runtime/plan.ts:1126-1130 emitOrder
+  src/runtime/plan.ts:1158-1162 emitOrder
   src/runtime/topology.ts:368-372 connectTopology
 function 0067b1c5ef7d ~131 minified bytes
-  src/tooling/migrate/commands.ts:732-735 invokeOf
+  src/tooling/migrate/commands.ts:765-768 invokeOf
   src/tooling/migrate/pg-probe.ts:660-663 alterTable
 function 1483eeaee048 ~131 minified bytes
   src/runtime/lock.ts:39-45 build
-  src/runtime/tree.ts:76-82 build
+  src/runtime/tree.ts:77-83 build
 function 4b779a9393a8 ~131 minified bytes
   src/adapters/pg/bunsql.ts:387-392 statsOf
   src/adapters/pg/neon.ts:371-376 statsOf
@@ -2367,11 +2386,17 @@ function 4b779a9393a8 ~131 minified bytes
 function 8a1bbedf0450 ~131 minified bytes
   src/runtime/write.ts:735-740 planUpdate
   src/runtime/write.ts:1405-1410 emitClaim
+function ba1057c2827d ~131 minified bytes
+  src/runtime/warnings/config.ts:41-44 assertProjectWarnings
+  src/runtime/warnings/config.ts:58-61 parseWarningOptions
+function 18c979e8d1f6 ~130 minified bytes
+  src/runtime/warnings/config.ts:66-69 parseWarningOptions
+  src/tooling/cli/parse.ts:196-199 parseCli
 function 6604123a0a8c ~130 minified bytes
   src/contracts/catalog/json.ts:80-83 encodeEscaped
   src/contracts/utf8.ts:93-96 readCode
 function 77bc5a8e6856 ~130 minified bytes
-  src/runtime/plan.ts:1127-1130 emitOrder
+  src/runtime/plan.ts:1159-1162 emitOrder
   src/runtime/tenancy/composite.ts:390-393 writePredicate
   src/runtime/topology.ts:369-372 connectTopology
 function 7d1fe791ebe9 ~130 minified bytes
@@ -2393,8 +2418,8 @@ function 28edfb17c944 ~129 minified bytes
   src/tooling/migrate/files.ts:39-43 loadMigrations
   src/tooling/migrate/lint.ts:121-125 lintMigrationDirectory
 function 424672f0f4cc ~129 minified bytes
-  src/runtime/topology.ts:441-445 connectTopology
-  src/runtime/topology.ts:1120-1124 shutdown
+  src/runtime/topology.ts:442-446 connectTopology
+  src/runtime/topology.ts:1121-1125 shutdown
 function 96b8614691d2 ~129 minified bytes
   src/runtime/include.ts:228-232 emitIncludeJoin
   src/runtime/include.ts:502-506 emitMorphJoin
@@ -2402,16 +2427,16 @@ function 96b8614691d2 ~129 minified bytes
 function c770bff40e0c ~129 minified bytes
   src/runtime/tenancy/via.ts:110-115 (arrow)
   src/runtime/tenancy/via.ts:133-138 (arrow)
-  src/runtime/topology.ts:1958-1963 fromSelect
+  src/runtime/topology.ts:1959-1964 fromSelect
 function c80f15ccc63f ~129 minified bytes
-  src/tooling/errors/examples.ts:1639-1645 (arrow)
-  src/tooling/errors/examples.ts:1651-1654 (arrow)
+  src/tooling/errors/examples.ts:1642-1648 (arrow)
+  src/tooling/errors/examples.ts:1654-1657 (arrow)
 function e08a77fb4a11 ~129 minified bytes
   src/dialects/pg/lower.ts:542-547 columnAlterKinds
   src/dialects/pg/role/sql.ts:103-108 privilegeSql
 literal 57ff8553dcc4 ~129 minified bytes x2
   src/runtime/page.ts:36
-  src/tooling/errors/registry.ts:246
+  src/tooling/errors/registry.ts:259
 function 16b7d54de7e7 ~128 minified bytes
   src/runtime/drift-detail.ts:113-117 groupMigrations
   src/tooling/migrate/status.ts:408-412 readHistory
@@ -2453,7 +2478,7 @@ function 0b5a9c1e63f5 ~126 minified bytes
   src/tooling/migrate/place.ts:225-229 moveRef
 function 4332322fbb55 ~126 minified bytes
   src/runtime/bucket-group.ts:184-188 writeGrouped
-  src/runtime/plan.ts:1126-1130 emitOrder
+  src/runtime/plan.ts:1158-1162 emitOrder
   src/runtime/tenancy/composite.ts:468-472 (arrow)
   src/runtime/topology.ts:368-372 connectTopology
   src/runtime/window.ts:159-163 emitResultOrder
@@ -2475,37 +2500,36 @@ function d7c8063aa128 ~126 minified bytes
   src/runtime/write.ts:1109-1113 updateSliceBody
   src/runtime/write.ts:2060-2064 pathInsert
 function ea1910bd2138 ~126 minified bytes
-  src/runtime/aggregate.ts:133-137 build
+  src/runtime/aggregate.ts:134-138 build
   src/runtime/lock.ts:41-45 build
-  src/runtime/tree.ts:78-82 build
+  src/runtime/tree.ts:79-83 build
 function fd61837c554c ~126 minified bytes
   src/contracts/catalog/plan-order.ts:32-35 uniqueBeforeForeignKey
   src/tooling/migrate/requirements.ts:162-165 unique
 function 05df40343f8f ~125 minified bytes
-  src/tooling/errors/examples.ts:1511-1518 (arrow)
-  src/tooling/errors/examples.ts:1558-1565 (arrow)
-  src/tooling/errors/examples.ts:1571-1578 (arrow)
+  src/tooling/errors/examples.ts:1514-1521 (arrow)
+  src/tooling/errors/examples.ts:1561-1568 (arrow)
+  src/tooling/errors/examples.ts:1574-1581 (arrow)
 function 0b08ee4a8eec ~125 minified bytes
   src/runtime/archive.ts:329-333 restoreSql
   src/runtime/include.ts:191-195 emitIncludeJoin
-  src/runtime/plan.ts:719-723 emitRead
-  src/runtime/tree.ts:185-189 emitTree
+  src/runtime/plan.ts:751-755 emitRead
+  src/runtime/tree.ts:187-191 emitTree
   src/runtime/write.ts:1007-1011 pathListUpdate
 function 1ffff5646b73 ~125 minified bytes
-  src/runtime/topology.ts:2173-2176 parseLsn
+  src/runtime/topology.ts:2174-2177 parseLsn
   src/tooling/migrate/plan.ts:1586-1589 parseInList
 function 223c832bc50e ~125 minified bytes
   src/runtime/trait-read.ts:37-41 fieldSealed
   src/runtime/trait-read.ts:55-59 sealingTrait
+function 300f29a5750c ~125 minified bytes
+  src/runtime/aggregate.ts:219-221 plan
+  src/runtime/page.ts:130-132 plan
+  src/tooling/migrate/commands.ts:766-768 invokeOf
+  src/tooling/migrate/pg-probe.ts:510-512 parseAddEnum
 function 6bfb42c47fab ~125 minified bytes
   src/dialects/pg/compile.ts:160-163 compileColumn
   src/tooling/migrate/api.ts:166-171 invokeOf
-function 74db6459ec6e ~125 minified bytes
-  src/dialects/pg/errors.ts:179-181 safeCause
-  src/runtime/ids/okid-generator.ts:40-42 optionsRecord
-  src/runtime/plan.ts:1309-1311 rejectOptions
-  src/runtime/read-stream.ts:190-192 pageFields
-  src/tooling/migrate/commands.ts:331-333 check
 function 7701bed32de5 ~125 minified bytes
   src/dialects/pg/emit.ts:275-281 typescriptForPgType
   src/dialects/pg/view/scratch.ts:441-447 canonicalArgType
@@ -2530,13 +2554,10 @@ function f30e29da04ba ~125 minified bytes
   src/runtime/include.ts:583-586 decodeRowIncluded
   src/runtime/include.ts:603-606 decodeInclude
   src/runtime/include.ts:631-634 decodeJsonInclude
-  src/runtime/plan.ts:1411-1414 decodeRow
+  src/runtime/plan.ts:1441-1444 decodeRow
 function 0a3e55aa4a59 ~124 minified bytes
   src/tooling/testing/facts.ts:97-102 readFacts
   src/tooling/testing/facts.ts:133-138 readViews
-function 1932d4b5a789 ~124 minified bytes
-  src/tooling/errors/body.ts:145-147 warningBody
-  src/tooling/migrate/commands.ts:331-333 check
 function 76f7cc3ec4e2 ~124 minified bytes
   src/contracts/catalog/enum.ts:117-123 domainType
   src/contracts/catalog/extension.ts:49-55 extensionObject
@@ -2555,14 +2576,14 @@ function 8e1d3051d942 ~124 minified bytes
 function a3cebb8e2286 ~124 minified bytes
   src/runtime/archive.ts:330-333 restoreSql
   src/runtime/include.ts:192-195 emitIncludeJoin
-  src/runtime/plan.ts:720-723 emitRead
+  src/runtime/plan.ts:752-755 emitRead
   src/runtime/sync.ts:400-403 manyThrough
   src/runtime/sync.ts:486-489 emitSelectLocked
   src/runtime/sync.ts:503-506 emitDesired
   src/runtime/sync.ts:523-526 emitChildMatch
   src/runtime/sync.ts:541-544 emitSetCase
   src/runtime/sync.ts:582-585 emitDistinct
-  src/runtime/tree.ts:186-189 emitTree
+  src/runtime/tree.ts:188-191 emitTree
   src/runtime/version.ts:283-286 targetStatement
   src/runtime/version.ts:408-411 anyClaimStatement
   src/runtime/write.ts:1008-1011 pathListUpdate
@@ -2572,21 +2593,21 @@ function b35ecc0428eb ~124 minified bytes
   src/tooling/migrate/pull-emit.ts:1050-1053 domainDefs
   src/tooling/migrate/reprint.ts:131-134 sqlBodies
 function f061d74e2008 ~124 minified bytes
-  src/runtime/client.ts:786-789 errorFields
+  src/runtime/client.ts:797-800 errorFields
   src/runtime/write.ts:2677-2680 scrubWrite
 function 1f8d93d868f0 ~123 minified bytes
   src/dialects/pg/errors.ts:560-563 valuesOf
   src/dialects/pg/lower.ts:518-521 alterColumn
   src/dialects/pg/schema.ts:1253-1256 compileForeignKeys
   src/runtime/archive.ts:443-446 joinOn
-  src/runtime/page.ts:200-203 (arrow)
+  src/runtime/page.ts:202-205 (arrow)
   src/runtime/safety/index.ts:439-442 sameViolations
   src/runtime/tenancy/composite.ts:295-298 rewriteTenant
   src/tooling/migrate/plan.ts:1188-1191 columnsAppended
   src/tooling/testing/factories.ts:461-464 paired
 function 23eaa50c1ac2 ~123 minified bytes
   src/adapters/pg/pglite.ts:200-205 describeOnPglite
-  src/runtime/topology.ts:1957-1962 fromSelect
+  src/runtime/topology.ts:1958-1963 fromSelect
 function 296dedf6c66a ~123 minified bytes
   src/runtime/safety/index.ts:134-138 (function)
   src/runtime/safety/index.ts:172-176 (function)
@@ -2602,15 +2623,15 @@ function 4376a82c10c4 ~123 minified bytes
   src/runtime/conflict.ts:138-141 lookupExisting
   src/runtime/sort.ts:360-363 moveStatement
 function 5496cf2a1aeb ~123 minified bytes
-  src/runtime/topology.ts:1267-1269 (arrow)
-  src/runtime/topology.ts:1482-1484 readStream
+  src/runtime/topology.ts:1268-1270 (arrow)
+  src/runtime/topology.ts:1483-1485 readStream
 function 647ac130413c ~123 minified bytes
   src/tooling/migrate/status.ts:405-411 readHistory
   src/tooling/migrate/status.ts:431-437 readBackfills
   src/tooling/migrate/status.ts:462-468 readSteps
 function 83c66a5a0d8c ~123 minified bytes
   src/runtime/include.ts:582-586 decodeRowIncluded
-  src/runtime/plan.ts:1410-1414 decodeRow
+  src/runtime/plan.ts:1440-1444 decodeRow
 function bc11dfa407ea ~123 minified bytes
   src/dialects/pg/role/sql.ts:81-85 privilegeSql
   src/tooling/migrate/plan.ts:339-343 planMigration
@@ -2620,14 +2641,14 @@ function be7bf8e6a860 ~123 minified bytes
 function c1a9d193affc ~123 minified bytes
   src/dialects/pg/schema.ts:523-526 schema
   src/dialects/pg/table.ts:569-572 buildIndex
-  src/runtime/client.ts:894-897 callOptions
+  src/runtime/client.ts:906-909 callOptions
   src/tooling/migrate/import-drizzle.ts:672-675 columnOf
 function 1096a7bb7210 ~122 minified bytes
   src/contracts/catalog/document.ts:1450-1454 parseFunction
   src/dialects/pg/table.ts:567-571 buildIndex
 function 179f484c6751 ~122 minified bytes
   src/runtime/exposure.ts:169-171 walk
-  src/runtime/plan.ts:1531-1533 plain
+  src/runtime/plan.ts:1561-1563 plain
 function 2ceaaa86faa4 ~122 minified bytes
   src/runtime/sync.ts:485-489 emitSelectLocked
   src/runtime/sync.ts:522-526 emitChildMatch
@@ -2648,7 +2669,7 @@ function ade0db8a6c10 ~122 minified bytes
   src/tooling/testing/isolation.ts:228-232 primaryWhere
 function d02c9af17363 ~122 minified bytes
   src/contracts/catalog/document.ts:1051-1054 definitionToJson
-  src/runtime/client.ts:786-789 errorFields
+  src/runtime/client.ts:797-800 errorFields
   src/runtime/exposure.ts:71-74 scrubCall
   src/runtime/pg/neon.ts:65-68 (arrow)
   src/runtime/write.ts:2677-2680 scrubWrite
@@ -2668,19 +2689,19 @@ function b049dae99928 ~121 minified bytes
   src/runtime/tenancy/via.ts:133-139 (arrow)
 function d3be2fc33269 ~121 minified bytes
   src/runtime/tenancy/rls.ts:270-277 runReadOnly
-  src/runtime/topology.ts:1338-1345 (arrow)
+  src/runtime/topology.ts:1339-1346 (arrow)
 function e8d1305dc228 ~121 minified bytes
   src/adapters/pg/bunsql.ts:255-261 (function)
   src/adapters/pg/neon.ts:260-266 (function)
   src/adapters/pg/nodepostgres.ts:238-244 (function)
   src/adapters/pg/pglite.ts:129-135 (function)
 function 06d85020aee3 ~120 minified bytes
-  src/tooling/errors/examples.ts:1091-1096 (arrow)
-  src/tooling/errors/examples.ts:1100-1105 (arrow)
+  src/tooling/errors/examples.ts:1094-1099 (arrow)
+  src/tooling/errors/examples.ts:1103-1108 (arrow)
 function 1da1abbd3af4 ~120 minified bytes
   src/dialects/pg/view/refresh.ts:74-80 refreshView
   src/runtime/tenancy/rls.ts:305-311 streamHeld
-  src/runtime/topology.ts:1375-1381 (function)
+  src/runtime/topology.ts:1376-1382 (function)
   src/tooling/migrate/apply.ts:1125-1131 insertReference
 function 2467accc94ff ~120 minified bytes
   src/contracts/catalog/enum.ts:110-114 domainType
@@ -2693,9 +2714,9 @@ function 5727e59cb5d0 ~120 minified bytes
   src/runtime/safety/index.ts:135-138 (function)
 function 5a18e866791c ~120 minified bytes
   src/dialects/pg/column.ts:658-662 (function)
-  src/runtime/client.ts:894-898 callOptions
+  src/runtime/client.ts:906-910 callOptions
 function a29b9c24ac45 ~120 minified bytes
-  src/runtime/client.ts:894-897 callOptions
+  src/runtime/client.ts:906-909 callOptions
   src/tooling/migrate/plan.ts:772-775 parsePlan
 function 0f19f792b450 ~119 minified bytes
   src/runtime/include.ts:116-119 emitIncludeSelect
@@ -2709,14 +2730,14 @@ function 41af0f0ad09a ~119 minified bytes
 function 6bfadd946a34 ~119 minified bytes
   src/dialects/pg/view/refresh.ts:74-79 refreshView
   src/runtime/tenancy/rls.ts:305-310 streamHeld
-  src/runtime/topology.ts:1375-1380 (function)
+  src/runtime/topology.ts:1376-1381 (function)
   src/tooling/migrate/apply.ts:766-771 restampHeadHash
   src/tooling/migrate/apply.ts:1062-1067 provisionEmpty
   src/tooling/migrate/apply.ts:1125-1130 insertReference
   src/tooling/migrate/baseline.ts:207-212 runBaseline
 function 707c7dffc775 ~119 minified bytes
-  src/runtime/plan.ts:761-766 emitJoin
-  src/runtime/tree.ts:255-260 emitStep
+  src/runtime/plan.ts:793-798 emitJoin
+  src/runtime/tree.ts:257-262 emitStep
 function 73a3e27fc2b5 ~119 minified bytes
   src/tooling/migrate/drift.ts:48-55 assertAuthorDrift
   src/tooling/migrate/sandbox.ts:380-387 dropScratch
@@ -2726,10 +2747,10 @@ function 91634f3670da ~119 minified bytes
 function 9b363f55a28c ~119 minified bytes
   src/runtime/archive.ts:329-333 restoreSql
   src/runtime/include.ts:191-195 emitIncludeJoin
-  src/runtime/plan.ts:719-723 emitRead
+  src/runtime/plan.ts:751-755 emitRead
   src/runtime/sync.ts:399-403 manyThrough
   src/runtime/sync.ts:502-506 emitDesired
-  src/runtime/tree.ts:185-189 emitTree
+  src/runtime/tree.ts:187-191 emitTree
   src/runtime/version.ts:282-286 targetStatement
   src/runtime/version.ts:407-411 anyClaimStatement
   src/runtime/write.ts:1007-1011 pathListUpdate
@@ -2753,7 +2774,7 @@ function fb60d8ad9c23 ~119 minified bytes
   src/tooling/migrate/resolve.ts:147-152 resolveOnTarget
   src/tooling/migrate/status.ts:230-235 readTargetStatus
 literal 042b77c102b0 ~119 minified bytes x2
-  src/tooling/errors/registry.ts:560
+  src/tooling/errors/registry.ts:573
   src/tooling/migrate/check.ts:69
 literal 843f41a125ca ~119 minified bytes x2
   src/runtime/version.ts:115
@@ -2780,7 +2801,7 @@ function 7eff69d33918 ~118 minified bytes
 function a776cb6ca9e0 ~118 minified bytes
   src/dialects/pg/introspect.ts:423-427 introspectSchema
   src/runtime/archive.ts:329-333 restoreSql
-  src/runtime/plan.ts:736-740 emitRead
+  src/runtime/plan.ts:768-772 emitRead
   src/runtime/sync.ts:399-403 manyThrough
   src/runtime/sync.ts:502-506 emitDesired
   src/runtime/version.ts:282-286 targetStatement
@@ -2798,7 +2819,7 @@ function da8b9ed83ec5 ~118 minified bytes
 function df1c1e12222c ~118 minified bytes
   src/dialects/pg/view/refresh.ts:75-80 refreshView
   src/runtime/tenancy/rls.ts:306-311 streamHeld
-  src/runtime/topology.ts:1376-1381 (function)
+  src/runtime/topology.ts:1377-1382 (function)
   src/tooling/migrate/apply.ts:1126-1131 insertReference
   src/tooling/migrate/step-journal.ts:116-121 completeMarker
 function e25ef5a8e277 ~118 minified bytes
@@ -2821,7 +2842,7 @@ function 57bc17e2e840 ~117 minified bytes
   src/tooling/migrate/baseline.ts:208-212 runBaseline
   src/tooling/migrate/step-journal.ts:116-120 completeMarker
 function 5ac534b88f4a ~117 minified bytes
-  src/runtime/plan.ts:1125-1129 emitOrder
+  src/runtime/plan.ts:1157-1161 emitOrder
   src/runtime/version.ts:420-424 anyClaimStatement
 function 735ee495c83f ~117 minified bytes
   src/runtime/sync.ts:486-489 emitSelectLocked
@@ -2849,8 +2870,8 @@ function ea154c944c66 ~117 minified bytes
   src/runtime/operator-sql.ts:133-137 emitPath
   src/runtime/write.ts:1517-1521 emitJsonSet
 function 02d491994995 ~116 minified bytes
-  src/tooling/errors/examples.ts:252-259 unknownEngine
-  src/tooling/errors/examples.ts:261-268 appliedEngine
+  src/tooling/errors/examples.ts:255-262 unknownEngine
+  src/tooling/errors/examples.ts:264-271 appliedEngine
 function 26e584684c16 ~116 minified bytes
   src/contracts/error.ts:643-645 fromDriver
   src/dialects/pg/schema.ts:524-526 schema
@@ -2867,28 +2888,28 @@ function 9be3ff1a8154 ~116 minified bytes
   src/adapters/pg/batch.ts:112-114 statementsOf
   src/adapters/pg/result.ts:70-72 rowCells
 function 1c8496bcacef ~115 minified bytes
-  src/runtime/aggregate.ts:133-137 build
+  src/runtime/aggregate.ts:134-138 build
   src/runtime/lock.ts:41-45 build
-  src/runtime/page.ts:77-81 build
-  src/runtime/tree.ts:78-82 build
+  src/runtime/page.ts:78-82 build
+  src/runtime/tree.ts:79-83 build
 function 6af31033f09e ~115 minified bytes
   src/adapters/pg/neon.ts:198-202 send
   src/adapters/pg/nodepostgres.ts:276-280 send
 function 722092a25dd0 ~115 minified bytes
   src/dialects/pg/ops/lane.ts:484-488 (arrow)
   src/runtime/archive.ts:277-281 archiveSql
-  src/runtime/plan.ts:745-749 emitRead
+  src/runtime/plan.ts:777-781 emitRead
   src/runtime/sort.ts:457-461 joinOn
   src/runtime/version.ts:527-531 closeUpdated
 function 800e07d2b047 ~115 minified bytes
-  src/tooling/errors/examples.ts:878-880 (arrow)
-  src/tooling/errors/examples.ts:882-884 (arrow)
-  src/tooling/errors/examples.ts:894-896 (arrow)
-  src/tooling/errors/examples.ts:902-904 (arrow)
-  src/tooling/errors/examples.ts:906-908 (arrow)
+  src/tooling/errors/examples.ts:881-883 (arrow)
+  src/tooling/errors/examples.ts:885-887 (arrow)
+  src/tooling/errors/examples.ts:897-899 (arrow)
+  src/tooling/errors/examples.ts:905-907 (arrow)
+  src/tooling/errors/examples.ts:909-911 (arrow)
 function db77b44482fb ~115 minified bytes
   src/runtime/tenancy/via.ts:133-139 (arrow)
-  src/runtime/topology.ts:462-468 (arrow)
+  src/runtime/topology.ts:463-469 (arrow)
 function f824565c366c ~115 minified bytes
   src/tooling/describe/scan.ts:141-144 callsInFile
   src/tooling/describe/scan.ts:189-192 importedRaw
@@ -2898,11 +2919,11 @@ function 169413620b19 ~114 minified bytes
 function 3919f783554c ~114 minified bytes
   src/runtime/archive.ts:330-333 restoreSql
   src/runtime/include.ts:192-195 emitIncludeJoin
-  src/runtime/plan.ts:720-723 emitRead
+  src/runtime/plan.ts:752-755 emitRead
   src/runtime/sync.ts:400-403 manyThrough
   src/runtime/sync.ts:503-506 emitDesired
-  src/runtime/tree.ts:186-189 emitTree
-  src/runtime/tree.ts:221-224 emitKeyList
+  src/runtime/tree.ts:188-191 emitTree
+  src/runtime/tree.ts:223-226 emitKeyList
   src/runtime/version.ts:283-286 targetStatement
   src/runtime/version.ts:408-411 anyClaimStatement
   src/runtime/write.ts:1008-1011 pathListUpdate
@@ -2910,8 +2931,8 @@ function 3919f783554c ~114 minified bytes
   src/runtime/write.ts:1306-1309 rowKey
   src/runtime/write.ts:2061-2064 pathInsert
 function 5254658168a1 ~114 minified bytes
-  src/tooling/errors/examples.ts:934-938 (arrow)
-  src/tooling/errors/examples.ts:954-958 (arrow)
+  src/tooling/errors/examples.ts:937-941 (arrow)
+  src/tooling/errors/examples.ts:957-961 (arrow)
 function 55b1783ee789 ~114 minified bytes
   src/dialects/pg/ops/lane.ts:484-489 (arrow)
   src/runtime/conflict.ts:137-141 lookupExisting
@@ -2933,7 +2954,7 @@ function 979b9beacaf3 ~114 minified bytes
 function 9ec93db1228b ~114 minified bytes
   src/dialects/pg/introspect.ts:423-427 introspectSchema
   src/runtime/include.ts:191-195 emitIncludeJoin
-  src/runtime/tree.ts:185-189 emitTree
+  src/runtime/tree.ts:187-191 emitTree
   src/runtime/write.ts:1305-1309 rowKey
 function b1b05ac7d177 ~114 minified bytes
   src/runtime/tenancy/composite.ts:468-471 (arrow)
@@ -2943,7 +2964,7 @@ function b5876ea7b293 ~114 minified bytes
   src/tooling/migrate/import-drizzle.ts:322-325 collect
 function c90e1891b691 ~114 minified bytes
   src/runtime/conflict.ts:137-141 lookupExisting
-  src/runtime/plan.ts:745-749 emitRead
+  src/runtime/plan.ts:777-781 emitRead
 function f50569e03f94 ~114 minified bytes
   src/adapters/error.ts:129-131 errorField
   src/contracts/connection.ts:111-113 readCode
@@ -2951,13 +2972,13 @@ function f50569e03f94 ~114 minified bytes
 function 161edee6abfa ~113 minified bytes
   src/runtime/batch.ts:181-184 recover
   src/runtime/bucket-group.ts:185-188 writeGrouped
-  src/runtime/plan.ts:1127-1130 emitOrder
+  src/runtime/plan.ts:1159-1162 emitOrder
   src/runtime/tenancy/composite.ts:469-472 (arrow)
   src/runtime/topology.ts:369-372 connectTopology
   src/runtime/window.ts:160-163 emitResultOrder
 function 1a6e8efa150c ~113 minified bytes
   src/runtime/archive-handle.ts:135-144 run
-  src/runtime/client.ts:434-438 runWrite
+  src/runtime/client.ts:444-448 runWrite
 function 27f287018c3d ~113 minified bytes
   src/runtime/conflict.ts:136-140 lookupExisting
   src/tooling/untrusted.ts:145-149 keep
@@ -2966,9 +2987,9 @@ function 36d06628ea0e ~113 minified bytes
   src/runtime/text-search.ts:187-190 hiddenSearch
 function 41308859ec13 ~113 minified bytes
   src/dialects/pg/ops/lane.ts:256-259 openTable
-  src/runtime/plan.ts:1432-1435 indexes
+  src/runtime/plan.ts:1462-1465 indexes
 function 4ea37b5ed632 ~113 minified bytes
-  src/runtime/plan.ts:746-749 emitRead
+  src/runtime/plan.ts:778-781 emitRead
   src/runtime/sort.ts:360-363 moveStatement
   src/runtime/sort.ts:444-447 flipStatement
 function 678799a08b96 ~113 minified bytes
@@ -2988,7 +3009,7 @@ function cc04ec8ff01f ~113 minified bytes
   src/runtime/sync.ts:523-526 emitChildMatch
   src/runtime/sync.ts:541-544 emitSetCase
   src/runtime/sync.ts:582-585 emitDistinct
-  src/runtime/tree.ts:221-224 emitKeyList
+  src/runtime/tree.ts:223-226 emitKeyList
 function daa33ceabd48 ~113 minified bytes
   src/runtime/version.ts:291-295 targetStatement
   src/runtime/version.ts:351-355 claimStatement
@@ -2996,21 +3017,13 @@ function daa33ceabd48 ~113 minified bytes
 function dc3ed3897a96 ~113 minified bytes
   src/dialects/pg/introspect.ts:423-426 introspectSchema
   src/dialects/pg/lower.ts:315-318 addValueStatements
-function f773beec0505 ~113 minified bytes
-  src/dialects/pg/table.ts:569-572 buildIndex
-  src/runtime/client.ts:746-749 readCall
-  src/runtime/client.ts:894-897 callOptions
-  src/tooling/migrate/import-drizzle.ts:671-674 columnOf
 function 2f933dcd37d5 ~112 minified bytes
-  src/tooling/migrate/commands.ts:436-440 extTestCommand
-  src/tooling/migrate/commands.ts:675-679 seed
+  src/tooling/migrate/commands.ts:469-473 extTestCommand
+  src/tooling/migrate/commands.ts:708-712 seed
 function 35ad13817214 ~112 minified bytes
   src/contracts/catalog/document.ts:1451-1454 parseFunction
-  src/dialects/pg/column.ts:658-661 (function)
   src/dialects/pg/compile.ts:154-157 compileColumn
-  src/dialects/pg/ext/index.ts:136-139 extension
-  src/runtime/client.ts:746-749 readCall
-  src/runtime/client.ts:894-897 callOptions
+  src/runtime/client.ts:906-909 callOptions
   src/tooling/migrate/import-drizzle.ts:671-674 columnOf
 function 60e8d91c8c6d ~112 minified bytes
   src/tooling/migrate/extensions.ts:90-93 assertExtensionsAvailable
@@ -3021,17 +3034,17 @@ function 6d5a95356603 ~112 minified bytes
   src/runtime/tenancy/via.ts:77-79 classify
 function a3c3d644cd0c ~112 minified bytes
   src/runtime/sync.ts:780-783 tenantSql
-  src/runtime/tree.ts:340-343 identityColumn
+  src/runtime/tree.ts:342-345 identityColumn
 function b3be7a56c462 ~112 minified bytes
-  src/runtime/plan.ts:761-765 emitJoin
+  src/runtime/plan.ts:793-797 emitJoin
   src/runtime/sync.ts:525-529 emitChildMatch
   src/runtime/sync.ts:597-601 emitJoinLocked
 function bb88ec84b0fc ~112 minified bytes
   src/tooling/describe/lock.ts:85-86 parseLock
   src/tooling/init/engine.ts:877-878 readRecord
 function 21c65f1682d7 ~111 minified bytes
-  src/tooling/errors/examples.ts:713-716 (arrow)
-  src/tooling/errors/examples.ts:720-722 (arrow)
+  src/tooling/errors/examples.ts:716-719 (arrow)
+  src/tooling/errors/examples.ts:723-725 (arrow)
 function 4b76c9477019 ~111 minified bytes
   src/contracts/catalog/document.ts:1451-1454 parseFunction
   src/dialects/pg/column.ts:658-661 (function)
@@ -3062,7 +3075,7 @@ function b3dac18c0dbd ~111 minified bytes
   src/runtime/sync.ts:522-526 emitChildMatch
   src/runtime/sync.ts:540-544 emitSetCase
   src/runtime/sync.ts:581-585 emitDistinct
-  src/runtime/tree.ts:220-224 emitKeyList
+  src/runtime/tree.ts:222-226 emitKeyList
 function c160e0a73fe7 ~111 minified bytes
   src/dialects/pg/errors.ts:507-510 fieldKey
   src/runtime/trait-read.ts:18-21 touchFields
@@ -3079,7 +3092,7 @@ function 397583653121 ~110 minified bytes
   src/runtime/include.ts:229-231 emitIncludeJoin
   src/runtime/include.ts:292-294 emitNestedAggregate
   src/runtime/include.ts:503-505 emitMorphJoin
-  src/runtime/topology.ts:608-610 preview
+  src/runtime/topology.ts:609-611 preview
   src/runtime/window.ts:215-217 emitWindow
   src/runtime/write.ts:1889-1891 shapeObserver
   src/tooling/migrate/runner.ts:130-132 runTarget
@@ -3097,37 +3110,40 @@ function a634fc675c8c ~110 minified bytes
   src/runtime/validate/places.ts:132-136 tableSetting
 function bb08ad9c6081 ~110 minified bytes
   src/runtime/sort.ts:238-242 moveColumn
-  src/runtime/tree.ts:342-346 identityColumn
+  src/runtime/tree.ts:344-348 identityColumn
 function c36b87504bed ~110 minified bytes
   src/tooling/migrate/lint-rules.ts:915-916 widenValidate
   src/tooling/migrate/lint-rules.ts:934-935 addedConstraint
 function cd619ee6996b ~110 minified bytes
-  src/runtime/topology.ts:1452-1457 choose
-  src/runtime/topology.ts:1623-1628 retryOf
+  src/runtime/topology.ts:1453-1458 choose
+  src/runtime/topology.ts:1624-1629 retryOf
 function 03c7a27f9d98 ~109 minified bytes
   src/tooling/describe/scan.ts:340-345 lex
   src/tooling/migrate/lint-rules.ts:451-456 sqlWords
+function 1243ac3f9ce3 ~109 minified bytes
+  src/runtime/client.ts:758-761 readCall
+  src/runtime/read-stream.ts:195-198 pageFields
 function 22d77355f035 ~109 minified bytes
   src/dialects/pg/morph.ts:244-249 (arrow)
   src/runtime/include.ts:534-539 emitMorphJoin
   src/runtime/sync.ts:526-531 emitChildMatch
   src/runtime/sync.ts:598-603 emitJoinLocked
 function 2a0b8c5676c5 ~109 minified bytes
-  src/tooling/errors/examples.ts:976-983 (arrow)
-  src/tooling/errors/examples.ts:996-1003 (arrow)
-  src/tooling/errors/examples.ts:1004-1011 (arrow)
+  src/tooling/errors/examples.ts:979-986 (arrow)
+  src/tooling/errors/examples.ts:999-1006 (arrow)
+  src/tooling/errors/examples.ts:1007-1014 (arrow)
 function 49f4ef13bfee ~109 minified bytes
-  src/tooling/errors/examples.ts:1357-1359 (arrow)
-  src/tooling/errors/examples.ts:1367-1369 (arrow)
+  src/tooling/errors/examples.ts:1360-1362 (arrow)
+  src/tooling/errors/examples.ts:1370-1372 (arrow)
 function 844d339804ca ~109 minified bytes
-  src/runtime/topology.ts:844-847 readProbe
+  src/runtime/topology.ts:845-848 readProbe
   src/tooling/migrate/plan.ts:1586-1589 parseInList
 function 9c6bf8074db3 ~109 minified bytes
   src/tooling/describe/scan.ts:332-338 lex
   src/tooling/describe/scan.ts:410-416 skipJsxElement
 function adfb9be35e92 ~109 minified bytes
-  src/runtime/topology.ts:1340-1348 (arrow)
-  src/runtime/topology.ts:1376-1384 (function)
+  src/runtime/topology.ts:1341-1349 (arrow)
+  src/runtime/topology.ts:1377-1385 (function)
 function bbe8b3473ff6 ~109 minified bytes
   src/dialects/pg/lower.ts:215-219 dropRelation
   src/dialects/pg/lower.ts:444-448 createRoutine
@@ -3135,27 +3151,27 @@ function bbe8b3473ff6 ~109 minified bytes
 function c79cc01ae3cc ~109 minified bytes
   src/runtime/include.ts:563-565 decodeMorph
   src/runtime/include.ts:583-585 decodeRowIncluded
-  src/runtime/plan.ts:1411-1413 decodeRow
+  src/runtime/plan.ts:1441-1443 decodeRow
 literal b4a6a8d5aaf6 ~109 minified bytes x4
   src/runtime/observe-emit.ts:382
   src/runtime/observe.ts:208
-  src/tooling/errors/examples.ts:652
-  src/tooling/errors/registry.ts:965
+  src/tooling/errors/examples.ts:655
+  src/tooling/errors/registry.ts:979
 function 5b9d3eb71f3a ~108 minified bytes
   src/tooling/describe/protocol.ts:460-464 saslInitial
   src/tooling/describe/protocol.ts:472-476 saslFinal
 function 7e3a9cc84baa ~108 minified bytes
-  src/runtime/topology.ts:729-736 readPrimary
-  src/runtime/topology.ts:780-786 readReplica
+  src/runtime/topology.ts:730-737 readPrimary
+  src/runtime/topology.ts:781-787 readReplica
 function 87d1bf625b55 ~108 minified bytes
   src/dialects/pg/ops/lane.ts:484-487 (arrow)
   src/runtime/bucket-group.ts:184-187 writeGrouped
 function 90bd0169c390 ~108 minified bytes
-  src/tooling/errors/examples.ts:1515-1518 (arrow)
-  src/tooling/errors/examples.ts:1534-1537 (arrow)
-  src/tooling/errors/examples.ts:1546-1549 (arrow)
-  src/tooling/errors/examples.ts:1589-1592 (arrow)
-  src/tooling/errors/examples.ts:1601-1604 (arrow)
+  src/tooling/errors/examples.ts:1518-1521 (arrow)
+  src/tooling/errors/examples.ts:1537-1540 (arrow)
+  src/tooling/errors/examples.ts:1549-1552 (arrow)
+  src/tooling/errors/examples.ts:1592-1595 (arrow)
+  src/tooling/errors/examples.ts:1604-1607 (arrow)
 function 9a4804f22b4c ~108 minified bytes
   src/dialects/pg/ext/feature.ts:49-52 pinAllows
   src/tooling/migrate/ext-surface.ts:278-281 versionAllows
@@ -3165,9 +3181,6 @@ function f689f3e8abd9 ~108 minified bytes
 function f71f251a45c1 ~108 minified bytes
   src/dialects/pg/view/scratch.ts:197-201 createExtensions
   src/tooling/migrate/pull-emit.ts:975-979 extensionCalls
-function 057b33053554 ~107 minified bytes
-  src/dialects/pg/schema.ts:523-526 schema
-  src/runtime/client.ts:746-749 readCall
 function 11418fa270e0 ~107 minified bytes
   src/dialects/pg/lower.ts:238-241 createIndex
   src/dialects/pg/lower.ts:254-257 dropIndex
@@ -3187,11 +3200,11 @@ function 2c88aed82f25 ~107 minified bytes
   src/dialects/pg/introspect.ts:424-427 introspectSchema
   src/runtime/archive.ts:330-333 restoreSql
   src/runtime/include.ts:192-195 emitIncludeJoin
-  src/runtime/plan.ts:720-723 emitRead
+  src/runtime/plan.ts:752-755 emitRead
   src/runtime/safety/index.ts:390-393 safetyProperty
   src/runtime/sync.ts:400-403 manyThrough
   src/runtime/sync.ts:503-506 emitDesired
-  src/runtime/tree.ts:186-189 emitTree
+  src/runtime/tree.ts:188-191 emitTree
   src/runtime/version.ts:283-286 targetStatement
   src/runtime/version.ts:408-411 anyClaimStatement
   src/runtime/write.ts:1008-1011 pathListUpdate
@@ -3199,7 +3212,7 @@ function 2c88aed82f25 ~107 minified bytes
   src/runtime/write.ts:1306-1309 rowKey
   src/runtime/write.ts:2061-2064 pathInsert
 function 723401e36371 ~107 minified bytes
-  src/runtime/plan.ts:1056-1060 emitOr
+  src/runtime/plan.ts:1088-1092 emitOr
   src/runtime/write.ts:2064-2068 pathInsert
 function 77d4cef1499b ~107 minified bytes
   src/dialects/pg/fn/touch.ts:80-83 updatedColumns
@@ -3227,13 +3240,13 @@ function ee04ac2673a4 ~107 minified bytes
   src/runtime/window.ts:119-122 (arrow)
   src/tooling/describe/scan.ts:189-192 importedRaw
 function fd8d8737d445 ~107 minified bytes
-  src/runtime/topology.ts:844-847 readProbe
-  src/runtime/topology.ts:2173-2176 parseLsn
+  src/runtime/topology.ts:845-848 readProbe
+  src/runtime/topology.ts:2174-2177 parseLsn
 literal 0479bf78177d ~107 minified bytes x2
-  src/tooling/errors/registry.ts:377
+  src/tooling/errors/registry.ts:390
   src/tooling/migrate/check.ts:313
 function 0253e8f2fe08 ~106 minified bytes
-  src/runtime/client.ts:893-895 callOptions
+  src/runtime/client.ts:905-907 callOptions
   src/tooling/describe/lock.ts:213-215 (arrow)
   src/tooling/describe/lock.ts:224-226 (arrow)
 function 24e81353e6bd ~106 minified bytes
@@ -3263,7 +3276,6 @@ function a27a7c275eae ~106 minified bytes
   src/contracts/catalog/document.ts:1451-1454 parseFunction
   src/dialects/pg/compile.ts:154-157 compileColumn
   src/dialects/pg/schema.ts:523-526 schema
-  src/runtime/client.ts:746-749 readCall
   src/tooling/migrate/plan.ts:773-776 parsePlan
 function bf5cc72fd345 ~106 minified bytes
   src/tooling/migrate/sql-lex.ts:193-197 dollarBodies
@@ -3281,12 +3293,12 @@ function 285f85fba87c ~105 minified bytes
   src/runtime/sort.ts:202-205 sortable
   src/runtime/write.ts:1595-1598 traitNamed
 function 3abc31d3b797 ~105 minified bytes
-  src/runtime/topology.ts:607-610 preview
+  src/runtime/topology.ts:608-611 preview
   src/tooling/migrate/sandbox.ts:444-447 runSteps
 function 444beef3abbf ~105 minified bytes
   src/dialects/pg/lower.ts:316-318 addValueStatements
   src/runtime/sync.ts:595-597 emitJoinLocked
-  src/runtime/tree.ts:253-255 emitStep
+  src/runtime/tree.ts:255-257 emitStep
   src/runtime/window.ts:120-122 (arrow)
   src/tooling/describe/scan.ts:142-144 callsInFile
   src/tooling/describe/scan.ts:190-192 importedRaw
@@ -3309,18 +3321,18 @@ function b245c42eee82 ~105 minified bytes
 function c84d0b6f5d61 ~105 minified bytes
   src/contracts/error.ts:643-644 fromDriver
   src/dialects/pg/fn/index.ts:443-444 (function)
-  src/runtime/client.ts:894-895 callOptions
+  src/runtime/client.ts:906-907 callOptions
   src/tooling/describe/lock.ts:214-215 (arrow)
   src/tooling/describe/lock.ts:225-226 (arrow)
 function de1a0c0499a3 ~105 minified bytes
-  src/runtime/plan.ts:1066-1069 emitOr
+  src/runtime/plan.ts:1098-1101 emitOr
   src/runtime/traits/index.ts:487-490 addFields
 function e1970e27a880 ~105 minified bytes
   src/runtime/archive.ts:252-256 archiveSql
   src/runtime/archive.ts:304-308 restoreSql
   src/runtime/sort.ts:386-390 moveStatement
 literal 26cc11702017 ~105 minified bytes x2
-  src/tooling/errors/registry.ts:898
+  src/tooling/errors/registry.ts:911
   src/tooling/migrate/baseline.ts:165
 function 061009cfc9fa ~104 minified bytes
   src/dialects/pg/lower.ts:315-318 addValueStatements
@@ -3332,9 +3344,12 @@ function 245ec847a5b0 ~104 minified bytes
   src/runtime/archive.ts:441-444 joinOn
   src/runtime/conflict.ts:136-139 lookupExisting
   src/tooling/untrusted.ts:145-148 keep
+function 249d51271b6a ~104 minified bytes
+  src/dialects/pg/custom.ts:36-39 custom
+  src/runtime/aggregate.ts:217-220 plan
 function 28d2052a511b ~104 minified bytes
   src/dialects/pg/schema.ts:524-526 schema
-  src/runtime/topology.ts:907-909 openEndpoint
+  src/runtime/topology.ts:908-910 openEndpoint
 function 2f245197183b ~104 minified bytes
   src/adapters/pg/nodepostgres.ts:159-161 open
   src/runtime/pg/bun.ts:67-69 connect
@@ -3346,7 +3361,7 @@ function 4be8aceb81c6 ~104 minified bytes
 function 54a060352955 ~104 minified bytes
   src/runtime/sync.ts:525-529 emitChildMatch
   src/runtime/sync.ts:597-601 emitJoinLocked
-  src/runtime/tree.ts:255-259 emitStep
+  src/runtime/tree.ts:257-261 emitStep
 function 5ff7174e474f ~104 minified bytes
   src/tooling/describe/lock.ts:173-177 renderRawTypes
   src/tooling/describe/sync.ts:97-101 buildRawLock
@@ -3354,15 +3369,15 @@ function 678191c6353b ~104 minified bytes
   src/dialects/pg/introspect.ts:256-261 introspectSchema
   src/tooling/migrate/import-drizzle.ts:536-541 catalogOf
 function 70c62552919d ~104 minified bytes
-  src/tooling/errors/examples.ts:1404-1407 (arrow)
-  src/tooling/errors/examples.ts:1409-1412 (arrow)
+  src/tooling/errors/examples.ts:1407-1410 (arrow)
+  src/tooling/errors/examples.ts:1412-1415 (arrow)
 function 961bb5684082 ~104 minified bytes
   src/runtime/safety/index.ts:389-393 safetyProperty
   src/runtime/sync.ts:485-489 emitSelectLocked
   src/runtime/sync.ts:522-526 emitChildMatch
   src/runtime/sync.ts:540-544 emitSetCase
   src/runtime/sync.ts:581-585 emitDistinct
-  src/runtime/tree.ts:220-224 emitKeyList
+  src/runtime/tree.ts:222-226 emitKeyList
 function b22663b84ad0 ~104 minified bytes
   src/runtime/include.ts:116-118 emitIncludeSelect
   src/runtime/sync.ts:245-247 oneToMany
@@ -3387,7 +3402,10 @@ function 797991105b69 ~103 minified bytes
   src/tooling/migrate/pull.ts:116-120 parsePullArgs
 function 86549603c098 ~103 minified bytes
   src/runtime/sync.ts:277-281 oneToMany
-  src/runtime/tree.ts:161-165 emitTree
+  src/runtime/tree.ts:163-167 emitTree
+function 99a56d3cb641 ~103 minified bytes
+  src/runtime/warnings/evaluate.ts:119-123 walk
+  src/runtime/write.ts:2714-2718 collectSecrets
 function a1239170b247 ~103 minified bytes
   src/dialects/pg/lower.ts:315-318 addValueStatements
   src/tooling/describe/scan.ts:141-144 callsInFile
@@ -3414,7 +3432,7 @@ function 017fb3e181bd ~102 minified bytes
   src/tooling/testing/facts.ts:202-205 foreignKeys
 function 02af0cfa56d3 ~102 minified bytes
   src/contracts/error.ts:643-645 fromDriver
-  src/runtime/client.ts:894-896 callOptions
+  src/runtime/client.ts:906-908 callOptions
 function 313225efa031 ~102 minified bytes
   src/runtime/archive.ts:442-444 joinOn
   src/runtime/conflict.ts:137-139 lookupExisting
@@ -3422,8 +3440,8 @@ function 313225efa031 ~102 minified bytes
   src/tooling/migrate/pull.ts:117-119 parsePullArgs
   src/tooling/untrusted.ts:146-148 keep
 function 3770f06229a5 ~102 minified bytes
-  src/tooling/errors/examples.ts:1242-1247 (arrow)
-  src/tooling/errors/examples.ts:1523-1528 (arrow)
+  src/tooling/errors/examples.ts:1245-1250 (arrow)
+  src/tooling/errors/examples.ts:1526-1531 (arrow)
 function 40f998bd5bae ~102 minified bytes
   src/dialects/pg/view/index.ts:487-490 renderQuery
   src/tooling/migrate/sandbox.ts:575-578 prepareCheckSql
@@ -3458,12 +3476,15 @@ function 337cdb5868fe ~101 minified bytes
 function 6407ae71b907 ~101 minified bytes
   src/tooling/describe/lock.ts:52-54 renderLock
   src/tooling/migrate/policy.ts:374-376 listTargets
+function 65a6eee08e23 ~101 minified bytes
+  src/dialects/pg/custom.ts:36-39 custom
+  src/runtime/page.ts:128-131 plan
 function 74fe51fc54aa ~101 minified bytes
   src/adapters/pg/postgresjs.ts:367-371 (function)
   src/adapters/pg/session.ts:108-112 (function)
 function 807aebefe648 ~101 minified bytes
   src/runtime/lock.ts:85-94 plan
-  src/runtime/tree.ts:109-118 open
+  src/runtime/tree.ts:111-120 open
 function cbb855be785a ~101 minified bytes
   src/tooling/describe/protocol.ts:449-455 passwordMessage
   src/tooling/describe/protocol.ts:472-478 saslFinal
@@ -3478,7 +3499,7 @@ function 480101d7859e ~100 minified bytes
   src/tooling/testing/factories.ts:210-214 insertPrepared
 function 7a797e0f8379 ~100 minified bytes
   src/runtime/include.ts:691-695 walkOperators
-  src/runtime/plan.ts:379-383 orderHasRelevance
+  src/runtime/plan.ts:411-415 orderHasRelevance
 function 7e3ae010ee5a ~100 minified bytes
   src/runtime/pg/neon.ts:83-86 connect
   src/runtime/pg/pglite.ts:59-62 connect
@@ -3486,8 +3507,8 @@ function 85bcae8d6bf3 ~100 minified bytes
   src/dialects/pg/schema.ts:1546-1548 (arrow)
   src/dialects/pg/schema.ts:1552-1554 (arrow)
 function 89da6f8306f6 ~100 minified bytes
-  src/tooling/errors/examples.ts:1061-1067 (arrow)
-  src/tooling/errors/examples.ts:1074-1077 (arrow)
+  src/tooling/errors/examples.ts:1064-1070 (arrow)
+  src/tooling/errors/examples.ts:1077-1080 (arrow)
 function addac85c9cec ~100 minified bytes
   src/tooling/describe/protocol.ts:437-441 simpleQuery
   src/tooling/describe/protocol.ts:447-451 passwordMessage
@@ -3502,8 +3523,8 @@ function b08397677c06 ~99 minified bytes
   src/runtime/tenancy/index.ts:273-275 rewriteTenant
   src/runtime/tenancy/path.ts:215-217 localOf
 literal 0c2a1cb8ed1f ~99 minified bytes x2
-  src/tooling/errors/examples.ts:1396
-  src/tooling/errors/examples.ts:1435
+  src/tooling/errors/examples.ts:1399
+  src/tooling/errors/examples.ts:1438
 function 22f799329cbb ~98 minified bytes
   src/runtime/batch.ts:114-118 run
   src/runtime/batch.ts:158-162 recover
@@ -3513,9 +3534,9 @@ function 4cf71448dea5 ~98 minified bytes
   src/tooling/describe/types.ts:98-102 loadLabels
   src/tooling/migrate/policy.ts:241-245 assertTargetAlias
 function b3177e647956 ~98 minified bytes
-  src/runtime/aggregate.ts:384-387 (arrow)
+  src/runtime/aggregate.ts:386-389 (arrow)
   src/runtime/archive.ts:323-326 restoreSql
-  src/runtime/plan.ts:704-707 emitRead
+  src/runtime/plan.ts:736-739 emitRead
 function e497d9af4287 ~98 minified bytes
   src/dialects/pg/archive-bind.ts:170-174 childLinks
   src/tooling/migrate/requirements.ts:161-165 unique
@@ -3527,15 +3548,15 @@ function e95072b5e47c ~98 minified bytes
 literal edc63e81373e ~98 minified bytes x4
   src/runtime/observe-emit.ts:377
   src/runtime/observe.ts:203
-  src/tooling/errors/examples.ts:647
-  src/tooling/errors/registry.ts:964
+  src/tooling/errors/examples.ts:650
+  src/tooling/errors/registry.ts:978
 function 0146f7b878e2 ~97 minified bytes
   src/runtime/include.ts:668-674 emitIncludeOrder
-  src/runtime/plan.ts:1171-1177 emitPrimaryOrder
+  src/runtime/plan.ts:1203-1209 emitPrimaryOrder
 function 08e6c483a40d ~97 minified bytes
-  src/tooling/errors/examples.ts:714-719 (arrow)
-  src/tooling/errors/examples.ts:732-737 (arrow)
-  src/tooling/errors/examples.ts:767-772 (arrow)
+  src/tooling/errors/examples.ts:717-722 (arrow)
+  src/tooling/errors/examples.ts:735-740 (arrow)
+  src/tooling/errors/examples.ts:770-775 (arrow)
 function 0b4e25a4ff43 ~97 minified bytes
   src/dialects/pg/trait.ts:210-212 contributedFields
   src/tooling/migrate/reference.ts:146-148 rowOf
@@ -3545,7 +3566,7 @@ function 10c5fd50455d ~97 minified bytes
   src/runtime/validate/engine.ts:120-123 finish
 function 2a25f364b7a1 ~97 minified bytes
   src/runtime/sync.ts:472-476 parentLock
-  src/runtime/tree.ts:169-173 emitTree
+  src/runtime/tree.ts:171-175 emitTree
 function 2b852ed4ea12 ~97 minified bytes
   src/tooling/migrate/drift.ts:47-54 assertAuthorDrift
   src/tooling/migrate/export.ts:278-285 assertLiveExternal
@@ -3579,13 +3600,13 @@ function 7cd1962f201f ~96 minified bytes
   src/tooling/migrate/pg-probe.ts:587-591 simpleColumns
 function cd775a100719 ~96 minified bytes
   src/dialects/pg/introspect.ts:1267-1271 unwrapTriggerWhen
-  src/runtime/plan.ts:718-722 emitRead
-  src/runtime/tree.ts:184-188 emitTree
+  src/runtime/plan.ts:750-754 emitRead
+  src/runtime/tree.ts:186-190 emitTree
   src/tooling/migrate/lint-rules.ts:590-594 unwrap
   src/tooling/migrate/pg-probe.ts:629-633 splitCommas
 function d2b40a32f225 ~96 minified bytes
-  src/runtime/client.ts:213-218 openClient
-  src/runtime/client.ts:303-308 tableApi
+  src/runtime/client.ts:223-228 openClient
+  src/runtime/client.ts:313-318 tableApi
 function db9264d03da7 ~96 minified bytes
   src/dialects/pg/emit.ts:109-112 readGeneric
   src/tooling/describe/scan.ts:286-289 splitArgs
@@ -3595,23 +3616,23 @@ function e26d8fd42dda ~96 minified bytes
   src/tooling/untrusted.ts:146-149 keep
 function 6989b17445dd ~95 minified bytes
   src/dialects/pg/morph.ts:234-238 (arrow)
-  src/runtime/plan.ts:408-412 emitRelationFrom
+  src/runtime/plan.ts:440-444 emitRelationFrom
 function 6a7c2d1f3dd9 ~95 minified bytes
   src/tooling/migrate/pg-probe.ts:631-634 splitCommas
   src/tooling/migrate/pg-probe.ts:722-725 readParen
 function 834a7a884a2d ~95 minified bytes
   src/runtime/include.ts:293-296 emitNestedAggregate
-  src/runtime/plan.ts:721-724 emitRead
+  src/runtime/plan.ts:753-756 emitRead
   src/runtime/sync.ts:401-404 manyThrough
   src/runtime/sync.ts:542-545 emitSetCase
-  src/runtime/tree.ts:187-190 emitTree
+  src/runtime/tree.ts:189-192 emitTree
   src/runtime/write.ts:1111-1114 updateSliceBody
 function 9f31e6115708 ~95 minified bytes
   src/runtime/tx.ts:151-153 noteWrites
   src/tooling/describe/lock.ts:214-216 (arrow)
 function d62fedadd068 ~95 minified bytes
-  src/runtime/plan.ts:719-722 emitRead
-  src/runtime/tree.ts:185-188 emitTree
+  src/runtime/plan.ts:751-754 emitRead
+  src/runtime/tree.ts:187-190 emitTree
   src/tooling/migrate/pg-probe.ts:573-576 wrapped
 function f063dfddf34e ~95 minified bytes
   src/runtime/write.ts:736-740 planUpdate
@@ -3647,7 +3668,7 @@ function 2f28e4fd19d4 ~93 minified bytes
   src/tooling/migrate/safe.ts:269-273 functionCalls
 function 41b54583735a ~93 minified bytes
   src/adapters/pg/bunsql-extra.ts:94-96 readStatement
-  src/runtime/topology.ts:1406-1408 classOf
+  src/runtime/topology.ts:1407-1409 classOf
 function 7260d5258d21 ~93 minified bytes
   src/tooling/migrate/sandbox.ts:237-243 inCheckTransaction
   src/tooling/migrate/sandbox.ts:379-385 dropScratch
@@ -3658,9 +3679,6 @@ function 82b444a70456 ~93 minified bytes
 function cacfec837e30 ~93 minified bytes
   src/tooling/migrate/lint-rules.ts:718-721 requiredColumn
   src/tooling/migrate/lint-rules.ts:939-941 validates
-function eff566cd20f5 ~93 minified bytes
-  src/runtime/client.ts:746-749 readCall
-  src/tooling/migrate/plan.ts:773-776 parsePlan
 function fe33d6f203ed ~93 minified bytes
   src/dialects/pg/through.ts:26-28 (arrow)
   src/runtime/include.ts:228-230 emitIncludeJoin
@@ -3685,13 +3703,16 @@ function b0dd54d5a509 ~92 minified bytes
 function bb2e2e880846 ~92 minified bytes
   src/dialects/pg/view/index.ts:260-268 (function)
   src/dialects/pg/view/index.ts:427-435 (function)
+function c9c255ac0391 ~92 minified bytes
+  src/runtime/validate/engine.ts:594-597 findColumn
+  src/runtime/warnings/evaluate.ts:176-179 relationOf
 function d1b093052d70 ~92 minified bytes
   src/dialects/pg/ops/fragment.ts:128-130 scanLiteral
   src/tooling/init/paths.ts:53-55 resolveInside
 function 3182bf9b677f ~91 minified bytes
   src/dialects/pg/morph.ts:237-241 (arrow)
   src/runtime/include.ts:527-531 emitMorphJoin
-  src/runtime/plan.ts:776-780 holdArchive
+  src/runtime/plan.ts:808-812 holdArchive
 function 331940870260 ~91 minified bytes
   src/dialects/pg/range.ts:138-141 splitBound
   src/runtime/write.ts:1020-1023 pathListUpdate
@@ -3704,17 +3725,17 @@ function 89ca8c0e922b ~91 minified bytes
   src/runtime/sync.ts:540-543 emitSetCase
   src/runtime/sync.ts:581-584 emitDistinct
   src/runtime/sync.ts:594-597 emitJoinLocked
-  src/runtime/tree.ts:220-223 emitKeyList
-  src/runtime/tree.ts:252-255 emitStep
+  src/runtime/tree.ts:222-225 emitKeyList
+  src/runtime/tree.ts:254-257 emitStep
 function b9747fa9b843 ~91 minified bytes
   src/tooling/describe/scan.ts:417-422 skipJsxElement
   src/tooling/describe/scan.ts:434-439 skipJsxChildren
 function c0326b9aaa5a ~91 minified bytes
-  src/tooling/errors/examples.ts:685-687 (arrow)
-  src/tooling/errors/examples.ts:702-706 (arrow)
+  src/tooling/errors/examples.ts:688-690 (arrow)
+  src/tooling/errors/examples.ts:705-709 (arrow)
 literal 73202956223a ~91 minified bytes x2
   src/dialects/pg/role/check.ts:177
-  src/tooling/errors/registry.ts:797
+  src/tooling/errors/registry.ts:810
 function 05f8bd3b5937 ~90 minified bytes
   src/dialects/ddl-step.ts:97-102 readIdent
   src/tooling/migrate/pg-probe.ts:699-704 readIdent
@@ -3723,16 +3744,16 @@ function 3b1d40fd9379 ~90 minified bytes
   src/tooling/testing/isolation.ts:252-256 scopeFor
 function 5965e2ceea23 ~90 minified bytes
   src/tooling/describe/scan.ts:588-590 walk
-  src/tooling/migrate/project.ts:800-802 directoryImportsValidate
+  src/tooling/migrate/project.ts:818-820 directoryImportsValidate
 function 8e163609f91e ~90 minified bytes
-  src/tooling/errors/examples.ts:446-448 (arrow)
-  src/tooling/errors/examples.ts:451-453 (arrow)
+  src/tooling/errors/examples.ts:449-451 (arrow)
+  src/tooling/errors/examples.ts:454-456 (arrow)
 function 9db9e5c9aff7 ~90 minified bytes
   src/runtime/archive.ts:254-258 archiveSql
   src/runtime/archive.ts:385-389 childUpdate
 function f3ac49e734d1 ~90 minified bytes
-  src/tooling/errors/examples.ts:695-698 (arrow)
-  src/tooling/errors/examples.ts:704-707 (arrow)
+  src/tooling/errors/examples.ts:698-701 (arrow)
+  src/tooling/errors/examples.ts:707-710 (arrow)
 function fe738813ba4b ~90 minified bytes
   src/tooling/migrate/sql-lex.ts:331-340 takeQuoted
   src/tooling/migrate/sql-lex.ts:345-354 takeIdent
@@ -3756,18 +3777,18 @@ function cb7622bac8a1 ~89 minified bytes
   src/runtime/archive.ts:306-310 restoreSql
   src/runtime/archive.ts:405-409 childRestore
 function f436c5af57d7 ~89 minified bytes
-  src/tooling/errors/examples.ts:721-723 (arrow)
-  src/tooling/errors/examples.ts:742-744 (arrow)
-  src/tooling/errors/examples.ts:777-779 (arrow)
+  src/tooling/errors/examples.ts:724-726 (arrow)
+  src/tooling/errors/examples.ts:745-747 (arrow)
+  src/tooling/errors/examples.ts:780-782 (arrow)
 literal 050a664b30ed ~89 minified bytes x2
-  src/tooling/errors/examples.ts:1391
-  src/tooling/errors/examples.ts:1430
+  src/tooling/errors/examples.ts:1394
+  src/tooling/errors/examples.ts:1433
 literal 0ee31aab661c ~89 minified bytes x3
   src/runtime/lock.ts:60
-  src/runtime/topology.ts:2271
+  src/runtime/topology.ts:2272
   src/runtime/transaction.ts:553
 literal 25485e096e87 ~89 minified bytes x2
-  src/tooling/errors/registry.ts:866
+  src/tooling/errors/registry.ts:879
   src/tooling/migrate/policy.ts:256
 function 21f5850fda43 ~88 minified bytes
   src/runtime/conflict.ts:136-139 lookupExisting
@@ -3781,7 +3802,7 @@ function 8b77414c02bb ~88 minified bytes
   src/dialects/pg/geometry.ts:126 lineText
 literal 7cde9c33bb04 ~88 minified bytes x2
   src/dialects/pg/fn/index.ts:206
-  src/tooling/errors/registry.ts:791
+  src/tooling/errors/registry.ts:804
 literal a77d945ed3ad ~88 minified bytes x2
   src/tooling/migrate/baseline.ts:401
   src/tooling/migrate/status.ts:238
@@ -3808,38 +3829,38 @@ function e57a2b184461 ~86 minified bytes
   src/tooling/describe/scan.ts:141-144 callsInFile
   src/tooling/untrusted.ts:146-149 keep
 literal 89d1a41cbe91 ~86 minified bytes x2
-  src/tooling/errors/registry.ts:821
+  src/tooling/errors/registry.ts:834
   src/tooling/migrate/export.ts:449
 literal c6231c4a316d ~86 minified bytes x2
-  src/runtime/topology.ts:2290
-  src/tooling/errors/registry.ts:834
+  src/runtime/topology.ts:2291
+  src/tooling/errors/registry.ts:847
 function 07a10a51ee01 ~85 minified bytes
   src/runtime/include.ts:537-541 emitMorphJoin
-  src/runtime/plan.ts:765-769 emitJoin
+  src/runtime/plan.ts:797-801 emitJoin
 function 42ff79390699 ~85 minified bytes
   src/dialects/pg/column.ts:659-663 (function)
   src/tooling/migrate/import-drizzle.ts:537-541 catalogOf
 function 540eb0fef3b0 ~85 minified bytes
   src/contracts/catalog/document.ts:1860-1864 parseReferences
-  src/runtime/client.ts:895-899 callOptions
+  src/runtime/client.ts:907-911 callOptions
 function 7941fc2b5c25 ~85 minified bytes
   src/dialects/pg/role/index.ts:511 (arrow)
   src/dialects/pg/role/index.ts:534 (arrow)
 literal 3b9687a09dfe ~85 minified bytes x2
-  src/tooling/errors/registry.ts:383
+  src/tooling/errors/registry.ts:396
   src/tooling/migrate/apply.ts:939
 function 02f992e7525e ~84 minified bytes
   src/tooling/cli/parse.ts:90-93 argvHasJson
   src/tooling/cli/parse.ts:321-324 consumesNext
 function 10f857747462 ~84 minified bytes
   src/dialects/pg/morph.ts:247-252 (arrow)
-  src/runtime/plan.ts:765-770 emitJoin
+  src/runtime/plan.ts:797-802 emitJoin
 function 27b962fc6056 ~84 minified bytes
   src/dialects/pg/morph.ts:239-243 (arrow)
   src/runtime/archive.ts:256-260 archiveSql
   src/runtime/include.ts:536-540 emitMorphJoin
 function 608b66e867e1 ~84 minified bytes
-  src/runtime/page.ts:198-201 (arrow)
+  src/runtime/page.ts:200-203 (arrow)
   src/runtime/write.ts:1019-1022 pathListUpdate
 function 9d4df3cec79e ~84 minified bytes
   src/dialects/pg/column.ts:659-663 (function)
@@ -3849,8 +3870,8 @@ function a2eaa8d5822c ~84 minified bytes
   src/tooling/migrate/backfill.ts:118-121 parseBackfillHeader
 function d228c3742740 ~84 minified bytes
   src/contracts/catalog/document.ts:1860-1863 parseReferences
-  src/runtime/client.ts:895-898 callOptions
-  src/runtime/page.ts:138-141 plan
+  src/runtime/client.ts:907-910 callOptions
+  src/runtime/page.ts:140-143 plan
 function db687272cad1 ~84 minified bytes
   src/adapters/pg/postgresjs.ts:374-378 (arrow)
   src/adapters/pg/session.ts:115-119 (arrow)
@@ -3859,11 +3880,11 @@ function ff7f2b8b1caa ~84 minified bytes
   src/tooling/cli/outcome.ts:168-171 attachPartial
   src/tooling/errors/shape.ts:96-99 attachCliDetail
 literal d37b6c15ad59 ~84 minified bytes x3
-  src/tooling/errors/registry.ts:910
+  src/tooling/errors/registry.ts:923
   src/tooling/migrate/policy.ts:94
   src/tooling/migrate/protect.ts:37
 function 5e2eda32b61b ~83 minified bytes
-  src/runtime/plan.ts:1396-1399 literalPattern
+  src/runtime/plan.ts:1426-1429 literalPattern
   src/tooling/cli/parse.ts:290-293 commandWords
   src/tooling/cli/parse.ts:321-324 consumesNext
   src/tooling/migrate/export.ts:562-565 exportFlags
@@ -3873,15 +3894,15 @@ function 7adedba9117a ~83 minified bytes
   src/tooling/cli/parse.ts:90-93 argvHasJson
   src/tooling/cli/parse.ts:290-293 commandWords
 function 7fc2fbd62712 ~83 minified bytes
-  src/runtime/plan.ts:776-780 holdArchive
-  src/runtime/plan.ts:1154-1158 emitOrder
+  src/runtime/plan.ts:808-812 holdArchive
+  src/runtime/plan.ts:1186-1190 emitOrder
 function 8e90417b2c1b ~83 minified bytes
   src/dialects/pg/archive-bind.ts:170-174 childLinks
   src/tooling/describe/types.ts:182-186 uniqueOids
   src/tooling/migrate/requirements.ts:161-165 unique
 literal 1753d9411631 ~83 minified bytes x2
   src/dialects/pg/view/client.ts:123
-  src/tooling/errors/registry.ts:766
+  src/tooling/errors/registry.ts:779
 function 23a193295863 ~82 minified bytes
   src/tooling/testing/isolation.ts:112-114 checkTable
   src/tooling/testing/isolation.ts:355-357 checkPath
@@ -3893,9 +3914,9 @@ function 907a19a65e28 ~82 minified bytes
   src/dialects/pg/morph.ts:237-241 (arrow)
   src/runtime/include.ts:527-531 emitMorphJoin
   src/runtime/include.ts:668-672 emitIncludeOrder
-  src/runtime/plan.ts:776-780 holdArchive
-  src/runtime/plan.ts:1154-1158 emitOrder
-  src/runtime/plan.ts:1171-1175 emitPrimaryOrder
+  src/runtime/plan.ts:808-812 holdArchive
+  src/runtime/plan.ts:1186-1190 emitOrder
+  src/runtime/plan.ts:1203-1207 emitPrimaryOrder
   src/runtime/sync.ts:526-530 emitChildMatch
   src/runtime/sync.ts:546-550 emitSetCase
   src/runtime/sync.ts:564-568 emitWillChange
@@ -3905,7 +3926,7 @@ function a6c4540f9470 ~82 minified bytes
   src/runtime/sync.ts:146 (arrow)
   src/runtime/sync.ts:149 (arrow)
 function a9fea3865be4 ~82 minified bytes
-  src/runtime/plan.ts:1396-1399 literalPattern
+  src/runtime/plan.ts:1426-1429 literalPattern
   src/tooling/cli/parse.ts:90-93 argvHasJson
   src/tooling/cli/parse.ts:290-293 commandWords
   src/tooling/migrate/export.ts:562-565 exportFlags
@@ -3913,16 +3934,16 @@ function a9fea3865be4 ~82 minified bytes
   src/tooling/migrate/pull.ts:117-120 parsePullArgs
 function cd376a5a73fa ~82 minified bytes
   src/dialects/pg/table.ts:625-628 snakeCase
-  src/runtime/plan.ts:1395-1398 literalPattern
+  src/runtime/plan.ts:1425-1428 literalPattern
 function de1e46495cc7 ~82 minified bytes
   src/runtime/batch.ts:148-151 recover
   src/runtime/validate/engine.ts:93-96 finishUpdate
 function e52dca0c7035 ~82 minified bytes
-  src/tooling/errors/examples.ts:631-634 (arrow)
-  src/tooling/errors/examples.ts:636-639 (arrow)
+  src/tooling/errors/examples.ts:634-637 (arrow)
+  src/tooling/errors/examples.ts:639-642 (arrow)
 literal 8f0ff27f9d2a ~82 minified bytes x2
-  src/tooling/errors/examples.ts:1382
-  src/tooling/errors/examples.ts:1421
+  src/tooling/errors/examples.ts:1385
+  src/tooling/errors/examples.ts:1424
 function 7b130f5f086f ~81 minified bytes
   src/tooling/describe/types.ts:184-186 uniqueOids
   src/tooling/describe/types.ts:194-196 oidList
@@ -3932,26 +3953,26 @@ function cb7f9360ce93 ~81 minified bytes
 function d7465875f5fb ~80 minified bytes
   src/runtime/tenancy/rls.ts:927-929 isWriteSql
   src/runtime/tenancy/rls.ts:935-937 isReadSql
-  src/runtime/topology.ts:1398-1400 classOf
+  src/runtime/topology.ts:1399-1401 classOf
 function 12424cee1222 ~79 minified bytes
   src/dialects/pg/introspect.ts:377-381 introspectSchema
   src/tooling/migrate/ext-surface.ts:354-358 visibleOperator
 function 46a1b12c3de0 ~79 minified bytes
-  src/tooling/errors/examples.ts:879 (arrow)
-  src/tooling/errors/examples.ts:883 (arrow)
-  src/tooling/errors/examples.ts:895 (arrow)
-  src/tooling/errors/examples.ts:903 (arrow)
-  src/tooling/errors/examples.ts:907 (arrow)
-  src/tooling/errors/examples.ts:1358 (arrow)
-  src/tooling/errors/examples.ts:1368 (arrow)
+  src/tooling/errors/examples.ts:882 (arrow)
+  src/tooling/errors/examples.ts:886 (arrow)
+  src/tooling/errors/examples.ts:898 (arrow)
+  src/tooling/errors/examples.ts:906 (arrow)
+  src/tooling/errors/examples.ts:910 (arrow)
+  src/tooling/errors/examples.ts:1361 (arrow)
+  src/tooling/errors/examples.ts:1371 (arrow)
 function fbc25fe755eb ~78 minified bytes
-  src/tooling/errors/examples.ts:1213-1216 (arrow)
-  src/tooling/errors/examples.ts:1218-1221 (arrow)
+  src/tooling/errors/examples.ts:1216-1219 (arrow)
+  src/tooling/errors/examples.ts:1221-1224 (arrow)
 function 2638510e1a83 ~77 minified bytes
-  src/tooling/errors/examples.ts:979-983 (arrow)
-  src/tooling/errors/examples.ts:987-991 (arrow)
-  src/tooling/errors/examples.ts:999-1003 (arrow)
-  src/tooling/errors/examples.ts:1007-1011 (arrow)
+  src/tooling/errors/examples.ts:982-986 (arrow)
+  src/tooling/errors/examples.ts:990-994 (arrow)
+  src/tooling/errors/examples.ts:1002-1006 (arrow)
+  src/tooling/errors/examples.ts:1010-1014 (arrow)
 function 3b53d0d5d4d8 ~77 minified bytes
   src/dialects/pg/emit.ts:42-45 emitRowTypes
   src/tooling/migrate/import-drizzle.ts:322-325 collect
@@ -3967,16 +3988,16 @@ function 04909e1020a1 ~75 minified bytes
 function 1dae74e138a0 ~75 minified bytes
   src/runtime/archive-handle.ts:95-97 (function)
   src/runtime/archive-handle.ts:98-100 (function)
-  src/runtime/client.ts:417-419 (function)
-  src/runtime/client.ts:420-422 (function)
+  src/runtime/client.ts:427-429 (function)
+  src/runtime/client.ts:430-432 (function)
 function 00496d2f5856 ~73 minified bytes
-  src/tooling/errors/examples.ts:295-297 (arrow)
-  src/tooling/errors/examples.ts:1536-1538 (arrow)
-  src/tooling/errors/examples.ts:1548-1550 (arrow)
-  src/tooling/errors/examples.ts:1564-1566 (arrow)
-  src/tooling/errors/examples.ts:1577-1579 (arrow)
-  src/tooling/errors/examples.ts:1591-1593 (arrow)
-  src/tooling/errors/examples.ts:1603-1605 (arrow)
+  src/tooling/errors/examples.ts:298-300 (arrow)
+  src/tooling/errors/examples.ts:1539-1541 (arrow)
+  src/tooling/errors/examples.ts:1551-1553 (arrow)
+  src/tooling/errors/examples.ts:1567-1569 (arrow)
+  src/tooling/errors/examples.ts:1580-1582 (arrow)
+  src/tooling/errors/examples.ts:1594-1596 (arrow)
+  src/tooling/errors/examples.ts:1606-1608 (arrow)
 function a33bf881f3f1 ~72 minified bytes
   src/tooling/migrate/lint-rules.ts:833-834 notNullFloorValidate
   src/tooling/migrate/lint-rules.ts:857-858 ownColumnCheckValidate
@@ -3999,14 +4020,14 @@ function 7abc4004fe6d ~70 minified bytes
   src/runtime/ids/uuid.ts:37-40 mintUuidV7
   src/tooling/testing/random.ts:102-105 (function)
 function 9ac5fd85a2e0 ~70 minified bytes
-  src/tooling/errors/examples.ts:920 (arrow)
-  src/tooling/errors/examples.ts:929 (arrow)
+  src/tooling/errors/examples.ts:923 (arrow)
+  src/tooling/errors/examples.ts:932 (arrow)
 function cb426b9a59b3 ~70 minified bytes
-  src/tooling/errors/examples.ts:431-434 (arrow)
-  src/tooling/errors/examples.ts:437-440 (arrow)
+  src/tooling/errors/examples.ts:434-437 (arrow)
+  src/tooling/errors/examples.ts:440-443 (arrow)
 function 15a2e28d2c4c ~69 minified bytes
-  src/tooling/errors/examples.ts:1330 (arrow)
-  src/tooling/errors/examples.ts:1448 (arrow)
+  src/tooling/errors/examples.ts:1333 (arrow)
+  src/tooling/errors/examples.ts:1451 (arrow)
 function 075421727b1b ~68 minified bytes
   src/adapters/pg/call.ts:46-47 nextTransactionDepth
   src/tooling/testing/record.ts:46-50 isTransactionControl
@@ -4044,8 +4065,8 @@ function 122d59874d0b ~51 minified bytes
   src/runtime/validate/engine.ts:443-444 precisionOk
   src/tooling/migrate/pull-emit.ts:741-742 typedCall
 function 9bb39d1a5406 ~49 minified bytes
-  src/runtime/topology.ts:688 readMaxLag
-  src/runtime/topology.ts:844 readProbe
+  src/runtime/topology.ts:689 readMaxLag
+  src/runtime/topology.ts:845 readProbe
 function 9638c1b40f94 ~47 minified bytes
   src/dialects/pg/decimal.ts:154 numericText
   src/dialects/pg/quote.ts:40 isBareNumber
