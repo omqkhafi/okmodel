@@ -24,8 +24,9 @@ import { OkmError } from "../contracts/error.js";
  *
  * The report is one header (`driver`, `dialect postgres`) and one row per
  * case: id, behavior, result (`pass`, `fail`, or `unsupported`), and the
- * capability when the result is unsupported. A failure exits through
- * {@link OkmError}. An unsupported case does not.
+ * capability when the result is unsupported. The last line counts portable
+ * runs, gated runs, refusal assertions, and unsupported cases. A failure
+ * exits through {@link OkmError}. An unsupported case does not.
  *
  * @param args - Arguments after `driver test`
  * @param stdout - Where the report is written

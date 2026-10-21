@@ -5,6 +5,7 @@
  * adapter did not declare is skipped. Error-mapping cases are a separate suite.
  */
 
+import { CAPABILITY_NAMES } from "../../../src/adapters/capabilities.js";
 import { DriverError } from "../../../src/adapters/error.js";
 import { expect } from "./expect.js";
 import { OkmError } from "../../../src/contracts/error.js";
@@ -14,15 +15,42 @@ import type {
   ExecuteResult,
   Statement,
 } from "../../../src/contracts/driver.js";
+import { assertSupported } from "../../../src/tooling/capabilities/check.js";
+import { POSTGRES_FEATURES } from "../../../src/tooling/capabilities/postgres.js";
+import type {
+  CapabilityGate,
+  FeatureEntry,
+  Registry,
+} from "../../../src/tooling/capabilities/types.js";
 
 /** Opens one pool. The caller closes it. */
 export type DriverOpener = () => DriverPool | Promise<DriverPool>;
+
+/**
+ * Portable, or gated on one registry key or capability gate.
+ *
+ * A gated case names a key in the dialect registry, or one of
+ * `transactions`, `stream`, `listen`, and `cancel`.
+ */
+export type CaseTier =
+  | { readonly kind: "portable" }
+  | { readonly kind: "gated"; readonly feature: string };
+
+/**
+ * How a tagged case was dispatched.
+ *
+ * `run` executed the body. `refusal` asserted the registry code and the
+ * alternative. `unsupported` did not run: the dialect still provides the
+ * feature and this driver does not.
+ */
+export type CaseOutcome = "run" | "refusal" | "unsupported";
 
 /**
  * Registers one suite case.
  *
  * `skip` records a case the adapter did not declare. `unsupported` names the
  * capability, so a report can say unsupported instead of dropping the case.
+ * `note` records the tier for the counts line.
  */
 export type SuiteTest = {
   (name: string, fn: () => Promise<void>, timeoutMs?: number): void;
@@ -34,6 +62,41 @@ export type SuiteTest = {
    * @param capability - The limit that explains it, for example `cancel`
    */
   unsupported?(name: string, capability: string): void;
+  /**
+   * Records the tier and how the case was dispatched.
+   *
+   * @param name - Case title
+   * @param tier - Portable, or the registry key or capability gate
+   * @param outcome - Run, refusal assertion, or unsupported
+   */
+  note?(name: string, tier: CaseTier, outcome: CaseOutcome): void;
+};
+
+/**
+ * Registry and adapter flags a gated case consults.
+ *
+ * `registry` omitted uses the Postgres table. That table has no refused
+ * entries, so a false adapter flag stays unsupported.
+ */
+export type ConformanceProfile = {
+  /** Dialect name in a refusal. Omitted uses `postgres`. */
+  readonly dialect?: string;
+  /** Feature table. Omitted uses the Postgres registry. */
+  readonly registry?: Registry;
+  /** Adapter flags. A false gate on a native entry is unsupported. */
+  readonly capabilities: DriverCapabilities;
+};
+
+/** Counts `okm driver test` prints after the case rows. */
+export type ConformanceCounts = {
+  /** Portable cases whose body ran. */
+  readonly portable: number;
+  /** Gated cases whose body ran. */
+  readonly gated: number;
+  /** Gated cases that asserted a refusal. */
+  readonly refusal: number;
+  /** Cases recorded unsupported. */
+  readonly unsupported: number;
 };
 
 /**
@@ -71,6 +134,103 @@ export function skipFor(
   return register;
 }
 
+/**
+ * Tags every case this registrar records.
+ *
+ * `"portable"` always runs the body. `{ gated }` names a registry key or a
+ * capability gate. A refused registry entry does not run the body: the case
+ * asserts that entry's code and that the error carries its alternative. A
+ * false adapter flag on an entry the registry still provides is unsupported.
+ * `block` forces unsupported and is the capability text (for example
+ * `one connection`).
+ *
+ * @param test - Registrar the suite was given
+ * @param tier - `"portable"`, or the key or gate the case needs
+ * @param profile - Registry and adapter flags. Omitted with a gate uses Postgres
+ * @param block - When set, the case is unsupported with this capability text
+ * @returns A registrar that tags the case and may replace the body
+ */
+export function tag(
+  test: SuiteTest,
+  tier: "portable" | { readonly gated: string },
+  profile?: ConformanceProfile,
+  block?: string,
+): SuiteTest {
+  const feature = tier === "portable" ? undefined : tier.gated;
+  const marked: CaseTier =
+    feature === undefined ? { kind: "portable" } : { kind: "gated", feature };
+  const decision = feature === undefined ? "run" : decide(feature, profile, block);
+  const register: SuiteTest = (name, fn, timeoutMs) => {
+    dispatch(test, name, fn, timeoutMs, marked, decision, block, feature, profile);
+  };
+  register.skip = (name, fn, timeoutMs) => {
+    dispatch(test, name, fn, timeoutMs, marked, "unsupported", block, feature, profile);
+  };
+  if (test.unsupported !== undefined) {
+    register.unsupported = (name, capability) => {
+      test.note?.(name, marked, "unsupported");
+      test.unsupported?.(name, capability);
+    };
+  }
+  return register;
+}
+
+/**
+ * Tags cases as portable. The body always runs.
+ *
+ * @param test - Registrar the suite was given
+ * @returns A registrar that notes each case as portable
+ */
+export function portable(test: SuiteTest): SuiteTest {
+  return tag(test, "portable");
+}
+
+/**
+ * Tags cases as gated on a registry key or a capability gate.
+ *
+ * @param test - Registrar the suite was given
+ * @param feature - Registry key, or `transactions`, `stream`, `listen`, `cancel`
+ * @param profile - Registry and adapter flags
+ * @param block - When set, the case is unsupported with this capability text
+ * @returns A registrar that runs the body, asserts a refusal, or records unsupported
+ */
+export function gated(
+  test: SuiteTest,
+  feature: string,
+  profile?: ConformanceProfile,
+  block?: string,
+): SuiteTest {
+  return tag(test, { gated: feature }, profile, block);
+}
+
+/**
+ * Reads the profile fields a suite object already carries.
+ *
+ * @param suite - Capabilities, and an optional registry
+ * @returns The profile `gated` consults
+ */
+export function conformanceProfile(suite: {
+  readonly capabilities: DriverCapabilities;
+  readonly registry?: Registry;
+  readonly dialect?: string;
+}): ConformanceProfile {
+  return {
+    capabilities: suite.capabilities,
+    ...(suite.registry !== undefined ? { registry: suite.registry } : {}),
+    ...(suite.dialect !== undefined ? { dialect: suite.dialect } : {}),
+  };
+}
+
+/**
+ * Formats the four counts on one line.
+ *
+ * @param counts - Totals from {@link SuiteTest.note}
+ * @returns A single line, no trailing newline
+ */
+export function formatConformanceCounts(counts: ConformanceCounts): string {
+  return `counts\tportable\t${String(counts.portable)}\tgated\t${String(counts.gated)}\trefusal\t${String(counts.refusal)}\tunsupported\t${String(counts.unsupported)}`;
+}
+
 /** What one adapter run needs. */
 export type DriverSuite = {
   /** Name used in test titles. */
@@ -83,8 +243,17 @@ export type DriverSuite = {
   readonly openOther: DriverOpener;
   /** `stats().size` after {@link DriverSuite.open}. */
   readonly size: number;
-  /** Flags the opener declares. Undeclared cases are skipped. */
+  /** Flags the opener declares. A false gate on a native feature is unsupported. */
   readonly capabilities: DriverCapabilities;
+  /**
+   * Dialect feature table.
+   *
+   * Omitted uses the Postgres registry. A refused entry turns a gated case
+   * into a refusal assertion.
+   */
+  readonly registry?: Registry;
+  /** Name used in a refusal. Omitted uses `postgres`. */
+  readonly dialect?: string;
   /**
    * The pool can describe a statement without running it.
    *
@@ -108,9 +277,10 @@ export type DriverSuite = {
  */
 export function registerDriverSuite(suite: DriverSuite): void {
   const { name } = suite;
-  const test = suite.test;
-  const optional = (flag: boolean, capability: string): SuiteTest =>
-    flag ? test : skipFor(test, capability);
+  const profile = conformanceProfile(suite);
+  const test = gated(suite.test, "schema.core", profile);
+  const gate = (feature: string): SuiteTest => gated(suite.test, feature, profile);
+  const describes = suite.statementDescribe === true ? test : skipFor(test, "describe");
 
   test(`${name} execute returns rows`, async () => {
     await using(suite.open, async (pool) => {
@@ -234,7 +404,7 @@ export function registerDriverSuite(suite: DriverSuite): void {
     });
   });
 
-  optional(suite.capabilities.cancel, "cancel")(
+  gate("cancel")(
     `${name} cancels an in-flight statement`,
     async () => {
       await using(suite.open, async (pool) => {
@@ -249,7 +419,7 @@ export function registerDriverSuite(suite: DriverSuite): void {
     10_000,
   );
 
-  optional(suite.capabilities.cancel, "cancel")(
+  gate("cancel")(
     `${name} times out an in-flight statement`,
     async () => {
       await using(suite.open, async (pool) => {
@@ -262,7 +432,7 @@ export function registerDriverSuite(suite: DriverSuite): void {
     10_000,
   );
 
-  optional(suite.capabilities.cancel, "cancel")(
+  gate("cancel")(
     `${name} cancels a batch and rolls it back`,
     async () => {
       await using(suite.open, async (pool) => {
@@ -280,7 +450,7 @@ export function registerDriverSuite(suite: DriverSuite): void {
     10_000,
   );
 
-  optional(suite.capabilities.cancel, "cancel")(
+  gate("cancel")(
     `${name} times out a batch and rolls it back`,
     async () => {
       await using(suite.open, async (pool) => {
@@ -385,19 +555,16 @@ export function registerDriverSuite(suite: DriverSuite): void {
     }
   }, 10_000);
 
-  optional(suite.statementDescribe === true, "describe")(
-    `${name} describes a statement`,
-    async () => {
-      await using(suite.open, async (pool) => {
-        if (pool.describe === undefined) throw new DriverError("describe is not on the pool");
-        const described = await pool.describe("SELECT $1::int AS n");
-        expect(described.columns).toEqual(["n"]);
-        expect(described.parameterCount).toBe(1);
-      });
-    },
-  );
+  describes(`${name} describes a statement`, async () => {
+    await using(suite.open, async (pool) => {
+      if (pool.describe === undefined) throw new DriverError("describe is not on the pool");
+      const described = await pool.describe("SELECT $1::int AS n");
+      expect(described.columns).toEqual(["n"]);
+      expect(described.parameterCount).toBe(1);
+    });
+  });
 
-  optional(suite.capabilities.stream, "stream")(`${name} streams rows`, async () => {
+  gate("query.stream")(`${name} streams rows`, async () => {
     await using(suite.open, async (pool) => {
       if (pool.stream === undefined) throw new DriverError("stream is not on the pool");
       const rows: string[] = [];
@@ -411,7 +578,7 @@ export function registerDriverSuite(suite: DriverSuite): void {
     });
   });
 
-  optional(suite.capabilities.listen, "listen")(`${name} delivers a notification`, async () => {
+  gate("listen.notify")(`${name} delivers a notification`, async () => {
     await using(suite.open, async (pool) => {
       if (pool.listen === undefined) throw new DriverError("listen is not on the pool");
       const payloads: string[] = [];
@@ -508,4 +675,130 @@ function wait(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+type Decision = "run" | "refusal" | "unsupported";
+
+function dispatch(
+  test: SuiteTest,
+  name: string,
+  fn: () => Promise<void>,
+  timeoutMs: number | undefined,
+  tier: CaseTier,
+  decision: Decision,
+  block: string | undefined,
+  feature: string | undefined,
+  profile: ConformanceProfile | undefined,
+): void {
+  if (decision === "run") {
+    test.note?.(name, tier, "run");
+    test(name, fn, timeoutMs);
+    return;
+  }
+  if (decision === "refusal") {
+    test.note?.(name, tier, "refusal");
+    const key = feature ?? "";
+    test(name, () => assertFeatureRefused(key, profile), timeoutMs);
+    return;
+  }
+  test.note?.(name, tier, "unsupported");
+  const capability = block ?? unsupportedLabel(feature, profile);
+  if (test.unsupported !== undefined) {
+    test.unsupported(name, capability);
+    return;
+  }
+  const skipped = block !== undefined ? `${name} (${block})` : name;
+  test.skip(skipped, fn, timeoutMs);
+}
+
+function decide(
+  feature: string,
+  profile: ConformanceProfile | undefined,
+  block: string | undefined,
+): Decision {
+  if (block !== undefined) return "unsupported";
+  if (profile === undefined) {
+    throw new Error(`gated(${feature}) needs a conformance profile.`);
+  }
+  const registry: Registry = profile.registry ?? POSTGRES_FEATURES;
+  const entry = registry[feature];
+  if (entry?.support === "refused") return "refusal";
+  const gate = entry?.gate ?? (isCapabilityGate(feature) ? feature : undefined);
+  if (gate !== undefined && !flagEnabled(profile.capabilities, gate)) {
+    if (isCapabilityGate(feature) && refusedByGate(registry, feature) !== undefined)
+      return "refusal";
+    return "unsupported";
+  }
+  if (entry === undefined && !isCapabilityGate(feature)) {
+    throw new Error(`gated(${feature}) is not a registry key or a capability gate.`);
+  }
+  return "run";
+}
+
+function unsupportedLabel(
+  feature: string | undefined,
+  profile: ConformanceProfile | undefined,
+): string {
+  if (feature === undefined) return "undeclared";
+  const registry: Registry = profile?.registry ?? POSTGRES_FEATURES;
+  return registry[feature]?.gate ?? feature;
+}
+
+function isCapabilityGate(feature: string): feature is CapabilityGate {
+  return (CAPABILITY_NAMES as readonly string[]).includes(feature);
+}
+
+function flagEnabled(capabilities: DriverCapabilities, gate: CapabilityGate): boolean {
+  if (gate === "transactions") return capabilities.transactions === "interactive";
+  if (gate === "stream") return capabilities.stream;
+  if (gate === "listen") return capabilities.listen;
+  return capabilities.cancel;
+}
+
+function refusedByGate(
+  registry: Registry,
+  gate: string,
+): { key: string; entry: FeatureEntry } | undefined {
+  for (const [key, entry] of Object.entries(registry)) {
+    if (entry.gate === gate && entry.support === "refused") return { key, entry };
+  }
+  return undefined;
+}
+
+async function assertFeatureRefused(
+  feature: string,
+  profile: ConformanceProfile | undefined,
+): Promise<void> {
+  const registry: Registry = profile?.registry ?? POSTGRES_FEATURES;
+  const direct = registry[feature];
+  const matched =
+    direct?.support === "refused"
+      ? { key: feature, entry: direct }
+      : refusedByGate(registry, feature);
+  if (matched === undefined) {
+    throw new Error(`gated(${feature}) has no refused registry entry to assert.`);
+  }
+  const { key, entry } = matched;
+  if (
+    entry.code === undefined ||
+    entry.alternative === undefined ||
+    entry.alternative.length === 0
+  ) {
+    throw new Error(`gated(${key}) is refused without a code and an alternative.`);
+  }
+  let caught: unknown;
+  try {
+    assertSupported([key], registry, profile?.dialect ?? "postgres");
+  } catch (error) {
+    caught = error;
+  }
+  if (!(caught instanceof OkmError)) {
+    throw new Error(`gated(${key}) did not refuse.`, { cause: caught });
+  }
+  if (caught.code !== entry.code) {
+    throw new Error(`gated(${key}) refused with ${caught.code}, not ${entry.code}.`);
+  }
+  if (!caught.fix.summary.includes(entry.alternative)) {
+    throw new Error(`gated(${key}) refusal does not carry the alternative.`);
+  }
 }
