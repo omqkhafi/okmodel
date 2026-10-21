@@ -47,11 +47,6 @@ Pointer index for the docs in this package. Open one page. Do not fetch the webs
 - `docs/example-app.md` - What the reference app proves end to end. - Read this for a full project shape.
 - `docs/untrusted.md` - How text from the database or an error is bounded. - Read this when handling an error or plan JSON.
 
-## Agents
-
-- `docs/roles.md` - Least-privilege roles for an agent login. - Read this before giving an agent a database role.
-- `docs/threat-model.md` - What agent use is defended against, and what is not. - Read this before trusting an agent with apply.
-
 ## Errors
 
 - `docs/errors/OKM1012.md` through `docs/errors/OKM1860.md` - one page per code - Read `docs/errors/<code>.md` when a command or a client throws that code.

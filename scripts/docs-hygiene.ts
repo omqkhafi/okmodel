@@ -13,7 +13,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 
-import { okmMentions } from "../src/tooling/agents/block.js";
+import { okmMentions } from "../src/tooling/agents/mentions.js";
 import {
   classificationProblems,
   docClass,
@@ -22,12 +22,12 @@ import {
   packedTextPaths,
   type DocClass,
 } from "./docs-pack.js";
-
-/** Extensions scanned for hidden characters. `LICENSE` is included by name. */
-const SCANNED_EXTENSIONS = [".md", ".json", ".txt", ".mjs"] as const;
 import { indexCoverageProblems, indexStaleProblems } from "./docs-index.js";
 import { exitOnProblems } from "./report.js";
 import { repoRoot } from "./root.js";
+
+/** Extensions scanned for hidden characters. `LICENSE` is included by name. */
+const SCANNED_EXTENSIONS = [".md", ".json", ".txt", ".mjs"] as const;
 
 /**
  * Files that may contain ZWNJ or ZWJ inside a word.
