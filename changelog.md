@@ -64,6 +64,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Conformance cases are tagged portable or gated on a registry key or an adapter gate. A refused registry entry asserts that entry's code and alternative instead of running the body. A false adapter flag on a feature the registry still provides stays unsupported. `okm driver test` prints portable, gated, refusal, and unsupported counts. A test-only profile refuses every Postgres feature and turns the adapter flags off, and the portable minimum (connect, a read and write, error mapping) still passes on it.
 - `bun ./scripts/pack-size.ts` fails when the packed tarball grows by more than 400 KB over `tests/fixtures/pack-size.json`.
 - `docs:check` also checks public-doc hygiene: front matter, links that stay inside the public set, a language on every code fence, and no hidden characters in the packed text. `bun run typecheck` compiles the public type surface and the `*.test-d.ts` consumer fixtures with TypeScript 7. `bun run ts6:check` compiles the same files with TypeScript 6.0.x (`typescript-editor`) and is not part of `bun run check`.
+- A committed step may declare `-- probe: <SELECT>` above its statement. The probe is one read-only `SELECT` that returns a single boolean: true means the step is already applied. It runs inside `begin read only` and is rolled back. A built-in probe for the step's kind still wins, and a declared probe has no cleanup. `okm migrate resolve --applied` uses that probe. The probe is not part of the step's SQL hash or the plan hash.
+- OKM1557 refuses a committed step that has no built-in probe and no declared probe, so a failure cannot tell whether the change is already in place. OKM1558 refuses an empty probe, a probe that is not one read-only `SELECT`, more than one statement, or a probe on a step that stays inside a transaction. `-- okm-allow` with a reason records that a failure in that step needs a person.
 
 #### docs
 
@@ -77,6 +79,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The published tarball includes the public guides, `docs/errors/<code>.md`, `docs/index.md`, and `skills/okmodel/SKILL.md`. Planning notes stay out of the tarball. `okmVersion` on each page is filled from `package.json` when the tarball is packed. The committed pages keep the train version, so a pre-release bump does not rewrite `docs/`.
 - `docs/index.md` is the pointer index: one line per public page, the command list, and the error-page range. `bun run docs:index` rewrites it. `docs:check` fails when the file is stale.
 - The site skill page reads `skills/okmodel/SKILL.md`. That file is the copy an install finds at `node_modules/okmodel/skills/okmodel/SKILL.md`.
+- The linter page, [When a migration fails](docs/migration-failure.md), and the OKM1557 and OKM1558 error pages describe a declared `-- probe:` and when a committed step must have one.
 
 ### 💥 Breaking Changes
 

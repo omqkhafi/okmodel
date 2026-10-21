@@ -23,6 +23,12 @@ export type PlanStepJson = {
   readonly operationClass: OperationClass;
   readonly lock: string;
   readonly sql: string;
+  /**
+   * Declared `-- probe:` text.
+   *
+   * Absent when the step has no probe. Not part of `planHash`.
+   */
+  readonly probe?: string;
 };
 
 /** One destructive step in a plan document. */
@@ -97,6 +103,7 @@ export function planDocument(
       sql: step.sql,
       kind,
       name: nameOf(step),
+      ...(step.probe !== undefined && step.probe.length > 0 ? { probe: step.probe } : {}),
     };
   });
   const operationClass = strictestOperation(steps.map((step) => step.operationClass));
@@ -135,6 +142,7 @@ export function planDocument(
       operationClass: step.operationClass,
       lock: step.lock,
       sql: step.sql,
+      ...(step.probe !== undefined ? { probe: step.probe } : {}),
     })),
     destructiveOperations: destructive,
     findings: findings.map((finding) => ({
@@ -231,6 +239,7 @@ function isPlanDocument(value: unknown): value is PlanDocument {
 
 function isStep(value: unknown): value is PlanStepJson {
   if (!isRecord(value)) return false;
+  if (value.probe !== undefined && typeof value.probe !== "string") return false;
   return isClass(value.class) && typeof value.lock === "string" && typeof value.sql === "string";
 }
 

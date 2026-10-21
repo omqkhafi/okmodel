@@ -2,7 +2,7 @@
 okmVersion: "0.10.0"
 since: "0.9"
 dialects: [postgres]
-codes: [OKM1510, OKM1511, OKM1512, OKM1513, OKM1514, OKM1515, OKM1516, OKM1517, OKM1518, OKM1519, OKM1520, OKM1521, OKM1522, OKM1523, OKM1524, OKM1525, OKM1526, OKM1527, OKM1528, OKM1529, OKM1530, OKM1531, OKM1532, OKM1533, OKM1534, OKM1535, OKM1536, OKM1537, OKM1538, OKM1539, OKM1540, OKM1541, OKM1542, OKM1543, OKM1544, OKM1545, OKM1546, OKM1547, OKM1548, OKM1549, OKM1550, OKM1551, OKM1552, OKM1706, OKM1814, OKM1823]
+codes: [OKM1510, OKM1511, OKM1512, OKM1513, OKM1514, OKM1515, OKM1516, OKM1517, OKM1518, OKM1519, OKM1520, OKM1521, OKM1522, OKM1523, OKM1524, OKM1525, OKM1526, OKM1527, OKM1528, OKM1529, OKM1530, OKM1531, OKM1532, OKM1533, OKM1534, OKM1535, OKM1536, OKM1537, OKM1538, OKM1539, OKM1540, OKM1541, OKM1542, OKM1543, OKM1544, OKM1545, OKM1546, OKM1547, OKM1548, OKM1549, OKM1550, OKM1551, OKM1552, OKM1557, OKM1558, OKM1706, OKM1814, OKM1823]
 ---
 # Linter
 
@@ -73,6 +73,10 @@ OKM1550 flags a statement that weakens `rlsTenancy`: `DISABLE ROW LEVEL SECURITY
 
 OKM1551 flags transaction control in a step: `COMMIT`, `COMMIT PREPARED`, `END`, `END WORK`, `END TRANSACTION`, `ABORT`, `ROLLBACK`, `ROLLBACK PREPARED`, `BEGIN`, `BEGIN WORK`, `BEGIN TRANSACTION`, `START TRANSACTION`, and `PREPARE TRANSACTION`, including when it follows another statement and including a `COMMIT` or `ROLLBACK` inside a `DO` body. A `COMMIT` or `ROLLBACK` inside `CREATE FUNCTION` or `CREATE PROCEDURE` is not this rule. A `BEGIN ATOMIC` body on those statements is not this rule, including its closing `END`. `BEGIN ATOMIC` elsewhere is still `BEGIN`. A bare `BEGIN` or `END` inside plpgsql is not this rule. `END IF`, `END LOOP`, `END CASE`, and `ROLLBACK TO` are not this rule. `-- okm-allow OKM1551: reason` lets apply run the step. `okm migrate check` still refuses it, because the replay is one transaction that always rolls back.
 
+OKM1557 flags a committed step that cannot be made re-runnable. A step is committed when it is not a backfill and either the header says `-- transactional: false` or the statement cannot share a transaction (`VACUUM`, `ALTER TYPE … ADD VALUE`, concurrent index create or drop). A built-in probe for that kind, including a raw `CREATE INDEX CONCURRENTLY` or `DROP INDEX CONCURRENTLY` the probe can parse, is enough. A `-- probe:` line is the other way. A transactional step never triggers it, and neither does a planner step whose kind already has a probe. `-- okm-allow OKM1557: reason` silences the finding and records that a failure of that step needs a person. An empty reason does not.
+
+OKM1558 flags a `-- probe:` that is empty, is not one read-only `SELECT` (a `WITH` whose body writes, `SELECT INTO`, and `FOR UPDATE` or `FOR SHARE` included), has more than one statement, or sits on a transactional or backfill step. A semicolon inside a quote is still one statement. A probe on a step that never leaves the migration transaction is refused, so a file cannot claim protection it does not use. `-- okm-allow OKM1558: reason` silences it. An empty reason does not.
+
 A blank line ends a step. A blank line inside a quote, a dollar quote, a block comment, or a `BEGIN ATOMIC` routine body stays in the step, including a `--` line while that quote or body is still open.
 
 `okm migrate plan`, `okm migrate apply`, and `okm migrate check` use this linter. Check and apply read the migration files. Plan lints the plan it generates. An error finding is OKM1510 in each command. The planner still writes one statement per step, so a generated migration lints as before.
@@ -128,6 +132,8 @@ OKM1706 and OKM1823 are not rules in this table. With `indexes: false` or `tenan
 | OKM1542 | data-dependent | error | `insert`, `update`, `delete`, `merge`, `truncate`, or a `with` that writes, outside a backfill step. `DO` and `CALL` too: the body is not analysed |
 | OKM1550 | destructive | error | `DISABLE ROW LEVEL SECURITY`, `NO FORCE ROW LEVEL SECURITY`, `DROP POLICY`, `CREATE` or `ALTER POLICY` on a tenant table that is not the emitted predicate, `BYPASSRLS` on a role, or `OWNER TO` on a tenant table |
 | OKM1551 | destructive | error | `COMMIT`, `END`, `ABORT`, `ROLLBACK`, `BEGIN`, `START TRANSACTION`, `PREPARE TRANSACTION`, or `COMMIT PREPARED` inside a step, including a `DO` body. A function or procedure body, including `BEGIN ATOMIC`, is not this. `BEGIN ATOMIC` outside `CREATE FUNCTION` or `CREATE PROCEDURE` is still `BEGIN`. `ROLLBACK TO` is not this. `-- okm-allow OKM1551: reason` lets apply run it. `okm migrate check` still refuses it |
+| OKM1557 | locking | error | A committed step (not a backfill) with no built-in probe and no `-- probe:`. A raw concurrent index the built-in probe can parse does not. A transactional step does not. `-- okm-allow OKM1557: reason` records that a failure needs a person |
+| OKM1558 | locking | error | `-- probe:` is empty, is not one read-only `SELECT`, has more than one statement, or sits on a transactional or backfill step. `-- okm-allow OKM1558: reason` silences it |
 | OKM1543 | type-preference | warning | `serial` or a `nextval` default |
 | OKM1544 | type-preference | warning | `json` where `jsonb` is available |
 | OKM1545 | type-preference | warning | Identity that is not generated always |
