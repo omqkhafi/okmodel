@@ -98,6 +98,14 @@ export const POSTGRES_FEATURES = {
   "writeObserver.rowCount": native("proof:writeObserver.rowCount", {
     cost: "mixed",
   }),
+  /**
+   * Timings a query observer can fill. Postgres measures statement time and
+   * decode time. Pool queue wait is not on the driver, so `queue` is absent
+   * and `queueMs` stays null.
+   */
+  "queryObserver.timing": native("proof:queryObserver.timing", {
+    cost: "query|decode",
+  }),
 } as const satisfies Registry;
 
 /** One Postgres feature key. */

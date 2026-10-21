@@ -59,22 +59,7 @@ export async function connect<const S extends QuerySchema>(
         ...(target !== undefined ? { dataDir: target } : {}),
         ...(options.timeouts !== undefined ? { timeouts: options.timeouts } : {}),
       });
-  return createClient(options.schema, pool, {
-    ownsPool: true,
-    http: options.errors?.http,
-    includeValues: options.errors?.includeValues,
-    logger: options.logger,
-    signal: options.signal,
-    requireMeta: options.requireMeta,
-    timeout: options.timeout,
-    timeouts: options.timeouts,
-    hookm: options.hookm,
-    onWrite: options.onWrite,
-    warnings: options.warnings,
-    catalog: options.catalog,
-    catalogDir: options.catalogDir,
-    generators: options.generators,
-  });
+  return createClient(options.schema, pool, options, true);
 }
 
 function isPool(target: PgliteTarget | TopologyInput): target is DriverPool {

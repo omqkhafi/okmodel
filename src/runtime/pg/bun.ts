@@ -72,22 +72,7 @@ export function connect<const S extends QuerySchema>(
         ...(options.ssl !== undefined ? { ssl: options.ssl } : {}),
       });
   if (!isPool(target)) markClientPool(pool);
-  return createClient(options.schema, pool, {
-    ownsPool: owned,
-    http: options.errors?.http,
-    includeValues: options.errors?.includeValues,
-    logger: options.logger,
-    signal: options.signal,
-    timeout: options.timeout,
-    timeouts: options.timeouts,
-    hookm: options.hookm,
-    onWrite: options.onWrite,
-    warnings: options.warnings,
-    catalog: options.catalog,
-    catalogDir: options.catalogDir,
-    requireMeta: options.requireMeta,
-    generators: options.generators,
-  });
+  return createClient(options.schema, pool, options, owned);
 }
 
 function isPool(target: BunSqlTarget | TopologyInput): target is DriverPool {

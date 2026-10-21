@@ -26,6 +26,8 @@ export type RunHost = {
   readonly hookm?: readonly Hookm[] | undefined;
   /** Set when `connect({ onWrite })` registered a write observer. */
   readonly o?: ObservingSlot | undefined;
+  /** Set when `connect({ onQuery })` registered a query observer. */
+  readonly q?: object | undefined;
   /** Set inside a transaction. A unit of several statements is a savepoint there, not a transaction. */
   readonly tx?: object | undefined;
 };
@@ -90,8 +92,13 @@ export async function runWrite(
   } else if (observer !== undefined && outer) {
     observer.ensureUnit();
   }
-  const timed = observer !== undefined;
+  const querying = host.q !== undefined;
+  const timed = observer !== undefined || querying;
   const started = timed ? Date.now() : 0;
+  const stack =
+    querying && (host.q as { observeStack?: boolean }).observeStack === true
+      ? new Error().stack
+      : undefined;
   let results: readonly ExecuteResult[];
   try {
     results = single
@@ -100,6 +107,10 @@ export async function runWrite(
   } catch (error) {
     if (timed && observer !== undefined) {
       noteWrites(observer, statements.length, observe, Date.now() - started);
+    }
+    if (querying) {
+      const { failWrite } = await import("./observe-query.js");
+      failWrite(host, statements, observe, Date.now() - started, error, stack);
     }
     if (multiPhase) {
       if (emit !== undefined) emit.emitPhase({ ...host, observer }, "rollback", 0);
@@ -112,6 +123,10 @@ export async function runWrite(
   const durationMs = timed ? Date.now() - started : 0;
   if (timed && observer !== undefined) {
     noteWrites(observer, statements.length, observe, durationMs, results);
+  }
+  if (querying) {
+    const { holdWrite } = await import("./observe-query.js");
+    holdWrite(host, statements, observe, durationMs, results, stack);
   }
   if (multiPhase) {
     if (emit !== undefined) emit.emitPhase({ ...host, observer }, "commit", 0);
@@ -134,11 +149,13 @@ function noteWrites(
   results?: readonly ExecuteResult[],
 ): void {
   const drafts: WriteDraft[] = [];
+  const handlerTag = observer.observeTag();
   for (let i = 0; i < count; i += 1) {
     const meta = observe?.[i] ?? observe?.[observe.length - 1];
     const result = results?.[i];
     const counted = rowCountOf(meta, result);
     const keys = keysOf(meta, result);
+    const tag = meta?.tag ?? handlerTag;
     drafts.push({
       table: meta?.table ?? null,
       op: meta?.op ?? "raw",
@@ -148,7 +165,7 @@ function noteWrites(
       source: meta?.source ?? "raw",
       rowCount: counted.rowCount,
       rowCountMode: counted.rowCountMode,
-      ...(meta?.tag !== undefined ? { tag: meta.tag } : {}),
+      ...(tag !== undefined ? { tag } : {}),
       ...(keys !== undefined ? { keys } : {}),
     });
   }
@@ -166,7 +183,7 @@ function noteWrites(
  * @param result - Driver result. Absent on a failed statement
  * @returns Count and mode
  */
-function rowCountOf(
+export function rowCountOf(
   meta: WriteObserveMeta | undefined,
   result: ExecuteResult | undefined,
 ): { readonly rowCount: number | null; readonly rowCountMode: RowCountMode } {

@@ -52,10 +52,13 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Write events take `rowCount` from the command tag. Mode is `changed` for insert, update, and delete, `returned` when `RETURNING` ran, and `unknown` with `rowCount: null` when the driver gave no tag. An upsert stays `changed` and counts inserted plus updated rows.
 - `find({ offset })` skips that many rows. The value is an integer from 0 up and is sent as a parameter.
 - `okmodel/warnings` exports `warnings()`. Pass it to `connect({ warnings })`. In development, OKM2004 (offset past 1,000), OKM2005 (a limit whose order does not end in a unique key), OKM2007 (a value list past 500), and OKM2008 (an include whose row bound passes 10,000) each report once per call site. Production reports nothing until a level is set. `ignore` needs a reason. `onWarning` replaces the console.
+- `connect({ onQuery })` delivers one `QueryEvent` per statement, reads and writes, after the statement settles. With no observer the client does not build an event and does not read the clock. `queryObserver()` isolates a throwing or rejecting handler, waits on `flush()`, and overflows in-flight promises with OKM2200. `params: true` and `stack: true` opt in; sensitive, hidden, and tenant values are `[redacted]`. `toOtel(event)` returns `{ name, attributes }` with the same `db.*` names as `okmodel/otel`, plus `db.response.status_code` (the SQLSTATE) on failure. It imports nothing from OpenTelemetry and never emits parameters or tenant ids. `db.query.text` is included only when `statement: true`.
+- `writeObserver({ tag })` and `queryObserver({ tag })` copy a tag onto each event. A tag is 1–64 characters from `[A-Za-z0-9_.:/-]`. Anything else is `invalid` when the helper is built.
 
 #### tooling
 
 - Capability keys `writeObserver.unit` (`transaction | batch`), `writeObserver.keys` (`returning`; closed profile `none`), and `writeObserver.rowCount` (`mixed`; closed profile `unknown`) are in the Postgres registry with proofs and closed-profile refusals.
+- `queryObserver.timing` is native on Postgres with cost `query|decode`. Pool-queue wait is not measured, so `queueMs` stays null. The closed profile cost is `none`.
 - OKM1890 refuses `writeObserver({ keys })` when a named table has no primary key or is not in the schema. OKM2200 warns when the write-observer pending-event buffer overflows.
 - `okm --json` on every command prints one `okm.cli/1` document and nothing else. `--out <file>` writes a large `data` payload (`-` keeps it on stdout). `okm schema <command>` prints the JSON Schema for that `data`. The same files ship under `schemas/cli-1/`.
 - Short flags for flags that already exist: `-h` help, `-V` version, `-v` verbose, `-c` config, `-t` target, `-o` out, `-n` dry-run on `migrate baseline`. `-f` is not a flag. `--allow-protected`, `--allow-pooler`, and `--replace` have no short form and are not read from the environment.
@@ -92,6 +95,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 #### docs
 
 - [Observer events](docs/observer-events.md) freezes `okm.observe/1` (write, savepoint, outcome) for `connect({ onWrite })` and documents `writeObserver()` on `okmodel/observe`. `keys` appends primary-key `RETURNING`. Row counts record the command tag each driver exposes. Postgres costs are `returning` and `mixed`. The closed profile stays `none` and `unknown`.
+- The same page documents `QueryEvent`, `toOtel()`, the `tag` option, and `queryObserver.timing`. `queueMs` is null because no driver reports pool-queue wait.
 - Docs: [Adopt an existing database](docs/adopt-existing.md) and the handbook page cover pull, generate, then baseline.
 - A describe spike records, per driver and Postgres 15–18, whether parameter OIDs, column names, column type OIDs, and table OID plus attnum can be read without executing the statement. The notes are `docs/describe-spike.md`. The scripts under `packages/spikes/describe/` are not packed.
 - [When a migration fails](docs/migration-failure.md) records what a failed Postgres apply does, the `okm_history` and `okm_steps` columns, the step id, and why there is no skip.

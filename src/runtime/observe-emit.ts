@@ -93,6 +93,8 @@ type Unit = {
   ordered: Array<WriteEvent | SavepointEvent>;
   frames: Frame[];
   seq: number;
+  /** Sequence for query events that share this unit. */
+  querySeq: number;
 };
 
 let unitSeq = 0;
@@ -159,6 +161,31 @@ export class ObserverController {
     return this.open.id;
   }
 
+  /**
+   * The open unit's next query sequence, when a unit is open.
+   *
+   * Does not open a unit. A read outside a transaction gets no unit.
+   *
+   * @returns Unit id and sequence, or `undefined` when no unit is open
+   */
+  nextQueryPlace(): { readonly unit: string; readonly seq: number } | undefined {
+    const unit = this.open;
+    if (unit === undefined) return undefined;
+    const seq = unit.querySeq;
+    unit.querySeq += 1;
+    return { unit: unit.id, seq };
+  }
+
+  /**
+   * Tag copied onto events when the handler carries a valid one.
+   *
+   * @returns The tag, or `undefined` when the handler has none
+   */
+  observeTag(): string | undefined {
+    const value = (this.onWrite as { tag?: unknown }).tag;
+    return typeof value === "string" && observeTagOk(value) ? value : undefined;
+  }
+
   private makeUnit(): Unit {
     this.evictIfNeeded(0);
     const unit: Unit = {
@@ -167,6 +194,7 @@ export class ObserverController {
       ordered: [],
       frames: [],
       seq: 0,
+      querySeq: 0,
     };
     this.queue.push({ id: unit.id, unit });
     return unit;
@@ -369,6 +397,18 @@ export class ObserverController {
       // Isolation.
     }
   }
+}
+
+const TAG_TEXT = /^[A-Za-z0-9_.:/-]{1,64}$/;
+
+/**
+ * Whether `value` is a tag the contract accepts.
+ *
+ * @param value - Handler tag
+ * @returns True when it is 1–64 characters from the allowed set
+ */
+export function observeTagOk(value: string): boolean {
+  return TAG_TEXT.test(value);
 }
 
 function overflowError(): OkmError {
