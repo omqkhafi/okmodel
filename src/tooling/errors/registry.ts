@@ -900,6 +900,13 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     summary: "The configured dialect refuses a feature this schema uses.",
     fix: "Use the portable alternative named in the error. The message names the dialect, the feature, and the first version that would support it when one exists.",
   },
+  {
+    code: "OKM2200",
+    title: "Observer buffer overflow",
+    summary:
+      "The write-observer buffer dropped the oldest unit because it exceeded the pending-event ceiling.",
+    fix: "Drain handlers with flush() more often, or raise maxPending on writeObserver. The write path does not wait.",
+  },
 ];
 
 let byCode: ReadonlyMap<string, ErrorDoc> | undefined;

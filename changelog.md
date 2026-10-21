@@ -37,10 +37,12 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - A connected client exposes `capabilities`, the same frozen object as the pool (`transactions`, `stream`, `listen`, `cancel`).
 - `update({ where, set, limit, lock: "skip", version: "any" })` on a `versioned()` table skips the version check, bumps `version` by 1, and returns the claimed rows. A miss is an empty array. `version` stays required on every other versioned update. `version: "any"` without `lock: "skip"` and `limit`, an unrecognised version string, and a `version` key in `set` are OKM1120 (Q6, O-5, #393).
 - `connect({ onWrite })` observes write units (`okm.observe/1`): buffered write, savepoint, and tri-state outcome events after commit or rollback, from one emission point shared with `hookm.onTransaction`. Normative shape in `docs/observer-events.md`. G-4 emits `rowCount: null` / `rowCountMode: "unknown"`. `db.flush()` waits for the `okmodel/observe` helper (app size gate).
+- `okmodel/observe` exports `writeObserver()`, `flush()`, `OBSERVE_BUFFER_MAX` (10,000), and `observerBufferOverflow()` (OKM2200). The helper buffers per unit, calls exactly one of `committed` | `rolledBack` | `unknown`, isolates throwing and rejecting handlers via `onObserverError`, and settles tracked promises on `flush()`. Overflow drops the oldest unit without blocking the write path. `keys` is accepted and ignored until G-5.
 
 #### tooling
 
 - Capability keys `writeObserver.unit` (`transaction | batch`), `writeObserver.keys` (`none` until G-5), and `writeObserver.rowCount` (`unknown` until G-5) are in the Postgres registry with proofs and closed-profile refusals.
+- OKM2200 warns when the write-observer pending-event buffer overflows.
 - `okm --json` on every command prints one `okm.cli/1` document and nothing else. `--out <file>` writes a large `data` payload (`-` keeps it on stdout). `okm schema <command>` prints the JSON Schema for that `data`. The same files ship under `schemas/cli-1/`.
 - Short flags for flags that already exist: `-h` help, `-V` version, `-v` verbose, `-c` config, `-t` target, `-o` out, `-n` dry-run on `migrate baseline`. `-f` is not a flag. `--allow-protected`, `--allow-pooler`, and `--replace` have no short form and are not read from the environment.
 - `describe(schema).requirements` reports `minVersion.postgres` (the same floor as `minPostgres`), the extension list, the catalog features the schema uses, and a cost line for each emulated feature. `okm build`, `okm check`, and `okm doctor` compare that list with the Postgres registry exported from `okmodel/migrate`. A refused feature stops with OKM1860 and names the dialect, the feature, the first version that would support it, and the portable alternative.
@@ -67,7 +69,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### docs
 
-- [Observer events](docs/observer-events.md) freezes `okm.observe/1` (write, savepoint, outcome) for `connect({ onWrite })`.
+- [Observer events](docs/observer-events.md) freezes `okm.observe/1` (write, savepoint, outcome) for `connect({ onWrite })` and documents `writeObserver()` on `okmodel/observe`.
 - Docs: [Adopt an existing database](docs/adopt-existing.md) and the handbook page cover pull, generate, then baseline.
 - A describe spike records, per driver and Postgres 15–18, whether parameter OIDs, column names, column type OIDs, and table OID plus attnum can be read without executing the statement. The notes are `docs/describe-spike.md`. The scripts under `packages/spikes/describe/` are not packed.
 - [When a migration fails](docs/migration-failure.md) records what a failed Postgres apply does, the `okm_history` and `okm_steps` columns, the step id, and why there is no skip.

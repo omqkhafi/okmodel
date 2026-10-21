@@ -614,6 +614,26 @@ thrown(
   },
 );
 
+thrown(
+  "OKM2200",
+  () => {
+    throw new OkmError(
+      "OKM2200",
+      "The write-observer buffer dropped the oldest unit because it exceeded the pending-event ceiling.",
+      {
+        kind: "driver",
+        fix: {
+          summary:
+            "Drain handlers with flush() more often, or raise maxPending on writeObserver. The write path does not wait.",
+        },
+      },
+    );
+  },
+  () => {
+    throw new OkmError("invalid", "not an observer overflow");
+  },
+);
+
 const tasks = () => table("tasks", { id: t.identity(), title: t.text() });
 
 reported(
