@@ -111,6 +111,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `defineConfig({ namespace })` places a trigger's called function with the catalog, so generate/apply/check no longer fail OKM1020 for a missing function in `public` (B-47).
 - The guide roles flow on a fresh database no longer fails with `SAVEPOINT can only be used in transaction blocks` during provision: schema ownership runs without a savepoint when no transaction is open, `CREATEROLE` is checked on the connecting user (not the managed migration role), and a failed provision drops empty bootstrap tables so a retry is clean (B-30).
 
+#### contracts
+
+- `Insert` omits defaulted and nullable columns, and `Update` accepts any subset of the writable columns, matching `insert()` and `update()`. A missing required column and an unknown key stay type errors (R7, #404).
+
 #### adapters
 
 - A Bun.sql pool that answers `connection must be a PostgresSQLConnection` after `pg_terminate_backend` is replaced. The next call dials again. Pool `close()` returns within a second when Bun's own `close()` does not (oven-sh/bun#46166). Still present on Bun 1.4.3.

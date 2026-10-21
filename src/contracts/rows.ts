@@ -70,27 +70,48 @@ export type Row<N extends TableName<S>, S extends AnySchema | undefined = undefi
 >;
 
 /**
- * Insert type. Guarded, generated, and primary-key columns are already removed.
+ * Required keys of an insert row.
  *
- * @typeParam N - Table name
- * @typeParam S - Explicit schema. Omit it to use {@link Register}
+ * A key whose value includes `undefined` is optional. Marking it required makes
+ * the editor offer only the property under the cursor (D139).
+ *
+ * @typeParam T - Insert shape
  */
-export type Insert<N extends TableName<S>, S extends AnySchema | undefined = undefined> = ShapeOf<
-  S,
-  N,
-  "~insert"
->;
+export type RequiredInsert<T> = {
+  readonly [K in keyof T as undefined extends T[K] ? never : K]: T[K];
+};
 
 /**
- * Update type. The same columns as insert, every one optional.
+ * Optional keys of an insert row.
+ *
+ * @typeParam T - Insert shape
+ */
+export type OptionalInsert<T> = {
+  readonly [K in keyof T as undefined extends T[K] ? K : never]?: T[K];
+};
+
+/**
+ * Insert type. Guarded, generated, and primary-key columns are already removed.
+ *
+ * Defaulted and nullable columns are optional keys. A missing required column
+ * and an unknown key are type errors. The shape matches `insert()`.
  *
  * @typeParam N - Table name
  * @typeParam S - Explicit schema. Omit it to use {@link Register}
  */
-export type Update<N extends TableName<S>, S extends AnySchema | undefined = undefined> = ShapeOf<
-  S,
-  N,
-  "~update"
+export type Insert<
+  N extends TableName<S>,
+  S extends AnySchema | undefined = undefined,
+> = RequiredInsert<ShapeOf<S, N, "~insert">> & OptionalInsert<ShapeOf<S, N, "~insert">>;
+
+/**
+ * Update type. Every writable column is optional.
+ *
+ * @typeParam N - Table name
+ * @typeParam S - Explicit schema. Omit it to use {@link Register}
+ */
+export type Update<N extends TableName<S>, S extends AnySchema | undefined = undefined> = Partial<
+  ShapeOf<S, N, "~update">
 >;
 
 /**
