@@ -20,6 +20,7 @@ import { dirname, resolve } from "node:path";
 
 import { OkmError } from "../../contracts/error.js";
 import { sha256 } from "../../contracts/sha256.js";
+import type { AgentsData } from "../agents/plan.js";
 import { canonicalHash, type Canonical } from "../canonical-json.js";
 import { CONFIG_FILE } from "../migrate/paths.js";
 import { renderUntrusted, type UntrustedText } from "../untrusted.js";
@@ -91,6 +92,8 @@ export type InitData = {
   }[];
   /** `okmodel.base.ts`, when this init writes it. */
   readonly base?: string;
+  /** Agent files plan, when `--agents`, `--no-agents`, or a prompt chose one. */
+  readonly agents?: AgentsData;
 };
 
 /** One file apply may write. */
@@ -301,7 +304,7 @@ export function buildPlan(choices: InitChoices): InitPlan {
   files.push(classifyPackage(patched.text, scan.packageText, patched.edits));
 
   const hashes = postHashes(files);
-  const recordText = recordTextOf(choices, driver, hashes);
+  const recordText = recordTextOf(choices, driver, hashes, record?.agents);
   const recordCurrent = readIfFile(choices.root, ".okm/init.json");
   files.push(classifyRecord(recordCurrent, recordText, choices));
   files.sort(
@@ -461,6 +464,8 @@ type Planned = {
 
 type InitRecord = {
   readonly files: Readonly<Record<string, string>>;
+  /** The `agents` section, kept as read. `okm agents` owns it. */
+  readonly agents?: unknown;
 };
 
 function kindOf(path: string): "own" | "append" | "attributes" {
@@ -636,6 +641,7 @@ function recordTextOf(
   choices: InitChoices,
   driver: InitDriver,
   hashes: Readonly<Record<string, string>>,
+  agents: unknown,
 ): string {
   const files: Record<string, string> = {};
   for (const path of Object.keys(hashes).sort()) {
@@ -652,6 +658,7 @@ function recordTextOf(
         tenancy: choices.tenancy,
       },
       files,
+      ...(agents === undefined ? {} : { agents }),
     },
     null,
     2,
@@ -813,6 +820,19 @@ function addedDiff(path: string, lines: readonly string[]): string {
   return [`--- ${path}`, `+++ ${path}`, ...lines.map((line) => `+${line}`)].join("\n");
 }
 
+/**
+ * Line diff of two texts, with `---` and `+++` headers. Empty when the
+ * lines are equal. A text over 180 lines is reported as differing.
+ *
+ * @param path - Path printed in the headers
+ * @param before - Old text
+ * @param after - New text
+ * @returns The diff text without a trailing newline
+ */
+export function textDiff(path: string, before: string, after: string): string {
+  return diff(path, before, after);
+}
+
 function diffLines(text: string): string[] {
   const normal = lf(text);
   if (normal.length === 0) return [];
@@ -911,7 +931,8 @@ function readRecord(text: string | undefined): InitRecord | undefined {
     for (const [key, value] of Object.entries(record.files)) {
       if (typeof value === "string") files[key] = value;
     }
-    return { files };
+    const agents = (parsed as { readonly agents?: unknown }).agents;
+    return { files, ...(agents === undefined ? {} : { agents }) };
   } catch {
     return undefined;
   }

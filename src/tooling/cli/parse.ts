@@ -72,6 +72,12 @@ export type ParsedCli = {
   readonly allWorkspaces: boolean;
   /** `okm init --shared`. One database package. */
   readonly shared: boolean;
+  /** `okm init --agents`. Targets, repeatable or comma-separated. */
+  readonly agents: readonly string[];
+  /** `okm init --no-agents`. */
+  readonly noAgents: boolean;
+  /** `okm agents update --protected`. `yes` or `no`. */
+  readonly protectedFlag: string | undefined;
   /** Positionals after the command words. */
   readonly operands: readonly string[];
 };
@@ -81,6 +87,7 @@ const GROUP_FIX: Readonly<Record<string, string>> = {
   ext: "Use okm ext list, okm ext check, okm ext scaffold, or okm ext test.",
   catalog: "Use okm catalog export.",
   raw: "Use okm raw sync.",
+  agents: "Use okm agents status, okm agents update, or okm agents remove.",
   import: "Use okm import drizzle <path>.",
   driver: "Use okm driver test <driver>.",
 };
@@ -219,6 +226,9 @@ export function parseCli(argv: readonly string[]): ParsedCli {
     workspace: stringList(values.workspace),
     allWorkspaces: values["all-workspaces"] === true,
     shared: values.shared === true,
+    agents: stringList(values.agents),
+    noAgents: values["no-agents"] === true,
+    protectedFlag: stringValue(values.protected),
     operands,
   };
 }
@@ -285,6 +295,9 @@ function blank(flags: { readonly help: boolean; readonly json: boolean }): Parse
     workspace: [],
     allWorkspaces: false,
     shared: false,
+    agents: [],
+    noAgents: false,
+    protectedFlag: undefined,
     operands: [],
   };
 }

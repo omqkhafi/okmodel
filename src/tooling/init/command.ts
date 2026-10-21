@@ -11,10 +11,15 @@ import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { OkmError } from "../../contracts/error.js";
+import { applyAgents } from "../agents/apply.js";
+import { consented } from "../agents/command.js";
+import type { AgentsPlan } from "../agents/plan.js";
 import { attachPartial } from "../cli/outcome.js";
 import type { ParsedCli } from "../cli/parse.js";
 import { packageRoot, readPackageVersion } from "../cli/version.js";
+import { ask } from "../prompt.js";
 import { catalogHasOkmodel, findWorkspaceRoot, type WorkspacePackage } from "../workspaces.js";
+import { mergeAgents, planInitAgents } from "./agents.js";
 import { scanProject } from "./detect.js";
 import {
   applyWrites,
@@ -91,7 +96,7 @@ export async function initCommand(
     interactive: tty && !parsed.yes && !parsed.json,
   });
   if (choice.kind === "prompt") {
-    const answer = await prompt(workspacePrompt(choice.candidates));
+    const answer = await ask(workspacePrompt(choice.candidates));
     const parsedAnswer = parseWorkspaceAnswer(answer, choice.candidates);
     if (!parsedAnswer.ok) {
       if (parsedAnswer.reason === "empty") {
@@ -141,29 +146,41 @@ async function singlePackage(
   const okmodelSpec = repo !== undefined && catalogHasOkmodel(repo) ? "catalog:" : undefined;
   const requested = await askDriver(parsed, scan.installedDrivers, tty);
   const { tenancy, install } = await askTenancyAndInstall(parsed, tty);
-  const plan = buildPlan({
+  const agents = await planInitAgents({
+    parsed,
     root,
-    driver: resolveDriver(scan, requested),
     tenancy,
-    dir,
-    pm: usedPm,
-    yes: parsed.yes,
-    force,
-    install,
-    versions: packageVersions(),
-    dryRun: parsed.dryRun,
-    ...(okmodelSpec === undefined ? {} : { okmodelSpec }),
+    version: readPackageVersion(),
+    tty,
   });
+  const plan = mergeAgents(
+    buildPlan({
+      root,
+      driver: resolveDriver(scan, requested),
+      tenancy,
+      dir,
+      pm: usedPm,
+      yes: parsed.yes,
+      force,
+      install,
+      versions: packageVersions(),
+      dryRun: parsed.dryRun,
+      ...(okmodelSpec === undefined ? {} : { okmodelSpec }),
+    }),
+    agents,
+  );
   present(parsed, plan, human);
+  const writeAgents = await agentsApproved(parsed, plan, agents, human);
   if (!parsed.dryRun) {
     try {
       applyWrites(root, dir, plan.writes);
+      if (writeAgents && agents !== undefined) applyAgents(agents);
       if (install) runInstall(root, usedPm);
     } catch (error) {
       rethrow(error, plan);
     }
   }
-  return produced(parsed, plan, plan.writes.length > 0 || install);
+  return produced(parsed, plan, plan.writes.length > 0 || install || writeAgents, writeAgents);
 }
 
 /**
@@ -191,33 +208,45 @@ async function repoPackage(
     for (const pkg of selected) {
       const installed = scanProject(pkg.dir, usedPm).installedDrivers;
       if (installed.length <= 1) continue;
-      const answer = await prompt(`Driver (${installed.join(", ")}): `);
+      const answer = await ask(`Driver (${installed.join(", ")}): `);
       if (answer.length === 0) refuseMissingDecision(["--driver"]);
       requested = driverFlag(answer);
       break;
     }
   }
   const { tenancy, install } = await askTenancyAndInstall(parsed, tty);
-  const plan = buildRepoPlan({
-    repo: root,
-    choice: choice.choice,
-    driver: requested,
+  const agents = await planInitAgents({
+    parsed,
+    root,
     tenancy,
-    dir,
-    pm: usedPm,
-    yes: parsed.yes,
-    force,
-    install,
-    versions: packageVersions(),
-    dryRun: parsed.dryRun,
+    version: readPackageVersion(),
+    tty,
   });
+  const plan = mergeAgents(
+    buildRepoPlan({
+      repo: root,
+      choice: choice.choice,
+      driver: requested,
+      tenancy,
+      dir,
+      pm: usedPm,
+      yes: parsed.yes,
+      force,
+      install,
+      versions: packageVersions(),
+      dryRun: parsed.dryRun,
+    }),
+    agents,
+  );
   present(parsed, plan, human);
+  const writeAgents = await agentsApproved(parsed, plan, agents, human);
   if (!parsed.dryRun) {
     try {
       for (const item of plan.packageWrites) applyWrites(item.dir, item.dirName, item.writes);
       if (plan.repoWrites.length > 0) {
         applyWrites(root, dir, plan.repoWrites, new Set(plan.repoWrites.map((file) => file.path)));
       }
+      if (writeAgents && agents !== undefined) applyAgents(agents);
       if (install) runInstall(root, usedPm);
     } catch (error) {
       rethrow(error, plan);
@@ -225,7 +254,30 @@ async function repoPackage(
   }
   const wrote =
     plan.packageWrites.some((item) => item.writes.length > 0) || plan.repoWrites.length > 0;
-  return produced(parsed, plan, wrote || install);
+  return produced(parsed, plan, wrote || install || writeAgents, writeAgents);
+}
+
+/**
+ * Whether the agent files in this plan are written.
+ *
+ * A plan that changes an existing file needs `--yes` or a typed yes. A
+ * refusal throws before any file is written. A typed no skips only the
+ * agent files.
+ */
+async function agentsApproved(
+  parsed: ParsedCli,
+  plan: InitPlan,
+  agents: AgentsPlan | undefined,
+  human: (text: string) => void,
+): Promise<boolean> {
+  if (agents === undefined || agents.writes.length === 0 || parsed.dryRun) return false;
+  try {
+    if (await consented(parsed, agents)) return true;
+  } catch (error) {
+    rethrow(error, plan);
+  }
+  human("agent files not written\n");
+  return false;
 }
 
 async function askDriver(
@@ -235,7 +287,7 @@ async function askDriver(
 ): Promise<InitDriver | undefined> {
   let requested = driverFlag(parsed.driver);
   if (requested === undefined && installed.length > 1 && tty && !parsed.yes && !parsed.json) {
-    const answer = await prompt(`Driver (${installed.join(", ")}): `);
+    const answer = await ask(`Driver (${installed.join(", ")}): `);
     if (answer.length === 0) refuseMissingDecision(["--driver"]);
     requested = driverFlag(answer);
   }
@@ -248,7 +300,7 @@ async function askTenancyAndInstall(
 ): Promise<{ readonly tenancy: ReturnType<typeof tenancyFlag>; readonly install: boolean }> {
   let tenancyInput = parsed.tenancy;
   if (tenancyInput === undefined && tty && !parsed.yes && !parsed.json) {
-    const answer = await prompt("Tenancy (none or column) [none]: ");
+    const answer = await ask("Tenancy (none or column) [none]: ");
     tenancyInput = answer.length === 0 ? "none" : answer;
   }
   let install = shouldInstall({
@@ -259,7 +311,7 @@ async function askTenancyAndInstall(
     tty,
   });
   if (tty && !parsed.json && !parsed.yes && !parsed.install && !parsed.noInstall) {
-    const answer = await prompt("Install dependencies now? [Y/n] ");
+    const answer = await ask("Install dependencies now? [Y/n] ");
     if (answer.toLowerCase() === "n" || answer.toLowerCase() === "no") install = false;
   }
   return { tenancy: tenancyFlag(tenancyInput), install };
@@ -290,9 +342,23 @@ function present(parsed: ParsedCli, plan: InitPlan, human: (text: string) => voi
   }
 }
 
-function produced(parsed: ParsedCli, plan: InitPlan, wrote: boolean): InitProduced {
+function produced(
+  parsed: ParsedCli,
+  plan: InitPlan,
+  wrote: boolean,
+  agentsWrote: boolean,
+): InitProduced {
   const acted = !parsed.dryRun && wrote;
-  const data = acted ? { ...plan.data, status: "applied" as const } : plan.data;
+  const agents = plan.data.agents;
+  const data = acted
+    ? {
+        ...plan.data,
+        status: "applied" as const,
+        ...(agents !== undefined && agentsWrote
+          ? { agents: { ...agents, status: "applied" as const } }
+          : {}),
+      }
+    : plan.data;
   return { text: plan.human, data, warnings: plan.warnings, outFile: null };
 }
 
@@ -347,16 +413,6 @@ function rethrow(error: unknown, plan: InitPlan): never {
     throw attachPartial(error, { data: plan.data, warnings: plan.warnings, outFile: null });
   }
   throw error;
-}
-
-async function prompt(label: string): Promise<string> {
-  const { createInterface } = await import("node:readline/promises");
-  const prompts = createInterface({ input: process.stdin, output: process.stderr });
-  try {
-    return (await prompts.question(label)).trim();
-  } finally {
-    prompts.close();
-  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
