@@ -6,20 +6,31 @@
  */
 
 import { OkmError } from "../contracts/error.js";
+import { observeTagOk } from "./observe-emit.js";
 import type {
   ObserveEvent,
+  OnQuery,
   OnWrite,
   OutcomeEvent,
+  QueryEvent,
   SavepointEvent,
   WriteEvent,
 } from "./observe-types.js";
+
+const OTEL_SYSTEM = "postgresql";
+const OTEL_NAMESPACE = "public";
 
 export type {
   ObserveDialect,
   ObserveEvent,
   ObserveKey,
+  OnQuery,
   OnWrite,
   OutcomeEvent,
+  QueryError,
+  QueryEvent,
+  QueryLimit,
+  QueryRoute,
   RowCountMode,
   SavepointEvent,
   WriteEvent,
@@ -58,6 +69,12 @@ export type WriteObserverOptions = {
   readonly onEvent?: (e: ObserveEvent) => void | Promise<void>;
   /** Pending-event ceiling. Defaults to {@link OBSERVE_BUFFER_MAX}. */
   readonly maxPending?: number;
+  /**
+   * Copied onto each write event.
+   *
+   * 1–64 characters from `[A-Za-z0-9_.:/-]`.
+   */
+  readonly tag?: string;
 };
 
 /** What {@link writeObserver} returns: a connect `onWrite` handler with `flush`. */
@@ -68,6 +85,12 @@ export type WriteObserver = OnWrite & {
   readonly maxPending: number;
   /** @internal */
   onObserverError?: WriteObserverOptions["onObserverError"];
+  /**
+   * Copied onto each write when set.
+   *
+   * 1–64 characters from `[A-Za-z0-9_.:/-]`.
+   */
+  readonly tag?: string;
   /**
    * Tables copied from {@link WriteObserverOptions.keys}.
    *
@@ -169,6 +192,7 @@ export function writeObserver(options: WriteObserverOptions = {}): WriteObserver
       ...(options.keys !== undefined && options.keys.length > 0
         ? { observeKeys: options.keys.slice() }
         : {}),
+      ...(options.tag !== undefined ? { tag: checkedTag(options.tag) } : {}),
       flush(): Promise<void> {
         if (pending.length === 0) return Promise.resolve();
         const batch = pending.splice(0, pending.length);
@@ -190,6 +214,127 @@ export function writeObserver(options: WriteObserverOptions = {}): WriteObserver
  */
 export function flush(observer: WriteObserver): Promise<void> {
   return observer.flush();
+}
+
+/** Options for {@link queryObserver}. */
+export type QueryObserverOptions = {
+  /** Called once per statement, after it settles. */
+  readonly query: (event: QueryEvent) => void | Promise<void>;
+  /**
+   * Include bound parameters on the event.
+   *
+   * Sensitive columns, hidden columns, and tenant keys are `"[redacted]"`.
+   */
+  readonly params?: boolean;
+  /** Include a stack trace on the event. */
+  readonly stack?: boolean;
+  /**
+   * Copied onto each query event.
+   *
+   * 1–64 characters from `[A-Za-z0-9_.:/-]`.
+   */
+  readonly tag?: string;
+  /** A throwing or rejecting handler, or a buffer overflow (OKM2200). */
+  readonly onObserverError?: (err: unknown, event: QueryEvent) => void;
+  /** Pending-promise ceiling. Defaults to {@link OBSERVE_BUFFER_MAX}. */
+  readonly maxPending?: number;
+};
+
+/** What {@link queryObserver} returns: a connect `onQuery` handler with `flush`. */
+export type QueryObserver = OnQuery & {
+  /** Settles tracked handler promises for this observer. Never rejects on handler errors. */
+  flush(): Promise<void>;
+  /** @internal Ceiling the query controller reads from the function object. */
+  readonly maxPending: number;
+  /** @internal */
+  onObserverError?: QueryObserverOptions["onObserverError"];
+  /** @internal Set when {@link QueryObserverOptions.params} is true. */
+  readonly observeParams?: boolean;
+  /** @internal Set when {@link QueryObserverOptions.stack} is true. */
+  readonly observeStack?: boolean;
+  /** @internal Copied onto each event when it matches the tag grammar. */
+  readonly tag?: string;
+};
+
+/**
+ * One query event, with the same attribute names `okmodel/otel` writes.
+ *
+ * `db.query.text` is included only when `statement` is true. Parameters,
+ * tenant ids, and stacks are never attributes. This does not import
+ * OpenTelemetry.
+ */
+export type OtelQuery = {
+  readonly name: string;
+  readonly attributes: Readonly<Record<string, string>>;
+};
+
+/**
+ * Buffers one event per statement. A throwing or rejecting `query` is reported
+ * to `onObserverError` and cannot change the statement result.
+ *
+ * @param options - Callback, and optional params, stack, and tag
+ * @returns Handler for `connect({ onQuery })`
+ */
+export function queryObserver(options: QueryObserverOptions): QueryObserver {
+  let observer!: QueryObserver;
+  observer = Object.assign((event: QueryEvent): void | Promise<void> => options.query(event), {
+    maxPending: options.maxPending ?? OBSERVE_BUFFER_MAX,
+    ...(options.onObserverError !== undefined ? { onObserverError: options.onObserverError } : {}),
+    ...(options.params === true ? { observeParams: true as const } : {}),
+    ...(options.stack === true ? { observeStack: true as const } : {}),
+    ...(options.tag !== undefined ? { tag: checkedTag(options.tag) } : {}),
+    flush(): Promise<void> {
+      return import("./observe-query.js").then((mod) => mod.flushQuery(observer));
+    },
+  });
+  return observer;
+}
+
+/**
+ * Maps one query event to a span name and attributes.
+ *
+ * The names match `okmodel/otel`: `db.system.name`, `db.namespace`,
+ * `db.collection.name`, `db.operation.name`, `db.query.summary`, and
+ * `error.type`. A failure also sets `db.response.status_code` to the SQLSTATE.
+ * `db.query.summary` is the fingerprint. The span name is the low-cardinality
+ * summary (`SELECT tasks`).
+ *
+ * @param event - One settled statement
+ * @param options - `statement: true` copies sanitised statement text
+ * @returns The span name and attributes. No OpenTelemetry import
+ */
+export function toOtel(event: QueryEvent, options?: { readonly statement?: boolean }): OtelQuery {
+  const attributes: Record<string, string> = {
+    "db.system.name": OTEL_SYSTEM,
+    "db.namespace": OTEL_NAMESPACE,
+    "db.collection.name": event.table ?? "",
+    "db.operation.name": event.op,
+    "db.query.summary": event.fingerprint,
+  };
+  if (options?.statement === true) attributes["db.query.text"] = event.text;
+  if (event.error !== undefined) {
+    attributes["error.type"] = event.error.kind;
+    if (event.error.sqlstate !== undefined) {
+      attributes["db.response.status_code"] = event.error.sqlstate;
+    }
+  }
+  return { name: event.summary, attributes };
+}
+
+/**
+ * Accepts a tag or throws `invalid`.
+ *
+ * @param value - Caller tag
+ * @returns The same string when it matches the grammar
+ */
+function checkedTag(value: string): string {
+  if (!observeTagOk(value)) {
+    throw new OkmError("invalid", "tag must be 1–64 characters from [A-Za-z0-9_.:/-].", {
+      kind: "invalid",
+      fix: { summary: "Use a short tag such as api.request." },
+    });
+  }
+  return value;
 }
 
 /**

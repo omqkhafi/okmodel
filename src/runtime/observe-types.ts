@@ -67,3 +67,62 @@ export type ObserveEvent = WriteEvent | SavepointEvent | OutcomeEvent;
  * May return a promise. The write path does not await it; `flush()` does.
  */
 export type OnWrite = (event: ObserveEvent) => void | Promise<void>;
+
+/** Where a statement ran. */
+export type QueryRoute = {
+  readonly endpoint: string;
+  readonly role: "primary" | "replica";
+};
+
+/** A caller-supplied limit. Default limits are not reported. */
+export type QueryLimit = {
+  readonly value: number;
+  readonly source: string;
+};
+
+/** Failure fields. No message and no row values. */
+export type QueryError = {
+  readonly kind: string;
+  readonly category: string;
+  readonly code: string;
+  /** SQLSTATE when the server sent one. */
+  readonly sqlstate?: string;
+};
+
+/**
+ * One statement, delivered after it settles.
+ *
+ * `unit` and `seq` are set only inside a transaction, a batch, or an
+ * autocommit write unit. `params` and `stack` are set only when the observer
+ * opts in.
+ */
+export type QueryEvent = {
+  readonly id: string;
+  readonly unit?: string;
+  readonly seq?: number;
+  readonly dialect: ObserveDialect;
+  readonly table: string | null;
+  readonly op: string;
+  readonly summary: string;
+  readonly fingerprint: string;
+  readonly text: string;
+  readonly durationMs: number;
+  readonly queueMs: number | null;
+  readonly queryMs: number;
+  readonly decodeMs: number | null;
+  readonly rowCount: number | null;
+  readonly rowCountMode: RowCountMode;
+  readonly route: QueryRoute;
+  readonly error?: QueryError;
+  readonly tag?: string;
+  readonly limit?: QueryLimit;
+  readonly params?: readonly unknown[];
+  readonly stack?: string;
+};
+
+/**
+ * Raw `connect({ onQuery })` handler.
+ *
+ * May return a promise. The statement path does not await it; `flush()` does.
+ */
+export type OnQuery = (event: QueryEvent) => void | Promise<void>;

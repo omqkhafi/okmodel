@@ -78,6 +78,13 @@ export type Session = {
    * the assignment does not need a spread.
    */
   readonly w: ((schema: QuerySchema, call: ReadCall, stack?: string) => void) | undefined;
+  /**
+   * Query observer from `connect({ onQuery })`.
+   *
+   * `undefined` when the caller did not pass one. Present so the assignment
+   * does not need a spread.
+   */
+  readonly q: object | undefined;
   /** Set on the client a transaction hands out. `extras` are the methods only that client has. */
   readonly tx?: { readonly extras: object; readonly depth: number };
   /** Tenant value or an unscoped reason. Absent on the root client. */
@@ -117,9 +124,13 @@ export function createClient<S extends QuerySchema>(
   pool: DriverPool,
   options: {
     readonly endpoint?: string;
-    readonly ownsPool: boolean;
+    readonly ownsPool?: boolean;
     readonly http?: ErrorStatuses | undefined;
     readonly includeValues?: boolean | undefined;
+    readonly errors?: {
+      readonly http?: ErrorStatuses | undefined;
+      readonly includeValues?: boolean | undefined;
+    };
     readonly logger?: Session["logger"] | undefined;
     readonly signal?: AbortSignal | undefined;
     readonly timeout?: number | undefined;
@@ -127,12 +138,17 @@ export function createClient<S extends QuerySchema>(
     readonly hookm?: readonly Hookm[] | undefined;
     readonly onWrite?: import("./observe-types.js").OnWrite | undefined;
     readonly warnings?: ((schema: QuerySchema, call: ReadCall, stack?: string) => void) | undefined;
+    readonly onQuery?: object | undefined;
     readonly catalog?: CatalogArtifact | undefined;
     readonly catalogDir?: string | undefined;
     readonly requireMeta?: boolean | undefined;
     readonly generators?: IdGenerators | undefined;
   },
+  ownsPool?: boolean,
 ): Connected<S> {
+  const http = options.http ?? options.errors?.http;
+  const includeValues = (options.includeValues ?? options.errors?.includeValues) === true;
+  const owned = ownsPool ?? options.ownsPool === true;
   const closing: { current: Promise<void> | undefined; early: boolean } = {
     current: undefined,
     early: false,
@@ -140,7 +156,7 @@ export function createClient<S extends QuerySchema>(
   const checked = checkServer(
     pool,
     schema,
-    options.http,
+    http,
     options.requireMeta === true,
     callOptions(options),
     {
@@ -164,9 +180,9 @@ export function createClient<S extends QuerySchema>(
   const session: Session = {
     schema,
     pool,
-    ownsPool: options.ownsPool,
-    http: options.http,
-    includeValues: options.includeValues === true,
+    ownsPool: owned,
+    http,
+    includeValues,
     logger: options.logger,
     connected,
     cache: new Map(),
@@ -175,6 +191,7 @@ export function createClient<S extends QuerySchema>(
     hookm: options.hookm,
     ...(options.onWrite !== undefined ? { o: { w: options.onWrite, c: undefined } } : {}),
     w: options.warnings,
+    q: options.onQuery,
     closing,
   };
   return openClient(session);
@@ -650,6 +667,16 @@ export function readHandle(
     if (params.length > 65_533) {
       (await import("./param-limit.js")).refuseParamLimit(params.length);
     }
+    if (session.q !== undefined) {
+      return (await import("./observe-query.js")).runObservedRead(
+        session,
+        table,
+        plan,
+        params,
+        call,
+        decode,
+      );
+    }
     try {
       const result = await session.pool.execute(
         plan.text,
@@ -661,10 +688,7 @@ export function readHandle(
       }
       return await decode(plan, result.rows);
     } catch (error) {
-      const mapped = await mapError(session, error);
-      if (session.schema.model[table]?.conceal !== true) throw logged(session, mapped);
-      const { scrubCall } = await import("./exposure.js");
-      throw logged(session, scrubCall(mapped, session.schema, call));
+      return failRead(session, table, call, error);
     }
   };
   return queryHandle(run, {
@@ -778,6 +802,18 @@ async function checkServer(
   await acceptServer(pool, schema, http, requireMeta, options, source, onWrite);
 }
 
+export async function failRead(
+  session: Session,
+  table: string,
+  call: ReadCall,
+  error: unknown,
+): Promise<never> {
+  const mapped = await mapError(session, error);
+  if (session.schema.model[table]?.conceal !== true) throw logged(session, mapped);
+  const { scrubCall } = await import("./exposure.js");
+  throw logged(session, scrubCall(mapped, session.schema, call));
+}
+
 async function mapError(session: Session, error: unknown): Promise<OkmError> {
   if (error instanceof OkmError) {
     return session.http === undefined
@@ -882,7 +918,7 @@ export function attachHttp(http: ErrorStatuses | undefined, error: OkmError): Ok
   return new OkmError(error.code, error.message, { ...errorFields(error), http });
 }
 
-function callOptions(
+export function callOptions(
   input: {
     readonly signal?: AbortSignal | undefined;
     readonly timeout?: number | undefined;
