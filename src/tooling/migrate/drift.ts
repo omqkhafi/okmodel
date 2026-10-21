@@ -73,9 +73,10 @@ export async function assertAuthorDrift(
     const live = await introspectSchema(runner, schema, schema, managedRoleOptions(roles));
     const plan = planMigration({ before: live, after: authorOnServer, name: "check" });
     if (plan.steps.length === 0) return;
+    const weaker = unvalidatedNotNull(live, authorOnServer);
     throw new OkmError(
       "OKM1520",
-      `The database differs from the schema.\n${plan.steps.map((step) => step.sql).join("\n")}`,
+      `The database differs from the schema.\n${plan.steps.map((step) => step.sql).join("\n")}${weaker}`,
       {
         fix: {
           summary: "Change the schema or the database so okm check reports no difference.",
@@ -87,6 +88,30 @@ export async function assertAuthorDrift(
   } finally {
     await finishQuiet(() => sql.end({ timeout: 5 }));
   }
+}
+
+/**
+ * Lines naming each column the schema declares NOT NULL while the database
+ * holds the constraint unvalidated (PostgreSQL 18 `NOT NULL … NOT VALID`).
+ * Rows with NULL may exist, so the database is weaker than the schema even
+ * though `attnotnull` is set. Empty when there is no such column.
+ */
+function unvalidatedNotNull(live: Catalog, author: Catalog): string {
+  const required = new Set<string>();
+  for (const object of author.objects) {
+    if (object.kind !== "column" || object.definition.nullable) continue;
+    required.add(`${object.identity.parent.name}.${object.identity.name}`);
+  }
+  const lines: string[] = [];
+  for (const object of live.objects) {
+    if (object.kind !== "column" || object.definition.unvalidatedNotNull === undefined) continue;
+    const label = `${object.identity.parent.name}.${object.identity.name}`;
+    if (!required.has(label)) continue;
+    lines.push(
+      `\n${label} is NOT NULL NOT VALID (${object.definition.unvalidatedNotNull}) in the database; rows with NULL may exist.`,
+    );
+  }
+  return lines.join("");
 }
 
 /**

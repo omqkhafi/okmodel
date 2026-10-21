@@ -13,6 +13,7 @@ import { startupHash } from "../../contracts/catalog/document.js";
 import type { Catalog, CatalogObject, ColumnObject } from "../../contracts/catalog/types.js";
 import { OkmError } from "../../contracts/error.js";
 import { quoteIdent } from "../../dialects/pg/ddl.js";
+import { unvalidatedNotNullSql } from "../../dialects/pg/not-null.js";
 import type { MigrateConfig } from "./config.js";
 import { driverUrl } from "./driver-url.js";
 import type { Finding } from "./lint.js";
@@ -367,7 +368,10 @@ function isColumnOf(
 type LiveColumn = {
   readonly name: string;
   readonly type: string;
+  /** False only for a NOT NULL constraint that is validated. */
   readonly nullable: boolean;
+  /** Name of a NOT NULL constraint that is not validated (PostgreSQL 18). */
+  readonly unvalidatedNotNull?: string;
 };
 
 type ExternalTable = ExportTable;
@@ -490,10 +494,15 @@ async function assertLiveTable(
   }
   const differ = columnDifference(snapshotTableColumns(snapshot, table), live);
   if (differ !== undefined) {
+    const unvalidated = live.find((column) => column.name === differ)?.unvalidatedNotNull;
+    const reason =
+      unvalidated === undefined
+        ? "is missing on the database"
+        : `is NOT NULL NOT VALID (${unvalidated}) on the database, so rows with NULL may exist`;
     throw snapshotError(
       path,
       "stale",
-      `Catalog snapshot ${path} is stale: ${table.namespace}.${table.name}.${differ} is missing on the database.`,
+      `Catalog snapshot ${path} is stale: ${table.namespace}.${table.name}.${differ} ${reason}.`,
     );
   }
 }
@@ -529,8 +538,9 @@ async function liveColumns(
   table: string,
 ): Promise<readonly LiveColumn[] | undefined> {
   const rows = await sql<
-    { name: string; type: string; not_null: boolean }[]
-  >`select a.attname as name, format_type(a.atttypid, a.atttypmod) as type, a.attnotnull as not_null
+    { name: string; type: string; not_null: boolean; not_null_unvalidated: string | null }[]
+  >`select a.attname as name, format_type(a.atttypid, a.atttypmod) as type, a.attnotnull as not_null,
+      ${sql.unsafe(unvalidatedNotNullSql("a"))} as not_null_unvalidated
     from pg_attribute a
     join pg_class c on c.oid = a.attrelid
     join pg_namespace n on n.oid = c.relnamespace
@@ -543,7 +553,15 @@ async function liveColumns(
     `;
     if (exists[0]?.reg == null) return undefined;
   }
-  return rows.map((row) => ({ name: row.name, type: row.type, nullable: !row.not_null }));
+  return rows.map((row) => {
+    const unvalidated = row.not_null && row.not_null_unvalidated ? row.not_null_unvalidated : "";
+    return {
+      name: row.name,
+      type: row.type,
+      nullable: !row.not_null || unvalidated.length > 0,
+      ...(unvalidated.length > 0 ? { unvalidatedNotNull: unvalidated } : {}),
+    };
+  });
 }
 
 function resolveSnapshot(cwd: string, path: string): string {

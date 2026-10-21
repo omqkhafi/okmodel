@@ -88,7 +88,14 @@ export async function pullProject(
     }
     commitPullFiles(emitted.files, "Pull");
     return {
-      text: formatPullReport(emitted.counts, emitted.skipped, emitted.verdicts, unexpressed),
+      text: formatPullReport(
+        emitted.counts,
+        emitted.skipped,
+        emitted.verdicts,
+        unexpressed,
+        "pulled",
+        emitted.unvalidated,
+      ),
       skipped: emitted.skipped,
     };
   } catch (error) {

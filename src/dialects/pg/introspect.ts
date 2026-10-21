@@ -27,6 +27,8 @@ import {
 } from "../../contracts/catalog/view.js";
 import { VIEW_DEPENDENCIES, viewDependencyEdges } from "./view/depend.js";
 import { quoteIdent } from "./ddl.js";
+import { withUnvalidatedNotNull } from "../../contracts/catalog/not-null.js";
+import { unvalidatedNotNullSql } from "./not-null.js";
 import { columnPrivilege } from "./role/sql.js";
 import type {
   Catalog,
@@ -207,11 +209,13 @@ export async function introspectSchema(
     if (enumLabels.has(dataType) || domainNames.has(dataType)) {
       extra.push({ kind: "type", namespace, name: dataType });
     }
+    const notNull = flag(row, "not_null");
+    const unvalidated = notNull ? text(row, "not_null_unvalidated") : "";
     const built: ColumnObject = column({
       parent,
       name: text(row, "name"),
       dataType,
-      nullable: !flag(row, "not_null"),
+      nullable: !notNull,
       provenance,
       ...(extra.length > 0 ? { dependencies: extra } : {}),
       ...(identity === "a" || identity === "d" ? { identity: { always: identity === "a" } } : {}),
@@ -221,7 +225,7 @@ export async function introspectSchema(
         : {}),
       ...(collation.length > 0 ? { collation } : {}),
     });
-    objects.push(built);
+    objects.push(unvalidated.length > 0 ? withUnvalidatedNotNull(built, unvalidated) : built);
   }
   for (const row of constraints) {
     const parentName = text(row, "parent");
@@ -497,15 +501,16 @@ async function includeOutsideReferences(
     objects.push(table({ namespace, name: target.name, provenance }));
     const rows = await runner.query(OUTSIDE_COLUMNS, [target.schema, target.name]);
     for (const row of rows) {
-      objects.push(
-        column({
-          parent,
-          name: text(row, "name"),
-          dataType: text(row, "type"),
-          nullable: !flag(row, "not_null"),
-          provenance,
-        }),
-      );
+      const notNull = flag(row, "not_null");
+      const unvalidated = notNull ? text(row, "not_null_unvalidated") : "";
+      const outside = column({
+        parent,
+        name: text(row, "name"),
+        dataType: text(row, "type"),
+        nullable: !notNull,
+        provenance,
+      });
+      objects.push(unvalidated.length > 0 ? withUnvalidatedNotNull(outside, unvalidated) : outside);
     }
   }
 }
@@ -930,7 +935,8 @@ const COLUMNS = `
       when ty.typtype = 'e' and ty.typnamespace = n.oid then ty.typname
       else format_type(a.atttypid, a.atttypmod)
     end as type,
-    a.attnotnull as not_null, a.attidentity as identity, a.attgenerated as generated,
+    a.attnotnull as not_null, ${unvalidatedNotNullSql("a")} as not_null_unvalidated,
+    a.attidentity as identity, a.attgenerated as generated,
     case
       when a.attcollation = 0 or a.attcollation = ty.typcollation then ''
       else coalesce((select col.collname from pg_collation col where col.oid = a.attcollation), '')
@@ -972,7 +978,8 @@ function referencedNamespace(
 }
 
 const OUTSIDE_COLUMNS = `
-  select a.attname as name, format_type(a.atttypid, a.atttypmod) as type, a.attnotnull as not_null
+  select a.attname as name, format_type(a.atttypid, a.atttypmod) as type, a.attnotnull as not_null,
+    ${unvalidatedNotNullSql("a")} as not_null_unvalidated
   from pg_attribute a
   join pg_class c on c.oid = a.attrelid
   join pg_namespace n on n.oid = c.relnamespace

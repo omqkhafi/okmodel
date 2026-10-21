@@ -201,7 +201,13 @@ export const STEP_RULES: readonly StepRule[] = [
     "data-dependent",
     "error",
     "A check that validates existing rows fails when a row does not pass.",
-    (input) => hit(validatingCheck(input), "validates a check"),
+    (input) =>
+      hit(
+        validatingCheck(input),
+        validatesUnvalidatedNotNull(input)
+          ? "validates a NOT NULL constraint"
+          : "validates a check",
+      ),
   ),
   rule(
     "OKM1532",
@@ -909,6 +915,23 @@ function ownColumnSafe(
   }
   if (found.definition.defaultExpression !== undefined) return true;
   return found.definition.nullable;
+}
+
+/**
+ * `VALIDATE CONSTRAINT` of a NOT NULL constraint the before-catalog holds
+ * unvalidated (PostgreSQL 18 `NOT NULL … NOT VALID`).
+ *
+ * The planner emits it when the schema says NOT NULL. Stored NULLs make it
+ * fail, so it stays OKM1531 with its own reason.
+ */
+function validatesUnvalidatedNotNull(input: StepInput): boolean {
+  const text = normalizedSql(input.step.sql);
+  const token = /^alter table\s+\S+\s+validate constraint\s+(\S+)/.exec(text)?.[1];
+  const name = token === undefined ? undefined : lastName(token);
+  if (name === undefined) return false;
+  return input.before.objects.some(
+    (object) => object.kind === "column" && object.definition.unvalidatedNotNull === name,
+  );
 }
 
 function widenValidate(input: StepInput): boolean {

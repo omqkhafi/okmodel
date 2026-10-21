@@ -63,6 +63,11 @@ export type PullEmission = {
   readonly skipped: readonly PullSkip[];
   /** Scratch results for the routines the files declare. */
   readonly verdicts: readonly RoutineVerdict[];
+  /**
+   * `table.column (constraint)` for each column the database holds as
+   * `NOT NULL … NOT VALID` (PostgreSQL 18). The files declare it nullable.
+   */
+  readonly unvalidated: readonly string[];
   readonly counts: {
     readonly tables: number;
     readonly functions: number;
@@ -280,6 +285,7 @@ export function emitPull(source: Catalog, layout: PullLayout, review?: PullRevie
     files,
     skipped,
     verdicts: verdictList,
+    unvalidated: unvalidatedColumns(source, skippedKeys),
     counts: {
       tables: tables.length - skippedTables(source, skipped),
       functions: plan.functions.length,
@@ -288,6 +294,18 @@ export function emitPull(source: Catalog, layout: PullLayout, review?: PullRevie
       materializedViews: plan.views.length - viewCount,
     },
   };
+}
+
+function unvalidatedColumns(source: Catalog, skippedKeys: ReadonlySet<string>): readonly string[] {
+  const labels: string[] = [];
+  for (const object of source.objects) {
+    if (object.kind !== "column" || object.definition.unvalidatedNotNull === undefined) continue;
+    if (skippedKeys.has(identityKey(object.identity))) continue;
+    labels.push(
+      `${object.identity.parent.name}.${object.identity.name} (${object.definition.unvalidatedNotNull})`,
+    );
+  }
+  return labels.sort(compare);
 }
 
 function skippedTables(source: Catalog, skipped: readonly PullSkip[]): number {
@@ -311,6 +329,7 @@ function skippedTables(source: Catalog, skipped: readonly PullSkip[]): number {
  * @param verdicts - Scratch results. Empty when no routine was pulled
  * @param unexpressed - Aggregates, procedures, event triggers, and rules
  * @param verb - `imported` for `okm import drizzle`. `pulled` is `okm pull`
+ * @param unvalidated - Columns the database holds as `NOT NULL … NOT VALID`
  * @returns The report, with a trailing newline
  */
 export function formatPullReport(
@@ -319,6 +338,7 @@ export function formatPullReport(
   verdicts: readonly RoutineVerdict[] = [],
   unexpressed: readonly PullCount[] = [],
   verb: "pulled" | "imported" = "pulled",
+  unvalidated: readonly string[] = [],
 ): string {
   const lines = [
     verb === "imported"
@@ -355,6 +375,12 @@ export function formatPullReport(
       lines.push(`    ${row.label}`);
       if (row.sql.length > 0) lines.push(`      ${row.sql}`);
     }
+  }
+  if (unvalidated.length > 0) {
+    lines.push(
+      `  not validated: ${String(unvalidated.length)} — NOT NULL NOT VALID in the database, so the column is declared nullable until the constraint is validated`,
+    );
+    for (const label of unvalidated) lines.push(`    ${label}`);
   }
   return `${lines.join("\n")}\n`;
 }
@@ -428,6 +454,12 @@ function planTable(
         ),
       );
       continue;
+    }
+    if (column.definition.unvalidatedNotNull !== undefined) {
+      columnLines.push(
+        `    // NOT NULL NOT VALID (${column.definition.unvalidatedNotNull}) in the database: rows with NULL may exist.`,
+        `    // Validate the constraint, then remove .nullable().`,
+      );
     }
     columnLines.push(`    ${jsKey(field)}: ${built},`);
     emitted.add(column.identity.name);
@@ -677,7 +709,9 @@ function columnSource(
   }
   if (call === undefined) return undefined;
   if (field !== column.identity.name) call += `.sqlName(${JSON.stringify(column.identity.name)})`;
-  if (column.definition.nullable) call += ".nullable()";
+  if (column.definition.nullable || column.definition.unvalidatedNotNull !== undefined) {
+    call += ".nullable()";
+  }
   if (column.definition.defaultExpression !== undefined) {
     call += `.defaultSql(${JSON.stringify(column.definition.defaultExpression)})`;
   }
