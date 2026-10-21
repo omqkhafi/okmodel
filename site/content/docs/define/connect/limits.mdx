@@ -4,9 +4,13 @@ description: "Opt-in default limits for find, to-many include, page, and groupBy
 ---
 By default a read with no `limit` is refused (OKM1101 for `find`, `page`, and a grouped aggregate; OKM1105 for a to-many `include`). `limits` is an opt-in default for those calls. Leave it out and nothing changes.
 
-```ts title="db.ts"
+```ts
 import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
 import { warnings } from "okmodel/warnings";
+
+const notesTable = table("notes", { id: t.identity(), title: t.text() });
+const app = schema({ tables: [notesTable] });
 
 export const db = connect(process.env.DATABASE_URL ?? "", {
   schema: app,
