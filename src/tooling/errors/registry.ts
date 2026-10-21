@@ -724,6 +724,13 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     fix: "Restore the policies okm generate emits for this rls schema.",
   },
   {
+    code: "OKM1709",
+    title: "Session setting",
+    summary:
+      "A sessionSettings() declaration or a db.with() value is not accepted: a name without a dot, a name that starts with a setting okm reserves for tenancy or is a built-in setting, a type that is not text, uuid, int, or bool, a value of the wrong type, an unknown key, or a required key that is missing. A client with a required setting refuses every statement until db.with() gives it. Nothing reached the database.",
+    fix: "Declare names like app.user_id, pass each value as its declared type, and call db.with({ ... }) with every required key before the first query.",
+  },
+  {
     code: "OKM1801",
     title: "Dialect mismatch",
     summary: "The schema dialect and the driver dialect are not the same.",

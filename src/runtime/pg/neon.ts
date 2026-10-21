@@ -11,6 +11,7 @@ import type { QuerySchema } from "../../dialects/pg/model.js";
 import { open, type NeonConfig } from "../../adapters/pg/neon.js";
 import { createClient } from "../client.js";
 import type { RoutedClient, TopologyInput, TopologyOptions } from "../topology.js";
+import type { SessionContext } from "../session/index.js";
 import type { ConnectOptions, Connected } from "../types.js";
 
 export { open, type NeonConfig, type NeonMode } from "../../adapters/pg/neon.js";
@@ -26,7 +27,7 @@ export { DriverError } from "../../adapters/error.js";
 export type NeonTarget = string | DriverPool;
 
 /** Driver options `connect` forwards to {@link open}. */
-export type NeonConnectOptions<S extends QuerySchema> = ConnectOptions<S> &
+export type NeonConnectOptions<S extends QuerySchema, C = undefined> = ConnectOptions<S, C> &
   Omit<NeonConfig, "url"> &
   TopologyOptions;
 
@@ -47,18 +48,21 @@ export type NeonConnectOptions<S extends QuerySchema> = ConnectOptions<S> &
  * @param options - Schema, mode, errors, logger, and driver options
  * @returns The client. A topology returns a promise. Await `connected` for the dialect check
  */
-export function connect<const S extends QuerySchema>(
-  target: TopologyInput,
-  options: NeonConnectOptions<S>,
-): Promise<RoutedClient<S>>;
-export function connect<const S extends QuerySchema>(
-  target: NeonTarget,
-  options: NeonConnectOptions<S>,
-): Promise<Connected<S>>;
-export function connect<const S extends QuerySchema>(
+export function connect<
+  const S extends QuerySchema,
+  const C extends SessionContext | undefined = undefined,
+>(target: TopologyInput, options: NeonConnectOptions<S, C>): Promise<RoutedClient<S, C>>;
+export function connect<
+  const S extends QuerySchema,
+  const C extends SessionContext | undefined = undefined,
+>(target: NeonTarget, options: NeonConnectOptions<S, C>): Promise<Connected<S, C>>;
+export function connect<
+  const S extends QuerySchema,
+  const C extends SessionContext | undefined = undefined,
+>(
   target: NeonTarget | TopologyInput,
-  options: NeonConnectOptions<S>,
-): Promise<Connected<S> | RoutedClient<S>> {
+  options: NeonConnectOptions<S, C>,
+): Promise<Connected<S, C> | RoutedClient<S, C>> {
   if (typeof target === "object" && !isPool(target)) {
     return import("../topology.js").then((mod) =>
       mod.default(target, options, ((config: NeonConfig) =>

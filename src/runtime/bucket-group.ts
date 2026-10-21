@@ -52,7 +52,7 @@ export type BucketChunk = {
     wrote: { at: number },
     group: BucketGroup,
   ): void;
-  writeGrouped(sink: Sink, names: readonly string[], orderBy: unknown): void;
+  writeGrouped(sink: Sink, names: readonly string[], orderBy: unknown, having?: () => void): void;
 };
 
 /**
@@ -176,9 +176,16 @@ export function writeBucket(
  * @param sink - Statement buffer
  * @param names - Group names, in select order
  * @param orderBy - Caller order, or the default group order
+ * @param having - Writes the `having` clause between `group by` and `order by`
  */
-export function writeGrouped(sink: Sink, names: readonly string[], orderBy: unknown): void {
+export function writeGrouped(
+  sink: Sink,
+  names: readonly string[],
+  orderBy: unknown,
+  having?: () => void,
+): void {
   sink.text(ordinals(names.length));
+  having?.();
   if (isRecord(orderBy) && Object.keys(orderBy).length > 0) {
     sink.text(" order by ");
     const keys = Object.keys(orderBy);

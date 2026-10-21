@@ -1,5 +1,5 @@
 /**
- * `okm doctor --production`: a read-only misuse check of one target (X4, D312).
+ * `okm doctor --production`: a read-only misuse check of one target (X4, D314).
  *
  * Each finding has a stable id, a severity (`fail`, `warn`, `ok`), and a
  * one-line fix. Every query runs in one `READ ONLY` transaction on one fresh

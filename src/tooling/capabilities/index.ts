@@ -14,4 +14,10 @@ export {
 export { collectTestTitles } from "./titles.js";
 export { POSTGRES_FEATURES, type PostgresFeature } from "./postgres.js";
 export type { CapabilityGate, EmulatedNote, FeatureEntry, Registry, Support } from "./types.js";
+export {
+  SESSION_SETTINGS,
+  assertSessionSettings,
+  type SettingScope,
+  type SettingsDialect,
+} from "./session.js";
 export { featuresUsed } from "./used.js";

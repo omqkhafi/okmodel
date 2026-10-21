@@ -57,6 +57,7 @@ import { assertValidation } from "../../runtime/validate/places.js";
 import { stand } from "../../runtime/validate/engine.js";
 import { v } from "../../runtime/validate/rules.js";
 import { assertParamCount, PG_PARAM_LIMIT } from "../../runtime/param-limit.js";
+import { sessionSettings } from "../../runtime/session/index.js";
 import { assertObserveKeys } from "../../runtime/observe-keys.js";
 import { assertSupported } from "../capabilities/check.js";
 import type { Registry } from "../capabilities/types.js";
@@ -1747,6 +1748,16 @@ thrown(
       tenancy: columnTenancy({ key: "tenantId", type: "uuid", indexes: false }),
       tables: [table("notes", { id: t.identity(), title: t.text() })],
     });
+  },
+);
+
+thrown(
+  "OKM1709",
+  () => {
+    sessionSettings({ userId: { name: "user_id", type: "uuid" } });
+  },
+  () => {
+    sessionSettings({ userId: { name: "app.user_id", type: "uuid" } });
   },
 );
 
