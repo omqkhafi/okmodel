@@ -6,7 +6,7 @@
  */
 
 import { statSync, writeFileSync } from "node:fs";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 
 import { nearestName } from "../../contracts/nearest.js";
 import { OkmError } from "../../contracts/error.js";
@@ -246,7 +246,7 @@ async function dispatch(
   const spec = parsed.spec;
   if (spec === undefined) return empty("");
   const project = projectContext(cwd, parsed.config);
-  const announce = announcesConfig(spec.id, parsed.operands[0]);
+  const announce = announcesConfig(spec.id, parsed.operands[0]) && !parsed.bundle;
   const human = (text: string): void => {
     if (parsed.json) return;
     stdout(text);
@@ -281,7 +281,10 @@ async function route(
   if (id === "catalog export") return catalog(project, parsed, cwd, human);
   if (id === "check") return check(project, parsed, human);
   if (id === "dev") return dev(project, human);
-  if (id === "doctor") return doctor(project, parsed, human);
+  if (id === "doctor")
+    return parsed.bundle
+      ? doctorBundle(project, parsed, cwd, human)
+      : doctor(project, parsed, human);
   if (id === "driver test") return driver(parsed, human);
   if (id === "ext list" || id === "ext check") return extRead(project, id, parsed, human);
   if (id === "ext scaffold") return extScaffoldCommand(project, parsed, cwd, human);
@@ -500,6 +503,30 @@ async function doctor(
     warnings: [],
     outFile: null,
   };
+}
+
+async function doctorBundle(
+  project: ProjectContext,
+  parsed: ParsedCli,
+  cwd: string,
+  human: (text: string) => void,
+): Promise<Produced> {
+  const { bundleText, collectBundle, DEFAULT_BUNDLE_PATH, writeBundle } =
+    await import("./doctor-bundle.js");
+  const bundle = await collectBundle(project);
+  const text = bundleText(bundle);
+  const bytes = Buffer.byteLength(text);
+  const data = { bundle };
+  if (parsed.out === "-") {
+    human(text);
+    return { text, data, warnings: [], outFile: { path: "-", bytes } };
+  }
+  const shown = parsed.out ?? DEFAULT_BUNDLE_PATH;
+  const base = parsed.out === undefined ? project.cwd : cwd;
+  writeBundle(resolve(base, shown), shown, text, parsed.overwrite);
+  const said = `wrote ${shown} (${String(bytes)} bytes)\nNo network was used. The file holds codes, versions, and hashes, and no values. Read it before you send it.\n`;
+  human(said);
+  return { text: said, data, warnings: [], outFile: { path: shown, bytes } };
 }
 
 async function driver(parsed: ParsedCli, human: (text: string) => void): Promise<Produced> {
@@ -900,7 +927,8 @@ function place(
 
 async function selectedTarget(parsed: ParsedCli, cwd: string): Promise<CliTarget | undefined> {
   if (parsed.spec?.usesDatabase !== true) return undefined;
-  if (parsed.spec.id === "doctor" && parsed.operands.length > 0) return undefined;
+  if (parsed.spec.id === "doctor" && (parsed.operands.length > 0 || parsed.bundle))
+    return undefined;
   try {
     const project = projectContext(cwd, parsed.config);
     const config = await loadConfig(project);

@@ -265,13 +265,9 @@ export async function checkProject(
     }
   }
   assertSnapshots(cwd, opened.config, opened.built.catalog);
-  const { rawOfflineFindings, rawOnlineCheck } = await import("../describe/command.js");
+  const { rawOnlineCheck } = await import("../describe/command.js");
   const allows = listAllows(projectPath(cwd, opened.config.migrations ?? "migrations"));
-  const findings = [
-    ...lintOpened(opened),
-    ...couplingFindings(opened.built.catalog),
-    ...(await rawOfflineFindings(cwd, opened.config)),
-  ];
+  const findings = [...(await offlineFindings(opened))];
   if (hasError(findings)) throw lintRefusal(findings);
   findings.push(...allowFindings(allows));
   const { advice, ignores } = schemaAdvice(
@@ -441,6 +437,28 @@ async function planLockText(
   }
   const aliases = renameAliases(plan.steps);
   return (step) => annotateLock(step, estimates, aliases);
+}
+
+/**
+ * Findings `okm check` computes before it connects: the plan lint, the type
+ * preferences, cross-catalog keys, and typed raw drift.
+ *
+ * @param opened - Result of {@link openProject}
+ * @returns Findings of every severity, in the order `okm check` reports them
+ */
+export async function offlineFindings(opened: {
+  readonly cwd: string;
+  readonly built: Built;
+  readonly previous: Catalog;
+  readonly renames: readonly DeclaredRename[];
+  readonly config: MigrateConfig;
+}): Promise<readonly Finding[]> {
+  const { rawOfflineFindings } = await import("../describe/command.js");
+  return [
+    ...lintOpened(opened),
+    ...couplingFindings(opened.built.catalog),
+    ...(await rawOfflineFindings(opened.cwd, opened.config)),
+  ];
 }
 
 function lintOpened(opened: {

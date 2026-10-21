@@ -83,6 +83,310 @@
           "type": "string"
         }
       }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bundle"
+      ],
+      "properties": {
+        "bundle": {
+          "description": "`okm doctor --bundle`: the document written to the file and printed as `data.bundle`. Keys sort at every depth. No connection string, host, user, URL, table or column name, SQL text, row value, path outside the project, or environment variable value is in it.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "adapters",
+            "artifacts",
+            "bundleFormat",
+            "capabilities",
+            "checks",
+            "config",
+            "dialect",
+            "layout",
+            "okmodel",
+            "packageManager",
+            "runtime"
+          ],
+          "properties": {
+            "adapters": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "package",
+                  "version"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "package": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            },
+            "artifacts": {
+              "description": "Entries under `.okm/` from a closed list of names. A file has its SHA-256.",
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "kind",
+                      "name",
+                      "sha256"
+                    ],
+                    "properties": {
+                      "kind": {
+                        "const": "file"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "sha256": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "kind",
+                      "name"
+                    ],
+                    "properties": {
+                      "kind": {
+                        "const": "directory"
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "bundleFormat": {
+              "const": 1
+            },
+            "capabilities": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "dialect",
+                "emulated",
+                "features",
+                "native",
+                "refused",
+                "used"
+              ],
+              "properties": {
+                "dialect": {
+                  "const": "postgres"
+                },
+                "emulated": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "features": {
+                  "type": "number"
+                },
+                "native": {
+                  "type": "number"
+                },
+                "refused": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "used": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "checks": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "codes",
+                "failures",
+                "result",
+                "rules",
+                "scope"
+              ],
+              "properties": {
+                "codes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "failures": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "result": {
+                  "enum": [
+                    "pass",
+                    "fail"
+                  ]
+                },
+                "rules": {
+                  "type": "object",
+                  "description": "Rule code to `{ result, severity }`. `fail` means the rule raised a finding. A step that could not run is a code in `failures`."
+                },
+                "scope": {
+                  "const": "offline"
+                }
+              }
+            },
+            "config": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "ambiguous",
+                "file",
+                "found",
+                "loaded",
+                "targets"
+              ],
+              "properties": {
+                "ambiguous": {
+                  "type": "number"
+                },
+                "file": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "found": {
+                  "type": "boolean"
+                },
+                "loaded": {
+                  "type": "boolean"
+                },
+                "targets": {
+                  "type": "number"
+                }
+              }
+            },
+            "dialect": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "package",
+                "version"
+              ],
+              "properties": {
+                "name": {
+                  "const": "postgres"
+                },
+                "package": {
+                  "const": "okmodel"
+                },
+                "version": {
+                  "type": "string"
+                }
+              }
+            },
+            "layout": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "configInWorkspaceRoot",
+                "migrations",
+                "monorepo",
+                "workspacePackages"
+              ],
+              "properties": {
+                "configInWorkspaceRoot": {
+                  "type": "boolean"
+                },
+                "migrations": {
+                  "type": "number"
+                },
+                "monorepo": {
+                  "type": "boolean"
+                },
+                "workspacePackages": {
+                  "type": "number"
+                }
+              }
+            },
+            "okmodel": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "version"
+              ],
+              "properties": {
+                "version": {
+                  "type": "string"
+                }
+              }
+            },
+            "packageManager": {
+              "enum": [
+                "bun",
+                "npm",
+                "pnpm",
+                "yarn",
+                "unknown"
+              ]
+            },
+            "runtime": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "arch",
+                "bun",
+                "node",
+                "os"
+              ],
+              "properties": {
+                "arch": {
+                  "type": "string"
+                },
+                "bun": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "node": {
+                  "type": "string"
+                },
+                "os": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   ]
 }
