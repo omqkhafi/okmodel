@@ -63,7 +63,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okm protect add`, `okm protect remove`, and `okm protect list` read and write the user fingerprint store. `add` records the selected target. `remove` requires a terminal. `list` prints the stored fingerprints. The JSON data is the fingerprint, with `identity` null, and does not include the URL.
 - Conformance cases are tagged portable or gated on a registry key or an adapter gate. A refused registry entry asserts that entry's code and alternative instead of running the body. A false adapter flag on a feature the registry still provides stays unsupported. `okm driver test` prints portable, gated, refusal, and unsupported counts. A test-only profile refuses every Postgres feature and turns the adapter flags off, and the portable minimum (connect, a read and write, error mapping) still passes on it.
 - `bun ./scripts/pack-size.ts` fails when the packed tarball grows by more than 400 KB over `tests/fixtures/pack-size.json`.
-- `docs:check` also checks public-doc hygiene: front matter, links that stay inside the public set, a language on every code fence, and no hidden characters in the packed text. `bun ./scripts/ts7-check.ts` typechecks the public API surface with `@typescript/native-preview` when that package is on npm. It is not part of `bun run check`.
+- `docs:check` also checks public-doc hygiene: front matter, links that stay inside the public set, a language on every code fence, and no hidden characters in the packed text. `bun run typecheck` compiles the public type surface and the `*.test-d.ts` consumer fixtures with TypeScript 7. `bun run ts6:check` compiles the same files with TypeScript 6.0.x (`typescript-editor`) and is not part of `bun run check`.
 
 #### docs
 
