@@ -955,6 +955,38 @@
     "docs": "docs/errors/OKM1556.md"
   },
   {
+    "code": "OKM1557",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A committed step has no built-in probe and no declared probe, so a failure cannot tell whether the change is already in place.",
+    "fix": "Declare one read-only SELECT that returns a single boolean, true when the change is already in place, or keep the step inside the migration transaction.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1557.md",
+    "escapeHatches": [
+      {
+        "name": "-- okm-allow",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1557.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM1558",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A probe is empty, is not one read-only SELECT, has more than one statement, or is declared on a step that stays inside a transaction.",
+    "fix": "Write one read-only SELECT that returns a single boolean, and put it on a step that cannot share a transaction.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1558.md",
+    "escapeHatches": [
+      {
+        "name": "-- okm-allow",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1558.md#escape"
+      }
+    ]
+  },
+  {
     "code": "OKM1601",
     "kind": "invalid",
     "category": "input",
