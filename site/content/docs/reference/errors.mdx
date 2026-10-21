@@ -346,6 +346,7 @@ The registry has 123 codes, in numeric order. Ranges are schema `OKM1000`, queri
 | `OKM1706` | Tenant index | Prefixing is off (`indexes: false` or `tenantIndexes: false`) and an index on a tenant table does not lead with the tenant key. |
 | `OKM1707` | RLS role | A scoped call under rls ran as a role that owns the tenant tables, is a superuser, or has BYPASSRLS. The reason field says which. The message names the endpoint. |
 | `OKM1708` | RLS policy | A scoped call under rls found a tenant table whose row-level security is missing, not forced, or whose policies are not the ones okm generate emits. The message names the table and the endpoint. |
+| `OKM1709` | Session setting | A `sessionSettings()` declaration or a `db.with()` value is not accepted: a name without a dot, a reserved name, a type that is not text, uuid, int, or bool, a value of the wrong type, an unknown key, or a required key that is missing. Nothing reached the database. |
 
 ### Drivers and versions
 

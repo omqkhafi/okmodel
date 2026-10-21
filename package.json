@@ -1,6 +1,6 @@
 {
   "name": "okmodel",
-  "version": "0.10.0-next.70",
+  "version": "0.10.0-next.71",
   "description": "okmodel is a catalog-first TypeScript ORM, PostgreSQL first.",
   "keywords": [
     "migrations",
@@ -89,6 +89,10 @@
       "types": "./dist/runtime/tenancy/index.d.ts",
       "import": "./dist/runtime/tenancy/index.js"
     },
+    "./session": {
+      "types": "./dist/runtime/session/index.d.ts",
+      "import": "./dist/runtime/session/index.js"
+    },
     "./testing": {
       "types": "./dist/tooling/testing/index.d.ts",
       "import": "./dist/tooling/testing/index.js"
@@ -159,7 +163,7 @@
     }
   },
   "scripts": {
-    "build": "rm -rf dist && bun build ./src/contracts/index.ts ./src/contracts/internal.ts ./src/dialects/pg/index.ts ./src/runtime/pg/postgresjs.ts ./src/runtime/pg/pglite.ts ./src/runtime/pg/pg.ts ./src/runtime/pg/bun.ts ./src/runtime/pg/neon.ts ./src/runtime/ids/index.ts ./src/runtime/safety/index.ts ./src/runtime/traits/index.ts ./src/runtime/tenancy/index.ts ./src/runtime/validate/index.ts ./src/runtime/otel.ts ./src/runtime/observe.ts ./src/runtime/warnings/index.ts ./src/dialects/pg/ext/index.ts ./src/dialects/pg/fn/index.ts ./src/dialects/pg/view/index.ts ./src/dialects/pg/ext/citext.ts ./src/dialects/pg/ext/pg-trgm.ts ./src/dialects/pg/ext/unaccent.ts ./src/dialects/pg/ext/hstore.ts ./src/dialects/pg/ext/ltree.ts ./src/dialects/pg/ext/btree-gist.ts ./src/dialects/pg/ext/btree-gin.ts ./src/dialects/pg/ext/fuzzystrmatch.ts ./src/dialects/pg/ext/pgcrypto.ts ./src/tooling/migrate/index.ts ./src/tooling/testing/index.ts ./src/tooling/cli.ts --outdir ./dist --root ./src --format esm --target node --splitting --chunk-naming=shared/[hash].js --external postgres --external @electric-sql/pglite --external pg --external bun --external @neondatabase/serverless && bunx tsc -p tsconfig.build.json && rm -f ./dist/dialects/pg/temporal.local.d.ts && bun build ./packages/harness/src/driver-run.ts --outdir ./dist/tooling --format esm --target node --splitting --chunk-naming=shared/[hash].js --external postgres --external @electric-sql/pglite --external pg --external bun --external @neondatabase/serverless && bun ./scripts/write-bin-wrappers.ts",
+    "build": "rm -rf dist && bun build ./src/contracts/index.ts ./src/contracts/internal.ts ./src/dialects/pg/index.ts ./src/runtime/pg/postgresjs.ts ./src/runtime/pg/pglite.ts ./src/runtime/pg/pg.ts ./src/runtime/pg/bun.ts ./src/runtime/pg/neon.ts ./src/runtime/ids/index.ts ./src/runtime/safety/index.ts ./src/runtime/traits/index.ts ./src/runtime/tenancy/index.ts ./src/runtime/session/index.ts ./src/runtime/validate/index.ts ./src/runtime/otel.ts ./src/runtime/observe.ts ./src/runtime/warnings/index.ts ./src/dialects/pg/ext/index.ts ./src/dialects/pg/fn/index.ts ./src/dialects/pg/view/index.ts ./src/dialects/pg/ext/citext.ts ./src/dialects/pg/ext/pg-trgm.ts ./src/dialects/pg/ext/unaccent.ts ./src/dialects/pg/ext/hstore.ts ./src/dialects/pg/ext/ltree.ts ./src/dialects/pg/ext/btree-gist.ts ./src/dialects/pg/ext/btree-gin.ts ./src/dialects/pg/ext/fuzzystrmatch.ts ./src/dialects/pg/ext/pgcrypto.ts ./src/tooling/migrate/index.ts ./src/tooling/testing/index.ts ./src/tooling/cli.ts --outdir ./dist --root ./src --format esm --target node --splitting --chunk-naming=shared/[hash].js --external postgres --external @electric-sql/pglite --external pg --external bun --external @neondatabase/serverless && bunx tsc -p tsconfig.build.json && rm -f ./dist/dialects/pg/temporal.local.d.ts && bun build ./packages/harness/src/driver-run.ts --outdir ./dist/tooling --format esm --target node --splitting --chunk-naming=shared/[hash].js --external postgres --external @electric-sql/pglite --external pg --external bun --external @neondatabase/serverless && bun ./scripts/write-bin-wrappers.ts",
     "driver-bench": "bun ./scripts/driver-bench.ts",
     "typecheck": "mkdir -p .cache/tsc && bun ./scripts/ts-range.ts && bunx tsc --noEmit -p tests/fixtures/raw/tsconfig.json --incremental --tsBuildInfoFile .cache/tsc/raw.tsbuildinfo",
     "editor-check": "bun ./scripts/editor-check.ts",

@@ -367,6 +367,7 @@ test("refusal:tenancy.column", () => refuse("tenancy.column"));
 test("refusal:tenancy.rls", () => refuse("tenancy.rls"));
 test("refusal:policies.table", () => refuse("policies.table"));
 test("refusal:session.settings", () => refuse("session.settings"));
+test("refusal:session.local", () => refuse("session.local"));
 test("refusal:roles.grants", () => refuse("roles.grants"));
 test("refusal:guard.fragment", () => refuse("guard.fragment"));
 test("refusal:guard.pooler", () => refuse("guard.pooler"));

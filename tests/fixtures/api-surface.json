@@ -623,6 +623,32 @@
       "kind": "stable"
     }
   ],
+  "okmodel/session": [
+    {
+      "name": "SessionContext",
+      "kind": "stable"
+    },
+    {
+      "name": "SessionValues",
+      "kind": "stable"
+    },
+    {
+      "name": "SettingDecl",
+      "kind": "stable"
+    },
+    {
+      "name": "SettingMap",
+      "kind": "stable"
+    },
+    {
+      "name": "SettingType",
+      "kind": "stable"
+    },
+    {
+      "name": "sessionSettings",
+      "kind": "stable"
+    }
+  ],
   "okmodel/testing": [
     {
       "name": "FactoryContext",

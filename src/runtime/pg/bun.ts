@@ -11,6 +11,7 @@ import type { QuerySchema } from "../../dialects/pg/model.js";
 import { markClientPool, open, type BunSqlConfig } from "../../adapters/pg/bunsql.js";
 import { createClient } from "../client.js";
 import type { RoutedClient, TopologyInput, TopologyOptions } from "../topology.js";
+import type { SessionContext } from "../session/index.js";
 import type { ConnectOptions, Connected } from "../types.js";
 
 export { open, type BunSqlConfig, type BunSqlTls } from "../../adapters/pg/bunsql.js";
@@ -21,7 +22,7 @@ export { DriverError } from "../../adapters/error.js";
 export type BunSqlTarget = string | DriverPool;
 
 /** Driver options `connect` forwards to {@link open}. */
-export type BunSqlConnectOptions<S extends QuerySchema> = ConnectOptions<S> &
+export type BunSqlConnectOptions<S extends QuerySchema, C = undefined> = ConnectOptions<S, C> &
   Omit<BunSqlConfig, "url"> &
   TopologyOptions;
 
@@ -39,18 +40,21 @@ export type BunSqlConnectOptions<S extends QuerySchema> = ConnectOptions<S> &
  * @param options - Schema, errors, logger, and driver options
  * @returns The client. A topology returns a promise. Await `connected` for the dialect check
  */
-export function connect<const S extends QuerySchema>(
-  target: TopologyInput,
-  options: BunSqlConnectOptions<S>,
-): Promise<RoutedClient<S>>;
-export function connect<const S extends QuerySchema>(
-  target: BunSqlTarget,
-  options: BunSqlConnectOptions<S>,
-): Connected<S>;
-export function connect<const S extends QuerySchema>(
+export function connect<
+  const S extends QuerySchema,
+  const C extends SessionContext | undefined = undefined,
+>(target: TopologyInput, options: BunSqlConnectOptions<S, C>): Promise<RoutedClient<S, C>>;
+export function connect<
+  const S extends QuerySchema,
+  const C extends SessionContext | undefined = undefined,
+>(target: BunSqlTarget, options: BunSqlConnectOptions<S, C>): Connected<S, C>;
+export function connect<
+  const S extends QuerySchema,
+  const C extends SessionContext | undefined = undefined,
+>(
   target: BunSqlTarget | TopologyInput,
-  options: BunSqlConnectOptions<S>,
-): Connected<S> | Promise<RoutedClient<S>> {
+  options: BunSqlConnectOptions<S, C>,
+): Connected<S, C> | Promise<RoutedClient<S, C>> {
   if (typeof target === "object" && !isPool(target)) {
     return import("../topology.js").then((mod) =>
       mod.default(target, options, ((config: BunSqlConfig) => {

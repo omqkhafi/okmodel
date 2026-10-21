@@ -331,6 +331,12 @@ export type SchemaHookCtx = {
   readonly tables?: Record<string, unknown>;
   readonly scoped?: boolean;
   readonly open?: (scope: { readonly value: string } | { readonly unscoped: string }) => unknown;
+  /** Opens a client whose `db.with()` settings are `merge` of the current ones. */
+  readonly set?: (
+    merge: (
+      current: readonly (readonly [string, string])[] | undefined,
+    ) => readonly (readonly [string, string])[],
+  ) => unknown;
   readonly table?: string;
   readonly view?: "with" | "only";
   /** The last preset chained on this handle. Absent when none is. */

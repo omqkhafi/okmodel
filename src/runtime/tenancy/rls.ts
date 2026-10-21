@@ -6,14 +6,7 @@
  */
 
 import { OkmError } from "../../contracts/error.js";
-import type {
-  DriverConnection,
-  DriverPool,
-  ExecuteOptions,
-  ExecuteResult,
-  Statement,
-  WireValue,
-} from "../../contracts/driver.js";
+import type { DriverPool } from "../../contracts/driver.js";
 import type { CatalogObject, ObjectRef, Provenance } from "../../contracts/catalog/types.js";
 import {
   policyObject,
@@ -27,6 +20,14 @@ import type { ColumnTenancy } from "../../dialects/pg/tenancy.js";
 import type { SchemaHookCtx } from "../../dialects/pg/model.js";
 import { columnTenancy } from "./index.js";
 import { readIndexPolicy } from "./index-shape.js";
+import {
+  innerPool,
+  isWrapped,
+  wrapPool,
+  type RoutedPool,
+  type Setting,
+  type Tenant,
+} from "./scope-pool.js";
 
 /** Why {@link RlsRoleError} refused the role. */
 export type RlsRoleReason = "owner" | "superuser" | "bypassrls";
@@ -67,10 +68,6 @@ export class RlsRoleError extends OkmError {
 }
 
 const TRAIT = "okm.rls";
-const WRAPPED = Symbol("okmodel.rls.wrapped");
-const INNER = Symbol("okmodel.rls.inner");
-
-type Scope = { readonly value: string } | { readonly unscoped: string };
 
 type Model = Readonly<
   Record<
@@ -101,49 +98,15 @@ type GuardEndpoint = {
   readonly pool: DriverPool;
 };
 
-type ScopeState = {
-  last: string | undefined;
-  pending: Promise<void> | undefined;
-  epoch: number;
-  /** Statements of different scopes on this connection run one at a time. */
-  chain: Promise<void>;
-};
-
 type HookSession = {
   pool: DriverPool;
-  readonly scope?: Scope;
+  readonly scope?: Tenant;
+  readonly settings?: readonly Setting[];
   readonly tx?: unknown;
   readonly schema: { readonly model: Model };
 };
 
-type ReadUnit = (
-  text: string,
-  params: readonly WireValue[] | undefined,
-  prelude: Statement,
-  options: ExecuteOptions | undefined,
-) => Promise<ExecuteResult>;
-
-type ReadStream = (
-  text: string,
-  params: readonly WireValue[] | undefined,
-  prelude: Statement,
-  options: ExecuteOptions | undefined,
-) => AsyncIterable<readonly (readonly WireValue[])[]>;
-
-type RoutedPool = DriverPool & {
-  readonly okmReadOnlyUnit?: ReadUnit;
-  readonly okmReadOnlyStream?: ReadStream;
-  okmEndpoints?: () => readonly GuardEndpoint[];
-  okmGuardInstalled?: boolean;
-};
-
-type ScopeHooks = {
-  okmForgetScope?: () => void;
-  okmScopePending?: () => Promise<void> | undefined;
-};
-
 const guardChecks = new WeakMap<object, Map<number, Promise<void>>>();
-const scopeStates = new WeakMap<object, ScopeState>();
 
 function openColumn(key: string, indexes: boolean | undefined): ColumnTenancy {
   return (
@@ -157,10 +120,6 @@ function openColumn(key: string, indexes: boolean | undefined): ColumnTenancy {
     type: "uuid",
     ...(indexes !== undefined ? { indexes } : {}),
   });
-}
-
-function statementOf(text: string, params: readonly WireValue[] | undefined): Statement {
-  return params === undefined ? { text } : { text, params };
 }
 
 /**
@@ -243,71 +202,6 @@ export function rlsTenancy<const Key>(input: {
     },
   };
   return api as ColumnTenancy & { readonly key: Key extends string ? Key : string };
-}
-
-/**
- * Runs one statement inside `BEGIN READ ONLY` after the tenant setting.
- *
- * The caller releases the connection. A failure rolls the transaction back.
- *
- * @param conn - Reserved connection
- * @param text - User statement
- * @param params - Wire parameters
- * @param prelude - `set_config` statement
- * @param options - Deadline and cancellation, without a route hint
- * @returns The user statement's result
- */
-export async function runReadOnly(
-  conn: DriverConnection,
-  text: string,
-  params: readonly WireValue[] | undefined,
-  prelude: Statement,
-  options: ExecuteOptions | undefined,
-): Promise<ExecuteResult> {
-  await conn.execute("begin read only");
-  try {
-    await conn.execute(prelude.text, prelude.params);
-    const result = await conn.execute(text, params, options);
-    await conn.execute("commit");
-    return result;
-  } catch (error) {
-    await conn.execute("rollback").catch(() => undefined);
-    throw error;
-  }
-}
-
-/**
- * Streams one query inside `BEGIN READ ONLY` after the tenant setting.
- *
- * Rows come back in chunks of 64. The caller releases the connection.
- *
- * @param conn - Reserved connection
- * @param text - User query
- * @param params - Wire parameters
- * @param prelude - `set_config` statement
- * @returns Row chunks
- */
-export async function* streamHeld(
-  conn: DriverConnection,
-  text: string,
-  params: readonly WireValue[] | undefined,
-  prelude: Statement,
-): AsyncGenerator<readonly (readonly WireValue[])[]> {
-  await conn.execute("begin read only");
-  try {
-    await conn.execute(prelude.text, prelude.params);
-    await conn.execute(`declare okm_rls no scroll cursor for ${text}`, params);
-    for (;;) {
-      const chunk = await conn.execute("fetch 64 from okm_rls");
-      if (chunk.rows.length === 0) break;
-      yield chunk.rows;
-    }
-    await conn.execute("close okm_rls");
-    await conn.execute("commit");
-  } catch (error) {
-    await conn.execute("rollback").catch(() => undefined);
-    throw error;
-  }
 }
 
 function refuseVia(tables: readonly AnyTable[]): void {
@@ -428,7 +322,13 @@ function arm(
   const tables = tenantTables(session.schema.model, key);
   remember(() => checkEndpoint(raw, "primary", 0, tables), session);
   if (session.scope === undefined || isWrapped(session.pool)) return;
-  session.pool = wrapPool(session.pool, session.scope, session.tx !== undefined, tables);
+  const inner = session.pool;
+  installGuard(inner, tables);
+  const ensure = (): Promise<void> =>
+    (inner as RoutedPool).okmGuardInstalled === true
+      ? Promise.resolve()
+      : checkEndpoint(inner, "primary", 0, tables);
+  session.pool = wrapPool(inner, session.scope, session.settings, session.tx !== undefined, ensure);
 }
 
 function isSession(value: object | undefined): value is HookSession {
@@ -447,295 +347,6 @@ function tenantTables(model: Model, key: string): readonly TenantGuard[] {
     tables.push({ name: table.sql, column: column.sql, dataType: column.dataType });
   }
   return tables;
-}
-
-function isWrapped(pool: object): boolean {
-  return WRAPPED in pool;
-}
-
-function innerPool(pool: DriverPool): DriverPool {
-  const inner = (pool as { [INNER]?: DriverPool })[INNER];
-  return inner ?? pool;
-}
-
-/** The pool a wrapper chain reserves: one chain for every scope on that connection. */
-function rootPool(pool: DriverPool): DriverPool {
-  let current = pool;
-  for (;;) {
-    const inner = (current as { [INNER]?: DriverPool })[INNER];
-    if (inner === undefined) return current;
-    current = inner;
-  }
-}
-
-function wrapPool(
-  inner: DriverPool,
-  scope: Scope,
-  inside: boolean,
-  tables: readonly TenantGuard[],
-): DriverPool {
-  const setting = settingOf(scope);
-  const unscoped = "unscoped" in scope;
-  installGuard(inner, tables);
-  const ensure = (): Promise<void> =>
-    (inner as RoutedPool).okmGuardInstalled === true
-      ? Promise.resolve()
-      : checkEndpoint(inner, "primary", 0, tables);
-  const state = inside ? scopeState(rootPool(inner)) : undefined;
-  if (state !== undefined) queueScope(inner, scope, state);
-  const arm = (): Promise<void> =>
-    state === undefined ? Promise.resolve() : ensureScope(inner, scope, state);
-  const wrapped: DriverPool = {
-    capabilities: inner.capabilities,
-    execute: async (text, params, options) => {
-      await ensure();
-      if (unscoped && isWriteSql(text)) unscopedWrite();
-      if (inside) {
-        if (state === undefined) {
-          await arm();
-          return inner.execute(text, params, options);
-        }
-        const release = await acquire(state);
-        try {
-          await ensureScope(inner, scope, state);
-          return await inner.execute(text, params, options);
-        } finally {
-          release();
-        }
-      }
-      if (isReadSql(text)) return runScopedRead(inner, text, params, setting, options);
-      const results = await inner.batch([setting, statementOf(text, params)], options);
-      const result = results[1];
-      if (result === undefined) {
-        throw new OkmError("OKM1111", "The driver returned no result for the statement.", {
-          fix: { summary: "Use a Postgres driver that returns one result per batched statement." },
-        });
-      }
-      return result;
-    },
-    batch: async (statements, options) => {
-      await ensure();
-      if (unscoped && statements.some((statement) => isWriteSql(statement.text))) unscopedWrite();
-      if (inside) {
-        if (state === undefined) {
-          await arm();
-          return inner.batch(statements, options);
-        }
-        const release = await acquire(state);
-        try {
-          await ensureScope(inner, scope, state);
-          return await inner.batch(statements, options);
-        } finally {
-          release();
-        }
-      }
-      if (statements.length > 0 && statements.every((statement) => isReadSql(statement.text))) {
-        const results: ExecuteResult[] = [];
-        for (const statement of statements) {
-          results.push(
-            await runScopedRead(inner, statement.text, statement.params, setting, options),
-          );
-        }
-        return results;
-      }
-      const results = await inner.batch(
-        [setting, ...statements.map((statement) => statementOf(statement.text, statement.params))],
-        options,
-      );
-      return results.slice(1);
-    },
-    stats: () => inner.stats(),
-    close: () => inner.close(),
-  };
-  if (state !== undefined) bindScopeHooks(inner, wrapped, state);
-  if (inner.reserve !== undefined) wrapped.reserve = () => inner.reserve!();
-  if (inner.describe !== undefined) {
-    wrapped.describe = (text, params) => inner.describe!(text, params);
-  }
-  if (inner.listen !== undefined)
-    wrapped.listen = (channel, onNotify) => inner.listen!(channel, onNotify);
-  if (inner.cancel !== undefined) wrapped.cancel = () => inner.cancel!();
-  if (inner.stream !== undefined || (inner as RoutedPool).okmReadOnlyStream !== undefined) {
-    wrapped.stream = (text, params) =>
-      streamScoped(inner, text, params, setting, scope, inside, unscoped, ensure, arm, state);
-  }
-  Object.defineProperty(wrapped, WRAPPED, { value: true });
-  Object.defineProperty(wrapped, INNER, { value: inner });
-  return wrapped;
-}
-
-function settingOf(scope: Scope): Statement {
-  if ("unscoped" in scope) return { text: "select set_config('app.unscoped', 'on', true)" };
-  return { text: "select set_config('app.tenant', $1, true)", params: [scope.value] };
-}
-
-async function runScopedRead(
-  inner: DriverPool,
-  text: string,
-  params: readonly WireValue[] | undefined,
-  setting: Statement,
-  options: ExecuteOptions | undefined,
-): Promise<ExecuteResult> {
-  const unit = (inner as RoutedPool).okmReadOnlyUnit;
-  if (unit !== undefined) return unit(text, params, setting, options);
-  if (inner.reserve === undefined) {
-    throw new OkmError(
-      "OKM1111",
-      "Row-level security needs a driver that can reserve a connection.",
-      {
-        fix: { summary: "Use a Postgres driver that supports interactive transactions." },
-      },
-    );
-  }
-  const conn = await inner.reserve();
-  try {
-    return await runReadOnly(conn, text, params, setting, options);
-  } finally {
-    await conn.release();
-  }
-}
-
-function streamScoped(
-  inner: DriverPool,
-  text: string,
-  params: readonly WireValue[] | undefined,
-  setting: Statement,
-  scope: Scope,
-  inside: boolean,
-  unscoped: boolean,
-  ensure: () => Promise<void>,
-  arm: () => Promise<void>,
-  state: ScopeState | undefined,
-): AsyncIterable<readonly (readonly WireValue[])[]> {
-  return (async function* () {
-    await ensure();
-    if (unscoped && isWriteSql(text)) unscopedWrite();
-    const routed = (inner as RoutedPool).okmReadOnlyStream;
-    if (!inside && isReadSql(text) && routed !== undefined) {
-      yield* routed(text, params, setting, undefined);
-      return;
-    }
-    if (inside) {
-      if (inner.stream === undefined) {
-        throw new OkmError("OKM1111", "stream() inside tx() needs a driver stream.", {
-          fix: { summary: "Stream outside the transaction, or read with find()." },
-        });
-      }
-      if (state === undefined) {
-        await arm();
-        yield* inner.stream(text, params);
-        return;
-      }
-      const release = await acquire(state);
-      try {
-        await ensureScope(inner, scope, state);
-        yield* inner.stream(text, params);
-      } finally {
-        release();
-      }
-      return;
-    }
-    if (inner.reserve === undefined) {
-      throw new OkmError(
-        "OKM1111",
-        "Row-level security needs a driver that can reserve a connection.",
-        {
-          fix: { summary: "Use a Postgres driver that supports interactive transactions." },
-        },
-      );
-    }
-    const conn = await inner.reserve();
-    try {
-      yield* streamHeld(conn, text, params, setting);
-    } finally {
-      await conn.release();
-    }
-  })();
-}
-
-function scopeState(pool: object): ScopeState {
-  let state = scopeStates.get(pool);
-  if (state === undefined) {
-    state = { last: undefined, pending: undefined, epoch: 0, chain: Promise.resolve() };
-    scopeStates.set(pool, state);
-  }
-  return state;
-}
-
-/**
- * Runs `run` after every earlier statement on this connection.
- *
- * The caller holds the returned release until its own statement has finished,
- * so a second scope cannot read the first scope's `set_config`.
- */
-function acquire(state: ScopeState): Promise<() => void> {
-  const previous = state.chain;
-  let release: () => void = () => undefined;
-  const gate = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  state.chain = previous.then(
-    () => gate,
-    () => gate,
-  );
-  return previous.then(
-    () => release,
-    () => release,
-  );
-}
-
-function scopeKey(scope: Scope): string {
-  return "unscoped" in scope ? `unscoped:${scope.unscoped}` : scope.value;
-}
-
-/**
- * Queues `set_config` as soon as the transaction client exists.
- *
- * That is after `BEGIN` and before the callback, so a later savepoint cannot
- * roll the setting back. A second scope waits until the first write finishes.
- */
-function queueScope(inner: DriverPool, scope: Scope, state: ScopeState): void {
-  const key = scopeKey(scope);
-  if (state.last === key || state.pending !== undefined) return;
-  const setting = settingOf(scope);
-  const run = inner.execute(setting.text, setting.params).then(() => {
-    // `last` is updated only while a statement holds the chain. This write can
-    // finish after another scope has moved the session.
-    if (state.pending === run) state.pending = undefined;
-  });
-  state.pending = run;
-  void run.catch(() => {
-    if (state.pending === run) state.pending = undefined;
-  });
-}
-
-/** Sets the tenant when this statement's scope is not the one last applied. */
-async function ensureScope(inner: DriverPool, scope: Scope, state: ScopeState): Promise<void> {
-  const key = scopeKey(scope);
-  const pending = state.pending;
-  if (pending !== undefined) await pending;
-  if (state.last === key) return;
-  const epoch = state.epoch;
-  const setting = settingOf(scope);
-  await inner.execute(setting.text, setting.params);
-  if (state.epoch !== epoch) return;
-  state.last = key;
-}
-
-function bindScopeHooks(inner: DriverPool, wrapped: DriverPool, state: ScopeState): void {
-  const hooks: ScopeHooks = {
-    okmForgetScope() {
-      state.epoch += 1;
-      state.last = undefined;
-      state.pending = undefined;
-      state.chain = Promise.resolve();
-    },
-    okmScopePending() {
-      return state.pending;
-    },
-  };
-  Object.assign(inner, hooks);
-  Object.assign(wrapped, hooks);
 }
 
 /**
@@ -913,31 +524,6 @@ function policyError(table: string, detail: string, endpoint: string): never {
 /** Double-quoted identifier text for `to_regclass`. */
 function quotedIdent(name: string): string {
   return `"${name.replaceAll('"', '""')}"`;
-}
-
-function unscopedWrite(): never {
-  throw new OkmError("OKM1701", "unscoped() cannot write under row-level security.", {
-    fix: {
-      summary:
-        "Cross-tenant writes belong to the migration role. Use for() to write as one tenant.",
-    },
-  });
-}
-
-function isWriteSql(text: string): boolean {
-  const sql = text.trimStart().toLowerCase().replace(/\s+/g, " ");
-  if (/^(insert|update|delete|refresh|truncate|create|alter|drop|grant|revoke|copy)\b/.test(sql)) {
-    return true;
-  }
-  return sql.startsWith("with ") && /\b(insert|update|delete)\b/.test(sql);
-}
-
-function isReadSql(text: string): boolean {
-  const sql = text.trimStart().toLowerCase().replace(/\s+/g, " ");
-  if (/^(select|values|table|show|explain)\b/.test(sql)) {
-    return !/\sfor (no key update|key share|update|share)\b/.test(sql);
-  }
-  return sql.startsWith("with ") && !/\b(insert|update|delete)\b/.test(sql);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
