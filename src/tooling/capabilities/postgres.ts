@@ -46,6 +46,7 @@ export const POSTGRES_FEATURES = {
   "query.distinctOn": native("proof:query.distinctOn"),
   "query.namedAggregates": native("proof:query.namedAggregates"),
   "query.having": native("proof:query.having"),
+  "query.orderNulls": native("proof:query.orderNulls"),
   "query.rawTyped": native(
     "a raw read binds parameters, decodes the class, and keeps the tenant predicate",
   ),

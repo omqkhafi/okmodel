@@ -187,6 +187,32 @@ export async function busyStatuses(url: string) {
 `having needs groupBy.`
 </Callout>
 
+#### orderBy
+
+A grouped `aggregate` orders by a `groupBy` field, a bucket `as`, `count`, or a name in `select`. Each key takes `"asc"`, `"desc"`, or `{ dir, nulls }`. Without `nulls`, ascending puts NULLs last and descending puts them first. A group with no non-NULL values has a NULL `sum`, `avg`, `min`, and `max`, so name the end you want.
+
+```ts title="order-groups.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const tasks = table("tasks", {
+  id: t.identity(),
+  status: t.text(),
+  amount: t.integer().nullable(),
+});
+const app = schema({ tables: [tasks] });
+
+export async function biggestFirst(url: string) {
+  await using db = connect(url, { schema: app });
+  return db.tasks.aggregate({
+    groupBy: ["status"],
+    select: { revenue: { sum: "amount" } },
+    orderBy: { revenue: { dir: "desc", nulls: "last" } }, // [!code focus]
+    limit: 20,
+  });
+}
+```
+
 ### Distinct
 
 `find` takes `distinct: true` with a `select`. It keeps one row per different combination of the selected fields, and NULL counts as one value. `orderBy` may name selected fields only. `distinctOn` is Postgres only: it keeps the first row of each key, so `orderBy` must start with the same keys and the keys after them pick the row. `include`, `search`, `page`, and `one` refuse both.

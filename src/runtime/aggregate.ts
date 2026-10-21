@@ -33,13 +33,13 @@ import { isOperator, operatorName, operatorValue } from "../dialects/pg/operator
 import {
   cell,
   emitOperand,
-  emitOrder,
   emitWhere,
   fail,
   indexes,
   isRecord,
   isTextColumn,
   list,
+  parseOrder,
   projectExpr,
   quote,
   readLimit,
@@ -117,11 +117,12 @@ type Group = FieldGroup | BucketGroup;
 /** One aggregate a `having` may name: the SQL it writes and the column that encodes its operand. */
 type Slot = { readonly expr: string; readonly column: ColumnModel };
 
-type Having = { readonly value: unknown; readonly slots: ReadonlyMap<string, Slot> };
-
 type Spec = {
   readonly groups: readonly Group[];
-  readonly having: Having | undefined;
+  /** `count` and each `select` name: what `having` and `orderBy` may name. */
+  readonly slots: ReadonlyMap<string, Slot>;
+  /** The caller's `having`, checked against `slots` when the statement is written. */
+  readonly having: unknown;
   readonly bucketed: boolean;
   readonly count: boolean;
   readonly calls: readonly {
@@ -222,15 +223,16 @@ function plan(
   const orderBy = record.orderBy;
   if (orderBy !== undefined) {
     if (!isRecord(orderBy)) fail("OKM1120", "orderBy must be an object of fields.");
+    const accepted = spec.groups.length > 0 ? [...names, ...spec.slots.keys()] : names;
     for (const field of Object.keys(orderBy)) {
-      if (!names.includes(field)) {
+      if (!accepted.includes(field)) {
         const column = indexed.columns.get(field);
         if (column !== undefined) refuseHidden(column);
         throwNamed(
           "OKM1120",
           field,
-          names,
-          `aggregate() orders by a groupBy field. Accepted names: ${list(names)}.`,
+          accepted,
+          `aggregate() orders by a groupBy field, count, or a select name. Accepted names: ${list(accepted)}.`,
         );
       }
     }
@@ -288,7 +290,8 @@ function parse(table: Indexed, record: Record<string, unknown>, buckets?: Bucket
   }
   return {
     groups: grouped.groups,
-    having: readHaving(record.having, grouped.groups.length > 0, calls),
+    slots: slotsOf(calls),
+    having: readHaving(record.having, grouped.groups.length > 0),
     bucketed: grouped.bucketed,
     count,
     calls,
@@ -303,17 +306,13 @@ function numberText(value: unknown): string {
 }
 
 /**
- * Collects what a `having` can name: `count`, and each `select` name.
+ * Collects what `having` and `orderBy` can name: `count`, and each `select` name.
  *
- * `count` is always there. The list forms have no flat name, so `having` cannot
+ * `count` is always there. The list forms have no flat name, so neither can
  * reach them. A sum, avg, count, or countDistinct compares as a number; min and
  * max compare as the column they read.
  */
-function readHaving(value: unknown, grouped: boolean, calls: Spec["calls"]): Having | undefined {
-  if (value === undefined) return undefined;
-  if (!grouped) {
-    fail("OKM1120", "having needs groupBy.", "Add groupBy, or filter the rows with where.");
-  }
+function slotsOf(calls: Spec["calls"]): ReadonlyMap<string, Slot> {
   const slots = new Map<string, Slot>();
   slots.set("count", { expr: "count(*)", column: counted("count") });
   for (const item of calls) {
@@ -327,7 +326,14 @@ function readHaving(value: unknown, grouped: boolean, calls: Spec["calls"]): Hav
           : counted(item.name),
     });
   }
-  return { value, slots };
+  return slots;
+}
+
+function readHaving(value: unknown, grouped: boolean): unknown {
+  if (value !== undefined && !grouped) {
+    fail("OKM1120", "having needs groupBy.", "Add groupBy, or filter the rows with where.");
+  }
+  return value;
 }
 
 function counted(name: string): ColumnModel {
@@ -363,10 +369,10 @@ const HAVING_TEXT = ",startsWith,endsWith,contains,like,ilike,";
 function emitHaving(
   schema: Parameters<ReadBuild>[0],
   table: Indexed,
-  having: Having,
+  value: unknown,
+  slots: ReadonlyMap<string, Slot>,
   sink: Sink,
 ): void {
-  const { value, slots } = having;
   if (isRecord(value) && Object.values(value).every((item) => item === undefined)) return;
   sink.text(" having ");
   sink.mark("h|");
@@ -649,19 +655,12 @@ function statement(spec: Spec, buckets: BucketChunk | undefined): ReadBuild {
       sink.text(" group by ");
       if (spec.bucketed) {
         if (buckets === undefined) fail("OKM1120", "bucket group");
-        buckets.writeGrouped(sink, groupNames(spec.groups), call.orderBy, () => {
-          if (spec.having !== undefined) emitHaving(schema, table, spec.having, sink);
-        });
+        buckets.writeGrouped(sink, groupNames(spec.groups));
       } else {
         sink.text(spec.groups.map((group) => fieldRef(group)).join(", "));
-        if (spec.having !== undefined) emitHaving(schema, table, spec.having, sink);
-        if (isRecord(call.orderBy) && Object.keys(call.orderBy).length > 0) {
-          emitOrder(table, call.orderBy, sink, "t");
-        } else {
-          sink.text(" order by ");
-          sink.text(spec.groups.map((group) => `${fieldRef(group)} asc nulls last`).join(", "));
-        }
       }
+      if (spec.having !== undefined) emitHaving(schema, table, spec.having, spec.slots, sink);
+      emitGroupOrder(spec, call.orderBy, sink);
     }
     if (call.limit !== undefined) {
       const limit = String(call.limit as number);
@@ -671,6 +670,50 @@ function statement(spec: Spec, buckets: BucketChunk | undefined): ReadBuild {
     }
     if (typeof call.all === "string") sink.mark(`all:${call.all}`);
   };
+}
+
+/**
+ * Writes ` order by` over the group keys and the aggregate names.
+ *
+ * A group key orders by its own column, or by its select position when the call
+ * has a bucket. An aggregate orders by its expression, so a `min` or `max` of a
+ * timestamp sorts as a timestamp and not as the text the select list returns.
+ * With no `orderBy`, groups come in `groupBy` order.
+ */
+function emitGroupOrder(spec: Spec, orderBy: unknown, sink: Sink): void {
+  const names = groupNames(spec.groups);
+  const keys = isRecord(orderBy) ? Object.keys(orderBy) : [];
+  sink.text(" order by ");
+  if (!isRecord(orderBy) || keys.length === 0) {
+    sink.text(
+      spec.groups
+        .map((group, index) =>
+          spec.bucketed
+            ? `${String(index + 1)} asc nulls last`
+            : `${fieldRef(group)} asc nulls last`,
+        )
+        .join(", "),
+    );
+    return;
+  }
+  for (let index = 0; index < keys.length; index += 1) {
+    const key = keys[index] as string;
+    const parsed = parseOrder(key, orderBy[key]);
+    const at = names.indexOf(key);
+    const group = spec.groups[at];
+    const slot = spec.slots.get(key);
+    if (index > 0) sink.text(", ");
+    sink.text(
+      group === undefined
+        ? (slot?.expr ?? fail("OKM1120", `orderBy ${key} is not a group or an aggregate.`))
+        : spec.bucketed
+          ? String(at + 1)
+          : fieldRef(group),
+    );
+    sink.text(parsed.dir === "asc" ? " asc" : " desc");
+    sink.text(parsed.nulls === "first" ? " nulls first" : " nulls last");
+    sink.mark(`o:${key}:${parsed.dir}:${parsed.nulls}`);
+  }
 }
 
 /** Field-only marks stay the column names, so an existing plan key does not move. */
