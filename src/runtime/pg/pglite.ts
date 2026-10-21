@@ -12,6 +12,7 @@ import type { QuerySchema } from "../../dialects/pg/model.js";
 import { open, seal, type PgliteConfig } from "../../adapters/pg/pglite.js";
 import { createClient } from "../client.js";
 import type { RoutedClient, TopologyInput, TopologyOptions } from "../topology.js";
+import type { SessionContext } from "../session/index.js";
 import type { Bounded, ConnectOptions, Connected, Limits, NoLimits } from "../types.js";
 
 export { open, type PgliteConfig } from "../../adapters/pg/pglite.js";
@@ -22,12 +23,11 @@ export { DriverError } from "../../adapters/error.js";
 export type PgliteTarget = string | DriverPool | undefined;
 
 /** Driver options `connect` forwards to {@link open}. */
-export type PgliteConnectOptions<S extends QuerySchema, D extends Limits = Limits> = ConnectOptions<
-  S,
-  D
-> &
-  Omit<PgliteConfig, "dataDir"> &
-  TopologyOptions;
+export type PgliteConnectOptions<
+  S extends QuerySchema,
+  C = undefined,
+  D extends Limits = Limits,
+> = ConnectOptions<S, C, D> & Omit<PgliteConfig, "dataDir"> & TopologyOptions;
 
 /**
  * Connects one PGlite endpoint, or a primary and its replicas, and returns a client for `schema`.
@@ -37,23 +37,35 @@ export type PgliteConnectOptions<S extends QuerySchema, D extends Limits = Limit
  * endpoint's data directory.
  *
  * @typeParam S - Schema
+ * @typeParam C - The `session` context
  * @typeParam D - The `limits` literal. It decides which reads need no `limit`
  * @param target - Data directory, existing pool, omitted for memory, or `{ primary, replicas }`
  * @param options - Schema, errors, and logger
  * @returns The client
  */
-export function connect<const S extends QuerySchema, const D extends Limits = NoLimits>(
+export function connect<
+  const S extends QuerySchema,
+  const C extends SessionContext | undefined = undefined,
+  const D extends Limits = NoLimits,
+>(
   target: TopologyInput,
-  options: PgliteConnectOptions<S, D>,
-): Promise<RoutedClient<Bounded<S, D>>>;
-export function connect<const S extends QuerySchema, const D extends Limits = NoLimits>(
+  options: PgliteConnectOptions<S, C, D>,
+): Promise<RoutedClient<Bounded<S, D>, C>>;
+export function connect<
+  const S extends QuerySchema,
+  const C extends SessionContext | undefined = undefined,
+  const D extends Limits = NoLimits,
+>(
   target: PgliteTarget,
-  options: PgliteConnectOptions<S, D>,
-): Promise<Connected<Bounded<S, D>>>;
-export async function connect<const S extends QuerySchema>(
+  options: PgliteConnectOptions<S, C, D>,
+): Promise<Connected<Bounded<S, D>, C>>;
+export async function connect<
+  const S extends QuerySchema,
+  const C extends SessionContext | undefined = undefined,
+>(
   target: PgliteTarget | TopologyInput,
-  options: PgliteConnectOptions<S>,
-): Promise<Connected<S> | RoutedClient<S>> {
+  options: PgliteConnectOptions<S, C>,
+): Promise<Connected<S, C> | RoutedClient<S, C>> {
   if (typeof target === "object" && !isPool(target)) {
     return import("../topology.js").then((mod) => mod.default(target, options, open as never));
   }

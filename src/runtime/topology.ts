@@ -19,7 +19,7 @@ import type {
   WireValue,
 } from "../contracts/driver.js";
 import { OkmError } from "../contracts/error.js";
-import type { QuerySchema } from "../dialects/pg/model.js";
+import type { QuerySchema, SchemaHook } from "../dialects/pg/model.js";
 import { createClient } from "./client.js";
 import type { ConnectOptions, Connected } from "./types.js";
 
@@ -121,14 +121,14 @@ type SelectChoice =
  * `using` returns a client that forces one route. That client has no `close`
  * and no `using`. Only the root closes the pools.
  */
-export type RoutedClient<S extends QuerySchema> = Connected<S> & {
+export type RoutedClient<S extends QuerySchema, C = undefined> = Connected<S, C> & {
   /**
    * Forces later operations onto the primary or a replica.
    *
    * @param route - `"primary"` or `"replica"`
    * @returns A client with no `close` and no `using`
    */
-  using(route: RouteName): Omit<Connected<S>, "close">;
+  using(route: RouteName): Omit<Connected<S, C>, "close">;
 };
 
 /**
@@ -330,9 +330,12 @@ const handles = new WeakMap<object, Handle>();
  * @param open - The driver's `open`
  * @returns The client
  */
-export async function connectTopology<S extends QuerySchema>(
+export async function connectTopology<
+  S extends QuerySchema,
+  C extends { readonly hook: SchemaHook } | undefined = undefined,
+>(
   target: object,
-  options: ConnectOptions<S> &
+  options: ConnectOptions<S, C> &
     TopologyOptions & {
       readonly max?: number;
       readonly prepared?: "named" | "unnamed";
@@ -340,7 +343,7 @@ export async function connectTopology<S extends QuerySchema>(
       readonly ssl?: unknown;
     },
   open: EndpointOpen,
-): Promise<RoutedClient<S>> {
+): Promise<RoutedClient<S, C>> {
   if (Object.prototype.hasOwnProperty.call(options.schema.model, "using")) {
     throw new OkmError("OKM1120", 'Table "using" collides with client.using(). Rename the table.');
   }
@@ -434,10 +437,11 @@ export async function connectTopology<S extends QuerySchema>(
       catalogDir: options.catalogDir,
       requireMeta: options.requireMeta,
       generators: options.generators,
+      session: options.session,
     };
     const router = routePool(handle);
     const client = createClient(options.schema, router, { ownsPool: true, ...shared });
-    const routed = client as RoutedClient<S>;
+    const routed = client as RoutedClient<S, C>;
     routed.using = (route) => derive(options.schema, handle, router, shared, route);
     return instrument(routed, handle);
   } catch (error) {
@@ -1230,15 +1234,18 @@ function routePool(handle: Handle): DriverPool {
  * @param route - `"primary"` or `"replica"`. Anything else is OKM1120
  * @returns A client with no `close` and no `using`
  */
-function derive<S extends QuerySchema>(
+function derive<S extends QuerySchema, C extends { readonly hook: SchemaHook } | undefined>(
   schema: S,
   handle: Handle,
   router: DriverPool,
   shared: Omit<ClientOpts, "ownsPool">,
   route: unknown,
-): Omit<Connected<S>, "close"> {
+): Omit<Connected<S, C>, "close"> {
   const name = readRoute(route);
-  const client = createClient(schema, force(handle, router, name), { ...shared, ownsPool: false });
+  const client = createClient(schema, force(handle, router, name), {
+    ...shared,
+    ownsPool: false,
+  }) as unknown as Connected<S, C>;
   delete (client as { close?: unknown }).close;
   return instrument(client, handle, name);
 }

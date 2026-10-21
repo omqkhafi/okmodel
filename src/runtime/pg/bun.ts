@@ -11,6 +11,7 @@ import type { QuerySchema } from "../../dialects/pg/model.js";
 import { markClientPool, open, type BunSqlConfig } from "../../adapters/pg/bunsql.js";
 import { createClient } from "../client.js";
 import type { RoutedClient, TopologyInput, TopologyOptions } from "../topology.js";
+import type { SessionContext } from "../session/index.js";
 import type { Bounded, ConnectOptions, Connected, Limits, NoLimits } from "../types.js";
 
 export { open, type BunSqlConfig, type BunSqlTls } from "../../adapters/pg/bunsql.js";
@@ -21,12 +22,11 @@ export { DriverError } from "../../adapters/error.js";
 export type BunSqlTarget = string | DriverPool;
 
 /** Driver options `connect` forwards to {@link open}. */
-export type BunSqlConnectOptions<S extends QuerySchema, D extends Limits = Limits> = ConnectOptions<
-  S,
-  D
-> &
-  Omit<BunSqlConfig, "url"> &
-  TopologyOptions;
+export type BunSqlConnectOptions<
+  S extends QuerySchema,
+  C = undefined,
+  D extends Limits = Limits,
+> = ConnectOptions<S, C, D> & Omit<BunSqlConfig, "url"> & TopologyOptions;
 
 /**
  * Connects one Postgres endpoint through Bun.sql, or a primary and its replicas.
@@ -38,23 +38,32 @@ export type BunSqlConnectOptions<S extends QuerySchema, D extends Limits = Limit
  * `prepared: "named"` is not for transaction-mode poolers.
  *
  * @typeParam S - Schema
+ * @typeParam C - The `session` context
  * @typeParam D - The `limits` literal. It decides which reads need no `limit`
  * @param target - URL, an existing pool, or `{ primary, replicas }`
  * @param options - Schema, errors, logger, and driver options
  * @returns The client. A topology returns a promise. Await `connected` for the dialect check
  */
-export function connect<const S extends QuerySchema, const D extends Limits = NoLimits>(
+export function connect<
+  const S extends QuerySchema,
+  const C extends SessionContext | undefined = undefined,
+  const D extends Limits = NoLimits,
+>(
   target: TopologyInput,
-  options: BunSqlConnectOptions<S, D>,
-): Promise<RoutedClient<Bounded<S, D>>>;
-export function connect<const S extends QuerySchema, const D extends Limits = NoLimits>(
-  target: BunSqlTarget,
-  options: BunSqlConnectOptions<S, D>,
-): Connected<Bounded<S, D>>;
-export function connect<const S extends QuerySchema>(
+  options: BunSqlConnectOptions<S, C, D>,
+): Promise<RoutedClient<Bounded<S, D>, C>>;
+export function connect<
+  const S extends QuerySchema,
+  const C extends SessionContext | undefined = undefined,
+  const D extends Limits = NoLimits,
+>(target: BunSqlTarget, options: BunSqlConnectOptions<S, C, D>): Connected<Bounded<S, D>, C>;
+export function connect<
+  const S extends QuerySchema,
+  const C extends SessionContext | undefined = undefined,
+>(
   target: BunSqlTarget | TopologyInput,
-  options: BunSqlConnectOptions<S>,
-): Connected<S> | Promise<RoutedClient<S>> {
+  options: BunSqlConnectOptions<S, C>,
+): Connected<S, C> | Promise<RoutedClient<S, C>> {
   if (typeof target === "object" && !isPool(target)) {
     return import("../topology.js").then((mod) =>
       mod.default(target, options, ((config: BunSqlConfig) => {

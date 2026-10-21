@@ -96,6 +96,10 @@
       "import": "./dist/runtime/safety/index.js",
       "types": "./dist/runtime/safety/index.d.ts"
     },
+    "./session": {
+      "import": "./dist/runtime/session/index.js",
+      "types": "./dist/runtime/session/index.d.ts"
+    },
     "./tenancy": {
       "import": "./dist/runtime/tenancy/index.js",
       "types": "./dist/runtime/tenancy/index.d.ts"
@@ -367,6 +371,8 @@
     "dist/runtime/safety/index.d.ts",
     "dist/runtime/safety/index.js",
     "dist/runtime/server-check.d.ts",
+    "dist/runtime/session/index.d.ts",
+    "dist/runtime/session/index.js",
     "dist/runtime/sort-bind.d.ts",
     "dist/runtime/sort.d.ts",
     "dist/runtime/sql-fragment.d.ts",
@@ -378,6 +384,7 @@
     "dist/runtime/tenancy/index.js",
     "dist/runtime/tenancy/path.d.ts",
     "dist/runtime/tenancy/rls.d.ts",
+    "dist/runtime/tenancy/scope-pool.d.ts",
     "dist/runtime/tenancy/via.d.ts",
     "dist/runtime/text-search.d.ts",
     "dist/runtime/topology.d.ts",
@@ -582,6 +589,7 @@
     "dist/shared/*.js",
     "dist/shared/*.js",
     "dist/shared/*.js",
+    "dist/shared/*.js",
     "dist/tooling/agents/apply.d.ts",
     "dist/tooling/agents/block.d.ts",
     "dist/tooling/agents/command.d.ts",
@@ -595,6 +603,7 @@
     "dist/tooling/capabilities/check.d.ts",
     "dist/tooling/capabilities/index.d.ts",
     "dist/tooling/capabilities/postgres.d.ts",
+    "dist/tooling/capabilities/session.d.ts",
     "dist/tooling/capabilities/titles.d.ts",
     "dist/tooling/capabilities/types.d.ts",
     "dist/tooling/capabilities/used.d.ts",
@@ -905,6 +914,7 @@
     "docs/errors/OKM1706.md",
     "docs/errors/OKM1707.md",
     "docs/errors/OKM1708.md",
+    "docs/errors/OKM1709.md",
     "docs/errors/OKM1801.md",
     "docs/errors/OKM1802.md",
     "docs/errors/OKM1803.md",
