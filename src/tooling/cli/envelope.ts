@@ -5,8 +5,8 @@
  * database. `ok` is true only when `exit` is 0.
  */
 
-import { sha256 } from "../../contracts/sha256.js";
 import { errorBody as buildErrorBody, type CliErrorBody } from "../errors/body.js";
+import { hostDbFingerprint } from "../migrate/fingerprint.js";
 import { renderUntrusted } from "../untrusted.js";
 import type { CliOutFile, CliTargetBody, CliWarningBody, ExitCode } from "./outcome.js";
 
@@ -53,7 +53,7 @@ export function targetFingerprint(target: {
   readonly port: string;
   readonly database: string;
 }): CliTarget {
-  const hostDb = sha256(`${target.host}:${target.port}/${target.database}`.toLowerCase());
+  const hostDb = hostDbFingerprint(target.host, target.port, target.database);
   return {
     name: target.name,
     protected: target.protected,

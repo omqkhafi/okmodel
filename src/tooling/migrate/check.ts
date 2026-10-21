@@ -34,7 +34,12 @@ import {
   type Finding,
 } from "./lint.js";
 import { planMigration, type MigrationPlan, type PlanStep } from "./plan.js";
-import { assertDirectConnection, selectTarget, type InvokeFlags } from "./policy.js";
+import {
+  assertDirectConnection,
+  protectionReason,
+  selectTarget,
+  type InvokeFlags,
+} from "./policy.js";
 import { assertLiveExternal, assertSnapshots, loadSnapshots } from "./export.js";
 import { openProject } from "./project.js";
 import { proveCheckSnapshot, replayCheckHistory } from "./sandbox.js";
@@ -104,7 +109,7 @@ export async function checkMigrations(
   if (target.protected) {
     throw new OkmError(
       "OKM1850",
-      `okm migrate check writes a scratch schema and refuses protected target ${target.name}. Point it at a throwaway Postgres.`,
+      `okm migrate check writes a scratch schema and refuses protected target ${target.name} (${protectionReason(target)}). Point it at a throwaway Postgres.`,
       {
         kind: "forbidden",
         fix: {

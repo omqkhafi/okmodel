@@ -269,6 +269,30 @@ const SCHEMAS: Readonly<Record<string, JsonSchema>> = {
   push: textData(idOf("push"), "okm push data"),
   pull: textData(idOf("pull"), "okm pull data"),
   seed: textData(idOf("seed"), "okm seed data"),
+  "protect add": object("protect add", "okm protect add data", ["hostDb", "identity", "reason"], {
+    hostDb: { type: "string" },
+    identity: { type: "null" },
+    reason: { const: "store fingerprint" },
+  }),
+  "protect remove": object(
+    "protect remove",
+    "okm protect remove data",
+    ["hostDb", "identity", "removed"],
+    {
+      hostDb: { type: "string" },
+      identity: { type: "null" },
+      removed: { type: "boolean" },
+    },
+  ),
+  "protect list": object("protect list", "okm protect list data", ["fingerprints"], {
+    fingerprints: {
+      type: "array",
+      items: objectNode(["hostDb", "identity"], {
+        hostDb: { type: "string" },
+        identity: { type: "null" },
+      }),
+    },
+  }),
   schema: {
     $schema: DRAFT,
     $id: idOf("schema"),

@@ -8,6 +8,8 @@
 import { OkmError } from "../../contracts/error.js";
 import { tagOutcome } from "../cli/outcome.js";
 import type { MigrateConfig, TargetInput } from "./config.js";
+import { hostDbFingerprint, postgresEndpoint } from "./fingerprint.js";
+import { protectedStorePath, readProtectedStore } from "./protected-store.js";
 
 /** An operation the policy table allows or blocks. */
 export type PolicyOperation =
@@ -40,14 +42,37 @@ export type InvokeFlags = {
   readonly statementTimeoutMs?: number;
 };
 
+/**
+ * Where a target's protection came from.
+ *
+ * `open` is neither. `project` is config `protected: true` only. `store` is
+ * a user fingerprint only. `project-and-store` is both. Callers that pass
+ * only `protected: true` are treated as `project`, so `--allow-protected`
+ * still lifts that case.
+ */
+export type ProtectionMatch = "open" | "project" | "store" | "project-and-store";
+
 /** A resolved migration target. The plan stores the name, not the URL. */
 export type TargetRecord = {
   readonly name: string;
   readonly url: string;
   readonly protected: boolean;
+  readonly protection: ProtectionMatch;
   readonly host: string;
   readonly port: string;
   readonly database: string;
+};
+
+/** Where {@link listTargets} reads fingerprints. The default is the user store. */
+export type StoreOptions = {
+  readonly storePath?: string;
+};
+
+/** A target {@link assertTargetPolicy} can see. `protection` omitted means project config. */
+export type PolicySubject = {
+  readonly name: string;
+  readonly protected: boolean;
+  readonly protection?: ProtectionMatch;
 };
 
 const READ: ReadonlySet<PolicyOperation> = new Set([
@@ -65,34 +90,142 @@ const ALLOWED: ReadonlySet<PolicyOperation> = new Set(["expand", "reference", "p
 
 const FORWARD_ONLY: ReadonlySet<PolicyOperation> = new Set(["drop", "rollback"]);
 
+const STORE_FIX =
+  "Open a terminal for this invocation. A terminal is friction, not proof of a human.";
+
+/**
+ * True when the operation changes a database and protection can refuse it.
+ *
+ * Read, expand, reference, and provision are not. `drop` and `rollback`
+ * are refused by a different error and are not commands.
+ *
+ * @param operation - Policy operation
+ * @returns Whether a store fingerprint can refuse it without a terminal
+ */
+export function isStateChangingOperation(operation: PolicyOperation): boolean {
+  return !READ.has(operation) && !ALLOWED.has(operation) && !FORWARD_ONLY.has(operation);
+}
+
+/**
+ * Refuses a store fingerprint when this process has no terminal.
+ *
+ * `--allow-protected` does not lift it. Project-config protection does not
+ * enter this function's refusal. A terminal is friction, not proof of a human.
+ *
+ * @param target - Name, flag, and where the flag came from
+ * @param operation - What the entry point is about to do
+ * @param tty - Whether stdin is a terminal. The default is this process
+ */
+export function assertStoreTerminal(
+  target: PolicySubject,
+  operation: PolicyOperation,
+  tty: boolean = process.stdin.isTTY === true,
+): void {
+  const match = protectionOf(target);
+  if (match !== "store" && match !== "project-and-store") return;
+  if (!isStateChangingOperation(operation)) return;
+  if (tty) return;
+  throw new OkmError(
+    "OKM1859",
+    `${operation} is blocked on protected target ${target.name} (${reasonText(match)}). A store fingerprint blocks this state-changing command when there is no terminal.`,
+    { kind: "forbidden", fix: { summary: STORE_FIX } },
+  );
+}
+
+/**
+ * Refuses `okm driver test --url` when that URL's fingerprint is stored
+ * and there is no terminal.
+ *
+ * A terminal follows today's policy for a URL the command does not mark
+ * protected in config: the store check is the only refusal here.
+ *
+ * @param url - `--url`
+ * @param options - Store path and terminal flag for tests
+ */
+export function guardStoredDriverUrl(
+  url: string,
+  options?: { readonly storePath?: string; readonly tty?: boolean },
+): void {
+  const endpoint = postgresEndpoint(url);
+  const hostDb = hostDbFingerprint(endpoint.host, endpoint.port, endpoint.database);
+  const store = readProtectedStore(options?.storePath ?? protectedStorePath());
+  if (!store.fingerprints.includes(hostDb)) return;
+  assertStoreTerminal(
+    { name: "url", protected: true, protection: "store" },
+    "seed",
+    options?.tty ?? process.stdin.isTTY === true,
+  );
+}
+
+/**
+ * Sentence for a protection match. `open` is not a refusal reason.
+ *
+ * @param target - Name, flag, and where the flag came from
+ * @returns `project config`, `store fingerprint`, or both
+ */
+export function protectionReason(target: PolicySubject): string {
+  return reasonText(protectionOf(target));
+}
+
+/**
+ * Builds the subject runner and apply pass into {@link assertTargetPolicy}.
+ *
+ * @param input - Name, flag, and optional match
+ * @returns The subject, omitting an unknown match so it stays project config
+ */
+export function policySubject(input: PolicySubject): PolicySubject {
+  if (input.protection === undefined) return { name: input.name, protected: input.protected };
+  return { name: input.name, protected: input.protected, protection: input.protection };
+}
+
 /**
  * Refuses an operation the target's protection does not allow.
  *
- * `--allow-protected` is per invocation. It does not lift `drop` or `rollback`.
+ * `--allow-protected` is per invocation. It does not lift `drop` or `rollback`,
+ * and it does not lift a store fingerprint when there is no terminal.
  * `provision` is allowed here; the caller still refuses a target that is not empty.
  *
  * @param target - Name and protection flag
  * @param operation - What the entry point is about to do
  * @param allowProtected - The invocation passed `--allow-protected`
+ * @param options - Terminal flag. The default is this process
  */
 export function assertTargetPolicy(
-  target: { readonly name: string; readonly protected: boolean },
+  target: PolicySubject,
   operation: PolicyOperation,
   allowProtected = false,
+  options?: { readonly tty?: boolean },
 ): void {
   if (FORWARD_ONLY.has(operation)) {
     throw new OkmError("invalid", "There is no down migration.", {
       fix: { summary: "Recovery is a new forward migration." },
     });
   }
+  assertStoreTerminal(target, operation, options?.tty ?? process.stdin.isTTY === true);
   if (!target.protected || allowProtected) return;
   if (READ.has(operation) || ALLOWED.has(operation)) return;
-  throw new OkmError("OKM1850", `${operation} is blocked on protected target ${target.name}.`, {
-    kind: "forbidden",
-    fix: {
-      summary: "Use a read-only command or an expand migration.",
+  throw new OkmError(
+    "OKM1850",
+    `${operation} is blocked on protected target ${target.name} (${protectionReason(target)}).`,
+    {
+      kind: "forbidden",
+      fix: {
+        summary: "Use a read-only command or an expand migration.",
+      },
     },
-  });
+  );
+}
+
+function protectionOf(target: PolicySubject): ProtectionMatch {
+  if (target.protection !== undefined) return target.protection;
+  return target.protected ? "project" : "open";
+}
+
+function reasonText(match: ProtectionMatch): string {
+  if (match === "project") return "project config";
+  if (match === "store") return "store fingerprint";
+  if (match === "project-and-store") return "project config and store fingerprint";
+  return "open";
 }
 
 /**
@@ -226,7 +359,10 @@ export async function assertStableBackend(
  * @param config - Project config
  * @returns Targets in name order
  */
-export function listTargets(config: MigrateConfig): readonly TargetRecord[] {
+export function listTargets(
+  config: MigrateConfig,
+  options?: StoreOptions,
+): readonly TargetRecord[] {
   if (config.database !== undefined && config.targets !== undefined) {
     throw new OkmError("invalid", "Set database or targets, not both.", {
       fix: { summary: "database is the one target named default. Use targets for more than one." },
@@ -240,7 +376,10 @@ export function listTargets(config: MigrateConfig): readonly TargetRecord[] {
       if (input !== undefined) entries.push([name, input]);
     }
   }
-  return entries.map(([name, input]) => resolveTarget(name, input));
+  const fingerprints = new Set(
+    readProtectedStore(options?.storePath ?? protectedStorePath()).fingerprints,
+  );
+  return entries.map(([name, input]) => resolveTarget(name, input, fingerprints));
 }
 
 /**
@@ -252,8 +391,12 @@ export function listTargets(config: MigrateConfig): readonly TargetRecord[] {
  * @param name - `--target`, when the command passed one
  * @returns The target
  */
-export function selectTarget(config: MigrateConfig, name: string | undefined): TargetRecord {
-  const targets = listTargets(config);
+export function selectTarget(
+  config: MigrateConfig,
+  name: string | undefined,
+  options?: StoreOptions,
+): TargetRecord {
+  const targets = listTargets(config, options);
   if (targets.length === 0) {
     throw new OkmError("OKM1845", "No target is configured.", {
       fix: { summary: "Set database or targets in okmodel.config.ts." },
@@ -277,7 +420,11 @@ export function selectTarget(config: MigrateConfig, name: string | undefined): T
   return found;
 }
 
-function resolveTarget(name: string, input: TargetInput): TargetRecord {
+function resolveTarget(
+  name: string,
+  input: TargetInput,
+  fingerprints: ReadonlySet<string>,
+): TargetRecord {
   if (typeof input !== "string" && isReplicaTarget(input)) {
     throw new OkmError(
       "OKM1845",
@@ -291,21 +438,33 @@ function resolveTarget(name: string, input: TargetInput): TargetRecord {
     );
   }
   const url = typeof input === "string" ? input : input.url;
-  const protectedTarget = typeof input === "string" ? false : input.protected === true;
+  const configProtected = typeof input === "string" ? false : input.protected === true;
   if (url === undefined || url.length === 0) {
     throw new OkmError("OKM1845", `Target ${name} has no url.`, {
       fix: { summary: "Set the target url. A target is not inferred from the environment." },
     });
   }
   const endpoint = endpointOf(url);
+  const inStore = fingerprints.has(
+    hostDbFingerprint(endpoint.host, endpoint.port, endpoint.database),
+  );
+  const protection = protectionMatch(configProtected, inStore);
   return {
     name,
     url,
-    protected: protectedTarget,
+    protected: protection !== "open",
+    protection,
     host: endpoint.host,
     port: endpoint.port,
     database: endpoint.database,
   };
+}
+
+function protectionMatch(configProtected: boolean, inStore: boolean): ProtectionMatch {
+  if (configProtected && inStore) return "project-and-store";
+  if (inStore) return "store";
+  if (configProtected) return "project";
+  return "open";
 }
 
 function isReplicaTarget(input: object): boolean {
@@ -313,18 +472,5 @@ function isReplicaTarget(input: object): boolean {
 }
 
 function endpointOf(url: string): { host: string; port: string; database: string } {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    throw new OkmError("OKM1845", "The target URL is not a Postgres URL.", {
-      fix: { summary: "Pass a postgres:// URL for the target." },
-    });
-  }
-  const database = decodeURIComponent(parsed.pathname.replace(/^\//, ""));
-  return {
-    host: parsed.hostname.toLowerCase(),
-    port: parsed.port.length > 0 ? parsed.port : "5432",
-    database,
-  };
+  return postgresEndpoint(url);
 }

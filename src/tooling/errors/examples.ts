@@ -502,6 +502,20 @@ thrown(
 );
 
 thrown(
+  "OKM1859",
+  () => {
+    assertTargetPolicy({ name: "default", protected: true, protection: "store" }, "push", true, {
+      tty: false,
+    });
+  },
+  () => {
+    assertTargetPolicy({ name: "default", protected: true, protection: "store" }, "push", true, {
+      tty: true,
+    });
+  },
+);
+
+thrown(
   "OKM1853",
   () => {
     selectTarget(

@@ -337,6 +337,7 @@ function endpoint(name: string, url: string, protectedTarget: boolean): TargetRe
     name,
     url,
     protected: protectedTarget,
+    protection: protectedTarget ? "project" : "open",
     host: parsed.hostname,
     port: parsed.port.length > 0 ? parsed.port : "5432",
     database: parsed.pathname.slice(1),

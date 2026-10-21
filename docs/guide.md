@@ -1279,6 +1279,8 @@ The worked example is a project tracker: workspaces as tenants, archive, a funct
 
 `protected: true` is a flag on the target, not on the name and not on `NODE_ENV`. Plan, status, check, ext check, and drift stay allowed. Expand and reference rows stay allowed. An empty protected database can be provisioned. Contract, unclassified SQL, push, backfill, and seed are OKM1850 unless that invocation passes `--allow-protected`. `okm migrate check` writes a scratch schema, so it stays refused, and the flag does not apply. Point it at a throwaway Postgres. Protection does not affect `connect()`.
 
+`okm protect add` records a fingerprint in the user store (`~/.config/okm/protected.json`, or `%APPDATA%\okm\protected.json` on Windows). That store is a union with `protected: true`: deleting the config flag leaves the fingerprint in place. A state-changing command against a stored fingerprint exits 4 without a terminal, and `--allow-protected` does not lift that. A terminal is friction, not proof of a human. The ceiling is [Protection](protection.md).
+
 ## Commands
 
 | Command                   | What it does                                                                                                                                                                                             |
@@ -1298,6 +1300,9 @@ The worked example is a project tracker: workspaces as tenants, archive, a funct
 | `okm ext scaffold <name>` | Prints a starting `extension()` definition from the connected catalog. `--out` writes that file and never overwrites. Read-only on a protected target.                                                    |
 | `okm ext test <file>`     | Checks the file's types, operators, functions, and index methods against the server. A mismatch exits non-zero. A version the server does not meet is OKM1812. Read-only on a protected target.           |
 | `okm doctor [code]`       | Lists triggers, or explains one error code. A role check is read-only on a protected target.                                                                                                             |
+| `okm protect add`         | Records the selected target's fingerprint in the user store. Does not print the URL.                                                                                                                     |
+| `okm protect remove`      | Deletes that fingerprint. Requires a terminal, otherwise exit 4. Deleting `protected: true` does not do this.                                                                                            |
+| `okm protect list`        | Prints stored fingerprints, or `none`.                                                                                                                                                                   |
 | `okm --version`           | Prints the package version.                                                                                                                                                                              |
 
 `okmodel` and `okm` are the same command.
