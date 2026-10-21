@@ -223,7 +223,7 @@ type QueryEvent = {
   route: { endpoint: string; role: "primary" | "replica" };
   error?: { kind: string; category: string; code: string; sqlstate?: string };
   tag?: string;
-  limit?: { value: number; source: string }; // source "caller" when the call passed limit. Absent until a default limit exists
+  limit?: { value: number; source: string }; // source "caller" when the call passed limit, "limits.find", "limits.page" or "limits.groupBy" when connect({ limits }) supplied it
   params?: readonly unknown[]; // only when queryObserver({ params: true })
   stack?: string; // only when queryObserver({ stack: true })
 };
@@ -238,7 +238,7 @@ the fingerprint of that parameterised text. A read uses `plan.fingerprint`.
 `rowCount` for a write uses the same command-tag rule as `WriteEvent`. A read is
 `returned` when the driver reported a count, and `unknown` with `rowCount: null`
 otherwise. `queueMs` is null. `decodeMs` is null when a write's SQL has no
-`RETURNING`. `limit` is set only when the caller passed a numeric `limit`. `one()`
+`RETURNING`. `limit` is set when the caller passed a numeric `limit`, or when a `connect({ limits })` default applied to the root read (`limits.find`, `limits.page`, `limits.groupBy`). A default for a to-many include is not on the event: `.inspect()` lists it as the rule `limits.include`. `one()`
 does not report the internal `limit 2`.
 
 `params` redacts sensitive columns, hidden columns, and tenant keys as

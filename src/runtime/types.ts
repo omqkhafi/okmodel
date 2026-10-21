@@ -22,8 +22,10 @@ import type {
   SearchMatch,
 } from "../dialects/pg/operators.js";
 import type { FieldWhere, IsJsonObject } from "../dialects/pg/where.js";
-import type { AppliedRule, ReadCall, ReadOp } from "./plan.js";
+import type { AppliedRule, Limits, ReadCall, ReadDone, ReadOp } from "./plan.js";
 import type { SessionContext, SessionValues, SettingMap } from "./session/index.js";
+
+export type { Limits } from "./plan.js";
 import type { WarningIgnore } from "./warnings/catalog.js";
 
 export type { FieldWhere, WhereValue } from "../dialects/pg/where.js";
@@ -211,7 +213,18 @@ type Related<S extends QuerySchema, T extends keyof S["~byName"], Opt> = Opt ext
   ? Selected<RowOf<S, T>, Sel>
   : RowOf<S, T>;
 
-/** One include. To-many needs `limit`. A morph include is `true`. */
+/** True when `connect({ limits })` set `Key`: the call may then state no limit. */
+type Defaults<S, Key extends keyof Limits> = S extends {
+  readonly "~limits": { readonly [P in Key]: number };
+}
+  ? true
+  : false;
+
+/** `limit` of a to-many include: required, or optional when `limits.include` is set. */
+type IncludeLimit<S> =
+  Defaults<S, "include"> extends true ? { readonly limit?: number } : { readonly limit: number };
+
+/** One include. To-many needs `limit`, unless `limits.include` is set. A morph include is `true`. */
 export type IncludeOf<S extends QuerySchema, K extends keyof S["~byName"]> = {
   readonly [R in RelationKeys<RelationsOf<S, K>>]?: RelationsOf<S, K>[R] extends {
     readonly morph: { readonly targets: readonly string[] };
@@ -222,12 +235,13 @@ export type IncludeOf<S extends QuerySchema, K extends keyof S["~byName"]> = {
           readonly table: infer T extends string;
         }
       ? T extends keyof S["~byName"]
-        ? {
-            readonly limit: number;
-            readonly select?: readonly (keyof RowOf<S, T> & string)[];
-            readonly where?: FieldWhere<RowOf<S, T>>;
-            readonly orderBy?: OrderBy<RowOf<S, T>>;
-          }
+        ?
+            | (Defaults<S, "include"> extends true ? true : never)
+            | (IncludeLimit<S> & {
+                readonly select?: readonly (keyof RowOf<S, T> & string)[];
+                readonly where?: FieldWhere<RowOf<S, T>>;
+                readonly orderBy?: OrderBy<RowOf<S, T>>;
+              })
         : never
       : RelationsOf<S, K>[R] extends {
             readonly kind: "one";
@@ -1005,6 +1019,26 @@ type ArchiveOps<S extends QuerySchema, K extends keyof S["~byName"] & string, L>
 };
 
 /**
+ * What a call that states no limit returns: the read when `connect({ limits })`
+ * set `Key`, and otherwise a handle that only offers `.all(reason)`.
+ */
+type Unbounded<S, Key extends keyof Limits, R> =
+  Defaults<S, Key> extends true ? R : { all(reason: string): R };
+
+/** `page` options with no `limit`, for a client with `limits.page`. Otherwise `never`. */
+type DefaultPage<
+  S extends QuerySchema,
+  K extends keyof S["~byName"],
+  Filter extends boolean = false,
+> =
+  Defaults<S, "page"> extends true
+    ? Filter extends true
+      ? Omit<PageOptions<S, K>, "where" | "orderBy" | "limit"> &
+          ReadFilterOptions<S, K> & { readonly limit?: number }
+      : Omit<PageOptions<S, K>, "limit"> & { readonly limit?: number }
+    : never;
+
+/**
  * Methods an opt-in feature adds to a table handle.
  *
  * The interface is empty here, so an application that imports no feature
@@ -1028,10 +1062,10 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   ): Read<readonly ResultRow<S, K, O>[]>;
   find<const O extends FindFilterOptions<S, K, L>>(
     options: O,
-  ): { all(reason: string): Read<readonly ResultRow<S, K, O>[]> };
+  ): Unbounded<S, "find", Read<readonly ResultRow<S, K, O>[]>>;
   find<const O extends FindOptions<S, K> & L>(
     options: O,
-  ): { all(reason: string): Read<readonly ResultRow<S, K, O>[]> };
+  ): Unbounded<S, "find", Read<readonly ResultRow<S, K, O>[]>>;
   one<const O extends ReadOptions<S, K>>(options?: O): Read<ResultRow<S, K, O> | null>;
   one<const O extends ReadFilterOptions<S, K>>(options?: O): Read<ResultRow<S, K, O> | null>;
   /**
@@ -1044,6 +1078,8 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   page<const O extends Omit<PageOptions<S, K>, "where" | "orderBy"> & ReadFilterOptions<S, K>>(
     options: O,
   ): Query<Page<ResultRow<S, K, O>>>;
+  page<const O extends DefaultPage<S, K>>(options: O): Query<Page<ResultRow<S, K, O>>>;
+  page<const O extends DefaultPage<S, K, true>>(options: O): Query<Page<ResultRow<S, K, O>>>;
   /**
    * Counts, sums, averages, and finds extremes, per group.
    *
@@ -1069,7 +1105,7 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
     },
   >(
     options: O,
-  ): { all(reason: string): Query<readonly AggregateRow<RowOf<S, K>, O>[]> };
+  ): Unbounded<S, "groupBy", Query<readonly AggregateRow<RowOf<S, K>, O>[]>>;
   aggregate<
     const O extends AggregateOptions<S, K> &
       NamedAggregateOptions<S, K> &
@@ -1079,7 +1115,7 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   ): Query<readonly AggregateRow<RowOf<S, K>, O>[]>;
   aggregate<const O extends AggregateOptions<S, K> & NamedAggregateOptions<S, K>>(
     options: O & HavingGuard<RowOf<S, K>, O>,
-  ): { all(reason: string): Query<readonly AggregateRow<RowOf<S, K>, O>[]> };
+  ): Unbounded<S, "groupBy", Query<readonly AggregateRow<RowOf<S, K>, O>[]>>;
   count(
     options?: CallOptions & {
       readonly where?: WhereOf<S, K>;
@@ -1526,7 +1562,7 @@ export type CatalogArtifact = {
 };
 
 /** `connect` options shared by the Postgres drivers. */
-export type ConnectOptions<S extends QuerySchema, C = undefined> = {
+export type ConnectOptions<S extends QuerySchema, C = undefined, D extends Limits = Limits> = {
   readonly schema: S;
   /**
    * Transaction-local session settings from `okmodel/session`.
@@ -1588,10 +1624,35 @@ export type ConnectOptions<S extends QuerySchema, C = undefined> = {
    *
    * Absent, a read does not report OKM2xxx advice.
    */
-  readonly warnings?: (schema: QuerySchema, call: ReadCall, stack?: string) => void;
+  readonly warnings?: (
+    schema: QuerySchema,
+    call: ReadCall,
+    stack?: string,
+    done?: ReadDone,
+  ) => void;
   /** Per-statement observer (`okm.observe/1`). See `docs/observer-events.md`. */
   readonly onQuery?: import("./observe-types.js").OnQuery;
+  /**
+   * Default limits for reads that state neither `limit` nor `.all(reason)`.
+   *
+   * Absent, nothing changes. See {@link Limits}.
+   */
+  readonly limits?: D;
 };
+
+/** The `limits` of a client that set none. */
+export type NoLimits = Record<never, never>;
+
+/**
+ * The schema type of a client whose `connect({ limits })` names keys. A client
+ * with no keys keeps `S`, so its types are the ones the schema alone gives.
+ *
+ * @typeParam S - Schema
+ * @typeParam D - The `limits` literal
+ */
+export type Bounded<S extends QuerySchema, D extends Limits> = NoLimits extends D
+  ? S
+  : S & { readonly "~limits": D };
 
 /** Ceilings from `connect({ timeouts })`, in milliseconds. Each key is optional. */
 export type Timeouts = DriverTimeouts;

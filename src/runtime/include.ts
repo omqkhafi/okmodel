@@ -36,6 +36,8 @@ import {
   type ReadCall,
   type Sink,
 } from "./plan.js";
+import { capLimit } from "./limits.js";
+import type { Limits } from "./plan.js";
 
 registerFailFix("OKM1105", "Pass a limit on the include.");
 
@@ -82,6 +84,7 @@ function emitIncludeSelect(
     outputs?.includes.push({
       name: include.name,
       kind: "many",
+      ...(include.dl !== undefined ? { dl: include.dl } : {}),
       at: column,
       fields: selected.map((item, index) => ({
         key: item.field,
@@ -91,6 +94,7 @@ function emitIncludeSelect(
       nested: include.nested.map((nested, index) => ({
         name: nested.name,
         kind: nested.relation.kind,
+        ...(nested.dl !== undefined ? { dl: nested.dl } : {}),
         at: selected.length + index,
         fields: nested.columns.map((item, at) => ({
           key: item.field,
@@ -134,6 +138,7 @@ function emitIncludeSelect(
     nestedOut.push({
       name: nested.name,
       kind: nested.relation.kind,
+      ...(nested.dl !== undefined ? { dl: nested.dl } : {}),
       at:
         nested.relation.kind === "many"
           ? cursor
@@ -204,11 +209,7 @@ function emitIncludeJoin(
     emitRelationFrom(schema, include.relation, child, sink, parentAlias, childAlias, depth + 1);
     emitWhere(schema, child, include.where, sink, childAlias, depth + 1, true);
     emitIncludeOrder(child, include.orderBy, sink, childAlias);
-    if (include.limit !== undefined) {
-      sink.text(" limit ");
-      sink.param(String(include.limit));
-      sink.mark(`l:${String(include.limit)}`);
-    }
+    emitIncludeLimit(include, sink);
     sink.text(") limited) ordered) ");
     sink.text(alias);
     sink.text(" on true");
@@ -268,6 +269,14 @@ function emitIncludeJoin(
   sink.text(" on true");
 }
 
+/** A default limit adds `d` to the plan mark, so a cached plan knows which limit the caller wrote. */
+function emitIncludeLimit(include: ParsedInclude, sink: Sink): void {
+  if (include.limit === undefined) return;
+  sink.text(" limit ");
+  sink.param(String(include.limit));
+  sink.mark(`l:${String(include.limit)}${include.dl === undefined ? "" : "d"}`);
+}
+
 function emitNestedAggregate(
   schema: QuerySchema,
   include: ParsedInclude,
@@ -300,11 +309,7 @@ function emitNestedAggregate(
   emitRelationFrom(schema, include.relation, child, sink, alias, childAlias, depth);
   emitWhere(schema, child, include.where, sink, childAlias, depth, true);
   emitIncludeOrder(child, include.orderBy, sink, childAlias);
-  if (include.limit !== undefined) {
-    sink.text(" limit ");
-    sink.param(String(include.limit));
-    sink.mark(`l:${String(include.limit)}`);
-  }
+  emitIncludeLimit(include, sink);
   sink.text(") limited) ordered)");
 }
 
@@ -339,6 +344,7 @@ function readIncludes(
   table: Indexed,
   include: unknown,
   all: string | undefined,
+  limits: Limits | undefined,
 ): readonly ParsedInclude[] {
   if (include === undefined) return [];
   if (!isRecord(include)) {
@@ -355,7 +361,7 @@ function readIncludes(
         `Include ${name} is not a relation of ${table.model.name}. Accepted names: ${list([...table.relations.keys()])}.`,
       );
     }
-    parsed.push(parseInclude(schema, name, relation, include[name], all));
+    parsed.push(parseInclude(schema, name, relation, include[name], all, limits));
   }
   return parsed;
 }
@@ -366,10 +372,12 @@ function parseInclude(
   relation: RelationModel,
   value: unknown,
   all: string | undefined,
+  limits: Limits | undefined,
 ): ParsedInclude {
   if (relation.morph?.direction === "to") return parseMorph(schema, name, relation, value);
   if (value === true) {
-    if (relation.kind === "many" && all === undefined) {
+    const dl = relation.kind === "many" && all === undefined ? limits?.include : undefined;
+    if (relation.kind === "many" && all === undefined && dl === undefined) {
       fail("OKM1105", `Include ${name} is to-many and has no limit. Pass a limit.`);
     }
     const child = childIndex(schema, relation);
@@ -379,7 +387,8 @@ function parseInclude(
       relation,
       where: undefined,
       orderBy: undefined,
-      limit: undefined,
+      limit: dl,
+      ...(dl !== undefined ? { dl } : {}),
       columns,
       ...anchored(child, columns),
       nested: [],
@@ -391,20 +400,28 @@ function parseInclude(
   rejectKeys(value, INCLUDE_OPTIONS, `include ${name}`);
   const reason = typeof value.all === "string" ? value.all : all;
   let limit: number | undefined;
-  if (value.limit !== undefined) limit = readLimit(value.limit);
+  let dl: number | undefined;
+  if (value.limit !== undefined) {
+    limit = readLimit(value.limit);
+    if (reason === undefined) capLimit(limit, limits?.max);
+  } else if (relation.kind === "many" && reason === undefined) {
+    limit = dl = limits?.include;
+  }
   if (relation.kind === "many" && limit === undefined && reason === undefined) {
     fail("OKM1105", `Include ${name} is to-many and has no limit. Pass a limit.`);
   }
   const child = childIndex(schema, relation);
   const columns = includeColumns(child, value.select);
   const nestedValue = value.include;
-  const nested = nestedValue === undefined ? [] : readIncludes(schema, child, nestedValue, reason);
+  const nested =
+    nestedValue === undefined ? [] : readIncludes(schema, child, nestedValue, reason, limits);
   return {
     name,
     relation,
     where: value.where,
     orderBy: value.orderBy,
     limit,
+    ...(dl !== undefined ? { dl } : {}),
     columns,
     ...anchored(child, columns),
     nested,
