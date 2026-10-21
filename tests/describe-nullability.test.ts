@@ -12,6 +12,7 @@ const base: AttributeFacts = {
   attidentity: "",
   attgenerated: "",
   relkind: "r",
+  notNullInvalid: false,
 };
 
 const column = { name: "name", tableOid: 1, attnum: 2 };
@@ -103,4 +104,7 @@ test("a plain base column is not null, and the suffix overrides either way", () 
   expect(
     columnNullability("select name from item", column, { ...base, relkind: "p" }).nullable,
   ).toBe(false);
+  expect(
+    columnNullability("select name from item", column, { ...base, notNullInvalid: true }),
+  ).toEqual({ name: "name", nullable: true });
 });

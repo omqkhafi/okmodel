@@ -5,9 +5,9 @@
  * column, `attnotnull` is set, the column is not a generated expression, and
  * the statement's lexical screen is clear. An `!` or `?` suffix on the result
  * name overrides that proof. CHECK constraints, views, and stored generated
- * columns are not proof. PostgreSQL 18 also stores NOT NULL in
- * `pg_constraint`; 15 through 17 return no row from that join, so this rule
- * reads `attnotnull` only.
+ * columns are not proof. An unvalidated NOT NULL constraint (`pg_constraint`
+ * `contype` `n`, `convalidated` false) also blocks the proof. PostgreSQL 15
+ * through 17 store no such row, so `attnotnull` alone still decides there.
  */
 
 import { statementBlocksNotNull } from "./screen.js";
@@ -28,6 +28,13 @@ export type AttributeFacts = {
   readonly attgenerated: string;
   /** `pg_class.relkind`. */
   readonly relkind: string;
+  /**
+   * True when a NOT NULL constraint on this column is not validated.
+   *
+   * PostgreSQL 18 can set `attnotnull` for `NOT VALID`. 15 through 17 never
+   * set this.
+   */
+  readonly notNullInvalid: boolean;
 };
 
 /** One described column after the alias suffix is applied. */
@@ -41,8 +48,10 @@ export type ColumnNullability = {
 /**
  * Catalog read for {@link attributeFacts}. `$1` is the table OID. `$2` is `attnum`.
  *
- * The selected list is the describe spike's query. Only `attnotnull`,
- * `attidentity`, `attgenerated`, and `relkind` decide the result.
+ * The selected list is the describe spike's query, plus whether a NOT NULL
+ * constraint on the column is unvalidated. Only `attnotnull`, `attidentity`,
+ * `attgenerated`, `relkind`, and that flag decide the result. Before
+ * PostgreSQL 18 the flag is false: `contype` `n` matches no row.
  */
 export const NULLABILITY_SQL = `
 SELECT
@@ -56,7 +65,15 @@ SELECT
   t.typbasetype,
   c.relkind,
   c.relname,
-  n.nspname
+  n.nspname,
+  EXISTS (
+    SELECT 1
+    FROM pg_constraint k
+    WHERE k.conrelid = a.attrelid
+      AND k.contype = 'n'
+      AND a.attnum = ANY (k.conkey)
+      AND k.convalidated = false
+  ) AS not_null_invalid
 FROM pg_attribute a
 JOIN pg_class c ON c.oid = a.attrelid
 JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -82,6 +99,7 @@ export function attributeFacts(row: readonly (string | null)[]): AttributeFacts 
     attidentity: text(row[1]),
     attgenerated: text(row[2]),
     relkind,
+    notNullInvalid: row[11] === "t" || row[11] === "true",
   };
 }
 
@@ -117,6 +135,7 @@ function proven(
   if (facts.relkind !== "r" && facts.relkind !== "p") return false;
   if (facts.attgenerated.trim() !== "") return false;
   if (!facts.attnotnull) return false;
+  if (facts.notNullInvalid) return false;
   return !statementBlocksNotNull(sql);
 }
 

@@ -10,7 +10,12 @@ import { open as openPostgres } from "../src/adapters/pg/postgresjs.js";
 import { connectDescribe } from "../src/tooling/describe/protocol.js";
 import { describeSql, resultFromOutcome } from "../src/tooling/describe/provider.js";
 import { PROOF_CASES } from "./describe-fixture.js";
-import { applyFixture, expectProof, expectTypes } from "./describe-proof.js";
+import {
+  applyFixture,
+  expectNotValidNullable,
+  expectProof,
+  expectTypes,
+} from "./describe-proof.js";
 
 const gate = await loadPostgresGate();
 
@@ -42,6 +47,29 @@ postgresTest(
       expect(viaWire.parameters).toEqual(viaPool.parameters);
     } finally {
       client.close();
+      await pool.close();
+      await database.close();
+    }
+  },
+  30_000,
+);
+
+postgresTest(
+  gate,
+  "PostgreSQL 18 keeps a NOT VALID not-null column nullable",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const pool = openPostgres({ url: database.url, max: 1 });
+    try {
+      const version = await pool.execute("select current_setting('server_version_num')");
+      const num = Number(version.rows[0]?.[0] ?? "0");
+      // NOT NULL ... NOT VALID is a syntax error before 18. 15–17 keep attnotnull.
+      if (num < 180_000) {
+        expect(num).toBeLessThan(180_000);
+        return;
+      }
+      await expectNotValidNullable(pool);
+    } finally {
       await pool.close();
       await database.close();
     }
