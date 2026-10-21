@@ -63,7 +63,7 @@ A cursor this call did not return is `after is not a cursor that page() returned
 
 ### Aggregate
 
-`aggregate` counts, sums, averages, and finds extremes. There is no `having`. `select` names each aggregate.
+`aggregate` counts, sums, averages, and finds extremes. `select` names each aggregate, and `having` keeps the groups whose aggregates match.
 
 | Input | Result |
 | --- | --- |
@@ -156,6 +156,36 @@ export async function byStatus(url: string) {
   return rows.map((row) => `${row.status}: ${row.tasks} tasks, ${row.revenue ?? 0} total`);
 }
 ```
+
+#### having
+
+`having` keeps the groups whose aggregates match. It is the `where` predicate form over `count` and the names in `select`, and it needs `groupBy`. It takes `eq`, `not`, `lt`, `lte`, `gt`, `gte`, `between`, `inList`, `notIn`, and `or()`. A text `min` or `max` also takes the text patterns. A NULL aggregate matches no comparison, and `null` matches it. A list-form aggregate has no name, so `having` cannot reach it.
+
+```ts title="having.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t, gt, gte, or } from "okmodel/pg";
+
+const tasks = table("tasks", {
+  id: t.identity(),
+  status: t.text(),
+  amount: t.integer().nullable(),
+});
+const app = schema({ tables: [tasks] });
+
+export async function busyStatuses(url: string) {
+  await using db = connect(url, { schema: app });
+  return db.tasks.aggregate({
+    groupBy: ["status"],
+    select: { revenue: { sum: "amount" } },
+    having: or([{ count: gte(10) }, { revenue: gt(1000) }]), // [!code focus]
+    limit: 20,
+  });
+}
+```
+
+<Callout type="error" title="OKM1120">
+`having needs groupBy.`
+</Callout>
 
 ### Distinct
 
@@ -857,7 +887,7 @@ export async function take(url: string, token: string) {
 
 ### Period
 
-`bucket(column, unit, { tz, as })` goes in `aggregate` `groupBy`, beside field names. `as` is the result key. A grouped aggregate needs `limit`, or `.all(reason)`. There is no `having` and no gap filling.
+`bucket(column, unit, { tz, as })` goes in `aggregate` `groupBy`, beside field names. `as` is the result key. A grouped aggregate needs `limit`, or `.all(reason)`. There is no gap filling.
 
 | Unit | On `timestamptz` | On `date` |
 | --- | --- | --- |

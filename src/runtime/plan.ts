@@ -509,7 +509,7 @@ export function needsOperatorSql(table: Indexed, value: unknown, key?: string): 
   return false;
 }
 
-function isTextColumn(dataType: string): boolean {
+export function isTextColumn(dataType: string): boolean {
   return (
     dataType === "text" ||
     dataType === "citext" ||
@@ -949,7 +949,7 @@ function emitPredicate(
   emitOperand(schema, table, column, value, sink, alias, depth);
 }
 
-function emitOperand(
+export function emitOperand(
   schema: QuerySchema,
   table: Indexed,
   column: ColumnModel,
@@ -958,8 +958,8 @@ function emitOperand(
   alias: string,
   depth: number,
   wrapped = false,
+  ref = `${alias}.${quote(column.sql)}`,
 ): void {
-  const ref = `${alias}.${quote(column.sql)}`;
   if (isOperator(value)) {
     emitOperator(
       schema,
@@ -1011,7 +1011,7 @@ function emitOperator(
     return;
   }
   if (name === "eq") {
-    emitOperand(schema, table, column, value, sink, alias, depth, true);
+    emitOperand(schema, table, column, value, sink, alias, depth, true, ref);
     return;
   }
   if (name === "lt" || name === "lte" || name === "gt" || name === "gte") {
@@ -1080,7 +1080,7 @@ function emitNot(
     }
   }
   sink.text("not (");
-  emitOperand(schema, table, column, value, sink, alias, depth, true);
+  emitOperand(schema, table, column, value, sink, alias, depth, true, ref);
   sink.text(")");
 }
 

@@ -29,13 +29,16 @@ import {
 } from "./client.js";
 import type { BucketChunk, BucketGroup } from "./bucket-group.js";
 import { refusePrototypeKey } from "./result-name.js";
+import { isOperator, operatorName, operatorValue } from "../dialects/pg/operators.js";
 import {
   cell,
+  emitOperand,
   emitOrder,
   emitWhere,
   fail,
   indexes,
   isRecord,
+  isTextColumn,
   list,
   projectExpr,
   quote,
@@ -74,6 +77,7 @@ const OPTIONS = [
   "min",
   "max",
   "select",
+  "having",
   "orderBy",
   "limit",
   "ignore",
@@ -110,8 +114,14 @@ type FieldGroup = { readonly kind: "field"; readonly column: ColumnModel };
 
 type Group = FieldGroup | BucketGroup;
 
+/** One aggregate a `having` may name: the SQL it writes and the column that encodes its operand. */
+type Slot = { readonly expr: string; readonly column: ColumnModel };
+
+type Having = { readonly value: unknown; readonly slots: ReadonlyMap<string, Slot> };
+
 type Spec = {
   readonly groups: readonly Group[];
+  readonly having: Having | undefined;
   readonly bucketed: boolean;
   readonly count: boolean;
   readonly calls: readonly {
@@ -276,7 +286,155 @@ function parse(table: Indexed, record: Record<string, unknown>, buckets?: Bucket
       "aggregate() needs count, countDistinct, sum, avg, min, max, select, or groupBy.",
     );
   }
-  return { groups: grouped.groups, bucketed: grouped.bucketed, count, calls };
+  return {
+    groups: grouped.groups,
+    having: readHaving(record.having, grouped.groups.length > 0, calls),
+    bucketed: grouped.bucketed,
+    count,
+    calls,
+  };
+}
+
+/** Compares with a number or a numeric string, which is how a count, sum, or avg reads back. */
+function numberText(value: unknown): string {
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  if (typeof value === "string" && /^-?\d+(\.\d+)?$/.test(value)) return value;
+  return fail("OKM1121", "A count, sum, or avg compares with a number or a numeric string.");
+}
+
+/**
+ * Collects what a `having` can name: `count`, and each `select` name.
+ *
+ * `count` is always there. The list forms have no flat name, so `having` cannot
+ * reach them. A sum, avg, count, or countDistinct compares as a number; min and
+ * max compare as the column they read.
+ */
+function readHaving(value: unknown, grouped: boolean, calls: Spec["calls"]): Having | undefined {
+  if (value === undefined) return undefined;
+  if (!grouped) {
+    fail("OKM1120", "having needs groupBy.", "Add groupBy, or filter the rows with where.");
+  }
+  const slots = new Map<string, Slot>();
+  slots.set("count", { expr: "count(*)", column: counted("count") });
+  for (const item of calls) {
+    if (item.name === undefined) continue;
+    const source = item.column;
+    slots.set(item.name, {
+      expr: aggregateSql(item),
+      column:
+        source !== undefined && (item.option === "min" || item.option === "max")
+          ? { ...source, field: item.name, sql: item.name }
+          : counted(item.name),
+    });
+  }
+  return { value, slots };
+}
+
+function counted(name: string): ColumnModel {
+  return {
+    field: name,
+    sql: name,
+    dataType: "numeric",
+    encode: numberText,
+    decode: undefined,
+    hidden: false,
+    sensitive: false,
+    guarded: false,
+    writable: false,
+    guardUpdate: false,
+  };
+}
+
+/** The aggregate as SQL, without the cast that reads it back as text. */
+function aggregateSql(item: Spec["calls"][number]): string {
+  const column = item.column;
+  if (column === undefined) return "count(*)";
+  const ref = `t.${quote(column.sql)}`;
+  return item.option === "countDistinct" ? `count(distinct ${ref})` : `${item.option}(${ref})`;
+}
+
+const HAVING_FORM = "having is an object of aggregate names, or or() of such objects.";
+
+/** Operators `having` takes. The text patterns need a text `min` or `max`. */
+const HAVING_OPERATORS = ",eq,not,lt,lte,gt,gte,between,inList,notIn,";
+const HAVING_TEXT = ",startsWith,endsWith,contains,like,ilike,";
+
+/** Writes ` having ...`, the same predicate form as `where`, over the aggregate names. */
+function emitHaving(
+  schema: Parameters<ReadBuild>[0],
+  table: Indexed,
+  having: Having,
+  sink: Sink,
+): void {
+  const { value, slots } = having;
+  if (isRecord(value) && Object.values(value).every((item) => item === undefined)) return;
+  sink.text(" having ");
+  sink.mark("h|");
+  const fields = (record: Readonly<Record<string, unknown>>): boolean => {
+    let wrote = false;
+    for (const key of Object.keys(record)) {
+      const operand = record[key];
+      if (operand === undefined) continue;
+      const slot = slots.get(key);
+      if (slot === undefined) {
+        const names = [...slots.keys()];
+        throwNamed(
+          "OKM1120",
+          key,
+          names,
+          `having names an aggregate of this call. Accepted names: ${list(names)}.`,
+        );
+      }
+      checkOperator(key, slot, operand);
+      if (wrote) sink.text(" and ");
+      wrote = true;
+      sink.mark(`h:${JSON.stringify(key)}`);
+      emitOperand(schema, table, slot.column, operand, sink, "t", 0, false, slot.expr);
+    }
+    return wrote;
+  };
+  if (!isOperator(value)) {
+    if (!isRecord(value)) fail("OKM1121", HAVING_FORM);
+    fields(value);
+    return;
+  }
+  const branches = operatorName(value) === "or" ? operatorValue(value) : undefined;
+  if (!Array.isArray(branches)) fail("OKM1121", HAVING_FORM);
+  sink.mark(`h:or:${String(branches.length)}|`);
+  if (branches.length === 0) {
+    sink.text("false");
+    return;
+  }
+  sink.text("(");
+  for (let index = 0; index < branches.length; index += 1) {
+    const branch: unknown = branches[index];
+    if (!isRecord(branch)) fail("OKM1121", "or() branches must be having objects.");
+    sink.text(index === 0 ? "(" : " or (");
+    if (!fields(branch)) fail("OKM1121", "An or() branch needs at least one aggregate.");
+    sink.text(")");
+  }
+  sink.text(")");
+}
+
+/** Refuses an operator `having` does not write, before any SQL. */
+function checkOperator(key: string, slot: Slot, value: unknown): void {
+  if (!isOperator(value)) return;
+  const name = operatorName(value);
+  if (name === "not") {
+    checkOperator(key, slot, operatorValue(value));
+    return;
+  }
+  if (
+    HAVING_OPERATORS.includes(`,${name},`) ||
+    (HAVING_TEXT.includes(`,${name},`) && isTextColumn(slot.column.dataType))
+  ) {
+    return;
+  }
+  fail(
+    "OKM1121",
+    `having ${key} does not take ${name}.`,
+    "It takes eq, not, lt, lte, gt, gte, between, inList, notIn, and or(). A text min or max also takes startsWith, endsWith, contains, like, and ilike.",
+  );
 }
 
 /** Checks that the function takes the column's type, and picks how the result is read. */
@@ -469,19 +627,19 @@ function statement(spec: Spec, buckets: BucketChunk | undefined): ReadBuild {
     if (spec.count) put(sink, outputs, wrote, "count(*)::text", { key: "c:", decode: undefined });
     for (const item of spec.calls) {
       const column = item.column;
-      const ref = column === undefined ? "*" : `t.${quote(column.sql)}`;
-      const expr =
-        column === undefined
-          ? "count(*)::text"
-          : item.option === "countDistinct"
-            ? `count(distinct ${ref})::text`
-            : item.option === "sum" || item.option === "avg"
-              ? `${item.option}(${ref})::text`
-              : projectExpr(`${item.option}(${ref})`, column.dataType);
-      put(sink, outputs, wrote, expr, {
-        key: item.name === undefined ? `${item.tag}:${column?.field}` : `m:${item.name}`,
-        decode: item.decode,
-      });
+      const sql = aggregateSql(item);
+      put(
+        sink,
+        outputs,
+        wrote,
+        column === undefined || item.option === "countDistinct" || numericOption(item.option)
+          ? `${sql}::text`
+          : projectExpr(sql, column.dataType),
+        {
+          key: item.name === undefined ? `${item.tag}:${column?.field}` : `m:${item.name}`,
+          decode: item.decode,
+        },
+      );
     }
     sink.text(" from ");
     sink.text(quote(table.model.sql));
@@ -491,9 +649,12 @@ function statement(spec: Spec, buckets: BucketChunk | undefined): ReadBuild {
       sink.text(" group by ");
       if (spec.bucketed) {
         if (buckets === undefined) fail("OKM1120", "bucket group");
-        buckets.writeGrouped(sink, groupNames(spec.groups), call.orderBy);
+        buckets.writeGrouped(sink, groupNames(spec.groups), call.orderBy, () => {
+          if (spec.having !== undefined) emitHaving(schema, table, spec.having, sink);
+        });
       } else {
         sink.text(spec.groups.map((group) => fieldRef(group)).join(", "));
+        if (spec.having !== undefined) emitHaving(schema, table, spec.having, sink);
         if (isRecord(call.orderBy) && Object.keys(call.orderBy).length > 0) {
           emitOrder(table, call.orderBy, sink, "t");
         } else {
@@ -523,6 +684,10 @@ function groupMark(groups: readonly Group[]): string {
     );
   }
   return parts.join(",");
+}
+
+function numericOption(option: string): boolean {
+  return option === "sum" || option === "avg";
 }
 
 function fieldRef(group: Group): string {

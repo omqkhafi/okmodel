@@ -4,7 +4,7 @@
 
 import { expectTypeOf } from "expect-type";
 
-import { integer, schema, table, text, uuid } from "../src/dialects/pg/index.js";
+import { gt, gte, integer, not, or, schema, table, text, uuid } from "../src/dialects/pg/index.js";
 import type { Connected } from "../src/runtime/types.js";
 
 const sales = table("sales", {
@@ -61,3 +61,36 @@ void db.sales.aggregate({ select: { x: { max: "nope" } }, limit: 1 });
 void db.sales.aggregate({ select: { x: { sum: "nope" } }, limit: 1 });
 // @ts-expect-error a select entry is one function, not a list
 void db.sales.aggregate({ select: { x: { sum: ["amount"] } }, limit: 1 });
+
+// having over count, and over the names of select
+void db.sales.aggregate({ groupBy: ["region"], having: { count: gte(2) }, limit: 1 });
+void db.sales.aggregate({
+  groupBy: ["region"],
+  select: { total: { sum: "amount" }, first: { min: "customer" } },
+  having: { total: gt(10), count: 3, first: not(null) },
+  limit: 1,
+});
+void db.sales.aggregate({
+  groupBy: ["region"],
+  select: { total: { sum: "amount" } },
+  having: or([{ total: null }, { count: gte(2) }]),
+  limit: 1,
+});
+void db.sales.aggregate({ groupBy: ["region"], having: { count: gte(2) } }).all("report");
+
+// @ts-expect-error having names count and the select names only
+void db.sales.aggregate({ groupBy: ["region"], having: { nope: gte(2) }, limit: 1 });
+void db.sales.aggregate({
+  groupBy: ["region"],
+  select: { total: { sum: "amount" } },
+  // @ts-expect-error amount is a field, not an aggregate name
+  having: { amount: gt(1) },
+  limit: 1,
+});
+void db.sales.aggregate({
+  groupBy: ["region"],
+  select: { total: { sum: "amount" } },
+  // @ts-expect-error a sum compares with a number
+  having: { total: "ten" },
+  limit: 1,
+});

@@ -536,7 +536,45 @@ export type NamedAggregateOptions<S extends QuerySchema, K extends keyof S["~byN
   readonly select: {
     readonly [name: string]: AggregateCall<keyof RowOf<S, K> & string, NumericKeys<RowOf<S, K>>>;
   };
+  /** Keeps groups by their aggregates. Checked against the names of `select` on the call. */
+  readonly having?: object;
 };
+
+/**
+ * `having`: the same predicate form as `where`, over the aggregate names.
+ *
+ * `or()` may be the whole filter. An aggregate over a nullable column is
+ * `T | null`, so `null` and the comparisons all type as they do in `where`.
+ */
+export type HavingOf<Row> = FieldWhere<Row> | Or<FieldWhere<Row>>;
+
+/** `having` without `select`: `count` is the only name. */
+type CountHaving = HavingOf<{ readonly count: number }>;
+
+/**
+ * Types `having` from the names of `select`, on the call.
+ *
+ * It sits on the `select` overloads, so a call without `select` builds none of it.
+ */
+type HavingGuard<Row, O> = O extends {
+  readonly select: infer M;
+  readonly having?: infer H;
+}
+  ? {
+      readonly having?:
+        | ClosedWhere<
+            H,
+            FieldWhere<
+              { readonly count: number } & { readonly [N in keyof M]: CallValue<Row, M[N]> }
+            >
+          >
+        | Or<
+            FieldWhere<
+              { readonly count: number } & { readonly [N in keyof M]: CallValue<Row, M[N]> }
+            >
+          >;
+    }
+  : unknown;
 
 /** The type of one named aggregate: a count is a number, the rest follow the field. */
 type CallValue<Row, E> = E extends { readonly count: true }
@@ -1049,24 +1087,33 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   aggregate<
     const O extends AggregateOptions<S, K> &
       (
-        | { readonly limit: number; readonly select?: undefined }
-        | { readonly groupBy?: undefined; readonly select?: undefined }
+        | { readonly limit: number; readonly select?: undefined; readonly having?: CountHaving }
+        | {
+            readonly groupBy?: undefined;
+            readonly select?: undefined;
+            readonly having?: undefined;
+          }
       ),
   >(
     options: O,
   ): Query<readonly AggregateRow<RowOf<S, K>, O>[]>;
-  aggregate<const O extends AggregateOptions<S, K> & { readonly select?: undefined }>(
+  aggregate<
+    const O extends AggregateOptions<S, K> & {
+      readonly select?: undefined;
+      readonly having?: CountHaving;
+    },
+  >(
     options: O,
   ): Unbounded<S, "groupBy", Query<readonly AggregateRow<RowOf<S, K>, O>[]>>;
   aggregate<
     const O extends AggregateOptions<S, K> &
       NamedAggregateOptions<S, K> &
-      ({ readonly limit: number } | { readonly groupBy?: undefined }),
+      ({ readonly limit: number } | { readonly groupBy?: undefined; readonly having?: undefined }),
   >(
-    options: O,
+    options: O & HavingGuard<RowOf<S, K>, O>,
   ): Query<readonly AggregateRow<RowOf<S, K>, O>[]>;
   aggregate<const O extends AggregateOptions<S, K> & NamedAggregateOptions<S, K>>(
-    options: O,
+    options: O & HavingGuard<RowOf<S, K>, O>,
   ): Unbounded<S, "groupBy", Query<readonly AggregateRow<RowOf<S, K>, O>[]>>;
   count(
     options?: CallOptions & {
