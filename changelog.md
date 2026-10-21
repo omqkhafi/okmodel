@@ -63,10 +63,11 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `find({ distinct: true, select })` keeps one row per different combination of the selected fields, and NULL is one value. `find({ distinctOn: [fields], orderBy })` is Postgres only and keeps the first row of each key; `orderBy` must start with the same keys. Neither takes `include` or `search`, and `page` and `one` refuse them (D310, #507).
 - `aggregate({ select: { name: { sum: "field" } } })` gives each aggregate its own flat, typed result key. An entry is one of `count: true`, `countDistinct`, `sum`, `avg`, `min`, or `max`, so one call can hold several aggregates of the same function and column. The list forms keep working beside it. A name that is a group field, a bucket `as`, a list-form key, or a prototype key is OKM1120 (D311, #508).
 - `aggregate({ groupBy, having })` keeps the groups whose aggregates match. It is the `where` predicate form over `count` and the names in `select`: comparisons, `between`, `inList`, `notIn`, `not`, `or()`, and the text patterns on a text `min` or `max`. A NULL aggregate matches no comparison. `having` without `groupBy`, an unknown name, or another operator is refused before any SQL (D313, #509).
+- `aggregate({ groupBy, orderBy })` orders groups by `count` and by the names in `select`, besides group fields and bucket names, each as `asc`, `desc`, or `{ dir, nulls }`. A `min` or `max` of a timestamp sorts as a timestamp. An unknown name is OKM1120 and lists the accepted names. Every other read that orders (`find`, `one`, `page`, `stream`, `include`, window helpers) already took `{ dir, nulls }`; they now have tests with NULL rows (D314, #510).
 
 #### tooling
 
-- Capability key `query.countDistinct` is native on Postgres (D309), `query.distinct` and `query.distinctOn` are native on Postgres (D310), `query.namedAggregates` is native on Postgres (D311), and `query.having` is native on Postgres (D313).
+- Capability key `query.countDistinct` is native on Postgres (D309), `query.distinct` and `query.distinctOn` are native on Postgres (D310), `query.namedAggregates` is native on Postgres (D311), `query.having` is native on Postgres (D313), and `query.orderNulls` is native on Postgres (D314).
 - Capability keys `writeObserver.unit` (`transaction | batch`), `writeObserver.keys` (`returning`; closed profile `none`), and `writeObserver.rowCount` (`mixed`; closed profile `unknown`) are in the Postgres registry with proofs and closed-profile refusals.
 - `queryObserver.timing` is native on Postgres with cost `query|decode`. Pool-queue wait is not measured, so `queueMs` stays null. The closed profile cost is `none`.
 - OKM1890 refuses `writeObserver({ keys })` when a named table has no primary key or is not in the schema. OKM2200 warns when the write-observer pending-event buffer overflows.
@@ -143,7 +144,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - [Warnings](docs/warnings.md) lists OKM2101, OKM2102, and OKM2103, the `target` ignore, the stale report, and when each rule stays silent. Pages for the three codes are generated with the error pages.
 - The guide, the CLI reference, the threat model, and the offline-first note describe `okm doctor --bundle`: what the file holds, what it never holds, and what `checks` does not cover (D307).
 - The guide and the CLI reference describe `okm agents`, `okm init --agents` and `--no-agents`, the managed block, the closed list of writable paths, and a `CODEOWNERS` recommendation for `AGENTS.md` and `.claude/`. OKM1881 to OKM1888 have error pages (D308).
-- `docs/guide.md` and the handbook page `define/connect/session-settings` cover `okmodel/session`. `docs/known-limits.md` says it does not authenticate: a role that can run SQL can set the same names. D314 records the decision.
+- `docs/guide.md` and the handbook page `define/connect/session-settings` cover `okmodel/session`. `docs/known-limits.md` says it does not authenticate: a role that can run SQL can set the same names. D312 records the decision.
 
 ### 💥 Breaking Changes
 
@@ -212,11 +213,11 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 #### contracts
 
 - `Insert` omits defaulted and nullable columns, and `Update` accepts any subset of the writable columns, matching `insert()` and `update()`. A missing required column and an unknown key stay type errors (R7, #404).
-- `ColumnDefinition` adds the optional `unvalidatedNotNull` (the constraint name). Introspection sets it on PostgreSQL 18 for a column whose NOT NULL constraint is `NOT VALID`. It is absent otherwise, so no existing catalog changes its document or hash (D314).
+- `ColumnDefinition` adds the optional `unvalidatedNotNull` (the constraint name). Introspection sets it on PostgreSQL 18 for a column whose NOT NULL constraint is `NOT VALID`. It is absent otherwise, so no existing catalog changes its document or hash (D315).
 
 #### dialects
 
-- Introspection reads a PostgreSQL 18 `NOT NULL … NOT VALID` constraint (`pg_constraint` `contype` `n`, `convalidated` false) instead of treating `attnotnull` as proof. The column stays NOT NULL and records the unvalidated constraint. When the schema says NOT NULL, the plan is one `VALIDATE CONSTRAINT` step. When it says nullable, the plan is `DROP NOT NULL`. PostgreSQL 15 through 17 read as before (D314).
+- Introspection reads a PostgreSQL 18 `NOT NULL … NOT VALID` constraint (`pg_constraint` `contype` `n`, `convalidated` false) instead of treating `attnotnull` as proof. The column stays NOT NULL and records the unvalidated constraint. When the schema says NOT NULL, the plan is one `VALIDATE CONSTRAINT` step. When it says nullable, the plan is `DROP NOT NULL`. PostgreSQL 15 through 17 read as before (D315).
 
 #### adapters
 
@@ -244,7 +245,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 #### docs
 
 - Known limits names `postgresjs-kill-storm.md` again. The name is text, not a link, and the file stays out of the published tarball.
-- Known limits, the migrate-check page, the CLI reference, and the external-catalog page describe the PostgreSQL 18 `NOT NULL … NOT VALID` state. D314 records what each command does with it.
+- Known limits, the migrate-check page, the CLI reference, and the external-catalog page describe the PostgreSQL 18 `NOT NULL … NOT VALID` state. D315 records what each command does with it.
 
 ### 🔒 Security
 

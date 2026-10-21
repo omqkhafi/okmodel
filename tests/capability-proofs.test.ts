@@ -315,6 +315,22 @@ test("proof:query.having", async () => {
   expect(described.text).toContain(" having count(*) >= ");
 });
 
+test("proof:query.orderNulls", async () => {
+  const db = await connect(stub(), { schema: notesSchema });
+  const found = await db.notes
+    .find({ orderBy: { body: { dir: "asc", nulls: "first" } }, limit: 2 })
+    .sql();
+  expect(found.text).toContain('"body" asc nulls first');
+  const grouped = await db.notes
+    .aggregate({
+      groupBy: ["body"],
+      orderBy: { count: { dir: "desc", nulls: "last" } },
+      limit: 2,
+    })
+    .sql();
+  expect(grouped.text).toContain("order by count(*) desc nulls last");
+});
+
 test("proof:query.upsert", async () => {
   const db = await connect(stub(), { schema: notesSchema });
   const described = await db.notes.insert({ id: "a", body: "x" }, { onConflict: "ignore" }).sql();
