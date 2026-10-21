@@ -380,6 +380,16 @@ export type FindOptions<S extends QuerySchema, K extends keyof S["~byName"]> = R
   readonly offset?: number;
   /** Text to look for. The closest matches come first unless `orderBy` is set. */
   readonly search?: TextSearch<RowOf<S, K>>;
+  /**
+   * One row per different combination of the selected fields. Needs `select`.
+   * `orderBy` may name selected fields only. Not with `include` or `search`.
+   */
+  readonly distinct?: true;
+  /**
+   * Postgres. The first row of each key under `orderBy`, which must start with
+   * the same keys. Not with `distinct`, `include`, or `search`.
+   */
+  readonly distinctOn?: readonly (keyof RowOf<S, K> & string)[];
 };
 
 /**
@@ -499,6 +509,8 @@ export type AggregateOptions<S extends QuerySchema, K extends keyof S["~byName"]
   readonly groupBy?: readonly ((keyof RowOf<S, K> & string) | Bucket<string, string, string>)[];
   /** Adds `count`, the number of rows in the group. */
   readonly count?: true;
+  /** Adds `countDistinct.<field>`: how many different non-null values the group holds. */
+  readonly countDistinct?: readonly (keyof RowOf<S, K> & string)[];
   readonly sum?: readonly NumericKeys<RowOf<S, K>>[];
   readonly avg?: readonly NumericKeys<RowOf<S, K>>[];
   readonly min?: readonly (keyof RowOf<S, K> & string)[];
@@ -547,6 +559,9 @@ type GroupOf<Row, G> =
 export type AggregateRow<Row, O> = Show<
   (O extends { readonly groupBy: readonly (infer G)[] } ? GroupOf<Row, G> : unknown) &
     (O extends { readonly count: true } ? { readonly count: number } : unknown) &
+    (O extends { readonly countDistinct: readonly (infer F)[] }
+      ? { readonly countDistinct: { readonly [P in F & keyof Row]: number } }
+      : unknown) &
     (O extends { readonly sum: readonly (infer F)[] }
       ? { readonly sum: { readonly [P in F & keyof Row]: NonNullable<Row[P]> | null } }
       : unknown) &

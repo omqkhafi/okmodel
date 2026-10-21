@@ -69,8 +69,9 @@ A cursor this call did not return is `after is not a cursor that page() returned
 | --- | --- |
 | no `groupBy` | One row. |
 | `groupBy` | One row per group. Needs `limit`, or `.all(reason)`. |
-| `sum`, `avg` | A list of field names. |
+| `sum`, `avg`, `min`, `max` | A list of field names. |
 | `count: true` | The row count. |
+| `countDistinct` | A list of field names. Different non-null values, as `countDistinct.<field>`. |
 
 #### count
 
@@ -95,7 +96,7 @@ export async function totals(url: string) {
 
 #### grouped
 
-`groupBy` needs `limit`, or `.all(reason)`. `sum` is a list of field names.
+`groupBy` needs `limit`, or `.all(reason)`. `sum` and `countDistinct` are lists of field names. `countDistinct` skips NULL, so a group with only NULLs counts 0.
 
 ```ts title="aggregate.ts"
 import { connect } from "okmodel/pg/postgresjs";
@@ -114,6 +115,7 @@ export async function byStatus(url: string) {
     groupBy: ["status"],
     count: true,
     sum: ["amount"], // [!code focus]
+    countDistinct: ["amount"], // [!code focus]
     limit: 20,
   });
 }
@@ -121,6 +123,43 @@ export async function byStatus(url: string) {
 
 <Callout type="error" title="OKM1101">
 `aggregate() with groupBy needs a limit.`
+</Callout>
+
+### Distinct
+
+`find` takes `distinct: true` with a `select`. It keeps one row per different combination of the selected fields, and NULL counts as one value. `orderBy` may name selected fields only. `distinctOn` is Postgres only: it keeps the first row of each key, so `orderBy` must start with the same keys and the keys after them pick the row. `include`, `search`, `page`, and `one` refuse both.
+
+| Input | Result |
+| --- | --- |
+| `distinct: true` | One row per different combination of `select`. Needs `select`. |
+| `distinctOn: [fields]` | The first row of each key under `orderBy`. Postgres only. |
+| `orderBy` with `distinctOn` | Starts with the same keys. |
+
+```ts title="distinct.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const tasks = table("tasks", {
+  id: t.identity(),
+  status: t.text(),
+  amount: t.integer().nullable(),
+});
+const app = schema({ tables: [tasks] });
+
+export async function statuses(url: string) {
+  await using db = connect(url, { schema: app });
+  const kinds = await db.tasks.find({ distinct: true, select: ["status"], limit: 20 }); // [!code focus]
+  const biggest = await db.tasks.find({
+    distinctOn: ["status"], // [!code focus]
+    orderBy: { status: "asc", amount: { dir: "desc", nulls: "last" } },
+    limit: 20,
+  });
+  return { kinds, biggest };
+}
+```
+
+<Callout type="error" title="OKM1120">
+`distinctOn needs an orderBy that starts with status.`
 </Callout>
 
 ### Include

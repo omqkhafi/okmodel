@@ -6,8 +6,8 @@
  * emulated: a client-generated id is not the same default as `uuidv7()`,
  * and OKM1812 stays.
  *
- * Not in this table (no proof today): `query.distinctOn`, `query.fullJoin`,
- * `query.cte`, `query.setOps`.
+ * Not in this table (no proof today): `query.fullJoin`, `query.cte`,
+ * `query.setOps`.
  */
 
 import type { FeatureEntry, Registry } from "./types.js";
@@ -41,6 +41,9 @@ export const POSTGRES_FEATURES = {
   "query.relational": native("proof:query.relational"),
   "query.keyset": native("proof:query.keyset"),
   "query.window": native("proof:query.window"),
+  "query.countDistinct": native("proof:query.countDistinct"),
+  "query.distinct": native("proof:query.distinct"),
+  "query.distinctOn": native("proof:query.distinctOn"),
   "query.rawTyped": native(
     "a raw read binds parameters, decodes the class, and keeps the tenant predicate",
   ),
