@@ -6,6 +6,8 @@ Normative. R1–R7 are architectural constraints (D265). They are not a phase, a
 
 OKModel builds no sync cursors, CDC adapters, offline command queues, sync authorization, conflict handling, or realtime orchestration. SQLite support does not commit OKModel to browser or Expo storage adapters.
 
+Diagnostics a tester sends stay local. `okm doctor --bundle` makes no network call, needs no database, and writes one file that a person sends by hand ([guide](guide.md#sending-a-bundle), D307).
+
 ## R1. Two schema descriptions, one source
 
 The catalog is the physical description for migrations. Client generators sit outside the catalog and outside its hash. `okmodel/internal` has no stability promise ([`api.md`](api.md)).

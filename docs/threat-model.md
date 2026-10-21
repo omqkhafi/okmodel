@@ -35,6 +35,10 @@ The protection store holds hashes, not URLs. Command output does not print the U
 
 Feature: `hostDbFingerprint` in `src/tooling/migrate/fingerprint.ts`. Contract: [protected targets](protection.md). Test: `tests/protection.test.ts`.
 
+`okm doctor --bundle` writes a diagnostics file for a person to send. It holds versions, codes, closed artifact names with hashes, and counts. It holds no connection string, host, user, URL, table or column name, SQL text, row value, absolute path, or environment variable value, and it opens no socket. A test scans the output for secret-looking values planted in the config, the environment, the schema, a migration, and `.env`.
+
+Feature: `collectBundle` in `src/tooling/migrate/doctor-bundle.ts`. Contract: [guide](guide.md#sending-a-bundle). Test: `tests/doctor-bundle.test.ts`.
+
 ## Hidden Unicode in docs
 
 The packed text files are scanned for NUL, zero-width characters, bidi overrides and isolates, tag characters, and variation selectors outside an emoji sequence. Arabic, Persian, Hebrew, and Indic letters are allowed. ZWNJ and ZWJ are allowed only inside a word in a file named by `HIDDEN_CHAR_ALLOWLIST` in `scripts/docs-hygiene.ts`. That list is empty. The same classes of bidi override and tag character are stripped from untrusted database and error text.

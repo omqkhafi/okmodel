@@ -46,6 +46,7 @@ Exit codes are by outcome. `0` is done, or nothing to do. `1` is a command that 
 | `check` | Lints the schema. Compares one database when a target is selected. |
 | `dev` | Names a target called `dev`, or creates a PGlite database and prints its directory. |
 | `doctor [code]` | Lists triggers, checks [minPostgres](/docs/reference/schema-api) and required extensions against the target, checks [roles](/docs/define/config/roles) when they are set, or prints one error code. |
+| `doctor --bundle` | Writes `.okm/doctor-bundle.json`, a local diagnostics file a tester sends by hand. Needs no database and makes no network call. See [doctor](#doctor). |
 | `driver test <driver>` | Runs the conformance suites against one driver. |
 | `ext list` | Lists extensions the server can install. |
 | `ext check` | Compares declared extensions with the server. |
@@ -86,6 +87,8 @@ Every command parses the flags in this table. An unknown flag is a usage error, 
 | `--check` | `raw sync`. Writes nothing and exits 1 when the lock or the generated types would change. |
 | `--json` | Every command. Prints one `okm.cli/1` document. The command's previous JSON is `data`. |
 | `--out <file>`, `-o <file>` | With `--json`, writes `data` to the file unless the command already owns `--out`. `-` keeps `data` on stdout. |
+| `--bundle` | `doctor`. Writes the diagnostics bundle instead of the target report. `--out <file>` is the bundle path, with or without `--json`. |
+| `--force-file` | `doctor --bundle`. Replaces an existing bundle file. `init` takes `--force-file <path>`. |
 | `--dry-run`, `-n` | `migrate baseline`. Prints what would be recorded and writes nothing. |
 | `--replace <table>.<column>.<old>=<new>` | `generate` and `migrate plan`. Repeat it for each removed value. `=null` is the null replacement, on a nullable column. |
 | `--provision` | `migrate check`. Compares a snapshot install with a full replay. |
@@ -207,6 +210,20 @@ With no code, the command lists each table's triggers, one line `<table>: <name>
 ```sh
 bunx okm doctor OKM1520
 ```
+
+### doctor --bundle
+
+`okm doctor --bundle` writes one JSON file for a tester to send by hand. It needs no database and makes no network call. The file holds versions, codes, closed `.okm/` artifact names with hashes, and counts. It holds no connection string, host, user, URL, table or column name, SQL text, row value, path outside the project, or environment variable value.
+
+```sh
+bunx okm doctor --bundle
+bunx okm doctor --bundle --out ./okm-bundle.json
+bunx okm doctor --bundle --force-file
+```
+
+The default path is `.okm/doctor-bundle.json`. An existing file is refused with exit 4 unless `--force-file` is passed. `--out -` prints the document. `--bundle` takes no code and no `--target`. With `--json`, `data.bundle` is the document and `outFile` names the file.
+
+The document has `bundleFormat: 1` and these top-level keys, sorted: `adapters`, `artifacts`, `bundleFormat`, `capabilities`, `checks`, `config`, `dialect`, `layout`, `okmodel`, `packageManager`, `runtime`. `checks` runs the lint and schema rules that need no database and lists a code and a pass or fail for each rule. `okm schema doctor` prints the JSON Schema, and the same file ships as `schemas/cli-1/doctor.json`. The [guide](https://github.com/omqkhafi/okmodel/blob/main/docs/guide.md#sending-a-bundle) lists each key.
 
 ## ext
 
