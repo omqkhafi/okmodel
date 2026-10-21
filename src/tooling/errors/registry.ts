@@ -167,9 +167,13 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
   {
     code: "OKM1101",
     title: "Find without limit",
-    summary: "find was called without a limit.",
-    fix: "Pass a limit.",
-    safeAlternatives: [alt("OKM1101", "Use page() with a cursor.")],
+    summary:
+      "find was called without a limit, or a limit is above limits.max. connect({ limits }) can set a default for find, page, and groupBy.",
+    fix: "Pass a limit. A limit must not be above limits.max.",
+    safeAlternatives: [
+      alt("OKM1101", "Use page() with a cursor."),
+      alt("OKM1101", "Set limits.find in connect for a default row count."),
+    ],
     escapeHatches: [hatch("OKM1101", "all()")],
   },
   {
@@ -188,8 +192,9 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
   {
     code: "OKM1105",
     title: "Include without limit",
-    summary: "A to-many include has no limit.",
-    fix: "Pass a limit on the include.",
+    summary:
+      "A to-many include has no limit. connect({ limits: { include } }) sets a default for includes that name none.",
+    fix: "Pass a limit on the include, or set limits.include in connect.",
     escapeHatches: [hatch("OKM1105", "all()")],
   },
   {

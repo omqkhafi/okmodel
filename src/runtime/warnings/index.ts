@@ -7,6 +7,7 @@
  */
 
 import type { QuerySchema } from "../../dialects/pg/model.js";
+import type { ReadDone } from "../plan.js";
 import { WARNING_RULES } from "./catalog.js";
 import {
   parseWarningOptions,
@@ -26,9 +27,16 @@ export type { WarningNotice } from "./report.js";
  * Slot `connect({ warnings })` stores.
  *
  * The planner passes the schema and the read after presets, text search, and
- * `page()` have rewritten it.
+ * `page()` have rewritten it. After the read finishes, a client with
+ * `connect({ limits })` calls it again with `done`, and only the rules that
+ * read the result run.
  */
-export type WarningSlot = (schema: QuerySchema, call: WarningCall, stack?: string) => void;
+export type WarningSlot = (
+  schema: QuerySchema,
+  call: WarningCall,
+  stack?: string,
+  done?: ReadDone,
+) => void;
 
 /**
  * Builds the plan-time warning slot.
@@ -42,8 +50,8 @@ export type WarningSlot = (schema: QuerySchema, call: WarningCall, stack?: strin
  */
 export function warnings(options?: WarningOptions): WarningSlot {
   const parsed = parseWarningOptions(options);
-  return (schema, call, stack) => {
-    advise(schema, call, parsed, stack);
+  return (schema, call, stack, done) => {
+    advise(schema, call, parsed, stack, done);
   };
 }
 
@@ -52,15 +60,23 @@ function advise(
   call: WarningCall,
   parsed: ParsedWarnings,
   stack: string | undefined,
+  done: ReadDone | undefined,
 ): void {
   const ignores = [...parsed.ignore, ...readCallIgnore(call.ignore)];
   const env = warningEnvironment(parsed.env);
   for (const rule of WARNING_RULES) {
-    if (!ruleFires(rule, schema, call)) continue;
+    const fired = ruleFires(rule, schema, call, done);
+    if (fired === false) continue;
     if (ignores.some((item) => item.rule === rule.rule && item.target === undefined)) continue;
     const level = resolvedLevel(rule, parsed.levels, env);
     if (level === "off") continue;
     if (level === "error") throwWarning(rule);
-    reportWarning(rule, level, parsed.onWarning, stack);
+    reportWarning(
+      rule,
+      level,
+      parsed.onWarning,
+      stack,
+      typeof fired === "string" ? fired : undefined,
+    );
   }
 }

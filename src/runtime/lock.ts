@@ -92,6 +92,7 @@ function plan(
       session.schema,
       view,
     ),
+    ...(session.l !== undefined ? { limits: session.l } : {}),
     tail(sink: { text(value: string): void; mark(token: string): void }) {
       sink.text(clause);
       sink.mark(`lock:${clause}`);

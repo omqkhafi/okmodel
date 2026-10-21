@@ -150,6 +150,24 @@ export const WARNING_RULES: readonly WarningRule[] = [
     escapeHatches: [hatch("OKM2008")],
   },
   {
+    code: "OKM2011",
+    rule: "default-limit-reached",
+    title: "Default limit reached",
+    summary:
+      "A read that used a default limit from connect returned exactly that many rows, so more rows may exist.",
+    fix: "Pass a limit that fits the call, or use page() with a cursor.",
+    defaultLevel: "warn",
+    severity: "medium",
+    phase: "dev-runtime",
+    evidence: "observed",
+    safeAlternatives: [
+      alt("OKM2011", "Pass a limit that fits the call."),
+      alt("OKM2011", "Use page() with a cursor."),
+      alt("OKM2011", "Call .all(reason) when every row is needed."),
+    ],
+    escapeHatches: [hatch("OKM2011")],
+  },
+  {
     code: "OKM2101",
     rule: "unindexed-foreign-key",
     title: "Foreign key without an index",
