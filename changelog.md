@@ -58,10 +58,11 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `connect({ onQuery })` delivers one `QueryEvent` per statement, reads and writes, after the statement settles. With no observer the client does not build an event and does not read the clock. `queryObserver()` isolates a throwing or rejecting handler, waits on `flush()`, and overflows in-flight promises with OKM2200. `params: true` and `stack: true` opt in; sensitive, hidden, and tenant values are `[redacted]`. `toOtel(event)` returns `{ name, attributes }` with the same `db.*` names as `okmodel/otel`, plus `db.response.status_code` (the SQLSTATE) on failure. It imports nothing from OpenTelemetry and never emits parameters or tenant ids. `db.query.text` is included only when `statement: true`.
 - `writeObserver({ tag })` and `queryObserver({ tag })` copy a tag onto each event. A tag is 1–64 characters from `[A-Za-z0-9_.:/-]`. Anything else is `invalid` when the helper is built.
 - `aggregate({ countDistinct: [fields] })` counts the different non-null values of each field per group and returns them as `countDistinct.<field>`. A group with only NULLs, and the one total row of an empty table, count 0. It takes the column types `min` and `max` take (D309, #506).
+- `find({ distinct: true, select })` keeps one row per different combination of the selected fields, and NULL is one value. `find({ distinctOn: [fields], orderBy })` is Postgres only and keeps the first row of each key; `orderBy` must start with the same keys. Neither takes `include` or `search`, and `page` and `one` refuse them (D310, #507).
 
 #### tooling
 
-- Capability key `query.countDistinct` is native on Postgres (D309).
+- Capability key `query.countDistinct` is native on Postgres (D309), and `query.distinct` and `query.distinctOn` are native on Postgres (D310).
 - Capability keys `writeObserver.unit` (`transaction | batch`), `writeObserver.keys` (`returning`; closed profile `none`), and `writeObserver.rowCount` (`mixed`; closed profile `unknown`) are in the Postgres registry with proofs and closed-profile refusals.
 - `queryObserver.timing` is native on Postgres with cost `query|decode`. Pool-queue wait is not measured, so `queueMs` stays null. The closed profile cost is `none`.
 - OKM1890 refuses `writeObserver({ keys })` when a named table has no primary key or is not in the schema. OKM2200 warns when the write-observer pending-event buffer overflows.

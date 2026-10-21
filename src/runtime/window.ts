@@ -51,7 +51,7 @@ type Parsed = {
   readonly tieBreak: boolean;
 };
 
-type Item =
+export type Item =
   | { readonly kind: "column"; readonly column: ColumnModel }
   | { readonly kind: "window"; readonly window: Parsed }
   | {
@@ -61,7 +61,7 @@ type Item =
       readonly textual?: true;
     };
 
-type Spec = {
+export type Spec = {
   readonly items: readonly Item[];
   /** `as` name to a 1-based select ordinal, for `orderBy`. */
   readonly ordinals: ReadonlyMap<string, string>;
@@ -82,7 +82,17 @@ export function attach(schema: QuerySchema, call: ReadCall): ReadCall {
   return { ...call, build: statement(readSpec(table, call.select)) };
 }
 
-function statement(spec: Spec): ReadBuild {
+/**
+ * Writes `select <items> from <table> where ... order by ... limit`.
+ *
+ * `distinct` reuses it with column items, so a read that sets `distinct` or
+ * `distinct on` orders by select position and loads no second statement writer.
+ *
+ * @param spec - Select items, and the `as` names or positions `orderBy` may use
+ * @param head - Writes what follows `select`, such as `distinct`
+ * @returns The statement builder a call sets as `build`
+ */
+export function statement(spec: Spec, head?: (sink: Sink) => void): ReadBuild {
   return (schema, table, sink, outputs, call, hooks) => {
     sink.mark(`${call.op}|${table.model.name}|`);
     if (call.include !== undefined && hooks === undefined) {
@@ -93,6 +103,7 @@ function statement(spec: Spec): ReadBuild {
         ? []
         : hooks.read(schema, table, call.include, call.all);
     sink.text("select ");
+    head?.(sink);
     let column = 0;
     for (const item of spec.items) {
       if (column > 0) sink.text(", ");
