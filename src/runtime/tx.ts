@@ -15,6 +15,7 @@ import type {
   ExecuteResult,
   Statement,
 } from "../contracts/driver.js";
+import type { ObserveKey, RowCountMode } from "./observe-types.js";
 import type { ObservingSlot, WriteDraft } from "./observe-emit.js";
 import type { Hookm, Timeouts } from "./types.js";
 
@@ -37,6 +38,14 @@ export type WriteObserveMeta = {
   readonly settings: readonly string[];
   readonly source: "client" | "raw";
   readonly tag?: string;
+  /** The statement's SQL contains `RETURNING` (caller or observer). */
+  readonly returning?: boolean;
+  /** Primary-key columns in the result, when this table opted in. */
+  readonly keyFields?: readonly {
+    readonly field: string;
+    readonly at: number;
+    readonly decode: ((wire: string) => unknown) | undefined;
+  }[];
 };
 
 /**
@@ -101,7 +110,9 @@ export async function runWrite(
     throw error;
   }
   const durationMs = timed ? Date.now() - started : 0;
-  if (timed && observer !== undefined) noteWrites(observer, statements.length, observe, durationMs);
+  if (timed && observer !== undefined) {
+    noteWrites(observer, statements.length, observe, durationMs, results);
+  }
   if (multiPhase) {
     if (emit !== undefined) emit.emitPhase({ ...host, observer }, "commit", 0);
     else hooks?.phase(host.hookm, "commit", 0);
@@ -120,10 +131,14 @@ function noteWrites(
   count: number,
   observe: readonly WriteObserveMeta[] | undefined,
   durationMs: number,
+  results?: readonly ExecuteResult[],
 ): void {
   const drafts: WriteDraft[] = [];
   for (let i = 0; i < count; i += 1) {
     const meta = observe?.[i] ?? observe?.[observe.length - 1];
+    const result = results?.[i];
+    const counted = rowCountOf(meta, result);
+    const keys = keysOf(meta, result);
     drafts.push({
       table: meta?.table ?? null,
       op: meta?.op ?? "raw",
@@ -131,10 +146,68 @@ function noteWrites(
       settings: meta?.settings ?? [],
       durationMs,
       source: meta?.source ?? "raw",
+      rowCount: counted.rowCount,
+      rowCountMode: counted.rowCountMode,
       ...(meta?.tag !== undefined ? { tag: meta.tag } : {}),
+      ...(keys !== undefined ? { keys } : {}),
     });
   }
   observer.recordWrites(drafts);
+}
+
+/**
+ * Command-tag count for one statement.
+ *
+ * Missing `reported` (older fixtures) and a null tag are both `unknown`.
+ * An upsert stays `changed` even when `RETURNING` ran. Every other op is
+ * `returned` when the statement's SQL contained `RETURNING`.
+ *
+ * @param meta - Observe metadata for this statement
+ * @param result - Driver result. Absent on a failed statement
+ * @returns Count and mode
+ */
+function rowCountOf(
+  meta: WriteObserveMeta | undefined,
+  result: ExecuteResult | undefined,
+): { readonly rowCount: number | null; readonly rowCountMode: RowCountMode } {
+  const reported = result?.reported;
+  if (result === undefined || reported === undefined || reported === null) {
+    return { rowCount: null, rowCountMode: "unknown" };
+  }
+  const op = meta?.op ?? "raw";
+  const rowCountMode =
+    op === "upsert" ? "changed" : meta?.returning === true ? "returned" : "changed";
+  return { rowCount: reported, rowCountMode };
+}
+
+/**
+ * Primary-key records from a statement that opted in.
+ *
+ * @param meta - Observe metadata
+ * @param result - Driver result. Absent on failure, which omits keys
+ * @returns One record per returned row, or `undefined` when keys were not requested
+ */
+function keysOf(
+  meta: WriteObserveMeta | undefined,
+  result: ExecuteResult | undefined,
+): readonly ObserveKey[] | undefined {
+  const fields = meta?.keyFields;
+  if (fields === undefined || result === undefined) return undefined;
+  const keys: ObserveKey[] = [];
+  for (const row of result.rows) {
+    const key: Record<string, unknown> = {};
+    for (const field of fields) {
+      const wire = row[field.at];
+      key[field.field] =
+        wire === null || wire === undefined
+          ? null
+          : field.decode === undefined
+            ? wire
+            : field.decode(wire);
+    }
+    keys.push(key);
+  }
+  return keys;
 }
 
 /**

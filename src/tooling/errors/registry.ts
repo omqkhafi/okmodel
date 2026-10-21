@@ -953,18 +953,24 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
   },
   {
     code: "OKM1890",
+    title: "Observer keys",
+    summary: "writeObserver keys named a table that has no primary key or is not in the schema.",
+    fix: "Add a primary key on that table, or remove it from writeObserver({ keys }).",
+  },
+  {
+    code: "OKM1891",
     title: "Ambiguous config",
     summary: "Two okmodel.config.ts files are the same distance from the working directory.",
     fix: "Pass --config <path> to the config this command should load.",
   },
   {
-    code: "OKM1891",
+    code: "OKM1892",
     title: "Workspace choice",
     summary: "okm init needs a workspace and this invocation is not interactive.",
     fix: "Pass --workspace <name>, --all-workspaces, or --shared.",
   },
   {
-    code: "OKM1892",
+    code: "OKM1893",
     title: "Shared migrations",
     summary: "Two packages use the same migrations directory.",
     fix: "Give each package its own migrations directory.",
@@ -978,7 +984,7 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
   },
   // Reserved, not registered (no raising path): version OKM1804–OKM1809,
   // extension OKM1815–OKM1819, feature refusal OKM1861 and OKM1868–OKM1879,
-  // adapter capability refusal OKM1880–OKM1889. OKM1890–OKM1892 are registered.
+  // adapter capability refusal OKM1880–OKM1889. OKM1890–OKM1893 are registered.
   // OKM1140–OKM1179 stay reserved (D291).
 ];
 

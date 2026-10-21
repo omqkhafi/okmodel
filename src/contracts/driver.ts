@@ -47,11 +47,15 @@ export type Notice = {
 /**
  * Result of one statement.
  *
- * `count` is the affected-row count. `rows` are wire text.
+ * `count` is the affected-row count the caller sees. `reported` is the
+ * command-tag count the driver gave, or null when the driver gave none.
+ * Absent on fixtures that only set `count`. `rows` are wire text.
  */
 export type ExecuteResult = {
   readonly rows: readonly (readonly WireValue[])[];
   readonly count: number;
+  /** Command-tag count. Null when the driver reported none. */
+  readonly reported?: number | null;
   readonly notices: readonly Notice[];
 };
 

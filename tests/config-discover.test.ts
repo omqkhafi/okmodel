@@ -61,12 +61,12 @@ test("two equally near configs fail check and migrate status", () => {
       const body = JSON.parse(result.stdout) as {
         errors: readonly { code?: string; summary?: string }[];
       };
-      expect(body.errors[0]?.code).toBe("OKM1890");
+      expect(body.errors[0]?.code).toBe("OKM1891");
       expect(body.errors[0]?.summary).toContain("packages/api/okmodel.config.ts");
       expect(body.errors[0]?.summary).toContain("packages/web/okmodel.config.ts");
     }
     const picked = run(["check", "--json", "--config", "packages/api/okmodel.config.ts"], cwd);
-    expect(`${picked.stdout}\n${picked.stderr}`).not.toContain("OKM1890");
+    expect(`${picked.stdout}\n${picked.stderr}`).not.toContain("OKM1891");
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

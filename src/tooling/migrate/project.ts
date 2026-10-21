@@ -651,7 +651,7 @@ export async function exportProject(
  * Loads `okmodel.config.ts` (or the path from `--config`).
  *
  * The file is the nearest config upward from the working directory. Two
- * configs at that same distance are OKM1890. `--config` skips the search.
+ * configs at that same distance are OKM1891. `--config` skips the search.
  *
  * @param project - Project directory or {@link ProjectContext}
  * @returns The config object

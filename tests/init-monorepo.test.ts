@@ -35,7 +35,7 @@ test("a pnpm workspace proposes per-service and fails until a flag is passed", (
     const refused = run(["init", "--json", "--yes"], cwd);
     expect(refused.code).toBe(3);
     const body = envelope(refused.stdout);
-    expect(body.errors[0]?.code).toBe("OKM1891");
+    expect(body.errors[0]?.code).toBe("OKM1892");
     expect(body.errors[0]?.summary).toContain("@acme/api");
     expect(body.errors[0]?.summary).toContain("@acme/web");
     expect(tree(cwd)).toEqual(before);
@@ -152,7 +152,7 @@ test("several candidates with no flag write nothing", () => {
     const before = tree(cwd);
     const result = run(["init", "--json", "--yes"], cwd);
     expect(result.code).toBe(3);
-    expect(envelope(result.stdout).errors[0]?.code).toBe("OKM1891");
+    expect(envelope(result.stdout).errors[0]?.code).toBe("OKM1892");
     expect(tree(cwd)).toEqual(before);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
@@ -189,7 +189,7 @@ test("two packages on one migrations directory write nothing", () => {
     const result = run(["init", "--json", "--yes", "--all-workspaces"], cwd);
     expect(result.code).toBe(4);
     const body = envelope(result.stdout);
-    expect(body.errors[0]?.code).toBe("OKM1892");
+    expect(body.errors[0]?.code).toBe("OKM1893");
     expect(body.errors[0]?.summary).toContain("packages/api");
     expect(body.errors[0]?.summary).toContain("packages/web");
     expect(readFileSync(join(cwd, "packages/api/okmodel.config.ts"), "utf8")).toBe(original);

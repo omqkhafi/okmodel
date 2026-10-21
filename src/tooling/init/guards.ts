@@ -158,7 +158,7 @@ export function refuseWorkspaceChoice(candidates: readonly string[]): void {
   if (candidates.length < 2) return;
   const listed = [...candidates].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
   initError(
-    "OKM1891",
+    "OKM1892",
     `okm init needs a workspace. Candidates: ${listed.join(", ")}.`,
     "Pass --workspace <name>, --all-workspaces, or --shared.",
     "decision",
@@ -175,7 +175,7 @@ export function refuseSharedMigrations(packages: readonly string[], directory: s
   if (packages.length < 2) return;
   const listed = [...packages].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
   initError(
-    "OKM1892",
+    "OKM1893",
     `${listed.join(", ")} use the same migrations directory ${directory}.`,
     "Give each package its own migrations directory.",
     "guard",

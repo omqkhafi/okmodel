@@ -138,6 +138,7 @@ export function createClient<S extends QuerySchema>(
       ...(options.catalog !== undefined ? { catalog: options.catalog } : {}),
       ...(options.catalogDir !== undefined ? { catalogDir: options.catalogDir } : {}),
     },
+    options.onWrite,
   );
   // QA-M5: `connected` always has a handler. A caller that closes before awaiting
   // it must not leave a rejection unhandled. A caller who awaits it later gets
@@ -405,23 +406,14 @@ function writeHandle(
   options: object,
   mods: WriteMods,
 ): Promise<unknown> & Record<string, unknown> {
+  const view = (kind: "sql" | "inspect" | "describe") =>
+    loadWrite().then((mod) => mod.explainHandle(session, op, table, input, options, mods, kind));
   return queryHandle(() => runWrite(session, op, table, input, options, mods), {
     // `batch` plans each operation and runs the statements of all of them as one unit.
     "~plan": () => runWrite(session, op, table, input, options, mods, true),
-    sql() {
-      return loadWrite().then((mod) =>
-        mod.explainWrite(
-          session.schema,
-          op,
-          table,
-          input,
-          options,
-          mods,
-          session.generators,
-          session.scope,
-        ),
-      );
-    },
+    sql: () => view("sql"),
+    inspect: () => view("inspect"),
+    describe: () => view("describe"),
     expect(count: number) {
       return writeHandle(session, op, table, input, options, { ...mods, expect: count });
     },
@@ -769,9 +761,10 @@ async function checkServer(
   requireMeta: boolean,
   options: ExecuteOptions | undefined,
   source: { readonly catalog?: CatalogArtifact; readonly catalogDir?: string },
+  onWrite: object | undefined,
 ): Promise<void> {
   const { acceptServer } = await import("./server-check.js");
-  await acceptServer(pool, schema, http, requireMeta, options, source);
+  await acceptServer(pool, schema, http, requireMeta, options, source, onWrite);
 }
 
 async function mapError(session: Session, error: unknown): Promise<OkmError> {

@@ -44,13 +44,15 @@ export function rowsFrom(value: unknown): WireValue[][] {
  *
  * @param value - A driver result
  * @param notices - Notices observed during the call
- * @returns Rows, count, and notices
+ * @returns Rows, the caller count, the command-tag count, and notices
  */
 export function resultFrom(value: unknown, notices: readonly Notice[]): ExecuteResult {
   const rows = rowsFrom(value);
+  const reported = reportedFrom(value);
   return {
     rows,
-    count: countFrom(value, rows.length),
+    count: reported ?? rows.length,
+    reported,
     notices,
   };
 }
@@ -79,13 +81,25 @@ function rowCells(row: unknown): WireValue[] {
   return [cell(row)];
 }
 
-function countFrom(value: unknown, rows: number): number {
-  if (typeof value !== "object" || value === null) return rows;
-  const count = Reflect.get(value, "count");
-  if (typeof count === "number" && !Number.isNaN(count)) return count;
-  const rowCount = Reflect.get(value, "rowCount");
-  if (typeof rowCount === "number" && !Number.isNaN(rowCount)) return rowCount;
-  const affected = Reflect.get(value, "affectedRows");
-  if (typeof affected === "number" && !Number.isNaN(affected)) return affected;
-  return rows;
+/**
+ * Command-tag count from the first own field a driver uses.
+ *
+ * Order is `count` (postgres.js, Bun.sql), `rowCount` (pg, Neon, PGlite),
+ * then `affectedRows` (PGlite, only when `rowCount` is absent). An own field
+ * that is not a finite number means the driver reported nothing: later fields
+ * are not a fallback. PGlite's `affectedRows` is cumulative across statements
+ * in one query; its `rowCount` is the per-statement tag.
+ *
+ * @param value - A driver result
+ * @returns The tag count, or null when the driver gave none
+ */
+function reportedFrom(value: unknown): number | null {
+  if (typeof value !== "object" || value === null) return null;
+  for (const name of ["count", "rowCount", "affectedRows"] as const) {
+    if (!Object.hasOwn(value, name)) continue;
+    const found: unknown = Reflect.get(value, name);
+    if (typeof found === "number" && Number.isFinite(found)) return found;
+    return null;
+  }
+  return null;
 }

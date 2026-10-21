@@ -118,7 +118,7 @@ export function refuseAmbiguousConfigs(paths: readonly string[]): void {
   if (paths.length < 2) return;
   const listed = [...paths].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
   throw tagOutcome(
-    new OkmError("OKM1890", `Two configs are equally near: ${listed.join(", ")}.`, {
+    new OkmError("OKM1891", `Two configs are equally near: ${listed.join(", ")}.`, {
       kind: "invalid",
       retryable: false,
       fix: { summary: "Pass --config <path> to the config this command should load." },

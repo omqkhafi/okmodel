@@ -1,7 +1,9 @@
 ---
 title: "Observers"
-description: "hookm is a list of read-only observers."
+description: "onWrite observes writes. hookm observes notices and transactions."
 ---
+`onWrite` observes committed writes. Pass `writeObserver({ keys: ["tasks"] })` from `okmodel/observe` when a table's primary key should appear on the event. A table with no primary key is refused at connect. Row counts use the driver command tag: `changed`, `returned` when `RETURNING` ran, or `unknown` when the driver reported none. An upsert counts inserted and updated rows as `changed`. The handler cannot change the write. `await onWrite.flush()` waits for handlers.
+
 `hookm` is a list of read-only observers. Omitted, no observer runs. Pass an array: `hookm: [observer]`. A single observer object is not a list — wrap it. There is no `hooks` connect option; that key is ignored. Each method is optional. They run in list order. They are events only. They cannot change a query, a commit, or a rollback. An error a hook throws is dropped and never reaches the call. The next observer still runs.
 
 | Method | When |
