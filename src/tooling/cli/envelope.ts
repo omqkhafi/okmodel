@@ -6,23 +6,13 @@
  */
 
 import { sha256 } from "../../contracts/sha256.js";
-import { OkmError, type ErrorCategory, type ErrorKind } from "../../contracts/error.js";
-import { sessionFailure } from "../migrate/lost.js";
+import { errorBody as buildErrorBody, type CliErrorBody } from "../errors/body.js";
 import type { CliOutFile, CliTargetBody, CliWarningBody, ExitCode } from "./outcome.js";
+
+export type { CliErrorBody };
 
 /** Schema name frozen for this contract. */
 export const CLI_SCHEMA = "okm.cli/1";
-
-/** One error in `errors`. Further fields may be added later. */
-export type CliErrorBody = {
-  readonly code: string;
-  readonly kind: ErrorKind;
-  readonly category: ErrorCategory;
-  readonly summary: string;
-  /** The fix text `okm` already prints (`OkmError.fix.summary`). */
-  readonly fix: string;
-  readonly retryable: boolean;
-};
 
 /** Selected database. `fingerprint` has no URL, host, or credential. */
 export type CliTarget = CliTargetBody;
@@ -79,15 +69,7 @@ export function targetFingerprint(target: {
  * @returns The object
  */
 export function errorBody(error: unknown): CliErrorBody {
-  const mapped = sessionFailure(error) ?? OkmError.from(error);
-  return {
-    code: mapped.code,
-    kind: mapped.kind,
-    category: mapped.category,
-    summary: mapped.message,
-    fix: mapped.fix.summary,
-    retryable: mapped.retryable,
-  };
+  return buildErrorBody(error);
 }
 
 /**

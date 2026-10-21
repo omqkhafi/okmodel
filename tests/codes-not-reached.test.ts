@@ -32,8 +32,14 @@ function sources(dir: string): string[] {
 test("OKM1110 and OKM1191 are registered and not thrown anywhere in src", () => {
   const found: string[] = [];
   for (const file of sources("src")) {
-    if (file.endsWith("tooling/errors/registry.ts") || file.endsWith("contracts/error.ts"))
+    // examples.ts lists codes that have no raising path. It does not throw them.
+    if (
+      file.endsWith("tooling/errors/registry.ts") ||
+      file.endsWith("tooling/errors/examples.ts") ||
+      file.endsWith("contracts/error.ts")
+    ) {
       continue;
+    }
     const content = readFileSync(file, "utf8");
     for (const code of ["OKM1110", "OKM1191"]) {
       if (content.includes(`"${code}"`)) found.push(`${file}: ${code}`);

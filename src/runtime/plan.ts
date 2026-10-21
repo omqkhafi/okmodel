@@ -1212,7 +1212,7 @@ export function emitLimit(call: ReadCall, sink: Sink): void {
     return;
   }
   if (call.limit === undefined) {
-    fail("OKM1101", "find() needs a limit, or .all(reason) when the full set is intentional.");
+    fail("OKM1101", "find() needs a limit.");
   }
   const limit = readLimit(call.limit);
   sink.text(" limit ");
@@ -1496,7 +1496,7 @@ export function orFail(empty: boolean): never {
 
 const FAIL_FIX: Partial<Record<QueryCode, string>> = {
   OKM1121: "Use eq for an object value, or has, none, or every for a relation.",
-  OKM1101: "Pass limit, or call .all(reason).",
+  OKM1101: "Pass a limit.",
 };
 
 /**

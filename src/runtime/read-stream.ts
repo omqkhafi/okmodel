@@ -84,7 +84,7 @@ export async function* streamRows(
     }
     if (call.limit !== undefined) total = readLimit(call.limit);
     else if (mods.all === undefined) {
-      fail("OKM1101", "find() needs a limit, or .all(reason) when the full set is intentional.");
+      fail("OKM1101", "find() needs a limit.");
     }
     const timeout = call.timeout;
     if (timeout !== undefined && (typeof timeout !== "number" || !(timeout > 0))) {

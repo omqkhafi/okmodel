@@ -3,13 +3,16 @@ import { dirname, join, relative, resolve } from "node:path";
 
 import { exitOnProblems } from "./report.js";
 import { repoRoot } from "./root.js";
+import { pageExample } from "../src/tooling/errors/examples.js";
+import { errorPageProblems } from "../src/tooling/errors/page.js";
+import { ERROR_DOCS } from "../src/tooling/errors/registry.js";
 
 const DECISIONS_FILE = "okmodel-decisions.md";
 
 /**
  * Checks relative links, `§` section references, and decision numbers under `docsDir`.
  *
- * Error-code and milestone checks are later prompts. Section numbers are the
+ * Each `docs/errors/<code>.md` must match the registry. Section numbers are the
  * heading numbers across the docs directory (`## 4.2 …` satisfies `§4.2`).
  */
 export function checkDocs(docsDir: string): readonly string[] {
@@ -35,6 +38,9 @@ export function checkDocs(docsDir: string): readonly string[] {
     if (defined !== undefined) {
       problems.push(...decisionProblems(docsDir, file, text, defined));
     }
+  }
+  for (const doc of ERROR_DOCS) {
+    problems.push(...errorPageProblems(doc, pageExample(doc.code)));
   }
   return problems;
 }

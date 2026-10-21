@@ -162,10 +162,7 @@ export function columnTenancy<const Key>(input: {
       if (view.unscoped !== undefined) target.unscoped = view.unscoped;
     },
     missing(table): never {
-      throw new OkmError(
-        "OKM1701",
-        `Table ${table} is tenant-scoped. Call for({ ${key} }) or unscoped("reason").`,
-      );
+      throw new OkmError("OKM1701", `Table ${table} is tenant-scoped. Call for({ ${key} }).`);
     },
   };
   return api as ColumnTenancy & { readonly key: Key extends string ? Key : string };
@@ -390,10 +387,7 @@ function writePredicate(
   if (!tenants.has(input.table)) return false;
   const scope = input.scope;
   if (scope === undefined) {
-    throw new OkmError(
-      "OKM1701",
-      `Table ${input.table} is tenant-scoped. Call for({ ${key} }) or unscoped("reason").`,
-    );
+    throw new OkmError("OKM1701", `Table ${input.table} is tenant-scoped. Call for({ ${key} }).`);
   }
   if ("unscoped" in scope) {
     input.sink.mark("unscoped|");
