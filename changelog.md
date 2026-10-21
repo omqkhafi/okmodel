@@ -50,6 +50,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okmodel/observe` exports `writeObserver()`, `flush()`, `OBSERVE_BUFFER_MAX` (10,000), and `observerBufferOverflow()` (OKM2200). The helper buffers per unit, calls exactly one of `committed` | `rolledBack` | `unknown`, isolates throwing and rejecting handlers via `onObserverError`, and settles tracked promises on `flush()`. Overflow drops the oldest unit without blocking the write path.
 - `writeObserver({ keys })` names schema tables. Those writes append primary-key `RETURNING` when the statement is a simple insert, update, or delete, and put the values on `WriteEvent.keys`. `sql()` and `inspect()` show the extra clause. `describe()` labels the appended columns `"observer"`. A table with no primary key, or a name missing from the schema, is OKM1890 at connect and at plan time. Nested `RETURNING` (parent guard, versioned close, archive) is not rewritten. A caller result is unchanged: observer-only rows are hidden.
 - Write events take `rowCount` from the command tag. Mode is `changed` for insert, update, and delete, `returned` when `RETURNING` ran, and `unknown` with `rowCount: null` when the driver gave no tag. An upsert stays `changed` and counts inserted plus updated rows.
+- `find({ offset })` skips that many rows. The value is an integer from 0 up and is sent as a parameter.
+- `okmodel/warnings` exports `warnings()`. Pass it to `connect({ warnings })`. In development, OKM2004 (offset past 1,000), OKM2005 (a limit whose order does not end in a unique key), OKM2007 (a value list past 500), and OKM2008 (an include whose row bound passes 10,000) each report once per call site. Production reports nothing until a level is set. `ignore` needs a reason. `onWarning` replaces the console.
 
 #### tooling
 
@@ -85,6 +87,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okm raw sync` discovers static `raw()` calls imported from `okmodel/pg`, describes each statement without running it, and writes `.okm/raw.lock.json` and `.okm/raw.d.ts`. `--check` writes nothing and exits 1 when either file would change. `okm check` fails with OKM1604 when a call is missing from the lock, warns with OKM1605 when a lock entry is no longer called, and fails with OKM1601 when a target's signature no longer matches. A statement that is not a static string is OKM1603. A statement the checker cannot classify is OKM1602.
 - A described column is NOT NULL only when it comes from a base or partitioned table, `attnotnull` is set, the column is not generated, no NOT NULL constraint on that column is unvalidated, and the statement has none of `join`, `union`, `intersect`, `except`, `lateral`, `with`, `values`, `rollup`, `cube`, or `grouping` outside strings, comments, and quoted identifiers. `as "name!"` forces NOT NULL and `as "name?"` forces nullable. The suffix is not part of the name. PostgreSQL 15–17 have no `contype` `n` row, so that check does not change them. On 18 a `NOT VALID` constraint sets `attnotnull` while NULLs can remain, and the column stays nullable.
 - `okm init` writes starter files for one package (`okmodel.config.ts`, schema, client, scripts, and `.okm/init.json`) and does not connect. `okm generate init` still writes the first migration. A different installed driver is OKM1862, a missing non-interactive choice is OKM1863, a user-modified file is OKM1864, an unusable directory is OKM1865, a plan-hash mismatch is OKM1866, and schema or database tenancy is OKM1867.
+- `okm check` lists each project warning ignore with its rule and reason. An ignore without a reason is a configuration error. Warning pages for OKM2004, OKM2005, OKM2007, and OKM2008 are generated with the error pages.
 
 #### docs
 
@@ -103,6 +106,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The linter page, [When a migration fails](docs/migration-failure.md), and the OKM1557 and OKM1558 error pages describe a declared `-- probe:` and when a committed step must have one.
 - The guide awaits `userFilters.parse(request.query)` and passes the result to `find` with a limit. `parse` is asynchronous because the parser loads on first use (Q10, #397).
 - [Capabilities](docs/capabilities.md) is generated from the Postgres feature registry. A feature whose proof title does not pass the registry proof check is `unverified`. `docs:check` fails when that page, a `<!-- support: key -->` block, or the step-kind table in [When a migration fails](docs/migration-failure.md) disagrees with the code.
+- [Warnings](docs/warnings.md) records the levels, the development defaults, and the four static rules.
 
 ### 💥 Breaking Changes
 

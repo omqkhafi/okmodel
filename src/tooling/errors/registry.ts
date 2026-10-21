@@ -3,6 +3,7 @@ import {
   VALIDATION_NOT_IMPORTED,
   VALIDATION_NOT_IMPORTED_FIX,
 } from "../../runtime/validate/closed.js";
+import { WARNING_RULES, type WarningRule } from "../../runtime/warnings/catalog.js";
 import type { CliEscapeHatch, CliSafeAlternative } from "./shape.js";
 
 /**
@@ -27,6 +28,18 @@ export type ErrorDoc = {
   readonly safeAlternatives?: readonly CliSafeAlternative[];
   /** Bypasses. Each one requires a human-written reason. */
   readonly escapeHatches?: readonly CliEscapeHatch[];
+  /** Kebab-case id. Set on OKM2xxx and OKM3xxx advice. */
+  readonly rule?: string;
+  /** Development default before a project overrides it. */
+  readonly defaultLevel?: WarningRule["defaultLevel"];
+  /** Seriousness. The level is separate and can be changed. */
+  readonly severity?: WarningRule["severity"];
+  /** When the rule runs. */
+  readonly phase?: WarningRule["phase"];
+  /** Static query shape, or a later observation. */
+  readonly evidence?: WarningRule["evidence"];
+  /** Front-matter `since`. Absent means `0.9`. */
+  readonly since?: string;
 };
 
 /**
@@ -957,6 +970,7 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     summary: "writeObserver keys named a table that has no primary key or is not in the schema.",
     fix: "Add a primary key on that table, or remove it from writeObserver({ keys }).",
   },
+  ...WARNING_RULES.map(warningDoc),
   {
     code: "OKM2200",
     title: "Observer buffer overflow",
@@ -968,6 +982,29 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
   // extension OKM1815–OKM1819, feature refusal OKM1861 and OKM1868–OKM1879,
   // adapter capability refusal OKM1880–OKM1889. OKM1140–OKM1179 stay reserved (D291).
 ];
+
+/**
+ * Copies one warning rule into a doctor entry.
+ *
+ * @param rule - Catalog rule
+ * @returns The registry entry
+ */
+function warningDoc(rule: WarningRule): ErrorDoc {
+  return {
+    code: rule.code,
+    title: rule.title,
+    summary: rule.summary,
+    fix: rule.fix,
+    safeAlternatives: rule.safeAlternatives,
+    escapeHatches: rule.escapeHatches,
+    rule: rule.rule,
+    defaultLevel: rule.defaultLevel,
+    severity: rule.severity,
+    phase: rule.phase,
+    evidence: rule.evidence,
+    since: "0.10",
+  };
+}
 
 let byCode: ReadonlyMap<string, ErrorDoc> | undefined;
 

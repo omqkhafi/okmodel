@@ -16,6 +16,62 @@
     },
     "emulation": {
       "type": "string"
+    },
+    "ignores": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "rule",
+          "reason"
+        ],
+        "properties": {
+          "rule": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "untrusted",
+              "origin",
+              "text",
+              "truncated",
+              "modified"
+            ],
+            "properties": {
+              "untrusted": {
+                "const": true
+              },
+              "origin": {
+                "enum": [
+                  "schema.identifier",
+                  "schema.comment",
+                  "schema.enum",
+                  "schema.default",
+                  "constraint.name",
+                  "index.name",
+                  "migration.comment",
+                  "db.error",
+                  "db.object-name",
+                  "user.query",
+                  "package.json"
+                ]
+              },
+              "text": {
+                "type": "string"
+              },
+              "truncated": {
+                "type": "boolean"
+              },
+              "modified": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

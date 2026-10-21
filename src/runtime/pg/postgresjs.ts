@@ -75,6 +75,7 @@ export function connect<const S extends QuerySchema>(
     timeouts: options.timeouts,
     hookm: options.hookm,
     onWrite: options.onWrite,
+    warnings: options.warnings,
     catalog: options.catalog,
     catalogDir: options.catalogDir,
     requireMeta: options.requireMeta,
