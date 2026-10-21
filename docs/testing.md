@@ -25,7 +25,7 @@ test("today view runs one query", async () => {
 });
 ```
 
-`open()` is async and returns a driver pool. `open({ url })` from `okmodel/pg/postgresjs` is synchronous and is accepted the same way. `testing` applies the schema's catalog first, which is what an empty PGlite database needs. Pass `migrate: false` when the database already has its tables. `okm seed` does that.
+`open()` is async and returns a driver pool. `open({ url })` from `okmodel/pg/postgresjs` is synchronous and is accepted the same way. `testing` applies the schema's catalog first, which is what an empty PGlite database needs. Pass `migrate: false` when the database already has its tables. `okm seed` does that. `close()` drops the objects that apply created, in reverse dependency order, and drops nothing when `migrate` is false.
 
 `tenants` in the example is a global table (`global("tenant directory")`). Its `id` is the value passed to `for({ tenantId })`. `users` and `tasks` are tenant tables. `lists` is the table `x.ref("lists")` inserts or reuses. `loadToday` is the application's read; the count is how many statements that read sends.
 
@@ -59,3 +59,13 @@ export default async function seed(t) {
 ```
 
 `okm seed <file>` loads that default export and calls it with the harness for the selected target. Under `rlsTenancy` the command runs as the application role. The owner, a superuser, or a `BYPASSRLS` role gets OKM1707. The target's schema must already be applied. One configured target is used as it stands. Several targets require `--target` (OKM1853). A protected target is blocked (OKM1850) unless the invocation passes `--allow-protected`. The command prints `target <name>` and one line per table that the factories inserted, or `created nothing`.
+
+## Conformance
+
+The driver, error, and transaction suites share one tag. `portable(test)` marks a case every dialect runs. `gated(test, feature, profile)` marks a case that needs a registry key or an adapter gate (`transactions`, `stream`, `listen`, `cancel`). The tag is the helper, not the case title.
+
+A gated case runs its body when the registry says `native` or `emulated` and the adapter gate, if the entry has one, is on. A `refused` entry does not run the body. The case calls the same check the Postgres registry uses and asserts that entry's code and that the error carries the entry's alternative. A false adapter flag on an entry the registry still provides is `unsupported`. The driver report keeps one row per case (`pass`, `fail`, or `unsupported`) and ends with counts: portable run, gated run, refusal, unsupported.
+
+`packages/harness/src/closed-profile.ts` is a test fixture. `src/` does not import it. Every Postgres registry key is `refused`, with OKM1860 and an alternative, and the adapter flags are all off (`transactions: "none"`, `stream`, `listen`, and `cancel` false). `prepared` and `describe` are not flags. Against that profile, each registry key is refused through `assertSupported`, and a schema that uses a catalog feature is refused by the planner. `tx()` with no timeout is OKM1111 and names `batch()` as the alternative. A positive `timeout` is OKM1120 because cancel is off; that error does not carry a registry alternative. `stream`, `listen`, and `describe` have no refusal: `.stream()` does not read the flag, and `listen` and `describe` are absent unless the pool defines them.
+
+The portable minimum still passes on that profile: `connect`, a parameterised read and write through the in-memory driver, and mapping a unique violation. A new dialect ships a registry and passes that minimum before it marks a feature `native` or `emulated`. A feature it refuses needs `refusal:<key>` as a literal test title, a code, and an alternative. A feature it claims needs the `proof` title already on the entry, and the gated cases for that key then run.

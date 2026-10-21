@@ -86,7 +86,7 @@ export function planVersioned(
   if (mods.all !== undefined) {
     fail(
       "OKM1120",
-      `update on ${table.model.name} cannot use .all() with versioned().`,
+      `update on ${table.model.name} cannot use all() with versioned().`,
       "Pass a per-row list with the version you read for each row.",
     );
   }

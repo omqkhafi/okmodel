@@ -108,8 +108,7 @@ export async function checkMigrations(
       {
         kind: "forbidden",
         fix: {
-          summary:
-            "Point okm migrate check at a throwaway Postgres. --allow-protected does not apply.",
+          summary: "Point okm migrate check at a throwaway Postgres.",
         },
       },
     );

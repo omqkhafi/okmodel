@@ -13,6 +13,7 @@ import { catalog } from "../../contracts/catalog/build.js";
 import { parseCatalog } from "../../contracts/catalog/document.js";
 import type { Catalog, ColumnObject } from "../../contracts/catalog/types.js";
 import { OkmError } from "../../contracts/error.js";
+import { attachCliDetail } from "../errors/shape.js";
 import { errorDoc } from "../errors/registry.js";
 import { COLUMN_RULES, STEP_RULES, statementMayReprint, type LintSeverity } from "./lint-rules.js";
 import { REPRINT_CODE, reprintHits } from "./reprint.js";
@@ -164,9 +165,12 @@ export function hasError(findings: readonly Finding[]): boolean {
  */
 export function lintRefusal(findings: readonly Finding[]): OkmError {
   const doc = errorDoc("OKM1510");
-  return new OkmError("OKM1510", formatFindings(findings).trim(), {
-    fix: { summary: doc?.fix ?? "Allow the finding with a reason, or change the statement." },
+  const error = new OkmError("OKM1510", formatFindings(findings).trim(), {
+    fix: { summary: doc?.fix ?? "Change the statement so the finding is gone." },
   });
+  const step = findings.find((item) => item.place.startsWith("step "))?.place;
+  if (step === undefined) return error;
+  return attachCliDetail(error, { location: { step } });
 }
 
 type Hit = {

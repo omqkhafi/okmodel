@@ -10,6 +10,7 @@ import { isAbsolute, join } from "node:path";
 
 import { nearestName } from "../../contracts/nearest.js";
 import { OkmError } from "../../contracts/error.js";
+import { warningBody } from "../errors/body.js";
 import { errorDoc } from "../errors/registry.js";
 import {
   envelope,
@@ -329,7 +330,19 @@ async function doctor(
   if (doc === undefined) return textData(text);
   return {
     text,
-    data: { code: doc.code, title: doc.title, summary: doc.summary, fix: doc.fix },
+    data: {
+      code: doc.code,
+      title: doc.title,
+      summary: doc.summary,
+      fix: doc.fix,
+      ...(doc.safeAlternatives !== undefined && doc.safeAlternatives.length > 0
+        ? { safeAlternatives: doc.safeAlternatives }
+        : {}),
+      docs: `docs/errors/${doc.code}.md`,
+      ...(doc.escapeHatches !== undefined && doc.escapeHatches.length > 0
+        ? { escapeHatches: doc.escapeHatches }
+        : {}),
+    },
     warnings: [],
     outFile: null,
   };
@@ -630,12 +643,23 @@ function warningsOf(findings: readonly Finding[]): readonly CliWarning[] {
   const warnings: CliWarning[] = [];
   for (const finding of findings) {
     if (finding.severity !== "warning") continue;
-    warnings.push({
-      code: finding.code,
-      summary: finding.reason,
-      place: finding.place,
-      fix: finding.fix,
-    });
+    const preference =
+      finding.code === "OKM1539" ||
+      finding.code === "OKM1540" ||
+      finding.code === "OKM1543" ||
+      finding.code === "OKM1544" ||
+      finding.code === "OKM1545";
+    warnings.push(
+      warningBody({
+        code: finding.code,
+        summary: finding.reason,
+        place: finding.place,
+        fix: finding.fix,
+        level: "warn",
+        severity: preference ? "low" : "medium",
+        ...(finding.place.startsWith("step ") ? { location: { step: finding.place } } : {}),
+      }),
+    );
   }
   return warnings;
 }

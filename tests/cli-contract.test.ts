@@ -19,10 +19,12 @@ import {
   schemaFileName,
   schemaFor,
   schemaProblems,
+  errorsSchemaText,
   schemaText,
 } from "../src/tooling/cli/schema.js";
 import { readPackageVersion } from "../src/tooling/cli/version.js";
 import { ERROR_DOCS } from "../src/tooling/errors/registry.js";
+import { bypassTokensIn } from "../src/tooling/errors/shape.js";
 import { repoRoot } from "../scripts/root.js";
 
 const root = repoRoot();
@@ -75,7 +77,10 @@ test("schema files match the generator and cover every command", () => {
   expect(schemaCoverageProblems()).toEqual([]);
   const directory = join(root, "schemas/cli-1");
   const files = readdirSync(directory).sort();
-  expect(files).toEqual(schemaCommands().map((command) => schemaFileName(command)));
+  expect(files).toEqual(
+    [...schemaCommands().map((command) => schemaFileName(command)), "errors.json"].sort(),
+  );
+  expect(readFileSync(join(directory, "errors.json"), "utf8")).toBe(errorsSchemaText());
   for (const command of schemaCommands()) {
     expect(readFileSync(join(directory, schemaFileName(command)), "utf8")).toBe(
       schemaText(command),
@@ -382,7 +387,12 @@ type Envelope = {
 function parseEnvelope(text: string): Envelope {
   const parsed: unknown = JSON.parse(text);
   if (typeof parsed !== "object" || parsed === null) throw new Error("not an envelope");
-  return parsed as Envelope;
+  const envelope = parsed as Envelope;
+  for (const error of envelope.errors) {
+    const hits = [...bypassTokensIn(error.summary), ...bypassTokensIn(error.fix)];
+    expect(hits, error.code).toEqual([]);
+  }
+  return envelope;
 }
 
 function spawnOkm(

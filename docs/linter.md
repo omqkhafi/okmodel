@@ -3,7 +3,7 @@
 The linter reads a migration plan and the catalogs before and after it. It does not connect to the database. A finding names the step, the code, why it fired, and the fix.
 
 ```text
-error OKM1511 step 1: drops a table -- fix: Stop reading the table in an expand migration, then drop it in a later contract. Or allow OKM1511 with a reason.
+error OKM1511 step 1: drops a table -- fix: Stop reading the table in an expand migration, then drop it in a later contract.
 ```
 
 `error` fails the command. `warning` prints and the command still succeeds. The place is `step N` when the step has one statement, `step N statement M` when it has more, and `table.column` for a type preference. `okm migrate apply` prefixes the place with the migration id (`0001_drop step 1`).

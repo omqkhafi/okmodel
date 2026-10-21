@@ -26,7 +26,9 @@ test("QA-M6: port 6432 is a pooler URL", async () => {
   expect(() => assertDirectConnection("postgres://u@127.0.0.1:6432/app", true)).not.toThrow();
   expect(() => assertDirectConnection("postgres://u@127.0.0.1:5432/app", false)).not.toThrow();
   const doc = errorDoc("OKM1854");
-  expect(doc?.fix).toContain("--allow-pooler");
+  expect(doc?.fix).toBe("Use a direct connection.");
+  expect(doc?.escapeHatches?.[0]?.name).toBe("--allow-pooler");
+  expect(doc?.escapeHatches?.[0]?.requiresHumanReason).toBe(true);
   const doctor = await spawn(["doctor", "OKM1854"]);
   expect(doctor.code).toBe(0);
   expect(doctor.stdout).toContain("OKM1854");

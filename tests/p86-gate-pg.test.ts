@@ -334,30 +334,31 @@ async function expectLeak(
     try {
       const report = await harness.isolation();
       for (const name of checked) expect(report.checked).toContain(name);
+      // Finishing the applying harness removes the schema this leak check reads.
+      const stripped: ColumnTenancy = {
+        ...tenancy,
+        predicate(input: Parameters<ColumnTenancy["predicate"]>[0]): boolean {
+          if (
+            input.scope !== undefined &&
+            "value" in input.scope &&
+            input.scope.value === tenantProbe
+          ) {
+            return tenancy.predicate(input);
+          }
+          return false;
+        },
+      };
+      const leaking = await testing(build(stripped), {
+        driver: open({ url: database.url }),
+        migrate: false,
+      });
+      try {
+        await expectIsolationError(leaking.isolation());
+      } finally {
+        await leaking.close();
+      }
     } finally {
       await harness.close();
-    }
-    const stripped: ColumnTenancy = {
-      ...tenancy,
-      predicate(input: Parameters<ColumnTenancy["predicate"]>[0]): boolean {
-        if (
-          input.scope !== undefined &&
-          "value" in input.scope &&
-          input.scope.value === tenantProbe
-        ) {
-          return tenancy.predicate(input);
-        }
-        return false;
-      },
-    };
-    const leaking = await testing(build(stripped), {
-      driver: open({ url: database.url }),
-      migrate: false,
-    });
-    try {
-      await expectIsolationError(leaking.isolation());
-    } finally {
-      await leaking.close();
     }
   } finally {
     await database.close();

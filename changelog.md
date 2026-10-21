@@ -54,12 +54,16 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okm migrate resolve <migration>:<step>` records a committed step a person finished, or marks it so the next apply tries again. The operand is the 0-based id `okm migrate status` prints. A protected target needs the protected-target allowance. There is no skip.
 - `okm migrate status` JSON `data` adds `steps[]` (`id`, `kind`, `state`, `attempt`, `nextAction`) for committed steps that are in flight or broken. The text table is unchanged, and a `steps` section follows when a row exists.
 - A failed committed step is recorded in `okm_steps` (`started`, `failed`, or `retry`) and removed in the same transaction that inserts `okm_history`. OKM1553 means the probe cannot tell whether the step is applied. OKM1554 means resolve refused because the probe says it is not applied. OKM1555 means resolve needs explicit acceptance because that kind has no probe. OKM1556 means the statement changed after the step started.
+- `okm --json` errors keep the six `okm.cli/1` fields and add `location`, `fixEdit`, `safeAlternatives`, `docs`, and `escapeHatches` when the producer or the registry has them. `fix` stays a string. A kind-only error such as `driver` stays at the six fields. `schemas/cli-1/errors.json` is the array schema. `okm doctor <code>` prints `docs/errors/<code>.md`.
+- Conformance cases are tagged portable or gated on a registry key or an adapter gate. A refused registry entry asserts that entry's code and alternative instead of running the body. A false adapter flag on a feature the registry still provides stays unsupported. `okm driver test` prints portable, gated, refusal, and unsupported counts. A test-only profile refuses every Postgres feature and turns the adapter flags off, and the portable minimum (connect, a read and write, error mapping) still passes on it.
 
 #### docs
 
 - Docs: [Adopt an existing database](docs/adopt-existing.md) and the handbook page cover pull, generate, then baseline.
 - A describe spike records, per driver and Postgres 15–18, whether parameter OIDs, column names, column type OIDs, and table OID plus attnum can be read without executing the statement. The notes are `docs/describe-spike.md`. The scripts under `packages/spikes/describe/` are not packed.
 - [When a migration fails](docs/migration-failure.md) records what a failed Postgres apply does, the `okm_history` and `okm_steps` columns, the step id, and why there is no skip.
+- `bun run docs:errors` writes `docs/errors/<code>.md` for every registry code. `docs:check` fails when a page is missing or differs from the registry. A code that needs a server says `Example: needs a database`.
+- The testing notes describe the portable and gated conformance split, the profile that refuses every capability, and what a new dialect ships before it claims a gated feature.
 
 ### 💥 Breaking Changes
 
@@ -80,8 +84,13 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okm migrate check` prints, after `ok N migrations`, that an empty-table replay does not catch a step that fails only on real data: `NOT NULL` on a populated column, a unique index over duplicates, or a check over existing rows (Q4, #391).
 - The Release workflow runs on a `v*` tag. Before any build it requires the tagged commit to be an ancestor of `origin/main`, the tag to match `package.json`, and a `## v` changelog section. It then runs the Postgres suite, the pack contract, and `npm stage publish` with provenance (npm 11.15 or newer, Node 22.14 or newer). A dispatch with `publish` false checks `main` and refuses a tag that is not on `main`. The publish job is the only one with `id-token: write` and `contents: write`, and it uses the `release` environment. No npm token is stored.
 
+#### runtime
+
+- Thrown `summary` and `fix` text no longer names a bypass. `all()`, `unscoped()`, `--allow-protected`, and `--allow-pooler` stay on `escapeHatches`, which requires a human-written reason.
+
 #### tooling
 
+- Registry `fix` is the primary remedy. A bypass moves to `escapeHatches`.
 - The migration planner takes a dialect lowering object. Postgres plans stay the same. Feature support and refusal are questions on that object, so the planner does not import the feature registry.
 - Table, column, and constraint changes lower through that dialect. One logical change can be several statements. Postgres plans stay the same, including a validated check before `SET NOT NULL` on an existing column.
 - Index create, drop, and rename lower through that dialect. Postgres still builds and drops an index on an existing table concurrently. The planner still waits to drop a replaced index until the new one is built. Plans stay the same.
@@ -89,6 +98,10 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Function, trigger, view, policy, role, and grant changes lower through that dialect. One policy can be several statements. Postgres plans stay the same, including `CREATE OR REPLACE` for a compatible function or view body.
 - The planner no longer imports Postgres SQL. Sequences, check swaps, and backfill `UPDATE`s lower through the dialect. Postgres plans stay the same.
 - A committed step that fails is not run again when Postgres cannot prove what landed. The next apply probes a concurrent index, a concurrent drop, a constraint, a constraint validation, or an enum value. An INVALID concurrent index is dropped and rebuilt. Any other kind stops until a person resolves it. Transactional steps and backfills are unchanged.
+
+#### docs
+
+- Handbook quotes of OKM1101, OKM1102, OKM1105, OKM1701, and OKM1850 match the remedy text.
 
 ### 🔥 Removed
 
@@ -131,6 +144,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `lint / pull request` assigns the open train milestone when `Closes #N` has none. `0.10.0-next.N` uses milestone `0.10`. The issue and the pull request both receive it.
 - A no-op CI event mirrors the last finished `gate / check` and skips a cancelled run, so two label events that cancel each other do not fail the gate when an earlier run succeeded.
 - A failed `CREATE INDEX CONCURRENTLY` is dropped before apply returns, so the target does not keep an INVALID index. When that drop fails, the error names the index and `DROP INDEX CONCURRENTLY`. A later apply still drops a leftover invalid index and rebuilds it (Q4, #391).
+- `testing()` drops the catalog it applied when the harness finishes, in reverse dependency order. An `ignored` object is left in place. `migrate: false` drops nothing (Q9, #396).
 
 ### 🔒 Security
 

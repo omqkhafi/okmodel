@@ -90,8 +90,7 @@ export function assertTargetPolicy(
   throw new OkmError("OKM1850", `${operation} is blocked on protected target ${target.name}.`, {
     kind: "forbidden",
     fix: {
-      summary:
-        "Run a read-only command or an expand migration, or pass --allow-protected for this invocation.",
+      summary: "Use a read-only command or an expand migration.",
     },
   });
 }
@@ -153,7 +152,7 @@ export function assertDirectConnection(url: string, allowPooler: boolean): void 
   ) {
     throw tagOutcome(
       new OkmError("invalid", `Refusing pooler host ${host}. Apply needs a direct connection.`, {
-        fix: { summary: "Use a direct connection, or pass --allow-pooler." },
+        fix: { summary: "Use a direct connection." },
       }),
       "unreachable",
     );
@@ -202,7 +201,7 @@ export async function assertStableBackend(
         throw new OkmError(
           "OKM1854",
           `The backend pid changed from ${first} to ${second}. A pooler is handing out a new session between statements.`,
-          { fix: { summary: "Use a direct connection, or pass --allow-pooler." } },
+          { fix: { summary: "Use a direct connection." } },
         );
       }
       if (release !== undefined) {

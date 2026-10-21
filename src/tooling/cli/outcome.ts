@@ -6,6 +6,12 @@
  */
 
 import { OkmError, type ErrorKind } from "../../contracts/error.js";
+import type {
+  CliErrorLocation,
+  CliEscapeHatch,
+  CliFixEdit,
+  CliSafeAlternative,
+} from "../errors/shape.js";
 import { sessionFailure } from "../migrate/lost.js";
 
 /** Exit codes the contract assigns. */
@@ -103,12 +109,30 @@ export type CliPartial = {
   readonly outFile: CliOutFile | null;
 };
 
-/** Warning object stored on a partial result. */
+/** `level` on a warning (OKM2xxx) or a hint (OKM3xxx). */
+export type CliNoticeLevel = "hint" | "warn";
+
+/** How serious a warning or a hint is. */
+export type CliNoticeSeverity = "low" | "medium" | "high";
+
+/**
+ * Warning object stored on a partial result.
+ *
+ * The original fields stay first. The error-object fields and `level` /
+ * `severity` are additive.
+ */
 export type CliWarningBody = {
   readonly code?: string;
   readonly summary: string;
   readonly place?: string;
   readonly fix?: string;
+  readonly location?: CliErrorLocation;
+  readonly fixEdit?: CliFixEdit;
+  readonly safeAlternatives?: readonly CliSafeAlternative[];
+  readonly docs?: string;
+  readonly escapeHatches?: readonly CliEscapeHatch[];
+  readonly level?: CliNoticeLevel;
+  readonly severity?: CliNoticeSeverity;
 };
 
 /** Target object stored on a partial result. */
