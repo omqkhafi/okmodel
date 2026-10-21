@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://okmodel.dev/schemas/cli-1/protect-remove.json",
+  "title": "okm protect remove data",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "hostDb",
+    "identity",
+    "removed"
+  ],
+  "properties": {
+    "hostDb": {
+      "type": "string"
+    },
+    "identity": {
+      "type": "null"
+    },
+    "removed": {
+      "type": "boolean"
+    }
+  }
+}

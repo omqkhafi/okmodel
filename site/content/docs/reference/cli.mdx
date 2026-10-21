@@ -33,7 +33,7 @@ A process that cannot load a `.ts` config exits 2. The line is `okm needs Node.j
 
 An unknown command is `Unknown command <name>.` A group without its subcommand (`okm migrate`, `okm ext`, `okm catalog`, `okm import`, `okm driver`) names the subcommands. A close spelling adds `Did you mean`.
 
-Exit codes are by outcome. `0` is done, or nothing to do. `1` is a command that ran and failed, including an error finding and an unexpected internal error. `2` is usage or configuration: an unknown flag, a missing config, a missing flag value. `3` is a decision the command will not ask for (OKM1530), or a committed step that needs a person (OKM1553, OKM1555). `4` is a guard: a protected target without `--allow-protected` (OKM1850), two targets that alias one database and disagree about protection (OKM1852), or a file the user already has (OKM1855). `5` is a target that cannot be reached or a refused feature: no connection, a server older than the floor (OKM1803), a missing extension (OKM1811), a pooler host, or OKM1860. A code with no outcome in that list stays `1`.
+Exit codes are by outcome. `0` is done, or nothing to do. `1` is a command that ran and failed, including an error finding and an unexpected internal error. `2` is usage or configuration: an unknown flag, a missing config, a missing flag value. `3` is a decision the command will not ask for (OKM1530), or a committed step that needs a person (OKM1553, OKM1555). `4` is a guard: a protected target without `--allow-protected` (OKM1850), a store fingerprint with no terminal (OKM1859), two targets that alias one database and disagree about protection (OKM1852), or a file the user already has (OKM1855). `5` is a target that cannot be reached or a refused feature: no connection, a server older than the floor (OKM1803), a missing extension (OKM1811), a pooler host, or OKM1860. A code with no outcome in that list stays `1`.
 
 `--json` on every command prints one `okm.cli/1` document on stdout and nothing else. Stderr is empty on success. A failure still prints that document; a terminal also gets one terse stderr line, and a pipe does not, so `2>&1` stays one JSON document. There are no prompts and no color. The keys, in order, are `schema`, `command`, `okmVersion`, `capabilities`, `ok`, `exit`, `target` (omitted when the command did not select a database), `data`, `errors`, `warnings`, `truncated`, `outFile`. `ok` is true only when `exit` is 0. `target.fingerprint.hostDb` is the SHA-256 of lower-cased `host:port/database`. `identity` is null. The fingerprint has no URL, host, or credential. `--out <file>` writes `data` to that file (`-` keeps it on stdout) and the envelope records `outFile` (`path`, `bytes`). Commands that already used `--out` for their own file or directory keep that meaning.
 
@@ -62,6 +62,9 @@ Exit codes are by outcome. `0` is done, or nothing to do. `1` is a command that 
 | `push` | Applies the schema diff. Writes no SQL file. |
 | `pull` | Reads one database and writes one table file per table, plus the schema file. |
 | `seed <file>` | Runs the file's default export on one target. |
+| `protect add` | Records the selected target's fingerprint in the user protection store. |
+| `protect remove` | Removes that fingerprint. Requires a terminal, otherwise exit 4. |
+| `protect list` | Prints the stored fingerprints. |
 | `schema <command>` | Prints the JSON Schema for that command's `--json` `data`. |
 
 ## Flags
@@ -71,7 +74,7 @@ Every command parses the flags in this table. An unknown flag is a usage error, 
 | Flag | Read by |
 | --- | --- |
 | `--config <path>`, `-c <path>` | Every command that loads a config. Loads that file instead of `okmodel.config.ts` in the working directory. |
-| `--target <name>`, `-t <name>` | `check`, `migrate plan`, `migrate apply`, `migrate status`, `migrate resolve`, `migrate check`, `migrate baseline`, `push`, `pull`, `seed`, `ext`, and `doctor`. Who requires it is [Database](/docs/define/config/database). |
+| `--target <name>`, `-t <name>` | `check`, `migrate plan`, `migrate apply`, `migrate status`, `migrate resolve`, `migrate check`, `migrate baseline`, `push`, `pull`, `seed`, `protect add`, `protect remove`, `ext`, and `doctor`. Who requires it is [Database](/docs/define/config/database). |
 | `--allow-protected` | `migrate apply`, `migrate resolve`, `migrate baseline`, `push`, and `seed`. One invocation. Blocked work is [Protection](/docs/define/config/database#protection). `migrate check` ignores the flag. |
 | `--allow-pooler` | `migrate apply`, `migrate resolve`, `migrate baseline`, `push`, `seed`, `migrate check`, and `check` when it compares a database. Same opt-in as [allowPooler](/docs/define/config/pooler). Either one is enough. |
 | `--lock-timeout <milliseconds>` | `migrate apply`. Overrides [timeouts.lock](/docs/define/config/timeouts). `0` disables it. |
@@ -313,7 +316,7 @@ bunx okm migrate baseline --allow-protected --target production
 
 `okm migrate check` replays every migration into a scratch schema inside one transaction, then rolls that transaction back and drops the schema. The schema name starts with `okm_check_`. An extension is database-wide. When it is already installed, the replay moves it into the scratch schema for that transaction instead of running `CREATE EXTENSION` again, and the rollback restores the schema apply left. A `uuidv7()` default on PostgreSQL 15, 16, or 17 is OKM1812 before any statement, with the fix `uuidv7() needs PostgreSQL 18 or higher. minPostgres: 18.` PostgreSQL 18 replays that default. A passing run prints `ok <n> migrations`, then one line: the replay uses empty tables, so a step that fails only on real data is not caught (`NOT NULL` on a populated column, a unique index over duplicates, or a check over existing rows). A statement left unrun follows on its own line, `<id> step <n>: <reason>`. The reasons are `VACUUM is not run inside the check transaction`, `CREATE or DROP DATABASE is not run inside the check transaction`, and `ALTER SYSTEM is not run inside the check transaction`.
 
-A protected target is OKM1850. The message is `okm migrate check writes a scratch schema and refuses protected target <name>. Point it at a throwaway Postgres.` `--allow-protected` does not lift it.
+A protected target is OKM1850. The message is `okm migrate check writes a scratch schema and refuses protected target <name> (<reason>). Point it at a throwaway Postgres.` `--allow-protected` does not lift it.
 
 The command also checks the previous catalog, the head, and the linter. The first linted id is [lintFrom](/docs/define/config/lint-from). An error finding is OKM1510. Transaction control (`begin`, `commit`, `rollback`, `abort`, `end`, `start transaction`, `prepare transaction`), including inside a `DO` body, is that finding, OKM1551. A function or procedure body is not this. When the finding is allowed, the replay still throws OKM1551: `Migration <id> step <n> contains <word>.`
 
@@ -358,4 +361,15 @@ export default async function seed(t: Testing): Promise<void> {
 
 ```sh
 bunx okm seed seed.ts
+```
+
+## protect
+
+`okm protect add` records the selected target in the user store: `$XDG_CONFIG_HOME/okm/protected.json`, or `~/.config/okm/protected.json`. Windows uses `%APPDATA%\okm\protected.json`. The file holds `hostDb` fingerprints, not URLs. `identity` is null. `okm protect list` prints those fingerprints, or `none`. `okm protect remove` deletes the selected target's fingerprint and requires a terminal. Without a terminal it is OKM1859 and exits 4.
+
+The store is a union with `protected: true`. Deleting the config flag leaves the fingerprint in place. A state-changing command against a stored fingerprint exits 4 with no terminal, and `--allow-protected` does not lift that. Project config alone still honors `--allow-protected`. A terminal is friction, not proof of a human. The refusal names `project config`, `store fingerprint`, or both.
+
+```sh
+bunx okm protect add --target production
+bunx okm protect list
 ```

@@ -869,6 +869,12 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     summary: "The live database does not match the model snapshot that baseline would record.",
     fix: "Change the schema or the database until they match, then okm migrate baseline records the match.",
   },
+  {
+    code: "OKM1859",
+    title: "Store fingerprint",
+    summary: "A store fingerprint blocks this state-changing command when there is no terminal.",
+    fix: "Open a terminal for this invocation. A terminal is friction, not proof of a human.",
+  },
   // Reserved, not registered (no raising path): version OKM1804–OKM1809,
   // extension OKM1815–OKM1819, feature refusal OKM1861–OKM1879, adapter
   // capability refusal OKM1880–OKM1889. OKM1140–OKM1179 stay reserved (D291).

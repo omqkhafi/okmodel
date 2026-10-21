@@ -26,7 +26,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okm generate` exits 1 when an error finding exists; the migration file is still written; stderr says `okm migrate apply` will refuse until it is fixed (Q8, #395). A warning-only finding stays exit 0.
 - `okm pull` and `okm import drizzle` write relative imports with the `.ts` extension so Node type stripping and `bunx okm` can load the schema (R4, #401). `tsc` needs `allowImportingTsExtensions` with `noEmit`, or `rewriteRelativeImportExtensions`.
 - An `update` on a `versioned()` table without `version` is a TypeScript error; the runtime OKM1120 stays when types are bypassed (Q5, D305, #392). Non-versioned tables are unchanged. Type-cost ceilings: inferred-200 instantiations 17,831; query-features types 7,146 (measured plus 3 percent).
-- `okm` exit codes follow the outcome. `0` is done or nothing to do. `1` is a command that ran and failed. `2` is usage or configuration (unknown flag, missing config, a Node older than 22.18). `3` is a decision the command will not ask (OKM1530, and a committed step that needs a person: OKM1553, OKM1555). `4` is a guard (OKM1850, OKM1852, OKM1855). `5` is a target that cannot be reached or a refused feature (OKM1802, OKM1803, OKM1811, OKM1812, OKM1843, OKM1844, OKM1846, OKM1854, OKM1860, and a lost connection). Every other code, including OKM1401, planner OKM1541, OKM1554, OKM1556, OKM1851, OKM1857, and OKM1858, stays `1`. A script that only checked non-zero still fails. A script that treated every failure as `1` now sees `2` through `5`.
+- `okm` exit codes follow the outcome. `0` is done or nothing to do. `1` is a command that ran and failed. `2` is usage or configuration (unknown flag, missing config, a Node older than 22.18). `3` is a decision the command will not ask (OKM1530, and a committed step that needs a person: OKM1553, OKM1555). `4` is a guard (OKM1850, OKM1852, OKM1855, OKM1859). `5` is a target that cannot be reached or a refused feature (OKM1802, OKM1803, OKM1811, OKM1812, OKM1843, OKM1844, OKM1846, OKM1854, OKM1860, and a lost connection). Every other code, including OKM1401, planner OKM1541, OKM1554, OKM1556, OKM1851, OKM1857, and OKM1858, stays `1`. A script that only checked non-zero still fails. A script that treated every failure as `1` now sees `2` through `5`.
 - `okm migrate plan --json`, `okm migrate baseline --json`, and `okm catalog export --json` keep their previous fields inside the `okm.cli/1` envelope `data`. `parsePlanJson` reads `data` and still accepts a bare plan document.
 - `okm build` and `okm dev` reject an unknown flag. They used to leave the rest of the line unread.
 
@@ -58,6 +58,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Text read from a database, a database error, or a user query is an object with `untrusted`, `origin`, `text`, `truncated`, and `modified`. It is bounded and marked untrusted; this reduces risk and does not eliminate it. The human line is `untrusted <origin>: "<text>"`.
 - A failed committed step is recorded in `okm_steps` (`started`, `failed`, or `retry`) and removed in the same transaction that inserts `okm_history`. OKM1553 means the probe cannot tell whether the step is applied. OKM1554 means resolve refused because the probe says it is not applied. OKM1555 means resolve needs explicit acceptance because that kind has no probe. OKM1556 means the statement changed after the step started.
 - `okm --json` errors keep the six `okm.cli/1` fields and add `location`, `fixEdit`, `safeAlternatives`, `docs`, and `escapeHatches` when the producer or the registry has them. `fix` stays a string. A kind-only error such as `driver` stays at the six fields. `schemas/cli-1/errors.json` is the array schema. `okm doctor <code>` prints `docs/errors/<code>.md`.
+- `okm protect add`, `okm protect remove`, and `okm protect list` read and write the user fingerprint store. `add` records the selected target. `remove` requires a terminal. `list` prints the stored fingerprints. The JSON data is the fingerprint, with `identity` null, and does not include the URL.
 - Conformance cases are tagged portable or gated on a registry key or an adapter gate. A refused registry entry asserts that entry's code and alternative instead of running the body. A false adapter flag on a feature the registry still provides stays unsupported. `okm driver test` prints portable, gated, refusal, and unsupported counts. A test-only profile refuses every Postgres feature and turns the adapter flags off, and the portable minimum (connect, a read and write, error mapping) still passes on it.
 
 #### docs
@@ -146,6 +147,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### tooling
 
+- A protected-target refusal names the match: project config, a store fingerprint, or both.
 - `okm migrate check` reuses an extension that is already installed. The replay moves it into the scratch schema for the transaction, and `ROLLBACK` restores the schema apply left, so a declared extension still passes after apply (R6, #403).
 - `okm ext check` prints the extension name in the declared column when the pin is omitted. A pin still prints that version or floor (R6, #403).
 - `okm migrate check` refuses a `uuidv7()` default on PostgreSQL 15, 16, and 17 with OKM1812 and the fix `uuidv7() needs PostgreSQL 18 or higher. minPostgres: 18.` PostgreSQL 18 replays that default (R6, #403).
@@ -156,6 +158,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### 🔒 Security
 
+- A store fingerprint blocks a state-changing command when there is no terminal (OKM1859, exit 4), including when that invocation passed `--allow-protected`. Project-config protection still honors `--allow-protected`. Deleting `protected: true` does not delete the stored fingerprint. A terminal is friction, not proof of a human. The ceiling is [Protection](docs/protection.md).
 - A postgres.js generic or aborted-connection failure on a statement whose table has a sensitive column no longer leaves `parameters` or `args` on `error.cause` when the driver omits `table` (B-33 residual, #364).
 - `SECURITY.md` names the disclosure address, the report policy, and supported lines (the current 0.x minor and the previous minor, 0.10.x and 0.9.x). [Using OKModel safely](docs/using-okmodel-safely.md) covers lockfile pinning, a minimum release age, and what provenance does not prove.
 

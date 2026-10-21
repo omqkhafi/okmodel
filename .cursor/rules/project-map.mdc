@@ -33,6 +33,7 @@ contracts → dialects → adapters → runtime → tooling. Adapters import con
 - OKM codes: `OKM1xxx`, raised via `OkmError`; doctor text in `src/tooling/errors/registry.ts` (spec §21); pages in `docs/errors/<code>.md`.
 - Catalog hash: `catalogHash` in `src/contracts/catalog/document.ts`.
 - Untrusted CLI text: `src/tooling/untrusted.ts`. Plan-hash canonical JSON: `src/tooling/canonical-json.ts`. Paths: `src/tooling/untrusted-paths.ts`. Notes: `docs/untrusted.md`.
+- Protected-target store: `src/tooling/migrate/protected-store.ts`. Host fingerprint: `src/tooling/migrate/fingerprint.ts`. `okm protect` commands: `src/tooling/migrate/protect.ts`. Notes: `docs/protection.md`.
 - Migration SQL lexing / statement split: `src/tooling/migrate/sql-lex.ts`; lint codes in `lint-rules.ts`; check sandbox in `check.ts`.
 - Pack contract: `scripts/pack-contract.ts` (`bun run pack-contract`); snapshot `tests/fixtures/pack-contract.snap.json`. `scripts/pack-tracked.ts` still refuses a packed path outside `dist/` that git does not track.
 

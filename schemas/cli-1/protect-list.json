@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://okmodel.dev/schemas/cli-1/protect-list.json",
+  "title": "okm protect list data",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "fingerprints"
+  ],
+  "properties": {
+    "fingerprints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "hostDb",
+          "identity"
+        ],
+        "properties": {
+          "hostDb": {
+            "type": "string"
+          },
+          "identity": {
+            "type": "null"
+          }
+        }
+      }
+    }
+  }
+}

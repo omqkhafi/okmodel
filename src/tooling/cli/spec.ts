@@ -2,8 +2,13 @@
  * Per-command flag table for `okm`.
  *
  * `parseArgs` reads this table. `--help` prints it. Guard-relaxing flags
- * have no short form.
+ * have no short form. `policy` is the operation the command declares.
  */
+
+import type { PolicyOperation } from "../migrate/policy.js";
+
+/** Policy a command declares. `none` does not touch a target. `store` writes the user fingerprint file. */
+export type CommandPolicy = PolicyOperation | "none" | "store";
 
 /** One flag a command accepts. `name` is the long form without leading dashes. */
 export type FlagSpec = {
@@ -37,6 +42,13 @@ export type CommandSpec = {
   readonly missing?: string;
   /** The command may connect, so the envelope can carry `target`. */
   readonly usesDatabase: boolean;
+  /**
+   * Operation this command declares.
+   *
+   * A state-changing command uses a write operation or `store`. `drop` and
+   * `rollback` are not declared: they are policy refusals, not commands.
+   */
+  readonly policy: CommandPolicy;
   /**
    * `--out` is this command's own path, not a divert of JSON `data`.
    * `pull` and `import drizzle` take a directory. `catalog export` and
@@ -109,6 +121,7 @@ const statementTimeout: FlagSpec = {
 export const COMMANDS: readonly CommandSpec[] = [
   spec({
     id: "migrate plan",
+    policy: "plan",
     words: ["migrate", "plan"],
     summary: "Print the plan and its lock estimates. --json prints a document.",
     usage: "migrate plan <name>",
@@ -121,6 +134,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   }),
   spec({
     id: "migrate apply",
+    policy: "contract",
     words: ["migrate", "apply"],
     summary: "Apply pending migrations.",
     usage: "migrate apply",
@@ -132,6 +146,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   }),
   spec({
     id: "migrate status",
+    policy: "status",
     words: ["migrate", "status"],
     summary: "Print whether the target is current.",
     usage: "migrate status",
@@ -143,6 +158,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   }),
   spec({
     id: "migrate resolve",
+    policy: "history-repair",
     words: ["migrate", "resolve"],
     summary: "Record a committed step, or mark it to run again. There is no skip.",
     usage: "migrate resolve <step>",
@@ -174,6 +190,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   }),
   spec({
     id: "migrate check",
+    policy: "check",
     words: ["migrate", "check"],
     summary: "Replay migration history in a scratch schema.",
     usage: "migrate check",
@@ -196,6 +213,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   }),
   spec({
     id: "migrate baseline",
+    policy: "history-repair",
     words: ["migrate", "baseline"],
     summary: "Record the head snapshot as applied on an existing database. No schema changes.",
     usage: "migrate baseline",
@@ -217,6 +235,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   }),
   spec({
     id: "catalog export",
+    policy: "catalog-export",
     words: ["catalog", "export"],
     summary: "Write the catalog snapshot.",
     usage: "catalog export",
@@ -228,6 +247,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   }),
   spec({
     id: "import drizzle",
+    policy: "none",
     words: ["import", "drizzle"],
     summary:
       "Import a Drizzle schema. This runs that file. Writes table files and needs no database.",
@@ -241,6 +261,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   }),
   spec({
     id: "driver test",
+    policy: "seed",
     words: ["driver", "test"],
     summary: "Run conformance against one driver.",
     usage: "driver test <driver>",
@@ -253,6 +274,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   }),
   spec({
     id: "ext scaffold",
+    policy: "check",
     words: ["ext", "scaffold"],
     summary: "Print a starting extension() definition.",
     usage: "ext scaffold <name>",
@@ -265,6 +287,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   }),
   spec({
     id: "ext check",
+    policy: "check",
     words: ["ext", "check"],
     summary: "Compare declared extensions with the server.",
     usage: "ext check",
@@ -276,6 +299,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   }),
   spec({
     id: "ext list",
+    policy: "check",
     words: ["ext", "list"],
     summary: "List extensions the server can install.",
     usage: "ext list",
@@ -287,6 +311,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   }),
   spec({
     id: "ext test",
+    policy: "check",
     words: ["ext", "test"],
     summary: "Check an extension() definition against the server.",
     usage: "ext test <file>",
@@ -299,6 +324,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   }),
   spec({
     id: "build",
+    policy: "none",
     words: ["build"],
     summary: "Write the schema build.",
     usage: "build",
@@ -310,6 +336,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   }),
   spec({
     id: "check",
+    policy: "check",
     words: ["check"],
     summary: "Lint the schema and compare it with one target.",
     usage: "check",
@@ -321,6 +348,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   }),
   spec({
     id: "dev",
+    policy: "none",
     words: ["dev"],
     summary: "Open a PGlite database in .okm/dev-db, or name a target called dev.",
     usage: "dev",
@@ -332,6 +360,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   }),
   spec({
     id: "doctor",
+    policy: "check",
     words: ["doctor"],
     summary: "Print a target report, or one error code.",
     usage: "doctor [code]",
@@ -343,6 +372,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   }),
   spec({
     id: "generate",
+    policy: "none",
     words: ["generate"],
     summary: "Write the next migration.",
     usage: "generate [name]",
@@ -354,6 +384,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   }),
   spec({
     id: "push",
+    policy: "push",
     words: ["push"],
     summary: "Apply the schema diff to one target.",
     usage: "push",
@@ -365,6 +396,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   }),
   spec({
     id: "pull",
+    policy: "pull",
     words: ["pull"],
     summary: "Write table files and a schema from one database.",
     usage: "pull",
@@ -385,6 +417,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   }),
   spec({
     id: "seed",
+    policy: "seed",
     words: ["seed"],
     summary: "Run a seed file on one target.",
     usage: "seed <file>",
@@ -396,7 +429,45 @@ export const COMMANDS: readonly CommandSpec[] = [
     flags: [target, allowProtected, allowPooler],
   }),
   spec({
+    id: "protect add",
+    policy: "store",
+    words: ["protect", "add"],
+    summary: "Record this target's fingerprint in the user protection store.",
+    usage: "protect add",
+    minOperands: 0,
+    maxOperands: 0,
+    usesDatabase: true,
+    ownOut: false,
+    flags: [target],
+  }),
+  spec({
+    id: "protect remove",
+    policy: "store",
+    words: ["protect", "remove"],
+    summary:
+      "Remove this target's fingerprint from the user protection store. A terminal is required.",
+    usage: "protect remove",
+    minOperands: 0,
+    maxOperands: 0,
+    usesDatabase: true,
+    ownOut: false,
+    flags: [target],
+  }),
+  spec({
+    id: "protect list",
+    policy: "none",
+    words: ["protect", "list"],
+    summary: "Print fingerprints in the user protection store.",
+    usage: "protect list",
+    minOperands: 0,
+    maxOperands: 0,
+    usesDatabase: false,
+    ownOut: false,
+    flags: [],
+  }),
+  spec({
     id: "schema",
+    policy: "none",
     words: ["schema"],
     summary: "Print the JSON Schema for that command's --json data.",
     usage: "schema <command>",

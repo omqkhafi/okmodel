@@ -24,7 +24,12 @@ import type { PlanStep } from "./plan.js";
 import { sessionFailure } from "./lost.js";
 import { migrationJournalGrants } from "./managed.js";
 import { postgresStepEngine } from "./pg-probe.js";
-import { assertTargetPolicy, type PolicyOperation } from "./policy.js";
+import {
+  assertTargetPolicy,
+  policySubject,
+  type PolicyOperation,
+  type ProtectionMatch,
+} from "./policy.js";
 import { postgresStepJournal } from "./step-journal.js";
 import {
   resumeCommittedStep,
@@ -69,6 +74,7 @@ export type RunPolicy = {
   readonly target: string;
   readonly protected: boolean;
   readonly allowProtected?: boolean;
+  readonly protection?: ProtectionMatch;
 };
 
 /** One target's units, retries, and checkpoints. */
@@ -498,7 +504,11 @@ async function runBackfill(
     DEFAULT_BACKFILL_STATEMENT_TIMEOUT_MS;
   for (;;) {
     assertTargetPolicy(
-      { name: run.policy.target, protected: run.policy.protected },
+      policySubject({
+        name: run.policy.target,
+        protected: run.policy.protected,
+        ...(run.policy.protection !== undefined ? { protection: run.policy.protection } : {}),
+      }),
       "backfill",
       run.policy.allowProtected === true,
     );
@@ -807,7 +817,11 @@ function assertUnitPolicy(policy: RunPolicy, unit: RunnableUnit): void {
     }
   }
   assertTargetPolicy(
-    { name: policy.target, protected: policy.protected },
+    policySubject({
+      name: policy.target,
+      protected: policy.protected,
+      ...(policy.protection !== undefined ? { protection: policy.protection } : {}),
+    }),
     operation,
     policy.allowProtected === true,
   );

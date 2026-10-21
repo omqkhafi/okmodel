@@ -37,6 +37,8 @@ import { schemaCommands, schemaFor, schemaText } from "../cli/schema.js";
 import { readPackageVersion } from "../cli/version.js";
 import { formatFindings, hasError, lintRefusal, type Finding } from "./lint.js";
 import { sessionFailure } from "./lost.js";
+import { guardStoredDriverUrl } from "./policy.js";
+import { protectedStorePath } from "./protected-store.js";
 import { projectContext, type ProjectContext } from "./paths.js";
 import { listTargets, selectTarget, type InvokeFlags } from "./policy.js";
 import {
@@ -252,6 +254,9 @@ async function dispatch(
   if (id === "push") return push(project, parsed, human);
   if (id === "pull") return pull(project, parsed, human);
   if (id === "seed") return seed(project, parsed, human);
+  if (id === "protect add") return protectAdd(project, parsed, human);
+  if (id === "protect remove") return protectRemove(project, parsed, human);
+  if (id === "protect list") return protectList(human);
   if (id === "schema") return schemaCommand(parsed, human);
   throw tagOutcome(new OkmError("invalid", `Unknown command ${id}.`), "usage");
 }
@@ -350,6 +355,7 @@ async function doctor(
 }
 
 async function driver(parsed: ParsedCli, human: (text: string) => void): Promise<Produced> {
+  if (parsed.url !== undefined) guardStoredDriverUrl(parsed.url);
   const { driverTest } = await import("../driver-test.js");
   const args = [parsed.operands[0] ?? ""];
   if (parsed.url !== undefined) args.push("--url", parsed.url);
@@ -602,6 +608,44 @@ async function pull(
   const text = (await pullProject(project, args)).text;
   human(text);
   return textData(text);
+}
+
+async function protectAdd(
+  project: ProjectContext,
+  parsed: ParsedCli,
+  human: (text: string) => void,
+): Promise<Produced> {
+  const { addProtectedTarget } = await import("./protect.js");
+  const data = await addProtectedTarget(project, parsed.target, protectedStorePath());
+  const text = `protected ${data.hostDb}\n`;
+  human(text);
+  return { text, data, warnings: [], outFile: null };
+}
+
+async function protectRemove(
+  project: ProjectContext,
+  parsed: ParsedCli,
+  human: (text: string) => void,
+): Promise<Produced> {
+  const { removeProtectedTarget } = await import("./protect.js");
+  const data = await removeProtectedTarget(
+    project,
+    parsed.target,
+    protectedStorePath(),
+    process.stdin.isTTY === true,
+  );
+  const text = `${data.removed ? "removed" : "absent"} ${data.hostDb}\n`;
+  human(text);
+  return { text, data, warnings: [], outFile: null };
+}
+
+async function protectList(human: (text: string) => void): Promise<Produced> {
+  const { listProtectedTargets } = await import("./protect.js");
+  const data = listProtectedTargets(protectedStorePath());
+  const lines = data.fingerprints.map((item) => item.hostDb);
+  const text = lines.length === 0 ? "none\n" : `${lines.join("\n")}\n`;
+  human(text);
+  return { text, data, warnings: [], outFile: null };
 }
 
 async function seed(

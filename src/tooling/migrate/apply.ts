@@ -43,9 +43,12 @@ import type { StepBoundary } from "./step-engine.js";
 import { catalogQuery, managedRoleOptions, sealDomainChecks, sealTableChecks } from "./drift.js";
 import {
   assertDirectConnection,
+  assertStoreTerminal,
   assertTargetPolicy,
+  policySubject,
   selectTarget,
   type InvokeFlags,
+  type ProtectionMatch,
 } from "./policy.js";
 import { probeStableBackend } from "./pooler-probe.js";
 import { driverUrl } from "./driver-url.js";
@@ -73,6 +76,7 @@ export type ApplyRequest = {
   readonly url: string;
   readonly target: string;
   readonly protected: boolean;
+  readonly protection?: ProtectionMatch;
   readonly allowProtected?: boolean;
   readonly allowPooler?: boolean;
   readonly searchPath?: string;
@@ -457,6 +461,7 @@ async function runApply(
   const { cwd } = asProject(project);
   const config = await loadConfig(project);
   const target = selectTarget(config, flags.target);
+  assertStoreTerminal(target, "contract");
   const directory = joinMigrations(cwd, config.migrations);
   const migrations = loadMigrations(directory);
   const head = loadHeadSnapshot(directory);
@@ -473,6 +478,7 @@ async function runApply(
     url: target.url,
     target: target.name,
     protected: target.protected,
+    protection: target.protection,
     allowProtected: flags.allowProtected,
     allowPooler: flags.allowPooler || config.allowPooler === true,
     ...(flags.lockTimeoutMs !== undefined
@@ -534,6 +540,7 @@ export async function pushProject(
     url: target.url,
     target: target.name,
     protected: target.protected,
+    protection: target.protection,
     allowProtected: flags.allowProtected,
     allowPooler: flags.allowPooler || config.allowPooler === true,
     ...backfillTiming(config.backfill),
@@ -556,6 +563,7 @@ type PushRequest = {
   readonly url: string;
   readonly target: string;
   readonly protected: boolean;
+  readonly protection?: ProtectionMatch;
   readonly allowProtected?: boolean;
   readonly allowPooler?: boolean;
   readonly after: Catalog;
@@ -683,6 +691,7 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
           target: request.target,
           protected: request.protected,
           allowProtected: request.allowProtected === true,
+          ...(request.protection !== undefined ? { protection: request.protection } : {}),
         },
         units,
         retries: DEFAULT_RETRIES,
@@ -724,6 +733,7 @@ async function restampHeadHash(
   request: {
     readonly target: string;
     readonly protected: boolean;
+    readonly protection?: ProtectionMatch;
     readonly allowProtected?: boolean;
   },
   migrationId: string,
@@ -735,7 +745,11 @@ async function restampHeadHash(
   const stored = current.rows[0]?.[0];
   if (typeof stored === "string" && stored === catalogHash) return [];
   assertTargetPolicy(
-    { name: request.target, protected: request.protected },
+    policySubject({
+      name: request.target,
+      protected: request.protected,
+      ...(request.protection !== undefined ? { protection: request.protection } : {}),
+    }),
     "history-repair",
     request.allowProtected === true,
   );
@@ -852,7 +866,11 @@ async function restampLegacy(
     const restamped = result.rows.flatMap((row) => (typeof row[0] === "string" ? [row[0]] : []));
     if (restamped.length > 0) {
       assertTargetPolicy(
-        { name: request.target, protected: request.protected },
+        policySubject({
+          name: request.target,
+          protected: request.protected,
+          ...(request.protection !== undefined ? { protection: request.protection } : {}),
+        }),
         "history-repair",
         request.allowProtected === true,
       );
@@ -999,13 +1017,21 @@ async function provisionEmpty(
   const snapshot = request.snapshot;
   if (snapshot === undefined) throw new Error("provision requires a snapshot");
   assertTargetPolicy(
-    { name: request.target, protected: request.protected },
+    policySubject({
+      name: request.target,
+      protected: request.protected,
+      ...(request.protection !== undefined ? { protection: request.protection } : {}),
+    }),
     "provision",
     request.allowProtected === true,
   );
   if (snapshot.reference.length > 0) {
     assertTargetPolicy(
-      { name: request.target, protected: request.protected },
+      policySubject({
+        name: request.target,
+        protected: request.protected,
+        ...(request.protection !== undefined ? { protection: request.protection } : {}),
+      }),
       "reference",
       request.allowProtected === true,
     );
@@ -1084,7 +1110,11 @@ async function insertReference(connection: DriverConnection, request: ApplyReque
   const snapshot = request.snapshot;
   if (snapshot === undefined || snapshot.reference.length === 0) return;
   assertTargetPolicy(
-    { name: request.target, protected: request.protected },
+    policySubject({
+      name: request.target,
+      protected: request.protected,
+      ...(request.protection !== undefined ? { protection: request.protection } : {}),
+    }),
     "reference",
     request.allowProtected === true,
   );

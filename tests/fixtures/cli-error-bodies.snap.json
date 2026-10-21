@@ -1343,6 +1343,15 @@
     "docs": "docs/errors/OKM1858.md"
   },
   {
+    "code": "OKM1859",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A store fingerprint blocks this state-changing command when there is no terminal.",
+    "fix": "Open a terminal for this invocation. A terminal is friction, not proof of a human.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1859.md"
+  },
+  {
     "code": "OKM1860",
     "kind": "invalid",
     "category": "input",

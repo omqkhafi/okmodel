@@ -91,7 +91,7 @@ export default defineConfig({
 | --- | --- |
 | `plan`, `status`, `check`, `drift`, `verify`, `pull`, `catalog-export`, `inspect` | Allowed. |
 | `expand`, `reference`, `provision` | Allowed. A target that is not empty is still OKM1851. |
-| `contract`, `unclassified`, `push`, `backfill`, `seed`, `history-repair` | OKM1850 until `--allow-protected`. |
+| `contract`, `unclassified`, `push`, `backfill`, `seed`, `history-repair` | OKM1850 until `--allow-protected`, when the only record is project config. A store fingerprint exits 4 (OKM1859) with no terminal, and `--allow-protected` does not lift that. |
 | `okm migrate check` | OKM1850. `--allow-protected` does not lift it. Point it at a throwaway Postgres. |
 | `drop`, `rollback` | Refused on every target. The code is `invalid`. `--allow-protected` does not lift it. |
 
@@ -103,8 +103,14 @@ On `okm migrate apply`, the unit is `backfill` when it contains a backfill step.
 okm migrate apply --target prod --allow-protected
 ```
 
+The refusal names the match in parentheses: `project config`, `store fingerprint`, or `project config and store fingerprint`. `okm protect add` writes the user store. `okm protect remove` requires a terminal. Deleting `protected: true` does not delete a stored fingerprint. A terminal is friction, not proof of a human.
+
 <Callout type="error" title="OKM1850">
-`<operation> is blocked on protected target <name>.` `okm migrate check` says `okm migrate check writes a scratch schema and refuses protected target <name>. Point it at a throwaway Postgres.`
+`<operation> is blocked on protected target <name> (<reason>).` `okm migrate check` says `okm migrate check writes a scratch schema and refuses protected target <name> (<reason>). Point it at a throwaway Postgres.`
+</Callout>
+
+<Callout type="error" title="OKM1859">
+`<operation> is blocked on protected target <name> (store fingerprint). A store fingerprint blocks this state-changing command when there is no terminal.`
 </Callout>
 
 <Callout type="error" title="No down migration">
