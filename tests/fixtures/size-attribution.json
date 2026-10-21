@@ -18,178 +18,173 @@
       "id": "app",
       "entry": "scripts/app-startup.ts",
       "kind": "startup",
-      "minBytes": 90879,
-      "gzipBytes": 29769,
+      "minBytes": 88464,
+      "gzipBytes": 28441,
       "modules": [
         {
           "path": "scripts/app-startup.ts",
           "minBytes": 861,
-          "gzipBytes": 282
+          "gzipBytes": 277
         },
         {
           "path": "src/adapters/capabilities.ts",
           "minBytes": 66,
-          "gzipBytes": 22
+          "gzipBytes": 21
         },
         {
           "path": "src/adapters/failure.ts",
           "minBytes": 330,
-          "gzipBytes": 108
+          "gzipBytes": 106
         },
         {
           "path": "src/adapters/pg/call.ts",
           "minBytes": 604,
-          "gzipBytes": 198
+          "gzipBytes": 194
         },
         {
           "path": "src/adapters/pg/postgresjs.ts",
           "minBytes": 4913,
-          "gzipBytes": 1609
+          "gzipBytes": 1579
         },
         {
           "path": "src/adapters/pg/result.ts",
           "minBytes": 1146,
-          "gzipBytes": 375
+          "gzipBytes": 368
         },
         {
           "path": "src/contracts/catalog/build.ts",
-          "minBytes": 829,
-          "gzipBytes": 272
+          "minBytes": 826,
+          "gzipBytes": 266
         },
         {
           "path": "src/contracts/catalog/enum.ts",
-          "minBytes": 648,
-          "gzipBytes": 212
+          "minBytes": 647,
+          "gzipBytes": 208
         },
         {
           "path": "src/contracts/catalog/identifier.ts",
-          "minBytes": 1220,
-          "gzipBytes": 400
+          "minBytes": 1347,
+          "gzipBytes": 433
         },
         {
           "path": "src/contracts/catalog/identity.ts",
-          "minBytes": 2658,
-          "gzipBytes": 871
+          "minBytes": 2656,
+          "gzipBytes": 854
         },
         {
           "path": "src/contracts/catalog/json.ts",
           "minBytes": 1378,
-          "gzipBytes": 451
+          "gzipBytes": 443
         },
         {
           "path": "src/contracts/catalog/object.ts",
-          "minBytes": 6251,
-          "gzipBytes": 2048
+          "minBytes": 6241,
+          "gzipBytes": 2006
         },
         {
           "path": "src/contracts/catalog/order.ts",
-          "minBytes": 1143,
-          "gzipBytes": 374
+          "minBytes": 1137,
+          "gzipBytes": 366
         },
         {
           "path": "src/contracts/catalog/types.ts",
           "minBytes": 132,
-          "gzipBytes": 43
+          "gzipBytes": 42
         },
         {
           "path": "src/contracts/catalog/words.ts",
           "minBytes": 805,
-          "gzipBytes": 264
+          "gzipBytes": 259
         },
         {
           "path": "src/contracts/error.ts",
           "minBytes": 4977,
-          "gzipBytes": 1630
+          "gzipBytes": 1600
         },
         {
           "path": "src/contracts/generator.ts",
           "minBytes": 332,
-          "gzipBytes": 109
+          "gzipBytes": 107
         },
         {
           "path": "src/contracts/location.ts",
           "minBytes": 435,
-          "gzipBytes": 143
+          "gzipBytes": 140
         },
         {
           "path": "src/contracts/nearest.ts",
           "minBytes": 906,
-          "gzipBytes": 297
-        },
-        {
-          "path": "src/contracts/sha256.ts",
-          "minBytes": 2023,
-          "gzipBytes": 663
+          "gzipBytes": 291
         },
         {
           "path": "src/contracts/utf8.ts",
-          "minBytes": 1114,
-          "gzipBytes": 365
+          "minBytes": 604,
+          "gzipBytes": 194
         },
         {
           "path": "src/dialects/pg/array-literal.ts",
           "minBytes": 1847,
-          "gzipBytes": 605
+          "gzipBytes": 594
         },
         {
           "path": "src/dialects/pg/bool.ts",
           "minBytes": 270,
-          "gzipBytes": 88
+          "gzipBytes": 87
         },
         {
           "path": "src/dialects/pg/column.ts",
           "minBytes": 4943,
-          "gzipBytes": 1619
+          "gzipBytes": 1589
         },
         {
           "path": "src/dialects/pg/compile.ts",
-          "minBytes": 1743,
-          "gzipBytes": 571
+          "minBytes": 1741,
+          "gzipBytes": 560
         },
         {
           "path": "src/dialects/pg/decimal.ts",
           "minBytes": 969,
-          "gzipBytes": 317
+          "gzipBytes": 312
         },
         {
           "path": "src/dialects/pg/filters.ts",
           "minBytes": 684,
-          "gzipBytes": 224
+          "gzipBytes": 220
         },
         {
           "path": "src/dialects/pg/finite.ts",
           "minBytes": 168,
-          "gzipBytes": 55
+          "gzipBytes": 54
         },
         {
           "path": "src/dialects/pg/floor.ts",
           "minBytes": 297,
-          "gzipBytes": 97
+          "gzipBytes": 95
         },
         {
           "path": "src/dialects/pg/integer.ts",
           "minBytes": 499,
-          "gzipBytes": 163
+          "gzipBytes": 160
         },
         {
           "path": "src/dialects/pg/json.ts",
           "minBytes": 487,
-          "gzipBytes": 160
+          "gzipBytes": 157
         },
         {
           "path": "src/dialects/pg/keys.ts",
           "minBytes": 1021,
-          "gzipBytes": 334
+          "gzipBytes": 328
         },
         {
           "path": "src/dialects/pg/misuse.ts",
           "minBytes": 140,
-          "gzipBytes": 46
+          "gzipBytes": 45
         },
         {
           "path": "src/dialects/pg/operators.ts",
           "minBytes": 190,
-          "gzipBytes": 62
+          "gzipBytes": 61
         },
         {
           "path": "src/dialects/pg/ops/eq.ts",
@@ -199,57 +194,57 @@
         {
           "path": "src/dialects/pg/quote.ts",
           "minBytes": 283,
-          "gzipBytes": 93
+          "gzipBytes": 91
         },
         {
           "path": "src/dialects/pg/relations.ts",
           "minBytes": 169,
-          "gzipBytes": 55
+          "gzipBytes": 54
         },
         {
           "path": "src/dialects/pg/schema.ts",
-          "minBytes": 17250,
-          "gzipBytes": 5651
+          "minBytes": 17265,
+          "gzipBytes": 5551
         },
         {
           "path": "src/dialects/pg/table.ts",
           "minBytes": 1559,
-          "gzipBytes": 511
+          "gzipBytes": 501
         },
         {
           "path": "src/dialects/pg/temporal.ts",
           "minBytes": 693,
-          "gzipBytes": 227
+          "gzipBytes": 223
         },
         {
           "path": "src/dialects/pg/tenancy.ts",
           "minBytes": 265,
-          "gzipBytes": 87
+          "gzipBytes": 85
         },
         {
           "path": "src/dialects/pg/text.ts",
           "minBytes": 125,
-          "gzipBytes": 41
+          "gzipBytes": 40
         },
         {
           "path": "src/dialects/pg/time.ts",
           "minBytes": 224,
-          "gzipBytes": 73
+          "gzipBytes": 72
         },
         {
           "path": "src/runtime/client.ts",
           "minBytes": 8826,
-          "gzipBytes": 2891
+          "gzipBytes": 2838
         },
         {
           "path": "src/runtime/pg/postgresjs.ts",
           "minBytes": 613,
-          "gzipBytes": 201
+          "gzipBytes": 197
         },
         {
           "path": "src/runtime/plan.ts",
           "minBytes": 14743,
-          "gzipBytes": 4829
+          "gzipBytes": 4740
         },
         {
           "path": "src/runtime/safety-hook.ts",
@@ -352,7 +347,7 @@
       "entry": "src/runtime/pg/pglite.ts",
       "kind": "startup",
       "minBytes": 39205,
-      "gzipBytes": 13757,
+      "gzipBytes": 13758,
       "modules": [
         {
           "path": "src/adapters/capabilities.ts",
@@ -397,7 +392,7 @@
         {
           "path": "src/contracts/catalog/words.ts",
           "minBytes": 805,
-          "gzipBytes": 282
+          "gzipBytes": 283
         },
         {
           "path": "src/contracts/error.ts",
@@ -446,7 +441,7 @@
       "entry": "src/runtime/pg/pg.ts",
       "kind": "startup",
       "minBytes": 40952,
-      "gzipBytes": 14368,
+      "gzipBytes": 14366,
       "modules": [
         {
           "path": "src/adapters/capabilities.ts",
@@ -526,12 +521,12 @@
         {
           "path": "src/runtime/plan.ts",
           "minBytes": 14572,
-          "gzipBytes": 5113
+          "gzipBytes": 5112
         },
         {
           "path": "src/runtime/safety-hook.ts",
           "minBytes": 67,
-          "gzipBytes": 24
+          "gzipBytes": 23
         }
       ]
     },
@@ -540,7 +535,7 @@
       "entry": "src/runtime/pg/bun.ts",
       "kind": "startup",
       "minBytes": 39877,
-      "gzipBytes": 14023,
+      "gzipBytes": 14022,
       "modules": [
         {
           "path": "src/adapters/capabilities.ts",
@@ -555,7 +550,7 @@
         {
           "path": "src/adapters/failure.ts",
           "minBytes": 360,
-          "gzipBytes": 126
+          "gzipBytes": 127
         },
         {
           "path": "src/adapters/pg/bunsql.ts",
@@ -600,12 +595,12 @@
         {
           "path": "src/contracts/nearest.ts",
           "minBytes": 906,
-          "gzipBytes": 319
+          "gzipBytes": 318
         },
         {
           "path": "src/contracts/utf8.ts",
           "minBytes": 451,
-          "gzipBytes": 159
+          "gzipBytes": 158
         },
         {
           "path": "src/dialects/pg/operators.ts",
@@ -639,7 +634,7 @@
       "entry": "src/runtime/pg/neon.ts",
       "kind": "startup",
       "minBytes": 40725,
-      "gzipBytes": 14206,
+      "gzipBytes": 14207,
       "modules": [
         {
           "path": "src/adapters/capabilities.ts",
@@ -664,7 +659,7 @@
         {
           "path": "src/adapters/pg/neon.ts",
           "minBytes": 2676,
-          "gzipBytes": 933
+          "gzipBytes": 934
         },
         {
           "path": "src/adapters/pg/no-inflight-timeout.ts",
