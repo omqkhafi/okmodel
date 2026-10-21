@@ -21,6 +21,9 @@ import { open as openBun } from "../src/adapters/pg/bunsql.js";
 import { open as openPg } from "../src/adapters/pg/nodepostgres.js";
 import { open as openPostgres } from "../src/adapters/pg/postgresjs.js";
 import type { DriverPool, ExecuteResult } from "../src/contracts/driver.js";
+import { schema, t, table } from "../src/dialects/pg/index.js";
+import { connect } from "../src/runtime/pg/postgresjs.js";
+import { sessionSettings } from "../src/runtime/session/index.js";
 
 /** How long the first transaction holds the only server connection. */
 const HOLD_MS = 2_000;
@@ -60,6 +63,10 @@ if (POOLER_URL === undefined || POOLER_URL.length === 0) {
     test(`${driver.name}: a set outside a transaction is visible to the next client`, async () => {
       await expectSessionLeak(url, driver.open);
     }, 15_000);
+
+    test(`${driver.name}: session settings never reach the next client on the one server`, async () => {
+      await expectNoSettingLeak(url, driver.open);
+    }, 30_000);
   }
 }
 
@@ -138,5 +145,84 @@ async function expectSessionLeak(url: string, open: Opener): Promise<void> {
     await second.execute("reset lock_timeout");
   } finally {
     await second.close();
+  }
+}
+
+const USER_A = "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c8d";
+const USER_B = "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c8e";
+
+const SETTINGS = sessionSettings({
+  userId: { name: "app.leak_user", type: "uuid" },
+});
+
+/**
+ * The leak test: two clients with different values share the one PgBouncer
+ * server connection, and neither ever reads the other's value.
+ *
+ * Each row stores `current_setting('app.leak_user')` at insert. One client
+ * holds a transaction open across a pause while the other writes. After
+ * every unit a third pool on the same server reads the setting as empty, and
+ * a client that never calls `with()` stores NULL.
+ *
+ * @param url - Pooler URL
+ * @param open - Adapter opener
+ */
+async function expectNoSettingLeak(url: string, open: Opener): Promise<void> {
+  const name = "leaks";
+  const notes = table(name, { id: t.identity(), actor: t.text().nullable() });
+  const app = schema({ casing: "snake", tables: [notes] });
+  const admin = open({ url, max: 1 });
+  const first = open({ url, max: 1 });
+  const second = open({ url, max: 1 });
+  const dbA = connect(first, { schema: app, session: SETTINGS });
+  const dbB = connect(second, { schema: app, session: SETTINGS });
+  try {
+    await admin.execute(`drop table if exists "${name}"`);
+    await admin.execute(
+      `create table "${name}" (id bigint generated always as identity primary key, actor text default nullif(current_setting('app.leak_user', true), ''))`,
+    );
+    await Promise.all([dbA.connected, dbB.connected]);
+    const pid = oneCell(await admin.execute("select pg_backend_pid()"));
+    expect(oneCell(await first.execute("select pg_backend_pid()"))).toBe(pid);
+    expect(oneCell(await second.execute("select pg_backend_pid()"))).toBe(pid);
+
+    const a = dbA.with({ userId: USER_A });
+    const b = dbB.with({ userId: USER_B });
+    const held = a.tx(async (tx) => {
+      const before = await tx.leaks.insert({});
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      const after = await tx.leaks.insert({});
+      return [before.actor, after.actor];
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const written = await Promise.all(
+      Array.from({ length: 6 }, async () => (await b.leaks.insert({})).actor),
+    );
+    expect(written).toEqual(Array.from({ length: 6 }, () => USER_B));
+    expect(await held).toEqual([USER_A, USER_A]);
+
+    const loop = await Promise.all(
+      Array.from({ length: 8 }, async (_unused, index) => {
+        const side = index % 2 === 0;
+        const row = await (side ? a : b).leaks.insert({});
+        return [row.actor, side ? USER_A : USER_B];
+      }),
+    );
+    for (const [got, want] of loop) expect(got).toBe(want);
+
+    expect(oneCell(await admin.execute("select current_setting('app.leak_user', true)"))).toBe("");
+    const bare = await dbB.leaks.insert({});
+    expect(bare.actor).toBeNull();
+    const counts = await admin.execute(
+      `select actor, count(*) from "${name}" group by actor order by actor`,
+    );
+    expect(counts.rows.map((row) => row[0])).toEqual([USER_A, USER_B, null]);
+  } finally {
+    await admin.execute(`drop table if exists "${name}"`).catch(() => undefined);
+    await dbA.close().catch(() => undefined);
+    await dbB.close().catch(() => undefined);
+    await first.close().catch(() => undefined);
+    await second.close().catch(() => undefined);
+    await admin.close().catch(() => undefined);
   }
 }

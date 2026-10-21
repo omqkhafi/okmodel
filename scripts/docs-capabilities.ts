@@ -15,6 +15,7 @@ import { join, relative } from "node:path";
 
 import {
   POSTGRES_FEATURES,
+  SESSION_SETTINGS,
   collectTestTitles,
   registryProblems,
   type FeatureEntry,
@@ -179,6 +180,18 @@ export function renderCapabilitiesPage(input: {
     }
     lines.push("");
   }
+  lines.push(
+    "## sessionSettings by dialect family",
+    "",
+    "`okmodel/session` needs a setting that ends with the transaction. MySQL has only connection variables, which a pooled connection hands to the next client. SQLite has none. Both refuse (OKM1860) and the alternative is column, composite, or path tenancy.",
+    "",
+    "| Dialect | Scope |",
+    "| --- | --- |",
+  );
+  for (const [dialect, scope] of Object.entries(SESSION_SETTINGS)) {
+    lines.push(`| ${dialect} | \`${scope}\` |`);
+  }
+  lines.push("");
   return `${lines.join("\n")}\n`;
 }
 
