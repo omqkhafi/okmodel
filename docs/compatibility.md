@@ -1,3 +1,9 @@
+---
+okmVersion: "0.10.0"
+since: "0.9"
+dialects: [postgres]
+codes: [OKM1803, OKM1846]
+---
 # Driver compatibility
 
 Generated from the conformance run (`tests/driver-suite.test.ts` and `tests/error-suite.test.ts`). Do not edit by hand.
@@ -45,3 +51,5 @@ Neon is not a column in this table. postgres.js and node-postgres pointed at Neo
 | maps a cancelled call and does not retry it | pass | pass | pass | pass |
 | maps a connection failure | pass | pass | pass | pass |
 | carries batchIndex on a batch failure and null at commit | pass | pass | pass | pass |
+
+`bun run ts7:check` typechecks the public entry files with `@typescript/native-preview` (`tsgo`) when that package is on npm. It is not part of `bun run check` and it is not a required CI status. The repository typecheck uses the `typescript` package at major 7 (`tsc`). When the preview package is not published, the script prints that and exits 0.

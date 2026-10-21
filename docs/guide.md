@@ -1,3 +1,9 @@
+---
+okmVersion: "0.10.0"
+since: "0.9"
+dialects: [postgres]
+codes: [OKM1020, OKM1101, OKM1102, OKM1105, OKM1120, OKM1121, OKM1123, OKM1130, OKM1190, OKM1200, OKM1210, OKM1510, OKM1511, OKM1520, OKM1521, OKM1531, OKM1701, OKM1707, OKM1811, OKM1812, OKM1820, OKM1822, OKM1823, OKM1824, OKM1830, OKM1840, OKM1843, OKM1844, OKM1845, OKM1846, OKM1850, OKM1854]
+---
 # OKModel guide
 
 okmodel is a catalog-first TypeScript ORM, PostgreSQL first. Other SQL databases are the direction. CI runs PostgreSQL 15 to 18. The schema is the single source. Migrations and queries come from it.
@@ -1376,7 +1382,7 @@ Measured on this release.
 
 The full app has column tenancy, `archivable()`, `timestamps()`, validation rules, `one`, `many` and `manyThrough` relations, presets, and calls `include`, `page`, `aggregate`, `tx` and `batch`. A feature costs bytes only in an app that uses it: the full app is 30,744 minified and 9,602 gzip bytes above the plain one. The runtime entry and the plain app are gated. The full app is printed, not gated. The plain app's cold import on this sample is under the 15 ms local reference. That figure is printed and is not a gate.
 
-The rest of the measurements are in [size](https://github.com/omqkhafi/okmodel/blob/main/docs/size.md).
+The rest of the measurements are in the repository size notes, which are not part of the published package.
 
 ## Docs
 

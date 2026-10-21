@@ -60,6 +60,9 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okm --json` errors keep the six `okm.cli/1` fields and add `location`, `fixEdit`, `safeAlternatives`, `docs`, and `escapeHatches` when the producer or the registry has them. `fix` stays a string. A kind-only error such as `driver` stays at the six fields. `schemas/cli-1/errors.json` is the array schema. `okm doctor <code>` prints `docs/errors/<code>.md`.
 - `okm protect add`, `okm protect remove`, and `okm protect list` read and write the user fingerprint store. `add` records the selected target. `remove` requires a terminal. `list` prints the stored fingerprints. The JSON data is the fingerprint, with `identity` null, and does not include the URL.
 - Conformance cases are tagged portable or gated on a registry key or an adapter gate. A refused registry entry asserts that entry's code and alternative instead of running the body. A false adapter flag on a feature the registry still provides stays unsupported. `okm driver test` prints portable, gated, refusal, and unsupported counts. A test-only profile refuses every Postgres feature and turns the adapter flags off, and the portable minimum (connect, a read and write, error mapping) still passes on it.
+- `renderAgentsBlock({ version, tenancy, protectedConfigured })` writes the managed AGENTS.md block: the docs paths inside the package, the safe command order (`okm check`, `okm migrate plan`, `okm migrate check`, `okm migrate apply`), and the never-list. It names only commands that exist. The block does not include a URL or a timestamp.
+- `bun ./scripts/pack-size.ts` fails when the packed tarball grows by more than 400 KB over `tests/fixtures/pack-size.json`.
+- `docs:check` also checks public-doc hygiene: front matter, links that stay inside the public set, a language on every code fence, and no hidden characters in the packed text. `bun ./scripts/ts7-check.ts` typechecks the public API surface with `@typescript/native-preview` when that package is on npm. It is not part of `bun run check`.
 
 #### docs
 
@@ -69,6 +72,11 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `bun run docs:errors` writes `docs/errors/<code>.md` for every registry code. `docs:check` fails when a page is missing or differs from the registry. A code that needs a server says `Example: needs a database`.
 - [Untrusted text](docs/untrusted.md) records the bound, the origins, and the plan hash.
 - The testing notes describe the portable and gated conformance split, the profile that refuses every capability, and what a new dialect ships before it claims a gated feature.
+- The published tarball includes the public guides, `docs/errors/<code>.md`, `docs/index.md`, and `skills/okmodel/SKILL.md`. Planning notes stay out of the tarball. `okmVersion` on each page is filled from `package.json` when the tarball is packed. The committed pages keep the train version, so a pre-release bump does not rewrite `docs/`.
+- `docs/index.md` is the pointer index: one line per public page, the command list, and the error-page range. `bun run docs:index` rewrites it. `docs:check` fails when the file is stale.
+- [Roles](docs/roles.md) is the least-privilege recipe for an agent: `GRANT pg_read_all_data` for inspection, and a separate migrator role with `CREATE` on the schema. It does not use `default_transaction_read_only`.
+- [Threat model](docs/threat-model.md) records what agent use is defended against and what is not. Each defense names the feature or the test behind it.
+- The site skill page reads `skills/okmodel/SKILL.md`. That file is the copy an install finds at `node_modules/okmodel/skills/okmodel/SKILL.md`.
 
 ### 💥 Breaking Changes
 

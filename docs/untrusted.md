@@ -1,3 +1,9 @@
+---
+okmVersion: "0.10.0"
+since: "0.9"
+dialects: [postgres]
+codes: []
+---
 # Untrusted text
 
 Text read from a database catalog, a database error, or a user query is bounded and marked untrusted; this reduces risk and does not eliminate it.

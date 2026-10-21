@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 
+import { hygieneProblems } from "./docs-hygiene.js";
 import { exitOnProblems } from "./report.js";
 import { repoRoot } from "./root.js";
 import { pageExample } from "../src/tooling/errors/examples.js";
@@ -200,5 +201,15 @@ function decode(value: string): string {
 const LINK = /!?\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)/g;
 
 if (import.meta.main) {
-  exitOnProblems(checkDocs(join(repoRoot(), "docs")));
+  const root = repoRoot();
+  const parsed: unknown = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  const version =
+    typeof parsed === "object" && parsed !== null && "version" in parsed
+      ? (parsed as { version?: unknown }).version
+      : undefined;
+  if (typeof version !== "string") {
+    exitOnProblems(["docs:check: package.json version is not a string"]);
+  } else {
+    exitOnProblems([...checkDocs(join(root, "docs")), ...hygieneProblems(root, version)]);
+  }
 }

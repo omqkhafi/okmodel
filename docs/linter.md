@@ -1,3 +1,9 @@
+---
+okmVersion: "0.10.0"
+since: "0.9"
+dialects: [postgres]
+codes: [OKM1510, OKM1511, OKM1512, OKM1513, OKM1514, OKM1515, OKM1516, OKM1517, OKM1518, OKM1519, OKM1520, OKM1521, OKM1522, OKM1523, OKM1524, OKM1525, OKM1526, OKM1527, OKM1528, OKM1529, OKM1530, OKM1531, OKM1532, OKM1533, OKM1534, OKM1535, OKM1536, OKM1537, OKM1538, OKM1539, OKM1540, OKM1541, OKM1542, OKM1543, OKM1544, OKM1545, OKM1546, OKM1547, OKM1548, OKM1549, OKM1550, OKM1551, OKM1552, OKM1706, OKM1814, OKM1823]
+---
 # Linter
 
 The linter reads a migration plan and the catalogs before and after it. It does not connect to the database. A finding names the step, the code, why it fired, and the fix.

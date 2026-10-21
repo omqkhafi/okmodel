@@ -1,3 +1,9 @@
+---
+okmVersion: "0.10.0"
+since: "0.9"
+dialects: [postgres]
+codes: [OKM1546]
+---
 # Backfill
 
 A backfill is a step in a migration file (D59, D195). It is not a function exported from `okmodel`, and there is no `okm backfill` command. `okm migrate plan` and `okm generate` write the step. `okm migrate apply` runs it.

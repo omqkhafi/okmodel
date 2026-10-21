@@ -28,6 +28,12 @@ const URL = /(?:https?:\/\/|www\.)/i;
  */
 export function renderErrorPage(doc: ErrorDoc, example?: PageExample): string {
   const lines: string[] = [
+    "---",
+    'okmVersion: "0.10.0"',
+    'since: "0.9"',
+    "dialects: [postgres]",
+    `codes: [${doc.code}]`,
+    "---",
     `# ${doc.code}`,
     "",
     doc.title,

@@ -1,3 +1,9 @@
+---
+okmVersion: "0.10.0"
+since: "0.9"
+dialects: [postgres]
+codes: [OKM1520, OKM1853, OKM1854]
+---
 # Production
 
 Nothing about an environment is inferred from `NODE_ENV` or from a target's name (spec §19.8).

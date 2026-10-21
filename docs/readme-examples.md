@@ -1,3 +1,9 @@
+---
+okmVersion: "0.10.0"
+since: "0.9"
+dialects: [postgres]
+codes: [OKM1811]
+---
 # README samples
 
 Each feature from the README. The code is the same API the tests use.

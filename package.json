@@ -1,6 +1,6 @@
 {
   "name": "okmodel",
-  "version": "0.10.0-next.47",
+  "version": "0.10.0-next.48",
   "description": "okmodel is a catalog-first TypeScript ORM, PostgreSQL first.",
   "keywords": [
     "migrations",
@@ -28,7 +28,9 @@
   ],
   "files": [
     "dist",
+    "docs",
     "schemas",
+    "skills",
     "README.md",
     "LICENSE"
   ],
@@ -162,6 +164,8 @@
     "okid-drift": "bun ./scripts/okid-drift.ts",
     "test:runtimes": "bun ./scripts/runtimes.ts",
     "docs:errors": "bun ./scripts/docs-errors.ts",
+    "docs:index": "bun ./scripts/docs-index.ts",
+    "docs:hygiene": "bun ./scripts/docs-hygiene.ts",
     "docs:check": "bun ./scripts/docs-check.ts",
     "readme:check": "bun ./scripts/readme-check.ts",
     "compiler-api": "bun ./scripts/compiler-api.ts",
@@ -169,8 +173,10 @@
     "attw": "bun ./scripts/attw.ts",
     "pack-tracked": "bun ./scripts/pack-tracked.ts",
     "pack-contract": "bun ./scripts/pack-contract.ts",
-    "prepack": "bun ./scripts/strip-workspaces.ts strip",
-    "postpack": "bun ./scripts/strip-workspaces.ts restore",
+    "pack-size": "bun ./scripts/pack-size.ts",
+    "ts7:check": "bun ./scripts/ts7-check.ts",
+    "prepack": "bun ./scripts/strip-workspaces.ts strip && bun ./scripts/docs-pack.ts stamp",
+    "postpack": "bun ./scripts/docs-pack.ts restore && bun ./scripts/strip-workspaces.ts restore",
     "size": "bun ./scripts/size.ts",
     "bundle-purity": "bun ./scripts/bundle-purity.ts",
     "test": "bun test",

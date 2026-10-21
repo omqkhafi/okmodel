@@ -1,3 +1,9 @@
+---
+okmVersion: "0.10.0"
+since: "0.9"
+dialects: [postgres]
+codes: []
+---
 # Quickstart
 
 Set `DATABASE_URL` to a direct Postgres URL, not a pooler. The CI test packs the tarball, installs it in a fresh project, and runs the commands and the read and write calls in this file.

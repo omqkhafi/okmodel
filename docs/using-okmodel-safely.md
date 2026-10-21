@@ -1,3 +1,9 @@
+---
+okmVersion: "0.10.0"
+since: "0.9"
+dialects: [postgres]
+codes: []
+---
 # Using OKModel safely
 
 Pin what you install, wait before taking a brand-new release, and read a provenance attestation as a record of the build. Report a vulnerability through the address in [SECURITY.md](../SECURITY.md).

@@ -1,3 +1,9 @@
+---
+okmVersion: "0.10.0"
+since: "0.9"
+dialects: [postgres]
+codes: [OKM1853]
+---
 # GitHub Action
 
 The composite action `.github/actions/migrate` runs `okm migrate check` and `okm migrate plan --json` against a named target and posts one sticky pull-request comment (D279, §19.8). `okm migrate plan --json` prints an `okm.cli/1` envelope. The plan fields are `data`. `parsePlanJson` reads that field and still accepts a bare plan document. The comment heading is the strictest class. Each step shows its class and lock, including the row estimate the plan already prints. Lint findings keep their codes. A lint error or a failed check fails the job with that command's exit code.

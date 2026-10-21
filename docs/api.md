@@ -1,3 +1,9 @@
+---
+okmVersion: "0.10.0"
+since: "0.9"
+dialects: [postgres]
+codes: []
+---
 # API
 
 0.1 classifies every export as **stable**, **experimental**, or **internal**. The list CI checks is [`tests/fixtures/api-surface.json`](../tests/fixtures/api-surface.json). An export that is not in that file fails the test.

@@ -18,8 +18,17 @@ import { join } from "node:path";
 import { parseArgs } from "node:util";
 
 const REPO_ROOT = join(import.meta.dir, "..");
-const PACKAGE_PATH = join(REPO_ROOT, "package.json");
-const CHANGELOG_PATH = join(REPO_ROOT, "changelog.md");
+
+/**
+ * Files a bump may write, relative to the repository root.
+ *
+ * `docs/` is not in this list. Front matter `okmVersion` is stamped at
+ * pack time, not by this script.
+ */
+export const BUMP_OUTPUTS = ["package.json", "changelog.md"] as const;
+
+const PACKAGE_PATH = join(REPO_ROOT, BUMP_OUTPUTS[0]);
+const CHANGELOG_PATH = join(REPO_ROOT, BUMP_OUTPUTS[1]);
 
 /** Semver bump kind, including the pre-release and release flows. */
 export type BumpKind = "patch" | "minor" | "major" | "next" | "release";

@@ -1,3 +1,9 @@
+---
+okmVersion: "0.10.0"
+since: "0.9"
+dialects: [postgres]
+codes: [OKM1521, OKM1542, OKM1851]
+---
 # Provisioning
 
 An empty target installs the head snapshot. It does not replay migration files (D99, D198).

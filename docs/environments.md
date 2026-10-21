@@ -1,3 +1,9 @@
+---
+okmVersion: "0.10.0"
+since: "0.9"
+dialects: [postgres]
+codes: []
+---
 # Environments
 
 An environment is a named target. Nothing about it is inferred from `NODE_ENV` or from the name (spec §19.8). Protection is `protected: true` on that entry. A pipeline always passes `--target`.

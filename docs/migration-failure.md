@@ -1,3 +1,9 @@
+---
+okmVersion: "0.10.0"
+since: "0.9"
+dialects: [postgres]
+codes: [OKM1553, OKM1554, OKM1555, OKM1556]
+---
 # When a migration fails
 
 `okm migrate apply` keeps going only when it can prove what the database already has. A step that runs inside a transaction is rolled back with its history row, so the next apply runs it again. A backfill keeps its cursor in `okm_backfill` and continues from that key. A step that cannot run inside a transaction is different: Postgres may commit the DDL and then lose the connection before the history row is written.

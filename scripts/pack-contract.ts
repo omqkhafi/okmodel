@@ -21,8 +21,10 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 
+import { packSizeProblems, readPackSizeBaseline } from "./pack-size.js";
 import { exitOnProblems } from "./report.js";
 import { repoRoot } from "./root.js";
+import { restorePackedDocs } from "./docs-pack.js";
 import { restoreWorkspaces } from "./strip-workspaces.js";
 
 /** Install-time scripts the published manifest must not define. */
@@ -142,22 +144,30 @@ if (import.meta.main) {
   const problems = [...manifestProblems(manifest)];
   if (problems.length > 0) exitOnProblems(problems);
 
-  const packed = await packedFiles(root).catch((error: unknown) => {
+  const packed = await readPacked(root).catch((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     exitOnProblems([`pack-contract: ${message}`]);
     throw error;
   });
   const exportsField = isRecord(manifest) && "exports" in manifest ? manifest.exports : null;
   const next: PackSnapshot = {
-    files: packed.map((path) => normalizePackedPath(path)).sort(),
+    files: packed.files.map((path) => normalizePackedPath(path)).sort(),
     exports: exportsField ?? null,
   };
+  const drift: string[] = values.update ? [] : [...compareSnapshot(snapshotPath, next)];
+  if (!values.update) {
+    try {
+      drift.push(...packSizeProblems(packed.bytes, readPackSizeBaseline(root)));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      drift.push(message);
+    }
+  }
   if (values.update) {
     writeFileSync(snapshotPath, `${canonical(next)}\n`);
     console.log(`pack-contract: wrote ${snapshotPath}`);
-  } else {
-    exitOnProblems(compareSnapshot(snapshotPath, next));
   }
+  exitOnProblems(drift);
 }
 
 /**
@@ -190,15 +200,24 @@ function compareSnapshot(snapshotPath: string, next: PackSnapshot): readonly str
   return problems;
 }
 
+/** Files and tarball size from one `npm pack --dry-run --json`. */
+export type PackedTarball = {
+  /** Sorted packed paths. */
+  readonly files: readonly string[];
+  /** Tarball size in bytes (`size` in the npm JSON). */
+  readonly bytes: number;
+};
+
 /**
  * Lists files `npm pack --dry-run --json` would put in the tarball.
  *
- * Restores a `prepack` workspace strip if npm stops before `postpack`.
+ * Restores a `prepack` workspace strip and a docs stamp if npm stops
+ * before `postpack`.
  *
  * @param root - Package directory
- * @returns Sorted packed paths
+ * @returns Sorted packed paths and the tarball size
  */
-async function packedFiles(root: string): Promise<readonly string[]> {
+export async function readPacked(root: string): Promise<PackedTarball> {
   try {
     const proc = Bun.spawn(["bunx", "npm", "pack", "--dry-run", "--json"], {
       cwd: root,
@@ -211,8 +230,10 @@ async function packedFiles(root: string): Promise<readonly string[]> {
     if (code !== 0) {
       throw new Error(stderr.trim() || `npm pack exited ${String(code)}`);
     }
-    return filePaths(parsePack(stdout));
+    const payload = parsePack(stdout);
+    return { files: filePaths(payload), bytes: tarballBytes(payload) };
   } finally {
+    restorePackedDocs(root);
     restoreWorkspaces(root);
   }
 }
@@ -223,6 +244,20 @@ async function packedFiles(root: string): Promise<readonly string[]> {
  * @param payload - Parsed `npm pack --dry-run --json` output
  * @returns Sorted relative paths
  */
+/**
+ * Tarball `size` from npm's JSON, in bytes.
+ *
+ * @param payload - Parsed `npm pack --dry-run --json` output
+ * @returns The packed size
+ */
+function tarballBytes(payload: unknown): number {
+  const entry = Array.isArray(payload) ? payload[0] : payload;
+  if (!isRecord(entry) || typeof entry.size !== "number" || !Number.isInteger(entry.size)) {
+    throw new Error("npm pack JSON has no integer size");
+  }
+  return entry.size;
+}
+
 function filePaths(payload: unknown): readonly string[] {
   const entry = Array.isArray(payload) ? payload[0] : payload;
   if (!isRecord(entry) || !Array.isArray(entry.files)) {

@@ -1,3 +1,9 @@
+---
+okmVersion: "0.10.0"
+since: "0.9"
+dialects: [postgres]
+codes: [OKM1850]
+---
 # Example application
 
 `packages/reference-app` is a small project tracker that uses OKModel only through its public entry points. It is private and not published. CI runs it as the end-to-end proof (D207).
