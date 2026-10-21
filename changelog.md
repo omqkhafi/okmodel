@@ -50,6 +50,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okmodel/observe` exports `writeObserver()`, `flush()`, `OBSERVE_BUFFER_MAX` (10,000), and `observerBufferOverflow()` (OKM2200). The helper buffers per unit, calls exactly one of `committed` | `rolledBack` | `unknown`, isolates throwing and rejecting handlers via `onObserverError`, and settles tracked promises on `flush()`. Overflow drops the oldest unit without blocking the write path.
 - `writeObserver({ keys })` names schema tables. Those writes append primary-key `RETURNING` when the statement is a simple insert, update, or delete, and put the values on `WriteEvent.keys`. `sql()` and `inspect()` show the extra clause. `describe()` labels the appended columns `"observer"`. A table with no primary key, or a name missing from the schema, is OKM1890 at connect and at plan time. Nested `RETURNING` (parent guard, versioned close, archive) is not rewritten. A caller result is unchanged: observer-only rows are hidden.
 - Write events take `rowCount` from the command tag. Mode is `changed` for insert, update, and delete, `returned` when `RETURNING` ran, and `unknown` with `rowCount: null` when the driver gave no tag. An upsert stays `changed` and counts inserted plus updated rows.
+- `find({ offset })` skips that many rows. The value is an integer from 0 up and is sent as a parameter.
+- `okmodel/warnings` exports `warnings()`. Pass it to `connect({ warnings })`. In development, OKM2004 (offset past 1,000), OKM2005 (a limit whose order does not end in a unique key), OKM2007 (a value list past 500), and OKM2008 (an include whose row bound passes 10,000) each report once per call site. Production reports nothing until a level is set. `ignore` needs a reason. `onWarning` replaces the console.
 
 #### tooling
 
@@ -87,6 +89,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okm init` writes starter files for one package (`okmodel.config.ts`, schema, client, scripts, and `.okm/init.json`) and does not connect. `okm generate init` still writes the first migration. A different installed driver is OKM1862, a missing non-interactive choice is OKM1863, a user-modified file is OKM1864, an unusable directory is OKM1865, a plan-hash mismatch is OKM1866, and schema or database tenancy is OKM1867.
 - `okm init` in a workspace initialises the selected packages. One config per service, or one shared database package when the apps already depend on it. Two or more packages, or a package under an ancestor config, share lint, roles, and target names through `okmodel.base.ts`. That file has no database URL and no protected flag. Root scripts are added only when a task runner is already in use. `okmodel` is `catalog:` only when a pnpm catalog already lists it.
 - A command loads the nearest `okmodel.config.ts` and prints that path. Two files at the same distance are OKM1891. `okm init` with several workspaces and no terminal is OKM1892. Two packages that share one migrations directory are OKM1893 and nothing is written.
+- `okm check` lists each project warning ignore with its rule and reason. An ignore without a reason is a configuration error. Warning pages for OKM2004, OKM2005, OKM2007, and OKM2008 are generated with the error pages.
 
 #### docs
 
@@ -106,6 +109,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The CLI reference describes workspace `okm init` and nearest-config discovery. OKM1891, OKM1892, and OKM1893 have error pages.
 - The guide awaits `userFilters.parse(request.query)` and passes the result to `find` with a limit. `parse` is asynchronous because the parser loads on first use (Q10, #397).
 - [Capabilities](docs/capabilities.md) is generated from the Postgres feature registry. A feature whose proof title does not pass the registry proof check is `unverified`. `docs:check` fails when that page, a `<!-- support: key -->` block, or the step-kind table in [When a migration fails](docs/migration-failure.md) disagrees with the code.
+- [Warnings](docs/warnings.md) records the levels, the development defaults, and the four static rules.
 
 ### 💥 Breaking Changes
 

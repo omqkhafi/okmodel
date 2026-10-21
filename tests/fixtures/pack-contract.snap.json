@@ -115,6 +115,10 @@
     "./view": {
       "import": "./dist/dialects/pg/view/index.js",
       "types": "./dist/dialects/pg/view/index.d.ts"
+    },
+    "./warnings": {
+      "import": "./dist/runtime/warnings/index.js",
+      "types": "./dist/runtime/warnings/index.d.ts"
     }
   },
   "files": [
@@ -389,8 +393,16 @@
     "dist/runtime/validate/rules.d.ts",
     "dist/runtime/validate/surface.d.ts",
     "dist/runtime/version.d.ts",
+    "dist/runtime/warnings/catalog.d.ts",
+    "dist/runtime/warnings/config.d.ts",
+    "dist/runtime/warnings/evaluate.d.ts",
+    "dist/runtime/warnings/index.d.ts",
+    "dist/runtime/warnings/index.js",
+    "dist/runtime/warnings/level.d.ts",
+    "dist/runtime/warnings/report.d.ts",
     "dist/runtime/window.d.ts",
     "dist/runtime/write.d.ts",
+    "dist/shared/*.js",
     "dist/shared/*.js",
     "dist/shared/*.js",
     "dist/shared/*.js",
@@ -888,6 +900,10 @@
     "docs/errors/OKM1891.md",
     "docs/errors/OKM1892.md",
     "docs/errors/OKM1893.md",
+    "docs/errors/OKM2004.md",
+    "docs/errors/OKM2005.md",
+    "docs/errors/OKM2007.md",
+    "docs/errors/OKM2008.md",
     "docs/errors/OKM2200.md",
     "docs/example-app.md",
     "docs/extension-compatibility.md",
@@ -911,6 +927,7 @@
     "docs/type-change.md",
     "docs/untrusted.md",
     "docs/using-okmodel-safely.md",
+    "docs/warnings.md",
     "package.json",
     "schemas/cli-1/build.json",
     "schemas/cli-1/catalog-export.json",

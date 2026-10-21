@@ -14,6 +14,7 @@ export type TargetInput =
     };
 
 import type { RolesInput } from "../../dialects/pg/role/index.js";
+import type { WarningIgnore, WarningLevel } from "../../runtime/warnings/catalog.js";
 
 /** Paths and targets `okm` reads. */
 export type MigrateConfig = {
@@ -92,6 +93,16 @@ export type MigrateConfig = {
    */
   readonly raw?: {
     readonly include?: readonly string[];
+  };
+  /**
+   * Development warning levels and project ignores.
+   *
+   * `okm check` lists `ignore`. A runtime client reports them when the same
+   * object is passed to `warnings()` from `okmodel/warnings`.
+   */
+  readonly warnings?: {
+    readonly levels?: Readonly<Record<string, WarningLevel>>;
+    readonly ignore?: readonly WarningIgnore[];
   };
 };
 
