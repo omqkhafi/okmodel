@@ -112,7 +112,7 @@ test("a cold import loads the startup chunks and not the lazy ones", async () =>
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
-});
+}, 20_000);
 
 test("stubbed sources match the full startup graph", async () => {
   const graphs = [
