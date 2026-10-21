@@ -198,6 +198,18 @@ export const INDEX_ENTRIES: readonly IndexEntry[] = [
     when: "Read this when handling an error or plan JSON.",
     group: "operate",
   },
+  {
+    path: "docs/roles.md",
+    purpose: "Least-privilege roles for an agent login.",
+    when: "Read this before giving an agent a database role.",
+    group: "agents",
+  },
+  {
+    path: "docs/threat-model.md",
+    purpose: "What agent use is defended against, and what is not.",
+    when: "Read this before trusting an agent with apply.",
+    group: "agents",
+  },
 ];
 
 /**
