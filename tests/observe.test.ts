@@ -24,9 +24,14 @@ import { POSTGRES_FEATURES } from "../src/tooling/capabilities/postgres.js";
 const notes = table("notes", {
   id: t.text().primaryKey(),
   body: t.text(),
+});
+const secrets = table("secrets", {
+  id: t.text().primaryKey(),
+  body: t.text(),
   secret: t.text().sensitive().hidden(),
 });
 const app = schema({ casing: "snake", tables: [notes] });
+const secretApp = schema({ casing: "snake", tables: [secrets] });
 const TENANT_A = "11111111-1111-4111-8111-111111111111";
 const draft = (seq = 0): WriteDraft => ({
   table: "notes",
@@ -382,10 +387,11 @@ test("error isolation: throwing and rejecting handlers, flush, and overflow", as
     onObserverError: (err) => {
       observerErrors.push(err);
     },
-    onEvent: (event) => {
+    onEvent: (event): void | Promise<void> => {
       if (event.type === "write" && event.seq === 0) {
         return Promise.reject(new Error("reject boom"));
       }
+      return undefined;
     },
   });
   const pool = recording({});
@@ -408,9 +414,9 @@ test("error isolation: throwing and rejecting handlers, flush, and overflow", as
     },
   });
   const controller = createObserver(bounded);
-  controller.onPhase("start", 0);
+  controller.onPhase("start", 0, undefined);
   controller.recordWrites([draft(0), draft(1)]);
-  controller.onPhase("start", 0);
+  controller.onPhase("start", 0, undefined);
   controller.recordWrites([draft(0), draft(1)]);
   expect(overflowErrors.some((err) => err.code === "OKM2200")).toBe(true);
   expect(observerBufferOverflow().code).toBe("OKM2200");
@@ -436,7 +442,7 @@ test("writeObserver calls committed, rolledBack, and unknown once per unit", asy
   const db = createClient(app, pool, { ownsPool: false, onWrite });
   await db.connected;
   await db.tx(async (tx) => {
-    await tx.notes.insert({ id: "1", body: "a", secret: "s" });
+    await tx.notes.insert({ id: "1", body: "a" });
   });
   expect(committed).toHaveLength(1);
   expect(rolled).toHaveLength(0);
@@ -473,14 +479,14 @@ test("no-leak: bound values and hidden/sensitive columns stay out of events", as
     },
   });
   const pool = recording({});
-  const db = createClient(app, pool, { ownsPool: false, onWrite });
-  await db.notes.insert({ id: "row-1", body: secretBody, secret: secretCol });
+  const db = createClient(secretApp, pool, { ownsPool: false, onWrite });
+  await db.secrets.insert({ id: "row-1", body: secretBody, secret: secretCol });
   await onWrite.flush();
   const blob = JSON.stringify(events);
   expect(blob).not.toContain(secretBody);
   expect(blob).not.toContain(secretCol);
   expect(blob).not.toContain("row-1");
-  expect(writes(events)[0]?.table).toBe("notes");
+  expect(writes(events)[0]?.table).toBe("secrets");
   expect(writes(events)[0]?.tenant).toBeNull();
 });
 
