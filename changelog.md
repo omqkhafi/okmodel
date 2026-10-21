@@ -46,6 +46,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `update({ where, set, limit, lock: "skip", version: "any" })` on a `versioned()` table skips the version check, bumps `version` by 1, and returns the claimed rows. A miss is an empty array. `version` stays required on every other versioned update. `version: "any"` without `lock: "skip"` and `limit`, an unrecognised version string, and a `version` key in `set` are OKM1120 (Q6, O-5, #393).
 - `connect({ onWrite })` observes write units (`okm.observe/1`): buffered write, savepoint, and tri-state outcome events after commit or rollback, from one emission point shared with `hookm.onTransaction`. Normative shape in `docs/observer-events.md`. G-4 emits `rowCount: null` / `rowCountMode: "unknown"`. `db.flush()` waits for the `okmodel/observe` helper (app size gate).
 - `okmodel/observe` exports `writeObserver()`, `flush()`, `OBSERVE_BUFFER_MAX` (10,000), and `observerBufferOverflow()` (OKM2200). The helper buffers per unit, calls exactly one of `committed` | `rolledBack` | `unknown`, isolates throwing and rejecting handlers via `onObserverError`, and settles tracked promises on `flush()`. Overflow drops the oldest unit without blocking the write path. `keys` is accepted and ignored until G-5.
+- `find({ offset })` skips that many rows. The value is an integer from 0 up and is sent as a parameter.
+- `okmodel/warnings` exports `warnings()`. Pass it to `connect({ warnings })`. In development, OKM2004 (offset past 1,000), OKM2005 (a limit whose order does not end in a unique key), OKM2007 (a value list past 500), and OKM2008 (an include whose row bound passes 10,000) each report once per call site. Production reports nothing until a level is set. `ignore` needs a reason. `onWarning` replaces the console.
 
 #### tooling
 
@@ -81,6 +83,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okm raw sync` discovers static `raw()` calls imported from `okmodel/pg`, describes each statement without running it, and writes `.okm/raw.lock.json` and `.okm/raw.d.ts`. `--check` writes nothing and exits 1 when either file would change. `okm check` fails with OKM1604 when a call is missing from the lock, warns with OKM1605 when a lock entry is no longer called, and fails with OKM1601 when a target's signature no longer matches. A statement that is not a static string is OKM1603. A statement the checker cannot classify is OKM1602.
 - A described column is NOT NULL only when it comes from a base or partitioned table, `attnotnull` is set, the column is not generated, no NOT NULL constraint on that column is unvalidated, and the statement has none of `join`, `union`, `intersect`, `except`, `lateral`, `with`, `values`, `rollup`, `cube`, or `grouping` outside strings, comments, and quoted identifiers. `as "name!"` forces NOT NULL and `as "name?"` forces nullable. The suffix is not part of the name. PostgreSQL 15–17 have no `contype` `n` row, so that check does not change them. On 18 a `NOT VALID` constraint sets `attnotnull` while NULLs can remain, and the column stays nullable.
 - `okm init` writes starter files for one package (`okmodel.config.ts`, schema, client, scripts, and `.okm/init.json`) and does not connect. `okm generate init` still writes the first migration. A different installed driver is OKM1862, a missing non-interactive choice is OKM1863, a user-modified file is OKM1864, an unusable directory is OKM1865, a plan-hash mismatch is OKM1866, and schema or database tenancy is OKM1867.
+- `okm check` lists each project warning ignore with its rule and reason. An ignore without a reason is a configuration error. Warning pages for OKM2004, OKM2005, OKM2007, and OKM2008 are generated with the error pages.
 
 #### docs
 
@@ -97,6 +100,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - [Threat model](docs/threat-model.md) records what agent use is defended against and what is not. Each defense names the feature or the test behind it.
 - The site skill page reads `skills/okmodel/SKILL.md`. That file is the copy an install finds at `node_modules/okmodel/skills/okmodel/SKILL.md`.
 - The linter page, [When a migration fails](docs/migration-failure.md), and the OKM1557 and OKM1558 error pages describe a declared `-- probe:` and when a committed step must have one.
+- [Warnings](docs/warnings.md) records the levels, the development defaults, and the four static rules.
 
 ### 💥 Breaking Changes
 

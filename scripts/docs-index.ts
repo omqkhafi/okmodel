@@ -127,6 +127,12 @@ export const INDEX_ENTRIES: readonly IndexEntry[] = [
     group: "query",
   },
   {
+    path: "docs/warnings.md",
+    purpose: "Development warnings for offset, order, value lists, and includes.",
+    when: "Read this when a query should report OKM2xxx advice.",
+    group: "query",
+  },
+  {
     path: "docs/adopt-existing.md",
     purpose: "Pull, generate, then baseline an existing database.",
     when: "Read this when the database already has tables.",

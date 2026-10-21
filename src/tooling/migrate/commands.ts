@@ -11,7 +11,7 @@ import { isAbsolute, join } from "node:path";
 import { nearestName } from "../../contracts/nearest.js";
 import { OkmError } from "../../contracts/error.js";
 import { warningBody } from "../errors/body.js";
-import { untrustedText } from "../untrusted.js";
+import { renderUntrusted, untrustedText } from "../untrusted.js";
 import { errorDoc } from "../errors/registry.js";
 import {
   envelope,
@@ -326,12 +326,45 @@ async function check(
   if (checked.emulation !== undefined) text += checked.emulation;
   if (checked.notice !== undefined) text += checked.notice;
   text += formatFindings(checked.findings);
+  const listed = checked.ignores ?? [];
+  for (const item of listed) {
+    text += `ignore ${item.rule}: ${renderUntrusted(untrustedText(item.reason, "user.query"))}\n`;
+  }
   text += "ok\n";
   human(text);
-  const data: { status: "ok"; notice?: string; emulation?: string } = { status: "ok" };
+  const data: {
+    status: "ok";
+    notice?: string;
+    emulation?: string;
+    ignores?: readonly {
+      readonly rule: string;
+      readonly reason: ReturnType<typeof untrustedText>;
+    }[];
+  } = { status: "ok" };
   if (checked.notice !== undefined) data.notice = checked.notice;
   if (checked.emulation !== undefined) data.emulation = checked.emulation;
-  return { text, data, warnings: warningsOf(checked.findings), outFile: null };
+  if (listed.length > 0) {
+    data.ignores = listed.map((item) => ({
+      rule: item.rule,
+      reason: untrustedText(item.reason, "user.query"),
+    }));
+  }
+  return {
+    text,
+    data,
+    warnings: [
+      ...warningsOf(checked.findings),
+      ...listed.map((item) =>
+        warningBody({
+          summary: "A project rule is ignored.",
+          place: item.rule,
+          level: "hint",
+          severity: "low",
+        }),
+      ),
+    ],
+    outFile: null,
+  };
 }
 
 async function dev(project: ProjectContext, human: (text: string) => void): Promise<Produced> {

@@ -64,7 +64,11 @@ export type ReadCall = {
   readonly select?: unknown;
   readonly orderBy?: unknown;
   readonly limit?: unknown;
+  /** Rows to skip. An integer from 0 up. It is a parameter, marked `off:`. */
+  readonly offset?: unknown;
   readonly include?: unknown;
+  /** Call-site warning ignore. It never enters the plan or its key. */
+  readonly ignore?: unknown;
   /** `find` and `count`. Rewritten to `matches` and `relevance` before SQL. */
   readonly search?: unknown;
   readonly all?: string;
@@ -278,28 +282,56 @@ export type Sink = {
   mark(token: string): void;
 };
 
+// `let` so the minifier keeps one copy of each name. Four lists share them.
+let ignoreKey = "ignore";
+let includeKey = "include";
+let orderKey = "orderBy";
+let searchKey = "search";
+let selectKey = "select";
+let routeKey = "route";
+let signalKey = "signal";
+let timeoutKey = "timeout";
+let whereKey = "where";
 const FIND_OPTIONS = [
-  "include",
+  ignoreKey,
+  includeKey,
   "limit",
-  "orderBy",
-  "search",
-  "select",
-  "route",
-  "signal",
-  "timeout",
-  "where",
+  "offset",
+  orderKey,
+  searchKey,
+  selectKey,
+  routeKey,
+  signalKey,
+  timeoutKey,
+  whereKey,
 ] as const;
 const ONE_OPTIONS = [
-  "include",
-  "orderBy",
-  "route",
-  "select",
-  "signal",
-  "timeout",
-  "where",
+  ignoreKey,
+  includeKey,
+  orderKey,
+  routeKey,
+  selectKey,
+  signalKey,
+  timeoutKey,
+  whereKey,
 ] as const;
-const COUNT_OPTIONS = ["route", "search", "signal", "timeout", "where"] as const;
-const FILTER_OPTIONS = ["route", "signal", "timeout", "where"] as const;
+const COUNT_OPTIONS = [ignoreKey, routeKey, searchKey, signalKey, timeoutKey, whereKey] as const;
+const FILTER_OPTIONS = [ignoreKey, routeKey, signalKey, timeoutKey, whereKey] as const;
+
+/**
+ * Caller fields `readCall` copies onto the logical read.
+ *
+ * The names are the shared bindings above, so the startup bundle keeps one copy.
+ */
+export const copiedReadKeys = [
+  whereKey,
+  selectKey,
+  orderKey,
+  "limit",
+  "offset",
+  includeKey,
+  ignoreKey,
+] as const;
 
 /**
  * Option names `find`, `one`, `count`, and `exists` accept.
@@ -1199,25 +1231,23 @@ export function emitLimit(call: ReadCall, sink: Sink): void {
   }
   if (call.op !== "find") return;
   if (call.all !== undefined) {
-    if (call.all.length === 0) {
-      fail("OKM1101", "find() .all needs a reason.");
-    }
+    if (call.all.length === 0) fail("OKM1101", "find() .all needs a reason.");
     sink.mark(`all:${call.all}`);
-    if (call.limit !== undefined) {
-      const limit = readLimit(call.limit);
-      sink.text(" limit ");
-      sink.param(String(limit));
-      sink.mark(`l:${String(limit)}`);
-    }
-    return;
+    if (call.limit !== undefined) emitBound(sink, " limit ", "l:", readLimit(call.limit));
+  } else {
+    if (call.limit === undefined) fail("OKM1101", "find() needs a limit.");
+    emitBound(sink, " limit ", "l:", readLimit(call.limit));
   }
-  if (call.limit === undefined) {
-    fail("OKM1101", "find() needs a limit.");
+  if (call.offset !== undefined) {
+    emitBound(sink, " offset ", "off:", readLimit(call.offset, "offset"));
   }
-  const limit = readLimit(call.limit);
-  sink.text(" limit ");
-  sink.param(String(limit));
-  sink.mark(`l:${String(limit)}`);
+}
+
+/** Writes `limit` or `offset` as one parameter and one plan mark. */
+function emitBound(sink: Sink, word: string, mark: string, value: number): void {
+  sink.text(word);
+  sink.param(String(value));
+  sink.mark(mark + String(value));
 }
 
 /** One target branch of a morph include. */
@@ -1345,9 +1375,9 @@ export function rejectKeys(
   }
 }
 
-export function readLimit(value: unknown): number {
+export function readLimit(value: unknown, name = "limit"): number {
   if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
-    throw new OkmError("invalid", "limit must be an integer from 0 up.", { kind: "invalid" });
+    throw new OkmError("invalid", `${name} must be an integer from 0 up.`, { kind: "invalid" });
   }
   return value;
 }

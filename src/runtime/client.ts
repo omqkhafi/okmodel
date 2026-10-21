@@ -24,6 +24,7 @@ import {
   decodeResult,
   logicalIntent,
   readNeedsOperatorSql,
+  copiedReadKeys,
   readOptionNames,
   rejectKeys,
   type AppliedRule,
@@ -70,6 +71,13 @@ export type Session = {
    * Shared by reference across `held()` session copies. Controller loads lazily.
    */
   readonly o?: import("./observe-emit.js").ObservingSlot;
+  /**
+   * Warning slot from `connect({ warnings })`.
+   *
+   * `undefined` when the caller did not pass one. The property stays present so
+   * the assignment does not need a spread.
+   */
+  readonly w: ((schema: QuerySchema, call: ReadCall, stack?: string) => void) | undefined;
   /** Set on the client a transaction hands out. `extras` are the methods only that client has. */
   readonly tx?: { readonly extras: object; readonly depth: number };
   /** Tenant value or an unscoped reason. Absent on the root client. */
@@ -118,6 +126,7 @@ export function createClient<S extends QuerySchema>(
     readonly timeouts?: Timeouts | undefined;
     readonly hookm?: readonly Hookm[] | undefined;
     readonly onWrite?: import("./observe-types.js").OnWrite | undefined;
+    readonly warnings?: ((schema: QuerySchema, call: ReadCall, stack?: string) => void) | undefined;
     readonly catalog?: CatalogArtifact | undefined;
     readonly catalogDir?: string | undefined;
     readonly requireMeta?: boolean | undefined;
@@ -164,6 +173,7 @@ export function createClient<S extends QuerySchema>(
     timeouts: options.timeouts,
     hookm: options.hookm,
     ...(options.onWrite !== undefined ? { o: { w: options.onWrite, c: undefined } } : {}),
+    w: options.warnings,
     closing,
   };
   return openClient(session);
@@ -602,6 +612,7 @@ export function readHandle(
 ): Promise<unknown> & Record<string, unknown> {
   let prepared: Prepared | undefined;
   const origin = call;
+  const warnStack = session.w && new Error().stack;
   const searched = "search" in call;
   const prepare = async (): Promise<Prepared> => {
     if (prepared !== undefined) return prepared;
@@ -618,6 +629,7 @@ export function readHandle(
     if (call.build === undefined && selectHasWindow(call.select)) {
       call = (await import("./window.js")).attach(session.schema, call);
     }
+    session.w?.(session.schema, call, warnStack);
     const bound = bindCall(session.schema, call, hooks);
     let plan = session.cache.get(bound.key);
     if (plan === undefined) {
@@ -671,7 +683,7 @@ export function readHandle(
         return finish(session, inspection(prepared.plan, prepared.params, call, source), call);
       }
       if (sync()) {
-        const bound = bindNow(session.schema, call);
+        const bound = bindNow(session, call);
         prepared = bound;
         return finish(session, inspection(bound.plan, bound.params, call, source), call);
       }
@@ -684,7 +696,7 @@ export function readHandle(
         return { text: prepared.plan.text, params: prepared.params };
       }
       if (sync()) {
-        const { plan, params } = bindNow(session.schema, call);
+        const { plan, params } = bindNow(session, call);
         prepared = { plan, params };
         return { text: plan.text, params };
       }
@@ -742,24 +754,23 @@ export function readCall(
 ): ReadCall {
   const record = options as Record<string, unknown>;
   rejectKeys(record, readOptionNames(op), op, true);
-  return {
+  const call: Record<string, unknown> = {
     op,
     table,
-    ...(record.where !== undefined ? { where: record.where } : {}),
-    ...(record.select !== undefined ? { select: record.select } : {}),
-    ...(record.orderBy !== undefined ? { orderBy: record.orderBy } : {}),
-    ...(record.limit !== undefined ? { limit: record.limit } : {}),
-    ...(record.include !== undefined ? { include: record.include } : {}),
-    ...("search" in record ? { search: record.search } : {}),
     ...callOptions(record),
-    ...(all !== undefined ? { all } : {}),
-    ...(scope !== undefined ? { scope } : {}),
-    ...(schema.tenancy !== undefined && model !== undefined
-      ? { tenancyRules: schema.tenancy.rules(table, model.source, scope) }
-      : {}),
-    ...(view !== undefined ? { archive: view } : {}),
     ...archiveRecord(model, view),
   };
+  for (const key of copiedReadKeys) {
+    if (record[key] !== undefined) call[key] = record[key];
+  }
+  if ("search" in record) call.search = record.search;
+  if (all !== undefined) call.all = all;
+  if (scope !== undefined) call.scope = scope;
+  if (schema.tenancy !== undefined && model !== undefined) {
+    call.tenancyRules = schema.tenancy.rules(table, model.source, scope);
+  }
+  if (view !== undefined) call.archive = view;
+  return call as ReadCall;
 }
 
 async function checkServer(
@@ -819,11 +830,12 @@ function hooksFor(call: ReadCall): Promise<IncludeHooks | undefined> {
 }
 
 function bindNow(
-  schema: Session["schema"],
+  session: Session,
   call: ReadCall,
 ): { readonly plan: Plan; readonly params: readonly (string | null)[] } {
-  const bound = bindCall(schema, call);
-  const plan = compileCall(schema, call, bound.key);
+  session.w?.(session.schema, call);
+  const bound = bindCall(session.schema, call);
+  const plan = compileCall(session.schema, call, bound.key);
   return { plan, params: bound.params };
 }
 

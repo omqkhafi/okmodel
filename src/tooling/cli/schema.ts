@@ -112,6 +112,13 @@ const SCHEMAS: Readonly<Record<string, JsonSchema>> = {
     status: { const: "ok" },
     notice: { type: "string" },
     emulation: { type: "string" },
+    ignores: {
+      type: "array",
+      items: objectNode(["rule", "reason"], {
+        rule: { type: "string" },
+        reason: untrustedSchema(),
+      }),
+    },
   }),
   dev: textData(idOf("dev"), "okm dev data"),
   doctor: {

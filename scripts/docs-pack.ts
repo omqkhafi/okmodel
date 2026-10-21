@@ -70,6 +70,7 @@ export const PUBLIC_DOCS = [
   "topology.md",
   "type-change.md",
   "untrusted.md",
+  "warnings.md",
   "using-okmodel-safely.md",
 ] as const;
 

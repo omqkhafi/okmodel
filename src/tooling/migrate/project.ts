@@ -27,6 +27,7 @@ import {
 } from "../../contracts/catalog/document.js";
 import { sha256 } from "../../contracts/sha256.js";
 import { OkmError } from "../../contracts/error.js";
+import { assertProjectWarnings } from "../../runtime/warnings/config.js";
 import { tagOutcome } from "../cli/outcome.js";
 import { assertSupported, formatEmulation } from "../capabilities/check.js";
 import { POSTGRES_FEATURES } from "../capabilities/postgres.js";
@@ -183,6 +184,12 @@ export type CheckProjectResult = {
    * A refused feature throws OKM1860 before this returns.
    */
   readonly emulation?: string;
+  /**
+   * Project ignores from `defineConfig({ warnings })`.
+   *
+   * Absent when the config lists none. `okm check` prints them.
+   */
+  readonly ignores?: readonly { readonly rule: string; readonly reason: string }[];
 };
 
 /**
@@ -243,10 +250,15 @@ export async function checkProject(
   ];
   if (hasError(findings)) throw lintRefusal(findings);
   const named = flags?.target;
-  if (targets.length === 0) return checked({ findings }, emulation);
+  const finish = (result: CheckProjectResult): CheckProjectResult => {
+    const ignores = opened.config.warnings?.ignore;
+    const listed = ignores === undefined || ignores.length === 0 ? result : { ...result, ignores };
+    return checked(listed, emulation);
+  };
+  if (targets.length === 0) return finish({ findings });
   if (targets.length > 1 && named === undefined) {
     const { serverChecksSkippedNotice } = await import("./server-requirements.js");
-    return checked({ findings, notice: serverChecksSkippedNotice(targets.length) }, emulation);
+    return finish({ findings, notice: serverChecksSkippedNotice(targets.length) });
   }
   const target = selectTarget(opened.config, named);
   assertTargetPolicy(target, "check", flags?.allowProtected ?? false);
@@ -263,7 +275,7 @@ export async function checkProject(
   await assertAuthorDrift(target.url, opened.built.catalog, opened.config.roles, allowPooler);
   await assertSchemaExtensions(target.url, opened.built, created);
   await rawOnlineCheck(cwd, opened.config, target.url, allowPooler);
-  return checked({ findings }, emulation);
+  return finish({ findings });
 }
 
 /**
@@ -672,6 +684,12 @@ export async function loadConfig(project: string | ProjectContext): Promise<Migr
       new OkmError("invalid", `${CONFIG_FILE} must default-export defineConfig(...).`),
       "usage",
     );
+  }
+  try {
+    assertProjectWarnings(config.warnings);
+  } catch (error) {
+    if (error instanceof OkmError) throw tagOutcome(error, "usage");
+    throw error;
   }
   return config;
 }

@@ -22,7 +22,8 @@ import type {
   SearchMatch,
 } from "../dialects/pg/operators.js";
 import type { FieldWhere, IsJsonObject } from "../dialects/pg/where.js";
-import type { AppliedRule, ReadOp } from "./plan.js";
+import type { AppliedRule, ReadCall, ReadOp } from "./plan.js";
+import type { WarningIgnore } from "./warnings/catalog.js";
 
 export type { FieldWhere, WhereValue } from "../dialects/pg/where.js";
 
@@ -345,6 +346,9 @@ export type CallOptions = {
   readonly route?: "primary" | "replica";
 };
 
+/** One warning ignore, or a list of them. `reason` is required on each. */
+type CallIgnore = WarningIgnore | readonly WarningIgnore[];
+
 /** Options shared by reads. */
 export type ReadOptions<S extends QuerySchema, K extends keyof S["~byName"]> = CallOptions & {
   readonly where?: WhereOf<S, K>;
@@ -352,6 +356,8 @@ export type ReadOptions<S extends QuerySchema, K extends keyof S["~byName"]> = C
   readonly select?: readonly ((keyof RowOf<S, K> & string) | Window<string, string | number>)[];
   readonly orderBy?: OrderBy<RowOf<S, K>>;
   readonly include?: IncludeOf<S, K>;
+  /** Suppress a warning rule. Absent when every firing rule should report. */
+  readonly ignore?: CallIgnore;
 };
 
 /**
@@ -369,6 +375,8 @@ export type LockOptions = {
 /** `find` options. `limit` is required unless the caller uses `.all(reason)`. */
 export type FindOptions<S extends QuerySchema, K extends keyof S["~byName"]> = ReadOptions<S, K> & {
   readonly limit?: number;
+  /** Rows to skip. An integer from 0 up. */
+  readonly offset?: number;
   /** Text to look for. The closest matches come first unless `orderBy` is set. */
   readonly search?: TextSearch<RowOf<S, K>>;
 };
@@ -384,6 +392,8 @@ export type TreeOptions<S extends QuerySchema, K extends keyof S["~byName"]> = C
   readonly where?: WhereOf<S, K>;
   readonly select?: readonly (keyof RowOf<S, K> & string)[];
   readonly orderBy?: OrderBy<RowOf<S, K>>;
+  /** Suppress a warning rule. Absent when every firing rule should report. */
+  readonly ignore?: CallIgnore;
   readonly depth?: number;
   /** Include the starting row. Omitted leaves it out. */
   readonly self?: boolean;
@@ -482,6 +492,8 @@ type SortDir = "asc" | "desc" | { readonly dir: "asc" | "desc"; readonly nulls?:
 /** `aggregate` options. A hidden field is refused at runtime. */
 export type AggregateOptions<S extends QuerySchema, K extends keyof S["~byName"]> = CallOptions & {
   readonly where?: WhereOf<S, K>;
+  /** Suppress a warning rule. Absent when every firing rule should report. */
+  readonly ignore?: CallIgnore;
   /** One result row per distinct combination. Needs `limit`, or `.all(reason)`. */
   readonly groupBy?: readonly ((keyof RowOf<S, K> & string) | Bucket<string, string, string>)[];
   /** Adds `count`, the number of rows in the group. */
@@ -1385,6 +1397,12 @@ export type ConnectOptions<S extends QuerySchema> = {
   readonly hookm?: readonly Hookm[];
   /** Low-level write observer (`okm.observe/1`). See `docs/observer-events.md`. */
   readonly onWrite?: import("./observe-types.js").OnWrite;
+  /**
+   * Plan-time warning slot from `okmodel/warnings`.
+   *
+   * Absent, a read does not report OKM2xxx advice.
+   */
+  readonly warnings?: (schema: QuerySchema, call: ReadCall, stack?: string) => void;
 };
 
 /** Ceilings from `connect({ timeouts })`, in milliseconds. Each key is optional. */

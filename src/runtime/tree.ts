@@ -41,6 +41,7 @@ const OPTIONS = [
   "depth",
   "self",
   "relation",
+  "ignore",
   "route",
   "signal",
   "timeout",
@@ -105,6 +106,7 @@ function open(
     ...(user.signal !== undefined ? { signal: user.signal } : {}),
     ...(user.timeout !== undefined ? { timeout: user.timeout } : {}),
     ...(user.route !== undefined ? { route: user.route } : {}),
+    ...(user.ignore !== undefined ? { ignore: user.ignore } : {}),
   };
   const base = readCall(
     "find",
