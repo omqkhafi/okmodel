@@ -23,6 +23,7 @@ import type {
 } from "../dialects/pg/operators.js";
 import type { FieldWhere, IsJsonObject } from "../dialects/pg/where.js";
 import type { AppliedRule, ReadCall, ReadOp } from "./plan.js";
+import type { SessionContext, SessionValues } from "./session/index.js";
 import type { WarningIgnore } from "./warnings/catalog.js";
 
 export type { FieldWhere, WhereValue } from "../dialects/pg/where.js";
@@ -1303,8 +1304,33 @@ type ViewsClient<S> = S extends { readonly "~views": infer V extends readonly un
     }
   : unknown;
 
+/**
+ * `with()` on a client opened with `connect({ session })`.
+ *
+ * Absent when the connection declared no session settings.
+ *
+ * @typeParam C - The `sessionSettings()` value, or `undefined`
+ * @typeParam S - Connected schema
+ * @typeParam Root - True on the root client. `with()` returns the same kind of client
+ */
+type SessionMethods<C, S extends QuerySchema, Root extends boolean> =
+  C extends SessionContext<infer M>
+    ? {
+        /**
+         * Opens a client that sets these values before each unit of work.
+         *
+         * One `set_config(..., true)` statement is the first statement of the
+         * transaction. Every required key is required here. Later calls add to
+         * the earlier ones. It composes with `for()` and `unscoped()` in any order.
+         *
+         * @param values - Setting key to value
+         */
+        with(values: SessionValues<M>): Root extends true ? Connected<S, C> : ScopedClient<S, C>;
+      }
+    : unknown;
+
 /** A client whose tables are already inside one tenant or an unscoped reason. */
-type ScopedClient<S extends QuerySchema> = {
+type ScopedClient<S extends QuerySchema, C = undefined> = {
   readonly [K in keyof S["~byName"] & string]: TableApi<S, K>;
 } & {
   /** Looks up a table by name. An unknown name is OKM1120. */
@@ -1317,10 +1343,11 @@ type ScopedClient<S extends QuerySchema> = {
   readonly capabilities: DriverCapabilities;
 } & TxApi<S, false> &
   ViewsClient<S> &
+  SessionMethods<C, S, false> &
   IfAsyncDisposable<typeof Symbol>;
 
 /** `for` and `unscoped` on a schema that set tenancy. */
-type ScopeMethods<S extends QuerySchema> =
+type ScopeMethods<S extends QuerySchema, C> =
   TenantKeyOf<S> extends never
     ? object
     : {
@@ -1332,7 +1359,7 @@ type ScopeMethods<S extends QuerySchema> =
          *
          * @param input - The tenant key and its value
          */
-        for(input: { readonly [K in TenantKeyOf<S>]: string }): ScopedClient<S>;
+        for(input: { readonly [K in TenantKeyOf<S>]: string }): ScopedClient<S, C>;
         /**
          * Opens a client with no tenant predicate.
          *
@@ -1340,11 +1367,16 @@ type ScopeMethods<S extends QuerySchema> =
          *
          * @param reason - Why this client leaves the tenant scope
          */
-        unscoped(reason: string): ScopedClient<S>;
+        unscoped(reason: string): ScopedClient<S, C>;
       };
 
-/** A client typed by its own schema. */
-export type Connected<S extends QuerySchema> = {
+/**
+ * A client typed by its own schema.
+ *
+ * @typeParam S - Connected schema
+ * @typeParam C - The `connect({ session })` value, which adds `with()`
+ */
+export type Connected<S extends QuerySchema, C = undefined> = {
   readonly [K in RootName<S>]: TableApi<S, K>;
 } & {
   /** Looks up a table by name. A tenant table on the root client is OKM1701. */
@@ -1361,8 +1393,9 @@ export type Connected<S extends QuerySchema> = {
   /** The adapter's frozen capability flags. */
   readonly capabilities: DriverCapabilities;
 } & TxApi<S, true> &
-  ScopeMethods<S> &
+  ScopeMethods<S, C> &
   ViewsClient<S> &
+  SessionMethods<C, S, true> &
   IfAsyncDisposable<typeof Symbol>;
 
 /**
@@ -1376,8 +1409,14 @@ export type CatalogArtifact = {
 };
 
 /** `connect` options shared by the Postgres drivers. */
-export type ConnectOptions<S extends QuerySchema> = {
+export type ConnectOptions<S extends QuerySchema, C = undefined> = {
   readonly schema: S;
+  /**
+   * Transaction-local session settings from `okmodel/session`.
+   *
+   * Adds `db.with()`. Postgres only.
+   */
+  readonly session?: C;
   /**
    * Build artifact. When set, its hash is the code's catalog hash.
    * The JSON is checked only when the database hash differs.
