@@ -18,6 +18,7 @@ import { pgTrgm } from "../src/dialects/pg/ext/pg-trgm.js";
 import {
   arr,
   fragment,
+  gte,
   json,
   many,
   one,
@@ -304,6 +305,14 @@ test("proof:query.namedAggregates", async () => {
     .aggregate({ select: { total: { countDistinct: "body" } }, limit: 1 })
     .sql();
   expect(described.text).toContain("count(distinct ");
+});
+
+test("proof:query.having", async () => {
+  const db = await connect(stub(), { schema: notesSchema });
+  const described = await db.notes
+    .aggregate({ groupBy: ["body"], having: { count: gte(2) }, limit: 2 })
+    .sql();
+  expect(described.text).toContain(" having count(*) >= ");
 });
 
 test("proof:query.upsert", async () => {

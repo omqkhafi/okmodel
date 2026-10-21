@@ -53,6 +53,7 @@ Apache-2.0. The published version is [okmodel on npm](https://www.npmjs.com/pack
   - [Traits](#traits)
   - [Archive](#archive)
   - [Tenancy](#tenancy)
+  - [Session settings](#session-settings)
   - [Typed raw SQL](#typed-raw-sql)
   - [Extensions](#extensions)
   - [Domains](#domains)
@@ -571,12 +572,12 @@ export const set = { n: inc(1), meta: json.set(["published"], true), tags: arr.a
 
 ### Page and aggregate
 
-`page` returns one page of rows and a `next` cursor for the page after it. Pass that cursor back as `after`, with the same `orderBy`. A cursor from a different `orderBy` is OKM1130. `aggregate` counts or groups rows instead of returning them. A group needs a `limit`, or `.all(reason)`. `bucket()` groups a `timestamptz` or `date` by a unit. A day or longer unit comes back as `Temporal.PlainDate`. On a `timestamptz`, a second, minute, or hour comes back as `Temporal.Instant`. Those three units are refused on a `date`. A NULL timestamp is one group: the result key is present and the value is null. `countDistinct` is a list of field names, like `sum`. It counts the different non-null values in each group and gives a number at `countDistinct.<field>`. A group with only NULLs counts 0. `select: { name: { sum: "amount" } }` names an aggregate. Each entry is one of `count: true`, `countDistinct`, `sum`, `avg`, `min`, or `max`, and gives one flat result key, so one call can hold several of the same function and column. A name that is a group field, a bucket `as`, or `count`, `countDistinct`, `sum`, `avg`, `min`, or `max` is OKM1120. `find` takes `distinct: true` with a `select` and keeps one row per different combination of those fields. NULL is one value. `orderBy` may name selected fields only. `distinctOn: [fields]` is Postgres only. It keeps the first row of each key, and `orderBy` must start with the same keys, so the keys after them pick the row each key keeps. Neither takes `include` or `search`, and `page` and `one` refuse them. There is still no `having`. An `as` of `__proto__`, `constructor`, `toString`, or `hasOwnProperty` is refused.
+`page` returns one page of rows and a `next` cursor for the page after it. Pass that cursor back as `after`, with the same `orderBy`. A cursor from a different `orderBy` is OKM1130. `aggregate` counts or groups rows instead of returning them. A group needs a `limit`, or `.all(reason)`. `bucket()` groups a `timestamptz` or `date` by a unit. A day or longer unit comes back as `Temporal.PlainDate`. On a `timestamptz`, a second, minute, or hour comes back as `Temporal.Instant`. Those three units are refused on a `date`. A NULL timestamp is one group: the result key is present and the value is null. `countDistinct` is a list of field names, like `sum`. It counts the different non-null values in each group and gives a number at `countDistinct.<field>`. A group with only NULLs counts 0. `select: { name: { sum: "amount" } }` names an aggregate. Each entry is one of `count: true`, `countDistinct`, `sum`, `avg`, `min`, or `max`, and gives one flat result key, so one call can hold several of the same function and column. A name that is a group field, a bucket `as`, or `count`, `countDistinct`, `sum`, `avg`, `min`, or `max` is OKM1120. `find` takes `distinct: true` with a `select` and keeps one row per different combination of those fields. NULL is one value. `orderBy` may name selected fields only. `distinctOn: [fields]` is Postgres only. It keeps the first row of each key, and `orderBy` must start with the same keys, so the keys after them pick the row each key keeps. Neither takes `include` or `search`, and `page` and `one` refuse them. `having` keeps the groups whose aggregates match, in the `where` predicate form over `count` and the `select` names, so `having: { count: gte(2), total: gt(100) }`. It needs `groupBy`, takes the comparison operators, `inList`, `notIn`, `not`, and `or()`, and cannot name a list-form aggregate. A NULL aggregate matches no comparison; `null` matches it. An `as` of `__proto__`, `constructor`, `toString`, or `hasOwnProperty` is refused.
 
 `page.ts`:
 
 ```ts
-import { bucket, schema, table, t } from "okmodel/pg";
+import { bucket, gte, schema, table, t } from "okmodel/pg";
 import { connect } from "okmodel/pg/postgresjs";
 
 const notes = table("notes", {
@@ -605,6 +606,13 @@ export async function report(url: string): Promise<void> {
     select: { notes: { count: true }, first: { min: "title" }, last: { max: "title" } },
     limit: 10,
   });
+  // having keeps the days with at least two notes. count is always a name.
+  const busy = await db.notes.aggregate({
+    groupBy: [bucket("createdAt", "day", { tz: "Asia/Riyadh", as: "day" })],
+    select: { first: { min: "title" } },
+    having: { count: gte(2) },
+    limit: 10,
+  });
   // One row per different title, and the newest note for each title.
   const titles = await db.notes.find({ distinct: true, select: ["title"], limit: 10 });
   const newest = await db.notes.find({
@@ -615,6 +623,7 @@ export async function report(url: string): Promise<void> {
   void page.next;
   void days;
   void named;
+  void busy;
   void titles;
   void newest;
 }
@@ -908,6 +917,32 @@ export async function list(url: string, tenantId: string): Promise<void> {
   await db.unscoped("nightly report").notes.find({ limit: 20 });
 }
 ```
+
+### Session settings
+
+`okmodel/session` hands a value, usually the user id, to a row-level security policy or a trigger for the length of one transaction. `sessionSettings({ key: { name, type, required? } })` declares the settings (types `text`, `uuid`, `int`, `bool`). `connect(url, { schema, session })` adds `db.with({ ...values })`, a typed client: every `required` key is required there and the rest are optional. `with()` composes with `for()` and `unscoped()` in any order, and a later `with()` adds to an earlier one.
+
+`session-settings.ts`:
+
+```ts
+import { schema, table, t } from "okmodel/pg";
+import { connect } from "okmodel/pg/postgresjs";
+import { sessionSettings } from "okmodel/session";
+
+const docs = table("docs", { id: t.identity(), ownerId: t.uuid(), title: t.text() });
+const app = schema({ casing: "snake", tables: [docs] });
+const session = sessionSettings({
+  userId: { name: "app.user_id", type: "uuid", required: true },
+});
+export async function mine(url: string, userId: string): Promise<void> {
+  await using db = connect(url, { schema: app, session });
+  await db.with({ userId }).docs.find({ limit: 20 });
+}
+```
+
+One `select set_config($1, $2, true), ...` is the first statement of the unit's transaction, before any savepoint. The third argument is always `true`, so the value is gone after commit and after rollback and a transaction-mode pooler cannot pass it to the next client. A nested `tx()` never sets again, a read sets it on its `BEGIN READ ONLY` transaction on whichever endpoint serves it, and `batch()` starts with it. Read it in SQL as `NULLIF(current_setting('app.user_id', true), '')` before a cast: after the transaction the setting reads as an empty string, not NULL.
+
+A name needs a dot and cannot start with `app.tenant` or `app.unscoped` or be a built-in setting. A value of the wrong type, an unknown key, a missing required key, and a client that never called `with()` when a key is required are OKM1709, before any statement. It does not authenticate: a role that can run SQL can set the same names. It is Postgres only. The MySQL family and SQLite refuse and point at column, composite, or path tenancy (OKM1860). The handbook page [Session settings](https://okm.omqkhafi.dev/docs/define/connect/session-settings) has the policy example.
 
 ### Typed raw SQL
 

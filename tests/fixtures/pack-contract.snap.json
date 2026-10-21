@@ -96,6 +96,10 @@
       "import": "./dist/runtime/safety/index.js",
       "types": "./dist/runtime/safety/index.d.ts"
     },
+    "./session": {
+      "import": "./dist/runtime/session/index.js",
+      "types": "./dist/runtime/session/index.d.ts"
+    },
     "./tenancy": {
       "import": "./dist/runtime/tenancy/index.js",
       "types": "./dist/runtime/tenancy/index.d.ts"
@@ -902,6 +906,7 @@
     "docs/errors/OKM1706.md",
     "docs/errors/OKM1707.md",
     "docs/errors/OKM1708.md",
+    "docs/errors/OKM1709.md",
     "docs/errors/OKM1801.md",
     "docs/errors/OKM1802.md",
     "docs/errors/OKM1803.md",

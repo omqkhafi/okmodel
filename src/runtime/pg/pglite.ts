@@ -12,6 +12,7 @@ import type { QuerySchema } from "../../dialects/pg/model.js";
 import { open, seal, type PgliteConfig } from "../../adapters/pg/pglite.js";
 import { createClient } from "../client.js";
 import type { RoutedClient, TopologyInput, TopologyOptions } from "../topology.js";
+import type { SessionContext } from "../session/index.js";
 import type { ConnectOptions, Connected } from "../types.js";
 
 export { open, type PgliteConfig } from "../../adapters/pg/pglite.js";
@@ -22,7 +23,7 @@ export { DriverError } from "../../adapters/error.js";
 export type PgliteTarget = string | DriverPool | undefined;
 
 /** Driver options `connect` forwards to {@link open}. */
-export type PgliteConnectOptions<S extends QuerySchema> = ConnectOptions<S> &
+export type PgliteConnectOptions<S extends QuerySchema, C = undefined> = ConnectOptions<S, C> &
   Omit<PgliteConfig, "dataDir"> &
   TopologyOptions;
 
@@ -38,18 +39,21 @@ export type PgliteConnectOptions<S extends QuerySchema> = ConnectOptions<S> &
  * @param options - Schema, errors, and logger
  * @returns The client
  */
-export function connect<const S extends QuerySchema>(
-  target: TopologyInput,
-  options: PgliteConnectOptions<S>,
-): Promise<RoutedClient<S>>;
-export function connect<const S extends QuerySchema>(
-  target: PgliteTarget,
-  options: PgliteConnectOptions<S>,
-): Promise<Connected<S>>;
-export async function connect<const S extends QuerySchema>(
+export function connect<
+  const S extends QuerySchema,
+  const C extends SessionContext | undefined = undefined,
+>(target: TopologyInput, options: PgliteConnectOptions<S, C>): Promise<RoutedClient<S, C>>;
+export function connect<
+  const S extends QuerySchema,
+  const C extends SessionContext | undefined = undefined,
+>(target: PgliteTarget, options: PgliteConnectOptions<S, C>): Promise<Connected<S, C>>;
+export async function connect<
+  const S extends QuerySchema,
+  const C extends SessionContext | undefined = undefined,
+>(
   target: PgliteTarget | TopologyInput,
-  options: PgliteConnectOptions<S>,
-): Promise<Connected<S> | RoutedClient<S>> {
+  options: PgliteConnectOptions<S, C>,
+): Promise<Connected<S, C> | RoutedClient<S, C>> {
   if (typeof target === "object" && !isPool(target)) {
     return import("../topology.js").then((mod) => mod.default(target, options, open as never));
   }

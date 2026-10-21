@@ -101,6 +101,7 @@ const PATH_ICONS: Readonly<Record<string, LucideIcon>> = {
   "/docs/define/connect/topology": Network,
   "/docs/define/connect/check": BadgeCheck,
   "/docs/define/connect/session": Layers,
+  "/docs/define/connect/session-settings": Settings,
   "/docs/define/connect/errors": CircleAlert,
   "/docs/define/connect/generators": Dices,
   "/docs/define/connect/observers": Radio,
