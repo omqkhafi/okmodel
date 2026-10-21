@@ -44,6 +44,7 @@ export const POSTGRES_FEATURES = {
   "query.countDistinct": native("proof:query.countDistinct"),
   "query.distinct": native("proof:query.distinct"),
   "query.distinctOn": native("proof:query.distinctOn"),
+  "query.namedAggregates": native("proof:query.namedAggregates"),
   "query.rawTyped": native(
     "a raw read binds parameters, decodes the class, and keeps the tenant predicate",
   ),

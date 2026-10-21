@@ -513,6 +513,43 @@ type NumericKeys<Row> = {
 /** One `orderBy` value. `asc` is nulls last and `desc` is nulls first unless `nulls` is set. */
 type SortDir = "asc" | "desc" | { readonly dir: "asc" | "desc"; readonly nulls?: "first" | "last" };
 
+/** One `select` entry of `aggregate`: a single function and its field. */
+export type AggregateCall<Field extends string, Numeric extends string> =
+  | { readonly count: true }
+  | { readonly countDistinct: Field }
+  | { readonly sum: Numeric }
+  | { readonly avg: Numeric }
+  | { readonly min: Field }
+  | { readonly max: Field };
+
+/**
+ * `aggregate` options with named aggregates.
+ *
+ * Each entry is one function and gives one flat result key, so one call can
+ * hold several of the same function and column. A name that is a group field,
+ * a bucket `as`, or `count`, `countDistinct`, `sum`, `avg`, `min`, or `max` is
+ * refused. The `select` overloads of `aggregate` take these, so a call without
+ * `select` does not pay for them in type cost.
+ */
+export type NamedAggregateOptions<S extends QuerySchema, K extends keyof S["~byName"]> = {
+  readonly select: {
+    readonly [name: string]: AggregateCall<keyof RowOf<S, K> & string, NumericKeys<RowOf<S, K>>>;
+  };
+};
+
+/** The type of one named aggregate: a count is a number, the rest follow the field. */
+type CallValue<Row, E> = E extends { readonly count: true }
+  ? number
+  : E extends { readonly countDistinct: string }
+    ? number
+    : E extends
+          | { readonly sum: infer N }
+          | { readonly avg: infer N }
+          | { readonly min: infer N }
+          | { readonly max: infer N }
+      ? NonNullable<Row[N & keyof Row]> | null
+      : never;
+
 /** `aggregate` options. A hidden field is refused at runtime. */
 export type AggregateOptions<S extends QuerySchema, K extends keyof S["~byName"]> = CallOptions & {
   readonly where?: WhereOf<S, K>;
@@ -586,6 +623,9 @@ export type AggregateRow<Row, O> = Show<
       : unknown) &
     (O extends { readonly max: readonly (infer F)[] }
       ? { readonly max: { readonly [P in F & keyof Row]: NonNullable<Row[P]> | null } }
+      : unknown) &
+    (O extends { readonly select: infer M }
+      ? { readonly [N in keyof M]: CallValue<Row, M[N]> }
       : unknown)
 >;
 
@@ -1007,11 +1047,24 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
    */
   aggregate<
     const O extends AggregateOptions<S, K> &
+      (
+        | { readonly limit: number; readonly select?: undefined }
+        | { readonly groupBy?: undefined; readonly select?: undefined }
+      ),
+  >(
+    options: O,
+  ): Query<readonly AggregateRow<RowOf<S, K>, O>[]>;
+  aggregate<const O extends AggregateOptions<S, K> & { readonly select?: undefined }>(
+    options: O,
+  ): Unbounded<S, "groupBy", Query<readonly AggregateRow<RowOf<S, K>, O>[]>>;
+  aggregate<
+    const O extends AggregateOptions<S, K> &
+      NamedAggregateOptions<S, K> &
       ({ readonly limit: number } | { readonly groupBy?: undefined }),
   >(
     options: O,
   ): Query<readonly AggregateRow<RowOf<S, K>, O>[]>;
-  aggregate<const O extends AggregateOptions<S, K>>(
+  aggregate<const O extends AggregateOptions<S, K> & NamedAggregateOptions<S, K>>(
     options: O,
   ): Unbounded<S, "groupBy", Query<readonly AggregateRow<RowOf<S, K>, O>[]>>;
   count(

@@ -44,6 +44,12 @@ expectTypeOf(findOnly.notes.aggregate({ groupBy: ["rank"], count: true })).not.t
 );
 expectTypeOf(all.notes.aggregate({ groupBy: ["rank"], count: true })).toHaveProperty("then");
 expectTypeOf(all.notes.aggregate({ count: true })).toHaveProperty("then");
+expectTypeOf(
+  all.notes.aggregate({ groupBy: ["rank"], select: { n: { count: true } } }),
+).toHaveProperty("then");
+expectTypeOf(
+  findOnly.notes.aggregate({ groupBy: ["rank"], select: { n: { count: true } } }),
+).not.toHaveProperty("then");
 expectTypeOf(plain.notes.aggregate({ groupBy: ["rank"], count: true })).not.toHaveProperty("then");
 
 void plain.notes.find({
