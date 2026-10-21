@@ -13,7 +13,7 @@ import { test } from "bun:test";
 import { open as openPglite } from "../src/adapters/pg/pglite.js";
 import { OkmError } from "../src/contracts/error.js";
 import { renderCatalog } from "../src/dialects/pg/ddl.js";
-import { integer, schema, table, text, uuid } from "../src/dialects/pg/index.js";
+import { integer, schema, table, text, timestamptz, uuid } from "../src/dialects/pg/index.js";
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
 import { withPostgresSchema } from "../packages/harness/src/postgres.js";
 import { primaryUrl } from "../packages/harness/src/topology.js";
@@ -33,6 +33,7 @@ export const sales = table("sales", {
   customer: text().nullable(),
   amount: integer().nullable(),
   channel: text().nullable(),
+  seenAt: timestamptz().nullable(),
   secret: text().hidden(),
 });
 
@@ -45,34 +46,36 @@ export const app = schema({
 export type Db = Connected<typeof app>;
 export type Scoped = ReturnType<Db["for"]>;
 
+const day = (text: string): Temporal.Instant => Temporal.Instant.from(`${text}T00:00:00Z`);
+
 /**
  * Tenant A holds seven rows and tenant B one. Every nullable column has a NULL.
  *
- * | region | customer | amount | channel |
- * | --- | --- | ---: | --- |
- * | north | c1 | 10 | web |
- * | north | c1 | 20 | web |
- * | north | c2 | null | app |
- * | north | null | 5 | null |
- * | south | c3 | 7 | web |
- * | south | c3 | null | web |
- * | east | null | null | null |
+ * | region | customer | amount | channel | seenAt |
+ * | --- | --- | ---: | --- | --- |
+ * | north | c1 | 10 | web | 2026-01-02 |
+ * | north | c1 | 20 | web | 2026-01-02 |
+ * | north | c2 | null | app | 2026-01-01 |
+ * | north | null | 5 | null | null |
+ * | south | c3 | 7 | web | null |
+ * | south | c3 | null | web | null |
+ * | east | null | null | null | null |
  *
- * Tenant B: north, c9, 1000, web.
+ * Tenant B: north, c9, 1000, web, 2026-03-01.
  */
 export async function seed(db: Db): Promise<{ readonly a: Scoped; readonly b: Scoped }> {
   const a = db.for({ tenantId: TENANT_A });
   const b = db.for({ tenantId: TENANT_B });
   const rows = [
-    ["north", "c1", 10, "web"],
-    ["north", "c1", 20, "web"],
-    ["north", "c2", null, "app"],
-    ["north", null, 5, null],
-    ["south", "c3", 7, "web"],
-    ["south", "c3", null, "web"],
-    ["east", null, null, null],
+    ["north", "c1", 10, "web", day("2026-01-02")],
+    ["north", "c1", 20, "web", day("2026-01-02")],
+    ["north", "c2", null, "app", day("2026-01-01")],
+    ["north", null, 5, null, null],
+    ["south", "c3", 7, "web", null],
+    ["south", "c3", null, "web", null],
+    ["east", null, null, null, null],
   ] as const;
-  for (const [region, customer, amount, channel] of rows) {
+  for (const [region, customer, amount, channel, seenAt] of rows) {
     await a.sales.insert({
       id: crypto.randomUUID(),
       secret: "x",
@@ -80,6 +83,7 @@ export async function seed(db: Db): Promise<{ readonly a: Scoped; readonly b: Sc
       customer,
       amount,
       channel,
+      seenAt,
     });
   }
   await b.sales.insert({
@@ -89,6 +93,7 @@ export async function seed(db: Db): Promise<{ readonly a: Scoped; readonly b: Sc
     customer: "c9",
     amount: 1000,
     channel: "web",
+    seenAt: day("2026-03-01"),
   });
   return { a, b };
 }

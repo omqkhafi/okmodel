@@ -393,6 +393,16 @@ export type FindOptions<S extends QuerySchema, K extends keyof S["~byName"]> = R
   readonly offset?: number;
   /** Text to look for. The closest matches come first unless `orderBy` is set. */
   readonly search?: TextSearch<RowOf<S, K>>;
+  /**
+   * One row per different combination of the selected fields. Needs `select`.
+   * `orderBy` may name selected fields only. Not with `include` or `search`.
+   */
+  readonly distinct?: true;
+  /**
+   * Postgres. The first row of each key under `orderBy`, which must start with
+   * the same keys. Not with `distinct`, `include`, or `search`.
+   */
+  readonly distinctOn?: readonly (keyof RowOf<S, K> & string)[];
 };
 
 /**

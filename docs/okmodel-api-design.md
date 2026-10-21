@@ -892,7 +892,7 @@ The reporting role from section 5.7 is not tenant-safe against its own SQL. It i
 
 | Method | Returns | Rule |
 |---|---|---|
-| `find(opts)` | `Row[]` | `limit` or `.all("reason")` (OKM1101) |
+| `find(opts)` | `Row[]` | `limit` or `.all("reason")` (OKM1101); `distinct: true` needs `select` and keeps one row per different combination of the selected fields, and `orderBy` names selected fields only; `distinctOn: [fields]` is Postgres only, keeps the first row of each key, and needs an `orderBy` that starts with the same keys; neither takes `include` or `search`, and `page` and `one` refuse them (OKM1120, D310) |
 | `page(opts)` | `{ items, next }` | `limit` is required; `after` takes the previous `next` (`null` on the last page); keyset on `orderBy` with the primary key appended; the cursor is opaque and encodes its order, so a different `orderBy` is OKM1130 |
 | `one(opts)` | `Row \| null` | more than one match → `not_unique`, unless `orderBy` is given (then the first row); `.required()` turns `null` into `not_found` |
 | `count(opts)`, `exists(opts)` | `number`, `boolean` | |
