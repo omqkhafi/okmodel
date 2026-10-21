@@ -1074,6 +1074,38 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     fix: "Drain handlers with flush() more often, or raise maxPending on writeObserver. The write path does not wait.",
   },
   {
+    code: "OKM2201",
+    title: "Production timeouts",
+    summary:
+      "okm doctor --production found a lock_timeout or statement_timeout of 0. Apply or a statement can then wait without limit. The finding is a warning: nothing is refused.",
+    fix: "Set timeouts.lock in the config, and ALTER ROLE <app role> SET statement_timeout to the limit you want.",
+    since: "0.10",
+  },
+  {
+    code: "OKM2202",
+    title: "Target not protected",
+    summary:
+      "okm doctor --production selected a target that does not set protected: true in the config. A name such as production and NODE_ENV are never read. A fingerprint in this machine's store does not count: it protects one machine.",
+    fix: "Set protected: true on the production target in okmodel.config.ts.",
+    since: "0.10",
+  },
+  {
+    code: "OKM2203",
+    title: "Pooler target",
+    summary:
+      "okm doctor --production found a target URL that okm migrate apply refuses as a pooler: a host with pooler or pgbouncer in it, port 6543 or 6432, or ?pgbouncer=true. It is a warning, and a failure when the command line or the config lets apply through.",
+    fix: "Point the target at a direct connection, and remove the setting that allows a pooler.",
+    since: "0.10",
+  },
+  {
+    code: "OKM2204",
+    title: "Production check failed",
+    summary:
+      "okm doctor --production found at least one fail finding. The report lists each finding with its id and a one-line fix.",
+    fix: "Fix each fail finding, then check the target again with okm doctor --production.",
+    since: "0.10",
+  },
+  {
     code: "OKM2300",
     title: "Weak override reason",
     summary:

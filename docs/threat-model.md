@@ -37,6 +37,8 @@ Feature: `hostDbFingerprint` in `src/tooling/migrate/fingerprint.ts`. Contract: 
 
 `okm doctor --bundle` writes a diagnostics file for a person to send. It holds versions, codes, closed artifact names with hashes, and counts. It holds no connection string, host, user, URL, table or column name, SQL text, row value, absolute path, or environment variable value, and it opens no socket. A test scans the output for secret-looking values planted in the config, the environment, the schema, a migration, and `.env`.
 
+`okm doctor --production` reads one target in a `READ ONLY` transaction and makes no network call beyond that database. It names the target by its configured name. It never prints the URL, host, user, or password, and a failed connection is reported without the driver's text, which can name the host or the user. A test logs in as roles with unique names and passwords and scans the human and JSON output for them (D315).
+
 Feature: `collectBundle` in `src/tooling/migrate/doctor-bundle.ts`. Contract: [guide](guide.md#sending-a-bundle). Test: `tests/doctor-bundle.test.ts`.
 
 ## Hidden Unicode in docs

@@ -63,6 +63,13 @@ import { assertSupported } from "../capabilities/check.js";
 import type { Registry } from "../capabilities/types.js";
 import { primaryKeyColumns } from "../migrate/backfill.js";
 import { allowFindings } from "../migrate/allows.js";
+import type { MigrateConfig } from "../migrate/config.js";
+import {
+  buildReport,
+  poolerFinding,
+  PRODUCTION_FAILED_CODE,
+  timeoutFindings,
+} from "../migrate/doctor-production.js";
 import { lintCatalog, lintPlan, type Finding } from "../migrate/lint.js";
 import { parsePlan, planMigration } from "../migrate/plan.js";
 import {
@@ -820,6 +827,57 @@ reported(
     weakAllows(
       "-- okm-allow OKM1511: notes moved to the archive schema and the export was verified\ndrop table notes",
     ),
+);
+
+const plain: MigrateConfig = { schema: "./schema.ts" };
+const directUrl = "postgres://app:secret@db.example.com:5432/app";
+const quiet = {
+  metaPresent: true,
+  role: { superuser: false, bypassRls: false },
+  ownedTables: 0,
+  sessionLockMs: 5_000,
+  sessionStatementMs: 30_000,
+  serverMajor: 17,
+  minimum: undefined,
+  roleConfig: "not-set",
+  extensions: { required: [], versions: new Map<string, string>(), refusal: undefined },
+} as const;
+
+function productionCodes(protection: "open" | "project", config: MigrateConfig): readonly string[] {
+  const report = buildReport(
+    { target: { name: "production", protection, url: directUrl }, config, allowPooler: false },
+    quiet,
+  );
+  const codes = report.findings.flatMap((item) => (item.code === undefined ? [] : [item.code]));
+  return report.summary.fail > 0 ? [...codes, PRODUCTION_FAILED_CODE] : codes;
+}
+
+reported(
+  "OKM2201",
+  () =>
+    timeoutFindings({ ...plain, timeouts: { lock: 0 } }, 0, 0).flatMap((item) => item.code ?? []),
+  () =>
+    timeoutFindings({ ...plain, timeouts: { lock: 5_000 } }, 5_000, 30_000).flatMap(
+      (item) => item.code ?? [],
+    ),
+);
+
+reported(
+  "OKM2202",
+  () => productionCodes("open", plain),
+  () => productionCodes("project", plain),
+);
+
+reported(
+  "OKM2203",
+  () => [poolerFinding("postgres://app:secret@db-pooler.example.com:5432/app", false).code ?? ""],
+  () => [poolerFinding(directUrl, false).code ?? ""],
+);
+
+reported(
+  "OKM2204",
+  () => productionCodes("open", plain),
+  () => productionCodes("project", plain),
 );
 
 reported(

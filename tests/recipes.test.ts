@@ -51,6 +51,10 @@ const SKIP = new Map<string, string>([
     "okm migrate apply --target rehearsal",
     "CI has no clone of a production database. Rehearsal is apply on that clone.",
   ],
+  [
+    "okm doctor --production --target production",
+    "The check is read-only and has its own real-Postgres test (doctor-production-pg).",
+  ],
 ]);
 
 /**
