@@ -26,7 +26,7 @@ import { effectivePredicate } from "./predicate.js";
 import { stack } from "./preset-stack.js";
 import { runSafety, safetyInstalled } from "./safety-hook.js";
 import { runWrite, type RunHost } from "./tx.js";
-import type { PreparedWrite } from "./write.js";
+import { tenantFromScope, type PreparedWrite } from "./write.js";
 
 registerFailFix(
   "OKM1102",
@@ -73,7 +73,11 @@ export async function executeArchive(
   scope: CallScope | undefined,
 ): Promise<{ readonly count: number; readonly archiveId?: string }> {
   const prepared = prepareArchive(host.schema, op, table, input, options, mods, scope);
-  const results = await runWrite(host, prepared.statements, prepared.options);
+  const observe =
+    host.o !== undefined && prepared.observe !== undefined
+      ? prepared.statements.map(() => prepared.observe!)
+      : undefined;
+  const results = await runWrite(host, prepared.statements, prepared.options, undefined, observe);
   return prepared.finish(results) as { readonly count: number; readonly archiveId?: string };
 }
 
@@ -101,9 +105,22 @@ export function prepareArchive(
   scope: CallScope | undefined,
 ): PreparedWrite {
   const planned = planArchive(schema, op, table, input, options, mods, scope);
+  const keys =
+    schema.tenancy === undefined
+      ? undefined
+      : schema.tenancy.keys !== undefined && schema.tenancy.keys.length > 0
+        ? schema.tenancy.keys
+        : [schema.tenancy.key];
   return {
     statements: [{ text: planned.text, params: planned.params }],
     options: planned.call,
+    observe: {
+      table,
+      op,
+      tenant: tenantFromScope(scope, keys),
+      settings: [],
+      source: "client",
+    },
     ...(op === "restore"
       ? { checked: "restore" as const }
       : planned.expect !== undefined

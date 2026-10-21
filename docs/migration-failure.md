@@ -62,13 +62,31 @@ Postgres can probe these kinds:
 - `validate-constraint`. `convalidated` true is `applied`. False is `absent`.
 - `add-enum-value`. The label present is `applied`. Missing is `absent`.
 
-Every other kind is `unknown` after a failure. The statement is not run again until a person marks it `retry` or records it as applied.
+Every other kind is `unknown` after a failure, unless the step declares a probe. The statement is not run again until a person marks it `retry` or records it as applied.
+
+## Declared probe
+
+A hand-written step may carry one line above its statement, in the same comment style as `-- lock:`:
+
+```sql
+-- probe: select exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relname = 'notes')
+-- transactional: false
+create table notes (id integer);
+```
+
+The probe is one read-only `SELECT` (or `WITH … SELECT`). It returns exactly one boolean. True means the step has already been applied. False means it has not. NULL, more than one row, a non-boolean, or an error is `unknown`, never applied. Apply runs it inside `begin read only` and rolls the transaction back. The text is not part of the statement hash.
+
+A built-in probe for the step's kind still wins. The declared line is not consulted.
+
+There is no cleanup for a declared probe. A raw step has to be atomic. If a crash can leave a partial result, the author repairs that through `okm migrate resolve` after looking at the database. `okm migrate resolve --applied` uses the declared probe, so that step no longer needs `--accept-unverified`. A probe that is not `applied` is still OKM1554.
+
+OKM1557 refuses a committed step that has no built-in probe and no `-- probe:`. OKM1558 refuses a probe that is empty, is not one read-only `SELECT`, has more than one statement, or sits on a step that stays inside a transaction. `-- okm-allow OKM1557: reason` records that a failure of that step needs a person. An empty reason does not silence the finding.
 
 ## Resolve
 
 `okm migrate resolve <migrationId>:<stepIndex>` takes the same advisory lock as apply. It only works when an `okm_steps` row exists.
 
-- Record the step as applied after finishing it by hand. Where a probe exists, a result other than `applied` is OKM1554. Where no probe exists, the command is OKM1555 until the invocation explicitly accepts that the database was checked.
+- Record the step as applied after finishing it by hand. Where a probe exists, including a `-- probe:` line, a result other than `applied` is OKM1554. Where no probe exists, the command is OKM1555 until the invocation explicitly accepts that the database was checked. A declared probe is a probe, so that step does not need the unverified acceptance.
 - Mark the row `retry`. The next apply probes first where a probe exists, and otherwise runs the step.
 
 There is no skip. Skipping would write a done row for a change that is not in the database, and the next migration would be planned on top of that lie. Finish the change, or mark the step to run again.

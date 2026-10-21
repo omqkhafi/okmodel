@@ -79,6 +79,9 @@
           },
           "sql": {
             "type": "string"
+          },
+          "probe": {
+            "type": "string"
           }
         }
       }

@@ -615,6 +615,22 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     fix: "Restore the statement that started, or replace the file only after the database matches it.",
   },
   {
+    code: "OKM1557",
+    title: "Step cannot be made re-runnable",
+    summary:
+      "A committed step has no built-in probe and no declared probe, so a failure cannot tell whether the change is already in place.",
+    fix: "Declare one read-only SELECT that returns a single boolean, true when the change is already in place, or keep the step inside the migration transaction.",
+    escapeHatches: [hatch("OKM1557", "-- okm-allow")],
+  },
+  {
+    code: "OKM1558",
+    title: "Invalid probe",
+    summary:
+      "A probe is empty, is not one read-only SELECT, has more than one statement, or is declared on a step that stays inside a transaction.",
+    fix: "Write one read-only SELECT that returns a single boolean, and put it on a step that cannot share a transaction.",
+    escapeHatches: [hatch("OKM1558", "-- okm-allow")],
+  },
+  {
     code: "OKM1601",
     title: "Stale typed SQL",
     summary: "A typed SQL signature no longer matches the database.",

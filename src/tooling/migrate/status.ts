@@ -473,7 +473,8 @@ async function readSteps(
     }
     const stepIndex = Number(index);
     const file = migrations.find((migration) => migration.id === migrationId)?.steps[stepIndex];
-    const probed = postgresHasProbe(kind, file?.sql ?? "");
+    const declared = file?.probe !== undefined && file.probe.trim().length > 0;
+    const probed = postgresHasProbe(kind, file?.sql ?? "") || declared;
     const marker = markerState(state);
     rows.push({
       id: stepId(migrationId, stepIndex),
