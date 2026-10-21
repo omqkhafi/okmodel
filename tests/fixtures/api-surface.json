@@ -1183,6 +1183,10 @@
       "kind": "stable"
     },
     {
+      "name": "RawStatements",
+      "kind": "stable"
+    },
+    {
       "name": "ReferenceModifier",
       "kind": "stable"
     },
@@ -1535,6 +1539,10 @@
       "kind": "stable"
     },
     {
+      "name": "registerRawLock",
+      "kind": "stable"
+    },
+    {
       "name": "relevance",
       "kind": "stable"
     },
@@ -1588,6 +1596,10 @@
     },
     {
       "name": "timetz",
+      "kind": "stable"
+    },
+    {
+      "name": "trusted",
       "kind": "stable"
     },
     {

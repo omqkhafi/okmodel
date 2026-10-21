@@ -990,8 +990,8 @@
     "code": "OKM1601",
     "kind": "invalid",
     "category": "input",
-    "summary": "A typed SQL signature no longer matches the database.",
-    "fix": "Regenerate the typed SQL and commit the new signature.",
+    "summary": "A typed raw statement is missing from the lock, the lock does not parse, or its signature no longer matches the database.",
+    "fix": "Rerun okm raw sync and commit .okm/raw.lock.json and .okm/raw.d.ts.",
     "retryable": false,
     "docs": "docs/errors/OKM1601.md"
   },
@@ -999,8 +999,8 @@
     "code": "OKM1602",
     "kind": "invalid",
     "category": "input",
-    "summary": "A raw statement is not one select or one write the checker can classify, or two result columns share a name.",
-    "fix": "Start the statement with select, insert, update, or delete. with is a write when it contains insert, update, delete, or merge. Give result columns distinct names.",
+    "summary": "A raw statement is not one select or one write the checker can classify, two result columns share a name, or a typed raw call passed the wrong number of parameters.",
+    "fix": "Start the statement with select, insert, update, or delete. with is a write when it contains insert, update, delete, or merge. Give result columns distinct names. Pass one value per $n placeholder.",
     "retryable": false,
     "docs": "docs/errors/OKM1602.md"
   },
@@ -1051,13 +1051,18 @@
     "code": "OKM1702",
     "kind": "invalid",
     "category": "input",
-    "summary": "Raw SQL on a tenant table cannot prove the tenant predicate. A raw write is this. A raw read that does not select the primary key with ident is this.",
-    "fix": "Use update or delete, or select the primary key with ident(name).",
+    "summary": "Raw SQL on a tenant table cannot prove the tenant predicate. A raw write is this. A raw read that does not select the primary key with ident is this. A typed raw call, raw(db, sql, params), on a client of a schema with tenancy is this.",
+    "fix": "Use update or delete, or select the primary key with ident(name). For a typed raw call, use the table API, or pass trusted(client, \"reason\") to send the SQL without a tenant predicate on purpose.",
     "retryable": false,
     "docs": "docs/errors/OKM1702.md",
     "escapeHatches": [
       {
         "name": "unscoped()",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1702.md#escape"
+      },
+      {
+        "name": "trusted()",
         "requiresHumanReason": true,
         "docs": "docs/errors/OKM1702.md#escape"
       }

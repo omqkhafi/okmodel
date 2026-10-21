@@ -8,38 +8,21 @@
 
 import { OkmError } from "../../contracts/error.js";
 import { typescriptForPgType, type PgTypescriptCodecs } from "../../dialects/pg/emit.js";
+import {
+  parseRawLockValue,
+  staleRaw,
+  type RawLock,
+  type RawLockStatement,
+} from "../../dialects/pg/raw-lock.js";
 import { errorDoc } from "../errors/registry.js";
 import type { RawCall } from "./scan.js";
 
-/** One parameter in the lock. `enumLabels` is omitted unless the type is an enum. */
-export type RawLockParam = {
-  readonly pgType: string;
-  readonly enumLabels?: readonly string[];
-};
-
-/** One result column. `name` has no `!` or `?` suffix. */
-export type RawLockColumn = {
-  readonly name: string;
-  readonly pgType: string;
-  readonly nullable: boolean;
-  readonly enumLabels?: readonly string[];
-};
-
-/** One locked statement. `sql` is the normalised text. */
-export type RawLockStatement = {
-  readonly sql: string;
-  readonly kind: "read" | "write";
-  readonly params: readonly RawLockParam[];
-  readonly columns: readonly RawLockColumn[];
-};
-
-/** The file `.okm/raw.lock.json`. */
-export type RawLock = {
-  readonly version: 1;
-  readonly dialect: "postgres";
-  readonly catalogHash: string;
-  readonly statements: Readonly<Record<string, RawLockStatement>>;
-};
+export type {
+  RawLock,
+  RawLockColumn,
+  RawLockParam,
+  RawLockStatement,
+} from "../../dialects/pg/raw-lock.js";
 
 /**
  * Pretty JSON for the lock. Keys are in a fixed order and hashes are sorted.
@@ -78,17 +61,11 @@ export function parseLock(text: string): RawLock {
   try {
     value = JSON.parse(text);
   } catch {
-    throw stale();
+    throw staleRaw();
   }
-  if (!isRecord(value) || value.version !== 1 || value.dialect !== "postgres") throw stale();
-  if (typeof value.catalogHash !== "string" || !isRecord(value.statements)) throw stale();
-  const statements: Record<string, RawLockStatement> = {};
-  for (const [hash, statement] of Object.entries(value.statements)) {
-    const parsed = parseStatement(statement);
-    if (parsed === undefined) throw stale();
-    statements[hash] = parsed;
-  }
-  return { version: 1, dialect: "postgres", catalogHash: value.catalogHash, statements };
+  const parsed = parseRawLockValue(value);
+  if (parsed === undefined) throw staleRaw();
+  return parsed;
 }
 
 /**
@@ -151,7 +128,7 @@ export function assertLocked(
  */
 export function assertSignature(stored: RawLockStatement, described: RawLockStatement): void {
   if (statementJsonText(stored) === statementJsonText(described)) return;
-  throw stale();
+  throw staleRaw();
 }
 
 /**
@@ -265,52 +242,4 @@ function typedJson(value: { readonly pgType: string; readonly enumLabels?: reado
 
 function statementJsonText(statement: RawLockStatement): string {
   return JSON.stringify(statementJson(statement));
-}
-
-function parseStatement(value: unknown): RawLockStatement | undefined {
-  if (!isRecord(value)) return undefined;
-  if (typeof value.sql !== "string") return undefined;
-  if (value.kind !== "read" && value.kind !== "write") return undefined;
-  if (!Array.isArray(value.params) || !Array.isArray(value.columns)) return undefined;
-  const params: RawLockParam[] = [];
-  for (const item of value.params) {
-    const parsed = parseTyped(item);
-    if (parsed === undefined) return undefined;
-    params.push(parsed);
-  }
-  const columns: RawLockColumn[] = [];
-  for (const item of value.columns) {
-    if (!isRecord(item) || typeof item.name !== "string" || typeof item.nullable !== "boolean") {
-      return undefined;
-    }
-    const parsed = parseTyped(item);
-    if (parsed === undefined) return undefined;
-    columns.push({ name: item.name, ...parsed, nullable: item.nullable });
-  }
-  return { sql: value.sql, kind: value.kind, params, columns };
-}
-
-function parseTyped(
-  value: unknown,
-): { readonly pgType: string; readonly enumLabels?: readonly string[] } | undefined {
-  if (!isRecord(value) || typeof value.pgType !== "string") return undefined;
-  if (value.enumLabels === undefined) return { pgType: value.pgType };
-  if (
-    !Array.isArray(value.enumLabels) ||
-    value.enumLabels.some((item) => typeof item !== "string")
-  ) {
-    return undefined;
-  }
-  return { pgType: value.pgType, enumLabels: value.enumLabels as readonly string[] };
-}
-
-function stale(): OkmError {
-  const doc = errorDoc("OKM1601");
-  return new OkmError(doc?.code ?? "OKM1601", doc?.summary ?? "Typed SQL is stale.", {
-    fix: { summary: doc?.fix ?? "Run okm raw sync and commit the lock." },
-  });
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
