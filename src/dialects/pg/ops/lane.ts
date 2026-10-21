@@ -1,10 +1,13 @@
 /**
- * Typed raw SQL and `explain()` (P103, P104, D268).
+ * Typed raw SQL and `explain()` (P103, P104, D268, F7-3).
  *
  * Exported from `okmodel/pg`. An app that does not import them drops this
  * module. The table handle carries the session under `Symbol.for("okm.lane")`.
- * The statement class is explicit. Parameters come from the fragment. The
- * tenant predicate, when it applies, is written outside the fragment.
+ * The class form names the statement class explicitly. Its parameters come
+ * from the fragment, and the tenant predicate, when it applies, is written
+ * outside the fragment. The `raw(db, sql, params)` form runs a statement
+ * `okm raw sync` locked. It hands the session to the runtime chunk that binds,
+ * runs, and decodes it, so this module holds no codec and no file reader.
  */
 
 import type { DriverPool } from "../../../contracts/driver.js";
@@ -55,13 +58,66 @@ type Lane = {
   fail(session: LaneSession, error: unknown): Promise<Mapped>;
 };
 
+/** What the runtime chunk exposes to a typed `raw()` call. */
+type RawRunner = {
+  readonly runTypedRaw: (
+    session: object,
+    sql: string,
+    params: unknown,
+    trust: unknown,
+  ) => Promise<readonly unknown[]>;
+};
+
+/**
+ * Typed raw statements, keyed by the exact SQL literal.
+ *
+ * Empty here. `okm raw sync` writes `.okm/raw.d.ts`, which adds one entry per
+ * `raw(db, "...", [...])` literal with its `params`, `row`, and `kind`. A
+ * literal with no entry does not type-check.
+ */
+// oxlint-disable-next-line typescript/no-empty-object-type, no-unused-vars
+export interface RawStatements {}
+
+/** The message a literal with no `RawStatements` entry shows. */
+type NeedsRawSync =
+  "No typed entry for this SQL. Run `okm raw sync` and commit .okm/raw.lock.json and .okm/raw.d.ts. The SQL must be one string literal.";
+
 const LANE = Symbol.for("okm.lane");
+const TRUSTED = Symbol.for("okm.trusted");
 const READ = "read";
 const WRITE = "write";
 const BLOCKED = new Set(["__proto__", "constructor", "toString", "hasOwnProperty"]);
 
 /**
- * Runs one typed raw statement on a table handle.
+ * Runs one locked raw statement.
+ *
+ * `sql` is a string literal that `okm raw sync` described. Its entry in
+ * `.okm/raw.d.ts` types `params` and each row. Parameters are encoded and
+ * columns are decoded with the codecs the typed API uses for that Postgres
+ * type, and a type with no codec stays the driver's text. A `"write"`
+ * statement runs on the primary. A `"read"` follows the routing rules, and
+ * inside `tx()` both use the transaction's connection.
+ *
+ * The lock is read from `.okm/raw.lock.json` on the first call, or comes from
+ * `registerRawLock`. A statement that is not in it is OKM1601.
+ *
+ * A raw statement has no archive filter and no hidden-column guard. On a
+ * schema with tenancy it is refused (OKM1702) unless the client went through
+ * `trusted(client, reason)`.
+ *
+ * @typeParam S - The SQL literal
+ * @param db - The connected client, including one from `tx()`, or a table handle
+ * @param sql - Static SQL with `$n` placeholders
+ * @param params - One value per placeholder, in order
+ * @returns One object per row, keyed by column name
+ */
+export function raw<S extends string>(
+  db: object,
+  sql: S extends keyof RawStatements ? S : NeedsRawSync,
+  params: S extends keyof RawStatements ? RawStatements[S]["params"] : never,
+): Promise<readonly (S extends keyof RawStatements ? RawStatements[S]["row"] : never)[]>;
+/**
+ * Runs one raw statement on a table handle, with the class naming the row.
  *
  * `cls` is constructed once per row. Own enumerable keys of that instance, in
  * order, are the result columns. A key that is a field of the table uses that
@@ -75,7 +131,73 @@ const BLOCKED = new Set(["__proto__", "constructor", "toString", "hasOwnProperty
  * @param source - A `fragment` template. Identifiers are `ident(name)`
  * @returns One instance per row
  */
-export async function raw<C extends new () => object>(
+export function raw<C extends new () => object>(
+  handle: object,
+  cls: C,
+  statement: "read" | "write",
+  source: unknown,
+): Promise<InstanceType<C>[]>;
+export function raw(
+  handle: object,
+  second: unknown,
+  third: unknown,
+  fourth?: unknown,
+): Promise<readonly unknown[]> {
+  if (typeof second === "string") return rawTyped(handle, second, third);
+  return rawClass(handle, second as new () => object, third as "read" | "write", fourth);
+}
+
+/**
+ * Lets typed `raw()` run on a tenant client.
+ *
+ * A raw statement has no tenant predicate, so on a schema with tenancy the
+ * client refuses it (OKM1702). This returns the same client for typed `raw()`
+ * to accept. The reason is required. It reaches the safety hatches as
+ * `trusted` and the write observer as the event `tag`. The statement still
+ * has no tenant predicate and no archive filter.
+ *
+ * @typeParam C - Client type
+ * @param client - The connected client
+ * @param reason - Why this statement may run without a tenant predicate
+ * @returns A client that typed `raw()` accepts. Other methods are unchanged
+ */
+export function trusted<C extends object>(client: C, reason: string): C {
+  if (typeof reason !== "string" || reason.trim().length === 0) {
+    unverifiable("trusted() needs a reason.", 'Pass trusted(client, "why this SQL is safe").');
+  }
+  return Object.create(client, { [TRUSTED]: { value: reason.trim() } }) as C;
+}
+
+async function rawTyped(handle: object, sql: string, params: unknown): Promise<readonly unknown[]> {
+  const value = findLane(handle);
+  const session: unknown = value[0];
+  const door: unknown = value[3];
+  if (!isSession(session) || typeof door !== "function") {
+    bad("Pass the connected client.", "raw(db, sql, params) takes the client from connect().");
+  }
+  const runner = await (door as () => Promise<RawRunner>)();
+  return runner.runTypedRaw(session, sql, params, Reflect.get(handle, TRUSTED));
+}
+
+function findLane(handle: object): readonly unknown[] {
+  const own: unknown = Reflect.get(handle, LANE);
+  if (Array.isArray(own)) return own;
+  for (const key in handle) {
+    const item: unknown = Reflect.get(handle, key);
+    if (typeof item !== "object" || item === null) continue;
+    const lane: unknown = Reflect.get(item, LANE);
+    if (Array.isArray(lane)) return lane;
+  }
+  if (typeof Reflect.get(handle, "for") === "function") {
+    unverifiable(
+      "The root client of a tenant schema has no tenant for typed raw SQL.",
+      'Call for({ ... }) and pass trusted(client, "reason"), or call unscoped(reason).',
+    );
+  }
+  return bad("Pass the connected client.", "raw(db, sql, params) takes the client from connect().");
+}
+
+async function rawClass<C extends new () => object>(
   handle: object,
   cls: C,
   statement: "read" | "write",

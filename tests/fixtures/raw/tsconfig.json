@@ -20,5 +20,10 @@
       "okmodel/pg": ["../../../src/dialects/pg/index.ts"]
     }
   },
-  "files": ["raw-generated.d.ts", "raw-jsonb.test-d.ts", "raw-statements.test-d.ts"]
+  "files": [
+    "raw-call.test-d.ts",
+    "raw-generated.d.ts",
+    "raw-jsonb.test-d.ts",
+    "raw-statements.test-d.ts"
+  ]
 }

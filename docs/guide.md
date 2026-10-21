@@ -53,6 +53,7 @@ Apache-2.0. The published version is [okmodel on npm](https://www.npmjs.com/pack
   - [Traits](#traits)
   - [Archive](#archive)
   - [Tenancy](#tenancy)
+  - [Typed raw SQL](#typed-raw-sql)
   - [Extensions](#extensions)
   - [Domains](#domains)
   - [Functions](#functions)
@@ -887,6 +888,24 @@ export async function list(url: string, tenantId: string): Promise<void> {
   await db.unscoped("nightly report").notes.find({ limit: 20 });
 }
 ```
+
+### Typed raw SQL
+
+`raw(db, "select ...", params)` runs a SQL string you wrote and returns typed rows. The types and the parameter and column codecs come from `.okm/raw.lock.json`, which `okm raw sync` writes by describing each static call against your database. Run `okm raw sync` after you add or change a statement, and commit both `.okm/raw.lock.json` and `.okm/raw.d.ts`. `okm check` compares the lock.
+
+`raw-call.ts`:
+
+```ts
+import { raw } from "okmodel/pg";
+
+const rows = await raw(db, "select id, title from notes where author_id = $1", [authorId]);
+```
+
+A literal with no entry in the lock is a type error that says to run `okm raw sync`. At runtime, a statement missing from the lock, a lock that does not parse, or a lock whose columns no longer match the result is OKM1601. The lock is read on the first typed raw call, from `.okm/` under the `catalogDir` you pass to `connect`. A runtime with no file system calls `registerRawLock(lock)` from `okmodel/pg` once at startup with the parsed lock instead.
+
+Parameters use the codecs the typed API uses for that Postgres type (booleans, integers, `bigint` and `numeric` modes, JSON, ranges, arrays, enums by label). A parameter count that differs from the lock is OKM1602. A `write` statement runs on the primary. A `read` statement follows normal routing. Inside `tx()` both use the transaction connection. `onWrite` sees a write statement with `source: "raw"`, `op: "raw"`, and `table: null`. `onQuery` sees reads and writes with `op: "raw"`.
+
+A client from `for()` refuses typed raw with OKM1702, because the statement is not filtered by tenant. `trusted(client, "reason")` from `okmodel/pg` returns the same client with the check lifted for the statements you run through it. The reason is required and shows as the event `tag` in the observer. A schema with no tenancy has no restriction. Raw SQL has no archive filter and no hidden-column guard: write both into the statement. A template literal with `${}` or a dynamic string stays on the older `raw(handle, cls, "read" | "write", fragment)` form.
 
 ### Extensions
 

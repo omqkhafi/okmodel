@@ -1,4 +1,5 @@
 import { POSTGRES_FLOOR, uuidv7NeedsPostgres } from "../../dialects/pg/floor.js";
+import { RAW_STALE } from "../../dialects/pg/raw-lock.js";
 import {
   VALIDATION_NOT_IMPORTED,
   VALIDATION_NOT_IMPORTED_FIX,
@@ -646,15 +647,15 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
   {
     code: "OKM1601",
     title: "Stale typed SQL",
-    summary: "A typed SQL signature no longer matches the database.",
-    fix: "Regenerate the typed SQL and commit the new signature.",
+    summary: RAW_STALE.summary,
+    fix: RAW_STALE.fix,
   },
   {
     code: "OKM1602",
     title: "Bad typed SQL",
     summary:
-      "A raw statement is not one select or one write the checker can classify, or two result columns share a name.",
-    fix: "Start the statement with select, insert, update, or delete. with is a write when it contains insert, update, delete, or merge. Give result columns distinct names.",
+      "A raw statement is not one select or one write the checker can classify, two result columns share a name, or a typed raw call passed the wrong number of parameters.",
+    fix: "Start the statement with select, insert, update, or delete. with is a write when it contains insert, update, delete, or merge. Give result columns distinct names. Pass one value per $n placeholder.",
   },
   {
     code: "OKM1603",
@@ -685,9 +686,9 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     code: "OKM1702",
     title: "Unverifiable tenant SQL",
     summary:
-      "Raw SQL on a tenant table cannot prove the tenant predicate. A raw write is this. A raw read that does not select the primary key with ident is this.",
-    fix: "Use update or delete, or select the primary key with ident(name).",
-    escapeHatches: [hatch("OKM1702", "unscoped()")],
+      "Raw SQL on a tenant table cannot prove the tenant predicate. A raw write is this. A raw read that does not select the primary key with ident is this. A typed raw call, raw(db, sql, params), on a client of a schema with tenancy is this.",
+    fix: 'Use update or delete, or select the primary key with ident(name). For a typed raw call, use the table API, or pass trusted(client, "reason") to send the SQL without a tenant predicate on purpose.',
+    escapeHatches: [hatch("OKM1702", "unscoped()"), hatch("OKM1702", "trusted()")],
   },
   {
     code: "OKM1704",
