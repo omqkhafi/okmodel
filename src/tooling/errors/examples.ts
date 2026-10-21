@@ -758,6 +758,18 @@ reported(
   () => hand("create table notes (id int)"),
 );
 
+reported(
+  "OKM1557",
+  () => hand("-- transactional: false\nvacuum analyze notes"),
+  () => hand("-- probe: select true\n-- transactional: false\nvacuum analyze notes"),
+);
+
+reported(
+  "OKM1558",
+  () => hand("-- probe: delete from notes\n-- transactional: false\nvacuum analyze notes"),
+  () => hand("-- probe: select true\n-- transactional: false\nvacuum analyze notes"),
+);
+
 thrown(
   "OKM1553",
   () =>

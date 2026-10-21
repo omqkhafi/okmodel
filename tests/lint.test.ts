@@ -1131,6 +1131,16 @@ test("every step rule fires, stays quiet on its safe form, and honors an overrid
       safe: 'create table "tasks" ("id" bigint)',
     },
     { code: "OKM1551", fire: "commit", safe: 'create table "tasks" ("id" bigint)' },
+    {
+      code: "OKM1557",
+      fire: "-- transactional: false\nvacuum analyze notes",
+      safe: "-- probe: select true\n-- transactional: false\nvacuum analyze notes",
+    },
+    {
+      code: "OKM1558",
+      fire: "-- probe: delete from notes\n-- transactional: false\nvacuum analyze notes",
+      safe: "-- probe: select true\n-- transactional: false\nvacuum analyze notes",
+    },
   ];
   expect(fixtures.map((item) => item.code).sort()).toEqual(
     STEP_RULES.map((rule) => rule.code).sort(),
