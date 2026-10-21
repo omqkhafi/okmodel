@@ -498,6 +498,8 @@ export type AggregateOptions<S extends QuerySchema, K extends keyof S["~byName"]
   readonly groupBy?: readonly ((keyof RowOf<S, K> & string) | Bucket<string, string, string>)[];
   /** Adds `count`, the number of rows in the group. */
   readonly count?: true;
+  /** Adds `countDistinct.<field>`: how many different non-null values the group holds. */
+  readonly countDistinct?: readonly (keyof RowOf<S, K> & string)[];
   readonly sum?: readonly NumericKeys<RowOf<S, K>>[];
   readonly avg?: readonly NumericKeys<RowOf<S, K>>[];
   readonly min?: readonly (keyof RowOf<S, K> & string)[];
@@ -546,6 +548,9 @@ type GroupOf<Row, G> =
 export type AggregateRow<Row, O> = Show<
   (O extends { readonly groupBy: readonly (infer G)[] } ? GroupOf<Row, G> : unknown) &
     (O extends { readonly count: true } ? { readonly count: number } : unknown) &
+    (O extends { readonly countDistinct: readonly (infer F)[] }
+      ? { readonly countDistinct: { readonly [P in F & keyof Row]: number } }
+      : unknown) &
     (O extends { readonly sum: readonly (infer F)[] }
       ? { readonly sum: { readonly [P in F & keyof Row]: NonNullable<Row[P]> | null } }
       : unknown) &

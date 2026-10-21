@@ -278,6 +278,12 @@ test("proof:query.window", async () => {
   expect(described.text).toContain("row_number()");
 });
 
+test("proof:query.countDistinct", async () => {
+  const db = await connect(stub(), { schema: notesSchema });
+  const described = await db.notes.aggregate({ countDistinct: ["body"], limit: 1 }).sql();
+  expect(described.text).toContain("count(distinct ");
+});
+
 test("proof:query.upsert", async () => {
   const db = await connect(stub(), { schema: notesSchema });
   const described = await db.notes.insert({ id: "a", body: "x" }, { onConflict: "ignore" }).sql();
