@@ -177,6 +177,7 @@ const SCHEMAS: Readonly<Record<string, JsonSchema>> = {
             operationClass: operationClassSchema(),
             lock: { type: "string" },
             sql: { type: "string" },
+            probe: { type: "string" },
           },
         },
       },

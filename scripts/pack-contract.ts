@@ -155,7 +155,8 @@ if (import.meta.main) {
     exports: exportsField ?? null,
   };
   const drift: string[] = values.update ? [] : [...compareSnapshot(snapshotPath, next)];
-  if (!values.update) {
+  // The size budget is the repository's. A fixture passed with --root has no baseline.
+  if (!values.update && resolve(root) === resolve(repoRoot())) {
     try {
       drift.push(...packSizeProblems(packed.bytes, readPackSizeBaseline(root)));
     } catch (error) {

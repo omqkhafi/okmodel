@@ -2,13 +2,21 @@
  * Postgres probes for a committed step.
  *
  * Only `create-index` (concurrent), `drop-index` (concurrent),
- * `add-constraint`, `validate-constraint`, and `add-enum-value` have a probe.
- * Every other kind is `unknown`. A valid object is `applied` only when the
- * statement's definition can be proved equal to the catalog. Anything the
- * parser cannot prove is `unknown`, never `applied`.
+ * `add-constraint`, `validate-constraint`, and `add-enum-value` have a
+ * built-in probe. A step may also declare `-- probe:`. A built-in probe
+ * wins. A declared probe is one read-only `SELECT` run inside
+ * `begin read only` and then rolled back. True is `applied`, false is
+ * `absent`. NULL, more than one row, a non-boolean, or an error is
+ * `unknown`, never `applied`. A declared probe has no cleanup: the
+ * statement has to be atomic, or the author repairs a partial result
+ * with `okm migrate resolve`.
+ *
+ * A valid object is `applied` only when the statement's definition can be
+ * proved equal to the catalog. Anything the parser cannot prove is
+ * `unknown`, never `applied`.
  */
 
-import type { DriverConnection } from "../../contracts/driver.js";
+import type { DriverConnection, ExecuteResult } from "../../contracts/driver.js";
 import { quoteIdent } from "../../dialects/pg/ddl.js";
 import { PartialCleanupError, type ProbeResult, type StepEngine } from "./step-engine.js";
 
@@ -31,6 +39,36 @@ export function postgresHasProbe(kind: string, sql: string): boolean {
     resolved === "validate-constraint" ||
     resolved === "add-enum-value"
   );
+}
+
+/**
+ * Reports whether the built-in probe can read this statement.
+ *
+ * A concurrent index whose name cannot be read, and a constraint, validate,
+ * or enum step whose statement cannot be read, is false. That probe would
+ * return `unknown` for every database.
+ *
+ * @param kind - Planner kind, or `raw-sql`
+ * @param sql - Statement text
+ * @returns `true` when {@link postgresStepEngine} has a built-in probe that parses `sql`
+ */
+export function postgresProbeParses(kind: string, sql: string): boolean {
+  if (!postgresHasProbe(kind, sql)) return false;
+  const resolved = probeKind(kind, sql);
+  switch (resolved) {
+    case "create-index":
+      return parseCreateIndex(sql) !== undefined;
+    case "drop-index":
+      return parseDropIndex(sql) !== undefined;
+    case "add-constraint":
+      return parseAddConstraint(sql) !== undefined;
+    case "validate-constraint":
+      return parseValidate(sql) !== undefined;
+    case "add-enum-value":
+      return parseAddEnum(sql) !== undefined;
+    default:
+      return false;
+  }
 }
 
 /**
@@ -113,17 +151,63 @@ export function constraintDefinitionVerdict(
  */
 export function postgresStepEngine(
   connection: DriverConnection,
-  step: { readonly kind: string; readonly sql: string; readonly lockTimeoutMs: number },
+  step: {
+    readonly kind: string;
+    readonly sql: string;
+    readonly lockTimeoutMs: number;
+    /** Declared `-- probe:` text. A built-in probe for `kind` still wins. */
+    readonly probe?: string;
+  },
   run: () => Promise<void>,
 ): StepEngine {
-  const probed = postgresHasProbe(step.kind, step.sql);
+  const builtin = postgresHasProbe(step.kind, step.sql);
+  const declared = step.probe !== undefined && step.probe.trim().length > 0;
+  const probed = builtin || declared;
   const kind = probeKind(step.kind, step.sql);
   return {
     probed,
-    probe: () => (probed ? probeStep(connection, kind, step.sql) : Promise.resolve("unknown")),
-    cleanup: () => cleanupStep(connection, { ...step, kind }),
+    probe: () => {
+      if (builtin) return probeStep(connection, kind, step.sql);
+      if (declared && step.probe !== undefined) return probeDeclared(connection, step.probe);
+      return Promise.resolve("unknown");
+    },
+    cleanup: () => (builtin ? cleanupStep(connection, { ...step, kind }) : Promise.resolve()),
     run,
   };
+}
+
+/**
+ * Runs a declared probe in a read-only transaction.
+ *
+ * There is no cleanup. A raw step has to be atomic, or its author repairs
+ * a partial result with `okm migrate resolve`.
+ *
+ * @param connection - Reserved connection
+ * @param probe - The `-- probe:` statement
+ * @returns `applied`, `absent`, or `unknown`
+ */
+async function probeDeclared(connection: DriverConnection, probe: string): Promise<ProbeResult> {
+  let open = false;
+  try {
+    await connection.execute("begin read only");
+    open = true;
+    const result = await connection.execute(probe);
+    return declaredVerdict(result);
+  } catch {
+    return "unknown";
+  } finally {
+    if (open) await connection.execute("rollback").catch(() => undefined);
+  }
+}
+
+function declaredVerdict(result: ExecuteResult): ProbeResult {
+  if (result.rows.length !== 1) return "unknown";
+  const row = result.rows[0];
+  if (row === undefined || row.length !== 1) return "unknown";
+  const value = row[0];
+  if (wireTrue(value)) return "applied";
+  if (wireFalse(value)) return "absent";
+  return "unknown";
 }
 
 async function probeStep(
@@ -677,4 +761,8 @@ function skipSpace(text: string, index: number): number {
 
 function wireTrue(value: unknown): boolean {
   return value === true || value === "t" || value === "true" || value === "1";
+}
+
+function wireFalse(value: unknown): boolean {
+  return value === false || value === "f" || value === "false" || value === "0";
 }

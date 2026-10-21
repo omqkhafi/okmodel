@@ -110,6 +110,14 @@ export type PlanStep = {
    */
   readonly behavior?: "change";
   /**
+   * `-- probe:` text on a committed step.
+   *
+   * One read-only `SELECT`. True means the step is already applied. Absent
+   * when the step has no probe line. An empty string is a probe line with
+   * no statement. The text is not part of the statement hash.
+   */
+  readonly probe?: string;
+  /**
    * `-- okm-allow` lines on the step.
    *
    * A reason silences that code on every statement of the step. An empty
@@ -665,6 +673,9 @@ export function formatPlan(plan: MigrationPlan, lockText?: (step: PlanStep) => s
     if (!item.transactional) lines.push("-- transactional: false");
     if (item.path !== undefined) lines.push(`-- path: ${item.path}`);
     if (item.behavior === "change") lines.push("-- behavior: change");
+    if (item.probe !== undefined) {
+      lines.push(item.probe.length === 0 ? "-- probe:" : `-- probe: ${item.probe}`);
+    }
     for (const allow of item.allows ?? []) {
       lines.push(`-- okm-allow ${allow.code}: ${allow.reason}`);
     }
@@ -714,6 +725,7 @@ export function parsePlan(text: string): MigrationPlan {
     let backfill: BackfillSpec | undefined;
     let path: PlanStep["path"];
     let behavior: PlanStep["behavior"];
+    let probe: string | undefined;
     const allows: StepAllow[] = [];
     const sql: string[] = [];
     let quoteOpen = false;
@@ -738,7 +750,9 @@ export function parsePlan(text: string): MigrationPlan {
       else if (line === "-- transactional: false") transactional = false;
       else if (line === "-- path: unverified") path = "unverified";
       else if (line === "-- behavior: change") behavior = "change";
-      else if (line.startsWith("-- okm-allow")) allows.push(readAllow(line));
+      else if (line === "-- probe:" || line.startsWith("-- probe: ")) {
+        probe = line.startsWith("-- probe: ") ? line.slice("-- probe: ".length).trim() : "";
+      } else if (line.startsWith("-- okm-allow")) allows.push(readAllow(line));
       else if (!line.startsWith("--")) {
         sql.push(line);
         quoteOpen = sqlQuoteOpen(sql.join("\n"));
@@ -758,6 +772,7 @@ export function parsePlan(text: string): MigrationPlan {
         ...(backfill !== undefined ? { backfill } : {}),
         ...(path !== undefined ? { path } : {}),
         ...(behavior !== undefined ? { behavior } : {}),
+        ...(probe !== undefined ? { probe } : {}),
         ...(allows.length > 0 ? { allows } : {}),
       });
     }

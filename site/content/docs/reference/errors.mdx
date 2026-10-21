@@ -325,6 +325,8 @@ The registry has 123 codes, in numeric order. Ranges are schema `OKM1000`, queri
 | `OKM1554` | Step is not applied | Resolve refused to record the step because the probe says it is not applied. |
 | `OKM1555` | Unverified step | Resolve refused to record the step because this kind has no probe. Exit 3. |
 | `OKM1556` | Step statement changed | The migration file's statement changed after the committed step started. |
+| `OKM1557` | Step cannot be made re-runnable | A committed step has no built-in probe and no declared probe, so a failure cannot tell whether the change is already in place. |
+| `OKM1558` | Invalid probe | A probe is empty, is not one read-only SELECT, has more than one statement, or is declared on a step that stays inside a transaction. |
 
 ### Typed SQL
 

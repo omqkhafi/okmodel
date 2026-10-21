@@ -65,6 +65,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `renderAgentsBlock({ version, tenancy, protectedConfigured })` writes the managed AGENTS.md block: the docs paths inside the package, the safe command order (`okm check`, `okm migrate plan`, `okm migrate check`, `okm migrate apply`), and the never-list. It names only commands that exist. The block does not include a URL or a timestamp.
 - `bun ./scripts/pack-size.ts` fails when the packed tarball grows by more than 400 KB over `tests/fixtures/pack-size.json`.
 - `docs:check` also checks public-doc hygiene: front matter, links that stay inside the public set, a language on every code fence, and no hidden characters in the packed text. `bun run typecheck` compiles the public type surface and the `*.test-d.ts` consumer fixtures with TypeScript 7. `bun run ts6:check` compiles the same files with TypeScript 6.0.x (`typescript-editor`) and is not part of `bun run check`.
+- A committed step may declare `-- probe: <SELECT>` above its statement. The probe is one read-only `SELECT` that returns a single boolean: true means the step is already applied. It runs inside `begin read only` and is rolled back. A built-in probe for the step's kind still wins, and a declared probe has no cleanup. `okm migrate resolve --applied` uses that probe. The probe is not part of the step's SQL hash or the plan hash.
+- OKM1557 refuses a committed step that has no built-in probe and no declared probe, so a failure cannot tell whether the change is already in place. OKM1558 refuses an empty probe, a probe that is not one read-only `SELECT`, more than one statement, or a probe on a step that stays inside a transaction. `-- okm-allow` with a reason records that a failure in that step needs a person.
 
 #### docs
 
@@ -80,6 +82,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - [Roles](docs/roles.md) is the least-privilege recipe for an agent: `GRANT pg_read_all_data` for inspection, and a separate migrator role with `CREATE` on the schema. It does not use `default_transaction_read_only`.
 - [Threat model](docs/threat-model.md) records what agent use is defended against and what is not. Each defense names the feature or the test behind it.
 - The site skill page reads `skills/okmodel/SKILL.md`. That file is the copy an install finds at `node_modules/okmodel/skills/okmodel/SKILL.md`.
+- The linter page, [When a migration fails](docs/migration-failure.md), and the OKM1557 and OKM1558 error pages describe a declared `-- probe:` and when a committed step must have one.
 
 ### 💥 Breaking Changes
 
@@ -166,6 +169,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - A no-op CI event mirrors the last finished `gate / check` and skips a cancelled run, so two label events that cancel each other do not fail the gate when an earlier run succeeded.
 - A failed `CREATE INDEX CONCURRENTLY` is dropped before apply returns, so the target does not keep an INVALID index. When that drop fails, the error names the index and `DROP INDEX CONCURRENTLY`. A later apply still drops a leftover invalid index and rebuilds it (Q4, #391).
 - `testing()` drops the catalog it applied when the harness finishes, in reverse dependency order. An `ignored` object is left in place. `migrate: false` drops nothing (Q9, #396).
+- The packed-tarball size check runs for this repository. A fixture passed to `pack-contract` with `--root` does not need `tests/fixtures/pack-size.json`.
 
 #### docs
 
