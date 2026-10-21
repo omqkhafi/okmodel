@@ -180,7 +180,7 @@ test("proof:writeObserver.unit", async () => {
 
 test("proof:writeObserver.keys", () => {
   expect(POSTGRES_FEATURES["writeObserver.keys"]?.support).toBe("native");
-  expect(POSTGRES_FEATURES["writeObserver.keys"]?.cost).toBe("none");
+  expect(POSTGRES_FEATURES["writeObserver.keys"]?.cost).toBe("returning");
   const event: WriteEvent = {
     type: "write",
     unit: "u",
@@ -200,7 +200,7 @@ test("proof:writeObserver.keys", () => {
 
 test("proof:writeObserver.rowCount", () => {
   expect(POSTGRES_FEATURES["writeObserver.rowCount"]?.support).toBe("native");
-  expect(POSTGRES_FEATURES["writeObserver.rowCount"]?.cost).toBe("unknown");
+  expect(POSTGRES_FEATURES["writeObserver.rowCount"]?.cost).toBe("mixed");
   const event: WriteEvent = {
     type: "write",
     unit: "u",

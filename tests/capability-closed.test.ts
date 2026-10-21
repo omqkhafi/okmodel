@@ -374,3 +374,11 @@ test("refusal:tooling.describe", () => refuse("tooling.describe"));
 test("refusal:writeObserver.unit", () => refuse("writeObserver.unit"));
 test("refusal:writeObserver.keys", () => refuse("writeObserver.keys"));
 test("refusal:writeObserver.rowCount", () => refuse("writeObserver.rowCount"));
+
+test("closed profile keeps the most restrictive observer costs", () => {
+  const closed = closedRegistry();
+  expect(closed["writeObserver.keys"]?.support).toBe("refused");
+  expect(closed["writeObserver.keys"]?.cost).toBe("none");
+  expect(closed["writeObserver.rowCount"]?.support).toBe("refused");
+  expect(closed["writeObserver.rowCount"]?.cost).toBe("unknown");
+});

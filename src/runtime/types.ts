@@ -690,6 +690,32 @@ export type WriteOptions<S extends QuerySchema, K extends keyof S["~byName"]> = 
 /** `{ count }` from an update or delete without `returning`. */
 export type WriteCount = { readonly count: number };
 
+/** Who asked for a column reported by {@link Write.describe}. */
+export type WriteColumnLabel = "caller" | "observer";
+
+/** One column {@link Write.describe} reports. */
+export type WriteColumn = {
+  readonly name: string;
+  readonly label: WriteColumnLabel;
+};
+
+/** What {@link Write.describe} returns. */
+export type WriteDescription = {
+  readonly statements: readonly {
+    readonly text: string;
+    readonly columns: readonly WriteColumn[];
+  }[];
+};
+
+/** What {@link Write.inspect} returns. The SQL includes observer `RETURNING`. */
+export type WriteInspection = {
+  readonly statements: readonly {
+    readonly text: string;
+    readonly params?: readonly (string | null)[];
+  }[];
+  readonly rules: readonly AppliedRule[];
+};
+
 /** A write handle. Await it, or read its SQL before it runs. */
 export type Write<T> = Promise<T> & {
   /** Statement text and parameters, one entry per chunk. */
@@ -699,6 +725,10 @@ export type Write<T> = Promise<T> & {
       readonly params?: readonly (string | null)[];
     }[];
   }>;
+  /** Statements and the rules that shaped them, including observer `RETURNING`. */
+  inspect(): Promise<WriteInspection>;
+  /** Returned columns. Observer primary-key columns are labeled `"observer"`. */
+  describe(): Promise<WriteDescription>;
   /** `{ ok, value }` or `{ ok, error }`. */
   safe(): Promise<SafeResult<T>>;
   /** Throws `not_found` when the changed-row count is not `count`. */
