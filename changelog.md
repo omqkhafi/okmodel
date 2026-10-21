@@ -85,6 +85,9 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okm raw sync` discovers static `raw()` calls imported from `okmodel/pg`, describes each statement without running it, and writes `.okm/raw.lock.json` and `.okm/raw.d.ts`. `--check` writes nothing and exits 1 when either file would change. `okm check` fails with OKM1604 when a call is missing from the lock, warns with OKM1605 when a lock entry is no longer called, and fails with OKM1601 when a target's signature no longer matches. A statement that is not a static string is OKM1603. A statement the checker cannot classify is OKM1602.
 - A described column is NOT NULL only when it comes from a base or partitioned table, `attnotnull` is set, the column is not generated, no NOT NULL constraint on that column is unvalidated, and the statement has none of `join`, `union`, `intersect`, `except`, `lateral`, `with`, `values`, `rollup`, `cube`, or `grouping` outside strings, comments, and quoted identifiers. `as "name!"` forces NOT NULL and `as "name?"` forces nullable. The suffix is not part of the name. PostgreSQL 15–17 have no `contype` `n` row, so that check does not change them. On 18 a `NOT VALID` constraint sets `attnotnull` while NULLs can remain, and the column stays nullable.
 - `okm init` writes starter files for one package (`okmodel.config.ts`, schema, client, scripts, and `.okm/init.json`) and does not connect. `okm generate init` still writes the first migration. A different installed driver is OKM1862, a missing non-interactive choice is OKM1863, a user-modified file is OKM1864, an unusable directory is OKM1865, a plan-hash mismatch is OKM1866, and schema or database tenancy is OKM1867.
+- `bun ./scripts/size-attribution.ts` prints minified bytes and a gzip share for each source module on every gated graph from `scripts/size.ts`. It fails when a total differs from that script. `--update` rewrites `tests/fixtures/size-attribution.json`. The pull-request job `inform / size` prints the delta and is not a required check.
+- `bun ./scripts/dead-exports.ts` lists exports under `src/` that nothing in `src/`, `tests/`, or `scripts/` imports and that are not on the public API surface.
+- `bun ./scripts/duplicates.ts` lists duplicate and near-duplicate function bodies and repeated large literals under `src/`.
 
 #### docs
 
@@ -103,6 +106,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The linter page, [When a migration fails](docs/migration-failure.md), and the OKM1557 and OKM1558 error pages describe a declared `-- probe:` and when a committed step must have one.
 - The guide awaits `userFilters.parse(request.query)` and passes the result to `find` with a limit. `parse` is asynchronous because the parser loads on first use (Q10, #397).
 - [Capabilities](docs/capabilities.md) is generated from the Postgres feature registry. A feature whose proof title does not pass the registry proof check is `unverified`. `docs:check` fails when that page, a `<!-- support: key -->` block, or the step-kind table in [When a migration fails](docs/migration-failure.md) disagrees with the code.
+- [Size audit](docs/size-audit.md) records where the gated bytes go, every unused export, and every duplicate group. It is an internal note and is not packed.
 
 ### 💥 Breaking Changes
 

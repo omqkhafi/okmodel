@@ -99,6 +99,7 @@ export const INTERNAL_DOCS = [
   "postgresjs-kill-storm.md",
   "postgresjs-kill-storm.mjs",
   "release.md",
+  "size-audit.md",
   "size.md",
 ] as const;
 
