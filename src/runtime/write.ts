@@ -45,7 +45,7 @@ import {
 import { stack } from "./preset-stack.js";
 import { effectivePredicate } from "./predicate.js";
 import { fieldSealed, sealingTrait, touchFields } from "./trait-read.js";
-import { runWrite, type RunHost } from "./tx.js";
+import { runWrite, type RunHost, type WriteObserveMeta } from "./tx.js";
 import { writeWouldValidate } from "./validate/places.js";
 
 registerFailFix(
@@ -104,6 +104,8 @@ export type PreparedWrite = {
   readonly options: ExecuteOptions | undefined;
   /** Set when `finish` can refuse a statement that already ran. `batch` refuses such a write (D183). */
   readonly checked?: "restore" | "expect" | "parent" | "tree";
+  /** Observe metadata for each statement when `onWrite` is registered. */
+  readonly observe?: WriteObserveMeta;
   finish(results: readonly ExecuteResult[]): unknown;
   /**
    * More statements once the planned ones have run.
@@ -244,10 +246,15 @@ export async function executeWrite(
     const prepared = await prepareWrite(host, op, table, input, options, mods, scope);
     if (plan !== undefined) return prepared;
     if (prepared.statements.length === 0) return prepared.finish([]);
-    const results = await runWrite(host, prepared.statements, prepared.options);
+    const observe = observeList(host, prepared);
+    const results = await runWrite(host, prepared.statements, prepared.options, undefined, observe);
     const more = prepared.follow?.(results);
     if (more === undefined || more.length === 0) return prepared.finish(results);
-    const extra = await runWrite(host, more, prepared.options);
+    const followObserve =
+      host.o !== undefined && prepared.observe !== undefined
+        ? more.map(() => prepared.observe as WriteObserveMeta)
+        : undefined;
+    const extra = await runWrite(host, more, prepared.options, undefined, followObserve);
     return prepared.finish(results.concat(extra));
   } catch (error) {
     // B-33: postgres.js omits `table` on generic / aborted failures but keeps parameters.
@@ -291,6 +298,7 @@ async function prepareWrite(
     return {
       statements: planned.statements,
       options: callOptions(options),
+      observe: writeObserve(op, table, options, scope, host.schema.tenancy),
       ...(planned.parentGuard === true
         ? { checked: "parent" as const }
         : planned.treeGuard === true
@@ -1636,6 +1644,61 @@ function tenantKeyList(tenancy: QuerySchema["tenancy"]): readonly string[] | und
   if (tenancy === undefined) return undefined;
   if (tenancy.keys !== undefined && tenancy.keys.length > 0) return tenancy.keys;
   return [tenancy.key];
+}
+
+function observeList(
+  host: RunHost,
+  prepared: PreparedWrite,
+): readonly WriteObserveMeta[] | undefined {
+  if (host.o === undefined || prepared.observe === undefined) return undefined;
+  return prepared.statements.map(() => prepared.observe as WriteObserveMeta);
+}
+
+/**
+ * Builds observe metadata for one planned write (G-4: rowCount unknown, no keys).
+ *
+ * @param op - Insert, update, or delete
+ * @param table - Table name
+ * @param options - Caller options (detects upsert via onConflict)
+ * @param scope - Tenant scope
+ * @param tenancy - Schema tenancy
+ * @returns Metadata shared by every statement of this write
+ */
+function writeObserve(
+  op: WriteOp,
+  table: string,
+  options: object,
+  scope: CallScope | undefined,
+  tenancy: QuerySchema["tenancy"],
+): WriteObserveMeta {
+  const conflict = op === "insert" && isRecord(options) ? options["onConflict"] : undefined;
+  const observed: WriteObserveMeta["op"] =
+    conflict !== undefined && conflict !== "error" ? "upsert" : op;
+  return {
+    table,
+    op: observed,
+    tenant: tenantFromScope(scope, tenantKeyList(tenancy)),
+    settings: [],
+    source: "client",
+  };
+}
+
+/**
+ * Scope keys and values for a write event. Unscoped and root clients are null.
+ *
+ * @param scope - Call scope
+ * @param keys - Tenant field names
+ * @returns Tenant record or null
+ */
+export function tenantFromScope(
+  scope: CallScope | undefined,
+  keys: readonly string[] | undefined,
+): Readonly<Record<string, unknown>> | null {
+  if (scope === undefined || "unscoped" in scope) return null;
+  if (scope.values !== undefined) return scope.values;
+  const key = keys?.[0];
+  if (key !== undefined) return { [key]: scope.value };
+  return { value: scope.value };
 }
 
 function pathInsert(

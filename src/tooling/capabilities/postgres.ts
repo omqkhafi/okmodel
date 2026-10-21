@@ -83,6 +83,18 @@ export const POSTGRES_FEATURES = {
   "tooling.scratchReplay": native("proof:tooling.scratchReplay"),
   "tooling.testing": native("factories create, reuse a ref, fill defaults, and replay a seed"),
   "tooling.describe": native("proof:tooling.describe"),
+  /** Unit kinds the write observer covers: transaction and batch. */
+  "writeObserver.unit": native("proof:writeObserver.unit", {
+    cost: "transaction | batch",
+  }),
+  /** Key capture mode. G-4 is none; G-5 adds returning | emulated. */
+  "writeObserver.keys": native("proof:writeObserver.keys", {
+    cost: "none",
+  }),
+  /** Row-count mode. G-4 is unknown; G-5 fills changed | matched | mixed. */
+  "writeObserver.rowCount": native("proof:writeObserver.rowCount", {
+    cost: "unknown",
+  }),
 } as const satisfies Registry;
 
 /** One Postgres feature key. */
