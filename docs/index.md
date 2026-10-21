@@ -80,5 +80,5 @@ Pointer index for the docs in this package. Open one page. Do not fetch the webs
 - `okm protect list` - Print fingerprints in the user protection store.
 - `okm raw sync` - Describe static raw() calls and write the typed SQL lock.
 - `okm schema` - Print the JSON Schema for that command's --json data.
-- `okm init` - Write starter files for one package.
+- `okm init` - Write starter files for a package or selected workspace packages.
 

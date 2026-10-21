@@ -1474,6 +1474,33 @@
     "docs": "docs/errors/OKM1867.md"
   },
   {
+    "code": "OKM1890",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "Two okmodel.config.ts files are the same distance from the working directory.",
+    "fix": "Pass --config <path> to the config this command should load.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1890.md"
+  },
+  {
+    "code": "OKM1891",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "okm init needs a workspace and this invocation is not interactive.",
+    "fix": "Pass --workspace <name>, --all-workspaces, or --shared.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1891.md"
+  },
+  {
+    "code": "OKM1892",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "Two packages use the same migrations directory.",
+    "fix": "Give each package its own migrations directory.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1892.md"
+  },
+  {
     "code": "OKM2200",
     "kind": "invalid",
     "category": "input",

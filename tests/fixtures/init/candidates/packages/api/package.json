@@ -1,0 +1,6 @@
+{
+  "name": "@acme/api",
+  "dependencies": {
+    "pg": "8.13.0"
+  }
+}

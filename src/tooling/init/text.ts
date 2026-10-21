@@ -57,11 +57,13 @@ export function gitignoreEntries(): readonly string[] {
  * offline `okm check` has no target to dial.
  *
  * @param dir - Base directory for `schema.ts`, such as `db`
+ * @param baseSpecifier - Import of `okmodel.base.ts`. Omitted for one package
  * @returns The file text
  */
-export function configText(dir: string): string {
+export function configText(dir: string, baseSpecifier?: string): string {
   const schema = `./${dir}/schema.ts`;
-  return `import { defineConfig } from "okmodel/migrate";
+  if (baseSpecifier === undefined) {
+    return `import { defineConfig } from "okmodel/migrate";
 
 // \`database\` is one target named default. A protected target is
 // \`{ url, protected: true }\` and refuses non-expand work (OKM1850).
@@ -77,6 +79,43 @@ export default defineConfig({
   migrations: "./migrations",
   ...(typeof database === "string" && database.length > 0 ? { database } : {}),
 });
+`;
+  }
+  return `import { defineConfig } from "okmodel/migrate";
+import { settings } from ${JSON.stringify(baseSpecifier)};
+
+// Targets stay in this package. Shared lint, roles, and target names
+// live in okmodel.base.ts. That file has no database URL and no protected flag.
+
+const database = process.env.DATABASE_URL;
+
+export default defineConfig({
+  ...settings,
+  schema: ${JSON.stringify(schema)},
+  migrations: "./migrations",
+  ...(typeof database === "string" && database.length > 0 ? { database } : {}),
+});
+`;
+}
+
+/**
+ * `okmodel.base.ts` body.
+ *
+ * Shared lint, roles, and target names. No database URL and no protected flag.
+ *
+ * @returns The file text
+ */
+export function baseText(): string {
+  return `// Shared settings. Each package names its own targets in okmodel.config.ts.
+// This file has no database URL and no protected flag.
+
+export const settings = {
+  lint: { migrations: "strict" },
+  roles: {
+    migration: "migration",
+    app: "app",
+  },
+};
 `;
 }
 

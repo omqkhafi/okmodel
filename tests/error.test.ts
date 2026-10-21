@@ -151,6 +151,9 @@ const SPEC_CODES = [
   "OKM1865",
   "OKM1866",
   "OKM1867",
+  "OKM1890",
+  "OKM1891",
+  "OKM1892",
   "OKM2200",
 ] as const;
 

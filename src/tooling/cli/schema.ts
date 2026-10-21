@@ -364,6 +364,16 @@ const SCHEMAS: Readonly<Record<string, JsonSchema>> = {
       planHash: { type: "string" },
       install: { type: "boolean" },
       note: { type: "string" },
+      layout: { enum: ["single", "per-service", "shared"] },
+      base: { type: "string" },
+      workspaces: {
+        type: "array",
+        items: objectNode(["path", "driver", "config"], {
+          path: { type: "string" },
+          driver: { enum: ["postgresjs", "pg", "bun-sql", "pglite", "neon"] },
+          config: { type: "string" },
+        }),
+      },
     },
   ),
 };

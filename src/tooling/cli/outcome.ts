@@ -22,6 +22,7 @@ export type CliOutcomeName = "done" | "failed" | "usage" | "decision" | "guard" 
 
 const OUTCOME = Symbol.for("okm.cli.outcome");
 const PARTIAL = Symbol.for("okm.cli.partial");
+const CONFIG_PATH = Symbol.for("okm.cli.configPath");
 
 /**
  * Codes that are not exit 1.
@@ -58,6 +59,9 @@ const CODE_EXIT: Readonly<Record<string, ExitCode>> = {
   OKM1865: 5,
   OKM1866: 4,
   OKM1867: 3,
+  OKM1890: 3,
+  OKM1891: 3,
+  OKM1892: 4,
   unavailable: 5,
 };
 
@@ -85,6 +89,29 @@ export function exitCodeForCode(code: string): ExitCode {
 export function tagOutcome<T extends object>(error: T, outcome: CliOutcomeName): T {
   Object.defineProperty(error, OUTCOME, { value: outcome, enumerable: false });
   return error;
+}
+
+/**
+ * Records the config file a command resolved, so a failure can print it.
+ *
+ * @param error - Error about to be thrown
+ * @param configPath - Absolute `okmodel.config.ts` path
+ * @returns The same error
+ */
+export function tagConfigPath<T extends object>(error: T, configPath: string): T {
+  Object.defineProperty(error, CONFIG_PATH, { value: configPath, enumerable: false });
+  return error;
+}
+
+/**
+ * Config path recorded by {@link tagConfigPath}.
+ *
+ * @param error - Caught value
+ * @returns The path, or `undefined` when none was recorded
+ */
+export function readConfigPath(error: object): string | undefined {
+  const value: unknown = Reflect.get(error, CONFIG_PATH);
+  return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 /**

@@ -4,6 +4,8 @@
 
 import { dirname, resolve } from "node:path";
 
+import { resolveProject } from "./discover.js";
+
 /** Default config file name the loader reads (D296, D298). */
 export const CONFIG_FILE = "okmodel.config.ts";
 
@@ -12,11 +14,14 @@ export const CONFIG_FILE = "okmodel.config.ts";
  *
  * When `config` is set, the project root is that file's directory so schema
  * and migrations paths stay next to the config (monorepo package or absolute
- * `--config`).
+ * `--config`). With no `config`, {@link resolveProject} picks the nearest
+ * `okmodel.config.ts`. `ambiguous` is set when two files are equally near.
  */
 export type ProjectContext = {
   readonly cwd: string;
   readonly configPath: string;
+  /** Config files at the same distance. The loader refuses to pick one. */
+  readonly ambiguous?: readonly string[];
 };
 
 /**
@@ -43,11 +48,11 @@ export function projectPath(cwd: string, ...parts: readonly string[]): string {
  * @returns Project root and absolute config path
  */
 export function projectContext(cwd: string, config?: string): ProjectContext {
-  if (config === undefined) {
-    return { cwd, configPath: projectPath(cwd, CONFIG_FILE) };
+  if (config !== undefined) {
+    const configPath = resolve(cwd, config);
+    return { cwd: dirname(configPath), configPath };
   }
-  const configPath = resolve(cwd, config);
-  return { cwd: dirname(configPath), configPath };
+  return resolveProject(cwd, CONFIG_FILE);
 }
 
 /**

@@ -69,13 +69,16 @@ import {
 import { checkProject } from "../migrate/project.js";
 import { parseReplace } from "../migrate/values.js";
 import { reprintHits } from "../migrate/reprint.js";
+import { refuseAmbiguousConfigs } from "../migrate/discover.js";
 import {
   refuseDifferentDriver,
   refuseMissingDecision,
   refusePlanHash,
+  refuseSharedMigrations,
   refuseTenancy,
   refuseUnsupported,
   refuseUserModified,
+  refuseWorkspaceChoice,
 } from "../init/guards.js";
 import { resumeCommittedStep, stepSqlHash } from "../migrate/step-engine.js";
 import type { CommittedStep, StepEngine, StepJournal } from "../migrate/step-engine.js";
@@ -1785,6 +1788,36 @@ thrown(
   },
   () => {
     refuseTenancy("none");
+  },
+);
+
+thrown(
+  "OKM1890",
+  () => {
+    refuseAmbiguousConfigs(["packages/api/okmodel.config.ts", "packages/web/okmodel.config.ts"]);
+  },
+  () => {
+    refuseAmbiguousConfigs(["packages/api/okmodel.config.ts"]);
+  },
+);
+
+thrown(
+  "OKM1891",
+  () => {
+    refuseWorkspaceChoice(["@acme/api (packages/api)", "@acme/web (packages/web)"]);
+  },
+  () => {
+    refuseWorkspaceChoice(["@acme/api (packages/api)"]);
+  },
+);
+
+thrown(
+  "OKM1892",
+  () => {
+    refuseSharedMigrations(["packages/api", "packages/web"], "packages/web/migrations");
+  },
+  () => {
+    refuseSharedMigrations(["packages/api"], "packages/api/migrations");
   },
 );
 

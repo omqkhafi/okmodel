@@ -80,6 +80,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okm raw sync` discovers static `raw()` calls imported from `okmodel/pg`, describes each statement without running it, and writes `.okm/raw.lock.json` and `.okm/raw.d.ts`. `--check` writes nothing and exits 1 when either file would change. `okm check` fails with OKM1604 when a call is missing from the lock, warns with OKM1605 when a lock entry is no longer called, and fails with OKM1601 when a target's signature no longer matches. A statement that is not a static string is OKM1603. A statement the checker cannot classify is OKM1602.
 - A described column is NOT NULL only when it comes from a base or partitioned table, `attnotnull` is set, the column is not generated, no NOT NULL constraint on that column is unvalidated, and the statement has none of `join`, `union`, `intersect`, `except`, `lateral`, `with`, `values`, `rollup`, `cube`, or `grouping` outside strings, comments, and quoted identifiers. `as "name!"` forces NOT NULL and `as "name?"` forces nullable. The suffix is not part of the name. PostgreSQL 15–17 have no `contype` `n` row, so that check does not change them. On 18 a `NOT VALID` constraint sets `attnotnull` while NULLs can remain, and the column stays nullable.
 - `okm init` writes starter files for one package (`okmodel.config.ts`, schema, client, scripts, and `.okm/init.json`) and does not connect. `okm generate init` still writes the first migration. A different installed driver is OKM1862, a missing non-interactive choice is OKM1863, a user-modified file is OKM1864, an unusable directory is OKM1865, a plan-hash mismatch is OKM1866, and schema or database tenancy is OKM1867.
+- `okm init` in a workspace initialises the selected packages. One config per service, or one shared database package when the apps already depend on it. Two or more packages, or a package under an ancestor config, share lint, roles, and target names through `okmodel.base.ts`. That file has no database URL and no protected flag. Root scripts are added only when a task runner is already in use. `okmodel` is `catalog:` only when a pnpm catalog already lists it.
+- A command loads the nearest `okmodel.config.ts` and prints that path. Two files at the same distance are OKM1890. `okm init` with several workspaces and no terminal is OKM1891. Two packages that share one migrations directory are OKM1892 and nothing is written.
 
 #### docs
 
@@ -94,6 +96,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `docs/index.md` is the pointer index: one line per public page, the command list, and the error-page range. `bun run docs:index` rewrites it. `docs:check` fails when the file is stale.
 - The site skill page reads `skills/okmodel/SKILL.md`. That file is the copy an install finds at `node_modules/okmodel/skills/okmodel/SKILL.md`.
 - The linter page, [When a migration fails](docs/migration-failure.md), and the OKM1557 and OKM1558 error pages describe a declared `-- probe:` and when a committed step must have one.
+- The CLI reference describes workspace `okm init` and nearest-config discovery. OKM1890, OKM1891, and OKM1892 have error pages.
 
 ### 💥 Breaking Changes
 
