@@ -1141,7 +1141,7 @@ okm doctor OKM1811
 
 `okm doctor --bundle` writes one JSON file for a tester to send by hand (O-6, D307). It needs no database and makes no network call, so it runs the same on a laptop with no connection and on a project whose database is down. It never uploads anything: the file stays where you wrote it until you attach it to a message.
 
-```sh
+```text
 okm doctor --bundle
 okm doctor --bundle --out ./sent/okm-bundle.json
 okm doctor --bundle --force-file
