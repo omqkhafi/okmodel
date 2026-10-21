@@ -571,12 +571,12 @@ export const set = { n: inc(1), meta: json.set(["published"], true), tags: arr.a
 
 ### Page and aggregate
 
-`page` returns one page of rows and a `next` cursor for the page after it. Pass that cursor back as `after`, with the same `orderBy`. A cursor from a different `orderBy` is OKM1130. `aggregate` counts or groups rows instead of returning them. A group needs a `limit`, or `.all(reason)`. `bucket()` groups a `timestamptz` or `date` by a unit. A day or longer unit comes back as `Temporal.PlainDate`. On a `timestamptz`, a second, minute, or hour comes back as `Temporal.Instant`. Those three units are refused on a `date`. A NULL timestamp is one group: the result key is present and the value is null. `countDistinct` is a list of field names, like `sum`. It counts the different non-null values in each group and gives a number at `countDistinct.<field>`. A group with only NULLs counts 0. `select: { name: { sum: "amount" } }` names an aggregate. Each entry is one of `count: true`, `countDistinct`, `sum`, `avg`, `min`, or `max`, and gives one flat result key, so one call can hold several of the same function and column. A name that is a group field, a bucket `as`, or `count`, `countDistinct`, `sum`, `avg`, `min`, or `max` is OKM1120. `find` takes `distinct: true` with a `select` and keeps one row per different combination of those fields. NULL is one value. `orderBy` may name selected fields only. `distinctOn: [fields]` is Postgres only. It keeps the first row of each key, and `orderBy` must start with the same keys, so the keys after them pick the row each key keeps. Neither takes `include` or `search`, and `page` and `one` refuse them. There is still no `having`. An `as` of `__proto__`, `constructor`, `toString`, or `hasOwnProperty` is refused.
+`page` returns one page of rows and a `next` cursor for the page after it. Pass that cursor back as `after`, with the same `orderBy`. A cursor from a different `orderBy` is OKM1130. `aggregate` counts or groups rows instead of returning them. A group needs a `limit`, or `.all(reason)`. `bucket()` groups a `timestamptz` or `date` by a unit. A day or longer unit comes back as `Temporal.PlainDate`. On a `timestamptz`, a second, minute, or hour comes back as `Temporal.Instant`. Those three units are refused on a `date`. A NULL timestamp is one group: the result key is present and the value is null. `countDistinct` is a list of field names, like `sum`. It counts the different non-null values in each group and gives a number at `countDistinct.<field>`. A group with only NULLs counts 0. `select: { name: { sum: "amount" } }` names an aggregate. Each entry is one of `count: true`, `countDistinct`, `sum`, `avg`, `min`, or `max`, and gives one flat result key, so one call can hold several of the same function and column. A name that is a group field, a bucket `as`, or `count`, `countDistinct`, `sum`, `avg`, `min`, or `max` is OKM1120. `find` takes `distinct: true` with a `select` and keeps one row per different combination of those fields. NULL is one value. `orderBy` may name selected fields only. `distinctOn: [fields]` is Postgres only. It keeps the first row of each key, and `orderBy` must start with the same keys, so the keys after them pick the row each key keeps. Neither takes `include` or `search`, and `page` and `one` refuse them. `having` keeps the groups whose aggregates match, in the `where` predicate form over `count` and the `select` names, so `having: { count: gte(2), total: gt(100) }`. It needs `groupBy`, takes the comparison operators, `inList`, `notIn`, `not`, and `or()`, and cannot name a list-form aggregate. A NULL aggregate matches no comparison; `null` matches it. An `as` of `__proto__`, `constructor`, `toString`, or `hasOwnProperty` is refused.
 
 `page.ts`:
 
 ```ts
-import { bucket, schema, table, t } from "okmodel/pg";
+import { bucket, gte, schema, table, t } from "okmodel/pg";
 import { connect } from "okmodel/pg/postgresjs";
 
 const notes = table("notes", {
@@ -605,6 +605,13 @@ export async function report(url: string): Promise<void> {
     select: { notes: { count: true }, first: { min: "title" }, last: { max: "title" } },
     limit: 10,
   });
+  // having keeps the days with at least two notes. count is always a name.
+  const busy = await db.notes.aggregate({
+    groupBy: [bucket("createdAt", "day", { tz: "Asia/Riyadh", as: "day" })],
+    select: { first: { min: "title" } },
+    having: { count: gte(2) },
+    limit: 10,
+  });
   // One row per different title, and the newest note for each title.
   const titles = await db.notes.find({ distinct: true, select: ["title"], limit: 10 });
   const newest = await db.notes.find({
@@ -615,6 +622,7 @@ export async function report(url: string): Promise<void> {
   void page.next;
   void days;
   void named;
+  void busy;
   void titles;
   void newest;
 }
