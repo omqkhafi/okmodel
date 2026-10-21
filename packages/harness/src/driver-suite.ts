@@ -561,6 +561,8 @@ export function registerDriverSuite(suite: DriverSuite): void {
       const described = await pool.describe("SELECT $1::int AS n");
       expect(described.columns).toEqual(["n"]);
       expect(described.parameterCount).toBe(1);
+      expect(described.parameters).toEqual([23]);
+      expect(described.fields).toEqual([{ name: "n", typeOid: 23, tableOid: 0, attnum: 0 }]);
     });
   });
 

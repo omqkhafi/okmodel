@@ -32,6 +32,14 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### ✨ Added
 
+#### contracts
+
+- `DescribeResult` adds `parameters` (type OIDs in `$n` order) and `fields` (`name`, `typeOid`, `tableOid`, `attnum`). `columns` and `parameterCount` stay.
+
+#### adapters
+
+- postgres.js and PGlite `describe` return those fields and do not execute the statement. node-postgres, Bun.sql, and Neon still leave `describe` unset.
+
 #### runtime
 
 - A connected client exposes `capabilities`, the same frozen object as the pool (`transactions`, `stream`, `listen`, `cancel`).
@@ -62,6 +70,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okm --json` errors keep the six `okm.cli/1` fields and add `location`, `fixEdit`, `safeAlternatives`, `docs`, and `escapeHatches` when the producer or the registry has them. `fix` stays a string. A kind-only error such as `driver` stays at the six fields. `schemas/cli-1/errors.json` is the array schema. `okm doctor <code>` prints `docs/errors/<code>.md`.
 - `okm protect add`, `okm protect remove`, and `okm protect list` read and write the user fingerprint store. `add` records the selected target. `remove` requires a terminal. `list` prints the stored fingerprints. The JSON data is the fingerprint, with `identity` null, and does not include the URL.
 - Conformance cases are tagged portable or gated on a registry key or an adapter gate. A refused registry entry asserts that entry's code and alternative instead of running the body. A false adapter flag on a feature the registry still provides stays unsupported. `okm driver test` prints portable, gated, refusal, and unsupported counts. A test-only profile refuses every Postgres feature and turns the adapter flags off, and the portable minimum (connect, a read and write, error mapping) still passes on it.
+- A direct connection describes one statement when the driver cannot, including TLS chosen from `sslmode`. A pooler host is still refused.
+- A described column is NOT NULL only when it comes from a base or partitioned table, `attnotnull` is set, the column is not generated, and the statement has none of `join`, `union`, `intersect`, `except`, `lateral`, `with`, `values`, `rollup`, `cube`, or `grouping` outside strings, comments, and quoted identifiers. `as "name!"` forces NOT NULL and `as "name?"` forces nullable. The suffix is not part of the name.
 
 #### docs
 
