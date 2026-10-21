@@ -61,6 +61,7 @@ Apache-2.0. The published version is [okmodel on npm](https://www.npmjs.com/pack
   - [Views](#views)
   - [Roles and grants](#roles-and-grants)
   - [okm ext and okm doctor](#okm-ext-and-okm-doctor)
+  - [Sending a bundle](#sending-a-bundle)
   - [Linter](#linter)
   - [Reference data](#reference-data)
   - [Backfill](#backfill)
@@ -1136,6 +1137,36 @@ okm doctor
 okm doctor OKM1811
 ```
 
+### Sending a bundle
+
+`okm doctor --bundle` writes one JSON file for a tester to send by hand (O-6, D307). It needs no database and makes no network call, so it runs the same on a laptop with no connection and on a project whose database is down. It never uploads anything: the file stays where you wrote it until you attach it to a message.
+
+```sh
+okm doctor --bundle
+okm doctor --bundle --out ./sent/okm-bundle.json
+okm doctor --bundle --force-file
+```
+
+The default path is `.okm/doctor-bundle.json`, relative to the project. `--out <file>` sets another path. An existing file is refused (exit 4) unless `--force-file` is passed. `--out -` prints the document instead of writing it. `--bundle` takes no error code and no `--target`. Do not commit the file.
+
+The file has `bundleFormat: 1`. Keys sort at every depth, so the same project writes the same bytes. The top-level keys are:
+
+| Key              | Holds                                                                                                                                                  |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `adapters`       | Driver packages the project declares (`postgresjs`, `pg`, `pglite`, `neon`) with the installed package version, or `null`.                              |
+| `artifacts`      | Files and directories under `.okm/` from a closed list of names (`catalog.json`, `catalog.hash`, `types.d.ts`, `raw.lock.json`, `dev-db`, and the rest). A file has its SHA-256. |
+| `bundleFormat`   | `1`. A change to a key name or its meaning raises it.                                                                                                   |
+| `capabilities`   | The Postgres feature registry: the count, the native count, the emulated and refused keys, and the keys this schema uses.                              |
+| `checks`         | The checks that need no database, run now: `codes` (sorted), `failures` (a step that could not run), `result`, `rules` (`pass` or `fail` per rule, with its severity), and `scope: "offline"`. |
+| `config`         | The config file name, whether it was found and loaded, the number of targets, and how many configs tied for nearest.                                    |
+| `dialect`        | `postgres`, with the `okmodel` version.                                                                                                                |
+| `layout`         | Whether the project is in a workspace, how many workspace packages exist, whether the config is at the workspace root, and the migration file count.    |
+| `okmodel`        | The version of the `okm` that wrote the file.                                                                                                          |
+| `packageManager` | `bun`, `npm`, `pnpm`, `yarn`, or `unknown`, from the lockfile name.                                                                                    |
+| `runtime`        | Node version, Bun version or `null`, operating system, and CPU architecture.                                                                          |
+
+`checks` runs the lint and the schema rules that `okm check` and `okm migrate check` run before they connect. It does not read a record of an earlier run, and it does not replay history in a scratch schema, so a failure that needs a database (a missing extension, drift) is not in it. A finding contributes its code and severity only. Never in the file: a connection string, host, user name, URL, table or column name, SQL text, row value, a path outside the project, or an environment variable value. `okm schema doctor` prints the JSON Schema for the document (`data.bundle`).
+
 ### Linter
 
 A migration plan is checked before it runs. Dropping a table, renaming a column, or adding a unique constraint on a table that already exists is an error. On an existing table the planner writes the safe form: a concurrent index, a check or foreign key as `NOT VALID` then `VALIDATE`, and `SET NOT NULL` through a validated check. The linter accepts that pair when the check is on a column added in the same migration with a constant default (or nullable without a default); a `VALIDATE` on an existing column is still OKM1531. The same statements written by hand, without that form, are errors. A type change that rewrites the table stays a warning. `okm generate` prints the finding, still writes the file, and exits 1 on an error finding (stderr says apply will refuse until it is fixed). `okm migrate plan` and `okm check` also exit non-zero on an error. `okm migrate apply` refuses with OKM1510 before any statement. The linter reads the plan and the catalogs. It does not connect. See [the linter](https://github.com/omqkhafi/okmodel/blob/main/docs/linter.md).
@@ -1343,6 +1374,7 @@ The worked example is a project tracker: workspaces as tenants, archive, a funct
 | `okm ext scaffold <name>` | Prints a starting `extension()` definition from the connected catalog. `--out` writes that file and never overwrites. Read-only on a protected target.                                                    |
 | `okm ext test <file>`     | Checks the file's types, operators, functions, and index methods against the server. A mismatch exits non-zero. A version the server does not meet is OKM1812. Read-only on a protected target.           |
 | `okm doctor [code]`       | Lists triggers, or explains one error code. A role check is read-only on a protected target.                                                                                                             |
+| `okm doctor --bundle`     | Writes a local diagnostics file (`.okm/doctor-bundle.json`) for a tester to send by hand. No database, no network, no values. Refuses to replace a file without `--force-file`.                         |
 | `okm protect add`         | Records the selected target's fingerprint in the user store. Does not print the URL.                                                                                                                     |
 | `okm protect remove`      | Deletes that fingerprint. Requires a terminal, otherwise exit 4. Deleting `protected: true` does not do this.                                                                                            |
 | `okm protect list`        | Prints stored fingerprints, or `none`.                                                                                                                                                                   |
