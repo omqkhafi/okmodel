@@ -291,6 +291,10 @@ async function route(
     const { initCommand } = await import("../init/command.js");
     return initCommand(parsed, cwd, human);
   }
+  if (id === "agents status" || id === "agents update" || id === "agents remove") {
+    const { agentsCommand } = await import("../agents/command.js");
+    return agentsCommand(parsed, cwd, human);
+  }
   if (id === "import drizzle") return drizzle(project, parsed, human);
   if (id === "migrate plan") return planCommand(project, parsed, human);
   if (id === "migrate apply") return applyCommand(project, parsed, human);
@@ -320,7 +324,13 @@ async function route(
  * @returns `true` when the resolved path is printed
  */
 function announcesConfig(id: string, operand: string | undefined): boolean {
-  if (id === "init" || id === "schema" || id === "driver test" || id === "protect list") {
+  if (
+    id === "init" ||
+    id === "schema" ||
+    id === "driver test" ||
+    id === "protect list" ||
+    id.startsWith("agents ")
+  ) {
     return false;
   }
   if (id === "doctor" && operand !== undefined) return false;

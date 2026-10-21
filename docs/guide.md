@@ -69,6 +69,7 @@ Apache-2.0. The published version is [okmodel on npm](https://www.npmjs.com/pack
   - [Reference app](#reference-app)
   - [Startup](#startup)
   - [Protected targets](#protected-targets)
+  - [Agent files](#agent-files)
 - [Commands](#commands)
 - [Check a history in CI](#check-a-history-in-ci)
 - [Roadmap](#roadmap)
@@ -1324,6 +1325,25 @@ The worked example is a project tracker: workspaces as tenants, archive, a funct
 
 `okm protect add` records a fingerprint in the user store (`~/.config/okm/protected.json`, or `%APPDATA%\okm\protected.json` on Windows). That store is a union with `protected: true`: deleting the config flag leaves the fingerprint in place. A state-changing command against a stored fingerprint exits 4 without a terminal, and `--allow-protected` does not lift that. A terminal is friction, not proof of a human. The ceiling is [Protection](protection.md).
 
+### Agent files
+
+`okm init --agents` and `okm agents` keep three kinds of file for a coding agent, and nothing else. A block in `AGENTS.md` between `<!-- BEGIN OKMODEL v<version> -->` and `<!-- END OKMODEL -->` names the docs in `node_modules/okmodel/docs/` and the safe command order. `CLAUDE.md` is a thin `@AGENTS.md` import. The `okmodel` skill from the package goes to `.claude/skills/okmodel/` and `.agents/skills/okmodel/`, but only when that directory exists or `--agents claude` or `--agents agents` names it. `--agents block` writes the block and the import alone, and `--agents all` writes both skills.
+
+Text outside the markers is never changed. A missing `AGENTS.md` is created with only the block. An existing `CLAUDE.md` with no import line gets the line inside a managed block, after the diff is shown. The content comes from the installed package, never from the network. The `agents` section of `.okm/init.json` records the choice, the facts the block prints, and the SHA-256 of each file `okm` wrote.
+
+| Command | What it does |
+| --- | --- |
+| `okm agents status` | Prints `current`, `stale`, `missing`, or `modified` for each file. Exits 1 with OKM1881 when any file is not current. Warns when `CLAUDE.local.md` exists. |
+| `okm agents update` | Rewrites the block and any unmodified skill file. Does nothing in a project that never installed them. |
+| `okm agents remove` | Deletes the block, and the files whose hash still matches. A file `okm` created is deleted, and a file it only added to keeps its own text. |
+| `okm init --no-agents` | Records that this project has no agent files. Later runs never ask. |
+
+A skill file you edited is `modified`. `update` and `remove` leave it as it is and say so. `--dry-run` prints the plan and the diff and writes nothing. A change to an existing file needs `--yes`, or an answer on a terminal; without either the command exits 3 with OKM1884. `--plan-hash` applies only the plan you reviewed. A damaged marker is OKM1882 and a repeated block is OKM1883. okm refuses both and does not repair them.
+
+The writable paths are a closed list: `AGENTS.md`, `CLAUDE.md`, the shipped skill files in the two directories above, and `.okm/init.json`. `.claude/settings*.json`, hooks, `.vscode/tasks.json`, `.cursor/rules`, and MCP entries are never written. A link is followed only when it lands on another file in that list.
+
+A repository that uses agents should name an owner for `AGENTS.md` and `.claude/` in `CODEOWNERS`. These files steer an agent that can run `okm`, so a change to them deserves the same review as a change to CI.
+
 ## Commands
 
 | Command                   | What it does                                                                                                                                                                                             |
@@ -1346,6 +1366,10 @@ The worked example is a project tracker: workspaces as tenants, archive, a funct
 | `okm protect add`         | Records the selected target's fingerprint in the user store. Does not print the URL.                                                                                                                     |
 | `okm protect remove`      | Deletes that fingerprint. Requires a terminal, otherwise exit 4. Deleting `protected: true` does not do this.                                                                                            |
 | `okm protect list`        | Prints stored fingerprints, or `none`.                                                                                                                                                                   |
+| `okm init`                | Writes starter files for a package or workspace packages. Does not connect. `--agents` and `--no-agents` choose the agent files.                                                                         |
+| `okm agents status`       | Reports whether the AGENTS.md block, the CLAUDE.md import, and the skill are current. Exits 1 on drift.                                                                                                  |
+| `okm agents update`       | Rewrites the AGENTS.md block and any unmodified skill from this package.                                                                                                                                 |
+| `okm agents remove`       | Deletes the AGENTS.md block and the agent files whose hash still matches.                                                                                                                                |
 | `okm --version`           | Prints the package version.                                                                                                                                                                              |
 
 `okmodel` and `okm` are the same command.

@@ -49,6 +49,31 @@ const textData = (id: string, title: string): JsonSchema => ({
   properties: { text: { type: "string" } },
 });
 
+const AGENT_KINDS = ["block", "import", "skill", "record"] as const;
+const AGENT_STATES = ["current", "stale", "missing", "modified"] as const;
+const AGENT_ACTIONS = ["none", "create", "insert", "update", "remove", "delete", "skip"] as const;
+
+function agentsPlanProperties(): Readonly<Record<string, JsonSchemaNode>> {
+  return {
+    status: { enum: ["planned", "applied", "unchanged"] },
+    files: {
+      type: "array",
+      items: objectNode(["path", "kind", "state", "action"], {
+        path: { type: "string" },
+        kind: { enum: AGENT_KINDS },
+        state: { enum: AGENT_STATES },
+        action: { enum: AGENT_ACTIONS },
+        diff: { type: "string" },
+      }),
+    },
+    planHash: { type: "string" },
+  };
+}
+
+function agentsPlanSchema(): JsonSchemaNode {
+  return objectNode(["status", "files", "planHash"], agentsPlanProperties());
+}
+
 const SCHEMAS: Readonly<Record<string, JsonSchema>> = {
   build: object("build", "okm build data", ["directory"], {
     directory: { type: "string" },
@@ -288,6 +313,29 @@ const SCHEMAS: Readonly<Record<string, JsonSchema>> = {
   }),
   pull: textData(idOf("pull"), "okm pull data"),
   seed: textData(idOf("seed"), "okm seed data"),
+  "agents status": object("agents status", "okm agents status data", ["status", "files"], {
+    status: { enum: ["current", "drifted", "declined"] },
+    files: {
+      type: "array",
+      items: objectNode(["path", "kind", "state"], {
+        path: { type: "string" },
+        kind: { enum: AGENT_KINDS },
+        state: { enum: AGENT_STATES },
+      }),
+    },
+  }),
+  "agents update": object(
+    "agents update",
+    "okm agents update data",
+    ["status", "files", "planHash"],
+    agentsPlanProperties(),
+  ),
+  "agents remove": object(
+    "agents remove",
+    "okm agents remove data",
+    ["status", "files", "planHash"],
+    agentsPlanProperties(),
+  ),
   "protect add": object("protect add", "okm protect add data", ["hostDb", "identity", "reason"], {
     hostDb: { type: "string" },
     identity: { type: "null" },
@@ -379,6 +427,7 @@ const SCHEMAS: Readonly<Record<string, JsonSchema>> = {
       note: { type: "string" },
       layout: { enum: ["single", "per-service", "shared"] },
       base: { type: "string" },
+      agents: agentsPlanSchema(),
       workspaces: {
         type: "array",
         items: objectNode(["path", "driver", "config"], {
