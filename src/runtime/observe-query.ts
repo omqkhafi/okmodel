@@ -12,8 +12,9 @@ import type { ColumnModel, QuerySchema } from "../dialects/pg/model.js";
 import { mapPostgresError } from "../dialects/pg/errors.js";
 import { OkmError } from "../contracts/error.js";
 import { callOptions, failRead, type Session } from "./client.js";
-import { observeTagOk } from "./observe-emit.js";
+import { observeTagOk, txScope } from "./observe-emit.js";
 import { observerBufferOverflow } from "./observe.js";
+import { servedBy } from "./served-by.js";
 import type {
   QueryError,
   QueryEvent,
@@ -490,8 +491,10 @@ function settle(groups: readonly (readonly ExecuteResult[])[], decodeMs: number)
   for (const { item, group } of paired) {
     const handler = item.host.q;
     heldWrites.delete(group);
-    secretBags.delete(item.statements);
-    if (handler === undefined) continue;
+    if (handler === undefined) {
+      secretBags.delete(item.statements);
+      continue;
+    }
     for (let index = 0; index < item.statements.length; index += 1) {
       const returns = metaAt(item.observe, index)?.returning === true;
       let share: number | null = null;
@@ -516,6 +519,7 @@ function settle(groups: readonly (readonly ExecuteResult[])[], decodeMs: number)
         ),
       );
     }
+    secretBags.delete(item.statements);
   }
 }
 
@@ -526,8 +530,10 @@ function failHeld(groups: readonly (readonly ExecuteResult[])[], error: unknown)
     if (item === undefined) continue;
     const handler = item.host.q;
     heldWrites.delete(group);
-    secretBags.delete(item.statements);
-    if (handler === undefined) continue;
+    if (handler === undefined) {
+      secretBags.delete(item.statements);
+      continue;
+    }
     for (let index = 0; index < item.statements.length; index += 1) {
       deliver(
         handler,
@@ -545,6 +551,7 @@ function failHeld(groups: readonly (readonly ExecuteResult[])[], error: unknown)
         ),
       );
     }
+    secretBags.delete(item.statements);
   }
 }
 
@@ -624,7 +631,7 @@ function readEvent(
     decodeMs,
     rowCount: counted.rowCount,
     rowCountMode: counted.rowCountMode,
-    route: routeOf(call.route),
+    route: routeOf(call.route, result),
     error: failure,
     tag: handlerTag(session.q),
     limit,
@@ -735,7 +742,9 @@ function summaryOf(op: string, table: string | null): string {
   return table === null || table.length === 0 ? verb : `${verb} ${table}`;
 }
 
-function routeOf(route: ReadCall["route"]): QueryRoute {
+function routeOf(route: ReadCall["route"], result?: ExecuteResult): QueryRoute {
+  const served = result === undefined ? undefined : servedBy.get(result);
+  if (served !== undefined) return { endpoint: served, role: "replica" };
   if (route === "replica") return { endpoint: "replica", role: "replica" };
   return { endpoint: "primary", role: "primary" };
 }
@@ -758,7 +767,7 @@ function describeError(error: unknown): QueryError {
 }
 
 function readPlace(session: Session): Place | undefined {
-  const open = session.o?.c?.nextQueryPlace();
+  const open = session.o?.c?.nextQueryPlace(txScope(session.tx));
   if (open !== undefined) return open;
   if (session.tx !== undefined) return txPlace(session.tx);
   return undefined;
@@ -768,7 +777,7 @@ function writePlaces(host: RunHost, count: number): Place[] {
   const places: Place[] = [];
   let local: { unit: string; seq: number } | undefined;
   for (let index = 0; index < count; index += 1) {
-    const open = host.o?.c?.nextQueryPlace();
+    const open = host.o?.c?.nextQueryPlace(host.u ?? txScope(host.tx));
     if (open !== undefined) {
       places.push(open);
       continue;
@@ -788,11 +797,12 @@ function writePlaces(host: RunHost, count: number): Place[] {
 }
 
 function txPlace(tx: object): Place {
-  let state = txUnits.get(tx);
+  const key = txScope(tx) ?? tx;
+  let state = txUnits.get(key);
   if (state === undefined) {
     unitSeq += 1;
     state = { unit: `qu${unitSeq}`, seq: 0 };
-    txUnits.set(tx, state);
+    txUnits.set(key, state);
   }
   const place = { unit: state.unit, seq: state.seq };
   state.seq += 1;

@@ -37,7 +37,22 @@ export type ObservingSlot = {
 export type ObserveHost = {
   readonly hookm?: readonly Hookm[] | undefined;
   readonly observer?: ObserverController | undefined;
+  /** The transaction or write the phase belongs to. See {@link txScope}. */
+  readonly scope?: object | undefined;
 };
+
+/**
+ * The object that names a transaction's unit.
+ *
+ * Every client a `tx()` hands out, at any savepoint depth, carries the same
+ * state object, so concurrent units on one client never share a unit.
+ *
+ * @param tx - `Session.tx` or `RunHost.tx`
+ * @returns The transaction state, or `undefined` outside a transaction
+ */
+export function txScope(tx: object | undefined): object | undefined {
+  return (tx as { state?: object } | undefined)?.state;
+}
 
 /**
  * Ensures the observer controller exists on the slot.
@@ -88,6 +103,7 @@ type Frame = {
 
 type Unit = {
   readonly id: string;
+  readonly scope: object;
   writes: WriteEvent[];
   /** Surviving write + savepoint events in delivery order (outcome appended later). */
   ordered: Array<WriteEvent | SavepointEvent>;
@@ -131,7 +147,7 @@ export function createObserver(onWrite: OnWrite): ObserverController {
  */
 export class ObserverController {
   private readonly onWrite: OnWriteExtras;
-  private open: Unit | undefined;
+  private readonly units = new WeakMap<object, Unit>();
   private readonly pending: Promise<unknown>[] = [];
   private readonly queue: Queue[] = [];
   private pendingEvents = 0;
@@ -149,27 +165,38 @@ export class ObserverController {
   }
 
   /**
-   * Opens a unit when none is open (autocommit / standalone batch).
+   * Opens the scope's unit when it has none (autocommit / standalone batch).
    *
-   * Nested under an open `tx()` unit this is a no-op: writes join that unit.
+   * Inside a `tx()` the scope is the transaction's and its unit already exists.
    *
-   * @returns The open unit id
+   * @param scope - The transaction, or the autocommit write
+   * @returns The scope's unit id
    */
-  ensureUnit(): string {
-    if (this.open !== undefined) return this.open.id;
-    this.open = this.makeUnit();
-    return this.open.id;
+  ensureUnit(scope: object): string {
+    return this.unitOf(scope).id;
+  }
+
+  private unitOf(scope: object): Unit {
+    let unit = this.units.get(scope);
+    if (unit === undefined) {
+      unit = this.makeUnit(scope);
+      this.units.set(scope, unit);
+    }
+    return unit;
   }
 
   /**
-   * The open unit's next query sequence, when a unit is open.
+   * The scope's next query sequence, when it has a unit.
    *
    * Does not open a unit. A read outside a transaction gets no unit.
    *
-   * @returns Unit id and sequence, or `undefined` when no unit is open
+   * @param scope - The transaction or autocommit write the statement runs in
+   * @returns Unit id and sequence, or `undefined` when the scope has no unit
    */
-  nextQueryPlace(): { readonly unit: string; readonly seq: number } | undefined {
-    const unit = this.open;
+  nextQueryPlace(
+    scope: object | undefined,
+  ): { readonly unit: string; readonly seq: number } | undefined {
+    const unit = scope === undefined ? undefined : this.units.get(scope);
     if (unit === undefined) return undefined;
     const seq = unit.querySeq;
     unit.querySeq += 1;
@@ -186,10 +213,11 @@ export class ObserverController {
     return typeof value === "string" && observeTagOk(value) ? value : undefined;
   }
 
-  private makeUnit(): Unit {
+  private makeUnit(scope: object): Unit {
     this.evictIfNeeded(0);
     const unit: Unit = {
       id: nextUnitId(),
+      scope,
       writes: [],
       ordered: [],
       frames: [],
@@ -204,11 +232,11 @@ export class ObserverController {
     while (this.pendingEvents + incoming > this.maxPending && this.queue.length > 0) {
       const oldest = this.queue[0];
       if (oldest === undefined) return;
-      if (this.open?.id === oldest.id && this.queue.length === 1) return;
+      if (this.units.get(oldest.unit.scope) === oldest.unit && this.queue.length === 1) return;
       this.queue.shift();
       const dropped = oldest.unit.ordered.length;
       this.pendingEvents = Math.max(0, this.pendingEvents - dropped);
-      if (this.open?.id === oldest.id) this.open = undefined;
+      if (this.units.get(oldest.unit.scope) === oldest.unit) this.units.delete(oldest.unit.scope);
       this.reportOverflow(oldest.unit);
     }
   }
@@ -231,34 +259,32 @@ export class ObserverController {
   /**
    * Transaction or savepoint phase shared with `hookm.onTransaction`.
    *
+   * @param scope - The transaction or batch the phase belongs to
    * @param phase - start, commit, or rollback
    * @param depth - 0 for the transaction, 1+ for savepoints
    * @param name - Savepoint name when depth ≥ 1
    * @param opts - `unknown` when COMMIT was lost (OKM1401)
    */
   onPhase(
+    scope: object,
     phase: TransactionEvent["phase"],
     depth: number,
     name: string | undefined,
     opts?: { readonly unknown?: boolean },
   ): void {
     if (opts?.unknown === true) {
-      this.finish("unknown");
+      this.finish(scope, "unknown");
       return;
     }
     if (depth === 0) {
       if (phase === "start") {
-        this.open = this.makeUnit();
+        this.units.set(scope, this.makeUnit(scope));
         return;
       }
-      if (phase === "commit") {
-        this.finish("committed");
-        return;
-      }
-      this.finish("rolled_back");
+      this.finish(scope, phase === "commit" ? "committed" : "rolled_back");
       return;
     }
-    const unit = this.open;
+    const unit = this.units.get(scope);
     if (unit === undefined) return;
     if (phase === "start") {
       unit.frames.push({
@@ -296,16 +322,15 @@ export class ObserverController {
   }
 
   /**
-   * Records write drafts into the open unit (creates one when needed).
+   * Records write drafts into the scope's unit (creates one when needed).
    *
+   * @param scope - The transaction or autocommit write the statements ran in
    * @param drafts - One draft per statement, in send order
    */
-  recordWrites(drafts: readonly WriteDraft[]): void {
+  recordWrites(scope: object, drafts: readonly WriteDraft[]): void {
     if (drafts.length === 0) return;
-    this.ensureUnit();
-    const unit = this.open;
-    if (unit === undefined) return;
     this.evictIfNeeded(drafts.length);
+    const unit = this.unitOf(scope);
     for (const draft of drafts) {
       const event: WriteEvent = {
         type: "write",
@@ -333,10 +358,11 @@ export class ObserverController {
   /**
    * Ends an autocommit or standalone-batch unit that never saw `onPhase`.
    *
+   * @param scope - The autocommit write
    * @param outcome - committed or rolled_back
    */
-  endAutocommit(outcome: "committed" | "rolled_back"): void {
-    this.finish(outcome);
+  endAutocommit(scope: object, outcome: "committed" | "rolled_back"): void {
+    this.finish(scope, outcome);
   }
 
   /**
@@ -352,9 +378,9 @@ export class ObserverController {
     return Promise.all(batch.map((p) => p.catch(() => undefined))).then(() => undefined);
   }
 
-  private finish(outcome: OutcomeEvent["outcome"]): void {
-    const unit = this.open;
-    this.open = undefined;
+  private finish(scope: object, outcome: OutcomeEvent["outcome"]): void {
+    const unit = this.units.get(scope);
+    this.units.delete(scope);
     if (unit === undefined) return;
     const index = this.queue.findIndex((entry) => entry.id === unit.id);
     if (index >= 0) this.queue.splice(index, 1);
@@ -451,5 +477,5 @@ export function emitPhase(
       }
     }
   }
-  host.observer?.onPhase(phase, depth, name, opts);
+  if (host.scope !== undefined) host.observer?.onPhase(host.scope, phase, depth, name, opts);
 }

@@ -21,6 +21,7 @@ import type {
 import { OkmError } from "../contracts/error.js";
 import type { QuerySchema, SchemaHook } from "../dialects/pg/model.js";
 import { createClient } from "./client.js";
+import { servedBy } from "./served-by.js";
 import type { ConnectOptions, Connected } from "./types.js";
 
 /** How many consecutive probe failures open a replica's circuit. */
@@ -1619,6 +1620,7 @@ async function tracked(
   const started = replica && time ? performance.now() : 0;
   try {
     const result = await run();
+    if (replica) servedBy.set(result, endpoint.name);
     if (replica && time) observe(endpoint, performance.now() - started);
     return result;
   } finally {

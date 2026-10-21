@@ -30,6 +30,8 @@ export type RunHost = {
   readonly q?: object | undefined;
   /** Set inside a transaction. A unit of several statements is a savepoint there, not a transaction. */
   readonly tx?: object | undefined;
+  /** Names the unit of an autocommit write or standalone batch. Set by `runWrite` while a write observer is attached. */
+  readonly u?: object | undefined;
 };
 
 /** Per-statement observe metadata (no duration yet). */
@@ -86,11 +88,13 @@ export async function runWrite(
     emit !== undefined && host.o !== undefined ? emit.resolveObserver(host.o) : undefined;
   const outer = host.tx === undefined;
   const multiPhase = !single && outer;
+  const scope = emit === undefined ? undefined : outer ? {} : emit.txScope(host.tx);
+  const run: RunHost = outer && scope !== undefined ? { ...host, u: scope } : host;
   if (multiPhase) {
-    if (emit !== undefined) emit.emitPhase({ ...host, observer }, "start", 0);
+    if (emit !== undefined) emit.emitPhase({ ...host, observer, scope }, "start", 0);
     else hooks?.phase(host.hookm, "start", 0);
-  } else if (observer !== undefined && outer) {
-    observer.ensureUnit();
+  } else if (observer !== undefined && scope !== undefined && outer) {
+    observer.ensureUnit(scope);
   }
   const querying = host.q !== undefined;
   const timed = observer !== undefined || querying;
@@ -105,34 +109,34 @@ export async function runWrite(
       ? [await host.pool.execute(first.text, first.params, call)]
       : await host.pool.batch(statements, call);
   } catch (error) {
-    if (timed && observer !== undefined) {
-      noteWrites(observer, statements.length, observe, Date.now() - started);
+    if (timed && observer !== undefined && scope !== undefined) {
+      noteWrites(observer, scope, statements.length, observe, Date.now() - started);
     }
     if (querying) {
       const { failWrite } = await import("./observe-query.js");
-      failWrite(host, statements, observe, Date.now() - started, error, stack);
+      failWrite(run, statements, observe, Date.now() - started, error, stack);
     }
     if (multiPhase) {
-      if (emit !== undefined) emit.emitPhase({ ...host, observer }, "rollback", 0);
+      if (emit !== undefined) emit.emitPhase({ ...host, observer, scope }, "rollback", 0);
       else hooks?.phase(host.hookm, "rollback", 0);
-    } else if (observer !== undefined && outer) {
-      observer.endAutocommit("rolled_back");
+    } else if (observer !== undefined && scope !== undefined && outer) {
+      observer.endAutocommit(scope, "rolled_back");
     }
     throw error;
   }
   const durationMs = timed ? Date.now() - started : 0;
-  if (timed && observer !== undefined) {
-    noteWrites(observer, statements.length, observe, durationMs, results);
+  if (timed && observer !== undefined && scope !== undefined) {
+    noteWrites(observer, scope, statements.length, observe, durationMs, results);
   }
   if (querying) {
     const { holdWrite } = await import("./observe-query.js");
-    holdWrite(host, statements, observe, durationMs, results, stack);
+    holdWrite(run, statements, observe, durationMs, results, stack);
   }
   if (multiPhase) {
-    if (emit !== undefined) emit.emitPhase({ ...host, observer }, "commit", 0);
+    if (emit !== undefined) emit.emitPhase({ ...host, observer, scope }, "commit", 0);
     else hooks?.phase(host.hookm, "commit", 0);
-  } else if (observer !== undefined && outer) {
-    observer.endAutocommit("committed");
+  } else if (observer !== undefined && scope !== undefined && outer) {
+    observer.endAutocommit(scope, "committed");
   }
   if (host.hookm !== undefined) {
     const heard = results.flatMap((result) => result.notices);
@@ -143,6 +147,7 @@ export async function runWrite(
 
 function noteWrites(
   observer: import("./observe-emit.js").ObserverController,
+  scope: object,
   count: number,
   observe: readonly WriteObserveMeta[] | undefined,
   durationMs: number,
@@ -169,7 +174,7 @@ function noteWrites(
       ...(keys !== undefined ? { keys } : {}),
     });
   }
-  observer.recordWrites(drafts);
+  observer.recordWrites(scope, drafts);
 }
 
 /**
