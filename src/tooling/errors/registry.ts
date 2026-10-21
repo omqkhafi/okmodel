@@ -640,8 +640,26 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     code: "OKM1602",
     title: "Bad typed SQL",
     summary:
-      "A raw statement is missing its class, is not one select or one write, or the result class has no column initializers.",
-    fix: 'Pass "read" or "write", a fragment`...`, and a class with an initializer on every column. Identifiers are ident(name).',
+      "A raw statement is not one select or one write the checker can classify, or two result columns share a name.",
+    fix: "Start the statement with select, insert, update, or delete. with is a write when it contains insert, update, delete, or merge. Give result columns distinct names.",
+  },
+  {
+    code: "OKM1603",
+    title: "Raw SQL is not static",
+    summary: "raw SQL must be a static string.",
+    fix: "Pass a string literal or a template literal with no substitutions as the SQL.",
+  },
+  {
+    code: "OKM1604",
+    title: "Typed SQL is not locked",
+    summary: "A raw statement in the source is not in the typed SQL lock.",
+    fix: "okm raw sync writes the lock and the generated types. Commit both.",
+  },
+  {
+    code: "OKM1605",
+    title: "Stale typed SQL entry",
+    summary: "A typed SQL lock entry is no longer called from the source.",
+    fix: "okm raw sync writes the lock and the generated types. Commit both.",
   },
   {
     code: "OKM1701",

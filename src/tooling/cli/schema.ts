@@ -268,6 +268,11 @@ const SCHEMAS: Readonly<Record<string, JsonSchema>> = {
     },
   ),
   push: textData(idOf("push"), "okm push data"),
+  "raw sync": object("raw sync", "okm raw sync data", ["lock", "statements", "unchanged"], {
+    lock: { type: "string" },
+    statements: { type: "number" },
+    unchanged: { type: "boolean" },
+  }),
   pull: textData(idOf("pull"), "okm pull data"),
   seed: textData(idOf("seed"), "okm seed data"),
   "protect add": object("protect add", "okm protect add data", ["hostDb", "identity", "reason"], {

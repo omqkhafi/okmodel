@@ -80,6 +80,8 @@ import {
 import { resumeCommittedStep, stepSqlHash } from "../migrate/step-engine.js";
 import type { CommittedStep, StepEngine, StepJournal } from "../migrate/step-engine.js";
 import type { PageExample } from "./page.js";
+import { assertLocked, assertSignature, staleLockCodes } from "../describe/lock.js";
+import { discoverRawCalls } from "../describe/scan.js";
 
 /** Codes whose producer reads a live server. */
 export const NEEDS_DATABASE = [
@@ -115,10 +117,10 @@ export const NEEDS_DATABASE = [
 /**
  * Registered codes this build does not throw.
  *
- * OKM1025 is a second `Register` augmentation. OKM1051, OKM1110, OKM1191,
- * and OKM1601 have no raising path.
+ * OKM1025 is a second `Register` augmentation. OKM1051, OKM1110, and OKM1191
+ * have no raising path.
  */
-export const NOT_THROWN = ["OKM1025", "OKM1051", "OKM1110", "OKM1191", "OKM1601"] as const;
+export const NOT_THROWN = ["OKM1025", "OKM1051", "OKM1110", "OKM1191"] as const;
 
 /** One offline pair. `bad` and `fixed` are the source the page prints. */
 export type OfflineExample = {
@@ -1430,6 +1432,63 @@ reported(
   "OKM1538",
   () => diffCodes(tasks(), table("tasks", { id: t.identity(), title: t.integer() })),
   () => diffCodes(tasks(), tasks()),
+);
+
+thrown(
+  "OKM1601",
+  () => {
+    assertSignature(
+      {
+        sql: "select 1",
+        kind: "read",
+        params: [],
+        columns: [{ name: "n", pgType: "integer", nullable: true }],
+      },
+      {
+        sql: "select 1",
+        kind: "read",
+        params: [],
+        columns: [{ name: "n", pgType: "text", nullable: true }],
+      },
+    );
+  },
+  () => {
+    const column = { name: "n", pgType: "integer", nullable: true };
+    assertSignature(
+      { sql: "select 1", kind: "read", params: [], columns: [column] },
+      { sql: "select 1", kind: "read", params: [], columns: [column] },
+    );
+  },
+);
+
+thrown(
+  "OKM1603",
+  () => {
+    discoverRawCalls([
+      { path: "src/app.ts", text: 'import { raw } from "okmodel/pg";\nraw(db, sql, []);\n' },
+    ]);
+  },
+  () => {
+    discoverRawCalls([
+      { path: "src/app.ts", text: 'import { raw } from "okmodel/pg";\nraw(db, "select 1", []);\n' },
+    ]);
+  },
+);
+
+thrown(
+  "OKM1604",
+  () => {
+    assertLocked(["statement"], []);
+  },
+  () => {
+    assertLocked(["statement"], ["statement"]);
+  },
+);
+
+reported(
+  "OKM1605",
+  () => staleLockCodes(["kept"], ["kept", "stale"]),
+  () => staleLockCodes(["kept"], ["kept"]),
 );
 
 thrown(

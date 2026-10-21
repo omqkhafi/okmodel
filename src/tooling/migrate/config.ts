@@ -84,6 +84,15 @@ export type MigrateConfig = {
    * `columns` grants select or update on named columns.
    */
   readonly roles?: RolesInput;
+  /**
+   * Typed `raw()` discovery.
+   *
+   * `include` is the globs to scan. The default is every `.ts`, `.tsx`, and
+   * `.mts` file under `src`. `node_modules`, `dist`, and `.okm` are never scanned.
+   */
+  readonly raw?: {
+    readonly include?: readonly string[];
+  };
 };
 
 /**

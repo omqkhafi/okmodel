@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://okmodel.dev/schemas/cli-1/raw-sync.json",
+  "title": "okm raw sync data",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "lock",
+    "statements",
+    "unchanged"
+  ],
+  "properties": {
+    "lock": {
+      "type": "string"
+    },
+    "statements": {
+      "type": "number"
+    },
+    "unchanged": {
+      "type": "boolean"
+    }
+  }
+}

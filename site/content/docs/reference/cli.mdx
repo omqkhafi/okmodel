@@ -62,11 +62,14 @@ Exit codes are by outcome. `0` is done, or nothing to do. `1` is a command that 
 | `migrate baseline` | Records the head snapshot as applied on an existing database. No schema changes. |
 | `push` | Applies the schema diff. Writes no SQL file. |
 | `pull` | Reads one database and writes one table file per table, plus the schema file. |
+| `raw sync` | Describes every static `raw()` call from `okmodel/pg` and writes `.okm/raw.lock.json` and `.okm/raw.d.ts`. `--check` writes nothing and exits 1 when either file would change. |
 | `seed <file>` | Runs the file's default export on one target. |
 | `protect add` | Records the selected target's fingerprint in the user protection store. |
 | `protect remove` | Removes that fingerprint. Requires a terminal, otherwise exit 4. |
 | `protect list` | Prints the stored fingerprints. |
 | `schema <command>` | Prints the JSON Schema for that command's `--json` `data`. |
+
+`raw sync` scans `.ts`, `.tsx`, and `.mts` files under `src` for `raw` imported from `okmodel/pg`, including `import { raw as q }`. `defineConfig({ raw: { include } })` replaces those globs. `node_modules`, `dist`, and `.okm` are skipped. The SQL argument has to be a string literal or a template literal with no substitutions. The command describes each statement and does not run it. `okm check` fails when a call is missing from the lock (OKM1604) and warns when a lock entry is no longer called (OKM1605). With a target, a signature that no longer matches the database is OKM1601.
 
 ## Flags
 
@@ -75,11 +78,12 @@ Every command parses the flags in this table. An unknown flag is a usage error, 
 | Flag | Read by |
 | --- | --- |
 | `--config <path>`, `-c <path>` | Every command that loads a config. Loads that file instead of `okmodel.config.ts` in the working directory. |
-| `--target <name>`, `-t <name>` | `check`, `migrate plan`, `migrate apply`, `migrate status`, `migrate resolve`, `migrate check`, `migrate baseline`, `push`, `pull`, `seed`, `protect add`, `protect remove`, `ext`, and `doctor`. Who requires it is [Database](/docs/define/config/database). |
+| `--target <name>`, `-t <name>` | `check`, `raw sync`, `migrate plan`, `migrate apply`, `migrate status`, `migrate resolve`, `migrate check`, `migrate baseline`, `push`, `pull`, `seed`, `protect add`, `protect remove`, `ext`, and `doctor`. Who requires it is [Database](/docs/define/config/database). |
 | `--allow-protected` | `migrate apply`, `migrate resolve`, `migrate baseline`, `push`, and `seed`. One invocation. Blocked work is [Protection](/docs/define/config/database#protection). `migrate check` ignores the flag. |
-| `--allow-pooler` | `migrate apply`, `migrate resolve`, `migrate baseline`, `push`, `seed`, `migrate check`, and `check` when it compares a database. Same opt-in as [allowPooler](/docs/define/config/pooler). Either one is enough. |
-| `--lock-timeout <milliseconds>` | `migrate apply`. Overrides [timeouts.lock](/docs/define/config/timeouts). `0` disables it. |
-| `--statement-timeout <milliseconds>` | `migrate apply`. Overrides [timeouts.statement](/docs/define/config/timeouts). |
+| `--allow-pooler` | `migrate apply`, `migrate resolve`, `migrate baseline`, `push`, `seed`, `migrate check`, `raw sync`, and `check` when it compares a database. Same opt-in as [allowPooler](/docs/define/config/pooler). Either one is enough. |
+| `--lock-timeout <milliseconds>` | `migrate apply` and `raw sync`. Overrides [timeouts.lock](/docs/define/config/timeouts). `0` disables it. |
+| `--statement-timeout <milliseconds>` | `migrate apply` and `raw sync`. Overrides [timeouts.statement](/docs/define/config/timeouts). |
+| `--check` | `raw sync`. Writes nothing and exits 1 when the lock or the generated types would change. |
 | `--json` | Every command. Prints one `okm.cli/1` document. The command's previous JSON is `data`. |
 | `--out <file>`, `-o <file>` | With `--json`, writes `data` to the file unless the command already owns `--out`. `-` keeps `data` on stdout. |
 | `--dry-run`, `-n` | `migrate baseline`. Prints what would be recorded and writes nothing. |

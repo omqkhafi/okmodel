@@ -466,6 +466,28 @@ export const COMMANDS: readonly CommandSpec[] = [
     flags: [],
   }),
   spec({
+    id: "raw sync",
+    policy: "check",
+    words: ["raw", "sync"],
+    summary: "Describe static raw() calls and write the typed SQL lock.",
+    usage: "raw sync",
+    minOperands: 0,
+    maxOperands: 0,
+    usesDatabase: true,
+    ownOut: false,
+    flags: [
+      target,
+      allowPooler,
+      lockTimeout,
+      statementTimeout,
+      {
+        name: "check",
+        type: "boolean",
+        hint: "Do not write. Exit 1 when the lock would change.",
+      },
+    ],
+  }),
+  spec({
     id: "schema",
     policy: "none",
     words: ["schema"],
