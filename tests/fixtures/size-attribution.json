@@ -18,8 +18,8 @@
       "id": "app",
       "entry": "scripts/app-startup.ts",
       "kind": "startup",
-      "minBytes": 88348,
-      "gzipBytes": 28426,
+      "minBytes": 88572,
+      "gzipBytes": 28509,
       "modules": [
         {
           "path": "scripts/app-startup.ts",
@@ -64,7 +64,7 @@
         {
           "path": "src/contracts/catalog/identifier.ts",
           "minBytes": 1347,
-          "gzipBytes": 433
+          "gzipBytes": 434
         },
         {
           "path": "src/contracts/catalog/identity.ts",
@@ -74,12 +74,12 @@
         {
           "path": "src/contracts/catalog/json.ts",
           "minBytes": 1378,
-          "gzipBytes": 443
+          "gzipBytes": 444
         },
         {
           "path": "src/contracts/catalog/object.ts",
           "minBytes": 6241,
-          "gzipBytes": 2008
+          "gzipBytes": 2009
         },
         {
           "path": "src/contracts/catalog/order.ts",
@@ -99,7 +99,7 @@
         {
           "path": "src/contracts/error.ts",
           "minBytes": 4977,
-          "gzipBytes": 1601
+          "gzipBytes": 1602
         },
         {
           "path": "src/contracts/generator.ts",
@@ -114,7 +114,7 @@
         {
           "path": "src/contracts/nearest.ts",
           "minBytes": 906,
-          "gzipBytes": 291
+          "gzipBytes": 292
         },
         {
           "path": "src/contracts/utf8.ts",
@@ -124,7 +124,7 @@
         {
           "path": "src/dialects/pg/array-literal.ts",
           "minBytes": 1847,
-          "gzipBytes": 594
+          "gzipBytes": 595
         },
         {
           "path": "src/dialects/pg/bool.ts",
@@ -134,7 +134,7 @@
         {
           "path": "src/dialects/pg/column.ts",
           "minBytes": 4943,
-          "gzipBytes": 1590
+          "gzipBytes": 1591
         },
         {
           "path": "src/dialects/pg/compile.ts",
@@ -204,7 +204,7 @@
         {
           "path": "src/dialects/pg/schema.ts",
           "minBytes": 17265,
-          "gzipBytes": 5555
+          "gzipBytes": 5557
         },
         {
           "path": "src/dialects/pg/table.ts",
@@ -233,8 +233,8 @@
         },
         {
           "path": "src/runtime/client.ts",
-          "minBytes": 8991,
-          "gzipBytes": 2893
+          "minBytes": 9215,
+          "gzipBytes": 2966
         },
         {
           "path": "src/runtime/pg/postgresjs.ts",
@@ -244,7 +244,7 @@
         {
           "path": "src/runtime/plan.ts",
           "minBytes": 14743,
-          "gzipBytes": 4744
+          "gzipBytes": 4745
         },
         {
           "path": "src/runtime/safety-hook.ts",
@@ -257,8 +257,8 @@
       "id": "connect:src/runtime/pg/postgresjs.ts",
       "entry": "src/runtime/pg/postgresjs.ts",
       "kind": "startup",
-      "minBytes": 39995,
-      "gzipBytes": 14251,
+      "minBytes": 40219,
+      "gzipBytes": 14324,
       "modules": [
         {
           "path": "src/adapters/capabilities.ts",
@@ -283,7 +283,7 @@
         {
           "path": "src/adapters/pg/postgresjs.ts",
           "minBytes": 4948,
-          "gzipBytes": 1763
+          "gzipBytes": 1762
         },
         {
           "path": "src/adapters/pg/result.ts",
@@ -303,7 +303,7 @@
         {
           "path": "src/contracts/error.ts",
           "minBytes": 4941,
-          "gzipBytes": 1761
+          "gzipBytes": 1760
         },
         {
           "path": "src/contracts/nearest.ts",
@@ -313,7 +313,7 @@
         {
           "path": "src/contracts/utf8.ts",
           "minBytes": 451,
-          "gzipBytes": 161
+          "gzipBytes": 160
         },
         {
           "path": "src/dialects/pg/operators.ts",
@@ -322,8 +322,8 @@
         },
         {
           "path": "src/runtime/client.ts",
-          "minBytes": 9015,
-          "gzipBytes": 3212
+          "minBytes": 9231,
+          "gzipBytes": 3287
         },
         {
           "path": "src/runtime/pg/postgresjs.ts",
@@ -332,8 +332,8 @@
         },
         {
           "path": "src/runtime/plan.ts",
-          "minBytes": 14606,
-          "gzipBytes": 5204
+          "minBytes": 14614,
+          "gzipBytes": 5205
         },
         {
           "path": "src/runtime/safety-hook.ts",
@@ -346,8 +346,8 @@
       "id": "connect:src/runtime/pg/pglite.ts",
       "entry": "src/runtime/pg/pglite.ts",
       "kind": "startup",
-      "minBytes": 39087,
-      "gzipBytes": 13738,
+      "minBytes": 39311,
+      "gzipBytes": 13815,
       "modules": [
         {
           "path": "src/adapters/capabilities.ts",
@@ -407,7 +407,7 @@
         {
           "path": "src/contracts/utf8.ts",
           "minBytes": 451,
-          "gzipBytes": 159
+          "gzipBytes": 158
         },
         {
           "path": "src/dialects/pg/operators.ts",
@@ -416,8 +416,8 @@
         },
         {
           "path": "src/runtime/client.ts",
-          "minBytes": 9019,
-          "gzipBytes": 3170
+          "minBytes": 9237,
+          "gzipBytes": 3246
         },
         {
           "path": "src/runtime/pg/pglite.ts",
@@ -426,8 +426,8 @@
         },
         {
           "path": "src/runtime/plan.ts",
-          "minBytes": 14602,
-          "gzipBytes": 5132
+          "minBytes": 14608,
+          "gzipBytes": 5134
         },
         {
           "path": "src/runtime/safety-hook.ts",
@@ -440,8 +440,8 @@
       "id": "connect:src/runtime/pg/pg.ts",
       "entry": "src/runtime/pg/pg.ts",
       "kind": "startup",
-      "minBytes": 40836,
-      "gzipBytes": 14340,
+      "minBytes": 41060,
+      "gzipBytes": 14413,
       "modules": [
         {
           "path": "src/adapters/capabilities.ts",
@@ -481,7 +481,7 @@
         {
           "path": "src/contracts/catalog/identifier.ts",
           "minBytes": 736,
-          "gzipBytes": 259
+          "gzipBytes": 258
         },
         {
           "path": "src/contracts/catalog/words.ts",
@@ -491,7 +491,7 @@
         {
           "path": "src/contracts/error.ts",
           "minBytes": 4965,
-          "gzipBytes": 1744
+          "gzipBytes": 1743
         },
         {
           "path": "src/contracts/nearest.ts",
@@ -510,8 +510,8 @@
         },
         {
           "path": "src/runtime/client.ts",
-          "minBytes": 9055,
-          "gzipBytes": 3180
+          "minBytes": 9279,
+          "gzipBytes": 3257
         },
         {
           "path": "src/runtime/pg/pg.ts",
@@ -521,7 +521,7 @@
         {
           "path": "src/runtime/plan.ts",
           "minBytes": 14566,
-          "gzipBytes": 5115
+          "gzipBytes": 5113
         },
         {
           "path": "src/runtime/safety-hook.ts",
@@ -534,8 +534,8 @@
       "id": "connect:src/runtime/pg/bun.ts",
       "entry": "src/runtime/pg/bun.ts",
       "kind": "startup",
-      "minBytes": 39760,
-      "gzipBytes": 13997,
+      "minBytes": 39984,
+      "gzipBytes": 14078,
       "modules": [
         {
           "path": "src/adapters/capabilities.ts",
@@ -609,8 +609,8 @@
         },
         {
           "path": "src/runtime/client.ts",
-          "minBytes": 9012,
-          "gzipBytes": 3172
+          "minBytes": 9236,
+          "gzipBytes": 3252
         },
         {
           "path": "src/runtime/pg/bun.ts",
@@ -625,7 +625,7 @@
         {
           "path": "src/runtime/safety-hook.ts",
           "minBytes": 67,
-          "gzipBytes": 23
+          "gzipBytes": 24
         }
       ]
     },
@@ -633,8 +633,8 @@
       "id": "connect:src/runtime/pg/neon.ts",
       "entry": "src/runtime/pg/neon.ts",
       "kind": "startup",
-      "minBytes": 40607,
-      "gzipBytes": 14175,
+      "minBytes": 40831,
+      "gzipBytes": 14250,
       "modules": [
         {
           "path": "src/adapters/capabilities.ts",
@@ -708,8 +708,8 @@
         },
         {
           "path": "src/runtime/client.ts",
-          "minBytes": 9012,
-          "gzipBytes": 3146
+          "minBytes": 9236,
+          "gzipBytes": 3223
         },
         {
           "path": "src/runtime/pg/neon.ts",
@@ -719,7 +719,7 @@
         {
           "path": "src/runtime/plan.ts",
           "minBytes": 14614,
-          "gzipBytes": 5102
+          "gzipBytes": 5100
         },
         {
           "path": "src/runtime/safety-hook.ts",

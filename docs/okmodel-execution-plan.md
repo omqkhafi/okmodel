@@ -229,6 +229,7 @@ The plan is [#307](https://github.com/omqkhafi/okmodel/issues/307). Milestone [0
 | 0.9 Tooling | P110–P119 | Released as 0.9.0 (P119, D286). The plan is [#307](https://github.com/omqkhafi/okmodel/issues/307). Milestone [0.9](https://github.com/omqkhafi/okmodel/milestone/11). M2 is complete |
 | 0.10 Doctor bundle | X7 | [#511](https://github.com/omqkhafi/okmodel/issues/511). `okm doctor --bundle` writes a local diagnostics file a tester sends by hand: no network, no database, no values (O-6, D307). Tooling only. No gate move. Milestone [0.10](https://github.com/omqkhafi/okmodel/milestone/13) |
 | 0.10 Init and agent surface | I1–I3 | `okm init` (one package, workspaces, shared), the AGENTS.md block, and I3 `okm agents status \| update \| remove` with `okm init --agents` and `--no-agents` (D308, [#513](https://github.com/omqkhafi/okmodel/issues/513)). Tooling only. Milestone [0.10](https://github.com/omqkhafi/okmodel/milestone/13) |
+| 0.10 Session settings | G-1 | [#512](https://github.com/omqkhafi/okmodel/issues/512). `okmodel/session`: `sessionSettings()`, `connect({ session })`, and `db.with()` set transaction-local settings with one `set_config(..., true)` statement first in the unit, composed with `for()` and `unscoped()` (D309). Postgres only. OKM1709. No gate move. Milestone [0.10](https://github.com/omqkhafi/okmodel/milestone/13) |
 
 ### Later phases (prompts written when reached)
 

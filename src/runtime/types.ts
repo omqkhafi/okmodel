@@ -23,7 +23,7 @@ import type {
 } from "../dialects/pg/operators.js";
 import type { FieldWhere, IsJsonObject } from "../dialects/pg/where.js";
 import type { AppliedRule, ReadCall, ReadOp } from "./plan.js";
-import type { SessionContext, SessionValues } from "./session/index.js";
+import type { SessionContext, SessionValues, SettingMap } from "./session/index.js";
 import type { WarningIgnore } from "./warnings/catalog.js";
 
 export type { FieldWhere, WhereValue } from "../dialects/pg/where.js";
@@ -1313,21 +1313,22 @@ type ViewsClient<S> = S extends { readonly "~views": infer V extends readonly un
  * @typeParam S - Connected schema
  * @typeParam Root - True on the root client. `with()` returns the same kind of client
  */
-type SessionMethods<C, S extends QuerySchema, Root extends boolean> =
-  C extends SessionContext<infer M>
-    ? {
-        /**
-         * Opens a client that sets these values before each unit of work.
-         *
-         * One `set_config(..., true)` statement is the first statement of the
-         * transaction. Every required key is required here. Later calls add to
-         * the earlier ones. It composes with `for()` and `unscoped()` in any order.
-         *
-         * @param values - Setting key to value
-         */
-        with(values: SessionValues<M>): Root extends true ? Connected<S, C> : ScopedClient<S, C>;
-      }
-    : unknown;
+type SettingsOf<C> = C extends SessionContext<infer M> ? M : SettingMap;
+
+type SessionMethods<C, S extends QuerySchema, Root extends boolean> = {
+  /**
+   * Opens a client that sets these values before each unit of work.
+   *
+   * One `set_config(..., true)` statement is the first statement of the
+   * transaction. Every required key is required here. Later calls add to
+   * the earlier ones. It composes with `for()` and `unscoped()` in any order.
+   *
+   * @param values - Setting key to value
+   */
+  with(
+    values: SessionValues<SettingsOf<C>>,
+  ): Root extends true ? Connected<S, C> : ScopedClient<S, C>;
+};
 
 /** A client whose tables are already inside one tenant or an unscoped reason. */
 type ScopedClient<S extends QuerySchema, C = undefined> = {
@@ -1343,7 +1344,7 @@ type ScopedClient<S extends QuerySchema, C = undefined> = {
   readonly capabilities: DriverCapabilities;
 } & TxApi<S, false> &
   ViewsClient<S> &
-  SessionMethods<C, S, false> &
+  (C extends undefined ? unknown : SessionMethods<C, S, false>) &
   IfAsyncDisposable<typeof Symbol>;
 
 /** `for` and `unscoped` on a schema that set tenancy. */
@@ -1395,7 +1396,7 @@ export type Connected<S extends QuerySchema, C = undefined> = {
 } & TxApi<S, true> &
   ScopeMethods<S, C> &
   ViewsClient<S> &
-  SessionMethods<C, S, true> &
+  (C extends undefined ? unknown : SessionMethods<C, S, true>) &
   IfAsyncDisposable<typeof Symbol>;
 
 /**
