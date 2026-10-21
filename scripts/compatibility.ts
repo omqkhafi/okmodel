@@ -21,6 +21,8 @@ import {
   open as openNodePostgres,
 } from "../src/adapters/pg/nodepostgres.js";
 import { BUNSQL_CAPABILITIES } from "../src/adapters/capabilities.js";
+import { repoRoot } from "./root.js";
+import { compilerRangeNote } from "./ts-range.js";
 
 /** One case on one driver. */
 export type CompatibilityCell = {
@@ -70,11 +72,7 @@ export function renderCompatibility(cells: readonly CompatibilityCell[]): string
     }
     lines.push(`| ${row.join(" | ")} |`);
   }
-  lines.push(
-    "",
-    "`bun run ts7:check` typechecks the public entry files with `@typescript/native-preview` (`tsgo`) when that package is on npm. It is not part of `bun run check` and it is not a required CI status. The repository typecheck uses the `typescript` package at major 7 (`tsc`). When the preview package is not published, the script prints that and exits 0. Preview `7.0.0-dev.20260707.2` is published. `tsgo` reports no declaration for `pg` and refuses `Temporal` as a value in the testing factories. That run stays informational.",
-    "",
-  );
+  lines.push("", compilerRangeNote(repoRoot()), "");
   return lines.join("\n");
 }
 
