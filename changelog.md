@@ -98,6 +98,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The site skill page reads `skills/okmodel/SKILL.md`. That file is the copy an install finds at `node_modules/okmodel/skills/okmodel/SKILL.md`.
 - The linter page, [When a migration fails](docs/migration-failure.md), and the OKM1557 and OKM1558 error pages describe a declared `-- probe:` and when a committed step must have one.
 - The guide awaits `userFilters.parse(request.query)` and passes the result to `find` with a limit. `parse` is asynchronous because the parser loads on first use (Q10, #397).
+- [Capabilities](docs/capabilities.md) is generated from the Postgres feature registry. A feature whose proof title does not pass the registry proof check is `unverified`. `docs:check` fails when that page, a `<!-- support: key -->` block, or the step-kind table in [When a migration fails](docs/migration-failure.md) disagrees with the code.
 
 ### 💥 Breaking Changes
 

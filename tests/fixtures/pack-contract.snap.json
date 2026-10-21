@@ -738,6 +738,7 @@
     "docs/adopt-existing.md",
     "docs/api.md",
     "docs/backfill.md",
+    "docs/capabilities.md",
     "docs/compatibility.md",
     "docs/environments.md",
     "docs/errors/OKM1012.md",

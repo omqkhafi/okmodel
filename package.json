@@ -1,6 +1,6 @@
 {
   "name": "okmodel",
-  "version": "0.10.0-next.55",
+  "version": "0.10.0-next.56",
   "description": "okmodel is a catalog-first TypeScript ORM, PostgreSQL first.",
   "keywords": [
     "migrations",
@@ -169,6 +169,7 @@
     "test:runtimes": "bun ./scripts/runtimes.ts",
     "docs:errors": "bun ./scripts/docs-errors.ts",
     "docs:index": "bun ./scripts/docs-index.ts",
+    "docs:capabilities": "bun ./scripts/docs-capabilities.ts",
     "docs:hygiene": "bun ./scripts/docs-hygiene.ts",
     "docs:check": "bun ./scripts/docs-check.ts",
     "readme:check": "bun ./scripts/readme-check.ts",

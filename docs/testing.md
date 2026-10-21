@@ -8,6 +8,10 @@ codes: [OKM1111, OKM1120, OKM1707, OKM1850, OKM1853, OKM1860]
 
 `okmodel/testing` opens a real database and returns factories, a query counter, and a cross-tenant isolation check. The pool comes from `open()`. There is no mock database.
 
+<!-- support: tooling.testing -->
+Postgres: native. Proof passes (`factories create, reuse a ref, fill defaults, and replay a seed`).
+<!-- /support -->
+
 ```ts no-check="needs a running database and the application's schema"
 import { testing } from "okmodel/testing";
 import { open } from "okmodel/pg/pglite";
