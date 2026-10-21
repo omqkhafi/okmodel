@@ -142,6 +142,37 @@ export const COMMANDS: readonly CommandSpec[] = [
     flags: [target],
   }),
   spec({
+    id: "migrate resolve",
+    words: ["migrate", "resolve"],
+    summary: "Record a committed step, or mark it to run again. There is no skip.",
+    usage: "migrate resolve <step>",
+    minOperands: 1,
+    maxOperands: 1,
+    missing: "okm migrate resolve needs a step id.",
+    usesDatabase: true,
+    ownOut: false,
+    flags: [
+      target,
+      allowProtected,
+      allowPooler,
+      {
+        name: "applied",
+        type: "boolean",
+        hint: "Record the step as applied after it was finished by hand. No short form.",
+      },
+      {
+        name: "retry",
+        type: "boolean",
+        hint: "Mark the step so the next apply tries it. No short form.",
+      },
+      {
+        name: "accept-unverified",
+        type: "boolean",
+        hint: "Record a step whose kind has no probe. No short form.",
+      },
+    ],
+  }),
+  spec({
     id: "migrate check",
     words: ["migrate", "check"],
     summary: "Replay migration history in a scratch schema.",

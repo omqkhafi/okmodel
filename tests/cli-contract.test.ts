@@ -34,6 +34,8 @@ const probe = join(root, "tests/cli-parse-probe.ts");
 const EXIT_BY_CODE: Readonly<Record<string, 0 | 1 | 2 | 3 | 4 | 5>> = {
   OKM1201: 2,
   OKM1530: 3,
+  OKM1553: 3,
+  OKM1555: 3,
   OKM1802: 5,
   OKM1803: 5,
   OKM1811: 5,

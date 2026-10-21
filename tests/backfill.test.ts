@@ -90,6 +90,7 @@ test("status keeps the target columns and lists an unfinished backfill", () => {
     state: "current",
     protected: false,
     backfills: [],
+    steps: [],
     pending: [],
     compatibility: "up to date" as const,
   };

@@ -215,7 +215,7 @@ The registry is not on the runtime entry. A process that never explains a code d
 
 ## Registry
 
-The registry has 119 codes, in numeric order. Ranges are schema `OKM1000`, queries and capabilities `OKM1100`, validation `OKM1200`, mapped database errors `OKM1300`, transactions `OKM1400`, migrations `OKM1500`, typed SQL `OKM1600`, tenancy and policies `OKM1700`, drivers and versions `OKM1800`, and CLI `OKM1900`. Mapped database errors use the kind as the code, so `OKM1300` has no entry. `OKM1900` has no entry. The tables below are every code the registry holds.
+The registry has 123 codes, in numeric order. Ranges are schema `OKM1000`, queries and capabilities `OKM1100`, validation `OKM1200`, mapped database errors `OKM1300`, transactions `OKM1400`, migrations `OKM1500`, typed SQL `OKM1600`, tenancy and policies `OKM1700`, drivers and versions `OKM1800`, and CLI `OKM1900`. Mapped database errors use the kind as the code, so `OKM1300` has no entry. `OKM1900` has no entry. The tables below are every code the registry holds.
 
 ### Schema
 
@@ -321,6 +321,10 @@ The registry has 119 codes, in numeric order. Ranges are schema `OKM1000`, queri
 | `OKM1550` | Row-level security weakened | A statement disables row-level security, drops or widens a policy, grants BYPASSRLS, or changes the owner of a tenant table. |
 | `OKM1551` | Transaction control in a step | A step contains COMMIT, ROLLBACK, or other transaction control, including inside a DO body. A function or procedure body is not this. |
 | `OKM1552` | Reprinted declaration | A domain check or a LANGUAGE sql function body is stored differently from the text in the migration catalog. |
+| `OKM1553` | Step needs a human | A committed step failed and the probe cannot tell whether it is applied. Apply leaves it until someone decides. Exit 3. |
+| `OKM1554` | Step is not applied | Resolve refused to record the step because the probe says it is not applied. |
+| `OKM1555` | Unverified step | Resolve refused to record the step because this kind has no probe. Exit 3. |
+| `OKM1556` | Step statement changed | The migration file's statement changed after the committed step started. |
 
 ### Typed SQL
 

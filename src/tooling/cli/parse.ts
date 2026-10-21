@@ -34,12 +34,18 @@ export type ParsedCli = {
   readonly url: string | undefined;
   readonly lockTimeoutMs: number | undefined;
   readonly statementTimeoutMs: number | undefined;
+  /** `okm migrate resolve --applied`. */
+  readonly applied: boolean;
+  /** `okm migrate resolve --retry`. */
+  readonly retry: boolean;
+  /** `okm migrate resolve --accept-unverified`. Long form only. */
+  readonly acceptUnverified: boolean;
   /** Positionals after the command words. */
   readonly operands: readonly string[];
 };
 
 const GROUP_FIX: Readonly<Record<string, string>> = {
-  migrate: "Use okm migrate plan, apply, status, check, or baseline.",
+  migrate: "Use okm migrate plan, apply, status, resolve, check, or baseline.",
   ext: "Use okm ext list, okm ext check, okm ext scaffold, or okm ext test.",
   catalog: "Use okm catalog export.",
   import: "Use okm import drizzle <path>.",
@@ -159,6 +165,9 @@ export function parseCli(argv: readonly string[]): ParsedCli {
     url: stringValue(values.url),
     lockTimeoutMs: milliseconds(values["lock-timeout"], "--lock-timeout"),
     statementTimeoutMs: milliseconds(values["statement-timeout"], "--statement-timeout"),
+    applied: values.applied === true,
+    retry: values.retry === true,
+    acceptUnverified: values["accept-unverified"] === true,
     operands,
   };
 }
@@ -183,6 +192,9 @@ function blank(flags: { readonly help: boolean; readonly json: boolean }): Parse
     url: undefined,
     lockTimeoutMs: undefined,
     statementTimeoutMs: undefined,
+    applied: false,
+    retry: false,
+    acceptUnverified: false,
     operands: [],
   };
 }

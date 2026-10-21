@@ -590,6 +590,31 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     escapeHatches: [hatch("OKM1552", "-- okm-allow")],
   },
   {
+    code: "OKM1553",
+    title: "Step needs a human",
+    summary:
+      "A committed step failed and the probe cannot tell whether it is applied. Apply leaves it until someone decides.",
+    fix: "Inspect the database. Record the step as applied when the change is in place, or mark it for another attempt. okm migrate resolve takes the step id from okm migrate status.",
+  },
+  {
+    code: "OKM1554",
+    title: "Step is not applied",
+    summary: "Resolve refused to record the step because the probe says it is not applied.",
+    fix: "Finish the change in the database, or mark the step for another attempt.",
+  },
+  {
+    code: "OKM1555",
+    title: "Unverified step",
+    summary: "Resolve refused to record the step because this kind has no probe.",
+    fix: "Confirm the change in the database, then record the step with explicit acceptance.",
+  },
+  {
+    code: "OKM1556",
+    title: "Step statement changed",
+    summary: "The migration file's statement changed after the committed step started.",
+    fix: "Restore the statement that started, or replace the file only after the database matches it.",
+  },
+  {
     code: "OKM1601",
     title: "Stale typed SQL",
     summary: "A typed SQL signature no longer matches the database.",

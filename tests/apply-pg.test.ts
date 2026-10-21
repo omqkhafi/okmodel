@@ -27,7 +27,7 @@ const url = primaryUrl();
 
 postgresTest(
   gate,
-  "apply commits, a failed step resumes, and a second apply does not repeat it",
+  "apply commits finished steps and a raw committed failure needs a human",
   async () => {
     await withPostgresSchema(async (sql, schemaName) => {
       const tableSql = `create table ${q(schemaName)}.items (id integer primary key)`;
@@ -44,14 +44,9 @@ postgresTest(
       expect(messageOf(failed)).toContain("failed at step 3");
       const present = await sql<{ id: number }[]>`select id from items`;
       expect(present.map((row) => row.id)).toEqual([1]);
-      const fixed: StoredMigration = {
-        ...failing,
-        steps: [failing.steps[0]!, failing.steps[1]!, step("select 1", false)],
-      };
-      const report = await applyTo(schemaName, [fixed]);
-      expect(report.applied).toEqual(["0001_items"]);
-      const again = await applyTo(schemaName, [fixed]);
-      expect(again.applied).toEqual([]);
+      const again = await catchError(() => applyTo(schemaName, [failing]));
+      expect(again).toBeInstanceOf(OkmError);
+      if (again instanceof OkmError) expect(again.code).toBe("OKM1553");
       expect(await sql<{ id: number }[]>`select id from items`).toHaveLength(1);
     });
   },

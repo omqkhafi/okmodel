@@ -245,6 +245,7 @@ async function dispatch(
   if (id === "migrate plan") return planCommand(project, parsed, human);
   if (id === "migrate apply") return applyCommand(project, parsed, human);
   if (id === "migrate status") return statusCommand(project, parsed, human);
+  if (id === "migrate resolve") return resolveCommand(project, parsed, human);
   if (id === "migrate check") return migrateCheck(project, parsed, human);
   if (id === "migrate baseline") return baselineCommand(project, parsed, human);
   if (id === "push") return push(project, parsed, human);
@@ -504,15 +505,45 @@ async function statusCommand(
   parsed: ParsedCli,
   human: (text: string) => void,
 ): Promise<Produced> {
-  const { status } = await import("./api.js");
-  const rows = await status({
-    cwd: project.cwd,
-    config: project.configPath,
-    ...invokeOf(parsed),
-  });
-  const text = rows[0]?.text ?? "";
+  const { formatStatus, statusProjectRows } = await import("./status.js");
+  const rows = await statusProjectRows(project, invokeOf(parsed));
+  const text = formatStatus(rows);
   human(text);
-  return textData(text);
+  return {
+    text,
+    data: {
+      text,
+      steps: rows.flatMap((row) =>
+        row.steps.map((step) => ({
+          id: step.id,
+          kind: step.kind,
+          state: step.state,
+          attempt: step.attempt,
+          nextAction: step.nextAction,
+        })),
+      ),
+    },
+    warnings: [],
+    outFile: null,
+  };
+}
+
+async function resolveCommand(
+  project: ProjectContext,
+  parsed: ParsedCli,
+  human: (text: string) => void,
+): Promise<Produced> {
+  const { formatResolve, resolveProject } = await import("./resolve.js");
+  const result = await resolveProject(project, {
+    ...invokeOf(parsed),
+    applied: parsed.applied,
+    retry: parsed.retry,
+    acceptUnverified: parsed.acceptUnverified,
+    step: parsed.operands[0] ?? "",
+  });
+  const text = formatResolve(result);
+  human(text);
+  return { text, data: result, warnings: [], outFile: null };
 }
 
 async function migrateCheck(

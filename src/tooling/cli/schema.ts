@@ -180,7 +180,35 @@ const SCHEMAS: Readonly<Record<string, JsonSchema>> = {
     },
   },
   "migrate apply": textData(idOf("migrate apply"), "okm migrate apply data"),
-  "migrate status": textData(idOf("migrate status"), "okm migrate status data"),
+  "migrate status": object("migrate status", "okm migrate status data", ["text", "steps"], {
+    text: { type: "string" },
+    steps: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "kind", "state", "attempt", "nextAction"],
+        properties: {
+          id: { type: "string" },
+          kind: { type: "string" },
+          state: { type: "string" },
+          attempt: { type: "number" },
+          nextAction: { type: "string" },
+        },
+      },
+    },
+  }),
+  "migrate resolve": object(
+    "migrate resolve",
+    "okm migrate resolve data",
+    ["target", "step", "action", "result"],
+    {
+      target: { type: "string" },
+      step: { type: "string" },
+      action: { enum: ["applied", "retry"] },
+      result: { enum: ["recorded", "retry"] },
+    },
+  ),
   "migrate check": textData(idOf("migrate check"), "okm migrate check data"),
   "migrate baseline": object(
     "migrate baseline",

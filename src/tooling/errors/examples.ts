@@ -69,6 +69,8 @@ import {
 import { checkProject } from "../migrate/project.js";
 import { parseReplace } from "../migrate/values.js";
 import { reprintHits } from "../migrate/reprint.js";
+import { resumeCommittedStep, stepSqlHash } from "../migrate/step-engine.js";
+import type { CommittedStep, StepEngine, StepJournal } from "../migrate/step-engine.js";
 import type { PageExample } from "./page.js";
 
 /** Codes whose producer reads a live server. */
@@ -98,6 +100,8 @@ export const NEEDS_DATABASE = [
   "OKM1856",
   "OKM1857",
   "OKM1858",
+  "OKM1554",
+  "OKM1555",
 ] as const;
 
 /**
@@ -200,6 +204,56 @@ async function catchCode(run: () => unknown): Promise<string | undefined> {
     if (error instanceof OkmError) return error.code;
     throw error;
   }
+}
+
+function committedNote(): CommittedStep {
+  const sql = "create table notes (id int)";
+  return {
+    migrationId: "0001_init",
+    stepIndex: 0,
+    kind: "create-table",
+    sql,
+    sqlHash: stepSqlHash(sql),
+    stepClass: "create-table",
+    catalogHash: "catalog",
+    finishes: false,
+  };
+}
+
+function failedMarker(sqlHash: string): StepJournal {
+  const step = committedNote();
+  return {
+    read: () =>
+      Promise.resolve({
+        migrationId: step.migrationId,
+        stepIndex: step.stepIndex,
+        kind: step.kind,
+        sqlHash,
+        state: "failed",
+        attempt: 1,
+      }),
+    start: () => Promise.resolve(),
+    fail: () => Promise.resolve(),
+    complete: () => Promise.resolve(),
+  };
+}
+
+function unknownEngine(): StepEngine {
+  return {
+    probed: true,
+    probe: () => Promise.resolve("unknown"),
+    cleanup: () => Promise.resolve(),
+    run: () => Promise.resolve(),
+  };
+}
+
+function appliedEngine(): StepEngine {
+  return {
+    probed: true,
+    probe: () => Promise.resolve("applied"),
+    cleanup: () => Promise.resolve(),
+    run: () => Promise.resolve(),
+  };
 }
 
 function hand(sql: string, before: Catalog = empty): readonly string[] {
@@ -688,6 +742,39 @@ reported(
   "OKM1551",
   () => hand("commit"),
   () => hand("create table notes (id int)"),
+);
+
+thrown(
+  "OKM1553",
+  () =>
+    resumeCommittedStep(committedNote(), failedMarker(committedNote().sqlHash), unknownEngine(), {
+      retries: 0,
+      wrap: (error) => error as OkmError,
+    }),
+  () =>
+    resumeCommittedStep(committedNote(), failedMarker(committedNote().sqlHash), appliedEngine(), {
+      retries: 0,
+      wrap: (error) => error as OkmError,
+    }),
+);
+
+thrown(
+  "OKM1556",
+  () =>
+    resumeCommittedStep(
+      committedNote(),
+      failedMarker(stepSqlHash("create table other (id int)")),
+      appliedEngine(),
+      {
+        retries: 0,
+        wrap: (error) => error as OkmError,
+      },
+    ),
+  () =>
+    resumeCommittedStep(committedNote(), failedMarker(committedNote().sqlHash), appliedEngine(), {
+      retries: 0,
+      wrap: (error) => error as OkmError,
+    }),
 );
 
 reported(

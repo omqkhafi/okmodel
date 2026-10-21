@@ -22,7 +22,17 @@ import {
 } from "./backfill.js";
 import type { PlanStep } from "./plan.js";
 import { sessionFailure } from "./lost.js";
+import { migrationJournalGrants } from "./managed.js";
+import { postgresStepEngine } from "./pg-probe.js";
 import { assertTargetPolicy, type PolicyOperation } from "./policy.js";
+import { postgresStepJournal } from "./step-journal.js";
+import {
+  resumeCommittedStep,
+  stepSqlHash,
+  unitMode,
+  type CommittedStep,
+  type StepBoundary,
+} from "./step-engine.js";
 
 /** One step with its index in the migration file. */
 export type RunnableStep = {
@@ -74,6 +84,8 @@ export type TargetRun = {
   readonly schema?: string;
   readonly onProgress?: (line: string) => void;
   readonly afterBatch?: (batch: BackfillBatch) => void | Promise<void>;
+  /** Test failpoint. A stop leaves the committed step where a crash would. */
+  readonly failAt?: StepBoundary;
 };
 
 /** What {@link runTarget} finished on this target. */
@@ -346,49 +358,20 @@ async function runUnit(
     await runBackfill(connection, unit, only, only.step.backfill, run);
     return;
   }
+  if (unitMode(unit) === "committed") {
+    if (only === undefined) return;
+    await runCommitted(connection, unit, only, run, session);
+    return;
+  }
   for (let attempt = 0; attempt <= run.retries; attempt += 1) {
     let began = false;
     let current = unit.steps[0]?.index ?? 0;
     try {
-      if (unit.transactional) {
-        await connection.execute("begin");
-        began = true;
-      }
+      await connection.execute("begin");
+      began = true;
       for (const item of unit.steps) {
         current = item.index;
-        // Create every managed role as the connecting user first. SET ROLE to
-        // the migration role waits until a later non-role step so a second
-        // CREATE ROLE is not refused (the migration role has NOCREATEROLE).
-        if (
-          run.migrationRole !== undefined &&
-          !changesRole(item.step.sql) &&
-          session.setRole !== run.migrationRole &&
-          (await roleExists(connection, run.migrationRole))
-        ) {
-          await assumeRole(connection, run.migrationRole, session);
-        }
-        await rebuildInvalidIndex(connection, item.step.sql);
-        const created = createdRoleName(item.step.sql);
-        const existed = created !== undefined && (await roleExists(connection, created));
-        if (created === undefined) {
-          await connection.execute(item.step.sql);
-          await assertSchemaUsageLanded(connection, item.step.sql);
-        } else if (!existed) await connection.execute(createRoleOnce(item.step.sql));
-        if (created !== undefined && created === run.migrationRole && !existed) {
-          await grantSchema(connection, run.schema ?? "public", created);
-          await ownSchema(connection, run.schema ?? "public", created);
-          await connection.execute(
-            `grant select, insert, update on okm_meta, okm_history, okm_backfill to ${quoteIdent(created)}`,
-          );
-        }
-        if (!unit.transactional) {
-          await connection.execute("begin");
-          began = true;
-          await writeStep(connection, unit, item);
-          if (unit.finishes) await writeMeta(connection, unit);
-          await connection.execute("commit");
-          began = false;
-        }
+        await executePlanStep(connection, item, run, session);
       }
       if (
         run.migrationRole !== undefined &&
@@ -397,25 +380,90 @@ async function runUnit(
       ) {
         await assumeRole(connection, run.migrationRole, session);
       }
-      if (unit.transactional) {
-        for (const item of unit.steps) await writeStep(connection, unit, item);
-        if (unit.finishes) await writeMeta(connection, unit);
-        await connection.execute("commit");
-        began = false;
-      }
+      for (const item of unit.steps) await writeStep(connection, unit, item);
+      if (unit.finishes) await writeMeta(connection, unit);
+      await connection.execute("commit");
       return;
     } catch (error) {
       if (began) await connection.execute("rollback").catch(() => undefined);
-      if (!isLockTimeout(error) || attempt === run.retries) {
-        const failed = unit.steps.find((item) => item.index === current);
-        const leftover =
-          failed === undefined
-            ? undefined
-            : await dropFailedConcurrentIndex(connection, failed.step.sql);
-        throw annotateInvalidIndex(failStep(unit, current, error), leftover);
-      }
+      if (!isLockTimeout(error) || attempt === run.retries) throw failStep(unit, current, error);
       await delay(BACKOFF_MS * 2 ** attempt);
     }
+  }
+}
+
+async function runCommitted(
+  connection: DriverConnection,
+  unit: RunnableUnit,
+  item: RunnableStep,
+  run: TargetRun,
+  session: { setRole?: string },
+): Promise<void> {
+  const step = committedOf(unit, item);
+  await resumeCommittedStep(
+    step,
+    postgresStepJournal(connection),
+    postgresStepEngine(
+      connection,
+      { kind: step.kind, sql: item.step.sql, lockTimeoutMs: run.lockTimeoutMs },
+      () => executePlanStep(connection, item, run, session),
+    ),
+    {
+      retries: run.retries,
+      ...(run.failAt !== undefined ? { failAt: run.failAt } : {}),
+      wrap: (error) => failStep(unit, item.index, error),
+    },
+  );
+}
+
+function committedOf(unit: RunnableUnit, item: RunnableStep): CommittedStep {
+  return {
+    migrationId: unit.migrationId,
+    stepIndex: item.index,
+    kind: item.step.kind ?? "raw-sql",
+    sql: item.step.sql,
+    sqlHash: stepSqlHash(item.step.sql),
+    stepClass: item.step.class,
+    catalogHash: unit.catalogHash,
+    finishes: unit.finishes,
+  };
+}
+
+/**
+ * Runs one statement, including role creation and the migration-role grants.
+ *
+ * @param connection - Reserved connection
+ * @param item - The step
+ * @param run - Role and schema for this target
+ * @param session - Role already assumed
+ */
+async function executePlanStep(
+  connection: DriverConnection,
+  item: RunnableStep,
+  run: TargetRun,
+  session: { setRole?: string },
+): Promise<void> {
+  // Create every managed role as the connecting user first. SET ROLE to
+  // the migration role waits until a later non-role step so a second
+  // CREATE ROLE is not refused (the migration role has NOCREATEROLE).
+  if (
+    run.migrationRole !== undefined &&
+    !changesRole(item.step.sql) &&
+    session.setRole !== run.migrationRole &&
+    (await roleExists(connection, run.migrationRole))
+  ) {
+    await assumeRole(connection, run.migrationRole, session);
+  }
+  const created = createdRoleName(item.step.sql);
+  const existed = created !== undefined && (await roleExists(connection, created));
+  if (created === undefined) {
+    await connection.execute(item.step.sql);
+    await assertSchemaUsageLanded(connection, item.step.sql);
+  } else if (!existed) await connection.execute(createRoleOnce(item.step.sql));
+  if (created !== undefined && created === run.migrationRole && !existed) {
+    await grantSchema(connection, run.schema ?? "public", created);
+    await ownSchema(connection, run.schema ?? "public", created);
+    for (const sql of migrationJournalGrants(created)) await connection.execute(sql);
   }
 }
 
@@ -642,99 +690,6 @@ async function writeMeta(connection: DriverConnection, unit: RunnableUnit): Prom
   );
 }
 
-async function rebuildInvalidIndex(connection: DriverConnection, sql: string): Promise<void> {
-  const name = await invalidConcurrentIndex(connection, sql);
-  if (name === undefined) return;
-  await connection.execute(`drop index concurrently if exists ${quoteIdent(name)}`);
-}
-
-/**
- * Drops an INVALID index left by a failed `CREATE INDEX CONCURRENTLY`.
- *
- * Postgres keeps that index, and the same statement then fails with "already
- * exists". Dropping it here is what makes a re-run safe. When the drop fails,
- * the name is returned so the error can give `DROP INDEX CONCURRENTLY`.
- *
- * @param connection - Reserved connection, not inside a transaction
- * @param sql - The step that just failed
- * @returns The index name when it is still INVALID
- */
-async function dropFailedConcurrentIndex(
-  connection: DriverConnection,
-  sql: string,
-): Promise<string | undefined> {
-  let name: string | undefined;
-  try {
-    name = await invalidConcurrentIndex(connection, sql);
-  } catch {
-    return undefined;
-  }
-  if (name === undefined) return undefined;
-  try {
-    await connection.execute(`drop index concurrently if exists ${quoteIdent(name)}`);
-  } catch {
-    return name;
-  }
-  return undefined;
-}
-
-/**
- * Name of a concurrent index from `sql` when `pg_index.indisvalid` is false.
- *
- * A missing index and a valid index are both `undefined`. The lookup uses
- * `current_schema()`, which apply sets to the migration schema.
- *
- * @param connection - Reserved connection
- * @param sql - One statement
- * @returns The index name, or `undefined` when it is missing or valid
- */
-async function invalidConcurrentIndex(
-  connection: DriverConnection,
-  sql: string,
-): Promise<string | undefined> {
-  const name = concurrentIndexName(sql);
-  if (name === undefined) return undefined;
-  const found = await connection.execute(
-    `select i.indisvalid
-     from pg_class c
-     join pg_namespace n on n.oid = c.relnamespace
-     join pg_index i on i.indexrelid = c.oid
-     where c.relname = $1 and n.nspname = current_schema()`,
-    [name],
-  );
-  const valid = found.rows[0]?.[0];
-  if (valid === undefined || wireTrue(valid)) return undefined;
-  return name;
-}
-
-/**
- * Adds the leftover index and the exact drop to an apply failure.
- *
- * @param error - The step failure
- * @param name - INVALID index the drop did not remove
- * @returns `error` when `name` is omitted
- */
-function annotateInvalidIndex(error: OkmError, name: string | undefined): OkmError {
-  if (name === undefined) return error;
-  const quoted = quoteIdent(name);
-  return new OkmError(error.code, `${error.message} Index ${quoted} is INVALID.`, {
-    kind: error.kind,
-    cause: error.cause,
-    fix: {
-      summary: `DROP INDEX CONCURRENTLY ${quoted}; then run apply again. Finished steps are not repeated.`,
-    },
-    ...(error.sqlstate !== undefined ? { sqlstate: error.sqlstate } : {}),
-  });
-}
-
-function concurrentIndexName(sql: string): string | undefined {
-  const match =
-    /^create\s+(?:unique\s+)?index\s+concurrently\s+(?:if\s+not\s+exists\s+)?(?:"([^"]+)"|([A-Za-z_][\w$]*))/i.exec(
-      sql.trim(),
-    );
-  return match?.[1] ?? match?.[2];
-}
-
 const SCHEMA_USAGE =
   /^\s*grant\s+usage\s+on\s+schema\s+(?:"((?:[^"]|"")*)"|([A-Za-z_][\w$]*))\s+to\s+(?:"((?:[^"]|"")*)"|([A-Za-z_][\w$]*))\s*;?\s*$/i;
 
@@ -809,10 +764,6 @@ function isLockTimeout(error: unknown): boolean {
   if ("sqlstate" in error && error.sqlstate === "55P03") return true;
   const message = error instanceof Error ? error.message : "";
   return message.includes("lock timeout");
-}
-
-function wireTrue(value: string | null | undefined): boolean {
-  return value === "t" || value === "true";
 }
 
 function roleFlag(value: unknown): boolean {
