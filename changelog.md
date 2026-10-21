@@ -57,11 +57,11 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `trusted(client, "reason")` from `okmodel/pg` lifts the tenant check for typed raw on a `for()` client. The reason is required and shows as the observer `tag`. Without it, typed raw on a tenant client is OKM1702. Raw SQL has no archive filter and no hidden-column guard.
 - `connect({ onQuery })` delivers one `QueryEvent` per statement, reads and writes, after the statement settles. With no observer the client does not build an event and does not read the clock. `queryObserver()` isolates a throwing or rejecting handler, waits on `flush()`, and overflows in-flight promises with OKM2200. `params: true` and `stack: true` opt in; sensitive, hidden, and tenant values are `[redacted]`. `toOtel(event)` returns `{ name, attributes }` with the same `db.*` names as `okmodel/otel`, plus `db.response.status_code` (the SQLSTATE) on failure. It imports nothing from OpenTelemetry and never emits parameters or tenant ids. `db.query.text` is included only when `statement: true`.
 - `writeObserver({ tag })` and `queryObserver({ tag })` copy a tag onto each event. A tag is 1–64 characters from `[A-Za-z0-9_.:/-]`. Anything else is `invalid` when the helper is built.
-- `aggregate({ countDistinct: [fields] })` counts the different non-null values of each field per group and returns them as `countDistinct.<field>`. A group with only NULLs, and the one total row of an empty table, count 0. It takes the column types `min` and `max` take (D307, #506).
+- `aggregate({ countDistinct: [fields] })` counts the different non-null values of each field per group and returns them as `countDistinct.<field>`. A group with only NULLs, and the one total row of an empty table, count 0. It takes the column types `min` and `max` take (D308, #506).
 
 #### tooling
 
-- Capability key `query.countDistinct` is native on Postgres (D307).
+- Capability key `query.countDistinct` is native on Postgres (D308).
 - Capability keys `writeObserver.unit` (`transaction | batch`), `writeObserver.keys` (`returning`; closed profile `none`), and `writeObserver.rowCount` (`mixed`; closed profile `unknown`) are in the Postgres registry with proofs and closed-profile refusals.
 - `queryObserver.timing` is native on Postgres with cost `query|decode`. Pool-queue wait is not measured, so `queueMs` stays null. The closed profile cost is `none`.
 - OKM1890 refuses `writeObserver({ keys })` when a named table has no primary key or is not in the schema. OKM2200 warns when the write-observer pending-event buffer overflows.
@@ -105,6 +105,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okm check` runs three schema warning rules offline: OKM2101 (`unindexed-foreign-key`, no index starts with a foreign key's columns, a composite index that starts with them counts), OKM2102 (`table-without-primary-key`), and OKM2103 (`unindexed-filter-column`, a column in a `filters()` allow or sort list or used by a preset with no index that starts with it; a primary key, a unique index, and the tenant prefix count). Each is medium severity, default level `warn`, phase `check`, evidence `static`. Findings print one per line and fill `warnings[]` with `place` set to `table` or `table.column`. Exit stays 0. `warnings.levels` sets `off`, `hint`, `warn`, or `error`; `error` exits non-zero with the rule code. A rule that cannot decide (an expression index, a preset that needs its arguments, a `filters()` field that is not a literal) stays silent.
 - `filters()` keeps nothing at runtime, so `okm check` reads it from source with the `okm raw sync` lexer: the `raw.include` files (default `src/**`), the schema file, and the `tables` directory. Only literal `allow` keys and `sort` strings on a receiver bound to one `table("name", ...)` count.
 - A project warning ignore takes an optional `target` (`events` or `orders.user_id`, SQL names). `okm check --json` adds `target` and `status` (`applied` or `stale`) to each `data.ignores` entry. An ignore for an OKM2101 to OKM2103 rule that matched nothing is `stale` and is also reported as a warning. `schemas/cli-1/check.json` gains those two optional fields.
+- `okm doctor --bundle [--out <file>] [--force-file]` writes one local JSON file (`bundleFormat: 1`, sorted keys, default `.okm/doctor-bundle.json`) that a tester sends by hand. It needs no database and makes no network call, and the envelope carries no `target`. It holds versions (okmodel, Node, Bun), OS and arch, package manager, dialect and adapter packages with installed versions, the config file name, `.okm/` artifacts from a closed list with SHA-256, layout counts, the capability registry summary, and the codes and pass or fail per rule of the checks that need no database. It never holds a connection string, host, user, URL, table or column name, SQL text, row value, a path outside the project, or an environment variable value. An existing file is refused with exit 4 unless `--force-file`. `--bundle` takes no code and no `--target`. `okm schema doctor` and `schemas/cli-1/doctor.json` describe the document (X7, O-6, D307, #511).
 
 #### docs
 
@@ -128,6 +129,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - [Warnings](docs/warnings.md) records the levels, the development defaults, and the four static rules.
 - [Size audit](docs/size-audit.md) records where the gated bytes go, every unused export, and every duplicate group. It is an internal note and is not packed.
 - [Warnings](docs/warnings.md) lists OKM2101, OKM2102, and OKM2103, the `target` ignore, the stale report, and when each rule stays silent. Pages for the three codes are generated with the error pages.
+- The guide, the CLI reference, the threat model, and the offline-first note describe `okm doctor --bundle`: what the file holds, what it never holds, and what `checks` does not cover (D307).
 
 ### 💥 Breaking Changes
 

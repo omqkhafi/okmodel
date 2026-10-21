@@ -20,8 +20,8 @@ import {
 } from "./guards.js";
 import { assertReadable, resolveInside } from "./paths.js";
 
-/** npm names that mean a driver is already installed. */
-const DRIVER_OF: Readonly<Record<string, InitDriver>> = {
+/** Driver an npm package name stands for. */
+export const DRIVER_OF: Readonly<Record<string, InitDriver>> = {
   postgres: "postgresjs",
   pg: "pg",
   "@neondatabase/serverless": "neon",

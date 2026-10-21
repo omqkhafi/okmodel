@@ -55,6 +55,11 @@ export type CommandSpec = {
    * `ext scaffold` take a file.
    */
   readonly ownOut: "file" | "directory" | false;
+  /**
+   * Boolean flag that makes `--out` this command's own file path, even without `--json`.
+   * `doctor --bundle` writes the bundle there. Without the flag `--out` diverts JSON `data`.
+   */
+  readonly ownOutFlag?: string;
   /** Flags besides the globals. */
   readonly flags: readonly FlagSpec[];
 };
@@ -362,13 +367,27 @@ export const COMMANDS: readonly CommandSpec[] = [
     id: "doctor",
     policy: "check",
     words: ["doctor"],
-    summary: "Print a target report, or one error code.",
+    summary:
+      "Print a target report, or one error code. --bundle writes a local diagnostics file and needs no database.",
     usage: "doctor [code]",
     minOperands: 0,
     maxOperands: 1,
     usesDatabase: true,
     ownOut: false,
-    flags: [target],
+    ownOutFlag: "bundle",
+    flags: [
+      target,
+      {
+        name: "bundle",
+        type: "boolean",
+        hint: "Write one JSON diagnostics file (bundleFormat 1) for a person to send by hand. No network, no database, no values. --out <file> sets the path; the default is .okm/doctor-bundle.json.",
+      },
+      {
+        name: "force-file",
+        type: "boolean",
+        hint: "With --bundle, replace an existing file. No short form.",
+      },
+    ],
   }),
   spec({
     id: "generate",
