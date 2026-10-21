@@ -1,0 +1,328 @@
+/**
+ * Which files under `docs/` ship in the npm tarball.
+ *
+ * Every file is `public` or `internal`. A new file that is in neither list
+ * fails the check, so adding a page forces a decision. Public pages are
+ * packed. Internal pages stay in the repository. `docs/.npmignore` is
+ * generated from the internal list.
+ *
+ * `okmVersion` in the committed pages is the release train (`X.Y.Z` with
+ * no `-next.N`). `stamp` rewrites that field, and the index title, to the
+ * full package version for the tarball only. `restore` puts the committed
+ * bytes back. `bun run bump` does not call either one.
+ *
+ *   bun ./scripts/docs-pack.ts
+ *   bun ./scripts/docs-pack.ts --write-ignore
+ *   bun ./scripts/docs-pack.ts stamp
+ *   bun ./scripts/docs-pack.ts restore
+ */
+
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join, relative, sep } from "node:path";
+
+import { exitOnProblems } from "./report.js";
+import { repoRoot } from "./root.js";
+
+/** Backup of public docs while `stamp` rewrites the packed copy. Untracked. */
+export const PACK_BACKUP = ".okm-docs-pack";
+
+/** `docs/.npmignore`, relative to the repository root. */
+export const NPM_IGNORE = "docs/.npmignore";
+
+/**
+ * Public guides, relative to `docs/`.
+ *
+ * `docs/errors/OKM####.md` is public by pattern and is not listed here.
+ * There is no `docs/capabilities.md` in this repository.
+ */
+export const PUBLIC_DOCS = [
+  "adopt-existing.md",
+  "api.md",
+  "backfill.md",
+  "compatibility.md",
+  "environments.md",
+  "example-app.md",
+  "extension-compatibility.md",
+  "github-action.md",
+  "guide.md",
+  "index.md",
+  "known-limits.md",
+  "linter.md",
+  "migrate-check.md",
+  "migration-failure.md",
+  "observer-events.md",
+  "production.md",
+  "protection.md",
+  "provisioning.md",
+  "quickstart.md",
+  "readme-examples.md",
+  "testing.md",
+  "topology.md",
+  "type-change.md",
+  "untrusted.md",
+  "using-okmodel-safely.md",
+] as const;
+
+/**
+ * Repository notes that must not be packed, relative to `docs/`.
+ *
+ * `.npmignore` is the generated exclusion list. It is internal so the
+ * classifier still sees it.
+ */
+export const INTERNAL_DOCS = [
+  ".npmignore",
+  "ci-and-test-cycle-plan.md",
+  "ci-baseline.md",
+  "describe-spike.md",
+  "editor-check.md",
+  "github.md",
+  "m0-findings.md",
+  "offline-first-constraints.md",
+  "oke-windows-audit.md",
+  "okmodel-api-design.md",
+  "okmodel-decisions.md",
+  "okmodel-execution-plan.md",
+  "okmodel-gap-research.md",
+  "p100-offline-audit.md",
+  "p108-inline-relations-study.md",
+  "postgresjs-kill-storm.md",
+  "postgresjs-kill-storm.mjs",
+  "release.md",
+  "size.md",
+] as const;
+
+const ERROR_PAGE = /^errors\/OKM\d{4}\.md$/;
+
+/** One file under `docs/` and the decision recorded for it. */
+export type DocClass = "public" | "internal";
+
+/**
+ * Release version with a `-next.N` suffix removed.
+ *
+ * `0.10.0-next.47` is `0.10.0`. A bare `0.10.0` stays `0.10.0`.
+ *
+ * @param version - `package.json` version
+ * @returns The train version committed into front matter and the index title
+ */
+export function committedDocVersion(version: string): string {
+  return version.replace(/-next\.\d+$/, "");
+}
+
+/**
+ * Class of one path relative to `docs/`, or `undefined` when nobody decided.
+ *
+ * @param rel - Forward-slash path under `docs/`
+ * @returns The recorded class
+ */
+export function docClass(rel: string): DocClass | undefined {
+  if ((PUBLIC_DOCS as readonly string[]).includes(rel)) return "public";
+  if ((INTERNAL_DOCS as readonly string[]).includes(rel)) return "internal";
+  if (ERROR_PAGE.test(rel)) return "public";
+  return undefined;
+}
+
+/**
+ * Problems in the classification of `docs/`.
+ *
+ * A file on disk with no class, a listed path that is missing, and a path
+ * listed twice are problems.
+ *
+ * @param root - Repository root
+ * @returns Problem lines
+ */
+export function classificationProblems(root: string): readonly string[] {
+  const problems: string[] = [];
+  const onDisk = new Set(docsFiles(root));
+  const seen = new Set<string>();
+  for (const rel of [...PUBLIC_DOCS, ...INTERNAL_DOCS]) {
+    if (seen.has(rel)) problems.push(`docs-pack: ${rel} is listed twice`);
+    seen.add(rel);
+    if (!onDisk.has(rel)) problems.push(`docs-pack: ${rel} is listed but missing`);
+  }
+  for (const rel of [...onDisk].sort()) {
+    if (docClass(rel) === undefined) problems.push(`docs-pack: ${rel} is not public or internal`);
+  }
+  for (const rel of PUBLIC_DOCS) {
+    if ((INTERNAL_DOCS as readonly string[]).includes(rel)) {
+      problems.push(`docs-pack: ${rel} is both public and internal`);
+    }
+  }
+  return problems;
+}
+
+/**
+ * `.npmignore` body for `docs/`.
+ *
+ * One internal path per line, sorted. The ignore file does not list itself.
+ *
+ * @returns The file contents, ending in a newline
+ */
+export function npmIgnoreText(): string {
+  const lines = INTERNAL_DOCS.filter((rel) => rel !== ".npmignore")
+    .slice()
+    .sort();
+  return `# Generated by scripts/docs-pack.ts. Do not edit.\n${lines.join("\n")}\n`;
+}
+
+/**
+ * Public markdown that an agent reads from the package, relative to the root.
+ *
+ * Includes `docs/errors/OKM####.md`. Paths use forward slashes.
+ *
+ * @param root - Repository root
+ * @returns Sorted paths
+ */
+export function packedDocPaths(root: string): readonly string[] {
+  const paths: string[] = [];
+  for (const rel of docsFiles(root)) {
+    if (docClass(rel) !== "public" || !rel.endsWith(".md")) continue;
+    paths.push(`docs/${rel}`);
+  }
+  return paths.sort();
+}
+
+/**
+ * Text files the tarball ships for an agent to read.
+ *
+ * `dist/` JavaScript is build output and is not scanned here.
+ *
+ * @param root - Repository root
+ * @returns Repo-relative paths
+ */
+export function packedTextPaths(root: string): readonly string[] {
+  const paths = [...packedDocPaths(root), "skills/okmodel/SKILL.md", "README.md", "LICENSE"];
+  const schemas = join(root, "schemas");
+  if (existsSync(schemas)) {
+    for (const rel of walkFiles(schemas, schemas)) {
+      if (rel.endsWith(".json")) paths.push(`schemas/${rel}`);
+    }
+  }
+  return paths.sort();
+}
+
+/**
+ * Rewrites `okmVersion`, and the index title, to the full package version.
+ *
+ * @param text - Committed markdown
+ * @param version - Full `package.json` version
+ * @returns The tarball copy
+ */
+export function stampDocText(text: string, version: string): string {
+  if (!/^okmVersion:\s*"[^"]*"/m.test(text)) {
+    throw new Error("docs-pack: page has no okmVersion field to stamp");
+  }
+  const stamped = text.replace(/^okmVersion:\s*"[^"]*"/m, `okmVersion: "${version}"`);
+  return stamped.replace(/^OKModel \S+ - agent index$/m, `OKModel ${version} - agent index`);
+}
+
+/**
+ * Copies public docs aside and stamps `okmVersion` for `npm pack`.
+ *
+ * A second call restores first, so a crashed pack can be stamped again.
+ *
+ * @param root - Repository root
+ */
+export function stampPackedDocs(root: string): void {
+  if (existsSync(join(root, PACK_BACKUP))) restorePackedDocs(root);
+  const version = packageVersion(root);
+  const backup = join(root, PACK_BACKUP);
+  for (const rel of packedDocPaths(root)) {
+    const from = join(root, rel);
+    const to = join(backup, rel);
+    mkdirSync(dirname(to), { recursive: true });
+    cpSync(from, to);
+    writeFileSync(from, stampDocText(readFileSync(from, "utf8"), version));
+  }
+  writeFileSync(join(backup, "version"), `${version}\n`);
+}
+
+/**
+ * Puts the committed public docs back. A missing backup is a no-op.
+ *
+ * @param root - Repository root
+ */
+export function restorePackedDocs(root: string): void {
+  const backup = join(root, PACK_BACKUP);
+  if (!existsSync(backup)) return;
+  for (const rel of walkFiles(backup, backup)) {
+    if (rel === "version") continue;
+    const from = join(backup, ...rel.split("/"));
+    const to = join(root, ...rel.split("/"));
+    mkdirSync(dirname(to), { recursive: true });
+    cpSync(from, to);
+  }
+  rmSync(backup, { recursive: true, force: true });
+}
+
+/**
+ * Every file under `docs/`, relative to `docs/`, forward slashes, sorted.
+ *
+ * @param root - Repository root
+ * @returns Paths such as `guide.md` and `errors/OKM1012.md`
+ */
+export function docsFiles(root: string): readonly string[] {
+  return walkFiles(join(root, "docs"), join(root, "docs"));
+}
+
+function walkFiles(dir: string, base: string): readonly string[] {
+  if (!existsSync(dir)) return [];
+  const files: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...walkFiles(path, base));
+      continue;
+    }
+    if (!entry.isFile()) continue;
+    files.push(relative(base, path).split(sep).join("/"));
+  }
+  return files.sort();
+}
+
+function packageVersion(root: string): string {
+  const parsed: unknown = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  if (typeof parsed !== "object" || parsed === null || !("version" in parsed)) {
+    throw new Error("docs-pack: package.json has no version");
+  }
+  const version = (parsed as { version?: unknown }).version;
+  if (typeof version !== "string" || version.length === 0) {
+    throw new Error("docs-pack: package.json version is not a string");
+  }
+  return version;
+}
+
+if (import.meta.main) {
+  const root = repoRoot();
+  const [mode] = process.argv.slice(2);
+  if (mode === "stamp") {
+    stampPackedDocs(root);
+  } else if (mode === "restore") {
+    restorePackedDocs(root);
+  } else if (mode === "--write-ignore" || mode === undefined) {
+    if (mode === "--write-ignore") {
+      writeFileSync(join(root, NPM_IGNORE), npmIgnoreText());
+      console.log(`docs-pack: wrote ${NPM_IGNORE}`);
+    }
+    const problems = classificationProblems(root);
+    if (problems.length > 0) exitOnProblems(problems);
+    if (mode !== "--write-ignore") {
+      const ignorePath = join(root, NPM_IGNORE);
+      const ignore = existsSync(ignorePath) ? readFileSync(ignorePath, "utf8") : "";
+      if (ignore !== npmIgnoreText()) {
+        exitOnProblems([
+          "docs-pack: docs/.npmignore does not match the internal list. Run with --write-ignore.",
+        ]);
+      }
+    }
+  } else {
+    exitOnProblems(["docs-pack: usage is stamp, restore, or --write-ignore"]);
+  }
+}

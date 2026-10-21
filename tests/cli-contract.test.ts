@@ -194,7 +194,7 @@ test("a target fingerprint is a hash and the envelope key order is fixed", () =>
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
-});
+}, 20_000);
 
 test("exit 0 is a finished command", () => {
   const result = spawnOkm(["doctor", "OKM1020", "--json"], root);

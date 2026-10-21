@@ -21,6 +21,8 @@ import {
   open as openNodePostgres,
 } from "../src/adapters/pg/nodepostgres.js";
 import { BUNSQL_CAPABILITIES } from "../src/adapters/capabilities.js";
+import { repoRoot } from "./root.js";
+import { compilerRangeNote } from "./ts-range.js";
 
 /** One case on one driver. */
 export type CompatibilityCell = {
@@ -44,6 +46,12 @@ export function renderCompatibility(cells: readonly CompatibilityCell[]): string
   const lookup = new Map(cells.map((cell) => [`${cell.driver}\n${cell.name}`, cell.result]));
   const header = ["Case", ...drivers];
   const lines = [
+    "---",
+    'okmVersion: "0.10.0"',
+    'since: "0.9"',
+    "dialects: [postgres]",
+    "codes: [OKM1803, OKM1846]",
+    "---",
     "# Driver compatibility",
     "",
     "Generated from the conformance run (`tests/driver-suite.test.ts` and `tests/error-suite.test.ts`). Do not edit by hand.",
@@ -64,7 +72,7 @@ export function renderCompatibility(cells: readonly CompatibilityCell[]): string
     }
     lines.push(`| ${row.join(" | ")} |`);
   }
-  lines.push("");
+  lines.push("", compilerRangeNote(repoRoot()), "");
   return lines.join("\n");
 }
 

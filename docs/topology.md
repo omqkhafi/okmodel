@@ -1,3 +1,9 @@
+---
+okmVersion: "0.10.0"
+since: "0.9"
+dialects: [postgres]
+codes: [OKM1120, OKM1843, OKM1844, OKM1845]
+---
 # Topology
 
 `connect({ primary, replicas }, options)` opens one pool per endpoint. The first argument is still a string or an existing pool, and that path does not load this code. A topology returns a promise on every driver. PGlite already returned a promise for a string.
@@ -112,4 +118,4 @@ Replica read share under a read-heavy mix, 8 rounds of 1 write and 8 reads: 64 o
 
 With weights 5 and 1, one pick while the lighter replica is out, then 24 reads together, the sequence is `abaaaaabaaaaabaaaaabaaaa` (20 of the heavier replica, 4 of the lighter, first read on the heavier). The same schedule before `current` was cleared for a replica that sat the pick out was `baaaaabaaaaabaaaaabaaaaa` (the same 20 and 4, first read on the lighter). D205.
 
-The design this implements, and the routing rules that are not built yet, are §15.1 of the [API design](okmodel-api-design.md#151-topology-routing-and-consistency).
+The design this implements, and the routing rules that are not built yet, are §15.1 of the API design.

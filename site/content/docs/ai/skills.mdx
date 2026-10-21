@@ -6,7 +6,7 @@ The agent skills in this repository, and when to run each one.
 
 A skill is a file an agent reads and follows. Skills live at `.agents/skills/<name>/SKILL.md`. The `description` in that file says when it applies. This repository ships one skill.
 
-The site publishes one skill for agents that are not in this repository. The index is [`/.well-known/agent-skills/index.json`](/.well-known/agent-skills/index.json). The file is [`/.well-known/agent-skills/okmodel/SKILL.md`](/.well-known/agent-skills/okmodel/SKILL.md). It says to start at `/llms.txt`, then fetch one page. The index pins that file with a SHA-256 digest.
+The site publishes one skill for agents that are not in this repository. The index is [`/.well-known/agent-skills/index.json`](/.well-known/agent-skills/index.json). The file is [`/.well-known/agent-skills/okmodel/SKILL.md`](/.well-known/agent-skills/okmodel/SKILL.md). Those bytes are `skills/okmodel/SKILL.md` in the repository, the same file the npm tarball ships. It points at `node_modules/okmodel/docs/index.md` and the safe `okm` command order. The index pins that file with a SHA-256 digest.
 
 ## okm-ship
 

@@ -42,7 +42,7 @@ A layer may import layers below it. It must not import a layer above it. Adapter
 - `bun run lint` uses oxlint with type-aware rules. `bun run format:check` uses oxfmt. `bun run format` rewrites formatting.
 - `bun run layers-check` fails when an import goes upward.
 - `bun run core-purity` fails on a `node:*` import below tooling and on runtime `dependencies`. The postgres.js adapter may import `node:net` to unref an idle pool socket. The node-postgres adapter may import it to cancel a query.
-- `bun run docs:check` checks relative links, `§` references, and decision numbers.
+- `bun run docs:check` checks relative links, `§` references, and decision numbers, then the public-doc hygiene (front matter, internal links, fence languages, hidden characters, and a fresh `docs/index.md`).
 - `bun run readme:check` fails when `README.md` contains a relative link or an image that is not an absolute `https://` URL.
 - `bun test` covers package exports, the bins, the check fixtures, PGlite, and the schema fixtures. Postgres tests run when the topology is up; they fail instead of skipping when `REQUIRE_DOCKER=1`. PGlite and the in-process wire server stay in that run.
 - `bun run bump` moves the version. `next` sets `<next minor>-next.N` and does not touch the changelog. `release` drops the suffix and promotes `## Unreleased`. `patch`, `minor`, `major`, and `--set` still promote the changelog. It does not publish.

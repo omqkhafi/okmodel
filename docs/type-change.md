@@ -1,3 +1,9 @@
+---
+okmVersion: "0.10.0"
+since: "0.9"
+dialects: [postgres]
+codes: [OKM1510, OKM1512, OKM1515, OKM1538]
+---
 # A type change that rewrites the table
 
 OKM1538 is a warning. It fires when `ALTER TABLE … ALTER COLUMN … TYPE` (or `SET DATA TYPE`) rewrites the heap (D276). There is no automatic safe form in 0.9, and there is no `okm migrate type-change` command (D285). That command is built later only if someone asks for it.

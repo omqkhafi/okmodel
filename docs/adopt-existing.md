@@ -1,3 +1,9 @@
+---
+okmVersion: "0.10.0"
+since: "0.9"
+dialects: [postgres]
+codes: [OKM1850, OKM1857, OKM1858]
+---
 # Adopt an existing database
 
 A live database with no OKModel history can be adopted without replaying DDL (D299).

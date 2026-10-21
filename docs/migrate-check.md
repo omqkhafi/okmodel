@@ -1,3 +1,9 @@
+---
+okmVersion: "0.10.0"
+since: "0.9"
+dialects: [postgres]
+codes: [OKM1510, OKM1521, OKM1547, OKM1548, OKM1549, OKM1551, OKM1552]
+---
 # Check a history in CI
 
 `okm migrate check` proves a migration history is sound. It is a CI command: no prompts, and the result does not depend on colour. Exit zero prints `ok N migrations`, then one line that this command replays empty tables and does not catch a step that fails only on real data. A reprinted domain check or `LANGUAGE sql` body adds warning OKM1552 on the following lines (D276). Any failure exits non-zero. One failure prints its code, the message, and the fix. Several failures print one greppable line per failure.

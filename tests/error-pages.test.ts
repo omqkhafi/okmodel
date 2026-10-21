@@ -97,6 +97,8 @@ test("a database page uses the fixed sentence and prose stays unmarked", () => {
     const example = pageExample(doc.code);
     const text = renderErrorPage(doc, example);
     expect(proseProblems(doc.code, text)).toEqual([]);
+    expect(text.startsWith('---\nokmVersion: "0.10.0"\n')).toBe(true);
+    expect(text).not.toContain("-next.");
     if ((NEEDS_DATABASE as readonly string[]).includes(doc.code)) {
       expect(text).toContain("Example: needs a database");
     }

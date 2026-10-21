@@ -6,7 +6,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { planBump, promoteUnreleasedSection } from "./bump-version.js";
+import { BUMP_OUTPUTS, planBump, promoteUnreleasedSection } from "./bump-version.js";
 import { repoRoot } from "./root.js";
 
 describe("planBump", () => {
@@ -67,6 +67,11 @@ describe("planBump", () => {
       promoteChangelog: true,
     });
   });
+});
+
+test("a bump writes package.json and changelog.md and does not write docs/", () => {
+  expect([...BUMP_OUTPUTS]).toEqual(["package.json", "changelog.md"]);
+  for (const path of BUMP_OUTPUTS) expect(path.startsWith("docs")).toBe(false);
 });
 
 describe("promoteUnreleasedSection", () => {

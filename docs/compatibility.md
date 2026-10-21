@@ -1,3 +1,9 @@
+---
+okmVersion: "0.10.0"
+since: "0.9"
+dialects: [postgres]
+codes: [OKM1803, OKM1846]
+---
 # Driver compatibility
 
 Generated from the conformance run (`tests/driver-suite.test.ts` and `tests/error-suite.test.ts`). Do not edit by hand.
@@ -45,3 +51,5 @@ Neon is not a column in this table. postgres.js and node-postgres pointed at Neo
 | maps a cancelled call and does not retry it | pass | pass | pass | pass |
 | maps a connection failure | pass | pass | pass | pass |
 | carries batchIndex on a batch failure and null at commit | pass | pass | pass | pass |
+
+The public type surface (`scripts/api-surface.ts`) and the consumer fixtures (`*.test-d.ts` files the required typecheck includes) compile with TypeScript 7.0.2 (`tsc`, required, `bun run typecheck`). The same files compile with TypeScript 6.0.3 through the dev-only `typescript-editor` package (`bun run ts6:check`). That run is not part of `bun run check`. Nothing in `src/` imports the TypeScript compiler API. TypeScript 7.0 has no stable programmatic API until 7.1.
