@@ -101,7 +101,7 @@ export function statement(spec: Spec, head?: (sink: Sink) => void): ReadBuild {
     const includes =
       hooks === undefined || call.include === undefined
         ? []
-        : hooks.read(schema, table, call.include, call.all);
+        : hooks.read(schema, table, call.include, call.all, call.limits);
     sink.text("select ");
     head?.(sink);
     let column = 0;

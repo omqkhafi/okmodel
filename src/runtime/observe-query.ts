@@ -612,7 +612,7 @@ function readEvent(
   const summary = summaryOf(call.op, table);
   const counted = readCount(result);
   const failure = error === undefined ? undefined : describeError(error);
-  const limit = limitOf(call.limit);
+  const limit = limitOf(call);
   return baseEvent({
     place,
     table,
@@ -740,7 +740,9 @@ function routeOf(route: ReadCall["route"]): QueryRoute {
   return { endpoint: "primary", role: "primary" };
 }
 
-function limitOf(value: unknown): QueryLimit | undefined {
+function limitOf(call: ReadCall): QueryLimit | undefined {
+  if (call.dl !== undefined) return { value: call.dl[1], source: `limits.${call.dl[0]}` };
+  const value = call.limit;
   if (typeof value !== "number" || !Number.isInteger(value) || value < 0) return undefined;
   return { value, source: "caller" };
 }

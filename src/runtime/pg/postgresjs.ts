@@ -12,7 +12,7 @@ import { open, type PostgresJsConfig } from "../../adapters/pg/postgresjs.js";
 import { createClient } from "../client.js";
 import type { RoutedClient, TopologyInput, TopologyOptions } from "../topology.js";
 import type { SessionContext } from "../session/index.js";
-import type { ConnectOptions, Connected } from "../types.js";
+import type { Bounded, ConnectOptions, Connected, Limits, NoLimits } from "../types.js";
 
 export { open, type PostgresJsConfig } from "../../adapters/pg/postgresjs.js";
 export { capabilities, hasCapability, readCapability } from "../../adapters/pg/postgresjs.js";
@@ -22,9 +22,11 @@ export { DriverError } from "../../adapters/error.js";
 export type PostgresTarget = string | DriverPool;
 
 /** Driver options `connect` forwards to {@link open}. */
-export type PostgresConnectOptions<S extends QuerySchema, C = undefined> = ConnectOptions<S, C> &
-  Omit<PostgresJsConfig, "url"> &
-  TopologyOptions;
+export type PostgresConnectOptions<
+  S extends QuerySchema,
+  C = undefined,
+  D extends Limits = Limits,
+> = ConnectOptions<S, C, D> & Omit<PostgresJsConfig, "url"> & TopologyOptions;
 
 /**
  * Connects one Postgres endpoint, or a primary and its replicas, and returns a client for `schema`.
@@ -36,6 +38,8 @@ export type PostgresConnectOptions<S extends QuerySchema, C = undefined> = Conne
  * `prepared: "named"` is not for transaction-mode poolers.
  *
  * @typeParam S - Schema
+ * @typeParam C - The `session` context
+ * @typeParam D - The `limits` literal. It decides which reads need no `limit`
  * @param target - URL, an existing pool, or `{ primary, replicas }`
  * @param options - Schema, errors, logger, and driver options
  * @returns The client. A topology returns a promise. Await `connected` for the dialect check
@@ -43,11 +47,16 @@ export type PostgresConnectOptions<S extends QuerySchema, C = undefined> = Conne
 export function connect<
   const S extends QuerySchema,
   const C extends SessionContext | undefined = undefined,
->(target: TopologyInput, options: PostgresConnectOptions<S, C>): Promise<RoutedClient<S, C>>;
+  const D extends Limits = NoLimits,
+>(
+  target: TopologyInput,
+  options: PostgresConnectOptions<S, C, D>,
+): Promise<RoutedClient<Bounded<S, D>, C>>;
 export function connect<
   const S extends QuerySchema,
   const C extends SessionContext | undefined = undefined,
->(target: PostgresTarget, options: PostgresConnectOptions<S, C>): Connected<S, C>;
+  const D extends Limits = NoLimits,
+>(target: PostgresTarget, options: PostgresConnectOptions<S, C, D>): Connected<Bounded<S, D>, C>;
 export function connect<
   const S extends QuerySchema,
   const C extends SessionContext | undefined = undefined,
