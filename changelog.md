@@ -90,6 +90,9 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okm init` in a workspace initialises the selected packages. One config per service, or one shared database package when the apps already depend on it. Two or more packages, or a package under an ancestor config, share lint, roles, and target names through `okmodel.base.ts`. That file has no database URL and no protected flag. Root scripts are added only when a task runner is already in use. `okmodel` is `catalog:` only when a pnpm catalog already lists it.
 - A command loads the nearest `okmodel.config.ts` and prints that path. Two files at the same distance are OKM1891. `okm init` with several workspaces and no terminal is OKM1892. Two packages that share one migrations directory are OKM1893 and nothing is written.
 - `okm check` lists each project warning ignore with its rule and reason. An ignore without a reason is a configuration error. Warning pages for OKM2004, OKM2005, OKM2007, and OKM2008 are generated with the error pages.
+- `bun ./scripts/size-attribution.ts` prints minified bytes and a gzip share for each source module on every gated graph from `scripts/size.ts`. It fails when a total differs from that script. `--update` rewrites `tests/fixtures/size-attribution.json`. The pull-request job `inform / size` prints the delta and is not a required check.
+- `bun ./scripts/dead-exports.ts` lists exports under `src/` that nothing in `src/`, `tests/`, or `scripts/` imports and that are not on the public API surface.
+- `bun ./scripts/duplicates.ts` lists duplicate and near-duplicate function bodies and repeated large literals under `src/`.
 
 #### docs
 
@@ -110,6 +113,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The guide awaits `userFilters.parse(request.query)` and passes the result to `find` with a limit. `parse` is asynchronous because the parser loads on first use (Q10, #397).
 - [Capabilities](docs/capabilities.md) is generated from the Postgres feature registry. A feature whose proof title does not pass the registry proof check is `unverified`. `docs:check` fails when that page, a `<!-- support: key -->` block, or the step-kind table in [When a migration fails](docs/migration-failure.md) disagrees with the code.
 - [Warnings](docs/warnings.md) records the levels, the development defaults, and the four static rules.
+- [Size audit](docs/size-audit.md) records where the gated bytes go, every unused export, and every duplicate group. It is an internal note and is not packed.
 
 ### 💥 Breaking Changes
 
