@@ -342,6 +342,7 @@ test("refusal:extension", () => refuse("extension"));
 test("refusal:query.relational", () => refuse("query.relational"));
 test("refusal:query.keyset", () => refuse("query.keyset"));
 test("refusal:query.window", () => refuse("query.window"));
+test("refusal:query.countDistinct", () => refuse("query.countDistinct"));
 test("refusal:query.rawTyped", () => refuse("query.rawTyped"));
 test("refusal:query.upsert", () => refuse("query.upsert"));
 test("refusal:returning.write", () => refuse("returning.write"));
