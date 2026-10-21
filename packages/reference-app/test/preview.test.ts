@@ -11,7 +11,7 @@ import { expect } from "bun:test";
 import { loadPostgresGate, postgresTest } from "../../harness/src/postgres-test.js";
 import { openPostgres } from "../../harness/src/postgres.js";
 import { CHECK_REPLAY_LIMIT } from "../../../src/tooling/migrate/check.js";
-import { appRoleUrl, loadApp, okmOk, previewDatabase } from "./support.js";
+import { appRoleUrl, loadApp, okmOk, previewDatabase, schemaChecked } from "./support.js";
 
 const gate = await loadPostgresGate();
 
@@ -25,7 +25,7 @@ postgresTest(
       try {
         const env = { PREVIEW_DATABASE_URL: database.url };
         expect(applied).toContain("applied provisioned@0004_sql_names");
-        const checked = await okmOk(["check", "--target", "preview"], env);
+        const checked = schemaChecked(await okmOk(["check", "--target", "preview"], env));
         expect(checked).toContain("allow 0003_drop_share_token step 1 OKM1512 destructive");
         expect(checked.endsWith("ok\n")).toBe(true);
         expect(await okmOk(["migrate", "status", "--target", "preview"], env)).toContain(

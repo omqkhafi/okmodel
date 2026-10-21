@@ -117,6 +117,8 @@ const SCHEMAS: Readonly<Record<string, JsonSchema>> = {
       items: objectNode(["rule", "reason"], {
         rule: { type: "string" },
         reason: untrustedSchema(),
+        target: { type: "string" },
+        status: { enum: ["applied", "stale"] },
       }),
     },
     allows: allowsSchema(),

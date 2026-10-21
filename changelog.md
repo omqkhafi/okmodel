@@ -29,6 +29,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `okm` exit codes follow the outcome. `0` is done or nothing to do. `1` is a command that ran and failed. `2` is usage or configuration (unknown flag, missing config, a Node older than 22.18). `3` is a decision the command will not ask (OKM1530, and a committed step that needs a person: OKM1553, OKM1555). `4` is a guard (OKM1850, OKM1852, OKM1855, OKM1859). `5` is a target that cannot be reached or a refused feature (OKM1802, OKM1803, OKM1811, OKM1812, OKM1843, OKM1844, OKM1846, OKM1854, OKM1860, and a lost connection). Every other code, including OKM1401, planner OKM1541, OKM1554, OKM1556, OKM1851, OKM1857, and OKM1858, stays `1`. A script that only checked non-zero still fails. A script that treated every failure as `1` now sees `2` through `5`.
 - `okm migrate plan --json`, `okm migrate baseline --json`, and `okm catalog export --json` keep their previous fields inside the `okm.cli/1` envelope `data`. `parsePlanJson` reads `data` and still accepts a bare plan document.
 - `okm build` and `okm dev` reject an unknown flag. They used to leave the rest of the line unread.
+- A derived name longer than 63 bytes (index, constraint, sequence, check, trigger) keeps the same shape, a UTF-8 prefix, `_`, and 8 hex characters, but the suffix is now the 32-bit FNV-1a hash of the full name, not the first 8 characters of its SHA-256. The stored name of every such identifier changes once, so the next `okm generate` plans a change for it. Names that fit in 63 bytes are unchanged. Two long names that shorten to the same stored name stay OKM1023 (duplicate identity) and are never merged. The featureless app startup graph drops 2,415 minified bytes because `sha256.ts` leaves it (90,763 to 88,348).
 
 ### ✨ Added
 
@@ -99,6 +100,9 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `bun ./scripts/dead-exports.ts` lists exports under `src/` that nothing in `src/`, `tests/`, or `scripts/` imports and that are not on the public API surface.
 - `bun ./scripts/duplicates.ts` lists duplicate and near-duplicate function bodies and repeated large literals under `src/`.
 - `okm check` and `okm migrate check` list every `-- okm-allow` line in the migrations directory: migration id, step, code, rule class, and reason. A destructive rule (a drop, a row-level-security weakening, a shortening or narrowing type change) is marked `DESTRUCTIVE`. `okm.cli/1` data adds `allows[]` for both commands (additive; `schemas/cli-1/check.json` and `migrate-check.json`). The reason is marked untrusted. OKM2300 warns on a reason shorter than 12 characters, made only of stop-list words (`ok`, `fix`, `test`, `todo`, `needed`, `temp`, `tmp`, `none`, `na`), or made only of the code repeated. It is an audit: nothing is refused and the exit code does not change. There is no new flag.
+- `okm check` runs three schema warning rules offline: OKM2101 (`unindexed-foreign-key`, no index starts with a foreign key's columns, a composite index that starts with them counts), OKM2102 (`table-without-primary-key`), and OKM2103 (`unindexed-filter-column`, a column in a `filters()` allow or sort list or used by a preset with no index that starts with it; a primary key, a unique index, and the tenant prefix count). Each is medium severity, default level `warn`, phase `check`, evidence `static`. Findings print one per line and fill `warnings[]` with `place` set to `table` or `table.column`. Exit stays 0. `warnings.levels` sets `off`, `hint`, `warn`, or `error`; `error` exits non-zero with the rule code. A rule that cannot decide (an expression index, a preset that needs its arguments, a `filters()` field that is not a literal) stays silent.
+- `filters()` keeps nothing at runtime, so `okm check` reads it from source with the `okm raw sync` lexer: the `raw.include` files (default `src/**`), the schema file, and the `tables` directory. Only literal `allow` keys and `sort` strings on a receiver bound to one `table("name", ...)` count.
+- A project warning ignore takes an optional `target` (`events` or `orders.user_id`, SQL names). `okm check --json` adds `target` and `status` (`applied` or `stale`) to each `data.ignores` entry. An ignore for an OKM2101 to OKM2103 rule that matched nothing is `stale` and is also reported as a warning. `schemas/cli-1/check.json` gains those two optional fields.
 
 #### docs
 
@@ -121,6 +125,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - [Capabilities](docs/capabilities.md) is generated from the Postgres feature registry. A feature whose proof title does not pass the registry proof check is `unverified`. `docs:check` fails when that page, a `<!-- support: key -->` block, or the step-kind table in [When a migration fails](docs/migration-failure.md) disagrees with the code.
 - [Warnings](docs/warnings.md) records the levels, the development defaults, and the four static rules.
 - [Size audit](docs/size-audit.md) records where the gated bytes go, every unused export, and every duplicate group. It is an internal note and is not packed.
+- [Warnings](docs/warnings.md) lists OKM2101, OKM2102, and OKM2103, the `target` ignore, the stale report, and when each rule stays silent. Pages for the three codes are generated with the error pages.
 
 ### 💥 Breaking Changes
 
@@ -148,6 +153,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### tooling
 
+- The adapter incremental size gates are raised by decision on 2026-10-21 after the size audit: postgres.js 16,000 to 17,000 and PGlite 12,010 to 12,700 minified bytes. One-time increase. The featureless app and runtime entry gates are unchanged.
 - Registry `fix` is the primary remedy. A bypass moves to `escapeHatches`.
 - The migration planner takes a dialect lowering object. Postgres plans stay the same. Feature support and refusal are questions on that object, so the planner does not import the feature registry.
 - Table, column, and constraint changes lower through that dialect. One logical change can be several statements. Postgres plans stay the same, including a validated check before `SET NOT NULL` on an existing column.

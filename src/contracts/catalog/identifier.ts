@@ -8,7 +8,6 @@
  */
 
 import { catalogError } from "../error.js";
-import { sha256 } from "../sha256.js";
 import { truncateUtf8, utf8ByteLength } from "../utf8.js";
 import { reservedWords } from "./words.js";
 
@@ -75,8 +74,10 @@ export function assertIdentifier(
  *
  * Names that already fit are unchanged, including reserved words (those are
  * rejected by {@link assertIdentifier} before a name is stored). Longer names
- * become a UTF-8 prefix, an underscore, and the first 8 hex characters of the
- * SHA-256 of the original name.
+ * become a UTF-8 prefix, an underscore, and 8 hex characters of the 32-bit
+ * FNV-1a hash of the original name. Two different names can share a suffix; a
+ * collision between two stored names is an OKM1023 duplicate identity when the
+ * catalog is built.
  *
  * @param name - Requested identifier
  * @param limit - Dialect byte limit. Defaults to the Postgres limit
@@ -88,7 +89,7 @@ export function fitIdentifier(name: string, limit = POSTGRES_IDENTIFIER_MAX_BYTE
   if (utf8ByteLength(name) <= limit) {
     return name;
   }
-  const suffix = `_${sha256(name).slice(0, SUFFIX_HEX)}`;
+  const suffix = `_${fnv1a(name).toString(16).padStart(SUFFIX_HEX, "0")}`;
   const budget = limit - SUFFIX_BYTES;
   return `${truncateUtf8(name, budget)}${suffix}`;
 }
@@ -130,6 +131,14 @@ export function assertStoredText(value: string, role: string): void {
   if (value.includes("\u0000") || hasControl(value)) {
     catalogError("OKM1122", `${role} contains a control character.`);
   }
+}
+
+function fnv1a(text: string): number {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index++) {
+    hash = Math.imul(hash ^ text.charCodeAt(index), 0x01000193);
+  }
+  return hash >>> 0;
 }
 
 function assertIdentifierText(name: string, role: string): void {

@@ -57,7 +57,7 @@ function advise(
   const env = warningEnvironment(parsed.env);
   for (const rule of WARNING_RULES) {
     if (!ruleFires(rule, schema, call)) continue;
-    if (ignores.some((item) => item.rule === rule.rule)) continue;
+    if (ignores.some((item) => item.rule === rule.rule && item.target === undefined)) continue;
     const level = resolvedLevel(rule, parsed.levels, env);
     if (level === "off") continue;
     if (level === "error") throwWarning(rule);

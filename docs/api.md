@@ -24,4 +24,4 @@ Stable exports are the application API this release commits to. Experimental exp
 
 `okmodel/otel` is experimental. It exports `otel`. You pass a tracer. The package does not import OpenTelemetry. Spans use the `db.*` attributes. `db.query.summary` is the fingerprint from `inspect()`. Statement text stays off unless you set `statement: true`. Parameters and tenant ids are not attributes.
 
-`okmodel/warnings` is experimental. It exports `warnings`. Pass the function to `connect({ warnings })`. `defineConfig({ warnings })` holds levels and project ignores. `okm check` lists those ignores. See [warnings](warnings.md).
+`okmodel/warnings` is experimental. It exports `warnings`. Pass the function to `connect({ warnings })`. `defineConfig({ warnings })` holds levels and project ignores. `okm check` lists those ignores and runs the schema rules OKM2101, OKM2102, and OKM2103. A project ignore may name a `target`. See [warnings](warnings.md).

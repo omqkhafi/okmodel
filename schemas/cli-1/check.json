@@ -69,6 +69,15 @@
                 "type": "boolean"
               }
             }
+          },
+          "target": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "applied",
+              "stale"
+            ]
           }
         }
       }

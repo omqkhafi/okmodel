@@ -182,17 +182,23 @@ const SHAKEN_OPERATORS = [
  * and not gated (D135): the driver packages dominate it.
  *
  * Ceilings are the P17 measurement plus 25 percent (D127).
+ *
+ * The postgres.js gate is 17,000 and the PGlite gate is 12,700. Both were
+ * raised by decision on 2026-10-21 after the size audit (`docs/size-audit.md`);
+ * one-time increase. postgres.js measured 15,909 against 16,000 (91 left) and
+ * now has 1,091 left. PGlite measured 11,923 against 12,010 (87 left) and now
+ * has 777 left. The featureless app and runtime entry gates did not move.
  */
 export const ADAPTER_ENTRIES = [
   {
     entry: "src/adapters/pg/postgresjs.ts",
     external: ["postgres"],
-    maxIncrementalMinBytes: 16_000, // close rule, #264
+    maxIncrementalMinBytes: 17_000, // close rule, #264; raised by decision on 2026-10-21 after the size audit; one-time increase
   },
   {
     entry: "src/adapters/pg/pglite.ts",
     external: ["@electric-sql/pglite"],
-    maxIncrementalMinBytes: 12_010,
+    maxIncrementalMinBytes: 12_700, // raised by decision on 2026-10-21 after the size audit; one-time increase
   },
 ] as const;
 

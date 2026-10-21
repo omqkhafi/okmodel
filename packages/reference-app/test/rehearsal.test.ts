@@ -13,7 +13,7 @@ import { expect } from "bun:test";
 import { loadPostgresGate, postgresTest } from "../../harness/src/postgres-test.js";
 import { createIsolatedDatabase, openPostgres } from "../../harness/src/postgres.js";
 import { CHECK_REPLAY_LIMIT } from "../../../src/tooling/migrate/check.js";
-import { okm, okmOk, projectAt, removeProject } from "./support.js";
+import { okm, okmOk, projectAt, removeProject, schemaChecked } from "./support.js";
 
 const gate = await loadPostgresGate();
 
@@ -36,7 +36,7 @@ postgresTest(
         const applied = await okmOk(["migrate", "apply", "--target", "rehearsal"], env);
         expect(applied).toContain("applied 0002_public_id");
         expect(applied).toContain("applied 0003_drop_share_token");
-        const checked = await okmOk(["check", "--target", "rehearsal"], env);
+        const checked = schemaChecked(await okmOk(["check", "--target", "rehearsal"], env));
         expect(checked).toContain("allow 0003_drop_share_token step 1 OKM1512 destructive");
         expect(checked).not.toContain("OKM2300");
         expect(checked.endsWith("ok\n")).toBe(true);
