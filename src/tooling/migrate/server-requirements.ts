@@ -32,6 +32,9 @@ export type RequirementsSchema = {
   readonly requires?: { readonly postgres?: string } | undefined;
 };
 
+/** Anything that can run one statement: a pool or a reserved connection. */
+export type StatementRunner = Pick<DriverPool, "execute">;
+
 /**
  * Notice when several targets exist and `--target` was omitted.
  *
@@ -134,7 +137,7 @@ export async function assertSchemaRequirements(
  * @param createdByMigrations - Names applied or pending migrations create
  */
 export async function assertAgainstPool(
-  pool: DriverPool,
+  pool: StatementRunner,
   schema: RequirementsSchema,
   createdByMigrations: ReadonlySet<string> = new Set(),
 ): Promise<void> {
@@ -142,7 +145,17 @@ export async function assertAgainstPool(
   await assertExtensionsAgainstPool(pool, schema, createdByMigrations);
 }
 
-async function assertMajorAgainstPool(pool: DriverPool, schema: RequirementsSchema): Promise<void> {
+/**
+ * Refuses when the server is older than the schema floor, on an open runner.
+ *
+ * @param pool - Pool or connection
+ * @param schema - Schema `describe` reads
+ * @throws OkmError OKM1802 or OKM1803
+ */
+export async function assertMajorAgainstPool(
+  pool: StatementRunner,
+  schema: RequirementsSchema,
+): Promise<void> {
   const description = describe(schema);
   const major = await serverMajor(pool);
   refuseMajor(
@@ -152,8 +165,16 @@ async function assertMajorAgainstPool(pool: DriverPool, schema: RequirementsSche
   );
 }
 
-async function assertExtensionsAgainstPool(
-  pool: DriverPool,
+/**
+ * Refuses when a required extension is missing, on an open runner.
+ *
+ * @param pool - Pool or connection
+ * @param schema - Schema `describe` reads
+ * @param createdByMigrations - Names applied or pending migrations create
+ * @throws OkmError OKM1811
+ */
+export async function assertExtensionsAgainstPool(
+  pool: StatementRunner,
   schema: RequirementsSchema,
   createdByMigrations: ReadonlySet<string>,
 ): Promise<void> {
@@ -188,6 +209,30 @@ async function assertExtensionsAgainstPool(
   }
 }
 
+/**
+ * Installed version of each named extension.
+ *
+ * @param pool - Pool or connection
+ * @param names - Extension names
+ * @returns Name to `extversion`; a name the server lacks is absent
+ */
+export async function installedExtensionVersions(
+  pool: StatementRunner,
+  names: readonly string[],
+): Promise<ReadonlyMap<string, string>> {
+  const found = new Map<string, string>();
+  if (names.length === 0) return found;
+  const result = await pool.execute(
+    "select extname, extversion from pg_extension where extname = any($1::text[])",
+    [encodeTextArray(names)],
+  );
+  for (const row of result.rows) {
+    const name = cell(row[0]);
+    if (name.length > 0) found.set(name, cell(row[1]));
+  }
+  return found;
+}
+
 function refuseMajor(server: number, need: PostgresMajor, declared: boolean): void {
   if (server >= need) return;
   if (!declared && need === POSTGRES_FLOOR) {
@@ -200,13 +245,19 @@ function refuseMajor(server: number, need: PostgresMajor, declared: boolean): vo
   });
 }
 
-async function serverMajor(pool: DriverPool): Promise<number> {
+/**
+ * Reads the server's major version.
+ *
+ * @param pool - Pool or connection
+ * @returns The major, or 0 when the server did not answer
+ */
+export async function serverMajor(pool: StatementRunner): Promise<number> {
   const result = await pool.execute("select current_setting('server_version_num')");
   return Math.floor(Number(cell(result.rows[0]?.[0]) || "0") / 10_000);
 }
 
 async function installedExtensions(
-  pool: DriverPool,
+  pool: StatementRunner,
   names: readonly string[],
 ): Promise<ReadonlySet<string>> {
   if (names.length === 0) return new Set();
@@ -223,7 +274,7 @@ async function installedExtensions(
 }
 
 async function availableExtensions(
-  pool: DriverPool,
+  pool: StatementRunner,
   names: readonly string[],
 ): Promise<ReadonlySet<string>> {
   if (names.length === 0) return new Set();
@@ -239,7 +290,13 @@ async function availableExtensions(
   return found;
 }
 
-function encodeTextArray(values: readonly string[]): string {
+/**
+ * Postgres array literal for a `text[]` parameter.
+ *
+ * @param values - Strings to quote
+ * @returns The literal, for example `{"a","b"}`
+ */
+export function encodeTextArray(values: readonly string[]): string {
   return `{${values.map((value) => `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`).join(",")}}`;
 }
 

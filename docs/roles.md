@@ -2,7 +2,7 @@
 okmVersion: "0.10.0"
 since: "0.10"
 dialects: [postgres]
-codes: [OKM1707, OKM1825, OKM1850]
+codes: [OKM1707, OKM1825, OKM1850, OKM2204]
 ---
 
 # Least-privilege roles for an agent
@@ -37,3 +37,7 @@ Replace `public` with the schema `defineConfig` uses. The migrator must own that
 Grants are the boundary a determined agent cannot step over without a richer role. `okm protect add` records a fingerprint of the target. `okm protect list` prints those fingerprints and does not print the URL. `okm protect remove` deletes one fingerprint and requires a terminal. A state-changing command against a protected target is refused (OKM1850) unless that invocation passes `--allow-protected`. `okm migrate check` stays refused on a protected target. A destructive migration step is separate: it runs only when its committed file carries a `-- okm-allow` line, which `okm check` lists.
 
 A role that lacks `CREATE` still cannot apply DDL when someone passes `--allow-protected`. Protection stops the accident. The grant stops the statement. The two are complements, and neither one is a session flag.
+
+## Check the login role
+
+`okm doctor --production --target <name>` reports what the role in the target URL can do: a superuser or `BYPASSRLS` login fails (OKM1707), and a login that owns the tables warns, because that is right for the migrator and wrong for the app role. With `roles` set in the config it also runs the role health check above. Run it once per login: the migrator's URL warns about ownership by design, and the app's URL must not. See [production](production.md#check-a-production-target).

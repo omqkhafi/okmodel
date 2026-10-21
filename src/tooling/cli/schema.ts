@@ -165,6 +165,7 @@ const SCHEMAS: Readonly<Record<string, JsonSchema>> = {
       }),
       objectNode(["text"], { text: { type: "string" } }),
       objectNode(["bundle"], { bundle: bundleSchema() }),
+      objectNode(["production"], { production: productionSchema() }),
     ],
   },
   "driver test": textData(idOf("driver test"), "okm driver test data"),
@@ -727,6 +728,31 @@ function bundleSchema(): JsonSchemaNode {
         }),
       },
     ),
+  };
+}
+
+function productionSchema(): JsonSchemaNode {
+  return {
+    description:
+      "`okm doctor --production`: one target, read-only. Findings keep a fixed order and stable ids. The exit code is non-zero when `summary.fail` is above 0. No URL, host, user, or password is in it.",
+    ...objectNode(["findings", "summary", "target"], {
+      target: { type: "string", description: "The configured target name." },
+      summary: objectNode(["fail", "ok", "warn"], {
+        fail: { type: "number" },
+        ok: { type: "number" },
+        warn: { type: "number" },
+      }),
+      findings: {
+        type: "array",
+        items: objectNode(["fix", "id", "severity", "summary"], {
+          id: { type: "string" },
+          severity: { enum: ["fail", "warn", "ok"] },
+          code: { type: "string" },
+          summary: { type: "string" },
+          fix: { type: "string" },
+        }),
+      },
+    }),
   };
 }
 
