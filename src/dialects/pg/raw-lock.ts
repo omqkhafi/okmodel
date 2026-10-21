@@ -42,7 +42,7 @@ export type RawLock = {
 export const RAW_STALE = {
   summary:
     "A typed raw statement is missing from the lock, the lock does not parse, or its signature no longer matches the database.",
-  fix: "Run okm raw sync and commit .okm/raw.lock.json and .okm/raw.d.ts.",
+  fix: "Rerun okm raw sync and commit .okm/raw.lock.json and .okm/raw.d.ts.",
 } as const;
 
 /**

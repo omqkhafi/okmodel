@@ -687,7 +687,7 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     title: "Unverifiable tenant SQL",
     summary:
       "Raw SQL on a tenant table cannot prove the tenant predicate. A raw write is this. A raw read that does not select the primary key with ident is this. A typed raw call, raw(db, sql, params), on a client of a schema with tenancy is this.",
-    fix: 'Use update or delete, or select the primary key with ident(name). For a typed raw call, use the table API, or pass trusted(client, "reason") to run the SQL without a tenant predicate on purpose.',
+    fix: 'Use update or delete, or select the primary key with ident(name). For a typed raw call, use the table API, or pass trusted(client, "reason") to send the SQL without a tenant predicate on purpose.',
     escapeHatches: [hatch("OKM1702", "unscoped()"), hatch("OKM1702", "trusted()")],
   },
   {

@@ -153,7 +153,7 @@ not a key statement. A first-or-create lookup does not attach keys.
 
 ## Typed raw
 
-A typed `raw(db, sql, params)` write statement emits a write event with `source: "raw"`, `op: "raw"`, and `table: null`. Inside `trusted(client, "reason")` the event `tag` is `trusted: <reason>`. A typed raw read emits no event.
+A typed `raw(db, sql, params)` write statement emits a write event with `source: "raw"`, `op: "raw"`, and `table: null`. Inside `trusted(client, "reason")` the event `tag` is `trusted: <reason>`. `onQuery` sees a typed raw read or write as a query event with `op: "raw"` and `table: null`. A typed raw read emits no write event.
 
 ## Row counts
 

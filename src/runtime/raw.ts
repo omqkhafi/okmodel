@@ -5,7 +5,7 @@
  * handle. It finds the statement in the lock, encodes the parameters and
  * decodes the rows with the codecs the typed API uses for each Postgres type,
  * and runs the statement through the same pool path as every other statement.
- * A write goes through `runWrite`, so `onWrite` sees it as a `raw` event.
+ * A write goes through `runWrite`, so `onWrite` and `onQuery` see it as a `raw` event. A read reaches `onQuery` through `runObservedRaw`.
  *
  * The lock is `.okm/raw.lock.json`, read once per directory, or the value
  * `registerRawLock` was given. A raw statement has no archive filter and no
@@ -91,7 +91,23 @@ export async function runTypedRaw(
     );
   }
   const wire = encodeParams(bound.params, params);
-  const result = await execute(live, statement, wire, reason);
+  if (statement.kind === "write") {
+    const results = await executeWrite(live, statement, wire, reason);
+    const decode = (): readonly unknown[] =>
+      decodeRows(live, bound.columns, results[0]?.rows ?? []);
+    if (live.q === undefined) return decode();
+    return (await import("./observe-query.js")).finishObserved(live, [results], decode);
+  }
+  if (live.q !== undefined) {
+    return (await import("./observe-query.js")).runObservedRaw(
+      live,
+      statement.sql,
+      wire,
+      () => executeRead(live, statement, wire),
+      (rows) => decodeRows(live, bound.columns, rows),
+    );
+  }
+  const result = await executeRead(live, statement, wire);
   return decodeRows(live, bound.columns, result.rows);
 }
 
@@ -177,33 +193,40 @@ function encodeParams(
   return wire;
 }
 
-async function execute(
+async function executeWrite(
   session: Session,
   statement: RawLockStatement,
   params: readonly (string | null)[],
   reason: string | undefined,
+): Promise<readonly ExecuteResult[]> {
+  const meta: WriteObserveMeta = {
+    table: null,
+    op: "raw",
+    tenant: null,
+    settings: [],
+    source: "raw",
+    ...(reason !== undefined ? { tag: `trusted: ${reason}` } : {}),
+    ...(/\breturning\b/i.test(statement.sql) ? { returning: true } : {}),
+  };
+  try {
+    return await runWrite(
+      session,
+      [{ text: statement.sql, params: params as readonly WireValue[] }],
+      { route: "primary" },
+      undefined,
+      [meta],
+    );
+  } catch (error) {
+    return settleCall(session, error);
+  }
+}
+
+async function executeRead(
+  session: Session,
+  statement: RawLockStatement,
+  params: readonly (string | null)[],
 ): Promise<ExecuteResult> {
   try {
-    if (statement.kind === "write") {
-      const meta: WriteObserveMeta = {
-        table: null,
-        op: "raw",
-        tenant: null,
-        settings: [],
-        source: "raw",
-        ...(reason !== undefined ? { tag: `trusted: ${reason}` } : {}),
-        ...(/\breturning\b/i.test(statement.sql) ? { returning: true } : {}),
-      };
-      const [result] = await runWrite(
-        session,
-        [{ text: statement.sql, params: params as readonly WireValue[] }],
-        { route: "primary" },
-        undefined,
-        [meta],
-      );
-      if (result === undefined) throw new Error("The write returned no result.");
-      return result;
-    }
     const timeout = session.timeouts?.statement;
     const options: ExecuteOptions | undefined = timeout === undefined ? undefined : { timeout };
     const result = await session.pool.execute(

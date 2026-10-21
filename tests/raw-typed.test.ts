@@ -16,7 +16,8 @@ import { RAW_STALE, type RawLockStatement } from "../src/dialects/pg/raw-lock.js
 import { connect } from "../src/runtime/pg/postgresjs.js";
 import { columnTenancy } from "../src/runtime/tenancy/index.js";
 import { registerRule } from "../src/runtime/safety/index.js";
-import type { ObserveEvent } from "../src/runtime/observe-types.js";
+import { queryObserver } from "../src/runtime/observe.js";
+import type { ObserveEvent, QueryEvent } from "../src/runtime/observe-types.js";
 import { ERROR_DOCS } from "../src/tooling/errors/registry.js";
 
 const TENANT = "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c8d";
@@ -335,6 +336,54 @@ test("a tenant client and the root client of a tenant schema refuse typed raw", 
   const root = await thrown(() => run(db, READ, [7, "open"]));
   expect(root.code).toBe("OKM1702");
   expect(calls).toEqual([]);
+});
+
+test("onQuery sees a typed raw read and a typed raw write as op raw with no table", async () => {
+  registerRawLock(lockOf(STATEMENTS));
+  const events: QueryEvent[] = [];
+  const onQuery = queryObserver({
+    query: (event) => {
+      events.push(event);
+    },
+    params: true,
+  });
+  const reader = connect(recording([], [READ_ROW], 1), { schema: plain, onQuery });
+  const writer = connect(recording([], [], 1), { schema: plain, onQuery });
+  await Promise.all([reader.connected, writer.connected]);
+  events.length = 0;
+  await run(reader, READ, [7, "open"]);
+  await run(writer, WRITE, [1, {}, "open", 1n]);
+  expect(events.map((event) => [event.op, event.table, event.summary])).toEqual([
+    ["raw", null, "SQL"],
+    ["raw", null, "SQL"],
+  ]);
+  expect(events[0]?.text).toBe(READ);
+  expect(events[0]?.params).toEqual(["7", "open"]);
+  expect(events[0]?.decodeMs).toEqual(expect.any(Number));
+  expect(events[1]?.route).toEqual({ endpoint: "primary", role: "primary" });
+  expect(JSON.stringify(events)).not.toContain("hello");
+  await Promise.all([reader.close(), writer.close()]);
+});
+
+test("onQuery reports a typed raw read that fails to decode", async () => {
+  registerRawLock(lockOf(STATEMENTS));
+  const events: QueryEvent[] = [];
+  const calls: Call[] = [];
+  const db = connect(recording(calls, [["7"]]), {
+    schema: plain,
+    onQuery: queryObserver({
+      query: (event) => {
+        events.push(event);
+      },
+    }),
+  });
+  await db.connected;
+  events.length = 0;
+  const error = await thrown(() => run(db, READ, [7, "open"]));
+  expect(error.code).toBe("OKM1601");
+  expect(events).toHaveLength(1);
+  expect(events[0]?.error?.code).toBe("OKM1601");
+  await db.close();
 });
 
 test("trusted() runs typed raw on a tenant client and shows its reason", async () => {

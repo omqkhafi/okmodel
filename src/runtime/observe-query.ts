@@ -167,6 +167,72 @@ export async function runObservedRead(
 }
 
 /**
+ * Runs a typed raw read and delivers its query event (`op: "raw"`, no table).
+ *
+ * @param session - Client session
+ * @param text - The statement text from the lock
+ * @param params - Bound parameters
+ * @param run - Sends the statement. It throws the error the caller will see
+ * @param decode - Turns wire rows into the caller value
+ * @returns The decoded rows
+ */
+export async function runObservedRaw<T>(
+  session: Session,
+  text: string,
+  params: readonly (string | null)[],
+  run: () => Promise<ExecuteResult>,
+  decode: (rows: readonly (readonly (string | null)[])[]) => T,
+): Promise<T> {
+  const handler = session.q as QueryHandler;
+  const place = readPlace(session);
+  const stack = wantsStack(handler) ? new Error().stack : undefined;
+  const started = Date.now();
+  const event = (
+    queryMs: number,
+    decodeMs: number | null,
+    result: ExecuteResult | undefined,
+    error: unknown,
+  ): QueryEvent => {
+    const summary = summaryOf("raw", null);
+    const counted = readCount(result);
+    return baseEvent({
+      place,
+      table: null,
+      op: "raw",
+      summary,
+      fingerprint: statementFingerprint(text),
+      text: sanitizeSql(text, summary),
+      queryMs,
+      decodeMs,
+      rowCount: counted.rowCount,
+      rowCountMode: counted.rowCountMode,
+      route: routeOf(undefined),
+      error: error === undefined ? undefined : describeError(error),
+      tag: handlerTag(handler),
+      params: eventParams(handler, params, EMPTY_SECRETS),
+      stack: eventStack(handler, stack),
+    });
+  };
+  let result: ExecuteResult;
+  try {
+    result = await run();
+  } catch (error) {
+    deliver(handler, event(Date.now() - started, null, undefined, error));
+    throw error;
+  }
+  const queryMs = Date.now() - started;
+  const decodeStarted = Date.now();
+  try {
+    const value = decode(result.rows);
+    deliver(handler, event(queryMs, Date.now() - decodeStarted, result, undefined));
+    return value;
+  } catch (error) {
+    deliver(handler, event(queryMs, null, result, error));
+    throw error;
+  }
+}
+
+/**
  * Snapshots query events for a write that succeeded.
  *
  * The write unit is still open. Delivery waits until `finishObserved`, so

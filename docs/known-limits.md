@@ -229,7 +229,7 @@ These were named on the M2 row and are not in 0.9.0. They are not scheduled on a
 
 ## Typed raw
 
-- **Typed raw SQL scans static strings only (F7-3).** `okm raw sync` reads string literals and `` `...` `` templates with no `${}`. A template literal with `${}` is not scanned, and dynamic SQL stays on the `raw(handle, cls, "read" | "write", fragment)` form. The runtime stale check is a column-count and decode check, not a catalog hash compare: run `okm check` in CI. Typed raw has no archive filter and no hidden-column guard, and it emits no `onQuery` event for a read (that observer is not part of this release).
+- **Typed raw SQL scans static strings only (F7-3).** `okm raw sync` reads string literals and `` `...` `` templates with no `${}`. A template literal with `${}` is not scanned, and dynamic SQL stays on the `raw(handle, cls, "read" | "write", fragment)` form. The runtime stale check is a column-count and decode check, not a catalog hash compare: run `okm check` in CI. Typed raw has no archive filter and no hidden-column guard.
 
 ## Observability
 
