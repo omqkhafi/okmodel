@@ -55,6 +55,11 @@ export type CommandSpec = {
    * `ext scaffold` take a file.
    */
   readonly ownOut: "file" | "directory" | false;
+  /**
+   * Boolean flag that makes `--out` this command's own file path, even without `--json`.
+   * `doctor --bundle` writes the bundle there. Without the flag `--out` diverts JSON `data`.
+   */
+  readonly ownOutFlag?: string;
   /** Flags besides the globals. */
   readonly flags: readonly FlagSpec[];
 };
@@ -103,6 +108,25 @@ const replace: FlagSpec = {
   type: "string",
   multiple: true,
   hint: "<table>.<column>.<old>=<new>. No short form.",
+};
+
+const yes: FlagSpec = {
+  name: "yes",
+  short: "y",
+  type: "boolean",
+  hint: "Accept defaults and do not prompt.",
+};
+
+const dryRun: FlagSpec = {
+  name: "dry-run",
+  type: "boolean",
+  hint: "Print the plan and write nothing.",
+};
+
+const planHash: FlagSpec = {
+  name: "plan-hash",
+  type: "string",
+  hint: "<hash> from a previous plan. Apply refuses a different plan.",
 };
 
 const lockTimeout: FlagSpec = {
@@ -362,13 +386,27 @@ export const COMMANDS: readonly CommandSpec[] = [
     id: "doctor",
     policy: "check",
     words: ["doctor"],
-    summary: "Print a target report, or one error code.",
+    summary:
+      "Print a target report, or one error code. --bundle writes a local diagnostics file and needs no database.",
     usage: "doctor [code]",
     minOperands: 0,
     maxOperands: 1,
     usesDatabase: true,
     ownOut: false,
-    flags: [target],
+    ownOutFlag: "bundle",
+    flags: [
+      target,
+      {
+        name: "bundle",
+        type: "boolean",
+        hint: "Write one JSON diagnostics file (bundleFormat 1) for a person to send by hand. No network, no database, no values. --out <file> sets the path; the default is .okm/doctor-bundle.json.",
+      },
+      {
+        name: "force-file",
+        type: "boolean",
+        hint: "With --bundle, replace an existing file. No short form.",
+      },
+    ],
   }),
   spec({
     id: "generate",
@@ -512,8 +550,8 @@ export const COMMANDS: readonly CommandSpec[] = [
     usesDatabase: false,
     ownOut: false,
     flags: [
-      { name: "yes", short: "y", type: "boolean", hint: "Accept defaults and do not prompt." },
-      { name: "dry-run", type: "boolean", hint: "Print the plan and write nothing." },
+      yes,
+      dryRun,
       { name: "dialect", type: "string", hint: "<postgres>." },
       {
         name: "driver",
@@ -535,11 +573,7 @@ export const COMMANDS: readonly CommandSpec[] = [
         multiple: true,
         hint: "<path> replaces that one user-modified file. No short form.",
       },
-      {
-        name: "plan-hash",
-        type: "string",
-        hint: "<hash> from a previous plan. Apply refuses a different plan.",
-      },
+      planHash,
       {
         name: "workspace",
         type: "string",
@@ -556,7 +590,67 @@ export const COMMANDS: readonly CommandSpec[] = [
         type: "boolean",
         hint: "One config in the shared database package. Apps are not given a config.",
       },
+      {
+        name: "agents",
+        type: "string",
+        multiple: true,
+        hint: "<block|claude|agents|all> writes the AGENTS.md block and the CLAUDE.md import, and with claude or agents the okmodel skill. Repeat or separate with commas.",
+      },
+      {
+        name: "no-agents",
+        type: "boolean",
+        hint: "Record that this project has no agent files. init does not ask again.",
+      },
     ],
+  }),
+  spec({
+    id: "agents status",
+    policy: "none",
+    words: ["agents", "status"],
+    summary:
+      "Report whether the AGENTS.md block, the CLAUDE.md import, and the skill are current. Exits 1 on drift.",
+    usage: "agents status [dir]",
+    minOperands: 0,
+    maxOperands: 1,
+    usesDatabase: false,
+    ownOut: false,
+    flags: [],
+  }),
+  spec({
+    id: "agents update",
+    policy: "none",
+    words: ["agents", "update"],
+    summary:
+      "Rewrite the AGENTS.md block and any unmodified skill from this package. Prints the diff first.",
+    usage: "agents update [dir]",
+    minOperands: 0,
+    maxOperands: 1,
+    usesDatabase: false,
+    ownOut: false,
+    flags: [
+      yes,
+      dryRun,
+      planHash,
+      { name: "tenancy", type: "string", hint: "<none|column|schema|database> the block prints." },
+      {
+        name: "protected",
+        type: "string",
+        hint: "<yes|no> whether the block says protected targets are configured.",
+      },
+    ],
+  }),
+  spec({
+    id: "agents remove",
+    policy: "none",
+    words: ["agents", "remove"],
+    summary:
+      "Delete the AGENTS.md block and the agent files whose hash still matches. Prints the diff first.",
+    usage: "agents remove [dir]",
+    minOperands: 0,
+    maxOperands: 1,
+    usesDatabase: false,
+    ownOut: false,
+    flags: [yes, dryRun, planHash],
   }),
 ];
 

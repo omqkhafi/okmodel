@@ -75,6 +75,10 @@ import { checkProject } from "../migrate/project.js";
 import { parseReplace } from "../migrate/values.js";
 import { reprintHits } from "../migrate/reprint.js";
 import { refuseAmbiguousConfigs } from "../migrate/discover.js";
+import { agentPath, shippedSkill } from "../agents/files.js";
+import { refuseChanged, refuseConsent, refuseContent, refuseDrift } from "../agents/guards.js";
+import { findBlock } from "../agents/markers.js";
+import { withAgentsRecord } from "../agents/record.js";
 import {
   refuseDifferentDriver,
   refuseMissingDecision,
@@ -1860,6 +1864,89 @@ function limitedDb() {
     limits: { find: 1 },
   });
 }
+
+thrown(
+  "OKM1881",
+  () => {
+    refuseDrift([{ path: "AGENTS.md", state: "stale" }]);
+  },
+  () => {
+    refuseDrift([{ path: "AGENTS.md", state: "current" }]);
+  },
+);
+
+thrown(
+  "OKM1882",
+  () => {
+    findBlock("<!-- BEGIN OKMODEL v0.10.0 -->\nOKModel notes\n", "AGENTS.md");
+  },
+  () => {
+    findBlock("<!-- BEGIN OKMODEL v0.10.0 -->\nOKModel notes\n<!-- END OKMODEL -->\n", "AGENTS.md");
+  },
+);
+
+thrown(
+  "OKM1883",
+  () => {
+    findBlock(
+      "<!-- BEGIN OKMODEL v0.10.0 -->\na\n<!-- END OKMODEL -->\n<!-- BEGIN OKMODEL v0.10.0 -->\nb\n<!-- END OKMODEL -->\n",
+      "AGENTS.md",
+    );
+  },
+  () => {
+    findBlock("<!-- BEGIN OKMODEL v0.10.0 -->\na\n<!-- END OKMODEL -->\n", "AGENTS.md");
+  },
+);
+
+thrown(
+  "OKM1884",
+  () => {
+    refuseConsent(["AGENTS.md"]);
+  },
+  () => {
+    refuseConsent([]);
+  },
+);
+
+thrown(
+  "OKM1885",
+  () => {
+    refuseContent("The package has no skills/okmodel directory to copy.");
+  },
+  () => {
+    shippedSkill();
+  },
+);
+
+thrown(
+  "OKM1886",
+  () => {
+    agentPath(tmpdir(), ".claude/settings.json", new Set(["AGENTS.md"]));
+  },
+  () => {
+    agentPath(tmpdir(), "AGENTS.md", new Set(["AGENTS.md"]));
+  },
+);
+
+thrown(
+  "OKM1887",
+  () => {
+    refuseChanged("AGENTS.md", "edited by hand\n", "as planned\n");
+  },
+  () => {
+    refuseChanged("AGENTS.md", "as planned\n", "as planned\n");
+  },
+);
+
+thrown(
+  "OKM1888",
+  () => {
+    withAgentsRecord("[]", { choice: "yes" });
+  },
+  () => {
+    withAgentsRecord("{}", { choice: "yes" });
+  },
+);
 
 thrown(
   "OKM1891",

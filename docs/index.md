@@ -88,4 +88,7 @@ Pointer index for the docs in this package. Open one page. Do not fetch the webs
 - `okm raw sync` - Describe static raw() calls and write the typed SQL lock.
 - `okm schema` - Print the JSON Schema for that command's --json data.
 - `okm init` - Write starter files for a package or selected workspace packages.
+- `okm agents status` - Report whether the AGENTS.md block, the CLAUDE.md import, and the skill are current.
+- `okm agents update` - Rewrite the AGENTS.md block and any unmodified skill from this package.
+- `okm agents remove` - Delete the AGENTS.md block and the agent files whose hash still matches.
 

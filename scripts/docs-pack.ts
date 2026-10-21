@@ -203,7 +203,11 @@ export function packedDocPaths(root: string): readonly string[] {
  * @returns Repo-relative paths
  */
 export function packedTextPaths(root: string): readonly string[] {
-  const paths = [...packedDocPaths(root), "skills/okmodel/SKILL.md", "README.md", "LICENSE"];
+  const paths = [...packedDocPaths(root), "README.md", "LICENSE"];
+  const skills = join(root, "skills");
+  if (existsSync(skills)) {
+    for (const rel of walkFiles(skills, skills)) paths.push(`skills/${rel}`);
+  }
   const schemas = join(root, "schemas");
   if (existsSync(schemas)) {
     for (const rel of walkFiles(schemas, schemas)) {

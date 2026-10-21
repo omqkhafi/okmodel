@@ -20,7 +20,7 @@ export type JsonSchema = {
   readonly properties?: Readonly<Record<string, JsonSchemaNode>>;
   readonly items?: JsonSchemaNode;
   readonly oneOf?: readonly JsonSchemaNode[];
-  readonly const?: string | boolean;
+  readonly const?: string | boolean | number;
   readonly enum?: readonly string[];
   readonly description?: string;
 };
@@ -32,7 +32,7 @@ type JsonSchemaNode = {
   readonly properties?: Readonly<Record<string, JsonSchemaNode>>;
   readonly items?: JsonSchemaNode;
   readonly oneOf?: readonly JsonSchemaNode[];
-  readonly const?: string | boolean;
+  readonly const?: string | boolean | number;
   readonly enum?: readonly string[];
   readonly description?: string;
 };
@@ -48,6 +48,31 @@ const textData = (id: string, title: string): JsonSchema => ({
   required: ["text"],
   properties: { text: { type: "string" } },
 });
+
+const AGENT_KINDS = ["block", "import", "skill", "record"] as const;
+const AGENT_STATES = ["current", "stale", "missing", "modified"] as const;
+const AGENT_ACTIONS = ["none", "create", "insert", "update", "remove", "delete", "skip"] as const;
+
+function agentsPlanProperties(): Readonly<Record<string, JsonSchemaNode>> {
+  return {
+    status: { enum: ["planned", "applied", "unchanged"] },
+    files: {
+      type: "array",
+      items: objectNode(["path", "kind", "state", "action"], {
+        path: { type: "string" },
+        kind: { enum: AGENT_KINDS },
+        state: { enum: AGENT_STATES },
+        action: { enum: AGENT_ACTIONS },
+        diff: { type: "string" },
+      }),
+    },
+    planHash: { type: "string" },
+  };
+}
+
+function agentsPlanSchema(): JsonSchemaNode {
+  return objectNode(["status", "files", "planHash"], agentsPlanProperties());
+}
 
 const SCHEMAS: Readonly<Record<string, JsonSchema>> = {
   build: object("build", "okm build data", ["directory"], {
@@ -139,6 +164,7 @@ const SCHEMAS: Readonly<Record<string, JsonSchema>> = {
         escapeHatches: hatchesSchema(),
       }),
       objectNode(["text"], { text: { type: "string" } }),
+      objectNode(["bundle"], { bundle: bundleSchema() }),
     ],
   },
   "driver test": textData(idOf("driver test"), "okm driver test data"),
@@ -288,6 +314,29 @@ const SCHEMAS: Readonly<Record<string, JsonSchema>> = {
   }),
   pull: textData(idOf("pull"), "okm pull data"),
   seed: textData(idOf("seed"), "okm seed data"),
+  "agents status": object("agents status", "okm agents status data", ["status", "files"], {
+    status: { enum: ["current", "drifted", "declined"] },
+    files: {
+      type: "array",
+      items: objectNode(["path", "kind", "state"], {
+        path: { type: "string" },
+        kind: { enum: AGENT_KINDS },
+        state: { enum: AGENT_STATES },
+      }),
+    },
+  }),
+  "agents update": object(
+    "agents update",
+    "okm agents update data",
+    ["status", "files", "planHash"],
+    agentsPlanProperties(),
+  ),
+  "agents remove": object(
+    "agents remove",
+    "okm agents remove data",
+    ["status", "files", "planHash"],
+    agentsPlanProperties(),
+  ),
   "protect add": object("protect add", "okm protect add data", ["hostDb", "identity", "reason"], {
     hostDb: { type: "string" },
     identity: { type: "null" },
@@ -379,6 +428,7 @@ const SCHEMAS: Readonly<Record<string, JsonSchema>> = {
       note: { type: "string" },
       layout: { enum: ["single", "per-service", "shared"] },
       base: { type: "string" },
+      agents: agentsPlanSchema(),
       workspaces: {
         type: "array",
         items: objectNode(["path", "driver", "config"], {
@@ -578,6 +628,105 @@ function allowsSchema(): JsonSchemaNode {
       destructive: { type: "boolean" },
       reason: untrustedSchema(),
     }),
+  };
+}
+
+function bundleSchema(): JsonSchemaNode {
+  const text: JsonSchemaNode = { type: "string" };
+  const count: JsonSchemaNode = { type: "number" };
+  const flag: JsonSchemaNode = { type: "boolean" };
+  const words: JsonSchemaNode = { type: "array", items: text };
+  return {
+    description:
+      "`okm doctor --bundle`: the document written to the file and printed as `data.bundle`. Keys sort at every depth. No connection string, host, user, URL, table or column name, SQL text, row value, path outside the project, or environment variable value is in it.",
+    ...objectNode(
+      [
+        "adapters",
+        "artifacts",
+        "bundleFormat",
+        "capabilities",
+        "checks",
+        "config",
+        "dialect",
+        "layout",
+        "okmodel",
+        "packageManager",
+        "runtime",
+      ],
+      {
+        adapters: {
+          type: "array",
+          items: objectNode(["name", "package", "version"], {
+            name: text,
+            package: text,
+            version: { type: ["string", "null"] },
+          }),
+        },
+        artifacts: {
+          description: "Entries under `.okm/` from a closed list of names. A file has its SHA-256.",
+          type: "array",
+          items: {
+            oneOf: [
+              objectNode(["kind", "name", "sha256"], {
+                kind: { const: "file" },
+                name: text,
+                sha256: text,
+              }),
+              objectNode(["kind", "name"], { kind: { const: "directory" }, name: text }),
+            ],
+          },
+        },
+        bundleFormat: { const: 1 },
+        capabilities: objectNode(["dialect", "emulated", "features", "native", "refused", "used"], {
+          dialect: { const: "postgres" },
+          emulated: words,
+          features: count,
+          native: count,
+          refused: words,
+          used: words,
+        }),
+        checks: objectNode(["codes", "failures", "result", "rules", "scope"], {
+          codes: words,
+          failures: words,
+          result: { enum: ["pass", "fail"] },
+          rules: {
+            type: "object",
+            description:
+              "Rule code to `{ result, severity }`. `fail` means the rule raised a finding. A step that could not run is a code in `failures`.",
+          },
+          scope: { const: "offline" },
+        }),
+        config: objectNode(["ambiguous", "file", "found", "loaded", "targets"], {
+          ambiguous: count,
+          file: { type: ["string", "null"] },
+          found: flag,
+          loaded: flag,
+          targets: count,
+        }),
+        dialect: objectNode(["name", "package", "version"], {
+          name: { const: "postgres" },
+          package: { const: "okmodel" },
+          version: text,
+        }),
+        layout: objectNode(
+          ["configInWorkspaceRoot", "migrations", "monorepo", "workspacePackages"],
+          {
+            configInWorkspaceRoot: flag,
+            migrations: count,
+            monorepo: flag,
+            workspacePackages: count,
+          },
+        ),
+        okmodel: objectNode(["version"], { version: text }),
+        packageManager: { enum: ["bun", "npm", "pnpm", "yarn", "unknown"] },
+        runtime: objectNode(["arch", "bun", "node", "os"], {
+          arch: text,
+          bun: { type: ["string", "null"] },
+          node: text,
+          os: text,
+        }),
+      },
+    ),
   };
 }
 

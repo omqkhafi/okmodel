@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://okmodel.dev/schemas/cli-1/agents-remove.json",
+  "title": "okm agents remove data",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "files",
+    "planHash"
+  ],
+  "properties": {
+    "status": {
+      "enum": [
+        "planned",
+        "applied",
+        "unchanged"
+      ]
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "kind",
+          "state",
+          "action"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "block",
+              "import",
+              "skill",
+              "record"
+            ]
+          },
+          "state": {
+            "enum": [
+              "current",
+              "stale",
+              "missing",
+              "modified"
+            ]
+          },
+          "action": {
+            "enum": [
+              "none",
+              "create",
+              "insert",
+              "update",
+              "remove",
+              "delete",
+              "skip"
+            ]
+          },
+          "diff": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "planHash": {
+      "type": "string"
+    }
+  }
+}

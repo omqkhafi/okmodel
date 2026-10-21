@@ -60,6 +60,10 @@ export type ParsedCli = {
   readonly noInstall: boolean;
   /** `okm init --force-file`. */
   readonly forceFile: readonly string[];
+  /** `okm doctor --bundle`. */
+  readonly bundle: boolean;
+  /** `okm doctor --bundle --force-file`. A boolean there; `okm init` takes paths. */
+  readonly overwrite: boolean;
   /** `okm init --plan-hash`. */
   readonly planHash: string | undefined;
   /** `okm init --workspace`. Repeatable package name or path. */
@@ -68,6 +72,12 @@ export type ParsedCli = {
   readonly allWorkspaces: boolean;
   /** `okm init --shared`. One database package. */
   readonly shared: boolean;
+  /** `okm init --agents`. Targets, repeatable or comma-separated. */
+  readonly agents: readonly string[];
+  /** `okm init --no-agents`. */
+  readonly noAgents: boolean;
+  /** `okm agents update --protected`. `yes` or `no`. */
+  readonly protectedFlag: string | undefined;
   /** Positionals after the command words. */
   readonly operands: readonly string[];
 };
@@ -77,6 +87,7 @@ const GROUP_FIX: Readonly<Record<string, string>> = {
   ext: "Use okm ext list, okm ext check, okm ext scaffold, or okm ext test.",
   catalog: "Use okm catalog export.",
   raw: "Use okm raw sync.",
+  agents: "Use okm agents status, okm agents update, or okm agents remove.",
   import: "Use okm import drizzle <path>.",
   driver: "Use okm driver test <driver>.",
 };
@@ -101,7 +112,7 @@ export function argvHasJson(argv: readonly string[]): boolean {
     if (!arg.startsWith("-") || arg === "-") continue;
     const eq = arg.indexOf("=");
     const flag = eq === -1 ? arg : arg.slice(0, eq);
-    if (eq === -1 && consumesNext(arg, valueFlags)) index += 1;
+    if (eq === -1 && consumesNext(arg, valueFlags, argv[index + 1])) index += 1;
     if (flag === "--json") return true;
   }
   return false;
@@ -170,11 +181,13 @@ export function parseCli(argv: readonly string[]): ParsedCli {
     spec !== undefined &&
     spec.ownOut === false &&
     values.json !== true &&
+    !(spec.ownOutFlag !== undefined && values[spec.ownOutFlag] === true) &&
     !help &&
     !version
   ) {
     throw usage("--out needs --json for this command.", "Pass --json --out <file>, or drop --out.");
   }
+  if (!help && !version) refuseBundleMix(spec, values, operands);
   return {
     command: spec?.id ?? null,
     spec,
@@ -207,12 +220,40 @@ export function parseCli(argv: readonly string[]): ParsedCli {
     install: values.install === true,
     noInstall: values["no-install"] === true,
     forceFile: stringList(values["force-file"]),
+    bundle: values.bundle === true,
+    overwrite: spec?.id === "doctor" && values["force-file"] === true,
     planHash: stringValue(values["plan-hash"]),
     workspace: stringList(values.workspace),
     allWorkspaces: values["all-workspaces"] === true,
     shared: values.shared === true,
+    agents: stringList(values.agents),
+    noAgents: values["no-agents"] === true,
+    protectedFlag: stringValue(values.protected),
     operands,
   };
+}
+
+function refuseBundleMix(
+  spec: CommandSpec | undefined,
+  values: Record<string, unknown>,
+  operands: readonly string[],
+): void {
+  if (spec?.id !== "doctor") return;
+  if (values.bundle !== true) {
+    if (values["force-file"] === true) {
+      throw usage("--force-file needs --bundle.", "Pass okm doctor --bundle --force-file.");
+    }
+    return;
+  }
+  if (operands.length > 0) {
+    throw usage("--bundle does not take an error code.", "Run okm doctor --bundle on its own.");
+  }
+  if (values.target !== undefined) {
+    throw usage(
+      "--bundle does not connect, so it has no target.",
+      "Drop --target, or run okm doctor without --bundle.",
+    );
+  }
 }
 
 function blank(flags: { readonly help: boolean; readonly json: boolean }): ParsedCli {
@@ -248,10 +289,15 @@ function blank(flags: { readonly help: boolean; readonly json: boolean }): Parse
     install: false,
     noInstall: false,
     forceFile: [],
+    bundle: false,
+    overwrite: false,
     planHash: undefined,
     workspace: [],
     allWorkspaces: false,
     shared: false,
+    agents: [],
+    noAgents: false,
+    protectedFlag: undefined,
     operands: [],
   };
 }
@@ -308,7 +354,7 @@ function commandWords(argv: readonly string[]): readonly string[] {
     }
     if (arg.startsWith("-") && arg !== "-") {
       const eq = arg.indexOf("=");
-      if (eq === -1 && consumesNext(arg, valueFlags)) index += 1;
+      if (eq === -1 && consumesNext(arg, valueFlags, argv[index + 1])) index += 1;
       continue;
     }
     words.push(arg);
@@ -328,7 +374,19 @@ function valueFlagSet(): ReadonlySet<string> {
   return names;
 }
 
-function consumesNext(arg: string, valueFlags: ReadonlySet<string>): boolean {
+/**
+ * Whether `arg` takes the next argument as its value.
+ *
+ * A flag name can be a string flag for one command and a boolean for another
+ * (`--force-file`). A next argument that is itself a flag is never a value,
+ * so the boolean spelling does not swallow `--out`.
+ */
+function consumesNext(
+  arg: string,
+  valueFlags: ReadonlySet<string>,
+  next: string | undefined,
+): boolean {
+  if (next !== undefined && next.startsWith("-") && next.length > 1) return false;
   if (arg.startsWith("--")) return valueFlags.has(arg);
   const body = arg.slice(1);
   for (let index = 0; index < body.length; index += 1) {
