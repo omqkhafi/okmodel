@@ -15,7 +15,7 @@ import {
   type OkmErrorOptions,
 } from "../contracts/error.js";
 import type { MapPostgresErrorOptions, MapPostgresErrorSchema } from "../dialects/pg/errors.js";
-import type { PresetUse, QuerySchema } from "../dialects/pg/model.js";
+import type { PresetUse, QuerySchema, SchemaHook } from "../dialects/pg/model.js";
 import {
   appliedRules,
   archiveRules,
@@ -91,6 +91,10 @@ export type Session = {
   readonly tx?: { readonly extras: object; readonly depth: number };
   /** Tenant value or an unscoped reason. Absent on the root client. */
   readonly scope?: CallScope;
+  /** Schema hooks, then the `connect({ session })` hook. */
+  readonly hooks: readonly SchemaHook[] | undefined;
+  /** `db.with()` values as setting name and wire text, sorted by name. Absent on the root client. */
+  readonly settings?: readonly (readonly [string, string])[];
   /**
    * Shared close. `for()` and `unscoped()` reuse the same promise.
    *
@@ -121,7 +125,10 @@ const SINGLE_ENDPOINT: RoutingDecision = {
  * @param options - Errors, logger, and whether `close` ends the pool
  * @returns The typed client
  */
-export function createClient<S extends QuerySchema>(
+export function createClient<
+  S extends QuerySchema,
+  C extends { readonly hook: SchemaHook } | undefined = undefined,
+>(
   schema: S,
   pool: DriverPool,
   options: {
@@ -145,9 +152,10 @@ export function createClient<S extends QuerySchema>(
     readonly catalogDir?: string | undefined;
     readonly requireMeta?: boolean | undefined;
     readonly generators?: IdGenerators | undefined;
+    readonly session?: C | undefined;
   },
   ownsPool?: boolean,
-): Connected<S> {
+): Connected<S, C> {
   const http = options.http ?? options.errors?.http;
   const includeValues = (options.includeValues ?? options.errors?.includeValues) === true;
   const owned = ownsPool ?? options.ownsPool === true;
@@ -192,9 +200,23 @@ export function createClient<S extends QuerySchema>(
     ...(options.onWrite !== undefined ? { o: { w: options.onWrite, c: undefined } } : {}),
     w: options.warnings,
     q: options.onQuery,
+    hooks:
+      options.session === undefined
+        ? schema.hooks
+        : [...(schema.hooks ?? []), options.session.hook],
     closing,
   };
-  return openClient(session);
+  return openClient(session) as unknown as Connected<S, C>;
+}
+
+/** The pool under every scope wrapper, so a new scope wraps it once. */
+function bare(pool: DriverPool): DriverPool {
+  const key = Symbol.for("okmodel.pool.inner");
+  for (let next: unknown = pool; next !== undefined;) {
+    pool = next as DriverPool;
+    next = (pool as unknown as Record<symbol, unknown>)[key];
+  }
+  return pool;
 }
 
 export function openClient<S extends QuerySchema>(session: Session): Connected<S> {
@@ -238,14 +260,16 @@ export function openClient<S extends QuerySchema>(session: Session): Connected<S
     batch: (ops: unknown, options?: object) => batchHandle(session, ops, options),
     ...session.tx?.extras,
   };
-  const hooks = session.schema.hooks;
+  const hooks = session.hooks;
   if (hooks !== undefined) {
     for (const hook of hooks) {
       hook(client, {
         names,
         tables,
         scoped: session.scope !== undefined,
-        open: (scope) => openClient({ ...session, scope }),
+        open: (scope) => openClient({ ...session, pool: bare(session.pool), scope }),
+        set: (merge) =>
+          openClient({ ...session, pool: bare(session.pool), settings: merge(session.settings) }),
       });
     }
   }
@@ -331,7 +355,7 @@ function tableApi(
       view,
       true,
     );
-  const hooks = session.schema.hooks;
+  const hooks = session.hooks;
   if (hooks !== undefined) {
     for (const hook of hooks) {
       hook(api, {

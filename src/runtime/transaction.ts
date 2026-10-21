@@ -399,11 +399,13 @@ async function nested(
   const after: After[] = [];
   let released = false;
   const hooks = session.pool as {
-    okmForgetScope?: () => void;
+    okmForgetScope?: (mark?: number) => void;
     okmScopePending?: () => Promise<void> | undefined;
+    okmScopeMark?: () => number;
   };
   const pending = hooks.okmScopePending?.();
   if (pending !== undefined) await pending;
+  const mark = hooks.okmScopeMark?.();
   try {
     await step(session, frame, `SAVEPOINT ${name}`);
     if (emit !== undefined) emit.emitPhase(host, "start", depth + 1, name);
@@ -422,7 +424,7 @@ async function nested(
     if (!released && frame.stopped === undefined) {
       // The savepoint absorbs the failure: the transaction goes on if the caller handles the error.
       await frame.conn.execute(`ROLLBACK TO SAVEPOINT ${name}`).catch(() => undefined);
-      hooks.okmForgetScope?.();
+      hooks.okmForgetScope?.(mark);
       frame.failed = saved;
       if (emit !== undefined) emit.emitPhase(host, "rollback", depth + 1, name);
       else hear?.phase(session.hookm, "rollback", depth + 1);

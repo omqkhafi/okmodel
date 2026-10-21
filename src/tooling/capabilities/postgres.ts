@@ -76,6 +76,7 @@ export const POSTGRES_FEATURES = {
   "tenancy.rls": native("rls emits enable, force, and two policies, and skips global tables"),
   "policies.table": native("rls emits enable, force, and two policies, and skips global tables"),
   "session.settings": native("proof:session.settings"),
+  "session.local": native("proof:session.local"),
   "roles.grants": native("proof:roles.grants"),
   "guard.fragment": native("proof:guard.fragment"),
   "guard.pooler": native("QA-M6: a backend pid that changes between the two statements is OKM1854"),

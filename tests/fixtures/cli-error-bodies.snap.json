@@ -1114,6 +1114,15 @@
     "docs": "docs/errors/OKM1708.md"
   },
   {
+    "code": "OKM1709",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A sessionSettings() declaration or a db.with() value is not accepted: a name without a dot, a name that starts with a setting okm reserves for tenancy or is a built-in setting, a type that is not text, uuid, int, or bool, a value of the wrong type, an unknown key, or a required key that is missing. A client with a required setting refuses every statement until db.with() gives it. Nothing reached the database.",
+    "fix": "Declare names like app.user_id, pass each value as its declared type, and call db.with({ ... }) with every required key before the first query.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1709.md"
+  },
+  {
     "code": "OKM1801",
     "kind": "invalid",
     "category": "input",
