@@ -57,6 +57,7 @@ import { assertValidation } from "../../runtime/validate/places.js";
 import { stand } from "../../runtime/validate/engine.js";
 import { v } from "../../runtime/validate/rules.js";
 import { assertParamCount, PG_PARAM_LIMIT } from "../../runtime/param-limit.js";
+import { assertObserveKeys } from "../../runtime/observe-keys.js";
 import { assertSupported } from "../capabilities/check.js";
 import type { Registry } from "../capabilities/types.js";
 import { primaryKeyColumns } from "../migrate/backfill.js";
@@ -624,6 +625,20 @@ thrown(
       "schema.core": { support: "native", proof: "proof" },
     };
     assertSupported(["schema.core"], registry, "sqlite");
+  },
+);
+
+thrown(
+  "OKM1890",
+  () => {
+    const logs = table("logs", { body: t.text() });
+    const app = schema({ tables: [logs] });
+    assertObserveKeys(app, ["logs"]);
+  },
+  () => {
+    const logs = table("logs", { id: t.text().primaryKey(), body: t.text() });
+    const app = schema({ tables: [logs] });
+    assertObserveKeys(app, ["logs"]);
   },
 );
 

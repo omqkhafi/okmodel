@@ -26,7 +26,7 @@ import { effectivePredicate } from "./predicate.js";
 import { stack } from "./preset-stack.js";
 import { runSafety, safetyInstalled } from "./safety-hook.js";
 import { runWrite, type RunHost } from "./tx.js";
-import { tenantFromScope, type PreparedWrite } from "./write.js";
+import { statementObserve, tenantFromScope, type PreparedWrite } from "./write.js";
 
 registerFailFix(
   "OKM1102",
@@ -73,10 +73,7 @@ export async function executeArchive(
   scope: CallScope | undefined,
 ): Promise<{ readonly count: number; readonly archiveId?: string }> {
   const prepared = prepareArchive(host.schema, op, table, input, options, mods, scope);
-  const observe =
-    host.o !== undefined && prepared.observe !== undefined
-      ? prepared.statements.map(() => prepared.observe!)
-      : undefined;
+  const observe = statementObserve(host.o !== undefined, prepared);
   const results = await runWrite(host, prepared.statements, prepared.options, undefined, observe);
   return prepared.finish(results) as { readonly count: number; readonly archiveId?: string };
 }

@@ -31,9 +31,10 @@ export const OBSERVE_BUFFER_MAX = 10_000;
 /** Options for {@link writeObserver}. */
 export type WriteObserverOptions = {
   /**
-   * Key columns to capture (G-5).
+   * Tables whose primary key is returned on each write.
    *
-   * Accepted and ignored until G-5 fills `WriteEvent.keys`.
+   * Names are schema table names. A table with no primary key is OKM1890.
+   * The values land on `WriteEvent.keys`.
    */
   readonly keys?: readonly string[];
   /** Surviving writes after a committed unit. */
@@ -67,13 +68,19 @@ export type WriteObserver = OnWrite & {
   readonly maxPending: number;
   /** @internal */
   onObserverError?: WriteObserverOptions["onObserverError"];
+  /**
+   * Tables copied from {@link WriteObserverOptions.keys}.
+   *
+   * The connect path and the write planner read this off the handler.
+   */
+  readonly observeKeys?: readonly string[];
 };
 
 /**
  * Buffers low-level events and calls exactly one of `committed` | `rolledBack` |
  * `unknown` per unit. A unit with zero surviving writes calls nothing.
  *
- * @param options - Callbacks and optional key list (ignored until G-5)
+ * @param options - Callbacks and an optional primary-key table list
  * @returns Handler for `connect({ onWrite })`
  */
 export function writeObserver(options: WriteObserverOptions = {}): WriteObserver {
@@ -159,6 +166,9 @@ export function writeObserver(options: WriteObserverOptions = {}): WriteObserver
     {
       maxPending,
       onObserverError: options.onObserverError,
+      ...(options.keys !== undefined && options.keys.length > 0
+        ? { observeKeys: options.keys.slice() }
+        : {}),
       flush(): Promise<void> {
         if (pending.length === 0) return Promise.resolve();
         const batch = pending.splice(0, pending.length);

@@ -87,13 +87,16 @@ export const POSTGRES_FEATURES = {
   "writeObserver.unit": native("proof:writeObserver.unit", {
     cost: "transaction | batch",
   }),
-  /** Key capture mode. G-4 is none; G-5 adds returning | emulated. */
+  /** Key capture. Postgres appends primary-key `RETURNING`. */
   "writeObserver.keys": native("proof:writeObserver.keys", {
-    cost: "none",
+    cost: "returning",
   }),
-  /** Row-count mode. G-4 is unknown; G-5 fills changed | matched | mixed. */
+  /**
+   * Row-count mode. Postgres reports `changed`, `returned`, and `unknown`
+   * (a driver with no command tag), so the cost is `mixed`.
+   */
   "writeObserver.rowCount": native("proof:writeObserver.rowCount", {
-    cost: "unknown",
+    cost: "mixed",
   }),
 } as const satisfies Registry;
 

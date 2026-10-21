@@ -3,7 +3,8 @@
  *
  * Public pages need front matter. They link only to public pages. A code
  * fence names a language. Packed text has no hidden characters. The index
- * matches `docs-index.ts`. `scripts/readme-check.ts` checks README links.
+ * matches `docs-index.ts`. The capabilities page, support blocks, and the
+ * step table match `docs-capabilities.ts`. `scripts/readme-check.ts` checks README links.
  * It does not typecheck fences, and this script does not add a second
  * typecheck.
  *
@@ -22,6 +23,7 @@ import {
   packedTextPaths,
   type DocClass,
 } from "./docs-pack.js";
+import { capabilityDocProblems } from "./docs-capabilities.js";
 import { indexCoverageProblems, indexStaleProblems } from "./docs-index.js";
 import { exitOnProblems } from "./report.js";
 import { repoRoot } from "./root.js";
@@ -60,6 +62,7 @@ export function hygieneProblems(root: string, version: string): readonly string[
     ...ignoreProblems(root),
     ...indexCoverageProblems(root),
     ...indexStaleProblems(root, version),
+    ...capabilityDocProblems(root),
     ...publicPageProblems(root),
     ...hiddenCharProblems(root),
     ...skillProblems(root),

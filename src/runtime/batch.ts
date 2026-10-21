@@ -14,7 +14,7 @@ import { settleCall, withHttp, type Session } from "./client.js";
 import { fail, isRecord, rejectKeys } from "./plan.js";
 import { refuseUncancellableTimeout } from "./inflight.js";
 import { runWrite } from "./tx.js";
-import type { PreparedWrite } from "./write.js";
+import { statementObserve, type PreparedWrite } from "./write.js";
 
 /** A write handle, as `batch` reads it: it can plan itself without running. */
 type Op = { readonly "~plan"?: () => Promise<PreparedWrite>; readonly "~refresh"?: true };
@@ -122,16 +122,7 @@ async function run(
   const observe =
     session.o === undefined
       ? undefined
-      : prepared.flatMap((item) => {
-          const meta = item.observe ?? {
-            table: null,
-            op: "raw" as const,
-            tenant: null,
-            settings: [],
-            source: "client" as const,
-          };
-          return item.statements.map(() => meta);
-        });
+      : prepared.flatMap((item) => statementObserve(true, item) ?? rawObserve(item));
   let results;
   try {
     results = await runWrite(session, statements, call(options), true, observe);
@@ -176,14 +167,11 @@ async function recover(
     session.o === undefined
       ? undefined
       : pending.flatMap((item) => {
-          const meta = prepared[item.index]?.observe ?? {
-            table: null,
-            op: "raw" as const,
-            tenant: null,
-            settings: [],
-            source: "client" as const,
-          };
-          return item.statements.map(() => meta);
+          const base = prepared[item.index]?.observe;
+          if (base === undefined) return rawStatements(item.statements);
+          return item.statements.map((statement) =>
+            /\breturning\b/i.test(statement.text) ? { ...base, returning: true } : base,
+          );
         });
   try {
     ran = await runWrite(session, flat, call(options), true, observe);
@@ -197,6 +185,34 @@ async function recover(
     found.set(item.index, ran.slice(from, extraStarts[index + 1] ?? ran.length));
   }
   return found;
+}
+
+const RAW_OBSERVE = {
+  table: null,
+  op: "raw" as const,
+  tenant: null,
+  settings: [] as readonly string[],
+  source: "client" as const,
+};
+
+/**
+ * Fallback metadata when a batched operation recorded none.
+ *
+ * @param item - Planned operation
+ * @returns One raw meta per statement
+ */
+function rawObserve(item: PreparedWrite): (typeof RAW_OBSERVE)[] {
+  return item.statements.map(() => RAW_OBSERVE);
+}
+
+/**
+ * Fallback metadata for follow-up statements that have no base meta.
+ *
+ * @param statements - Follow-up statements
+ * @returns One raw meta per statement
+ */
+function rawStatements(statements: readonly Statement[]): (typeof RAW_OBSERVE)[] {
+  return statements.map(() => RAW_OBSERVE);
 }
 
 function mapExtra(

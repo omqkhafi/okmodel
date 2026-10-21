@@ -8,6 +8,10 @@ codes: [OKM1553, OKM1554, OKM1555, OKM1556, OKM1557, OKM1558]
 
 `okm migrate apply` keeps going only when it can prove what the database already has. A step that runs inside a transaction is rolled back with its history row, so the next apply runs it again. A backfill keeps its cursor in `okm_backfill` and continues from that key. A step that cannot run inside a transaction is different: Postgres may commit the DDL and then lose the connection before the history row is written.
 
+<!-- support: steps.resumable -->
+Postgres: native. Proof passes (`concurrent index create and drop run outside the transaction, and validate stays in it`).
+<!-- /support -->
+
 `okm migrate status` still prints `failed at step N (resume with okm migrate apply)`. That `N` is the stored step index, starting at 0. Apply's own error starts `Migration <id> failed at step N`, and that `N` starts at 1.
 
 ## What is stored
@@ -69,6 +73,84 @@ Postgres can probe these kinds:
 - `add-enum-value`. The label present is `applied`. Missing is `absent`.
 
 Every other kind is `unknown` after a failure, unless the step declares a probe. The statement is not run again until a person marks it `retry` or records it as applied.
+
+## Step kinds
+
+<!-- steps -->
+Generated from `STEP_KINDS`, `postgresHasProbe`, and `unitMode`. Do not edit by hand.
+
+| Kind | Transactional | Built-in probe | Resume | Code |
+| --- | --- | --- | --- | --- |
+| `create-table` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `drop-table` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `add-column` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `add-column-required` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `drop-column` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `set-column-type` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `set-not-null` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `drop-not-null` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `set-default` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `drop-default` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `add-identity` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `drop-identity` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `set-identity-always` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `set-identity-by-default` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `add-constraint` | yes | yes | rolls back with the history row; a committed copy follows the probe | OKM1553 |
+| `validate-constraint` | yes | yes | rolls back with the history row; a committed copy follows the probe | OKM1553 |
+| `drop-constraint` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `drop-not-null-check` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `rename-constraint` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `widen-check` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `narrow-check` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `create-index` | no when CONCURRENTLY | when CONCURRENTLY | a plain statement rolls back; CONCURRENTLY follows the probe, and partial drops the index and rebuilds | OKM1553, OKM1556 |
+| `drop-index` | no when CONCURRENTLY | when CONCURRENTLY | a plain statement rolls back; CONCURRENTLY follows the probe | OKM1553, OKM1556 |
+| `rename-index` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `create-sequence` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `drop-sequence` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `create-enum` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `recreate-enum` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `add-enum-value` | no | yes | follows the probe: applied writes history, absent runs the statement, unknown stops | OKM1553, OKM1556 |
+| `rename-enum` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `drop-enum` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `set-enum-column` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `create-domain` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `drop-domain` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `add-domain-check` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `validate-domain-check` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `drop-domain-check` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `rename-domain-check` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `create-extension` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `drop-extension` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `update-extension` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `move-extension` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `create-function` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `drop-function` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `replace-function` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `create-trigger` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `drop-trigger` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `create-view` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `drop-view` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `replace-view` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `create-matview` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `drop-matview` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `refresh-matview` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `create-role` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `alter-role` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `grant` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `revoke` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `grant-default` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `revoke-default` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `rename-table` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `rename-column` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `rename-sequence` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `backfill-expand` | no | no | continues from the last key in okm_backfill; no okm_steps row | — |
+| `backfill-contract` | no | no | continues from the last key in okm_backfill; no okm_steps row | — |
+| `enable-rls` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `create-policy` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `drop-policy` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `disable-rls` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `raw-sql` | yes, unless the statement cannot share a transaction | when CONCURRENTLY | rolls back when the statement can share a transaction; a concurrent index follows the probe; any other committed statement stops until a declared probe or a person marks retry | OKM1553, OKM1556, OKM1557 |
+<!-- /steps -->
 
 ## Declared probe
 

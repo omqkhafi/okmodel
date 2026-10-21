@@ -964,6 +964,12 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     summary: "Tenancy schema or database is not supported by init yet.",
     fix: "Pass --tenancy none, or --tenancy column.",
   },
+  {
+    code: "OKM1890",
+    title: "Observer keys",
+    summary: "writeObserver keys named a table that has no primary key or is not in the schema.",
+    fix: "Add a primary key on that table, or remove it from writeObserver({ keys }).",
+  },
   ...WARNING_RULES.map(warningDoc),
   {
     code: "OKM2200",

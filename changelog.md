@@ -35,24 +35,28 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 #### contracts
 
 - `DescribeResult` adds `parameters` (type OIDs in `$n` order) and `fields` (`name`, `typeOid`, `tableOid`, `attnum`). `columns` and `parameterCount` stay.
+- `ExecuteResult.reported` is the driver command-tag count, or null when the driver reported none. Absent on fixtures that only set `count`. The caller-facing `count` stays `reported ?? rows.length`.
 
 #### adapters
 
 - postgres.js and PGlite `describe` return those fields and do not execute the statement. node-postgres, Bun.sql, and Neon still leave `describe` unset.
+- `resultFrom` records the command tag on `ExecuteResult.reported`. postgres.js and Bun.sql use `count`. pg and Neon use `rowCount`. PGlite uses per-statement `rowCount`, and cumulative `affectedRows` only when `rowCount` is absent. An own field that is not a finite number is nothing; a later field is not a fallback.
 
 #### runtime
 
 - A connected client exposes `capabilities`, the same frozen object as the pool (`transactions`, `stream`, `listen`, `cancel`).
 - `update({ where, set, limit, lock: "skip", version: "any" })` on a `versioned()` table skips the version check, bumps `version` by 1, and returns the claimed rows. A miss is an empty array. `version` stays required on every other versioned update. `version: "any"` without `lock: "skip"` and `limit`, an unrecognised version string, and a `version` key in `set` are OKM1120 (Q6, O-5, #393).
-- `connect({ onWrite })` observes write units (`okm.observe/1`): buffered write, savepoint, and tri-state outcome events after commit or rollback, from one emission point shared with `hookm.onTransaction`. Normative shape in `docs/observer-events.md`. G-4 emits `rowCount: null` / `rowCountMode: "unknown"`. `db.flush()` waits for the `okmodel/observe` helper (app size gate).
-- `okmodel/observe` exports `writeObserver()`, `flush()`, `OBSERVE_BUFFER_MAX` (10,000), and `observerBufferOverflow()` (OKM2200). The helper buffers per unit, calls exactly one of `committed` | `rolledBack` | `unknown`, isolates throwing and rejecting handlers via `onObserverError`, and settles tracked promises on `flush()`. Overflow drops the oldest unit without blocking the write path. `keys` is accepted and ignored until G-5.
+- `connect({ onWrite })` observes write units (`okm.observe/1`): buffered write, savepoint, and tri-state outcome events after commit or rollback, from one emission point shared with `hookm.onTransaction`. Normative shape in `docs/observer-events.md`. `db.flush()` waits for the `okmodel/observe` helper (app size gate).
+- `okmodel/observe` exports `writeObserver()`, `flush()`, `OBSERVE_BUFFER_MAX` (10,000), and `observerBufferOverflow()` (OKM2200). The helper buffers per unit, calls exactly one of `committed` | `rolledBack` | `unknown`, isolates throwing and rejecting handlers via `onObserverError`, and settles tracked promises on `flush()`. Overflow drops the oldest unit without blocking the write path.
+- `writeObserver({ keys })` names schema tables. Those writes append primary-key `RETURNING` when the statement is a simple insert, update, or delete, and put the values on `WriteEvent.keys`. `sql()` and `inspect()` show the extra clause. `describe()` labels the appended columns `"observer"`. A table with no primary key, or a name missing from the schema, is OKM1890 at connect and at plan time. Nested `RETURNING` (parent guard, versioned close, archive) is not rewritten. A caller result is unchanged: observer-only rows are hidden.
+- Write events take `rowCount` from the command tag. Mode is `changed` for insert, update, and delete, `returned` when `RETURNING` ran, and `unknown` with `rowCount: null` when the driver gave no tag. An upsert stays `changed` and counts inserted plus updated rows.
 - `find({ offset })` skips that many rows. The value is an integer from 0 up and is sent as a parameter.
 - `okmodel/warnings` exports `warnings()`. Pass it to `connect({ warnings })`. In development, OKM2004 (offset past 1,000), OKM2005 (a limit whose order does not end in a unique key), OKM2007 (a value list past 500), and OKM2008 (an include whose row bound passes 10,000) each report once per call site. Production reports nothing until a level is set. `ignore` needs a reason. `onWarning` replaces the console.
 
 #### tooling
 
-- Capability keys `writeObserver.unit` (`transaction | batch`), `writeObserver.keys` (`none` until G-5), and `writeObserver.rowCount` (`unknown` until G-5) are in the Postgres registry with proofs and closed-profile refusals.
-- OKM2200 warns when the write-observer pending-event buffer overflows.
+- Capability keys `writeObserver.unit` (`transaction | batch`), `writeObserver.keys` (`returning`; closed profile `none`), and `writeObserver.rowCount` (`mixed`; closed profile `unknown`) are in the Postgres registry with proofs and closed-profile refusals.
+- OKM1890 refuses `writeObserver({ keys })` when a named table has no primary key or is not in the schema. OKM2200 warns when the write-observer pending-event buffer overflows.
 - `okm --json` on every command prints one `okm.cli/1` document and nothing else. `--out <file>` writes a large `data` payload (`-` keeps it on stdout). `okm schema <command>` prints the JSON Schema for that `data`. The same files ship under `schemas/cli-1/`.
 - Short flags for flags that already exist: `-h` help, `-V` version, `-v` verbose, `-c` config, `-t` target, `-o` out, `-n` dry-run on `migrate baseline`. `-f` is not a flag. `--allow-protected`, `--allow-pooler`, and `--replace` have no short form and are not read from the environment.
 - `describe(schema).requirements` reports `minVersion.postgres` (the same floor as `minPostgres`), the extension list, the catalog features the schema uses, and a cost line for each emulated feature. `okm build`, `okm check`, and `okm doctor` compare that list with the Postgres registry exported from `okmodel/migrate`. A refused feature stops with OKM1860 and names the dialect, the feature, the first version that would support it, and the portable alternative.
@@ -87,7 +91,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### docs
 
-- [Observer events](docs/observer-events.md) freezes `okm.observe/1` (write, savepoint, outcome) for `connect({ onWrite })` and documents `writeObserver()` on `okmodel/observe`.
+- [Observer events](docs/observer-events.md) freezes `okm.observe/1` (write, savepoint, outcome) for `connect({ onWrite })` and documents `writeObserver()` on `okmodel/observe`. `keys` appends primary-key `RETURNING`. Row counts record the command tag each driver exposes. Postgres costs are `returning` and `mixed`. The closed profile stays `none` and `unknown`.
 - Docs: [Adopt an existing database](docs/adopt-existing.md) and the handbook page cover pull, generate, then baseline.
 - A describe spike records, per driver and Postgres 15–18, whether parameter OIDs, column names, column type OIDs, and table OID plus attnum can be read without executing the statement. The notes are `docs/describe-spike.md`. The scripts under `packages/spikes/describe/` are not packed.
 - [When a migration fails](docs/migration-failure.md) records what a failed Postgres apply does, the `okm_history` and `okm_steps` columns, the step id, and why there is no skip.
@@ -100,6 +104,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - [Threat model](docs/threat-model.md) records what agent use is defended against and what is not. Each defense names the feature or the test behind it.
 - The site skill page reads `skills/okmodel/SKILL.md`. That file is the copy an install finds at `node_modules/okmodel/skills/okmodel/SKILL.md`.
 - The linter page, [When a migration fails](docs/migration-failure.md), and the OKM1557 and OKM1558 error pages describe a declared `-- probe:` and when a committed step must have one.
+- The guide awaits `userFilters.parse(request.query)` and passes the result to `find` with a limit. `parse` is asynchronous because the parser loads on first use (Q10, #397).
+- [Capabilities](docs/capabilities.md) is generated from the Postgres feature registry. A feature whose proof title does not pass the registry proof check is `unverified`. `docs:check` fails when that page, a `<!-- support: key -->` block, or the step-kind table in [When a migration fails](docs/migration-failure.md) disagrees with the code.
 - [Warnings](docs/warnings.md) records the levels, the development defaults, and the four static rules.
 
 ### 💥 Breaking Changes

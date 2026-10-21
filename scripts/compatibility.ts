@@ -21,6 +21,7 @@ import {
   open as openNodePostgres,
 } from "../src/adapters/pg/nodepostgres.js";
 import { BUNSQL_CAPABILITIES } from "../src/adapters/capabilities.js";
+import { supportRegion } from "./docs-capabilities.js";
 import { repoRoot } from "./root.js";
 import { compilerRangeNote } from "./ts-range.js";
 
@@ -57,6 +58,8 @@ export function renderCompatibility(cells: readonly CompatibilityCell[]): string
     "Generated from the conformance run (`tests/driver-suite.test.ts` and `tests/error-suite.test.ts`). Do not edit by hand.",
     "",
     supportSentence(),
+    "",
+    supportRegion("type.uuidv7", repoRoot()).trimEnd(),
     "",
     "PGlite runs in the check job. The in-process wire server runs in the check job. postgres.js, node-postgres, and Bun.sql run in the postgres job (`REQUIRE_DOCKER=1`). Bun.sql runs only under Bun. A skip means the adapter did not declare the capability that case needs. node-postgres and Bun.sql do not describe a statement without running it. Bun.sql does not surface RAISE NOTICE and does not abort an in-flight statement. PGlite has no socket to cut, so COMMIT loss (`r2.commit-loss`, `r2.batch-commit-loss`) is `unsupported` in `okm driver test`, with that reason. It is not a silent skip.",
     "",
