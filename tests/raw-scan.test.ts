@@ -250,7 +250,7 @@ test("the checked declaration is the jsonb, enum-array, and unmapped render", ()
       },
     },
   };
-  expect(readFileSync(join(import.meta.dir, "raw-generated.d.ts"), "utf8")).toBe(
+  expect(readFileSync(join(import.meta.dir, "fixtures/raw/raw-generated.d.ts"), "utf8")).toBe(
     renderRawTypes(calls, lock),
   );
 });
