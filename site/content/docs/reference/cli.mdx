@@ -46,6 +46,7 @@ Exit codes are by outcome. `0` is done, or nothing to do. `1` is a command that 
 | `check` | Lints the schema. Compares one database when a target is selected. |
 | `dev` | Names a target called `dev`, or creates a PGlite database and prints its directory. |
 | `doctor [code]` | Lists triggers, checks [minPostgres](/docs/reference/schema-api) and required extensions against the target, checks [roles](/docs/define/config/roles) when they are set, or prints one error code. |
+| `doctor --production` | Checks one target for production misuse and reads it only: protection, pooler, `okm_meta`, login role, timeouts, server, extensions. Exits 1 on a `fail` finding. See [doctor --production](#doctor---production). |
 | `doctor --bundle` | Writes `.okm/doctor-bundle.json`, a local diagnostics file a tester sends by hand. Needs no database and makes no network call. See [doctor](#doctor). |
 | `driver test <driver>` | Runs the conformance suites against one driver. |
 | `ext list` | Lists extensions the server can install. |
@@ -84,12 +85,13 @@ Every command parses the flags in this table. An unknown flag is a usage error, 
 | `--config <path>`, `-c <path>` | Every command that loads a config. Loads that file instead of `okmodel.config.ts` in the working directory. |
 | `--target <name>`, `-t <name>` | `check`, `raw sync`, `migrate plan`, `migrate apply`, `migrate status`, `migrate resolve`, `migrate check`, `migrate baseline`, `push`, `pull`, `seed`, `protect add`, `protect remove`, `ext`, and `doctor`. Who requires it is [Database](/docs/define/config/database). |
 | `--allow-protected` | `migrate apply`, `migrate resolve`, `migrate baseline`, `push`, and `seed`. One invocation. Blocked work is [Protection](/docs/define/config/database#protection). `migrate check` ignores the flag. |
-| `--allow-pooler` | `migrate apply`, `migrate resolve`, `migrate baseline`, `push`, `seed`, `migrate check`, `raw sync`, and `check` when it compares a database. Same opt-in as [allowPooler](/docs/define/config/pooler). Either one is enough. |
+| `--allow-pooler` | `migrate apply`, `migrate resolve`, `migrate baseline`, `push`, `seed`, `migrate check`, `raw sync`, and `check` when it compares a database. On `doctor --production` it marks a pooler URL as a fail instead of a warning, and changes no connection. Same opt-in as [allowPooler](/docs/define/config/pooler). Either one is enough. |
 | `--lock-timeout <milliseconds>` | `migrate apply` and `raw sync`. Overrides [timeouts.lock](/docs/define/config/timeouts). `0` disables it. |
 | `--statement-timeout <milliseconds>` | `migrate apply` and `raw sync`. Overrides [timeouts.statement](/docs/define/config/timeouts). |
 | `--check` | `raw sync`. Writes nothing and exits 1 when the lock or the generated types would change. |
 | `--json` | Every command. Prints one `okm.cli/1` document. The command's previous JSON is `data`. |
 | `--out <file>`, `-o <file>` | With `--json`, writes `data` to the file unless the command already owns `--out`. `-` keeps `data` on stdout. |
+| `--production` | `doctor`. Checks one target for production misuse. Long form only. Needs `--target` when several targets are configured. |
 | `--bundle` | `doctor`. Writes the diagnostics bundle instead of the target report. `--out <file>` is the bundle path, with or without `--json`. |
 | `--force-file` | `doctor --bundle`. Replaces an existing bundle file. `init` takes `--force-file <path>`. |
 | `--dry-run`, `-n` | `migrate baseline`. Prints what would be recorded and writes nothing. |
@@ -230,6 +232,30 @@ With no code, the command lists each table's triggers, one line `<table>: <name>
 ```sh
 bunx okm doctor OKM1520
 ```
+
+### doctor --production
+
+`okm doctor --production` reads one target and reports findings. Every query runs in one `READ ONLY` transaction on one fresh session, and the command makes no network call beyond the target database. Several targets and no `--target` is OKM1853 (exit 2), not a skip. It takes no error code and cannot be combined with `--bundle`. The output names the target as ``target `<name>` ``. It never prints the URL, host, user, or password, and a failed connection is `Could not read target` with exit 5.
+
+```sh
+bunx okm doctor --production --target production
+bunx okm doctor --production --target production --json
+```
+
+Each finding has a stable id, a severity (`fail`, `warn`, `ok`), and a one-line fix. The command exits 1 when any finding is `fail` (OKM2204). The ids, in order: `target-protection`, `pooler`, `okm-meta`, `role-privilege`, `role-owns-tables`, `role-config` (only when [roles](/docs/define/config/roles) is set), `lock-timeout`, `statement-timeout`, `server-version`, `extensions`. With `--json`, `data.production` holds `target`, `summary`, and `findings`; warn and fail findings are also in `warnings`. `okm schema doctor` prints the JSON Schema.
+
+| Id | Fails when | Warns when |
+| --- | --- | --- |
+| `target-protection` | the target does not set `protected: true` (OKM2202). A name, `NODE_ENV`, and a store fingerprint do not count | never |
+| `pooler` | the URL looks like a pooler and `--allow-pooler` or `allowPooler` is on (OKM2203) | the URL looks like a pooler |
+| `okm-meta` | `okm_meta` is missing (OKM1520). The check cannot see `connect()` options such as `requireMeta` | never |
+| `role-privilege` | the login role is a superuser or has `BYPASSRLS` (OKM1707) | never |
+| `role-owns-tables` | never | the login role owns the catalog tables (OKM1707) |
+| `role-config` | the role check for `roles` fails | never |
+| `lock-timeout` | never | apply's `lock_timeout` is 0 (OKM2201). Apply sets its own value, 5000 ms by default, and that is the one reported |
+| `statement-timeout` | never | the role's `statement_timeout` is 0 in a fresh session (OKM2201) |
+| `server-version` | the major is below 15 or below `minPostgres` (OKM1802, OKM1803) | the major is above 18 |
+| `extensions` | a required extension is not installed (OKM1811) | never |
 
 ### doctor --bundle
 

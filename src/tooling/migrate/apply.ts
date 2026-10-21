@@ -169,8 +169,10 @@ export type ApplyReport = {
   readonly setRole?: string;
 };
 
-const DEFAULT_LOCK_MS = 5_000;
-const DEFAULT_STATEMENT_MS = 30_000;
+/** `lock_timeout` apply sets when neither a flag nor `timeouts.lock` names one. */
+export const DEFAULT_LOCK_MS = 5_000;
+/** `statement_timeout` apply sets when neither a flag nor `timeouts.statement` names one. */
+export const DEFAULT_STATEMENT_MS = 30_000;
 const DEFAULT_RETRIES = 3;
 
 const META = `create table if not exists okm_meta (

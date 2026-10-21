@@ -281,10 +281,12 @@ async function route(
   if (id === "catalog export") return catalog(project, parsed, cwd, human);
   if (id === "check") return check(project, parsed, human);
   if (id === "dev") return dev(project, human);
-  if (id === "doctor")
-    return parsed.bundle
-      ? doctorBundle(project, parsed, cwd, human)
+  if (id === "doctor") {
+    if (parsed.bundle) return doctorBundle(project, parsed, cwd, human);
+    return parsed.production
+      ? doctorProduction(project, parsed, human)
       : doctor(project, parsed, human);
+  }
   if (id === "driver test") return driver(parsed, human);
   if (id === "ext list" || id === "ext check") return extRead(project, id, parsed, human);
   if (id === "ext scaffold") return extScaffoldCommand(project, parsed, cwd, human);
@@ -503,6 +505,45 @@ async function doctor(
     warnings: [],
     outFile: null,
   };
+}
+
+async function doctorProduction(
+  project: ProjectContext,
+  parsed: ParsedCli,
+  human: (text: string) => void,
+): Promise<Produced> {
+  const {
+    doctorProduction: inspect,
+    formatReport,
+    PRODUCTION_FAILED_CODE,
+  } = await import("./doctor-production.js");
+  const report = await inspect(project, invokeOf(parsed));
+  const text = formatReport(report);
+  human(text);
+  const data = { production: report };
+  const warnings = report.findings
+    .filter((item) => item.severity !== "ok")
+    .map((item) =>
+      warningBody({
+        ...(item.code === undefined ? {} : { code: item.code }),
+        summary: item.summary,
+        place: item.id,
+        fix: item.fix,
+        level: "warn",
+        severity: item.severity === "fail" ? "high" : "medium",
+      }),
+    );
+  if (report.summary.fail > 0) {
+    throw attachPartial(
+      new OkmError(
+        PRODUCTION_FAILED_CODE,
+        `${String(report.summary.fail)} production finding(s) failed on target \`${report.target}\`.`,
+        { fix: { summary: "Fix each fail finding, then run okm doctor --production again." } },
+      ),
+      { data, warnings, outFile: null },
+    );
+  }
+  return { text, data, warnings, outFile: null };
 }
 
 async function doctorBundle(

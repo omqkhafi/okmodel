@@ -120,6 +120,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Agent file writes come only from the installed package. They print a plan and a diff, `--dry-run` writes nothing, `--plan-hash` pins the plan, and a change to an existing file needs `--yes` or an answer on a terminal (OKM1884, exit 3). Writes are atomic and go to a closed list: `AGENTS.md`, `CLAUDE.md`, the shipped skill files, and `.okm/init.json`. `.claude/settings*.json`, hooks, `.vscode/tasks.json`, `.cursor/rules`, and MCP entries are never written.
 - Damaged or repeated `OKMODEL` markers are refused and never repaired (OKM1882, OKM1883). New codes: OKM1881 drift, OKM1884 needs a yes, OKM1885 refused content, OKM1886 refused path, OKM1887 file changed after the plan, OKM1888 damaged `.okm/init.json`. `schemas/cli-1/agents-status.json`, `agents-update.json`, and `agents-remove.json` describe the `--json` data, and `init.json` gains an `agents` section.
 - The packed text scan (`docs:check`) covers every file under `skills/`, not only `skills/okmodel/SKILL.md`.
+- `okm doctor --production` checks one target for misuse and changes nothing: every query runs in one `READ ONLY` transaction, and the output says `target <name>` and never the URL, host, user, or password. Each finding has a stable id, a severity (`fail`, `warn`, `ok`), and a one-line fix. The exit code is 1 when any finding fails (OKM2204), 2 when several targets exist and no `--target` is given (OKM1853), and 5 when the target cannot be read. `--json` returns the `okm.cli/1` envelope with `data.production`. Findings: `target-protection` (fails unless the config sets `protected: true`; a name or `NODE_ENV` is never read; OKM2202), `pooler` (warns, fails with `--allow-pooler`; OKM2203), `okm-meta` (fails when absent; the doctor cannot see `connect()` options such as `requireMeta`; OKM1520), `role-privilege` (superuser or BYPASSRLS fails; OKM1707), `role-owns-tables` (warns), `role-config` (with `config.roles`; OKM1707), `lock-timeout` and `statement-timeout` (a value of 0 warns; apply's own lock timeout is the one reported; OKM2201), `server-version` (outside 15 to 18 warns above and fails below; OKM1803), and `extensions` (installed versions; OKM1811). The exposure check is not built: the catalog does not record `validation` (D315, #523). `--allow-pooler` is accepted on `okm doctor` only with `--production`.
 - OKM1709 is registered with a page. `session.local` is native on Postgres in the capability registry and `SESSION_SETTINGS` reports the scope by dialect family: `transaction` for Postgres, `session` for the MySQL family, `none` for SQLite. `assertSessionSettings("mysql" | "sqlite")` refuses with OKM1860 and names column, composite, or path tenancy. `docs/capabilities.md` lists the table.
 
 #### docs
@@ -146,6 +147,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - [Warnings](docs/warnings.md) lists OKM2101, OKM2102, and OKM2103, the `target` ignore, the stale report, and when each rule stays silent. Pages for the three codes are generated with the error pages.
 - The guide, the CLI reference, the threat model, and the offline-first note describe `okm doctor --bundle`: what the file holds, what it never holds, and what `checks` does not cover (D307).
 - The guide and the CLI reference describe `okm agents`, `okm init --agents` and `--no-agents`, the managed block, the closed list of writable paths, and a `CODEOWNERS` recommendation for `AGENTS.md` and `.claude/`. OKM1881 to OKM1888 have error pages (D308).
+- The guide, `docs/production.md`, `docs/roles.md`, the CLI reference, the known limits, and the threat model describe `okm doctor --production`, its finding ids, and what it cannot see (D315). OKM2201 to OKM2204 have error pages.
 - `docs/guide.md` and the handbook page `define/connect/session-settings` cover `okmodel/session`. `docs/known-limits.md` says it does not authenticate: a role that can run SQL can set the same names. D312 records the decision.
 - The Limits handbook page, the OKM2011 error page, and the OKM1101 and OKM1105 pages describe `connect({ limits })`. [Observer events](docs/observer-events.md) and [Warnings](docs/warnings.md) cover the limit source and OKM2011. `okm doctor` does not report limits yet, and `filters().parse` takes no clamp from `limits.max`: both are follow-ups in the plan.
 
@@ -216,11 +218,11 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 #### contracts
 
 - `Insert` omits defaulted and nullable columns, and `Update` accepts any subset of the writable columns, matching `insert()` and `update()`. A missing required column and an unknown key stay type errors (R7, #404).
-- `ColumnDefinition` adds the optional `unvalidatedNotNull` (the constraint name). Introspection sets it on PostgreSQL 18 for a column whose NOT NULL constraint is `NOT VALID`. It is absent otherwise, so no existing catalog changes its document or hash (D315).
+- `ColumnDefinition` adds the optional `unvalidatedNotNull` (the constraint name). Introspection sets it on PostgreSQL 18 for a column whose NOT NULL constraint is `NOT VALID`. It is absent otherwise, so no existing catalog changes its document or hash (D316).
 
 #### dialects
 
-- Introspection reads a PostgreSQL 18 `NOT NULL … NOT VALID` constraint (`pg_constraint` `contype` `n`, `convalidated` false) instead of treating `attnotnull` as proof. The column stays NOT NULL and records the unvalidated constraint. When the schema says NOT NULL, the plan is one `VALIDATE CONSTRAINT` step. When it says nullable, the plan is `DROP NOT NULL`. PostgreSQL 15 through 17 read as before (D315).
+- Introspection reads a PostgreSQL 18 `NOT NULL … NOT VALID` constraint (`pg_constraint` `contype` `n`, `convalidated` false) instead of treating `attnotnull` as proof. The column stays NOT NULL and records the unvalidated constraint. When the schema says NOT NULL, the plan is one `VALIDATE CONSTRAINT` step. When it says nullable, the plan is `DROP NOT NULL`. PostgreSQL 15 through 17 read as before (D316).
 
 #### adapters
 
@@ -248,7 +250,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 #### docs
 
 - Known limits names `postgresjs-kill-storm.md` again. The name is text, not a link, and the file stays out of the published tarball.
-- Known limits, the migrate-check page, the CLI reference, and the external-catalog page describe the PostgreSQL 18 `NOT NULL … NOT VALID` state. D315 records what each command does with it.
+- Known limits, the migrate-check page, the CLI reference, and the external-catalog page describe the PostgreSQL 18 `NOT NULL … NOT VALID` state. D316 records what each command does with it.
 
 ### 🔒 Security
 

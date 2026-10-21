@@ -60,6 +60,8 @@ export type ParsedCli = {
   readonly noInstall: boolean;
   /** `okm init --force-file`. */
   readonly forceFile: readonly string[];
+  /** `okm doctor --production`. */
+  readonly production: boolean;
   /** `okm doctor --bundle`. */
   readonly bundle: boolean;
   /** `okm doctor --bundle --force-file`. A boolean there; `okm init` takes paths. */
@@ -187,7 +189,7 @@ export function parseCli(argv: readonly string[]): ParsedCli {
   ) {
     throw usage("--out needs --json for this command.", "Pass --json --out <file>, or drop --out.");
   }
-  if (!help && !version) refuseBundleMix(spec, values, operands);
+  if (!help && !version) refuseDoctorMix(spec, values, operands);
   return {
     command: spec?.id ?? null,
     spec,
@@ -220,6 +222,7 @@ export function parseCli(argv: readonly string[]): ParsedCli {
     install: values.install === true,
     noInstall: values["no-install"] === true,
     forceFile: stringList(values["force-file"]),
+    production: values.production === true,
     bundle: values.bundle === true,
     overwrite: spec?.id === "doctor" && values["force-file"] === true,
     planHash: stringValue(values["plan-hash"]),
@@ -233,12 +236,31 @@ export function parseCli(argv: readonly string[]): ParsedCli {
   };
 }
 
-function refuseBundleMix(
+function refuseDoctorMix(
   spec: CommandSpec | undefined,
   values: Record<string, unknown>,
   operands: readonly string[],
 ): void {
   if (spec?.id !== "doctor") return;
+  if (values.production === true) {
+    if (values.bundle === true) {
+      throw usage(
+        "--production connects and --bundle does not.",
+        "Run okm doctor --production and okm doctor --bundle separately.",
+      );
+    }
+    if (operands.length > 0) {
+      throw usage(
+        "--production does not take an error code.",
+        "Run okm doctor --production on its own.",
+      );
+    }
+  } else if (values["allow-pooler"] === true) {
+    throw usage(
+      "--allow-pooler needs --production.",
+      "Pass okm doctor --production --allow-pooler.",
+    );
+  }
   if (values.bundle !== true) {
     if (values["force-file"] === true) {
       throw usage("--force-file needs --bundle.", "Pass okm doctor --bundle --force-file.");
@@ -289,6 +311,7 @@ function blank(flags: { readonly help: boolean; readonly json: boolean }): Parse
     install: false,
     noInstall: false,
     forceFile: [],
+    production: false,
     bundle: false,
     overwrite: false,
     planHash: undefined,
