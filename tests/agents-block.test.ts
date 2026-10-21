@@ -48,7 +48,10 @@ test("every okm token is a real command, and missing commands are refused", () =
   expect(mentions.ids).toContain("migrate check");
   expect(mentions.ids).toContain("migrate apply");
   expect(okmMentions("okm describe").bad).toEqual(["describe"]);
-  expect(okmMentions("okm init").bad).toEqual(["init"]);
+  expect(okmMentions("okm init").bad).toEqual([]);
+  expect(okmMentions("okm init").ids).toEqual(["init"]);
+  expect(COMMAND_IDS).toContain("init");
+  expect(okmMentions("okm raw sync").ids).toEqual(["raw sync"]);
   expect(okmMentions("okm agents").bad).toEqual(["agents"]);
   expect(okmMentions("leave .okm files alone").bad).toEqual([]);
   expect(okmMentions("okm migrate plan then stop").ids).toEqual(["migrate plan"]);

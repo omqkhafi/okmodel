@@ -244,6 +244,10 @@ async function dispatch(
   if (id === "ext scaffold") return extScaffoldCommand(project, parsed, cwd, human);
   if (id === "ext test") return extTestCommand(project, parsed, human);
   if (id === "generate") return generate(project, parsed, human);
+  if (id === "init") {
+    const { initCommand } = await import("../init/command.js");
+    return initCommand(parsed, cwd, human);
+  }
   if (id === "import drizzle") return drizzle(project, parsed, human);
   if (id === "migrate plan") return planCommand(project, parsed, human);
   if (id === "migrate apply") return applyCommand(project, parsed, human);
@@ -252,6 +256,7 @@ async function dispatch(
   if (id === "migrate check") return migrateCheck(project, parsed, human);
   if (id === "migrate baseline") return baselineCommand(project, parsed, human);
   if (id === "push") return push(project, parsed, human);
+  if (id === "raw sync") return rawSync(project, parsed, human);
   if (id === "pull") return pull(project, parsed, human);
   if (id === "seed") return seed(project, parsed, human);
   if (id === "protect add") return protectAdd(project, parsed, human);
@@ -295,6 +300,20 @@ async function catalog(
     return { text: snapshot, data, warnings: [], outFile: { path: "-", bytes } };
   }
   return { text: snapshot, data, warnings: [], outFile: null };
+}
+
+async function rawSync(
+  project: ProjectContext,
+  parsed: ParsedCli,
+  human: (text: string) => void,
+): Promise<Produced> {
+  const { runRawSync } = await import("../describe/command.js");
+  const result = await runRawSync(project, parsed.check, invokeOf(parsed));
+  const text = result.unchanged
+    ? "ok\n"
+    : `${result.lock}\n${String(result.statements)} statements\n`;
+  human(text);
+  return { text, data: result, warnings: [], outFile: null };
 }
 
 async function check(

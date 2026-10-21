@@ -74,10 +74,36 @@ export type ExecuteOptions = {
   readonly route?: "primary" | "replica";
 };
 
-/** Column names and parameter count from a describe. */
+/**
+ * One result field from a describe.
+ *
+ * `tableOid` and `attnum` are zero when the output is not a simple column
+ * reference. The name is the server's name, including an `!` or `?` suffix.
+ */
+export type DescribeField = {
+  /** Result column name. */
+  readonly name: string;
+  /** Column type OID. */
+  readonly typeOid: number;
+  /** Source table OID. Zero when the output is not a simple column reference. */
+  readonly tableOid: number;
+  /** `pg_attribute.attnum`. Zero when `tableOid` is zero. */
+  readonly attnum: number;
+};
+
+/**
+ * Column names, parameter OIDs, and result fields from a describe.
+ *
+ * `columns` and `parameterCount` stay. `parameters` are type OIDs in `$1`
+ * order. `fields` is one entry per result column.
+ */
 export type DescribeResult = {
   readonly columns: readonly string[];
   readonly parameterCount: number;
+  /** Parameter type OIDs, in `$1` order. */
+  readonly parameters: readonly number[];
+  /** Result fields, including table OID and attnum. */
+  readonly fields: readonly DescribeField[];
 };
 
 /** Pool counters for selection strategies (spec §4.2). */

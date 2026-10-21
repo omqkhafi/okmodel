@@ -18,6 +18,7 @@ export const UNTRUSTED_ORIGINS = [
   "db.error",
   "db.object-name",
   "user.query",
+  "package.json",
 ] as const;
 
 /** One origin. */

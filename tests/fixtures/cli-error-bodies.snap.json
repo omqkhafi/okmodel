@@ -999,10 +999,37 @@
     "code": "OKM1602",
     "kind": "invalid",
     "category": "input",
-    "summary": "A raw statement is missing its class, is not one select or one write, or the result class has no column initializers.",
-    "fix": "Pass \"read\" or \"write\", a fragment`...`, and a class with an initializer on every column. Identifiers are ident(name).",
+    "summary": "A raw statement is not one select or one write the checker can classify, or two result columns share a name.",
+    "fix": "Start the statement with select, insert, update, or delete. with is a write when it contains insert, update, delete, or merge. Give result columns distinct names.",
     "retryable": false,
     "docs": "docs/errors/OKM1602.md"
+  },
+  {
+    "code": "OKM1603",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "raw SQL must be a static string.",
+    "fix": "Pass a string literal or a template literal with no substitutions as the SQL.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1603.md"
+  },
+  {
+    "code": "OKM1604",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A raw statement in the source is not in the typed SQL lock.",
+    "fix": "okm raw sync writes the lock and the generated types. Commit both.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1604.md"
+  },
+  {
+    "code": "OKM1605",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A typed SQL lock entry is no longer called from the source.",
+    "fix": "okm raw sync writes the lock and the generated types. Commit both.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1605.md"
   },
   {
     "code": "OKM1701",
@@ -1391,5 +1418,68 @@
     "fix": "Use the portable alternative named in the error. The message names the dialect, the feature, and the first version that would support it when one exists.",
     "retryable": false,
     "docs": "docs/errors/OKM1860.md"
+  },
+  {
+    "code": "OKM1862",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A driver package is already installed and the driver flag names a different one.",
+    "fix": "Drop the driver flag, or remove the installed driver package before choosing another.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1862.md"
+  },
+  {
+    "code": "OKM1863",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "okm init needs a choice and this invocation is not interactive.",
+    "fix": "Pass the flag named in the message. The flags are --driver, --tenancy, and --install.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1863.md"
+  },
+  {
+    "code": "OKM1864",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A file init recorded was edited, so init leaves it unchanged.",
+    "fix": "Keep the file, or pass the force-file flag with that path to replace it.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1864.md"
+  },
+  {
+    "code": "OKM1865",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "The directory has no package.json, cannot be written, or a path leaves it.",
+    "fix": "Use a package directory that can be written, and keep paths inside it.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1865.md"
+  },
+  {
+    "code": "OKM1866",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "The plan hash does not match this directory anymore.",
+    "fix": "Print the plan again and pass the new plan-hash.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1866.md"
+  },
+  {
+    "code": "OKM1867",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "Tenancy schema or database is not supported by init yet.",
+    "fix": "Pass --tenancy none, or --tenancy column.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1867.md"
+  },
+  {
+    "code": "OKM2200",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "The write-observer buffer dropped the oldest unit because it exceeded the pending-event ceiling.",
+    "fix": "Drain handlers with flush() more often, or raise maxPending on writeObserver. The write path does not wait.",
+    "retryable": false,
+    "docs": "docs/errors/OKM2200.md"
   }
 ]

@@ -235,7 +235,12 @@ export async function checkProject(
     }
   }
   assertSnapshots(cwd, opened.config, opened.built.catalog);
-  const findings = [...lintOpened(opened), ...couplingFindings(opened.built.catalog)];
+  const { rawOfflineFindings, rawOnlineCheck } = await import("../describe/command.js");
+  const findings = [
+    ...lintOpened(opened),
+    ...couplingFindings(opened.built.catalog),
+    ...(await rawOfflineFindings(cwd, opened.config)),
+  ];
   if (hasError(findings)) throw lintRefusal(findings);
   const named = flags?.target;
   if (targets.length === 0) return checked({ findings }, emulation);
@@ -257,6 +262,7 @@ export async function checkProject(
   await assertSchemaMajor(target.url, opened.built);
   await assertAuthorDrift(target.url, opened.built.catalog, opened.config.roles, allowPooler);
   await assertSchemaExtensions(target.url, opened.built, created);
+  await rawOnlineCheck(cwd, opened.config, target.url, allowPooler);
   return checked({ findings }, emulation);
 }
 
@@ -503,17 +509,29 @@ const GIT_ATTRIBUTES = [
 ].join("\n");
 
 /**
+ * Text `okm generate init` and `okm init` write for LF migration files.
+ *
+ * An existing `.gitattributes` is left unchanged. These commands do not
+ * append to a file the project already has.
+ *
+ * @returns The file body, including the trailing newline
+ */
+export function migrationGitAttributes(): string {
+  return GIT_ATTRIBUTES;
+}
+
+/**
  * Writes `.gitattributes` for LF migration and catalog files.
  *
  * An existing file is left unchanged, including one that does not list these
- * patterns. `okm generate init` is the only caller.
+ * patterns.
  *
  * @param cwd - Project directory
  */
 function writeGitAttributes(cwd: string): void {
   const path = projectPath(cwd, ".gitattributes");
   if (existsSync(path)) return;
-  writeFileSync(path, GIT_ATTRIBUTES);
+  writeFileSync(path, migrationGitAttributes());
 }
 
 /**

@@ -69,9 +69,19 @@ import {
 import { checkProject } from "../migrate/project.js";
 import { parseReplace } from "../migrate/values.js";
 import { reprintHits } from "../migrate/reprint.js";
+import {
+  refuseDifferentDriver,
+  refuseMissingDecision,
+  refusePlanHash,
+  refuseTenancy,
+  refuseUnsupported,
+  refuseUserModified,
+} from "../init/guards.js";
 import { resumeCommittedStep, stepSqlHash } from "../migrate/step-engine.js";
 import type { CommittedStep, StepEngine, StepJournal } from "../migrate/step-engine.js";
 import type { PageExample } from "./page.js";
+import { assertLocked, assertSignature, staleLockCodes } from "../describe/lock.js";
+import { discoverRawCalls } from "../describe/scan.js";
 
 /** Codes whose producer reads a live server. */
 export const NEEDS_DATABASE = [
@@ -107,10 +117,10 @@ export const NEEDS_DATABASE = [
 /**
  * Registered codes this build does not throw.
  *
- * OKM1025 is a second `Register` augmentation. OKM1051, OKM1110, OKM1191,
- * and OKM1601 have no raising path.
+ * OKM1025 is a second `Register` augmentation. OKM1051, OKM1110, and OKM1191
+ * have no raising path.
  */
-export const NOT_THROWN = ["OKM1025", "OKM1051", "OKM1110", "OKM1191", "OKM1601"] as const;
+export const NOT_THROWN = ["OKM1025", "OKM1051", "OKM1110", "OKM1191"] as const;
 
 /** One offline pair. `bad` and `fixed` are the source the page prints. */
 export type OfflineExample = {
@@ -611,6 +621,26 @@ thrown(
       "schema.core": { support: "native", proof: "proof" },
     };
     assertSupported(["schema.core"], registry, "sqlite");
+  },
+);
+
+thrown(
+  "OKM2200",
+  () => {
+    throw new OkmError(
+      "OKM2200",
+      "The write-observer buffer dropped the oldest unit because it exceeded the pending-event ceiling.",
+      {
+        kind: "driver",
+        fix: {
+          summary:
+            "Drain handlers with flush() more often, or raise maxPending on writeObserver. The write path does not wait.",
+        },
+      },
+    );
+  },
+  () => {
+    throw new OkmError("invalid", "not an observer overflow");
   },
 );
 
@@ -1405,6 +1435,63 @@ reported(
 );
 
 thrown(
+  "OKM1601",
+  () => {
+    assertSignature(
+      {
+        sql: "select 1",
+        kind: "read",
+        params: [],
+        columns: [{ name: "n", pgType: "integer", nullable: true }],
+      },
+      {
+        sql: "select 1",
+        kind: "read",
+        params: [],
+        columns: [{ name: "n", pgType: "text", nullable: true }],
+      },
+    );
+  },
+  () => {
+    const column = { name: "n", pgType: "integer", nullable: true };
+    assertSignature(
+      { sql: "select 1", kind: "read", params: [], columns: [column] },
+      { sql: "select 1", kind: "read", params: [], columns: [column] },
+    );
+  },
+);
+
+thrown(
+  "OKM1603",
+  () => {
+    discoverRawCalls([
+      { path: "src/app.ts", text: 'import { raw } from "okmodel/pg";\nraw(db, sql, []);\n' },
+    ]);
+  },
+  () => {
+    discoverRawCalls([
+      { path: "src/app.ts", text: 'import { raw } from "okmodel/pg";\nraw(db, "select 1", []);\n' },
+    ]);
+  },
+);
+
+thrown(
+  "OKM1604",
+  () => {
+    assertLocked(["statement"], []);
+  },
+  () => {
+    assertLocked(["statement"], ["statement"]);
+  },
+);
+
+reported(
+  "OKM1605",
+  () => staleLockCodes(["kept"], ["kept", "stale"]),
+  () => staleLockCodes(["kept"], ["kept"]),
+);
+
+thrown(
   "OKM1602",
   async () => {
     class Row {
@@ -1640,6 +1727,66 @@ function tableProject(extra: boolean): string {
   );
   return cwd;
 }
+
+thrown(
+  "OKM1862",
+  () => {
+    refuseDifferentDriver("postgresjs", "pg");
+  },
+  () => {
+    refuseDifferentDriver("pg", "pg");
+  },
+);
+
+thrown(
+  "OKM1863",
+  () => {
+    refuseMissingDecision(["--driver"]);
+  },
+  () => {
+    refuseMissingDecision([]);
+  },
+);
+
+thrown(
+  "OKM1864",
+  () => {
+    refuseUserModified(["db/schema.ts"]);
+  },
+  () => {
+    refuseUserModified([]);
+  },
+);
+
+thrown(
+  "OKM1865",
+  () => {
+    refuseUnsupported("okm init needs a package.json in the project directory.");
+  },
+  () => {
+    refuseUnsupported(undefined);
+  },
+);
+
+thrown(
+  "OKM1866",
+  () => {
+    refusePlanHash("aaaa", "bbbb");
+  },
+  () => {
+    refusePlanHash("aaaa", "aaaa");
+  },
+);
+
+thrown(
+  "OKM1867",
+  () => {
+    refuseTenancy("schema");
+  },
+  () => {
+    refuseTenancy("none");
+  },
+);
 
 function withColumn(
   source: Catalog,

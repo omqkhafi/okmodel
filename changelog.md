@@ -32,15 +32,25 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### ✨ Added
 
+#### contracts
+
+- `DescribeResult` adds `parameters` (type OIDs in `$n` order) and `fields` (`name`, `typeOid`, `tableOid`, `attnum`). `columns` and `parameterCount` stay.
+
+#### adapters
+
+- postgres.js and PGlite `describe` return those fields and do not execute the statement. node-postgres, Bun.sql, and Neon still leave `describe` unset.
+
 #### runtime
 
 - A connected client exposes `capabilities`, the same frozen object as the pool (`transactions`, `stream`, `listen`, `cancel`).
 - `update({ where, set, limit, lock: "skip", version: "any" })` on a `versioned()` table skips the version check, bumps `version` by 1, and returns the claimed rows. A miss is an empty array. `version` stays required on every other versioned update. `version: "any"` without `lock: "skip"` and `limit`, an unrecognised version string, and a `version` key in `set` are OKM1120 (Q6, O-5, #393).
 - `connect({ onWrite })` observes write units (`okm.observe/1`): buffered write, savepoint, and tri-state outcome events after commit or rollback, from one emission point shared with `hookm.onTransaction`. Normative shape in `docs/observer-events.md`. G-4 emits `rowCount: null` / `rowCountMode: "unknown"`. `db.flush()` waits for the `okmodel/observe` helper (app size gate).
+- `okmodel/observe` exports `writeObserver()`, `flush()`, `OBSERVE_BUFFER_MAX` (10,000), and `observerBufferOverflow()` (OKM2200). The helper buffers per unit, calls exactly one of `committed` | `rolledBack` | `unknown`, isolates throwing and rejecting handlers via `onObserverError`, and settles tracked promises on `flush()`. Overflow drops the oldest unit without blocking the write path. `keys` is accepted and ignored until G-5.
 
 #### tooling
 
 - Capability keys `writeObserver.unit` (`transaction | batch`), `writeObserver.keys` (`none` until G-5), and `writeObserver.rowCount` (`unknown` until G-5) are in the Postgres registry with proofs and closed-profile refusals.
+- OKM2200 warns when the write-observer pending-event buffer overflows.
 - `okm --json` on every command prints one `okm.cli/1` document and nothing else. `--out <file>` writes a large `data` payload (`-` keeps it on stdout). `okm schema <command>` prints the JSON Schema for that `data`. The same files ship under `schemas/cli-1/`.
 - Short flags for flags that already exist: `-h` help, `-V` version, `-v` verbose, `-c` config, `-t` target, `-o` out, `-n` dry-run on `migrate baseline`. `-f` is not a flag. `--allow-protected`, `--allow-pooler`, and `--replace` have no short form and are not read from the environment.
 - `describe(schema).requirements` reports `minVersion.postgres` (the same floor as `minPostgres`), the extension list, the catalog features the schema uses, and a cost line for each emulated feature. `okm build`, `okm check`, and `okm doctor` compare that list with the Postgres registry exported from `okmodel/migrate`. A refused feature stops with OKM1860 and names the dialect, the feature, the first version that would support it, and the portable alternative.
@@ -67,10 +77,14 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `docs:check` also checks public-doc hygiene: front matter, links that stay inside the public set, a language on every code fence, and no hidden characters in the packed text. `bun run typecheck` compiles the public type surface and the `*.test-d.ts` consumer fixtures with TypeScript 7. `bun run ts6:check` compiles the same files with TypeScript 6.0.x (`typescript-editor`) and is not part of `bun run check`.
 - A committed step may declare `-- probe: <SELECT>` above its statement. The probe is one read-only `SELECT` that returns a single boolean: true means the step is already applied. It runs inside `begin read only` and is rolled back. A built-in probe for the step's kind still wins, and a declared probe has no cleanup. `okm migrate resolve --applied` uses that probe. The probe is not part of the step's SQL hash or the plan hash.
 - OKM1557 refuses a committed step that has no built-in probe and no declared probe, so a failure cannot tell whether the change is already in place. OKM1558 refuses an empty probe, a probe that is not one read-only `SELECT`, more than one statement, or a probe on a step that stays inside a transaction. `-- okm-allow` with a reason records that a failure in that step needs a person.
+- A direct connection describes one statement when the driver cannot, including TLS chosen from `sslmode`. A pooler host is still refused.
+- `okm raw sync` discovers static `raw()` calls imported from `okmodel/pg`, describes each statement without running it, and writes `.okm/raw.lock.json` and `.okm/raw.d.ts`. `--check` writes nothing and exits 1 when either file would change. `okm check` fails with OKM1604 when a call is missing from the lock, warns with OKM1605 when a lock entry is no longer called, and fails with OKM1601 when a target's signature no longer matches. A statement that is not a static string is OKM1603. A statement the checker cannot classify is OKM1602.
+- A described column is NOT NULL only when it comes from a base or partitioned table, `attnotnull` is set, the column is not generated, no NOT NULL constraint on that column is unvalidated, and the statement has none of `join`, `union`, `intersect`, `except`, `lateral`, `with`, `values`, `rollup`, `cube`, or `grouping` outside strings, comments, and quoted identifiers. `as "name!"` forces NOT NULL and `as "name?"` forces nullable. The suffix is not part of the name. PostgreSQL 15–17 have no `contype` `n` row, so that check does not change them. On 18 a `NOT VALID` constraint sets `attnotnull` while NULLs can remain, and the column stays nullable.
+- `okm init` writes starter files for one package (`okmodel.config.ts`, schema, client, scripts, and `.okm/init.json`) and does not connect. `okm generate init` still writes the first migration. A different installed driver is OKM1862, a missing non-interactive choice is OKM1863, a user-modified file is OKM1864, an unusable directory is OKM1865, a plan-hash mismatch is OKM1866, and schema or database tenancy is OKM1867.
 
 #### docs
 
-- [Observer events](docs/observer-events.md) freezes `okm.observe/1` (write, savepoint, outcome) for `connect({ onWrite })`.
+- [Observer events](docs/observer-events.md) freezes `okm.observe/1` (write, savepoint, outcome) for `connect({ onWrite })` and documents `writeObserver()` on `okmodel/observe`.
 - Docs: [Adopt an existing database](docs/adopt-existing.md) and the handbook page cover pull, generate, then baseline.
 - A describe spike records, per driver and Postgres 15–18, whether parameter OIDs, column names, column type OIDs, and table OID plus attnum can be read without executing the statement. The notes are `docs/describe-spike.md`. The scripts under `packages/spikes/describe/` are not packed.
 - [When a migration fails](docs/migration-failure.md) records what a failed Postgres apply does, the `okm_history` and `okm_steps` columns, the step id, and why there is no skip.
