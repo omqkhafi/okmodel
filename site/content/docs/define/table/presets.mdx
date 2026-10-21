@@ -169,7 +169,7 @@ A preset filters `find`, `one`, `count`, `exists`, `page`, and `aggregate`. It a
 
 A call does not replace the handle it started from. `const pending = db.notes.pending()` still means pending after `pending.ownedBy(owner)`.
 
-Update and delete still need their own `where`. A preset does not stand in for one. `notes.pending().delete({})` is OKM1102: `delete on notes needs a where. Pass a filter, or .all(reason).` `.all("clear the backlog")` matches every pending row.
+Update and delete still need their own `where`. A preset does not stand in for one. `notes.pending().delete({})` is OKM1102: `delete on notes needs a where. Pass a filter.` `.all("clear the backlog")` matches every pending row.
 
 #### simple
 

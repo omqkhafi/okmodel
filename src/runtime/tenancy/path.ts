@@ -304,7 +304,7 @@ function writeExists(chain: PathChain | undefined, input: ExistsInput): boolean 
   if (scope === undefined) {
     throw new OkmError(
       "OKM1701",
-      `Table ${input.table} is tenant-scoped. Call for({ ${input.keys.join(", ")} }) or unscoped("reason").`,
+      `Table ${input.table} is tenant-scoped. Call for({ ${input.keys.join(", ")} }).`,
     );
   }
   if ("unscoped" in scope) {

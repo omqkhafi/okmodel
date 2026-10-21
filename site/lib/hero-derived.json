@@ -234,7 +234,7 @@
           "code": "OKM1528",
           "step": 1,
           "message": "builds a unique or primary key",
-          "fix": "Deduplicate the rows first. Or allow OKM1528 with a reason."
+          "fix": "Deduplicate the rows first."
         }
       ],
       "types": null
@@ -310,7 +310,7 @@
           "code": "OKM1532",
           "step": 2,
           "message": "validates a foreign key",
-          "fix": "Add the foreign key NOT VALID, repair the rows, then validate it. Or allow OKM1532 with a reason."
+          "fix": "Add the foreign key NOT VALID, repair the rows, then validate it."
         }
       ],
       "types": null
@@ -455,7 +455,7 @@
           "code": "OKM1519",
           "step": 1,
           "message": "renames a column",
-          "fix": "Add the new column, backfill, and switch readers before dropping the old name. Or allow OKM1519 with a reason."
+          "fix": "Add the new column, backfill, and switch readers before dropping the old name."
         }
       ],
       "types": {
@@ -634,7 +634,7 @@
           "code": "OKM1511",
           "step": 1,
           "message": "drops a table",
-          "fix": "Stop reading the table in an expand migration, then drop it in a later contract. Or allow OKM1511 with a reason."
+          "fix": "Stop reading the table in an expand migration, then drop it in a later contract."
         }
       ],
       "types": {

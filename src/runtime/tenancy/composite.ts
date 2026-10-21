@@ -144,7 +144,7 @@ export function compositeTenancy<const Keys extends readonly [string, ...string[
     missing(table): never {
       throw new OkmError(
         "OKM1701",
-        `Table ${table} is tenant-scoped. Call for({ ${keys.join(", ")} }) or unscoped("reason").`,
+        `Table ${table} is tenant-scoped. Call for({ ${keys.join(", ")} }).`,
       );
     },
   };
@@ -380,7 +380,7 @@ function writePredicate(
   if (scope === undefined) {
     throw new OkmError(
       "OKM1701",
-      `Table ${input.table} is tenant-scoped. Call for({ ${keys.join(", ")} }) or unscoped("reason").`,
+      `Table ${input.table} is tenant-scoped. Call for({ ${keys.join(", ")} }).`,
     );
   }
   if ("unscoped" in scope) {

@@ -20,7 +20,7 @@ contracts → dialects → adapters → runtime → tooling. Adapters import con
 - `src/runtime/` — client, planner (`plan.ts`), predicates, include, write, archive, batch, drift, text search (`text-search.ts`), parameter budget (`param-limit.ts`); `pg/` connect entries per driver; `otel.ts` (`okmodel/otel`); `ids/`, `safety/`, `tenancy/`, `traits/`, `validate/`.
 - `src/tooling/capabilities/` — dialect feature registry (Postgres), proof check, schema feature detection. Not in the runtime entry.
 - `src/tooling/migrate/` — apply, check (sandbox), lint (`lint-rules.ts`), SQL lexer `sql-lex.ts`, files, status, provision, runner. The planner takes `postgresDialect` from `postgres-dialect.ts`.
-- `src/tooling/cli.ts` — `okm` CLI; machine contract `okm.cli/1` in `src/tooling/cli/` (envelope, parseArgs spec, exit codes, JSON Schema); `src/tooling/driver-test.ts` — `okm driver test` (the suites stay in `packages/harness`); `src/tooling/errors/registry.ts` — doctor text for every OKM code; `src/tooling/testing/`; `src/tooling/github/` — plan comment for the GitHub Action.
+- `src/tooling/cli.ts` — `okm` CLI; machine contract `okm.cli/1` in `src/tooling/cli/` (envelope, parseArgs spec, exit codes, JSON Schema); `src/tooling/driver-test.ts` — `okm driver test` (the suites stay in `packages/harness`); `src/tooling/errors/registry.ts` — doctor text for every OKM code, pages in `docs/errors/` (`bun run docs:errors`); `src/tooling/testing/`; `src/tooling/github/` — plan comment for the GitHub Action.
 - `.github/actions/migrate/` — official composite GitHub Action (`action.yml`). Dogfood workflow: `.github/workflows/github-action.yml`.
 - `.github/actions/setup-bun/` — pinned Bun, the install cache, and `bun install --frozen-lockfile`.
 - `tests/` — flat: `*.test.ts`, `*-pg.test.ts` (real Postgres), `*.test-d.ts` (expect-type), `*.property.test.ts`, `*.worker.ts` (spawned by a test).
@@ -30,7 +30,7 @@ contracts → dialects → adapters → runtime → tooling. Adapters import con
 
 ## Where each concern lives
 - Error kinds: `ERROR_KINDS` / `ErrorKind` in `src/contracts/error.ts`. SQLSTATE mapping: `src/dialects/pg/errors.ts`; driver errors: `src/adapters/error.ts`, `src/adapters/failure.ts`.
-- OKM codes: `OKM1xxx`, raised via `OkmError`; doctor text in `src/tooling/errors/registry.ts` (spec §21).
+- OKM codes: `OKM1xxx`, raised via `OkmError`; doctor text in `src/tooling/errors/registry.ts` (spec §21); pages in `docs/errors/<code>.md`.
 - Catalog hash: `catalogHash` in `src/contracts/catalog/document.ts`.
 - Migration SQL lexing / statement split: `src/tooling/migrate/sql-lex.ts`; lint codes in `lint-rules.ts`; check sandbox in `check.ts`.
 - Pack contract: `scripts/pack-contract.ts` (`bun run pack-contract`); snapshot `tests/fixtures/pack-contract.snap.json`. `scripts/pack-tracked.ts` still refuses a packed path outside `dist/` that git does not track.

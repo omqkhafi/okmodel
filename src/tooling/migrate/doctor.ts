@@ -1,7 +1,7 @@
 /**
  * `okm doctor`.
  *
- * A code prints the registry entry. With no code, the project is loaded and
+ * A code prints `docs/errors/<code>.md`. With no code, the project is loaded and
  * each table's triggers are listed. When a target is configured, the command
  * also connects and checks `minPostgres` and required extensions from
  * `describe()` (D300). An extension an applied or pending migration creates
@@ -18,6 +18,7 @@ import { assertRoleHealth } from "../../dialects/pg/role/check.js";
 import { assertSupported, formatEmulation } from "../capabilities/check.js";
 import { POSTGRES_FEATURES } from "../capabilities/postgres.js";
 import { featuresUsed } from "../capabilities/used.js";
+import { readErrorPage, renderErrorPage } from "../errors/page.js";
 import { errorDoc } from "../errors/registry.js";
 import { omitManagedObjects } from "./managed.js";
 import { assertTargetPolicy, listTargets, selectTarget, type InvokeFlags } from "./policy.js";
@@ -59,7 +60,7 @@ export async function doctorProject(
         "usage",
       );
     }
-    return `${doc.code}: ${doc.title}\n${doc.summary}\n${doc.fix}\n`;
+    return readErrorPage(doc.code) ?? renderErrorPage(doc);
   }
   const opened = await openProject(project);
   const emulation = formatEmulation(

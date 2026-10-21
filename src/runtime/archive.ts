@@ -28,7 +28,10 @@ import { runSafety, safetyInstalled } from "./safety-hook.js";
 import { runWrite, type RunHost } from "./tx.js";
 import type { PreparedWrite } from "./write.js";
 
-registerFailFix("OKM1102", "Pass where, or call .all(reason) to match every row.");
+registerFailFix(
+  "OKM1102",
+  "Pass a predicate. An undefined-only where is the same as an empty filter.",
+);
 
 type LifecycleOp = "archive" | "restore";
 
@@ -502,7 +505,7 @@ function requireFilter(table: Indexed, where: unknown, mods: Mods, op: Lifecycle
     return;
   }
   if (!effectivePredicate(where)) {
-    fail("OKM1102", `${op} on ${table.model.name} needs a where. Pass a filter, or .all(reason).`);
+    fail("OKM1102", `${op} on ${table.model.name} needs a where. Pass a filter.`);
   }
 }
 

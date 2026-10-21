@@ -188,7 +188,7 @@ function plan(
   if (indexed === undefined) fail("OKM1120", `Table ${table} is not in the schema.`);
   const spec = parse(indexed, record, buckets);
   if (spec.groups.length > 0 && record.limit === undefined && mods.all === undefined) {
-    fail("OKM1101", "aggregate() with groupBy needs a limit, or .all(reason) for every group.");
+    fail("OKM1101", "aggregate() with groupBy needs a limit.");
   }
   const names = groupNames(spec.groups);
   const orderBy = record.orderBy;

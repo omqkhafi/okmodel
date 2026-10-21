@@ -5,6 +5,7 @@
  * the same bytes.
  */
 
+import { ERROR_CATEGORIES, ERROR_KINDS } from "../../contracts/error.js";
 import { COMMANDS } from "./spec.js";
 
 /** A JSON Schema document this module can check. */
@@ -18,7 +19,7 @@ export type JsonSchema = {
   readonly properties?: Readonly<Record<string, JsonSchemaNode>>;
   readonly items?: JsonSchemaNode;
   readonly oneOf?: readonly JsonSchemaNode[];
-  readonly const?: string;
+  readonly const?: string | boolean;
   readonly enum?: readonly string[];
   readonly description?: string;
 };
@@ -30,7 +31,7 @@ type JsonSchemaNode = {
   readonly properties?: Readonly<Record<string, JsonSchemaNode>>;
   readonly items?: JsonSchemaNode;
   readonly oneOf?: readonly JsonSchemaNode[];
-  readonly const?: string;
+  readonly const?: string | boolean;
   readonly enum?: readonly string[];
   readonly description?: string;
 };
@@ -122,6 +123,9 @@ const SCHEMAS: Readonly<Record<string, JsonSchema>> = {
         title: { type: "string" },
         summary: { type: "string" },
         fix: { type: "string" },
+        safeAlternatives: alternativesSchema(),
+        docs: { type: "string" },
+        escapeHatches: hatchesSchema(),
       }),
       objectNode(["text"], { text: { type: "string" } }),
     ],
@@ -263,6 +267,33 @@ export function schemaCommands(): readonly string[] {
 }
 
 /**
+ * JSON Schema for the envelope `errors` array.
+ *
+ * The six original fields are required. Location, `fixEdit`, alternatives,
+ * `docs`, and hatches are optional.
+ *
+ * @returns The schema document
+ */
+export function errorsSchema(): JsonSchema {
+  return {
+    $schema: DRAFT,
+    $id: "https://okmodel.dev/schemas/cli-1/errors.json",
+    title: "okm.cli/1 errors",
+    type: "array",
+    items: errorItemSchema(),
+  };
+}
+
+/**
+ * Pretty JSON for {@link errorsSchema}.
+ *
+ * @returns JSON text ending in a newline
+ */
+export function errorsSchemaText(): string {
+  return `${JSON.stringify(errorsSchema(), null, 2)}\n`;
+}
+
+/**
  * Reasons `value` does not match `schema`. Empty when it matches.
  *
  * The checker covers the keywords this module emits.
@@ -315,6 +346,49 @@ function objectNode(
   properties: Readonly<Record<string, JsonSchemaNode>>,
 ): JsonSchemaNode {
   return { type: "object", additionalProperties: false, required, properties };
+}
+
+function errorItemSchema(): JsonSchemaNode {
+  return objectNode(["code", "kind", "category", "summary", "fix", "retryable"], {
+    code: { type: "string" },
+    kind: { enum: ERROR_KINDS },
+    category: { enum: ERROR_CATEGORIES },
+    summary: { type: "string" },
+    fix: { type: "string" },
+    retryable: { type: "boolean" },
+    location: objectNode([], {
+      file: { type: "string" },
+      line: { type: "number" },
+      step: { type: "string" },
+    }),
+    fixEdit: {
+      oneOf: [
+        objectNode(["file", "insert"], { file: { type: "string" }, insert: { type: "string" } }),
+        objectNode(["file", "replace"], { file: { type: "string" }, replace: { type: "string" } }),
+      ],
+    },
+    safeAlternatives: alternativesSchema(),
+    docs: { type: "string" },
+    escapeHatches: hatchesSchema(),
+  });
+}
+
+function alternativesSchema(): JsonSchemaNode {
+  return {
+    type: "array",
+    items: objectNode(["text", "docs"], { text: { type: "string" }, docs: { type: "string" } }),
+  };
+}
+
+function hatchesSchema(): JsonSchemaNode {
+  return {
+    type: "array",
+    items: objectNode(["name", "requiresHumanReason", "docs"], {
+      name: { type: "string" },
+      requiresHumanReason: { const: true },
+      docs: { type: "string" },
+    }),
+  };
 }
 
 function problemsAt(schema: JsonSchemaNode, value: unknown, path: string): readonly string[] {

@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
  * @returns The version string
  */
 export function readPackageVersion(): string {
-  const path = findPackageJson(dirname(fileURLToPath(import.meta.url)));
+  const path = join(packageRoot(), "package.json");
   const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
   if (!isRecord(parsed) || typeof parsed.version !== "string") {
     throw new Error(`No string version in ${path}`);
@@ -24,15 +24,20 @@ export function readPackageVersion(): string {
   return parsed.version;
 }
 
-function findPackageJson(start: string): string {
-  let dir = start;
+/**
+ * Directory that holds the `okmodel` package.json.
+ *
+ * A split chunk under `dist/tooling/shared/` and a source file both reach it.
+ *
+ * @returns The package root
+ */
+export function packageRoot(): string {
+  let dir = dirname(fileURLToPath(import.meta.url));
   for (let depth = 0; depth < 8; depth += 1) {
     const candidate = join(dir, "package.json");
     if (existsSync(candidate)) {
       const parsed: unknown = JSON.parse(readFileSync(candidate, "utf8"));
-      if (isRecord(parsed) && parsed.name === "okmodel" && typeof parsed.version === "string") {
-        return candidate;
-      }
+      if (isRecord(parsed) && parsed.name === "okmodel") return dir;
     }
     const parent = dirname(dir);
     if (parent === dir) break;

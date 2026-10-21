@@ -103,7 +103,7 @@ export async function raw<C extends new () => object>(
   if (kind === WRITE && tenancy !== undefined) {
     unverifiable(
       "A raw write on a tenant table cannot keep the tenant predicate.",
-      'Use update or delete. unscoped("reason") is the reviewed hatch.',
+      "Use update or delete, or select the primary key with ident(name).",
     );
   }
   const guard = kind === READ ? guardOf(indexed, tenancy, compiled.params.length) : undefined;

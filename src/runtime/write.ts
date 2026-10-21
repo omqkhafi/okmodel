@@ -48,7 +48,10 @@ import { fieldSealed, sealingTrait, touchFields } from "./trait-read.js";
 import { runWrite, type RunHost } from "./tx.js";
 import { writeWouldValidate } from "./validate/places.js";
 
-registerFailFix("OKM1102", "Pass where, or call .all(reason) to match every row.");
+registerFailFix(
+  "OKM1102",
+  "Pass a predicate. An undefined-only where is the same as an empty filter.",
+);
 registerFailFix("OKM1190", "Remove the guarded field. Input cannot set it.");
 /** Statements in one insert stay under this many parameters. The shared driver ceiling is 65533 (B-48). */
 export const WRITE_PARAM_BUDGET = 2048;
@@ -1982,7 +1985,7 @@ export function requireFilter(table: Indexed, where: unknown, mods: WriteMods, o
     return;
   }
   if (!effectivePredicate(where)) {
-    fail("OKM1102", `${op} on ${table.model.name} needs a where. Pass a filter, or .all(reason).`);
+    fail("OKM1102", `${op} on ${table.model.name} needs a where. Pass a filter.`);
   }
 }
 
