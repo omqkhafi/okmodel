@@ -31,3 +31,33 @@ expectTypeOf<Distinct["countDistinct"]>().toEqualTypeOf<{
 
 // @ts-expect-error countDistinct takes field names of the table
 void db.sales.aggregate({ countDistinct: ["nope"], limit: 1 });
+
+const named = db.sales.aggregate({
+  groupBy: ["region"],
+  count: true,
+  select: {
+    rows: { count: true },
+    buyers: { countDistinct: "customer" },
+    total: { sum: "amount" },
+    mean: { avg: "amount" },
+    first: { min: "customer" },
+    last: { max: "region" },
+  },
+  limit: 1,
+});
+type Named = Awaited<typeof named>[number];
+expectTypeOf<Named["region"]>().toEqualTypeOf<string>();
+expectTypeOf<Named["count"]>().toEqualTypeOf<number>();
+expectTypeOf<Named["rows"]>().toEqualTypeOf<number>();
+expectTypeOf<Named["buyers"]>().toEqualTypeOf<number>();
+expectTypeOf<Named["total"]>().toEqualTypeOf<number | null>();
+expectTypeOf<Named["mean"]>().toEqualTypeOf<number | null>();
+expectTypeOf<Named["first"]>().toEqualTypeOf<string | null>();
+expectTypeOf<Named["last"]>().toEqualTypeOf<string | null>();
+
+// @ts-expect-error a select entry names a field of the table
+void db.sales.aggregate({ select: { x: { max: "nope" } }, limit: 1 });
+// @ts-expect-error sum takes a numeric field
+void db.sales.aggregate({ select: { x: { sum: "nope" } }, limit: 1 });
+// @ts-expect-error a select entry is one function, not a list
+void db.sales.aggregate({ select: { x: { sum: ["amount"] } }, limit: 1 });
