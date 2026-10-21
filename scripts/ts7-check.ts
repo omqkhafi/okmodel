@@ -64,6 +64,7 @@ if (import.meta.main) {
           target: "es2023",
           skipLibCheck: true,
           types: ["bun"],
+          typeRoots: [join(root, "node_modules/@types")],
         },
         files,
       },
