@@ -1,0 +1,11 @@
+{
+  "name": "npm-app",
+  "private": true,
+  "workspaces": ["packages/*"],
+  "dependencies": {
+    "postgres": "^3.4.9"
+  },
+  "scripts": {
+    "preinstall": "echo leave-me"
+  }
+}

@@ -135,7 +135,8 @@
                       "migration.comment",
                       "db.error",
                       "db.object-name",
-                      "user.query"
+                      "user.query",
+                      "package.json"
                     ]
                   },
                   "text": {
@@ -207,7 +208,8 @@
                   "migration.comment",
                   "db.error",
                   "db.object-name",
-                  "user.query"
+                  "user.query",
+                  "package.json"
                 ]
               },
               "text": {
