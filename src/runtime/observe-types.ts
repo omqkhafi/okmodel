@@ -9,10 +9,16 @@
 /** Dialect tag on every write event. Postgres only in this train. */
 export type ObserveDialect = "postgres";
 
-/** How `rowCount` was derived. G-4 always emits `unknown`. */
+/**
+ * How `rowCount` was derived.
+ *
+ * `changed` is inserted, updated, or deleted rows (an upsert counts inserted
+ * plus updated). `returned` is a statement whose SQL ran `RETURNING`.
+ * `unknown` means the driver gave no command tag. `matched` is reserved.
+ */
 export type RowCountMode = "changed" | "matched" | "returned" | "unknown";
 
-/** One write key (G-5). Present only when keys are requested and available. */
+/** One primary-key record. Present only when that table was opted in. */
 export type ObserveKey = Readonly<Record<string, unknown>>;
 
 /** One statement that ran inside a unit. */

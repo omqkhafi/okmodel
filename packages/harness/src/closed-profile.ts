@@ -41,9 +41,16 @@ export const CLOSED_CAPABILITIES = {
  *
  * @returns A registry whose every entry is refused
  */
+/** Most restrictive cost for observer keys that have a cost scale. */
+const CLOSED_COST: Readonly<Record<string, string>> = {
+  "writeObserver.keys": "none",
+  "writeObserver.rowCount": "unknown",
+};
+
 export function closedRegistry(): Registry {
   const registry: Record<string, FeatureEntry> = {};
   for (const [key, entry] of Object.entries(POSTGRES_FEATURES)) {
+    const cost = CLOSED_COST[key];
     registry[key] = {
       support: "refused",
       proof: entry.proof,
@@ -51,6 +58,7 @@ export function closedRegistry(): Registry {
       alternative: `Portable substitute for ${key}.`,
       ...(entry.since !== undefined ? { since: entry.since } : {}),
       ...(entry.gate !== undefined ? { gate: entry.gate } : {}),
+      ...(cost !== undefined ? { cost } : {}),
     };
   }
   return registry;

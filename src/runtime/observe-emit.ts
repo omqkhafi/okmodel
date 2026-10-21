@@ -11,6 +11,7 @@ import { OkmError } from "../contracts/error.js";
 import type { Hookm, TransactionEvent } from "./types.js";
 import type {
   ObserveEvent,
+  ObserveKey,
   OnWrite,
   OutcomeEvent,
   SavepointEvent,
@@ -68,6 +69,12 @@ export type WriteDraft = {
   readonly durationMs: number;
   readonly tag?: string;
   readonly source: "client" | "raw";
+  /** Omitted means the driver gave no command tag. */
+  readonly rowCount?: number | null;
+  /** Omitted means `unknown`. */
+  readonly rowCountMode?: WriteEvent["rowCountMode"];
+  /** Primary-key records. Omitted when this statement did not opt in. */
+  readonly keys?: readonly ObserveKey[];
 };
 
 type Frame = {
@@ -279,13 +286,14 @@ export class ObserverController {
         dialect: "postgres",
         table: draft.table,
         op: draft.op,
-        rowCount: null,
-        rowCountMode: "unknown",
+        rowCount: draft.rowCount ?? null,
+        rowCountMode: draft.rowCountMode ?? "unknown",
         tenant: draft.tenant,
         settings: draft.settings,
         durationMs: draft.durationMs,
         source: draft.source,
         ...(draft.tag !== undefined ? { tag: draft.tag } : {}),
+        ...(draft.keys !== undefined ? { keys: draft.keys } : {}),
       };
       unit.seq += 1;
       unit.writes.push(event);

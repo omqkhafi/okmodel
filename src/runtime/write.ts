@@ -45,6 +45,7 @@ import {
 import { stack } from "./preset-stack.js";
 import { effectivePredicate } from "./predicate.js";
 import { fieldSealed, sealingTrait, touchFields } from "./trait-read.js";
+import { assertObserveKeys, observeKeyList } from "./observe-keys.js";
 import { runWrite, type RunHost, type WriteObserveMeta } from "./tx.js";
 import { writeWouldValidate } from "./validate/places.js";
 
@@ -104,8 +105,15 @@ export type PreparedWrite = {
   readonly options: ExecuteOptions | undefined;
   /** Set when `finish` can refuse a statement that already ran. `batch` refuses such a write (D183). */
   readonly checked?: "restore" | "expect" | "parent" | "tree";
-  /** Observe metadata for each statement when `onWrite` is registered. */
+  /** Observe metadata shared by statements that did not opt into keys. */
   readonly observe?: WriteObserveMeta;
+  /**
+   * Per-statement observe metadata.
+   *
+   * Set when `writeObserver({ keys })` includes this table, so a quiet lock
+   * does not receive the insert's primary-key columns.
+   */
+  readonly observeStatements?: readonly WriteObserveMeta[];
   finish(results: readonly ExecuteResult[]): unknown;
   /**
    * More statements once the planned ones have run.
@@ -246,13 +254,15 @@ export async function executeWrite(
     const prepared = await prepareWrite(host, op, table, input, options, mods, scope);
     if (plan !== undefined) return prepared;
     if (prepared.statements.length === 0) return prepared.finish([]);
-    const observe = observeList(host, prepared);
+    const observe = statementObserve(host.o !== undefined, prepared);
     const results = await runWrite(host, prepared.statements, prepared.options, undefined, observe);
     const more = prepared.follow?.(results);
     if (more === undefined || more.length === 0) return prepared.finish(results);
     const followObserve =
       host.o !== undefined && prepared.observe !== undefined
-        ? more.map(() => prepared.observe as WriteObserveMeta)
+        ? more.map((statement) =>
+            withStatementReturning(prepared.observe as WriteObserveMeta, statement.text),
+          )
         : undefined;
     const extra = await runWrite(host, more, prepared.options, undefined, followObserve);
     return prepared.finish(results.concat(extra));
@@ -285,6 +295,8 @@ async function prepareWrite(
   scope?: CallScope,
 ): Promise<PreparedWrite> {
   try {
+    const observeKeys = observeKeyList(host.o?.w);
+    if (observeKeys !== undefined) assertObserveKeys(host.schema, observeKeys);
     const planned = await planWrite(
       host.schema,
       host.generators,
@@ -295,10 +307,16 @@ async function prepareWrite(
       mods,
       scope,
     );
+    const observe = writeObserve(op, table, options, scope, host.schema.tenancy);
+    const shaped =
+      observeKeys?.includes(table) === true
+        ? shapeObserver(indexes(host.schema).get(table) as Indexed, planned, observe)
+        : undefined;
     return {
-      statements: planned.statements,
+      statements: shaped?.statements ?? planned.statements,
       options: callOptions(options),
-      observe: writeObserve(op, table, options, scope, host.schema.tenancy),
+      observe,
+      ...(shaped === undefined ? {} : { observeStatements: shaped.metas }),
       ...(planned.parentGuard === true
         ? { checked: "parent" as const }
         : planned.treeGuard === true
@@ -314,11 +332,71 @@ async function prepareWrite(
                 decodePlanned(withoutQuiet(results, planned.quiet), planned.outputs),
               ) ?? [],
           }),
-      finish: (results) => finish(withoutQuiet(results, planned.quiet), planned, table),
+      finish: (results) =>
+        finish(
+          withoutQuiet(
+            shaped === undefined ? results : hideObserverRows(results, shaped.hideRows),
+            planned.quiet,
+          ),
+          planned,
+          table,
+        ),
     };
   } catch (error) {
     throw scrubWrite(host.schema, table, input, error);
   }
+}
+
+/**
+ * Plans a write for `sql()`, `inspect()`, or `describe()`.
+ *
+ * The projection stays here so the connected client does not repeat it.
+ *
+ * @param host - Schema, generators, scope, and observer keys
+ * @param op - Insert, update, or delete
+ * @param table - Table name
+ * @param input - Rows, or the update or delete target
+ * @param options - Returning, conflict, expect, signal, timeout
+ * @param mods - `.all` and `.expect`
+ * @param kind - Which view to return
+ * @returns Statements, or statements plus rules, or described columns
+ */
+export function explainHandle(
+  host: {
+    readonly schema: QuerySchema;
+    readonly generators?: IdGenerators | undefined;
+    readonly scope?: CallScope | undefined;
+    readonly o?: { readonly w: object } | undefined;
+  },
+  op: WriteOp,
+  table: string,
+  input: unknown,
+  options: object,
+  mods: WriteMods,
+  kind: "sql" | "inspect" | "describe",
+): Promise<
+  | { readonly statements: readonly Statement[] }
+  | {
+      readonly statements: readonly Statement[];
+      readonly rules: WriteExplain["rules"];
+    }
+  | { readonly statements: WriteExplain["described"] }
+> {
+  return explainWrite(
+    host.schema,
+    op,
+    table,
+    input,
+    options,
+    mods,
+    host.generators,
+    host.scope,
+    observeKeyList(host.o?.w),
+  ).then((plan) => {
+    if (kind === "inspect") return { statements: plan.statements, rules: plan.rules };
+    if (kind === "describe") return { statements: plan.described };
+    return { statements: plan.statements };
+  });
 }
 
 /**
@@ -331,7 +409,9 @@ async function prepareWrite(
  * @param options - Returning, conflict, expect, signal, timeout
  * @param mods - `.all` and `.expect`
  * @param generators - Built-in replacements. Omitted uses the functions stored on the columns
- * @returns The statements in order
+ * @param scope - Tenant scope of the client
+ * @param observeKeys - Tables from `writeObserver({ keys })`
+ * @returns Statements, described columns, and observer rules
  */
 export async function explainWrite(
   schema: QuerySchema,
@@ -342,14 +422,54 @@ export async function explainWrite(
   mods: WriteMods,
   generators?: IdGenerators,
   scope?: CallScope,
-): Promise<{ readonly statements: readonly Statement[] }> {
+  observeKeys?: readonly string[],
+): Promise<WriteExplain> {
   try {
+    if (observeKeys !== undefined) assertObserveKeys(schema, observeKeys);
     const planned = await planWrite(schema, generators, op, table, input, options, mods, scope);
-    return { statements: planned.statements };
+    const observe = writeObserve(op, table, options, scope, schema.tenancy);
+    if (observeKeys?.includes(table) === true) {
+      const shaped = shapeObserver(indexes(schema).get(table) as Indexed, planned, observe);
+      return {
+        statements: shaped.statements,
+        described: shaped.described,
+        rules: shaped.rules,
+      };
+    }
+    return {
+      statements: planned.statements,
+      described: callerDescription(planned),
+      rules: [],
+    };
   } catch (error) {
     throw scrubWrite(schema, table, input, error);
   }
 }
+
+/** What {@link explainWrite} returns. `sql()` keeps `statements` only. */
+export type WriteExplain = {
+  readonly statements: readonly Statement[];
+  readonly described: readonly {
+    readonly text: string;
+    readonly columns: readonly {
+      readonly name: string;
+      readonly label: "caller" | "observer";
+    }[];
+  }[];
+  readonly rules: readonly {
+    readonly rule: string;
+    readonly contribution: string;
+    readonly provenance: string;
+  }[];
+};
+
+type ObserverShape = {
+  readonly statements: readonly Statement[];
+  readonly metas: readonly WriteObserveMeta[];
+  readonly hideRows: readonly boolean[];
+  readonly described: WriteExplain["described"];
+  readonly rules: WriteExplain["rules"];
+};
 
 async function planWrite(
   schema: QuerySchema,
@@ -1646,16 +1766,30 @@ function tenantKeyList(tenancy: QuerySchema["tenancy"]): readonly string[] | und
   return [tenancy.key];
 }
 
-function observeList(
-  host: RunHost,
+/**
+ * Per-statement observe metadata when a write observer is registered.
+ *
+ * Key opt-in uses the list stored on the prepared write. Otherwise every
+ * statement shares one meta, with `returning` set from that statement's SQL.
+ *
+ * @param watching - True when `onWrite` is registered
+ * @param prepared - Planned write
+ * @returns One meta per statement, or `undefined` when nobody is watching
+ */
+export function statementObserve(
+  watching: boolean,
   prepared: PreparedWrite,
 ): readonly WriteObserveMeta[] | undefined {
-  if (host.o === undefined || prepared.observe === undefined) return undefined;
-  return prepared.statements.map(() => prepared.observe as WriteObserveMeta);
+  if (!watching) return undefined;
+  if (prepared.observeStatements !== undefined) return prepared.observeStatements;
+  if (prepared.observe === undefined) return undefined;
+  const base = prepared.observe;
+  return prepared.statements.map((statement) => withStatementReturning(base, statement.text));
 }
 
 /**
- * Builds observe metadata for one planned write (G-4: rowCount unknown, no keys).
+ * Builds observe metadata for one planned write.
+ *
  *
  * @param op - Insert, update, or delete
  * @param table - Table name
@@ -1681,6 +1815,218 @@ function writeObserve(
     settings: [],
     source: "client",
   };
+}
+
+/**
+ * Marks a statement whose SQL contains `RETURNING`.
+ *
+ * Follow-up lookups keep the base meta (no primary-key fields) and only gain
+ * the returning flag.
+ *
+ * @param base - Metadata shared by the write
+ * @param text - Statement text
+ * @returns The same meta, or a copy with `returning`
+ */
+function withStatementReturning(base: WriteObserveMeta, text: string): WriteObserveMeta {
+  return statementHasReturning(text) ? { ...base, returning: true } : base;
+}
+
+/**
+ * True when the statement text contains a `RETURNING` clause.
+ *
+ * @param text - Statement text
+ * @returns Whether `RETURNING` ran
+ */
+function statementHasReturning(text: string): boolean {
+  return /\breturning\b/i.test(text);
+}
+
+/**
+ * Where a `RETURNING` clause sits in SQL this library emitted.
+ *
+ * A leading `insert`, `update`, or `delete` with no `RETURNING` can gain one.
+ * A terminal `RETURNING` can gain columns. A clause whose tail contains
+ * `select` (parent guard, versioned close, archive CTE) is left alone.
+ *
+ * @param text - Statement text
+ * @returns `none`, `terminal`, or `nested`
+ */
+function returningKind(text: string): "none" | "terminal" | "nested" {
+  if (!/^\s*(?:insert|update|delete)\b/i.test(text)) return "nested";
+  const at = text.toLowerCase().lastIndexOf(" returning ");
+  if (at < 0) return "none";
+  const suffix = text.toLowerCase().slice(at + " returning ".length);
+  if (/\bselect\b/.test(suffix)) return "nested";
+  return "terminal";
+}
+
+/**
+ * Adds primary-key `RETURNING` and the per-statement key metadata.
+ *
+ * Quiet statements (a sortable lock) are not key statements. Columns the
+ * caller already returns keep their indexes. Appended columns are labeled
+ * `observer`. When the caller asked for no rows, those result rows are hidden
+ * so the caller still receives null or a count.
+ *
+ * @param table - Planned table
+ * @param planned - Planned statements and caller outputs
+ * @param base - Observe metadata for this write
+ * @returns Shaped statements, metas, and the description
+ */
+function shapeObserver(table: Indexed, planned: Planned, base: WriteObserveMeta): ObserverShape {
+  const primary = primaryColumns(table);
+  const user = planned.outputs.fields;
+  const userAt = new Map(user.map((field) => [field.key, field]));
+  const missing = primary.filter((column) => !userAt.has(column.field));
+  const quiet = new Set(planned.quiet ?? []);
+  const nextAt = user.reduce((max, field) => Math.max(max, field.at + 1), 0);
+  const callerColumns = user.map((field) => ({ name: field.key, label: "caller" as const }));
+  let added = false;
+  const statements: Statement[] = [];
+  const metas: WriteObserveMeta[] = [];
+  const hideRows: boolean[] = [];
+  const described: WriteExplain["described"][number][] = [];
+  for (let index = 0; index < planned.statements.length; index += 1) {
+    const statement = planned.statements[index];
+    if (statement === undefined) continue;
+    if (quiet.has(index)) {
+      statements.push(statement);
+      hideRows.push(false);
+      metas.push(withStatementReturning(base, statement.text));
+      described.push({ text: statement.text, columns: [] });
+      continue;
+    }
+    const kind = returningKind(statement.text);
+    const canAppend = kind !== "nested" && missing.length > 0;
+    const text = canAppend
+      ? appendReturning(
+          statement.text,
+          kind,
+          missing.map((column) =>
+            keyExpr(column, /^\s*insert\b/i.test(statement.text) ? undefined : "t"),
+          ),
+        )
+      : statement.text;
+    if (canAppend) added = true;
+    const next = text === statement.text ? statement : { ...statement, text };
+    statements.push(next);
+    const observerColumns = canAppend
+      ? missing.map((column) => ({ name: column.field, label: "observer" as const }))
+      : [];
+    described.push({ text, columns: [...callerColumns, ...observerColumns] });
+    const returning = statementHasReturning(text);
+    if (missing.length > 0 && !canAppend) {
+      hideRows.push(false);
+      metas.push(returning ? { ...base, returning: true } : base);
+      continue;
+    }
+    const keyFields = primary.map((column) => {
+      const existing = userAt.get(column.field);
+      if (existing !== undefined) {
+        return { field: column.field, at: existing.at, decode: existing.decode };
+      }
+      const offset = missing.findIndex((item) => item.field === column.field);
+      return { field: column.field, at: nextAt + offset, decode: column.decode };
+    });
+    hideRows.push(canAppend && user.length === 0);
+    metas.push({ ...base, returning, keyFields });
+  }
+  return {
+    statements,
+    metas,
+    hideRows,
+    described,
+    rules: added
+      ? [{ rule: "returning", contribution: "primary key", provenance: "observer" }]
+      : [],
+  };
+}
+
+/**
+ * Caller columns for a write that did not opt into keys.
+ *
+ * @param planned - Planned write
+ * @returns One description per statement
+ */
+function callerDescription(planned: Planned): WriteExplain["described"] {
+  const columns = planned.outputs.fields.map((field) => ({
+    name: field.key,
+    label: "caller" as const,
+  }));
+  return planned.statements.map((statement) => ({ text: statement.text, columns }));
+}
+
+/**
+ * Drops rows that exist only because the observer added `RETURNING`.
+ *
+ * @param results - Driver results
+ * @param mask - True where the caller asked for no rows
+ * @returns Results whose row lists the caller is allowed to see
+ */
+function hideObserverRows(
+  results: readonly ExecuteResult[],
+  mask: readonly boolean[],
+): readonly ExecuteResult[] {
+  if (!mask.some(Boolean)) return results;
+  return results.map((result, index) => (mask[index] === true ? { ...result, rows: [] } : result));
+}
+
+/**
+ * Primary-key columns in catalog order.
+ *
+ * @param table - Planned table
+ * @returns Columns named by `model.primary`
+ */
+function primaryColumns(table: Indexed): readonly ColumnModel[] {
+  const columns: ColumnModel[] = [];
+  for (const field of table.model.primary) {
+    const column = table.columns.get(field);
+    if (column === undefined) {
+      throw new OkmError(
+        "OKM1890",
+        `writeObserver keys cannot include ${table.model.name}: primary key ${field} is not a column.`,
+        {
+          kind: "invalid",
+          table: table.model.name,
+          fix: {
+            summary: `Add a primary key on ${table.model.name}, or remove it from writeObserver({ keys }).`,
+          },
+        },
+      );
+    }
+    columns.push(column);
+  }
+  return columns;
+}
+
+/**
+ * Appends primary-key expressions to a simple write.
+ *
+ * @param text - Statement text
+ * @param kind - `none` starts the clause. `terminal` extends it
+ * @param exprs - Projected primary-key expressions
+ * @returns Statement text including the observer columns
+ */
+function appendReturning(
+  text: string,
+  kind: "none" | "terminal",
+  exprs: readonly string[],
+): string {
+  const list = exprs.join(", ");
+  if (kind === "none") return `${text} returning ${list}`;
+  return `${text}, ${list}`;
+}
+
+/**
+ * SQL for one primary-key column in `RETURNING`.
+ *
+ * @param column - Primary-key column
+ * @param alias - Update and delete use `t`. Insert has none
+ * @returns The projected expression
+ */
+function keyExpr(column: ColumnModel, alias: string | undefined): string {
+  const sql = alias === undefined ? quote(column.sql) : `${alias}.${quote(column.sql)}`;
+  return projectExpr(sql, column.dataType);
 }
 
 /**

@@ -2,7 +2,7 @@
 okmVersion: "0.10.0"
 since: "0.10"
 dialects: [postgres]
-codes: [OKM1401, OKM2200]
+codes: [OKM1401, OKM1890, OKM2200]
 ---
 # Observer events (`okm.observe/1`)
 
@@ -26,10 +26,11 @@ Anything that must survive a crash is an outbox table plus a relay.
 | `op` | `insert` \| `update` \| `delete` \| `upsert` \| `archive` \| `restore` \| `raw`. |
 | `rowCountMode` | `changed` \| `matched` \| `returned` \| `unknown`. |
 | `rowCount` | `null` exactly when the mode is `unknown`. |
+| `keys` | Primary-key records for a table named in `writeObserver({ keys })`. Omitted otherwise. |
 | `source` | `client` or `raw`. |
 | `tenant` | `null`, or the scope keys and values. |
 
-No event carries row values or bound parameters.
+No event carries row values or bound parameters. `keys` carries only the primary-key columns of a table that opted in.
 
 ## Registry
 
@@ -38,11 +39,11 @@ Postgres: native. Cost: transaction | batch. Proof passes (`proof:writeObserver.
 <!-- /support -->
 
 <!-- support: writeObserver.keys -->
-Postgres: native. Cost: none. Proof passes (`proof:writeObserver.keys`).
+Postgres: native. Cost: returning. Proof passes (`proof:writeObserver.keys`).
 <!-- /support -->
 
 <!-- support: writeObserver.rowCount -->
-Postgres: native. Cost: unknown. Proof passes (`proof:writeObserver.rowCount`).
+Postgres: native. Cost: mixed. Proof passes (`proof:writeObserver.rowCount`).
 <!-- /support -->
 
 ## Events
@@ -57,7 +58,7 @@ type WriteEvent = {
   op: "insert" | "update" | "delete" | "upsert" | "archive" | "restore" | "raw";
   rowCount: number | null;
   rowCountMode: "changed" | "matched" | "returned" | "unknown";
-  keys?: readonly Key[]; // G-5
+  keys?: readonly Key[]; // primary key, only when that table opted in
   tenant: Readonly<Record<string, unknown>> | null;
   settings: readonly string[]; // names only, never values
   durationMs: number;
@@ -118,7 +119,7 @@ write in that batch shares the wall time of the whole batch.
 
 ```ts
 writeObserver({
-  keys?: readonly string[], // accepted and ignored until G-5
+  keys?: readonly string[], // schema table names
   committed?: (u: { unit: string; writes: readonly WriteEvent[] }) => void | Promise<void>,
   rolledBack?: (u: { unit: string }) => void | Promise<void>,
   unknown?: (u: { unit: string; writes: readonly WriteEvent[] }) => void | Promise<void>,
@@ -130,8 +131,47 @@ writeObserver({
 `connect({ onWrite: writeObserver({ ... }) })` also accepts the raw low-level
 handler. The helper buffers per unit and calls exactly one of
 `committed` | `rolledBack` | `unknown` once per unit. A unit with zero surviving
-writes calls nothing. An observer cannot veto or alter a write. `keys` is
-accepted and ignored until G-5.
+writes calls nothing. An observer cannot veto or alter a write.
+
+`keys` names schema tables. For each of those tables the write planner appends
+`RETURNING` of the primary key when the statement is a simple `INSERT`,
+`UPDATE`, or `DELETE`. The extra columns show in `sql()` and `inspect()`.
+`describe()` labels caller columns `"caller"` and appended primary-key columns
+`"observer"`. `WriteEvent.keys` is one record per returned row. A successful
+statement that opted in and could return the key sets `keys` (an empty array
+when no row came back). A failure omits `keys`.
+
+A table with no primary key, or a name that is not in the schema, is OKM1890
+at connect and again when the write is planned (`sql()` does not wait for
+`connected`).
+
+Statements whose `RETURNING` is not terminal (a parent guard, a versioned
+close, an archive CTE) are not rewritten. They fill `keys` only when the
+caller already returns every primary-key column. A sortable lock statement is
+not a key statement. A first-or-create lookup does not attach keys.
+
+## Row counts
+
+`rowCount` is the command-tag count the driver reported (`ExecuteResult.reported`).
+A fixture that omits `reported` is `unknown` with `rowCount: null`. The caller's
+result still uses `count`, which falls back to the row list when the tag is absent.
+
+| Mode | When |
+| --- | --- |
+| `changed` | `insert`, `update`, or `delete` whose SQL has no `RETURNING`. An `upsert` (`ON CONFLICT`) is always `changed` when a tag exists, including `ON CONFLICT DO UPDATE` (inserted plus updated) and `ON CONFLICT DO NOTHING` (inserted only). |
+| `returned` | Any other op whose SQL ran `RETURNING`, including primary-key `RETURNING` added for `keys`. |
+| `unknown` | The driver reported no command tag (`reported` null or absent). `rowCount` is null. |
+| `matched` | Reserved. Not emitted. |
+
+| Driver | Field | Insert, update, delete | `RETURNING` | Nothing |
+| --- | --- | --- | --- | --- |
+| postgres.js | `count` (null until CommandComplete) | `changed` | `returned` (upsert stays `changed`) | null → `unknown` |
+| pg | `rowCount` | `changed` | `returned` (upsert stays `changed`) | null → `unknown` |
+| Neon | `rowCount` (same shape as pg) | `changed` | `returned` (upsert stays `changed`) | null → `unknown` |
+| Bun.sql | `count` (postgres.js-shaped) | `changed` | `returned` (upsert stays `changed`) | null or absent → `unknown` |
+| PGlite | `rowCount` is the per-statement tag. `affectedRows` is cumulative and is used only when `rowCount` is absent | `changed` | `returned` (upsert stays `changed`) | neither a number → `unknown` |
+
+An own field that is present and not a finite number (null) is "nothing". A later field is not a fallback. `count` on the caller result is still `reported ?? rows.length`.
 
 ```ts
 import { writeObserver } from "okmodel/observe";
@@ -151,5 +191,5 @@ await onWrite.flush();
 | Key | Postgres | Closed profile |
 | --- | --- | --- |
 | `writeObserver.unit` | `transaction` \| `batch` | most restrictive (refused) |
-| `writeObserver.keys` | `none` until G-5 (`returning` \| `emulated` \| `none`) | refused |
-| `writeObserver.rowCount` | `unknown` until G-5 (`changed` \| `matched` \| `mixed` \| `unknown`) | refused |
+| `writeObserver.keys` | `returning` (`returning` \| `emulated` \| `none`) | `none` (refused) |
+| `writeObserver.rowCount` | `mixed` (`changed` \| `matched` \| `mixed` \| `unknown`) | `unknown` (refused) |

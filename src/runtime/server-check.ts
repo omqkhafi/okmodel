@@ -102,7 +102,13 @@ export async function acceptServer(
   requireMeta: boolean,
   options: ExecuteOptions | undefined,
   source: { readonly catalog?: CatalogArtifact; readonly catalogDir?: string },
+  onWrite?: object,
 ): Promise<void> {
+  if (onWrite !== undefined) {
+    const { assertObserveKeys, observeKeyList } = await import("./observe-keys.js");
+    const observeKeys = observeKeyList(onWrite);
+    if (observeKeys !== undefined) assertObserveKeys(schema, observeKeys);
+  }
   const namespace = await recordedNamespace(source.catalogDir);
   let rows: readonly (readonly (string | null)[])[];
   try {
