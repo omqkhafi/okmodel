@@ -592,6 +592,7 @@
     "dist/shared/*.js",
     "dist/shared/*.js",
     "dist/shared/*.js",
+    "dist/shared/*.js",
     "dist/tooling/agents/apply.d.ts",
     "dist/tooling/agents/block.d.ts",
     "dist/tooling/agents/command.d.ts",
