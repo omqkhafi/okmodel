@@ -24,6 +24,9 @@ import { resultFrom, rowsFrom } from "./result.js";
 const RESET_ALL = "RESET ALL";
 const UNLOCK = "SELECT pg_advisory_unlock_all()";
 
+/** Ignores a result. One function keeps the minified adapter under its gate. */
+function discard(): void {}
+
 type Lost = {
   on: boolean;
   /** Rejects the reset or drain that is using this reserved connection. */
@@ -67,7 +70,7 @@ export async function checkout(pool: HeldPool, timeoutMs?: number): Promise<Driv
   // socket.write. After closed() sets the socket to null, that timer throws
   // outside the query promise. The close handler sets `lost` before the next
   // statement, savepoint, or COMMIT, so that write is never scheduled.
-  const lost = { on: false, stop: (): void => undefined };
+  const lost = { on: false, stop: discard };
   arm(reserved, lost);
   let limit = timeoutMs !== undefined && timeoutMs > 0 ? timeoutMs : 0;
   const remember = (timeout: number | undefined): void => {
@@ -113,8 +116,7 @@ export async function checkout(pool: HeldPool, timeoutMs?: number): Promise<Driv
         // in the open list, and the next statement would write to a socket that is gone.
         // The fatal ErrorResponse can still be sitting on that connection and is delivered to the
         // next query. A discarded statement consumes it. The call timeout covers that wait.
-        if (lost.on)
-          await deadline(ms, () => pool.sql.unsafe("select 1"), pool.sql).catch(() => undefined);
+        if (lost.on) await deadline(ms, () => pool.sql.unsafe("select 1"), pool.sql).catch(discard);
         else reserved.release();
       }
     },
@@ -127,7 +129,18 @@ export async function describe(
   params?: readonly WireValue[],
 ): Promise<DescribeResult> {
   const d = await sql.unsafe(text, asParams(params), { prepare: true }).describe();
-  return { columns: d.columns.map((c) => c.name), parameterCount: d.types.length };
+  const fields = d.columns.map((c) => ({
+    name: c.name,
+    typeOid: c.type,
+    tableOid: c.table,
+    attnum: c.number,
+  }));
+  return {
+    columns: fields.map((c) => c.name),
+    parameterCount: d.types.length,
+    parameters: d.types,
+    fields,
+  };
 }
 
 export async function* stream(
@@ -198,7 +211,7 @@ function poolWaits(sql: Sql): Opts | undefined {
  */
 export function deadline<T>(ms: number, run: () => Promise<T>, link?: Lost | Sql): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let off = (): void => undefined;
+  let off = discard;
   const slot = link !== undefined && "stop" in link ? link : undefined;
   const pool = slot === undefined && link !== undefined ? poolWaits(link as Sql) : undefined;
   let ended = false;
@@ -246,7 +259,7 @@ export function deadline<T>(ms: number, run: () => Promise<T>, link?: Lost | Sql
     go();
   }).finally(() => {
     clearTimeout(timer);
-    if (slot !== undefined) slot.stop = (): void => undefined;
+    if (slot !== undefined) slot.stop = discard;
     off();
   });
 }
@@ -308,7 +321,7 @@ function reserveConnection(
       (connection) => {
         if (settled) {
           void resetConnection(connection, 0)
-            .catch(() => undefined)
+            .catch(discard)
             .finally(() => {
               connection.release();
             });
@@ -328,7 +341,7 @@ function reserveConnection(
 }
 
 async function resetConnection(sql: Sql, depth: number): Promise<void> {
-  if (depth > 0) await sql.unsafe("ROLLBACK").catch(() => undefined);
+  if (depth > 0) await sql.unsafe("ROLLBACK").catch(discard);
   const clear = async (): Promise<void> => {
     await sql.unsafe(RESET_ALL);
     await sql.unsafe(UNLOCK);
@@ -336,7 +349,7 @@ async function resetConnection(sql: Sql, depth: number): Promise<void> {
   try {
     await clear();
   } catch {
-    await sql.unsafe("ROLLBACK").catch(() => undefined);
+    await sql.unsafe("ROLLBACK").catch(discard);
     await clear();
   }
 }
