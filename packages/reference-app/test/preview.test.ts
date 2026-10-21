@@ -25,7 +25,9 @@ postgresTest(
       try {
         const env = { PREVIEW_DATABASE_URL: database.url };
         expect(applied).toContain("applied provisioned@0004_sql_names");
-        expect(await okmOk(["check", "--target", "preview"], env)).toBe("ok\n");
+        const checked = await okmOk(["check", "--target", "preview"], env);
+        expect(checked).toContain("allow 0003_drop_share_token step 1 OKM1512 destructive");
+        expect(checked.endsWith("ok\n")).toBe(true);
         expect(await okmOk(["migrate", "status", "--target", "preview"], env)).toContain(
           "0004_sql_names",
         );
@@ -71,7 +73,7 @@ postgresTest(
         await okmOk(["migrate", "check", "--provision", "--target", "preview"], {
           PREVIEW_DATABASE_URL: a.url,
         }),
-      ).toBe(`ok 4 migrations\n${CHECK_REPLAY_LIMIT}\n`);
+      ).toStartWith(`ok 4 migrations\n${CHECK_REPLAY_LIMIT}\n`);
     } finally {
       await Promise.all(databases.map((database) => database.close()));
     }
