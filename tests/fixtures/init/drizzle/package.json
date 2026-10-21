@@ -1,0 +1,7 @@
+{
+  "name": "drizzle-app",
+  "private": true,
+  "dependencies": {
+    "drizzle-orm": "^0.36.0"
+  }
+}

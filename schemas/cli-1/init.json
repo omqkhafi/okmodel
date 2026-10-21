@@ -1,0 +1,209 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://okmodel.dev/schemas/cli-1/init.json",
+  "title": "okm init data",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "detection",
+    "files",
+    "packageEdits",
+    "nextSteps",
+    "planHash",
+    "install"
+  ],
+  "properties": {
+    "status": {
+      "enum": [
+        "planned",
+        "applied",
+        "unchanged"
+      ]
+    },
+    "detection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pm",
+        "driver",
+        "runtime",
+        "databaseEnv",
+        "git",
+        "okmodel",
+        "typescript",
+        "orm",
+        "ancestorConfig"
+      ],
+      "properties": {
+        "pm": {
+          "enum": [
+            "bun",
+            "pnpm",
+            "yarn",
+            "npm"
+          ]
+        },
+        "driver": {
+          "enum": [
+            "postgresjs",
+            "pg",
+            "bun-sql",
+            "pglite",
+            "neon"
+          ]
+        },
+        "runtime": {
+          "enum": [
+            "bun",
+            "workers",
+            "next",
+            "node"
+          ]
+        },
+        "packageName": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "untrusted",
+            "origin",
+            "text",
+            "truncated",
+            "modified"
+          ],
+          "properties": {
+            "untrusted": {
+              "const": true
+            },
+            "origin": {
+              "enum": [
+                "schema.identifier",
+                "schema.comment",
+                "schema.enum",
+                "schema.default",
+                "constraint.name",
+                "index.name",
+                "migration.comment",
+                "db.error",
+                "db.object-name",
+                "user.query",
+                "package.json"
+              ]
+            },
+            "text": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            },
+            "modified": {
+              "type": "boolean"
+            }
+          }
+        },
+        "databaseEnv": {
+          "const": "DATABASE_URL"
+        },
+        "git": {
+          "type": "boolean"
+        },
+        "okmodel": {
+          "type": "boolean"
+        },
+        "typescript": {
+          "enum": [
+            "absent",
+            "ok",
+            "warn"
+          ]
+        },
+        "orm": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ancestorConfig": {
+          "type": "boolean"
+        }
+      }
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "state",
+          "action"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "absent",
+              "identical",
+              "managed-diff",
+              "user-modified"
+            ]
+          },
+          "action": {
+            "enum": [
+              "create",
+              "update",
+              "skip",
+              "overwrite",
+              "append"
+            ]
+          },
+          "diff": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "packageEdits": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "key",
+          "action"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "action": {
+            "enum": [
+              "add",
+              "skip"
+            ]
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "nextSteps": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "planHash": {
+      "type": "string"
+    },
+    "install": {
+      "type": "boolean"
+    },
+    "note": {
+      "type": "string"
+    }
+  }
+}

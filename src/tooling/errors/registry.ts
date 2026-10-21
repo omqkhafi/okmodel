@@ -891,14 +891,47 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     summary: "A store fingerprint blocks this state-changing command when there is no terminal.",
     fix: "Open a terminal for this invocation. A terminal is friction, not proof of a human.",
   },
-  // Reserved, not registered (no raising path): version OKM1804–OKM1809,
-  // extension OKM1815–OKM1819, feature refusal OKM1861–OKM1879, adapter
-  // capability refusal OKM1880–OKM1889. OKM1140–OKM1179 stay reserved (D291).
   {
     code: "OKM1860",
     title: "Feature refused",
     summary: "The configured dialect refuses a feature this schema uses.",
     fix: "Use the portable alternative named in the error. The message names the dialect, the feature, and the first version that would support it when one exists.",
+  },
+  {
+    code: "OKM1862",
+    title: "Different driver",
+    summary: "A driver package is already installed and the driver flag names a different one.",
+    fix: "Drop the driver flag, or remove the installed driver package before choosing another.",
+  },
+  {
+    code: "OKM1863",
+    title: "Init decision",
+    summary: "okm init needs a choice and this invocation is not interactive.",
+    fix: "Pass the flag named in the message. The flags are --driver, --tenancy, and --install.",
+  },
+  {
+    code: "OKM1864",
+    title: "User-modified file",
+    summary: "A file init recorded was edited, so init leaves it unchanged.",
+    fix: "Keep the file, or pass the force-file flag with that path to replace it.",
+  },
+  {
+    code: "OKM1865",
+    title: "Unsupported project",
+    summary: "The directory has no package.json, cannot be written, or a path leaves it.",
+    fix: "Use a package directory that can be written, and keep paths inside it.",
+  },
+  {
+    code: "OKM1866",
+    title: "Plan hash mismatch",
+    summary: "The plan hash does not match this directory anymore.",
+    fix: "Print the plan again and pass the new plan-hash.",
+  },
+  {
+    code: "OKM1867",
+    title: "Tenancy mode",
+    summary: "Tenancy schema or database is not supported by init yet.",
+    fix: "Pass --tenancy none, or --tenancy column.",
   },
   {
     code: "OKM2200",
@@ -907,6 +940,9 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
       "The write-observer buffer dropped the oldest unit because it exceeded the pending-event ceiling.",
     fix: "Drain handlers with flush() more often, or raise maxPending on writeObserver. The write path does not wait.",
   },
+  // Reserved, not registered (no raising path): version OKM1804–OKM1809,
+  // extension OKM1815–OKM1819, feature refusal OKM1861 and OKM1868–OKM1879,
+  // adapter capability refusal OKM1880–OKM1889. OKM1140–OKM1179 stay reserved (D291).
 ];
 
 let byCode: ReadonlyMap<string, ErrorDoc> | undefined;

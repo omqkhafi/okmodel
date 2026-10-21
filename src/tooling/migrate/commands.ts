@@ -244,6 +244,10 @@ async function dispatch(
   if (id === "ext scaffold") return extScaffoldCommand(project, parsed, cwd, human);
   if (id === "ext test") return extTestCommand(project, parsed, human);
   if (id === "generate") return generate(project, parsed, human);
+  if (id === "init") {
+    const { initCommand } = await import("../init/command.js");
+    return initCommand(parsed, cwd, human);
+  }
   if (id === "import drizzle") return drizzle(project, parsed, human);
   if (id === "migrate plan") return planCommand(project, parsed, human);
   if (id === "migrate apply") return applyCommand(project, parsed, human);
