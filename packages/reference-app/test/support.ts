@@ -205,3 +205,20 @@ export function projectAt(count: number): string {
 export function removeProject(dir: string): void {
   rmSync(dir, { recursive: true, force: true });
 }
+
+/**
+ * `okm check` output without the OKM2101 lines.
+ *
+ * The app's composite tenant keys have no index that starts with them. The
+ * rehearsal and preview tests check that a database matches the schema, so
+ * they compare the output without the schema warnings.
+ *
+ * @param output - Stdout of `okm check`
+ * @returns The output without `warn OKM2101` lines
+ */
+export function schemaChecked(output: string): string {
+  return output
+    .split("\n")
+    .filter((line) => !line.startsWith("warn OKM2101 "))
+    .join("\n");
+}
