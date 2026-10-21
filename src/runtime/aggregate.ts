@@ -67,6 +67,7 @@ const OPTIONS = [
   "where",
   "groupBy",
   "count",
+  "countDistinct",
   "sum",
   "avg",
   "min",
@@ -83,13 +84,20 @@ const OPTIONS = [
 const NUMERIC = /^(smallint|integer|bigint|real|double precision|numeric|decimal)\b/;
 
 const AS_NUMBER = (wire: string): unknown => Number(wire);
+const GROUPS: Readonly<Record<string, string>> = {
+  "d:": "countDistinct",
+  "s:": "sum",
+  "a:": "avg",
+  "n:": "min",
+};
 const AS_TEXT = (wire: string): unknown => wire;
 
 /** Column types with no order, so `min` and `max` refuse them. */
 const UNORDERED = /^(json|jsonb|bytea|point|line|tsvector)\b|\[\]$/;
 
-/** `sum`, `avg`, `min`, and `max` in the order the statement writes them. */
+/** `countDistinct`, `sum`, `avg`, `min`, and `max` in the order the statement writes them. */
 const FUNCTIONS = [
+  { option: "countDistinct", tag: "d", numeric: false },
   { option: "sum", tag: "s", numeric: true },
   { option: "avg", tag: "a", numeric: true },
   { option: "min", tag: "n", numeric: false },
@@ -105,7 +113,7 @@ type Spec = {
   readonly bucketed: boolean;
   readonly count: boolean;
   readonly calls: readonly {
-    readonly option: "sum" | "avg" | "min" | "max";
+    readonly option: "countDistinct" | "sum" | "avg" | "min" | "max";
     readonly tag: string;
     readonly column: ColumnModel;
     /** How the result is read: the column's codec, or the exact text or number of a sum. */
@@ -260,15 +268,17 @@ function parse(table: Indexed, record: Record<string, unknown>, buckets?: Bucket
           `${option} does not apply to ${column.dataType} column ${column.field}. ${
             numeric
               ? "sum and avg take integer, real, and numeric columns."
-              : "min and max need an ordered type."
+              : "countDistinct, min, and max need an ordered type."
           }`,
         );
       }
-      calls.push({ option, tag, column, decode: numeric ? sumDecode(column) : column.decode });
+      const decode =
+        option === "countDistinct" ? AS_NUMBER : numeric ? sumDecode(column) : column.decode;
+      calls.push({ option, tag, column, decode });
     }
   }
   if (!count && calls.length === 0 && grouped.groups.length === 0) {
-    fail("OKM1120", "aggregate() needs count, sum, avg, min, max, or groupBy.");
+    fail("OKM1120", "aggregate() needs count, countDistinct, sum, avg, min, max, or groupBy.");
   }
   return { groups: grouped.groups, bucketed: grouped.bucketed, count, calls };
 }
@@ -388,9 +398,11 @@ function statement(spec: Spec, buckets: BucketChunk | undefined): ReadBuild {
     for (const item of spec.calls) {
       const ref = `t.${quote(item.column.sql)}`;
       const expr =
-        item.option === "sum" || item.option === "avg"
-          ? `${item.option}(${ref})::text`
-          : projectExpr(`${item.option}(${ref})`, item.column.dataType);
+        item.option === "countDistinct"
+          ? `count(distinct ${ref})::text`
+          : item.option === "sum" || item.option === "avg"
+            ? `${item.option}(${ref})::text`
+            : projectExpr(`${item.option}(${ref})`, item.column.dataType);
       put(sink, outputs, wrote, expr, {
         key: `${item.tag}:${item.column.field}`,
         decode: item.decode,
@@ -472,7 +484,7 @@ function decode(
       } else if (tag === "c:") {
         item.count = Number(value ?? 0);
       } else {
-        const group = tag === "s:" ? "sum" : tag === "a:" ? "avg" : tag === "n:" ? "min" : "max";
+        const group = GROUPS[tag] ?? "max";
         const into = (item[group] ??= {}) as Record<string, unknown>;
         into[name] = cell(value, field.decode);
       }

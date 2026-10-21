@@ -69,8 +69,9 @@ A cursor this call did not return is `after is not a cursor that page() returned
 | --- | --- |
 | no `groupBy` | One row. |
 | `groupBy` | One row per group. Needs `limit`, or `.all(reason)`. |
-| `sum`, `avg` | A list of field names. |
+| `sum`, `avg`, `min`, `max` | A list of field names. |
 | `count: true` | The row count. |
+| `countDistinct` | A list of field names. Different non-null values, as `countDistinct.<field>`. |
 
 #### count
 
@@ -95,7 +96,7 @@ export async function totals(url: string) {
 
 #### grouped
 
-`groupBy` needs `limit`, or `.all(reason)`. `sum` is a list of field names.
+`groupBy` needs `limit`, or `.all(reason)`. `sum` and `countDistinct` are lists of field names. `countDistinct` skips NULL, so a group with only NULLs counts 0.
 
 ```ts title="aggregate.ts"
 import { connect } from "okmodel/pg/postgresjs";
@@ -114,6 +115,7 @@ export async function byStatus(url: string) {
     groupBy: ["status"],
     count: true,
     sum: ["amount"], // [!code focus]
+    countDistinct: ["amount"], // [!code focus]
     limit: 20,
   });
 }
