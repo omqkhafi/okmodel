@@ -990,8 +990,8 @@
     "code": "OKM1601",
     "kind": "invalid",
     "category": "input",
-    "summary": "A typed SQL signature no longer matches the database.",
-    "fix": "Regenerate the typed SQL and commit the new signature.",
+    "summary": "A typed raw statement is missing from the lock, the lock does not parse, or its signature no longer matches the database.",
+    "fix": "Rerun okm raw sync and commit .okm/raw.lock.json and .okm/raw.d.ts.",
     "retryable": false,
     "docs": "docs/errors/OKM1601.md"
   },
@@ -999,8 +999,8 @@
     "code": "OKM1602",
     "kind": "invalid",
     "category": "input",
-    "summary": "A raw statement is not one select or one write the checker can classify, or two result columns share a name.",
-    "fix": "Start the statement with select, insert, update, or delete. with is a write when it contains insert, update, delete, or merge. Give result columns distinct names.",
+    "summary": "A raw statement is not one select or one write the checker can classify, two result columns share a name, or a typed raw call passed the wrong number of parameters.",
+    "fix": "Start the statement with select, insert, update, or delete. with is a write when it contains insert, update, delete, or merge. Give result columns distinct names. Pass one value per $n placeholder.",
     "retryable": false,
     "docs": "docs/errors/OKM1602.md"
   },
@@ -1051,13 +1051,18 @@
     "code": "OKM1702",
     "kind": "invalid",
     "category": "input",
-    "summary": "Raw SQL on a tenant table cannot prove the tenant predicate. A raw write is this. A raw read that does not select the primary key with ident is this.",
-    "fix": "Use update or delete, or select the primary key with ident(name).",
+    "summary": "Raw SQL on a tenant table cannot prove the tenant predicate. A raw write is this. A raw read that does not select the primary key with ident is this. A typed raw call, raw(db, sql, params), on a client of a schema with tenancy is this.",
+    "fix": "Use update or delete, or select the primary key with ident(name). For a typed raw call, use the table API, or pass trusted(client, \"reason\") to send the SQL without a tenant predicate on purpose.",
     "retryable": false,
     "docs": "docs/errors/OKM1702.md",
     "escapeHatches": [
       {
         "name": "unscoped()",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM1702.md#escape"
+      },
+      {
+        "name": "trusted()",
         "requiresHumanReason": true,
         "docs": "docs/errors/OKM1702.md#escape"
       }
@@ -1567,6 +1572,76 @@
         "name": "ignore",
         "requiresHumanReason": true,
         "docs": "docs/errors/OKM2008.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM2101",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "No index starts with the columns of this foreign key, so a parent delete or key change scans the child table.",
+    "fix": "Add an index that starts with the foreign key columns.",
+    "retryable": false,
+    "safeAlternatives": [
+      {
+        "text": "Add an index that starts with the foreign key columns.",
+        "docs": "docs/errors/OKM2101.md#page"
+      }
+    ],
+    "docs": "docs/errors/OKM2101.md",
+    "escapeHatches": [
+      {
+        "name": "ignore",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM2101.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM2102",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A table with no primary key has no stable row identity for updates and deletes.",
+    "fix": "Declare a primary key on the table.",
+    "retryable": false,
+    "safeAlternatives": [
+      {
+        "text": "Declare a primary key on the table.",
+        "docs": "docs/errors/OKM2102.md#page"
+      }
+    ],
+    "docs": "docs/errors/OKM2102.md",
+    "escapeHatches": [
+      {
+        "name": "ignore",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM2102.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM2103",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "Callers can filter or sort by this column and no index starts with it, so each read scans the table.",
+    "fix": "Add an index that starts with the column, or remove the column from the allowlist or preset.",
+    "retryable": false,
+    "safeAlternatives": [
+      {
+        "text": "Add an index that starts with the column.",
+        "docs": "docs/errors/OKM2103.md#page"
+      },
+      {
+        "text": "Remove the column from the filters allowlist, the sort list, or the preset.",
+        "docs": "docs/errors/OKM2103.md#page"
+      }
+    ],
+    "docs": "docs/errors/OKM2103.md",
+    "escapeHatches": [
+      {
+        "name": "ignore",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM2103.md#escape"
       }
     ]
   },

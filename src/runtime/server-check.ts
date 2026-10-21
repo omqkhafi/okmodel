@@ -101,7 +101,10 @@ export async function acceptServer(
   http: ErrorStatuses | undefined,
   requireMeta: boolean,
   options: ExecuteOptions | undefined,
-  source: { readonly catalog?: CatalogArtifact; readonly catalogDir?: string },
+  source: {
+    readonly catalog?: CatalogArtifact | undefined;
+    readonly catalogDir?: string | undefined;
+  },
   onWrite?: object,
 ): Promise<void> {
   if (onWrite !== undefined) {

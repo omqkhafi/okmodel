@@ -1433,6 +1433,8 @@ export type ConnectOptions<S extends QuerySchema> = {
    * Absent, a read does not report OKM2xxx advice.
    */
   readonly warnings?: (schema: QuerySchema, call: ReadCall, stack?: string) => void;
+  /** Per-statement observer (`okm.observe/1`). See `docs/observer-events.md`. */
+  readonly onQuery?: import("./observe-types.js").OnQuery;
 };
 
 /** Ceilings from `connect({ timeouts })`, in milliseconds. Each key is optional. */

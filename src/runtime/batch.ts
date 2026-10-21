@@ -119,10 +119,14 @@ async function run(
     statements.push(...item.statements);
   }
   if (statements.length === 0) return prepared.map((item) => item.finish([]));
-  const observe =
-    session.o === undefined
-      ? undefined
-      : prepared.flatMap((item) => statementObserve(true, item) ?? rawObserve(item));
+  const watching = session.o !== undefined || session.q !== undefined;
+  const observe = watching
+    ? prepared.flatMap((item) => statementObserve(true, item) ?? rawObserve(item))
+    : undefined;
+  if (session.q !== undefined && wantsQueryParams(session.q)) {
+    const { rememberSecrets } = await import("./observe-query.js");
+    rememberSecrets(statements, session.schema, session.scope, undefined);
+  }
   let results;
   try {
     results = await runWrite(session, statements, call(options), true, observe);
@@ -130,12 +134,17 @@ async function run(
     throw at(error, starts);
   }
   const extra = await recover(session, prepared, results, starts, options);
-  return prepared.map((item, index) => {
-    const from = starts[index] ?? 0;
-    const slice = results.slice(from, from + item.statements.length);
-    const more = extra.get(index);
-    return item.finish(more === undefined ? slice : slice.concat(more));
-  });
+  const decode = (): readonly unknown[] =>
+    prepared.map((item, index) => {
+      const from = starts[index] ?? 0;
+      const slice = results.slice(from, from + item.statements.length);
+      const more = extra.found.get(index);
+      return item.finish(more === undefined ? slice : slice.concat(more));
+    });
+  if (session.q === undefined) return decode();
+  const { finishObserved } = await import("./observe-query.js");
+  const groups = extra.ran === undefined ? [results] : [results, extra.ran];
+  return finishObserved(session, groups, decode);
 }
 
 async function recover(
@@ -144,7 +153,10 @@ async function recover(
   results: readonly ExecuteResult[],
   starts: readonly number[],
   options: Record<string, unknown>,
-): Promise<Map<number, readonly ExecuteResult[]>> {
+): Promise<{
+  readonly found: Map<number, readonly ExecuteResult[]>;
+  readonly ran?: readonly ExecuteResult[];
+}> {
   const pending: { readonly index: number; readonly statements: readonly Statement[] }[] = [];
   for (let index = 0; index < prepared.length; index += 1) {
     const item = prepared[index];
@@ -155,7 +167,7 @@ async function recover(
     pending.push({ index, statements: more });
   }
   const found = new Map<number, readonly ExecuteResult[]>();
-  if (pending.length === 0) return found;
+  if (pending.length === 0) return { found };
   const flat: Statement[] = [];
   const extraStarts: number[] = [];
   for (const item of pending) {
@@ -163,16 +175,20 @@ async function recover(
     flat.push(...item.statements);
   }
   let ran: readonly ExecuteResult[];
-  const observe =
-    session.o === undefined
-      ? undefined
-      : pending.flatMap((item) => {
-          const base = prepared[item.index]?.observe;
-          if (base === undefined) return rawStatements(item.statements);
-          return item.statements.map((statement) =>
-            /\breturning\b/i.test(statement.text) ? { ...base, returning: true } : base,
-          );
-        });
+  const watching = session.o !== undefined || session.q !== undefined;
+  const observe = watching
+    ? pending.flatMap((item) => {
+        const base = prepared[item.index]?.observe;
+        if (base === undefined) return rawStatements(item.statements);
+        return item.statements.map((statement) =>
+          /\breturning\b/i.test(statement.text) ? { ...base, returning: true } : base,
+        );
+      })
+    : undefined;
+  if (session.q !== undefined && wantsQueryParams(session.q)) {
+    const { rememberSecrets } = await import("./observe-query.js");
+    rememberSecrets(flat, session.schema, session.scope, undefined);
+  }
   try {
     ran = await runWrite(session, flat, call(options), true, observe);
   } catch (error) {
@@ -184,7 +200,11 @@ async function recover(
     const from = extraStarts[index] ?? 0;
     found.set(item.index, ran.slice(from, extraStarts[index + 1] ?? ran.length));
   }
-  return found;
+  return { found, ran };
+}
+
+function wantsQueryParams(handler: object | undefined): boolean {
+  return (handler as { observeParams?: boolean } | undefined)?.observeParams === true;
 }
 
 const RAW_OBSERVE = {

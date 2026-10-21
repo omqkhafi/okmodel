@@ -74,11 +74,26 @@ export async function execute(
 ): Promise<{ readonly added: readonly unknown[]; readonly removed: readonly unknown[] }> {
   try {
     const planned = await prepare(session, table, id, relation, ids, options, mods);
-    const results = await runWrite(session, [planned.lock, planned.statement], planned.call);
-    return readResult(planned, results[1]?.rows ?? []);
+    const statements = [planned.lock, planned.statement];
+    if (session.q !== undefined && wantsQueryParams(session.q)) {
+      const { rememberSecrets } = await import("./observe-query.js");
+      rememberSecrets(statements, session.schema, session.scope, { id, relation, ids });
+    }
+    const results = await runWrite(session, statements, planned.call);
+    const decode = (): {
+      readonly added: readonly unknown[];
+      readonly removed: readonly unknown[];
+    } => readResult(planned, results[1]?.rows ?? []);
+    if (session.q === undefined) return decode();
+    const { finishObserved } = await import("./observe-query.js");
+    return finishObserved(session, [results], decode);
   } catch (error) {
     return settleCall(session, error);
   }
+}
+
+function wantsQueryParams(handler: object | undefined): boolean {
+  return (handler as { observeParams?: boolean } | undefined)?.observeParams === true;
 }
 
 /**

@@ -328,7 +328,7 @@ const extensionHeader = [
 
 const extensionV1 = [
   "export const app = schema({",
-  '  tables: [table("people", { email: t.citext() })],',
+  '  tables: [table("people", { id: t.identity(), email: t.citext() })],',
   "  extensions: [citextExtension()],",
   "});",
 ].join("\n");
@@ -339,7 +339,7 @@ const extensionV2 = [
   "  tables: [",
   "    table(",
   '      "people",',
-  "      { email: t.citext(), title: t.text(), body: t.text() },",
+  "      { id: t.identity(), email: t.citext(), title: t.text(), body: t.text() },",
   "      { indexes: (column) => [trigram.gin(column.title.name), trigram.gist(column.body.name)] },",
   "    ),",
   "  ],",
@@ -353,13 +353,13 @@ const domainHeader = [`import { schema, t, table } from ${pg};`].join("\n");
 
 const domainV1 = [
   "export const app = schema({",
-  '  tables: [table("people", { n: t.domain("pos", t.integer(), "((VALUE > 0))") })],',
+  '  tables: [table("people", { id: t.identity(), n: t.domain("pos", t.integer(), "((VALUE > 0))") })],',
   "});",
 ].join("\n");
 
 const domainV2 = [
   "export const app = schema({",
-  '  tables: [table("people", { n: t.domain("pos", t.integer(), "((VALUE > 1))") })],',
+  '  tables: [table("people", { id: t.identity(), n: t.domain("pos", t.integer(), "((VALUE > 1))") })],',
   "});",
 ].join("\n");
 

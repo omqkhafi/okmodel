@@ -4086,6 +4086,6 @@ The attribution is the [per-graph table](#per-graph-totals): the postgres.js inc
 | `adapter:src/adapters/pg/postgresjs.ts` | 15,909 | 16,000 | 91 | 17,000 | 1,091 |
 | `adapter:src/adapters/pg/pglite.ts` | 11,923 | 12,010 | 87 | 12,700 | 777 |
 
-One-time increase. Unchanged: the featureless app gate (90,900 / 30,170; 88,464 / 28,441 measured after #497, 2,436 / 1,729 left) and the runtime entry gate (6,100 / 2,250; 5,288 / 2,026 measured).
+One-time increase. Unchanged: the featureless app gate (90,900 / 30,170; 88,348 / 28,426 measured after #497, 2,552 / 1,744 left) and the runtime entry gate (6,100 / 2,250; 5,288 / 2,026 measured).
 
 Not decided here, and moved to the 0.10.x notes: candidates 2 and 3 (lazy relation, tenancy, and archive compilers inside `schema.ts` and `plan.ts`), and candidates 4 and 5 (dead-export and clone removal). They are too risky for a gate reset.

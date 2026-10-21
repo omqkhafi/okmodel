@@ -115,7 +115,7 @@ function ownerOf(model: TableModel | undefined, name: string, table: string): st
 }
 
 /** Field names a filter constrains, across the branches of an `or`. Never values. */
-function fieldsOf(filter: unknown): string[] {
+export function fieldsOf(filter: unknown): string[] {
   if (isOperator(filter)) {
     const branches = operatorValue(filter);
     return Array.isArray(branches) ? branches.flatMap(fieldsOf) : [];

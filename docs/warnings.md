@@ -2,7 +2,7 @@
 okmVersion: "0.10.0"
 since: "0.10"
 dialects: [postgres]
-codes: [OKM2004, OKM2005, OKM2007, OKM2008]
+codes: [OKM2004, OKM2005, OKM2007, OKM2008, OKM2101, OKM2102, OKM2103]
 ---
 # Warnings
 
@@ -42,7 +42,9 @@ await db.notes.find({
 });
 ```
 
-`defineConfig({ warnings })` accepts `levels` and `ignore`. `okm check` lists each project ignore with its rule and reason. The reason is untrusted text (`user.query`). `okm check` does not run the query rules.
+`defineConfig({ warnings })` accepts `levels` and `ignore`. `okm check` lists each project ignore with its rule and reason. The reason is untrusted text (`user.query`). `okm check` does not run the query rules. It runs the schema rules below.
+
+A project ignore may carry a `target`: a table (`events`) or a column (`orders.user_id`), in SQL names. The target narrows the ignore to that table or column. Without a target the ignore covers every finding of its rule. A call-site ignore has no target. A project ignore with a target never silences a query rule.
 
 ## Rules
 
@@ -55,6 +57,40 @@ await db.notes.find({
 
 OKM2011 is not part of this channel yet.
 
+## Schema rules in `okm check`
+
+These three rules read the schema, the catalog, and the project source. They need no database and no running app. `okm check` evaluates them in phase `check` with static evidence. A level comes from `warnings.levels`, or the registry default (`warn`, severity medium). A project has no environment here, so a production build does not turn them off.
+
+| Code | Rule | Fires when |
+| --- | --- | --- |
+| OKM2101 | `unindexed-foreign-key` | No index, primary key, or unique constraint starts with the columns of a foreign key. A composite index that starts with them counts, in any order of those columns. |
+| OKM2102 | `table-without-primary-key` | A managed table has no primary key. A unique index does not replace one. |
+| OKM2103 | `unindexed-filter-column` | A column is in a `filters()` allow list or sort list, or used by a preset, and no index starts with it. A primary key or unique index counts. On a tenant table the tenant column prefix counts. |
+
+`okm check` prints one line per finding and one `warnings[]` entry with `place` set to the target (`orders.user_id`). It exits 0. A rule at level `error` makes it exit non-zero with that rule's code and every error finding in the message. `off` drops the rule. A table that declares no key on purpose is silenced with a project ignore:
+
+```ts
+export default defineConfig({
+  schema: "./schema.ts",
+  warnings: {
+    levels: { "unindexed-filter-column": "error" },
+    ignore: [
+      { rule: "table-without-primary-key", target: "events", reason: "append-only log" },
+    ],
+  },
+});
+```
+
+Every project ignore is listed with its reason. For these three rules the entry also has `status`: `applied` when a finding matched, `stale` when none did. A stale ignore is reported as a warning. An ignore for another rule has no status.
+
+A rule stays silent when it cannot decide:
+
+- An index with an expression makes the columns it names undecidable. The rule does not fire for them.
+- A partial index counts as an index.
+- A preset is run once with its builder and no arguments. A preset that throws without its arguments adds nothing. A name that is not a column of the table is skipped.
+- `filters()` is read from source, because the call keeps nothing at runtime. `okm check` reads the `raw.include` files (default `src/**`), the schema file, and the `tables` directory. A call counts when its receiver is an identifier bound to one `table("name", ...)`. Only literal `allow` keys and literal `sort` strings are read. A spread, a computed key, an unknown receiver, or a name bound to two tables adds nothing.
+- An external or ignored table is not checked.
+
 The fix for a deep offset is `page()` with a cursor. The fix for a large list is `= any(array)`, so the list is one parameter. The fix for a wide include is a lower parent limit or a lower include limit. The fix for an unordered limit is an `orderBy` that ends with the primary key or a unique column.
 
-Pages: [OKM2004](errors/OKM2004.md), [OKM2005](errors/OKM2005.md), [OKM2007](errors/OKM2007.md), [OKM2008](errors/OKM2008.md).
+Pages: [OKM2004](errors/OKM2004.md), [OKM2005](errors/OKM2005.md), [OKM2007](errors/OKM2007.md), [OKM2008](errors/OKM2008.md), [OKM2101](errors/OKM2101.md), [OKM2102](errors/OKM2102.md), [OKM2103](errors/OKM2103.md).

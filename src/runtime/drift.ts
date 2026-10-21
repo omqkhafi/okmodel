@@ -40,8 +40,8 @@ export async function assertCompatible(
   schema: QuerySchema,
   recordedHash: string,
   source: {
-    readonly catalog?: CatalogArtifact;
-    readonly catalogDir?: string;
+    readonly catalog?: CatalogArtifact | undefined;
+    readonly catalogDir?: string | undefined;
   },
   options: ExecuteOptions | undefined,
   namespace = "public",
@@ -77,7 +77,10 @@ export async function assertCompatible(
 
 async function codeHash(
   schema: QuerySchema,
-  source: { readonly catalog?: CatalogArtifact; readonly catalogDir?: string },
+  source: {
+    readonly catalog?: CatalogArtifact | undefined;
+    readonly catalogDir?: string | undefined;
+  },
 ): Promise<{
   readonly hash: string;
   readonly artifact?: CatalogArtifact;

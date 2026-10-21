@@ -5,7 +5,7 @@ description: "Development advice for a query. The level is configuration. The co
 
 `okmodel/warnings` exports `warnings`. Pass it to `connect`. Production reports nothing until a level is set. Development reports a hint for low severity and a warn for medium or high. `error` throws and is meant for a test.
 
-An ignore needs a reason. `okm check` lists project ignores. It does not run the query rules.
+An ignore needs a reason. `okm check` does not run the query rules. It lists project ignores and runs the schema rules below.
 
 ```ts title="warnings.ts"
 import { connect } from "okmodel/pg/postgresjs";
@@ -25,3 +25,25 @@ export const db = connect(process.env.DATABASE_URL ?? "", {
 ```
 
 `offset` above 1,000 is OKM2004. A `limit` whose order does not end in a unique key is OKM2005. A value list above 500 elements is OKM2007. An include whose row product is above 10,000 is OKM2008. `page()` is the cursor alternative to a deep offset.
+
+## Schema rules in `okm check`
+
+`okm check` reads the schema, the catalog, and the project source. It needs no database. A finding is a warning and the exit code stays 0. A rule at level `error` exits non-zero.
+
+- OKM2101 (`unindexed-foreign-key`): no index starts with the columns of a foreign key. A composite index that starts with them counts.
+- OKM2102 (`table-without-primary-key`): a managed table has no primary key.
+- OKM2103 (`unindexed-filter-column`): a column in a `filters()` allow or sort list, or used by a preset, has no index that starts with it. A primary key, a unique index, and the tenant prefix count.
+
+A rule that cannot decide, such as one facing an expression index, stays silent. A project ignore names a `target` (`events` or `orders.user_id`) and a reason. `okm check` lists every ignore and marks one that matched nothing as stale.
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  warnings: {
+    levels: { "unindexed-foreign-key": "error" },
+    ignore: [{ rule: "table-without-primary-key", target: "events", reason: "append-only log" }],
+  },
+});
+```

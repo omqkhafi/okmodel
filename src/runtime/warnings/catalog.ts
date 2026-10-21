@@ -18,10 +18,17 @@ export type WarningPhase = "build" | "check" | "dev-runtime" | "production-runti
 /** Whether the rule reads the query or a later observation. */
 export type WarningEvidence = "static" | "observed";
 
-/** One call-site or project ignore. `reason` is required. */
+/**
+ * One call-site or project ignore. `reason` is required.
+ *
+ * `target` narrows a project ignore of a `check` rule to one table
+ * (`orders`) or one column (`orders.user_id`). Without it the ignore covers
+ * every finding of the rule.
+ */
 export type WarningIgnore = {
   readonly rule: string;
   readonly reason: string;
+  readonly target?: string;
 };
 
 /** One safe alternative, in the same shape as an error page. */
@@ -83,9 +90,10 @@ function hatch(code: string): WarningHatch {
 }
 
 /**
- * Registered query-behaviour rules, in numeric order.
+ * Registered rules, in numeric order.
  *
- * 2000–2099 is query behaviour. 2100–2199 is schema. 2200–2299 is operations.
+ * 2000–2099 is query behaviour. 2100–2199 is schema, read by `okm check`.
+ * 2200–2299 is operations.
  */
 export const WARNING_RULES: readonly WarningRule[] = [
   {
@@ -140,6 +148,50 @@ export const WARNING_RULES: readonly WarningRule[] = [
     evidence: "static",
     safeAlternatives: [alt("OKM2008", "Lower the parent limit or an include limit.")],
     escapeHatches: [hatch("OKM2008")],
+  },
+  {
+    code: "OKM2101",
+    rule: "unindexed-foreign-key",
+    title: "Foreign key without an index",
+    summary:
+      "No index starts with the columns of this foreign key, so a parent delete or key change scans the child table.",
+    fix: "Add an index that starts with the foreign key columns.",
+    defaultLevel: "warn",
+    severity: "medium",
+    phase: "check",
+    evidence: "static",
+    safeAlternatives: [alt("OKM2101", "Add an index that starts with the foreign key columns.")],
+    escapeHatches: [hatch("OKM2101")],
+  },
+  {
+    code: "OKM2102",
+    rule: "table-without-primary-key",
+    title: "Table without a primary key",
+    summary: "A table with no primary key has no stable row identity for updates and deletes.",
+    fix: "Declare a primary key on the table.",
+    defaultLevel: "warn",
+    severity: "medium",
+    phase: "check",
+    evidence: "static",
+    safeAlternatives: [alt("OKM2102", "Declare a primary key on the table.")],
+    escapeHatches: [hatch("OKM2102")],
+  },
+  {
+    code: "OKM2103",
+    rule: "unindexed-filter-column",
+    title: "Filter or sort column without an index",
+    summary:
+      "Callers can filter or sort by this column and no index starts with it, so each read scans the table.",
+    fix: "Add an index that starts with the column, or remove the column from the allowlist or preset.",
+    defaultLevel: "warn",
+    severity: "medium",
+    phase: "check",
+    evidence: "static",
+    safeAlternatives: [
+      alt("OKM2103", "Add an index that starts with the column."),
+      alt("OKM2103", "Remove the column from the filters allowlist, the sort list, or the preset."),
+    ],
+    escapeHatches: [hatch("OKM2103")],
   },
 ];
 
