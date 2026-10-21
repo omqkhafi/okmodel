@@ -16,6 +16,8 @@ import { identityKey, identityLabel } from "../../contracts/catalog/identity.js"
 import type { Catalog, CatalogObject } from "../../contracts/catalog/types.js";
 import type { DriverConnection } from "../../contracts/driver.js";
 import { OkmError } from "../../contracts/error.js";
+import { attachCliDetail } from "../errors/shape.js";
+import { untrustedText } from "../untrusted.js";
 import { quoteIdent } from "../../dialects/pg/ddl.js";
 import { introspectSchema } from "../../dialects/pg/introspect.js";
 import { sealViews } from "../../dialects/pg/view/scratch.js";
@@ -152,29 +154,35 @@ async function runBaseline(
           unmanaged,
         };
       }
-      throw new OkmError(
-        "OKM1857",
-        `Target ${target.name} already has OKModel history (${existing.migrationId}).`,
-        {
-          kind: "forbidden",
-          fix: {
-            summary:
-              "Baseline is for a database with no OKModel history. Use okm migrate status, or point at another target.",
+      throw attachCliDetail(
+        new OkmError(
+          "OKM1857",
+          `Target ${target.name} already has OKModel history (${existing.migrationId}).`,
+          {
+            kind: "forbidden",
+            fix: {
+              summary:
+                "Baseline is for a database with no OKModel history. Use okm migrate status, or point at another target.",
+            },
           },
-        },
+        ),
+        { detail: untrustedText(existing.migrationId, "db.object-name") },
       );
     }
     const compared = await compareLive(url, model, namespace, config.roles);
     if (compared.mismatch.length > 0) {
-      throw new OkmError(
-        "OKM1858",
-        `Target ${target.name} does not match the model snapshot.\n${compared.mismatch.join("\n")}`,
-        {
-          fix: {
-            summary:
-              "Change the schema or the database until they match, then run okm migrate baseline again.",
+      throw attachCliDetail(
+        new OkmError(
+          "OKM1858",
+          `Target ${target.name} does not match the model snapshot.\n${compared.mismatch.join("\n")}`,
+          {
+            fix: {
+              summary:
+                "Change the schema or the database until they match, then run okm migrate baseline again.",
+            },
           },
-        },
+        ),
+        { detail: untrustedText(compared.mismatch.join("\n"), "user.query") },
       );
     }
     const report: BaselineReport = {
@@ -250,7 +258,10 @@ function reportJson(report: BaselineReport): Record<string, unknown> {
     migrationId: report.migrationId,
     catalogHash: report.catalogHash,
     status: report.status,
-    unmanaged: report.unmanaged.map((item) => ({ kind: item.kind, name: item.name })),
+    unmanaged: report.unmanaged.map((item) => ({
+      kind: item.kind,
+      name: untrustedText(item.name, "db.object-name"),
+    })),
   };
 }
 
@@ -333,15 +344,18 @@ async function listUnmanaged(
 ): Promise<readonly BaselineUnmanaged[]> {
   const compared = await compareLive(url, model, namespace, roles);
   if (compared.mismatch.length > 0) {
-    throw new OkmError(
-      "OKM1858",
-      `Target already baselined but no longer matches the model.\n${compared.mismatch.join("\n")}`,
-      {
-        fix: {
-          summary:
-            "Change the schema or the database until they match. Baseline does not rewrite history.",
+    throw attachCliDetail(
+      new OkmError(
+        "OKM1858",
+        `Target already baselined but no longer matches the model.\n${compared.mismatch.join("\n")}`,
+        {
+          fix: {
+            summary:
+              "Change the schema or the database until they match. Baseline does not rewrite history.",
+          },
         },
-      },
+      ),
+      { detail: untrustedText(compared.mismatch.join("\n"), "user.query") },
     );
   }
   return compared.unmanaged;

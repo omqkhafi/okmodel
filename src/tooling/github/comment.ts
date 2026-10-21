@@ -4,7 +4,8 @@
  * The text comes from the plan document. It does not read the human plan.
  */
 
-import { parsePlanJson, type PlanDocument } from "../migrate/plan-json.js";
+import { parsePlanJson, type PlanDocument, type PlanFindingJson } from "../migrate/plan-json.js";
+import { renderUntrusted } from "../untrusted.js";
 
 /**
  * Hidden marker that identifies the sticky comment.
@@ -50,9 +51,7 @@ export function renderPlanComment(plan: PlanDocument): string {
     lines.push("No lint findings.", "");
   } else {
     for (const finding of plan.findings) {
-      lines.push(
-        `- ${finding.severity} ${finding.code} ${cell(finding.place)}: ${cell(finding.reason)}`,
-      );
+      lines.push(findingLine(finding));
     }
     lines.push("");
   }
@@ -104,6 +103,12 @@ export function stickyCommentTarget(
   );
   if (found === undefined) return undefined;
   return { updateId: found.id };
+}
+
+function findingLine(finding: PlanFindingJson): string {
+  const head = `- ${finding.severity} ${finding.code} ${cell(finding.place)}`;
+  if (typeof finding.reason === "string") return `${head}: ${cell(finding.reason)}`;
+  return `${head}\n${renderUntrusted(finding.reason)}`;
 }
 
 function cell(text: string): string {

@@ -20,6 +20,7 @@ import { pathToFileURL } from "node:url";
 import { catalog } from "../../contracts/catalog/build.js";
 import {
   catalogFileText,
+  catalogHash,
   parseCatalog,
   serializeCatalog,
   startupCatalog,
@@ -159,7 +160,11 @@ export async function planProject(
     plan: prepared.plan,
     findings,
     text: formatPlan(prepared.plan, lockText),
-    json: formatPlanJson(prepared.plan, findings, lockText),
+    json: formatPlanJson(prepared.plan, findings, lockText, {
+      dialect: "postgres",
+      fromCatalogHash: catalogHash(prepared.before),
+      toCatalogHash: catalogHash(prepared.after),
+    }),
   };
 }
 

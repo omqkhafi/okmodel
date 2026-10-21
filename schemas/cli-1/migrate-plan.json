@@ -7,7 +7,13 @@
   "required": [
     "name",
     "class",
+    "operationClass",
+    "fromCatalogHash",
+    "toCatalogHash",
+    "planHash",
+    "requiresAck",
     "steps",
+    "destructiveOperations",
     "findings"
   ],
   "properties": {
@@ -21,6 +27,26 @@
         "unclassified"
       ]
     },
+    "operationClass": {
+      "enum": [
+        "additive",
+        "widening",
+        "data",
+        "destructive"
+      ]
+    },
+    "fromCatalogHash": {
+      "type": "string"
+    },
+    "toCatalogHash": {
+      "type": "string"
+    },
+    "planHash": {
+      "type": "string"
+    },
+    "requiresAck": {
+      "type": "boolean"
+    },
     "steps": {
       "type": "array",
       "items": {
@@ -28,6 +54,7 @@
         "additionalProperties": false,
         "required": [
           "class",
+          "operationClass",
           "lock",
           "sql"
         ],
@@ -39,10 +66,92 @@
               "unclassified"
             ]
           },
+          "operationClass": {
+            "enum": [
+              "additive",
+              "widening",
+              "data",
+              "destructive"
+            ]
+          },
           "lock": {
             "type": "string"
           },
           "sql": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "destructiveOperations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "stepIndex",
+          "kind",
+          "objectKind",
+          "name",
+          "summary"
+        ],
+        "properties": {
+          "stepIndex": {
+            "type": "number"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "objectKind": {
+            "type": "string"
+          },
+          "name": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "untrusted",
+                  "origin",
+                  "text",
+                  "truncated",
+                  "modified"
+                ],
+                "properties": {
+                  "untrusted": {
+                    "const": true
+                  },
+                  "origin": {
+                    "enum": [
+                      "schema.identifier",
+                      "schema.comment",
+                      "schema.enum",
+                      "schema.default",
+                      "constraint.name",
+                      "index.name",
+                      "migration.comment",
+                      "db.error",
+                      "db.object-name",
+                      "user.query"
+                    ]
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "truncated": {
+                    "type": "boolean"
+                  },
+                  "modified": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            ]
+          },
+          "summary": {
             "type": "string"
           }
         }
@@ -74,7 +183,43 @@
             "type": "string"
           },
           "reason": {
-            "type": "string"
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "untrusted",
+              "origin",
+              "text",
+              "truncated",
+              "modified"
+            ],
+            "properties": {
+              "untrusted": {
+                "const": true
+              },
+              "origin": {
+                "enum": [
+                  "schema.identifier",
+                  "schema.comment",
+                  "schema.enum",
+                  "schema.default",
+                  "constraint.name",
+                  "index.name",
+                  "migration.comment",
+                  "db.error",
+                  "db.object-name",
+                  "user.query"
+                ]
+              },
+              "text": {
+                "type": "string"
+              },
+              "truncated": {
+                "type": "boolean"
+              },
+              "modified": {
+                "type": "boolean"
+              }
+            }
           },
           "fix": {
             "type": "string"

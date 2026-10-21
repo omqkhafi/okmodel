@@ -83,14 +83,14 @@ postgresTest(
         schema: string;
         data: {
           status: string;
-          unmanaged: { kind: string; name: string }[];
+          unmanaged: { kind: string; name: { text: string } }[];
         };
       };
       expect(dry.schema).toBe("okm.cli/1");
       const parsed = dry.data;
       expect(parsed.status).toBe("dry-run");
       expect(
-        parsed.unmanaged.some((item) => item.kind === "table" && item.name.includes("junk")),
+        parsed.unmanaged.some((item) => item.kind === "table" && item.name.text.includes("junk")),
       ).toBe(true);
       expect(await present(url, "okm_meta")).toBe(false);
 

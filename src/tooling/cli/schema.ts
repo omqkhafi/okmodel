@@ -6,6 +6,7 @@
  */
 
 import { ERROR_CATEGORIES, ERROR_KINDS } from "../../contracts/error.js";
+import { UNTRUSTED_ORIGINS } from "../untrusted.js";
 import { COMMANDS } from "./spec.js";
 
 /** A JSON Schema document this module can check. */
@@ -145,20 +146,52 @@ const SCHEMAS: Readonly<Record<string, JsonSchema>> = {
     title: "okm migrate plan data",
     type: "object",
     additionalProperties: false,
-    required: ["name", "class", "steps", "findings"],
+    required: [
+      "name",
+      "class",
+      "operationClass",
+      "fromCatalogHash",
+      "toCatalogHash",
+      "planHash",
+      "requiresAck",
+      "steps",
+      "destructiveOperations",
+      "findings",
+    ],
     properties: {
       name: { type: "string" },
       class: { enum: ["expand", "contract", "unclassified"] },
+      operationClass: operationClassSchema(),
+      fromCatalogHash: { type: "string" },
+      toCatalogHash: { type: "string" },
+      planHash: { type: "string" },
+      requiresAck: { type: "boolean" },
       steps: {
         type: "array",
         items: {
           type: "object",
           additionalProperties: false,
-          required: ["class", "lock", "sql"],
+          required: ["class", "operationClass", "lock", "sql"],
           properties: {
             class: { enum: ["expand", "contract", "unclassified"] },
+            operationClass: operationClassSchema(),
             lock: { type: "string" },
             sql: { type: "string" },
+          },
+        },
+      },
+      destructiveOperations: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["stepIndex", "kind", "objectKind", "name", "summary"],
+          properties: {
+            stepIndex: { type: "number" },
+            kind: { type: "string" },
+            objectKind: { type: "string" },
+            name: { oneOf: [{ type: "string" }, untrustedSchema()] },
+            summary: { type: "string" },
           },
         },
       },
@@ -172,7 +205,7 @@ const SCHEMAS: Readonly<Record<string, JsonSchema>> = {
             severity: { enum: ["error", "warning"] },
             code: { type: "string" },
             place: { type: "string" },
-            reason: { type: "string" },
+            reason: untrustedSchema(),
             fix: { type: "string" },
           },
         },
@@ -189,9 +222,9 @@ const SCHEMAS: Readonly<Record<string, JsonSchema>> = {
         additionalProperties: false,
         required: ["id", "kind", "state", "attempt", "nextAction"],
         properties: {
-          id: { type: "string" },
-          kind: { type: "string" },
-          state: { type: "string" },
+          id: untrustedSchema(),
+          kind: untrustedSchema(),
+          state: untrustedSchema(),
           attempt: { type: "number" },
           nextAction: { type: "string" },
         },
@@ -227,7 +260,7 @@ const SCHEMAS: Readonly<Record<string, JsonSchema>> = {
           required: ["kind", "name"],
           properties: {
             kind: { type: "string" },
-            name: { type: "string" },
+            name: untrustedSchema(),
           },
         },
       },
@@ -398,6 +431,21 @@ function errorItemSchema(): JsonSchemaNode {
     safeAlternatives: alternativesSchema(),
     docs: { type: "string" },
     escapeHatches: hatchesSchema(),
+    detail: untrustedSchema(),
+  });
+}
+
+function operationClassSchema(): JsonSchemaNode {
+  return { enum: ["additive", "widening", "data", "destructive"] };
+}
+
+function untrustedSchema(): JsonSchemaNode {
+  return objectNode(["untrusted", "origin", "text", "truncated", "modified"], {
+    untrusted: { const: true },
+    origin: { enum: UNTRUSTED_ORIGINS },
+    text: { type: "string" },
+    truncated: { type: "boolean" },
+    modified: { type: "boolean" },
   });
 }
 

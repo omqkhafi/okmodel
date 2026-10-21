@@ -13,7 +13,7 @@ contracts → dialects → adapters → runtime → tooling. Adapters import con
 ## Folders
 - `src/contracts/` — lowest layer, runtime entry `src/contracts/index.ts`; `OkmError`, `ErrorKind` (`error.ts`), pure-TS SHA-256 (`sha256.ts`), no `node:*`.
 - `src/contracts/catalog/` — catalog model (tables, policy, privilege, view, routine…); `catalogHash` in `document.ts`.
-- `src/dialects/ddl.ts` — DDL lowering interface (`DdlDialect`). One physical step is `ddlStep` in `src/dialects/ddl-step.ts`. Step classes live in `src/dialects/step-class.ts` and are re-exported from `src/tooling/migrate/classify.ts`.
+- `src/dialects/ddl.ts` — DDL lowering interface (`DdlDialect`). One physical step is `ddlStep` in `src/dialects/ddl-step.ts`. Step classes and operation classes live in `src/dialects/step-class.ts` and are re-exported from `src/tooling/migrate/classify.ts`.
 - `src/dialects/pg/` — Postgres schema DSL, compile/emit, DDL (`ddl.ts`), lowering (`lower.ts`, `table-safe.ts`), introspect, quoting, roles (`role/`), `ext/`, `fn/`, `ops/`.
 - `src/adapters/pg/` — one file per driver: `postgresjs.ts`, `nodepostgres.ts`, `bunsql.ts`, `pglite.ts`, `pglite-wire.ts`, `neon.ts` (+ `*-extra.ts`, `batch.ts`, `session.ts`).
 - `src/adapters/` — `error.ts`, `failure.ts` (driver error mapping), `capabilities.ts`.
@@ -32,6 +32,7 @@ contracts → dialects → adapters → runtime → tooling. Adapters import con
 - Error kinds: `ERROR_KINDS` / `ErrorKind` in `src/contracts/error.ts`. SQLSTATE mapping: `src/dialects/pg/errors.ts`; driver errors: `src/adapters/error.ts`, `src/adapters/failure.ts`.
 - OKM codes: `OKM1xxx`, raised via `OkmError`; doctor text in `src/tooling/errors/registry.ts` (spec §21); pages in `docs/errors/<code>.md`.
 - Catalog hash: `catalogHash` in `src/contracts/catalog/document.ts`.
+- Untrusted CLI text: `src/tooling/untrusted.ts`. Plan-hash canonical JSON: `src/tooling/canonical-json.ts`. Paths: `src/tooling/untrusted-paths.ts`. Notes: `docs/untrusted.md`.
 - Migration SQL lexing / statement split: `src/tooling/migrate/sql-lex.ts`; lint codes in `lint-rules.ts`; check sandbox in `check.ts`.
 - Pack contract: `scripts/pack-contract.ts` (`bun run pack-contract`); snapshot `tests/fixtures/pack-contract.snap.json`. `scripts/pack-tracked.ts` still refuses a packed path outside `dist/` that git does not track.
 

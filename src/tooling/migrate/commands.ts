@@ -11,6 +11,7 @@ import { isAbsolute, join } from "node:path";
 import { nearestName } from "../../contracts/nearest.js";
 import { OkmError } from "../../contracts/error.js";
 import { warningBody } from "../errors/body.js";
+import { untrustedText } from "../untrusted.js";
 import { errorDoc } from "../errors/registry.js";
 import {
   envelope,
@@ -515,9 +516,9 @@ async function statusCommand(
       text,
       steps: rows.flatMap((row) =>
         row.steps.map((step) => ({
-          id: step.id,
-          kind: step.kind,
-          state: step.state,
+          id: untrustedText(step.id, "db.object-name"),
+          kind: untrustedText(step.kind, "db.object-name"),
+          state: untrustedText(step.state, "db.object-name"),
           attempt: step.attempt,
           nextAction: step.nextAction,
         })),

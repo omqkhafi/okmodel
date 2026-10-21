@@ -42,7 +42,43 @@
             "type": "string"
           },
           "name": {
-            "type": "string"
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "untrusted",
+              "origin",
+              "text",
+              "truncated",
+              "modified"
+            ],
+            "properties": {
+              "untrusted": {
+                "const": true
+              },
+              "origin": {
+                "enum": [
+                  "schema.identifier",
+                  "schema.comment",
+                  "schema.enum",
+                  "schema.default",
+                  "constraint.name",
+                  "index.name",
+                  "migration.comment",
+                  "db.error",
+                  "db.object-name",
+                  "user.query"
+                ]
+              },
+              "text": {
+                "type": "string"
+              },
+              "truncated": {
+                "type": "boolean"
+              },
+              "modified": {
+                "type": "boolean"
+              }
+            }
           }
         }
       }

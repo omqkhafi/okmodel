@@ -230,7 +230,7 @@ bunx okm generate rename-status --replace notes.status.draft=open
 
 With one target, or with `--target`, a database that answers adds `pg_class` row estimates to the lock lines. No target, several targets and no `--target`, or a target that cannot be reached, prints the plan without estimates. An unknown `--target` and a protection mismatch still throw. Those are the same refusals as [Database](/docs/define/config/database). A pooler host is not refused.
 
-An error finding is OKM1510 and the command exits 1 after the plan text. `--json` prints one envelope and no SQL text. `data` is `name`, `class`, each step's `class`, `lock`, and `sql`, and the findings (`severity`, `code`, `place`, `reason`, `fix`). `lock` is the human `-- lock:` line. The command still exits 1 after that document when a finding is an error. `--replace` is the same flag as [generate](#generate).
+An error finding is OKM1510 and the command exits 1 after the plan text. `--json` prints one envelope and no SQL text. `data` is `name`, `class`, `operationClass`, `fromCatalogHash`, `toCatalogHash`, `planHash`, `requiresAck`, `destructiveOperations`, each step's `class`, `operationClass`, `lock`, and `sql`, and the findings (`severity`, `code`, `place`, `reason`, `fix`). `lock` is the human `-- lock:` line. `reason` is an untrusted object. `planHash` covers the dialect, the two catalog hashes, and each step's SQL as executed. `requiresAck` is true when `operationClass` is `destructive`. Apply does not read it. The command still exits 1 after that document when a finding is an error. `--replace` is the same flag as [generate](#generate).
 
 ```sh
 bunx okm migrate plan init
@@ -274,7 +274,7 @@ A pooler host is not refused. The command is read-only, including on a protected
 bunx okm migrate status
 ```
 
-`--json` keeps that text in `data.text` and adds `data.steps` (`id`, `kind`, `state`, `attempt`, `nextAction`). The array is empty when no committed step is in flight.
+`--json` keeps that text in `data.text` and adds `data.steps` (`id`, `kind`, `state`, `attempt`, `nextAction`). `id`, `kind`, and `state` are untrusted objects read from `okm_steps`. The array is empty when no committed step is in flight.
 
 ## migrate resolve
 
@@ -305,7 +305,7 @@ bunx okm migrate baseline --dry-run --json
 bunx okm migrate baseline --allow-protected --target production
 ```
 
-`--json` puts `target`, `migrationId`, `catalogHash`, `status` (`baselined`, `already-baselined`, or `dry-run`), and `unmanaged` (`kind`, `name`) in `data`.
+`--json` puts `target`, `migrationId`, `catalogHash`, `status` (`baselined`, `already-baselined`, or `dry-run`), and `unmanaged` (`kind`, `name`) in `data`. `name` is an untrusted object.
 
 `baseline(target)` from `okmodel/migrate` is the programmatic entry. `default` is the `database` target.
 

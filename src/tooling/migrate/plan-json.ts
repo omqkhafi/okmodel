@@ -5,15 +5,40 @@
  * back out of the human SQL text.
  */
 
-import type { MigrationClass } from "./classify.js";
+import { canonicalHash } from "../canonical-json.js";
+import { checkedOrUntrusted, untrustedText, type UntrustedText } from "../untrusted.js";
+import {
+  operationClassOf,
+  strictestOperation,
+  type MigrationClass,
+  type OperationClass,
+  type StepKind,
+} from "./classify.js";
 import type { Finding } from "./lint.js";
 import type { MigrationPlan, PlanStep } from "./plan.js";
 
 /** One step in a plan document. `lock` matches the human `-- lock:` line. */
 export type PlanStepJson = {
   readonly class: MigrationClass;
+  readonly operationClass: OperationClass;
   readonly lock: string;
   readonly sql: string;
+};
+
+/** One destructive step in a plan document. */
+export type DestructiveOperation = {
+  readonly stepIndex: number;
+  readonly kind: StepKind;
+  readonly objectKind: string;
+  readonly name: string | UntrustedText;
+  readonly summary: string;
+};
+
+/** Catalog hashes the plan hash commits to. Target and version are absent. */
+export type PlanIdentity = {
+  readonly dialect: string;
+  readonly fromCatalogHash: string;
+  readonly toCatalogHash: string;
 };
 
 /** One lint finding in a plan document. */
@@ -21,7 +46,7 @@ export type PlanFindingJson = {
   readonly severity: "error" | "warning";
   readonly code: string;
   readonly place: string;
-  readonly reason: string;
+  readonly reason: string | UntrustedText;
   readonly fix: string;
 };
 
@@ -33,7 +58,13 @@ export type PlanFindingJson = {
 export type PlanDocument = {
   readonly name: string;
   readonly class: MigrationClass;
+  readonly operationClass: OperationClass;
+  readonly fromCatalogHash: string;
+  readonly toCatalogHash: string;
+  readonly planHash: string;
+  readonly requiresAck: boolean;
   readonly steps: readonly PlanStepJson[];
+  readonly destructiveOperations: readonly DestructiveOperation[];
   readonly findings: readonly PlanFindingJson[];
 };
 
@@ -52,23 +83,96 @@ export function planDocument(
   plan: MigrationPlan,
   findings: readonly Finding[],
   lockText?: (step: PlanStep) => string,
+  identity?: PlanIdentity,
 ): PlanDocument {
+  const dialect = identity?.dialect ?? "postgres";
+  const fromCatalogHash = identity?.fromCatalogHash ?? "";
+  const toCatalogHash = identity?.toCatalogHash ?? "";
+  const steps = plan.steps.map((step) => {
+    const kind = step.kind ?? "raw-sql";
+    return {
+      class: step.class,
+      operationClass: operationClassOf(kind),
+      lock: lockText === undefined ? step.lock : lockText(step),
+      sql: step.sql,
+      kind,
+      name: nameOf(step),
+    };
+  });
+  const operationClass = strictestOperation(steps.map((step) => step.operationClass));
+  const destructive = steps.flatMap((step, stepIndex) =>
+    step.operationClass === "destructive"
+      ? [
+          {
+            stepIndex,
+            kind: step.kind,
+            objectKind: objectKindOf(step.kind),
+            name: step.name,
+            summary: `The step is ${step.kind}.`,
+          },
+        ]
+      : [],
+  );
   return {
     name: plan.name,
     class: plan.class,
-    steps: plan.steps.map((step) => ({
+    operationClass,
+    fromCatalogHash,
+    toCatalogHash,
+    planHash: canonicalHash({
+      planFormat: 1,
+      dialect,
+      fromCatalogHash,
+      toCatalogHash,
+      steps: steps.map((step) => ({
+        sql: step.sql.replace(/\r\n/g, "\n").replace(/\r/g, "\n"),
+        class: step.operationClass,
+      })),
+    }),
+    requiresAck: operationClass === "destructive",
+    steps: steps.map((step) => ({
       class: step.class,
-      lock: lockText === undefined ? step.lock : lockText(step),
+      operationClass: step.operationClass,
+      lock: step.lock,
       sql: step.sql,
     })),
+    destructiveOperations: destructive,
     findings: findings.map((finding) => ({
       severity: finding.severity,
       code: finding.code,
       place: finding.place,
-      reason: finding.reason,
+      reason: untrustedText(finding.reason, "user.query"),
       fix: finding.fix,
     })),
   };
+}
+
+function nameOf(step: PlanStep): string | UntrustedText {
+  const table = step.tables?.[0];
+  if (table !== undefined) return checkedOrUntrusted(table, "schema.identifier");
+  const quoted = /"([^"]+)"/.exec(step.sql);
+  const name = quoted?.[1];
+  if (name !== undefined) return checkedOrUntrusted(name, "schema.identifier");
+  return untrustedText(step.sql, "user.query");
+}
+
+function objectKindOf(kind: StepKind): string {
+  if (kind.includes("column")) return "column";
+  if (kind.includes("constraint") || kind.includes("check")) return "constraint";
+  if (kind.includes("index")) return "index";
+  if (kind.includes("enum")) return "enum";
+  if (kind.includes("domain")) return "domain";
+  if (kind.includes("extension")) return "extension";
+  if (kind.includes("function")) return "function";
+  if (kind.includes("trigger")) return "trigger";
+  if (kind.includes("matview")) return "matview";
+  if (kind.includes("view")) return "view";
+  if (kind.includes("role") || kind === "grant" || kind === "revoke" || kind.endsWith("default"))
+    return "role";
+  if (kind.includes("sequence")) return "sequence";
+  if (kind.includes("policy") || kind.includes("rls")) return "policy";
+  if (kind.includes("table")) return "table";
+  return "statement";
 }
 
 /**
@@ -83,8 +187,9 @@ export function formatPlanJson(
   plan: MigrationPlan,
   findings: readonly Finding[],
   lockText?: (step: PlanStep) => string,
+  identity?: PlanIdentity,
 ): string {
-  return `${JSON.stringify(planDocument(plan, findings, lockText))}\n`;
+  return `${JSON.stringify(planDocument(plan, findings, lockText, identity))}\n`;
 }
 
 /**
@@ -135,8 +240,19 @@ function isFinding(value: unknown): value is PlanFindingJson {
     (value.severity === "error" || value.severity === "warning") &&
     typeof value.code === "string" &&
     typeof value.place === "string" &&
-    typeof value.reason === "string" &&
+    (typeof value.reason === "string" || isUntrusted(value.reason)) &&
     typeof value.fix === "string"
+  );
+}
+
+function isUntrusted(value: unknown): value is UntrustedText {
+  if (!isRecord(value)) return false;
+  return (
+    value.untrusted === true &&
+    typeof value.origin === "string" &&
+    typeof value.text === "string" &&
+    typeof value.truncated === "boolean" &&
+    typeof value.modified === "boolean"
   );
 }
 
