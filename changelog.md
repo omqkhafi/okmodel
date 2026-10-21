@@ -32,6 +32,14 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ### ✨ Added
 
+#### contracts
+
+- `DescribeResult` adds `parameters` (type OIDs in `$n` order) and `fields` (`name`, `typeOid`, `tableOid`, `attnum`). `columns` and `parameterCount` stay.
+
+#### adapters
+
+- postgres.js and PGlite `describe` return those fields and do not execute the statement. node-postgres, Bun.sql, and Neon still leave `describe` unset.
+
 #### runtime
 
 - A connected client exposes `capabilities`, the same frozen object as the pool (`transactions`, `stream`, `listen`, `cancel`).
@@ -66,6 +74,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Conformance cases are tagged portable or gated on a registry key or an adapter gate. A refused registry entry asserts that entry's code and alternative instead of running the body. A false adapter flag on a feature the registry still provides stays unsupported. `okm driver test` prints portable, gated, refusal, and unsupported counts. A test-only profile refuses every Postgres feature and turns the adapter flags off, and the portable minimum (connect, a read and write, error mapping) still passes on it.
 - A committed step may declare `-- probe: <SELECT>` above its statement. The probe is one read-only `SELECT` that returns a single boolean: true means the step is already applied. It runs inside `begin read only` and is rolled back. A built-in probe for the step's kind still wins, and a declared probe has no cleanup. `okm migrate resolve --applied` uses that probe. The probe is not part of the step's SQL hash or the plan hash.
 - OKM1557 refuses a committed step that has no built-in probe and no declared probe, so a failure cannot tell whether the change is already in place. OKM1558 refuses an empty probe, a probe that is not one read-only `SELECT`, more than one statement, or a probe on a step that stays inside a transaction. `-- okm-allow` with a reason records that a failure in that step needs a person.
+- A direct connection describes one statement when the driver cannot, including TLS chosen from `sslmode`. A pooler host is still refused.
+- A described column is NOT NULL only when it comes from a base or partitioned table, `attnotnull` is set, the column is not generated, no NOT NULL constraint on that column is unvalidated, and the statement has none of `join`, `union`, `intersect`, `except`, `lateral`, `with`, `values`, `rollup`, `cube`, or `grouping` outside strings, comments, and quoted identifiers. `as "name!"` forces NOT NULL and `as "name?"` forces nullable. The suffix is not part of the name. PostgreSQL 15–17 have no `contype` `n` row, so that check does not change them. On 18 a `NOT VALID` constraint sets `attnotnull` while NULLs can remain, and the column stays nullable.
 
 #### docs
 

@@ -8,6 +8,7 @@
 import { PGlite, type QueryOptions } from "@electric-sql/pglite";
 
 import type {
+  DescribeField,
   DescribeResult,
   DriverConnection,
   DriverPool,
@@ -136,11 +137,7 @@ export async function open(config: PgliteConfig = {}): Promise<DriverPool> {
     async describe(text): Promise<DescribeResult> {
       await slot.acquire(acquireMs);
       try {
-        const described = await db.describeQuery(text);
-        return {
-          columns: described.resultFields.map((field) => field.name),
-          parameterCount: described.queryParams.length,
-        };
+        return await describeOnPglite(db, text);
       } finally {
         slot.release();
       }
@@ -161,11 +158,68 @@ export async function open(config: PgliteConfig = {}): Promise<DriverPool> {
   };
 }
 
+type WireMessage = {
+  readonly name: string;
+  readonly dataTypeIDs?: readonly number[];
+  readonly fields?: readonly {
+    readonly name: string;
+    readonly dataTypeID: number;
+    readonly tableID: number;
+    readonly columnID: number;
+  }[];
+};
+
+/**
+ * Describes through PGlite's protocol helpers.
+ *
+ * `describeQuery` drops table OID and attnum. Parse, Describe, and Sync do
+ * not bind or execute.
+ *
+ * @param db - Open database
+ * @param text - One statement
+ * @returns Parameter OIDs and result fields
+ */
+async function describeOnPglite(db: PGlite, text: string): Promise<DescribeResult> {
+  // Static `protocol` makes the size stub's cold import fail. Load it here.
+  const { protocol } = await import("@electric-sql/pglite");
+  const serialize = protocol.serialize;
+  const parse = serialize.parse({ text, types: [] });
+  const described = serialize.describe({ type: "S" });
+  const sync = serialize.sync();
+  const bytes = new Uint8Array(parse.length + described.length + sync.length);
+  bytes.set(parse, 0);
+  bytes.set(described, parse.length);
+  bytes.set(sync, parse.length + described.length);
+  const result = await db.execProtocol(bytes, { throwOnError: false });
+  const parameters: number[] = [];
+  const fields: DescribeField[] = [];
+  for (const message of result.messages as readonly WireMessage[]) {
+    if (message.name === "parameterDescription" && message.dataTypeIDs !== undefined) {
+      parameters.push(...message.dataTypeIDs);
+    } else if (message.name === "rowDescription" && message.fields !== undefined) {
+      for (const field of message.fields) {
+        fields.push({
+          name: field.name,
+          typeOid: field.dataTypeID,
+          tableOid: field.tableID,
+          attnum: field.columnID,
+        });
+      }
+    } else if (message.name === "error") throw message;
+  }
+  return {
+    columns: fields.map((field) => field.name),
+    parameterCount: parameters.length,
+    parameters,
+    fields,
+  };
+}
+
 /**
  * A pool whose `close` marks this client only.
  *
  * The inner pool stays open. A later call fails as unavailable.
- * The body stays this small: the PGlite incremental figure is 11,510, 500 under its gate.
+ * The body stays this small: the PGlite incremental figure is 11,982, 28 under its gate.
  *
  * @param pool - The caller's pool
  * @returns A pool the client owns

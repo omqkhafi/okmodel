@@ -25,6 +25,10 @@
       "kind": "stable"
     },
     {
+      "name": "DescribeField",
+      "kind": "stable"
+    },
+    {
       "name": "DescribeResult",
       "kind": "stable"
     },
