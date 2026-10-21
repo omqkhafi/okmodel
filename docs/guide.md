@@ -1156,6 +1156,15 @@ okm doctor
 okm doctor OKM1811
 ```
 
+### Checking a production target
+
+`okm doctor --production --target <name>` reports how one target differs from the production setup: `protected: true`, a pooler URL, `okm_meta`, a superuser or `BYPASSRLS` login, a login that owns the tables, zero `lock_timeout` or `statement_timeout`, the server major, and required extensions. Every query runs in one `READ ONLY` transaction, and the output never holds the URL, host, user, or password (D312). The command exits 1 when a finding is `fail`. It cannot see `connect()` options such as `requireMeta`. See [production](production.md#check-a-production-target).
+
+```text
+okm doctor --production --target production
+okm doctor --production --target production --json
+```
+
 ### Sending a bundle
 
 `okm doctor --bundle` writes one JSON file for a tester to send by hand (O-6, D307). It needs no database and makes no network call, so it runs the same on a laptop with no connection and on a project whose database is down. It never uploads anything: the file stays where you wrote it until you attach it to a message.
@@ -1412,6 +1421,7 @@ A repository that uses agents should name an owner for `AGENTS.md` and `.claude/
 | `okm ext scaffold <name>` | Prints a starting `extension()` definition from the connected catalog. `--out` writes that file and never overwrites. Read-only on a protected target.                                                    |
 | `okm ext test <file>`     | Checks the file's types, operators, functions, and index methods against the server. A mismatch exits non-zero. A version the server does not meet is OKM1812. Read-only on a protected target.           |
 | `okm doctor [code]`       | Lists triggers, or explains one error code. A role check is read-only on a protected target.                                                                                                             |
+| `okm doctor --production` | Checks one target for production misuse and reads it only. Findings have a stable id, a severity, and a fix. Exits 1 on a `fail`. Needs `--target` when several are configured. See [production](production.md#check-a-production-target). |
 | `okm doctor --bundle`     | Writes a local diagnostics file (`.okm/doctor-bundle.json`) for a tester to send by hand. No database, no network, no values. Refuses to replace a file without `--force-file`.                         |
 | `okm protect add`         | Records the selected target's fingerprint in the user store. Does not print the URL.                                                                                                                     |
 | `okm protect remove`      | Deletes that fingerprint. Requires a terminal, otherwise exit 4. Deleting `protected: true` does not do this.                                                                                            |

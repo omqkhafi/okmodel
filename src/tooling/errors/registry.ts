@@ -1090,7 +1090,7 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     title: "Production check failed",
     summary:
       "okm doctor --production found at least one fail finding. The report lists each finding with its id and a one-line fix.",
-    fix: "Fix each fail finding, then run okm doctor --production again.",
+    fix: "Fix each fail finding, then check the target again with okm doctor --production.",
     since: "0.10",
   },
   {
