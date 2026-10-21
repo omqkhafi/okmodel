@@ -32,6 +32,20 @@ Anything that must survive a crash is an outbox table plus a relay.
 
 No event carries row values or bound parameters. `keys` carries only the primary-key columns of a table that opted in.
 
+## Registry
+
+<!-- support: writeObserver.unit -->
+Postgres: native. Cost: transaction | batch. Proof passes (`proof:writeObserver.unit`).
+<!-- /support -->
+
+<!-- support: writeObserver.keys -->
+Postgres: native. Cost: returning. Proof passes (`proof:writeObserver.keys`).
+<!-- /support -->
+
+<!-- support: writeObserver.rowCount -->
+Postgres: native. Cost: mixed. Proof passes (`proof:writeObserver.rowCount`).
+<!-- /support -->
+
 ## Events
 
 ```ts

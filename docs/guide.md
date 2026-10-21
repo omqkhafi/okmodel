@@ -599,7 +599,7 @@ export async function report(url: string): Promise<void> {
 
 ### Request filters
 
-A request should not be able to filter on every column. `filters` names the columns and the comparisons you accept, and the columns a caller may sort by. `parse` turns that request into `where` and `orderBy`. Naming a hidden column there is OKM1123.
+A request should not be able to filter on every column. `filters` names the columns and the comparisons you accept, and the columns a caller may sort by. `parse` turns that request into `where` and `orderBy`.
 
 `filters.ts`:
 
@@ -610,6 +610,22 @@ const users = table("users", { id: t.identity(), email: t.text() });
 export const app = schema({ tables: [users] });
 // A request may filter email with eq, and may sort by email. Nothing else.
 export const userFilters = users.filters({ allow: { email: ["eq"] }, sort: ["email"] });
+```
+
+`parse` is asynchronous because the parser loads on first use, so the handler must await it; a request key or operator that is not allowed is an input error, and a hidden column in `allow` is OKM1123 when `filters()` is called.
+
+`request.ts`:
+
+```ts
+import { connect } from "okmodel/pg/postgresjs";
+
+import { app, userFilters } from "./filters.ts";
+
+export async function list(url: string, request: { query: unknown }): Promise<void> {
+  await using db = connect(url, { schema: app });
+  const parsed = await userFilters.parse(request.query);
+  await db.users.find({ ...parsed, limit: 20 });
+}
 ```
 
 ### Presets
