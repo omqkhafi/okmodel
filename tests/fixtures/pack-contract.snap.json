@@ -555,6 +555,7 @@
     "dist/shared/*.js",
     "dist/shared/*.js",
     "dist/shared/*.js",
+    "dist/shared/*.js",
     "dist/tooling/agents/block.d.ts",
     "dist/tooling/agents/mentions.d.ts",
     "dist/tooling/canonical-json.d.ts",
