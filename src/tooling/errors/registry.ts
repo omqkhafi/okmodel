@@ -1088,8 +1088,8 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     code: "OKM2203",
     title: "Pooler target",
     summary:
-      "okm doctor --production found a target URL that okm migrate apply refuses as a pooler: a host with pooler or pgbouncer in it, port 6543 or 6432, or ?pgbouncer=true. It is a warning, and a failure when --allow-pooler or allowPooler lets apply through.",
-    fix: "Point the target at a direct connection, and drop --allow-pooler and allowPooler.",
+      "okm doctor --production found a target URL that okm migrate apply refuses as a pooler: a host with pooler or pgbouncer in it, port 6543 or 6432, or ?pgbouncer=true. It is a warning, and a failure when the command line or the config lets apply through.",
+    fix: "Point the target at a direct connection, and remove the setting that allows a pooler.",
     since: "0.10",
   },
   {

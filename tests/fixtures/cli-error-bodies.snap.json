@@ -1763,6 +1763,42 @@
     "docs": "docs/errors/OKM2200.md"
   },
   {
+    "code": "OKM2201",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "okm doctor --production found a lock_timeout or statement_timeout of 0. Apply or a statement can then wait without limit. The finding is a warning: nothing is refused.",
+    "fix": "Set timeouts.lock in the config, and ALTER ROLE <app role> SET statement_timeout to the limit you want.",
+    "retryable": false,
+    "docs": "docs/errors/OKM2201.md"
+  },
+  {
+    "code": "OKM2202",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "okm doctor --production selected a target that does not set protected: true in the config. A name such as production and NODE_ENV are never read. A fingerprint in this machine's store does not count: it protects one machine.",
+    "fix": "Set protected: true on the production target in okmodel.config.ts.",
+    "retryable": false,
+    "docs": "docs/errors/OKM2202.md"
+  },
+  {
+    "code": "OKM2203",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "okm doctor --production found a target URL that okm migrate apply refuses as a pooler: a host with pooler or pgbouncer in it, port 6543 or 6432, or ?pgbouncer=true. It is a warning, and a failure when the command line or the config lets apply through.",
+    "fix": "Point the target at a direct connection, and remove the setting that allows a pooler.",
+    "retryable": false,
+    "docs": "docs/errors/OKM2203.md"
+  },
+  {
+    "code": "OKM2204",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "okm doctor --production found at least one fail finding. The report lists each finding with its id and a one-line fix.",
+    "fix": "Fix each fail finding, then check the target again with okm doctor --production.",
+    "retryable": false,
+    "docs": "docs/errors/OKM2204.md"
+  },
+  {
     "code": "OKM2300",
     "kind": "invalid",
     "category": "input",
