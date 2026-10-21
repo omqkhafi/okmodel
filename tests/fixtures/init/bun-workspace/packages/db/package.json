@@ -1,0 +1,7 @@
+{
+  "name": "@acme/db",
+  "packageManager": "bun@1.4.3",
+  "dependencies": {
+    "postgres": "3.4.5"
+  }
+}

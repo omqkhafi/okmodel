@@ -8,6 +8,8 @@
 import { existsSync, lstatSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
+import { hasGitMarker } from "../workspaces.js";
+
 import { untrustedText, type UntrustedText } from "../untrusted.js";
 import { CONFIG_FILE } from "../migrate/paths.js";
 import {
@@ -25,6 +27,9 @@ const DRIVER_OF: Readonly<Record<string, InitDriver>> = {
   "@neondatabase/serverless": "neon",
   "@electric-sql/pglite": "pglite",
 };
+
+/** npm names that mean a driver is already installed. */
+export const DRIVER_PACKAGE_NAMES: readonly string[] = Object.keys(DRIVER_OF);
 
 /** Package managers in lockfile precedence order. */
 const LOCKS: readonly (readonly [string, InitPackageManager])[] = [
@@ -88,7 +93,7 @@ export function scanProject(root: string, pmOverride: InitPackageManager | undef
       : {}),
     orm: detectOrm(names),
     typescript: detectTypeScript(root),
-    git: existsSync(join(root, ".git")),
+    git: hasGitMarker(root),
     okmodel: names.has("okmodel"),
     ancestorConfig: hasAncestorConfig(root),
     databaseEnv: "DATABASE_URL",

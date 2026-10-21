@@ -62,6 +62,7 @@ import {
   selectTarget,
   type InvokeFlags,
 } from "./policy.js";
+import { refuseAmbiguousConfigs } from "./discover.js";
 import { asProject, CONFIG_FILE, projectPath, type ProjectContext } from "./paths.js";
 import { formatPlanJson } from "./plan-json.js";
 import {
@@ -661,11 +662,16 @@ export async function exportProject(
 /**
  * Loads `okmodel.config.ts` (or the path from `--config`).
  *
+ * The file is the nearest config upward from the working directory. Two
+ * configs at that same distance are OKM1891. `--config` skips the search.
+ *
  * @param project - Project directory or {@link ProjectContext}
  * @returns The config object
  */
 export async function loadConfig(project: string | ProjectContext): Promise<MigrateConfig> {
-  const { configPath } = asProject(project);
+  const resolved = asProject(project);
+  if (resolved.ambiguous !== undefined) refuseAmbiguousConfigs(resolved.ambiguous);
+  const { configPath } = resolved;
   if (!existsSync(configPath)) {
     throw tagOutcome(
       new OkmError("invalid", `Missing ${CONFIG_FILE} at ${configPath}.`, {

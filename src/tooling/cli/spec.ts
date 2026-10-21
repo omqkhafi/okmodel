@@ -69,7 +69,7 @@ export const GLOBAL_FLAGS: readonly FlagSpec[] = [
     name: "config",
     short: "c",
     type: "string",
-    hint: "<path> loads that file instead of okmodel.config.ts.",
+    hint: "<path> loads that file. Otherwise the nearest okmodel.config.ts is used.",
   },
   {
     name: "out",
@@ -504,7 +504,8 @@ export const COMMANDS: readonly CommandSpec[] = [
     id: "init",
     policy: "none",
     words: ["init"],
-    summary: "Write starter files for one package. Does not connect. This is not generate init.",
+    summary:
+      "Write starter files for a package or selected workspace packages. Does not connect. This is not generate init.",
     usage: "init [dir]",
     minOperands: 0,
     maxOperands: 1,
@@ -538,6 +539,22 @@ export const COMMANDS: readonly CommandSpec[] = [
         name: "plan-hash",
         type: "string",
         hint: "<hash> from a previous plan. Apply refuses a different plan.",
+      },
+      {
+        name: "workspace",
+        type: "string",
+        multiple: true,
+        hint: "<name|path> initialises that workspace. Repeat for more than one.",
+      },
+      {
+        name: "all-workspaces",
+        type: "boolean",
+        hint: "Initialise every workspace package.",
+      },
+      {
+        name: "shared",
+        type: "boolean",
+        hint: "One config in the shared database package. Apps are not given a config.",
       },
     ],
   }),
@@ -605,7 +622,7 @@ export function commandsTable(): string {
   lines.push(
     "",
     "okm <command> --help prints that command.",
-    "--config <path> loads that file instead of okmodel.config.ts.",
+    "--config <path> loads that file. Otherwise the nearest okmodel.config.ts is used.",
     "--json prints one okm.cli/1 document.",
     "",
   );
