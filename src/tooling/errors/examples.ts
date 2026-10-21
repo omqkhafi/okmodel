@@ -1867,6 +1867,15 @@ function warnDb(rule: string) {
   });
 }
 
+/** One row comes back, and `limits.find` is 1: the read reached its default. */
+function limitedDb() {
+  return connect(pool, {
+    schema: schema({ tables: [table("notes", { id: text().primaryKey(), title: text() })] }),
+    warnings: warnings({ env: "development", levels: { "default-limit-reached": "error" } }),
+    limits: { find: 1 },
+  });
+}
+
 thrown(
   "OKM1881",
   () => {
@@ -2034,6 +2043,16 @@ thrown(
       orderBy: { id: "asc" },
       include: { comments: { limit: 100 } },
     });
+  },
+);
+
+thrown(
+  "OKM2011",
+  async () => {
+    await limitedDb().notes.find({ orderBy: { id: "asc" } });
+  },
+  async () => {
+    await limitedDb().notes.find({ orderBy: { id: "asc" }, limit: 1 });
   },
 );
 

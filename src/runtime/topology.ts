@@ -432,6 +432,7 @@ export async function connectTopology<
       onWrite: options.onWrite,
       warnings: options.warnings,
       onQuery: options.onQuery,
+      limits: options.limits,
       catalog: options.catalog,
       catalogDir: options.catalogDir,
       requireMeta: options.requireMeta,

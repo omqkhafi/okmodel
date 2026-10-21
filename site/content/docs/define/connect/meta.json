@@ -8,6 +8,7 @@
     "check",
     "session",
     "session-settings",
+    "limits",
     "errors",
     "generators",
     "observers",

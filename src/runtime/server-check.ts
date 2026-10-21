@@ -104,9 +104,11 @@ export async function acceptServer(
   source: {
     readonly catalog?: CatalogArtifact | undefined;
     readonly catalogDir?: string | undefined;
+    readonly limits?: object | undefined;
   },
   onWrite?: object,
 ): Promise<void> {
+  if (source.limits !== undefined) (await import("./limits.js")).assertLimits(source.limits);
   if (onWrite !== undefined) {
     const { assertObserveKeys, observeKeyList } = await import("./observe-keys.js");
     const observeKeys = observeKeyList(onWrite);

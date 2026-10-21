@@ -30,6 +30,7 @@ import {
   type Keyset,
   type Plan,
 } from "./plan.js";
+import { capLimit } from "./limits.js";
 
 registerFailFix(
   "OKM1130",
@@ -100,8 +101,13 @@ function plan(
   rejectKeys(record, OPTIONS, "page");
   const indexed = indexes(session.schema).get(table);
   if (indexed === undefined) fail("OKM1120", `Table ${table} is not in the schema.`);
-  if (record.limit === undefined) fail("OKM1101", "page() needs a limit.");
-  const size = readLimit(record.limit);
+  // `stream()` plans its batches here with a pin. It keeps its own rules.
+  const limits = pin === undefined ? session.l : undefined;
+  const dflt = record.limit === undefined && mods.all === undefined ? limits?.page : undefined;
+  const given = dflt ?? record.limit;
+  if (given === undefined) fail("OKM1101", "page() needs a limit.");
+  const size = readLimit(given);
+  if (mods.all === undefined) capLimit(size, limits?.max);
   if (size < 1) {
     throw new OkmError("invalid", "page() limit must be at least 1.", { kind: "invalid" });
   }
@@ -140,6 +146,9 @@ function plan(
     ),
     ...(after !== undefined ? { after } : {}),
     ...(pin !== undefined ? { pin } : {}),
+    size,
+    ...(limits !== undefined ? { limits } : {}),
+    ...(dflt !== undefined ? { dl: ["page", dflt] as const } : {}),
   };
   return readHandle(session, table, call, mods, async (compiled, rows) => {
     const items = (await decodeRows(compiled, rows, table)) as Record<string, unknown>[];

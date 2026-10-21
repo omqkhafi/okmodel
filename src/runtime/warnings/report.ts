@@ -20,6 +20,8 @@ export type WarningNotice = {
   readonly safeAlternatives: WarningRule["safeAlternatives"];
   readonly escapeHatches: WarningRule["escapeHatches"];
   readonly location?: { readonly file: string; readonly line: number };
+  /** The default limit the read reached, such as `limits.find = 100`. Set on OKM2011. */
+  readonly limit?: string;
   readonly level: Exclude<WarningLevel, "off" | "error">;
   readonly severity: WarningSeverity;
   readonly rule: string;
@@ -45,18 +47,21 @@ export function throwWarning(rule: WarningRule): never {
  * @param rule - Registered rule
  * @param level - `hint` or `warn`
  * @param onWarning - Replaces the console when set
+ * @param stack - Stack captured where the read was written
+ * @param limit - What the read reached, when the rule names it
  */
 export function reportWarning(
   rule: WarningRule,
   level: WarningNotice["level"],
   onWarning: ((notice: WarningNotice) => void) | undefined,
   stack?: string,
+  limit?: string,
 ): void {
   const location = callerLocation(stack);
-  const key = `${rule.code}\0${location?.file ?? ""}:${String(location?.line ?? 0)}`;
+  const key = `${rule.code}\0${location?.file ?? ""}:${String(location?.line ?? 0)}\0${limit ?? ""}`;
   if (seen.has(key)) return;
   seen.add(key);
-  const notice = noticeOf(rule, level, location);
+  const notice = noticeOf(rule, level, location, limit);
   if (onWarning !== undefined) {
     onWarning(notice);
     return;
@@ -68,6 +73,7 @@ function noticeOf(
   rule: WarningRule,
   level: WarningNotice["level"],
   location: WarningNotice["location"],
+  limit: string | undefined,
 ): WarningNotice {
   return {
     code: rule.code,
@@ -80,6 +86,7 @@ function noticeOf(
     safeAlternatives: rule.safeAlternatives,
     escapeHatches: rule.escapeHatches,
     ...(location !== undefined ? { location } : {}),
+    ...(limit !== undefined ? { limit } : {}),
     level,
     severity: rule.severity,
     rule: rule.rule,
@@ -90,6 +97,8 @@ function formatNotice(notice: WarningNotice): string {
   const lines = [`${notice.code} ${notice.level}: ${notice.summary}`];
   if (notice.location !== undefined)
     lines.push(`  at ${notice.location.file}:${String(notice.location.line)}`);
+  if (notice.limit !== undefined)
+    lines.push(`  Limit: ${notice.limit}. Or call .all(reason) when every row is needed.`);
   lines.push(`  Fix: ${notice.fix.summary}`, `  ${notice.docs}`);
   return lines.join("\n");
 }
