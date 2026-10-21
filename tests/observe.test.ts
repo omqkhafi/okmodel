@@ -414,10 +414,12 @@ test("error isolation: throwing and rejecting handlers, flush, and overflow", as
     },
   });
   const controller = createObserver(bounded);
-  controller.onPhase("start", 0, undefined);
-  controller.recordWrites([draft(0), draft(1)]);
-  controller.onPhase("start", 0, undefined);
-  controller.recordWrites([draft(0), draft(1)]);
+  const first = {};
+  const second = {};
+  controller.onPhase(first, "start", 0, undefined);
+  controller.recordWrites(first, [draft(0), draft(1)]);
+  controller.onPhase(second, "start", 0, undefined);
+  controller.recordWrites(second, [draft(0), draft(1)]);
   expect(overflowErrors.some((err) => err.code === "OKM2200")).toBe(true);
   expect(observerBufferOverflow().code).toBe("OKM2200");
   expect(OBSERVE_BUFFER_MAX).toBe(10_000);
