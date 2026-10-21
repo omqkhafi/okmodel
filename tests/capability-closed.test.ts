@@ -371,3 +371,6 @@ test("refusal:tooling.pull", () => refuse("tooling.pull"));
 test("refusal:tooling.scratchReplay", () => refuse("tooling.scratchReplay"));
 test("refusal:tooling.testing", () => refuse("tooling.testing"));
 test("refusal:tooling.describe", () => refuse("tooling.describe"));
+test("refusal:writeObserver.unit", () => refuse("writeObserver.unit"));
+test("refusal:writeObserver.keys", () => refuse("writeObserver.keys"));
+test("refusal:writeObserver.rowCount", () => refuse("writeObserver.rowCount"));

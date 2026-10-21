@@ -64,6 +64,12 @@ export type Session = {
   readonly timeouts: Timeouts | undefined;
   /** Observers from `connect({ hookm })`. */
   readonly hookm: readonly Hookm[] | undefined;
+  /**
+   * Write-observer slot from `connect({ onWrite })`.
+   *
+   * Shared by reference across `held()` session copies. Controller loads lazily.
+   */
+  readonly o?: import("./observe-emit.js").ObservingSlot;
   /** Set on the client a transaction hands out. `extras` are the methods only that client has. */
   readonly tx?: { readonly extras: object; readonly depth: number };
   /** Tenant value or an unscoped reason. Absent on the root client. */
@@ -111,6 +117,7 @@ export function createClient<S extends QuerySchema>(
     readonly timeout?: number | undefined;
     readonly timeouts?: Timeouts | undefined;
     readonly hookm?: readonly Hookm[] | undefined;
+    readonly onWrite?: import("./observe-types.js").OnWrite | undefined;
     readonly catalog?: CatalogArtifact | undefined;
     readonly catalogDir?: string | undefined;
     readonly requireMeta?: boolean | undefined;
@@ -156,6 +163,7 @@ export function createClient<S extends QuerySchema>(
     generators: options.generators,
     timeouts: options.timeouts,
     hookm: options.hookm,
+    ...(options.onWrite !== undefined ? { o: { w: options.onWrite, c: undefined } } : {}),
     closing,
   };
   return openClient(session);

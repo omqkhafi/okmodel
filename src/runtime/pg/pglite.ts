@@ -69,6 +69,7 @@ export async function connect<const S extends QuerySchema>(
     timeout: options.timeout,
     timeouts: options.timeouts,
     hookm: options.hookm,
+    onWrite: options.onWrite,
     catalog: options.catalog,
     catalogDir: options.catalogDir,
     generators: options.generators,

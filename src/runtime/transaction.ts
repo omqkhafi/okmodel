@@ -251,7 +251,14 @@ async function once(
     signal !== undefined || deadline !== undefined,
   );
   const after: After[] = [];
-  const hear = session.hookm === undefined ? undefined : await import("./hookm.js");
+  const emit = session.o !== undefined ? await import("./observe-emit.js") : undefined;
+  const observer =
+    emit !== undefined && session.o !== undefined ? emit.resolveObserver(session.o) : undefined;
+  const host = { hookm: session.hookm, observer };
+  const hear =
+    session.hookm !== undefined || session.logger !== undefined
+      ? await import("./hookm.js")
+      : undefined;
   const onAbort = (): void => frame.stop(cancelled());
   signal?.addEventListener("abort", onAbort, { once: true });
   const timer =
@@ -268,7 +275,8 @@ async function once(
       options.isolation === undefined ? "BEGIN" : BEGIN[options.isolation],
     );
     began = true;
-    hear?.phase(session.hookm, "start", 0);
+    if (emit !== undefined) emit.emitPhase(host, "start", 0);
+    else hear?.phase(session.hookm, "start", 0);
     frame.arm();
     const t = openClient(held(session, frame, after, 0));
     const value = await Promise.race([fn(t), frame.halt]);
@@ -283,7 +291,11 @@ async function once(
     if (began && !committed) {
       // A failed COMMIT has ended the transaction already, and a lost one leaves no connection to ask.
       if (!committing) await frame.conn.execute("ROLLBACK").catch(() => undefined);
-      if (!(error instanceof OkmError && error.kind === "outcome_unknown")) {
+      if (error instanceof OkmError && error.kind === "outcome_unknown") {
+        emit?.emitPhase(host, "rollback", 0, undefined, { unknown: true });
+      } else if (emit !== undefined) {
+        emit.emitPhase(host, "rollback", 0);
+      } else {
         hear?.phase(session.hookm, "rollback", 0);
       }
     }
@@ -299,7 +311,8 @@ async function once(
       hear?.report(session, error);
     }
     if (committed) {
-      hear?.phase(session.hookm, "commit", 0);
+      if (emit !== undefined) emit.emitPhase(host, "commit", 0);
+      else hear?.phase(session.hookm, "commit", 0);
       await run(session, after, hear);
     }
   }
@@ -376,7 +389,12 @@ async function nested(
   frame.check();
   frame.savepoints += 1;
   const name = `okm_t${String(frame.savepoints)}`;
-  const hear = session.hookm === undefined ? undefined : await import("./hookm.js");
+  const emit = session.o !== undefined ? await import("./observe-emit.js") : undefined;
+  const observer =
+    emit !== undefined && session.o !== undefined ? emit.resolveObserver(session.o) : undefined;
+  const host = { hookm: session.hookm, observer };
+  const hear =
+    emit === undefined && session.hookm !== undefined ? await import("./hookm.js") : undefined;
   const saved = frame.failed;
   const after: After[] = [];
   let released = false;
@@ -388,14 +406,16 @@ async function nested(
   if (pending !== undefined) await pending;
   try {
     await step(session, frame, `SAVEPOINT ${name}`);
-    hear?.phase(session.hookm, "start", depth + 1);
+    if (emit !== undefined) emit.emitPhase(host, "start", depth + 1, name);
+    else hear?.phase(session.hookm, "start", depth + 1);
     const t = openClient(held(session, frame, after, depth + 1));
     const value = await Promise.race([fn(t), frame.halt]);
     frame.check();
     if (frame.failed !== saved) throw frame.failed;
     await step(session, frame, `RELEASE SAVEPOINT ${name}`);
     released = true;
-    hear?.phase(session.hookm, "commit", depth + 1);
+    if (emit !== undefined) emit.emitPhase(host, "commit", depth + 1, name);
+    else hear?.phase(session.hookm, "commit", depth + 1);
     (session.tx as Held).after.push(...after);
     return value;
   } catch (error) {
@@ -404,7 +424,8 @@ async function nested(
       await frame.conn.execute(`ROLLBACK TO SAVEPOINT ${name}`).catch(() => undefined);
       hooks.okmForgetScope?.();
       frame.failed = saved;
-      hear?.phase(session.hookm, "rollback", depth + 1);
+      if (emit !== undefined) emit.emitPhase(host, "rollback", depth + 1, name);
+      else hear?.phase(session.hookm, "rollback", depth + 1);
     }
     return await failWith(session, error);
   }
