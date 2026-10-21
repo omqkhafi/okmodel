@@ -31,6 +31,20 @@ Anything that must survive a crash is an outbox table plus a relay.
 
 No event carries row values or bound parameters.
 
+## Registry
+
+<!-- support: writeObserver.unit -->
+Postgres: native. Cost: transaction | batch. Proof passes (`proof:writeObserver.unit`).
+<!-- /support -->
+
+<!-- support: writeObserver.keys -->
+Postgres: native. Cost: none. Proof passes (`proof:writeObserver.keys`).
+<!-- /support -->
+
+<!-- support: writeObserver.rowCount -->
+Postgres: native. Cost: unknown. Proof passes (`proof:writeObserver.rowCount`).
+<!-- /support -->
+
 ## Events
 
 ```ts

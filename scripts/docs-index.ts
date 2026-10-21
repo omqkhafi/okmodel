@@ -79,6 +79,12 @@ export const INDEX_ENTRIES: readonly IndexEntry[] = [
     group: "start",
   },
   {
+    path: "docs/capabilities.md",
+    purpose: "Postgres feature support taken from the registry.",
+    when: "Read this before claiming a feature is native.",
+    group: "start",
+  },
+  {
     path: "docs/using-okmodel-safely.md",
     purpose: "Pin the lockfile and read a provenance attestation.",
     when: "Read this before adding the dependency.",
