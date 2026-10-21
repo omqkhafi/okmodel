@@ -125,6 +125,43 @@ export async function byStatus(url: string) {
 `aggregate() with groupBy needs a limit.`
 </Callout>
 
+### Distinct
+
+`find` takes `distinct: true` with a `select`. It keeps one row per different combination of the selected fields, and NULL counts as one value. `orderBy` may name selected fields only. `distinctOn` is Postgres only: it keeps the first row of each key, so `orderBy` must start with the same keys and the keys after them pick the row. `include`, `search`, `page`, and `one` refuse both.
+
+| Input | Result |
+| --- | --- |
+| `distinct: true` | One row per different combination of `select`. Needs `select`. |
+| `distinctOn: [fields]` | The first row of each key under `orderBy`. Postgres only. |
+| `orderBy` with `distinctOn` | Starts with the same keys. |
+
+```ts title="distinct.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const tasks = table("tasks", {
+  id: t.identity(),
+  status: t.text(),
+  amount: t.integer().nullable(),
+});
+const app = schema({ tables: [tasks] });
+
+export async function statuses(url: string) {
+  await using db = connect(url, { schema: app });
+  const kinds = await db.tasks.find({ distinct: true, select: ["status"], limit: 20 }); // [!code focus]
+  const biggest = await db.tasks.find({
+    distinctOn: ["status"], // [!code focus]
+    orderBy: { status: "asc", amount: { dir: "desc", nulls: "last" } },
+    limit: 20,
+  });
+  return { kinds, biggest };
+}
+```
+
+<Callout type="error" title="OKM1120">
+`distinctOn needs an orderBy that starts with status.`
+</Callout>
+
 ### Include
 
 `limit` on a to-many `include` is the first N related rows of each parent.

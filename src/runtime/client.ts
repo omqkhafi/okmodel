@@ -286,6 +286,9 @@ function tableApi(
       if ("lock" in options) {
         return lazyRead(session, () => import("./lock.js"), table, options, base, view);
       }
+      if ("distinct" in options || "distinctOn" in options) {
+        return lazyRead(session, () => import("./distinct.js"), table, options, base, view);
+      }
       return start(session, "find", table, options, base, view);
     },
     one(options: object = {}) {
