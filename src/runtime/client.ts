@@ -60,6 +60,8 @@ export type Session = {
     | undefined;
   readonly connected: Promise<void>;
   readonly cache: Map<string, Plan>;
+  /** `connect({ catalogDir })`. The typed raw lock sits beside `catalog.json`. */
+  readonly dir: string | undefined;
   readonly generators: IdGenerators | undefined;
   /** Ceilings from `connect({ timeouts })`. */
   readonly timeouts: Timeouts | undefined;
@@ -143,10 +145,7 @@ export function createClient<S extends QuerySchema>(
     options.http,
     options.requireMeta === true,
     callOptions(options),
-    {
-      ...(options.catalog !== undefined ? { catalog: options.catalog } : {}),
-      ...(options.catalogDir !== undefined ? { catalogDir: options.catalogDir } : {}),
-    },
+    options,
     options.onWrite,
   );
   // QA-M5: `connected` always has a handler. A caller that closes before awaiting
@@ -170,6 +169,7 @@ export function createClient<S extends QuerySchema>(
     logger: options.logger,
     connected,
     cache: new Map(),
+    dir: options.catalogDir,
     generators: options.generators,
     timeouts: options.timeouts,
     hookm: options.hookm,
@@ -330,7 +330,7 @@ function tableApi(
   }
   // `raw` and `explain` read this. The symbol is not a method, so an app that
   // never imports those functions does not keep them.
-  (api as Record<symbol, unknown>)[Symbol.for("okm.lane")] = [session, table, mapError];
+  (api as Record<symbol, unknown>)[Symbol.for("okm.lane")] = [session, table, mapError, loadRaw];
   return api as unknown as TableApi<QuerySchema, string>;
 }
 
@@ -356,6 +356,9 @@ type WriteMods = {
   readonly archive?: ArchiveView | undefined;
   readonly uses?: PresetUse | undefined;
 };
+
+/** The typed `raw(db, sql, params)` chunk. `raw` calls it through the lane. */
+const loadRaw = (): Promise<typeof import("./raw.js")> => import("./raw.js");
 
 let writers: Promise<typeof import("./write.js")> | undefined;
 
@@ -771,7 +774,10 @@ async function checkServer(
   http: ErrorStatuses | undefined,
   requireMeta: boolean,
   options: ExecuteOptions | undefined,
-  source: { readonly catalog?: CatalogArtifact; readonly catalogDir?: string },
+  source: {
+    readonly catalog?: CatalogArtifact | undefined;
+    readonly catalogDir?: string | undefined;
+  },
   onWrite: object | undefined,
 ): Promise<void> {
   const { acceptServer } = await import("./server-check.js");
