@@ -1383,6 +1383,8 @@ export type ConnectOptions<S extends QuerySchema> = {
   readonly timeouts?: Timeouts;
   /** Observers of notices, transactions and errors. They cannot change a query (spec §18). */
   readonly hookm?: readonly Hookm[];
+  /** Low-level write observer (`okm.observe/1`). See `docs/observer-events.md`. */
+  readonly onWrite?: import("./observe-types.js").OnWrite;
 };
 
 /** Ceilings from `connect({ timeouts })`, in milliseconds. Each key is optional. */

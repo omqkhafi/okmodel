@@ -119,9 +119,22 @@ async function run(
     statements.push(...item.statements);
   }
   if (statements.length === 0) return prepared.map((item) => item.finish([]));
+  const observe =
+    session.o === undefined
+      ? undefined
+      : prepared.flatMap((item) => {
+          const meta = item.observe ?? {
+            table: null,
+            op: "raw" as const,
+            tenant: null,
+            settings: [],
+            source: "client" as const,
+          };
+          return item.statements.map(() => meta);
+        });
   let results;
   try {
-    results = await runWrite(session, statements, call(options), true);
+    results = await runWrite(session, statements, call(options), true, observe);
   } catch (error) {
     throw at(error, starts);
   }
@@ -159,8 +172,21 @@ async function recover(
     flat.push(...item.statements);
   }
   let ran: readonly ExecuteResult[];
+  const observe =
+    session.o === undefined
+      ? undefined
+      : pending.flatMap((item) => {
+          const meta = prepared[item.index]?.observe ?? {
+            table: null,
+            op: "raw" as const,
+            tenant: null,
+            settings: [],
+            source: "client" as const,
+          };
+          return item.statements.map(() => meta);
+        });
   try {
-    ran = await runWrite(session, flat, call(options), true);
+    ran = await runWrite(session, flat, call(options), true, observe);
   } catch (error) {
     throw mapExtra(error, pending, extraStarts);
   }
