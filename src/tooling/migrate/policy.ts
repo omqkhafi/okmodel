@@ -272,24 +272,39 @@ export function assertTargetAlias(targets: readonly TargetRecord[]): void {
  */
 export function assertDirectConnection(url: string, allowPooler: boolean): void {
   if (allowPooler) return;
-  const endpoint = endpointOf(url);
-  const parsed = new URL(url);
-  const host = endpoint.host;
-  if (
-    host.includes("pooler") ||
-    host.includes("pgbouncer") ||
-    host.includes("-pooler") ||
-    endpoint.port === "6543" ||
-    endpoint.port === "6432" ||
-    parsed.searchParams.get("pgbouncer") === "true"
-  ) {
+  if (poolerSignal(url) !== undefined) {
     throw tagOutcome(
-      new OkmError("invalid", `Refusing pooler host ${host}. Apply needs a direct connection.`, {
-        fix: { summary: "Use a direct connection." },
-      }),
+      new OkmError(
+        "invalid",
+        `Refusing pooler host ${endpointOf(url).host}. Apply needs a direct connection.`,
+        { fix: { summary: "Use a direct connection." } },
+      ),
       "unreachable",
     );
   }
+}
+
+/** Which part of a target URL looks like a pooler. */
+export type PoolerSignal = "host" | "port" | "parameter";
+
+/**
+ * Reads the URL patterns {@link assertDirectConnection} refuses.
+ *
+ * Only the URL is read. No connection is made, and the result names the part,
+ * not its value.
+ *
+ * @param url - Target URL
+ * @returns The first matching part, or `undefined` for a direct-looking URL
+ */
+export function poolerSignal(url: string): PoolerSignal | undefined {
+  const endpoint = endpointOf(url);
+  const host = endpoint.host;
+  if (host.includes("pooler") || host.includes("pgbouncer") || host.includes("-pooler")) {
+    return "host";
+  }
+  if (endpoint.port === "6543" || endpoint.port === "6432") return "port";
+  if (new URL(url).searchParams.get("pgbouncer") === "true") return "parameter";
+  return undefined;
 }
 
 /** Options for {@link assertStableBackend}. */

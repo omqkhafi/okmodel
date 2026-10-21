@@ -387,7 +387,7 @@ export const COMMANDS: readonly CommandSpec[] = [
     policy: "check",
     words: ["doctor"],
     summary:
-      "Print a target report, or one error code. --bundle writes a local diagnostics file and needs no database.",
+      "Print a target report, or one error code. --production checks one target for misuse and reads it only. --bundle writes a local diagnostics file and needs no database.",
     usage: "doctor [code]",
     minOperands: 0,
     maxOperands: 1,
@@ -396,6 +396,12 @@ export const COMMANDS: readonly CommandSpec[] = [
     ownOutFlag: "bundle",
     flags: [
       target,
+      allowPooler,
+      {
+        name: "production",
+        type: "boolean",
+        hint: "Check one target for production misuse: protection, pooler, okm_meta, role, timeouts, server. Read-only, exits 1 on a fail finding. Needs --target when several are configured. No short form.",
+      },
       {
         name: "bundle",
         type: "boolean",
