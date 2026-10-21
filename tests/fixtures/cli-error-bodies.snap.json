@@ -1479,6 +1479,78 @@
     "docs": "docs/errors/OKM1867.md"
   },
   {
+    "code": "OKM1881",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "okm agents status found an agent file that is not current: the AGENTS.md block, the CLAUDE.md import, or a skill file is stale, missing, or modified.",
+    "fix": "Use okm agents update to rewrite the block and any unmodified skill, or okm init --agents when the files were never written.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1881.md"
+  },
+  {
+    "code": "OKM1882",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A file has a BEGIN OKMODEL or END OKMODEL line that is malformed, unpaired, or out of order, so okm cannot tell which text it owns. It does not repair markers.",
+    "fix": "Restore one BEGIN OKMODEL line and one END OKMODEL line, or delete both and the text between them, then repeat the command.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1882.md"
+  },
+  {
+    "code": "OKM1883",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A file has more than one OKMODEL block, so okm cannot tell which one it owns. It does not merge blocks.",
+    "fix": "Keep one OKMODEL block and delete the others, then repeat the command.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1883.md"
+  },
+  {
+    "code": "OKM1884",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "The plan changes an existing file, and okm cannot ask: there is no terminal, or --json is on, and --yes was not passed.",
+    "fix": "Read the plan with the dry flag, then pass --yes. Or answer the prompt on a terminal.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1884.md"
+  },
+  {
+    "code": "OKM1885",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "The skill files in the installed package are missing, are not markdown, are a symlink, or contain a hidden character. okm copies agent files only from its own package, and only when they pass these checks.",
+    "fix": "Reinstall okmodel from the registry.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1885.md"
+  },
+  {
+    "code": "OKM1886",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "An agent file path is not on the list okm may write, resolves outside the project directory, is not a regular file, or could not be written.",
+    "fix": "Keep the agent files as regular files inside the project directory.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1886.md"
+  },
+  {
+    "code": "OKM1887",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A file changed after the plan was made and before it was replaced, so okm stopped. Files already written stay.",
+    "fix": "Repeat the command so the diff matches the file.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1887.md"
+  },
+  {
+    "code": "OKM1888",
+    "kind": "invalid",
+    "category": "input",
+    "summary": ".okm/init.json is not a JSON object, so okm cannot record the hashes of the agent files it writes.",
+    "fix": "Restore .okm/init.json from version control, or delete it and use okm init again.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1888.md"
+  },
+  {
     "code": "OKM1890",
     "kind": "invalid",
     "category": "input",

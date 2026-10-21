@@ -25,6 +25,17 @@ export type AgentsBlockInput = {
 };
 
 /**
+ * Renders the block `okm` adds to an existing `CLAUDE.md`: the import of
+ * `AGENTS.md` between the version markers.
+ *
+ * @param version - Package version, printed in the marker
+ * @returns The block, ending in a newline
+ */
+export function renderImportBlock(version: string): string {
+  return `<!-- BEGIN OKMODEL v${version} -->\n@AGENTS.md\n<!-- END OKMODEL -->\n`;
+}
+
+/**
  * Renders the block between the version markers.
  *
  * @param input - Version, tenancy mode, and whether protection is configured

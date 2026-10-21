@@ -96,6 +96,9 @@ export const UNTRUSTED_PATHS: readonly UntrustedPath[] = [
   { command: "protect remove", path: "data.hostDb", treatment: "none" },
   { command: "protect list", path: "data.fingerprints[].hostDb", treatment: "none" },
   { command: "schema", path: "data", treatment: "none" },
+  { command: "agents status", path: "data", treatment: "none" },
+  { command: "agents update", path: "data", treatment: "none" },
+  { command: "agents remove", path: "data", treatment: "none" },
   {
     command: "init",
     path: "data.detection.packageName",
