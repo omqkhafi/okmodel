@@ -20,7 +20,8 @@ name: CI
 # The tarball stays on the Postgres label. One job builds `dist` and uploads
 # it. Test groups that need it download it. The others do not build.
 # `inform / pack` builds twice on one runner and checks published 0.9.1.
-# It is not a `gate / check` slice. Release and weekly call the suite and
+# `inform / size` prints the per-module delta against the size baseline.
+# Neither is a `gate / check` slice. Release and weekly call the suite and
 # tarball workflows themselves, on every major.
 # Concurrency is the pull request number, or the commit sha on main. A new
 # push on a pull request cancels the older run. A label event does not.
@@ -687,6 +688,23 @@ jobs:
       - name: Published 0.9.1
         continue-on-error: true
         run: bun ./scripts/verify-release.ts 0.9.1
+
+  size-report:
+    name: inform / size
+    if: >-
+      github.event_name == 'pull_request' &&
+      (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'full-ci')
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup
+        uses: ./.github/actions/setup-bun
+
+      - name: Attribute gated graphs
+        continue-on-error: true
+        run: bun ./scripts/size-attribution.ts
 
   issue:
     name: gate / issue
