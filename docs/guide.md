@@ -722,7 +722,7 @@ export async function save(url: string, title: string): Promise<void> {
 
 ### Batch and locks
 
-`batch` sends several writes as one unit. It will not run `restore`, and it will not run a write that uses `expect` (OKM1121). Validated inserts and updates belong in the same unit: their rules run while the batch plans, before any statement, and a failure is OKM1200 with `batchIndex`. Inside `tx()`, `lock: "update"` makes other transactions wait to change that row, and `advisoryLock` holds a named lock until the transaction ends. A row lock outside `tx()` is OKM1830. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
+`batch` sends several writes as one unit. It will not run `restore`, a write that uses `expect`, or, on `db.batch`, an update that checks `version` (OKM1121). Use `tx()` for them; `tx.batch` takes a versioned update. Validated inserts and updates belong in the same unit: their rules run while the batch plans, before any statement, and a failure is OKM1200 with `batchIndex`. Inside `tx()`, `lock: "update"` makes other transactions wait to change that row, and `advisoryLock` holds a named lock until the transaction ends. A row lock outside `tx()` is OKM1830. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
 
 `batch.ts`:
 

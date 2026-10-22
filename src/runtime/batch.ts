@@ -23,7 +23,7 @@ type Op = { readonly "~plan"?: () => Promise<PreparedWrite>; readonly "~refresh"
  * Runs write handles as one atomic unit.
  *
  * @param session - Client session
- * @param ops - Write handles: `insert`, `update`, `delete`, `archive`. A `restore`, a write with `expect`, or `refresh()` is OKM1121 (D183, D239)
+ * @param ops - Write handles: `insert`, `update`, `delete`, `archive`. A `restore`, a write with `expect`, a versioned update on `db.batch`, or `refresh()` is OKM1121 (D183, D239)
  * @param options - `signal` and `timeout` for the whole batch
  * @param replica - Set by `.replica()`. A batch needs the primary (OKM1840)
  * @returns One result per operation, in order
@@ -90,7 +90,14 @@ export async function batch(
           "batch does not take an update that sets a tree parent. The cycle is checked in the statement, and a batch cannot report that after it commits. Use update({ where, set }) inside tx().",
         );
       }
-      if (item.checked !== undefined) {
+      if (item.checked === "version") {
+        if (session.tx === undefined) {
+          fail(
+            "OKM1121",
+            "db.batch does not take an update that checks version: a stale version is judged after the statement ran, and a batch cannot report that after it commits. Use update({ where, set, version }) inside tx(), or batch inside tx().",
+          );
+        }
+      } else if (item.checked !== undefined) {
         fail(
           "OKM1121",
           item.checked === "restore"
@@ -125,7 +132,7 @@ async function run(
     : undefined;
   if (session.q !== undefined && wantsQueryParams(session.q)) {
     const { rememberSecrets } = await import("./observe-query.js");
-    rememberSecrets(statements, session.schema, session.scope, undefined);
+    rememberSecrets(statements, session.schema, session.scope, inputsOf(prepared));
   }
   let results;
   try {
@@ -187,7 +194,7 @@ async function recover(
     : undefined;
   if (session.q !== undefined && wantsQueryParams(session.q)) {
     const { rememberSecrets } = await import("./observe-query.js");
-    rememberSecrets(flat, session.schema, session.scope, undefined);
+    rememberSecrets(flat, session.schema, session.scope, inputsOf(prepared));
   }
   try {
     ran = await runWrite(session, flat, call(options), true, observe);
@@ -201,6 +208,11 @@ async function recover(
     found.set(item.index, ran.slice(from, extraStarts[index + 1] ?? ran.length));
   }
   return { found, ran };
+}
+
+/** The caller input of every operation, so sensitive values are redacted from observed parameters. */
+function inputsOf(prepared: readonly PreparedWrite[]): readonly unknown[] {
+  return prepared.map((item) => item.input);
 }
 
 function wantsQueryParams(handler: object | undefined): boolean {

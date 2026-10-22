@@ -1,10 +1,12 @@
 /**
  * `batch` refuses what it cannot check atomically (D183), on real Postgres.
  *
- * A `restore` is blocked while its parent is archived, and a write with `expect`
- * compares its count with the number it asked for. Both are checked after the
- * statement ran. A batch cannot report that after it commits, so it refuses them
- * with OKM1121 before any statement is sent, and `tx()` still does both.
+ * A `restore` is blocked while its parent is archived, a write with `expect`
+ * compares its count with the number it asked for, and a versioned update finds a
+ * stale version. All three are judged after the statement ran. A batch cannot
+ * report that after it commits, so `db.batch` refuses them with OKM1121 before any
+ * statement is sent, and `tx()` still does all three. `tx.batch` takes a versioned
+ * update: a stale version fails the transaction.
  */
 
 import { expect } from "bun:test";
@@ -13,6 +15,12 @@ import { OkmError } from "../src/contracts/error.js";
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
 import { withGate, type GateEnv } from "./gate-env.js";
 import { key, TENANT_A } from "./gate-schema.js";
+import { renderCatalog } from "../src/dialects/pg/ddl.js";
+import { schema, t, table } from "../src/dialects/pg/index.js";
+import { withPostgresSchema } from "../packages/harness/src/postgres.js";
+import { primaryUrl } from "../packages/harness/src/topology.js";
+import { connect } from "../src/runtime/pg/postgresjs.js";
+import { versioned } from "../src/runtime/traits/index.js";
 
 const gate = await loadPostgresGate();
 
@@ -183,6 +191,98 @@ postgresTest(
       });
       expect(out[0]).toEqual({ count: 1 });
       expect(out[1]).toEqual({ count: 0 });
+    });
+  },
+  60_000,
+);
+
+const docs = table(
+  "docs",
+  { id: t.text().primaryKey(), title: t.text() },
+  { traits: [versioned()] },
+);
+const versionedApp = schema({ casing: "snake", tables: [docs] });
+
+postgresTest(
+  gate,
+  "db.batch refuses a versioned update with OKM1121, tx.batch still checks it",
+  async () => {
+    await withPostgresSchema(async (sql, schemaName) => {
+      for (const statement of renderCatalog(versionedApp.catalog, schemaName)) {
+        await sql.unsafe(statement);
+      }
+      const db = connect(primaryUrl(), {
+        schema: versionedApp,
+        searchPath: schemaName,
+        max: 1,
+      }) as unknown as Loose;
+      try {
+        await db.connected;
+        await db.docs.insert([
+          { id: "a", title: "a" },
+          { id: "b", title: "b" },
+        ]);
+        const titles = async (): Promise<string[]> =>
+          (await sql.unsafe("select title from docs order by id")).map((row) => String(row.title));
+
+        // The version is current and the version is stale: both are refused, nothing is sent.
+        for (const version of [1, 9]) {
+          const error = await refused(() =>
+            db.batch([
+              db.docs.insert({ id: "c", title: "extra" }),
+              db.docs.update({ where: { id: "a" }, set: { title: "x" }, version }),
+            ]),
+          );
+          expect(error.code).toBe("OKM1121");
+          expect(error.message).toContain("version");
+          expect(error.message).toContain("tx()");
+          expect(await titles()).toEqual(["a", "b"]);
+        }
+        // A per-row list carries its versions too.
+        const list = await refused(() =>
+          db.batch([
+            db.docs.update([
+              { id: "a", set: { title: "x" }, version: 1 },
+              { id: "b", set: { title: "y" }, version: 1 },
+            ]),
+          ]),
+        );
+        expect(list.code).toBe("OKM1121");
+        expect(await titles()).toEqual(["a", "b"]);
+
+        // A claim that does not check a version is still a batch member.
+        await db.batch([
+          db.docs.update({
+            where: { id: "a" },
+            set: { title: "free" },
+            version: "any",
+            lock: "skip",
+            limit: 1,
+          }),
+        ]);
+        expect(await titles()).toEqual(["free", "b"]);
+
+        // Inside tx(), the batch checks the version and a stale one fails the transaction.
+        const stale = await refused(() =>
+          db.tx(async (tx: Loose) => {
+            await tx.batch([
+              tx.docs.insert({ id: "c", title: "extra" }),
+              tx.docs.update({ where: { id: "b" }, set: { title: "late" }, version: 9 }),
+            ]);
+          }),
+        );
+        expect(stale.category).toBe("conflict");
+        expect(await titles()).toEqual(["free", "b"]);
+        await db.tx(async (tx: Loose) => {
+          await tx.batch([
+            tx.docs.insert({ id: "c", title: "extra" }),
+            tx.docs.update({ where: { id: "b" }, set: { title: "ok" }, version: 1 }),
+          ]);
+        });
+        expect(await titles()).toEqual(["free", "ok", "extra"]);
+      } finally {
+        await db.close();
+      }
     });
   },
   60_000,
