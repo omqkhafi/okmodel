@@ -24,7 +24,7 @@ import { ensureMigrationTables } from "./apply.js";
 import type { MigrateConfig } from "./config.js";
 import { catalogQuery, managedRoleOptions, sealDomainChecks, sealTableChecks } from "./drift.js";
 import { assertUuidV7Available } from "./engine.js";
-import { createExtensionName } from "./extensions.js";
+import { extensionStatement, type ExtensionStatement } from "./extensions.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
 import { lintReprints, type Finding } from "./lint.js";
 import { planMigration, type MigrationPlan, type PlanStep } from "./plan.js";
@@ -32,7 +32,7 @@ import { driverUrl } from "./driver-url.js";
 import { probeStableBackend } from "./pooler-probe.js";
 import { assumeRole, assertSchemaUsageLanded, grantSchema, ownSchema } from "./runner.js";
 import { snapshotDifference } from "./snapshot.js";
-import { sqlStatements } from "./sql-lex.js";
+import { replaceSchemaName, sqlStatements } from "./sql-lex.js";
 
 /** One migration the check replays. */
 export type CheckMigration = {
@@ -54,7 +54,26 @@ export type ReplayOutcome = {
   readonly stop?: ReplayStop;
 };
 
-type Session = { setRole?: string };
+/**
+ * An extension installed outside the scratch schema.
+ *
+ * The replay never alters it. Create, drop, and alter statements for it are
+ * tracked here, and the catalog read after each migration is corrected from
+ * this record. A step that ends the transaction cannot make a change to the
+ * real extension permanent, because none was made.
+ */
+type Hosted = {
+  readonly home: string;
+  present: boolean;
+  schema: string;
+  version: string;
+};
+
+type Session = { setRole?: string; readonly hosted: Map<string, Hosted | null> };
+
+function newSession(): Session {
+  return { hosted: new Map() };
+}
 
 /**
  * Replays `history` in one transaction and rolls it back.
@@ -80,18 +99,14 @@ export async function replayCheckHistory(
   await inCheckTransaction(url, scratch, config, allowPooler, async (sql) => {
     const connection = driverOf(sql);
     await assertUuidV7Available(connection, history);
-    const session: Session = {};
+    const session = newSession();
     for (let index = 0; index < history.length; index += 1) {
       const migration = history[index];
       if (migration === undefined) continue;
       await replayMigration(sql, connection, scratch, config, migration, session, skips);
       await restoreSession(sql, session);
       const runner = catalogQuery(sql);
-      const live = extensionsAsLogical(
-        await introspectSchema(runner, scratch, logical, managedRoleOptions(config.roles)),
-        scratch,
-        logical,
-      );
+      const live = await introspectReplay(sql, scratch, logical, config, session);
       for (const item of lintReprints(migration.catalog, live, migration.steps)) {
         reprints.push({ ...item, place: `${migration.id} ${item.place}` });
       }
@@ -135,7 +150,7 @@ export async function proveCheckSnapshot(
   const logical = config.namespace ?? "public";
   const installed = await inCheckTransaction(url, provided, config, allowPooler, async (sql) => {
     const connection = driverOf(sql);
-    const session: Session = {};
+    const session = newSession();
     const planned = planMigration({
       before: catalog([]),
       after: head.catalog,
@@ -157,35 +172,17 @@ export async function proveCheckSnapshot(
       [],
     );
     await restoreSession(sql, session);
-    return extensionsAsLogical(
-      await introspectSchema(
-        catalogQuery(sql),
-        provided,
-        logical,
-        managedRoleOptions(config.roles),
-      ),
-      provided,
-      logical,
-    );
+    return introspectReplay(sql, provided, logical, config, session);
   });
   const again = await inCheckTransaction(url, replayed, config, allowPooler, async (sql) => {
     const connection = driverOf(sql);
     await assertUuidV7Available(connection, history);
-    const session: Session = {};
+    const session = newSession();
     for (const migration of history) {
       await replayMigration(sql, connection, replayed, config, migration, session, []);
     }
     await restoreSession(sql, session);
-    return extensionsAsLogical(
-      await introspectSchema(
-        catalogQuery(sql),
-        replayed,
-        logical,
-        managedRoleOptions(config.roles),
-      ),
-      replayed,
-      logical,
-    );
+    return introspectReplay(sql, replayed, logical, config, session);
   });
   return snapshotDifference(installed, again);
 }
@@ -195,7 +192,8 @@ export async function proveCheckSnapshot(
  *
  * `source` defaults to `public`. A foreign key aimed at another schema is
  * left in place. `CREATE EXTENSION … SCHEMA` names the schema without a
- * trailing dot, so that clause is retargeted too.
+ * trailing dot, so that clause is retargeted too. Only identifiers change:
+ * the same text inside a string literal or a comment stays as written.
  *
  * @param steps - Plan steps
  * @param schema - Scratch schema
@@ -207,24 +205,17 @@ export function retargetSteps(
   schema: string,
   source = "public",
 ): readonly PlanStep[] {
-  const from = `${quoteIdent(source)}.`;
-  const to = `${quoteIdent(schema)}.`;
-  const fromDefaults = `in schema ${quoteIdent(source)} `;
-  const toDefaults = `in schema ${quoteIdent(schema)} `;
-  const fromSchema = `on schema ${quoteIdent(source)}`;
-  const toSchema = `on schema ${quoteIdent(schema)}`;
-  const fromExtension = `schema ${quoteIdent(source)}`;
-  const toExtension = `schema ${quoteIdent(schema)}`;
   return steps.map((step) => ({
     ...step,
-    sql: step.sql
-      .replaceAll(from, to)
-      .replaceAll(fromDefaults, toDefaults)
-      .replaceAll(fromSchema, toSchema)
-      .replaceAll(fromExtension, toExtension),
+    sql: replaceSchemaName(step.sql, source, schema),
     ...(step.backfill === undefined
       ? {}
-      : { backfill: { ...step.backfill, table: step.backfill.table.replaceAll(from, to) } }),
+      : {
+          backfill: {
+            ...step.backfill,
+            table: replaceSchemaName(step.backfill.table, source, schema),
+          },
+        }),
   }));
 }
 
@@ -459,7 +450,9 @@ async function runSteps(
       ) {
         await assumeRole(connection, migrationRole, session);
       }
-      const replaySql = await tolerateInstalledExtensions(sql, prepared.sql, scratch);
+      const notes: string[] = [];
+      const replaySql = await replayExtensions(sql, prepared.sql, scratch, session, notes);
+      for (const note of notes) skips.push(`${migration.id} step ${String(index + 1)}: ${note}`);
       const created = createdRoleName(step.sql);
       const existed = created !== undefined && (await roleExists(connection, created));
       if (step.backfill !== undefined) {
@@ -491,80 +484,212 @@ async function runSteps(
 }
 
 /**
- * Drops `CREATE EXTENSION` when that extension is already installed.
+ * Replays extension statements without touching an installed extension.
  *
  * Extensions are database-wide, so a replay after apply would fail with
- * "already exists". The installed extension is moved into the scratch schema
- * for this transaction. `ROLLBACK` restores the schema it had.
+ * "already exists". A statement about an extension that is installed outside
+ * the scratch schema is not executed. It updates the {@link Hosted} record
+ * instead, and the scratch schema reads that extension through `search_path`.
+ * Any other extension statement runs in the scratch transaction.
  *
  * @param sql - Check connection
  * @param text - Statements for one step, after transactional rewrites
  * @param scratch - Scratch schema
+ * @param session - Extensions tracked so far
+ * @param notes - Receives a note for each statement that is not replayed
  * @returns The statements still to run
  */
-async function tolerateInstalledExtensions(
+async function replayExtensions(
   sql: Sql,
   text: string,
   scratch: string,
+  session: Session,
+  notes: string[],
 ): Promise<string> {
   const parts = sqlStatements(text);
   const source = parts.length === 0 ? [text] : parts;
   const kept: string[] = [];
+  let moved = false;
   for (const statement of source) {
-    const name = createExtensionName(statement);
-    if (name !== undefined && (await relocateInstalledExtension(sql, name, scratch))) continue;
-    const trimmed = statement.trim().replace(/;\s*$/, "");
+    const parsed = extensionStatement(statement);
+    const remaining =
+      parsed === undefined
+        ? statement
+        : await replayExtension(sql, parsed, statement, scratch, session, notes);
+    if (remaining !== statement) moved = true;
+    const trimmed = remaining.trim().replace(/;\s*$/, "");
     if (trimmed.length > 0) kept.push(trimmed);
   }
+  if (moved) await placeHosted(sql, scratch, session);
   return kept.length === 0 ? "" : `${kept.join(";\n")};`;
 }
 
-/**
- * Moves an installed extension into the scratch schema.
- *
- * @param sql - Check connection
- * @param name - Extension name
- * @param scratch - Scratch schema
- * @returns `true` when the extension is already installed
- */
-async function relocateInstalledExtension(
+async function replayExtension(
   sql: Sql,
+  parsed: ExtensionStatement,
+  statement: string,
+  scratch: string,
+  session: Session,
+  notes: string[],
+): Promise<string> {
+  if (parsed.kind === "drop") {
+    const rest: string[] = [];
+    for (const name of parsed.names) {
+      const host = await hostedExtension(sql, session, name, scratch);
+      if (host === undefined) {
+        rest.push(name);
+        continue;
+      }
+      if (parsed.cascade) {
+        notes.push(`DROP EXTENSION ${name} CASCADE is not replayed on an installed extension`);
+      } else if (host.present) {
+        await assertNoDependents(sql, name, scratch);
+      }
+      host.present = false;
+    }
+    if (rest.length === parsed.names.length) return statement;
+    if (rest.length === 0) return "";
+    const tail = parsed.cascade ? " cascade" : "";
+    return `drop extension ${parsed.ifExists ? "if exists " : ""}${rest.map(quoteIdent).join(", ")}${tail}`;
+  }
+  const host = await hostedExtension(sql, session, parsed.name, scratch);
+  if (host === undefined) return statement;
+  if (parsed.kind === "create") {
+    host.present = true;
+    host.schema = parsed.schema ?? scratch;
+  } else if (parsed.kind === "set-schema") {
+    host.schema = parsed.schema;
+  } else if (parsed.kind === "update") {
+    host.version = parsed.version;
+  } else {
+    notes.push(`ALTER EXTENSION ${parsed.name} is not replayed on an installed extension`);
+  }
+  return "";
+}
+
+/**
+ * Looks up an extension once. It is hosted when it is installed outside the scratch schema.
+ */
+async function hostedExtension(
+  sql: Sql,
+  session: Session,
   name: string,
   scratch: string,
-): Promise<boolean> {
+): Promise<Hosted | undefined> {
+  const known = session.hosted.get(name);
+  if (known !== undefined) return known ?? undefined;
   const rows = await sql.unsafe(
-    `select n.nspname as schema
+    `select n.nspname as schema, e.extversion as version
      from pg_extension e
      join pg_namespace n on n.oid = e.extnamespace
      where e.extname = $1`,
     [name],
   );
-  const schema = cell(rows[0], "schema");
-  if (schema === undefined) return false;
-  if (schema !== scratch) {
-    await sql.unsafe(`alter extension ${quoteIdent(name)} set schema ${quoteIdent(scratch)}`);
-  }
-  return true;
+  const home = cell(rows[0], "schema");
+  const found: Hosted | null =
+    home === undefined || home === scratch
+      ? null
+      : { home, present: true, schema: home, version: cell(rows[0], "version") ?? "" };
+  session.hosted.set(name, found);
+  return found ?? undefined;
 }
 
 /**
- * Records an extension in the scratch schema under the logical namespace.
+ * Refuses `DROP EXTENSION` while a scratch object still uses a member of it.
+ *
+ * This is the check Postgres would make if the extension were in the scratch
+ * schema. A column, an index operator class, a default, a constraint, a
+ * function, or a type in the scratch schema counts.
+ */
+async function assertNoDependents(sql: Sql, name: string, scratch: string): Promise<void> {
+  const rows = await sql.unsafe(
+    `select 1
+     from pg_depend d
+     join pg_depend m on m.classid = d.refclassid and m.objid = d.refobjid
+       and m.refclassid = 'pg_extension'::regclass and m.deptype = 'e'
+     join pg_extension e on e.oid = m.refobjid and e.extname = $1
+     where d.deptype in ('n', 'a')
+       and case d.classid
+         when 'pg_class'::regclass
+           then (select c.relnamespace from pg_class c where c.oid = d.objid)
+         when 'pg_attrdef'::regclass
+           then (select c.relnamespace from pg_attrdef a join pg_class c on c.oid = a.adrelid
+                 where a.oid = d.objid)
+         when 'pg_constraint'::regclass
+           then (select c.relnamespace from pg_constraint k join pg_class c on c.oid = k.conrelid
+                 where k.oid = d.objid)
+         when 'pg_proc'::regclass
+           then (select p.pronamespace from pg_proc p where p.oid = d.objid)
+         when 'pg_type'::regclass
+           then (select t.typnamespace from pg_type t where t.oid = d.objid)
+       end = (select oid from pg_namespace where nspname = $2)
+     limit 1`,
+    [name, scratch],
+  );
+  if (rows.length > 0) {
+    throw new Error(`cannot drop extension ${name} because other objects depend on it`);
+  }
+}
+
+/** Puts the schemas of the extensions still present after the scratch schema on `search_path`. */
+async function placeHosted(sql: Sql, scratch: string, session: Session): Promise<void> {
+  const homes = new Set<string>();
+  for (const host of session.hosted.values()) {
+    if (host !== null && host.present) homes.add(host.home);
+  }
+  const path = [scratch, ...homes].map((name) => quoteIdent(name)).join(", ");
+  await sql.unsafe(`set local search_path to ${path}`);
+}
+
+/**
+ * Reads the scratch schema as the catalog a migration stores.
  *
  * Introspection reads `extnamespace`, which is the scratch name for this
  * replay. The stored catalog names `public` (or the configured namespace).
+ * An extension that is installed outside the scratch schema is read with the
+ * schema and version the replay gave it.
  *
- * @param source - Catalog read from the scratch schema
+ * @param sql - Check connection
  * @param concrete - Scratch schema name
  * @param logical - Namespace the migration catalog stores
- * @returns `source`, or a copy whose extension schemas are `logical`
+ * @param config - Roles
+ * @param session - Extensions the replay tracks
+ * @returns The catalog of the scratch schema
  */
-function extensionsAsLogical(source: Catalog, concrete: string, logical: string): Catalog {
-  if (concrete === logical) return source;
+async function introspectReplay(
+  sql: Sql,
+  concrete: string,
+  logical: string,
+  config: MigrateConfig,
+  session: Session,
+): Promise<Catalog> {
+  const hosted = new Map<string, Hosted>();
+  for (const [name, host] of session.hosted) {
+    if (host !== null && host.present) hosted.set(name, host);
+  }
+  const source = await introspectSchema(catalogQuery(sql), concrete, logical, {
+    ...managedRoleOptions(config.roles),
+    hostedExtensions: [...hosted.keys()],
+  });
   let changed = false;
   const objects = source.objects.map((object) => {
-    if (object.kind !== "extension" || object.definition.schema !== concrete) return object;
+    if (object.kind !== "extension") return object;
+    const host = hosted.get(object.identity.name);
+    const schema = host?.schema ?? object.definition.schema;
+    const mapped = schema === concrete ? logical : schema;
+    const version = host?.version ?? object.definition.version;
+    if (mapped === object.definition.schema && version === object.definition.version) {
+      return object;
+    }
     changed = true;
-    return { ...object, definition: { ...object.definition, schema: logical } };
+    return {
+      ...object,
+      definition: {
+        ...object.definition,
+        schema: mapped,
+        ...(version !== undefined && version.length > 0 ? { version } : {}),
+      },
+    };
   });
   return changed ? { version: source.version, objects } : source;
 }

@@ -10,7 +10,13 @@ import { join } from "node:path";
 import { gateRuns } from "./gate-property.js";
 import { repoRoot } from "../scripts/root.js";
 import { parsePlan } from "../src/tooling/migrate/plan.js";
-import { sqlIdentifiers, sqlQuoteOpen, sqlStatements } from "../src/tooling/migrate/sql-lex.js";
+import {
+  replaceSchemaName,
+  sqlIdentifiers,
+  sqlQuoteOpen,
+  sqlStatements,
+  transactionControl,
+} from "../src/tooling/migrate/sql-lex.js";
 
 test("identifiers skip comments, strings, and dollar quotes", () => {
   expect(sqlIdentifiers(`select name from notes where id = n`)).toEqual([
@@ -193,6 +199,139 @@ test("a blank line inside a quote stays in the step, and one outside still split
   expect(split.steps).toHaveLength(2);
   expect(split.steps[0]?.sql).toBe("select 1");
   expect(split.steps[1]?.sql).toBe("truncate logs");
+});
+
+const ENDINGS = [
+  ["commit", "commit"],
+  ["end", "end"],
+  ["rollback", "rollback"],
+  ["abort", "abort"],
+] as const;
+const TAILS = [
+  "",
+  " work",
+  " transaction",
+  " and chain",
+  " and no chain",
+  " work and chain",
+  " work and no chain",
+  " transaction and chain",
+  " transaction and no chain",
+] as const;
+
+test("transactionControl names every COMMIT, END, ROLLBACK, and ABORT form (N-94)", () => {
+  for (const [keyword, word] of ENDINGS) {
+    for (const tail of TAILS) {
+      for (const text of [
+        `${keyword}${tail}`,
+        `${keyword.toUpperCase()}${tail.toUpperCase()}`,
+        `select 1;\n${keyword}${tail}`,
+        `${keyword}\n${tail.trim()}`,
+        `${keyword} /* c */${tail}`,
+        `${keyword}${tail};`,
+      ]) {
+        expect({ text, word: transactionControl(text) }).toEqual({ text, word });
+      }
+    }
+  }
+  expect(transactionControl("commit prepared 'x'")).toBe("commit");
+  expect(transactionControl("rollback prepared 'x'")).toBe("rollback");
+  expect(transactionControl("do $$ begin commit and chain; end $$")).toBe("commit");
+  expect(transactionControl("do $$ begin rollback and no chain; end $$")).toBe("rollback");
+});
+
+test("transactionControl leaves statements that stay in the transaction alone", () => {
+  for (const text of [
+    "rollback to savepoint s",
+    "rollback to s",
+    "rollback and chain to s",
+    "release savepoint s",
+    "savepoint s",
+    "end if",
+    "commit_log",
+    "select 'commit and chain'",
+    "select 1 -- commit and chain",
+    "/* rollback and chain */ select 1",
+    "do $$ begin end $$",
+    "create function f() returns void language plpgsql as $$ begin commit and chain; end $$",
+  ]) {
+    expect({ text, word: transactionControl(text) }).toEqual({ text, word: undefined });
+  }
+});
+
+test("replaceSchemaName renames identifiers and never a string or a comment (N-99)", () => {
+  const to = "okm_check_x";
+  const rename = (text: string): string => replaceSchemaName(text, "public", to);
+  expect(rename('create table "public"."t" (id int)')).toBe(
+    'create table "okm_check_x"."t" (id int)',
+  );
+  expect(rename('grant usage on schema "public" to "app"')).toBe(
+    'grant usage on schema "okm_check_x" to "app"',
+  );
+  expect(
+    rename('alter default privileges IN SCHEMA  "public"\n grant select on tables to "app"'),
+  ).toBe('alter default privileges IN SCHEMA  "okm_check_x"\n grant select on tables to "app"');
+  expect(rename('create extension "citext" schema "public"')).toBe(
+    'create extension "citext" schema "okm_check_x"',
+  );
+  expect(rename('select "public" . "t"')).toBe('select "okm_check_x" . "t"');
+  for (const keep of [
+    `alter table "t" alter column "n" set default 'see schema "public"'`,
+    `alter table "t" alter column "n" set default 'x "public"."y"'`,
+    `alter table "t" alter column "n" set default E'it''s "public"."y" \\' "public".z'`,
+    `comment on table "t" is 'schema "public"'`,
+    'select 1 -- schema "public"\n',
+    'select 1 /* "public"."t" schema "public" */',
+    'comment on table "t" is $$schema "public" "public"."t"$$',
+    'comment on table "t" is $tag$ "public"."t" $tag$',
+    'select "public"',
+    'select "other"."t", "t"."public"',
+  ]) {
+    expect({ keep, out: rename(keep) }).toEqual({ keep, out: keep });
+  }
+  expect(rename(`select 'a "public".b'; select * from "public"."t"`)).toBe(
+    `select 'a "public".b'; select * from "okm_check_x"."t"`,
+  );
+  expect(
+    rename('create view "public"."v" as select \'"public".x\' as s, * from "public"."t"'),
+  ).toBe('create view "okm_check_x"."v" as select \'"public".x\' as s, * from "okm_check_x"."t"');
+});
+
+test("replaceSchemaName rewrites a routine or DO body but not a string dollar quote", () => {
+  const to = "okm_check_x";
+  expect(
+    replaceSchemaName(
+      `create function "public"."f"() returns int language sql as $$ select count(*)::int from "public"."t" where s = 'schema "public"' $$`,
+      "public",
+      to,
+    ),
+  ).toBe(
+    `create function "okm_check_x"."f"() returns int language sql as $$ select count(*)::int from "okm_check_x"."t" where s = 'schema "public"' $$`,
+  );
+  expect(replaceSchemaName('do $do$ begin delete from "public"."t"; end $do$', "public", to)).toBe(
+    'do $do$ begin delete from "okm_check_x"."t"; end $do$',
+  );
+  expect(
+    replaceSchemaName(
+      `select 1; alter table "t" alter column "n" set default $$schema "public"$$`,
+      "public",
+      to,
+    ),
+  ).toBe(`select 1; alter table "t" alter column "n" set default $$schema "public"$$`);
+});
+
+test("replaceSchemaName never throws and leaves text with no match unchanged", () => {
+  fc.assert(
+    fc.property(
+      fc.string({ maxLength: 300 }),
+      (sql) => typeof replaceSchemaName(sql, "public", "scratch") === "string",
+    ),
+    { numRuns: gateRuns(200) },
+  );
+  fc.assert(
+    fc.property(fc.string({ maxLength: 300 }), (sql) => replaceSchemaName(sql, "zz", "yy") === sql),
+    { numRuns: gateRuns(200) },
+  );
 });
 
 test("reference-app migrations keep their step counts", () => {
