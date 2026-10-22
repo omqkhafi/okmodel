@@ -105,6 +105,8 @@ export type PreparedWrite = {
   readonly options: ExecuteOptions | undefined;
   /** Set when `finish` can refuse a statement that already ran. `batch` refuses such a write (D183). */
   readonly checked?: "restore" | "expect" | "parent" | "tree";
+  /** The caller's input, so `batch` can redact sensitive values from observed parameters. */
+  readonly input?: unknown;
   /** Observe metadata shared by statements that did not opt into keys. */
   readonly observe?: WriteObserveMeta;
   /**
@@ -352,6 +354,7 @@ async function prepareWrite(
           : planned.expect !== undefined
             ? { checked: "expect" as const }
             : {}),
+      input,
       ...(planned.recover === undefined
         ? {}
         : {

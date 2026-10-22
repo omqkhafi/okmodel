@@ -125,7 +125,7 @@ async function run(
     : undefined;
   if (session.q !== undefined && wantsQueryParams(session.q)) {
     const { rememberSecrets } = await import("./observe-query.js");
-    rememberSecrets(statements, session.schema, session.scope, undefined);
+    rememberSecrets(statements, session.schema, session.scope, inputsOf(prepared));
   }
   let results;
   try {
@@ -187,7 +187,7 @@ async function recover(
     : undefined;
   if (session.q !== undefined && wantsQueryParams(session.q)) {
     const { rememberSecrets } = await import("./observe-query.js");
-    rememberSecrets(flat, session.schema, session.scope, undefined);
+    rememberSecrets(flat, session.schema, session.scope, inputsOf(prepared));
   }
   try {
     ran = await runWrite(session, flat, call(options), true, observe);
@@ -201,6 +201,11 @@ async function recover(
     found.set(item.index, ran.slice(from, extraStarts[index + 1] ?? ran.length));
   }
   return { found, ran };
+}
+
+/** The caller input of every operation, so sensitive values are redacted from observed parameters. */
+function inputsOf(prepared: readonly PreparedWrite[]): readonly unknown[] {
+  return prepared.map((item) => item.input);
 }
 
 function wantsQueryParams(handler: object | undefined): boolean {

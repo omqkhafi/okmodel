@@ -131,6 +131,7 @@ export function prepareArchive(
       settings: [],
       source: "client",
     },
+    input,
     ...(op === "restore"
       ? { checked: "restore" as const }
       : planned.expect !== undefined
