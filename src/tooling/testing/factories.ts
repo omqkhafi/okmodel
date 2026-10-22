@@ -6,6 +6,7 @@
  */
 
 import { OkmError } from "../../contracts/error.js";
+import { printedIdentifier } from "../../contracts/catalog/identifier.js";
 import type { Catalog } from "../../contracts/catalog/types.js";
 import type { DriverPool } from "../../contracts/driver.js";
 import type { Connected } from "../../runtime/types.js";
@@ -561,7 +562,7 @@ function candidatesFor(host: FactoryHost, column: ColumnFacts): readonly unknown
 
 function enumLabels(catalog: Catalog, dataType: string): readonly string[] | undefined {
   for (const object of catalog.objects) {
-    if (object.kind !== "type" || object.identity.name !== dataType) continue;
+    if (object.kind !== "type" || printedIdentifier(object.identity.name) !== dataType) continue;
     const definition = object.definition;
     if ("labels" in definition && Array.isArray(definition.labels)) return definition.labels;
   }

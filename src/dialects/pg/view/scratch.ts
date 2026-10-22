@@ -27,7 +27,7 @@ import type {
   TableObject,
   ViewObject,
 } from "../../../contracts/catalog/types.js";
-import { createObjectSql, quoteIdent } from "../ddl.js";
+import { columnType, createObjectSql, quoteIdent } from "../ddl.js";
 import { atomicBody, type CatalogQuery } from "../introspect.js";
 import { cellText, PUBLIC, VIEW_DEPENDENCIES, viewDependencyEdges } from "./depend.js";
 
@@ -513,7 +513,7 @@ function stubTable(object: TableObject, source: Catalog): string {
       item.kind === "column" && item.identity.parent.name === object.identity.name,
   );
   const lines = columns.map(
-    (column) => `${quoteIdent(column.identity.name)} ${column.definition.dataType}`,
+    (column) => `${quoteIdent(column.identity.name)} ${columnType(column, SCRATCH)}`,
   );
   return `create table ${quoteIdent(object.identity.name)} (${lines.join(", ")})`;
 }

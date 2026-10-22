@@ -633,7 +633,7 @@ export default schema({
 
 An [enum](/docs/define/table/shape#enum) is its own type. A [picklist](/docs/define/table/shape#picklist) stays a string column and adds a CHECK.
 
-`t.domain("email", t.text(), "VALUE LIKE '%@%'")` stores the check as written. The name and the check must be non-empty. An enum cannot be the base. Changing the base type of an existing domain is OKM1020.
+`t.domain("email", t.text(), "VALUE LIKE '%@%'")` stores the check as written. The name and the check must be non-empty. An enum cannot be the base. Changing the base type of an existing domain is OKM1020. An enum or domain name with a capital letter, a space, or a quote is written as one quoted identifier wherever the type is used, so it never runs as SQL.
 
 `t.custom()` stores a SQL type that has no builder. `sqlType` must be non-empty. `accepts` names the object kinds the codec takes, such as `"Object"`. Omit `accepts` for a scalar. `extension` records an extension dependency. `sqlForm` defaults to `"quote"`.
 
