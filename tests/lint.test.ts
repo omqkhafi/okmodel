@@ -864,6 +864,27 @@ type Built = {
 test("OKM1551 flags transaction control and an allow needs a reason", () => {
   expect(codesOfHand("commit")).toContain("OKM1551");
   expect(codesOfHand("COMMIT WORK")).toContain("OKM1551");
+  for (const form of [
+    "commit and chain",
+    "commit and no chain",
+    "commit work and chain",
+    "commit transaction and no chain",
+    "end and chain",
+    "end work and no chain",
+    "end transaction and chain",
+    "rollback and chain",
+    "rollback work and no chain",
+    "rollback transaction and chain",
+    "abort",
+    "abort work",
+    "abort and chain",
+    "abort transaction and no chain",
+  ]) {
+    expect({ form, codes: codesOfHand(`select 1;\n${form}`) }).toEqual({
+      form,
+      codes: expect.arrayContaining(["OKM1551"]),
+    });
+  }
   expect(codesOfHand("end")).toContain("OKM1551");
   expect(codesOfHand("rollback")).toContain("OKM1551");
   expect(codesOfHand("begin")).toContain("OKM1551");

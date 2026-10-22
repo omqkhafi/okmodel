@@ -59,6 +59,13 @@ export type IntrospectOptions = {
    * privileges they already have.
    */
   readonly reportingRole?: string;
+  /**
+   * Extensions installed in another schema whose types this schema uses.
+   *
+   * Each is read as an extension row, with the schema it is really installed
+   * in. `okm migrate check` passes the extensions it replays without moving.
+   */
+  readonly hostedExtensions?: readonly string[];
 };
 
 /** A connection that can run one query. Parameters are `$1`, `$2`, … */
@@ -118,7 +125,7 @@ export async function introspectSchema(
     runner.query(SEQUENCES, params),
     runner.query(ENUMS, params),
     runner.query(DOMAINS, params),
-    runner.query(EXTENSIONS, params),
+    runner.query(EXTENSIONS, [concrete, JSON.stringify(options?.hostedExtensions ?? [])]),
     runner.query(FUNCTIONS, params),
     runner.query(TRIGGERS, params),
     runner.query(FUNCTION_DEPS, params),
@@ -1072,7 +1079,7 @@ const EXTENSIONS = `
     e.extversion as version
   from pg_extension e
   join pg_namespace n on n.oid = e.extnamespace
-  where n.nspname = $1
+  where n.nspname = $1 or e.extname in (select jsonb_array_elements_text($2::text::jsonb))
 `;
 
 const FUNCTIONS = `
