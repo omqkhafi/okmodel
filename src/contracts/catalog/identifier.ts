@@ -41,6 +41,23 @@ export function isReservedIdentifier(name: string): boolean {
   return reservedWords().has(name.toLowerCase());
 }
 
+const BARE_IDENT = /^[a-z_][a-z0-9_$]*$/;
+
+/**
+ * Spells an identifier the way `pg_get_expr` prints it.
+ *
+ * A lowercase unreserved name stays bare, so `tenant_id` does not move a
+ * stored catalog. Anything else, including a reserved word, is double-quoted
+ * with embedded quotes doubled.
+ *
+ * @param name - SQL name of a column or type
+ * @returns The identifier as it appears in an expression
+ */
+export function printedIdentifier(name: string): string {
+  if (BARE_IDENT.test(name) && !isReservedIdentifier(name)) return name;
+  return `"${name.replaceAll('"', '""')}"`;
+}
+
 /**
  * Rejects a name that fails the identifier rules.
  *

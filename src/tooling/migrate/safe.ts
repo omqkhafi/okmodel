@@ -16,7 +16,7 @@ import type {
   ColumnObject,
   ConstraintObject,
 } from "../../contracts/catalog/types.js";
-import { createObjectSql, qualify, quoteIdent } from "../../dialects/pg/ddl.js";
+import { columnType, createObjectSql, qualify, quoteIdent } from "../../dialects/pg/ddl.js";
 import { notNullSteps } from "../../dialects/pg/table-safe.js";
 import { keyRangePredicate, primaryKeyColumns, type BackfillSpec } from "./backfill.js";
 import type { StepKind } from "./classify.js";
@@ -213,7 +213,7 @@ function volatileColumnSteps(
   };
   const steps: SafeStep[] = [
     {
-      sql: `alter table ${table} add column ${name} ${column.definition.dataType}${collate}`,
+      sql: `alter table ${table} add column ${name} ${columnType(column, schema)}${collate}`,
       kind: "add-column",
       action: "ddl",
       lock: ACCESS,

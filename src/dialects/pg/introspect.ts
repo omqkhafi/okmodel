@@ -26,7 +26,7 @@ import {
   viewObject,
 } from "../../contracts/catalog/view.js";
 import { VIEW_DEPENDENCIES, viewDependencyEdges } from "./view/depend.js";
-import { quoteIdent } from "./ddl.js";
+import { quoteIdent, typeRef } from "./ddl.js";
 import { quoteLiteral } from "./quote.js";
 import { withUnvalidatedNotNull } from "../../contracts/catalog/not-null.js";
 import { unvalidatedNotNullSql } from "./not-null.js";
@@ -904,7 +904,9 @@ export async function reprintCheck(
   try {
     const defs =
       columns.length > 0
-        ? columns.map((column) => `${quoteIdent(column.name)} ${column.dataType}`).join(", ")
+        ? columns
+            .map((column) => `${quoteIdent(column.name)} ${standInType(column.dataType, types)}`)
+            .join(", ")
         : "id integer";
     await runner.query(`create temp table ${table} (${defs})`);
     await runner.query(
@@ -946,7 +948,9 @@ export async function reprintDomainCheck(
   const domain = scratchName("okm_expr_domain");
   const standIns = await createStandIns(runner, [base], types);
   try {
-    await runner.query(`create domain pg_temp.${domain} as ${base} check (${expression})`);
+    await runner.query(
+      `create domain pg_temp.${domain} as ${standInType(base, types)} check (${expression})`,
+    );
     const rows = await runner.query(
       `select pg_get_constraintdef(c.oid) as definition
        from pg_constraint c
@@ -961,6 +965,10 @@ export async function reprintDomainCheck(
 
 function scratchName(prefix: string): string {
   return `${prefix}_${crypto.randomUUID().replaceAll("-", "")}`;
+}
+
+function standInType(dataType: string, types: readonly ReprintType[]): string {
+  return typeRef(dataType, (name) => types.some((type) => type.name === name));
 }
 
 function namesType(dataType: string, name: string): boolean {
@@ -1004,7 +1012,7 @@ async function createStandIns(
       const body =
         type.labels !== undefined
           ? `as enum (${type.labels.map((label) => quoteLiteral(label)).join(", ")})`
-          : `as ${type.base ?? "text"}`;
+          : `as ${standInType(type.base ?? "text", types)}`;
       const kind = type.labels !== undefined ? "type" : "domain";
       await runner.query(`create ${kind} pg_temp.${name} ${body}`);
       created.unshift(`drop ${kind} pg_temp.${name}`);
@@ -1041,7 +1049,9 @@ const TABLES = `
 const COLUMNS = `
   select c.relname as parent, a.attname as name,
     case
-      when ty.typtype = 'e' and ty.typnamespace = n.oid then ty.typname
+      when ty.typtype in ('e', 'd') and ty.typnamespace = n.oid then ty.typname
+      when el.typtype in ('e', 'd') and el.typnamespace = n.oid and ty.typcategory = 'A'
+        then el.typname || '[]'
       else format_type(a.atttypid, a.atttypmod)
     end as type,
     a.attnotnull as not_null, ${unvalidatedNotNullSql("a")} as not_null_unvalidated,
@@ -1070,6 +1080,7 @@ const COLUMNS = `
   join pg_namespace n on n.oid = c.relnamespace
   join pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
   join pg_type ty on ty.oid = a.atttypid
+  left join pg_type el on el.oid = ty.typelem
   left join pg_attrdef ad on ad.adrelid = a.attrelid and ad.adnum = a.attnum
   where n.nspname = $1
     and c.relkind in ('r', 'p')

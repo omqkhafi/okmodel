@@ -13,6 +13,7 @@ import {
   assertIdentifier,
   assertStoredText,
   fitIdentifier,
+  printedIdentifier,
 } from "../../contracts/catalog/identifier.js";
 import {
   compareText,
@@ -935,7 +936,12 @@ function compileTable(
     const prepared: PreparedColumn = {
       field,
       sqlName: columnSql,
-      dataType: formatType(column.state.baseType, column.state.dims),
+      dataType: formatType(
+        column.state.typeDependency === undefined
+          ? column.state.baseType
+          : printedIdentifier(column.state.typeDependency),
+        column.state.dims,
+      ),
       nullable: column.state.nullable,
       references: column.state.references,
       encode: column.state.encode as (value: unknown) => string,

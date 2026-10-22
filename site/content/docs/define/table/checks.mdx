@@ -97,7 +97,7 @@ export const notes = table(
 
 #### two
 
-Two handles compare two columns. This check is `notes_ends_after_start_check`, and the text is `endsAt > startsAt` when those are the SQL names.
+Two handles compare two columns. This check is `notes_ends_after_start_check`, and the text is `endsAt > startsAt` when those are the SQL names. A name Postgres would fold or reject bare, such as `endsAt` with a capital letter, is double-quoted in the stored text: `"endsAt" > "startsAt"`. A lowercase name stays bare.
 
 ```ts title="two-columns.ts"
 import { sql, table, t } from "okmodel/pg";

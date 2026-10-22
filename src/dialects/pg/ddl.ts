@@ -6,7 +6,7 @@
  */
 
 import { isDomain } from "../../contracts/catalog/enum.js";
-import { fitIdentifier } from "../../contracts/catalog/identifier.js";
+import { fitIdentifier, printedIdentifier } from "../../contracts/catalog/identifier.js";
 import { identityKey } from "../../contracts/catalog/identity.js";
 import { creationOrder } from "../../contracts/catalog/document.js";
 import {
@@ -41,6 +41,51 @@ import { quoteLiteral } from "./quote.js";
  */
 export function quoteIdent(name: string): string {
   return `"${name.replaceAll('"', '""')}"`;
+}
+
+const ARRAY_TAIL = /(?:\[\])+$/;
+
+/**
+ * Spells a column or domain type the statement can run.
+ *
+ * A name the catalog owns as a type object (an enum or a domain) goes through
+ * {@link printedIdentifier}, so a mixed-case name, a space, a quote, or SQL text
+ * in it stays one quoted name. A quoted name is schema-qualified when `schema`
+ * is given. A bare lowercase name is unchanged, so existing plans keep their
+ * text. Any other spelling is the stored builder type and is returned as written.
+ *
+ * @param dataType - Stored type, with a `[]` tail for an array
+ * @param owns - Whether a name is a type the catalog owns
+ * @param schema - Concrete schema, or `undefined` for a bare quoted name
+ * @returns The type as SQL
+ */
+export function typeRef(
+  dataType: string,
+  owns: (name: string) => boolean,
+  schema?: string,
+): string {
+  const tail = ARRAY_TAIL.exec(dataType)?.[0] ?? "";
+  const scalar = dataType.slice(0, dataType.length - tail.length);
+  if (!owns(scalar)) return dataType;
+  const printed = printedIdentifier(scalar);
+  if (schema === undefined || printed === scalar) return `${printed}${tail}`;
+  return `${qualify(schema, scalar)}${tail}`;
+}
+
+/**
+ * The type of one column as SQL.
+ *
+ * @param column - Column whose edges name an enum or domain it uses
+ * @param schema - Concrete schema name
+ * @returns The type, quoted and qualified when the column uses an enum or domain
+ */
+export function columnType(column: ColumnObject, schema: string): string {
+  return typeRef(
+    column.definition.dataType,
+    (name) =>
+      column.dependencies.some((edge) => edge.target.kind === "type" && edge.target.name === name),
+    schema,
+  );
 }
 
 /**
@@ -161,7 +206,7 @@ export function dropObjectSql(object: CatalogObject, schema: string): string | u
 export function createObjectSql(object: CatalogObject, schema: string): string | undefined {
   switch (object.kind) {
     case "column":
-      return `alter table ${qualify(schema, object.identity.parent.name)} add column ${columnSql(object)}`;
+      return `alter table ${qualify(schema, object.identity.parent.name)} add column ${columnSql(object, schema)}`;
     case "index":
       return createIndexSql(object, schema);
     case "constraint":
@@ -380,9 +425,10 @@ export function alterColumnSql(
   const typeChanged = before.definition.dataType !== after.definition.dataType;
   const collationChanged = before.definition.collation !== after.definition.collation;
   if (typeChanged || collationChanged) {
-    const using = typeChanged ? ` using ${name}::${after.definition.dataType}` : "";
+    const type = columnType(after, schema);
+    const using = typeChanged ? ` using ${name}::${type}` : "";
     statements.push(
-      `alter table ${table} alter column ${name} set data type ${after.definition.dataType}${collateSql(after.definition.collation)}${using}`,
+      `alter table ${table} alter column ${name} set data type ${type}${collateSql(after.definition.collation)}${using}`,
     );
   }
   if (before.definition.nullable !== after.definition.nullable) {
@@ -438,7 +484,7 @@ export function createTableSql(tableObject: TableObject, source: Catalog, schema
       object.definition.constraintKind === "primaryKey" &&
       object.identity.parent.name === parent,
   );
-  const lines = columns.map((column) => columnSql(column));
+  const lines = columns.map((column) => columnSql(column, schema));
   if (primary !== undefined) {
     const cols = primary.definition.columns.map((name) => quoteIdent(name)).join(", ");
     lines.push(`constraint ${quoteIdent(primary.identity.name)} primary key (${cols})`);
@@ -460,15 +506,23 @@ function createTypeSql(object: TypeObject, schema: string): string {
   if (isDomain(object.definition)) {
     const name = object.identity.name;
     const constraint = quoteIdent(fitIdentifier(`${name}_check`));
-    return `create domain ${qualify(schema, name)} as ${object.definition.base} constraint ${constraint} check (${object.definition.check})`;
+    const base = typeRef(
+      object.definition.base,
+      (owned) =>
+        object.dependencies.some(
+          (edge) => edge.target.kind === "type" && edge.target.name === owned,
+        ),
+      schema,
+    );
+    return `create domain ${qualify(schema, name)} as ${base} constraint ${constraint} check (${object.definition.check})`;
   }
   const labels = object.definition.labels.map((label) => quoteLiteral(label)).join(", ");
   return `create type ${qualify(schema, object.identity.name)} as enum (${labels})`;
 }
 
-function columnSql(column: ColumnObject): string {
+function columnSql(column: ColumnObject, schema: string): string {
   const definition = column.definition;
-  let sql = `${quoteIdent(column.identity.name)} ${definition.dataType}${collateSql(definition.collation)}`;
+  let sql = `${quoteIdent(column.identity.name)} ${columnType(column, schema)}${collateSql(definition.collation)}`;
   if (definition.identity !== undefined) {
     sql += definition.identity.always
       ? " generated always as identity"

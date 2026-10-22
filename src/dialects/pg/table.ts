@@ -5,6 +5,7 @@
  * `schema()` does that.
  */
 
+import { printedIdentifier } from "../../contracts/catalog/identifier.js";
 import { throwNamed } from "../../contracts/error.js";
 import { callerLocation, withLocation } from "../../contracts/location.js";
 import { type ColumnInsertOf, type ColumnRowOf, type ColumnUpdateOf } from "./column.js";
@@ -601,7 +602,8 @@ export function buildIndex(input: {
 /**
  * Captures a check expression as text.
  *
- * Column handles become their SQL names. This is not a query builder.
+ * Column handles become their SQL names, double-quoted when Postgres would fold
+ * or reject them bare. This is not a query builder.
  *
  * @param strings - Literal parts
  * @param values - Interpolated columns, text, or numbers
@@ -719,7 +721,7 @@ function sqlValue(value: SqlValue | undefined): string {
     return value.text;
   }
   if ("name" in value && typeof value.name === "string") {
-    return value.name;
+    return printedIdentifier(value.name);
   }
   definition("sql accepts a column, a string, a number, a boolean, or null.");
 }
