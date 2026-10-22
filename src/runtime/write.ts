@@ -103,8 +103,11 @@ export type WriteHost = RunHost & {
 export type PreparedWrite = {
   readonly statements: readonly Statement[];
   readonly options: ExecuteOptions | undefined;
-  /** Set when `finish` can refuse a statement that already ran. `batch` refuses such a write (D183). */
-  readonly checked?: "restore" | "expect" | "parent" | "tree";
+  /**
+   * Set when `finish` can refuse a statement that already ran. `batch` refuses such a write (D183).
+   * `version` is the exception inside `tx()`: the savepoint rolls back with the transaction.
+   */
+  readonly checked?: "restore" | "expect" | "parent" | "tree" | "version";
   /** The caller's input, so `batch` can redact sensitive values from observed parameters. */
   readonly input?: unknown;
   /** Observe metadata shared by statements that did not opt into keys. */
@@ -353,7 +356,9 @@ async function prepareWrite(
           ? { checked: "tree" as const }
           : planned.expect !== undefined
             ? { checked: "expect" as const }
-            : {}),
+            : planned.versioned !== undefined
+              ? { checked: "version" as const }
+              : {}),
       input,
       ...(planned.recover === undefined
         ? {}
