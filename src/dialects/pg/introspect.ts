@@ -27,6 +27,7 @@ import {
 } from "../../contracts/catalog/view.js";
 import { VIEW_DEPENDENCIES, viewDependencyEdges } from "./view/depend.js";
 import { quoteIdent } from "./ddl.js";
+import { quoteLiteral } from "./quote.js";
 import { withUnvalidatedNotNull } from "../../contracts/catalog/not-null.js";
 import { unvalidatedNotNullSql } from "./not-null.js";
 import { columnPrivilege } from "./role/sql.js";
@@ -856,15 +857,33 @@ export type ReprintCheckColumn = {
 };
 
 /**
+ * A catalog type a scratch column may name.
+ *
+ * The scratch objects stand in for it when the schema does not have it yet:
+ * an enum with `labels`, or a domain over `base` with no check.
+ */
+export type ReprintType = {
+  readonly name: string;
+  readonly labels?: readonly string[];
+  readonly base?: string;
+};
+
+/**
  * Applies one expression as a check and reads Postgres's reprint.
  *
  * Two authoring spellings of the same predicate compare equal after this.
  * A different predicate does not. Column types matter: `IN (...)` on
  * `varchar(n)` reprints differently from the same list on `text`.
  *
+ * The table is a temporary table with a random name, and so is each stand-in
+ * for a type in `types` that a column names. Nothing is created in the
+ * target schema, so the role needs no `CREATE` on it. Temporary objects are
+ * dropped before this returns.
+ *
  * @param runner - Database connection
  * @param expression - Check expression without the `CHECK` keyword
  * @param columns - Scratch columns. Defaults to `id integer` and `title text`
+ * @param types - Enums and domains the columns may name, with the labels or base to rebuild
  * @returns The reprinted expression, without the `CHECK` keyword
  */
 export async function reprintCheck(
@@ -874,19 +893,33 @@ export async function reprintCheck(
     { name: "id", dataType: "integer" },
     { name: "title", dataType: "text" },
   ],
+  types: readonly ReprintType[] = [],
 ): Promise<string> {
-  await runner.query("drop table if exists okm_expr");
-  const defs =
-    columns.length > 0
-      ? columns.map((column) => `${quoteIdent(column.name)} ${column.dataType}`).join(", ")
-      : "id integer";
-  await runner.query(`create table okm_expr (${defs})`);
-  await runner.query(`alter table okm_expr add constraint okm_expr_check check (${expression})`);
-  const rows = await runner.query(
-    "select pg_get_constraintdef(oid) as definition from pg_constraint where conname = 'okm_expr_check'",
+  const table = scratchName("okm_expr");
+  const standIns = await createStandIns(
+    runner,
+    columns.map((column) => column.dataType),
+    types,
   );
-  await runner.query("drop table okm_expr");
-  return checkExpression(text(rows[0] ?? {}, "definition"));
+  try {
+    const defs =
+      columns.length > 0
+        ? columns.map((column) => `${quoteIdent(column.name)} ${column.dataType}`).join(", ")
+        : "id integer";
+    await runner.query(`create temp table ${table} (${defs})`);
+    await runner.query(
+      `alter table pg_temp.${table} add constraint okm_expr_check check (${expression})`,
+    );
+    const rows = await runner.query(
+      `select pg_get_constraintdef(oid) as definition
+       from pg_constraint
+       where conrelid = $1::regclass and conname = 'okm_expr_check'`,
+      [`pg_temp.${table}`],
+    );
+    return checkExpression(text(rows[0] ?? {}, "definition"));
+  } finally {
+    await runDrops(runner, [`drop table if exists pg_temp.${table}`, ...standIns]);
+  }
 }
 
 /**
@@ -894,28 +927,97 @@ export async function reprintCheck(
  *
  * Domain checks use `VALUE`, which is not valid on a table check. Two
  * authoring spellings of the same domain predicate compare equal after this.
+ * The domain and any stand-in for an enum or domain `base` names are
+ * temporary objects with random names. Nothing is created in the target
+ * schema.
  *
  * @param runner - Database connection
  * @param base - Domain base type, as Postgres `format_type` spells it
  * @param expression - Check expression without the `CHECK` keyword
+ * @param types - Enums and domains `base` may name, with the labels or base to rebuild
  * @returns The reprinted expression, without the `CHECK` keyword
  */
 export async function reprintDomainCheck(
   runner: CatalogQuery,
   base: string,
   expression: string,
+  types: readonly ReprintType[] = [],
 ): Promise<string> {
-  await runner.query("drop domain if exists okm_expr_domain");
-  await runner.query(`create domain okm_expr_domain as ${base} check (${expression})`);
-  const rows = await runner.query(
-    `select pg_get_constraintdef(c.oid) as definition
-     from pg_constraint c
-     join pg_type t on t.oid = c.contypid
-     join pg_namespace n on n.oid = t.typnamespace
-     where t.typname = 'okm_expr_domain' and n.nspname = current_schema()`,
-  );
-  await runner.query("drop domain okm_expr_domain");
-  return checkExpression(text(rows[0] ?? {}, "definition"));
+  const domain = scratchName("okm_expr_domain");
+  const standIns = await createStandIns(runner, [base], types);
+  try {
+    await runner.query(`create domain pg_temp.${domain} as ${base} check (${expression})`);
+    const rows = await runner.query(
+      `select pg_get_constraintdef(c.oid) as definition
+       from pg_constraint c
+       where c.contypid = $1::regtype`,
+      [`pg_temp.${domain}`],
+    );
+    return checkExpression(text(rows[0] ?? {}, "definition"));
+  } finally {
+    await runDrops(runner, [`drop domain if exists pg_temp.${domain}`, ...standIns]);
+  }
+}
+
+function scratchName(prefix: string): string {
+  return `${prefix}_${crypto.randomUUID().replaceAll("-", "")}`;
+}
+
+function namesType(dataType: string, name: string): boolean {
+  const plain = dataType.replaceAll('"', "");
+  const at = plain.indexOf(name);
+  if (at === -1) return false;
+  const word = /[\w$]/;
+  return !word.test(plain[at - 1] ?? "") && !word.test(plain[at + name.length] ?? "");
+}
+
+/**
+ * Creates a temporary enum or domain for each type the data types name.
+ *
+ * A type a domain's base names is created before the domain. The temporary schema is
+ * searched before the target schema for types, so a column resolves to the
+ * stand-in even when the schema has an older copy of the type.
+ *
+ * @returns The `DROP` statements for what was created, in the order to run them
+ */
+async function createStandIns(
+  runner: CatalogQuery,
+  dataTypes: readonly string[],
+  types: readonly ReprintType[],
+): Promise<readonly string[]> {
+  if (types.length === 0) return [];
+  const ordered: ReprintType[] = [];
+  const seen = new Set<ReprintType>();
+  const visit = (dataType: string): void => {
+    for (const type of types) {
+      if (seen.has(type) || !namesType(dataType, type.name)) continue;
+      seen.add(type);
+      if (type.base !== undefined) visit(type.base);
+      ordered.push(type);
+    }
+  };
+  for (const dataType of dataTypes) visit(dataType);
+  const created: string[] = [];
+  try {
+    for (const type of ordered) {
+      const name = quoteIdent(type.name);
+      const body =
+        type.labels !== undefined
+          ? `as enum (${type.labels.map((label) => quoteLiteral(label)).join(", ")})`
+          : `as ${type.base ?? "text"}`;
+      const kind = type.labels !== undefined ? "type" : "domain";
+      await runner.query(`create ${kind} pg_temp.${name} ${body}`);
+      created.unshift(`drop ${kind} pg_temp.${name}`);
+    }
+  } catch (error) {
+    await runDrops(runner, created);
+    throw error;
+  }
+  return created;
+}
+
+async function runDrops(runner: CatalogQuery, statements: readonly string[]): Promise<void> {
+  for (const statement of statements) await runner.query(statement).catch(() => undefined);
 }
 
 const CHILD = "not exists (select 1 from pg_inherits i where i.inhrelid = c.oid)";
