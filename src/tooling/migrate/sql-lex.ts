@@ -164,22 +164,29 @@ function isDo(statement: string): boolean {
   return /^do(?:\s|$)/i.test(statement.trim());
 }
 
+/** `[ WORK | TRANSACTION ] [ AND [ NO ] CHAIN ]`, the tail of COMMIT, ROLLBACK, ABORT, and END. */
+const TX_TAIL = String.raw`(?:\s+(?:work|transaction))?(?:\s+and(?:\s+no)?\s+chain)?`;
+const COMMIT = new RegExp(String.raw`^commit(?:${TX_TAIL}|\s+prepared\b.*)$`);
+const ROLLBACK = new RegExp(String.raw`^rollback(?:${TX_TAIL}|\s+prepared\b.*)$`);
+const ABORT = new RegExp(`^abort${TX_TAIL}$`);
+const END = new RegExp(`^end${TX_TAIL}$`);
+
 function controlWord(statement: string, insideBody: boolean): string | undefined {
   let text = statement.trim().replace(/\s+/g, " ").toLowerCase();
   if (insideBody && /^begin(?:\s|$)/.test(text) && !/^begin\s+(?:work|transaction)\b/.test(text)) {
     text = text.replace(/^begin\s+/, "").trim();
     if (text.length === 0) return undefined;
   }
-  if (/^commit(?:\s+(?:work|transaction|prepared\b.*))?$/.test(text)) return "commit";
-  if (text === "abort") return "abort";
-  if (/^rollback(?:\s+(?:work|transaction|prepared\b.*))?$/.test(text)) return "rollback";
+  if (COMMIT.test(text)) return "commit";
+  if (ABORT.test(text)) return "abort";
+  if (ROLLBACK.test(text)) return "rollback";
   if (/^prepare\s+transaction\b/.test(text)) return "prepare transaction";
   if (/^start\s+transaction\b/.test(text)) return "start transaction";
   if (/^begin(?:\s+(?:work|transaction)\b.*)?$/.test(text) || /^begin\s+\S/.test(text)) {
     if (insideBody && !/^begin\s+(?:work|transaction)\b/.test(text)) return undefined;
     return "begin";
   }
-  if (/^end(?:\s+(?:work|transaction))?$/.test(text)) {
+  if (END.test(text)) {
     if (insideBody && text === "end") return undefined;
     return "end";
   }
@@ -431,6 +438,87 @@ export function sqlIdentifiers(sql: string): readonly SqlName[] {
     index += 1;
   }
   return names;
+}
+
+/**
+ * Renames a double-quoted schema qualifier.
+ *
+ * Only an identifier is rewritten: `"from".name`, or `"from"` after the
+ * keyword `schema`. A string, an escape string, a comment, and a dollar quote
+ * that is not a routine or `DO` body keep their text. A routine or `DO` body
+ * is code, so it is rewritten the same way.
+ *
+ * @param sql - Step text
+ * @param from - Schema name as stored, unquoted
+ * @param to - Replacement schema name, unquoted
+ * @returns `sql` with each matching qualifier renamed
+ */
+export function replaceSchemaName(sql: string, from: string, to: string): string {
+  const quoted = `"${to.replaceAll('"', '""')}"`;
+  const out: string[] = [];
+  let index = 0;
+  let start = 0;
+  let last = "";
+  while (index < sql.length) {
+    const char = sql[index] ?? "";
+    const dollar = dollarAt(sql, index);
+    let end = index + 1;
+    let keep = true;
+    if (sql.startsWith("--", index)) {
+      end = lineCommentEnd(sql, index + 2);
+    } else if (sql.startsWith("/*", index)) {
+      end = blockComment(sql, index + 2).index;
+    } else if (dollar !== undefined) {
+      const closed = takeDollar(sql, dollar);
+      end = closed.index;
+      if (!closed.open && isCodeBody(sql.slice(start, index))) {
+        const tail = `$${dollar.tag}$`.length;
+        out.push(
+          sql.slice(index, dollar.end),
+          replaceSchemaName(sql.slice(dollar.end, end - tail), from, to),
+          sql.slice(end - tail, end),
+        );
+        keep = false;
+      }
+      last = "";
+    } else if (isEscapeString(sql, index)) {
+      end = takeQuoted(sql, index + 2, true).index;
+      last = "";
+    } else if (char === "'") {
+      end = takeQuoted(sql, index + 1, false).index;
+      last = "";
+    } else if (char === '"') {
+      const ident = takeIdent(sql, index + 1);
+      end = ident.index;
+      const next = skipTrivia(sql, end);
+      const hit =
+        !ident.open &&
+        unescapeIdent(sql.slice(index + 1, end - 1)) === from &&
+        (last === "schema" || sql[next] === ".");
+      if (hit) {
+        out.push(quoted);
+        keep = false;
+      }
+      last = "";
+    } else if (isIdentStart(sql.charCodeAt(index))) {
+      const word = readWord(sql, index);
+      end = index + word.length;
+      last = word.toLowerCase();
+    } else if (char === ";") {
+      start = end;
+      last = "";
+    } else if (!/\s/.test(char)) {
+      last = "";
+    }
+    if (keep) out.push(sql.slice(index, end));
+    index = end;
+  }
+  return out.join("");
+}
+
+function isCodeBody(head: string): boolean {
+  const text = sqlStatements(head).join(" ").replace(/\s+/g, " ").trim();
+  return isRoutineHead(text) || /^do\b/i.test(text);
 }
 
 function unescapeIdent(text: string): string {

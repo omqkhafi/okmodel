@@ -84,6 +84,73 @@ postgresTest(
 
 postgresTest(
   gate,
+  "a pending migration that drops the column and then the extension passes check and apply (N-98)",
+  async () => {
+    await withProject(async ({ cwd, url }) => {
+      const sql = openPostgres(url);
+      try {
+        writeCitextSchema(cwd, { id: true });
+        await cli(cwd, ["generate", "citext"]);
+        await cli(cwd, ["migrate", "apply"]);
+        writeSchema(cwd, `table("people", { id: t.integer().primaryKey() })`);
+        await generateWithErrors(cwd, ["generate", "drop-citext"]);
+        const path = migrationPath(cwd, ".sql");
+        const drafted = readFileSync(path, "utf8");
+        expect(drafted).toContain('drop extension "citext"');
+        writeFileSync(path, allowAll(drafted));
+        const before = await extensionPlacement(sql);
+        expect(before).toEqual([{ name: "citext", schema: "public" }]);
+        expect(await capture(["migrate", "check"], cwd)).toStartWith(
+          `ok 2 migrations\n${CHECK_REPLAY_LIMIT}\n`,
+        );
+        expect(await extensionPlacement(sql)).toEqual(before);
+        expect(await scratchSchemas(cwd)).toEqual([]);
+        expect(await capture(["migrate", "apply"], cwd)).toContain("applied 0002_drop-citext");
+        expect(await extensionPlacement(sql)).toEqual([]);
+      } finally {
+        await sql.end({ timeout: 5 });
+      }
+    });
+  },
+  90_000,
+);
+
+postgresTest(
+  gate,
+  'a default that spells schema "public" inside a string passes check and apply (N-99)',
+  async () => {
+    await withProject(async ({ cwd, url }) => {
+      const sql = openPostgres(url);
+      try {
+        writeSchema(
+          cwd,
+          `table("notes", { id: t.integer().primaryKey(), hint: t.text().default('see schema "public"') })`,
+        );
+        await cli(cwd, ["generate", "init"]);
+        expect(readFileSync(migrationPath(cwd, ".sql"), "utf8")).toContain(`'see schema "public"'`);
+        expect(await capture(["migrate", "check"], cwd)).toStartWith(
+          `ok 1 migrations\n${CHECK_REPLAY_LIMIT}\n`,
+        );
+        await cli(cwd, ["migrate", "apply"]);
+        const stored = await sql<{ expression: string }[]>`
+          select pg_get_expr(d.adbin, d.adrelid) as expression
+          from pg_attrdef d
+          where d.adrelid = 'public.notes'::regclass
+        `;
+        expect(stored[0]?.expression).toContain(`see schema "public"`);
+        expect(await capture(["migrate", "check"], cwd)).toStartWith(
+          `ok 1 migrations\n${CHECK_REPLAY_LIMIT}\n`,
+        );
+      } finally {
+        await sql.end({ timeout: 5 });
+      }
+    });
+  },
+  90_000,
+);
+
+postgresTest(
+  gate,
   "an edited stored catalog fails history verification and names the steps",
   async () => {
     await withProject(async ({ cwd }) => {
@@ -521,6 +588,32 @@ function allowDrop(sql: string): string {
   );
 }
 
+/** Puts an `okm-allow` line with a reason above every statement a drop plan drafted. */
+function allowAll(text: string): string {
+  return text
+    .split("\n")
+    .flatMap((line) =>
+      /^(alter table .* drop column |drop extension )/.test(line)
+        ? [
+            `-- okm-allow ${line.startsWith("drop") ? "OKM1517" : "OKM1512"}: nothing else uses it`,
+            line,
+          ]
+        : [line],
+    )
+    .join("\n");
+}
+
+async function extensionPlacement(
+  sql: ReturnType<typeof openPostgres>,
+): Promise<readonly { readonly name: string; readonly schema: string }[]> {
+  return sql<{ name: string; schema: string }[]>`
+    select e.extname as name, n.nspname as schema
+    from pg_extension e
+    join pg_namespace n on n.oid = e.extnamespace
+    where e.extname = 'citext'
+  `;
+}
+
 function migrationPath(cwd: string, suffix: ".sql" | ".catalog.json"): string {
   const directory = join(cwd, "migrations");
   const name = readdirSync(directory)
@@ -584,7 +677,8 @@ function writeSchema(
   if (options?.protected === true) writeConfig(cwd, { protected: true });
 }
 
-function writeCitextSchema(cwd: string): void {
+function writeCitextSchema(cwd: string, options?: { readonly id?: boolean }): void {
+  const id = options?.id === true ? "id: t.integer().primaryKey(), " : "";
   const source = (path: string): string => JSON.stringify(join(root, path));
   writeFileSync(
     join(cwd, "schema.ts"),
@@ -592,7 +686,7 @@ function writeCitextSchema(cwd: string): void {
       `import { schema, t, table } from ${source("src/dialects/pg/index.ts")};`,
       `import { citext } from ${source("src/dialects/pg/ext/citext.ts")};`,
       "export const app = schema({",
-      '  tables: [table("people", { email: t.citext() })],',
+      `  tables: [table("people", { ${id}email: t.citext() })],`,
       "  extensions: [citext()],",
       "});",
       "",

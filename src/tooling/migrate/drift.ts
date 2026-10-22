@@ -22,6 +22,7 @@ import {
   type CatalogQuery,
   type IntrospectOptions,
   type ReprintCheckColumn,
+  type ReprintType,
 } from "../../dialects/pg/introspect.js";
 import { sealViews } from "../../dialects/pg/view/scratch.js";
 import type { RolesInput } from "../../dialects/pg/role/index.js";
@@ -126,6 +127,7 @@ function unvalidatedNotNull(live: Catalog, author: Catalog): string {
  * @returns A catalog whose domain checks carry the server reprint
  */
 export async function sealDomainChecks(runner: CatalogQuery, source: Catalog): Promise<Catalog> {
+  const types = reprintTypes(source);
   const objects: CatalogObject[] = [];
   let changed = false;
   for (const object of source.objects) {
@@ -137,6 +139,7 @@ export async function sealDomainChecks(runner: CatalogQuery, source: Catalog): P
       runner,
       object.definition.base,
       object.definition.check,
+      types,
     );
     if (reprinted === object.definition.check) {
       objects.push(object);
@@ -165,6 +168,7 @@ export async function sealDomainChecks(runner: CatalogQuery, source: Catalog): P
  */
 export async function sealTableChecks(runner: CatalogQuery, source: Catalog): Promise<Catalog> {
   const columnsByTable = tableColumns(source);
+  const types = reprintTypes(source);
   const objects: CatalogObject[] = [];
   let changed = false;
   for (const object of source.objects) {
@@ -181,6 +185,7 @@ export async function sealTableChecks(runner: CatalogQuery, source: Catalog): Pr
       runner,
       object.definition.expression,
       columnsByTable.get(parent) ?? [],
+      types,
     );
     if (reprinted === object.definition.expression) {
       objects.push(object);
@@ -193,6 +198,19 @@ export async function sealTableChecks(runner: CatalogQuery, source: Catalog): Pr
     });
   }
   return changed ? { version: source.version, objects } : source;
+}
+
+function reprintTypes(source: Catalog): readonly ReprintType[] {
+  const types: ReprintType[] = [];
+  for (const object of source.objects) {
+    if (object.kind !== "type") continue;
+    types.push(
+      isDomain(object.definition)
+        ? { name: object.identity.name, base: object.definition.base }
+        : { name: object.identity.name, labels: object.definition.labels },
+    );
+  }
+  return types;
 }
 
 function tableColumns(source: Catalog): ReadonlyMap<string, readonly ReprintCheckColumn[]> {

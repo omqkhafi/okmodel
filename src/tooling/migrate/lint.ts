@@ -161,12 +161,13 @@ export function hasError(findings: readonly Finding[]): boolean {
  * The message is the finding lines, so the failure text stays greppable.
  *
  * @param findings - Findings that include at least one error
+ * @param fix - Fix text that replaces the registry text, when the caller has a better one
  * @returns The error apply, plan, and check throw before continuing
  */
-export function lintRefusal(findings: readonly Finding[]): OkmError {
+export function lintRefusal(findings: readonly Finding[], fix?: string): OkmError {
   const doc = errorDoc("OKM1510");
   const error = new OkmError("OKM1510", formatFindings(findings).trim(), {
-    fix: { summary: doc?.fix ?? "Change the statement so the finding is gone." },
+    fix: { summary: fix ?? doc?.fix ?? "Change the statement so the finding is gone." },
   });
   const step = findings.find((item) => item.place.startsWith("step "))?.place;
   if (step === undefined) return error;

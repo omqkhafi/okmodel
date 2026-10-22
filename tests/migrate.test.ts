@@ -34,6 +34,7 @@ import {
   type MigrationPlan,
   type PlanStep,
 } from "../src/tooling/migrate/plan.js";
+import { extensionStatement } from "../src/tooling/migrate/extensions.js";
 import { retargetSteps } from "../src/tooling/migrate/sandbox.js";
 import { unlistedTableFiles } from "../src/tooling/migrate/project.js";
 import { parseReplace } from "../src/tooling/migrate/values.js";
@@ -63,6 +64,72 @@ test("check replay retargets CREATE EXTENSION schema", () => {
     "tenant",
   );
   expect(moved[0]?.sql).toBe(`create extension "citext" schema "${scratch}"`);
+});
+
+test("check replay retargets identifiers only, never a string or a comment (N-99)", () => {
+  const scratch = "okm_check_abc";
+  const steps = retargetSteps(
+    [
+      replayStep(
+        `alter table "public"."notes" alter column "hint" set default 'see schema "public"'`,
+      ),
+      replayStep(`comment on table "public"."notes" is 'a "public"."notes" table'`),
+      replayStep(`select 1 -- schema "public"\n; select 2 /* "public"."x" */`),
+      {
+        ...replayStep('create table "public"."notes" ("id" int)'),
+        action: "backfill" as const,
+        backfill: { table: '"public"."notes"', key: ['"id"'], batch: 100 },
+      },
+    ],
+    scratch,
+  );
+  expect(steps.map((item) => item.sql)).toEqual([
+    `alter table "${scratch}"."notes" alter column "hint" set default 'see schema "public"'`,
+    `comment on table "${scratch}"."notes" is 'a "public"."notes" table'`,
+    `select 1 -- schema "public"\n; select 2 /* "public"."x" */`,
+    `create table "${scratch}"."notes" ("id" int)`,
+  ]);
+  expect(steps[3]?.backfill?.table).toBe(`"${scratch}"."notes"`);
+});
+
+test("extensionStatement reads every extension form the planner writes", () => {
+  expect(extensionStatement('create extension "citext" schema "public" version \'1.6\'')).toEqual({
+    kind: "create",
+    name: "citext",
+    schema: "public",
+  });
+  expect(extensionStatement("CREATE EXTENSION IF NOT EXISTS Pg_Trgm")).toEqual({
+    kind: "create",
+    name: "pg_trgm",
+  });
+  expect(extensionStatement('drop extension "citext"')).toEqual({
+    kind: "drop",
+    names: ["citext"],
+    ifExists: false,
+    cascade: false,
+  });
+  expect(extensionStatement('drop extension if exists "a", b, "c,d" cascade')).toEqual({
+    kind: "drop",
+    names: ["a", "b", "c,d"],
+    ifExists: true,
+    cascade: true,
+  });
+  expect(extensionStatement('alter extension "citext" set schema "tenant"')).toEqual({
+    kind: "set-schema",
+    name: "citext",
+    schema: "tenant",
+  });
+  expect(extensionStatement(`alter extension "citext" update to '1.7'`)).toEqual({
+    kind: "update",
+    name: "citext",
+    version: "1.7",
+  });
+  expect(extensionStatement('alter extension "citext" add function f()')).toEqual({
+    kind: "other",
+    name: "citext",
+  });
+  expect(extensionStatement('create table "extension" (id int)')).toBeUndefined();
+  expect(extensionStatement("select 1")).toBeUndefined();
 });
 
 test("rename rewrites expression text and the plan does not recreate the check", () => {

@@ -42,6 +42,12 @@ const REFUSED = [
   "commit; create table public.evil(a int)",
   "end; begin; alter table public.t add column ee int",
   "rollback; alter table public.t add column rr int",
+  "commit and chain; alter table public.t add column cc int",
+  "commit work and no chain; alter table public.t add column cn int",
+  "end transaction and chain; alter table public.t add column ec int",
+  "rollback and chain; alter table public.t add column rc int",
+  "abort; alter table public.t add column ab int",
+  "abort work and chain; alter table public.t add column aw int",
 ] as const;
 
 const REPLAYED = [

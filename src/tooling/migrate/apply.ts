@@ -13,7 +13,7 @@ import { open } from "../../adapters/pg/postgresjs.js";
 import { quoteIdent } from "../../dialects/pg/ddl.js";
 import { startupHash } from "../../contracts/catalog/document.js";
 import type { Catalog } from "../../contracts/catalog/types.js";
-import { hasError, lintMigrationDirectory, lintRefusal } from "./lint.js";
+import { hasError, lintMigrationDirectory, lintPlan, lintRefusal } from "./lint.js";
 import type { DriverConnection } from "../../contracts/driver.js";
 import { OkmError } from "../../contracts/error.js";
 import { assertCreateRole, currentUser, roleExists } from "../../dialects/pg/role/check.js";
@@ -561,6 +561,9 @@ export async function pushProject(
   return formatApplyText(report);
 }
 
+const PUSH_RLS_FIX =
+  "okm push does not weaken row-level security. Run okm generate, review the migration, then okm migrate apply it with `-- okm-allow OKM1550: <reason>` on the step.";
+
 type PushRequest = {
   readonly url: string;
   readonly target: string;
@@ -654,6 +657,8 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
         ...(request.schema !== undefined ? { schema: request.schema } : {}),
         ...(request.batchSize !== undefined ? { batchSize: request.batchSize } : {}),
       });
+      const weakened = lintPlan(plan, live, author).filter((item) => item.code === "OKM1550");
+      if (weakened.length > 0) throw lintRefusal(weakened, PUSH_RLS_FIX);
       planSteps = plan.steps;
     } finally {
       await finishQuiet(() => sql.end({ timeout: 5 }));

@@ -23,7 +23,8 @@ type MigrationSql = {
   readonly steps: readonly { readonly sql: string }[];
 };
 
-const CREATE_EXTENSION = /^\s*create\s+extension\s+(?:"([^"]+)"|([A-Za-z_][\w$]*))/i;
+const CREATE_EXTENSION =
+  /^\s*create\s+extension\s+(?:if\s+not\s+exists\s+)?(?:"([^"]+)"|([A-Za-z_][\w$]*))/i;
 const UPDATE_EXTENSION =
   /^\s*alter\s+extension\s+(?:"([^"]+)"|([A-Za-z_][\w$]*))\s+update\s+to\s+'([^']*)'/i;
 
@@ -37,6 +38,75 @@ export function createExtensionName(sql: string): string | undefined {
   const created = CREATE_EXTENSION.exec(sql);
   const name = created?.[1] ?? created?.[2];
   return name === undefined ? undefined : name.replaceAll('""', '"');
+}
+
+/** One statement that creates, drops, or alters an extension. */
+export type ExtensionStatement =
+  | { readonly kind: "create"; readonly name: string; readonly schema?: string }
+  | {
+      readonly kind: "drop";
+      readonly names: readonly string[];
+      readonly ifExists: boolean;
+      readonly cascade: boolean;
+    }
+  | { readonly kind: "set-schema"; readonly name: string; readonly schema: string }
+  | { readonly kind: "update"; readonly name: string; readonly version: string }
+  | { readonly kind: "other"; readonly name: string };
+
+const NAME = String.raw`(?:"((?:[^"]|"")+)"|([A-Za-z_][\w$]*))`;
+const DROP_EXTENSION = new RegExp(
+  String.raw`^drop\s+extension\s+(if\s+exists\s+)?(${NAME}(?:\s*,\s*${NAME})*)(?:\s+(cascade|restrict))?\s*$`,
+  "i",
+);
+const NAME_ALL = new RegExp(NAME, "g");
+const SCHEMA_CLAUSE = new RegExp(String.raw`\sschema\s+${NAME}`, "i");
+const ALTER_EXTENSION = new RegExp(String.raw`^\s*alter\s+extension\s+${NAME}\s+(.*)$`, "is");
+const SET_SCHEMA = new RegExp(String.raw`^set\s+schema\s+${NAME}\s*$`, "i");
+
+function unquoted(quoted: string | undefined, bare: string | undefined): string {
+  return quoted !== undefined ? quoted.replaceAll('""', '"') : (bare ?? "").toLowerCase();
+}
+
+/**
+ * Reads one statement that creates, drops, or alters an extension.
+ *
+ * Only the forms the planner writes carry detail. Another `ALTER EXTENSION`
+ * is `other`. Comments are already removed from `sql`.
+ *
+ * @param sql - One statement
+ * @returns The statement, or `undefined` when it is not about an extension
+ */
+export function extensionStatement(sql: string): ExtensionStatement | undefined {
+  const created = CREATE_EXTENSION.exec(sql);
+  if (created !== null) {
+    const clause = SCHEMA_CLAUSE.exec(sql);
+    return {
+      kind: "create",
+      name: unquoted(created[1], created[2]),
+      ...(clause === null ? {} : { schema: unquoted(clause[1], clause[2]) }),
+    };
+  }
+  const dropped = DROP_EXTENSION.exec(sql.trim());
+  if (dropped !== null) {
+    const names = Array.from(dropped[2]?.matchAll(NAME_ALL) ?? [], (found) =>
+      unquoted(found[1], found[2]),
+    );
+    return {
+      kind: "drop",
+      names,
+      ifExists: dropped[1] !== undefined,
+      cascade: dropped.at(-1)?.toLowerCase() === "cascade",
+    };
+  }
+  const altered = ALTER_EXTENSION.exec(sql);
+  if (altered === null) return undefined;
+  const name = unquoted(altered[1], altered[2]);
+  const rest = (altered[3] ?? "").trim();
+  const moved = SET_SCHEMA.exec(rest);
+  if (moved !== null) return { kind: "set-schema", name, schema: unquoted(moved[1], moved[2]) };
+  const updated = /^update\s+to\s+'([^']*)'\s*$/i.exec(rest);
+  if (updated !== null) return { kind: "update", name, version: updated[1] ?? "" };
+  return { kind: "other", name };
 }
 
 /**
