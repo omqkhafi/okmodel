@@ -414,6 +414,8 @@ bunx okm migrate check --provision
 
 `okm push` plans the schema against the live catalog on the target and applies that plan as one migration named `push-<n>`, where `n` comes from `okm_history`. It writes no SQL file. An empty plan that already matches `okm_meta` prints `target <name>` and `no changes`. When the hash moved with no DDL, it re-stamps `okm_meta` and prints `restamped push-<n>` then `nothing to apply`. A plan with steps uses the apply summary.
 
+Push runs no migration lint, with one exception. A plan that would weaken row-level security (OKM1550: disable or stop forcing it, drop or widen a policy, grant `BYPASSRLS`, or change the owner of a tenant table) is refused before any statement. The refusal is an OKM1510 error that lists the OKM1550 findings. Run `okm generate`, review the migration, then `okm migrate apply` it with `-- okm-allow OKM1550: <reason>` on the step.
+
 A protected target is OKM1850 until `--allow-protected`. Lock and statement timeouts stay 5000 and 30000 milliseconds. The config and the flags are not applied. A pooler host is refused until [allowPooler](/docs/define/config/pooler) or `--allow-pooler`.
 
 ```sh
