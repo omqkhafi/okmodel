@@ -1,18 +1,14 @@
 /**
- * Fails a pull request whose package version matches the base branch, or whose
- * changelog has no new lines under `## Unreleased`.
+ * A pull request leaves `package.json` and `changelog.md` alone.
  *
- * A release that drops a `-next.N` suffix and promotes Unreleased into
- * `## vX.Y.Z` is allowed to leave Unreleased empty. A cut from one bare
- * version to the next, with notes under the new heading, is allowed too.
- * Before that tag exists, notes added under the release heading are allowed
- * and the version stays. Folding those notes into an existing untagged
- * heading, while the package version moves to that heading, is the same
- * release.
+ * Notes are generated when a release promotes `## Unreleased`. `bump next
+ * --publish` may move the version to the next prerelease and must not edit
+ * the changelog. A release that drops a `-next.N` suffix, a bare version cut
+ * with notes under the new heading, and an untagged release that folds notes
+ * into its heading are still allowed.
  *
- * A pull request whose changed files are all under `.github/` is exempt from
- * both rules (see {@link releaseExemption}). Any file outside `.github/`
- * brings both rules back.
+ * A pull request whose changed files are all under `.github/` is exempt
+ * (see {@link releaseExemption}). Any file outside `.github/` is checked.
  *
  * Usage:
  *   bun ./scripts/release-check.ts --base <git-rev>
@@ -22,6 +18,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 
+import { nextVersion } from "./bump-version.js";
 import { exitOnProblems } from "./report.js";
 import { repoRoot } from "./root.js";
 
@@ -46,34 +43,46 @@ export type ReleaseCheckOptions = {
  * @param base - Version and changelog on the base branch
  * @param head - Version and changelog on the pull request
  * @param options - Allows notes on an untagged release heading
- * @returns Problem lines. Empty when the pull request moves the version and the notes
+ * @returns Problem lines. Empty when the pull request leaves the release files, publishes a prerelease, or cuts a release
  */
 export function checkReleaseSnapshots(
   base: ReleaseSnapshot,
   head: ReleaseSnapshot,
   options?: ReleaseCheckOptions,
 ): readonly string[] {
-  const problems: string[] = [];
-  const preTag = options?.untaggedRelease === true && hasNewReleaseNotes(base, head);
-  const folded = options?.untaggedRelease === true && isFoldedUntaggedRelease(base, head);
-  if (head.version === base.version && !preTag) {
-    problems.push(`package.json version ${head.version} equals the base branch`);
-  }
   const headSection = unreleasedSection(head.changelog);
   if (!headSection.found) {
-    problems.push("changelog.md has no ## Unreleased section");
-    return problems;
+    return ["changelog.md has no ## Unreleased section"];
   }
-  if (
-    !hasNewUnreleasedLines(base.changelog, head.changelog) &&
-    !isReleasePromotion(base, head) &&
-    !isBareReleaseCut(base, head) &&
-    !preTag &&
-    !folded
-  ) {
-    problems.push("changelog.md has no new lines under ## Unreleased");
+  const preTag = options?.untaggedRelease === true && hasNewReleaseNotes(base, head);
+  const folded = options?.untaggedRelease === true && isFoldedUntaggedRelease(base, head);
+  if (isReleasePromotion(base, head) || isBareReleaseCut(base, head) || preTag || folded) {
+    return [];
+  }
+  const notesAdded = hasNewUnreleasedLines(base.changelog, head.changelog);
+  const changedLog = normalize(base.changelog) !== normalize(head.changelog);
+  const sameVersion = head.version === base.version;
+  let prerelease = false;
+  try {
+    prerelease = head.version === nextVersion(base.version);
+  } catch {
+    prerelease = false;
+  }
+  if ((sameVersion || prerelease) && !notesAdded && !changedLog) return [];
+  const problems: string[] = [];
+  if (!sameVersion && !prerelease) {
+    problems.push(
+      `package.json version changed from ${base.version} to ${head.version}; bump next --publish is only for a prerelease`,
+    );
+  }
+  if (notesAdded || changedLog) {
+    problems.push("changelog.md changed; notes are generated at release");
   }
   return problems;
+}
+
+function normalize(text: string): string {
+  return text.replace(/\r\n/g, "\n");
 }
 
 /**

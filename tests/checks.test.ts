@@ -249,39 +249,39 @@ test("bundle purity rejects the harness barrel and an npm package in the metafil
 
 const releaseFixtures = join(fixtures, "release-check");
 
-test("release check fails when the version and Unreleased notes are unchanged", () => {
-  const problems = checkReleaseDirs(
-    join(releaseFixtures, "unchanged", "base"),
-    join(releaseFixtures, "unchanged", "head"),
-  );
-  expect(problems.some((problem) => problem.includes("equals the base branch"))).toBe(true);
-  expect(problems.some((problem) => problem.includes("no new lines"))).toBe(true);
+test("release check accepts an unchanged version and changelog", () => {
+  expect(
+    checkReleaseDirs(
+      join(releaseFixtures, "unchanged", "base"),
+      join(releaseFixtures, "unchanged", "head"),
+    ),
+  ).toEqual([]);
 });
 
-test("release check fails when the version matches even if Unreleased gained a line", () => {
+test("release check rejects a hand-written Unreleased line", () => {
   const problems = checkReleaseDirs(
     join(releaseFixtures, "same-version", "base"),
     join(releaseFixtures, "same-version", "head"),
   );
-  expect(problems.some((problem) => problem.includes("equals the base branch"))).toBe(true);
-  expect(problems.some((problem) => problem.includes("no new lines"))).toBe(false);
+  expect(problems).toEqual(["changelog.md changed; notes are generated at release"]);
 });
 
-test("release check fails when the version moved but Unreleased did not", () => {
-  const problems = checkReleaseDirs(
-    join(releaseFixtures, "version-only", "base"),
-    join(releaseFixtures, "version-only", "head"),
-  );
-  expect(problems).toEqual(["changelog.md has no new lines under ## Unreleased"]);
+test("release check accepts a prerelease publish that leaves the changelog", () => {
+  expect(
+    checkReleaseDirs(
+      join(releaseFixtures, "version-only", "base"),
+      join(releaseFixtures, "version-only", "head"),
+    ),
+  ).toEqual([]);
 });
 
-test("release check accepts a new Unreleased line and a new version", () => {
+test("release check rejects a prerelease that also edits the changelog", () => {
   expect(
     checkReleaseDirs(
       join(releaseFixtures, "notes", "base"),
       join(releaseFixtures, "notes", "head"),
     ),
-  ).toEqual([]);
+  ).toEqual(["changelog.md changed; notes are generated at release"]);
 });
 
 test("release check accepts a release that promotes Unreleased", () => {
@@ -312,7 +312,10 @@ test("release check rejects an emptied Unreleased that is not the suffix drop", 
     join(releaseFixtures, "not-release", "base"),
     join(releaseFixtures, "not-release", "head"),
   );
-  expect(problems).toEqual(["changelog.md has no new lines under ## Unreleased"]);
+  expect(problems).toEqual([
+    "package.json version changed from 0.1.0-next.2 to 0.2.0; bump next --publish is only for a prerelease",
+    "changelog.md changed; notes are generated at release",
+  ]);
 });
 
 test("release check accepts notes folded into an untagged release heading", () => {
@@ -325,7 +328,8 @@ test("release check accepts notes folded into an untagged release heading", () =
     changelog: "# Changelog\n\n## Unreleased\n\n## v0.6.0 — 2026-10-11\n\n- QA.\n- First.\n",
   };
   expect(checkReleaseSnapshots(base, head)).toEqual([
-    "changelog.md has no new lines under ## Unreleased",
+    "package.json version changed from 0.7.0-next.4 to 0.6.0; bump next --publish is only for a prerelease",
+    "changelog.md changed; notes are generated at release",
   ]);
   expect(checkReleaseSnapshots(base, head, { untaggedRelease: true })).toEqual([]);
 });
@@ -362,7 +366,13 @@ test("release exemption never covers an empty change or a file outside .github/"
 /** A throwaway git repository that holds the release-check script and a base commit. */
 function releaseRepo(): { readonly dir: string; readonly base: string } {
   const dir = mkdtempSync(join(tmpdir(), "okm-release-check-"));
-  for (const file of ["release-check.ts", "report.ts", "root.ts"]) {
+  for (const file of [
+    "release-check.ts",
+    "bump-version.ts",
+    "changelog-from-commits.ts",
+    "report.ts",
+    "root.ts",
+  ]) {
     mkdirSync(join(dir, "scripts"), { recursive: true });
     copyFileSync(join(root, "scripts", file), join(dir, "scripts", file));
   }
@@ -417,21 +427,20 @@ test("release-check passes a pull request that changes only .github/", () => {
   });
 });
 
-test("release-check still wants the bump and the changelog line when src/ changes too", () => {
+test("release-check allows a source change that leaves the version and changelog", () => {
   withReleaseRepo((dir, base) => {
     writeRepoFile(dir, ".github/workflows/ci.yml", "name: CI\n");
     writeRepoFile(dir, "src/index.ts", "export {};\n");
     git(dir, "add", ".");
     git(dir, "commit", "-q", "-m", "workflow and source");
     const result = runReleaseCheck(dir, base);
-    expect(result.code).toBe(1);
-    expect(result.err).toContain("package.json version 0.2.0 equals the base branch");
-    expect(result.err).toContain("changelog.md has no new lines under ## Unreleased");
+    expect(result.code).toBe(0);
+    expect(result.err).not.toContain("package.json version");
     expect(result.out).not.toContain("only .github/ changed");
   });
 });
 
-test("release-check passes a mixed pull request that has the bump and the changelog line", () => {
+test("release-check rejects a pull request that bumps the version and edits the changelog", () => {
   withReleaseRepo((dir, base) => {
     writeRepoFile(dir, ".github/workflows/ci.yml", "name: CI\n");
     writeRepoFile(dir, "src/index.ts", "export {};\n");
@@ -443,16 +452,17 @@ test("release-check passes a mixed pull request that has the bump and the change
     );
     git(dir, "add", ".");
     git(dir, "commit", "-q", "-m", "mixed");
-    expect(runReleaseCheck(dir, base).code).toBe(0);
+    const result = runReleaseCheck(dir, base);
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("bump next --publish is only for a prerelease");
+    expect(result.err).toContain("notes are generated at release");
   });
 });
 
-test("release-check treats an empty diff as it always did", () => {
+test("release-check treats an empty diff as a pull request with nothing to publish", () => {
   withReleaseRepo((dir, base) => {
     const result = runReleaseCheck(dir, base);
-    expect(result.code).toBe(1);
-    expect(result.err).toContain("package.json version 0.2.0 equals the base branch");
-    expect(result.err).toContain("changelog.md has no new lines under ## Unreleased");
+    expect(result.code).toBe(0);
     expect(result.out).not.toContain("only .github/ changed");
   });
 });

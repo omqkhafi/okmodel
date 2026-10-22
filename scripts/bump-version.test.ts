@@ -136,13 +136,24 @@ describe("promoteUnreleasedSection", () => {
   });
 });
 
-test("next dry-run prints the next version and does not write", async () => {
+test("next without --publish refuses to run", async () => {
+  const proc = Bun.spawn(["bun", "./scripts/bump-version.ts", "next", "--dry-run"], {
+    cwd: repoRoot(),
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const stderr = await new Response(proc.stderr).text();
+  expect(await proc.exited).toBe(2);
+  expect(stderr).toContain("Pass --publish");
+});
+
+test("next --publish dry-run prints the next version and does not write", async () => {
   const root = repoRoot();
   const packagePath = join(root, "package.json");
   const before = readFileSync(packagePath, "utf8");
   const current = (JSON.parse(before) as { version: string }).version;
   const expected = planBump(current, { kind: "next" }).version;
-  const proc = Bun.spawn(["bun", "./scripts/bump-version.ts", "next", "--dry-run"], {
+  const proc = Bun.spawn(["bun", "./scripts/bump-version.ts", "next", "--publish", "--dry-run"], {
     cwd: root,
     stdout: "pipe",
     stderr: "pipe",

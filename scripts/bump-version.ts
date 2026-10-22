@@ -2,20 +2,25 @@
 /**
  * Moves the root `okmodel` package version.
  *
- * - `next` sets `<next minor>-next.N` and does not touch the changelog.
- * - `release` drops a `-next.N` suffix and promotes `## Unreleased`.
+ * - `next --publish` sets `<next minor>-next.N` and does not touch the changelog.
+ *   It publishes a prerelease. A pull request does not run it.
+ * - `release` drops a `-next.N` suffix. An empty `## Unreleased` is filled from
+ *   merged pull request titles, then promoted.
  * - `patch`, `minor`, `major`, and `--set` still promote `## Unreleased`.
  *
  * Does not touch git, tags, or workspace packages under `packages/*`.
  *
  * Usage:
- *   bun run scripts/bump-version.ts [patch|minor|major|next|release] [--dry-run]
+ *   bun run scripts/bump-version.ts [patch|minor|major|release] [--dry-run]
+ *   bun run scripts/bump-version.ts next --publish [--dry-run]
  *   bun run scripts/bump-version.ts --set X.Y.Z [--dry-run]
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
+
+import { insertUnreleasedNotes, notesSinceLastRelease } from "./changelog-from-commits.js";
 
 const REPO_ROOT = join(import.meta.dir, "..");
 
@@ -56,11 +61,13 @@ type ParsedVersion = {
 function parseFlags(): {
   kind: BumpKind | undefined;
   set: string | undefined;
+  publish: boolean;
   dryRun: boolean;
 } {
   const { values, positionals } = parseArgs({
     options: {
       set: { type: "string" },
+      publish: { type: "boolean", default: false },
       "dry-run": { type: "boolean", default: false },
     },
     allowPositionals: true,
@@ -76,6 +83,7 @@ function parseFlags(): {
   return {
     kind,
     set: values.set,
+    publish: values.publish ?? false,
     dryRun: values["dry-run"] ?? false,
   };
 }
@@ -181,7 +189,7 @@ function parseSetVersion(version: string): string {
  * @param current - Current package version
  * @returns The next pre-release version
  */
-function nextVersion(current: string): string {
+export function nextVersion(current: string): string {
   const parsed = parseVersion(current);
   if (parsed.next !== undefined) {
     return `${formatBare(parsed)}-next.${parsed.next + 1}`;
@@ -273,9 +281,7 @@ export function promoteUnreleasedSection(raw: string, version: string, date: str
     }
   }
   if (start === -1) {
-    throw new Error(
-      "changelog.md has no ## Unreleased section — okm-ship writes upcoming notes there; bump promotes them.",
-    );
+    throw new Error("changelog.md has no ## Unreleased section.");
   }
   if (end === -1) end = lines.length;
 
@@ -284,7 +290,9 @@ export function promoteUnreleasedSection(raw: string, version: string, date: str
   while (body.length > 0 && body[body.length - 1]?.trim() === "") body.pop();
 
   if (!body.some((line) => /^-\s+/.test(line.trim()))) {
-    throw new Error("## Unreleased has no bullets — add ship notes with okm-ship before bumping.");
+    throw new Error(
+      "## Unreleased has no bullets — a release fills this from merged pull request titles.",
+    );
   }
 
   const before = lines.slice(0, start);
@@ -304,7 +312,11 @@ export function promoteUnreleasedSection(raw: string, version: string, date: str
  * @returns The changelog path
  */
 function applyChangelog(version: string, dryRun: boolean): string {
-  const raw = readFileSync(CHANGELOG_PATH, "utf-8");
+  let raw = readFileSync(CHANGELOG_PATH, "utf-8");
+  if (!unreleasedHasBullets(raw)) {
+    const notes = notesSinceLastRelease(REPO_ROOT);
+    if (notes.trim().length > 0) raw = insertUnreleasedNotes(raw, notes);
+  }
   try {
     const next = promoteUnreleasedSection(raw, version, todayLocal());
     if (!dryRun) writeFileSync(CHANGELOG_PATH, next.endsWith("\n") ? next : `${next}\n`, "utf-8");
@@ -317,15 +329,41 @@ function applyChangelog(version: string, dryRun: boolean): string {
 }
 
 /**
+ * Whether `## Unreleased` already has a bullet.
+ *
+ * A release leaves a hand-written section as it is. An empty section is filled
+ * from merged pull request titles.
+ *
+ * @param raw - Full changelog text
+ * @returns True when a bullet is present
+ */
+function unreleasedHasBullets(raw: string): boolean {
+  const lines = raw.replace(/\r\n/g, "\n").split("\n");
+  const start = lines.findIndex((line) => /^## Unreleased\s*$/.test(line));
+  if (start === -1) return false;
+  for (let i = start + 1; i < lines.length; i++) {
+    const line = lines[i] ?? "";
+    if (/^##\s+/.test(line)) return false;
+    if (/^-\s+\S/.test(line.trim())) return true;
+  }
+  return false;
+}
+
+/**
  * Runs the bump.
  */
 async function main(): Promise<void> {
   const flags = parseFlags();
   if (!flags.set && !flags.kind) {
     console.error(
-      "[bump] Usage: bun run scripts/bump-version.ts [patch|minor|major|next|release] [--dry-run]\n" +
+      "[bump] Usage: bun run scripts/bump-version.ts [patch|minor|major|release] [--dry-run]\n" +
+        "       bun run scripts/bump-version.ts next --publish [--dry-run]\n" +
         "       bun run scripts/bump-version.ts --set X.Y.Z [--dry-run]",
     );
+    process.exit(2);
+  }
+  if (flags.kind === "next" && !flags.publish) {
+    console.error("[bump] next publishes a prerelease. Pass --publish.");
     process.exit(2);
   }
 
