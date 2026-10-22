@@ -1,64 +1,17 @@
 /**
- * Full-tier rules for `gate / check`.
+ * Heavy jobs run on main and on the nightly schedule, not on a pull request.
  */
 
 import { expect, test } from "bun:test";
 
-import { fullTierRequested } from "./ci-tier.js";
+import { heavyTierRequested } from "./ci-tier.js";
 
-test("a push always requires the full tier", () => {
-  expect(
-    fullTierRequested({
-      eventName: "push",
-      fullCiLabel: false,
-      workflowsChanged: false,
-      title: "",
-    }),
-  ).toBe(true);
+test("a push and a schedule run the heavy tier", () => {
+  expect(heavyTierRequested("push")).toBe(true);
+  expect(heavyTierRequested("schedule")).toBe(true);
 });
 
-test("full-ci, release titles, and workflow path changes require the full tier", () => {
-  expect(
-    fullTierRequested({
-      eventName: "pull_request",
-      fullCiLabel: true,
-      workflowsChanged: false,
-      title: "fix(ci): x",
-    }),
-  ).toBe(true);
-  expect(
-    fullTierRequested({
-      eventName: "pull_request",
-      fullCiLabel: false,
-      workflowsChanged: false,
-      title: "chore(release): 0.10.0",
-    }),
-  ).toBe(true);
-  expect(
-    fullTierRequested({
-      eventName: "pull_request",
-      fullCiLabel: false,
-      workflowsChanged: true,
-      title: "chore(ci): gate",
-    }),
-  ).toBe(true);
-});
-
-test("an ordinary pull request without those signals stays on the fast tier", () => {
-  expect(
-    fullTierRequested({
-      eventName: "pull_request",
-      fullCiLabel: false,
-      workflowsChanged: false,
-      title: "chore(ci): gate",
-    }),
-  ).toBe(false);
-  expect(
-    fullTierRequested({
-      eventName: "pull_request",
-      fullCiLabel: false,
-      workflowsChanged: false,
-      title: "chore(release-notes): x",
-    }),
-  ).toBe(false);
+test("a pull request does not", () => {
+  expect(heavyTierRequested("pull_request")).toBe(false);
+  expect(heavyTierRequested("workflow_dispatch")).toBe(false);
 });

@@ -1,55 +1,57 @@
 # CI and test cycle plan
 
-How pull requests and `main` run checks after the tier split (#381) and the
-always-on gate (H1).
+How pull requests and `main` run checks. `gate / check` stays the required
+status. The heavy jobs run after merge.
 
 ## Required status
 
-`gate / check` is the only required status. It always runs (`if: always()`).
-It depends on the real CI jobs and fails when any needed job failed, was
-cancelled, or was skipped while the tier rules say it must pass. The CI
-workflow has no path or branch filters that would leave the required check
-Pending. A skipped job must not be how the required check turns green.
+`gate / check` is the only required status on a pull request. It always runs
+(`if: always()`). It depends on the pull request jobs and fails when any
+needed job failed, was cancelled, or was skipped while the path rules say it
+must pass. The CI workflow has no path or branch filters that would leave the
+required check Pending. A skipped Postgres suite is a pass only when the diff
+does not touch `src/dialects`, `src/runtime`, or `src/tooling/migrate`.
 
-## Tiers
+## Pull request
 
-**Tier 1** runs on every pull request push: format, lint, typecheck, layers,
-purity, docs, unit tests, property tests at `OKM_PROPERTY_SCALE=0.25`, the
-size gate, and the release-flow check. With `needs: postgres`, the suite runs
-on 15 and 18 and the tarball on 18.
+Every pull request runs format, lint, typecheck, layers, purity, docs, the
+readme, the compiler-API scan, bundle purity, the release-flow check, the
+build, tests for files changed since the merge base, and the runtime-entry
+size ceiling. Property tests in that job use `OKM_PROPERTY_SCALE=0.25`.
 
-**Tier 2** (full tier) is required when any of these hold:
+Postgres 18 (four shards and the pooler proof) runs when those paths change.
+A label does not start it. The tarball does not run on a pull request.
 
-- the pull request has the `full-ci` label
-- the title starts with `chore(release)`
-- the diff changes a file under `.github/workflows`
-- the event is a push to `main`
+The title `type(scope): summary` is the only pull request rule. The workflow
+derives `type:` and `area:` from it and from the paths.
 
-Tier 2 adds type cost, the editor check, attest, portable runtimes, the
-temporal matrix, package checks, Windows, Postgres 15 and 18, property tests
-at full count, and `drivers-conformance`.
+## After merge
 
-A docs-only or site-only diff may still skip the runtime matrix and Postgres;
-the gate treats that skip as a pass only when the path filter says those
-slices are irrelevant.
+A push to `main` and the nightly run (03:00 UTC) run the rest: type cost, the
+editor check, attest, portable runtimes, the temporal matrix, package checks
+(publint, attw, pack-tracked, pack-contract), Windows, the full test matrix
+including `drivers-conformance`, the size report, Postgres 15 through 18, and
+the tarball on those majors. Property tests there run at full count.
 
-**Tier 3** is release and the weekly workflow: every supported Postgres major,
-suite and tarball.
+A failure opens or updates one issue titled `CI failed after merge`. A green
+run does not close it. A later commit on `main` does not cancel the run
+already in progress.
+
+The release workflow still runs the suite and the tarball on 15 through 18.
+`.github/workflows/weekly.yml` is `workflow_dispatch` for that same matrix.
 
 ## Concurrency
 
 Pull request runs share one concurrency group per pull request number. A new
-push cancels the older run. A label or unlabel event does not cancel. Each
-push to `main` is one group per commit, so a later commit never cancels an
-earlier main run.
+push cancels the older run. Each push to `main` is one group per commit. The
+nightly run is its own group and does not cancel a push.
 
 ## Bun
 
-CI installs Bun 1.4.3 (or newer when the pin moves). Local tooling expects
-Bun `>=1.4.0`.
+CI installs the Bun version pinned in `.bun-version`.
 
 ## Out of scope here
 
-There is no merge queue on this repository (personal account). There are no
-manual required checks; anything that used to be a manual check becomes a CI
-job in a later item when it is automated.
+There is no merge queue on this repository (personal account). There is no
+“require branches to be up to date” rule: auto-merge squash is the finish
+line. There are no manual required checks.

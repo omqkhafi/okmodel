@@ -35,8 +35,8 @@ A layer may import layers below it. It must not import a layer above it. Adapter
 
 ## Scripts
 
-- `bun run check` runs format, lint, typecheck, `editor-check`, `type-cost`, `layers-check`, `core-purity`, `docs:check`, `readme:check`, the compiler-API scan, `bundle-purity`, build, tests, publint, arethetypeswrong, and the size budget. It does not run `@ark/attest`. CI runs those steps in parallel. Each check is `area / piece` (`CI / lint / static`, `CI / test / migrate pg`, and the rest). The required status is `gate / check`.
-- `bun run verify:fast` is the check before a push: format, lint, typecheck, layers, purity, docs, the readme, then `bun test --changed` against the merge-base with `origin/main`. Push once. On a CI failure, `bun run ci:fail <pull>` prints the first failing job, its step, the last 60 log lines, and the local command that reproduces it. Fix once, run `verify:fast`, and push. After two failed rounds, stop and report. While waiting, one `gh pr checks <pull> --watch` and nothing else.
+- `bun run check` runs format, lint, typecheck, `editor-check`, `type-cost`, `layers-check`, `core-purity`, `docs:check`, `readme:check`, the compiler-API scan, `bundle-purity`, build, tests, publint, arethetypeswrong, and the size budget. It does not run `@ark/attest`. A pull request runs the fast gate. A push to `main` and the nightly run run the rest. The required status is `gate / check`.
+- `bun run verify:fast` once, then push once, then `gh pr merge --auto --squash`, then stop. It checks format, lint, typecheck, layers, purity, docs, and the readme, then runs `bun test --changed` against the merge-base with `origin/main`. Do not poll CI. Do not merge `main` into the branch unless the push is rejected for a real conflict. Do not push an empty commit.
 - `bun run build` writes JavaScript with `bun build --target node` and declarations with `tsc` (`emitDeclarationOnly`).
 - `bun run typecheck` runs `tsc --noEmit`.
 - `bun run lint` uses oxlint with type-aware rules. `bun run format:check` uses oxfmt. `bun run format` rewrites formatting.
@@ -45,11 +45,11 @@ A layer may import layers below it. It must not import a layer above it. Adapter
 - `bun run docs:check` checks relative links, `§` references, and decision numbers, then the public-doc hygiene (front matter, internal links, fence languages, hidden characters, and a fresh `docs/index.md`).
 - `bun run readme:check` fails when `README.md` contains a relative link or an image that is not an absolute `https://` URL.
 - `bun test` covers package exports, the bins, the check fixtures, PGlite, and the schema fixtures. Postgres tests run when the topology is up; they fail instead of skipping when `REQUIRE_DOCKER=1`. PGlite and the in-process wire server stay in that run.
-- `bun run bump` moves the version. `next` sets `<next minor>-next.N` and does not touch the changelog. `release` drops the suffix and promotes `## Unreleased`. `patch`, `minor`, `major`, and `--set` still promote the changelog. It does not publish.
-- `bun run release-check -- --base <git-rev>` fails when `package.json` matches that revision or `changelog.md` has no new lines under `## Unreleased`. A release that promotes Unreleased is allowed, including a cut from one bare version to the next when the new `## vX.Y.Z` section has the notes. Before `vX.Y.Z` is tagged, notes added under that heading are allowed and the version stays. CI runs it on pull requests. A pull request whose changed files are all under `.github/` is exempt from the version and changelog rules and prints why; one file outside `.github/` brings both rules back.
+- `bun run bump` moves the version at publish time. `next --publish` sets `<next minor>-next.N` and does not touch the changelog. A pull request does not run it. `release` fills an empty `## Unreleased` from merged pull request titles, drops the suffix, and promotes that section. `patch`, `minor`, `major`, and `--set` still promote the changelog. It does not publish.
+- `bun run release-check -- --base <git-rev>` fails when a pull request changes `package.json`'s version (unless that change is `next --publish` or a release) or edits `changelog.md` outside a release. An unchanged version and changelog pass. A release that promotes Unreleased is allowed, including a cut from one bare version to the next when the new `## vX.Y.Z` section has the notes. Before `vX.Y.Z` is tagged, notes added under that heading are allowed and the version stays. CI runs it on pull requests. A pull request whose changed files are all under `.github/` is exempt and prints why; one file outside `.github/` is checked.
 - `bun run db:up` and `bun run db:down` start and stop the Postgres topology. `POSTGRES_VERSION` selects 15, 16, 17, or 18 (default 17).
 - `bun run test:postgres` runs every test file against that topology. `POSTGRES_EXCLUSIONS` in `scripts/postgres-suite.ts` is the only list of files left out, and each entry has a reason. `bun run test:tarball` packs the tarball and runs the README and the quickstart on the topology.
-- `bun run verify` runs that suite in Docker on this machine. One version by default (`POSTGRES_VERSION`, or 17). `--all` runs every supported major. CI stays the authority for a release. A pull request skips real Postgres unless it has the label `needs: postgres`, which runs the suite on 15 and 18 and the tarball job on 18. The release and a weekly run cover 15 through 18 for both.
+- `bun run verify` runs that suite in Docker on this machine. One version by default (`POSTGRES_VERSION`, or 17). `--all` runs every supported major. CI stays the authority for a release. A pull request runs Postgres 18 when the diff touches `src/dialects`, `src/runtime`, or `src/tooling/migrate`. A push to `main`, the nightly run, and a release cover 15 through 18 for the suite and the tarball.
 - `bun run type-cost` writes TypeScript 7 extended diagnostics as JSON and fails when a D127 ceiling is exceeded.
 - `bun run bundle-purity` fails when a runtime bundle contains an npm package, or when `src/` imports the `@okmodel/harness` barrel.
 - The size check reports `dist/` and does not gate it. The runtime entry (`src/contracts/index.ts`) gate is measured +10% (D144): 6,100 bytes minified and 2,250 gzip. CI fails a runtime-entry cold import above 25 ms. A local sample above 15 ms is a finding. The app and connect gates in `scripts/size.ts` measure the static startup graph with every relative dynamic import stubbed (D248). The full build is printed as a reference and is not gated. Connect-entry cold imports are that reference, printed, not gated; the 15 ms local reference is our own code with the driver stubbed. `okmodel/pg` is printed, not gated. Adapter entries are gated on minified bytes over the runtime entry, and lazy adapter chunks still count (D245).
@@ -60,6 +60,8 @@ A layer may import layers below it. It must not import a layer above it. Adapter
 ## Docs
 
 Documents in `docs/` are normative. The spec is draft 26. The repository implements it through the 0.9.1 release. Decisions run D1–D300. GitHub organization is [docs/github.md](docs/github.md) (D206).
+
+Do not read `docs/okmodel-decisions.md`, `docs/okmodel-api-design.md`, `docs/size-audit.md`, `docs/guide.md`, or `docs/known-limits.md` in full. Grep by decision number or heading.
 
 ## Engineering standards
 
@@ -78,9 +80,9 @@ D115: after the M0 gate, P09A removes spike leftovers, dedupes helpers, stabilis
 
 ## Changelog
 
-Before claiming work done, run [`.agents/skills/okm-ship`](.agents/skills/okm-ship/SKILL.md). Append notes to `changelog.md` under `## Unreleased`, then run `bun run bump next`. Never append under a shipped `## v…` section. A gate prompt that releases runs `bun run bump release` instead, which drops the `-next.N` suffix and promotes Unreleased into `## vX.Y.Z — <date>`.
+Do not edit `changelog.md` or bump the version on a pull request. A release runs `bun run bump release`, which fills an empty `## Unreleased` from merged pull request titles and promotes it into `## vX.Y.Z — <date>`. `bun run bump next --publish` is only for publishing a prerelease, and it does not touch the changelog. Never append under a shipped `## v…` section.
 
-Area headings inside a large group are `contracts`, `dialects`, `adapters`, `runtime`, `tooling`, and `docs`.
+Area headings inside a large generated group are `contracts`, `dialects`, `adapters`, `runtime`, `tooling`, and `docs`.
 
 ## Commits
 

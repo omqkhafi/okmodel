@@ -80,7 +80,7 @@ test("compatibility names the supported majors", () => {
     "The floor is 15: Postgres 13 is past end of life, 14 ends in November 2026, and 15 gives us features we can use later.",
   );
   expect(sentence).toContain(
-    "A pull request runs real Postgres only with the label `needs: postgres`: the suite on 15 and 18 and the tarball job on 18.",
+    "A pull request runs Postgres 18 when the diff touches dialects, migrate, or runtime.",
   );
   const committed = readFileSync(join(root, "docs/compatibility.md"), "utf8");
   expect(committed).toContain(sentence);
@@ -318,62 +318,37 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
     [...POSTGRES_VERSIONS],
   ]);
   const ci = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
+  const after = readFileSync(join(root, ".github/workflows/after-merge.yml"), "utf8");
   expect(ci).toContain("uses: ./.github/workflows/postgres-suite.yml");
-  expect(ci).toContain("uses: ./.github/workflows/postgres-tarball.yml");
+  expect(ci).not.toContain("postgres-tarball.yml");
+  expect(ci).toContain("versions: '[\"18\"]'");
   expect(ci).toContain("name: label / paths");
   expect(ci).toContain("name: lint / pull request");
   expect(ci).not.toContain("tests/harness.test.ts");
-  expect(ci).toMatch(/push:\n {4}branches:\n {6}- main\n/);
+  expect(ci).not.toMatch(/push:\n {4}branches:\n {6}- main\n/);
   expect(ci).toContain("pull_request:");
-  expect(ci).toContain(
-    "cancel-in-progress: ${{ github.event_name == 'pull_request' && github.event.action != 'labeled' && github.event.action != 'unlabeled' }}",
-  );
-  expect(ci).toContain(
-    "${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}",
-  );
+  expect(ci).toContain("cancel-in-progress: true");
+  expect(ci).toContain("group: ci-${{ github.event.pull_request.number }}");
   expect(ci).toMatch(/name: gate \/ check[\s\S]*?if: always\(\)/);
-  expect(ci).toContain("bun ./scripts/ci-tier.ts");
-  expect(ci).toContain("bun ./scripts/ci-gate-mirror.ts");
-  expect(ci).toMatch(/name: package \/ checks\n\s+needs: \[build, changes\]/);
-  const floor = POSTGRES_VERSIONS[0];
-  const newest = POSTGRES_VERSIONS[POSTGRES_VERSIONS.length - 1];
-  if (floor === undefined || newest === undefined) throw new Error("no postgres versions");
-  const pullRequest = readFileSync(join(root, ".github/workflows/postgres-pr.yml"), "utf8");
-  expect(pullRequest).toContain("uses: ./.github/workflows/postgres-suite.yml");
-  expect(pullRequest).toContain("uses: ./.github/workflows/postgres-tarball.yml");
-  expect(pullRequest).toContain("actions: read");
-  expect(pullRequest).toContain("needs: postgres");
-  expect(pullRequest).toContain("labeled");
-  expect(pullRequest).not.toContain("synchronize");
-  expect(pullRequest).toContain("types: [labeled, unlabeled]");
+  expect(ci).toContain("bun ./scripts/ci-gate.ts");
+  expect(ci).toContain("bun test --changed=");
+  expect(ci).toContain("bun run size -- --runtime-entry");
+  expect(after).toMatch(/push:\n {4}branches:\n {6}- main\n/);
+  expect(after).toContain('cron: "0 3 * * *"');
+  expect(after).toContain("uses: ./.github/workflows/postgres-suite.yml");
+  expect(after).toContain("uses: ./.github/workflows/postgres-tarball.yml");
+  expect(after).toContain("bun ./scripts/ci-issue.ts");
+  expect(after).toContain("name: gate / issue");
   const prMeta = readFileSync(join(root, ".github/workflows/pr-meta.yml"), "utf8");
   expect(prMeta).not.toContain("synchronize");
   expect(prMeta).not.toContain("opened");
-  expect(jsonVersionLists(pullRequest, "versions")).toEqual([[floor, newest], [newest]]);
-  const gateNeeds = ci.slice(
-    ci.indexOf("name: gate / check"),
-    ci.indexOf("name: attest / measure"),
-  );
-  for (const slice of [
-    "changes",
-    "lint",
-    "types",
-    "types-full",
-    "test",
-    "test-dist",
-    "runtimes",
-    "temporal",
-    "size",
-    "package",
-    "attest",
-    "windows",
-    "suite",
-    "tarball",
-    "drivers-conformance",
-  ]) {
+  expect(prMeta).not.toContain("milestoned");
+  expect(prMeta).toContain("bun ./scripts/pr-labels.ts");
+  const gateNeeds = ci.slice(ci.indexOf("name: gate / check"));
+  for (const slice of ["changes", "lint", "types", "build", "test", "size", "pull", "suite"]) {
     expect(gateNeeds).toContain(slice);
   }
-  expect(ci).toContain("bun ./scripts/ci-gate.ts");
+  expect(gateNeeds).not.toContain("tarball");
   expect(suite).toContain("fail-fast: false");
   expect(suite).toContain("bun ./scripts/postgres-suite.ts --shard");
   expect(suite).toContain("bun ./scripts/pooler-proof.ts");
@@ -384,28 +359,31 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   for (const shard of ["isolation", "selection", "consistency", "tx"]) {
     expect(suite).toContain(`- ${shard}\n`);
   }
-  expect(ci).toContain("name: test / ${{ matrix.group }}");
-  expect(ci).toContain("bun ./scripts/ci-test-groups.ts --matrix");
-  expect(ci).toContain("fromJSON(needs.changes.outputs.source || '[]')");
-  expect(ci).toContain("fromJSON(needs.changes.outputs.built || '[]')");
+  expect(after).toContain("name: test / ${{ matrix.group }}");
+  expect(after).toContain("bun ./scripts/ci-test-groups.ts --matrix");
+  expect(after).toContain("fromJSON(needs.changes.outputs.source)");
+  expect(after).toContain("fromJSON(needs.changes.outputs.built)");
   expect(ci).toContain("name: lint / static");
   expect(ci).toContain("name: types / compiler");
-  expect(ci).toContain("name: runtimes / portable");
-  expect(ci).toContain("name: temporal / node ${{ matrix.node }}");
-  expect(ci).toContain("name: package / checks");
+  expect(after).toContain("name: runtimes / portable");
+  expect(after).toContain("name: temporal / node ${{ matrix.node }}");
+  expect(after).toContain("name: package / checks");
   expect(ci).toContain("name: gate / check");
-  expect(ci).toContain("name: attest / measure");
+  expect(after).toContain("name: attest / measure");
   const checkScript = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
     scripts: { check: string };
   };
+  const covered = `${ci}\n${after}`;
   for (const part of checkScript.scripts.check.split(" && ")) {
-    expect(ci, part).toContain(part);
+    expect(covered, part).toContain(part);
   }
+  expect(jsonVersionLists(after, "versions")).toEqual([
+    [...POSTGRES_VERSIONS],
+    [...POSTGRES_VERSIONS],
+  ]);
   const weekly = readFileSync(join(root, ".github/workflows/weekly.yml"), "utf8");
-  expect(weekly).toContain('cron: "0 6 * * 1"');
-  expect(weekly).toContain("uses: ./.github/workflows/postgres-suite.yml");
-  expect(weekly).toContain("uses: ./.github/workflows/postgres-tarball.yml");
-  expect(weekly).toContain("actions: read");
+  expect(weekly).not.toContain("cron:");
+  expect(weekly).toContain("workflow_dispatch");
   expect(jsonVersionLists(weekly, "versions")).toEqual([
     [...POSTGRES_VERSIONS],
     [...POSTGRES_VERSIONS],
@@ -458,19 +436,19 @@ test("npm publish is given the tarball by explicit path, never a bare name", () 
   );
 });
 
-test("every job that runs bun run check sets up Node the way ci.yml does", () => {
-  const ci = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
+test("every job that runs bun run check sets up Node the way the runtimes job does", () => {
+  const after = readFileSync(join(root, ".github/workflows/after-merge.yml"), "utf8");
   const release = readFileSync(join(root, ".github/workflows/release.yml"), "utf8");
-  expect(checkSetupProblems(ci, ci)).toEqual([]);
-  expect(checkSetupProblems(release, ci)).toEqual([]);
+  expect(checkSetupProblems(after, after)).toEqual([]);
+  expect(checkSetupProblems(release, after)).toEqual([]);
   expect(checkJobs(release)).toEqual([]);
 });
 
 test("the setup guard names a check job without Node, or with Node after Check", () => {
-  const ci = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
+  const after = readFileSync(join(root, ".github/workflows/after-merge.yml"), "utf8");
   const noNode = ["jobs:", "  publish:", "    steps:", "      - run: bun run check"].join("\n");
-  expect(checkSetupProblems(noNode, ci)).toEqual([
-    "publish: runs bun run check without setup-node 22 before it, as ci.yml has",
+  expect(checkSetupProblems(noNode, after)).toEqual([
+    "publish: runs bun run check without setup-node 22 before it, as the runtimes job has",
   ]);
   const late = [
     "jobs:",
@@ -481,8 +459,8 @@ test("the setup guard names a check job without Node, or with Node after Check",
     "        with:",
     "          node-version: 22",
   ].join("\n");
-  expect(checkSetupProblems(late, ci)).toEqual([
-    "publish: runs bun run check without setup-node 22 before it, as ci.yml has",
+  expect(checkSetupProblems(late, after)).toEqual([
+    "publish: runs bun run check without setup-node 22 before it, as the runtimes job has",
   ]);
 });
 
@@ -636,12 +614,12 @@ function nodeBeforeCheck(steps: readonly WorkflowStep[]): string | undefined {
  */
 function checkSetupProblems(workflow: string, reference: string): readonly string[] {
   const expectedNode = runtimesNodeVersion(reference);
-  if (expectedNode === undefined) return ["ci.yml has no setup-node before Check"];
+  if (expectedNode === undefined) return ["reference workflow has no runtimes setup-node"];
   const problems: string[] = [];
   for (const [name, steps] of checkJobs(workflow)) {
     if (nodeBeforeCheck(steps) !== expectedNode) {
       problems.push(
-        `${name}: runs bun run check without setup-node ${expectedNode} before it, as ci.yml has`,
+        `${name}: runs bun run check without setup-node ${expectedNode} before it, as the runtimes job has`,
       );
     }
   }

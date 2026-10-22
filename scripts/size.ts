@@ -1326,5 +1326,14 @@ async function reportSize(): Promise<void> {
 }
 
 if (import.meta.main) {
-  await reportSize();
+  if (process.argv.includes("--runtime-entry")) {
+    const root = repoRoot();
+    const runtime = measureRuntimeEntry(root);
+    const ci = ciEnabled();
+    console.log(formatEntry(runtime, ci));
+    printColdImportFinding(runtime, ci);
+    exitOnProblems(runtimeBudgetProblems(runtime, { ci }));
+  } else {
+    await reportSize();
+  }
 }

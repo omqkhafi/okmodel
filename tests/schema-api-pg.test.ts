@@ -1,7 +1,7 @@
 /**
  * The handbook example, applied on Postgres.
  *
- * Local runs skip when Docker is down. CI with `needs: postgres` requires it.
+ * Local runs skip when Docker is down. CI requires it when the suite runs.
  */
 
 import { expect } from "bun:test";

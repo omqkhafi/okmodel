@@ -161,6 +161,9 @@ export async function checkout(held: HeldPool): Promise<DriverConnection & { evi
         // texts are the whole signal. The stamp is a SQLSTATE, which is what
         // the classifier reads.
         if (error instanceof Error && bunClosed(error.message)) {
+          // The wrapper is gone. Leaving the handle unmarked put it back in
+          // the pool, and the next `begin` failed the same way (#433).
+          lost.on = true;
           throw new DriverError(error.message, { cause: error, sqlstate: "08006" });
         }
         throw error;

@@ -1,57 +1,30 @@
 name: CI
 
-# Runner: every job runs on ubuntu-24.04, not ubuntu-latest. The image is
-# pinned, so moving to a newer Ubuntu is a deliberate change made in a pull
-# request, not something GitHub does when it moves the latest label.
+# Pull requests only. `gate / check` is the required status. It always runs
+# (`if: always()`). A push to main and the nightly run live in after-merge.yml.
 #
-# A push runs on main only. A pull request runs tier 1 on every push, and
-# tier 2 when the full tier is required: `full-ci`, a `chore(release)` title,
-# or a change under `.github/workflows`. Adding `full-ci` starts tier 2.
-# `gate / check` is the required status. It always runs (`if: always()`),
-# never path-filters the workflow, and fails when a needed job failed,
-# was cancelled, or was skipped while required. A skipped tier 2 job is a
-# pass only when that tier was not requested. A docs-only or site-only pull
-# request skips the runtime test matrix, Postgres, and the tier 2 runtime
-# jobs. A skip is a pass only when that filter says the slice is irrelevant.
-# `needs: postgres` still runs the suite on 15 and 18 and the tarball on 18.
-# The full tier also runs the suite on 15 and 18, including a push to main.
-# The suite workflow's pooler job (PgBouncer service plus the opt-in smoke
-# test) runs only with that label or the full tier, not on every pull request.
-# The tarball stays on the Postgres label. One job builds `dist` and uploads
-# it. Test groups that need it download it. The others do not build.
-# `inform / pack` builds twice on one runner and checks published 0.9.1.
-# `inform / size` prints the per-module delta against the size baseline.
-# Neither is a `gate / check` slice. Release and weekly call the suite and
-# tarball workflows themselves, on every major.
-# Concurrency is the pull request number, or the commit sha on main. A new
-# push on a pull request cancels the older run. A label event does not.
-# A later commit on main never cancels an earlier main run.
+# The gate is format, lint, typecheck, the build, tests for files changed
+# since the merge base, the runtime-entry size ceiling, and the title lint.
+# Postgres 18 runs when the diff touches src/dialects, src/runtime, or
+# src/tooling/migrate. A label does not start it.
 on:
-  push:
-    branches:
-      - main
   pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    types: [opened, synchronize, reopened]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.event.action != 'labeled' && github.event.action != 'unlabeled' }}
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
   pull-requests: write
-  actions: read
 
 jobs:
   changes:
     name: changes / filter
-    if: github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'full-ci'
     runs-on: ubuntu-24.04
     outputs:
-      runtime: ${{ steps.plan.outputs.runtime }}
-      source: ${{ steps.plan.outputs.source }}
-      built: ${{ steps.plan.outputs.built }}
-      full: ${{ steps.tier.outputs.full }}
+      postgres: ${{ steps.plan.outputs.postgres }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -70,77 +43,11 @@ jobs:
       - name: Plan
         id: plan
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            git fetch --no-tags origin "${{ github.event.pull_request.base.sha }}"
-            bun ./scripts/ci-paths.ts --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.event.pull_request.head.sha }}"
-          else
-            echo "runtime=true" >> "$GITHUB_OUTPUT"
-            echo "workflows=false" >> "$GITHUB_OUTPUT"
-          fi
-          # drivers-conformance is tier 2. Drop it here so the tier 1 matrix
-          # does not run it once that group exists.
-          matrix="$(GITHUB_OUTPUT= bun ./scripts/ci-test-groups.ts --matrix)"
-          printf '%s\n' "$matrix" | bun -e '
-            const { appendFileSync } = await import("node:fs");
-            const text = await Bun.stdin.text();
-            let written = "";
-            for (const line of text.split("\n")) {
-              const eq = line.indexOf("=");
-              if (eq < 1) continue;
-              const names = JSON.parse(line.slice(eq + 1)).filter((name) => name !== "drivers-conformance");
-              written += line.slice(0, eq) + "=" + JSON.stringify(names) + "\n";
-            }
-            const out = process.env.GITHUB_OUTPUT;
-            if (out !== undefined && out.length > 0) appendFileSync(out, written);
-            process.stdout.write(written);
-          '
-
-      - name: Tier
-        id: tier
-        env:
-          OKM_PR_TITLE: ${{ github.event.pull_request.title || '' }}
-        run: >
-          bun ./scripts/ci-tier.ts
-          --event ${{ github.event_name }}
-          --full-ci ${{ contains(github.event.pull_request.labels.*.name, 'full-ci') && '1' || '0' }}
-          --workflows ${{ steps.plan.outputs.workflows == 'true' && '1' || '0' }}
-
-  build:
-    name: build / dist
-    if: github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'full-ci'
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      actions: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Setup
-        uses: ./.github/actions/setup-bun
-
-      - name: Cache dist
-        id: dist
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-        with:
-          path: dist
-          key: dist-${{ runner.os }}-${{ hashFiles('src/**', 'bun.lock', 'tsconfig.build.json', 'scripts/write-bin-wrappers.ts', 'packages/harness/src/driver-run.ts') }}
-
-      - name: Build
-        if: steps.dist.outputs.cache-hit != 'true'
-        run: bun run build
-
-      - name: Upload dist
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: dist
-          path: dist
-          if-no-files-found: error
-          retention-days: 1
+          git fetch --no-tags origin "${{ github.event.pull_request.base.sha }}"
+          bun ./scripts/ci-paths.ts --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.sha }}"
 
   lint:
     name: lint / static
-    if: github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'full-ci'
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -179,13 +86,10 @@ jobs:
         run: bun run bundle-purity
 
       - name: Release flow
-        if: github.event_name == 'pull_request'
         run: bun ./scripts/release-check.ts --base ${{ github.event.pull_request.base.sha }}
 
   types:
     name: types / compiler
-    needs: changes
-    if: github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'full-ci'
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -204,14 +108,12 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
-  types-full:
-    name: types / full
-    needs: changes
-    if: >-
-      (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'full-ci') &&
-      needs.changes.outputs.runtime != 'false' &&
-      needs.changes.outputs.full == 'true'
+  build:
+    name: build / dist
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: write
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -219,62 +121,34 @@ jobs:
       - name: Setup
         uses: ./.github/actions/setup-bun
 
-      - name: Cache TypeScript
+      - name: Cache dist
+        id: dist
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
-          path: .cache/tsc
-          key: tsc-${{ runner.os }}-${{ hashFiles('tsconfig.json', 'tsconfig.build.json', 'src/**/*.ts', 'scripts/**/*.ts', 'tests/**/*.ts', 'packages/**/*.ts') }}
-          restore-keys: tsc-${{ runner.os }}-
+          path: dist
+          key: dist-${{ runner.os }}-${{ hashFiles('src/**', 'bun.lock', 'tsconfig.build.json', 'scripts/write-bin-wrappers.ts', 'packages/harness/src/driver-run.ts') }}
 
-      - name: Editor
-        run: bun run editor-check
+      - name: Build
+        if: steps.dist.outputs.cache-hit != 'true'
+        run: bun run build
 
-      - name: Type cost
-        run: bun run type-cost
+      - name: Upload dist
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist
+          if-no-files-found: error
+          retention-days: 1
 
   test:
-    name: test / ${{ matrix.group }}
-    needs: changes
-    if: >-
-      (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'full-ci') &&
-      needs.changes.outputs.runtime != 'false'
+    name: test / changed
+    needs: build
     runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        group: ${{ fromJSON(needs.changes.outputs.source || '[]') }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Setup
-        uses: ./.github/actions/setup-bun
-
-      - name: Test
-        env:
-          OKM_PROPERTY_SCALE: ${{ needs.changes.outputs.full == 'true' && '1' || '0.25' }}
-        run: |
-          files="$(bun ./scripts/ci-test-groups.ts "${{ matrix.group }}")"
-          if [ -z "$files" ]; then
-            echo "no test files"
-            exit 1
-          fi
-          bun test $files
-
-  test-dist:
-    name: test / ${{ matrix.group }}
-    needs: [changes, build]
-    if: >-
-      (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'full-ci') &&
-      needs.changes.outputs.runtime != 'false'
-    runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        group: ${{ fromJSON(needs.changes.outputs.built || '[]') }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
       - name: Setup
         uses: ./.github/actions/setup-bun
@@ -285,111 +159,16 @@ jobs:
           name: dist
           path: dist
 
-      - name: Test
+      - name: Changed tests
         env:
-          OKM_PROPERTY_SCALE: ${{ needs.changes.outputs.full == 'true' && '1' || '0.25' }}
+          OKM_PROPERTY_SCALE: "0.25"
         run: |
-          test -f dist/contracts/index.js
-          files="$(bun ./scripts/ci-test-groups.ts "${{ matrix.group }}")"
-          if [ -z "$files" ]; then
-            echo "no test files"
-            exit 1
-          fi
-          bun test $files
-
-  drivers-conformance:
-    name: test / drivers-conformance
-    needs: [changes, build]
-    if: >-
-      (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'full-ci') &&
-      needs.changes.outputs.runtime != 'false' &&
-      needs.changes.outputs.full == 'true'
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Setup
-        uses: ./.github/actions/setup-bun
-
-      - name: Download dist
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: dist
-          path: dist
-
-      - name: Test
-        env:
-          OKM_PROPERTY_SCALE: "1"
-        run: |
-          test -f dist/contracts/index.js
-          files="$(bun ./scripts/ci-test-groups.ts "drivers-conformance")"
-          if [ -z "$files" ]; then
-            echo "no test files"
-            exit 1
-          fi
-          bun test $files
-
-  runtimes:
-    name: runtimes / portable
-    needs: changes
-    if: >-
-      (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'full-ci') &&
-      needs.changes.outputs.runtime != 'false' &&
-      needs.changes.outputs.full == 'true'
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Setup
-        uses: ./.github/actions/setup-bun
-
-      - name: Setup Node
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 22
-
-      - name: Runtimes
-        run: bun run test:runtimes
-
-  temporal:
-    name: temporal / node ${{ matrix.node }}
-    needs: changes
-    if: >-
-      (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'full-ci') &&
-      needs.changes.outputs.runtime != 'false' &&
-      needs.changes.outputs.full == 'true'
-    runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        node: [22, 24, 26]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Setup
-        uses: ./.github/actions/setup-bun
-
-      - name: Setup Node
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: ${{ matrix.node }}
-
-      - name: Date/time columns
-        run: |
-          bun build scripts/node-temporal.ts --target node --external temporal-polyfill --outfile ./node_modules/.cache/okm-temporal.mjs
-          if [ "${{ matrix.node }}" = "26" ]; then
-            node ./node_modules/.cache/okm-temporal.mjs
-          else
-            node ./node_modules/.cache/okm-temporal.mjs --polyfill
-          fi
+          git fetch --no-tags origin "${{ github.event.pull_request.base.sha }}"
+          merge="$(git merge-base HEAD "${{ github.event.pull_request.base.sha }}")"
+          bun test --changed="$merge" --pass-with-no-tests
 
   size:
     name: package / size
-    needs: build
-    if: github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'full-ci'
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -398,229 +177,51 @@ jobs:
       - name: Setup
         uses: ./.github/actions/setup-bun
 
-      - name: Download dist
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: dist
-          path: dist
-
-      - name: Dist is present
-        run: test -f dist/contracts/index.js
-
-      - name: Size
-        run: bun run size
-
-  package:
-    name: package / checks
-    needs: [build, changes]
-    if: >-
-      (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'full-ci') &&
-      needs.changes.outputs.full == 'true'
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Setup
-        uses: ./.github/actions/setup-bun
-
-      - name: Download dist
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: dist
-          path: dist
-
-      - name: Dist is present
-        run: test -f dist/contracts/index.js
-
-      - name: Publint
-        run: bun run publint
-
-      - name: Are the types wrong
-        run: bun run attw
-
-      - name: Packed files are tracked
-        run: bun run pack-tracked
-
-  check:
-    name: gate / check
-    needs:
-      [
-        changes,
-        lint,
-        types,
-        types-full,
-        test,
-        test-dist,
-        runtimes,
-        temporal,
-        size,
-        package,
-        attest,
-        windows,
-        suite,
-        tarball,
-        drivers-conformance,
-      ]
-    if: always()
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      actions: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Setup
-        uses: ./.github/actions/setup-bun
-
-      - name: Require the slices
-        if: needs.changes.result != 'skipped'
-        run: >
-          bun ./scripts/ci-gate.ts --postgres
-          ${{ github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'needs: postgres') && '1' || '0' }}
-          --runtime
-          ${{ needs.changes.outputs.runtime != 'false' && '1' || '0' }}
-          --full
-          ${{ needs.changes.outputs.full == 'true' && '1' || '0' }}
-          changes=${{ needs.changes.result }}
-          lint=${{ needs.lint.result }}
-          types=${{ needs.types.result }}
-          types-full=${{ needs.types-full.result }}
-          test=${{ needs.test.result }}
-          test-dist=${{ needs.test-dist.result }}
-          runtimes=${{ needs.runtimes.result }}
-          temporal=${{ needs.temporal.result }}
-          size=${{ needs.size.result }}
-          package=${{ needs.package.result }}
-          attest=${{ needs.attest.result }}
-          windows=${{ needs.windows.result }}
-          suite=${{ needs.suite.result }}
-          tarball=${{ needs.tarball.result }}
-          drivers-conformance=${{ needs.drivers-conformance.result }}
-
-      - name: Download dist
-        if: success() && needs.changes.result != 'skipped'
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: dist
-          path: dist
-
-      - name: Pack contract
-        if: success() && needs.changes.result != 'skipped'
-        run: bun run pack-contract
-
-      - name: Mirror the last gate on a no-op event
-        if: needs.changes.result == 'skipped'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          RUN_ID: ${{ github.run_id }}
-        run: bun ./scripts/ci-gate-mirror.ts
-
-  attest:
-    name: attest / measure
-    needs: changes
-    if: >-
-      (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'full-ci') &&
-      needs.changes.outputs.runtime != 'false' &&
-      needs.changes.outputs.full == 'true'
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Setup
-        uses: ./.github/actions/setup-bun
-
-      - name: Attest
-        run: bun run attest
+      - name: Runtime entry
+        run: bun run size -- --runtime-entry
 
   paths:
     name: label / paths
-    if: >-
-      (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'full-ci') &&
-      github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     permissions:
       contents: read
       pull-requests: write
     steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
       - name: Label by path
         uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # v7.0.0
 
-  pull:
-    name: lint / pull request
-    needs: paths
-    if: >-
-      (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'full-ci') &&
-      github.event_name == 'pull_request' &&
-      !cancelled() &&
-      (needs.paths.result == 'success' || needs.paths.result == 'skipped')
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      pull-requests: write
-      issues: write
-    steps:
-      - name: Checkout base
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event.pull_request.base.sha }}
-          persist-credentials: false
-
       - name: Read pinned Bun
         id: bun-pin
-        run: |
-          set -euo pipefail
-          head="${{ github.event.pull_request.head.sha }}"
-          git fetch --no-tags origin "$head"
-          echo "version=$(git show "$head:.bun-version" | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(tr -d '[:space:]' < .bun-version)" >> "$GITHUB_OUTPUT"
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: ${{ steps.bun-pin.outputs.version }}
 
-      # Cursor agents cannot PATCH milestones (403). Copy from Closes #N (D206).
-      # Inline so this works while the job still checks out the base branch.
-      - name: Sync milestone from Closes
+      - name: Label by title
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          OKM_PR_TITLE: ${{ github.event.pull_request.title }}
           GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          meta="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")"
-          if echo "$meta" | jq -e '.milestone != null' >/dev/null; then
-            echo "milestone already set"
-            exit 0
-          fi
-          body="$(echo "$meta" | jq -r '.body // ""')"
-          body="${body%%<!-- CURSOR_AGENT_PR_BODY_END -->*}"
-          n="$(printf '%s\n' "$body" | sed -n 's/^Closes #\([0-9][0-9]*\)$/\1/p' | tail -1)"
-          if [ -z "${n}" ]; then
-            echo "no Closes #N line"
-            exit 0
-          fi
-          mil="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${n}" --jq '.milestone.number // empty')"
-          if [ -z "${mil}" ]; then
-            # Same rule as trainMilestoneTitle: 0.10.0-next.N is milestone 0.10.
-            version="$(jq -r '.version' package.json)"
-            release="${version%%-*}"
-            title="${release}"
-            if printf '%s' "${release}" | grep -Eq '^[0-9]+\.[0-9]+\.0$'; then
-              title="${release%.0}"
-            fi
-            mil="$(gh api "repos/${GITHUB_REPOSITORY}/milestones?state=open&per_page=100" --jq ".[] | select(.title==\"${title}\") | .number" | head -n 1)"
-            if [ -z "${mil}" ]; then
-              echo "issue #${n} has no milestone and no open milestone ${title}"
-              exit 0
-            fi
-            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/${n}" -f "milestone=${mil}"
-            echo "set issue #${n} milestone ${title}"
-          fi
-          gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}" -f "milestone=${mil}"
-          echo "set milestone ${mil} from #${n}"
+        run: bun ./scripts/pr-labels.ts --pr "$PR_NUMBER"
+
+  pull:
+    name: lint / pull request
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup
+        uses: ./.github/actions/setup-bun
 
       - name: Lint pull request
         env:
@@ -632,48 +233,19 @@ jobs:
   suite:
     name: suite
     needs: [build, changes]
-    if: >-
-      (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'full-ci') &&
-      needs.changes.outputs.runtime == 'true' &&
-      (needs.changes.outputs.full == 'true' || contains(github.event.pull_request.labels.*.name, 'needs: postgres'))
+    if: needs.changes.outputs.postgres == 'true'
     permissions:
       contents: read
       actions: read
     uses: ./.github/workflows/postgres-suite.yml
     with:
-      versions: '["15", "18"]'
-      dist_artifact: dist
-
-  tarball:
-    name: tarball
-    needs: [build, changes]
-    if: >-
-      (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'full-ci') &&
-      github.event_name == 'pull_request' &&
-      contains(github.event.pull_request.labels.*.name, 'needs: postgres') &&
-      needs.changes.outputs.runtime == 'true'
-    permissions:
-      contents: read
-      actions: read
-    uses: ./.github/workflows/postgres-tarball.yml
-    with:
       versions: '["18"]'
       dist_artifact: dist
 
-  windows:
-    name: windows / host
-    needs: changes
-    if: >-
-      (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'full-ci') &&
-      needs.changes.outputs.runtime != 'false' &&
-      needs.changes.outputs.full == 'true'
-    permissions:
-      contents: read
-    uses: ./.github/workflows/windows.yml
-
-  inform:
-    name: inform / pack
-    if: github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'full-ci'
+  check:
+    name: gate / check
+    needs: [changes, lint, types, build, test, size, pull, paths, suite]
+    if: always()
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -682,43 +254,16 @@ jobs:
       - name: Setup
         uses: ./.github/actions/setup-bun
 
-      - name: Pack twice on this runner
-        run: bun ./scripts/pack-stability.ts
-
-      - name: Published 0.9.1
-        continue-on-error: true
-        run: bun ./scripts/verify-release.ts 0.9.1
-
-  size-report:
-    name: inform / size
-    if: >-
-      github.event_name == 'pull_request' &&
-      (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'full-ci')
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Setup
-        uses: ./.github/actions/setup-bun
-
-      - name: Attribute gated graphs
-        continue-on-error: true
-        run: bun ./scripts/size-attribution.ts
-
-  issue:
-    name: gate / issue
-    needs: check
-    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.check.result == 'failure'
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      issues: write
-    steps:
-      - name: Open an issue
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Require the slices
         run: >
-          gh issue create
-          --title "CI failed on main (${{ github.sha }})"
-          --body "gate / check failed on main. Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }} Commit: ${{ github.sha }}"
+          bun ./scripts/ci-gate.ts
+          --postgres ${{ needs.changes.outputs.postgres == 'true' && '1' || '0' }}
+          changes=${{ needs.changes.result }}
+          lint=${{ needs.lint.result }}
+          types=${{ needs.types.result }}
+          build=${{ needs.build.result }}
+          test=${{ needs.test.result }}
+          size=${{ needs.size.result }}
+          pull=${{ needs.pull.result }}
+          paths=${{ needs.paths.result }}
+          suite=${{ needs.suite.result }}

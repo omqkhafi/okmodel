@@ -8,7 +8,7 @@ codes: [OKM1803, OKM1846]
 
 Generated from the conformance run (`tests/driver-suite.test.ts` and `tests/error-suite.test.ts`). Do not edit by hand.
 
-Supported majors are Postgres 15, 16, 17, and 18. The floor is 15: Postgres 13 is past end of life, 14 ends in November 2026, and 15 gives us features we can use later. `connect()` refuses an older server with OKM1803. `minPostgres` is 15, 16, 17, or 18. `requires: { postgres: ">=17" }` is the same floor and is deprecated. Identity columns need Postgres 10. A bare `t.id()` stores `gen_random_uuid()`, which is built in from Postgres 13. An explicit `uuidv7()` needs Postgres 18. A pull request runs real Postgres only with the label `needs: postgres`: the suite on 15 and 18 and the tarball job on 18. `bun run verify` runs the suite on this machine. The release and the weekly run cover each supported major. A failure on an older major in this list stays in the run.
+Supported majors are Postgres 15, 16, 17, and 18. The floor is 15: Postgres 13 is past end of life, 14 ends in November 2026, and 15 gives us features we can use later. `connect()` refuses an older server with OKM1803. `minPostgres` is 15, 16, 17, or 18. `requires: { postgres: ">=17" }` is the same floor and is deprecated. Identity columns need Postgres 10. A bare `t.id()` stores `gen_random_uuid()`, which is built in from Postgres 13. An explicit `uuidv7()` needs Postgres 18. A pull request runs Postgres 18 when the diff touches dialects, migrate, or runtime. `bun run verify` runs the suite on this machine. A push to main, the nightly run, and a release cover each supported major. A failure on an older major in this list stays in the run.
 
 <!-- support: type.uuidv7 -->
 Postgres: native. Since 18. Proof passes (`proof:type.uuidv7`).

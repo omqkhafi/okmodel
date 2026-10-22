@@ -1,55 +1,29 @@
 /**
- * Decides whether the full CI tier is required for this event.
+ * Heavy jobs run after merge: a push to `main`, and the nightly schedule.
  *
- * Full tier: push to `main`, the `full-ci` label, a release pull request
- * title (`chore(release)…`), or a change under `.github/workflows`.
+ * A pull request does not request them. `full-ci` and `needs: postgres` do
+ * not add jobs.
  *
- *   bun ./scripts/ci-tier.ts --event pull_request --full-ci 0 --workflows 1
+ *   bun ./scripts/ci-tier.ts --event pull_request
  *
- * Reads the pull request title from `OKM_PR_TITLE` when set. Writes
- * `full=true` or `full=false` to `GITHUB_OUTPUT` when that file is set.
+ * Writes `heavy=true` or `heavy=false` to `GITHUB_OUTPUT` when that file is set.
  */
 
 import { appendFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 
-/** Inputs that decide whether tier 2 must run and pass. */
-export type FullTierInput = {
-  /** `push` or `pull_request`. */
-  readonly eventName: string;
-  /** True when the pull request has the `full-ci` label. */
-  readonly fullCiLabel: boolean;
-  /** True when the diff touches `.github/workflows`. */
-  readonly workflowsChanged: boolean;
-  /** Pull request title, or empty on a push. */
-  readonly title: string;
-};
-
 /**
- * Whether the full tier is required.
+ * Whether the heavy tier runs for this event.
  *
- * @param input - Event, labels, path signal, and title
- * @returns True when tier 2 must run and `gate / check` must require it
+ * @param eventName - `pull_request`, `push`, or `schedule`
+ * @returns True for a push or a schedule
  */
-export function fullTierRequested(input: FullTierInput): boolean {
-  if (input.eventName === "push") return true;
-  if (input.fullCiLabel) return true;
-  if (input.workflowsChanged) return true;
-  if (input.title.startsWith("chore(release)")) return true;
-  return false;
+export function heavyTierRequested(eventName: string): boolean {
+  return eventName === "push" || eventName === "schedule";
 }
 
-function flag01(value: string | undefined): boolean {
-  if (value !== "0" && value !== "1") {
-    throw new Error(
-      `usage: bun ./scripts/ci-tier.ts --event <name> --full-ci <0|1> --workflows <0|1>`,
-    );
-  }
-  return value === "1";
-}
-
-function writeFull(full: boolean): void {
-  const line = `full=${full ? "true" : "false"}\n`;
+function writeHeavy(heavy: boolean): void {
+  const line = `heavy=${heavy ? "true" : "false"}\n`;
   const output = process.env.GITHUB_OUTPUT;
   if (output !== undefined && output.length > 0) appendFileSync(output, line);
   process.stdout.write(line);
@@ -58,27 +32,14 @@ function writeFull(full: boolean): void {
 if (import.meta.main) {
   try {
     const { values } = parseArgs({
-      options: {
-        event: { type: "string" },
-        "full-ci": { type: "string" },
-        workflows: { type: "string" },
-      },
+      options: { event: { type: "string" } },
       args: process.argv.slice(2),
       strict: true,
     });
     if (values.event === undefined) {
-      throw new Error(
-        "usage: bun ./scripts/ci-tier.ts --event <name> --full-ci <0|1> --workflows <0|1>",
-      );
+      throw new Error("usage: bun ./scripts/ci-tier.ts --event <name>");
     }
-    writeFull(
-      fullTierRequested({
-        eventName: values.event,
-        fullCiLabel: flag01(values["full-ci"]),
-        workflowsChanged: flag01(values.workflows),
-        title: process.env.OKM_PR_TITLE ?? "",
-      }),
-    );
+    writeHeavy(heavyTierRequested(values.event));
   } catch (error: unknown) {
     console.error("[ci-tier]", error instanceof Error ? error.message : error);
     process.exit(1);

@@ -8,8 +8,10 @@
  *
  *   bun ./scripts/ci-paths.ts --base <sha> --head <sha>
  *
- * Writes `runtime=` and `workflows=` lines to `GITHUB_OUTPUT` when that
- * file is set, and always prints the same lines.
+ * Writes `runtime=`, `workflows=`, and `postgres=` lines to `GITHUB_OUTPUT`
+ * when that file is set, and always prints the same lines. `postgres` is
+ * true when the diff touches dialects, migrate, or runtime: the pull request
+ * then runs Postgres 18.
  */
 
 import { appendFileSync } from "node:fs";
@@ -37,6 +39,27 @@ export function runtimeRelevant(paths: readonly string[]): boolean {
 export function workflowsChanged(paths: readonly string[]): boolean {
   return paths.some(
     (path) => path === ".github/workflows" || path.startsWith(".github/workflows/"),
+  );
+}
+
+/**
+ * Whether a pull request runs the Postgres 18 suite.
+ *
+ * The paths are `src/dialects`, `src/runtime`, and `src/tooling/migrate`.
+ * The suite is selected by path. A label does not start it.
+ *
+ * @param paths - Paths from the repository root
+ * @returns True when any path is in those trees
+ */
+export function postgres18Relevant(paths: readonly string[]): boolean {
+  return paths.some(
+    (path) =>
+      path === "src/dialects" ||
+      path.startsWith("src/dialects/") ||
+      path === "src/runtime" ||
+      path.startsWith("src/runtime/") ||
+      path === "src/tooling/migrate" ||
+      path.startsWith("src/tooling/migrate/"),
   );
 }
 
@@ -75,7 +98,8 @@ export function diffPaths(root: string, base: string, head: string): readonly st
 function writeOutputs(paths: readonly string[]): void {
   const text =
     `runtime=${runtimeRelevant(paths) ? "true" : "false"}\n` +
-    `workflows=${workflowsChanged(paths) ? "true" : "false"}\n`;
+    `workflows=${workflowsChanged(paths) ? "true" : "false"}\n` +
+    `postgres=${postgres18Relevant(paths) ? "true" : "false"}\n`;
   const output = process.env.GITHUB_OUTPUT;
   if (output !== undefined && output.length > 0) appendFileSync(output, text);
   process.stdout.write(text);

@@ -134,6 +134,9 @@ async function untilAfterStorm<T>(work: () => Promise<T>): Promise<T> {
     if (result.ok) return result.value;
     last = result.error;
     if (!recoverableAfterStorm(last)) throw last;
+    // The pool replaces the dead client on release. Give that client one
+    // turn before the next checkout (#433 retried with no gap).
+    await Bun.sleep(50 * attempt);
   }
   throw last;
 }
