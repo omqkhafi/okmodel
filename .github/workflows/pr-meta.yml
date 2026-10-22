@@ -1,20 +1,12 @@
 name: PR meta
 
-# A pull request update is the CI workflow. This file runs only when the
-# title, a label, or the milestone changes, so that event is its own run and
-# a code push is not a second one. Labels added with GITHUB_TOKEN do not
-# start another workflow.
-#
-# pull_request_target runs this file from the base branch. Pull request code
-# is never checked out and never executed. Lint checks out the base commit.
+# A title edit re-checks the title and refreshes labels. A code push is the
+# CI workflow, not this one. pull_request_target runs this file from the
+# default branch. Pull request code is never checked out and never executed.
 on:
   pull_request_target:
     types:
       - edited
-      - labeled
-      - unlabeled
-      - milestoned
-      - demilestoned
   workflow_dispatch:
     inputs:
       pr:
@@ -35,7 +27,6 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
-      issues: write
     steps:
       - name: Checkout base
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -56,49 +47,17 @@ jobs:
         with:
           bun-version: ${{ steps.bun-pin.outputs.version }}
 
-      # Cursor agents cannot PATCH milestones (403). Copy from Closes #N (D206).
-      # Inline so this works while the job still checks out the base branch.
-      - name: Sync milestone from Closes
-        env:
-          PR_NUMBER: ${{ github.event_name == 'workflow_dispatch' && inputs.pr || github.event.pull_request.number }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          meta="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")"
-          if echo "$meta" | jq -e '.milestone != null' >/dev/null; then
-            echo "milestone already set"
-            exit 0
-          fi
-          body="$(echo "$meta" | jq -r '.body // ""')"
-          body="${body%%<!-- CURSOR_AGENT_PR_BODY_END -->*}"
-          n="$(printf '%s\n' "$body" | sed -n 's/^Closes #\([0-9][0-9]*\)$/\1/p' | tail -1)"
-          if [ -z "${n}" ]; then
-            echo "no Closes #N line"
-            exit 0
-          fi
-          mil="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${n}" --jq '.milestone.number // empty')"
-          if [ -z "${mil}" ]; then
-            # Same rule as trainMilestoneTitle: 0.10.0-next.N is milestone 0.10.
-            version="$(jq -r '.version' package.json)"
-            release="${version%%-*}"
-            title="${release}"
-            if printf '%s' "${release}" | grep -Eq '^[0-9]+\.[0-9]+\.0$'; then
-              title="${release%.0}"
-            fi
-            mil="$(gh api "repos/${GITHUB_REPOSITORY}/milestones?state=open&per_page=100" --jq ".[] | select(.title==\"${title}\") | .number" | head -n 1)"
-            if [ -z "${mil}" ]; then
-              echo "issue #${n} has no milestone and no open milestone ${title}"
-              exit 0
-            fi
-            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/${n}" -f "milestone=${mil}"
-            echo "set issue #${n} milestone ${title}"
-          fi
-          gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}" -f "milestone=${mil}"
-          echo "set milestone ${mil} from #${n}"
-
       - name: Lint pull request
         env:
           PR_NUMBER: ${{ github.event_name == 'workflow_dispatch' && inputs.pr || github.event.pull_request.number }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
         run: bun ./scripts/pr-lint.ts --pr "$PR_NUMBER"
+
+      - name: Label by title
+        env:
+          PR_NUMBER: ${{ github.event_name == 'workflow_dispatch' && inputs.pr || github.event.pull_request.number }}
+          OKM_PR_TITLE: ${{ github.event.pull_request.title || '' }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: bun ./scripts/pr-labels.ts --pr "$PR_NUMBER"

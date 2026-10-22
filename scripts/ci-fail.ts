@@ -34,6 +34,8 @@ const STEP_COMMANDS: Readonly<Record<string, string>> = {
   "Packed files are tracked": "bun run pack-tracked",
   "Pack contract": "bun run pack-contract",
   Size: "bun run size",
+  "Runtime entry": "bun run size -- --runtime-entry",
+  "Changed tests": "bun test --changed=origin/main --pass-with-no-tests",
   Build: "bun run build",
   Attest: "bun run attest",
   Install: "bun install --frozen-lockfile",

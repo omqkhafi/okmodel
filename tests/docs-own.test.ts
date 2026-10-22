@@ -5,7 +5,7 @@
  * Postgres rejects that statement. Each `own.ts` and `own-advanced.ts` fence
  * on the four schema pages is planned from an empty catalog and applied.
  * PGlite runs in every `bun test`. It has no contrib extensions, so the
- * extension fences apply only on the topology (`needs: postgres`), together
+ * extension fences apply only on the topology, together
  * with the other six and the traits `connect` insert.
  */
 

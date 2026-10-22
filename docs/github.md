@@ -10,25 +10,25 @@ The GitHub defaults are not used. Three groups:
 | -------- | ---------------------------------------------------------------------------------------- |
 | `type:`  | `feat`, `fix`, `perf`, `docs`, `test`, `chore`, `refactor`, `security`                   |
 | `area:`  | `contracts`, `dialects`, `adapters`, `runtime`, `tooling`, `ci`, `docs`, `tenancy`, `grants` |
-| `needs:` | `decision`, `repro`, `design`, `postgres`                                                |
+| `needs:` | `decision`, `repro`, `design`                                                            |
 
 `area:` follows the directories under `src/`. `ci` is workflows and `scripts/`. `docs` is `docs/` and the repository markdown. `tenancy` and `grants` are set on the issue. The path labeler does not add them: they are not directories under `src/` (D217).
 
-Every issue and every pull request has exactly one `type:` label and at least one `area:` label. `needs:` is optional.
+Every issue has exactly one `type:` label and at least one `area:` label. A pull request receives the same labels from its title and its paths. `needs:` is optional and does not start a job.
 
 ## Pull requests
 
-- Title: `type(scope): summary`. The type is one of the `type:` names. The scope is a short lowercase name, such as `runtime`, `ci`, or `docs`.
+- Title: `type(scope): summary`. That is the only requirement. The type is one of the `type:` names. The scope is a short lowercase name, such as `runtime`, `ci`, or `docs`.
 - Branch: `pNN-short-name`, the same name as the plan row.
-- The body ends with `Closes #N`.
-- The pull request milestone is the milestone of that issue. When that issue has none, CI assigns the open milestone for the train in `package.json` (`0.10.0-next.N` is `0.10`) to the issue and the pull request.
-- The path labeler adds `area:` from the files that changed. Set `type:` yourself.
+- No closing line and no milestone.
 
-A pull request update starts one Actions run, `CI`. `label / paths` adds `area:` labels from the changed files. `lint / pull request` then checks the title, the closing line, one `type:` label, at least one `area:` label, and a milestone. It checks out the base branch and runs `scripts/pr-lint.ts`. Neither job checks out pull request code. A title edit, a label change, or a milestone change starts `pr-meta.yml` instead, which runs the same lint. A label added with `GITHUB_TOKEN` does not start another workflow.
+A pull request update starts one Actions run, `CI`. `label / paths` adds `area:` from the changed files and `type:` from the title (`scripts/pr-labels.ts`). `lint / pull request` checks the title and nothing else (`scripts/pr-lint.ts`). A title edit starts `pr-meta.yml`, which runs the same two scripts from the base branch. A label added with `GITHUB_TOKEN` does not start another workflow.
 
-`gate / check` is the required status. It always runs (`if: always()`). It needs every CI slice, including `suite` and `tarball`. Those two run when the pull request has `needs: postgres`: the suite is four shards (`isolation`, `selection`, `consistency`, `tx`) on Postgres 15 and 18, each with its own database, and the pgbouncer proof is a separate job in that same workflow. The tarball job is Postgres 18. A slice that should have run must be `success`. Without the label, `suite` and `tarball` are skipped and the gate allows that skip. A skip while the label is present fails the gate (D213, D230). The full tier is also required for `full-ci`, a `chore(release)` title, a change under `.github/workflows`, or a push to `main`; a skipped full-tier slice then fails the gate. A pull request whose every changed path is under `docs/` or `site/` also skips the runtime test matrix (`test`, `runtimes`, `temporal`), Postgres, the type-cost step, and attest. The gate treats that skip as a pass only because the filter says those slices are irrelevant. A failure still fails. One job builds `dist` and uploads it. Jobs that need the build download it. Jobs that do not need it do not build. Release and the weekly run still pass every supported major through the same workflows, and they build `dist` inside the shard when no artifact was passed. The cycle plan is [ci-and-test-cycle-plan.md](ci-and-test-cycle-plan.md).
+`gate / check` is the required status. It always runs (`if: always()`). It needs format, lint, typecheck, the build, tests for files changed since the merge base, the runtime-entry size ceiling, the title lint, and the path labels. Postgres 18 (four shards and the pooler proof) runs when the diff touches `src/dialects`, `src/runtime`, or `src/tooling/migrate`. A skipped suite is a pass only when those paths are absent. A failure still fails. One job builds `dist` and uploads it. The suite downloads it. The cycle plan is [ci-and-test-cycle-plan.md](ci-and-test-cycle-plan.md).
 
-A Dependabot pull request has no issue and no milestone, so `lint` skips the closing line and the milestone for `dependabot[bot]`. Its title and labels are still checked.
+A push to `main` and the nightly run (03:00 UTC) run everything else: the full test matrix, type cost, attest, portable runtimes, the temporal matrix, package checks, Windows, the size report, Postgres 15 through 18, and the tarball on those majors. A failure opens or updates one issue, `CI failed after merge`. Release uses the same suite and tarball workflows and builds `dist` inside the shard when no artifact was passed.
+
+A Dependabot pull request is linted like any other. Its title starts with `chore(deps)`, and Dependabot still applies `type: chore` and `area: ci`.
 
 ## Milestones
 
@@ -40,7 +40,7 @@ The OKModel project has a Step field. The value is the plan id (`P64A`). Saved v
 
 ## Merges
 
-Squash only. The branch is deleted on merge.
+Squash only, with auto-merge. The branch does not have to be up to date with `main`. The branch is deleted on merge.
 
 ## Files
 

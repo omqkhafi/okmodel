@@ -1,8 +1,8 @@
 name: Postgres
 
 # Reusable tarball job. The caller job is named `tarball`, so a run reads
-# `Postgres / tarball / 18`. A pull request with `needs: postgres` passes the
-# newest. Release and weekly pass every supported major.
+# `Postgres / tarball / 18`. A pull request does not run it. A push to main,
+# the nightly run, and a release pass every supported major.
 on:
   workflow_call:
     inputs:

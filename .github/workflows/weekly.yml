@@ -1,11 +1,9 @@
 name: Weekly
 
-# Full Postgres matrix, suite and tarball, Monday 06:00 UTC.
-# A pull request with `needs: postgres` runs the shorter list inside CI.
-# Adding that label starts postgres-pr.yml.
+# The Monday matrix moved to after-merge.yml (push to main and nightly).
+# This dispatch runs the same Postgres matrix by hand.
 on:
-  schedule:
-    - cron: "0 6 * * 1"
+  workflow_dispatch:
 
 permissions:
   contents: read

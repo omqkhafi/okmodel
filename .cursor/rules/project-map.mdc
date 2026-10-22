@@ -50,9 +50,9 @@ contracts → dialects → adapters → runtime → tooling. Adapters import con
 
 ## Working order
 1. Core work with a focused test per item, then commit locally.
-2. Focused tests for touched files; when they pass, run `bun run verify:fast` and push the branch once (so work is never only in a worktree, and CI never sees code that fails its own tests). If the change touches an adapter, an entry point or anything under a size gate, run `bun run size` now. On a CI failure, read only `bun run ci:fail <pull>`, fix once, run `verify:fast`, and push. After two failed rounds, stop and report. While waiting, one `gh pr checks <pull> --watch`.
-3. Secondary work: audits, docs, site, cleanup.
-4. `bun run check` once at the end (one foreground command), then the self-review.
+2. Focused tests for touched files; when they pass, run `bun run verify:fast` once and push once. Then `gh pr merge --auto --squash` and stop. Do not poll CI. Do not merge `main` unless the push is rejected for a real conflict. Do not push an empty commit. Do not edit `changelog.md`, bump the version, or update the pack snapshot or `docs/size-audit.md` on the pull request.
+3. Secondary work: audits, docs, site, cleanup, in the same pull request when it belongs there.
+4. Self-review against D129. Do not run `bun run check` to finish a pull request. That suite runs after merge.
 - A fix needs a reproduction (with a timeout when it can hang) and proof its test fails without the fix.
 - Any object a driver can make emit `error` (pool, client, listener, reserved connection, stream, cancel socket) needs an error path that cannot become `uncaughtException` or `unhandledRejection`.
 
@@ -64,15 +64,15 @@ contracts → dialects → adapters → runtime → tooling. Adapters import con
 - Hitting a gate: stop and report the exact numbers. First try to save bytes in the code you added; never raise a gate without a cap given in the prompt.
 
 ## Pull requests
-- Title `type(scope): summary`. Body ends with the line `Closes #N` (the PR lint accepts nothing else last).
-- Labels: one `type:` and at least one `area:`. Milestone of the release train. Project fields in sync.
-- Add the label `needs: postgres` when the change has Postgres-backed tests; without it `suite` and `tarball` are skipped. Required status on `main`: `gate / check`.
+- Title `type(scope): summary` is the only requirement. The workflow sets `type:` from the title and `area:` from the scope when the scope is an area, and from paths otherwise.
+- No milestone and no `Closes #N` line.
+- Postgres 18 runs when the diff touches dialects, migrate, or runtime. Required status: `gate / check`.
 - Never create an issue unless Ali approved one by name; if the issue is missing, stop and say so.
-- Open the PR, wait for the full CI run, then report.
+- Open the PR, enable auto-merge, stop. Do not wait on CI.
 - Report: max 40 lines. A table (item | file | test | status done / N/A / deferred + reason), commands with pass/fail, measured budgets from the scripts' output, PR link.
 
 ## Hard rules
 - No public API, `ErrorKind`, or catalog hash changes without Ali's explicit approval. Prefer adding a field over a new `ErrorKind`.
-- You may push branches, open PRs and set labels/milestones. Never merge, tag, publish or release (`bun publish`, `bun run bump release`) unless the prompt says so; Ali does those.
-- Changelog and version: follow `.cursor/rules/changelog.mdc` and `.agents/skills/okm-ship/SKILL.md`. Exception: when the prompt says the release version is untagged (for example `v0.6.0`), do not bump and add notes under that existing `## vX.Y.Z` heading.
+- You may push branches and open PRs. After `verify:fast`, run `gh pr merge --auto --squash` and stop. Never tag, publish, or run `bun run bump release` unless the prompt says so.
+- Changelog and version: do not edit them on a pull request. A release runs `bun run bump release`. A prerelease publish runs `bun run bump next --publish`. See `.agents/skills/okm-ship/SKILL.md`.
 - Commit trailers: see `AGENTS.md` § Commits.

@@ -1,124 +1,43 @@
 ---
 name: okm-ship
 description: >-
-  Closes every OKModel implementation by appending notes to changelog.md
-  under ## Unreleased, then running `bun run bump next`. Use automatically
-  after implementing a feature, fix, refactor, CLI change, dialect, adapter,
-  runtime change, or any user-visible work — before saying the work is done,
-  before commit, or when the user asks to ship, close out, or sync the
-  changelog. A gate prompt that releases runs `bun run bump release` instead.
-  For an untagged release named in the prompt (for example v0.6.0), notes go
-  under that existing ## vX.Y.Z and there is no bump.
+  Publishes an OKModel release. Do not run it after an ordinary pull request.
+  `bun run bump release` fills an empty ## Unreleased from merged pull request
+  titles and promotes it. `bun run bump next --publish` publishes a prerelease
+  and does not touch the changelog. Use when the user asks to cut a release
+  or a prerelease, not when finishing a feature, fix, or refactor.
 ---
 
-# OKM Ship — changelog, then the pre-release bump
+# OKM Ship — release only
 
-Run this **before** you claim the work is done. A missing changelog note for user-visible work is a defect.
-
-Notes for unfinished work go under `## Unreleased`. Then run `bun run bump next`, which moves `package.json` to `<next release>-next.N` and leaves the changelog where it is. A gate prompt that cuts a release runs `bun run bump release` instead: that drops the suffix and promotes `## Unreleased` into `## vX.Y.Z — <date>`.
+A pull request does not edit `changelog.md` and does not bump `package.json`. Finish the work, run `bun run verify:fast` once, push once, and `gh pr merge --auto --squash`. Then stop.
 
 ## When to run
 
-After any implementation that changes behavior, API surface, CLI, dialects, adapters, errors, or normative docs. Skip only for pure typo or format-only edits with no product impact.
+- `bun run bump release` when publishing the release. An empty `## Unreleased` is filled from squash-merge subjects since the last `vX.Y.Z` tag, then promoted to `## vX.Y.Z — <date>`.
+- `bun run bump next --publish` when publishing a prerelease. The version becomes `<next minor>-next.N`. The changelog stays as it is. Without `--publish` the command refuses.
 
-## Workflow
+`patch`, `minor`, `major`, and `--set` still promote the changelog. `--dry-run` prints the plan and writes nothing.
 
-```
-Task:
-- [ ] 1. Diff the change — list user-visible impact
-- [ ] 2. Changelog — append under ## Unreleased → ### group + #### area (untagged release: under its ## vX.Y.Z)
-- [ ] 3. Version — bun run bump next (a release prompt: bun run bump release; untagged release: no bump)
-```
+## Notes the release writes
 
-### 1. Inventory impact
+Merged titles use `type(scope): summary`.
 
-From the diff, list what a user or app author would notice. Map each item to:
+| Title | Changelog group |
+| --- | --- |
+| `feat` | `### ✨ Added` |
+| `fix` | `### 🐛 Fixed` |
+| `perf`, `refactor` | `### ♻️ Changed` |
+| `security` | `### 🔒 Security` |
+| `type(scope)!:` or a `BREAKING CHANGE:` body line | `### 💥 Breaking Changes` |
+| `docs`, `test`, `chore` | omitted |
 
-| Impact                                | Changelog group    |
-| ------------------------------------- | ------------------ |
-| New capability / export / command     | `Added`            |
-| Incompatible API, config, or behavior | `Breaking Changes` |
-| Behavior or default change            | `Changed`          |
-| Deprecation                           | `Deprecated`       |
-| Removal                               | `Removed`          |
-| Bug fix                               | `Fixed`            |
-| Security-relevant                     | `Security`         |
+A group with eight or more bullets gains `####` headings in this order: `contracts`, `dialects`, `adapters`, `runtime`, `tooling`, `docs`.
 
-If a note would invent an API the source does not support, stop and ask.
+Hand-written bullets already under `## Unreleased` are kept. The generator fills the section only when it has none.
 
-### 2. Changelog (`changelog.md`)
+## Do not
 
-**Upcoming work → `## Unreleased`.** Never append to an already-tagged `## vX.Y.Z` section.
-
-```text
-If ## Unreleased is missing (right after the preamble, before the newest ## v…):
-  Insert it.
-
-Append bullets under the matching ### group and #### area
-inside Unreleased (create the group / area if missing).
-Do not dump a new bullet at the top of a large group.
-```
-
-Rules:
-
-- Groups only when non-empty, in order: `### ✨ Added` · `### 💥 Breaking Changes` · `### ♻️ Changed` · `### ⚠️ Deprecated` · `### 🔥 Removed` · `### 🐛 Fixed` · `### 🔒 Security`
-- Large groups (8 or more bullets) add `####` area headings, only when that area has bullets, in order: `contracts` · `dialects` · `adapters` · `runtime` · `tooling` · `docs`
-- Pick the area from where the change lives (do not invent new area names):
-
-  | Change lives in…                 | `####` area |
-  | -------------------------------- | ----------- |
-  | contracts                        | contracts   |
-  | dialects                         | dialects    |
-  | adapters                         | adapters    |
-  | runtime                          | runtime     |
-  | CLI (`okm`), scripts, checks, CI | tooling     |
-  | `docs/`                          | docs        |
-
-- Small groups stay flat — no `####` until the group needs scanning.
-- Bullets: user or product impact, not a file dump. Short sentences. Wrapped lines are fine.
-- One idea per bullet.
-
-### 3. Version
-
-After the notes are in `## Unreleased`:
-
-```bash
-bun run bump next
-# → package.json becomes <next release>-next.N
-# → changelog is left untouched
-```
-
-**Untagged release exception.** If the prompt names a release version that is not yet tagged (for example `v0.6.0`), do not run `bun run bump`. Add the notes under that existing `## vX.Y.Z` heading and leave `package.json` as it is. `bun run release-check` allows this until the tag exists.
-
-D115: hygiene finishes before a release bump. P09A is the cleanup after the M0 gate (spike leftovers, duplicated helpers, flaky tests, doc sync, dependency audit, D127 budgets). A hygiene prompt that is not itself the release runs `bun run bump next`. P17 is that prompt for 0.1; P17B is the release. The release prompt of a train runs:
-
-```bash
-bun run bump release
-# → drops the -next.N suffix
-# → renames ## Unreleased → ## v{version} — {today}
-# → leaves a fresh empty ## Unreleased
-```
-
-That release prompt is P17B for 0.1.0, then P30, P44, P55, P66, P86, P99, P110, and P119.
-
-Do **not** invent `## v{next}` yourself. `patch`, `minor`, `major`, and `--set` remain available; they still promote the changelog. `--dry-run` prints the plan and writes nothing.
-
-## Engineering standards (D129)
-
-Before the execution report, review the change against these rules. The report states the measurements.
-
-- Built for performance, speed, lightness, and cold start, not only to pass tests.
-- Nothing enters the runtime entry (`src/contracts/index.ts`) without need. Tooling stays out. No module-level computation. Lazy work. `sideEffects: false`.
-- No duplicated logic: one helper, one place.
-- Small, obvious public API. Clear names. Precise types. Actionable errors.
-- No avoidable allocation or repeated work on hot paths.
-- Report runtime entry size (minified and gzip), cold import, and any type-cost change. Also report the app startup graph, the total graph, and connect-entry cold imports. A measurement within 3% of a type ceiling is called out. Connect-entry cold import is reported, not gated; the 15 ms local reference is our own code with the driver stubbed. Report each connect entry's minified and gzip size against its gate.
-
-## Done
-
-- [ ] Notes under `## Unreleased` → matching `###` group and `####` area when the group is large
-- [ ] Nothing appended under a tagged `## v…` section
-- [ ] `bun run bump next` has run, or `bun run bump release` on a release prompt
-- [ ] Self-review against the engineering standards, with runtime entry size, cold import, and type-cost change in the report
-- [ ] Untagged release prompt: notes under its `## vX.Y.Z`, no bump
-- [ ] Any path listed in `.cursor/rules/project-map.mdc` that you moved is updated there
+- Append a changelog bullet on a feature pull request.
+- Run `bun run bump next` to mark a pull request as shipped.
+- Update `tests/fixtures/pack-contract.snap.json` or `docs/size-audit.md` as pull-request bookkeeping. The pack snapshot and the full size report run after merge.

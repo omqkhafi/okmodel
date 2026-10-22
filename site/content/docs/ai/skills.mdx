@@ -12,67 +12,34 @@ In your own project, `okm init --agents` and `okm agents update` copy that skill
 
 ## okm-ship
 
-`.agents/skills/okm-ship/SKILL.md` closes an implementation. Run it before you say the work is done. A missing changelog note for user-visible work is a defect.
+`.agents/skills/okm-ship/SKILL.md` is for a release. Do not run it to finish a pull request. A pull request does not edit `changelog.md` and does not bump `package.json`.
 
-`AGENTS.md` and `.cursor/rules/changelog.mdc` send the agent to this file. Follow the skill file.
+Finish the work, run `bun run verify:fast` once, push once, and `gh pr merge --auto --squash`. Then stop.
 
 ### When it applies
 
-After a change to behavior, the public API, the CLI, a dialect, an adapter, errors, or the normative docs. Also when the prompt says to ship, close out, or sync the changelog.
+- `bun run bump release` when publishing a release. An empty `## Unreleased` is filled from squash-merge subjects since the last `vX.Y.Z` tag, then promoted to `## vX.Y.Z — <date>`.
+- `bun run bump next --publish` when publishing a prerelease. The version becomes `<next minor>-next.N`. The changelog stays as it is. Without `--publish` the command refuses.
 
-A pure typo or a format-only edit stays out of the changelog and skips the bump.
+`patch`, `minor`, `major`, and `--set` still promote the changelog. `--dry-run` prints the plan and writes nothing.
 
-### What it requires
+### Notes the release writes
 
-Three steps, in order. Finish them before the work is called done, and before the commit.
+Merged titles use `type(scope): summary`.
 
-| Step | Action |
+| Title | Changelog group |
 | --- | --- |
-| 1 | From the diff, list what a user or an app author would notice. |
-| 2 | Append those notes to `changelog.md` under `## Unreleased`. |
-| 3 | Run `bun run bump next`. |
+| `feat` | `### ✨ Added` |
+| `fix` | `### 🐛 Fixed` |
+| `perf`, `refactor` | `### ♻️ Changed` |
+| `security` | `### 🔒 Security` |
+| `type(scope)!:` or a `BREAKING CHANGE:` body line | `### 💥 Breaking Changes` |
+| `docs`, `test`, `chore` | omitted |
 
-A note that would describe an API the source does not have stops the skill. Ask before writing it.
-
-Create a group only when it has bullets. Keep this order:
-
-| Group | Use it for |
-| --- | --- |
-| `### ✨ Added` | A new capability, export, or command. |
-| `### 💥 Breaking Changes` | An incompatible API, config, or behavior. |
-| `### ♻️ Changed` | A behavior or default change. |
-| `### ⚠️ Deprecated` | A deprecation. |
-| `### 🔥 Removed` | A removal. |
-| `### 🐛 Fixed` | A bug fix. |
-| `### 🔒 Security` | A security-relevant change. |
-
-A group with 8 or more bullets gets `####` areas, and only for areas that have bullets. Order: `contracts`, `dialects`, `adapters`, `runtime`, `tooling`, `docs`. The area is where the change lives. The CLI, scripts, checks, and CI are `tooling`. Files under `docs/` are `docs`. A smaller group stays flat.
-
-One idea per bullet. Write the user-visible impact. Put the bullet in its group, under its area when the group is large.
-
-| Prompt | Notes go under | Command |
-| --- | --- | --- |
-| An implementation | `## Unreleased` | `bun run bump next` |
-| The release prompt of a train | `## Unreleased`; the command promotes that section | `bun run bump release` |
-| An untagged release the prompt names, such as `v0.6.0` | That existing `## vX.Y.Z` | Leave `package.json` as it is |
-
-`bun run bump next` sets `package.json` to `<next release>-next.N` and leaves the changelog in place. `bun run bump release` drops the `-next.N` suffix, renames `## Unreleased` to `## vX.Y.Z — <date>`, and leaves a fresh empty `## Unreleased`.
-
-Hygiene finishes before a release bump. A hygiene prompt that is not itself the release still runs `bun run bump next`. The release prompt of a train is P17B for 0.1.0, then P30, P44, P55, P66, P86, P99, P110, and P119. That prompt runs `bun run bump release`.
-
-`patch`, `minor`, `major`, and `--set` remain available. Each of those still promotes the changelog. `--dry-run` prints the plan and writes nothing.
-
-<Callout type="info" title="Untagged release">
-When the prompt names a release that has no tag yet, the notes go under that heading. `bun run bump` stays unrun. `bun run release-check` allows this until the tag exists.
-</Callout>
-
-Before the execution report, review the change against the engineering standards in the skill (D129). The report states runtime entry size, minified and gzip, cold import, and any type-cost change. It also states the app startup graph, the total graph, and connect-entry cold imports. A measurement within 3% of a type ceiling is called out. A path listed in `.cursor/rules/project-map.mdc` that moved is updated in that same change.
+A group with eight or more bullets gains `####` headings in this order: `contracts`, `dialects`, `adapters`, `runtime`, `tooling`, `docs`. Hand-written bullets already under `## Unreleased` are kept.
 
 ### What it must not do
 
-- Append a bullet under a tagged `## vX.Y.Z`. Current notes go under `## Unreleased`.
-- Write a `## v…` heading. `bun run bump release` writes it.
-- Add a group or an area outside the lists above.
-- Describe an API the source does not have. Stop and ask.
-- Run `bun run bump release` outside the release prompt of a train.
-- Run `bun run bump` when the prompt names an untagged release.
+- Append a changelog bullet on a feature pull request.
+- Run `bun run bump next` to mark a pull request as shipped.
+- Update the pack snapshot or `docs/size-audit.md` as pull-request bookkeeping.

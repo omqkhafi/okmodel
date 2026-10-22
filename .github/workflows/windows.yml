@@ -1,7 +1,7 @@
 name: Windows
 
-# Called from CI on the full tier (a `full-ci` pull request, or a push to
-# main). `gate / check` requires this workflow then. `windows-latest` is
+# Called from after-merge.yml on a push to main and on the nightly run.
+# A pull request does not run it. `windows-latest` is
 # intentional: the job exists to run on current Windows. The Ubuntu hash
 # job only publishes `catalog.hash` so the Windows job can compare it.
 #

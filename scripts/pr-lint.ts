@@ -1,9 +1,8 @@
 /**
- * Checks a pull request against the GitHub standard in `docs/github.md`.
+ * Checks a pull request title against `type(scope): summary`.
  *
- * The workflow checks out the base branch and passes a pull request number.
- * This file reads the pull request metadata from the API. It does not read
- * the pull request's files.
+ * Labels are applied by `scripts/pr-labels.ts`. The body, milestone, and
+ * closing line are not required.
  *
  * Usage:
  *   bun ./scripts/pr-lint.ts --pr <number>
@@ -26,8 +25,28 @@ export const TITLE_TYPES = [
 ] as const;
 
 const TITLE = new RegExp(
-  `^(?:${TITLE_TYPES.join("|")})\\([a-z][a-z0-9]*(?:-[a-z0-9]+)*\\): \\S(?:.*\\S)?$`,
+  `^(${TITLE_TYPES.join("|")})\\(([a-z][a-z0-9]*(?:-[a-z0-9]+)*)\\): \\S(?:.*\\S)?$`,
 );
+
+/**
+ * The type and scope of a `type(scope): summary` title.
+ *
+ * @param title - Pull request title
+ * @returns The two parts, or undefined when the title does not match
+ */
+export function parseConventionalTitle(
+  title: string,
+): { readonly type: (typeof TITLE_TYPES)[number]; readonly scope: string } | undefined {
+  const match = TITLE.exec(title);
+  const type = match?.[1];
+  const scope = match?.[2];
+  if (type === undefined || scope === undefined || !isTitleType(type)) return undefined;
+  return { type, scope };
+}
+
+function isTitleType(value: string): value is (typeof TITLE_TYPES)[number] {
+  return (TITLE_TYPES as readonly string[]).includes(value);
+}
 
 /** Dependabot opens update pull requests with no issue and no milestone. */
 export const DEPENDABOT_LOGIN = "dependabot[bot]";
@@ -47,51 +66,14 @@ export type PullRequestMeta = {
 };
 
 /**
- * Problems for one pull request. Empty when it matches the standard.
- *
- * A Dependabot pull request skips the closing line and the milestone. Its
- * title and labels are still checked.
+ * Problems for one pull request. Empty when the title matches.
  *
  * @param pr - Author, title, body, label names, and milestone title
- * @returns Actionable problem lines, in check order
+ * @returns Actionable problem lines
  */
 export function lintPullRequest(pr: PullRequestMeta): readonly string[] {
-  const problems: string[] = [];
-  const dependabot = pr.author === DEPENDABOT_LOGIN;
-  if (!TITLE.test(pr.title)) {
-    problems.push(`title must match type(scope): summary, where type is ${TITLE_TYPES.join(", ")}`);
-  }
-  if (!dependabot && !closesIssue(pr.body)) {
-    problems.push("body must end with Closes #N");
-  }
-  const types = pr.labels.filter((label) => label.startsWith("type: "));
-  if (types.length !== 1) {
-    problems.push(`exactly one type: label is required, found ${String(types.length)}`);
-  }
-  if (!pr.labels.some((label) => label.startsWith("area: "))) {
-    problems.push("at least one area: label is required");
-  }
-  if (!dependabot && (pr.milestone === null || pr.milestone.length === 0)) {
-    problems.push("milestone is required");
-  }
-  return problems;
-}
-
-/**
- * The last non-empty line is `Closes #N`.
- *
- * Content after `<!-- CURSOR_AGENT_PR_BODY_END -->` is ignored so a Cursor
- * agent footer does not break the closing line.
- *
- * @param body - Pull request body
- * @returns Whether the body ends with a closing line
- */
-function closesIssue(body: string): boolean {
-  const end = body.indexOf("<!-- CURSOR_AGENT_PR_BODY_END -->");
-  const text = (end === -1 ? body : body.slice(0, end)).replace(/\r\n/g, "\n").trimEnd();
-  const lines = text.split("\n");
-  const last = lines[lines.length - 1] ?? "";
-  return /^Closes #\d+$/.test(last.trim());
+  if (TITLE.test(pr.title)) return [];
+  return [`title must match type(scope): summary, where type is ${TITLE_TYPES.join(", ")}`];
 }
 
 /**
