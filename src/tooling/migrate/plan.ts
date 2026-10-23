@@ -365,7 +365,11 @@ export function planMigration(
       // A different name can be built first. The old index stays until that
       // build finishes, so the swap is not a blocking rebuild. A same-name
       // change still drops first: Postgres will not create the name twice.
-      if (onExistingTable && deferIndexDrop(object, createKeys, afterBy)) {
+      if (
+        onExistingTable &&
+        !readsDroppedColumn(object, dropKeys, beforeBy) &&
+        deferIndexDrop(object, createKeys, afterBy)
+      ) {
         replacementDrops.push(...lowered);
       } else steps.push(...lowered);
       return;
@@ -1924,6 +1928,32 @@ function deferIndexDrop(
     replacement = true;
   }
   return replacement;
+}
+
+/**
+ * Whether the plan drops a column this index covers.
+ *
+ * Such an index cannot wait for the new indexes: the column drop runs first
+ * and the deferred drop would then name an index Postgres already removed.
+ *
+ * @param object - Index the plan is dropping
+ * @param dropKeys - Objects the plan is dropping
+ * @param beforeBy - Catalog before the plan
+ * @returns Whether the drop must stay ahead of the column drop
+ */
+function readsDroppedColumn(
+  object: CatalogObject & { readonly kind: "index" },
+  dropKeys: ReadonlySet<string>,
+  beforeBy: ReadonlyMap<string, CatalogObject>,
+): boolean {
+  const parent = object.identity.parent.name;
+  for (const key of dropKeys) {
+    const dropped = beforeBy.get(key);
+    if (dropped === undefined || dropped.kind !== "column") continue;
+    if (dropped.identity.parent.name !== parent) continue;
+    if (object.definition.columns.includes(dropped.identity.name)) return true;
+  }
+  return false;
 }
 
 function hasTable(source: Catalog, name: string): boolean {
