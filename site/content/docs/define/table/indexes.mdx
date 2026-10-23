@@ -131,6 +131,8 @@ A new table adds the index with `create index`. A table that already exists adds
 
 `.unique()` marks that index unique. The columns and their order stay the ones you passed to `index()`.
 
+Only a btree index can be unique. `.unique()` on a `gin` or `gist` index, such as `trgm.gin(columns.title.name).unique()`, fails when the schema is built with OKM1060 and names the index and its method.
+
 #### one
 
 One column is the usual case. This index is `users_email_idx`.

@@ -7,6 +7,8 @@
 import { expect, test } from "bun:test";
 
 import type { Catalog } from "../src/contracts/catalog/types.js";
+import { OkmError } from "../src/contracts/error.js";
+import { pgTrgm } from "../src/dialects/pg/ext/pg-trgm.js";
 import { index, schema, table, t } from "../src/dialects/pg/index.js";
 import { columnTenancy } from "../src/runtime/tenancy/index.js";
 import { previousCatalogGaps } from "../src/tooling/migrate/check.js";
@@ -114,4 +116,45 @@ test("making a per-tenant unique index global stays OKM1529 (N-103)", () => {
 
 test("a new unique index with no unique index under it stays OKM1529 (N-103)", () => {
   expect(lintCodes(coded("global", false), coded("tenant"))).toContain("OKM1529");
+});
+
+test("a unique gin or gist index is refused when the schema is built (N-107)", () => {
+  const trgm = pgTrgm();
+  for (const method of ["gin", "gist"] as const) {
+    let caught: unknown;
+    try {
+      schema({
+        extensions: [trgm],
+        tables: [
+          table(
+            "notes",
+            { id: t.integer().primaryKey(), title: t.text() },
+            { indexes: (columns) => [trgm[method](columns.title.name).unique()] },
+          ),
+        ],
+      });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(OkmError);
+    const error = caught as OkmError;
+    expect(error.code).toBe("OKM1060");
+    expect(error.message).toContain("notes_title_idx");
+    expect(error.message).toContain(`${method} index cannot be unique`);
+  }
+});
+
+test("a non-unique gin index and a unique btree index still build (N-107)", () => {
+  const trgm = pgTrgm();
+  const built = schema({
+    extensions: [trgm],
+    tables: [
+      table(
+        "notes",
+        { id: t.integer().primaryKey(), title: t.text(), slug: t.text() },
+        { indexes: (columns) => [trgm.gin(columns.title.name), index(columns.slug).unique()] },
+      ),
+    ],
+  });
+  expect(built.catalog.objects.filter((object) => object.kind === "index")).toHaveLength(2);
 });

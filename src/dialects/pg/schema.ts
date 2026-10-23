@@ -12,6 +12,7 @@ import { staticNamespace } from "../../contracts/catalog/identity.js";
 import {
   assertIdentifier,
   assertStoredText,
+  deterministicName,
   identitySequenceName,
   printedIdentifier,
 } from "../../contracts/catalog/identifier.js";
@@ -1178,7 +1179,7 @@ function compileIndexes(
     definition(`Table ${tableName} indexes must return an array.`);
   }
   for (const call of calls) {
-    const built = readIndex(tableName, call);
+    const built = readIndex(tableName, call, parent.name);
     stage(jobs, () =>
       catalogIndex({
         parent,
@@ -1723,7 +1724,18 @@ function readFloor(minPostgres: unknown, requires: unknown): SchemaRequires | un
   return { postgres: formatPostgresFloor(major) };
 }
 
-function readIndex(tableName: string, call: IndexCall): IndexCall {
+function readIndex(tableName: string, call: IndexCall, sqlTable: string): IndexCall {
+  const method = call.isUnique ? /^using\s+([a-z_]+)/.exec(call.expression ?? "")?.[1] : undefined;
+  if (method !== undefined && method !== "btree") {
+    const name = deterministicName({
+      parent: sqlTable,
+      purpose: "index",
+      nameKey: call.columns.join("_"),
+    });
+    definition(
+      `Index ${name} on ${tableName} is unique, but a ${method} index cannot be unique: Postgres builds unique indexes with btree only. Remove .unique(), or add a unique constraint or btree index on the same columns.`,
+    );
+  }
   if (call.columns.length === 0) {
     definition(`Index on ${tableName} needs a column.`);
   }
