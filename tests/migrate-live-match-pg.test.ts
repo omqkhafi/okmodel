@@ -112,6 +112,49 @@ postgresTest(
   180_000,
 );
 
+postgresTest(
+  gate,
+  "push renames a table with an identity column like apply does (N-119)",
+  async () => {
+    const before = ['const posts = table("articles", { id: t.identity(), title: t.text() });'];
+    const after = [
+      'const posts = table("posts", { id: t.identity(), title: t.text() }, { renamedFrom: "articles" });',
+    ];
+    const settled = ['const posts = table("posts", { id: t.identity(), title: t.text() });'];
+    const database = await createIsolatedDatabase();
+    const migrations = project("rename-identity-migrate");
+    const pushed = project("rename-identity-push");
+    try {
+      writeConfig(migrations, database.url);
+      writeSchema(migrations, before, "posts");
+      await cli(migrations, ["generate", "init"]);
+      await cli(migrations, ["migrate", "apply"]);
+      writeSchema(migrations, after, "posts");
+      await generateAllowing(migrations);
+      await cli(migrations, ["migrate", "apply"]);
+      writeSchema(migrations, settled, "posts");
+      expect(await cli(migrations, ["check"])).toContain("ok");
+    } finally {
+      rmSync(migrations, { recursive: true, force: true });
+      await database.close();
+    }
+    const second = await createIsolatedDatabase();
+    try {
+      writeConfig(pushed, second.url);
+      writeSchema(pushed, before, "posts");
+      await cli(pushed, ["push"]);
+      writeSchema(pushed, after, "posts");
+      expect(await cli(pushed, ["push"])).toMatch(/applied push-2/);
+      writeSchema(pushed, settled, "posts");
+      expect(await cli(pushed, ["check"])).toContain("ok");
+    } finally {
+      rmSync(pushed, { recursive: true, force: true });
+      await second.close();
+    }
+  },
+  180_000,
+);
+
 function project(name: string): string {
   return mkdtempSync(join(tmpdir(), `okm-${name}-`));
 }
@@ -175,10 +218,15 @@ async function generateAllowing(cwd: string): Promise<void> {
   const text = readFileSync(join(dir, name), "utf8");
   writeFileSync(
     join(dir, name),
-    text.replace(
-      /^(alter table .* drop column .*)$/gm,
-      "-- okm-allow OKM1512: the column is unused\n$1",
-    ),
+    text
+      .replace(
+        /^(alter table .* drop column .*)$/gm,
+        "-- okm-allow OKM1512: the column is unused\n$1",
+      )
+      .replace(
+        /^(alter table [^\n]* rename to .*)$/gm,
+        "-- okm-allow OKM1523: no reader uses the old name\n$1",
+      ),
   );
 }
 

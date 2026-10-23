@@ -292,7 +292,7 @@ export function planMigration(
   recreateViewDependents(afterList, dropKeys, createKeys);
   refuseRoutineDrops(beforeBy, afterBy, dropKeys);
   omitOwnedSequences(createKeys, afterBy, request.after);
-  omitOwnedSequences(dropKeys, beforeBy, renamed);
+  omitOwnedSequences(dropKeys, beforeBy, request.before);
   releaseHandsOff(dropKeys, beforeBy, afterBy);
   releaseHandsOff(createKeys, afterBy, afterBy);
 
