@@ -155,6 +155,34 @@ postgresTest(
   180_000,
 );
 
+postgresTest(
+  gate,
+  "adding one enum value passes migrate check (N-118)",
+  async () => {
+    const declare = (labels: string): string[] => [
+      `const tasks = table("tasks", { id: t.integer().primaryKey(), status: t.enum("color", [${labels}]) });`,
+    ];
+    const database = await createIsolatedDatabase();
+    const cwd = project("enum-add-check");
+    try {
+      writeConfig(cwd, database.url);
+      writeSchema(cwd, declare('"red", "blue"'), "tasks");
+      await cli(cwd, ["generate", "init"]);
+      await cli(cwd, ["migrate", "apply"]);
+      writeSchema(cwd, declare('"red", "blue", "green"'), "tasks");
+      await cli(cwd, ["generate"]);
+      expect(await cli(cwd, ["migrate", "check"])).toContain("ok");
+      await cli(cwd, ["migrate", "apply"]);
+      expect(await cli(cwd, ["migrate", "check"])).toContain("ok");
+      expect(await cli(cwd, ["check"])).toContain("ok");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  180_000,
+);
+
 function project(name: string): string {
   return mkdtempSync(join(tmpdir(), `okm-${name}-`));
 }

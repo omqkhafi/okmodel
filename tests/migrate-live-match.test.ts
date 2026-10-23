@@ -7,6 +7,7 @@
 import { expect, test } from "bun:test";
 
 import { schema, table, t } from "../src/dialects/pg/index.js";
+import { previousCatalogGaps } from "../src/tooling/migrate/check.js";
 import { planMigration } from "../src/tooling/migrate/plan.js";
 
 function withReference(options?: {
@@ -47,4 +48,23 @@ test("a real action change still plans a foreign key swap (N-123)", () => {
     name: "change",
   });
   expect(plan.steps.some((step) => step.sql.includes("on delete cascade"))).toBe(true);
+});
+
+function colored(labels: readonly string[]) {
+  return schema({
+    tables: [table("tasks", { id: t.integer().primaryKey(), status: t.enum("color", labels) })],
+  }).catalog;
+}
+
+test("an added enum label leaves no previous-catalog gap (N-118)", () => {
+  const before = colored(["red", "blue"]);
+  expect(previousCatalogGaps(before, colored(["red", "blue", "green"]))).toEqual([]);
+  expect(previousCatalogGaps(before, colored(["red", "green", "blue"]))).toEqual([]);
+  expect(previousCatalogGaps(before, colored(["green", "red", "blue"]))).toEqual([]);
+});
+
+test("a removed or reordered enum label is still a previous-catalog gap (N-118)", () => {
+  const before = colored(["red", "blue"]);
+  expect(previousCatalogGaps(before, colored(["red"]))).toEqual(["type color changed"]);
+  expect(previousCatalogGaps(before, colored(["blue", "red"]))).toEqual(["type color changed"]);
 });
