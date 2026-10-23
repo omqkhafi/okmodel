@@ -47,11 +47,15 @@ export async function assertAuthorDrift(
   allowPooler = false,
 ): Promise<void> {
   assertDirectConnection(url, allowPooler);
+  const schema = authorSchema(author);
+  // pg_get_viewdef qualifies a table that is not on the search path, so a
+  // namespace's views would read back as `appns.tasks` and never match.
   const sql = postgres(driverUrl(url), {
     max: 1,
     connect_timeout: 5,
     idle_timeout: 1,
     onnotice: () => {},
+    ...(schema !== "public" ? { connection: { search_path: quoteIdent(schema) } } : {}),
   });
   try {
     await probeStableBackend(
@@ -62,7 +66,6 @@ export async function assertAuthorDrift(
       },
       allowPooler,
     );
-    const schema = authorSchema(author);
     const present = await sql<{ reg: string | null }[]>`
       select to_regclass(${metaReg(schema)})::text as reg
     `;
@@ -76,7 +79,7 @@ export async function assertAuthorDrift(
       ),
     );
     const live = await introspectSchema(runner, schema, schema, managedRoleOptions(roles));
-    const plan = planMigration({ before: live, after: authorOnServer, name: "check" });
+    const plan = planMigration({ before: live, after: authorOnServer, name: "check", schema });
     if (plan.steps.length === 0) return;
     const weaker = unvalidatedNotNull(live, authorOnServer);
     throw new OkmError(

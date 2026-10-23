@@ -11,7 +11,7 @@ import { join } from "node:path";
 
 import { OkmError } from "../src/contracts/error.js";
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
-import { createIsolatedDatabase } from "../packages/harness/src/postgres.js";
+import { createIsolatedDatabase, openPostgres } from "../packages/harness/src/postgres.js";
 import { repoRoot } from "../scripts/root.js";
 
 const gate = await loadPostgresGate();
@@ -252,6 +252,66 @@ postgresTest(
   180_000,
 );
 
+postgresTest(
+  gate,
+  "a view under defineConfig namespace does not drift (N-11)",
+  async () => {
+    const write = (cwd: string): void => {
+      writeFileSync(
+        join(cwd, "schema.ts"),
+        [
+          `import { schema, t, table } from ${source("src/dialects/pg/index.ts")};`,
+          `import { view } from ${source("src/dialects/pg/view/index.ts")};`,
+          'const tasks = table("tasks", { id: t.integer().primaryKey(), title: t.text() });',
+          'const titled = view("titled_tasks", (q) => q.from(tasks, ["id", "title"]));',
+          'const ids = view("task_ids", (q) => q.from(tasks, ["id"]));',
+          "export const app = schema({ tables: [tasks], views: [titled, ids] });",
+          "",
+        ].join("\n"),
+      );
+    };
+    const database = await createIsolatedDatabase();
+    const migrations = project("view-namespace-migrate");
+    const pushed = project("view-namespace-push");
+    try {
+      writeConfig(migrations, database.url, "appns");
+      write(migrations);
+      await cli(migrations, ["generate", "init"]);
+      await cli(migrations, ["migrate", "apply"]);
+      expect(await cli(migrations, ["check"])).toContain("ok");
+      expect(await cli(migrations, ["migrate", "check"])).toContain("ok");
+    } finally {
+      rmSync(migrations, { recursive: true, force: true });
+      await database.close();
+    }
+    const second = await createIsolatedDatabase();
+    try {
+      writeConfig(pushed, second.url, "appns");
+      write(pushed);
+      await cli(pushed, ["push"]);
+      expect(await cli(pushed, ["check"])).toContain("ok");
+      expect(await cli(pushed, ["push"])).not.toMatch(/applied/);
+      const sql = openPostgres(second.url);
+      try {
+        await sql.unsafe('drop view "appns"."task_ids"');
+        await sql.unsafe(
+          'create view "appns"."task_ids" as select id + 1 as id from "appns"."tasks"',
+        );
+      } finally {
+        await sql.end({ timeout: 5 });
+      }
+      const drift = await rejected(pushed, ["check"]);
+      expect(drift.code).toBe("OKM1520");
+      expect(drift.message).toContain('"appns"."task_ids"');
+      expect(drift.message).not.toContain('"public"');
+    } finally {
+      rmSync(pushed, { recursive: true, force: true });
+      await second.close();
+    }
+  },
+  180_000,
+);
+
 function project(name: string): string {
   return mkdtempSync(join(tmpdir(), `okm-${name}-`));
 }
@@ -337,6 +397,16 @@ async function cli(cwd: string, argv: readonly string[]): Promise<string> {
     );
   }
   return result.stdout;
+}
+
+async function rejected(cwd: string, argv: readonly string[]): Promise<OkmError> {
+  const result = await invoke(cwd, argv);
+  if (result.code === undefined) throw new Error(`${argv.join(" ")} should have failed`);
+  return new OkmError(
+    result.code,
+    result.message ?? "",
+    result.kind === undefined ? undefined : { kind: result.kind },
+  );
 }
 
 type InvokeResult = {
