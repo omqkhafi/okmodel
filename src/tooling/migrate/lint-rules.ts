@@ -754,7 +754,61 @@ function uniqueIndex(input: StepInput): boolean {
   if (name !== undefined && input.later.some((step) => usesIndex(normalizedSql(step.sql), name))) {
     return false;
   }
-  return true;
+  return !coveredByExistingUnique(input, name);
+}
+
+/**
+ * Whether a unique index that already stands makes the new one safe.
+ *
+ * Rows that collide on every column of the new index also collide on any
+ * subset of those columns. An existing unique index or key over such a
+ * subset, with no narrower predicate, already forbids them. This is the
+ * tenant-prefix upgrade: unique `(code)` becomes unique `(tenant_id, code)`.
+ * The reverse, `(tenant_id, code)` to `(code)`, is not covered. A step that
+ * dropped the existing one earlier in the plan does not count.
+ */
+function coveredByExistingUnique(input: StepInput, name: string | undefined): boolean {
+  const table = statementTable(input.step);
+  if (name === undefined || table === undefined) return false;
+  const created = input.after.objects.find(
+    (object) =>
+      object.kind === "index" &&
+      object.identity.name === name &&
+      object.identity.parent.name === table,
+  );
+  if (created?.kind !== "index" || created.definition.expression !== undefined) return false;
+  const columns = created.definition.columns;
+  const covers = (held: readonly string[], predicate: string | undefined): boolean =>
+    held.length > 0 &&
+    held.every((column) => columns.includes(column)) &&
+    (predicate === undefined || predicate === created.definition.predicate);
+  for (const object of input.before.objects) {
+    if (object.kind === "index") {
+      const { unique, expression, columns: held, predicate } = object.definition;
+      if (!unique || expression !== undefined || !covers(held, predicate)) continue;
+    } else if (
+      object.kind === "constraint" &&
+      (object.definition.constraintKind === "unique" ||
+        object.definition.constraintKind === "primaryKey")
+    ) {
+      if (!covers(object.definition.columns, undefined)) continue;
+    } else {
+      continue;
+    }
+    if (object.identity.parent.name !== table || object.identity.name === name) continue;
+    if (droppedEarlier(input.earlier, object.identity.name)) continue;
+    return true;
+  }
+  return false;
+}
+
+function droppedEarlier(earlier: readonly PlanStep[], name: string): boolean {
+  return earlier.some((step) => {
+    const text = normalizedSql(step.sql);
+    return (
+      /^(?:drop index|alter table .* drop constraint)\b/.test(text) && text.includes(`"${name}"`)
+    );
+  });
 }
 
 function createdIndexName(text: string): string | undefined {

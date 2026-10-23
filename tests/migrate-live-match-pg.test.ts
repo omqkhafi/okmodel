@@ -312,6 +312,45 @@ postgresTest(
   180_000,
 );
 
+postgresTest(
+  gate,
+  "removing .global() from a unique index generates and applies without OKM1529 (N-103)",
+  async () => {
+    const write = (cwd: string, global: boolean): void => {
+      writeFileSync(
+        join(cwd, "schema.ts"),
+        [
+          `import { index, schema, t, table } from ${source("src/dialects/pg/index.ts")};`,
+          `import { columnTenancy } from ${source("src/runtime/tenancy/index.ts")};`,
+          'const items = table("items", { id: t.identity(), code: t.text() }, {',
+          `  indexes: (columns) => [index(columns.code).unique()${global ? '.global("one code everywhere")' : ""}],`,
+          "});",
+          'export const app = schema({ casing: "snake", tenancy: columnTenancy({ key: "tenantId", type: "uuid" }), tables: [items] });',
+          "",
+        ].join("\n"),
+      );
+    };
+    const database = await createIsolatedDatabase();
+    const cwd = project("tenant-unique-upgrade");
+    try {
+      writeConfig(cwd, database.url);
+      write(cwd, true);
+      await cli(cwd, ["generate", "init"]);
+      await cli(cwd, ["migrate", "apply"]);
+      write(cwd, false);
+      const generated = await cli(cwd, ["generate"]);
+      expect(generated).not.toContain("OKM1529");
+      await cli(cwd, ["migrate", "apply"]);
+      expect(await cli(cwd, ["migrate", "check"])).toContain("ok");
+      expect(await cli(cwd, ["check"])).toContain("ok");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  180_000,
+);
+
 function project(name: string): string {
   return mkdtempSync(join(tmpdir(), `okm-${name}-`));
 }
