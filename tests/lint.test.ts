@@ -858,7 +858,7 @@ type Planned = {
 type Built = {
   readonly catalog: Catalog;
   readonly tables: readonly AnyTable[];
-  readonly casing: "snake" | undefined;
+  readonly casing: "snake" | "camel" | undefined;
 };
 
 test("OKM1551 flags transaction control and an allow needs a reason", () => {

@@ -9,7 +9,8 @@
 import { OkmError } from "../../contracts/error.js";
 import { ColumnBuilder, retarget } from "../../dialects/pg/column.js";
 import { isRelationCall } from "../../dialects/pg/relations.js";
-import { index, snakeCase, type AnyTable } from "../../dialects/pg/table.js";
+import type { Names } from "../../dialects/pg/casing.js";
+import { index, type AnyTable } from "../../dialects/pg/table.js";
 import type { TenancyText, TenantCall } from "../../dialects/pg/tenancy.js";
 import { quote } from "../plan.js";
 
@@ -26,12 +27,12 @@ export type PathHop = {
   readonly localField: string;
   /** Field on `parent` that the foreign key matches. */
   readonly remoteField: string;
-  /** SQL name stored on the local column, when the builder set one. */
-  readonly localSql: string | undefined;
-  /** SQL name stored on the remote column, when the builder set one. */
-  readonly remoteSql: string | undefined;
-  /** SQL name stored on the parent table, when the table set one. */
-  readonly parentSql: string | undefined;
+  /** SQL name of the local column. */
+  readonly localSql: string;
+  /** SQL name of the remote column. */
+  readonly remoteSql: string;
+  /** SQL name of the parent table. */
+  readonly parentSql: string;
   /** Encodes the local field when an update points it at a new parent. */
   readonly encode: (value: string) => string;
 };
@@ -75,7 +76,6 @@ export type PathPlan = {
 type ExistsInput = {
   readonly table: string;
   readonly alias: string;
-  readonly fieldSql: (field: string) => string | undefined;
   readonly scope: TenantCall | undefined;
   readonly sink: TenancyText;
   readonly appended: boolean;
@@ -97,18 +97,20 @@ const MAX_HOPS = 3;
  *
  * @param tables - Tables passed to `schema()`
  * @param kind - Classification, including `"path"`
+ * @param names - Name lookups for the schema's casing
  * @returns The plan the predicate and the rewrite share
  */
 export function compilePaths(
   tables: readonly AnyTable[],
   kind: ReadonlyMap<string, TableKind>,
+  names: Names,
 ): PathPlan {
   const chains = new Map<string, PathChain>();
   const endpoints = new Map<string, readonly string[]>();
   for (const item of tables) {
     if (kind.get(item.name) !== "path") continue;
     const via = viaOf(item);
-    const hops = resolve(item, via, tables, kind, new Set([item.name]));
+    const hops = resolve(item, via, tables, kind, new Set([item.name]), names);
     chains.set(item.name, { via, hops });
     const last = hops[hops.length - 1];
     if (last === undefined) continue;
@@ -126,7 +128,7 @@ export function compilePaths(
     isPath: (name) => chains.has(name),
     hops: (name) => chains.get(name)?.hops,
     adjust: (item) => adjust(item, chains.get(item.name), kind, tables),
-    writeExists: (input) => writeExists(chains.get(input.table), input),
+    writeExists: (input) => writeExists(chains.get(input.table), input, names),
   };
 }
 
@@ -150,6 +152,7 @@ function resolve(
   tables: readonly AnyTable[],
   kind: ReadonlyMap<string, TableKind>,
   seen: Set<string>,
+  names: Names,
 ): readonly PathHop[] {
   const segments = via.split(".");
   if (segments.length > MAX_HOPS) {
@@ -183,9 +186,9 @@ function resolve(
       parent: parent.name,
       localField,
       remoteField,
-      localSql: sqlNameOf(current, localField),
-      remoteSql: sqlNameOf(parent, remoteField),
-      parentSql: (parent.options as TableOptions | undefined)?.sqlName,
+      localSql: names.column(current, localField),
+      remoteSql: names.column(parent, remoteField),
+      parentSql: names.table(parent),
       encode: encodeOf(current, localField),
     });
     current = parent;
@@ -298,7 +301,7 @@ function leadingIndex(
   };
 }
 
-function writeExists(chain: PathChain | undefined, input: ExistsInput): boolean {
+function writeExists(chain: PathChain | undefined, input: ExistsInput, names: Names): boolean {
   if (chain === undefined) return false;
   const scope = input.scope;
   if (scope === undefined) {
@@ -312,8 +315,7 @@ function writeExists(chain: PathChain | undefined, input: ExistsInput): boolean 
     return false;
   }
   input.sink.text(input.appended ? " and " : " where ");
-  const snake = snakeOn(chain, input.fieldSql);
-  emitHop(chain, 0, input, snake, scope);
+  emitHop(chain, 0, input, names, scope);
   input.sink.mark("tenant|");
   return true;
 }
@@ -322,7 +324,7 @@ function emitHop(
   chain: PathChain,
   index: number,
   input: ExistsInput,
-  snake: boolean,
+  names: Names,
   scope: { readonly value: string; readonly values?: Readonly<Record<string, string>> },
 ): void {
   const hop = chain.hops[index];
@@ -330,13 +332,13 @@ function emitHop(
   const parentAlias = `p${String(index)}`;
   const last = index === chain.hops.length - 1;
   input.sink.text("exists (select 1 from ");
-  input.sink.text(quote(tableSql(hop.parent, hop.parentSql, snake)));
+  input.sink.text(quote(hop.parentSql));
   input.sink.text(" ");
   input.sink.text(parentAlias);
   input.sink.text(" where ");
   input.sink.text(parentAlias);
   input.sink.text(".");
-  input.sink.text(quote(columnSql(hop.remoteField, hop.remoteSql, snake)));
+  input.sink.text(quote(hop.remoteSql));
   input.sink.text(" = ");
   const assigned = index === 0 ? input.assigned?.[hop.localField] : undefined;
   if (assigned !== undefined) {
@@ -345,17 +347,17 @@ function emitHop(
     const qualifier = index === 0 ? input.alias : `p${String(index - 1)}`;
     input.sink.text(qualifier);
     input.sink.text(".");
-    input.sink.text(quote(columnSql(hop.localField, hop.localSql, snake)));
+    input.sink.text(quote(hop.localSql));
   }
   if (!last) {
     input.sink.text(" and ");
-    emitHop(chain, index + 1, input, snake, scope);
+    emitHop(chain, index + 1, input, names, scope);
   } else {
     for (const key of input.keys) {
       input.sink.text(" and ");
       input.sink.text(parentAlias);
       input.sink.text(".");
-      input.sink.text(quote(columnSql(key, undefined, snake)));
+      input.sink.text(quote(names.name(key)));
       input.sink.text(" = ");
       const raw = scope.values?.[key] ?? scope.value;
       input.sink.param(input.encodeKey(key, raw));
@@ -363,24 +365,6 @@ function emitHop(
     if (input.lock) input.sink.text(" for share");
   }
   input.sink.text(")");
-}
-
-function snakeOn(chain: PathChain, fieldSql: (field: string) => string | undefined): boolean {
-  const hop = chain.hops[0];
-  if (hop === undefined || hop.localSql !== undefined) return false;
-  const live = fieldSql(hop.localField);
-  const snake = snakeCase(hop.localField);
-  return live !== undefined && live === snake && live !== hop.localField;
-}
-
-function columnSql(field: string, explicit: string | undefined, snake: boolean): string {
-  if (explicit !== undefined) return explicit;
-  return snake ? snakeCase(field) : field;
-}
-
-function tableSql(name: string, explicit: string | undefined, snake: boolean): string {
-  if (explicit !== undefined) return explicit;
-  return snake ? snakeCase(name) : name;
 }
 
 /**
@@ -397,12 +381,6 @@ export function declaredPrimary(item: AnyTable): readonly string[] {
     if (builder instanceof ColumnBuilder && builder.state.primaryKey === true) fields.push(field);
   }
   return fields;
-}
-
-function sqlNameOf(table: AnyTable, field: string): string | undefined {
-  const builder = table.columns[field];
-  if (!(builder instanceof ColumnBuilder)) return undefined;
-  return builder.state.sqlName;
 }
 
 function encodeOf(table: AnyTable, field: string): (value: string) => string {

@@ -98,8 +98,9 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
   {
     code: "OKM1023",
     title: "Duplicate name",
-    summary: "Two catalog objects share an identity, or two tables emit the same type name.",
-    fix: "Rename one of them. Table names and emitted type names must be unique in the schema.",
+    summary:
+      "Two catalog objects share an identity, two tables emit the same type name, or two fields of one table spell the same SQL name after casing.",
+    fix: "Rename one of them, or name one with sqlName. Table names and emitted type names must be unique in the schema.",
   },
   {
     code: "OKM1024",

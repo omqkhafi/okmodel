@@ -14,7 +14,7 @@ contracts → dialects → adapters → runtime → tooling. Adapters import con
 - `src/contracts/` — lowest layer, runtime entry `src/contracts/index.ts`; `OkmError`, `ErrorKind` (`error.ts`), pure-TS SHA-256 (`sha256.ts`), no `node:*`.
 - `src/contracts/catalog/` — catalog model (tables, policy, privilege, view, routine…); `catalogHash` in `document.ts`.
 - `src/dialects/ddl.ts` — DDL lowering interface (`DdlDialect`). One physical step is `ddlStep` in `src/dialects/ddl-step.ts`. Step classes and operation classes live in `src/dialects/step-class.ts` and are re-exported from `src/tooling/migrate/classify.ts`.
-- `src/dialects/pg/` — Postgres schema DSL, compile/emit, DDL (`ddl.ts`), lowering (`lower.ts`, `table-safe.ts`), introspect, quoting, roles (`role/`), `ext/`, `fn/`, `ops/`.
+- `src/dialects/pg/` — Postgres schema DSL, compile/emit, casing resolver (`casing.ts`: `namesFor`, built once in `schema()`), DDL (`ddl.ts`), lowering (`lower.ts`, `table-safe.ts`), introspect, quoting, roles (`role/`), `ext/`, `fn/`, `ops/`.
 - Typed raw SQL: `raw(db, sql, params)` in `src/dialects/pg/ops/lane.ts`; lock types and `registerRawLock` in `src/dialects/pg/raw-lock.ts`; codecs in `raw-codec.ts`; the lazy runtime (lookup, bind, decode, tenancy) in `src/runtime/raw.ts`.
 - `src/adapters/pg/` — one file per driver: `postgresjs.ts`, `nodepostgres.ts`, `bunsql.ts`, `pglite.ts`, `pglite-wire.ts`, `neon.ts` (+ `*-extra.ts`, `batch.ts`, `session.ts`).
 - `src/adapters/` — `error.ts`, `failure.ts` (driver error mapping), `capabilities.ts`.

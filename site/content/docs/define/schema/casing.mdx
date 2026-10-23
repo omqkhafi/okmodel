@@ -1,13 +1,14 @@
 ---
 title: "Casing"
-description: "The SQL name of a camelCase field."
+description: "The SQL name of a field you did not name."
 ---
 `casing` is the SQL spelling of a name you did not set. Insert, update, and `where` still use the field name. The client name stays the name you passed to [`table()`](/docs/define/table).
 
 | Value | Result |
 | --- | --- |
 | omitted | The SQL name is the field name, and the table name. |
-| `"snake"` | An uppercase letter inserts `_`, then the letter is lowercased. |
+| `"snake"` | Words are lowercased and joined with `_`. An acronym is one word. |
+| `"camel"` | The first word is lowercase and the others start with a capital. |
 | any other value | Refused. |
 
 ### omitted
@@ -27,7 +28,7 @@ export default schema({ tables: [notes] });
 
 ### snake
 
-`"snake"` rewrites a camelCase table name and a camelCase field. The first character never gains a leading `_`. `publishedAt` is `published_at`. `userID` is `user_i_d`. `PublishedAt` is `published_at`. A digit does not insert `_`, so `iso8601Date` is `iso8601_date`. An uppercase letter that already follows `_` does not add a second one: `user_ID` is `user_i_d`.
+`"snake"` rewrites a table name and a field. A run of capitals is one word, so `userID` is `user_id`, `getURLs` is `get_urls`, and `HTMLParser` is `html_parser`. A digit stays with the word before it: `address2` is `address2` and `line1Text` is `line1_text`. An underscore at either end is kept, and a letter outside ASCII passes through unchanged.
 
 [sqlName](/docs/define/table/names#sql-name) and `renamedFrom` are stored as you wrote them. Indexes, checks, and foreign keys then use that SQL name.
 
@@ -50,6 +51,33 @@ export default schema({
 The table is `published_notes`. `publishedAt` is `published_at`. `headline` is `title`, because `sqlName` wins.
 </Callout>
 
-<Callout type="error" title="OKM1060">
-Anything other than `"snake"` is `schema() casing camel must be snake.`
+### camel
+
+`"camel"` splits a name into the same words and joins them as `camelCase`. `user_id` is `userId`, and `HTMLParser` is `htmlParser`. Use it when the database already spells names that way.
+
+```ts title="schema.ts"
+export default schema({
+  tables: [notes],
+  casing: "camel", // [!code focus]
+});
+```
+
+### What casing covers
+
+Casing spells every name you did not set: tables, columns, and the names derived from them (constraints, indexes, identity sequences, policies, and the `okm_touch` function). Views, enums, domains, functions, and triggers use the name you wrote.
+
+### Changing casing
+
+The stored name changes, so a database that already holds the old spelling gets a rename plan, not a silent rewrite. Pin the old name with [sqlName](/docs/define/table/names#sql-name) or `renamedFrom` to keep it.
+
+### Refused
+
+<Callout type="error" title="OKM1023">
+Two fields of one table that spell the same SQL name, such as `userID` and `user_id` under `"snake"`, are refused with a message that names both. Name one with `sqlName`.
 </Callout>
+
+<Callout type="error" title="OKM1122">
+An empty name, or a name over 63 bytes after casing, is refused at `schema()`.
+</Callout>
+
+Any value other than `"snake"` or `"camel"` is `schema() casing <value> must be snake or camel.`

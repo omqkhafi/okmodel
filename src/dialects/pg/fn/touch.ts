@@ -9,16 +9,18 @@ import { fitIdentifier } from "../../../contracts/catalog/identifier.js";
 import { staticNamespace } from "../../../contracts/catalog/identity.js";
 import { functionObject, triggerObject } from "../../../contracts/catalog/routine.js";
 import type { CatalogObject, ObjectRef } from "../../../contracts/catalog/types.js";
+import type { Names } from "../casing.js";
 import { quoteIdent } from "../ddl.js";
 
 /**
  * Catalog records for tables that carry the timestamps trait.
  *
  * @param built - Objects already staged, including columns
+ * @param names - Name lookups for the schema, which spell `updatedAt`
  * @returns The function and one trigger per table, or nothing when no table opted in
  */
-export function timestampRecords(built: unknown): readonly CatalogObject[] {
-  const columns = updatedColumns(built);
+export function timestampRecords(built: unknown, names: Names): readonly CatalogObject[] {
+  const columns = updatedColumns(built, names.name("updatedAt"));
   if (columns.length === 0) return [];
   const namespace = staticNamespace("public");
   const byColumn = new Map<string, ObjectRef[]>();
@@ -76,7 +78,10 @@ export function timestampRecords(built: unknown): readonly CatalogObject[] {
   return records;
 }
 
-function updatedColumns(built: unknown): { readonly parent: ObjectRef; readonly name: string }[] {
+function updatedColumns(
+  built: unknown,
+  updated: string,
+): { readonly parent: ObjectRef; readonly name: string }[] {
   if (!Array.isArray(built)) return [];
   const found: { readonly parent: ObjectRef; readonly name: string }[] = [];
   for (const object of built) {
@@ -89,8 +94,7 @@ function updatedColumns(built: unknown): { readonly parent: ObjectRef; readonly 
     if (typeof identity !== "object" || identity === null) continue;
     if (!("origin" in provenance) || provenance.origin !== "trait") continue;
     if (!("name" in provenance) || provenance.name !== "timestamps") continue;
-    if (!("name" in identity) || (identity.name !== "updated_at" && identity.name !== "updatedAt"))
-      continue;
+    if (!("name" in identity) || identity.name !== updated) continue;
     if (!("parent" in identity) || typeof identity.parent !== "object" || identity.parent === null)
       continue;
     const parent = identity.parent;

@@ -10,7 +10,8 @@ import type { Catalog } from "../../contracts/catalog/types.js";
 import { OkmError } from "../../contracts/error.js";
 import { qualify, quoteIdent } from "../../dialects/pg/ddl.js";
 import { quoteLiteral } from "../../dialects/pg/quote.js";
-import { snakeCase, type AnyTable, type ReferenceOption } from "../../dialects/pg/table.js";
+import { type Casing, type Names, namesFor } from "../../dialects/pg/casing.js";
+import type { AnyTable, ReferenceOption } from "../../dialects/pg/table.js";
 
 /** One value a reference row may store. */
 export type ReferenceValue = string | number | boolean | null;
@@ -29,24 +30,23 @@ export type ReferenceTable = {
  * that column order. The catalog is not given a copy of the rows.
  *
  * @param tables - Tables the schema built
- * @param casing - Schema casing. Absent means names are used as written
+ * @param casing - Schema casing. Absent means keys are SQL names as written
  * @param head - Head snapshot the rows will be inserted into
  * @returns One entry per table that declares rows
  */
 export function readReference(
   tables: readonly AnyTable[],
-  casing: "snake" | undefined,
+  casing: Casing | undefined,
   head: Catalog,
 ): readonly ReferenceTable[] {
+  const names = namesFor(casing);
   const declared: ReferenceTable[] = [];
   for (const item of tables) {
-    const options = item.options as
-      | { readonly reference?: ReferenceOption; readonly sqlName?: string }
-      | undefined;
-    const reference = options?.reference;
+    const reference = (item.options as { readonly reference?: ReferenceOption } | undefined)
+      ?.reference;
     if (reference === undefined) continue;
-    const table = options?.sqlName ?? (casing === "snake" ? snakeCase(item.name) : item.name);
-    const key = keyNames(item, reference, casing);
+    const table = names.table(item);
+    const key = keyNames(item, reference, names);
     if (!headHasTable(head, table)) {
       throw new OkmError(
         "invalid",
@@ -66,7 +66,7 @@ export function readReference(
         },
       );
     }
-    declared.push({ table, key, rows: rowsOf(item, reference, key, casing) });
+    declared.push({ table, key, rows: rowsOf(item, reference, key, names) });
   }
   return declared;
 }
@@ -99,39 +99,35 @@ export function referenceInserts(
   return statements;
 }
 
-function keyNames(
-  item: AnyTable,
-  reference: ReferenceOption,
-  casing: "snake" | undefined,
-): readonly string[] {
-  const names = typeof reference.key === "string" ? [reference.key] : [...reference.key];
-  if (names.length === 0) {
+function keyNames(item: AnyTable, reference: ReferenceOption, names: Names): readonly string[] {
+  const fields = typeof reference.key === "string" ? [reference.key] : [...reference.key];
+  if (fields.length === 0) {
     throw new OkmError("invalid", `Table ${item.name} reference key is empty.`, {
       fix: { summary: "Name the column or columns that identify a reference row." },
     });
   }
-  return names.map((field) => fieldSql(item, field, casing));
+  return fields.map((field) => fieldSql(item, field, names));
 }
 
 function rowsOf(
   item: AnyTable,
   reference: ReferenceOption,
   key: readonly string[],
-  casing: "snake" | undefined,
+  names: Names,
 ): ReferenceTable["rows"] {
   if (!Array.isArray(reference.rows)) {
     throw new OkmError("invalid", `Table ${item.name} reference rows must be a list.`, {
       fix: { summary: "Pass reference: { key, rows } with one object per row." },
     });
   }
-  return reference.rows.map((row, index) => rowOf(item, row, key, casing, index));
+  return reference.rows.map((row, index) => rowOf(item, row, key, names, index));
 }
 
 function rowOf(
   item: AnyTable,
   row: Readonly<Record<string, string | number | boolean | null>>,
   key: readonly string[],
-  casing: "snake" | undefined,
+  names: Names,
   index: number,
 ): readonly (readonly [string, ReferenceValue])[] {
   if (row === null || typeof row !== "object" || Array.isArray(row)) {
@@ -146,7 +142,7 @@ function rowOf(
   const pairs: (readonly [string, ReferenceValue])[] = [];
   const seen = new Set<string>();
   for (const name of key) {
-    const field = fieldFor(item, name, casing);
+    const field = fieldFor(item, name, names);
     if (field === undefined || !Object.hasOwn(row, field)) {
       throw new OkmError(
         "invalid",
@@ -159,27 +155,20 @@ function rowOf(
   }
   for (const field of Object.keys(row)) {
     if (seen.has(field)) continue;
-    pairs.push([fieldSql(item, field, casing), valueOf(item, index, field, row[field])]);
+    pairs.push([fieldSql(item, field, names), valueOf(item, index, field, row[field])]);
   }
   return pairs;
 }
 
-function fieldFor(
-  item: AnyTable,
-  sqlName: string,
-  casing: "snake" | undefined,
-): string | undefined {
+function fieldFor(item: AnyTable, sqlName: string, names: Names): string | undefined {
   for (const field of Object.keys(item.columns)) {
-    if (fieldSql(item, field, casing) === sqlName) return field;
+    if (fieldSql(item, field, names) === sqlName) return field;
   }
   return undefined;
 }
 
-function fieldSql(item: AnyTable, field: string, casing: "snake" | undefined): string {
-  const column = item.columns[field] as
-    | { readonly state?: { readonly sqlName?: string } }
-    | undefined;
-  if (column === undefined) {
+function fieldSql(item: AnyTable, field: string, names: Names): string {
+  if (item.columns[field] === undefined) {
     throw new OkmError(
       "invalid",
       `Table ${item.name} reference names ${field}, which is not a column.`,
@@ -188,9 +177,7 @@ function fieldSql(item: AnyTable, field: string, casing: "snake" | undefined): s
       },
     );
   }
-  const named = column.state?.sqlName;
-  if (named !== undefined && named.length > 0) return named;
-  return casing === "snake" ? snakeCase(field) : field;
+  return names.column(item, field);
 }
 
 function valueOf(item: AnyTable, index: number, field: string, value: unknown): ReferenceValue {

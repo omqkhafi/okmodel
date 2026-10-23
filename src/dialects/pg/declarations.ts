@@ -7,8 +7,8 @@
 
 import type { DeclaredRename } from "../../contracts/catalog/rename.js";
 import { ColumnBuilder } from "./column.js";
+import { type Casing, namesFor } from "./casing.js";
 import type { AnyTable } from "./table.js";
-import { snakeCase } from "./table.js";
 
 export type { DeclaredRename };
 
@@ -20,18 +20,19 @@ export type SchemaDeclarations = {
 /**
  * Reads declared renames.
  *
- * SQL names follow `sqlName`, then snake_case when the schema asked for it.
+ * SQL names follow `sqlName`, then the schema casing.
  *
  * @param source - Built schema
  * @returns Rename declarations, in table order
  */
 export function schemaDeclarations(source: {
   readonly tables: readonly AnyTable[];
-  readonly casing: "snake" | undefined;
+  readonly casing: Casing | undefined;
 }): SchemaDeclarations {
+  const names = namesFor(source.casing);
   const renames: DeclaredRename[] = [];
   for (const item of source.tables) {
-    const tableName = sqlTableName(item, source.casing);
+    const tableName = names.table(item);
     const renamed = tableRenamedFrom(item);
     if (renamed !== undefined) {
       renames.push({ kind: "table", from: renamed, to: tableName });
@@ -39,7 +40,7 @@ export function schemaDeclarations(source: {
     for (const [field, value] of Object.entries(item.columns)) {
       if (!(value instanceof ColumnBuilder)) continue;
       const state = value.state;
-      const columnName = state.sqlName ?? sqlIdentifier(field, source.casing);
+      const columnName = state.sqlName ?? names.name(field);
       if (state.renamedFrom !== undefined) {
         renames.push({
           kind: "column",
@@ -53,16 +54,7 @@ export function schemaDeclarations(source: {
   return { renames };
 }
 
-function sqlTableName(item: AnyTable, casing: "snake" | undefined): string {
-  const options = item.options as { readonly sqlName?: string } | undefined;
-  return options?.sqlName ?? sqlIdentifier(item.name, casing);
-}
-
 function tableRenamedFrom(item: AnyTable): string | undefined {
   const options = item.options as { readonly renamedFrom?: string } | undefined;
   return options?.renamedFrom;
-}
-
-function sqlIdentifier(name: string, casing: "snake" | undefined): string {
-  return casing === "snake" ? snakeCase(name) : name;
 }

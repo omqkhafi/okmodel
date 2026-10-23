@@ -8,7 +8,8 @@
 import { OkmError } from "../../../contracts/error.js";
 import type { ColumnTenancy } from "../tenancy.js";
 import type { ColumnModel, SchemaHook, SchemaHookCtx, TableModel } from "../model.js";
-import { snakeCase, type AnyTable } from "../table.js";
+import type { Names } from "../casing.js";
+import type { AnyTable } from "../table.js";
 import { decodeText, encodeText } from "../text.js";
 import { decodeUuid, encodeUuid } from "../keys.js";
 
@@ -48,16 +49,20 @@ export type ViewInstall = (
   model: { [name: string]: TableModel },
   tenancy: ColumnTenancy | undefined,
   tables: readonly AnyTable[],
-  casing: "snake" | undefined,
+  names: Names,
   scoped: Set<string>,
 ) => void;
 
-/** A value, or a function `install` calls once casing is known. */
-type ColumnSource =
-  | readonly { readonly name: string; readonly type: string }[]
-  | (() => readonly { readonly name: string; readonly type: string }[]);
+/**
+ * One output column. `source` is the table field a `q.from` column reads. The
+ * client key comes from it, so a cased SQL name cannot change the key.
+ */
+type SourceColumn = { readonly name: string; readonly type: string; readonly source?: string };
 
-/** A query string, or a function `install` calls once casing is known. */
+/** A value, or a function `install` calls once the schema names are known. */
+type ColumnSource = readonly SourceColumn[] | (() => readonly SourceColumn[]);
+
+/** A query string, or a function `install` calls once the schema names are known. */
 type QuerySource = string | (() => string);
 
 /**
@@ -66,9 +71,7 @@ type QuerySource = string | (() => string);
  * @param source - Columns or a getter
  * @returns The columns
  */
-function readColumns(
-  source: ColumnSource,
-): readonly { readonly name: string; readonly type: string }[] {
+function readColumns(source: ColumnSource): readonly SourceColumn[] {
   return typeof source === "function" ? source() : source;
 }
 
@@ -103,7 +106,7 @@ export function viewClient(
   const marked = readGlobal(name, tenancy);
   return {
     field,
-    install(model, scope, tables, casing, scoped) {
+    install(model, scope, tables, names, scoped) {
       const listed = readColumns(columns);
       const text = readQuery(query);
       if (Object.hasOwn(model, field)) {
@@ -111,8 +114,8 @@ export function viewClient(
           fix: { summary: "Give the view a name that no table uses." },
         });
       }
-      const exposes = exposesKey(listed, scope);
-      if (scope !== undefined && readsTenant(text, tables, casing, scoped)) {
+      const exposes = exposesKey(listed, scope, names);
+      if (scope !== undefined && readsTenant(text, tables, names, scoped)) {
         if (!exposes && marked === undefined) {
           throw new OkmError(
             "OKM1820",
@@ -135,7 +138,7 @@ export function viewClient(
         sql: name,
         primary: [],
         uniques: [],
-        columns: columnModels(listed, scope),
+        columns: columnModels(listed, scope, names),
         relations: [],
       };
       if (marked !== undefined) globalViews.set(built, marked);
@@ -239,13 +242,14 @@ function publish(field: string, target: Record<string, unknown>, ctx: SchemaHook
 }
 
 function columnModels(
-  columns: readonly { readonly name: string; readonly type: string }[],
+  columns: readonly SourceColumn[],
   tenancy: ColumnTenancy | undefined,
+  names: Names,
 ): readonly ColumnModel[] {
   const seen = new Set<string>();
   const models: ColumnModel[] = [];
   for (const column of columns) {
-    const field = fieldName(column.name, tenancy);
+    const field = fieldName(column.source ?? column.name, tenancy, names);
     if (seen.has(field)) {
       throw new OkmError("OKM1020", `View column ${column.name} repeats ${field}.`, {
         fix: { summary: "Declare each output column once." },
@@ -273,17 +277,20 @@ function columnModels(
 }
 
 function exposesKey(
-  columns: readonly { readonly name: string }[],
+  columns: readonly SourceColumn[],
   tenancy: ColumnTenancy | undefined,
+  names: Names,
 ): boolean {
   if (tenancy === undefined) return false;
-  return columns.some((column) => fieldName(column.name, tenancy) === tenancy.key);
+  return columns.some(
+    (column) => fieldName(column.source ?? column.name, tenancy, names) === tenancy.key,
+  );
 }
 
 function readsTenant(
   query: string,
   tables: readonly AnyTable[],
-  casing: "snake" | undefined,
+  names: Names,
   scoped: ReadonlySet<string>,
 ): boolean {
   for (const name of scoped) {
@@ -292,7 +299,7 @@ function readsTenant(
   for (const table of tables) {
     const mark = (table.options as { readonly tenancy?: unknown } | undefined)?.tenancy;
     if (isGlobalMark(mark)) continue;
-    const sql = casing === "snake" ? snakeCase(table.name) : table.name;
+    const sql = names.table(table);
     if (viewMentions(query, sql) || viewMentions(query, table.name)) return true;
   }
   return false;
@@ -318,9 +325,12 @@ function isGlobalMark(
   );
 }
 
-function fieldName(column: string, tenancy: ColumnTenancy | undefined): string {
+function fieldName(column: string, tenancy: ColumnTenancy | undefined, names: Names): string {
   const field = camelCase(column);
-  if (tenancy !== undefined && (column === tenancy.key || field === tenancy.key))
+  if (
+    tenancy !== undefined &&
+    (column === tenancy.key || field === tenancy.key || column === names.name(tenancy.key))
+  )
     return tenancy.key;
   return field;
 }

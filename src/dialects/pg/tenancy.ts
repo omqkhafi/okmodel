@@ -6,6 +6,7 @@
  * does not load them.
  */
 
+import type { Names } from "./casing.js";
 import type { ColumnBuilder, FlagTrue, PlainFlags } from "./column.js";
 import type { SchemaHookCtx } from "./model.js";
 import { definition } from "./misuse.js";
@@ -65,7 +66,7 @@ export type ColumnTenancy = {
   readonly type: "uuid";
   readonly strategy: string;
   /** Tables with the tenant column, widened uniques, and composite references. */
-  rewrite(tables: readonly AnyTable[]): readonly AnyTable[];
+  rewrite(tables: readonly AnyTable[], names: Names): readonly AnyTable[];
   /** Path table: isolation follows a relation instead of a tenant column. */
   isPath?(table: string): boolean;
   /**

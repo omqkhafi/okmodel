@@ -49,7 +49,7 @@ export function via<const Path extends string>(
 function planFor(ctx: TableRewriteContext): PathPlan {
   const cached = compiled.get(ctx.extras);
   if (cached !== undefined) return cached;
-  const plan = compilePaths(ctx.tables, classify(ctx.tables));
+  const plan = compilePaths(ctx.tables, classify(ctx.tables), ctx.names);
   for (const [name, declared] of plan.endpoints) {
     if (declared.length > 0) ctx.extras.set(name, declared);
   }
@@ -110,7 +110,6 @@ function install(api: ColumnTenancy, slot: Slot): void {
       slot.plan.writeExists({
         table: spec.table,
         alias: spec.alias,
-        fieldSql: spec.fieldSql,
         scope: spec.scope,
         sink: spec.sink,
         appended: spec.appended,
@@ -133,7 +132,6 @@ function install(api: ColumnTenancy, slot: Slot): void {
     return slot.plan.writeExists({
       table: spec.table,
       alias: spec.alias,
-      fieldSql: spec.fieldSql,
       scope: spec.scope,
       sink: spec.sink,
       appended: false,
@@ -142,7 +140,7 @@ function install(api: ColumnTenancy, slot: Slot): void {
       encodeKey: slot.encodeKey,
     });
   };
-  target.noteParent = (table, set, sink, scope, fieldSql) => {
+  target.noteParent = (table, set, sink, scope) => {
     const hop = slot.plan.hops(table)?.[0];
     if (hop === undefined) return;
     if (scope === undefined || "unscoped" in scope) return;
@@ -152,7 +150,6 @@ function install(api: ColumnTenancy, slot: Slot): void {
     slot.plan.writeExists({
       table,
       alias: "t",
-      fieldSql,
       scope,
       sink,
       appended: true,

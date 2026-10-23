@@ -11,6 +11,7 @@ import { OkmError } from "../../contracts/error.js";
 import { ColumnBuilder, retarget, type ReferenceModifier } from "../../dialects/pg/column.js";
 import { uuid } from "../../dialects/pg/keys.js";
 import { definition } from "../../dialects/pg/misuse.js";
+import type { Names } from "../../dialects/pg/casing.js";
 import type { AnyTable } from "../../dialects/pg/table.js";
 import type { TableRewriteContext } from "./context.js";
 import { markPathEndpoint } from "../../dialects/pg/path-endpoint.js";
@@ -102,7 +103,7 @@ export function columnTenancy<const Key>(input: {
     key,
     type: "uuid",
     strategy: "column",
-    rewrite(tables) {
+    rewrite(tables, names) {
       tenants.clear();
       globals.clear();
       exemptions.clear();
@@ -116,6 +117,7 @@ export function columnTenancy<const Key>(input: {
         globals,
         exemptions,
         prefixIndexes,
+        names,
       );
     },
     column: () => column,
@@ -178,6 +180,7 @@ function rewriteTables(
   globals: Map<string, string>,
   exemptions: Map<string, { name: string; reason: string }[]>,
   prefixIndexes: boolean,
+  names: Names,
 ): readonly AnyTable[] {
   const kind = new Map<string, Kind>();
   const swapped = new Map<string, AnyTable>();
@@ -203,6 +206,7 @@ function rewriteTables(
           encodes: [encode],
           api,
           extras,
+          names,
         }),
       );
       kind.set(item.name, "path");

@@ -7,7 +7,7 @@
  */
 
 import { catalogError } from "../error.js";
-import { fitIdentifier } from "./identifier.js";
+import { identitySequenceName } from "./identifier.js";
 import { sha256 } from "../sha256.js";
 import { canonicalJson, type Json } from "./json.js";
 import { replaceIdentifier } from "./rewrite.js";
@@ -978,8 +978,8 @@ function renamedIdentitySequence(
     ) {
       continue;
     }
-    if (fitIdentifier(`${change.from}_${object.identity.name}_seq`) !== sequenceName) continue;
-    return fitIdentifier(`${change.to}_${object.identity.name}_seq`);
+    if (identitySequenceName(change.from, object.identity.name) !== sequenceName) continue;
+    return identitySequenceName(change.to, object.identity.name);
   }
   return undefined;
 }

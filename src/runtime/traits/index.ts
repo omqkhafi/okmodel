@@ -7,6 +7,7 @@
 
 import { OkmError } from "../../contracts/error.js";
 import { rewriteArchivable } from "../../dialects/pg/archive-bind.js";
+import type { Names } from "../../dialects/pg/casing.js";
 import { uuid } from "../../dialects/pg/keys.js";
 import { definition, unavailable } from "../../dialects/pg/misuse.js";
 import { checkPresetNames, duplicatePreset, type PresetMap } from "../../dialects/pg/preset.js";
@@ -191,10 +192,11 @@ export function timestamps(options?: TimestampsOptions) {
      *
      * @param _peers - Unused. The columns are already in `built`
      * @param built - Objects staged before traits contribute
+     * @param names - Name lookups for the schema
      * @returns The function and trigger records
      */
-    contribute(_peers: unknown, built: unknown) {
-      return timestampRecords(built);
+    contribute(_peers: unknown, built: unknown, names: Names) {
+      return timestampRecords(built, names);
     },
   };
 }
@@ -248,16 +250,16 @@ export function archivable(options?: ArchivableOptions) {
      * Runs in the schema rewrite, after tenancy widens uniques.
      *
      * @param tables - Tables after the tenancy rewrite
-     * @param casing - Schema casing
+     * @param names - Name lookups for the schema
      * @param schemaTraits - Traits from `schema()`, when any were passed
      * @returns The rewritten tables
      */
     rewrite(
       tables: readonly AnyTable[],
-      casing: "snake" | undefined,
+      names: Names,
       schemaTraits: readonly object[] | undefined,
     ) {
-      return rewriteArchivable(self, tables, casing, schemaTraits, cascade);
+      return rewriteArchivable(self, tables, names, schemaTraits, cascade);
     },
     hook: attachArchive,
   };
@@ -321,16 +323,16 @@ export function sortable(groupBy?: string) {
      * Adds the unique position index after tenancy has widened uniques.
      *
      * @param tables - Tables after the tenancy rewrite
-     * @param casing - Schema casing
+     * @param names - Name lookups for the schema
      * @param schemaTraits - Traits from `schema()`, when any were passed
      * @returns The rewritten tables
      */
     rewrite(
       tables: readonly AnyTable[],
-      casing: "snake" | undefined,
+      names: Names,
       schemaTraits: readonly object[] | undefined,
     ) {
-      return rewriteSortable(self, tables, casing, schemaTraits, groupBy);
+      return rewriteSortable(self, tables, names, schemaTraits, groupBy);
     },
     hook: attachSort,
   };

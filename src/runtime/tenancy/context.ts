@@ -5,6 +5,7 @@
  * This file is types only, so it is not in a bundle.
  */
 
+import type { Names } from "../../dialects/pg/casing.js";
 import type { AnyTable } from "../../dialects/pg/table.js";
 import type { ColumnTenancy } from "../../dialects/pg/tenancy.js";
 
@@ -15,4 +16,6 @@ export type TableRewriteContext = {
   readonly encodes: readonly ((value: string) => string)[];
   readonly api: ColumnTenancy;
   readonly extras: Map<string, readonly string[]>;
+  /** SQL names for the schema's casing. */
+  readonly names: Names;
 };

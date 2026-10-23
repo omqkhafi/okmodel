@@ -14,7 +14,7 @@ import {
   unscopedPolicyExpression,
 } from "../../contracts/catalog/policy.js";
 import type { AnyTable } from "../../dialects/pg/table.js";
-import { snakeCase } from "../../dialects/pg/table.js";
+import type { Names } from "../../dialects/pg/casing.js";
 import { quoteLiteral } from "../../dialects/pg/quote.js";
 import type { ColumnTenancy } from "../../dialects/pg/tenancy.js";
 import type { SchemaHookCtx } from "../../dialects/pg/model.js";
@@ -172,9 +172,9 @@ export function rlsTenancy<const Key>(input: {
   const api: ColumnTenancy = {
     ...base,
     strategy: "rls",
-    rewrite(tables) {
+    rewrite(tables, names) {
       refuseVia(tables);
-      const next = base.rewrite(tables);
+      const next = base.rewrite(tables, names);
       for (const item of tables) {
         if (isTenantTable(item)) attachTrait(item, key);
       }
@@ -250,7 +250,7 @@ function policyTrait(
   readonly name: string;
   readonly fields: Readonly<Record<string, never>>;
   apply(): void;
-  contribute(peers: unknown, built: unknown): readonly CatalogObject[];
+  contribute(peers: unknown, built: unknown, names: Names): readonly CatalogObject[];
 } {
   return {
     name: TRAIT,
@@ -258,7 +258,7 @@ function policyTrait(
     apply() {
       return undefined;
     },
-    contribute(_peers, built) {
+    contribute(_peers, built, names) {
       if (!Array.isArray(built)) return [];
       const objects = built as readonly CatalogObject[];
       const parent = objects.find(
@@ -278,7 +278,7 @@ function policyTrait(
         (object) =>
           object.kind === "column" &&
           object.identity.parent.name === ref.name &&
-          (object.identity.name === key || object.identity.name === snakeCase(key)),
+          object.identity.name === names.name(key),
       );
       if (column === undefined || column.kind !== "column") {
         throw new OkmError(
@@ -338,11 +338,10 @@ function isSession(value: object | undefined): value is HookSession {
 }
 
 function tenantTables(model: Model, key: string): readonly TenantGuard[] {
-  const snake = snakeCase(key);
   const tables: TenantGuard[] = [];
   for (const table of Object.values(model)) {
     if (table.primary.length === 0) continue;
-    const column = table.columns.find((item) => item.field === key || item.sql === snake);
+    const column = table.columns.find((item) => item.field === key);
     if (column?.dataType === undefined) continue;
     tables.push({ name: table.sql, column: column.sql, dataType: column.dataType });
   }

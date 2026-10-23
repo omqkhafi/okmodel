@@ -619,25 +619,6 @@ export function sql(strings: TemplateStringsArray, ...values: readonly SqlValue[
 }
 
 /**
- * Converts a camelCase field name to snake_case.
- *
- * @param name - Field or table name
- * @returns The SQL spelling used when `casing` is `"snake"`
- */
-export function snakeCase(name: string): string {
-  let out = "";
-  for (let index = 0; index < name.length; index += 1) {
-    const char = name[index] ?? "";
-    const lower = char.toLowerCase();
-    if (lower !== char && char.toUpperCase() === char && out.length > 0 && !out.endsWith("_")) {
-      out += "_";
-    }
-    out += lower;
-  }
-  return out;
-}
-
-/**
  * Type name emitted for a table: `tasks` becomes `Tasks`.
  *
  * @param name - Table name
