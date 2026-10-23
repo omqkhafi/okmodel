@@ -183,6 +183,75 @@ postgresTest(
   180_000,
 );
 
+postgresTest(
+  gate,
+  "trigger WHEN in any keyword case or parenthesis compares equal after apply (N-10)",
+  async () => {
+    const spellings = [
+      "OLD.n IS DISTINCT FROM NEW.n",
+      "old.n is distinct from new.n",
+      "Old.n Is Distinct From New.n",
+      "(OLD.n IS DISTINCT FROM NEW.n)",
+      "((old.n is distinct from new.n))",
+      "OLD.n IS DISTINCT FROM NEW.n AND NEW.n IS NOT NULL",
+      "old.n is distinct from new.n and new.n is not null",
+      "(OLD.n IS DISTINCT FROM NEW.n) AND (NEW.n IS NOT NULL)",
+      "old.n > 1 or new.n < 0",
+      "NEW.n BETWEEN 1 AND 5",
+      "not (old.n = 1)",
+    ];
+    const triggers = spellings.map(
+      (when, position) =>
+        `const trigger${String(position)} = trigger(${JSON.stringify(`tasks_when_${String(position)}`)}, { on: tasks, timing: "before", events: ["update"], level: "row", calls: touch, when: ${JSON.stringify(when)} });`,
+    );
+    const declarations = [
+      'import { fn, trigger } from "' + join(root, "src/dialects/pg/fn/index.ts") + '";',
+      'const tasks = table("tasks", { id: t.integer().primaryKey(), n: t.integer() });',
+      'const touch = fn("touch", { returns: "trigger", language: "plpgsql", body: "begin return new; end", dependsOn: [tasks] });',
+      ...triggers,
+    ];
+    const list = spellings.map((_, position) => `trigger${String(position)}`).join(", ");
+    const write = (cwd: string): void => {
+      writeFileSync(
+        join(cwd, "schema.ts"),
+        [
+          `import { schema, t, table } from ${source("src/dialects/pg/index.ts")};`,
+          ...declarations,
+          `export const app = schema({ tables: [tasks], functions: [touch], triggers: [${list}] });`,
+          "",
+        ].join("\n"),
+      );
+    };
+    const database = await createIsolatedDatabase();
+    const migrations = project("trigger-when-migrate");
+    const pushed = project("trigger-when-push");
+    try {
+      writeConfig(migrations, database.url);
+      write(migrations);
+      await cli(migrations, ["generate", "init"]);
+      await cli(migrations, ["migrate", "apply"]);
+      expect(await cli(migrations, ["check"])).toContain("ok");
+      expect(await cli(migrations, ["migrate", "check"])).toContain("ok");
+      expect(await cli(migrations, ["generate"])).toBe("no changes\n");
+    } finally {
+      rmSync(migrations, { recursive: true, force: true });
+      await database.close();
+    }
+    const second = await createIsolatedDatabase();
+    try {
+      writeConfig(pushed, second.url);
+      write(pushed);
+      expect(await cli(pushed, ["push"])).toMatch(/applied push-1/);
+      expect(await cli(pushed, ["check"])).toContain("ok");
+      expect(await cli(pushed, ["push"])).not.toMatch(/applied/);
+    } finally {
+      rmSync(pushed, { recursive: true, force: true });
+      await second.close();
+    }
+  },
+  180_000,
+);
+
 function project(name: string): string {
   return mkdtempSync(join(tmpdir(), `okm-${name}-`));
 }

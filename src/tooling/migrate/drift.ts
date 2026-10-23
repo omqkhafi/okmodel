@@ -19,6 +19,7 @@ import {
   introspectSchema,
   reprintCheck,
   reprintDomainCheck,
+  reprintTriggerWhen,
   type CatalogQuery,
   type IntrospectOptions,
   type ReprintCheckColumn,
@@ -67,9 +68,12 @@ export async function assertAuthorDrift(
     `;
     if (present[0]?.reg == null) return;
     const runner = catalogQuery(sql);
-    const authorOnServer = await sealTableChecks(
+    const authorOnServer = await sealTriggerWhens(
       runner,
-      await sealDomainChecks(runner, await sealViews(runner, author)),
+      await sealTableChecks(
+        runner,
+        await sealDomainChecks(runner, await sealViews(runner, author)),
+      ),
     );
     const live = await introspectSchema(runner, schema, schema, managedRoleOptions(roles));
     const plan = planMigration({ before: live, after: authorOnServer, name: "check" });
@@ -196,6 +200,45 @@ export async function sealTableChecks(runner: CatalogQuery, source: Catalog): Pr
       ...object,
       definition: { ...object.definition, expression: reprinted },
     });
+  }
+  return changed ? { version: source.version, objects } : source;
+}
+
+/**
+ * Reprints each trigger `WHEN` the way this server prints it.
+ *
+ * `OLD.n IS DISTINCT FROM NEW.n` in any keyword case, with or without outer
+ * parentheses, becomes the text `pg_get_triggerdef` prints, so a plan against
+ * a live catalog does not drop and recreate the trigger every time. The
+ * catalog hash still uses the author text.
+ *
+ * @param runner - Database connection
+ * @param source - Catalog whose trigger conditions may still be author SQL
+ * @returns A catalog whose trigger `WHEN` text carries the server reprint
+ */
+export async function sealTriggerWhens(runner: CatalogQuery, source: Catalog): Promise<Catalog> {
+  const columnsByTable = tableColumns(source);
+  const types = reprintTypes(source);
+  const objects: CatalogObject[] = [];
+  let changed = false;
+  for (const object of source.objects) {
+    if (object.kind !== "trigger" || object.definition.when === undefined) {
+      objects.push(object);
+      continue;
+    }
+    const reprinted = await reprintTriggerWhen(
+      runner,
+      object.definition.when,
+      object.definition,
+      columnsByTable.get(object.identity.parent.name) ?? [],
+      types,
+    );
+    if (reprinted === undefined || reprinted === object.definition.when) {
+      objects.push(object);
+      continue;
+    }
+    changed = true;
+    objects.push({ ...object, definition: { ...object.definition, when: reprinted } });
   }
   return changed ? { version: source.version, objects } : source;
 }
