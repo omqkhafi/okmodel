@@ -53,9 +53,16 @@ The table is `published_notes`. `publishedAt` is `published_at`. `headline` is `
 
 ### camel
 
-`"camel"` splits a name into the same words and joins them as `camelCase`. `user_id` is `userId`, and `HTMLParser` is `htmlParser`. Use it when the database already spells names that way.
+`"camel"` splits a name into the same words and joins them as `camelCase`. `user_id` is `userId`, and `HTMLParser` is `htmlParser`. `publishedNotes` and `publishedAt` stay as written. Use it when the database already spells names that way.
 
 ```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("publishedNotes", {
+  id: t.identity(),
+  publishedAt: t.timestamptz().nullable(),
+});
+
 export default schema({
   tables: [notes],
   casing: "camel", // [!code focus]
