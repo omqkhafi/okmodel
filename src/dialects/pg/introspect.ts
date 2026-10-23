@@ -1408,8 +1408,11 @@ function actionAfter(
   definition: string,
   event: "delete" | "update",
 ): ReferentialAction | undefined {
-  const match = new RegExp(`on ${event} ([a-z ]+)`, "i").exec(definition);
-  const words = match?.[1]?.trim().toLowerCase() ?? "";
+  const match = new RegExp(
+    `on ${event} (cascade|restrict|no action|set null|set default)\\b`,
+    "i",
+  ).exec(definition);
+  const words = match?.[1]?.toLowerCase() ?? "";
   if (words.length === 0 || words === "no action") return undefined;
   return referentialAction(words);
 }

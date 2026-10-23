@@ -1787,7 +1787,9 @@ function sameDefinition(left: CatalogObject, right: CatalogObject): boolean {
  * an author check may omit column handles while `pg_constraint.conkey` lists
  * them, and comparison uses the sealed expression instead (D128). A
  * materialized view's `refresh` is not here: Postgres does not store it, so
- * {@link sameDefinition} ignores it.
+ * {@link sameDefinition} ignores it. A foreign key's `no action` is not here
+ * either: it is the default, `pg_get_constraintdef` omits it, and
+ * introspection cannot tell it from an absent action.
  *
  * @param object - One side of the diff
  * @returns The definition, with type names in the long spelling
@@ -1827,6 +1829,15 @@ function forComparison(object: CatalogObject): unknown {
     case "constraint": {
       const definition = withoutNameKey(object.definition);
       if (object.definition.constraintKind === "check") delete definition.columns;
+      const references = object.definition.references;
+      if (references !== undefined) {
+        const { onDelete, onUpdate, ...rest } = references;
+        definition.references = {
+          ...rest,
+          ...(onDelete !== undefined && onDelete !== "no action" ? { onDelete } : {}),
+          ...(onUpdate !== undefined && onUpdate !== "no action" ? { onUpdate } : {}),
+        };
+      }
       return definition;
     }
     case "index":

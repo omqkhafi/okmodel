@@ -62,6 +62,56 @@ postgresTest(
   180_000,
 );
 
+postgresTest(
+  gate,
+  "foreign keys with onDelete, onUpdate, and explicit no action match the live database (N-123)",
+  async () => {
+    const references = [
+      ["both", '{ onDelete: "cascade", onUpdate: "restrict" }'],
+      ["delete_none", '{ onDelete: "no action" }'],
+      ["update_none", '{ onUpdate: "no action" }'],
+      ["both_none", '{ onDelete: "no action", onUpdate: "no action" }'],
+      ["mixed", '{ onDelete: "no action", onUpdate: "cascade" }'],
+      ["set_null", '{ onDelete: "set null", onUpdate: "set default" }'],
+    ] as const;
+    const declarations = [
+      'const authors = table("authors", { id: t.integer().primaryKey() });',
+      ...references.map(
+        ([name, options]) =>
+          `const ${name} = table(${JSON.stringify(`fk_${name}`)}, { id: t.integer().primaryKey(), authorId: t.integer().nullable().references("authors", ${options}) });`,
+      ),
+    ];
+    const tables = ["authors", ...references.map(([name]) => name)].join(", ");
+    const database = await createIsolatedDatabase();
+    const migrations = project("fk-actions-migrate");
+    const pushed = project("fk-actions-push");
+    try {
+      writeConfig(migrations, database.url);
+      writeSchema(migrations, declarations, tables);
+      await cli(migrations, ["generate", "init"]);
+      await cli(migrations, ["migrate", "apply"]);
+      expect(await cli(migrations, ["check"])).toContain("ok");
+      expect(await cli(migrations, ["migrate", "check"])).toContain("ok");
+      expect(await cli(migrations, ["generate"])).toBe("no changes\n");
+    } finally {
+      rmSync(migrations, { recursive: true, force: true });
+      await database.close();
+    }
+    const second = await createIsolatedDatabase();
+    try {
+      writeConfig(pushed, second.url);
+      writeSchema(pushed, declarations, tables);
+      expect(await cli(pushed, ["push"])).toMatch(/applied push-1/);
+      expect(await cli(pushed, ["check"])).toContain("ok");
+      expect(await cli(pushed, ["push"])).not.toMatch(/applied/);
+    } finally {
+      rmSync(pushed, { recursive: true, force: true });
+      await second.close();
+    }
+  },
+  180_000,
+);
+
 function project(name: string): string {
   return mkdtempSync(join(tmpdir(), `okm-${name}-`));
 }
