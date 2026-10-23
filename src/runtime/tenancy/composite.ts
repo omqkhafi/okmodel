@@ -11,6 +11,7 @@ import { OkmError } from "../../contracts/error.js";
 import { ColumnBuilder, retarget, type ReferenceModifier } from "../../dialects/pg/column.js";
 import { uuid } from "../../dialects/pg/keys.js";
 import { definition } from "../../dialects/pg/misuse.js";
+import type { Names } from "../../dialects/pg/casing.js";
 import type { AnyTable } from "../../dialects/pg/table.js";
 import type { TableRewriteContext } from "./context.js";
 import { markPathEndpoint } from "../../dialects/pg/path-endpoint.js";
@@ -82,7 +83,7 @@ export function compositeTenancy<const Keys extends readonly [string, ...string[
     keys,
     type: "uuid",
     strategy: "composite",
-    rewrite(tables) {
+    rewrite(tables, names) {
       tenants.clear();
       globals.clear();
       exemptions.clear();
@@ -96,6 +97,7 @@ export function compositeTenancy<const Keys extends readonly [string, ...string[
         globals,
         exemptions,
         prefixIndexes,
+        names,
       );
     },
     column: () => columns[0] ?? uuid().guarded(),
@@ -161,6 +163,7 @@ function rewriteTables(
   globals: Map<string, string>,
   exemptions: Map<string, { name: string; reason: string }[]>,
   prefixIndexes: boolean,
+  names: Names,
 ): readonly AnyTable[] {
   const kind = new Map<string, "tenant" | "global" | "path">();
   const swapped = new Map<string, AnyTable>();
@@ -178,7 +181,7 @@ function rewriteTables(
       continue;
     }
     if (isRecord(mark) && typeof mark.rewrite === "function") {
-      const ctx: TableRewriteContext = { tables, keys, encodes, api, extras };
+      const ctx: TableRewriteContext = { tables, keys, encodes, api, extras, names };
       swapped.set(
         item.name,
         (mark.rewrite as (table: AnyTable, context: TableRewriteContext) => AnyTable)(item, ctx),

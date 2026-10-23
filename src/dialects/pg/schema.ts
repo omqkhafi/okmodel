@@ -12,7 +12,7 @@ import { staticNamespace } from "../../contracts/catalog/identity.js";
 import {
   assertIdentifier,
   assertStoredText,
-  fitIdentifier,
+  identitySequenceName,
   printedIdentifier,
 } from "../../contracts/catalog/identifier.js";
 import {
@@ -63,6 +63,7 @@ import type {
   Trait,
   TraitModel,
 } from "./trait.js";
+import { type Casing, type Names, namesFor } from "./casing.js";
 import { type ColumnTenancy, type TenantFields, readTenancy } from "./tenancy.js";
 import {
   type AnyTable,
@@ -74,7 +75,6 @@ import {
   type UpdateFrom,
   emittedTypeName,
   rejectLater,
-  snakeCase,
 } from "./table.js";
 
 /** Codec defaults from spec section 6.6. */
@@ -116,7 +116,13 @@ export type SchemaInput<TTables extends readonly AnyTable[]> = {
    * @deprecated Use {@link SchemaInput.minPostgres}. `">=17"` is the same floor as `minPostgres: 17`.
    */
   readonly requires?: SchemaRequires;
-  readonly casing?: "snake";
+  /**
+   * The SQL spelling of a key you did not name.
+   *
+   * Omitted keeps every key as written. `"snake"` and `"camel"` rewrite tables
+   * and columns, and every name derived from them. `sqlName` always wins.
+   */
+  readonly casing?: Casing;
   readonly codecs?: {
     readonly bigint?: SchemaCodecs["bigint"];
     readonly numeric?: SchemaCodecs["numeric"];
@@ -171,7 +177,7 @@ export type BuiltSchema<TTables extends readonly AnyTable[]> = {
   };
   readonly catalog: Catalog;
   readonly types: "emitted" | "inferred";
-  readonly casing: "snake" | undefined;
+  readonly casing: Casing | undefined;
   readonly codecs: SchemaCodecs;
   /**
    * Declared floor, normalised to `>=` and a major.
@@ -430,7 +436,8 @@ export function schema<const TTables extends readonly AnyTable[]>(
     definition("schema() needs a tables array.");
   }
   const casing = readCasing(config.casing);
-  const tables = rewritePass(config.tables, tenancy, schemaTraits, casing);
+  const names = namesFor(casing);
+  const tables = rewritePass(config.tables, tenancy, schemaTraits, names);
   const hooks = collectHooks(tenancy, schemaTraits, config.tables, config.views);
   const types = readTypes(config.types);
   const codecs = readCodecs(config.codecs);
@@ -447,7 +454,7 @@ export function schema<const TTables extends readonly AnyTable[]>(
     const built = compileTable(
       item,
       namespace,
-      casing,
+      names,
       codecs,
       requires,
       idDefault,
@@ -478,7 +485,7 @@ export function schema<const TTables extends readonly AnyTable[]>(
   for (const item of prepared) {
     model[item.tsName] = tableModel(item, edges, byName, accepted, scopeFields);
   }
-  bindViews(config.views, model, tenancy, tables, casing);
+  bindViews(config.views, model, tenancy, tables, names);
 
   // Catalog objects, enum types, and the cycle check run on first read.
   // Import pays for the query model only (D138).
@@ -500,17 +507,18 @@ export function schema<const TTables extends readonly AnyTable[]>(
             }),
           );
         }
-        contributeListed(config.extensions, objects);
-        contributeListed(config.functions, objects);
-        contributeListed(schemaTraits, objects);
+        contributeListed(config.extensions, objects, names);
+        contributeListed(config.functions, objects, names);
+        contributeListed(schemaTraits, objects, names);
         for (const item of config.tables) {
           contributeListed(
             (item.options as { readonly traits?: unknown } | undefined)?.traits,
             objects,
+            names,
           );
         }
-        contributeListed(config.triggers, objects);
-        contributeListed(config.views, objects);
+        contributeListed(config.triggers, objects, names);
+        contributeListed(config.views, objects, names);
         document = catalog(objects);
       }
       return document;
@@ -603,16 +611,16 @@ function noteEnum(
  * @param tables - Tables passed to `schema()`
  * @param tenancy - Column tenancy, when set
  * @param schemaTraits - Schema traits, when any were passed
- * @param casing - Schema casing
+ * @param names - Name lookups for the schema's casing
  * @returns Tables ready to compile
  */
 function rewritePass(
   tables: readonly AnyTable[],
   tenancy: ColumnTenancy | undefined,
   schemaTraits: readonly Trait[] | undefined,
-  casing: "snake" | undefined,
+  names: Names,
 ): readonly AnyTable[] {
-  let next = tenancy === undefined ? bareTables(tables) : tenancy.rewrite(tables);
+  let next = tenancy === undefined ? bareTables(tables) : tenancy.rewrite(tables, names);
   const seen = new Set<object>();
   const pending: object[] = [];
   const add = (value: object): void => {
@@ -637,12 +645,12 @@ function rewritePass(
         rewrite: (
           this: object,
           tables: readonly AnyTable[],
-          casing: "snake" | undefined,
+          names: Names,
           schemaTraits: readonly Trait[] | undefined,
         ) => readonly AnyTable[];
       }
     ).rewrite;
-    next = rewrite.call(trait, next, casing, schemaTraits);
+    next = rewrite.call(trait, next, names, schemaTraits);
   }
   return next;
 }
@@ -714,21 +722,21 @@ function collectHooks(
  * @param model - Query model, mutated with one entry per view
  * @param tenancy - Column tenancy, when the schema set it
  * @param tables - Tables after the tenancy rewrite
- * @param casing - Schema casing
+ * @param names - Name lookups for the schema's casing
  */
 function bindViews(
   views: unknown,
   model: { [name: string]: TableModel },
   tenancy: ColumnTenancy | undefined,
   tables: readonly AnyTable[],
-  casing: "snake" | undefined,
+  names: Names,
 ): void {
   if (!Array.isArray(views)) return;
   const scoped = new Set<string>();
   for (const item of views) {
     if (typeof item !== "object" || item === null) continue;
     const install = (item as { readonly install?: ViewBind }).install;
-    install?.call(item, model, tenancy, tables, casing, scoped);
+    install?.call(item, model, tenancy, tables, names, scoped);
   }
 }
 
@@ -737,7 +745,7 @@ type ViewBind = (
   model: { [name: string]: TableModel },
   tenancy: ColumnTenancy | undefined,
   tables: readonly AnyTable[],
-  casing: "snake" | undefined,
+  names: Names,
   scoped: Set<string>,
 ) => void;
 
@@ -771,13 +779,12 @@ function bareTables(tables: readonly AnyTable[]): readonly AnyTable[] {
  * @param value - The option or trait list the caller passed
  * @param objects - Objects the schema is collecting
  */
-function contributeListed(value: unknown, objects: CatalogObject[]): void {
+function contributeListed(value: unknown, objects: CatalogObject[], names: Names): void {
   if (!Array.isArray(value)) return;
   for (const item of value) {
-    const produced = (item as { contribute(peers: unknown, built: unknown): unknown }).contribute(
-      value,
-      objects,
-    );
+    const produced = (
+      item as { contribute(peers: unknown, built: unknown, names: Names): unknown }
+    ).contribute(value, objects, names);
     if (Array.isArray(produced))
       for (const object of produced) objects.push(object as CatalogObject);
   }
@@ -848,7 +855,7 @@ function openTableTraits(
 function compileTable(
   item: AnyTable,
   namespace: ReturnType<typeof staticNamespace>,
-  casing: "snake" | undefined,
+  names: Names,
   codecs: SchemaCodecs,
   requires: SchemaRequires | undefined,
   idDefault: SchemaIdDefault | undefined,
@@ -870,7 +877,7 @@ function compileTable(
       | undefined,
   );
   readTableNames(item.name, options);
-  const sqlName = options?.sqlName ?? (casing === "snake" ? snakeCase(item.name) : item.name);
+  const sqlName = names.table(item);
   assertIdentifier(sqlName, `table ${item.name}`);
   const provenance: Provenance =
     item.source === undefined
@@ -891,7 +898,14 @@ function compileTable(
       definition(`Column ${item.name}.${field} must be a column builder.`);
     }
     const column = applySchemaId(builder as unknown as ColumnView, idDefault);
-    const columnSql = column.state.sqlName ?? (casing === "snake" ? snakeCase(field) : field);
+    const columnSql = column.state.sqlName ?? names.name(field);
+    if (bySql.has(columnSql)) {
+      catalogError(
+        "OKM1023",
+        `Table ${item.name} columns ${bySql.get(columnSql)?.field ?? ""} and ${field} use SQL name ${columnSql}. Name one with sqlName.`,
+      );
+    }
+    if (names.casing !== undefined) assertIdentifier(columnSql, `column ${item.name}.${field}`);
     assertCodec(item.name, field, column, codecs);
     const mark =
       applied !== undefined ? (builder as { readonly trait?: unknown }).trait : undefined;
@@ -906,7 +920,7 @@ function compileTable(
           };
     const identity = column.state.identity;
     if (identity !== undefined) {
-      const seqName = fitIdentifier(`${sqlName}_${columnSql}_seq`);
+      const seqName = identitySequenceName(sqlName, columnSql);
       jobs.push((objects) => {
         const seq = sequence({
           namespace,
@@ -1427,12 +1441,9 @@ function readTypes(types: "emitted" | "inferred" | undefined): "emitted" | "infe
   return types;
 }
 
-function readCasing(casing: "snake" | undefined): "snake" | undefined {
-  if (casing === undefined) {
-    return undefined;
-  }
-  if (casing !== "snake") {
-    definition(`schema() casing ${String(casing)} must be snake.`);
+function readCasing(casing: Casing | undefined): Casing | undefined {
+  if (casing !== undefined && casing !== "snake" && casing !== "camel") {
+    definition(`schema() casing ${String(casing)} must be snake or camel.`);
   }
   return casing;
 }

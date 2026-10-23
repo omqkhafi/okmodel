@@ -139,6 +139,20 @@ export function deterministicName(input: {
 }
 
 /**
+ * Names the sequence behind an identity column.
+ *
+ * It is `{table}_{column}_seq`, fitted to the identifier limit. The schema
+ * compiler, the rename planner, and the catalog rewrite all spell it here.
+ *
+ * @param table - SQL name of the table
+ * @param column - SQL name of the identity column
+ * @returns The sequence name
+ */
+export function identitySequenceName(table: string, column: string): string {
+  return fitIdentifier(`${table}_${column}_seq`);
+}
+
+/**
  * Rejects NUL and other control characters in text that is not an identifier.
  *
  * @param value - Text stored in a definition

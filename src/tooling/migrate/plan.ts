@@ -14,7 +14,7 @@ import { OkmError } from "../../contracts/error.js";
 import { prepareMigrationText } from "./text.js";
 import { creationOrder, renameColumn, renameTable } from "../../contracts/catalog/document.js";
 import { isDomain, sameEnumLabels } from "../../contracts/catalog/enum.js";
-import { fitIdentifier } from "../../contracts/catalog/identifier.js";
+import { identitySequenceName } from "../../contracts/catalog/identifier.js";
 import { identityKey, identityLabel, staticNamespace } from "../../contracts/catalog/identity.js";
 import { compareText } from "../../contracts/catalog/object.js";
 import {
@@ -888,8 +888,8 @@ function sequenceRenames(
   for (const object of source.objects) {
     if (object.kind !== "column" || object.definition.identity === undefined) continue;
     if (object.identity.parent.name !== rename.from) continue;
-    const fromName = fitIdentifier(`${rename.from}_${object.identity.name}_seq`);
-    const toName = fitIdentifier(`${rename.to}_${object.identity.name}_seq`);
+    const fromName = identitySequenceName(rename.from, object.identity.name);
+    const toName = identitySequenceName(rename.to, object.identity.name);
     if (fromName === toName) continue;
     const owned = source.objects.some(
       (item) => item.kind === "sequence" && item.identity.name === fromName,

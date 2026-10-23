@@ -5,6 +5,8 @@
  * keys itself. The move and insert SQL load later, on the first call.
  */
 
+import { archiveNames } from "../dialects/pg/archive-bind.js";
+import type { Names } from "../dialects/pg/casing.js";
 import { definition } from "../dialects/pg/misuse.js";
 import { buildIndex, type AnyTable, type IndexCall } from "../dialects/pg/table.js";
 
@@ -16,7 +18,7 @@ import { buildIndex, type AnyTable, type IndexCall } from "../dialects/pg/table.
  *
  * @param self - The trait object `schema()` stored
  * @param tables - Tables after the tenancy rewrite
- * @param casing - Schema casing
+ * @param names - Name lookups for the schema
  * @param schemaTraits - Traits from `schema()`, when any were passed
  * @param group - Field that splits the order, when `sortable` was given one
  * @returns Tables with the index on the ones this trait applies to
@@ -24,14 +26,14 @@ import { buildIndex, type AnyTable, type IndexCall } from "../dialects/pg/table.
 export function rewriteSortable(
   self: object,
   tables: readonly AnyTable[],
-  casing: "snake" | undefined,
+  names: Names,
   schemaTraits: readonly object[] | undefined,
   group: string | undefined,
 ): readonly AnyTable[] {
   return tables.map((item) => {
     if (!applies(self, item, schemaTraits)) return item;
     refusePath(item);
-    return withIndex(item, casing, schemaTraits, group);
+    return withIndex(item, names, schemaTraits, group);
   });
 }
 
@@ -64,7 +66,7 @@ type IndexFactory = (
 
 function withIndex(
   item: AnyTable,
-  casing: "snake" | undefined,
+  names: Names,
   schemaTraits: readonly object[] | undefined,
   group: string | undefined,
 ): AnyTable {
@@ -80,7 +82,7 @@ function withIndex(
   for (const field of tenantKeys) if (!fields.includes(field)) fields.push(field);
   if (group !== undefined && !fields.includes(group)) fields.push(group);
   fields.push("position");
-  const predicate = archivedPredicate(item, casing, schemaTraits);
+  const predicate = archivedPredicate(item, names, schemaTraits);
   const indexes = (
     handles: Readonly<Record<string, { readonly name: string }>>,
   ): readonly IndexCall[] => {
@@ -102,11 +104,11 @@ function withIndex(
 
 function archivedPredicate(
   item: AnyTable,
-  casing: "snake" | undefined,
+  names: Names,
   schemaTraits: readonly object[] | undefined,
 ): string | undefined {
   if (!archivable(item, schemaTraits)) return undefined;
-  return casing === "snake" ? "(archived_at IS NULL)" : '("archivedAt" IS NULL)';
+  return archiveNames(names).predicate;
 }
 
 function archivable(item: AnyTable, schemaTraits: readonly object[] | undefined): boolean {

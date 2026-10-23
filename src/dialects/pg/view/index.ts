@@ -18,7 +18,8 @@ import type { CatalogObject, Provenance } from "../../../contracts/catalog/types
 import { formatType } from "../column.js";
 import { quoteIdent } from "../ddl.js";
 import type { SchemaHook } from "../model.js";
-import { snakeCase, type AnyTable, type SqlText } from "../table.js";
+import { type Names, namesFor } from "../casing.js";
+import type { AnyTable, SqlText } from "../table.js";
 import { viewClient, type ViewInstall } from "./client.js";
 
 /** One declared output column. `type` is the Postgres type name. */
@@ -55,9 +56,12 @@ type AllColumns<T extends AnyTable> = readonly {
   readonly type: string;
 }[];
 
+/** An output column of `q.from`: the SQL name, and the table field it reads. */
+type RenderedColumn = ViewColumnInput & { readonly source: string };
+
 const BUILT = Symbol("okmodel.view.from");
 
-/** What `q.from` stores. `install` renders the SQL once casing is known. */
+/** What `q.from` stores. `install` renders the SQL once the schema names are known. */
 type Recipe = {
   readonly [BUILT]: true;
   readonly table: AnyTable;
@@ -246,8 +250,8 @@ export function view<const N extends string, const C extends readonly ViewColumn
     name,
     schema,
     "~kind": "view",
-    install(model, tenancy, tables, casing, scoped) {
-      bound.install(model, tenancy, tables, casing, scoped);
+    install(model, tenancy, tables, names, scoped) {
+      bound.install(model, tenancy, tables, names, scoped);
       securityInvoker = tenancy?.strategy === "rls" && scoped.has(name);
     },
     hook: bound.hook,
@@ -386,12 +390,10 @@ function viewFrom<const N extends string, const C extends readonly ViewColumnInp
     });
   }
   const recipe = built;
-  let casingMode: "snake" | undefined;
-  let rendered:
-    | { readonly query: string; readonly columns: readonly ViewColumnInput[] }
-    | undefined;
-  const render = (): { readonly query: string; readonly columns: readonly ViewColumnInput[] } => {
-    rendered ??= renderQuery(name, recipe, casingMode);
+  let namesMode: Names | undefined;
+  let rendered: { readonly query: string; readonly columns: readonly RenderedColumn[] } | undefined;
+  const render = (): { readonly query: string; readonly columns: readonly RenderedColumn[] } => {
+    rendered ??= renderQuery(name, recipe, namesMode ?? namesFor(undefined));
     return rendered;
   };
   const bound = viewClient(
@@ -406,10 +408,10 @@ function viewFrom<const N extends string, const C extends readonly ViewColumnInp
     name,
     schema: "public",
     "~kind": "view",
-    install(model, tenancy, tables, casing, scoped) {
-      casingMode = casing;
+    install(model, tenancy, tables, names, scoped) {
+      namesMode = names;
       rendered = undefined;
-      bound.install(model, tenancy, tables, casing, scoped);
+      bound.install(model, tenancy, tables, names, scoped);
       securityInvoker = tenancy?.strategy === "rls" && scoped.has(name);
     },
     hook: bound.hook,
@@ -466,25 +468,25 @@ function finish<C extends readonly ViewColumnInput[]>(recipe: Recipe): ViewBuilt
 }
 
 /**
- * Renders `select ... from ...` using schema casing.
+ * Renders `select ... from ...` with the schema's SQL names.
  *
  * @param name - View name, for errors
  * @param recipe - The from() state
- * @param casing - Schema casing
+ * @param names - Name lookups for the schema
  * @returns The query and the SQL column names
  */
 function renderQuery(
   name: string,
   recipe: Recipe,
-  casing: "snake" | undefined,
-): { readonly query: string; readonly columns: readonly ViewColumnInput[] } {
+  names: Names,
+): { readonly query: string; readonly columns: readonly RenderedColumn[] } {
   const fields = recipe.picked ?? Object.keys(recipe.table.columns);
   if (fields.length === 0) {
     throw new OkmError("OKM1120", `View ${name} selects no columns.`, {
       fix: { summary: "Pick at least one column of the table." },
     });
   }
-  const columns: ViewColumnInput[] = [];
+  const columns: RenderedColumn[] = [];
   const selected: string[] = [];
   for (const field of fields) {
     const column = recipe.table.columns[field];
@@ -495,11 +497,11 @@ function renderQuery(
         { fix: { summary: "Pass a column of that table." } },
       );
     }
-    const sqlName = columnSql(column, field, casing);
-    columns.push({ name: sqlName, type: columnType(column, field) });
+    const sqlName = columnSql(column, field, names);
+    columns.push({ name: sqlName, type: columnType(column, field), source: field });
     selected.push(quoteIdent(sqlName));
   }
-  const tableName = tableSql(recipe.table, casing);
+  const tableName = names.table(recipe.table);
   let query = `select ${selected.join(", ")} from ${quoteIdent(tableName)}`;
   if (recipe.predicate !== undefined && recipe.predicate.trim().length > 0) {
     query += ` where ${recipe.predicate}`;
@@ -508,30 +510,17 @@ function renderQuery(
 }
 
 /**
- * SQL name of a table.
- *
- * @param table - Source table
- * @param casing - Schema casing
- * @returns The name in the FROM clause
- */
-function tableSql(table: AnyTable, casing: "snake" | undefined): string {
-  const options = table.options as { readonly sqlName?: unknown } | undefined;
-  if (typeof options?.sqlName === "string" && options.sqlName.length > 0) return options.sqlName;
-  return casing === "snake" ? snakeCase(table.name) : table.name;
-}
-
-/**
  * SQL name of one output column.
  *
  * @param column - Column builder
  * @param field - TypeScript field
- * @param casing - Schema casing
+ * @param names - Name lookups for the schema
  * @returns The name in the SELECT list
  */
-function columnSql(column: object, field: string, casing: "snake" | undefined): string {
+function columnSql(column: object, field: string, names: Names): string {
   const state = readState(column, field);
   if (state.sqlName !== undefined && state.sqlName.length > 0) return state.sqlName;
-  return casing === "snake" ? snakeCase(field) : field;
+  return names.name(field);
 }
 
 /**
