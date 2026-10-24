@@ -1329,12 +1329,40 @@ const INDEXES = `
   join pg_namespace n on n.oid = tbl.relnamespace
   join pg_am am on am.oid = idx.relam
   where n.nspname = $1
+    and i.indisvalid
     and not i.indisprimary
     and not exists (select 1 from pg_constraint con where con.conindid = i.indexrelid)
     and not exists (select 1 from pg_inherits inh where inh.inhrelid = tbl.oid)
     and not exists (select 1 from pg_inherits inh where inh.inhrelid = idx.oid)
     and ${member("idx.oid", "pg_class")}
 `;
+
+/**
+ * Indexes whose build did not finish.
+ *
+ * `CREATE INDEX CONCURRENTLY` leaves `indisvalid = false` when the session
+ * dies. Those rows are not catalog objects: a valid index is the only shape
+ * check, push, and baseline compare.
+ *
+ * @param runner - Database connection
+ * @param schema - Concrete schema name
+ * @returns Quoted `schema.name` values, in name order
+ */
+export async function invalidIndexNames(
+  runner: CatalogQuery,
+  schema: string,
+): Promise<readonly string[]> {
+  const rows = await runner.query(
+    `select n.nspname as schema, c.relname as name
+     from pg_index i
+     join pg_class c on c.oid = i.indexrelid
+     join pg_namespace n on n.oid = c.relnamespace
+     where n.nspname = $1 and not i.indisvalid
+     order by c.relname`,
+    [schema],
+  );
+  return rows.map((row) => `${quoteIdent(text(row, "schema"))}.${quoteIdent(text(row, "name"))}`);
+}
 
 const DOMAINS = `
   select t.typname as name,

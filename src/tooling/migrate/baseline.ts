@@ -24,7 +24,13 @@ import { sealViews } from "../../dialects/pg/view/scratch.js";
 import type { RolesInput } from "../../dialects/pg/role/index.js";
 import { ensureMigrationTables } from "./apply.js";
 import { driverUrl } from "./driver-url.js";
-import { catalogQuery, managedRoleOptions, sealStoredChecks, sealTriggerWhens } from "./drift.js";
+import {
+  catalogQuery,
+  invalidIndexReport,
+  managedRoleOptions,
+  sealStoredChecks,
+  sealTriggerWhens,
+} from "./drift.js";
 import { catalogNamespace } from "./export.js";
 import { loadHeadSnapshot } from "./files.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
@@ -307,6 +313,7 @@ async function compareLive(
         return !childOfUnmanaged(object, unmanagedKeys);
       }),
     };
+    const invalid = await invalidIndexReport(runner, namespace);
     const plan = planMigration({
       before: await sealStoredChecks(runner, managedLive),
       after: authorOnServer,
@@ -323,14 +330,15 @@ async function compareLive(
           ? left.name.localeCompare(right.name)
           : left.kind.localeCompare(right.kind),
       );
-    if (plan.steps.length === 0) return { unmanaged, mismatch: [] };
-    return {
-      unmanaged,
-      mismatch: formatPlan(plan)
-        .trimEnd()
-        .split("\n")
-        .filter((line) => line.length > 0),
-    };
+    const planned =
+      plan.steps.length === 0
+        ? []
+        : formatPlan(plan)
+            .trimEnd()
+            .split("\n")
+            .filter((line) => line.length > 0);
+    if (planned.length === 0 && invalid.length === 0) return { unmanaged, mismatch: [] };
+    return { unmanaged, mismatch: [...invalid, ...planned] };
   } finally {
     await finishQuiet(() => sql.end({ timeout: 5 }));
   }

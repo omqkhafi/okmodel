@@ -40,7 +40,13 @@ import { planMigration, type PlanStep } from "./plan.js";
 import type { StoredMigration } from "./files.js";
 import { finishQuiet } from "./lost.js";
 import type { StepBoundary } from "./step-engine.js";
-import { catalogQuery, managedRoleOptions, sealStoredChecks, sealTriggerWhens } from "./drift.js";
+import {
+  catalogQuery,
+  invalidIndexReport,
+  managedRoleOptions,
+  sealStoredChecks,
+  sealTriggerWhens,
+} from "./drift.js";
 import {
   assertDirectConnection,
   assertStoreTerminal,
@@ -647,6 +653,14 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
         runner,
         await introspectSchema(runner, schema, schema, managedRoleOptions(request.roles)),
       );
+      const invalid = await invalidIndexReport(runner, schema);
+      if (invalid.length > 0) {
+        throw new OkmError("OKM1520", invalid.join("\n"), {
+          fix: {
+            summary: "Drop the INVALID index with DROP INDEX CONCURRENTLY, then run apply again.",
+          },
+        });
+      }
       const plan = planMigration({
         before: live,
         after: author,

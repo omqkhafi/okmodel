@@ -17,6 +17,7 @@ import { isDomain } from "../../contracts/catalog/enum.js";
 import type { CatalogObject } from "../../contracts/catalog/types.js";
 import {
   introspectSchema,
+  invalidIndexNames,
   reprintCheck,
   reprintDomainCheck,
   reprintGenerated,
@@ -80,15 +81,20 @@ export async function assertAuthorDrift(
       runner,
       await introspectSchema(runner, schema, schema, managedRoleOptions(roles)),
     );
+    const invalid = await invalidIndexReport(runner, schema);
     const plan = planMigration({ before: live, after: authorOnServer, name: "check", schema });
-    if (plan.steps.length === 0) return;
+    if (invalid.length === 0 && plan.steps.length === 0) return;
     const weaker = unvalidatedNotNull(live, authorOnServer);
+    const sqlText = plan.steps.map((step) => step.sql).join("\n");
     throw new OkmError(
       "OKM1520",
-      `The database differs from the schema.\n${plan.steps.map((step) => step.sql).join("\n")}${weaker}`,
+      `The database differs from the schema.\n${[...invalid, sqlText].filter((line) => line.length > 0).join("\n")}${weaker}`,
       {
         fix: {
-          summary: "Change the schema or the database so okm check reports no difference.",
+          summary:
+            invalid.length > 0
+              ? "Drop the INVALID index with DROP INDEX CONCURRENTLY, then run apply again."
+              : "Change the schema or the database so okm check reports no difference.",
         },
       },
     );
@@ -97,6 +103,43 @@ export async function assertAuthorDrift(
   } finally {
     await finishQuiet(() => sql.end({ timeout: 5 }));
   }
+}
+
+/**
+ * Lines for indexes a killed concurrent build left behind, and started steps.
+ *
+ * An invalid index is omitted from the catalog, so a plan would otherwise
+ * try to create it again. The lines name the index and any `okm_steps` row
+ * still in `started`.
+ *
+ * @param runner - Database connection
+ * @param schema - Concrete schema the live catalog was read from
+ * @returns Empty when every index is valid
+ */
+export async function invalidIndexReport(
+  runner: CatalogQuery,
+  schema: string,
+): Promise<readonly string[]> {
+  const names = await invalidIndexNames(runner, schema);
+  if (names.length === 0) return [];
+  const lines = names.map((name) => `Index ${name} is INVALID (pg_index.indisvalid is false).`);
+  const present = await runner.query(`select to_regclass('okm_steps')::text as reg`);
+  if (present[0]?.["reg"] == null) return lines;
+  const steps = await runner.query(
+    `select migration_id, step_index::text as step_index
+     from okm_steps
+     where state = 'started'
+     order by migration_id, step_index`,
+  );
+  for (const row of steps) {
+    const id = row["migration_id"];
+    const index = row["step_index"];
+    if (typeof id !== "string" || (typeof index !== "string" && typeof index !== "number")) {
+      continue;
+    }
+    lines.push(`okm_steps ${id} step ${String(index)} is started.`);
+  }
+  return lines;
 }
 
 /**
