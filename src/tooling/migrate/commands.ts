@@ -564,7 +564,7 @@ async function doctorBundle(
   }
   const shown = parsed.out ?? DEFAULT_BUNDLE_PATH;
   const base = parsed.out === undefined ? project.cwd : cwd;
-  writeBundle(resolve(base, shown), shown, text, parsed.overwrite);
+  writeBundle(resolve(base, shown), shown, text, parsed.overwrite, project.cwd);
   const said = `wrote ${shown} (${String(bytes)} bytes)\nNo network was used. The file holds codes, versions, and hashes, and no values. Read it before you send it.\n`;
   human(said);
   return { text: said, data, warnings: [], outFile: { path: shown, bytes } };

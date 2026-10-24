@@ -15,9 +15,11 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  readlinkSync,
+  realpathSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 import { OkmError } from "../../contracts/error.js";
 import { WARNING_RULES } from "../../runtime/warnings/catalog.js";
@@ -197,14 +199,23 @@ export function bundleText(bundle: DoctorBundle): string {
 
 /**
  * Writes the bundle. An existing file is refused unless `force` is set.
+ * A symlink that resolves outside `root` is refused either way.
  *
  * @param path - Absolute path
  * @param shown - The path as the user wrote it, for messages
  * @param text - Output of {@link bundleText}
  * @param force - `--force-file`
+ * @param root - Project directory the file must stay inside
  * @returns Bytes written
  */
-export function writeBundle(path: string, shown: string, text: string, force: boolean): number {
+export function writeBundle(
+  path: string,
+  shown: string,
+  text: string,
+  force: boolean,
+  root: string,
+): number {
+  refuseEscapingSymlink(path, root, shown);
   try {
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, text, { flag: force ? "w" : "wx" });
@@ -212,7 +223,7 @@ export function writeBundle(path: string, shown: string, text: string, force: bo
     const errno = error instanceof Error && "code" in error ? String(error.code) : "unknown";
     if (errno === "EEXIST") {
       throw tagOutcome(
-        new OkmError("invalid", `${shown} already exists.`, {
+        new OkmError("OKM1855", `${shown} already exists.`, {
           fix: { summary: "Pass --force-file to replace it, or choose another file with --out." },
         }),
         "guard",
@@ -226,6 +237,56 @@ export function writeBundle(path: string, shown: string, text: string, force: bo
     );
   }
   return Buffer.byteLength(text);
+}
+
+/**
+ * Follows a symlink chain from `file` and refuses one that leaves `root`.
+ *
+ * A link whose target stays in the project is left for the write. A missing
+ * path is fine. Parent links count: `.okm` pointing outside would otherwise
+ * receive the new file.
+ *
+ * @param file - Absolute destination
+ * @param root - Project directory
+ * @param shown - Path named in the error
+ */
+function refuseEscapingSymlink(file: string, root: string, shown: string): void {
+  const rootReal = realpathSync(root);
+  const seen = new Set<string>();
+  const visit = (current: string): void => {
+    const path = resolve(current);
+    if (seen.has(path)) bundleSymlink(shown);
+    seen.add(path);
+    let stat;
+    try {
+      stat = lstatSync(path);
+    } catch (error) {
+      const errno = error instanceof Error && "code" in error ? String(error.code) : "";
+      if (errno !== "ENOENT") throw error;
+      const parent = dirname(path);
+      if (parent !== path) visit(parent);
+      return;
+    }
+    if (!stat.isSymbolicLink()) return;
+    const target = resolve(dirname(path), readlinkSync(path));
+    if (!insideProject(rootReal, target)) bundleSymlink(shown);
+    visit(target);
+  };
+  visit(file);
+}
+
+function insideProject(rootReal: string, target: string): boolean {
+  const rel = relative(rootReal, resolve(target));
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+function bundleSymlink(shown: string): never {
+  throw tagOutcome(
+    new OkmError("OKM1865", `${shown} is a symlink to a path outside the project.`, {
+      fix: { summary: "Remove the symlink, or point it at a file inside the project." },
+    }),
+    "unreachable",
+  );
 }
 
 type Hit = { readonly code: string; readonly severity: "error" | "warning" };

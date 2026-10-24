@@ -14,6 +14,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import net from "node:net";
@@ -313,16 +314,42 @@ test("an existing file is refused without --force-file", () => {
     writeFileSync(fx.out, "kept\n");
     const refused = okm(["doctor", "--bundle"], fx.dir);
     expect(refused.code).toBe(4);
+    expect(refused.stderr).toContain("OKM1855");
     expect(refused.stderr).toContain("already exists");
     expect(refused.stderr).toContain("--force-file");
     expect(read(fx.out)).toBe("kept\n");
     const json = okm(["doctor", "--bundle", "--json"], fx.dir);
     expect(json.code).toBe(4);
+    expect(JSON.parse(json.stdout).errors[0].code).toBe("OKM1855");
     expect(read(fx.out)).toBe("kept\n");
     expect(okm(["doctor", "--bundle", "--force-file"], fx.dir).code).toBe(0);
     expect(read(fx.out)).not.toBe("kept\n");
   } finally {
     rmSync(fx.dir, { recursive: true, force: true });
+  }
+});
+
+test("a symlink at the bundle path that leaves the project is not followed", () => {
+  const fx = fixture();
+  const outside = mkdtempSync(join(tmpdir(), "okm-bundle-out-"));
+  const target = join(outside, "escaped.json");
+  writeFileSync(target, "secret\n");
+  try {
+    symlinkSync(target, fx.out);
+    const escaped = okm(["doctor", "--bundle", "--force-file"], fx.dir);
+    expect(escaped.code).not.toBe(0);
+    expect(escaped.stderr).toContain("symlink");
+    expect(read(target)).toBe("secret\n");
+
+    rmSync(fx.out);
+    const inside = join(fx.dir, ".okm", "inside.json");
+    writeFileSync(inside, "old\n");
+    symlinkSync(inside, fx.out);
+    expect(okm(["doctor", "--bundle", "--force-file"], fx.dir).code).toBe(0);
+    expect(read(inside)).toContain("bundleFormat");
+  } finally {
+    rmSync(fx.dir, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
   }
 });
 
