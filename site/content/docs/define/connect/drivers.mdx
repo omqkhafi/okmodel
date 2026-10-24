@@ -16,7 +16,7 @@ A string or a pool returns the client for postgres.js, node-postgres, and Bun.sq
 
 When the schema names no floor, a server below 15 is OKM1803. [minPostgres](/docs/define/schema/min-postgres) is that floor. The test suite runs on 15, 16, 17, and 18.
 
-`db.capabilities` is that adapter's frozen flags: `transactions`, `stream`, `listen`, and `cancel`. A table named `capabilities` is OKM1023, because the client writes this key after the tables on the root, on a scoped client, and inside `tx()`. `prepared` is a connect option (`"named"`, `"unnamed"`, or `"none"`). A driver that can describe a statement exposes `pool.describe`.
+`db.capabilities` is that adapter's frozen flags: `transactions`, `stream`, `listen`, and `cancel`. A table named `capabilities` is OKM1023, because the client writes this key after the tables on the root, on a scoped client, and inside `tx()`. `prepared` and `describe` were removed from `DriverCapabilities`. That removal is breaking. Prepared-statement mode stays a connect option (`prepared: "named" | "unnamed" | "none"`). A driver that can describe a statement still exposes `pool.describe`.
 
 ### postgres.js
 
