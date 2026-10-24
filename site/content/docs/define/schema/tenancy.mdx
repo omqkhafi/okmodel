@@ -24,7 +24,7 @@ export default schema({
 ```
 
 <Callout type="error" title="OKM1060">
-`Table notes sets tenancy, and the schema does not.` A value that is not `columnTenancy()`, `compositeTenancy()`, or `rlsTenancy()` is `schema() tenancy must be columnTenancy() from okmodel/tenancy.`
+`Table notes sets tenancy, and the schema does not.` A value that is not `columnTenancy()`, `compositeTenancy()`, or `rlsTenancy()` is `schema() tenancy must be columnTenancy() from okmodel/tenancy.` `tenantIndexes` on a global table is `Table plans sets tenantIndexes, and the table is global.` In a schema with no tenancy, `tenantIndexes` is `Table notes sets tenantIndexes, and the schema has no tenancy.` `index().global()` and `index().scoped()` there are `Table notes index().global() needs tenancy. The schema has none.` and the same sentence for `.scoped()`.
 </Callout>
 
 ### column

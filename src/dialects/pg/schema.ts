@@ -53,7 +53,7 @@ import {
   type SchemaHook,
   type TableModel,
 } from "./model.js";
-import { definition, unavailable } from "./misuse.js";
+import { definition, refuseTenancyIndexMarks, unavailable } from "./misuse.js";
 import { isRelationCall, type ManyThroughRelation, type RelationEdge } from "./relations.js";
 import { decodeText, encodeText } from "./text.js";
 import type {
@@ -781,6 +781,7 @@ function bareTables(tables: readonly AnyTable[]): readonly AnyTable[] {
     if (mark !== undefined) {
       definition(`Table ${item.name} sets tenancy, and the schema does not.`);
     }
+    refuseTenancyIndexMarks(item);
   }
   return tables;
 }

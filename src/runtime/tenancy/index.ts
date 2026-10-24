@@ -10,7 +10,7 @@ import { assertIdentifier } from "../../contracts/catalog/identifier.js";
 import { OkmError } from "../../contracts/error.js";
 import { ColumnBuilder, retarget, type ReferenceModifier } from "../../dialects/pg/column.js";
 import { uuid } from "../../dialects/pg/keys.js";
-import { definition } from "../../dialects/pg/misuse.js";
+import { definition, refuseGlobalTenantIndexes } from "../../dialects/pg/misuse.js";
 import type { Names } from "../../dialects/pg/casing.js";
 import type { AnyTable } from "../../dialects/pg/table.js";
 import type { TableRewriteContext } from "./context.js";
@@ -218,7 +218,10 @@ function rewriteTables(
     const next = swapped.get(item.name);
     if (next !== undefined) return next;
     if (kind.get(item.name) !== "tenant") {
-      if (kind.get(item.name) === "global") refuseGlobalReference(item, kind);
+      if (kind.get(item.name) === "global") {
+        refuseGlobalTenantIndexes(item);
+        refuseGlobalReference(item, kind);
+      }
       return item;
     }
     return rewriteTenant(
