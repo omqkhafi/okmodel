@@ -4,7 +4,12 @@
 
 import { expect, test } from "bun:test";
 
-import { postgres18Relevant, runtimeRelevant, workflowsChanged } from "./ci-paths.js";
+import {
+  lifecycleRelevant,
+  postgres18Relevant,
+  runtimeRelevant,
+  workflowsChanged,
+} from "./ci-paths.js";
 
 test("docs-only and site-only diffs skip the runtime matrix", () => {
   expect(runtimeRelevant(["docs/github.md"])).toBe(false);
@@ -33,4 +38,13 @@ test("workflow path changes are detected for the full tier", () => {
   expect(workflowsChanged([".github/workflows/windows.yml", "docs/github.md"])).toBe(true);
   expect(workflowsChanged([".github/actions/setup-bun/action.yml"])).toBe(false);
   expect(workflowsChanged(["docs/github.md"])).toBe(false);
+});
+
+test("dialects, migrate, and tests/lifecycle run the lifecycle property", () => {
+  expect(lifecycleRelevant(["src/dialects/pg/ddl.ts"])).toBe(true);
+  expect(lifecycleRelevant(["src/tooling/migrate/apply.ts"])).toBe(true);
+  expect(lifecycleRelevant(["tests/lifecycle/lifecycle-pg.test.ts"])).toBe(true);
+  expect(lifecycleRelevant(["src/runtime/client.ts"])).toBe(false);
+  expect(lifecycleRelevant(["docs/github.md"])).toBe(false);
+  expect(lifecycleRelevant([])).toBe(false);
 });

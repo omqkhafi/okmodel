@@ -25,6 +25,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       postgres: ${{ steps.plan.outputs.postgres }}
+      lifecycle: ${{ steps.plan.outputs.lifecycle }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -242,9 +243,48 @@ jobs:
       versions: '["18"]'
       dist_artifact: dist
 
+  lifecycle:
+    name: lifecycle / 18
+    needs: [changes]
+    if: needs.changes.outputs.lifecycle == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup
+        uses: ./.github/actions/setup-bun
+
+      - name: Pull Postgres
+        run: docker pull "postgres:${POSTGRES_VERSION}"
+        env:
+          POSTGRES_VERSION: "18"
+
+      - name: Start Postgres
+        run: bun run db:up
+        env:
+          POSTGRES_VERSION: "18"
+
+      - name: Lifecycle property
+        run: bun test tests/lifecycle/lifecycle-pg.test.ts
+        env:
+          REQUIRE_DOCKER: "1"
+          POSTGRES_VERSION: "18"
+          OKM_LIFECYCLE: "1"
+          OKM_LIFECYCLE_TIER: "pr"
+          OKM_LIFECYCLE_CASES: "20"
+          OKM_LIFECYCLE_SEED: "20261024"
+
+      - name: Stop Postgres
+        if: always()
+        run: bun run db:down
+        env:
+          POSTGRES_VERSION: "18"
+
   check:
     name: gate / check
-    needs: [changes, lint, types, build, test, size, pull, paths, suite]
+    needs: [changes, lint, types, build, test, size, pull, paths, suite, lifecycle]
     if: always()
     runs-on: ubuntu-24.04
     steps:
@@ -258,6 +298,7 @@ jobs:
         run: >
           bun ./scripts/ci-gate.ts
           --postgres ${{ needs.changes.outputs.postgres == 'true' && '1' || '0' }}
+          --lifecycle ${{ needs.changes.outputs.lifecycle == 'true' && '1' || '0' }}
           changes=${{ needs.changes.result }}
           lint=${{ needs.lint.result }}
           types=${{ needs.types.result }}
@@ -267,3 +308,4 @@ jobs:
           pull=${{ needs.pull.result }}
           paths=${{ needs.paths.result }}
           suite=${{ needs.suite.result }}
+          lifecycle=${{ needs.lifecycle.result }}

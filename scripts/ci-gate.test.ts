@@ -21,25 +21,73 @@ function withSuite(result: string): readonly GateSlice[] {
 }
 
 test("Postgres 18 must succeed when the path asked for it", () => {
-  expect(gateFailures(withSuite("success"), true)).toEqual([]);
-  expect(gateFailures(withSuite("skipped"), true).map((slice) => slice.name)).toEqual(["suite"]);
-  expect(gateFailures(withSuite("failure"), true).map((slice) => slice.name)).toEqual(["suite"]);
+  expect(gateFailures(withSuite("success"), { postgres: true, lifecycle: false })).toEqual([]);
+  expect(
+    gateFailures(withSuite("skipped"), { postgres: true, lifecycle: false }).map(
+      (slice) => slice.name,
+    ),
+  ).toEqual(["suite"]);
+  expect(
+    gateFailures(withSuite("failure"), { postgres: true, lifecycle: false }).map(
+      (slice) => slice.name,
+    ),
+  ).toEqual(["suite"]);
 });
 
 test("a pull request that does not touch those paths allows a skipped suite", () => {
-  expect(gateFailures(withSuite("skipped"), false)).toEqual([]);
-  expect(gateFailures(withSuite("failure"), false).map((slice) => slice.name)).toEqual(["suite"]);
+  expect(gateFailures(withSuite("skipped"), { postgres: false, lifecycle: false })).toEqual([]);
+  expect(
+    gateFailures(withSuite("failure"), { postgres: false, lifecycle: false }).map(
+      (slice) => slice.name,
+    ),
+  ).toEqual(["suite"]);
+});
+
+test("lifecycle must succeed when the path asked for it", () => {
+  const slices = [
+    ...READY,
+    { name: "suite", result: "skipped" },
+    { name: "lifecycle", result: "success" },
+  ];
+  expect(gateFailures(slices, { postgres: false, lifecycle: true })).toEqual([]);
+  expect(
+    gateFailures(
+      [...READY, { name: "suite", result: "skipped" }, { name: "lifecycle", result: "skipped" }],
+      { postgres: false, lifecycle: true },
+    ).map((slice) => slice.name),
+  ).toEqual(["lifecycle"]);
+});
+
+test("a pull request that does not touch lifecycle paths allows a skipped lifecycle job", () => {
+  expect(
+    gateFailures(
+      [...READY, { name: "suite", result: "skipped" }, { name: "lifecycle", result: "skipped" }],
+      { postgres: false, lifecycle: false },
+    ),
+  ).toEqual([]);
 });
 
 test("an always-on slice must be success", () => {
   const slices = withSuite("skipped").map((slice) =>
     slice.name === "test" ? { ...slice, result: "failure" } : slice,
   );
-  expect(gateFailures(slices, false).map((slice) => slice.name)).toEqual(["test"]);
+  expect(
+    gateFailures(slices, { postgres: false, lifecycle: false }).map((slice) => slice.name),
+  ).toEqual(["test"]);
 });
 
 test("a skipped label job on a fork is allowed", () => {
-  expect(gateFailures([...READY, { name: "paths", result: "skipped" }], false)).toEqual([]);
+  expect(
+    gateFailures([...READY, { name: "paths", result: "skipped" }], {
+      postgres: false,
+      lifecycle: false,
+    }),
+  ).toEqual([]);
+});
+
+test("boolean postgres request still works for older callers", () => {
+  expect(gateFailures(withSuite("skipped"), false)).toEqual([]);
+  expect(gateFailures(withSuite("skipped"), true).map((slice) => slice.name)).toEqual(["suite"]);
 });
 
 test("parseGateSlices reads name=result and ignores flags", () => {
