@@ -503,7 +503,7 @@ export async function grant(url: string): Promise<void> {
 
 ### Sensitive
 
-A token can be stored and returned, and it still must not appear in a log or an error. `.sensitive()` shows `[redacted]` in logs, errors, `inspect()`, and OpenTelemetry spans. On a table that has a sensitive column, a unique, foreign-key, check, generic driver, or aborted-connection failure keeps the value out of `error.cause` (`detail`, parameters, `args`, `where`, and `internalQuery` stay off), including when postgres.js omits `table` on the error. Tables with no sensitive column keep today's cause. `connect({ errors: { includeValues: true } })` is the explicit opt-in. The value in the database stays the same.
+A token can be stored and returned, and it still must not appear in a log or an error. `.sensitive()` shows `[redacted]` in logs, errors, `inspect()`, and OpenTelemetry spans. Bound parameters stay off `error.cause` for every table unless `connect({ errors: { includeValues: true } })`. A unique, foreign-key, check, generic driver, or aborted-connection failure on a sensitive column stays redacted even with that opt-in (`detail`, parameters, `args`, `where`, and `internalQuery` stay off), including when postgres.js omits `table` on the error. The value in the database stays the same.
 
 `sensitive.ts`:
 

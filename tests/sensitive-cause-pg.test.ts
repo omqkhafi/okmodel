@@ -247,7 +247,10 @@ async function checkSensitive(
   if (plainErr instanceof OkmError) {
     expect(plainErr.kind).toBe("unique");
     expect(plainErr.message.includes("ada@example.com")).toBe(false);
-    expect(inspect(plainErr.cause, { depth: 10 })).toContain("ada@example.com");
+    expect(inspect(plainErr.cause, { depth: 10, showHidden: true })).not.toContain(
+      "ada@example.com",
+    );
+    expect(plainErr.cause).not.toHaveProperty("parameters");
   }
 }
 

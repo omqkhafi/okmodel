@@ -91,6 +91,19 @@ export type ReadCall = {
   readonly all?: string;
   /** The `after` cursor of a `page`. The condition joins the others with `and`. */
   readonly after?: Keyset;
+  /**
+   * Primary-key cursor for one `page()`.
+   *
+   * Set only when `after` names a row and the order includes a hidden or
+   * sensitive column. The lookup stays in this statement. Absent on every
+   * other read, so a value cursor does not carry it.
+   */
+  readonly keyCursor?: {
+    /** Writes `with c as (...) (` before `select`. */
+    open(sink: Sink): void;
+    /** Writes the `union all` arm that marks a missing cursor row. */
+    close(sink: Sink, columns: number): void;
+  };
   /** Set by `aggregate`. It writes the statement and the safety predicates stay in `emitWhere`. */
   readonly build?: ReadBuild;
   /** Writes the end of the statement, after `limit`. A row lock sets it. */
@@ -784,6 +797,8 @@ function emitRead(
     sink.text(")::text");
     return;
   }
+  const cursor = call.keyCursor;
+  if (cursor !== undefined) cursor.open(sink);
   sink.text("select ");
   let column = 0;
   for (let index = 0; index < selected.length; index += 1) {
@@ -802,16 +817,22 @@ function emitRead(
     hooks === undefined || call.include === undefined
       ? []
       : hooks.read(schema, table, call.include, call.all, call.limits);
-  if (selected.length === 0 && includes.length === 0) sink.text("1");
+  const bare = selected.length === 0 && includes.length === 0;
+  if (bare) sink.text("1");
   for (let index = 0; index < includes.length; index += 1) {
     const include = includes[index];
     if (include === undefined) continue;
     if (hooks === undefined) continue;
     column = hooks.select(include, `i${String(index)}`, sink, outputs, column);
   }
+  if (cursor !== undefined) {
+    if (column > 0 || bare) sink.text(", ");
+    sink.text("'1'");
+  }
   sink.text(" from ");
   sink.text(quote(table.model.sql));
   sink.text(" t");
+  if (cursor !== undefined) sink.text(" join c on true");
   for (let index = 0; index < includes.length; index += 1) {
     const include = includes[index];
     if (include === undefined) continue;
@@ -821,6 +842,7 @@ function emitRead(
   emitOrder(table, call.orderBy, sink, "t");
   emitLimit(call, sink);
   call.tail?.(sink);
+  if (cursor !== undefined) cursor.close(sink, column + (bare ? 1 : 0) + 1);
 }
 
 export function emitJoin(sink: Sink, parent: string, child: string, relation: RelationModel): void {
@@ -851,16 +873,25 @@ function holdArchive(table: Indexed, sink: Sink, alias: string, appended: boolea
   return true;
 }
 
-export function emitWhere(
+/**
+ * Writes the tenant predicate and the archive predicate for one alias.
+ *
+ * The same pair `page()` uses for the page and for a primary-key cursor row.
+ *
+ * @param schema - Connected schema
+ * @param table - The table being read
+ * @param sink - Statement under construction
+ * @param alias - Table alias
+ * @param appended - True when a `where` is already open
+ * @returns True when a predicate was written, or when one was already open
+ */
+export function emitVisibility(
   schema: QuerySchema,
   table: Indexed,
-  where: unknown,
   sink: Sink,
   alias: string,
-  depth: number,
-  appended = false,
-  extra?: Keyset,
-): void {
+  appended: boolean,
+): boolean {
   const held =
     schema.tenancy?.predicate({
       table: table.model.name,
@@ -872,7 +903,20 @@ export function emitWhere(
       sink,
     }) === true;
   const archived = holdArchive(table, sink, alias, appended || held);
-  let started = appended || held || archived;
+  return appended || held || archived;
+}
+
+export function emitWhere(
+  schema: QuerySchema,
+  table: Indexed,
+  where: unknown,
+  sink: Sink,
+  alias: string,
+  depth: number,
+  appended = false,
+  extra?: Keyset,
+): void {
+  let started = emitVisibility(schema, table, sink, alias, appended);
   if (extra !== undefined) {
     sink.text(started ? " and (" : " where (");
     extra(sink, alias);

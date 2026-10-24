@@ -18,7 +18,7 @@ description: "errors.http sets the statuses OkmError.toHttp uses."
 | Field | Result |
 | --- | --- |
 | `errors.http` | Statuses for `OkmError.toHttp`. `toHttp()` uses these when the caller does not pass statuses. `toHttp(statuses)` replaces them for that call. |
-| `errors.includeValues` | `true` stores row values on the error. They are never logged. |
+| `errors.includeValues` | `true` stores row values and keeps bound parameters on the cause. Off unless set. A sensitive column stays redacted either way. Values are never logged. |
 | `logger.error` | Receives `{ code, summary }`. |
 
 ### Statuses
@@ -29,7 +29,7 @@ The keys are `input`, `conflict`, `not_found`, `forbidden`, `transient`, and `in
 
 ### Row values
 
-`includeValues: true` stores row values on the error. `values()` returns them, or `undefined` when none were kept. Omitted, or `false`, stores none.
+`includeValues: true` stores row values on the error and keeps bound parameters on the cause. `values()` returns the row values, or `undefined` when none were kept. Omitted, or `false`, stores neither. A `.sensitive()` column stays redacted either way.
 
 <Callout type="info" title="Never logged">
 The log record has no row values. `logger.error` receives `{ code, summary }`. The `toHttp` body is `{ code, reason, fields }`.

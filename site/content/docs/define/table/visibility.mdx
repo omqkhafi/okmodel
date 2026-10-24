@@ -52,6 +52,8 @@ The column stays out of a reporting role's select unless [roles.columns](/docs/d
 
 `.nullable()` in the sample lets insert omit the field. `filterable` does not.
 
+`page()` does not put this column's value in the cursor. The cursor carries the primary key, and the next page reads the sort value back under the same tenant and archive predicates. A row that is no longer visible is `The cursor is no longer valid.`
+
 ```ts title="reset.ts"
 import { table, t } from "okmodel/pg";
 
@@ -63,7 +65,7 @@ export const users = table("users", {
 
 ### Sensitive
 
-`.sensitive()` takes no argument. The column stays on the row, and a read returns the stored value. `inspect()`, logs, errors, and OpenTelemetry spans replace that value with `[redacted]` or omit it. A unique, foreign-key, check, generic driver, or aborted-connection failure on a table that has a sensitive column keeps the value out of `error.cause` as well: the cause carries only safe fields (`code`, `sqlstate`, `constraint`, `table`, column names), never `detail`, parameters, `args`, `where`, or `internalQuery`. That includes postgres.js failures that omit `table` on the error while still attaching `parameters` / `args` on the cause. Tables with no sensitive column keep today's cause. `connect({ errors: { includeValues: true } })` is the explicit opt-in that can put values on the error. A codec rejection says `Field token was rejected.` The same column can also be [hidden](#hidden).
+`.sensitive()` takes no argument. The column stays on the row, and a read returns the stored value. `inspect()`, logs, errors, and OpenTelemetry spans replace that value with `[redacted]` or omit it. A `page()` cursor does not carry the value either. When `orderBy` names the column, the cursor carries the primary key and the next page reads the sort value back. A unique, foreign-key, check, generic driver, or aborted-connection failure on a table that has a sensitive column keeps the value out of `error.cause` as well: the cause carries only safe fields (`code`, `sqlstate`, `constraint`, `table`, column names), never `detail`, parameters, `args`, `where`, or `internalQuery`. That includes postgres.js failures that omit `table` on the error while still attaching `parameters` / `args` on the cause. Bound parameters stay off `error.cause` for every table unless `connect({ errors: { includeValues: true } })`. A sensitive column stays redacted even with that opt-in. A codec rejection says `Field token was rejected.` The same column can also be [hidden](#hidden).
 
 ```ts title="sessions.ts"
 import { connect } from "okmodel/pg/postgresjs";

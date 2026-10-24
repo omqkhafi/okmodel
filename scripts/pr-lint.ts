@@ -1,8 +1,8 @@
 /**
  * Checks a pull request title against `type(scope): summary`.
  *
- * Labels are applied by `scripts/pr-labels.ts`. The body, milestone, and
- * closing line are not required.
+ * A breaking change may write `type(scope)!: summary`. Labels are applied by
+ * `scripts/pr-labels.ts`. The body, milestone, and closing line are not required.
  *
  * Usage:
  *   bun ./scripts/pr-lint.ts --pr <number>
@@ -25,7 +25,7 @@ export const TITLE_TYPES = [
 ] as const;
 
 const TITLE = new RegExp(
-  `^(${TITLE_TYPES.join("|")})\\(([a-z][a-z0-9]*(?:-[a-z0-9]+)*)\\): \\S(?:.*\\S)?$`,
+  `^(${TITLE_TYPES.join("|")})\\(([a-z][a-z0-9]*(?:-[a-z0-9]+)*)\\)!?: \\S(?:.*\\S)?$`,
 );
 
 /**

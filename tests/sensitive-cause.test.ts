@@ -71,38 +71,46 @@ test("B-33: a unique violation on a sensitive table keeps values out of cause", 
   expect(mapped.cause).not.toHaveProperty("message");
 });
 
-test("B-33: a non-sensitive table still reports detail on cause", () => {
+test("E-1: a non-sensitive table omits bound values unless includeValues", () => {
   const detail = "Key (email)=(ada@example.com) already exists.";
-  const mapped = mapPostgresError(
-    new DriverError("duplicate key value violates unique constraint", {
-      sqlstate: "23505",
-      constraint: "plain_email_key",
-      table: "plain",
-      detail,
-      cause: Object.assign(new Error(detail), { detail }),
-    }),
-    { schema: app },
-  );
+  const driver = new DriverError("duplicate key value violates unique constraint", {
+    sqlstate: "23505",
+    constraint: "plain_email_key",
+    table: "plain",
+    detail,
+    cause: Object.assign(new Error(detail), { detail, parameters: ["ada@example.com"] }),
+  });
+  const mapped = mapPostgresError(driver, { schema: app });
   expect(mapped.kind).toBe("unique");
   expect(mapped.message.includes("ada@example.com")).toBe(false);
-  const cause = mapped.cause;
-  expect(cause).toBeDefined();
-  expect(inspect(cause, { depth: 10 })).toContain("ada@example.com");
+  expect(mapped.values()).toBeUndefined();
+  expect(mapped.cause).not.toHaveProperty("parameters");
+  expect(mapped.cause).not.toHaveProperty("detail");
+  expect(inspect(mapped.cause, { depth: 10 })).not.toContain("ada@example.com");
+
+  const opted = mapPostgresError(driver, { schema: app, includeValues: true });
+  expect(opted.values()).toEqual({ email: "ada@example.com" });
+  expect(inspect(opted.cause, { depth: 10 })).toContain("ada@example.com");
 });
 
-test("B-33: includeValues keeps the full cause as an opt-in", () => {
+test("E-1: includeValues still redacts a sensitive column", () => {
   const mapped = mapPostgresError(
     new DriverError("duplicate", {
       sqlstate: "23505",
       constraint: "secrets_secret_key",
       table: "secrets",
       detail: `Key (secret)=(${SECRET}) already exists.`,
-      cause: Object.assign(new Error(SECRET), { detail: SECRET }),
+      cause: Object.assign(new Error(SECRET), {
+        detail: SECRET,
+        parameters: [SECRET],
+      }),
     }),
     { schema: app, includeValues: true },
   );
-  expect(mapped.values()).toEqual({ secret: SECRET });
-  expect(inspect(mapped.cause, { depth: 10 })).toContain(SECRET);
+  expect(mapped.values()).toBeUndefined();
+  leakNowhere(mapped, SECRET);
+  expect(mapped.cause).not.toHaveProperty("parameters");
+  expect(mapped.cause).not.toHaveProperty("detail");
 });
 
 function pgjsCause(message: string, code: string, value: string): Error {
@@ -139,7 +147,7 @@ test("B-33 residual: aborted connection stamped okmTable strips parameters and a
   expect(mapped.cause).not.toHaveProperty("args");
 });
 
-test("B-33 residual: generic error on a non-sensitive statement still keeps parameters", () => {
+test("E-1: a non-sensitive statement omits parameters unless includeValues", () => {
   const driver = new DriverError('invalid input syntax for type integer: "x"', {
     sqlstate: "22P02",
     cause: pgjsCause('invalid input syntax for type integer: "x"', "22P02", "ada@example.com"),
@@ -147,5 +155,9 @@ test("B-33 residual: generic error on a non-sensitive statement still keeps para
   Reflect.set(driver, "okmTable", "plain");
   const mapped = mapPostgresError(driver, { schema: app });
   expect(mapped.kind).toBe("invalid");
-  expect(inspect(mapped.cause, { depth: 10, showHidden: true })).toContain("ada@example.com");
+  expect(mapped.cause).not.toHaveProperty("parameters");
+  expect(inspect(mapped.cause, { depth: 10, showHidden: true })).not.toContain("ada@example.com");
+
+  const opted = mapPostgresError(driver, { schema: app, includeValues: true });
+  expect(inspect(opted.cause, { depth: 10, showHidden: true })).toContain("ada@example.com");
 });

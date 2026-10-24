@@ -544,6 +544,28 @@ postgresTest(
   60_000,
 );
 
+/**
+ * Waits until an explicit replica read is served.
+ *
+ * A replica that is still catching up, or whose position is not known yet,
+ * is OKM1843. The call does not fall back to the primary.
+ */
+async function replicaRows(read: () => Promise<readonly string[]>): Promise<readonly string[]> {
+  let last: unknown;
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    try {
+      const rows = await read();
+      if (rows.length > 0) return rows;
+    } catch (error) {
+      if (!(error instanceof OkmError) || error.code !== "OKM1843") throw error;
+      last = error;
+    }
+    await Bun.sleep(100);
+  }
+  if (last !== undefined) throw last;
+  return [];
+}
+
 postgresTest(
   gate,
   "a read routed to a replica sets the value on its read-only transaction",
@@ -562,14 +584,14 @@ postgresTest(
           const b = db.with({ userId: USER_B });
           await a.docs.insert({ title: "mine", ownerId: USER_A });
           await b.docs.insert({ title: "theirs", ownerId: USER_B });
-          let titles: readonly string[] = [];
-          for (let attempt = 0; attempt < 50 && titles.length === 0; attempt += 1) {
-            titles = (await a.docs.find({ limit: 50, route: "replica" })).map((row) => row.title);
-            if (titles.length === 0) await Bun.sleep(100);
-          }
+          const titles = await replicaRows(async () =>
+            (await a.docs.find({ limit: 50, route: "replica" })).map((row) => row.title),
+          );
           expect(titles).toEqual(["mine"]);
-          const others = await b.docs.find({ limit: 50, route: "replica" });
-          expect(others.map((row) => row.title)).toEqual(["theirs"]);
+          const others = await replicaRows(async () =>
+            (await b.docs.find({ limit: 50, route: "replica" })).map((row) => row.title),
+          );
+          expect(others).toEqual(["theirs"]);
         } finally {
           await db.close();
         }
