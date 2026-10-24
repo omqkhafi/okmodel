@@ -21,23 +21,27 @@ function withSuite(result: string): readonly GateSlice[] {
 }
 
 test("Postgres 18 must succeed when the path asked for it", () => {
-  expect(gateFailures(withSuite("success"), { postgres: true, lifecycle: false })).toEqual([]);
   expect(
-    gateFailures(withSuite("skipped"), { postgres: true, lifecycle: false }).map(
+    gateFailures(withSuite("success"), { postgres: true, lifecycle: false, site: false }),
+  ).toEqual([]);
+  expect(
+    gateFailures(withSuite("skipped"), { postgres: true, lifecycle: false, site: false }).map(
       (slice) => slice.name,
     ),
   ).toEqual(["suite"]);
   expect(
-    gateFailures(withSuite("failure"), { postgres: true, lifecycle: false }).map(
+    gateFailures(withSuite("failure"), { postgres: true, lifecycle: false, site: false }).map(
       (slice) => slice.name,
     ),
   ).toEqual(["suite"]);
 });
 
 test("a pull request that does not touch those paths allows a skipped suite", () => {
-  expect(gateFailures(withSuite("skipped"), { postgres: false, lifecycle: false })).toEqual([]);
   expect(
-    gateFailures(withSuite("failure"), { postgres: false, lifecycle: false }).map(
+    gateFailures(withSuite("skipped"), { postgres: false, lifecycle: false, site: false }),
+  ).toEqual([]);
+  expect(
+    gateFailures(withSuite("failure"), { postgres: false, lifecycle: false, site: false }).map(
       (slice) => slice.name,
     ),
   ).toEqual(["suite"]);
@@ -49,11 +53,11 @@ test("lifecycle must succeed when the path asked for it", () => {
     { name: "suite", result: "skipped" },
     { name: "lifecycle", result: "success" },
   ];
-  expect(gateFailures(slices, { postgres: false, lifecycle: true })).toEqual([]);
+  expect(gateFailures(slices, { postgres: false, lifecycle: true, site: false })).toEqual([]);
   expect(
     gateFailures(
       [...READY, { name: "suite", result: "skipped" }, { name: "lifecycle", result: "skipped" }],
-      { postgres: false, lifecycle: true },
+      { postgres: false, lifecycle: true, site: false },
     ).map((slice) => slice.name),
   ).toEqual(["lifecycle"]);
 });
@@ -62,7 +66,7 @@ test("a pull request that does not touch lifecycle paths allows a skipped lifecy
   expect(
     gateFailures(
       [...READY, { name: "suite", result: "skipped" }, { name: "lifecycle", result: "skipped" }],
-      { postgres: false, lifecycle: false },
+      { postgres: false, lifecycle: false, site: false },
     ),
   ).toEqual([]);
 });
@@ -72,7 +76,9 @@ test("an always-on slice must be success", () => {
     slice.name === "test" ? { ...slice, result: "failure" } : slice,
   );
   expect(
-    gateFailures(slices, { postgres: false, lifecycle: false }).map((slice) => slice.name),
+    gateFailures(slices, { postgres: false, lifecycle: false, site: false }).map(
+      (slice) => slice.name,
+    ),
   ).toEqual(["test"]);
 });
 
@@ -81,6 +87,7 @@ test("a skipped label job on a fork is allowed", () => {
     gateFailures([...READY, { name: "paths", result: "skipped" }], {
       postgres: false,
       lifecycle: false,
+      site: false,
     }),
   ).toEqual([]);
 });
@@ -88,6 +95,39 @@ test("a skipped label job on a fork is allowed", () => {
 test("boolean postgres request still works for older callers", () => {
   expect(gateFailures(withSuite("skipped"), false)).toEqual([]);
   expect(gateFailures(withSuite("skipped"), true).map((slice) => slice.name)).toEqual(["suite"]);
+});
+
+test("site tests must succeed when tooling or dialects changed", () => {
+  const skipped = [...READY, { name: "site", result: "skipped" }];
+  expect(
+    gateFailures(skipped, { postgres: false, lifecycle: false, site: true }).map(
+      (slice) => slice.name,
+    ),
+  ).toEqual(["site"]);
+  expect(
+    gateFailures([...READY, { name: "site", result: "failure" }], {
+      postgres: false,
+      lifecycle: false,
+      site: true,
+    }).map((slice) => slice.name),
+  ).toEqual(["site"]);
+  expect(
+    gateFailures([...READY, { name: "site", result: "success" }], {
+      postgres: false,
+      lifecycle: false,
+      site: true,
+    }),
+  ).toEqual([]);
+});
+
+test("a pull request that does not touch tooling or dialects allows a skipped site job", () => {
+  expect(
+    gateFailures([...READY, { name: "site", result: "skipped" }], {
+      postgres: false,
+      lifecycle: false,
+      site: false,
+    }),
+  ).toEqual([]);
 });
 
 test("parseGateSlices reads name=result and ignores flags", () => {

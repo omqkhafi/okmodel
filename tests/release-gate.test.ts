@@ -331,6 +331,8 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   expect(ci).toContain("group: ci-${{ github.event.pull_request.number }}");
   expect(ci).toMatch(/name: gate \/ check[\s\S]*?if: always\(\)/);
   expect(ci).toContain("bun ./scripts/ci-gate.ts");
+  expect(ci).toContain("--site ${{ needs.changes.outputs.site == 'true' && '1' || '0' }}");
+  expect(ci).toContain("site=${{ needs.site.result }}");
   expect(ci).toContain("bun test --changed=");
   expect(ci).toContain("bun run size -- --runtime-entry");
   expect(after).toMatch(/push:\n {4}branches:\n {6}- main\n/);

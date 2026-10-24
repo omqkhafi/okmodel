@@ -8,6 +8,7 @@ import {
   lifecycleRelevant,
   postgres18Relevant,
   runtimeRelevant,
+  siteTestsRelevant,
   workflowsChanged,
 } from "./ci-paths.js";
 
@@ -38,6 +39,17 @@ test("workflow path changes are detected for the full tier", () => {
   expect(workflowsChanged([".github/workflows/windows.yml", "docs/github.md"])).toBe(true);
   expect(workflowsChanged([".github/actions/setup-bun/action.yml"])).toBe(false);
   expect(workflowsChanged(["docs/github.md"])).toBe(false);
+});
+
+test("tooling and dialects run the site tests", () => {
+  expect(siteTestsRelevant(["src/tooling/migrate/commands.ts"])).toBe(true);
+  expect(siteTestsRelevant(["src/dialects/pg/ddl.ts"])).toBe(true);
+  expect(siteTestsRelevant(["src/tooling/cli.ts", "docs/github.md"])).toBe(true);
+  expect(siteTestsRelevant(["src/runtime/client.ts"])).toBe(false);
+  expect(siteTestsRelevant(["src/adapters/pg/postgresjs.ts"])).toBe(false);
+  expect(siteTestsRelevant(["site/lib/hero-derived.json"])).toBe(false);
+  expect(siteTestsRelevant(["docs/errors/OKM1510.md"])).toBe(false);
+  expect(siteTestsRelevant([])).toBe(false);
 });
 
 test("dialects, migrate, and tests/lifecycle run the lifecycle property", () => {
