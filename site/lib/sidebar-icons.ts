@@ -74,9 +74,9 @@ import { createElement, type ReactNode } from "react";
 const PATH_ICONS: Readonly<Record<string, LucideIcon>> = {
   "/docs/start": Terminal,
   "/docs/start/basic-usage": Play,
-  "/docs/start/from-drizzle": FileInput,
-  "/docs/start/from-existing": FolderInput,
   "/docs/start/safely": Lock,
+  "/docs/migrate/from-drizzle": FileInput,
+  "/docs/migrate/from-existing": FolderInput,
   "/docs/define/config": Settings,
   "/docs/define/config/database": Database,
   "/docs/define/config/roles": Users,

@@ -53,12 +53,17 @@ test("every page and folder is listed in its meta.json", () => {
       .filter((entry) => entry.isDirectory() || /\.mdx?$/.test(entry.name))
       .map((entry) => entry.name.replace(/\.mdx?$/, ""));
     const meta: unknown = JSON.parse(readFileSync(join(dir, "meta.json"), "utf8"));
-    const listed =
+    const pages =
       typeof meta === "object" && meta !== null && "pages" in meta && Array.isArray(meta.pages)
-        ? meta.pages.filter((item): item is string => typeof item === "string" && !item.startsWith("---"))
+        ? meta.pages.filter((item): item is string => typeof item === "string")
         : [];
+    const listed = new Set<string>();
+    for (const item of pages) {
+      if (isLocalMetaPage(item)) listed.add(item);
+      if (item.startsWith("...") && item !== "..." && item !== "z...a") listed.add(item.slice(3));
+    }
     const where = relative(contentDir, dir) || ".";
-    expect(listed.slice().sort(), where).toEqual(names.slice().sort());
+    expect([...listed].sort(), where).toEqual(names.slice().sort());
     for (const entry of entries) {
       if (entry.isDirectory()) walk(join(dir, entry.name));
     }
@@ -72,4 +77,18 @@ function pageExists(href: string): boolean {
   return [`${base}.mdx`, `${base}.md`, join(base, "index.mdx"), join(base, "index.md")].some((path) =>
     existsSync(path),
   );
+}
+
+/**
+ * Whether a `meta.json` pages entry names a page or folder in this directory.
+ * Separators, extract (`...name`), exclude (`!name`), and cross-folder paths
+ * are ordered in the parent and are not local names.
+ */
+function isLocalMetaPage(item: string): boolean {
+  if (item.startsWith("---")) return false;
+  if (item === "..." || item === "z...a") return false;
+  if (item.startsWith("...") || item.startsWith("!")) return false;
+  if (item.startsWith("./") || item.startsWith("../")) return false;
+  if (item.startsWith("external:") || item.includes("](")) return false;
+  return true;
 }

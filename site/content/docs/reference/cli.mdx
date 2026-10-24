@@ -378,7 +378,7 @@ bunx okm migrate resolve 0001_init:2 --applied
 
 ## migrate baseline
 
-`okm migrate baseline` records the head snapshot as applied history on an existing database without running schema changes. Use it after [`okm pull`](#pull) and `okm generate` when the live database already matches the model. The guide is [Adopt an existing database](/docs/start/from-existing).
+`okm migrate baseline` records the head snapshot as applied history on an existing database without running schema changes. Use it after [`okm pull`](#pull) and `okm generate` when the live database already matches the model. The guide is [Existing database](/docs/migrate/from-existing).
 
 It introspects the target and plans managed objects against the head catalog. A difference is OKM1858 and prints that plan; nothing is marked applied. Objects the model does not name are listed as unmanaged and are left alone. A target that already has OKModel history is OKM1857. A repeat with the same `baselined@<migration id>` and catalog hash prints `already baselined` and changes nothing. The write creates `okm_meta` and `okm_history` when absent and inserts only those rows. The operation is history repair, so a protected target needs `--allow-protected`.
 

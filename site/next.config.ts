@@ -44,6 +44,8 @@ const config: NextConfig = {
     return [
       { source: "/docs/start/install", destination: "/docs/start", permanent: true },
       { source: "/docs/start/query", destination: "/docs/start", permanent: true },
+      { source: "/docs/start/from-drizzle", destination: "/docs/migrate/from-drizzle", permanent: true },
+      { source: "/docs/start/from-existing", destination: "/docs/migrate/from-existing", permanent: true },
       { source: "/docs/config", destination: "/docs/define/config", permanent: true },
       { source: "/docs/config/file", destination: "/docs/define/config", permanent: true },
       { source: "/docs/config/targets", destination: "/docs/define/config/database", permanent: true },

@@ -4,7 +4,7 @@ description: "okmodel is a catalog-first TypeScript ORM, PostgreSQL first."
 ---
 The schema is the source. Migrations and queries come from it. Start with one table, then add only the part you need.
 
-0.9 adds tooling around that schema: [pull](/docs/reference/cli#pull) writes table files from a database, [import drizzle](/docs/start/from-drizzle) writes them from a Drizzle schema, [catalogs](/docs/define/schema/catalogs) share one database, [describe](/docs/reference/schema-api) returns the catalog as JSON, [extension packs](/docs/define/schema/extensions) cover the contrib set except `vector`, the [GitHub Action](/docs/reference/github-action) posts the plan, and a [type change](/docs/reference/type-change) that rewrites a table is five migrations.
+0.9 adds tooling around that schema: [pull](/docs/reference/cli#pull) writes table files from a database, [import drizzle](/docs/migrate/from-drizzle) writes them from a Drizzle schema, [catalogs](/docs/define/schema/catalogs) share one database, [describe](/docs/reference/schema-api) returns the catalog as JSON, [extension packs](/docs/define/schema/extensions) cover the contrib set except `vector`, the [GitHub Action](/docs/reference/github-action) posts the plan, and a [type change](/docs/reference/type-change) that rewrites a table is five migrations.
 
 <Callout title="The source">
   The tables you declare are the catalog. Queries, migrations, and checks come from that catalog.
@@ -35,9 +35,14 @@ Add the package, then one table. The next page is one example per call.
     href="/docs/start/basic-usage"
   />
   <Card
-    title="Adopt an existing database"
+    title="Existing database"
     description="Pull, generate, then baseline without replaying DDL."
-    href="/docs/start/from-existing"
+    href="/docs/migrate/from-existing"
+  />
+  <Card
+    title="From Drizzle"
+    description="Import a Drizzle schema into okmodel table files."
+    href="/docs/migrate/from-drizzle"
   />
   <Card
     title="Using OKModel safely"
