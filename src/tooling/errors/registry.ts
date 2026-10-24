@@ -1078,7 +1078,7 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     code: "OKM1895",
     title: "Usage",
     summary: "The command line was not accepted.",
-    fix: "Run okm --help for the command list, or okm <command> --help for that command's flags.",
+    fix: "`okm --help` lists the commands, and `okm <command> --help` lists that command's flags.",
     since: "0.10",
   },
   {
