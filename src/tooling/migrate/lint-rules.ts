@@ -912,12 +912,7 @@ function notNullFloorValidate(input: StepInput): boolean {
 }
 
 function columnAdded(earlier: readonly PlanStep[], tableSql: string, column: string): boolean {
-  return earlier.some((step) => {
-    const prior = normalizedSql(step.sql);
-    const match = /^alter table\s+(\S+)\s+add column\s+(\S+)\b/.exec(prior);
-    if (match === null || match[1] !== tableSql) return false;
-    return lastName(match[2]) === column;
-  });
+  return addedColumn(earlier, tableSql, column) !== undefined;
 }
 
 /**
@@ -926,10 +921,12 @@ function columnAdded(earlier: readonly PlanStep[], tableSql: string, column: str
  * The planner pairs `ADD COLUMN` (constant default, or nullable with no
  * default) with `ADD CONSTRAINT … NOT VALID` then `VALIDATE`. Existing rows
  * only see the new column's default or null, so that scan is not OKM1531
- * when the default passes the check and NULL does not make it false. A
- * default that fails the check, a nullable column whose check rejects NULL,
- * a volatile default, or a check on a column that already existed, stays an
- * error (D301).
+ * when the default passes the check and NULL does not make it false. The
+ * default and nullability come from the `ADD COLUMN` statement. A write on
+ * that table after the add, a default in the statement that fails the check,
+ * a nullable column whose check rejects NULL, a volatile default, or a check
+ * on a column that already existed, stays an error (D301). The catalog
+ * snapshot is not enough: a hand-written file can disagree with it.
  */
 function ownColumnCheckValidate(input: StepInput): boolean {
   const text = normalizedSql(input.step.sql);
@@ -955,44 +952,334 @@ function ownColumnCheckValidate(input: StepInput): boolean {
   const columns = constraint.definition.columns;
   if (columns.length === 0) return false;
   const expression = constraint.definition.expression ?? "";
-  return columns.every((column) => ownColumnSafe(input, tableSql, tableName, column, expression));
+  return columns.every((column) => ownColumnSafe(input, tableSql, column, expression));
 }
 
 /**
  * Whether one check column was added in this migration with a safe default.
  *
- * @param input - Step context with earlier SQL and the after catalog
+ * @param input - Step context with earlier SQL and the catalogs
  * @param tableSql - Qualified table token from the validate statement
- * @param tableName - Unquoted table name
  * @param column - Column the check names
  * @param expression - Check expression, without the `CHECK` keyword
- * @returns `true` when the column add is constant-default or nullable and the check accepts that value
+ * @returns `true` when the add statement is a constant default or nullable and the check accepts that value
  */
 function ownColumnSafe(
   input: StepInput,
   tableSql: string,
-  tableName: string,
   column: string,
   expression: string,
 ): boolean {
-  const added = input.earlier.some((step) => {
-    const prior = normalizedSql(step.sql);
-    const match = /^alter table\s+(\S+)\s+add column\s+(\S+)\b/.exec(prior);
-    if (match === null) return false;
-    if (match[1] !== tableSql) return false;
-    return lastName(match[2]) === column;
-  });
-  if (!added) return false;
-  const found = findColumn(input.after, tableName, column);
-  if (found === undefined) return false;
-  if (volatileDefault(found.definition.defaultExpression, [input.before, input.after])) {
-    return false;
+  const added = addedColumn(input.earlier, tableSql, column);
+  if (added === undefined) return false;
+  if (writesTableAfter(input.earlier, tableSql, added.index)) return false;
+  const shape = addedColumnShape(added.sql, column);
+  if (shape === undefined || shape.generated) return false;
+  if (volatileDefault(shape.defaultExpression, [input.before, input.after])) return false;
+  if (shape.defaultExpression !== undefined) {
+    return !defaultViolatesCheck(column, shape.defaultExpression, expression);
   }
-  if (found.definition.defaultExpression !== undefined) {
-    return !defaultViolatesCheck(column, found.definition.defaultExpression, expression);
-  }
-  if (!found.definition.nullable) return false;
+  if (!shape.nullable) return false;
   return !checkRejectsNull(column, expression);
+}
+
+/**
+ * The `ADD COLUMN` for `column` on `tableSql`, using the statement text.
+ *
+ * @param earlier - Steps before `VALIDATE`
+ * @param tableSql - Table token from that statement
+ * @param column - Column the check names
+ * @returns The last matching add, or `undefined` when this migration did not add it
+ */
+function addedColumn(
+  earlier: readonly PlanStep[],
+  tableSql: string,
+  column: string,
+): { readonly index: number; readonly sql: string } | undefined {
+  let found: { readonly index: number; readonly sql: string } | undefined;
+  earlier.forEach((step, index) => {
+    const prior = normalizedSql(step.sql);
+    const match = /^alter table\s+(\S+)\s+add column(?:\s+if not exists)?\s+(\S+)\b/.exec(prior);
+    if (match === null || match[1] !== tableSql) return;
+    if (lastName(match[2]) !== column) return;
+    found = { index, sql: prior };
+  });
+  return found;
+}
+
+/**
+ * Whether a later statement can store a value other than the column default.
+ *
+ * `INSERT`, `UPDATE`, and `DELETE` on the same table token count. A write
+ * before the add does not: the column is not there yet.
+ *
+ * @param earlier - Steps before `VALIDATE`
+ * @param tableSql - Table token from the add
+ * @param addedAt - Index of that add in `earlier`
+ * @returns `true` when a row written in the gap can fail the check
+ */
+function writesTableAfter(
+  earlier: readonly PlanStep[],
+  tableSql: string,
+  addedAt: number,
+): boolean {
+  return earlier.slice(addedAt + 1).some((step) => writesTable(normalizedSql(step.sql), tableSql));
+}
+
+function writesTable(sql: string, tableSql: string): boolean {
+  const update = /^update\s+(?:only\s+)?(\S+)/.exec(sql);
+  if (update?.[1] === tableSql) return true;
+  const insert = /^insert\s+into\s+(\S+)/.exec(sql);
+  if (insert?.[1] === tableSql) return true;
+  const removed = /^delete\s+from\s+(?:only\s+)?(\S+)/.exec(sql);
+  return removed?.[1] === tableSql;
+}
+
+type AddedShape = {
+  readonly nullable: boolean;
+  readonly defaultExpression: string | undefined;
+  readonly generated: boolean;
+};
+
+/**
+ * Nullability and default from an `ADD COLUMN` statement.
+ *
+ * Postgres's column grammar allows the constraints in any order. A generated
+ * column is not a constant default. Unparsed text is `undefined`, and the
+ * caller then keeps OKM1531.
+ *
+ * @param sql - Normalised `ADD COLUMN` statement
+ * @param column - Column name the check uses
+ * @returns The shape, or `undefined` when the statement does not parse
+ */
+function addedColumnShape(sql: string, column: string): AddedShape | undefined {
+  const match = /^alter table\s+\S+\s+add column(?:\s+if not exists)?\s+(\S+)\s+([\s\S]+)$/.exec(
+    sql,
+  );
+  if (match === null || lastName(match[1]) !== column) return undefined;
+  const tail = match[2]?.trim().replace(/;$/, "").trim();
+  if (tail === undefined || tail.length === 0) return undefined;
+  return columnShape(tail);
+}
+
+function columnShape(tail: string): AddedShape | undefined {
+  let nullable = true;
+  let defaultExpression: string | undefined;
+  let generated = false;
+  let index = 0;
+  let depth = 0;
+  while (index < tail.length) {
+    const char = tail[index] ?? "";
+    if (char === "'") {
+      const next = closeQuote(tail, index, "'");
+      if (next === undefined) return undefined;
+      index = next;
+      continue;
+    }
+    if (char === '"') {
+      const next = closeQuote(tail, index, '"');
+      if (next === undefined) return undefined;
+      index = next;
+      continue;
+    }
+    if (char === "(") {
+      depth += 1;
+      index += 1;
+      continue;
+    }
+    if (char === ")") {
+      if (depth === 0) return undefined;
+      depth -= 1;
+      index += 1;
+      continue;
+    }
+    if (depth === 0 && isWordStart(char)) {
+      const word = readWord(tail, index);
+      const after = index + word.length;
+      if (word === "not" && peekWord(tail, after) === "null") {
+        nullable = false;
+        index = afterWord(tail, after);
+        continue;
+      }
+      if (word === "null") {
+        nullable = true;
+        index = after;
+        continue;
+      }
+      if (word === "default") {
+        const expression = readDefaultExpression(tail, after);
+        if (expression === undefined) return undefined;
+        defaultExpression = expression.expression;
+        index = expression.next;
+        continue;
+      }
+      if (word === "generated") {
+        generated = true;
+        index = after;
+        continue;
+      }
+      if (word === "primary") {
+        nullable = false;
+        index = after;
+        continue;
+      }
+      if (word === "collate" || word === "constraint") {
+        const name = skipName(tail, after);
+        if (name === undefined) return undefined;
+        index = name;
+        continue;
+      }
+      index = after;
+      continue;
+    }
+    index += 1;
+  }
+  if (depth !== 0) return undefined;
+  if (generated) return { nullable: false, defaultExpression: undefined, generated: true };
+  return { nullable, defaultExpression, generated: false };
+}
+
+function readDefaultExpression(
+  sql: string,
+  start: number,
+): { readonly expression: string; readonly next: number } | undefined {
+  let index = start;
+  while (sql[index] === " ") index += 1;
+  const begin = index;
+  let depth = 0;
+  let consumed = false;
+  while (index < sql.length) {
+    const char = sql[index] ?? "";
+    if (char === "'") {
+      const next = closeQuote(sql, index, "'");
+      if (next === undefined) return undefined;
+      index = next;
+      consumed = true;
+      continue;
+    }
+    if (char === '"') {
+      const next = closeQuote(sql, index, '"');
+      if (next === undefined) return undefined;
+      index = next;
+      consumed = true;
+      continue;
+    }
+    if (char === "(") {
+      depth += 1;
+      index += 1;
+      consumed = true;
+      continue;
+    }
+    if (char === ")") {
+      if (depth === 0) break;
+      depth -= 1;
+      index += 1;
+      continue;
+    }
+    if (char === "$") {
+      const next = closeDollar(sql, index);
+      if (next !== undefined) {
+        index = next;
+        consumed = true;
+        continue;
+      }
+    }
+    if (depth === 0 && isWordStart(char)) {
+      const word = readWord(sql, index);
+      const after = index + word.length;
+      if (word === "not" && peekWord(sql, after) === "null") {
+        if (!consumed) return undefined;
+        break;
+      }
+      if (!consumed && word === "null") {
+        index = after;
+        break;
+      }
+      if (consumed && constraintWord(word, sql, after)) break;
+      index = after;
+      consumed = true;
+      continue;
+    }
+    index += 1;
+    if (char !== " ") consumed = true;
+  }
+  const expression = sql.slice(begin, index).trim();
+  if (expression.length === 0) return undefined;
+  return { expression, next: index };
+}
+
+function constraintWord(word: string, sql: string, after: number): boolean {
+  if (word === "not") return peekWord(sql, after) === "null";
+  return (
+    word === "null" ||
+    word === "default" ||
+    word === "generated" ||
+    word === "check" ||
+    word === "unique" ||
+    word === "primary" ||
+    word === "references" ||
+    word === "collate" ||
+    word === "constraint"
+  );
+}
+
+function closeQuote(sql: string, index: number, quote: "'" | '"'): number | undefined {
+  let cursor = index + 1;
+  while (cursor < sql.length) {
+    if (sql[cursor] === quote) {
+      if (sql[cursor + 1] === quote) {
+        cursor += 2;
+        continue;
+      }
+      return cursor + 1;
+    }
+    cursor += 1;
+  }
+  return undefined;
+}
+
+function closeDollar(sql: string, index: number): number | undefined {
+  const tag = /^\$[A-Za-z0-9_]*\$/.exec(sql.slice(index));
+  const token = tag?.[0];
+  if (token === undefined) return undefined;
+  const close = sql.indexOf(token, index + token.length);
+  if (close < 0) return undefined;
+  return close + token.length;
+}
+
+function skipName(sql: string, start: number): number | undefined {
+  let index = start;
+  while (sql[index] === " ") index += 1;
+  const char = sql[index];
+  if (char === '"') return closeQuote(sql, index, '"');
+  if (char !== undefined && isWordStart(char)) return index + readWord(sql, index).length;
+  return undefined;
+}
+
+function peekWord(sql: string, start: number): string | undefined {
+  let index = start;
+  while (sql[index] === " ") index += 1;
+  const char = sql[index];
+  if (char === undefined || !isWordStart(char)) return undefined;
+  return readWord(sql, index);
+}
+
+function afterWord(sql: string, start: number): number {
+  let index = start;
+  while (sql[index] === " ") index += 1;
+  const char = sql[index];
+  if (char === undefined || !isWordStart(char)) return index;
+  return index + readWord(sql, index).length;
+}
+
+function readWord(sql: string, index: number): string {
+  let cursor = index + 1;
+  while (cursor < sql.length && /[\w$]/.test(sql[cursor] ?? "")) cursor += 1;
+  return sql.slice(index, cursor);
+}
+
+function isWordStart(char: string): boolean {
+  return /[A-Za-z_]/.test(char);
 }
 
 /**

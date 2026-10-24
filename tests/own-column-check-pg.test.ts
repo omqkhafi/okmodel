@@ -6,7 +6,7 @@
  */
 
 import { expect } from "bun:test";
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -68,6 +68,71 @@ postgresTest(
   },
   120_000,
 );
+
+postgresTest(
+  gate,
+  "a hand-written write or volatile default between add and validate is OKM1531",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const cwd = mkdtempSync(join(tmpdir(), "okm-own-sql-"));
+    const sql = openPostgres(database.url);
+    try {
+      writeSchema(cwd, database.url, ["id: t.integer().primaryKey()", "title: t.text()"]);
+      expect(await okm(cwd, ["generate", "init"])).toContain(".sql");
+      expect(await okm(cwd, ["migrate", "apply"])).toContain("applied");
+      await sql.unsafe(`insert into tasks (id, title) values (1, 'a'), (2, 'b')`);
+
+      writeSchema(
+        cwd,
+        database.url,
+        ["id: t.integer().primaryKey()", "title: t.text()", 'status: t.text().default("a")'],
+        "ok: (columns) => sql`${columns.status} IN ('a', 'b')`",
+      );
+      expect(await okm(cwd, ["generate", "hand"])).toContain("hand");
+      const file = pendingSql(cwd);
+      const original = readFileSync(file, "utf8");
+      const tableSql = /alter table\s+(\S+)\s+validate constraint/i.exec(original)?.[1];
+      if (tableSql === undefined) throw new Error(original);
+      const step = original.lastIndexOf("\n-- class:");
+      if (step < 0) throw new Error(original);
+      writeFileSync(
+        file,
+        [
+          original.slice(0, step),
+          `-- backfill table=${tableSql} key="id" batch=100`,
+          `update ${tableSql} set "status" = 'nope' where ($1::text is null or "id" > $1::integer) and ($2::text is null or "id" <= $2::integer);`,
+          original.slice(step),
+        ].join("\n"),
+      );
+      expect(await rejected(cwd, ["migrate", "apply"])).toContain("OKM1531");
+
+      const volatile = original.replace(
+        /(add column[\s\S]*?)default 'a'/,
+        "$1default gen_random_uuid()::text",
+      );
+      if (!volatile.includes("gen_random_uuid()")) throw new Error(original);
+      writeFileSync(file, volatile);
+      expect(await rejected(cwd, ["migrate", "apply"])).toContain("OKM1531");
+
+      writeFileSync(file, original);
+      expect(await okm(cwd, ["migrate", "apply"])).toContain("applied");
+      const statuses = await sql<{ status: string }[]>`select status from tasks order by id`;
+      expect(statuses.map((row) => row.status)).toEqual(["a", "a"]);
+    } finally {
+      await sql.end({ timeout: 5 });
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  120_000,
+);
+
+function pendingSql(cwd: string): string {
+  const dir = join(cwd, "migrations");
+  const name = readdirSync(dir).find((file) => file.endsWith(".sql") && !file.startsWith("0001_"));
+  if (name === undefined) throw new Error(`no pending migration in ${dir}`);
+  return join(dir, name);
+}
 
 function dropPending(cwd: string): void {
   const dir = join(cwd, "migrations");
