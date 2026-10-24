@@ -6,6 +6,9 @@
  * and OKM1801 is a dialect mismatch. This module does not invent a code and
  * does not throw for a missing flag.
  *
+ * Each object is frozen. The `@__PURE__` mark lets a bundle drop the objects
+ * it does not import. A bare `Object.freeze` keeps every object in this file.
+ *
  * `stream` means the driver can open a server cursor. `.stream()` does not
  * read it. That method walks keyset batches on every driver.
  */
@@ -25,7 +28,7 @@ export type CapabilityName = (typeof CAPABILITY_NAMES)[number];
  * the unnamed extended protocol so a plain execute is one round trip.
  * Named prepares are a connect option, not a flag.
  */
-export const POSTGRESJS_CAPABILITIES = Object.freeze({
+export const POSTGRESJS_CAPABILITIES = /* @__PURE__ */ Object.freeze({
   transactions: "interactive",
   stream: true,
   listen: true,
@@ -39,7 +42,7 @@ export const POSTGRESJS_CAPABILITIES = Object.freeze({
  * false: an in-flight statement cannot be aborted, and `statement_timeout`
  * is not enforced. The pool can describe a statement; that is not a flag.
  */
-export const PGLITE_CAPABILITIES = Object.freeze({
+export const PGLITE_CAPABILITIES = /* @__PURE__ */ Object.freeze({
   transactions: "interactive",
   stream: false,
   listen: true,
@@ -54,7 +57,7 @@ export const PGLITE_CAPABILITIES = Object.freeze({
  * statement without running it, so the suite skips that case.
  * Parameterized queries use the unnamed extended protocol.
  */
-export const NODE_POSTGRES_CAPABILITIES = Object.freeze({
+export const NODE_POSTGRES_CAPABILITIES = /* @__PURE__ */ Object.freeze({
   transactions: "interactive",
   stream: true,
   listen: true,
@@ -71,7 +74,7 @@ export const NODE_POSTGRES_CAPABILITIES = Object.freeze({
  * surfaced, so the notice case is skipped. `prepare` is off, so a
  * parameterized query does not leave a named statement.
  */
-export const BUNSQL_CAPABILITIES = Object.freeze({
+export const BUNSQL_CAPABILITIES = /* @__PURE__ */ Object.freeze({
   transactions: "interactive",
   stream: true,
   listen: true,
@@ -87,7 +90,7 @@ export const BUNSQL_CAPABILITIES = Object.freeze({
  * describe API. Statements use the unnamed protocol. `prepared: "named"`
  * is a connect option and is not for a transaction-mode pooler.
  */
-export const NEON_WEBSOCKET_CAPABILITIES = Object.freeze({
+export const NEON_WEBSOCKET_CAPABILITIES = /* @__PURE__ */ Object.freeze({
   transactions: "interactive",
   stream: false,
   listen: false,
@@ -101,7 +104,7 @@ export const NEON_WEBSOCKET_CAPABILITIES = Object.freeze({
  * There is no interactive `tx()`, no `LISTEN`, no server cursor, and no
  * cancel of a statement the server has already started.
  */
-export const NEON_HTTP_CAPABILITIES = Object.freeze({
+export const NEON_HTTP_CAPABILITIES = /* @__PURE__ */ Object.freeze({
   transactions: "batch",
   stream: false,
   listen: false,

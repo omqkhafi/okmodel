@@ -28,14 +28,7 @@ export function definition(message: string): never {
 
 type IndexMarked = {
   readonly name: string;
-  readonly columns: Readonly<Record<string, unknown>>;
-  readonly options?: {
-    readonly tenantIndexes?: unknown;
-    readonly indexes?: (columns: Readonly<Record<string, { readonly name: string }>>) => readonly {
-      readonly tenantGlobal?: string;
-      readonly tenantScoped?: boolean;
-    }[];
-  };
+  readonly options?: { readonly tenantIndexes?: unknown };
 };
 
 /**
@@ -49,35 +42,6 @@ type IndexMarked = {
 export function refuseGlobalTenantIndexes(item: IndexMarked): void {
   if (item.options?.tenantIndexes !== undefined) {
     definition(`Table ${item.name} sets tenantIndexes, and the table is global.`);
-  }
-}
-
-/**
- * Refuses tenant index marks when the schema has no tenancy.
- *
- * `tenantIndexes`, `index().global()`, and `index().scoped()` do nothing
- * there. The callback is read with the table's own fields so only the marks
- * are inspected.
- *
- * @param item - One table in a schema that set no tenancy
- */
-export function refuseTenancyIndexMarks(item: IndexMarked): void {
-  if (item.options?.tenantIndexes !== undefined) {
-    definition(`Table ${item.name} sets tenantIndexes, and the schema has no tenancy.`);
-  }
-  const build = item.options?.indexes;
-  if (typeof build !== "function") return;
-  const handles: Record<string, { readonly name: string }> = {};
-  for (const field of Object.keys(item.columns)) handles[field] = { name: field };
-  const calls = build(handles);
-  if (!Array.isArray(calls)) return;
-  for (const call of calls) {
-    if (call?.tenantGlobal !== undefined) {
-      definition(`Table ${item.name} index().global() needs tenancy. The schema has none.`);
-    }
-    if (call?.tenantScoped === true) {
-      definition(`Table ${item.name} index().scoped() needs tenancy. The schema has none.`);
-    }
   }
 }
 
