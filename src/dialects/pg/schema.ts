@@ -1186,6 +1186,7 @@ function compileIndexes(
         columns: built.columns,
         unique: built.isUnique === true,
         nameKey: built.columns.join("_"),
+        ...(built.sqlName !== undefined ? { name: built.sqlName } : {}),
         ...(built.predicate !== undefined ? { predicate: built.predicate } : {}),
         ...(built.expression !== undefined ? { expression: built.expression } : {}),
         provenance,
@@ -1735,6 +1736,9 @@ function readIndex(tableName: string, call: IndexCall, sqlTable: string): IndexC
     definition(
       `Index ${name} on ${tableName} is unique, but a ${method} index cannot be unique: Postgres builds unique indexes with btree only. Remove .unique(), or add a unique constraint or btree index on the same columns.`,
     );
+  }
+  if (call.sqlName !== undefined && call.sqlName.length === 0) {
+    definition(`Index on ${tableName} name must be a non-empty SQL identifier.`);
   }
   if (call.columns.length === 0) {
     definition(`Index on ${tableName} needs a column.`);

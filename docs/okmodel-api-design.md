@@ -505,7 +505,7 @@ Raw SQL is not a database object. A declared view, function, trigger or grant is
 | role | `name` (cluster object) |
 | extension | `name` |
 
-**Names.** A generated name uses SQL names after `casing` and `sqlName`. A primary key is `{table}_pkey`. A unique is `{table}_{every column}_key`. A foreign key is `{table}_{every referencing column}_fkey`, the PostgreSQL default, so a table created with `UNIQUE (a, b)` adopts with no plan steps when the schema matches. A picklist check uses the SQL column. A named check keeps the author's name. An index is `{table}_{columns}_idx`. A name longer than 63 bytes keeps a 32-bit hash suffix (8 hex characters). The stored name key is not that spelling. Renaming a field keeps the old name until the planner emits `RENAME CONSTRAINT` or `ALTER INDEX … RENAME` (D234).
+**Names.** A generated name uses SQL names after `casing` and `sqlName`. A primary key is `{table}_pkey`. A unique is `{table}_{every column}_key`. A foreign key is `{table}_{every referencing column}_fkey`, the PostgreSQL default, so a table created with `UNIQUE (a, b)` adopts with no plan steps when the schema matches. A picklist check uses the SQL column. A named check keeps the author's name. An index is `{table}_{columns}_idx`, unless `.name()` sets the SQL name. A name longer than 63 bytes keeps a 32-bit hash suffix (8 hex characters). The stored name key is not that spelling. Renaming a field keeps the old name until the planner emits `RENAME CONSTRAINT` or `ALTER INDEX … RENAME` (D234).
 
 **Templates in identity.** Snapshots and diffs store the logical identity, including the namespace template, never the concrete tenant names. A migration is therefore written once and resolved to concrete namespaces at execution time (section 19.5).
 

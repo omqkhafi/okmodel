@@ -11,7 +11,7 @@ A live database with no OKModel history can be adopted without replaying DDL (D2
 ## Steps
 
 1. Point `okmodel.config.ts` at the database.
-2. Introspect with `okm pull` (or write the schema by hand so it matches). Pulled relative imports keep the `.ts` extension. When `tsc` typechecks that output, set `allowImportingTsExtensions` with `noEmit`, or set `rewriteRelativeImportExtensions`.
+2. Introspect with `okm pull` (or write the schema by hand so it matches). An index whose database name is not `{table}_{columns}_idx` is written with that name, so baseline does not plan a rename. Pulled relative imports keep the `.ts` extension. When `tsc` typechecks that output, set `allowImportingTsExtensions` with `noEmit`, or set `rewriteRelativeImportExtensions`.
 3. `okm generate init` so the project has a head snapshot.
 4. `okm migrate baseline` to record that snapshot as applied history.
 5. Later changes use `okm generate` and `okm migrate apply` as usual.
