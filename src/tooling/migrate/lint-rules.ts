@@ -13,6 +13,7 @@ import type {
 } from "../../contracts/catalog/types.js";
 import { postgresProbeParses } from "./pg-probe.js";
 import type { PlanStep, StepKind } from "./plan.js";
+import { checkRejectsNull, defaultViolatesCheck } from "./check-value.js";
 import { volatileDefault } from "./safe.js";
 import { statementOutsideTransaction } from "./runner.js";
 import { sqlStatements, transactionControl } from "./sql-lex.js";
@@ -900,7 +901,22 @@ function notNullFloorValidate(input: StepInput): boolean {
     const prior = normalizedSql(step.sql);
     if (!prior.startsWith(`alter table ${table} `)) return false;
     if (!prior.includes(`add constraint ${constraint} `)) return false;
-    return /check\s*\(\s*\S+\s+is not null\s*\)\s*not valid/.test(prior);
+    const body = /check\s*\(\s*(\S+)\s+is not null\s*\)\s*not valid/.exec(prior);
+    if (body === null) return false;
+    // A column added in this migration is NULL on every existing row. That
+    // check is the user's, not the temporary floor before SET NOT NULL.
+    const column = lastName(body[1]);
+    if (column !== undefined && columnAdded(input.earlier, table, column)) return false;
+    return true;
+  });
+}
+
+function columnAdded(earlier: readonly PlanStep[], tableSql: string, column: string): boolean {
+  return earlier.some((step) => {
+    const prior = normalizedSql(step.sql);
+    const match = /^alter table\s+(\S+)\s+add column\s+(\S+)\b/.exec(prior);
+    if (match === null || match[1] !== tableSql) return false;
+    return lastName(match[2]) === column;
   });
 }
 
@@ -909,8 +925,10 @@ function notNullFloorValidate(input: StepInput): boolean {
  *
  * The planner pairs `ADD COLUMN` (constant default, or nullable with no
  * default) with `ADD CONSTRAINT … NOT VALID` then `VALIDATE`. Existing rows
- * only see the new column's default or null, so that scan is not OKM1531.
- * A volatile default, or a check on a column that already existed, stays an
+ * only see the new column's default or null, so that scan is not OKM1531
+ * when the default passes the check and NULL does not make it false. A
+ * default that fails the check, a nullable column whose check rejects NULL,
+ * a volatile default, or a check on a column that already existed, stays an
  * error (D301).
  */
 function ownColumnCheckValidate(input: StepInput): boolean {
@@ -936,7 +954,8 @@ function ownColumnCheckValidate(input: StepInput): boolean {
   }
   const columns = constraint.definition.columns;
   if (columns.length === 0) return false;
-  return columns.every((column) => ownColumnSafe(input, tableSql, tableName, column));
+  const expression = constraint.definition.expression ?? "";
+  return columns.every((column) => ownColumnSafe(input, tableSql, tableName, column, expression));
 }
 
 /**
@@ -946,13 +965,15 @@ function ownColumnCheckValidate(input: StepInput): boolean {
  * @param tableSql - Qualified table token from the validate statement
  * @param tableName - Unquoted table name
  * @param column - Column the check names
- * @returns `true` when the column add is constant-default or nullable
+ * @param expression - Check expression, without the `CHECK` keyword
+ * @returns `true` when the column add is constant-default or nullable and the check accepts that value
  */
 function ownColumnSafe(
   input: StepInput,
   tableSql: string,
   tableName: string,
   column: string,
+  expression: string,
 ): boolean {
   const added = input.earlier.some((step) => {
     const prior = normalizedSql(step.sql);
@@ -967,8 +988,11 @@ function ownColumnSafe(
   if (volatileDefault(found.definition.defaultExpression, [input.before, input.after])) {
     return false;
   }
-  if (found.definition.defaultExpression !== undefined) return true;
-  return found.definition.nullable;
+  if (found.definition.defaultExpression !== undefined) {
+    return !defaultViolatesCheck(column, found.definition.defaultExpression, expression);
+  }
+  if (!found.definition.nullable) return false;
+  return !checkRejectsNull(column, expression);
 }
 
 /**
