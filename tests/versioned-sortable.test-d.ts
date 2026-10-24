@@ -122,6 +122,15 @@ void claimHidden({
   lock: "skip",
   version: "any",
 });
+void update({
+  // @ts-expect-error version: "any" where rejects an unknown field, same as an integer update
+  where: { id: "1", nope: true },
+  set: { title: "b" },
+  limit: 1,
+  lock: "skip",
+  // @ts-expect-error the integer overload does not take version: "any"
+  version: "any",
+});
 type UpdateParam = Parameters<Api["update"]>[0];
 const validParam: UpdateParam = { where: { id: "1" }, set: { title: "b" }, version: 1 };
 void validParam;

@@ -935,14 +935,20 @@ export type UpdateTarget<S extends QuerySchema, K extends keyof S["~byName"]> =
  * A miss is an empty array (O-5). Kept off {@link UpdateTargetVersioned} so
  * `Omit` on that union cannot treat `lock` and `limit` as optional.
  *
- * A later `update` overload accepts it. An earlier overload is built for
- * every update and pushes the query-200-validate type ceiling over.
+ * `where` is closed the same way as an integer update, so an unknown field
+ * is refused. A hidden filterable column stays. A later `update` overload
+ * accepts the claim. An earlier overload is built for every update and
+ * pushes the query-200-validate type ceiling over.
  */
-type VersionAnyArg<S extends QuerySchema, K extends keyof S["~byName"]> = S["~byName"][K] extends {
+type VersionAnyArg<
+  S extends QuerySchema,
+  K extends keyof S["~byName"],
+  W,
+> = S["~byName"][K] extends {
   readonly "~versioned": true;
 }
   ? {
-      readonly where?: FilterFiltersOf<S, K> | Or<FilterFiltersOf<S, K>>;
+      readonly where?: FilterWhereOf<S, K, W>;
       readonly set: UpdateSet<S, K>;
       readonly limit: number;
       readonly lock: "skip";
@@ -1180,9 +1186,7 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   >(
     target: AllowedUpdateArg<S, K, Allow>,
     options: Opt,
-  ): [Opt["returning"]] extends [true]
-    ? Write<readonly Show<RowOf<S, K>>[]>
-    : Write<WriteCount>;
+  ): [Opt["returning"]] extends [true] ? Write<readonly Show<RowOf<S, K>>[]> : Write<WriteCount>;
   update(
     target: UpdateArg<S, K>,
     options: WriteOptions<S, K> & { readonly returning: true },
@@ -1195,7 +1199,7 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   update<
     const T extends ExactConstraint<
       T,
-      UpdateFilterTarget<S, K, T["where"]> | VersionAnyArg<S, K>
+      UpdateFilterTarget<S, K, T["where"]> | VersionAnyArg<S, K, T["where"]>
     >,
   >(
     target: T,
