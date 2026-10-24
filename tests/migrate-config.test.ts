@@ -12,6 +12,7 @@ import { join } from "node:path";
 
 import { OkmError } from "../src/contracts/error.js";
 import { run } from "../src/tooling/migrate/commands.js";
+import { status } from "../src/tooling/migrate/api.js";
 import { repoRoot } from "../scripts/root.js";
 
 const root = repoRoot();
@@ -42,6 +43,25 @@ describe("--config", () => {
       expect(error.message).toContain("okmodel.config.ts");
       expect(error.message).not.toContain("okm.config.ts");
       expect(error.fix?.summary).toContain("--config");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("--config names the path that was passed when that file is missing", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "okm-missing-named-"));
+    try {
+      const error = await rejected(["--config", "nope.config.ts", "build"], cwd);
+      expect(error.message).toContain("nope.config.ts");
+      expect(error.message).not.toContain("okmodel.config.ts");
+      const programmatic = await status({ cwd, config: "nope.config.ts" }).then(
+        () => undefined,
+        (caught: unknown) => caught,
+      );
+      expect(programmatic).toBeInstanceOf(OkmError);
+      if (!(programmatic instanceof OkmError)) return;
+      expect(programmatic.message).toContain("nope.config.ts");
+      expect(programmatic.message).not.toContain("okmodel.config.ts");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
