@@ -45,10 +45,12 @@ export const db = connect(process.env.DATABASE_URL!, { schema: app }); // [!code
 | 3 | [Topology](/docs/define/connect/topology) | A primary and its replicas. |
 | 4 | [Check](/docs/define/connect/check) | The server, the floor, and the catalog hash. |
 | 5 | [Session](/docs/define/connect/session) | Pool size, TLS, search path, and deadlines. |
-| 6 | [Errors](/docs/define/connect/errors) | HTTP statuses and row values. |
-| 7 | [Generators](/docs/define/connect/generators) | `uuidv4`, `uuidv7`, and `okid`. |
-| 8 | [Observers](/docs/define/connect/observers) | Notices, transactions, and errors. |
-| 9 | [OpenTelemetry](/docs/define/connect/otel) | Spans for those observers. |
+| 6 | [Session settings](/docs/define/connect/session-settings) | `sessionSettings()` and `db.with()` GUC values. |
+| 7 | [Limits](/docs/define/connect/limits) | Defaults for `find`, `page`, `groupBy`, and includes. |
+| 8 | [Errors](/docs/define/connect/errors) | HTTP statuses and row values. |
+| 9 | [Generators](/docs/define/connect/generators) | `uuidv4`, `uuidv7`, and `okid`. |
+| 10 | [Observers](/docs/define/connect/observers) | Notices, transactions, and errors. |
+| 11 | [OpenTelemetry](/docs/define/connect/otel) | Spans for those observers. |
 
 ## Close
 

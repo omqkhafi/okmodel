@@ -143,9 +143,9 @@ export async function removeNote(id: string) {
 
 `okm push` is for a database you can recreate. A shared database uses reviewed migrations: `okm generate init`, then `okm migrate apply`. `okm init` writes starter files for one package, or for the workspace packages you select, and does not connect; `okm generate init` writes the first migration and is a different command.
 
-## 0.9
+## Tooling
 
-This release is the tooling train. `okm pull` writes schema files from a database. `okm import drizzle` writes them from a Drizzle schema. Several catalogs share one database through `external()` and `okm catalog export`. `describe` and `buildCatalog` are on `okmodel/migrate`. Extension packs cover `unaccent`, `hstore`, `ltree`, `btree_gist`, `btree_gin`, `fuzzystrmatch`, and `pgcrypto`. The GitHub Action posts the migration plan on a pull request. A type change that rewrites a table is five migrations, not one `ALTER COLUMN … TYPE`.
+`okm pull` writes schema files from a database. `okm import drizzle` writes them from a Drizzle schema. Several catalogs share one database through `external()` and `okm catalog export`. `describe` and `buildCatalog` are on `okmodel/migrate`. Extension packs cover `unaccent`, `hstore`, `ltree`, `btree_gist`, `btree_gin`, `fuzzystrmatch`, and `pgcrypto`. The GitHub Action posts the migration plan on a pull request. A type change that rewrites a table is five migrations, not one `ALTER COLUMN … TYPE`.
 
 | Want…                   | Go to                                                                  |
 | ----------------------- | ---------------------------------------------------------------------- |
