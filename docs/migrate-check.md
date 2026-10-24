@@ -30,11 +30,13 @@ The scratch schema starts empty. The replay runs the migration files, not a copy
 - `NOT NULL` on a populated column, including `SET NOT NULL` and a not-null check
 - a unique index over duplicate values
 - a check constraint over existing rows that violate it
+- a foreign key validation over rows that do not match
+- a cast of values already stored
 
 A passing run prints that limit on the line after `ok N migrations`:
 
 ```text
-This check replays empty tables. A step that only fails on real data is not caught: NOT NULL on a populated column, a unique index over duplicates, or a check over existing rows.
+This check replays empty tables. A step that only fails on real data is not caught: NOT NULL on a populated column, a unique index over duplicates, a check over existing rows, a foreign key validation, or a cast.
 ```
 
 The first line stays `ok N migrations`. Skipped statements and OKM1552 warnings follow the limit. A data-aware `--with-data` mode is not this command. See [known limits](known-limits.md#migrations).

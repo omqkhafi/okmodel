@@ -48,6 +48,22 @@ postgresTest(
 
 postgresTest(
   gate,
+  "the limit line names foreign key validation and casts",
+  async () => {
+    await withProject(async ({ cwd }) => {
+      writeSchema(cwd, `table("items", { id: t.integer().primaryKey() })`);
+      await cli(cwd, ["generate", "init"]);
+      const text = await capture(["migrate", "check"], cwd);
+      expect(text.startsWith("ok 1 migrations\n")).toBe(true);
+      expect(text).toContain("a foreign key validation");
+      expect(text).toContain("or a cast");
+    });
+  },
+  60_000,
+);
+
+postgresTest(
+  gate,
   "a declared citext extension passes migrate check before and after apply",
   async () => {
     await withProject(async ({ cwd, url }) => {
