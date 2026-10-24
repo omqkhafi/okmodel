@@ -172,7 +172,7 @@ export const HERO_SCENARIOS: ReadonlyArray<HeroMigrateSpec> = [
     label: "Drop a table",
     name: "drop_notes",
     note: "a drop is a contract step, and the linter stops it until you allow it with a reason",
-    href: "/docs/define/config/migrations",
+    href: "/docs/define/config#migrations",
     edits: [
       {
         find: `const notes = table("notes", {

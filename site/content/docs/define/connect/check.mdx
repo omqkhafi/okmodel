@@ -110,7 +110,7 @@ Connect takes the first row that applies.
 
 When `catalog` is set, `hash` is the code's catalog hash. A difference loads `text` once per process. The load checks `text` against `hash`. Concurrent connects share that load.
 
-`catalogDir` is the directory of `catalog.hash` and `catalog.json`. A trailing `/` or `\` is removed, so the joined file name is one path. Connect reads this directory when `catalog` is omitted. [`okm build`](/docs/define/config/out) writes those two files.
+`catalogDir` is the directory of `catalog.hash` and `catalog.json`. A trailing `/` or `\` is removed, so the joined file name is one path. Connect reads this directory when `catalog` is omitted. [`okm build`](/docs/define/config#out) writes those two files.
 
 ```ts title="db.ts"
 import { connect } from "okmodel/pg/postgresjs";

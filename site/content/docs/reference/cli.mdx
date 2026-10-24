@@ -41,7 +41,7 @@ Exit codes are by outcome. `0` is done, or nothing to do. `1` is a command that 
 
 | Command | Result |
 | --- | --- |
-| `build` | Writes the catalog under [out](/docs/define/config/out). |
+| `build` | Writes the catalog under [out](/docs/define/config#out). |
 | `catalog export` | Writes the catalog snapshot a dependent verifies. |
 | `check` | Lints the schema. Compares one database when a target is selected. |
 | `dev` | Names a target called `dev`, or creates a PGlite database and prints its directory. |
@@ -85,9 +85,9 @@ Every command parses the flags in this table. An unknown flag is a usage error, 
 | `--config <path>`, `-c <path>` | Every command that loads a config. Loads that file instead of `okmodel.config.ts` in the working directory. |
 | `--target <name>`, `-t <name>` | `check`, `raw sync`, `migrate plan`, `migrate apply`, `migrate status`, `migrate resolve`, `migrate check`, `migrate baseline`, `push`, `pull`, `seed`, `protect add`, `protect remove`, `ext`, and `doctor`. Who requires it is [Database](/docs/define/config/database). |
 | `--allow-protected` | `migrate apply`, `migrate resolve`, `migrate baseline`, `push`, and `seed`. One invocation. Blocked work is [Protection](/docs/define/config/database#protection). `migrate check` ignores the flag. |
-| `--allow-pooler` | `migrate apply`, `migrate resolve`, `migrate baseline`, `push`, `seed`, `migrate check`, `raw sync`, and `check` when it compares a database. On `doctor --production` it marks a pooler URL as a fail instead of a warning, and changes no connection. Same opt-in as [allowPooler](/docs/define/config/pooler). Either one is enough. |
-| `--lock-timeout <milliseconds>` | `migrate apply` and `raw sync`. Overrides [timeouts.lock](/docs/define/config/timeouts). `0` disables it. |
-| `--statement-timeout <milliseconds>` | `migrate apply` and `raw sync`. Overrides [timeouts.statement](/docs/define/config/timeouts). |
+| `--allow-pooler` | `migrate apply`, `migrate resolve`, `migrate baseline`, `push`, `seed`, `migrate check`, `raw sync`, and `check` when it compares a database. On `doctor --production` it marks a pooler URL as a fail instead of a warning, and changes no connection. Same opt-in as [allowPooler](/docs/define/config#pooler). Either one is enough. |
+| `--lock-timeout <milliseconds>` | `migrate apply` and `raw sync`. Overrides [timeouts.lock](/docs/define/config#timeouts). `0` disables it. |
+| `--statement-timeout <milliseconds>` | `migrate apply` and `raw sync`. Overrides [timeouts.statement](/docs/define/config#timeouts). |
 | `--check` | `raw sync`. Writes nothing and exits 1 when the lock or the generated types would change. |
 | `--json` | Every command. Prints one `okm.cli/1` document. The command's previous JSON is `data`. |
 | `--out <file>`, `-o <file>` | With `--json`, writes `data` to the file unless the command already owns `--out`. `-` keeps `data` on stdout. |
@@ -141,7 +141,7 @@ bunx okm agents remove --yes
 
 ## build
 
-`okm build` validates the schema and writes the [out](/docs/define/config/out) directory. The default is `.okm`. It prints that directory. It does not connect.
+`okm build` validates the schema and writes the [out](/docs/define/config#out) directory. The default is `.okm`. It prints that directory. It does not connect.
 
 The files are `catalog.json`, `catalog.hash`, and `types.d.ts`. `catalog.hash` is the SHA-256 of `catalog.json`. `types.d.ts` is the row types. The mode header is on [Types](/docs/define/schema/types).
 
@@ -166,7 +166,7 @@ bunx okm pull --schema public --out ./adopted
 
 `okm import drizzle <path>` reads a Drizzle schema and writes one table file per table, plus the schema file. It imports that path, so the file runs. The `drizzle-orm` package is the one installed in the project. okmodel does not depend on it. A missing package is OKM1856: install `drizzle-orm` in the project. An existing file is OKM1855 and nothing is written. The command does not connect.
 
-The report starts with `namespace <name>`. When the name is not `public`, set [namespace](/docs/define/config/namespace) to it. `schema()` still compiles `public`. File stems follow the same lowercase-folded uniqueness and Windows-reserved rules as [pull](#pull). Composite primary-key columns are not null even when Drizzle omitted `.notNull()` on the column.
+The report starts with `namespace <name>`. When the name is not `public`, set [namespace](/docs/define/config#namespace) to it. `schema()` still compiles `public`. File stems follow the same lowercase-folded uniqueness and Windows-reserved rules as [pull](#pull). Composite primary-key columns are not null even when Drizzle omitted `.notNull()` on the column.
 
 Composite foreign keys, `relations()`, and custom column types are printed under `not imported` with the table and the reason. A `serial` column is written as `integer` not null. The sequence `serial` would create is listed, not written.
 
@@ -178,7 +178,7 @@ bunx okm import drizzle ./src/db/schema.ts --out ./adopted
 
 `okm catalog export` writes the column snapshot of the schema this project owns: table names plus each column's name, type, and nullability. It is not the full catalog; that is [`describe(schema)`](/docs/reference/schema-api). It does not connect. With no flags, the JSON is printed. `--out <file>` writes that file and prints the path. `--json` puts the snapshot in envelope `data`. `--json` and `--out` together write the snapshot to the file; `data` is `{}` and `outFile` names the file and its size.
 
-The file has `catalogHash` and `logical` (`namespace`, `name`, `format`). A table is a namespace, a name, and columns. There is no function and no connection URL. A dependent lists the path in [`external`](/docs/define/config/external).
+The file has `catalogHash` and `logical` (`namespace`, `name`, `format`). A table is a namespace, a name, and columns. There is no function and no connection URL. A dependent lists the path in [`external`](/docs/define/config#external).
 
 ```sh
 okm catalog export --out identity.okm.json
@@ -186,9 +186,9 @@ okm catalog export --out identity.okm.json
 
 ## check
 
-`okm check` lints the schema against the previous snapshot, then prints warning findings, one `allow` line for each `-- okm-allow` override in the migrations directory, and `ok`. `--json` adds the same list as `allows[]`. An error finding is OKM1510 and the command exits 1. A finding line is `<severity> <code> <place>: <reason> -- fix: <fix>`. An external table is checked against each [`external`](/docs/define/config/external) snapshot and, when a target is selected, against that database. A stale or missing snapshot is OKM1841. A foreign key whose namespaces differ is a `coupling` warning. A foreign key into another database is OKM1842.
+`okm check` lints the schema against the previous snapshot, then prints warning findings, one `allow` line for each `-- okm-allow` override in the migrations directory, and `ok`. `--json` adds the same list as `allows[]`. An error finding is OKM1510 and the command exits 1. A finding line is `<severity> <code> <place>: <reason> -- fix: <fix>`. An external table is checked against each [`external`](/docs/define/config#external) snapshot and, when a target is selected, against that database. A stale or missing snapshot is OKM1841. A foreign key whose namespaces differ is a `coupling` warning. A foreign key into another database is OKM1842.
 
-A [tables](/docs/define/config/tables) directory is scanned for a `.ts` file whose name is absent from the schema module. That is OKM1024: `Table file not in schema: <file>.` A schema that would validate on write, with no runtime import of `okmodel/validate`, is OKM1201. The rules are on [Validation](/docs/define/schema/validation).
+A [tables](/docs/define/config#tables) directory is scanned for a `.ts` file whose name is absent from the schema module. That is OKM1024: `Table file not in schema: <file>.` A schema that would validate on write, with no runtime import of `okmodel/validate`, is OKM1201. The rules are on [Validation](/docs/define/schema/validation).
 
 With one configured target, or with `--target`, the command checks `minPostgres` first, then compares a database that already has `okm_meta` with the schema (OKM1520 when they differ; on PostgreSQL 18 a `NOT NULL … NOT VALID` constraint counts as weaker than `NOT NULL` and the message names the column), then checks required extensions. An extension an applied or pending migration creates is not OKM1811 for a missing install. Several targets and no `--target` skip those server checks and print `server checks skipped: N targets, pass --target <name>`. No target skips them too. An unknown `--target` is still OKM1845. A protection mismatch on the same database is OKM1852. Both cases are on [Database](/docs/define/config/database).
 
@@ -293,9 +293,9 @@ bunx okm ext check
 
 `okm generate` plans the schema against the last `*.catalog.json` in name order and writes SQL. The name defaults to `migration`. Letters, digits, `_`, and `-` are accepted. Anything else is `Migration name <name> must be letters, digits, _ or -.`
 
-The file is `<number>_<name>.sql` in the [migrations](/docs/define/config/migrations) directory, with `<number>_<name>.catalog.json` beside it. The number is one higher than the highest numeric prefix, at least four digits. An empty directory starts at `0001`. The name `init` also writes `.gitattributes` in the project when that file is missing.
+The file is `<number>_<name>.sql` in the [migrations](/docs/define/config#migrations) directory, with `<number>_<name>.catalog.json` beside it. The number is one higher than the highest numeric prefix, at least four digits. An empty directory starts at `0001`. The name `init` also writes `.gitattributes` in the project when that file is missing.
 
-An empty plan writes no SQL file and prints `no changes`. The [out](/docs/define/config/out) catalog is still written. A written file prints its path, then one line per lint finding. An error finding still writes the file, then exits 1; stderr says `okm migrate apply` will refuse until it is fixed. A warning does not change the exit code. `migrate plan` and `check` also exit 1 on an error finding.
+An empty plan writes no SQL file and prints `no changes`. The [out](/docs/define/config#out) catalog is still written. A written file prints its path, then one line per lint finding. An error finding still writes the file, then exits 1; stderr says `okm migrate apply` will refuse until it is fixed. A warning does not change the exit code. `migrate plan` and `check` also exit 1 on an error finding.
 
 `--replace` records a removed picklist or enum value. The schema stores no replacement. A chain, a value replaced by another removed value, is OKM1541. `=null` on a column that is not nullable is OKM1541.
 
@@ -321,7 +321,7 @@ bunx okm migrate plan init
 
 ## migrate apply
 
-`okm migrate apply` applies pending files in the [migrations](/docs/define/config/migrations) directory. A file without its `.catalog.json` is refused. With no migration files, or no head snapshot, it prints `target <name>` and `nothing to apply` and does not connect.
+`okm migrate apply` applies pending files in the [migrations](/docs/define/config#migrations) directory. A file without its `.catalog.json` is refused. With no migration files, or no head snapshot, it prints `target <name>` and `nothing to apply` and does not connect.
 
 A pending file is linted after `okm_history` is read and before any DDL. `lintFrom` is not read. An error finding is OKM1510. Transaction control is the finding OKM1551. Apply accepts that step when it carries `-- okm-allow OKM1551: reason`. An empty reason, or a code the statement did not trigger, is OKM1510. [migrate check](#migrate-check) still refuses the step.
 
@@ -333,9 +333,9 @@ backfill <migration> step <index> batch <n> rows <n> key <last>
 
 `key` is the committed boundary, or `-` when that batch has none.
 
-A protected target allows expand, reference rows, and provision of an empty database. Contract, unclassified SQL, a backfill, and a history repair that changes a row are OKM1850 until `--allow-protected`. An empty database, a database that already has objects and no history, and a provision that stopped part-way are on [Database](/docs/define/config/database#an-empty-database). Reference rows are on [Reference rows](/docs/define/table/reference-rows). Timeouts are on [Timeouts](/docs/define/config/timeouts). Batch size, pause, and the batch statement timeout are on [Backfill](/docs/define/config/backfill). Roles are on [Roles](/docs/define/config/roles).
+A protected target allows expand, reference rows, and provision of an empty database. Contract, unclassified SQL, a backfill, and a history repair that changes a row are OKM1850 until `--allow-protected`. An empty database, a database that already has objects and no history, and a provision that stopped part-way are on [Database](/docs/define/config/database#an-empty-database). Reference rows are on [Reference rows](/docs/define/table/reference-rows). Timeouts are on [Timeouts](/docs/define/config#timeouts). Batch size, pause, and the batch statement timeout are on [Backfill](/docs/define/config#backfill). Roles are on [Roles](/docs/define/config/roles).
 
-A schema module that does not export a `schema()` still lets apply run. It installs no reference rows. The message is on [Schema](/docs/define/config/schema).
+A schema module that does not export a `schema()` still lets apply run. It installs no reference rows. The message is on [Schema](/docs/define/config#schema).
 
 ```sh
 bunx okm migrate apply --target prod
@@ -400,11 +400,11 @@ A protected target is OKM1850. The message is `okm migrate check writes a scratc
 
 After a passing run the command lists every `-- okm-allow` line in the migrations directory, as `allow <migration> step <n> <code> <class>`, and marks destructive rules. `--json` data carries the list as `allows[]`. A reason shorter than 12 characters, a stop-list word such as `ok` or `todo`, or only the code repeated is warning OKM2300. It is an audit, so nothing is refused.
 
-The command also checks the previous catalog, the head, and the linter. The first linted id is [lintFrom](/docs/define/config/lint-from). An error finding is OKM1510. Transaction control (`begin`, `commit`, `rollback`, `abort`, `end`, `start transaction`, `prepare transaction`), including inside a `DO` body, is that finding, OKM1551. A function or procedure body is not this. When the finding is allowed, the replay still throws OKM1551: `Migration <id> step <n> contains <word>.`
+The command also checks the previous catalog, the head, and the linter. The first linted id is [lintFrom](/docs/define/config#lint-from). An error finding is OKM1510. Transaction control (`begin`, `commit`, `rollback`, `abort`, `end`, `start transaction`, `prepare transaction`), including inside a `DO` body, is that finding, OKM1551. A function or procedure body is not this. When the finding is allowed, the replay still throws OKM1551: `Migration <id> step <n> contains <word>.`
 
 `--provision` also installs the head snapshot and compares it with a full replay. A difference is OKM1521: `Provisioning from the snapshot does not match the replayed history.`
 
-[timeouts](/docs/define/config/timeouts) apply when the config sets them. The flags do not. A pooler host is refused until [allowPooler](/docs/define/config/pooler) or `--allow-pooler`.
+[timeouts](/docs/define/config#timeouts) apply when the config sets them. The flags do not. A pooler host is refused until [allowPooler](/docs/define/config#pooler) or `--allow-pooler`.
 
 ```sh
 bunx okm migrate check --provision
@@ -416,7 +416,7 @@ bunx okm migrate check --provision
 
 Push runs no migration lint, with one exception. A plan that would weaken row-level security (OKM1550: disable or stop forcing it, drop or widen a policy, grant `BYPASSRLS`, or change the owner of a tenant table) is refused before any statement. The refusal is an OKM1510 error that lists the OKM1550 findings. Run `okm generate`, review the migration, then `okm migrate apply` it with `-- okm-allow OKM1550: <reason>` on the step.
 
-A protected target is OKM1850 until `--allow-protected`. Lock and statement timeouts stay 5000 and 30000 milliseconds. The config and the flags are not applied. A pooler host is refused until [allowPooler](/docs/define/config/pooler) or `--allow-pooler`.
+A protected target is OKM1850 until `--allow-protected`. Lock and statement timeouts stay 5000 and 30000 milliseconds. The config and the flags are not applied. A pooler host is refused until [allowPooler](/docs/define/config#pooler) or `--allow-pooler`.
 
 ```sh
 bunx okm push
@@ -426,7 +426,7 @@ bunx okm push
 
 `okm seed <file>` loads that module and calls its default export with the testing harness for the selected target. The path is resolved from the project directory. A missing file is `Seed file <file> was not found.` A default export that is not a function is `<file> must default-export a function.` A missing file argument is `okm seed needs a file.`
 
-The target is already migrated. The harness does not apply the catalog. A protected target is OKM1850 until `--allow-protected`. Several targets need `--target`. A pooler host is refused until [allowPooler](/docs/define/config/pooler) or `--allow-pooler`.
+The target is already migrated. The harness does not apply the catalog. A protected target is OKM1850 until `--allow-protected`. Several targets need `--target`. A pooler host is refused until [allowPooler](/docs/define/config#pooler) or `--allow-pooler`.
 
 The command prints `target <name>` and one line `<table> <count>` for each table the factories inserted, in table name order. No insert is `created nothing`.
 

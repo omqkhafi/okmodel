@@ -30,10 +30,14 @@ export function markdownTwinPath(pathname: string): string | undefined {
   if (path === "/docs/model/queries" || path === "/docs/start/queries") {
     return "/llms.mdx/docs/define/table/queries.md";
   }
-  if (path === "/docs/ship/migrations") return "/llms.mdx/docs/define/config/migrations.md";
+  if (path === "/docs/ship/migrations") return "/llms.mdx/docs/define/config.md";
   if (path === "/docs/ship/drivers") return "/llms.mdx/docs/define/connect/drivers.md";
   if (path === "/docs/define/schema/requires") {
     return "/llms.mdx/docs/define/schema/min-postgres.md";
+  }
+  if (path.startsWith("/docs/define/config/")) {
+    const folded = defineConfigMarkdownTwin(path.slice("/docs/define/config/".length));
+    if (folded !== undefined) return folded;
   }
   if (path.startsWith("/docs/define/connect/")) {
     const folded = connectMarkdownTwin(path.slice("/docs/define/connect/".length));
@@ -61,10 +65,9 @@ export function markdownTwinPath(pathname: string): string | undefined {
   return undefined;
 }
 
-/** Old `/docs/config/...` paths, one markdown file per Config page. */
-const CONFIG_PAGES = new Set([
+/** Config options that folded into `/docs/define/config`. */
+const CONFIG_FOLDED = new Set([
   "schema",
-  "database",
   "tables",
   "migrations",
   "out",
@@ -72,8 +75,12 @@ const CONFIG_PAGES = new Set([
   "pooler",
   "lint-from",
   "backfill",
-  "roles",
+  "namespace",
+  "external",
 ]);
+
+/** Config child pages that remain their own handbook pages. */
+const CONFIG_PAGES = new Set(["database", "roles"]);
 
 /** Retired config slugs whose public name changed. */
 const CONFIG_SLUG_ALIASES: Readonly<Record<string, string>> = {
@@ -83,14 +90,25 @@ const CONFIG_SLUG_ALIASES: Readonly<Record<string, string>> = {
 };
 
 /**
+ * Markdown twin for a `/docs/define/config/<slug>` URL after the fold.
+ *
+ * @param slug - Path after `/docs/define/config/`
+ */
+function defineConfigMarkdownTwin(slug: string): string | undefined {
+  if (CONFIG_FOLDED.has(slug)) return "/llms.mdx/docs/define/config.md";
+  return undefined;
+}
+
+/**
  * Markdown twin for a retired `/docs/config` URL.
  *
  * @param path - Request pathname without a trailing slash
  */
 function configMarkdownTwin(path: string): string {
-  if (path === "/docs/config") return "/llms.mdx/docs/define/config.md";
+  if (path === "/docs/config" || path === "/docs/config/file") return "/llms.mdx/docs/define/config.md";
   const raw = path.slice("/docs/config/".length);
   const slug = CONFIG_SLUG_ALIASES[raw] ?? raw;
+  if (CONFIG_FOLDED.has(slug)) return "/llms.mdx/docs/define/config.md";
   if (CONFIG_PAGES.has(slug)) return `/llms.mdx/docs/define/config/${slug}.md`;
   return "/llms.mdx/docs/define/config.md";
 }
