@@ -25,12 +25,12 @@ export type CapabilityName = (typeof CAPABILITY_NAMES)[number];
  * the unnamed extended protocol so a plain execute is one round trip.
  * Named prepares are a connect option, not a flag.
  */
-export const POSTGRESJS_CAPABILITIES = {
+export const POSTGRESJS_CAPABILITIES = Object.freeze({
   transactions: "interactive",
   stream: true,
   listen: true,
   cancel: true,
-} as const satisfies DriverCapabilities;
+} as const satisfies DriverCapabilities);
 
 /**
  * PGlite execution flags.
@@ -39,12 +39,12 @@ export const POSTGRESJS_CAPABILITIES = {
  * false: an in-flight statement cannot be aborted, and `statement_timeout`
  * is not enforced. The pool can describe a statement; that is not a flag.
  */
-export const PGLITE_CAPABILITIES = {
+export const PGLITE_CAPABILITIES = Object.freeze({
   transactions: "interactive",
   stream: false,
   listen: true,
   cancel: false,
-} as const satisfies DriverCapabilities;
+} as const satisfies DriverCapabilities);
 
 /**
  * node-postgres execution flags.
@@ -54,12 +54,12 @@ export const PGLITE_CAPABILITIES = {
  * statement without running it, so the suite skips that case.
  * Parameterized queries use the unnamed extended protocol.
  */
-export const NODE_POSTGRES_CAPABILITIES = {
+export const NODE_POSTGRES_CAPABILITIES = Object.freeze({
   transactions: "interactive",
   stream: true,
   listen: true,
   cancel: true,
-} as const satisfies DriverCapabilities;
+} as const satisfies DriverCapabilities);
 
 /**
  * Bun.sql execution flags.
@@ -71,12 +71,12 @@ export const NODE_POSTGRES_CAPABILITIES = {
  * surfaced, so the notice case is skipped. `prepare` is off, so a
  * parameterized query does not leave a named statement.
  */
-export const BUNSQL_CAPABILITIES = {
+export const BUNSQL_CAPABILITIES = Object.freeze({
   transactions: "interactive",
   stream: true,
   listen: true,
   cancel: false,
-} as const satisfies DriverCapabilities;
+} as const satisfies DriverCapabilities);
 
 /**
  * Neon WebSocket pool execution flags.
@@ -87,12 +87,12 @@ export const BUNSQL_CAPABILITIES = {
  * describe API. Statements use the unnamed protocol. `prepared: "named"`
  * is a connect option and is not for a transaction-mode pooler.
  */
-export const NEON_WEBSOCKET_CAPABILITIES = {
+export const NEON_WEBSOCKET_CAPABILITIES = Object.freeze({
   transactions: "interactive",
   stream: false,
   listen: false,
   cancel: false,
-} as const satisfies DriverCapabilities;
+} as const satisfies DriverCapabilities);
 
 /**
  * Neon HTTP execution flags.
@@ -101,12 +101,12 @@ export const NEON_WEBSOCKET_CAPABILITIES = {
  * There is no interactive `tx()`, no `LISTEN`, no server cursor, and no
  * cancel of a statement the server has already started.
  */
-export const NEON_HTTP_CAPABILITIES = {
+export const NEON_HTTP_CAPABILITIES = Object.freeze({
   transactions: "batch",
   stream: false,
   listen: false,
   cancel: false,
-} as const satisfies DriverCapabilities;
+} as const satisfies DriverCapabilities);
 
 /**
  * Reads one capability flag.
