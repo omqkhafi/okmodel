@@ -1007,11 +1007,11 @@ export async function titled(url: string) {
 ```
 
 <Callout type="error" title="OKM1602">
-Pass `"read"` or `"write"`, a `fragment` template, and a class with an initializer on every column. A read starts with `select`. A write starts with `insert`, `update`, or `delete`.
+Pass `"read"` or `"write"`, a `fragment` template, and a class with an initializer on every column. A read starts with `select`. A write starts with `insert`, `update`, or `delete`. A typed `raw(db, sql, params)` call that passes a different number of parameters than the lock is OKM1602.
 </Callout>
 
 <Callout type="error" title="OKM1702">
-A raw write on a scoped tenant table sends nothing. A raw read must select the primary key with `ident` and must not alias it. `unscoped("reason")` is the hatch for a reviewed statement.
+A raw write on a scoped tenant table sends nothing. A raw read must select the primary key with `ident` and must not alias it. `unscoped("reason")` is the hatch for a reviewed statement. A typed `raw(db, sql, params)` call on a client of a schema with tenancy is OKM1702. `trusted(client, "reason")` sends that SQL without a tenant predicate.
 </Callout>
 
 ### Explain
