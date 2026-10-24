@@ -4,7 +4,7 @@ description: "Tenant keys on every table that does not opt out."
 ---
 `tenancy` is `columnTenancy()`, `compositeTenancy()`, or `rlsTenancy()` from `okmodel/tenancy`. Omitted, no table gains a key. Importing the module is what loads the predicate.
 
-Each key is a guarded uuid. Insert fills it from `for()`. Reads and writes filter on it. Input cannot set it. A unique and the primary key include every key. An index is prefixed with the first key unless `indexes: false`. `global("reason")` and `via()` are the table marks. Both are on [tenancy](/docs/define/table/tenancy).
+Each key is a guarded uuid. Insert fills it from `for()`. Reads and writes filter on it. Input cannot set it. A unique, a unique index, and the primary key include every key. Another index is prefixed with the first key unless `indexes: false`. `global("reason")` and `via()` are the table marks. Both are on [tenancy](/docs/define/table/tenancy).
 
 ### omitted
 
@@ -106,7 +106,7 @@ With `indexes: false`, an index that does not lead with the key is `Index on not
 
 ### indexes
 
-`indexes` defaults to true. Every index on a tenant table gains the key as its first column. `indexes: false` leaves each index as written, and OKM1706 applies. A table's `tenantIndexes` overrides this. An index `.global("reason")` or `.scoped()` overrides the table. The nearest level wins. An index that already starts with the key is not prefixed twice. A unique index then covers one tenant, so two tenants may store the same value. The catalog, `okm generate`, and `describe()` show those resolved columns.
+`indexes` defaults to true. Every ordinary index on a tenant table gains the first key as its first column. A unique index gains every key, in order, so two tenants cannot share the value. Under composite tenancy that is the whole key. `indexes: false` leaves each index as written, and OKM1706 applies. A table's `tenantIndexes` overrides this. An index `.global("reason")` or `.scoped()` overrides the table. The nearest level wins. An index that already starts with the key is not prefixed twice. The catalog, `okm generate`, and `describe()` show those resolved columns.
 
 ```ts title="indexes.ts"
 import { columnTenancy } from "okmodel/tenancy";
@@ -135,7 +135,7 @@ A project whose indexes already start with the key sees no migration. An index t
 
 ### composite
 
-`compositeTenancy({ key, type: "uuid" })` adds every name, in that order. `for()` takes every key. One name is `columnTenancy()`.
+`compositeTenancy({ key, type: "uuid" })` adds every name, in that order. `for()` takes every key. One name is `columnTenancy()`. A unique index includes every key, so `index(c.email).unique()` stores `(organization_id, workspace_id, email)`. An ordinary index is prefixed with the first key only.
 
 ```ts title="composite.ts"
 import { connect } from "okmodel/pg/postgresjs";

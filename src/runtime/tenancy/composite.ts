@@ -46,9 +46,9 @@ type TableOptions = {
  * Reads and writes filter on every key.
  *
  * @typeParam Keys - Field names, at least one
- * `indexes` defaults to true and prefixes each index with the first key.
- * `false` keeps OKM1706. A table's `tenantIndexes` and an index
- * `.global()` / `.scoped()` win over this.
+ * `indexes` defaults to true and prefixes each ordinary index with the first
+ * key. A unique index includes every key. `false` keeps OKM1706. A table's
+ * `tenantIndexes` and an index `.global()` / `.scoped()` win over this.
  *
  * @param input - The key list, `uuid`, and whether indexes are prefixed
  * @returns The object `schema()` applies
@@ -56,7 +56,7 @@ type TableOptions = {
 export function compositeTenancy<const Keys extends readonly [string, ...string[]]>(input: {
   readonly key: Keys;
   readonly type: "uuid";
-  /** Prefix indexes with the first tenant key. Omitted is true. */
+  /** Prefix ordinary indexes with the first key. A unique index includes every key. Omitted is true. */
   readonly indexes?: boolean;
 }): ColumnTenancy & { readonly key: Keys[number]; readonly keys: Keys } {
   if (input === undefined || typeof input !== "object") {
@@ -302,7 +302,7 @@ function rewriteTenant(
   }
   tenants.add(item.name);
   if (notes.length > 0) exemptions.set(item.name, notes);
-  const indexes = shapeTenantIndexes(keys[0] ?? "", item.name, options?.indexes, {
+  const indexes = shapeTenantIndexes(keys, item.name, options?.indexes, {
     indexes: prefixIndexes,
     tenantIndexes: options?.tenantIndexes,
   });

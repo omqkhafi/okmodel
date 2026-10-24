@@ -284,6 +284,25 @@ test("a unique index becomes unique per tenant", () => {
   );
 });
 
+test("a composite unique index includes every key", () => {
+  const built = schema({
+    casing: "snake",
+    tenancy: compositeTenancy({ key: ["organizationId", "workspaceId"], type: "uuid" }),
+    tables: [
+      table(
+        "documents",
+        { id: t.identity(), email: t.text() },
+        { indexes: (columns) => [index(columns.email).unique()] },
+      ),
+    ],
+  });
+  expect(indexColumns(built, "documents")).toEqual([["organization_id", "workspace_id", "email"]]);
+  const sql = renderCatalog(built.catalog, "public").join("\n");
+  expect(sql).toContain(
+    'create unique index "documents_organization_id_workspace_id_email_idx" on "public"."documents" ("organization_id", "workspace_id", "email")',
+  );
+});
+
 test("composite and rls prefix the first key, and a global index stays put", () => {
   const composite = schema({
     casing: "snake",

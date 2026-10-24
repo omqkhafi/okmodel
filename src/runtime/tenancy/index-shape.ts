@@ -16,6 +16,8 @@ import { definition } from "../../dialects/pg/misuse.js";
 export type IndexShapeCall = {
   readonly columns: readonly string[];
   readonly expression?: string;
+  /** A unique index includes every tenant key. An ordinary index includes the first. */
+  readonly isUnique?: boolean;
   /** Set by `.global("reason")`. Empty is refused before this runs. */
   readonly tenantGlobal?: string;
   /** Set by `.scoped()`. */
@@ -43,14 +45,14 @@ export function readIndexPolicy(value: unknown, where: string): boolean {
  * Wraps a table's `indexes` callback so the catalog sees resolved columns.
  *
  * @typeParam T - Index call, including flags the author set
- * @param key - Tenant field name. Composite tenancy passes the first key
+ * @param keys - Tenant field names. A unique index takes every name. Another index takes the first
  * @param table - Table name, for OKM1706
  * @param build - The author's callback, when the table has indexes
  * @param policy - Config flag and the table override
  * @returns The callback `schema()` compiles, or `undefined` when there is none
  */
 export function shapeTenantIndexes<T extends IndexShapeCall>(
-  key: string,
+  keys: readonly string[],
   table: string,
   build: ((columns: HandleMap) => readonly T[]) | undefined,
   policy: { readonly indexes: boolean; readonly tenantIndexes?: boolean | undefined },
@@ -61,27 +63,39 @@ export function shapeTenantIndexes<T extends IndexShapeCall>(
   }
   return (columns) => {
     const calls = build(columns);
-    const tenantSql = columns[key]?.name;
+    const tenantSql = sqlNames(columns, keys);
     if (!Array.isArray(calls) || tenantSql === undefined) return calls;
     return calls.map((call) => shapeOne(table, tenantSql, call, policy));
   };
 }
 
+/** SQL names for the tenant keys, or `undefined` when a handle is missing. */
+function sqlNames(columns: HandleMap, keys: readonly string[]): readonly string[] | undefined {
+  const names: string[] = [];
+  for (const key of keys) {
+    const name = columns[key]?.name;
+    if (name === undefined) return undefined;
+    names.push(name);
+  }
+  return names;
+}
+
 function shapeOne<T extends IndexShapeCall>(
   table: string,
-  tenantSql: string,
+  tenantSql: readonly string[],
   call: T,
   policy: { readonly indexes: boolean; readonly tenantIndexes?: boolean | undefined },
 ): T {
-  const leads = call.columns[0] === tenantSql;
+  const needed = call.isUnique === true ? tenantSql : tenantSql.slice(0, 1);
+  const leads = needed.every((name, index) => call.columns[index] === name);
   const using = call.expression?.startsWith("using ") === true;
   if (wantsPrefix(call, policy) && !leads && !using) {
-    return { ...call, columns: [tenantSql, ...call.columns] };
+    return { ...call, columns: [...needed, ...call.columns] };
   }
   if (!leads && call.tenantGlobal === undefined) {
     throw new OkmError(
       "OKM1706",
-      `Index on ${table} starts with ${call.columns[0] ?? "no column"}. Put ${tenantSql} first.`,
+      `Index on ${table} starts with ${call.columns[0] ?? "no column"}. Put ${needed.join(", ")} first.`,
     );
   }
   return call;

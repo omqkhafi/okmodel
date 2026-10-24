@@ -315,7 +315,7 @@ function rewriteTenant(
   columns[key] = column;
   tenants.add(item.name);
   if (notes.length > 0) exemptions.set(item.name, notes);
-  const indexes = shapeTenantIndexes(key, item.name, options?.indexes, {
+  const indexes = shapeTenantIndexes([key], item.name, options?.indexes, {
     indexes: prefixIndexes,
     tenantIndexes: options?.tenantIndexes,
   });
