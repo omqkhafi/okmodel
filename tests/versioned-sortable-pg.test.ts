@@ -337,6 +337,18 @@ async function proveAny(db: Db): Promise<void> {
     version: "any",
   });
   expect(empty).toEqual([]);
+  const missed = await conflict(() =>
+    db.tasks
+      .update({
+        where: { laneId: "cap", title: "absent" },
+        set: { title: "running" },
+        limit: 1,
+        lock: "skip",
+        version: "any",
+      })
+      .expect(1),
+  );
+  expect(missed.message).toContain("update on tasks changed 0 rows");
 }
 
 async function proveAnyRace(db: Db): Promise<void> {
