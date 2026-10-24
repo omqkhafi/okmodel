@@ -22,6 +22,7 @@ import {
 import { extension } from "../src/dialects/pg/ext/index.js";
 import { materializedView, view } from "../src/dialects/pg/view/index.js";
 import { columnTenancy, compositeTenancy, global } from "../src/runtime/tenancy/index.js";
+import { versioned } from "../src/runtime/traits/index.js";
 import { tenantProbe } from "../src/tooling/testing/facts.js";
 import { testing } from "../src/tooling/testing/index.js";
 import { gateApp, TENANT_TABLES } from "./gate-schema.js";
@@ -139,6 +140,25 @@ test("isolation passes on the fixture schemas and fails when the predicate is dr
     if (!(failure instanceof OkmError)) return;
     expect(failure.message).toContain("Isolation leak on notes.find");
     expect(failure.message).toContain("body");
+  } finally {
+    await harness.close();
+  }
+}, 30_000);
+
+test("isolation runs on a versioned tenant table", async () => {
+  const jobs = table(
+    "jobs",
+    { id: id({ default: "none" }), title: text() },
+    { traits: [versioned()] },
+  );
+  const app = schema({
+    tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
+    tables: [jobs],
+  });
+  const harness = await testing(app, { driver: openPglite() });
+  try {
+    const report = await harness.isolation();
+    expect([...report.checked]).toEqual(["jobs"]);
   } finally {
     await harness.close();
   }
