@@ -6,15 +6,23 @@
  * offset. The tenant and active-set predicates are the planner's, so they
  * apply to every page the same way. This module loads on the first `page()`.
  *
- * The cursor holds the order it was made for and the values of the last row as
- * the database wrote them. Those are text, not decoded values, so a timestamp
+ * The cursor holds the order it was made for. When that order names no hidden
+ * or sensitive column, it also holds the sort values of the last row as the
+ * database wrote them. Those are text, not decoded values, so a timestamp
  * keeps its microseconds and no row is skipped or repeated.
+ *
+ * When the order names a hidden or sensitive column, the cursor holds only the
+ * primary key (one value, or a tuple when the key is composite). No sort value
+ * of a hidden or sensitive column is stored. The next page reads the sort
+ * values back from that row, in the same statement, under the same tenant and
+ * archive predicates. A row that is gone is OKM1130.
  */
 
 import { OkmError, throwNamed } from "../contracts/error.js";
 import type { ColumnModel } from "../dialects/pg/model.js";
 import { attachHttp, decodeRows, readCall, readHandle, type Mods, type Session } from "./client.js";
 import {
+  emitVisibility,
   fail,
   indexes,
   isRecord,
@@ -29,6 +37,7 @@ import {
   type ArchiveView,
   type Keyset,
   type Plan,
+  type Sink,
 } from "./plan.js";
 import { capLimit } from "./limits.js";
 
@@ -113,12 +122,26 @@ function plan(
   }
   const keys = orderKeys(indexed, record.orderBy);
   const signature = `${table}:${keys.map((key) => `${key.column.field}.${key.dir}.${key.nulls}`).join(",")}`;
-  const after =
+  const keyMode = keys.some((key) => concealed(key.column));
+  const pk = primaryColumns(indexed);
+  const cursor =
     record.after === undefined || record.after === null
       ? undefined
-      : keyset(keys, signature, record.after);
+      : keyMode
+        ? readKeyCursor(record.after, signature, pk.length)
+        : undefined;
+  const after =
+    cursor !== undefined
+      ? keyCompare(keys, signature)
+      : record.after === undefined || record.after === null
+        ? undefined
+        : keyset(keys, signature, record.after);
   const wanted = selectedColumns(indexed, record.select);
-  const extra = keys.filter((key) => !wanted.includes(key.column)).map((key) => key.column.field);
+  const pkNames = new Set(indexed.model.primary);
+  const extra = keys
+    .filter((key) => !wanted.includes(key.column))
+    .filter((key) => !(keyMode && concealed(key.column) && !pkNames.has(key.column.field)))
+    .map((key) => key.column.field);
   const select =
     extra.length === 0 ? record.select : [...wanted.map((column) => column.field), ...extra];
   const orderBy: Record<string, unknown> = {};
@@ -145,17 +168,33 @@ function plan(
       view,
     ),
     ...(after !== undefined ? { after } : {}),
+    ...(cursor !== undefined
+      ? {
+          keyCursor: {
+            open(sink: Sink) {
+              writeCursorCte(sink, session, indexed, keys, pk, cursor);
+            },
+            close: writeCursorMiss,
+          },
+        }
+      : {}),
     ...(pin !== undefined ? { pin } : {}),
     size,
     ...(limits !== undefined ? { limits } : {}),
     ...(dflt !== undefined ? { dl: ["page", dflt] as const } : {}),
   };
   return readHandle(session, table, call, mods, async (compiled, rows) => {
-    const items = (await decodeRows(compiled, rows, table)) as Record<string, unknown>[];
+    const source = cursor !== undefined ? withoutMissingCursor(rows) : rows;
+    const items = (await decodeRows(compiled, source, table)) as Record<string, unknown>[];
     const more = items.length > size;
     const kept = more ? items.slice(0, size) : items;
-    const last = rows[size - 1];
-    const next = more && last !== undefined ? makeCursor(compiled, last, keys, signature) : null;
+    const last = source[size - 1];
+    const next =
+      more && last !== undefined
+        ? keyMode
+          ? makeKeyCursor(compiled, last, pk, signature)
+          : makeCursor(compiled, last, keys, signature)
+        : null;
     if (extra.length > 0) {
       for (const item of kept) {
         for (const field of extra) delete item[field];
@@ -252,27 +291,174 @@ function makeCursor(
   keys: readonly Key[],
   signature: string,
 ): string {
-  const values = keys.map((key) => {
-    const at = plan.outputs.fields.find((field) => field.key === key.column.field)?.at;
+  return encodeToken([
+    signature,
+    ...wireValues(
+      plan,
+      row,
+      keys.map((key) => key.column),
+    ),
+  ]);
+}
+
+/** Cursor that names the last row by primary key and carries no sort value. */
+function makeKeyCursor(
+  plan: Plan,
+  row: readonly (string | null)[],
+  pk: readonly ColumnModel[],
+  signature: string,
+): string {
+  return encodeToken([KEY_MARK, signature, ...wireValues(plan, row, pk)]);
+}
+
+function wireValues(
+  plan: Plan,
+  row: readonly (string | null)[],
+  columns: readonly ColumnModel[],
+): (string | null)[] {
+  return columns.map((column) => {
+    const at = plan.outputs.fields.find((field) => field.key === column.field)?.at;
     return at === undefined ? null : (row[at] ?? null);
   });
-  const bytes = new TextEncoder().encode(JSON.stringify([signature, ...values]));
+}
+
+function encodeToken(value: readonly unknown[]): string {
+  const bytes = new TextEncoder().encode(JSON.stringify(value));
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
 }
 
-function readCursor(token: unknown, signature: string, count: number): (string | null)[] {
-  let parsed: unknown;
-  if (typeof token === "string") {
-    try {
-      const binary = atob(token.replaceAll("-", "+").replaceAll("_", "/"));
-      const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-      parsed = JSON.parse(new TextDecoder().decode(bytes));
-    } catch {
-      parsed = undefined;
-    }
+/** Marker for a primary-key cursor. A value cursor's first slot is the order signature. */
+const KEY_MARK = "k";
+
+function concealed(column: ColumnModel): boolean {
+  return column.sensitive === true || column.hidden !== false;
+}
+
+function primaryColumns(table: Indexed): readonly ColumnModel[] {
+  const columns: ColumnModel[] = [];
+  for (const field of table.model.primary) {
+    const column = table.columns.get(field);
+    if (column !== undefined) columns.push(column);
   }
+  return columns;
+}
+
+/**
+ * Compares the page row with the cursor row `c` that the statement joins.
+ *
+ * Nulls follow the same rule as a value cursor: nothing is later than a null
+ * in a nulls-last key, and every non-null is later than a null in a nulls-first
+ * key. Equality is null-safe, so ties stay tied.
+ */
+function keyCompare(keys: readonly Key[], signature: string): Keyset {
+  return (sink, alias) => {
+    sink.mark(`k:pk:${signature}`);
+    let wrote = false;
+    for (let index = 0; index < keys.length; index += 1) {
+      const key = keys[index];
+      if (key === undefined) continue;
+      sink.text(wrote ? " or (" : "(");
+      wrote = true;
+      for (let before = 0; before < index; before += 1) {
+        const prior = keys[before];
+        if (prior === undefined) continue;
+        const left = `${alias}.${quote(prior.column.sql)}`;
+        const right = `c.${quote(prior.column.sql)}`;
+        sink.text(`${left} is not distinct from ${right} and `);
+      }
+      later(sink, key, alias);
+      sink.text(")");
+    }
+    if (!wrote) sink.text("false");
+  };
+}
+
+function later(sink: Sink, key: Key, alias: string): void {
+  const left = `${alias}.${quote(key.column.sql)}`;
+  const right = `c.${quote(key.column.sql)}`;
+  const op = key.dir === "asc" ? ">" : "<";
+  if (key.nulls === "last") {
+    sink.text(`(${right} is not null and (${left} ${op} ${right} or ${left} is null))`);
+    return;
+  }
+  sink.text(
+    `((${right} is null and ${left} is not null) or (${right} is not null and ${left} ${op} ${right}))`,
+  );
+}
+
+/**
+ * One row, the cursor's primary key, under the call's tenant and archive predicates.
+ *
+ * The page joins it as `c`. Sort values stay in the database.
+ */
+function writeCursorCte(
+  sink: Sink,
+  session: Session,
+  table: Indexed,
+  keys: readonly Key[],
+  pk: readonly ColumnModel[],
+  ids: readonly (string | null)[],
+): void {
+  sink.text("with c as (select ");
+  for (let index = 0; index < keys.length; index += 1) {
+    const key = keys[index];
+    if (key === undefined) continue;
+    if (index > 0) sink.text(", ");
+    sink.text("k.");
+    sink.text(quote(key.column.sql));
+  }
+  sink.text(" from ");
+  sink.text(quote(table.model.sql));
+  sink.text(" k where ");
+  for (let index = 0; index < pk.length; index += 1) {
+    const column = pk[index];
+    const value = ids[index];
+    if (column === undefined) continue;
+    if (index > 0) sink.text(" and ");
+    sink.text("k.");
+    sink.text(quote(column.sql));
+    if (value === null) {
+      sink.text(" is null");
+    } else {
+      sink.text(" = ");
+      sink.param(value);
+    }
+    sink.mark(`pk:${column.field}`);
+  }
+  emitVisibility(session.schema, table, sink, "k", true);
+  sink.text(") (");
+}
+
+/** A second arm with flag `'0'` when the cursor row is not visible. */
+function writeCursorMiss(sink: Sink, columns: number): void {
+  sink.text(") union all select ");
+  for (let index = 0; index < columns - 1; index += 1) {
+    if (index > 0) sink.text(", ");
+    sink.text("null");
+  }
+  if (columns > 1) sink.text(", ");
+  sink.text("'0' where not exists (select 1 from c)");
+  sink.mark("kcur|");
+}
+
+function withoutMissingCursor(
+  rows: readonly (readonly (string | null)[])[],
+): readonly (readonly (string | null)[])[] {
+  const row = rows.length === 1 ? rows[0] : undefined;
+  if (row !== undefined && row[row.length - 1] === "0") {
+    fail(
+      "OKM1130",
+      "The cursor is no longer valid.",
+      "Request the next page from a row that is still in this tenant and archive set.",
+    );
+  }
+  return rows;
+}
+
+function readCursor(token: unknown, signature: string, count: number): (string | null)[] {
+  const parsed = decodeToken(token);
   if (!Array.isArray(parsed) || typeof parsed[0] !== "string") {
     fail("OKM1130", "after is not a cursor that page() returned.");
   }
@@ -290,4 +476,37 @@ function readCursor(token: unknown, signature: string, count: number): (string |
     fail("OKM1130", "after is not a cursor that page() returned.");
   }
   return values as (string | null)[];
+}
+
+/** Primary-key cursor. A value cursor is refused, so its sort values are not a range. */
+function readKeyCursor(token: unknown, signature: string, count: number): (string | null)[] {
+  const parsed = decodeToken(token);
+  if (!Array.isArray(parsed) || parsed[0] !== KEY_MARK || typeof parsed[1] !== "string") {
+    fail("OKM1130", "after is not a cursor that page() returned.");
+  }
+  if (parsed[1] !== signature) {
+    fail(
+      "OKM1130",
+      `The cursor was made for another order: ${parsed[1]}. This page orders by ${signature}.`,
+    );
+  }
+  const values = parsed.slice(2) as unknown[];
+  if (
+    values.length !== count ||
+    !values.every((value) => value === null || typeof value === "string")
+  ) {
+    fail("OKM1130", "after is not a cursor that page() returned.");
+  }
+  return values as (string | null)[];
+}
+
+function decodeToken(token: unknown): unknown {
+  if (typeof token !== "string") return undefined;
+  try {
+    const binary = atob(token.replaceAll("-", "+").replaceAll("_", "/"));
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    return JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    return undefined;
+  }
 }

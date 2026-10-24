@@ -10,7 +10,11 @@ The table is declared. This page is each call, in the order you meet it: the fir
 
 ### Page
 
-`page` returns `{ items, next }`. `next` is `null` on the last page. Pass it back as `after` with the same `orderBy`. The cursor is the order plus the primary key, so a page stays stable while rows are inserted.
+`page` returns `{ items, next }`. `next` is `null` on the last page. Pass it back as `after` with the same `orderBy`. The cursor encodes that order.
+
+When `orderBy` names no hidden or sensitive column, the cursor also carries the sort values of the last row, as the database wrote them. A timestamp keeps its microseconds, and a page stays stable while rows are inserted.
+
+When `orderBy` names a hidden or sensitive column, the cursor carries only the primary key of that row. A composite key is a tuple of its columns. The cursor does not carry those sort values. The next page reads them back in the same query, under the same tenant and archive predicates. A row that is gone is `The cursor is no longer valid.`
 
 | Input | Result |
 | --- | --- |
@@ -58,7 +62,7 @@ Omitting `limit` is `page() needs a limit.`
 </Callout>
 
 <Callout type="error" title="OKM1130">
-A cursor this call did not return is `after is not a cursor that page() returned.`
+A cursor this call did not return is `after is not a cursor that page() returned.` A key cursor whose row is gone is `The cursor is no longer valid.`
 </Callout>
 
 ### Aggregate
