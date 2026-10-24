@@ -813,7 +813,10 @@ function droppedEarlier(earlier: readonly PlanStep[], name: string): boolean {
 }
 
 function createdIndexName(text: string): string | undefined {
-  const match = /^create unique index (?:concurrently )?(?:"([^"]+)"|([a-z_][\w$]*))/.exec(text);
+  const match =
+    /^create unique index(?: concurrently)?(?: if not exists)?\s+(?:"([^"]+)"|([a-z_][\w$]*))/.exec(
+      text,
+    );
   return match?.[1] ?? match?.[2];
 }
 
@@ -1626,7 +1629,8 @@ function statementTable(step: PlanStep): string | undefined {
   const text = normalizedSql(step.sql);
   const altered = /^(?:alter|drop) table\s+(\S+)/.exec(text);
   if (altered?.[1] !== undefined) return lastName(altered[1]);
-  const index = /^create(?: unique)? index(?: concurrently)?\s+\S+\s+on\s+(\S+)/.exec(text);
+  const index =
+    /^create(?: unique)? index(?: concurrently)?(?: if not exists)?\s+\S+\s+on\s+(\S+)/.exec(text);
   return lastName(index?.[1]);
 }
 
