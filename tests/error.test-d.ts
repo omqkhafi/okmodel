@@ -4,6 +4,10 @@ import { OkmError, type HttpError } from "../src/contracts/index.js";
 
 declare const error: unknown;
 
+if (error instanceof OkmError) {
+  expectTypeOf(error).toEqualTypeOf<OkmError>();
+}
+
 if (OkmError.is(error, "unique")) {
   expectTypeOf(error.kind).toEqualTypeOf<"unique">();
 }

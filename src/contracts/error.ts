@@ -255,10 +255,18 @@ export type ErrorColumns<T extends string> = [TableName] extends [never]
 type Categorised<C extends ErrorCategory> = OkmError & { readonly category: C };
 
 /**
+ * Brand shared by every copy of this class.
+ *
+ * `instanceof` uses it, so two installs of the package still match.
+ */
+const OKM_ERROR = Symbol.for("okm.error");
+
+/**
  * One OKModel error.
  *
  * Construction does not format a stack trace and does not compile a regular
  * expression. Row values stay out unless `includeValues` was set.
+ * `instanceof` matches any copy that carries `Symbol.for("okm.error")`.
  */
 export class OkmError extends Error {
   /** Spec code, or the kind when spec §21 does not number that kind. */
@@ -330,6 +338,17 @@ export class OkmError extends Error {
     this.#values = options?.includeValues === true ? options.values : undefined;
     this.#http = options?.http;
     if (options?.issues !== undefined) this.issues = options.issues;
+    Object.defineProperty(this, OKM_ERROR, { value: true });
+  }
+
+  /**
+   * True for an {@link OkmError} from this copy or another copy of the package.
+   *
+   * @param value - The candidate
+   * @returns Whether `value` carries the shared brand
+   */
+  static override [Symbol.hasInstance](value: unknown): value is OkmError {
+    return typeof value === "object" && value !== null && Object.hasOwn(value, OKM_ERROR);
   }
 
   /**
