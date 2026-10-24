@@ -284,6 +284,49 @@ test("a unique index becomes unique per tenant", () => {
   );
 });
 
+test("a tenant key later in the index is moved forward and not repeated", () => {
+  const built = schema({
+    casing: "snake",
+    tenancy,
+    tables: [
+      table(
+        "notes",
+        { id: t.identity(), body: t.text() },
+        { indexes: (columns) => [index(columns.body, columns.tenantId)] },
+      ),
+    ],
+  });
+  expect(indexColumns(built, "notes")).toEqual([["tenant_id", "body"]]);
+});
+
+test("two indexes that match after the tenant prefix are OKM1023 and name both", () => {
+  let error: OkmError | undefined;
+  try {
+    schema({
+      casing: "snake",
+      tenancy,
+      tables: [
+        table(
+          "notes",
+          { id: t.identity(), body: t.text() },
+          {
+            indexes: (columns) => [
+              index(columns.body, columns.tenantId),
+              index(columns.tenantId, columns.body),
+            ],
+          },
+        ),
+      ],
+    });
+  } catch (caught) {
+    if (caught instanceof OkmError) error = caught;
+    else throw caught;
+  }
+  expect(error?.code).toBe("OKM1023");
+  expect(error?.message).toContain("body, tenant_id");
+  expect(error?.message).toContain("tenant_id, body");
+});
+
 test("a composite unique index includes every key", () => {
   const built = schema({
     casing: "snake",

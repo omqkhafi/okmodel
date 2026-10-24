@@ -106,7 +106,7 @@ With `indexes: false`, an index that does not lead with the key is `Index on not
 
 ### indexes
 
-`indexes` defaults to true. Every ordinary index on a tenant table gains the first key as its first column. A unique index gains every key, in order, so two tenants cannot share the value. Under composite tenancy that is the whole key. `indexes: false` leaves each index as written, and OKM1706 applies. A table's `tenantIndexes` overrides this. An index `.global("reason")` or `.scoped()` overrides the table. The nearest level wins. An index that already starts with the key is not prefixed twice. The catalog, `okm generate`, and `describe()` show those resolved columns.
+`indexes` defaults to true. Every ordinary index on a tenant table gains the first key as its first column. A unique index gains every key, in order, so two tenants cannot share the value. Under composite tenancy that is the whole key. `indexes: false` leaves each index as written, and OKM1706 applies. A table's `tenantIndexes` overrides this. An index `.global("reason")` or `.scoped()` overrides the table. The nearest level wins. An index that already names the key moves it to the front and does not list it again. Two indexes that become the same one are OKM1023, and the message names both declarations. The catalog, `okm generate`, and `describe()` show those resolved columns.
 
 ```ts title="indexes.ts"
 import { columnTenancy } from "okmodel/tenancy";
