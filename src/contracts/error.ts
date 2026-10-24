@@ -344,10 +344,12 @@ export class OkmError extends Error {
   /**
    * True for an {@link OkmError} from this copy or another copy of the package.
    *
+   * The return type stays `boolean` so `instanceof` still narrows to a subclass.
+   *
    * @param value - The candidate
    * @returns Whether `value` carries the shared brand
    */
-  static override [Symbol.hasInstance](value: unknown): value is OkmError {
+  static override [Symbol.hasInstance](value: unknown): boolean {
     return typeof value === "object" && value !== null && Object.hasOwn(value, OKM_ERROR);
   }
 
