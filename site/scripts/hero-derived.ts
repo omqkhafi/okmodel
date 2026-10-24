@@ -70,13 +70,17 @@ function toPublished(text: string, root: string): string {
 }
 
 /** Run the CLI. A non-zero exit is not an error here: the linter exits non-zero on a finding. */
-function okm(root: string, cwd: string, args: readonly string[]): string {
+function okm(
+  root: string,
+  cwd: string,
+  args: readonly string[],
+): { readonly stdout: string; readonly stderr: string } {
   const result = Bun.spawnSync(["bun", join(root, "src/tooling/cli.ts"), ...args], {
     cwd,
     stderr: "pipe",
     stdout: "pipe",
   });
-  return `${result.stdout.toString()}${result.stderr.toString()}`;
+  return { stdout: result.stdout.toString(), stderr: result.stderr.toString() };
 }
 
 /** Every row of a line diff, by longest common subsequence. */
@@ -186,11 +190,23 @@ function parseMigration(sql: string): { class: "expand" | "contract"; steps: Her
   return { class: fileClass, steps };
 }
 
-/** Findings the linter printed. A line that is not a finding is not kept. */
-function parseFindings(output: string): HeroFinding[] {
+/** One linter line. It may sit after `error OKM1510:` on the same line. */
+const FINDING_LINE = /(error|warning) (OKM\d+) step (\d+): (.*?) -- fix: (.*)$/;
+
+/**
+ * Findings `okm generate` printed.
+ *
+ * Warnings are lines on stdout. Error findings are inside the OKM1510 text
+ * on stderr, and the first one shares that line (`error OKM1510: error OKM1528 step 1: ...`).
+ *
+ * @param stdout - What the command wrote to stdout
+ * @param stderr - What the command wrote to stderr
+ * @returns Findings from both, stdout first
+ */
+export function findingsFromCli(stdout: string, stderr: string): HeroFinding[] {
   const findings: HeroFinding[] = [];
-  for (const line of output.split("\n")) {
-    const found = /^(error|warning) (OKM\d+) step (\d+): (.*?) -- fix: (.*)$/.exec(line.trim());
+  for (const line of `${stdout}\n${stderr}`.split("\n")) {
+    const found = FINDING_LINE.exec(line.trim());
     if (found === null) continue;
     findings.push({
       severity: found[1] as HeroFinding["severity"],
@@ -228,14 +244,18 @@ function migrate(root: string, spec: HeroMigrateSpec): HeroDerivedMigrate {
 
     // `generate init` writes nothing for a schema with no tables, so the number is not fixed.
     const file = readdirSync(join(dir, "migrations")).find((name) => name.endsWith(`_${spec.name}.sql`));
-    if (file === undefined) throw new Error(`${spec.id}: okm generate wrote no ${spec.name} migration\n${printed}`);
+    if (file === undefined) {
+      throw new Error(
+        `${spec.id}: okm generate wrote no ${spec.name} migration\n${printed.stdout}${printed.stderr}`,
+      );
+    }
     const migration = parseMigration(readFileSync(join(dir, "migrations", file), "utf8"));
     return {
       kind: "migrate",
       id: spec.id,
       diff: withContext(lineDiff(base.trimEnd().split("\n"), edited.trimEnd().split("\n"))),
       plan: { file: `migrations/${file}`, class: migration.class, steps: migration.steps },
-      lint: parseFindings(toPublished(printed, root)),
+      lint: findingsFromCli(toPublished(printed.stdout, root), toPublished(printed.stderr, root)),
       types: typesChange(typesBefore, typesAfter),
     };
   } finally {

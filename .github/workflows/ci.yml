@@ -6,7 +6,8 @@ name: CI
 # The gate is format, lint, typecheck, the build, tests for files changed
 # since the merge base, the runtime-entry size ceiling, and the title lint.
 # Postgres 18 runs when the diff touches src/dialects, src/runtime, or
-# src/tooling/migrate. A label does not start it.
+# src/tooling/migrate. A label does not start it. Site tests run when the
+# diff touches src/tooling or src/dialects. The Site workflow is not required.
 on:
   pull_request:
     types: [opened, synchronize, reopened]
@@ -26,6 +27,7 @@ jobs:
     outputs:
       postgres: ${{ steps.plan.outputs.postgres }}
       lifecycle: ${{ steps.plan.outputs.lifecycle }}
+      site: ${{ steps.plan.outputs.site }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -282,9 +284,28 @@ jobs:
         env:
           POSTGRES_VERSION: "18"
 
+  site:
+    name: site / tests
+    needs: [changes]
+    if: needs.changes.outputs.site == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup
+        uses: ./.github/actions/setup-bun
+        with:
+          working-directory: site
+          lockfile: site/bun.lock
+
+      - name: Tests
+        working-directory: site
+        run: bun run test
+
   check:
     name: gate / check
-    needs: [changes, lint, types, build, test, size, pull, paths, suite, lifecycle]
+    needs: [changes, lint, types, build, test, size, pull, paths, suite, lifecycle, site]
     if: always()
     runs-on: ubuntu-24.04
     steps:
@@ -299,6 +320,7 @@ jobs:
           bun ./scripts/ci-gate.ts
           --postgres ${{ needs.changes.outputs.postgres == 'true' && '1' || '0' }}
           --lifecycle ${{ needs.changes.outputs.lifecycle == 'true' && '1' || '0' }}
+          --site ${{ needs.changes.outputs.site == 'true' && '1' || '0' }}
           changes=${{ needs.changes.result }}
           lint=${{ needs.lint.result }}
           types=${{ needs.types.result }}
@@ -309,3 +331,4 @@ jobs:
           paths=${{ needs.paths.result }}
           suite=${{ needs.suite.result }}
           lifecycle=${{ needs.lifecycle.result }}
+          site=${{ needs.site.result }}

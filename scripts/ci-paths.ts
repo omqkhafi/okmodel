@@ -8,12 +8,14 @@
  *
  *   bun ./scripts/ci-paths.ts --base <sha> --head <sha>
  *
- * Writes `runtime=`, `workflows=`, `postgres=`, and `lifecycle=` lines to
- * `GITHUB_OUTPUT` when that file is set, and always prints the same lines.
+ * Writes `runtime=`, `workflows=`, `postgres=`, `lifecycle=`, and `site=` lines
+ * to `GITHUB_OUTPUT` when that file is set, and always prints the same lines.
  * `postgres` is true when the diff touches dialects, migrate, or runtime: the
  * pull request then runs Postgres 18. `lifecycle` is true when the diff
  * touches dialects, migrate, or `tests/lifecycle`: the pull request then runs
- * the migration lifecycle property on Postgres 18.
+ * the migration lifecycle property on Postgres 18. `site` is true when the
+ * diff touches `src/tooling` or `src/dialects`: the pull request then runs the
+ * site tests, because that is where CLI output the hero reads is produced.
  */
 
 import { appendFileSync } from "node:fs";
@@ -85,6 +87,26 @@ export function lifecycleRelevant(paths: readonly string[]): boolean {
   );
 }
 
+/**
+ * Whether a pull request runs the site tests inside `gate / check`.
+ *
+ * CLI text the site checks is produced under `src/tooling` and `src/dialects`.
+ * The Site workflow is not a required check, so a change there has to be
+ * requested here or the gate merges a red hero.
+ *
+ * @param paths - Paths from the repository root
+ * @returns True when any path is in those trees
+ */
+export function siteTestsRelevant(paths: readonly string[]): boolean {
+  return paths.some(
+    (path) =>
+      path === "src/tooling" ||
+      path.startsWith("src/tooling/") ||
+      path === "src/dialects" ||
+      path.startsWith("src/dialects/"),
+  );
+}
+
 function isDocsPath(path: string): boolean {
   return path === "docs" || path.startsWith("docs/");
 }
@@ -122,7 +144,8 @@ function writeOutputs(paths: readonly string[]): void {
     `runtime=${runtimeRelevant(paths) ? "true" : "false"}\n` +
     `workflows=${workflowsChanged(paths) ? "true" : "false"}\n` +
     `postgres=${postgres18Relevant(paths) ? "true" : "false"}\n` +
-    `lifecycle=${lifecycleRelevant(paths) ? "true" : "false"}\n`;
+    `lifecycle=${lifecycleRelevant(paths) ? "true" : "false"}\n` +
+    `site=${siteTestsRelevant(paths) ? "true" : "false"}\n`;
   const output = process.env.GITHUB_OUTPUT;
   if (output !== undefined && output.length > 0) appendFileSync(output, text);
   process.stdout.write(text);
