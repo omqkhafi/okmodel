@@ -646,20 +646,23 @@ async function generate(
     human("no changes\n");
     return { text: "no changes\n", data: { path: null }, warnings: [], outFile: null };
   }
-  const findings = formatFindings(written.findings);
+  const errors = written.findings.filter((item) => item.severity === "error");
+  const notices = formatFindings(written.findings.filter((item) => item.severity !== "error"));
   human(`${written.path}\n`);
-  human(findings);
+  human(notices);
   const warnings = warningsOf(written.findings);
-  if (hasError(written.findings)) {
+  if (errors.length > 0) {
     throw attachPartial(
-      new OkmError("OKM1510", findings.trim(), {
-        fix: { summary: "okm migrate apply will refuse until it is fixed." },
+      new OkmError("OKM1510", formatFindings(errors).trim(), {
+        fix: {
+          summary: "okm migrate apply will refuse until it is fixed. -- okm-allow OKM15xx: reason",
+        },
       }),
       { data: { path: written.path }, warnings, outFile: null },
     );
   }
   return {
-    text: `${written.path}\n${findings}`,
+    text: `${written.path}\n${notices}`,
     data: { path: written.path },
     warnings,
     outFile: null,

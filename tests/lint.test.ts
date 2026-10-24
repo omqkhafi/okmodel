@@ -521,12 +521,14 @@ test("generate writes the file, and plan and check fail on an error", async () =
     });
     expect(generated.code).toBe("OKM1510");
     expect(generated.fix.summary).toContain("apply will refuse until it is fixed");
+    expect(generated.fix.summary).toContain("-- okm-allow OKM15xx: reason");
     const written = lines.join("");
     const sqlPath = written.split("\n")[0] ?? "";
     expect(sqlPath.endsWith(".sql")).toBe(true);
     expect(existsSync(sqlPath)).toBe(true);
-    expect(written).toContain("error OKM1511");
+    expect(written).not.toContain("error OKM1511");
     expect(generated.message).toContain("error OKM1511");
+    expect(generated.message).not.toContain("warning ");
 
     const drop = plans(
       schema({ tables: [tasks(), table("notes", { id: t.identity() })] }),
@@ -576,9 +578,12 @@ test("okm generate exits 1 on an error finding and still writes the file", () =>
     expect(sqlPath.endsWith(".sql")).toBe(true);
     expect(existsSync(sqlPath)).toBe(true);
     expect(readFileSync(sqlPath, "utf8")).toContain("drop");
-    expect(stdout).toContain("error OKM1511");
+    expect(stdout).not.toContain("error OKM1511");
     expect(stderr).toContain("error OKM1510:");
+    expect(stderr.split("error OKM1511").length - 1).toBe(1);
     expect(stderr).toContain("apply will refuse until it is fixed");
+    expect(stderr).toContain("-- okm-allow OKM15xx: reason");
+    expect(stderr).not.toContain("warning ");
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -604,6 +609,56 @@ test("a second okm generate stays failed while the pending migration has an erro
     expect(second.exitCode).not.toBe(0);
     expect(second.stdout.toString()).not.toContain("no changes");
     expect(second.stderr.toString()).toContain("OKM1511");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("okm generate prints a warning once and keeps it out of OKM1510", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "okm-gen-both-"));
+  const root = repoRoot();
+  try {
+    writeFileSync(
+      join(cwd, "schema.ts"),
+      [
+        `import { identity, schema, table, t } from ${JSON.stringify(join(root, "src/dialects/pg/index.ts"))};`,
+        'export const app = schema({ tables: [table("tasks", { id: identity(), title: t.char(8) })] });',
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(cwd, "okmodel.config.ts"),
+      [
+        `import { defineConfig } from ${JSON.stringify(join(root, "src/tooling/migrate/index.ts"))};`,
+        'export default defineConfig({ schema: "./schema.ts", migrations: "./migrations" });',
+        "",
+      ].join("\n"),
+    );
+    mkdirSync(join(cwd, "migrations"));
+    writeFileSync(
+      join(cwd, "migrations", "0001_base.catalog.json"),
+      serializeCatalog(
+        schema({
+          tables: [
+            table("tasks", { id: t.identity(), title: t.char(3) }),
+            table("notes", { id: t.identity(), name: t.text() }),
+          ],
+        }).catalog,
+      ),
+    );
+    const proc = Bun.spawnSync(["bun", join(root, "src/tooling/cli.ts"), "generate", "edit"], {
+      cwd,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expect(proc.exitCode).toBe(1);
+    const stdout = proc.stdout.toString();
+    const stderr = proc.stderr.toString();
+    expect(stdout.split("warning OKM1538").length - 1).toBe(1);
+    expect(stdout).not.toContain("error OKM1511");
+    expect(stderr).not.toContain("warning ");
+    expect(stderr.split("error OKM1511").length - 1).toBe(1);
+    expect(stderr).toContain("-- okm-allow OKM15xx: reason");
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
