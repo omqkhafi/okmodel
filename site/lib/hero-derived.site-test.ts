@@ -9,13 +9,52 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
 
-import { generateHeroDerived } from "../scripts/hero-derived";
+import { findingsFromCli, generateHeroDerived } from "../scripts/hero-derived";
 import { heroSpecs } from "./hero";
 import { siteRoot } from "./repo";
 
 const checkedIn: unknown = JSON.parse(
   readFileSync(join(siteRoot(), "lib/hero-derived.json"), "utf8"),
 );
+
+test("generate findings come from stdout and from the OKM1510 line", () => {
+  const stdout = [
+    "migrations/0002_unique_name.sql",
+    "warning OKM1538 step 3: widens a column -- fix: Rewrite in place.",
+    "",
+  ].join("\n");
+  const stderr = [
+    "error OKM1510: error OKM1528 step 1: builds a unique or primary key -- fix: Deduplicate the rows first.",
+    "error OKM1511 step 2: drops a table -- fix: Stop reading the table in an expand migration.",
+    "okm migrate apply will refuse until it is fixed. -- okm-allow OKM15xx: reason",
+    "config: /tmp/okmodel.config.ts",
+    "",
+  ].join("\n");
+  expect(findingsFromCli(stdout, stderr)).toEqual([
+    {
+      severity: "warning",
+      code: "OKM1538",
+      step: 3,
+      message: "widens a column",
+      fix: "Rewrite in place.",
+    },
+    {
+      severity: "error",
+      code: "OKM1528",
+      step: 1,
+      message: "builds a unique or primary key",
+      fix: "Deduplicate the rows first.",
+    },
+    {
+      severity: "error",
+      code: "OKM1511",
+      step: 2,
+      message: "drops a table",
+      fix: "Stop reading the table in an expand migration.",
+    },
+  ]);
+  expect(findingsFromCli("", stderr).some((item) => item.code === "OKM1510")).toBe(false);
+});
 
 test("hero-derived.json is what the library produces now", () => {
   expect(generateHeroDerived()).toEqual(checkedIn as ReturnType<typeof generateHeroDerived>);
