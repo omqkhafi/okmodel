@@ -293,6 +293,47 @@ jobs:
       versions: '["15", "16", "17", "18"]'
       dist_artifact: dist
 
+  lifecycle:
+    name: lifecycle / ${{ matrix.version }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ["15", "16", "17", "18"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup
+        uses: ./.github/actions/setup-bun
+
+      - name: Pull Postgres
+        run: docker pull "postgres:${POSTGRES_VERSION}"
+        env:
+          POSTGRES_VERSION: ${{ matrix.version }}
+
+      - name: Start Postgres
+        run: bun run db:up
+        env:
+          POSTGRES_VERSION: ${{ matrix.version }}
+
+      - name: Lifecycle property
+        run: bun test tests/lifecycle/lifecycle-pg.test.ts
+        env:
+          REQUIRE_DOCKER: "1"
+          POSTGRES_VERSION: ${{ matrix.version }}
+          OKM_LIFECYCLE: "1"
+          OKM_LIFECYCLE_TIER: "nightly"
+          OKM_LIFECYCLE_CASES: "300"
+          OKM_LIFECYCLE_RANDOM: "1"
+
+      - name: Stop Postgres
+        if: always()
+        run: bun run db:down
+        env:
+          POSTGRES_VERSION: ${{ matrix.version }}
+
   tarball:
     name: tarball
     needs: build
@@ -321,6 +362,7 @@ jobs:
         size,
         inform,
         suite,
+        lifecycle,
         tarball,
       ]
     if: always()
@@ -359,4 +401,5 @@ jobs:
           size=${{ needs.size.result }}
           inform=${{ needs.inform.result }}
           suite=${{ needs.suite.result }}
+          lifecycle=${{ needs.lifecycle.result }}
           tarball=${{ needs.tarball.result }}

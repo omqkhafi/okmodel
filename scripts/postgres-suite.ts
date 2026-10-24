@@ -37,7 +37,12 @@ export type PostgresExclusion = {
  * Every current test file can run on the topology, so this list is empty.
  * A new omission goes here with its reason. A path in this list is not run.
  */
-export const POSTGRES_EXCLUSIONS: readonly PostgresExclusion[] = [];
+export const POSTGRES_EXCLUSIONS: readonly PostgresExclusion[] = [
+  {
+    file: "tests/lifecycle/lifecycle-pg.test.ts",
+    reason: "Heavy generate/apply/push property; dedicated OKM_LIFECYCLE job on PR and nightly",
+  },
+];
 
 /** A test file that fails on one or more majors, and why. */
 export type PostgresKnownFailure = {

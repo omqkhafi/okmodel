@@ -8,10 +8,12 @@
  *
  *   bun ./scripts/ci-paths.ts --base <sha> --head <sha>
  *
- * Writes `runtime=`, `workflows=`, and `postgres=` lines to `GITHUB_OUTPUT`
- * when that file is set, and always prints the same lines. `postgres` is
- * true when the diff touches dialects, migrate, or runtime: the pull request
- * then runs Postgres 18.
+ * Writes `runtime=`, `workflows=`, `postgres=`, and `lifecycle=` lines to
+ * `GITHUB_OUTPUT` when that file is set, and always prints the same lines.
+ * `postgres` is true when the diff touches dialects, migrate, or runtime: the
+ * pull request then runs Postgres 18. `lifecycle` is true when the diff
+ * touches dialects, migrate, or `tests/lifecycle`: the pull request then runs
+ * the migration lifecycle property on Postgres 18.
  */
 
 import { appendFileSync } from "node:fs";
@@ -63,6 +65,26 @@ export function postgres18Relevant(paths: readonly string[]): boolean {
   );
 }
 
+/**
+ * Whether a pull request runs the migration lifecycle property on Postgres 18.
+ *
+ * The paths are `src/dialects`, `src/tooling/migrate`, and `tests/lifecycle`.
+ *
+ * @param paths - Paths from the repository root
+ * @returns True when any path is in those trees
+ */
+export function lifecycleRelevant(paths: readonly string[]): boolean {
+  return paths.some(
+    (path) =>
+      path === "src/dialects" ||
+      path.startsWith("src/dialects/") ||
+      path === "src/tooling/migrate" ||
+      path.startsWith("src/tooling/migrate/") ||
+      path === "tests/lifecycle" ||
+      path.startsWith("tests/lifecycle/"),
+  );
+}
+
 function isDocsPath(path: string): boolean {
   return path === "docs" || path.startsWith("docs/");
 }
@@ -99,7 +121,8 @@ function writeOutputs(paths: readonly string[]): void {
   const text =
     `runtime=${runtimeRelevant(paths) ? "true" : "false"}\n` +
     `workflows=${workflowsChanged(paths) ? "true" : "false"}\n` +
-    `postgres=${postgres18Relevant(paths) ? "true" : "false"}\n`;
+    `postgres=${postgres18Relevant(paths) ? "true" : "false"}\n` +
+    `lifecycle=${lifecycleRelevant(paths) ? "true" : "false"}\n`;
   const output = process.env.GITHUB_OUTPUT;
   if (output !== undefined && output.length > 0) appendFileSync(output, text);
   process.stdout.write(text);
