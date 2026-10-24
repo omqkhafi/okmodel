@@ -55,6 +55,12 @@ export type CommittedStep = {
  */
 export type StepEngine = {
   readonly probed: boolean;
+  /**
+   * Quoted index a concurrent create builds.
+   *
+   * Set so a lost connection can name the INVALID index it may have left.
+   */
+  readonly indexLabel?: string;
   probe(): Promise<ProbeResult>;
   cleanup(): Promise<void>;
   run(): Promise<void>;
@@ -334,7 +340,7 @@ async function handleRunFailure(
       }
     }
   }
-  const wrapped = presentFailure(step, wrap(error), probe, cleanup);
+  const wrapped = presentFailure(step, wrap(error), probe, cleanup, engine.indexLabel);
   await journal
     .fail(step.migrationId, step.stepIndex, wrapped.code, scrubErrorText(causeOf(error)))
     .catch(() => undefined);
@@ -346,6 +352,7 @@ function presentFailure(
   wrapped: OkmError,
   probe: ProbeResult | undefined,
   cleanup: PartialCleanupError | undefined,
+  indexLabel?: string,
 ): OkmError {
   const stepNumber = step.stepIndex + 1;
   const next = nextApplyAction({
@@ -366,6 +373,11 @@ function presentFailure(
   if (cleanup !== undefined) {
     message = `${message}${cleanup.detail}`;
     fix = { summary: cleanup.fix };
+  } else if (indexLabel !== undefined && wrapped.kind === "unavailable") {
+    message = `${message} Index ${indexLabel} may be INVALID.`;
+    fix = {
+      summary: `DROP INDEX CONCURRENTLY ${indexLabel}; then run apply again. Finished steps are not repeated.`,
+    };
   }
   return new OkmError(wrapped.code, message, {
     kind: wrapped.kind,

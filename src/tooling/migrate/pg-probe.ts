@@ -164,7 +164,13 @@ export function postgresStepEngine(
   const declared = step.probe !== undefined && step.probe.trim().length > 0;
   const probed = builtin || declared;
   const kind = probeKind(step.kind, step.sql);
+  const created = parseCreateIndex(step.sql);
+  const indexLabel =
+    created !== undefined && /\bconcurrently\b/i.test(step.sql)
+      ? qualifiedName(created.schema, created.name)
+      : undefined;
   return {
+    ...(indexLabel !== undefined ? { indexLabel } : {}),
     probed,
     probe: () => {
       if (builtin) return probeStep(connection, kind, step.sql);
@@ -430,7 +436,8 @@ function parseCreateIndex(sql: string): IndexShape | undefined {
   return {
     unique,
     name: indexName.name,
-    schema: indexName.schema,
+    // An unqualified index is created in the table's schema, not the current one.
+    schema: indexName.schema ?? table.schema,
     table: table.name,
     method,
     columns: rendered,
