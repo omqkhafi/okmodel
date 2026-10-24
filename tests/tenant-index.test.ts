@@ -247,7 +247,11 @@ test("a using index is not rewritten, and OKM1706 stays unless it is global", ()
     throw new Error("using index should be OKM1706");
   } catch (error) {
     expect(error).toBeInstanceOf(OkmError);
-    if (error instanceof OkmError) expect(error.code).toBe("OKM1706");
+    if (error instanceof OkmError) {
+      expect(error.code).toBe("OKM1706");
+      expect(error.fix?.summary).toContain('index().global("reason")');
+      expect(error.fix?.summary).toContain("does not prefix a using tail");
+    }
   }
   const kept = schema({
     casing: "snake",

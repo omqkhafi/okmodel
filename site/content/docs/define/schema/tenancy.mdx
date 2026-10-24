@@ -101,7 +101,7 @@ A global table that references a tenant table is `Table plans.code is global and
 </Callout>
 
 <Callout type="error" title="OKM1706">
-With `indexes: false`, an index that does not lead with the key is `Index on notes starts with title. Put tenantId first.` With [casing](/docs/define/schema/casing) `"snake"`, the name in that sentence is `tenant_id`. The default prefixes the key, so this does not fire.
+With `indexes: false`, an index that does not lead with the key is `Index on notes starts with title. Put tenantId first.` With [casing](/docs/define/schema/casing) `"snake"`, the name in that sentence is `tenant_id`. The default prefixes the key, so this does not fire. A `using` tail, such as a pg_trgm gin index, is not prefixed. `index().global("reason")` is the option that works for it. Putting the key first does not.
 </Callout>
 
 ### indexes

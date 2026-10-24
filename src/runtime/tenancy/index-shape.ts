@@ -126,6 +126,18 @@ function shapeOne<T extends IndexShapeCall>(
     return columns === call.columns ? call : { ...call, columns };
   }
   if (!leads && call.tenantGlobal === undefined) {
+    if (using) {
+      throw new OkmError(
+        "OKM1706",
+        `Index on ${table} starts with ${call.columns[0] ?? "no column"}. A using tail is not prefixed.`,
+        {
+          fix: {
+            summary:
+              'index().global("reason") opts this index out. Putting the tenant key first does not prefix a using tail.',
+          },
+        },
+      );
+    }
     throw new OkmError(
       "OKM1706",
       `Index on ${table} starts with ${call.columns[0] ?? "no column"}. Put ${needed.join(", ")} first.`,
