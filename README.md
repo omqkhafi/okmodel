@@ -150,7 +150,7 @@ export async function removeNote(id: string) {
 | Want…                   | Go to                                                                  |
 | ----------------------- | ---------------------------------------------------------------------- |
 | Pull a database         | [pull](https://okm.omqkhafi.dev/docs/reference/cli#pull)               |
-| Import Drizzle          | [From Drizzle](https://okm.omqkhafi.dev/docs/migrate/from-drizzle)       |
+| Import Drizzle          | [From Drizzle](https://okm.omqkhafi.dev/docs/migrate/from-drizzle)     |
 | Several catalogs        | [Catalogs](https://okm.omqkhafi.dev/docs/define/schema/catalogs)       |
 | `describe`              | [Schema API](https://okm.omqkhafi.dev/docs/reference/schema-api)       |
 | Extension packs         | [Extensions](https://okm.omqkhafi.dev/docs/define/schema/extensions)   |

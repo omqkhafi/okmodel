@@ -62,14 +62,14 @@ The repository skill `.agents/skills/okm-ship/SKILL.md` is for a release only:
 
 Merged titles use `type(scope): summary`.
 
-| Title | Changelog group |
-| --- | --- |
-| `feat` | `### ✨ Added` |
-| `fix` | `### 🐛 Fixed` |
-| `perf`, `refactor` | `### ♻️ Changed` |
-| `security` | `### 🔒 Security` |
+| Title                                             | Changelog group           |
+| ------------------------------------------------- | ------------------------- |
+| `feat`                                            | `### ✨ Added`            |
+| `fix`                                             | `### 🐛 Fixed`            |
+| `perf`, `refactor`                                | `### ♻️ Changed`          |
+| `security`                                        | `### 🔒 Security`         |
 | `type(scope)!:` or a `BREAKING CHANGE:` body line | `### 💥 Breaking Changes` |
-| `docs`, `test`, `chore` | omitted |
+| `docs`, `test`, `chore`                           | omitted                   |
 
 A group with eight or more bullets gains `####` headings in this order: `contracts`, `dialects`, `adapters`, `runtime`, `tooling`, `docs`. Hand-written bullets already under `## Unreleased` are kept. The generator fills the section only when it has none.
 
