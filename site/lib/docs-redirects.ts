@@ -11,6 +11,7 @@ export const DOCS_REDIRECTS: Readonly<Record<string, string>> = {
   "/docs/start/from-drizzle": "/docs/migrate/from-drizzle",
   "/docs/start/from-existing": "/docs/migrate/from-existing",
   "/docs/start/queries": "/docs/define/table/queries",
+  "/docs/define": "/docs/define/table",
   "/docs/ai/mcp": "/docs/ai/skills",
   "/docs/config": "/docs/define/config",
   "/docs/config/file": "/docs/define/config",
