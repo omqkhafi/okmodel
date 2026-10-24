@@ -48,3 +48,29 @@ The maintainers' commits in this repository also end with `Co-authored-by: Ali A
 ## Toolchain
 
 TypeScript 7 (`tsc`) typechecks the repository and emits declarations. Nothing in that typecheck uses the TypeScript compiler API. Type assertions live in `*.test-d.ts` files and use `expect-type`. `bun run type-cost` reads `tsc --extendedDiagnostics`, writes JSON, and fails when a D127 ceiling is exceeded. `@ark/attest` runs separately, in `packages/attest`, on `@typescript/typescript6` (`tsc6`), and is not part of `bun run check`. Lint goes through oxlint, including its type-aware rules. Format goes through oxfmt. The published package sets `sideEffects` to false. `bun run bundle-purity` fails when a runtime bundle contains an npm package or when `src/` imports the harness barrel.
+
+## Releases
+
+A pull request does not edit `changelog.md` and does not bump `package.json`. Finish the work, run `bun run verify:fast` once, push once, and `gh pr merge --auto --squash`. Then stop.
+
+The repository skill `.agents/skills/okm-ship/SKILL.md` is for a release only:
+
+- `bun run bump release` when publishing a release. An empty `## Unreleased` is filled from squash-merge subjects since the last `vX.Y.Z` tag, then promoted to `## vX.Y.Z — <date>`.
+- `bun run bump next --publish` when publishing a prerelease. The version becomes `<next minor>-next.N`. The changelog stays as it is. Without `--publish` the command refuses.
+
+`patch`, `minor`, `major`, and `--set` still promote the changelog. `--dry-run` prints the plan and writes nothing.
+
+Merged titles use `type(scope): summary`.
+
+| Title | Changelog group |
+| --- | --- |
+| `feat` | `### ✨ Added` |
+| `fix` | `### 🐛 Fixed` |
+| `perf`, `refactor` | `### ♻️ Changed` |
+| `security` | `### 🔒 Security` |
+| `type(scope)!:` or a `BREAKING CHANGE:` body line | `### 💥 Breaking Changes` |
+| `docs`, `test`, `chore` | omitted |
+
+A group with eight or more bullets gains `####` headings in this order: `contracts`, `dialects`, `adapters`, `runtime`, `tooling`, `docs`. Hand-written bullets already under `## Unreleased` are kept. The generator fills the section only when it has none.
+
+Do not append a changelog bullet on a feature pull request, run `bun run bump next` to mark a pull request as shipped, or update the pack snapshot or `docs/size-audit.md` as pull-request bookkeeping.

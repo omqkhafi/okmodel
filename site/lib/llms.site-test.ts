@@ -27,7 +27,7 @@ test("sitemap and robots advertise the handbook", () => {
   expect(urls).toContain(`${SITE_ORIGIN}/llms.txt`);
   expect(urls).toContain(`${SITE_ORIGIN}/llms-full.txt`);
   expect(urls).toContain(`${SITE_ORIGIN}/docs/reference/cli`);
-  expect(urls).toContain(`${SITE_ORIGIN}/docs/ai/mcp`);
+  expect(urls).toContain(`${SITE_ORIGIN}/docs/ai/skills`);
 
   expect(urls).toContain(`${SITE_ORIGIN}/.well-known/agent-skills/index.json`);
 

@@ -11,7 +11,6 @@ import {
   Binary,
   Blocks,
   Bookmark,
-  Bot,
   Boxes,
   Braces,
   Building,
@@ -149,7 +148,6 @@ const PATH_ICONS: Readonly<Record<string, LucideIcon>> = {
   "/docs/reference/type-change": Replace,
   "/docs/reference/okid": Hash,
   "/docs/reference/environment-variables": Variable,
-  "/docs/ai/mcp": Bot,
   "/docs/ai/skills": Sparkles,
   "/docs/ai/llm": FileCode,
 };
