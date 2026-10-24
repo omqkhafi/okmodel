@@ -100,9 +100,12 @@ async function checkTable(
     await readTenant(facts, handle, where);
     const set = updateSet(host, facts, row);
     if (set !== undefined) {
-      const updated = asCount(await handle.update({ where, set }));
+      const version = versionProbe(host, facts.name, row);
+      const target = version === undefined ? { where, set } : { where, set, version };
+      const updated = asCount(await handle.update(target));
       if (updated > 0) leak(facts.name, "update", { count: updated });
-      if (typeof client.batch === "function") {
+      // A version check is judged after the statement. batch() refuses that outside tx().
+      if (version === undefined && typeof client.batch === "function") {
         const batched: unknown = await client.batch([handle.update({ where, set })]);
         if (Array.isArray(batched) && batched.some((item) => asCount(item) > 0)) {
           leak(facts.name, "batch", batched);
@@ -183,6 +186,27 @@ async function readTenant(
 function includeOf(relation: RelationModel): Record<string, unknown> {
   if (relation.kind === "many") return { [relation.name]: { limit: 1 } };
   return { [relation.name]: true };
+}
+
+/**
+ * The version a `versioned()` probe must send.
+ *
+ * The inserted row carries it. A missing value is the column default, 1.
+ * A table that is not versioned returns `undefined`, and the probe omits the field.
+ *
+ * @param host - The open harness
+ * @param table - Table the probe updates
+ * @param row - The row inserted for tenant B
+ * @returns The version to pass, or `undefined` when the table has no version check
+ */
+function versionProbe(
+  host: FactoryHost,
+  table: string,
+  row: Record<string, unknown>,
+): number | undefined {
+  const traits = host.schema.model[table]?.traits;
+  if (traits?.some((item) => item.name === "versioned") !== true) return undefined;
+  return typeof row.version === "number" ? row.version : 1;
 }
 
 function updateSet(
@@ -349,7 +373,9 @@ async function checkPath(
     await readTenant(facts, tableHandle(client, facts.name), where);
     const set = updateSet(host, facts, parent);
     if (set !== undefined) {
-      const updated = asCount(await tableHandle(client, facts.name).update({ where, set }));
+      const version = versionProbe(host, facts.name, parent);
+      const target = version === undefined ? { where, set } : { where, set, version };
+      const updated = asCount(await tableHandle(client, facts.name).update(target));
       if (updated > 0) leak(facts.name, "update", { count: updated });
     }
     const removed = asCount(await tableHandle(client, facts.name).delete({ where }));

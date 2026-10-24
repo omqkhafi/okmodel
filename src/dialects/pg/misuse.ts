@@ -26,6 +26,25 @@ export function definition(message: string): never {
   throw new OkmError(COLUMN_DEFINITION_CODE, message);
 }
 
+type IndexMarked = {
+  readonly name: string;
+  readonly options?: { readonly tenantIndexes?: unknown };
+};
+
+/**
+ * Refuses `tenantIndexes` on a global table.
+ *
+ * The rewrite returns before that flag is read, so a silent option would
+ * look like it applied.
+ *
+ * @param item - The global table
+ */
+export function refuseGlobalTenantIndexes(item: IndexMarked): void {
+  if (item.options?.tenantIndexes !== undefined) {
+    definition(`Table ${item.name} sets tenantIndexes, and the table is global.`);
+  }
+}
+
 /**
  * Throws OKM1061.
  *

@@ -462,6 +462,7 @@ export function schema<const TTables extends readonly AnyTable[]>(
       jobs,
       enums,
       schemaTraits,
+      tenancy === undefined,
     );
     if (sqlNames.has(built.sqlName)) {
       catalogError(
@@ -544,6 +545,13 @@ function acceptTables(tables: readonly AnyTable[]): readonly string[] {
   for (const item of tables) {
     if (typeof item.name !== "string" || item.name.length === 0) {
       definition("schema() tables need a name.");
+    }
+    if (item.name === "capabilities") {
+      catalogError(
+        "OKM1023",
+        withLocation("Table capabilities uses the client name capabilities.", item.source),
+        { fix: { summary: "Rename the table." } },
+      );
     }
     if (seen.has(item.name)) {
       catalogError(
@@ -763,9 +771,14 @@ function archiveModel(item: AnyTable): { readonly archive: ArchiveModel } | unde
 
 function bareTables(tables: readonly AnyTable[]): readonly AnyTable[] {
   for (const item of tables) {
-    const mark = (item.options as { readonly tenancy?: unknown } | undefined)?.tenancy;
-    if (mark !== undefined) {
+    const options = item.options as
+      | { readonly tenancy?: unknown; readonly tenantIndexes?: unknown }
+      | undefined;
+    if (options?.tenancy !== undefined) {
       definition(`Table ${item.name} sets tenancy, and the schema does not.`);
+    }
+    if (options?.tenantIndexes !== undefined) {
+      definition(`Table ${item.name} sets tenantIndexes, and the schema has no tenancy.`);
     }
   }
   return tables;
@@ -863,6 +876,7 @@ function compileTable(
   jobs: CatalogJob[],
   enums: Map<string, EnumNote>,
   schemaTraits: readonly Trait[] | undefined,
+  bare: boolean,
 ): Prepared {
   const options = item.options as StoredOptions | undefined;
   const applied = openTableTraits(
@@ -1025,7 +1039,7 @@ function compileTable(
     compileUniques(item.name, options, parent, provenance, byField, jobs);
   }
   if (options?.indexes !== undefined) {
-    compileIndexes(item.name, options, handles, parent, provenance, jobs);
+    compileIndexes(item.name, options, handles, parent, provenance, jobs, bare);
   }
   if (options?.checks !== undefined) {
     compileChecks(item.name, options, handles, parent, provenance, byField, jobs);
@@ -1169,6 +1183,7 @@ function compileIndexes(
   parent: ObjectRef,
   provenance: Provenance,
   jobs: CatalogJob[],
+  bare: boolean,
 ): void {
   const build = options?.indexes;
   if (build === undefined) {
@@ -1179,6 +1194,12 @@ function compileIndexes(
     definition(`Table ${tableName} indexes must return an array.`);
   }
   for (const call of calls) {
+    if (bare && call.tenantGlobal !== undefined) {
+      definition(`Table ${tableName} index().global() needs tenancy.`);
+    }
+    if (bare && call.tenantScoped === true) {
+      definition(`Table ${tableName} index().scoped() needs tenancy.`);
+    }
     const built = readIndex(tableName, call, parent.name);
     stage(jobs, () =>
       catalogIndex({

@@ -72,7 +72,7 @@ export type IndexCall = {
   /**
    * Marks the index unique.
    *
-   * On a tenant table the unique includes the tenant key, so two tenants may
+   * On a tenant table the unique includes every tenant key, so two tenants may
    * share a value. `.global("reason")` keeps the unique global.
    *
    * @returns The same columns, unique

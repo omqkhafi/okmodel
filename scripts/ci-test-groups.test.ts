@@ -75,6 +75,7 @@ test("every test file is in exactly one CI group", () => {
     "tests/compatibility-sync.test.ts": 41,
     "tests/capabilities.test.ts": 19,
     "tests/connect-floor.test.ts": 20,
+    "tests/driver-capabilities-break.test.ts": 12,
     "tests/driver-error-mapping.test.ts": 9,
     "tests/driver-error.test.ts": 11,
     "tests/driver-runner.test.ts": 79,

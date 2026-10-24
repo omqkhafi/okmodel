@@ -14,7 +14,7 @@ The key is a guarded uuid. Insert fills it from `for()`. A read or a write filte
 
 A column the table already declares with that name is OKM1012: `Table notes already declares tenantId, which tenancy adds. Rename the field or drop it from the table.`
 
-A unique includes the key. The primary key does too. An index is prefixed with the key, so a unique index is unique per tenant and two tenants may share a value. `tenantIndexes: false` turns the prefix off for this table. One index can opt out with `.global("reason")` or opt in with `.scoped()`. The nearest level wins. With the prefix off, an index that does not start with the key is OKM1706: `Index on notes starts with title. Put tenantId first.` A foreign key to another tenant table includes the key, so `set null` and `set default` are refused. See [references](/docs/define/table/references).
+A unique includes the key. The primary key does too. An index is prefixed with the key, so a unique index is unique per tenant and two tenants may share a value. `tenantIndexes: false` turns the prefix off for this table. One index can opt out with `.global("reason")` or opt in with `.scoped()`. The nearest level wins. With the prefix off, an index that does not start with the key is OKM1706: `Index on notes starts with title. Put tenantId first.` A `using` tail is not prefixed that way. `index().global("reason")` is the option that works for it. A foreign key to another tenant table includes the key, so `set null` and `set default` are refused. See [references](/docs/define/table/references).
 
 #### unique
 

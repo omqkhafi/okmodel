@@ -12,7 +12,12 @@ import { OkmError } from "../src/contracts/error.js";
 import { index, schema, table, t } from "../src/dialects/pg/index.js";
 import { buildIndex } from "../src/dialects/pg/table.js";
 import { renderCatalog } from "../src/dialects/pg/ddl.js";
-import { columnTenancy, compositeTenancy, rlsTenancy } from "../src/runtime/tenancy/index.js";
+import {
+  columnTenancy,
+  compositeTenancy,
+  global,
+  rlsTenancy,
+} from "../src/runtime/tenancy/index.js";
 import { describe } from "../src/tooling/migrate/schema-api.js";
 import { lintPlan } from "../src/tooling/migrate/lint.js";
 import { planMigration } from "../src/tooling/migrate/plan.js";
@@ -231,6 +236,79 @@ test(".global(reason) opts out, and an empty reason is refused", () => {
   ).toEqual([["tenant_id", "body"], ["title"]]);
 });
 
+test("tenantIndexes on a global table is OKM1060", () => {
+  const column = failure(() =>
+    schema({
+      tenancy,
+      tables: [
+        table("plans", { id: t.identity() }, { tenancy: global("shared"), tenantIndexes: true }),
+      ],
+    }),
+  );
+  expect(column.code).toBe("OKM1060");
+  expect(column.message).toContain("sets tenantIndexes, and the table is global");
+  const composite = failure(() =>
+    schema({
+      tenancy: compositeTenancy({ key: ["organizationId", "workspaceId"], type: "uuid" }),
+      tables: [
+        table("plans", { id: t.identity() }, { tenancy: global("shared"), tenantIndexes: false }),
+      ],
+    }),
+  );
+  expect(composite.code).toBe("OKM1060");
+  expect(composite.message).toContain("the table is global");
+  const kept = schema({
+    tenancy,
+    tables: [
+      table(
+        "plans",
+        { id: t.identity(), title: t.text() },
+        {
+          tenancy: global("shared"),
+          indexes: (columns) => [index(columns.title).global("lookup")],
+        },
+      ),
+    ],
+  });
+  expect(indexColumns(kept, "plans")).toEqual([["title"]]);
+});
+
+test("tenant index marks in a schema without tenancy are OKM1060", () => {
+  const indexes = failure(() =>
+    schema({
+      tables: [table("notes", { id: t.identity() }, { tenantIndexes: false })],
+    }),
+  );
+  expect(indexes.code).toBe("OKM1060");
+  expect(indexes.message).toContain("sets tenantIndexes, and the schema has no tenancy");
+  const marked = failure(() =>
+    schema({
+      tables: [
+        table(
+          "notes",
+          { id: t.identity(), title: t.text() },
+          { indexes: (columns) => [index(columns.title).global("lookup")] },
+        ),
+      ],
+    }),
+  );
+  expect(marked.code).toBe("OKM1060");
+  expect(marked.message).toContain("index().global() needs tenancy");
+  const scoped = failure(() =>
+    schema({
+      tables: [
+        table(
+          "notes",
+          { id: t.identity(), title: t.text() },
+          { indexes: (columns) => [index(columns.title).scoped()] },
+        ),
+      ],
+    }),
+  );
+  expect(scoped.code).toBe("OKM1060");
+  expect(scoped.message).toContain("index().scoped() needs tenancy");
+});
+
 test("a using index is not rewritten, and OKM1706 stays unless it is global", () => {
   const expression = 'using gin ("title" gin_trgm_ops)';
   try {
@@ -247,7 +325,11 @@ test("a using index is not rewritten, and OKM1706 stays unless it is global", ()
     throw new Error("using index should be OKM1706");
   } catch (error) {
     expect(error).toBeInstanceOf(OkmError);
-    if (error instanceof OkmError) expect(error.code).toBe("OKM1706");
+    if (error instanceof OkmError) {
+      expect(error.code).toBe("OKM1706");
+      expect(error.fix?.summary).toContain('index().global("reason")');
+      expect(error.fix?.summary).toContain("does not prefix a using tail");
+    }
   }
   const kept = schema({
     casing: "snake",
@@ -281,6 +363,68 @@ test("a unique index becomes unique per tenant", () => {
   expect(found[0]?.definition.columns).toEqual(["tenant_id", "email"]);
   expect(renderCatalog(built.catalog, "public").join("\n")).toContain(
     'create unique index "notes_tenant_id_email_idx" on "public"."notes" ("tenant_id", "email")',
+  );
+});
+
+test("a tenant key later in the index is moved forward and not repeated", () => {
+  const built = schema({
+    casing: "snake",
+    tenancy,
+    tables: [
+      table(
+        "notes",
+        { id: t.identity(), body: t.text() },
+        { indexes: () => [buildIndex({ columns: ["body", "tenant_id"] })] },
+      ),
+    ],
+  });
+  expect(indexColumns(built, "notes")).toEqual([["tenant_id", "body"]]);
+});
+
+test("two indexes that match after the tenant prefix are OKM1023 and name both", () => {
+  let error: OkmError | undefined;
+  try {
+    schema({
+      casing: "snake",
+      tenancy,
+      tables: [
+        table(
+          "notes",
+          { id: t.identity(), body: t.text() },
+          {
+            indexes: () => [
+              buildIndex({ columns: ["body", "tenant_id"] }),
+              buildIndex({ columns: ["tenant_id", "body"] }),
+            ],
+          },
+        ),
+      ],
+    });
+  } catch (caught) {
+    if (caught instanceof OkmError) error = caught;
+    else throw caught;
+  }
+  expect(error?.code).toBe("OKM1023");
+  expect(error?.message).toContain("body, tenant_id");
+  expect(error?.message).toContain("tenant_id, body");
+});
+
+test("a composite unique index includes every key", () => {
+  const built = schema({
+    casing: "snake",
+    tenancy: compositeTenancy({ key: ["organizationId", "workspaceId"], type: "uuid" }),
+    tables: [
+      table(
+        "documents",
+        { id: t.identity(), email: t.text() },
+        { indexes: (columns) => [index(columns.email).unique()] },
+      ),
+    ],
+  });
+  expect(indexColumns(built, "documents")).toEqual([["organization_id", "workspace_id", "email"]]);
+  const sql = renderCatalog(built.catalog, "public").join("\n");
+  expect(sql).toContain(
+    'create unique index "documents_organization_id_workspace_id_email_idx" on "public"."documents" ("organization_id", "workspace_id", "email")',
   );
 });
 
@@ -350,6 +494,16 @@ test("replacing a tenant index builds the new one concurrently, then drops the o
   );
   expect(errors).toEqual([]);
 });
+
+function failure(run: () => unknown): OkmError {
+  try {
+    run();
+  } catch (error) {
+    if (error instanceof OkmError) return error;
+    throw error;
+  }
+  throw new Error("expected OkmError");
+}
 
 function column(name: string): { readonly name: string } {
   return { name };

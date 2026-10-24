@@ -1104,7 +1104,7 @@
     "kind": "invalid",
     "category": "input",
     "summary": "An index on a tenant table does not lead with the tenant key, and the schema is not prefixing indexes. Prefixing is on unless indexes: false or tenantIndexes: false. index().global(\"reason\") is the opt-out that does not raise this.",
-    "fix": "Put the tenant key first, or leave indexes on so the schema adds it. index().global(\"reason\") opts one index out.",
+    "fix": "Put the tenant key first, or leave indexes on so the schema adds it. index().global(\"reason\") opts one index out. A using tail is not prefixed by putting the key first or by leaving indexes on. index().global(\"reason\") is the option that works for it.",
     "retryable": false,
     "docs": "docs/errors/OKM1706.md"
   },

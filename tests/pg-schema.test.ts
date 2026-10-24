@@ -230,6 +230,15 @@ test("OKM1023 names a duplicate table and the accepted names", () => {
   expect(error.message).toContain("Accepted names: tasks");
 });
 
+test("a table named capabilities is OKM1023", () => {
+  const error = capture(() =>
+    schema({ tables: [table("capabilities", { id: t.text().primaryKey() })] }),
+  );
+  expect(error.code).toBe("OKM1023");
+  expect(error.message).toContain("Table capabilities uses the client name capabilities");
+  expect(error.fix?.summary).toContain("Rename the table");
+});
+
 test("reference is a table option", () => {
   const roles = table(
     "roles",

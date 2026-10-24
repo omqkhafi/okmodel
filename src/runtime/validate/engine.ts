@@ -251,6 +251,8 @@ function acceptKeys(
 function refuseUnknown(model: TableModel, key: string): never {
   const names: string[] = [];
   for (const column of model.columns) names.push(column.field);
+  // Same order as the core write path (`table.names` is sorted).
+  names.sort();
   const accepted = names.length === 0 ? "(none)" : names.join(", ");
   throwNamed(
     "OKM1120",

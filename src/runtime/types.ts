@@ -935,14 +935,20 @@ export type UpdateTarget<S extends QuerySchema, K extends keyof S["~byName"]> =
  * A miss is an empty array (O-5). Kept off {@link UpdateTargetVersioned} so
  * `Omit` on that union cannot treat `lock` and `limit` as optional.
  *
- * A later `update` overload accepts it. An earlier overload is built for
- * every update and pushes the query-200-validate type ceiling over.
+ * `where` is closed the same way as an integer update, so an unknown field
+ * is refused. A hidden filterable column stays. A later `update` overload
+ * accepts the claim. An earlier overload is built for every update and
+ * pushes the query-200-validate type ceiling over.
  */
-type VersionAnyArg<S extends QuerySchema, K extends keyof S["~byName"]> = S["~byName"][K] extends {
+type VersionAnyArg<
+  S extends QuerySchema,
+  K extends keyof S["~byName"],
+  W,
+> = S["~byName"][K] extends {
   readonly "~versioned": true;
 }
   ? {
-      readonly where?: FilterFiltersOf<S, K> | Or<FilterFiltersOf<S, K>>;
+      readonly where?: FilterWhereOf<S, K, W>;
       readonly set: UpdateSet<S, K>;
       readonly limit: number;
       readonly lock: "skip";
@@ -1125,7 +1131,7 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   count<const O extends CountFilterOptions<S, K>>(options?: O): Read<number>;
   exists(options?: CallOptions & { readonly where?: WhereOf<S, K> }): Read<boolean>;
   /**
-   * Inserts one row. Unknown keys are dropped. `{ allow }` may set guarded fields.
+   * Inserts one row. An unknown key is OKM1120. `{ allow }` may set guarded fields.
    *
    * Optional columns are optional keys, so completion lists the ones not yet written.
    */
@@ -1140,7 +1146,7 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
     options?: InsertOptions<S, K>,
   ): Write<Show<RowOf<S, K>>>;
   /**
-   * Inserts a list in one transaction. Unknown keys are dropped.
+   * Inserts a list in one transaction. An unknown key is OKM1120.
    *
    * `{ allow: ["id"] }` may set `id` on a client-generator primary key.
    * A row that omits `id` still takes the generator. A longer `allow` list
@@ -1157,7 +1163,7 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
     options: InsertOptions<S, K> & { readonly allow: readonly ["id"] },
   ): Write<readonly Show<RowOf<S, K>>[]>;
   /**
-   * Inserts a list in one transaction. Unknown keys are dropped.
+   * Inserts a list in one transaction. An unknown key is OKM1120.
    *
    * Rows may carry different keys. An omitted key or an explicit `undefined` takes the
    * database default for that row; `null` stays NULL.
@@ -1191,13 +1197,24 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
     options: WriteOptions<S, K> & { readonly returning: true },
   ): Write<readonly Show<RowOf<S, K>>[]>;
   update<
-    const T extends ExactConstraint<T, UpdateFilterTarget<S, K, T["where"]> | VersionAnyArg<S, K>>,
+    const T extends ExactConstraint<
+      T,
+      UpdateFilterTarget<S, K, T["where"]> | VersionAnyArg<S, K, T["where"]>
+    >,
   >(
     target: T,
     options?: WriteOptions<S, K>,
   ): [T] extends [{ readonly version: "any" }]
     ? Write<readonly Show<RowOf<S, K>>[]>
     : Write<WriteCount>;
+  /**
+   * Last signature, so `Parameters` reads {@link UpdateArg}.
+   *
+   * A generic exact constraint collapses to `Record<string, never>` there and
+   * a helper then rejects a valid update. This signature repeats the integer
+   * form. A call still matches an earlier overload, including `version: "any"`.
+   */
+  update(target: UpdateArg<S, K>, options?: WriteOptions<S, K>): Write<WriteCount>;
   /**
    * Deletes matching rows. `where` is required.
    *

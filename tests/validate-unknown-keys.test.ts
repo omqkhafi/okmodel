@@ -25,6 +25,21 @@ const notes = table(
 
 const app = schema({ casing: "snake", tables: [notes], validation: true });
 
+const ordered = table(
+  "ordered",
+  {
+    zebra: text(),
+    apple: text(),
+  },
+  { validation: true },
+);
+const plain = table("plain", {
+  zebra: text(),
+  apple: text(),
+});
+const orderedApp = schema({ tables: [ordered], validation: true });
+const plainApp = schema({ tables: [plain] });
+
 const pool = {
   capabilities: {
     transactions: "interactive",
@@ -73,4 +88,18 @@ test("R1: validation true refuses unknown keys on insert and update", async () =
   expect(typo.message).toContain("notes");
   expect(typo.message).not.toContain("update set is empty");
   expect(typo.message).toContain("Did you mean");
+});
+
+test("validated OKM1120 lists accepted names in the core path's sorted order", async () => {
+  const validated = connect(pool, { schema: orderedApp });
+  const core = connect(pool, { schema: plainApp });
+  await validated.connected;
+  await core.connected;
+  const fromValidation = await codeOf(() =>
+    validated.ordered.insert({ zebra: "z", nope: 1 } as never).sql(),
+  );
+  const fromCore = await codeOf(() => core.plain.insert({ zebra: "z", nope: 1 } as never).sql());
+  expect(fromValidation.message).toContain("Accepted names: apple, zebra");
+  expect(fromCore.message).toContain("Accepted names: apple, zebra");
+  expect(fromValidation.message).toBe(fromCore.message.replace("plain", "ordered"));
 });

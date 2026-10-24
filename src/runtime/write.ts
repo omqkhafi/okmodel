@@ -376,6 +376,7 @@ async function prepareWrite(
           ),
           planned,
           table,
+          op,
         ),
     };
   } catch (error) {
@@ -826,7 +827,12 @@ function planDelete(
   };
 }
 
-function finish(results: readonly ExecuteResult[], planned: Planned, table: string): unknown {
+function finish(
+  results: readonly ExecuteResult[],
+  planned: Planned,
+  table: string,
+  op: WriteOp,
+): unknown {
   if (planned.versioned !== undefined) return finishVersioned(results, planned, table);
   if (planned.parentGuard === true) return finishParent(results, planned, table);
   if (planned.treeGuard === true) return finishTree(results, planned, table);
@@ -841,7 +847,7 @@ function finish(results: readonly ExecuteResult[], planned: Planned, table: stri
     planned.keys === undefined || planned.keyColumns === undefined
       ? decoded
       : orderByKeys(decoded, planned.keyColumns, planned.keys);
-  checkExpect(rows.length, planned.expect, table, "insert");
+  checkExpect(rows.length, planned.expect, table, op);
   if (planned.parent !== undefined && rows.length < planned.parent) {
     throw new OkmError("OKM1705", `Insert on ${table} did not find a parent in this tenant.`, {
       fix: { summary: "Insert under a parent that belongs to this tenant." },

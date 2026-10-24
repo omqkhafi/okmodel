@@ -68,6 +68,15 @@ test("every adapter capabilities object names only the shared flags", () => {
   }
 });
 
+test("adapter capability objects are frozen", () => {
+  for (const [name, flags] of ADAPTERS) {
+    expect(Object.isFrozen(flags), name).toBe(true);
+    expect(() => {
+      (flags as { stream: boolean }).stream = !flags.stream;
+    }, name).toThrow(TypeError);
+  }
+});
+
 test("neon entry re-exports the shared websocket and http capabilities", () => {
   expect(neonCapabilities).toEqual(NEON_WEBSOCKET_CAPABILITIES);
   expect(neonHttpCapabilities).toEqual(NEON_HTTP_CAPABILITIES);
