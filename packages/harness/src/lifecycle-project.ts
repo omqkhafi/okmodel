@@ -83,29 +83,64 @@ export function openLifecycleProject(root: string, label = "lifecycle"): Lifecyc
         .at(-1);
       if (name === undefined) throw new Error("generate wrote no migration");
       const text = readFileSync(join(dir, name), "utf8");
-      writeFileSync(
-        join(dir, name),
-        text
-          .replace(
-            /^(alter table .* drop column .*)$/gm,
-            "-- okm-allow OKM1512: the column is unused\n$1",
-          )
-          .replace(
-            /^(alter table [^\n]* rename to .*)$/gm,
-            "-- okm-allow OKM1523: no reader uses the old name\n$1",
-          )
-          .replace(/^(drop table .*)$/gm, "-- okm-allow OKM1511: the table is unused\n$1")
-          .replace(
-            /^(drop (?:type|domain|view|function|trigger) .*)$/gim,
-            "-- okm-allow OKM1511: unused object\n$1",
-          ),
-      );
+      writeFileSync(join(dir, name), allowLifecycleMigration(text));
       return name;
     },
     close(): void {
       rmSync(cwd, { recursive: true, force: true });
     },
   };
+}
+
+const KIND_ALLOW: Readonly<Record<string, string>> = {
+  "drop-column": "OKM1512",
+  "rename-table": "OKM1523",
+  "drop-table": "OKM1511",
+  "drop-enum": "OKM1513",
+  "drop-domain": "OKM1514",
+  "drop-view": "OKM1516",
+  "drop-function": "OKM1515",
+  "drop-matview": "OKM1518",
+  "rename-column": "OKM1519",
+};
+
+/**
+ * Writes the `-- okm-allow` line the linter requires for one destructive step.
+ *
+ * The code follows the step kind. A domain drop is OKM1514 and an enum drop
+ * is OKM1513. Stamping OKM1511 on those statements does not match.
+ * Validating a new foreign key is OKM1532.
+ *
+ * @param text - Migration file from `okm generate`
+ * @returns The same file with allow lines inserted
+ */
+export function allowLifecycleMigration(text: string): string {
+  return text.replace(
+    /(-- kind: ([a-z0-9-]+)(?:\n-- [^\n]*)*\n)((?:alter|drop)[^\n]*)/g,
+    (full, header: string, kind: string, sql: string) => {
+      const code = allowCode(kind, sql);
+      if (code === undefined || header.includes("-- okm-allow")) return full;
+      return `${header}-- okm-allow ${code}: ${allowReason(code)}\n${sql}`;
+    },
+  );
+}
+
+function allowCode(kind: string, sql: string): string | undefined {
+  if (kind === "validate-constraint" && sql.includes("_fkey")) return "OKM1532";
+  return KIND_ALLOW[kind];
+}
+
+function allowReason(code: string): string {
+  switch (code) {
+    case "OKM1512":
+      return "the column is unused";
+    case "OKM1523":
+      return "no reader uses the old name";
+    case "OKM1532":
+      return "the table is empty";
+    default:
+      return "the object is unused";
+  }
 }
 
 /**

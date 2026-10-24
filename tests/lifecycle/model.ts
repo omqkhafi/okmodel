@@ -5,6 +5,8 @@
  * TypeScript; the runner evolves them and checks CLI invariants.
  */
 
+import { caseName } from "../../src/dialects/pg/casing.js";
+
 /** Referential action the public API accepts, including explicit no action. */
 export type FkAction = "cascade" | "restrict" | "set null" | "set default" | "no action";
 
@@ -83,6 +85,19 @@ export type ViewModel = {
   readonly tableKey: string;
   readonly columns: readonly string[];
 };
+
+/**
+ * SQL spelling of an authored name under the schema's casing.
+ *
+ * Omitted casing keeps the name. `snake` uses the same fold as `schema()`.
+ *
+ * @param casing - Schema casing
+ * @param name - Name passed to `table()` or a column field
+ * @returns The name stored in the catalog
+ */
+export function sqlName(casing: "omit" | "snake", name: string): string {
+  return casing === "snake" ? caseName("snake", name) : name;
+}
 
 /** Full authored schema at one step. */
 export type SchemaModel = {

@@ -2,7 +2,7 @@
  * Applies one evolution to a schema model.
  */
 
-import type { Evolution, SchemaModel, TableModel } from "./model.js";
+import { sqlName, type Evolution, type SchemaModel, type TableModel } from "./model.js";
 
 /**
  * Returns a new schema after one evolution step.
@@ -55,7 +55,8 @@ export function applyEvolution(model: SchemaModel, step: Evolution): SchemaModel
       return mapTable(model, step.tableKey, (table) => ({
         ...table,
         name: step.nextName,
-        renamedFrom: table.name,
+        // The snapshot stores the cased SQL name, so renamedFrom must too.
+        renamedFrom: sqlName(model.casing, table.name),
       }));
     case "addEnumValue":
       return mapTable(model, step.tableKey, (table) => ({

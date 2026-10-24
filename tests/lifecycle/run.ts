@@ -8,9 +8,10 @@ import {
   giveDatabaseToOwner,
   openPostgres,
 } from "../../packages/harness/src/postgres.js";
+import { OkmError } from "../../src/contracts/error.js";
 import { applyEvolution, settleRenames } from "./evolve.js";
 import { matchKnownBug } from "./known-bugs.js";
-import type { LifecycleCase, SchemaModel } from "./model.js";
+import { sqlName, type LifecycleCase, type SchemaModel } from "./model.js";
 import { formatRepro, renderSchema } from "./render.js";
 
 /** Outcome of one case. */
@@ -36,7 +37,7 @@ export async function runLifecycleCase(
     await runPushPath(root, item);
     return { ok: true };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = failureText(error);
     const known = matchKnownBug(item.tags, message);
     const repro = formatRepro(item.initial, root, seed);
     if (known !== undefined) {
@@ -68,10 +69,12 @@ async function runApplyPath(root: string, item: LifecycleCase): Promise<void> {
       model = applyEvolution(model, step);
       project.writeSchema(renderSchema(model, root));
       await project.generateAllowing();
-      await expectOk(project, ["migrate", "check"]);
-      await project.cli(["migrate", "apply"]);
+      // The new snapshot already uses the new name. A later command treats that
+      // file as the previous catalog, so renamedFrom must be gone before it.
       model = settleRenames(model);
       project.writeSchema(renderSchema(model, root));
+      await expectOk(project, ["migrate", "check"]);
+      await project.cli(["migrate", "apply"]);
       await expectOk(project, ["migrate", "check"]);
       await expectOk(project, ["check"]);
       await expectNoChanges(project);
@@ -149,36 +152,39 @@ async function assertNoScratch(url: string): Promise<void> {
   }
 }
 
+function failureText(error: unknown): string {
+  if (error instanceof OkmError) return `${error.code}: ${error.message}`;
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
 async function seedRows(url: string, model: SchemaModel): Promise<void> {
   const sql = openPostgres(url);
   const schemaName = model.namespace ?? "public";
   try {
     for (const table of model.tables) {
-      const insertable = table.columns.filter(
-        (column) =>
-          !column.primaryKey &&
-          column.generated === undefined &&
-          column.type !== "identity" &&
-          column.references === undefined,
-      );
-      const cols: string[] = insertable.map((column) => quoteIdent(column.name));
-      const values: string[] = insertable.map((column) =>
-        sqlLiteral(column.type, column.defaultValue),
-      );
+      const cols: string[] = [];
+      const values: string[] = [];
+      for (const column of table.columns) {
+        if (column.generated !== undefined || column.type === "identity") continue;
+        if (column.references !== undefined && column.nullable) continue;
+        const literal =
+          column.primaryKey || column.references !== undefined
+            ? "1"
+            : sqlLiteral(column.type, column.defaultValue);
+        cols.push(quoteIdent(sqlName(model.casing, column.name)));
+        values.push(literal);
+      }
       if (model.tenancy) {
-        const tenantCol = model.casing === "snake" ? "tenant_id" : "tenantId";
-        cols.push(quoteIdent(tenantCol));
+        cols.push(quoteIdent(sqlName(model.casing, "tenantId")));
         values.push("'00000000-0000-4000-8000-000000000099'");
       }
+      const target = `${quoteIdent(schemaName)}.${quoteIdent(sqlName(model.casing, table.name))}`;
       if (cols.length === 0) {
-        await sql.unsafe(
-          `insert into ${quoteIdent(schemaName)}.${quoteIdent(table.name)} default values`,
-        );
+        await sql.unsafe(`insert into ${target} default values`);
         continue;
       }
-      await sql.unsafe(
-        `insert into ${quoteIdent(schemaName)}.${quoteIdent(table.name)} (${cols.join(", ")}) values (${values.join(", ")})`,
-      );
+      await sql.unsafe(`insert into ${target} (${cols.join(", ")}) values (${values.join(", ")})`);
     }
   } finally {
     await sql.end({ timeout: 5 });

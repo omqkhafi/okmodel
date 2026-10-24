@@ -14,6 +14,7 @@ import fc from "fast-check";
 import { loadPostgresGate, postgresTest } from "../../packages/harness/src/postgres-test.js";
 import { repoRoot } from "../../scripts/root.js";
 import { lifecycleCaseArb } from "./grammar.js";
+import { formatLifecycleReport, knownSkipExceedsBudget, type LifecycleReport } from "./report.js";
 import { runLifecycleCase } from "./run.js";
 
 const gate = await loadPostgresGate();
@@ -34,8 +35,6 @@ if (ENABLED) {
   );
 }
 
-const skippedKnown = new Map<string, number>();
-
 postgresTest(
   gate,
   "random migration lifecycle keeps generate/check/apply/push invariants",
@@ -45,17 +44,29 @@ postgresTest(
       return;
     }
     const started = Date.now();
+    const report: { ran: number; passed: number; known: number; unknown: number } = {
+      ran: 0,
+      passed: 0,
+      known: 0,
+      unknown: 0,
+    };
     let lastUnknown: string | undefined;
+    const finish = (): LifecycleReport => report;
     try {
       await fc.assert(
         fc.asyncProperty(lifecycleCaseArb, async (item) => {
+          report.ran += 1;
           const outcome = await runLifecycleCase(root, item, SEED);
-          if (outcome.ok) return true;
+          if (outcome.ok) {
+            report.passed += 1;
+            return true;
+          }
           if (outcome.known !== undefined) {
-            skippedKnown.set(outcome.known, (skippedKnown.get(outcome.known) ?? 0) + 1);
+            report.known += 1;
             console.warn(`[lifecycle] skipped known ${outcome.known}`);
             return true;
           }
+          report.unknown += 1;
           lastUnknown = outcome.error;
           // Throw so fast-check shrinks against the real message and the report
           // includes the copyable schema.
@@ -73,9 +84,7 @@ postgresTest(
       );
     } catch (error) {
       const elapsedMs = Date.now() - started;
-      console.log(
-        `[lifecycle] cases=${String(CASES)} elapsedMs=${String(elapsedMs)} knownSkipped=${JSON.stringify(Object.fromEntries(skippedKnown))}`,
-      );
+      console.log(`${formatLifecycleReport(finish())} elapsedMs=${String(elapsedMs)}`);
       if (lastUnknown !== undefined) {
         const lines = lastUnknown.split("\n").length;
         if (lines > 15) {
@@ -87,9 +96,10 @@ postgresTest(
       throw error;
     }
     const elapsedMs = Date.now() - started;
-    console.log(
-      `[lifecycle] cases=${String(CASES)} elapsedMs=${String(elapsedMs)} knownSkipped=${JSON.stringify(Object.fromEntries(skippedKnown))}`,
-    );
+    console.log(`${formatLifecycleReport(finish())} elapsedMs=${String(elapsedMs)}`);
+    if (knownSkipExceedsBudget(finish())) {
+      throw new Error(`${formatLifecycleReport(finish())}: known skips are more than 25% of cases`);
+    }
     if (process.env.OKM_LIFECYCLE_TIER === "pr" && elapsedMs > 240_000) {
       throw new Error(
         `PR-tier lifecycle run exceeded 4 minutes (${String(elapsedMs)} ms). Stop and ask.`,
