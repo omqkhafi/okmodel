@@ -545,6 +545,20 @@ function acceptTables(tables: readonly AnyTable[]): readonly string[] {
     if (typeof item.name !== "string" || item.name.length === 0) {
       definition("schema() tables need a name.");
     }
+    if (item.name === "capabilities") {
+      catalogError(
+        "OKM1023",
+        withLocation(
+          "Table capabilities uses the client name capabilities. db.capabilities is the adapter flags.",
+          item.source,
+        ),
+        {
+          fix: {
+            summary: "Rename the table. The client keeps capabilities for the adapter flags.",
+          },
+        },
+      );
+    }
     if (seen.has(item.name)) {
       catalogError(
         "OKM1023",
