@@ -72,6 +72,7 @@ import {
 } from "../migrate/doctor-production.js";
 import { lintCatalog, lintPlan, type Finding } from "../migrate/lint.js";
 import { parsePlan, planMigration } from "../migrate/plan.js";
+import { postgresDialect } from "../migrate/postgres-dialect.js";
 import {
   assertStableBackend,
   assertTargetAlias,
@@ -910,6 +911,16 @@ reported(
   "OKM1558",
   () => hand("-- probe: delete from notes\n-- transactional: false\nvacuum analyze notes"),
   () => hand("-- probe: select true\n-- transactional: false\nvacuum analyze notes"),
+);
+
+thrown(
+  "OKM1559",
+  () =>
+    planMigration(
+      { before: empty, after: notesCatalog, name: "empty" },
+      { ...postgresDialect, lower: () => [] },
+    ),
+  () => planMigration({ before: empty, after: notesCatalog, name: "table" }),
 );
 
 thrown(
