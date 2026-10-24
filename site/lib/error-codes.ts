@@ -57,8 +57,8 @@ export function errorCodeRows(): readonly ErrorCodeRow[] {
 }
 
 /** Markers the generator rewrites inside `reference/errors.mdx`. */
-export const ERROR_CODE_INDEX_BEGIN = "<!-- BEGIN:error-code-index -->";
-export const ERROR_CODE_INDEX_END = "<!-- END:error-code-index -->";
+export const ERROR_CODE_INDEX_BEGIN = "{/* BEGIN:error-code-index */}";
+export const ERROR_CODE_INDEX_END = "{/* END:error-code-index */}";
 
 /**
  * Markdown table for the Errors page registry section.
@@ -73,8 +73,8 @@ export function renderErrorCodeIndexMarkdown(
     "| --- | --- | --- | --- |",
   ];
   for (const row of rows) {
-    const codeCell = `<a id="${row.anchor}"></a>[\`${row.code}\`](#${row.anchor})`;
-    const summary = row.summary.replace(/\|/g, "\\|");
+    const codeCell = `<a id="${row.anchor}" />[\`${row.code}\`](#${row.anchor})`;
+    const summary = escapeMdxProse(row.summary);
     lines.push(
       `| ${codeCell} | \`${row.kind}\` | ${summary} | [${row.code}.md](${row.docsUrl}) |`,
     );
@@ -106,4 +106,13 @@ export function withErrorCodeIndex(source: string, body: string): string {
  */
 export function errorCodeIndexMatches(source: string): boolean {
   return source === withErrorCodeIndex(source, renderErrorCodeIndexMarkdown());
+}
+
+/**
+ * Escape table-cell prose so MDX does not treat `{…}` as an expression or `|` as a column.
+ *
+ * @param text - Registry summary
+ */
+function escapeMdxProse(text: string): string {
+  return text.replace(/\|/g, "\\|").replace(/\{/g, "\\{").replace(/\}/g, "\\}");
 }
