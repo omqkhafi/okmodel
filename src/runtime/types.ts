@@ -1180,7 +1180,9 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   >(
     target: AllowedUpdateArg<S, K, Allow>,
     options: Opt,
-  ): [Opt["returning"]] extends [true] ? Write<readonly Show<RowOf<S, K>>[]> : Write<WriteCount>;
+  ): [Opt["returning"]] extends [true]
+    ? Write<readonly Show<RowOf<S, K>>[]>
+    : Write<WriteCount>;
   update(
     target: UpdateArg<S, K>,
     options: WriteOptions<S, K> & { readonly returning: true },
@@ -1191,13 +1193,24 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
     options: WriteOptions<S, K> & { readonly returning: true },
   ): Write<readonly Show<RowOf<S, K>>[]>;
   update<
-    const T extends ExactConstraint<T, UpdateFilterTarget<S, K, T["where"]> | VersionAnyArg<S, K>>,
+    const T extends ExactConstraint<
+      T,
+      UpdateFilterTarget<S, K, T["where"]> | VersionAnyArg<S, K>
+    >,
   >(
     target: T,
     options?: WriteOptions<S, K>,
   ): [T] extends [{ readonly version: "any" }]
     ? Write<readonly Show<RowOf<S, K>>[]>
     : Write<WriteCount>;
+  /**
+   * Last signature, so `Parameters` reads {@link UpdateArg}.
+   *
+   * A generic exact constraint collapses to `Record<string, never>` there and
+   * a helper then rejects a valid update. This signature repeats the integer
+   * form. A call still matches an earlier overload, including `version: "any"`.
+   */
+  update(target: UpdateArg<S, K>, options?: WriteOptions<S, K>): Write<WriteCount>;
   /**
    * Deletes matching rows. `where` is required.
    *

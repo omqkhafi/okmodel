@@ -10,7 +10,7 @@
 import { expectTypeOf } from "expect-type";
 
 import { schema, table, t } from "../src/dialects/pg/index.js";
-import type { TableApi } from "../src/runtime/types.js";
+import type { Connected, TableApi } from "../src/runtime/types.js";
 import { sortable, versioned } from "../src/runtime/traits/index.js";
 
 const tasks = table(
@@ -122,3 +122,27 @@ void claimHidden({
   lock: "skip",
   version: "any",
 });
+type UpdateParam = Parameters<Api["update"]>[0];
+const validParam: UpdateParam = { where: { id: "1" }, set: { title: "b" }, version: 1 };
+void validParam;
+// @ts-expect-error versioned update needs the version read from the row
+const missingParam: UpdateParam = { where: { id: "1" }, set: { title: "b" } };
+void missingParam;
+const extraParam: UpdateParam = {
+  where: { id: "1" },
+  set: { title: "b" },
+  version: 1,
+  // @ts-expect-error unknown key
+  nope: true,
+};
+void extraParam;
+// @ts-expect-error Parameters reads the integer update, so version: "any" is not a member
+const anyParam: UpdateParam = { where: { id: "1" }, set: { title: "b" }, version: "any" };
+void anyParam;
+
+declare const db: Connected<typeof app>;
+declare const both: "tasks" | "queued";
+const bothHandle = db.table(both);
+// @ts-expect-error a union of versioned tables needs version
+void bothHandle.update({ where: { id: "1" }, set: { title: "b" } });
+void bothHandle.update({ where: { id: "1" }, set: { title: "b" }, version: 1 });
