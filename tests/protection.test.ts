@@ -4,7 +4,7 @@
 
 import { expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -213,6 +213,19 @@ test("the store is a union with project config and remove needs a terminal", asy
     expect(schemaProblems(schemaFor("protect list"), listed)).toEqual([]);
     writeFileSync(store, "[]");
     expect(() => listProtectedTargets(store)).toThrow(OkmError);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("the protected store file is private to its owner", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "okm-protect-mode-"));
+  const directory = join(cwd, "okm");
+  const store = join(directory, "protected.json");
+  try {
+    writeProtectedStore(store, []);
+    expect(statSync(directory).mode & 0o777).toBe(0o700);
+    expect(statSync(store).mode & 0o777).toBe(0o600);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

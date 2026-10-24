@@ -15,6 +15,7 @@ import {
   OBSERVE_BUFFER_MAX,
   observerBufferOverflow,
   writeObserver,
+  type WriteObserverOptions,
 } from "../src/runtime/observe.js";
 import type { ObserveEvent, OutcomeEvent, WriteEvent } from "../src/runtime/observe-types.js";
 import { columnTenancy } from "../src/runtime/tenancy/index.js";
@@ -490,6 +491,19 @@ test("no-leak: bound values and hidden/sensitive columns stay out of events", as
   expect(blob).not.toContain("row-1");
   expect(writes(events)[0]?.table).toBe("secrets");
   expect(writes(events)[0]?.tenant).toBeNull();
+});
+
+test("writeObserver refuses an unknown option", () => {
+  const options = { nope: true } as WriteObserverOptions;
+  let caught: unknown;
+  try {
+    writeObserver(options);
+  } catch (error) {
+    caught = error;
+  }
+  expect(caught).toBeInstanceOf(OkmError);
+  if (!(caught instanceof OkmError)) return;
+  expect(caught.message).toContain("nope");
 });
 
 test("no-leak: tenant appears only as scope keys and values", async () => {

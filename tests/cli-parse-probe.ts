@@ -25,7 +25,7 @@ function expect(condition: boolean, message: string): void {
 
 check("unknown flag names a suggestion", () => {
   const error = capture(() => parseCli(["build", "--jsn"]));
-  expect(error.code === "invalid", error.code);
+  expect(error.code === "OKM1895", error.code);
   expect(error.message.includes("Unknown flag --jsn"), error.message);
   expect(
     error.message.includes("Did you mean --json") ||

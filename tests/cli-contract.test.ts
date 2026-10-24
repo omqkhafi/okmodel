@@ -233,7 +233,7 @@ test("exit 1 is a command that ran and failed", () => {
   }
 });
 
-test("exit 2 is usage, including when the command was not parsed", () => {
+test("exit 2 is usage, and a bad flag names its command", () => {
   const missing = spawnOkm(["build", "--json"], mkdtempSync(join(tmpdir(), "okm-cli-exit2-")));
   expect(missing.code).toBe(2);
   const config = parseEnvelope(missing.stdout);
@@ -244,9 +244,13 @@ test("exit 2 is usage, including when the command was not parsed", () => {
   expect(flag.code).toBe(2);
   expect(flag.stderr).toBe("");
   const usage = parseEnvelope(flag.stdout);
-  expect(usage.command).toBeNull();
+  expect(usage.command).toBe("build");
   expect(usage.exit).toBe(2);
+  expect(usage.errors[0]?.code).toBe("OKM1895");
   expect(usage.errors[0]?.summary).toContain("Unknown flag --nope");
+  const unknown = parseEnvelope(spawnOkm(["nope", "--json"], root).stdout);
+  expect(unknown.command).toBeNull();
+  expect(unknown.errors[0]?.code).toBe("OKM1895");
   expect(JSON.parse(`${flag.stdout}${flag.stderr}`)).toEqual(usage);
 });
 

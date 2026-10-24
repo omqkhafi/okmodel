@@ -1797,6 +1797,15 @@
     "docs": "docs/errors/OKM1894.md"
   },
   {
+    "code": "OKM1895",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "The command line was not accepted.",
+    "fix": "Run okm --help for the command list, or okm <command> --help for that command's flags.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1895.md"
+  },
+  {
     "code": "OKM2200",
     "kind": "invalid",
     "category": "input",

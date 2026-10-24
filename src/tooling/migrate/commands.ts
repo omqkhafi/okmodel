@@ -33,7 +33,7 @@ import {
   tagOutcome,
   type CliOutFile,
 } from "../cli/outcome.js";
-import { argvHasJson, parseCli, type ParsedCli } from "../cli/parse.js";
+import { argvHasJson, commandId, parseCli, type ParsedCli } from "../cli/parse.js";
 import { commandsTable, helpText } from "../cli/spec.js";
 import { schemaCommands, schemaFor, schemaText } from "../cli/schema.js";
 import { readPackageVersion } from "../cli/version.js";
@@ -111,7 +111,7 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
   try {
     parsed = parseCli(argv);
   } catch (error) {
-    finish(error, argvHasJson(argv), null, stdout);
+    finish(error, argvHasJson(argv), commandId(argv), stdout);
     return;
   }
   const version = packageVersion();

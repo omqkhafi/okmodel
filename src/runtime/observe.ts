@@ -107,6 +107,7 @@ export type WriteObserver = OnWrite & {
  * @returns Handler for `connect({ onWrite })`
  */
 export function writeObserver(options: WriteObserverOptions = {}): WriteObserver {
+  refuseUnknownOptions(options);
   const units = new Map<string, WriteEvent[]>();
   const pending: Promise<unknown>[] = [];
   const maxPending = options.maxPending ?? OBSERVE_BUFFER_MAX;
@@ -319,6 +320,29 @@ export function toOtel(event: QueryEvent, options?: { readonly statement?: boole
     }
   }
   return { name: event.summary, attributes };
+}
+
+const OBSERVE_OPTIONS = new Set([
+  "keys",
+  "committed",
+  "rolledBack",
+  "unknown",
+  "onObserverError",
+  "onEvent",
+  "maxPending",
+  "tag",
+]);
+
+function refuseUnknownOptions(options: object): void {
+  for (const key of Object.keys(options)) {
+    if (OBSERVE_OPTIONS.has(key)) continue;
+    throw new OkmError("invalid", `writeObserver option ${key} is not supported.`, {
+      fix: {
+        summary:
+          "Pass keys, committed, rolledBack, unknown, onObserverError, onEvent, maxPending, or tag.",
+      },
+    });
+  }
 }
 
 /**

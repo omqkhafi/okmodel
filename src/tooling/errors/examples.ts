@@ -104,6 +104,7 @@ import { assertLocked, assertSignature, staleLockCodes } from "../describe/lock.
 import { discoverRawCalls } from "../describe/scan.js";
 import { schemaAdvice } from "../migrate/schema-rules.js";
 import { testingObjectConflict } from "../testing/conflict.js";
+import { parseCli } from "../cli/parse.js";
 
 /** Codes whose producer reads a live server. */
 export const NEEDS_DATABASE = [
@@ -2055,6 +2056,16 @@ thrown(
   },
   () => {
     return "migrate omitted on an empty database";
+  },
+);
+
+thrown(
+  "OKM1895",
+  () => {
+    parseCli(["build", "--nope"]);
+  },
+  () => {
+    parseCli(["build", "--help"]);
   },
 );
 
