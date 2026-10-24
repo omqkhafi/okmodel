@@ -908,12 +908,46 @@ function notNullFloorValidate(input: StepInput): boolean {
     if (!prior.includes(`add constraint ${constraint} `)) return false;
     const body = /check\s*\(\s*(\S+)\s+is not null\s*\)\s*not valid/.exec(prior);
     if (body === null) return false;
-    // A column added in this migration is NULL on every existing row. That
-    // check is the user's, not the temporary floor before SET NOT NULL.
+    // A column added in this migration is NULL until something fills it. A
+    // check that stays is the user's. The planner's floor is the one a later
+    // step replaces with SET NOT NULL and then drops.
     const column = lastName(body[1]);
-    if (column !== undefined && columnAdded(input.earlier, table, column)) return false;
+    if (column !== undefined && columnAdded(input.earlier, table, column)) {
+      return notNullFloorFollows(input.later, table, column, constraint);
+    }
     return true;
   });
+}
+
+/**
+ * Whether later steps turn this check into `SET NOT NULL` and drop it.
+ *
+ * That is the lock-safe recipe for a column added in the same migration.
+ * A check the migration keeps is not this recipe.
+ */
+function notNullFloorFollows(
+  later: readonly PlanStep[],
+  tableSql: string,
+  column: string,
+  constraint: string,
+): boolean {
+  const quoted = `"${column.replaceAll('"', '""')}"`;
+  const sets = new RegExp(
+    `alter column (?:${escapeToken(quoted)}|${escapeToken(column)}) set not null\\b`,
+  );
+  let setNotNull = false;
+  let dropped = false;
+  for (const step of later) {
+    const sql = normalizedSql(step.sql);
+    if (!sameTable(alterTableTarget(sql), tableSql)) continue;
+    if (sets.test(sql)) setNotNull = true;
+    if (sql.includes(`drop constraint ${constraint}`)) dropped = true;
+  }
+  return setNotNull && dropped;
+}
+
+function escapeToken(token: string): string {
+  return token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function columnAdded(earlier: readonly PlanStep[], tableSql: string, column: string): boolean {

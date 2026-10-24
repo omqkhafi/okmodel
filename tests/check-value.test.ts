@@ -187,6 +187,26 @@ test("an unqualified table token pairs with a public-qualified one", () => {
   expect(codesOf(withUpdate, before, after)).toContain("OKM1531");
 });
 
+test("a not-null floor on a column added in this migration is not OKM1531", () => {
+  const before = schema({
+    tables: [table("tasks", { id: t.integer().primaryKey(), title: t.text() })],
+  });
+  const after = schema({
+    tables: [
+      table("tasks", {
+        id: t.integer().primaryKey(),
+        title: t.text(),
+        publicId: t.uuid().defaultSql("gen_random_uuid()"),
+      }),
+    ],
+  });
+  const plan = planMigration({ before: before.catalog, after: after.catalog, name: "public_id" });
+  expect(plan.steps.some((step) => /validate constraint/i.test(step.sql))).toBe(true);
+  expect(plan.steps.some((step) => /set not null/i.test(step.sql))).toBe(true);
+  expect(plan.steps.some((step) => /drop constraint/i.test(step.sql))).toBe(true);
+  expect(codesOf(plan, before, after)).not.toContain("OKM1531");
+});
+
 function codes(
   before: ReturnType<typeof schema>,
   after: ReturnType<typeof schema>,
