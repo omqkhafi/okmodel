@@ -25,6 +25,17 @@ const cases: readonly {
   readonly seed?: string;
 }[] = [
   {
+    name: "picklist on a text array",
+    schema: [
+      `import { schema, table, t } from ${source("src/dialects/pg/index.ts")};`,
+      'export const app = schema({ tables: [table("tasks", {',
+      "  id: t.integer().primaryKey(),",
+      '  tags: t.text().picklist(["red", "blue"]).array(),',
+      "})] });",
+      "",
+    ].join("\n"),
+  },
+  {
     name: "picklist on text",
     schema: [
       `import { schema, table, t } from ${source("src/dialects/pg/index.ts")};`,
@@ -119,6 +130,47 @@ for (const item of cases) {
     120_000,
   );
 }
+
+postgresTest(
+  gate,
+  "a text array picklist stores listed elements and rejects the rest",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const cwd = mkdtempSync(join(tmpdir(), "okm-picklist-array-"));
+    const sql = openPostgres(database.url);
+    try {
+      writeFileSync(
+        join(cwd, "schema.ts"),
+        [
+          `import { schema, table, t } from ${source("src/dialects/pg/index.ts")};`,
+          'export const app = schema({ tables: [table("tasks", {',
+          "  id: t.integer().primaryKey(),",
+          '  tags: t.text().picklist(["red", "blue"]).array(),',
+          "})] });",
+          "",
+        ].join("\n"),
+      );
+      writeConfig(cwd, database.url);
+      expect(await okm(cwd, ["generate", "init"])).toContain(".sql");
+      expect(await okm(cwd, ["migrate", "apply"])).toContain("applied");
+      await sql.unsafe(`insert into tasks (id, tags) values (1, '{red,blue}'), (2, '{}')`);
+      let rejected = false;
+      try {
+        await sql.unsafe(`insert into tasks (id, tags) values (3, '{green}')`);
+      } catch {
+        rejected = true;
+      }
+      expect(rejected).toBe(true);
+      expect(await okm(cwd, ["check"])).toContain("ok");
+      expect(await okm(cwd, ["generate"])).toBe("no changes\n");
+    } finally {
+      await sql.end({ timeout: 5 });
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  120_000,
+);
 
 postgresTest(
   gate,

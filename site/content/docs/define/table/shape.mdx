@@ -74,7 +74,7 @@ A value that is not an array is rejected, and so is a null element. A rank that 
 
 | `check` | Result |
 | --- | --- |
-| omitted | The catalog CHECK is `column IN (...)`, in the order you listed. |
+| omitted | The catalog CHECK is `column IN (...)`, in the order you listed. On an array column it is `column <@ ARRAY[...]::element[]`, so each element is one of those values. |
 | `false` | The list stays in the type. The catalog has no CHECK. Encode still rejects a value outside the list. |
 
 #### check

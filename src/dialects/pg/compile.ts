@@ -132,7 +132,7 @@ export function compileColumn(
           constraintKind: "check",
           columns: [name],
           nameKey: name,
-          expression: picklistExpression(name, state.picklist.values),
+          expression: picklistExpression(name, state.picklist.values, state.baseType, state.dims),
           provenance: input.provenance,
           ...(input.owner !== undefined ? { owner: input.owner } : {}),
         })
@@ -162,7 +162,15 @@ export function compileColumn(
   };
 }
 
-function picklistExpression(name: string, values: readonly string[]): string {
+function picklistExpression(
+  name: string,
+  values: readonly string[],
+  baseType: string,
+  dims: number,
+): string {
   const list = values.map((value) => quoteLiteral(value)).join(", ");
-  return `(${name} IN (${list}))`;
+  if (dims === 0) return `(${name} IN (${list}))`;
+  // `tags IN ('red')` compares a text[] to a scalar and Postgres rejects the
+  // literal. Each element has to be one of the values.
+  return `(${name} <@ ARRAY[${list}]::${formatType(baseType, dims)})`;
 }
