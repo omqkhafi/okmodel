@@ -31,6 +31,12 @@ describe("lintPullRequest", () => {
   test("a conventional title passes without a closing line, labels, or a milestone", () => {
     expect(lintPullRequest(valid)).toEqual([]);
     expect(lintPullRequest(update)).toEqual([]);
+    expect(
+      lintPullRequest({
+        ...valid,
+        title: "fix(runtime)!: omit bound parameters by default",
+      }),
+    ).toEqual([]);
   });
 
   test("bad title", () => {
@@ -48,5 +54,9 @@ describe("lintPullRequest", () => {
 
 test("parseConventionalTitle reads the type and the scope", () => {
   expect(parseConventionalTitle("fix(ci): settle the gate")).toEqual({ type: "fix", scope: "ci" });
+  expect(parseConventionalTitle("fix(runtime)!: omit bound parameters by default")).toEqual({
+    type: "fix",
+    scope: "runtime",
+  });
   expect(parseConventionalTitle("not a title")).toBeUndefined();
 });
