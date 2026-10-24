@@ -935,8 +935,43 @@ function renameSteps(
         }),
       ),
     );
+    steps.push(...columnSequenceRenames(source, previousTable, rename, schema, dialect));
   }
   return steps;
+}
+
+/**
+ * Renames the identity sequence when the column that owns it is renamed.
+ *
+ * The sequence is `{table}_{column}_seq`. A table rename in the same plan
+ * has already moved it to the new table name, so this step starts from that
+ * name and finishes at the new column name. A column with no identity
+ * sequence is left alone.
+ */
+function columnSequenceRenames(
+  source: Catalog,
+  previousTable: string,
+  rename: { readonly table: string; readonly from: string; readonly to: string },
+  schema: string,
+  dialect: DdlDialect,
+): PlanStep[] {
+  const owned = source.objects.some(
+    (object) =>
+      object.kind === "column" &&
+      object.definition.identity !== undefined &&
+      object.identity.parent.name === previousTable &&
+      object.identity.name === rename.from &&
+      source.objects.some(
+        (item) =>
+          item.kind === "sequence" &&
+          item.identity.name === identitySequenceName(previousTable, rename.from),
+      ),
+  );
+  if (!owned) return [];
+  const fromName = identitySequenceName(rename.table, rename.from);
+  const toName = identitySequenceName(rename.table, rename.to);
+  if (fromName === toName) return [];
+  return take(dialect.lower({ op: "rename-sequence", schema, from: fromName, to: toName }));
 }
 
 function sequenceRenames(
