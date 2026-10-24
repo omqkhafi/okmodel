@@ -374,7 +374,7 @@ test("a tenant key later in the index is moved forward and not repeated", () => 
       table(
         "notes",
         { id: t.identity(), body: t.text() },
-        { indexes: (columns) => [index(columns.body, columns.tenantId)] },
+        { indexes: () => [buildIndex({ columns: ["body", "tenant_id"] })] },
       ),
     ],
   });
@@ -392,9 +392,9 @@ test("two indexes that match after the tenant prefix are OKM1023 and name both",
           "notes",
           { id: t.identity(), body: t.text() },
           {
-            indexes: (columns) => [
-              index(columns.body, columns.tenantId),
-              index(columns.tenantId, columns.body),
+            indexes: () => [
+              buildIndex({ columns: ["body", "tenant_id"] }),
+              buildIndex({ columns: ["tenant_id", "body"] }),
             ],
           },
         ),
