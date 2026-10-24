@@ -6,9 +6,11 @@
     "start",
     "---02 Define---",
     "define",
-    "---03 Reference---",
+    "---03 Migrate---",
+    "...migrate",
+    "---04 Reference---",
     "reference",
-    "---04 AI Resources---",
+    "---05 Coding agents---",
     "ai"
   ]
 }

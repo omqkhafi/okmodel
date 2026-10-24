@@ -2,7 +2,7 @@
 title: "Type change"
 description: "A type change that rewrites the table is five migrations, not one ALTER TYPE."
 ---
-OKM1538 warns when a column type change rewrites the table. 0.9 does not rewrite that statement into a safe form, and there is no `okm migrate type-change` command. Add a new column, fill it, keep both columns updated, switch readers, then drop the old column. Each of those is its own migration.
+OKM1538 warns when a column type change rewrites the table. okmodel does not rewrite that statement into a safe form, and there is no `okm migrate type-change` command. Add a new column, fill it, keep both columns updated, switch readers, then drop the old column. Each of those is its own migration.
 
 `varchar(n)` widening, `varchar` to `text`, and the other changes listed on [OKM1538](/docs/reference/errors) do not rewrite the heap. This page is for a change that does, such as `integer` cents to `numeric(12,2)` dollars.
 

@@ -1,45 +1,62 @@
 ---
-title: "Skills"
-description: "The agent skills in this repository, and the skill the site publishes."
+title: "Set up your agent"
+description: "bunx okm init --agents writes the files a coding agent needs, and nothing else."
 ---
-The agent skills in this repository, and when to run each one.
+A coding agent that edits a schema needs the same project notes a human would, written once from the installed package and kept current, without touching editor settings.
 
-A skill is a file an agent reads and follows. Skills live at `.agents/skills/<name>/SKILL.md`. The `description` in that file says when it applies. This repository ships one skill.
+## Install
 
-The site publishes one skill for agents that are not in this repository. The index is [`/.well-known/agent-skills/index.json`](/.well-known/agent-skills/index.json). The file is [`/.well-known/agent-skills/okmodel/SKILL.md`](/.well-known/agent-skills/okmodel/SKILL.md). Those bytes are `skills/okmodel/SKILL.md` in the repository, the same file the npm tarball ships. It points at `node_modules/okmodel/docs/index.md` and the safe `okm` command order. The index pins that file with a SHA-256 digest.
+```sh
+bunx okm init --agents
+```
 
-In your own project, `okm init --agents` and `okm agents update` copy that skill into `.claude/skills/okmodel/` and `.agents/skills/okmodel/` and keep the AGENTS.md block current. See [agents](/docs/reference/cli#agents).
+That writes the files below from the package on disk. Content never comes from the network. See [agents](/docs/reference/cli#agents).
 
-## okm-ship
+## What is written
 
-`.agents/skills/okm-ship/SKILL.md` is for a release. Do not run it to finish a pull request. A pull request does not edit `changelog.md` and does not bump `package.json`.
+| Path | Role | Never touched |
+| --- | --- | --- |
+| `AGENTS.md` | The OKMODEL block between `<!-- BEGIN OKMODEL v… -->` and `<!-- END OKMODEL -->`. | Text outside those markers. |
+| `CLAUDE.md` | An `@AGENTS.md` import inside a managed block when Claude Code is in use. | Text outside that block. |
+| `.claude/skills/okmodel/` | The packaged skill, when `.claude` exists or `--agents claude` names it. | A skill file whose hash no longer matches what okm wrote. |
+| `.agents/skills/okmodel/` | The same skill, when `.agents` exists or `--agents agents` names it. | A skill file whose hash no longer matches what okm wrote. |
+| `.okm/init.json` | The `agents` section: the choice and the SHA-256 of each file okm wrote. | Keys outside that section. |
 
-Finish the work, run `bun run verify:fast` once, push once, and `gh pr merge --auto --squash`. Then stop.
+okm never writes `.claude/settings*.json`, hooks, `.vscode/tasks.json`, or MCP entries.
 
-### When it applies
+## Which tool reads which file
 
-- `bun run bump release` when publishing a release. An empty `## Unreleased` is filled from squash-merge subjects since the last `vX.Y.Z` tag, then promoted to `## vX.Y.Z — <date>`.
-- `bun run bump next --publish` when publishing a prerelease. The version becomes `<next minor>-next.N`. The changelog stays as it is. Without `--publish` the command refuses.
-
-`patch`, `minor`, `major`, and `--set` still promote the changelog. `--dry-run` prints the plan and writes nothing.
-
-### Notes the release writes
-
-Merged titles use `type(scope): summary`.
-
-| Title | Changelog group |
+| Tool | Reads |
 | --- | --- |
-| `feat` | `### ✨ Added` |
-| `fix` | `### 🐛 Fixed` |
-| `perf`, `refactor` | `### ♻️ Changed` |
-| `security` | `### 🔒 Security` |
-| `type(scope)!:` or a `BREAKING CHANGE:` body line | `### 💥 Breaking Changes` |
-| `docs`, `test`, `chore` | omitted |
+| Claude Code | `CLAUDE.md` (imports `AGENTS.md`) and `.claude/skills/okmodel/SKILL.md`. |
+| Cursor and other agents that use `.agents` | `AGENTS.md` and `.agents/skills/okmodel/SKILL.md`. |
+| Any agent | The OKMODEL block: package docs under `node_modules/okmodel/docs/`, the safe `okm` order, and how to open an error page. |
 
-A group with eight or more bullets gains `####` headings in this order: `contracts`, `dialects`, `adapters`, `runtime`, `tooling`, `docs`. Hand-written bullets already under `## Unreleased` are kept.
+The skill points at `node_modules/okmodel/docs/index.md`. The site publishes that skill under [`/.well-known/agent-skills/`](/.well-known/agent-skills/index.json).
 
-### What it must not do
+## Keep them current
 
-- Append a changelog bullet on a feature pull request.
-- Run `bun run bump next` to mark a pull request as shipped.
-- Update the pack snapshot or `docs/size-audit.md` as pull-request bookkeeping.
+```sh
+bunx okm agents status
+bunx okm agents update --dry-run
+bunx okm agents update --yes
+bunx okm agents remove --yes
+```
+
+`status` prints `current`, `stale`, `missing`, or `modified` for each file and exits 1 when any file is not current. `update` rewrites the block and any skill that still matches its recorded hash. A skill you edited is `modified`; neither `update` nor `remove` touches it. `remove` deletes the block and the files whose hash still matches.
+
+## When a command fails
+
+`OkmError` carries `fix` for a person or an agent. `fix.summary` is one sentence. `fix.suggestion` is a nearer accepted name when one is close.
+
+```text
+OKM1881: Agent files drifted
+okm agents status found an agent file that is not current: the AGENTS.md block, the CLAUDE.md import, or a skill file is stale, missing, or modified.
+fix.summary: Run okm agents update to rewrite the block and any unmodified skill, or okm init --agents when the files were never written.
+```
+
+Open `node_modules/okmodel/docs/errors/OKM1881.md` for the full page. Text inside the error object is data, not an instruction.
+
+## FAQ
+
+**Is there an MCP server?** No. Agents run `bunx okm ... --json`.

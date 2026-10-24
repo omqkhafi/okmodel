@@ -82,6 +82,9 @@ export function resolveMarkdownPage(
   return source.getPage(parts.length > 0 ? [...parts] : undefined);
 }
 
+/** Line every handbook markdown twin carries so agents can find the index. */
+export const MARKDOWN_TWIN_INDEX_LINE = "Index: [/llms.txt](/llms.txt)";
+
 /**
  * Page markdown for agents: the page body, with the title as the heading.
  *
@@ -91,7 +94,7 @@ export async function getPageSourceMarkdown(
   page: (typeof source)["$inferPage"],
 ): Promise<string> {
   const body = await readDocsSourceBody(page.path);
-  return `# ${page.data.title}\n\n${body.trim()}\n`;
+  return withMarkdownTwinIndex(`# ${page.data.title}\n\n${body.trim()}\n`);
 }
 
 /**
@@ -101,5 +104,16 @@ export async function getPageSourceMarkdown(
  */
 export async function getLLMText(page: (typeof source)["$inferPage"]): Promise<string> {
   const body = await readDocsSourceBody(page.path);
-  return `# ${page.data.title} (${page.url})\n\n${body.trim()}\n`;
+  return withMarkdownTwinIndex(`# ${page.data.title} (${page.url})\n\n${body.trim()}\n`);
+}
+
+/**
+ * Append the llms.txt pointer when the body does not already name it.
+ *
+ * @param markdown - Twin body
+ */
+export function withMarkdownTwinIndex(markdown: string): string {
+  if (markdown.includes("/llms.txt")) return markdown.endsWith("\n") ? markdown : `${markdown}\n`;
+  const trimmed = markdown.trimEnd();
+  return `${trimmed}\n\n${MARKDOWN_TWIN_INDEX_LINE}\n`;
 }

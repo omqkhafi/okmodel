@@ -32,20 +32,22 @@ test("section folders become the routes under their label", () => {
   ]);
 });
 
-test("reference and ai resources sit under their labels", () => {
+test("reference and coding agents sit under their labels", () => {
   const flat = flattenSectionFolders(source.getPageTree());
   const labels = flat.children.map((node) => (node.type === "page" ? node.url : node.name));
-  expect(labels).toContain("03 Reference");
+  expect(labels).toContain("03 Migrate");
+  expect(labels).toContain("/docs/migrate/from-drizzle");
+  expect(labels).toContain("/docs/migrate/from-existing");
+  expect(labels).toContain("04 Reference");
   expect(labels).toContain("/docs/reference/cli");
   expect(labels).toContain("/docs/reference/errors");
   expect(labels).toContain("/docs/reference/okid");
   expect(labels).toContain("/docs/reference/environment-variables");
-  expect(labels).toContain("04 AI Resources");
-  expect(labels).toContain("/docs/ai/mcp");
+  expect(labels).toContain("05 Coding agents");
   expect(labels).toContain("/docs/ai/skills");
   expect(labels).toContain("/docs/ai/llm");
   expect(labels).not.toContain("Reference");
-  expect(labels).not.toContain("AI Resources");
+  expect(labels).not.toContain("/docs/ai/mcp");
 });
 
 test("every public page except the landing has a sidebar icon", () => {
