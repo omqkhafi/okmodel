@@ -215,170 +215,173 @@ The registry is not on the runtime entry. A process that never explains a code d
 
 ## Registry
 
-The registry has 123 codes, in numeric order. Ranges are schema `OKM1000`, queries and capabilities `OKM1100`, validation `OKM1200`, mapped database errors `OKM1300`, transactions `OKM1400`, migrations `OKM1500`, typed SQL `OKM1600`, tenancy and policies `OKM1700`, drivers and versions `OKM1800`, and CLI `OKM1900`. Mapped database errors use the kind as the code, so `OKM1300` has no entry. `OKM1900` has no entry. The tables below are every code the registry holds.
-
-### Schema
-
-| Code | Title | Summary |
-| --- | --- | --- |
-| `OKM1012` | Trait field conflict | A trait added a field that the table already declares. |
-| `OKM1020` | Unknown table | A table, dependency, or catalog object is missing or does not match its identity. |
-| `OKM1021` | Foreign key target | A foreign key is missing its target table or column, or the target is ambiguous. |
-| `OKM1022` | Foreign key type | A foreign key column and the column it references have different types. |
-| `OKM1023` | Duplicate name | Two catalog objects share an identity, or two tables emit the same type name. |
-| `OKM1024` | Table file not in schema | A table file is not passed to schema(). |
-| `OKM1025` | Multiple Register | More than one Register augmentation is in the project. |
-| `OKM1026` | Dependency cycle | The catalog dependency graph contains a cycle, so objects cannot be ordered. |
-| `OKM1027` | Unreadable catalog | The catalog document is malformed or uses a version this build cannot read. |
-| `OKM1030` | Validation in two places | A field is validated both on the column and somewhere else. |
-| `OKM1040` | Preset name collision | A preset uses the name of a client method or a reserved name, or a table and its traits (or two traits) define the same preset. |
-| `OKM1051` | Archive foreign key | A foreign key into a table-strategy archivable table uses CASCADE, SET NULL, or SET DEFAULT and is not listed in cascade. |
-| `OKM1052` | Not archivable | archive or restore was called on a table that is not archivable. |
-| `OKM1060` | Invalid column | A column definition has a bad length, precision, scale, array rank, interval qualifier, or an empty or repeated picklist or enum. |
-| `OKM1061` | Reserved option | The option exists in the types but this version does not implement it. |
-
-### Queries and capabilities
-
-| Code | Title | Summary |
-| --- | --- | --- |
-| `OKM1101` | Find without limit | find was called without a limit. |
-| `OKM1102` | Unfiltered write | A write with no effective predicate, including undefined values, is OKM1102. |
-| `OKM1104` | Upsert target | onConflict names columns that are not a unique constraint. |
-| `OKM1105` | Include without limit | A to-many include has no limit. |
-| `OKM1110` | Engine version | A feature needs a newer PostgreSQL than minPostgres allows. The message names the feature, the version it needs, and this schema's minimum. |
-| `OKM1111` | Missing capability | The call needs a driver capability this driver does not have. |
-| `OKM1120` | Unknown field | The name is not a field or an option on a write, read, or update. An unknown key on insert, update, upsert, or first-or-create is refused and names the key and the table. timeout and signal go in the second argument of update. Options go first: tx(options, fn). |
-| `OKM1121` | Object as value | An empty or() branch is OKM1121. or() takes one array: or([a, b]). A plain object was passed where a value is required. |
-| `OKM1122` | Bad identifier | An identifier is empty, too long, contains NUL or another control character, or is an unquoted reserved word. |
-| `OKM1123` | Hidden field allowlist | A hidden field was added to a filter or sort allowlist. |
-| `OKM1124` | Operator mismatch | An operator does not apply to the column type. |
-| `OKM1125` | Bad SQL fragment | A composed fragment is empty, unbalanced, includes a backslash, or interpolates a value it cannot bind. A select fragment that is not a number is the same code. |
-| `OKM1126` | Parameter limit | The finished statement has more than 65,533 parameters. The limit matches postgres.js (which refuses at 65,534) so OKM1126 fires first. The limit is for the whole statement (filters, inList, limit, values), not for inList alone. |
-| `OKM1130` | Cursor order | A cursor was reused with a different orderBy than the one that created it, or is not a cursor page() returned. |
-| `OKM1190` | Safety violation | A query composition broke a core invariant. violations lists every broken rule in stable order. |
-| `OKM1191` | No snapshot plan | A multi-statement read was requested inside READ COMMITTED and no single-statement plan exists. |
-
-### Validation
-
-| Code | Title | Summary |
-| --- | --- | --- |
-| `OKM1200` | Validation failed | A write or a standalone check failed a validation rule. issues lists each path and message key. |
-| `OKM1201` | Validation not imported | Validation is enabled but `okmodel/validate` was not imported. |
-| `OKM1210` | Codec rejected a value | A codec refused a value: not numeric text, not a valid temporal value, or the wrong shape. |
-
-### Transactions
-
-| Code | Title | Summary |
-| --- | --- | --- |
-| `OKM1401` | Outcome unknown | A commit or batch was sent and its result never arrived, so the write may or may not have happened. |
-
-### Migrations
+Codes are in numeric order. Ranges are schema `OKM1000`, queries and capabilities `OKM1100`, validation `OKM1200`, mapped database errors `OKM1300`, transactions `OKM1400`, migrations `OKM1500`, typed SQL `OKM1600`, tenancy and policies `OKM1700`, drivers and versions `OKM1800`, agent files `OKM1880`, and advice `OKM2xxx`. Mapped database errors use the kind as the code, so `OKM1300` has no entry. `OKM1900` has no entry. Each row links the page `bun run docs:errors` writes under `docs/errors/`.
 
 `OKM1538`, `OKM1539`, `OKM1540`, `OKM1543`, `OKM1544`, `OKM1545`, and `OKM1552` are warnings. A warning is printed and the command still succeeds. An error blocks plan, check, and apply.
 
-| Code | Title | Summary |
-| --- | --- | --- |
-| `OKM1510` | Unsafe migration | A migration has an unresolved lint error, or an override with an empty reason or a code no statement in the step triggered. |
-| `OKM1511` | Drop table | A statement drops a table. The rows and anything that reads them are gone. |
-| `OKM1512` | Drop column | A statement drops a column. Stored values and the code that reads them are gone. |
-| `OKM1513` | Drop enum | A statement drops an enum that columns or code may still depend on. |
-| `OKM1514` | Drop domain | A statement drops a domain that columns or code may still depend on. |
-| `OKM1515` | Drop function | A statement drops a function that queries or triggers may still call. |
-| `OKM1516` | Drop view | A statement drops a view that queries may still read. |
-| `OKM1517` | Drop extension | A statement drops an extension. A dependent still in the catalog is refused before this finding. |
-| `OKM1518` | Drop materialized view | A statement drops a materialized view and the rows it stores. |
-| `OKM1519` | Rename column | A statement renames a column. Existing queries still use the old name. |
-| `OKM1520` | Schema drift | The database has drifted past what an expand migration can repair. |
-| `OKM1521` | Snapshot mismatch | Provisioning from the snapshot does not match the replayed migration history. |
-| `OKM1522` | Apply lock held | Another apply already holds the target's migration lock. |
-| `OKM1523` | Rename table | A statement renames a table. Existing queries still use the old name. |
-| `OKM1524` | Column type change | A statement changes a column type. Existing readers and writers may not accept the new type. |
-| `OKM1525` | Required column | A statement adds a NOT NULL column with no default to a table that already has rows. |
-| `OKM1526` | Drop default | A statement removes a column default. Writers that omitted the column will fail. |
-| `OKM1527` | Shrink length | A statement shortens a character length. Values longer than the new limit no longer fit. |
-| `OKM1528` | Unique constraint | A statement adds a unique or primary-key constraint on a table that already has rows. |
-| `OKM1529` | Unique index | A statement creates a unique index on a table that already has rows. |
-| `OKM1530` | Ambiguous rename | A rename could match more than one object. |
-| `OKM1531` | Validating check | A statement adds or validates a check against rows already stored. |
-| `OKM1532` | Validating foreign key | A statement adds or validates a foreign key against rows already stored. |
-| `OKM1533` | Narrowing type | A statement narrows a numeric or integer type. Values outside the new range no longer fit. |
-| `OKM1534` | Index locks | A statement creates an index on an existing table without CONCURRENTLY. |
-| `OKM1535` | Check without NOT VALID | A statement adds a check on an existing table without NOT VALID. |
-| `OKM1536` | Foreign key without NOT VALID | A statement adds a foreign key on an existing table without NOT VALID. |
-| `OKM1537` | Set not null | A statement sets NOT NULL on a column that already exists. |
-| `OKM1538` | Type rewrite | A statement changes a column type in a way that rewrites the table. Binary-coercible changes, varchar widening, varchar to text, and a numeric precision increase at the same scale do not. The expand/contract recipe is [type change](/docs/reference/type-change). |
-| `OKM1539` | Timestamp without time zone | A column is timestamp without time zone. The instant depends on the session time zone. |
-| `OKM1540` | varchar length | A column is varchar(n). text stores the same values without a length limit in the type. |
-| `OKM1541` | Picklist removal | A picklist or enum value was removed and the replacement was not given. |
-| `OKM1542` | Data statement | A migration contains a data statement outside backfill(), or a DO or CALL whose body is not analysed. |
-| `OKM1543` | serial column | A column uses serial or a nextval default. Identity is the form this repo generates. |
-| `OKM1544` | json column | A column is json. jsonb is available and stores the same documents in binary. |
-| `OKM1545` | Identity not always | An identity column is generated by default. The repo default is generated always. |
-| `OKM1546` | Backfill key | A backfill step targets a table that has no primary key. |
-| `OKM1547` | History differs | Replaying a migration does not match its stored catalog, or the file was generated from a different parent than the previous migration. |
-| `OKM1548` | Previous catalog | An expand migration drops or changes a table, column, constraint, or type the previous catalog relies on. |
-| `OKM1549` | Stale head | The last migration's catalog does not match the schema. |
-| `OKM1550` | Row-level security weakened | A statement disables row-level security, drops or widens a policy, grants BYPASSRLS, or changes the owner of a tenant table. |
-| `OKM1551` | Transaction control in a step | A step contains COMMIT, ROLLBACK, or other transaction control, including inside a DO body. A function or procedure body is not this. |
-| `OKM1552` | Reprinted declaration | A domain check or a LANGUAGE sql function body is stored differently from the text in the migration catalog. |
-| `OKM1553` | Step needs a human | A committed step failed and the probe cannot tell whether it is applied. Apply leaves it until someone decides. Exit 3. |
-| `OKM1554` | Step is not applied | Resolve refused to record the step because the probe says it is not applied. |
-| `OKM1555` | Unverified step | Resolve refused to record the step because this kind has no probe. Exit 3. |
-| `OKM1556` | Step statement changed | The migration file's statement changed after the committed step started. |
-| `OKM1557` | Step cannot be made re-runnable | A committed step has no built-in probe and no declared probe, so a failure cannot tell whether the change is already in place. |
-| `OKM1558` | Invalid probe | A probe is empty, is not one read-only SELECT, has more than one statement, or is declared on a step that stays inside a transaction. |
-
-### Typed SQL
-
-| Code | Title | Summary |
-| --- | --- | --- |
-| `OKM1601` | Stale typed SQL | A typed SQL signature no longer matches the database. Recording signatures with `okm build` is deferred. |
-| `OKM1602` | Bad typed SQL | A raw statement is missing its class, is not one select or one write, or the result class has no column initializers. |
-
-### Tenancy and policies
-
-| Code | Title | Summary |
-| --- | --- | --- |
-| `OKM1701` | Tenant context missing | A tenant table was used on a client that has no tenant context. |
-| `OKM1702` | Unverifiable tenant SQL | Raw SQL on a tenant table cannot prove the tenant predicate. A raw write is this. A raw read that does not select the primary key with ident is this. |
-| `OKM1704` | Tenant key change | An update tried to change the tenant key. |
-| `OKM1705` | Global references tenant | A global table references a tenant table. |
-| `OKM1706` | Tenant index | Prefixing is off (`indexes: false` or `tenantIndexes: false`) and an index on a tenant table does not lead with the tenant key. |
-| `OKM1707` | RLS role | A scoped call under rls ran as a role that owns the tenant tables, is a superuser, or has BYPASSRLS. The reason field says which. The message names the endpoint. |
-| `OKM1708` | RLS policy | A scoped call under rls found a tenant table whose row-level security is missing, not forced, or whose policies are not the ones okm generate emits. The message names the table and the endpoint. |
-| `OKM1709` | Session setting | A `sessionSettings()` declaration or a `db.with()` value is not accepted: a name without a dot, a reserved name, a type that is not text, uuid, int, or bool, a value of the wrong type, an unknown key, or a required key that is missing. Nothing reached the database. |
-
-### Drivers and versions
-
-| Code | Title | Summary |
-| --- | --- | --- |
-| `OKM1801` | Dialect mismatch | The schema dialect and the driver dialect are not the same. |
-| `OKM1802` | Server version | The connected server is older than this schema's minPostgres. |
-| `OKM1803` | Postgres floor | The connected server is older than PostgreSQL 15. |
-| `OKM1810` | Extension not declared | An extension builder was used but the extension is not declared on the schema. |
-| `OKM1811` | Extension unavailable | A declared extension is not installed on the server. |
-| `OKM1812` | Feature version | A feature needs a newer PostgreSQL than minPostgres, or an extension version the server does not have. The message names the feature and the version. |
-| `OKM1813` | Extension defined twice | The same extension definition was registered twice. |
-| `OKM1814` | Extension change refused | The plan would downgrade an extension, move a non-relocatable one, or drop one that still has dependents. |
-| `OKM1820` | View tenancy | A view over tenant tables does not expose the tenant key and is not marked global. |
-| `OKM1821` | Replace needs recreate | An incompatible replace would have to recreate dependents. CASCADE is never used. |
-| `OKM1822` | Concurrent refresh | REFRESH CONCURRENTLY was declared without a unique index on the materialized view. |
-| `OKM1823` | Security definer path | A SECURITY DEFINER function has no search_path. |
-| `OKM1824` | Function dependencies | A plpgsql function has no dependsOn. Postgres does not record dependencies inside the body. |
-| `OKM1825` | Missing privilege | A role lacks a privilege on a managed object. |
-| `OKM1830` | Lock outside transaction | find was called with a row lock outside tx(). |
-| `OKM1840` | Replica not allowed | A replica route was used on an operation that requires the primary, or inside tx(). |
-| `OKM1841` | External object differs | An external object does not match the owner's exported catalog. |
-| `OKM1842` | Cross-database foreign key | A foreign key points at a table in another database. |
-| `OKM1843` | No eligible replica | A replica was required and none is eligible: unhealthy, behind the session, or none configured. |
-| `OKM1844` | Fallback refused | An automatic read found no eligible replica and fallback is error. |
-| `OKM1845` | Target unresolved | The target could not be resolved. The tenant is unknown or the resolver failed. |
-| `OKM1846` | Acquire timeout | The pool did not hand out a connection within timeouts.acquire. |
-| `OKM1850` | Protected target | The operation is blocked on a protected target. |
-| `OKM1851` | Target not empty | Provisioning was asked to fill a target that already has objects. |
-| `OKM1852` | Protection mismatch | Targets that resolve to the same database disagree about protection, or tenants of one schema-per-tenant database do. |
-| `OKM1853` | Target not named | Several targets are configured and the command was not given --target. |
-| `OKM1854` | Pooler session | Two statements on the same connection saw different backend pids. A transaction-mode pooler is in the way. |
-| `OKM1855` | Pull would overwrite | okm pull or okm import drizzle found a file it would replace. It writes nothing. |
-| `OKM1856` | Drizzle is not installed | okm import drizzle could not resolve drizzle-orm from the project. Install it in that project. |
-| `OKM1860` | Feature refused | The configured dialect refuses a feature this schema uses. Use the portable alternative named in the error. The message names the dialect, the feature, and the first version that would support it when one exists. |
+<!-- BEGIN:error-code-index -->
+| Code | Kind | Summary | Docs |
+| --- | --- | --- | --- |
+| <a id="okm1012"></a>[`OKM1012`](#okm1012) | `invalid` | A trait added a field that the table already declares. | [OKM1012.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1012.md) |
+| <a id="okm1020"></a>[`OKM1020`](#okm1020) | `invalid` | A table, dependency, or catalog object is missing or does not match its identity. | [OKM1020.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1020.md) |
+| <a id="okm1021"></a>[`OKM1021`](#okm1021) | `invalid` | A foreign key is missing its target table or column, or the target is ambiguous. | [OKM1021.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1021.md) |
+| <a id="okm1022"></a>[`OKM1022`](#okm1022) | `invalid` | A foreign key column and the column it references have different types. | [OKM1022.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1022.md) |
+| <a id="okm1023"></a>[`OKM1023`](#okm1023) | `invalid` | Two catalog objects share an identity, two tables emit the same type name, or two fields of one table spell the same SQL name after casing. | [OKM1023.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1023.md) |
+| <a id="okm1024"></a>[`OKM1024`](#okm1024) | `invalid` | A table file is not passed to schema(). | [OKM1024.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1024.md) |
+| <a id="okm1025"></a>[`OKM1025`](#okm1025) | `invalid` | More than one Register augmentation is in the project. | [OKM1025.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1025.md) |
+| <a id="okm1026"></a>[`OKM1026`](#okm1026) | `invalid` | The catalog dependency graph contains a cycle, so objects cannot be ordered. | [OKM1026.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1026.md) |
+| <a id="okm1027"></a>[`OKM1027`](#okm1027) | `invalid` | The catalog document is malformed or uses a version this build cannot read. | [OKM1027.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1027.md) |
+| <a id="okm1030"></a>[`OKM1030`](#okm1030) | `invalid` | A field is validated both on the column and somewhere else. | [OKM1030.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1030.md) |
+| <a id="okm1040"></a>[`OKM1040`](#okm1040) | `invalid` | A preset uses the name of a client method or a reserved name, or a table and its traits (or two traits) define the same preset. | [OKM1040.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1040.md) |
+| <a id="okm1051"></a>[`OKM1051`](#okm1051) | `invalid` | A foreign key into a table-strategy archivable table uses CASCADE, SET NULL, or SET DEFAULT and is not listed in cascade. | [OKM1051.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1051.md) |
+| <a id="okm1052"></a>[`OKM1052`](#okm1052) | `invalid` | archive or restore was called on a table that is not archivable. | [OKM1052.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1052.md) |
+| <a id="okm1060"></a>[`OKM1060`](#okm1060) | `invalid` | A column definition has a bad length, precision, scale, array rank, interval qualifier, or an empty or repeated picklist or enum. | [OKM1060.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1060.md) |
+| <a id="okm1061"></a>[`OKM1061`](#okm1061) | `invalid` | The option exists in the types but this version does not implement it. | [OKM1061.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1061.md) |
+| <a id="okm1101"></a>[`OKM1101`](#okm1101) | `invalid` | find was called without a limit, or a limit is above limits.max. connect({ limits }) can set a default for find, page, and groupBy. | [OKM1101.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1101.md) |
+| <a id="okm1102"></a>[`OKM1102`](#okm1102) | `invalid` | A write with no effective predicate, including undefined values, is OKM1102. | [OKM1102.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1102.md) |
+| <a id="okm1104"></a>[`OKM1104`](#okm1104) | `invalid` | onConflict names columns that are not a unique constraint. | [OKM1104.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1104.md) |
+| <a id="okm1105"></a>[`OKM1105`](#okm1105) | `invalid` | A to-many include has no limit. connect({ limits: { include } }) sets a default for includes that name none. | [OKM1105.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1105.md) |
+| <a id="okm1110"></a>[`OKM1110`](#okm1110) | `invalid` | A feature needs a newer PostgreSQL than minPostgres allows. The message names the feature, the version it needs, and this schema's minimum. | [OKM1110.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1110.md) |
+| <a id="okm1111"></a>[`OKM1111`](#okm1111) | `invalid` | The call needs a driver capability this driver does not have. | [OKM1111.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1111.md) |
+| <a id="okm1120"></a>[`OKM1120`](#okm1120) | `invalid` | The name is not a field or an option on a write, read, or update. An unknown key on insert, update, upsert, or first-or-create is refused and names the key and the table. timeout and signal go in the second argument of update. Options go first: tx(options, fn). | [OKM1120.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1120.md) |
+| <a id="okm1121"></a>[`OKM1121`](#okm1121) | `invalid` | An empty or() branch is OKM1121. or() takes one array: or([a, b]). A plain object was passed where a value is required. | [OKM1121.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1121.md) |
+| <a id="okm1122"></a>[`OKM1122`](#okm1122) | `invalid` | An identifier is empty, too long, contains NUL or another control character, or is an unquoted reserved word. | [OKM1122.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1122.md) |
+| <a id="okm1123"></a>[`OKM1123`](#okm1123) | `invalid` | A hidden field was added to a filter or sort allowlist. | [OKM1123.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1123.md) |
+| <a id="okm1124"></a>[`OKM1124`](#okm1124) | `invalid` | An operator does not apply to the column type. | [OKM1124.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1124.md) |
+| <a id="okm1125"></a>[`OKM1125`](#okm1125) | `invalid` | A composed fragment is empty, unbalanced, includes a backslash, or interpolates a value it cannot bind. A select fragment that is not a number is the same code. | [OKM1125.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1125.md) |
+| <a id="okm1126"></a>[`OKM1126`](#okm1126) | `invalid` | The finished statement has more than 65,533 parameters. The limit is for the whole statement (filters, inList, limit, values), not for inList alone. It matches postgres.js (which refuses at 65,534) so OKM1126 fires before that driver's MAX_PARAMETERS_EXCEEDED. | [OKM1126.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1126.md) |
+| <a id="okm1130"></a>[`OKM1130`](#okm1130) | `invalid` | A cursor was reused with a different orderBy than the one that created it, or is not a cursor page() returned. | [OKM1130.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1130.md) |
+| <a id="okm1190"></a>[`OKM1190`](#okm1190) | `invalid` | A query composition broke a core invariant. violations lists every broken rule in stable order. | [OKM1190.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1190.md) |
+| <a id="okm1191"></a>[`OKM1191`](#okm1191) | `invalid` | A multi-statement read was requested inside READ COMMITTED and no single-statement plan exists. | [OKM1191.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1191.md) |
+| <a id="okm1200"></a>[`OKM1200`](#okm1200) | `invalid` | A write or a standalone check failed a validation rule. issues lists each path and message key. | [OKM1200.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1200.md) |
+| <a id="okm1201"></a>[`OKM1201`](#okm1201) | `invalid` | Validation is enabled but `okmodel/validate` was not imported. | [OKM1201.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1201.md) |
+| <a id="okm1210"></a>[`OKM1210`](#okm1210) | `invalid` | A codec refused a value: not numeric text, not a valid temporal value, or the wrong shape. | [OKM1210.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1210.md) |
+| <a id="okm1401"></a>[`OKM1401`](#okm1401) | `outcome_unknown` | A commit or batch was sent and its result never arrived, so the write may or may not have happened. | [OKM1401.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1401.md) |
+| <a id="okm1510"></a>[`OKM1510`](#okm1510) | `invalid` | A migration has an unresolved lint error, or an override with an empty reason or a code no statement in the step triggered. | [OKM1510.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1510.md) |
+| <a id="okm1511"></a>[`OKM1511`](#okm1511) | `invalid` | A statement drops a table. The rows and anything that reads them are gone. | [OKM1511.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1511.md) |
+| <a id="okm1512"></a>[`OKM1512`](#okm1512) | `invalid` | A statement drops a column. Stored values and the code that reads them are gone. | [OKM1512.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1512.md) |
+| <a id="okm1513"></a>[`OKM1513`](#okm1513) | `invalid` | A statement drops an enum that columns or code may still depend on. | [OKM1513.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1513.md) |
+| <a id="okm1514"></a>[`OKM1514`](#okm1514) | `invalid` | A statement drops a domain that columns or code may still depend on. | [OKM1514.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1514.md) |
+| <a id="okm1515"></a>[`OKM1515`](#okm1515) | `invalid` | A statement drops a function that queries or triggers may still call. | [OKM1515.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1515.md) |
+| <a id="okm1516"></a>[`OKM1516`](#okm1516) | `invalid` | A statement drops a view that queries may still read. | [OKM1516.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1516.md) |
+| <a id="okm1517"></a>[`OKM1517`](#okm1517) | `invalid` | A statement drops an extension. A dependent still in the catalog is refused before this finding. | [OKM1517.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1517.md) |
+| <a id="okm1518"></a>[`OKM1518`](#okm1518) | `invalid` | A statement drops a materialized view and the rows it stores. | [OKM1518.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1518.md) |
+| <a id="okm1519"></a>[`OKM1519`](#okm1519) | `invalid` | A statement renames a column. Existing queries still use the old name. | [OKM1519.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1519.md) |
+| <a id="okm1520"></a>[`OKM1520`](#okm1520) | `schema_drift` | The database has drifted past what an expand migration can repair. | [OKM1520.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1520.md) |
+| <a id="okm1521"></a>[`OKM1521`](#okm1521) | `invalid` | Provisioning from the snapshot does not match the replayed migration history. | [OKM1521.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1521.md) |
+| <a id="okm1522"></a>[`OKM1522`](#okm1522) | `conflict` | Another apply already holds the target's migration lock. | [OKM1522.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1522.md) |
+| <a id="okm1523"></a>[`OKM1523`](#okm1523) | `invalid` | A statement renames a table. Existing queries still use the old name. | [OKM1523.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1523.md) |
+| <a id="okm1524"></a>[`OKM1524`](#okm1524) | `invalid` | A statement changes a column type. Existing readers and writers may not accept the new type. | [OKM1524.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1524.md) |
+| <a id="okm1525"></a>[`OKM1525`](#okm1525) | `invalid` | A statement adds a NOT NULL column with no default to a table that already has rows. | [OKM1525.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1525.md) |
+| <a id="okm1526"></a>[`OKM1526`](#okm1526) | `invalid` | A statement removes a column default. Writers that omitted the column will fail. | [OKM1526.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1526.md) |
+| <a id="okm1527"></a>[`OKM1527`](#okm1527) | `invalid` | A statement shortens a character length. Values longer than the new limit no longer fit. | [OKM1527.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1527.md) |
+| <a id="okm1528"></a>[`OKM1528`](#okm1528) | `invalid` | A statement adds a unique or primary-key constraint on a table that already has rows. | [OKM1528.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1528.md) |
+| <a id="okm1529"></a>[`OKM1529`](#okm1529) | `invalid` | A statement creates a unique index on a table that already has rows. | [OKM1529.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1529.md) |
+| <a id="okm1530"></a>[`OKM1530`](#okm1530) | `invalid` | A rename could match more than one object. | [OKM1530.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1530.md) |
+| <a id="okm1531"></a>[`OKM1531`](#okm1531) | `invalid` | A statement adds or validates a check against rows already stored. | [OKM1531.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1531.md) |
+| <a id="okm1532"></a>[`OKM1532`](#okm1532) | `invalid` | A statement adds or validates a foreign key against rows already stored. | [OKM1532.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1532.md) |
+| <a id="okm1533"></a>[`OKM1533`](#okm1533) | `invalid` | A statement narrows a numeric or integer type. Values outside the new range no longer fit. | [OKM1533.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1533.md) |
+| <a id="okm1534"></a>[`OKM1534`](#okm1534) | `invalid` | A statement creates an index on an existing table without CONCURRENTLY. | [OKM1534.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1534.md) |
+| <a id="okm1535"></a>[`OKM1535`](#okm1535) | `invalid` | A statement adds a check on an existing table without NOT VALID. | [OKM1535.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1535.md) |
+| <a id="okm1536"></a>[`OKM1536`](#okm1536) | `invalid` | A statement adds a foreign key on an existing table without NOT VALID. | [OKM1536.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1536.md) |
+| <a id="okm1537"></a>[`OKM1537`](#okm1537) | `invalid` | A statement sets NOT NULL on a column that already exists. | [OKM1537.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1537.md) |
+| <a id="okm1538"></a>[`OKM1538`](#okm1538) | `invalid` | A statement changes a column type in a way that rewrites the table. Binary-coercible changes, varchar widening, varchar to text, and a numeric precision increase at the same scale do not. | [OKM1538.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1538.md) |
+| <a id="okm1539"></a>[`OKM1539`](#okm1539) | `invalid` | A column is timestamp without time zone. The instant depends on the session time zone. | [OKM1539.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1539.md) |
+| <a id="okm1540"></a>[`OKM1540`](#okm1540) | `invalid` | A column is varchar(n). text stores the same values without a length limit in the type. | [OKM1540.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1540.md) |
+| <a id="okm1541"></a>[`OKM1541`](#okm1541) | `invalid` | A picklist or enum value was removed and the replacement was not given. | [OKM1541.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1541.md) |
+| <a id="okm1542"></a>[`OKM1542`](#okm1542) | `invalid` | A migration contains a data statement outside backfill(), or a DO or CALL whose body is not analysed. | [OKM1542.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1542.md) |
+| <a id="okm1543"></a>[`OKM1543`](#okm1543) | `invalid` | A column uses serial or a nextval default. Identity is the form this repo generates. | [OKM1543.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1543.md) |
+| <a id="okm1544"></a>[`OKM1544`](#okm1544) | `invalid` | A column is json. jsonb is available and stores the same documents in binary. | [OKM1544.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1544.md) |
+| <a id="okm1545"></a>[`OKM1545`](#okm1545) | `invalid` | An identity column is generated by default. The repo default is generated always. | [OKM1545.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1545.md) |
+| <a id="okm1546"></a>[`OKM1546`](#okm1546) | `invalid` | A backfill step targets a table that has no primary key. | [OKM1546.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1546.md) |
+| <a id="okm1547"></a>[`OKM1547`](#okm1547) | `invalid` | Replaying a migration does not match its stored catalog, or the file was generated from a different parent than the previous migration. | [OKM1547.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1547.md) |
+| <a id="okm1548"></a>[`OKM1548`](#okm1548) | `invalid` | An expand migration drops or changes a table, column, constraint, or type the previous catalog relies on. | [OKM1548.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1548.md) |
+| <a id="okm1549"></a>[`OKM1549`](#okm1549) | `invalid` | The last migration's catalog does not match the schema. | [OKM1549.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1549.md) |
+| <a id="okm1550"></a>[`OKM1550`](#okm1550) | `invalid` | A statement disables row-level security, drops or widens a policy, grants BYPASSRLS, or changes the owner of a tenant table. | [OKM1550.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1550.md) |
+| <a id="okm1551"></a>[`OKM1551`](#okm1551) | `invalid` | A step contains COMMIT, ROLLBACK, or other transaction control, including inside a DO body. A function or procedure body is not this. | [OKM1551.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1551.md) |
+| <a id="okm1552"></a>[`OKM1552`](#okm1552) | `invalid` | A domain check or a LANGUAGE sql function body is stored differently from the text in the migration catalog. | [OKM1552.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1552.md) |
+| <a id="okm1553"></a>[`OKM1553`](#okm1553) | `invalid` | A committed step failed and the probe cannot tell whether it is applied. Apply leaves it until someone decides. | [OKM1553.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1553.md) |
+| <a id="okm1554"></a>[`OKM1554`](#okm1554) | `invalid` | Resolve refused to record the step because the probe says it is not applied. | [OKM1554.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1554.md) |
+| <a id="okm1555"></a>[`OKM1555`](#okm1555) | `invalid` | Resolve refused to record the step because this kind has no probe. | [OKM1555.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1555.md) |
+| <a id="okm1556"></a>[`OKM1556`](#okm1556) | `invalid` | The migration file's statement changed after the committed step started. | [OKM1556.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1556.md) |
+| <a id="okm1557"></a>[`OKM1557`](#okm1557) | `invalid` | A committed step has no built-in probe and no declared probe, so a failure cannot tell whether the change is already in place. | [OKM1557.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1557.md) |
+| <a id="okm1558"></a>[`OKM1558`](#okm1558) | `invalid` | A probe is empty, is not one read-only SELECT, has more than one statement, or is declared on a step that stays inside a transaction. | [OKM1558.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1558.md) |
+| <a id="okm1601"></a>[`OKM1601`](#okm1601) | `invalid` | A typed raw statement is missing from the lock, the lock does not parse, or its signature no longer matches the database. | [OKM1601.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1601.md) |
+| <a id="okm1602"></a>[`OKM1602`](#okm1602) | `invalid` | A raw statement is not one select or one write the checker can classify, two result columns share a name, or a typed raw call passed the wrong number of parameters. | [OKM1602.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1602.md) |
+| <a id="okm1603"></a>[`OKM1603`](#okm1603) | `invalid` | raw SQL must be a static string. | [OKM1603.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1603.md) |
+| <a id="okm1604"></a>[`OKM1604`](#okm1604) | `invalid` | A raw statement in the source is not in the typed SQL lock. | [OKM1604.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1604.md) |
+| <a id="okm1605"></a>[`OKM1605`](#okm1605) | `invalid` | A typed SQL lock entry is no longer called from the source. | [OKM1605.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1605.md) |
+| <a id="okm1701"></a>[`OKM1701`](#okm1701) | `invalid` | A tenant table was used on a client that has no tenant context. | [OKM1701.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1701.md) |
+| <a id="okm1702"></a>[`OKM1702`](#okm1702) | `invalid` | Raw SQL on a tenant table cannot prove the tenant predicate. A raw write is this. A raw read that does not select the primary key with ident is this. A typed raw call, raw(db, sql, params), on a client of a schema with tenancy is this. | [OKM1702.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1702.md) |
+| <a id="okm1704"></a>[`OKM1704`](#okm1704) | `invalid` | An update tried to change the tenant key. | [OKM1704.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1704.md) |
+| <a id="okm1705"></a>[`OKM1705`](#okm1705) | `invalid` | A global table references a tenant table. | [OKM1705.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1705.md) |
+| <a id="okm1706"></a>[`OKM1706`](#okm1706) | `invalid` | An index on a tenant table does not lead with the tenant key, and the schema is not prefixing indexes. Prefixing is on unless indexes: false or tenantIndexes: false. index().global("reason") is the opt-out that does not raise this. | [OKM1706.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1706.md) |
+| <a id="okm1707"></a>[`OKM1707`](#okm1707) | `invalid` | A scoped call under rls ran as a role that owns the tenant tables, is a superuser, or has BYPASSRLS. The reason field says which. The message names the endpoint. | [OKM1707.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1707.md) |
+| <a id="okm1708"></a>[`OKM1708`](#okm1708) | `invalid` | A scoped call under rls found a tenant table whose row-level security is missing, not forced, or whose policies are not the ones okm generate emits. The message names the table and the endpoint. | [OKM1708.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1708.md) |
+| <a id="okm1709"></a>[`OKM1709`](#okm1709) | `invalid` | A sessionSettings() declaration or a db.with() value is not accepted: a name without a dot, a name that starts with a setting okm reserves for tenancy or is a built-in setting, a type that is not text, uuid, int, or bool, a value of the wrong type, an unknown key, or a required key that is missing. A client with a required setting refuses every statement until db.with() gives it. Nothing reached the database. | [OKM1709.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1709.md) |
+| <a id="okm1801"></a>[`OKM1801`](#okm1801) | `invalid` | The schema dialect and the driver dialect are not the same. | [OKM1801.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1801.md) |
+| <a id="okm1802"></a>[`OKM1802`](#okm1802) | `invalid` | The connected server is older than this schema's minPostgres. | [OKM1802.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1802.md) |
+| <a id="okm1803"></a>[`OKM1803`](#okm1803) | `invalid` | The connected server is older than PostgreSQL 15. | [OKM1803.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1803.md) |
+| <a id="okm1810"></a>[`OKM1810`](#okm1810) | `invalid` | An extension builder was used but the extension is not declared on the schema. | [OKM1810.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1810.md) |
+| <a id="okm1811"></a>[`OKM1811`](#okm1811) | `invalid` | A declared extension is not installed on the server. | [OKM1811.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1811.md) |
+| <a id="okm1812"></a>[`OKM1812`](#okm1812) | `invalid` | A feature needs a newer PostgreSQL than minPostgres, or an extension version the server does not have. The message names the feature and the version. | [OKM1812.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1812.md) |
+| <a id="okm1813"></a>[`OKM1813`](#okm1813) | `invalid` | The same extension definition was registered twice. | [OKM1813.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1813.md) |
+| <a id="okm1814"></a>[`OKM1814`](#okm1814) | `invalid` | The plan would downgrade an extension, move a non-relocatable one, or drop one that still has dependents. | [OKM1814.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1814.md) |
+| <a id="okm1820"></a>[`OKM1820`](#okm1820) | `invalid` | A view over tenant tables does not expose the tenant key and is not marked global. | [OKM1820.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1820.md) |
+| <a id="okm1821"></a>[`OKM1821`](#okm1821) | `invalid` | An incompatible replace would have to recreate dependents. CASCADE is never used. | [OKM1821.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1821.md) |
+| <a id="okm1822"></a>[`OKM1822`](#okm1822) | `invalid` | REFRESH CONCURRENTLY was declared without a unique index on the materialized view. | [OKM1822.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1822.md) |
+| <a id="okm1823"></a>[`OKM1823`](#okm1823) | `invalid` | A SECURITY DEFINER function has no search_path. | [OKM1823.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1823.md) |
+| <a id="okm1824"></a>[`OKM1824`](#okm1824) | `invalid` | A plpgsql function has no dependsOn. Postgres does not record dependencies inside the body. | [OKM1824.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1824.md) |
+| <a id="okm1825"></a>[`OKM1825`](#okm1825) | `forbidden` | A role lacks a privilege on a managed object. | [OKM1825.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1825.md) |
+| <a id="okm1830"></a>[`OKM1830`](#okm1830) | `invalid` | find was called with a row lock outside tx(). | [OKM1830.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1830.md) |
+| <a id="okm1840"></a>[`OKM1840`](#okm1840) | `invalid` | A replica route was used on an operation that requires the primary, or inside tx(). | [OKM1840.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1840.md) |
+| <a id="okm1841"></a>[`OKM1841`](#okm1841) | `invalid` | An external object does not match the owner's exported catalog. | [OKM1841.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1841.md) |
+| <a id="okm1842"></a>[`OKM1842`](#okm1842) | `invalid` | A foreign key points at a table in another database. | [OKM1842.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1842.md) |
+| <a id="okm1843"></a>[`OKM1843`](#okm1843) | `invalid` | A replica was required and none is eligible: unhealthy, behind the session, or none configured. | [OKM1843.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1843.md) |
+| <a id="okm1844"></a>[`OKM1844`](#okm1844) | `invalid` | An automatic read found no eligible replica and fallback is error. | [OKM1844.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1844.md) |
+| <a id="okm1845"></a>[`OKM1845`](#okm1845) | `invalid` | The target could not be resolved. The tenant is unknown or the resolver failed. | [OKM1845.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1845.md) |
+| <a id="okm1846"></a>[`OKM1846`](#okm1846) | `timeout` | The pool did not hand out a connection within timeouts.acquire. | [OKM1846.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1846.md) |
+| <a id="okm1850"></a>[`OKM1850`](#okm1850) | `forbidden` | The operation is blocked on a protected target. | [OKM1850.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1850.md) |
+| <a id="okm1851"></a>[`OKM1851`](#okm1851) | `forbidden` | Provisioning was asked to fill a target that already has objects. | [OKM1851.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1851.md) |
+| <a id="okm1852"></a>[`OKM1852`](#okm1852) | `invalid` | Targets that resolve to the same database disagree about protection, or tenants of one schema-per-tenant database do. | [OKM1852.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1852.md) |
+| <a id="okm1853"></a>[`OKM1853`](#okm1853) | `invalid` | Several targets are configured and the command was not given --target. | [OKM1853.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1853.md) |
+| <a id="okm1854"></a>[`OKM1854`](#okm1854) | `invalid` | Two statements on the same connection saw different backend pids. A transaction-mode pooler is in the way. | [OKM1854.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1854.md) |
+| <a id="okm1855"></a>[`OKM1855`](#okm1855) | `invalid` | okm pull or okm import drizzle found a file it would replace. It writes nothing. | [OKM1855.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1855.md) |
+| <a id="okm1856"></a>[`OKM1856`](#okm1856) | `invalid` | okm import drizzle could not resolve drizzle-orm from the project. | [OKM1856.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1856.md) |
+| <a id="okm1857"></a>[`OKM1857`](#okm1857) | `invalid` | okm migrate baseline was asked to write history on a target that already has it. | [OKM1857.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1857.md) |
+| <a id="okm1858"></a>[`OKM1858`](#okm1858) | `invalid` | The live database does not match the model snapshot that baseline would record. | [OKM1858.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1858.md) |
+| <a id="okm1859"></a>[`OKM1859`](#okm1859) | `invalid` | A store fingerprint blocks this state-changing command when there is no terminal. | [OKM1859.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1859.md) |
+| <a id="okm1860"></a>[`OKM1860`](#okm1860) | `invalid` | The configured dialect refuses a feature this schema uses. | [OKM1860.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1860.md) |
+| <a id="okm1862"></a>[`OKM1862`](#okm1862) | `invalid` | A driver package is already installed and the driver flag names a different one. | [OKM1862.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1862.md) |
+| <a id="okm1863"></a>[`OKM1863`](#okm1863) | `invalid` | okm init needs a choice and this invocation is not interactive. | [OKM1863.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1863.md) |
+| <a id="okm1864"></a>[`OKM1864`](#okm1864) | `invalid` | A file init recorded was edited, so init leaves it unchanged. | [OKM1864.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1864.md) |
+| <a id="okm1865"></a>[`OKM1865`](#okm1865) | `invalid` | The directory has no package.json, cannot be written, or a path leaves it. | [OKM1865.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1865.md) |
+| <a id="okm1866"></a>[`OKM1866`](#okm1866) | `invalid` | The plan hash does not match this directory anymore. | [OKM1866.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1866.md) |
+| <a id="okm1867"></a>[`OKM1867`](#okm1867) | `invalid` | Tenancy schema or database is not supported by init yet. | [OKM1867.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1867.md) |
+| <a id="okm1881"></a>[`OKM1881`](#okm1881) | `invalid` | okm agents status found an agent file that is not current: the AGENTS.md block, the CLAUDE.md import, or a skill file is stale, missing, or modified. | [OKM1881.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1881.md) |
+| <a id="okm1882"></a>[`OKM1882`](#okm1882) | `invalid` | A file has a BEGIN OKMODEL or END OKMODEL line that is malformed, unpaired, or out of order, so okm cannot tell which text it owns. It does not repair markers. | [OKM1882.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1882.md) |
+| <a id="okm1883"></a>[`OKM1883`](#okm1883) | `invalid` | A file has more than one OKMODEL block, so okm cannot tell which one it owns. It does not merge blocks. | [OKM1883.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1883.md) |
+| <a id="okm1884"></a>[`OKM1884`](#okm1884) | `invalid` | The plan changes an existing file, and okm cannot ask: there is no terminal, or --json is on, and --yes was not passed. | [OKM1884.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1884.md) |
+| <a id="okm1885"></a>[`OKM1885`](#okm1885) | `invalid` | The skill files in the installed package are missing, are not markdown, are a symlink, or contain a hidden character. okm copies agent files only from its own package, and only when they pass these checks. | [OKM1885.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1885.md) |
+| <a id="okm1886"></a>[`OKM1886`](#okm1886) | `invalid` | An agent file path is not on the list okm may write, resolves outside the project directory, is not a regular file, or could not be written. | [OKM1886.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1886.md) |
+| <a id="okm1887"></a>[`OKM1887`](#okm1887) | `invalid` | A file changed after the plan was made and before it was replaced, so okm stopped. Files already written stay. | [OKM1887.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1887.md) |
+| <a id="okm1888"></a>[`OKM1888`](#okm1888) | `invalid` | .okm/init.json is not a JSON object, so okm cannot record the hashes of the agent files it writes. | [OKM1888.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1888.md) |
+| <a id="okm1890"></a>[`OKM1890`](#okm1890) | `invalid` | writeObserver keys named a table that has no primary key or is not in the schema. | [OKM1890.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1890.md) |
+| <a id="okm2004"></a>[`OKM2004`](#okm2004) | `invalid` | An offset past 1,000 rows makes the database scan every skipped row. | [OKM2004.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM2004.md) |
+| <a id="okm2005"></a>[`OKM2005`](#okm2005) | `invalid` | A limit whose order does not end in a unique key can return a different row set each time. | [OKM2005.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM2005.md) |
+| <a id="okm2007"></a>[`OKM2007`](#okm2007) | `invalid` | A value list longer than 500 elements sends one parameter per element. | [OKM2007.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM2007.md) |
+| <a id="okm2008"></a>[`OKM2008`](#okm2008) | `invalid` | An include multiplies the parent limit by nested limits past 10,000 rows. | [OKM2008.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM2008.md) |
+| <a id="okm2011"></a>[`OKM2011`](#okm2011) | `invalid` | A read that used a default limit from connect returned exactly that many rows, so more rows may exist. | [OKM2011.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM2011.md) |
+| <a id="okm2101"></a>[`OKM2101`](#okm2101) | `invalid` | No index starts with the columns of this foreign key, so a parent delete or key change scans the child table. | [OKM2101.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM2101.md) |
+| <a id="okm2102"></a>[`OKM2102`](#okm2102) | `invalid` | A table with no primary key has no stable row identity for updates and deletes. | [OKM2102.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM2102.md) |
+| <a id="okm2103"></a>[`OKM2103`](#okm2103) | `invalid` | Callers can filter or sort by this column and no index starts with it, so each read scans the table. | [OKM2103.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM2103.md) |
+| <a id="okm1891"></a>[`OKM1891`](#okm1891) | `invalid` | Two okmodel.config.ts files are the same distance from the working directory. | [OKM1891.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1891.md) |
+| <a id="okm1892"></a>[`OKM1892`](#okm1892) | `invalid` | okm init needs a workspace and this invocation is not interactive. | [OKM1892.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1892.md) |
+| <a id="okm1893"></a>[`OKM1893`](#okm1893) | `invalid` | Two packages use the same migrations directory. | [OKM1893.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM1893.md) |
+| <a id="okm2200"></a>[`OKM2200`](#okm2200) | `invalid` | The write-observer buffer dropped the oldest unit because it exceeded the pending-event ceiling. | [OKM2200.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM2200.md) |
+| <a id="okm2201"></a>[`OKM2201`](#okm2201) | `invalid` | okm doctor --production found a lock_timeout or statement_timeout of 0. Apply or a statement can then wait without limit. The finding is a warning: nothing is refused. | [OKM2201.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM2201.md) |
+| <a id="okm2202"></a>[`OKM2202`](#okm2202) | `invalid` | okm doctor --production selected a target that does not set protected: true in the config. A name such as production and NODE_ENV are never read. A fingerprint in this machine's store does not count: it protects one machine. | [OKM2202.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM2202.md) |
+| <a id="okm2203"></a>[`OKM2203`](#okm2203) | `invalid` | okm doctor --production found a target URL that okm migrate apply refuses as a pooler: a host with pooler or pgbouncer in it, port 6543 or 6432, or ?pgbouncer=true. It is a warning, and a failure when the command line or the config lets apply through. | [OKM2203.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM2203.md) |
+| <a id="okm2204"></a>[`OKM2204`](#okm2204) | `invalid` | okm doctor --production found at least one fail finding. The report lists each finding with its id and a one-line fix. | [OKM2204.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM2204.md) |
+| <a id="okm2300"></a>[`OKM2300`](#okm2300) | `invalid` | A migration override gives a reason that is shorter than 12 characters, only stop-list words, or only the code repeated. This is a warning: nothing is refused. | [OKM2300.md](https://github.com/omqkhafi/okmodel/blob/main/docs/errors/OKM2300.md) |
+<!-- END:error-code-index -->
