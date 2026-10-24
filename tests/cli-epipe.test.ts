@@ -6,7 +6,7 @@
  * 100% CPU. Bun exits 1. The process has to exit with some code.
  */
 
-import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,6 +14,15 @@ import { join } from "node:path";
 import { expect, test } from "bun:test";
 
 import { repoRoot } from "../scripts/root.js";
+
+/**
+ * `ChildProcess` emits `"exit"` at runtime. TypeScript 7 does not put that
+ * listener on the class instance type, so the wait uses this shape.
+ */
+type ExitWait = {
+  kill(signal: NodeJS.Signals): boolean;
+  once(event: "exit", listener: (code: number | null, signal: NodeJS.Signals | null) => void): void;
+};
 
 test("node okm exits when stderr is closed", async () => {
   const dir = mkdtempSync(join(tmpdir(), "okm-epipe-"));
@@ -32,7 +41,7 @@ test("node okm exits when stderr is closed", async () => {
   // is that same closed pipe, without a race on how fast head reads.
   child.stdout?.destroy();
   child.stderr?.destroy();
-  const result = await stopped(child, 2_000);
+  const result = await stopped(child as unknown as ExitWait, 2_000);
   try {
     expect(result.signal).toBeNull();
     expect(typeof result.code).toBe("number");
@@ -43,7 +52,7 @@ test("node okm exits when stderr is closed", async () => {
 }, 20_000);
 
 function stopped(
-  child: ChildProcess,
+  child: ExitWait,
   ms: number,
 ): Promise<{ readonly code: number | null; readonly signal: NodeJS.Signals | null }> {
   return new Promise((resolve) => {
