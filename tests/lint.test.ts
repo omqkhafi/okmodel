@@ -584,6 +584,31 @@ test("okm generate exits 1 on an error finding and still writes the file", () =>
   }
 });
 
+test("a second okm generate stays failed while the pending migration has an error", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "okm-gen-retry-"));
+  try {
+    writeProject(cwd, repoRoot(), 'table("notes", { id: identity(), name: text() })');
+    mkdirSync(join(cwd, "migrations"));
+    writeFileSync(
+      join(cwd, "migrations", "0001_base.catalog.json"),
+      serializeCatalog(
+        schema({
+          tables: [tasks(), table("notes", { id: t.identity(), name: t.text() })],
+        }).catalog,
+      ),
+    );
+    const args = ["bun", join(repoRoot(), "src/tooling/cli.ts"), "generate", "drop"] as const;
+    const first = Bun.spawnSync([...args], { cwd, stdout: "pipe", stderr: "pipe" });
+    expect(first.exitCode).toBe(1);
+    const second = Bun.spawnSync([...args], { cwd, stdout: "pipe", stderr: "pipe" });
+    expect(second.exitCode).not.toBe(0);
+    expect(second.stdout.toString()).not.toContain("no changes");
+    expect(second.stderr.toString()).toContain("OKM1511");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("okm generate exits 0 on a warning-only finding", () => {
   const cwd = mkdtempSync(join(tmpdir(), "okm-gen-warn-"));
   const root = repoRoot();
