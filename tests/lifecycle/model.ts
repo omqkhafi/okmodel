@@ -5,7 +5,7 @@
  * TypeScript; the runner evolves them and checks CLI invariants.
  */
 
-import { caseName } from "../../src/dialects/pg/casing.ts";
+import { caseName } from "../../src/dialects/pg/casing.js";
 
 /** Referential action the public API accepts, including explicit no action. */
 export type FkAction = "cascade" | "restrict" | "set null" | "set default" | "no action";
