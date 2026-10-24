@@ -1487,7 +1487,69 @@ function sequenceType(value: string): "smallint" | "integer" | "bigint" {
 }
 
 function checkExpression(definition: string): string {
-  return definition.trim().replace(/^check\s+/i, "");
+  // CASE is pretty-printed across lines. Those newlines are control characters,
+  // so reading a check apply already accepted would raise OKM1122. Spaces
+  // inside quotes stay, and the author catalog is not rewritten.
+  return flattenSqlWhitespace(definition.trim().replace(/^check\s+/i, ""));
+}
+
+function flattenSqlWhitespace(value: string): string {
+  let out = "";
+  let index = 0;
+  while (index < value.length) {
+    const char = value[index] ?? "";
+    if (char === "'" || char === '"') {
+      const end = quotedEnd(value, index, char);
+      out += value.slice(index, end);
+      index = end;
+      continue;
+    }
+    if (char === "$") {
+      const tag = dollarTag(value, index);
+      if (tag !== undefined) {
+        const close = value.indexOf(tag, index + tag.length);
+        const end = close === -1 ? value.length : close + tag.length;
+        out += value.slice(index, end);
+        index = end;
+        continue;
+      }
+    }
+    const code = char.charCodeAt(0);
+    if (code < 0x20 || code === 0x7f || (code >= 0x80 && code <= 0x9f)) {
+      out += " ";
+    } else {
+      out += char;
+    }
+    index += 1;
+  }
+  return out;
+}
+
+function quotedEnd(value: string, index: number, quote: string): number {
+  let cursor = index + 1;
+  while (cursor < value.length) {
+    if (value[cursor] !== quote) {
+      cursor += 1;
+      continue;
+    }
+    if (value[cursor + 1] === quote) {
+      cursor += 2;
+      continue;
+    }
+    return cursor + 1;
+  }
+  return value.length;
+}
+
+function dollarTag(value: string, index: number): string | undefined {
+  let end = index + 1;
+  while (end < value.length) {
+    const char = value[end] ?? "";
+    if (char === "$") return value.slice(index, end + 1);
+    if (!/^[A-Za-z0-9_]$/.test(char)) return undefined;
+    end += 1;
+  }
+  return undefined;
 }
 
 /**

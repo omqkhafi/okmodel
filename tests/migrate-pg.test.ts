@@ -59,6 +59,12 @@ postgresTest(
         "VALUE IN ('a', 'b')",
       );
       expect(await reprintDomainCheck(runner, "character varying(20)", domain)).toBe(domain);
+      const folded = await reprintCheck(
+        runner,
+        "case when id > 0 then title = 'a' else title = 'b' end",
+      );
+      expect(folded).not.toMatch(/[\n\r\t]/);
+      expect(await reprintCheck(runner, folded)).toBe(folded);
     });
   },
   30_000,

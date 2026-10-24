@@ -62,6 +62,22 @@ const cases: readonly {
     ].join("\n"),
   },
   {
+    name: "table check written as CASE",
+    schema: [
+      `import { schema, table, t, sql } from ${source("src/dialects/pg/index.ts")};`,
+      'export const app = schema({ tables: [table("tasks", {',
+      "  id: t.integer().primaryKey(),",
+      "  n: t.integer(),",
+      "  status: t.text(),",
+      "}, {",
+      "  checks: {",
+      "    status_ok: (columns) => sql`case when ${columns.n} > 0 then ${columns.status} = 'a' else ${columns.status} = 'b' end`,",
+      "  },",
+      "})] });",
+      "",
+    ].join("\n"),
+  },
+  {
     name: "table check with no column handle",
     schema: [
       `import { schema, table, t, sql } from ${source("src/dialects/pg/index.ts")};`,
