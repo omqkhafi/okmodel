@@ -7,6 +7,14 @@ import { formatFailure, run } from "./migrate/commands.js";
 import { nodeStartupMessage } from "./node-version.js";
 
 const nodeProblem = nodeStartupMessage(process.version, process.versions.bun !== undefined);
+// `okm … 2>&1 | head` closes stderr. A later write raises EPIPE. Exit instead
+// of letting that error become an uncaught exception that writes stderr again.
+for (const stream of [process.stdout, process.stderr]) {
+  stream.on("error", (error: unknown) => {
+    if (!closedPipe(error)) throw error;
+    process.exit(typeof process.exitCode === "number" ? process.exitCode : 1);
+  });
+}
 if (process.stdin.isTTY !== true) {
   process.stdin.pause();
   const stdin = process.stdin as { unref?: () => void };
@@ -46,6 +54,11 @@ if (nodeProblem !== undefined) {
       process.exitCode = exitCodeFor(error);
     }
   }
+}
+
+function closedPipe(error: unknown): boolean {
+  if (typeof error !== "object" || error === null || !("code" in error)) return false;
+  return error.code === "EPIPE" || error.code === "ERR_STREAM_DESTROYED";
 }
 
 function wantsVerbose(argv: readonly string[]): boolean {

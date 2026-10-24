@@ -19,7 +19,7 @@ const root = repoRoot();
 
 test("an unknown flag is refused and --help lists flags", async () => {
   const unknown = await capture(["push", "--not-a-flag"]);
-  expect(unknown.error?.code).toBe("invalid");
+  expect(unknown.error?.code).toBe("OKM1895");
   expect(unknown.error?.message).toContain("Unknown flag --not-a-flag");
   const help = await capture(["migrate", "check", "--help"]);
   expect(help.stdout).toContain("Flags:");

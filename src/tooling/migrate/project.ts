@@ -74,7 +74,14 @@ import {
 } from "./plan.js";
 import { allowFindings, listAllows, type AllowEntry } from "./allows.js";
 import { projectFilterUses } from "./filter-scan.js";
-import { hasError, lintCatalog, lintPlan, lintRefusal, type Finding } from "./lint.js";
+import {
+  hasError,
+  lintCatalog,
+  lintMigrationDirectory,
+  lintPlan,
+  lintRefusal,
+  type Finding,
+} from "./lint.js";
 import {
   adviceRefusal,
   schemaAdvice,
@@ -112,7 +119,9 @@ export async function buildProject(
 /**
  * Plans the current schema against the latest snapshot and writes SQL.
  *
- * An empty plan writes nothing. The file is SQL, not TypeScript.
+ * An empty plan writes nothing. A pending migration that still has an error
+ * finding is returned again, so a retry does not look clean. The file is SQL,
+ * not TypeScript.
  *
  * @param project - Project directory or {@link ProjectContext}
  * @param name - Migration name
@@ -128,14 +137,30 @@ export async function generateProject(
   const prepared = await prepare(project, name, flags);
   if (name === "init") writeGitAttributes(cwd);
   writeArtifact(cwd, prepared.config, prepared.built);
-  if (prepared.plan.steps.length === 0) return undefined;
   const directory = projectPath(cwd, prepared.config.migrations ?? "migrations");
+  if (prepared.plan.steps.length === 0) return pendingLint(directory);
   mkdirSync(directory, { recursive: true });
   const base = `${nextNumber(directory)}_${safeName(name)}`;
   const sqlPath = join(directory, `${base}.sql`);
   writeFileSync(sqlPath, formatPlan(prepared.plan));
   writeFileSync(join(directory, `${base}.catalog.json`), serializeCatalog(prepared.built.catalog));
   return { path: sqlPath, findings: lintPrepared(prepared) };
+}
+
+/**
+ * The pending SQL that still has an error finding, when the new plan is empty.
+ *
+ * @param directory - Migrations directory
+ * @returns That file and its findings, or `undefined` when none remain
+ */
+function pendingLint(
+  directory: string,
+): { readonly path: string; readonly findings: readonly Finding[] } | undefined {
+  const findings = lintMigrationDirectory(directory);
+  if (!hasError(findings)) return undefined;
+  const id = findings.find((item) => item.severity === "error")?.place.split(" ")[0];
+  const path = id === undefined ? directory : join(directory, `${id}.sql`);
+  return { path, findings };
 }
 
 /**
@@ -727,9 +752,9 @@ export async function loadConfig(project: string | ProjectContext): Promise<Migr
   const { configPath } = resolved;
   if (!existsSync(configPath)) {
     throw tagOutcome(
-      new OkmError("invalid", `Missing ${CONFIG_FILE} at ${configPath}.`, {
+      new OkmError("invalid", `Missing ${configPath}.`, {
         fix: {
-          summary: `Create ${CONFIG_FILE} in the project directory, or pass --config <path>.`,
+          summary: `Create ${configPath}, or pass --config <path>.`,
         },
       }),
       "usage",

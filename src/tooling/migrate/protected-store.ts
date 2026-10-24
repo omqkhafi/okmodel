@@ -7,7 +7,7 @@
  * no environment variable that points this path somewhere else.
  */
 
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -103,10 +103,15 @@ export function readProtectedStore(path: string): ProtectedStore {
  * @param fingerprints - Lowercase hex digests
  */
 export function writeProtectedStore(path: string, fingerprints: readonly string[]): void {
-  mkdirSync(dirname(path), { recursive: true });
+  const directory = dirname(path);
+  mkdirSync(directory, { recursive: true });
+  chmodSync(directory, 0o700);
   const temporary = `${path}.${process.pid}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify({ version: 1, fingerprints }, null, 2)}\n`);
+  writeFileSync(temporary, `${JSON.stringify({ version: 1, fingerprints }, null, 2)}\n`, {
+    mode: 0o600,
+  });
   renameSync(temporary, path);
+  chmodSync(path, 0o600);
 }
 
 /**

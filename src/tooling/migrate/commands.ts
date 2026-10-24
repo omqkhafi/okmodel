@@ -33,7 +33,7 @@ import {
   tagOutcome,
   type CliOutFile,
 } from "../cli/outcome.js";
-import { argvHasJson, parseCli, type ParsedCli } from "../cli/parse.js";
+import { argvHasJson, commandId, parseCli, type ParsedCli } from "../cli/parse.js";
 import { commandsTable, helpText } from "../cli/spec.js";
 import { schemaCommands, schemaFor, schemaText } from "../cli/schema.js";
 import { readPackageVersion } from "../cli/version.js";
@@ -111,7 +111,7 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
   try {
     parsed = parseCli(argv);
   } catch (error) {
-    finish(error, argvHasJson(argv), null, stdout);
+    finish(error, argvHasJson(argv), commandId(argv), stdout);
     return;
   }
   const version = packageVersion();
@@ -564,7 +564,7 @@ async function doctorBundle(
   }
   const shown = parsed.out ?? DEFAULT_BUNDLE_PATH;
   const base = parsed.out === undefined ? project.cwd : cwd;
-  writeBundle(resolve(base, shown), shown, text, parsed.overwrite);
+  writeBundle(resolve(base, shown), shown, text, parsed.overwrite, project.cwd);
   const said = `wrote ${shown} (${String(bytes)} bytes)\nNo network was used. The file holds codes, versions, and hashes, and no values. Read it before you send it.\n`;
   human(said);
   return { text: said, data, warnings: [], outFile: { path: shown, bytes } };
@@ -646,20 +646,23 @@ async function generate(
     human("no changes\n");
     return { text: "no changes\n", data: { path: null }, warnings: [], outFile: null };
   }
-  const findings = formatFindings(written.findings);
+  const errors = written.findings.filter((item) => item.severity === "error");
+  const notices = formatFindings(written.findings.filter((item) => item.severity !== "error"));
   human(`${written.path}\n`);
-  human(findings);
+  human(notices);
   const warnings = warningsOf(written.findings);
-  if (hasError(written.findings)) {
+  if (errors.length > 0) {
     throw attachPartial(
-      new OkmError("OKM1510", findings.trim(), {
-        fix: { summary: "okm migrate apply will refuse until it is fixed." },
+      new OkmError("OKM1510", formatFindings(errors).trim(), {
+        fix: {
+          summary: "okm migrate apply will refuse until it is fixed. -- okm-allow OKM15xx: reason",
+        },
       }),
       { data: { path: written.path }, warnings, outFile: null },
     );
   }
   return {
-    text: `${written.path}\n${findings}`,
+    text: `${written.path}\n${notices}`,
     data: { path: written.path },
     warnings,
     outFile: null,

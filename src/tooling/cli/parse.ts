@@ -130,6 +130,20 @@ export function argvHasJson(argv: readonly string[]): boolean {
  * @returns The invocation
  * @throws OkmError tagged `usage` when the arguments are not accepted
  */
+/**
+ * Command id named by `argv`, when the words match a command.
+ *
+ * Flag errors still name that command. An unknown command is `null`.
+ *
+ * @param argv - Arguments after the program name
+ * @returns The command id, or `null`
+ */
+export function commandId(argv: readonly string[]): string | null {
+  const words = commandWords(argv);
+  if (words.length === 0 || words[0] === "help") return null;
+  return matchCommand(words)?.spec.id ?? null;
+}
+
 export function parseCli(argv: readonly string[]): ParsedCli {
   if (argv.length === 0 || argv[0] === "help") {
     return blank({ help: true, json: argvHasJson(argv) });
@@ -550,7 +564,7 @@ function stringValue(value: unknown): string | undefined {
 
 function usage(message: string, fix: string, suggestion?: string): OkmError {
   return tagOutcome(
-    new OkmError("invalid", message, {
+    new OkmError("OKM1895", message, {
       fix: suggestion === undefined ? { summary: fix } : { summary: fix, suggestion },
     }),
     "usage",

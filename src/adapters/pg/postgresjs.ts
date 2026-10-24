@@ -186,8 +186,13 @@ const lives: Live[] = [];
 // rebuilds stuck pools so the next read is not dead-queued. It does not stop
 // the exception from firing. Prefer pg or Bun.sql where kill storms are
 // expected. Bun exits 0 when a listener returns; print + exitCode so CLI
-// refusals keep stderr and fail.
+// refusals keep stderr and fail. A closed stderr (EPIPE from `okm … 2>&1 |
+// head`) must not be printed: that write is another EPIPE and Node never
+// leaves the handler.
 process.on("uncaughtException", (e: unknown) => {
+  if (closedPipe(e)) {
+    process.exit(typeof process.exitCode === "number" ? process.exitCode : 1);
+  }
   if (e instanceof TypeError && /socket\.write|reading 'write'/.test(e.message)) {
     for (const x of lives) {
       if (!x.on) continue;
@@ -200,6 +205,11 @@ process.on("uncaughtException", (e: unknown) => {
   console.error(e);
   process.exitCode = 1;
 });
+
+function closedPipe(error: unknown): boolean {
+  if (typeof error !== "object" || error === null || !("code" in error)) return false;
+  return error.code === "EPIPE" || error.code === "ERR_STREAM_DESTROYED";
+}
 
 /**
  * Opens a postgres.js pool for one endpoint.

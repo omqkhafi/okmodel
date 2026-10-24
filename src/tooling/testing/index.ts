@@ -11,6 +11,7 @@ import type { DriverPool } from "../../contracts/driver.js";
 import { renderCatalog } from "../../dialects/pg/ddl.js";
 import { createClient } from "../../runtime/client.js";
 import { dropAppliedCatalog } from "./cleanup.js";
+import { testingObjectConflict } from "./conflict.js";
 import type { Connected } from "../../runtime/types.js";
 import { attachHost, bindFactories, type FactoryHost, type TableFactory } from "./factories.js";
 import { readFacts, type TestingSchema } from "./facts.js";
@@ -116,7 +117,13 @@ export async function testing<const S extends TestingSchema>(
   if (applied) {
     for (const statement of renderCatalog(schema.catalog, "public")) {
       if (statement.trim().length === 0) continue;
-      await pool.execute(statement);
+      try {
+        await pool.execute(statement);
+      } catch (error) {
+        const conflict = harnessConflict(error, statement);
+        if (conflict !== undefined) throw conflict;
+        throw error;
+      }
     }
     // Materialized views are created WITH NO DATA. A later refresh:
     // "concurrently" needs one plain populate first (B-34).
@@ -191,6 +198,83 @@ export async function testing<const S extends TestingSchema>(
   };
   attachHost(harness, host);
   return harness;
+}
+
+/**
+ * Turns a duplicate-table or duplicate-object failure into OKM1894.
+ *
+ * Other failures stay as the driver raised them. The name comes from the
+ * statement the harness just sent.
+ *
+ * @param error - Rejection from `pool.execute`
+ * @param statement - The catalog statement that failed
+ * @returns The OKM error, or `undefined` when this is not that conflict
+ */
+function harnessConflict(error: unknown, statement: string): OkmError | undefined {
+  const sqlstate = sqlstateOf(error);
+  if (sqlstate !== "42P07" && sqlstate !== "42710") return undefined;
+  const object = createdObject(statement);
+  if (object === undefined) return undefined;
+  try {
+    testingObjectConflict(object.kind, object.name);
+  } catch (conflict) {
+    if (conflict instanceof OkmError) return conflict;
+  }
+  return undefined;
+}
+
+function createdObject(
+  statement: string,
+): { readonly kind: "table" | "extension"; readonly name: string } | undefined {
+  const text = statement.trimStart();
+  const extension = /^create extension\s+/i.exec(text);
+  if (extension !== null) {
+    const name = readIdent(text.slice(extension[0].length));
+    return name === undefined ? undefined : { kind: "extension", name: name.value };
+  }
+  const table = /^create table\s+/i.exec(text);
+  if (table === null) return undefined;
+  let rest = text.slice(table[0].length);
+  const first = readIdent(rest);
+  if (first === undefined) return undefined;
+  rest = rest.slice(first.consumed);
+  if (!rest.startsWith(".")) return { kind: "table", name: first.value };
+  const second = readIdent(rest.slice(1));
+  return second === undefined ? undefined : { kind: "table", name: second.value };
+}
+
+function readIdent(
+  text: string,
+): { readonly value: string; readonly consumed: number } | undefined {
+  if (text.startsWith('"')) {
+    let value = "";
+    for (let index = 1; index < text.length; index += 1) {
+      const char = text[index];
+      if (char !== '"') {
+        value += char ?? "";
+        continue;
+      }
+      if (text[index + 1] === '"') {
+        value += '"';
+        index += 1;
+        continue;
+      }
+      return { value, consumed: index + 1 };
+    }
+    return undefined;
+  }
+  const match = /^[A-Za-z_][A-Za-z0-9_$]*/.exec(text);
+  if (match === null) return undefined;
+  return { value: match[0], consumed: match[0].length };
+}
+
+function sqlstateOf(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  if ("sqlstate" in error && typeof error.sqlstate === "string") return error.sqlstate;
+  if ("code" in error && typeof error.code === "string" && /^[0-9A-Z]{5}$/.test(error.code)) {
+    return error.code;
+  }
+  return undefined;
 }
 
 /**
