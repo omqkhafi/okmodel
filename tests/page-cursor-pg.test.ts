@@ -193,7 +193,7 @@ postgresTest(
         expect(valueCursor).toContain("t");
 
         const described = await a.notes
-          .page({ orderBy: { code: "asc" }, limit: 2, after: hidden.cursors[0] })
+          .page({ orderBy: { code: "asc" }, limit: 2, after: hidden.cursors[0] ?? "" })
           .sql();
         expect(described.text.startsWith("with c as (")).toBe(true);
         expect(described.text.includes(";")).toBe(false);
@@ -204,7 +204,7 @@ postgresTest(
         expect(described.params).not.toContain("secret-b");
         expect(described.params).toContain("02");
         const plainSql = await a.notes
-          .page({ orderBy: { title: "asc" }, limit: 2, after: plain.cursors[0] })
+          .page({ orderBy: { title: "asc" }, limit: 2, after: plain.cursors[0] ?? "" })
           .sql();
         expect(plainSql.text.startsWith("select ")).toBe(true);
 
@@ -242,20 +242,20 @@ postgresTest(
 
         await a.notes.archive({ where: { id: "02" } });
         const archived = await catchCode(
-          a.notes.page({ orderBy: { code: "asc" }, limit: 2, after: hidden.cursors[0] }),
+          a.notes.page({ orderBy: { code: "asc" }, limit: 2, after: hidden.cursors[0] ?? "" }),
         );
         expect(archived.message).toBe("The cursor is no longer valid.");
         const wide = await a.notes.withArchived().page({
           orderBy: { code: "asc" },
           limit: 2,
-          after: hidden.cursors[0],
+          after: hidden.cursors[0] ?? "",
         });
         expect(wide.items.map((item) => item.id)).toEqual(["04", "03"]);
         await a.notes.restore({ where: { id: "02" } });
 
         await a.notes.delete({ where: { id: "02" } });
         const deleted = await catchCode(
-          a.notes.page({ orderBy: { code: "asc" }, limit: 2, after: hidden.cursors[0] }),
+          a.notes.page({ orderBy: { code: "asc" }, limit: 2, after: hidden.cursors[0] ?? "" }),
         );
         expect(deleted.code).toBe("OKM1130");
         expect(deleted.message).toBe("The cursor is no longer valid.");

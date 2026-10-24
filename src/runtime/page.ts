@@ -415,7 +415,7 @@ function writeCursorCte(
   for (let index = 0; index < pk.length; index += 1) {
     const column = pk[index];
     const value = ids[index];
-    if (column === undefined) continue;
+    if (column === undefined || value === undefined) continue;
     if (index > 0) sink.text(" and ");
     sink.text("k.");
     sink.text(quote(column.sql));
