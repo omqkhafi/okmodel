@@ -156,7 +156,7 @@ postgresTest(
 
 postgresTest(
   gate,
-  "postgresjs: B-33 residual plain table generic error keeps parameters",
+  "postgresjs: E-1 plain table generic error omits parameters",
   async () => {
     await withPostgresSchema(async (sql, schemaName) => {
       for (const statement of renderCatalog(app.catalog, schemaName)) await sql.unsafe(statement);
@@ -181,7 +181,31 @@ postgresTest(
         expect(failed).toBeInstanceOf(OkmError);
         if (failed instanceof OkmError) {
           expect(failed.kind).toBe("invalid");
-          expect(inspect(failed.cause, { depth: 10, showHidden: true })).toContain(email);
+          expect(failed.cause).not.toHaveProperty("parameters");
+          expect(inspect(failed.cause, { depth: 10, showHidden: true })).not.toContain(email);
+        }
+
+        const opted = connectPostgres(
+          openPostgres({ url: primaryUrl(), searchPath: schemaName, max: 1 }),
+          { schema: app, errors: { includeValues: true } },
+        );
+        try {
+          await opted.connected;
+          const kept = await raw(
+            opted.plain_residual,
+            CastRow,
+            "read",
+            fragment`select ${email}::int as n`,
+          ).then(
+            () => undefined,
+            (error: unknown) => error,
+          );
+          expect(kept).toBeInstanceOf(OkmError);
+          if (kept instanceof OkmError) {
+            expect(inspect(kept.cause, { depth: 10, showHidden: true })).toContain(email);
+          }
+        } finally {
+          await opted.close();
         }
       } finally {
         await db.close();

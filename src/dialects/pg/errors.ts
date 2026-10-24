@@ -41,9 +41,10 @@ type SqlField = {
 /** Options for {@link mapPostgresError}. */
 export type MapPostgresErrorOptions = {
   /**
-   * Keep row values on the error. Development only.
+   * Keep bound parameters and row values on the error. Off unless set.
    *
-   * The summary, the log, and {@link OkmError.fields} still omit them.
+   * A sensitive column stays redacted either way. The summary, the log, and
+   * {@link OkmError.fields} still omit row values.
    */
   readonly includeValues?: boolean;
   /** Category overrides from `connect({ errors })`. */
@@ -75,7 +76,7 @@ export type MapPostgresErrorOptions = {
  * is `timeout`, because `cancelled` comes only from the caller's signal.
  *
  * @param error - Caught value, usually a `DriverError`
- * @param options - `includeValues` keeps row values off the log
+ * @param options - `includeValues` keeps bound parameters on a non-sensitive error
  * @returns A categorised error
  */
 export function mapPostgresError(error: unknown, options?: MapPostgresErrorOptions): OkmError {
@@ -91,16 +92,9 @@ export function mapPostgresError(error: unknown, options?: MapPostgresErrorOptio
     (kind === "not_null"
       ? "not_null"
       : reasonOf(kind, error.table, error.constraint, columns, options?.schema));
-  const values = options?.includeValues === true ? valuesOf(error.detail, columns) : undefined;
+  const redact = redactBound(error, options, columns);
+  const values = redact ? undefined : valuesOf(error.detail, columns);
   const code = kind === "outcome_unknown" ? "OKM1401" : kind;
-  const redactCause =
-    options?.includeValues !== true &&
-    needsSafeCause(
-      options?.schema,
-      error.table,
-      columns,
-      options?.table ?? statementTableOf(error),
-    );
   return new OkmError(code, summaryOf(kind, error, columns, fieldReason), {
     kind,
     fieldReason,
@@ -110,12 +104,28 @@ export function mapPostgresError(error: unknown, options?: MapPostgresErrorOptio
     ...(error.constraint !== undefined ? { constraint: error.constraint } : {}),
     ...(error.sqlstate !== undefined ? { sqlstate: error.sqlstate } : {}),
     batchIndex: error.batchIndex,
-    cause: redactCause ? safeCause(error) : (error.cause ?? error),
-    ...(options?.includeValues === true && values !== undefined
-      ? { includeValues: true, values }
-      : {}),
+    cause: redact ? safeCause(error) : (error.cause ?? error),
+    ...(values !== undefined ? { includeValues: true, values } : {}),
     ...(options?.http !== undefined ? { http: options.http } : {}),
   });
+}
+
+/**
+ * Bound parameters stay off the cause unless `includeValues` is set.
+ *
+ * A sensitive column or table stays redacted even when that opt-in is set.
+ */
+function redactBound(
+  error: DriverShape,
+  options: MapPostgresErrorOptions | undefined,
+  columns: readonly string[],
+): boolean {
+  if (
+    needsSafeCause(options?.schema, error.table, columns, options?.table ?? statementTableOf(error))
+  ) {
+    return true;
+  }
+  return options?.includeValues !== true;
 }
 
 /**
@@ -259,16 +269,8 @@ function searchInputError(
 ): OkmError | undefined {
   const sqlstate = error.sqlstate;
   const message = error.message;
-  const cause =
-    options?.includeValues !== true &&
-    needsSafeCause(
-      options?.schema,
-      error.table,
-      columnsOf(error),
-      options?.table ?? statementTableOf(error),
-    )
-      ? safeCause(error)
-      : (error.cause ?? error);
+  const columns = columnsOf(error);
+  const cause = redactBound(error, options, columns) ? safeCause(error) : (error.cause ?? error);
   if (sqlstate === "42601" && (message.includes("tsquery") || searchQuery(error))) {
     return new OkmError("OKM1120", `Search input is not valid. ${stripRowValues(message)}`, {
       kind: "invalid",

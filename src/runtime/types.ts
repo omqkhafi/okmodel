@@ -1594,6 +1594,11 @@ export type ConnectOptions<S extends QuerySchema, C = undefined, D extends Limit
      * `toHttp(statuses)` replaces them for that call.
      */
     readonly http?: import("../contracts/error.js").ErrorStatuses;
+    /**
+     * When `true`, a mapped error keeps bound parameters on `cause` and
+     * stores row values for `values()`. Off unless set. A `.sensitive()`
+     * column stays redacted either way.
+     */
     readonly includeValues?: boolean;
   };
   /**
