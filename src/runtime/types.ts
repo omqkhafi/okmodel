@@ -1131,7 +1131,7 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   count<const O extends CountFilterOptions<S, K>>(options?: O): Read<number>;
   exists(options?: CallOptions & { readonly where?: WhereOf<S, K> }): Read<boolean>;
   /**
-   * Inserts one row. Unknown keys are dropped. `{ allow }` may set guarded fields.
+   * Inserts one row. An unknown key is OKM1120. `{ allow }` may set guarded fields.
    *
    * Optional columns are optional keys, so completion lists the ones not yet written.
    */
@@ -1146,7 +1146,7 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
     options?: InsertOptions<S, K>,
   ): Write<Show<RowOf<S, K>>>;
   /**
-   * Inserts a list in one transaction. Unknown keys are dropped.
+   * Inserts a list in one transaction. An unknown key is OKM1120.
    *
    * `{ allow: ["id"] }` may set `id` on a client-generator primary key.
    * A row that omits `id` still takes the generator. A longer `allow` list
@@ -1163,7 +1163,7 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
     options: InsertOptions<S, K> & { readonly allow: readonly ["id"] },
   ): Write<readonly Show<RowOf<S, K>>[]>;
   /**
-   * Inserts a list in one transaction. Unknown keys are dropped.
+   * Inserts a list in one transaction. An unknown key is OKM1120.
    *
    * Rows may carry different keys. An omitted key or an explicit `undefined` takes the
    * database default for that row; `null` stays NULL.
