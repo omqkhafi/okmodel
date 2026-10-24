@@ -1788,6 +1788,15 @@
     "docs": "docs/errors/OKM1893.md"
   },
   {
+    "code": "OKM1894",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "testing() found a table or extension that already exists in the database.",
+    "fix": "Use an empty database, or pass migrate: false when the schema is already applied.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1894.md"
+  },
+  {
     "code": "OKM2200",
     "kind": "invalid",
     "category": "input",

@@ -19,6 +19,7 @@ import {
   text,
   uuid,
 } from "../src/dialects/pg/index.js";
+import { extension } from "../src/dialects/pg/ext/index.js";
 import { materializedView, view } from "../src/dialects/pg/view/index.js";
 import { columnTenancy, compositeTenancy, global } from "../src/runtime/tenancy/index.js";
 import { tenantProbe } from "../src/tooling/testing/facts.js";
@@ -454,6 +455,47 @@ test("concurrent factory creates of related rows do not report a factory cycle",
   } finally {
     await harness.close();
   }
+});
+
+test("an existing table or extension is OKM1894 and names the object", async () => {
+  const notesOnly = schema({ tables: [notes] });
+  const pool = await openPglite();
+  let tableFailure: unknown;
+  try {
+    await pool.execute('create table "notes" (id int)');
+    await testing(notesOnly, { driver: pool });
+  } catch (error) {
+    tableFailure = error;
+  } finally {
+    await pool.close();
+  }
+  expect(tableFailure).toBeInstanceOf(OkmError);
+  if (!(tableFailure instanceof OkmError)) return;
+  expect(tableFailure.code).toBe("OKM1894");
+  expect(tableFailure.message).toContain("table");
+  expect(tableFailure.message).toContain("notes");
+
+  const reused = await openPglite();
+  await reused.execute('create table "notes" (id int)');
+  const skipped = await testing(notesOnly, { driver: reused, migrate: false });
+  await skipped.close();
+
+  const extPool = await openPglite();
+  let extFailure: unknown;
+  try {
+    await testing(schema({ tables: [notes], extensions: [extension("plpgsql")] }), {
+      driver: extPool,
+    });
+  } catch (error) {
+    extFailure = error;
+  } finally {
+    await extPool.close();
+  }
+  expect(extFailure).toBeInstanceOf(OkmError);
+  if (!(extFailure instanceof OkmError)) return;
+  expect(extFailure.code).toBe("OKM1894");
+  expect(extFailure.message).toContain("extension");
+  expect(extFailure.message).toContain("plpgsql");
 });
 
 function loadToday(

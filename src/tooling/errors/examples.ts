@@ -103,6 +103,7 @@ import type { PageExample } from "./page.js";
 import { assertLocked, assertSignature, staleLockCodes } from "../describe/lock.js";
 import { discoverRawCalls } from "../describe/scan.js";
 import { schemaAdvice } from "../migrate/schema-rules.js";
+import { testingObjectConflict } from "../testing/conflict.js";
 
 /** Codes whose producer reads a live server. */
 export const NEEDS_DATABASE = [
@@ -2044,6 +2045,16 @@ thrown(
   },
   () => {
     refuseSharedMigrations(["packages/api"], "packages/api/migrations");
+  },
+);
+
+thrown(
+  "OKM1894",
+  () => {
+    testingObjectConflict("table", "notes");
+  },
+  () => {
+    return "migrate omitted on an empty database";
   },
 );
 
