@@ -19,6 +19,17 @@ export type AgentsExecuted = {
 };
 
 /**
+ * Checks every path in a plan. Call this before any other writer so a
+ * refusal leaves the project untouched.
+ *
+ * @param plan - A plan from `planAgents` or `planDecline`
+ * @throws OkmError OKM1886 when a path cannot be written
+ */
+export function assertAgentPaths(plan: AgentsPlan): void {
+  for (const write of plan.writes) agentPath(plan.root, write.path, plan.allowed);
+}
+
+/**
  * Performs the writes of a plan, in plan order.
  *
  * @param plan - A plan from `planAgents` or `planDecline`
@@ -27,6 +38,7 @@ export type AgentsExecuted = {
  * regular, or a write that failed, and OKM1887 when a file changed after the plan
  */
 export function applyAgents(plan: AgentsPlan): readonly AgentsExecuted[] {
+  assertAgentPaths(plan);
   const done: AgentsExecuted[] = [];
   for (let index = 0; index < plan.writes.length; index += 1) {
     const write = plan.writes[index];

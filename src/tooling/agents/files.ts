@@ -166,10 +166,12 @@ export function agentsAllowlist(
  * @param rel - Project-relative path
  * @param allowed - The closed list for this run
  * @returns The path to read or write
- * @throws OkmError OKM1886 when the path is not listed or leaves the project
+ * @throws OkmError OKM1886 when the path is not listed, leaves the project,
+ * or sits under a dangling symlink
  */
 export function agentPath(root: string, rel: string, allowed: ReadonlySet<string>): string {
   if (!allowed.has(rel)) refusePath(`${rel} is not a file okm agents may write.`);
+  refuseDangling(root, rel);
   let path: string;
   try {
     path = resolveInside(root, rel);
@@ -182,6 +184,47 @@ export function agentPath(root: string, rel: string, allowed: ReadonlySet<string
     refusePath(`${rel} is a link to ${landed}, which okm agents may not write.`);
   if (existsSync(path) && !lstatSync(path).isFile()) refusePath(`${rel} is not a regular file.`);
   return path;
+}
+
+/**
+ * Refuses a symlink anywhere on `rel` whose target does not exist.
+ *
+ * `existsSync` reports that path as missing, so a later `mkdir` fails with
+ * ENOENT after other files were already written. Naming the link here stops
+ * the run before any write.
+ *
+ * @param root - Project directory
+ * @param rel - Project-relative path
+ */
+function refuseDangling(root: string, rel: string): void {
+  const parts = rel.split("/");
+  let current = root;
+  for (let index = 0; index < parts.length; index += 1) {
+    const next = join(current, parts[index] ?? "");
+    let stat;
+    try {
+      stat = lstatSync(next);
+    } catch (error) {
+      if (nodeCode(error) === "ENOENT") return;
+      throw error;
+    }
+    if (!stat.isSymbolicLink()) {
+      current = next;
+      continue;
+    }
+    try {
+      current = realpathSync(next);
+    } catch (error) {
+      if (nodeCode(error) !== "ENOENT") throw error;
+      const link = parts.slice(0, index + 1).join("/");
+      refusePath(`${rel} is under the dangling symlink ${link}.`);
+    }
+  }
+}
+
+function nodeCode(error: unknown): string {
+  if (typeof error !== "object" || error === null || !("code" in error)) return "";
+  return String(error.code);
 }
 
 /**

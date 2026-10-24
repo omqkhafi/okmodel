@@ -608,3 +608,24 @@ test("a link between two listed files works, and a link to anything else is refu
   ).toBe("OKM1886");
   expect(existsSync(join(tasks, ".vscode/skills"))).toBe(false);
 });
+
+test("okm init --agents writes nothing when a skills directory is a dangling symlink", () => {
+  const dir = project({ "package.json": '{"name":"x"}\n' });
+  const before = read(dir, "package.json");
+  mkdirSync(join(dir, ".agents"));
+  symlinkSync("/tmp/does-not-exist-okm-skills", join(dir, ".agents/skills"));
+  const run = okm(
+    ["init", "--driver", "postgresjs", "--no-install", "--agents", "agents", "--yes"],
+    dir,
+  );
+  expect(run.code).toBe(4);
+  expect(run.stderr).toContain("OKM1886");
+  expect(run.stderr).toContain("dangling");
+  expect(run.stderr).not.toContain("Still to write");
+  expect(run.stderr).not.toContain(".okm/init.json");
+  expect(existsSync(join(dir, "okmodel.config.ts"))).toBe(false);
+  expect(existsSync(join(dir, "db/schema.ts"))).toBe(false);
+  expect(existsSync(join(dir, ".okm/init.json"))).toBe(false);
+  expect(existsSync(join(dir, "AGENTS.md"))).toBe(false);
+  expect(read(dir, "package.json")).toBe(before);
+});

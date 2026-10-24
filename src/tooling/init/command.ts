@@ -11,7 +11,7 @@ import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { OkmError } from "../../contracts/error.js";
-import { applyAgents } from "../agents/apply.js";
+import { applyAgents, assertAgentPaths } from "../agents/apply.js";
 import { consented } from "../agents/command.js";
 import type { AgentsPlan } from "../agents/plan.js";
 import { attachPartial } from "../cli/outcome.js";
@@ -173,6 +173,7 @@ async function singlePackage(
   const writeAgents = await agentsApproved(parsed, plan, agents, human);
   if (!parsed.dryRun) {
     try {
+      if (writeAgents && agents !== undefined) assertAgentPaths(agents);
       applyWrites(root, dir, plan.writes);
       if (writeAgents && agents !== undefined) applyAgents(agents);
       if (install) runInstall(root, usedPm);
@@ -242,6 +243,7 @@ async function repoPackage(
   const writeAgents = await agentsApproved(parsed, plan, agents, human);
   if (!parsed.dryRun) {
     try {
+      if (writeAgents && agents !== undefined) assertAgentPaths(agents);
       for (const item of plan.packageWrites) applyWrites(item.dir, item.dirName, item.writes);
       if (plan.repoWrites.length > 0) {
         applyWrites(root, dir, plan.repoWrites, new Set(plan.repoWrites.map((file) => file.path)));
