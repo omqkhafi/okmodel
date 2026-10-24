@@ -404,7 +404,7 @@ The command also checks the previous catalog, the head, and the linter. The firs
 
 `--provision` also installs the head snapshot and compares it with a full replay. A difference is OKM1521: `Provisioning from the snapshot does not match the replayed history.`
 
-[timeouts](/docs/define/config#timeouts) apply when the config sets them. The flags do not. A pooler host is refused until [allowPooler](/docs/define/config#pooler) or `--allow-pooler`.
+[timeouts](/docs/define/config#timeouts) apply when the config sets them. The flags do not. A lock timeout's fix says to run `okm migrate check` again when that lock is free. The step does not need a change. A pooler host is refused until [allowPooler](/docs/define/config#pooler) or `--allow-pooler`.
 
 ```sh
 bunx okm migrate check --provision

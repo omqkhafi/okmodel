@@ -30,7 +30,13 @@ import { lintReprints, type Finding } from "./lint.js";
 import { planMigration, type MigrationPlan, type PlanStep } from "./plan.js";
 import { driverUrl } from "./driver-url.js";
 import { probeStableBackend } from "./pooler-probe.js";
-import { assumeRole, assertSchemaUsageLanded, grantSchema, ownSchema } from "./runner.js";
+import {
+  assumeRole,
+  assertSchemaUsageLanded,
+  grantSchema,
+  ownSchema,
+  stepFailureFix,
+} from "./runner.js";
 import { snapshotDifference } from "./snapshot.js";
 import { replaceSchemaName, sqlStatements } from "./sql-lex.js";
 
@@ -801,7 +807,7 @@ function failStep(id: string, index: number, error: unknown): OkmError {
     `Migration ${id} failed at step ${String(index + 1)}: ${message}`,
     {
       cause: error,
-      fix: { summary: "Fix the step and run apply again. Finished steps are not repeated." },
+      fix: stepFailureFix(error, "check"),
     },
   );
 }

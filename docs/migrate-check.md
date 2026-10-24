@@ -33,6 +33,8 @@ The scratch schema starts empty. The replay runs the migration files, not a copy
 - a foreign key validation over rows that do not match
 - a cast of values already stored
 
+A lock timeout while a step waits is not a bad migration. The fix says to run `okm migrate check` again when that lock is free, and that the step does not need a change.
+
 A passing run prints that limit on the line after `ok N migrations`:
 
 ```text
