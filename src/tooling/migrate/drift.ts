@@ -19,6 +19,7 @@ import {
   introspectSchema,
   reprintCheck,
   reprintDomainCheck,
+  reprintGenerated,
   reprintTriggerWhen,
   type CatalogQuery,
   type IntrospectOptions,
@@ -165,16 +166,70 @@ export async function sealDomainChecks(runner: CatalogQuery, source: Catalog): P
  * Reprints table and domain checks to the text Postgres stores.
  *
  * Author and live catalogs both go through this before they are planned
- * against each other. A check applied from author SQL and the same check
- * applied from an earlier reprint then compare equal. The catalog hash still
- * uses the author text.
+ * against each other. A check or generated expression applied from author SQL
+ * and the same text applied from an earlier reprint then compare equal. The
+ * catalog hash still uses the author text.
  *
  * @param runner - Database connection
  * @param source - Catalog whose checks may still be author SQL or one reprint
  * @returns A catalog whose check expressions carry the stable server text
  */
 export async function sealStoredChecks(runner: CatalogQuery, source: Catalog): Promise<Catalog> {
-  return sealTableChecks(runner, await sealDomainChecks(runner, source));
+  return sealGeneratedColumns(
+    runner,
+    await sealTableChecks(runner, await sealDomainChecks(runner, source)),
+  );
+}
+
+/**
+ * Reprints each generated expression the way this server stores it.
+ *
+ * `("a" + 1)` becomes `(a + 1)`. A plan against a live catalog does not
+ * treat that reprint as a permanent change. The catalog hash still uses the
+ * author text.
+ *
+ * @param runner - Database connection
+ * @param source - Catalog whose generated expressions may still be author SQL
+ * @returns A catalog whose generated expressions carry the server reprint
+ */
+export async function sealGeneratedColumns(
+  runner: CatalogQuery,
+  source: Catalog,
+): Promise<Catalog> {
+  const columnsByTable = tableColumns(source);
+  const types = reprintTypes(source);
+  const objects: CatalogObject[] = [];
+  let changed = false;
+  for (const object of source.objects) {
+    if (object.kind !== "column" || object.definition.generated === undefined) {
+      objects.push(object);
+      continue;
+    }
+    const parent = object.identity.parent.name;
+    const siblings = (columnsByTable.get(parent) ?? []).filter(
+      (column) => column.name !== object.identity.name,
+    );
+    const reprinted = await reprintGenerated(
+      runner,
+      object.definition.generated.expression,
+      { name: object.identity.name, dataType: object.definition.dataType },
+      siblings,
+      types,
+    );
+    if (reprinted === object.definition.generated.expression) {
+      objects.push(object);
+      continue;
+    }
+    changed = true;
+    objects.push({
+      ...object,
+      definition: {
+        ...object.definition,
+        generated: { ...object.definition.generated, expression: reprinted },
+      },
+    });
+  }
+  return changed ? { version: source.version, objects } : source;
 }
 
 /**

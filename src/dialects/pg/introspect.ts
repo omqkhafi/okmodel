@@ -1064,6 +1064,65 @@ async function reprintDomainCheckOnce(
 /** Passes a scratch reprint is allowed to take before the text is treated as stable. */
 const REPRINT_PASSES = 4;
 
+/**
+ * Creates a scratch generated column and reads the expression Postgres stores.
+ *
+ * `("a" + 1)` is printed `(a + 1)`. The reprint repeats until that text stops
+ * changing, the same way {@link reprintCheck} does. Sibling columns are plain
+ * columns of the same names and types, so the expression resolves. The table
+ * is temporary and is dropped before this returns.
+ *
+ * @param runner - Database connection
+ * @param expression - Generated expression, without the `GENERATED` clause
+ * @param column - Name and type of the generated column
+ * @param columns - Other columns of the same table. The generated column is omitted
+ * @param types - Enums and domains the columns may name
+ * @returns The reprinted expression
+ */
+export async function reprintGenerated(
+  runner: CatalogQuery,
+  expression: string,
+  column: ReprintCheckColumn,
+  columns: readonly ReprintCheckColumn[] = [],
+  types: readonly ReprintType[] = [],
+): Promise<string> {
+  return reprintUntilStable(expression, (current) =>
+    reprintGeneratedOnce(runner, current, column, columns, types),
+  );
+}
+
+async function reprintGeneratedOnce(
+  runner: CatalogQuery,
+  expression: string,
+  column: ReprintCheckColumn,
+  columns: readonly ReprintCheckColumn[],
+  types: readonly ReprintType[],
+): Promise<string> {
+  const table = scratchName("okm_expr_gen");
+  const standIns = await createStandIns(
+    runner,
+    [column.dataType, ...columns.map((item) => item.dataType)],
+    types,
+  );
+  try {
+    const defs = [
+      ...columns.map((item) => `${quoteIdent(item.name)} ${standInType(item.dataType, types)}`),
+      `${quoteIdent(column.name)} ${standInType(column.dataType, types)} generated always as (${expression}) stored`,
+    ].join(", ");
+    await runner.query(`create temp table ${table} (${defs})`);
+    const rows = await runner.query(
+      `select pg_get_expr(ad.adbin, ad.adrelid) as expression
+       from pg_attrdef ad
+       join pg_attribute a on a.attrelid = ad.adrelid and a.attnum = ad.adnum
+       where ad.adrelid = $1::regclass and a.attname = $2`,
+      [`pg_temp.${table}`, column.name],
+    );
+    return flattenSqlWhitespace(text(rows[0] ?? {}, "expression"));
+  } finally {
+    await runDrops(runner, [`drop table if exists pg_temp.${table}`, ...standIns]);
+  }
+}
+
 async function reprintUntilStable(
   expression: string,
   reprint: (current: string) => Promise<string>,
