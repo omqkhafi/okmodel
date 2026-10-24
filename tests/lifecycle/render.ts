@@ -38,7 +38,9 @@ export function renderSchema(model: SchemaModel, root: string): string {
   if (model.views.length > 0) {
     lines.push(`import { view } from ${source("src/dialects/pg/view/index.ts")};`);
   }
-  if (model.tenancy) {
+  if (model.tenancy && model.views.length > 0) {
+    lines.push(`import { columnTenancy, global } from ${source("src/runtime/tenancy/index.ts")};`);
+  } else if (model.tenancy) {
     lines.push(`import { columnTenancy } from ${source("src/runtime/tenancy/index.ts")};`);
   }
   if (model.tables.some((table) => table.archive || table.versioned)) {
@@ -61,7 +63,7 @@ export function renderSchema(model: SchemaModel, root: string): string {
     }
   }
   for (const item of model.views) {
-    lines.push(renderView(item));
+    lines.push(renderView(item, model.tenancy));
   }
 
   const tableKeys = model.tables.map((table) => table.key).join(", ");
@@ -212,9 +214,10 @@ function renderTrigger(trigger: TriggerModel): string {
   return `const ${triggerKey(trigger.name)} = trigger(${JSON.stringify(trigger.name)}, { on: ${trigger.tableKey}, timing: "before", events: ["update"], level: "row", calls: touch${when} });`;
 }
 
-function renderView(view: ViewModel): string {
+function renderView(view: ViewModel, tenancy: boolean): string {
   const cols = view.columns.map((name) => JSON.stringify(name)).join(", ");
-  return `const ${viewKey(view.name)} = view(${JSON.stringify(view.name)}, (q) => q.from(${view.tableKey}, [${cols}]));`;
+  const mark = tenancy ? `.tenancy(global("projection omits the tenant key"))` : "";
+  return `const ${viewKey(view.name)} = view(${JSON.stringify(view.name)}, (q) => q.from(${view.tableKey}, [${cols}])${mark});`;
 }
 
 function triggerKey(name: string): string {

@@ -5,6 +5,7 @@
 import fc from "fast-check";
 
 import {
+  sqlName,
   tagsFor,
   type ColumnModel,
   type ColumnTypeKind,
@@ -83,6 +84,13 @@ export const lifecycleCaseArb: fc.Arbitrary<LifecycleCase> = fc
   })
   .chain((pick) =>
     nameArb.chain((taskName) => {
+      const needsParent = pick.featurePack === "fk" || pick.evolutionKind === "addFk";
+      const renaming = pick.evolutionKind === "renameTable";
+      const reserved = [
+        ...(needsParent ? ["authors"] : []),
+        ...(pick.featurePack === "view" ? ["task_ids"] : []),
+      ];
+      const taskTableName = distinctTableName(taskName, reserved, pick.casing);
       const parent = baseTable("authors", "authors", {
         id: {
           key: "id",
@@ -95,14 +103,19 @@ export const lifecycleCaseArb: fc.Arbitrary<LifecycleCase> = fc
         },
         label: textColumn("label", "label"),
       });
-      let child = baseTable("tasks", taskName, {
+      let child = baseTable("tasks", taskTableName, {
         id: identityColumn("id", "id"),
         title: textColumn("title", "title"),
       });
       child = applyPack(child, pick.featurePack, parent);
-      const needsParent = pick.featurePack === "fk" || pick.evolutionKind === "addFk";
       const tables: TableModel[] = needsParent ? [parent, child] : [child];
-      const namespace = pick.featurePack === "view" ? (pick.namespace ?? "appns") : pick.namespace;
+      // A rename under defineConfig({ namespace }) is not a schema the planner
+      // accepts: the snapshot lives in that schema and the rename looks in public.
+      const namespace = renaming
+        ? undefined
+        : pick.featurePack === "view"
+          ? (pick.namespace ?? "appns")
+          : pick.namespace;
       const initial: SchemaModel = {
         casing: pick.casing,
         ...(namespace === undefined ? {} : { namespace }),
@@ -125,7 +138,7 @@ export const lifecycleCaseArb: fc.Arbitrary<LifecycleCase> = fc
             : [],
       };
       const evolutions = buildEvolutions(initial, pick.evolutionKind);
-      const withRows = pick.withRows && pick.featurePack !== "generated";
+      const withRows = pick.withRows;
       const tags = tagsFor(initial, evolutions, withRows);
       return fc.constant({
         initial,
@@ -258,7 +271,7 @@ function applyPack(table: TableModel, pack: string, parent: TableModel): TableMo
           primaryKey: false,
           unique: false,
           defaultKind: "none",
-          generated: '"a" + 1',
+          generated: '("a" + 1)',
         },
       );
       break;
@@ -277,7 +290,7 @@ function applyPack(table: TableModel, pack: string, parent: TableModel): TableMo
       indexes.push({
         columns: ["title"],
         unique: false,
-        partial: '"title" IS NOT NULL',
+        partial: "(title IS NOT NULL)",
         usingTrgm: false,
       });
       break;
@@ -371,27 +384,39 @@ function buildEvolutions(initial: SchemaModel, kind: string): readonly Evolution
         },
       ];
     }
-    case "addIndex":
+    case "addIndex": {
+      const column = freeIndexColumn(table);
+      if (column === undefined) return [];
       return [
         {
           kind: "addIndex",
           tableKey: table.key,
-          index: { columns: ["title"], unique: false, usingTrgm: false },
+          index: { columns: [column], unique: false, usingTrgm: false },
         },
       ];
+    }
     case "dropColumnAddIndex": {
       const droppable = table.columns.find(
         (column) => !column.primaryKey && column.key !== "title" && column.generated === undefined,
       );
       if (droppable === undefined) return [];
-      return [
+      const remaining: TableModel = {
+        ...table,
+        columns: table.columns.filter((column) => column.key !== droppable.key),
+        indexes: table.indexes.filter((index) => !index.columns.includes(droppable.key)),
+      };
+      const column = freeIndexColumn(remaining);
+      const steps: Evolution[] = [
         { kind: "dropColumn", tableKey: table.key, columnKey: droppable.key },
-        {
+      ];
+      if (column !== undefined) {
+        steps.push({
           kind: "addIndex",
           tableKey: table.key,
-          index: { columns: ["title"], unique: false, usingTrgm: false },
-        },
-      ];
+          index: { columns: [column], unique: false, usingTrgm: false },
+        });
+      }
+      return steps;
     }
     case "addFk": {
       const parent = initial.tables[0];
@@ -410,6 +435,46 @@ function buildEvolutions(initial: SchemaModel, kind: string): readonly Evolution
     default:
       return [];
   }
+}
+
+/**
+ * A column that does not already name an index.
+ *
+ * The default index identity is `table_column_idx`. A second index on the
+ * same column, including a partial one beside a plain one, is OKM1023.
+ *
+ * @param table - Table the evolution would change
+ * @returns Column key, or undefined when every column is already indexed
+ */
+function freeIndexColumn(table: TableModel): string | undefined {
+  const taken = new Set(table.indexes.map((index) => index.columns.join("\0")));
+  const candidates = table.columns.filter((column) => column.generated === undefined);
+  const title = candidates.find((column) => column.key === "title" && !taken.has(column.key));
+  if (title !== undefined) return title.key;
+  return candidates.find((column) => !taken.has(column.key))?.key;
+}
+
+/**
+ * Picks a table name whose SQL spelling is not already used.
+ *
+ * Two `table()` calls with the same name, or two names that `snake` folds
+ * together, are rejected by `schema()`.
+ *
+ * @param name - Candidate authored name
+ * @param reserved - Names already used by other tables or views
+ * @param casing - Schema casing
+ * @returns `name`, or `name` plus a suffix that does not collide
+ */
+export function distinctTableName(
+  name: string,
+  reserved: readonly string[],
+  casing: "omit" | "snake",
+): string {
+  const used = new Set(reserved.map((item) => sqlName(casing, item)));
+  if (!used.has(sqlName(casing, name))) return name;
+  const suffixed = `${name}_b`;
+  if (!used.has(sqlName(casing, suffixed))) return suffixed;
+  return `${name}_c`;
 }
 
 /** Exported for coverage / tests that want a fixed action list. */
