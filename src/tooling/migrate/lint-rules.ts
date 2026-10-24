@@ -846,13 +846,15 @@ function validatedNotNullCheck(
   const needle = `check (${column} is not null) not valid`;
   for (const step of earlier) {
     const text = normalizedSql(step.sql);
-    if (!text.startsWith(`alter table ${table} `) || !text.includes(needle)) continue;
+    if (!sameTable(alterTableTarget(text), table) || !text.includes(needle)) continue;
     const added = /^alter table\s+\S+\s+add constraint\s+(\S+)\s+check\b/.exec(text);
     const name = added?.[1];
     if (name === undefined) continue;
-    const validated = earlier.some((item) =>
-      normalizedSql(item.sql).startsWith(`alter table ${table} validate constraint ${name}`),
-    );
+    const validated = earlier.some((item) => {
+      const prior = normalizedSql(item.sql);
+      const match = /^alter table\s+(\S+)\s+validate constraint\s+(\S+)/.exec(prior);
+      return match !== null && sameTable(match[1], table) && match[2] === name;
+    });
     if (validated) return true;
   }
   return false;
@@ -899,7 +901,7 @@ function notNullFloorValidate(input: StepInput): boolean {
   if (table === undefined || constraint === undefined) return false;
   return input.earlier.some((step) => {
     const prior = normalizedSql(step.sql);
-    if (!prior.startsWith(`alter table ${table} `)) return false;
+    if (!sameTable(alterTableTarget(prior), table)) return false;
     if (!prior.includes(`add constraint ${constraint} `)) return false;
     const body = /check\s*\(\s*(\S+)\s+is not null\s*\)\s*not valid/.exec(prior);
     if (body === null) return false;
@@ -940,7 +942,7 @@ function ownColumnCheckValidate(input: StepInput): boolean {
   if (tableName === undefined || constraintName === undefined) return false;
   const paired = input.earlier.some((step) => {
     const prior = normalizedSql(step.sql);
-    if (!prior.startsWith(`alter table ${tableSql} `)) return false;
+    if (!sameTable(alterTableTarget(prior), tableSql)) return false;
     if (!prior.includes(`add constraint ${constraintSql} `)) return false;
     return /\bcheck\b/.test(prior) && /\bnot valid\b/.test(prior);
   });
@@ -1000,7 +1002,7 @@ function addedColumn(
   earlier.forEach((step, index) => {
     const prior = normalizedSql(step.sql);
     const match = /^alter table\s+(\S+)\s+add column(?:\s+if not exists)?\s+(\S+)\b/.exec(prior);
-    if (match === null || match[1] !== tableSql) return;
+    if (match === null || !sameTable(match[1], tableSql)) return;
     if (lastName(match[2]) !== column) return;
     found = { index, sql: prior };
   });
@@ -1028,11 +1030,42 @@ function writesTableAfter(
 
 function writesTable(sql: string, tableSql: string): boolean {
   const update = /^update\s+(?:only\s+)?(\S+)/.exec(sql);
-  if (update?.[1] === tableSql) return true;
+  if (sameTable(update?.[1], tableSql)) return true;
   const insert = /^insert\s+into\s+(\S+)/.exec(sql);
-  if (insert?.[1] === tableSql) return true;
+  if (sameTable(insert?.[1], tableSql)) return true;
   const removed = /^delete\s+from\s+(?:only\s+)?(\S+)/.exec(sql);
-  return removed?.[1] === tableSql;
+  return sameTable(removed?.[1], tableSql);
+}
+
+function alterTableTarget(sql: string): string | undefined {
+  return /^alter table\s+(\S+)/.exec(sql)?.[1];
+}
+
+/**
+ * Whether two table tokens are the same table.
+ *
+ * A missing schema is `public`. Quoted case stays. `app.tasks` is not
+ * `public.tasks`.
+ *
+ * @param left - Token from one statement
+ * @param right - Token from another statement
+ * @returns `true` when both name the same schema and table
+ */
+function sameTable(left: string | undefined, right: string | undefined): boolean {
+  if (left === undefined || right === undefined) return false;
+  return tableKey(left) === tableKey(right);
+}
+
+function tableKey(token: string): string {
+  const parts = [...token.matchAll(/"(?:[^"]|"")*"|[A-Za-z_][\w$]*/g)].map((part) => {
+    const text = part[0] ?? "";
+    if (text.startsWith('"')) return text.slice(1, -1).replaceAll('""', '"');
+    return text;
+  });
+  const name = parts.at(-1);
+  if (name === undefined) return token;
+  const schema = parts.length >= 2 ? (parts.at(-2) ?? "public") : "public";
+  return `${schema}.${name}`;
 }
 
 type AddedShape = {

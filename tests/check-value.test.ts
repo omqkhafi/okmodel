@@ -131,6 +131,62 @@ test("a write or a volatile default between ADD COLUMN and VALIDATE is OKM1531",
   expect(codesOf(volatile, before, after)).toContain("OKM1531");
 });
 
+test("an unqualified table token pairs with a public-qualified one", () => {
+  const before = schema({
+    tables: [table("tasks", { id: t.integer().primaryKey(), title: t.text() })],
+  });
+  const after = schema({
+    tables: [
+      table(
+        "tasks",
+        {
+          id: t.integer().primaryKey(),
+          title: t.text(),
+          status: t.text().default("a"),
+        },
+        { checks: { ok: (columns) => sql`${columns.status} IN ('a', 'b')` } },
+      ),
+    ],
+  });
+  const plan = planMigration({ before: before.catalog, after: after.catalog, name: "add" });
+  const unqualified = {
+    ...plan,
+    steps: plan.steps.map((step) => ({
+      ...step,
+      sql: /validate constraint/i.test(step.sql)
+        ? step.sql
+        : step.sql.replaceAll('alter table "public"."tasks"', 'alter table "tasks"'),
+    })),
+  };
+  expect(unqualified.steps.some((step) => step.sql.startsWith('alter table "tasks"'))).toBe(true);
+  expect(codesOf(unqualified, before, after)).not.toContain("OKM1531");
+
+  const otherSchema = {
+    ...plan,
+    steps: plan.steps.map((step) =>
+      /add column/i.test(step.sql)
+        ? { ...step, sql: step.sql.replace('"public"."tasks"', '"app"."tasks"') }
+        : step,
+    ),
+  };
+  expect(codesOf(otherSchema, before, after)).toContain("OKM1531");
+
+  const validate = unqualified.steps.find((step) => /validate constraint/i.test(step.sql));
+  const update = {
+    sql: 'update "tasks" set "status" = \'nope\'',
+    class: "expand" as const,
+    action: "backfill" as const,
+    lock: "",
+    transactional: true,
+    backfill: { table: '"tasks"', key: ['"id"'], batch: 100 },
+  };
+  const withUpdate = {
+    ...unqualified,
+    steps: unqualified.steps.flatMap((step) => (step === validate ? [update, step] : [step])),
+  };
+  expect(codesOf(withUpdate, before, after)).toContain("OKM1531");
+});
+
 function codes(
   before: ReturnType<typeof schema>,
   after: ReturnType<typeof schema>,

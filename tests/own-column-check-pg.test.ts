@@ -127,6 +127,67 @@ postgresTest(
   120_000,
 );
 
+postgresTest(
+  gate,
+  "an unqualified alter table pairs with a public-qualified validate",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const cwd = mkdtempSync(join(tmpdir(), "okm-own-qual-"));
+    const sql = openPostgres(database.url);
+    try {
+      writeSchema(cwd, database.url, ["id: t.integer().primaryKey()", "title: t.text()"]);
+      expect(await okm(cwd, ["generate", "init"])).toContain(".sql");
+      expect(await okm(cwd, ["migrate", "apply"])).toContain("applied");
+      await sql.unsafe(`insert into tasks (id, title) values (1, 'a'), (2, 'b')`);
+
+      writeSchema(
+        cwd,
+        database.url,
+        ["id: t.integer().primaryKey()", "title: t.text()", 'status: t.text().default("a")'],
+        "ok: (columns) => sql`${columns.status} IN ('a', 'b')`",
+      );
+      expect(await okm(cwd, ["generate", "qualify"])).toContain("qualify");
+      const file = pendingSql(cwd);
+      const original = readFileSync(file, "utf8");
+      const mixed = unqualifyExceptValidate(original);
+      if (!mixed.includes('alter table "tasks" add column')) throw new Error(original);
+      const step = mixed.lastIndexOf("\n-- class:");
+      if (step < 0) throw new Error(mixed);
+      writeFileSync(
+        file,
+        [
+          mixed.slice(0, step),
+          `-- backfill table="tasks" key="id" batch=100`,
+          `update "tasks" set "status" = 'nope' where ($1::text is null or "id" > $1::integer) and ($2::text is null or "id" <= $2::integer);`,
+          mixed.slice(step),
+        ].join("\n"),
+      );
+      expect(await rejected(cwd, ["migrate", "apply"])).toContain("OKM1531");
+
+      writeFileSync(file, mixed);
+      expect(await okm(cwd, ["migrate", "apply"])).toContain("applied");
+      const statuses = await sql<{ status: string }[]>`select status from tasks order by id`;
+      expect(statuses.map((row) => row.status)).toEqual(["a", "a"]);
+    } finally {
+      await sql.end({ timeout: 5 });
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  120_000,
+);
+
+function unqualifyExceptValidate(sql: string): string {
+  return sql
+    .split("\n\n")
+    .map((step) =>
+      /validate constraint/i.test(step)
+        ? step
+        : step.replaceAll('alter table "public"."tasks"', 'alter table "tasks"'),
+    )
+    .join("\n\n");
+}
+
 function pendingSql(cwd: string): string {
   const dir = join(cwd, "migrations");
   const name = readdirSync(dir).find((file) => file.endsWith(".sql") && !file.startsWith("0001_"));
