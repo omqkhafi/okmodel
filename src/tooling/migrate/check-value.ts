@@ -64,12 +64,15 @@ function evaluate(column: string, expression: string, value: Literal): Truth {
 
 class Parser {
   private index = 0;
+  private readonly tokens: readonly Token[];
+  private readonly column: string;
+  private readonly value: Literal;
 
-  constructor(
-    private readonly tokens: readonly Token[],
-    private readonly column: string,
-    private readonly value: Literal,
-  ) {}
+  constructor(tokens: readonly Token[], column: string, value: Literal) {
+    this.tokens = tokens;
+    this.column = column;
+    this.value = value;
+  }
 
   finished(): boolean {
     return this.index >= this.tokens.length;

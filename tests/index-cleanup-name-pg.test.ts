@@ -47,7 +47,7 @@ postgresTest(
         join pg_namespace n on n.oid = c.relnamespace
         where n.nspname = ${schemaName} and c.relkind = 'i'
       `;
-      expect(left).toEqual([]);
+      expect(left.count).toBe(0);
     });
   },
   60_000,
