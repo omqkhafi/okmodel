@@ -150,7 +150,7 @@ export async function checkMigrations(
  *
  * A table, column, constraint, or type that disappeared is a gap. A column
  * whose type changed is a gap. Nullability tightened without a default is a
- * gap. An added object is not.
+ * gap. An added object is not, and neither is an added enum label.
  *
  * @param before - Previous release catalog
  * @param after - Catalog the migration stores
@@ -468,8 +468,12 @@ function sameType(before: TypeDefinition, after: TypeDefinition): boolean {
     );
   }
   if (!beforeDomain && !afterDomain) {
-    if (before.labels.length !== after.labels.length) return false;
-    return before.labels.every((label, index) => label === after.labels[index]);
+    // Added labels are expand: readers of the previous catalog still see
+    // every label they knew, in the same order.
+    const kept = after.labels.filter((label) => before.labels.includes(label));
+    return (
+      kept.length === before.labels.length && kept.every((label, i) => label === before.labels[i])
+    );
   }
   return false;
 }

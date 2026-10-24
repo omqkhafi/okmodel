@@ -292,7 +292,7 @@ export function planMigration(
   recreateViewDependents(afterList, dropKeys, createKeys);
   refuseRoutineDrops(beforeBy, afterBy, dropKeys);
   omitOwnedSequences(createKeys, afterBy, request.after);
-  omitOwnedSequences(dropKeys, beforeBy, renamed);
+  omitOwnedSequences(dropKeys, beforeBy, request.before);
   releaseHandsOff(dropKeys, beforeBy, afterBy);
   releaseHandsOff(createKeys, afterBy, afterBy);
 
@@ -365,7 +365,11 @@ export function planMigration(
       // A different name can be built first. The old index stays until that
       // build finishes, so the swap is not a blocking rebuild. A same-name
       // change still drops first: Postgres will not create the name twice.
-      if (onExistingTable && deferIndexDrop(object, createKeys, afterBy)) {
+      if (
+        onExistingTable &&
+        !readsDroppedColumn(object, dropKeys, beforeBy) &&
+        deferIndexDrop(object, createKeys, afterBy)
+      ) {
         replacementDrops.push(...lowered);
       } else steps.push(...lowered);
       return;
@@ -1783,7 +1787,9 @@ function sameDefinition(left: CatalogObject, right: CatalogObject): boolean {
  * an author check may omit column handles while `pg_constraint.conkey` lists
  * them, and comparison uses the sealed expression instead (D128). A
  * materialized view's `refresh` is not here: Postgres does not store it, so
- * {@link sameDefinition} ignores it.
+ * {@link sameDefinition} ignores it. A foreign key's `no action` is not here
+ * either: it is the default, `pg_get_constraintdef` omits it, and
+ * introspection cannot tell it from an absent action.
  *
  * @param object - One side of the diff
  * @returns The definition, with type names in the long spelling
@@ -1823,6 +1829,15 @@ function forComparison(object: CatalogObject): unknown {
     case "constraint": {
       const definition = withoutNameKey(object.definition);
       if (object.definition.constraintKind === "check") delete definition.columns;
+      const references = object.definition.references;
+      if (references !== undefined) {
+        const { onDelete, onUpdate, ...rest } = references;
+        definition.references = {
+          ...rest,
+          ...(onDelete !== undefined && onDelete !== "no action" ? { onDelete } : {}),
+          ...(onUpdate !== undefined && onUpdate !== "no action" ? { onUpdate } : {}),
+        };
+      }
       return definition;
     }
     case "index":
@@ -1924,6 +1939,32 @@ function deferIndexDrop(
     replacement = true;
   }
   return replacement;
+}
+
+/**
+ * Whether the plan drops a column this index covers.
+ *
+ * Such an index cannot wait for the new indexes: the column drop runs first
+ * and the deferred drop would then name an index Postgres already removed.
+ *
+ * @param object - Index the plan is dropping
+ * @param dropKeys - Objects the plan is dropping
+ * @param beforeBy - Catalog before the plan
+ * @returns Whether the drop must stay ahead of the column drop
+ */
+function readsDroppedColumn(
+  object: CatalogObject & { readonly kind: "index" },
+  dropKeys: ReadonlySet<string>,
+  beforeBy: ReadonlyMap<string, CatalogObject>,
+): boolean {
+  const parent = object.identity.parent.name;
+  for (const key of dropKeys) {
+    const dropped = beforeBy.get(key);
+    if (dropped === undefined || dropped.kind !== "column") continue;
+    if (dropped.identity.parent.name !== parent) continue;
+    if (object.definition.columns.includes(dropped.identity.name)) return true;
+  }
+  return false;
 }
 
 function hasTable(source: Catalog, name: string): boolean {

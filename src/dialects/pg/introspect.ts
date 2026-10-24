@@ -924,6 +924,76 @@ export async function reprintCheck(
   }
 }
 
+/** Trigger shape {@link reprintTriggerWhen} needs to build a valid scratch trigger. */
+export type ReprintTrigger = {
+  readonly timing: "before" | "after" | "instead";
+  readonly events: readonly ("insert" | "update" | "delete" | "truncate")[];
+  readonly level: "row" | "statement";
+};
+
+/**
+ * Creates a scratch trigger with one `WHEN` and reads the text Postgres prints.
+ *
+ * The result goes through the same extraction as introspection, so keyword
+ * case, `OLD` / `NEW` case, and redundant parentheses in the author's text
+ * compare equal to what a live trigger reads back. The trigger sits on a
+ * temporary table with a random name, calls a temporary function, and both
+ * are dropped before this returns. Nothing is created in the target schema.
+ *
+ * @param runner - Database connection
+ * @param expression - `WHEN` expression without the keyword or outer parentheses
+ * @param trigger - Timing, events, and level of the trigger that carries it
+ * @param columns - Columns of the table the trigger is on
+ * @param types - Enums and domains the columns may name, with the labels or base to rebuild
+ * @returns The reprinted expression, or `undefined` when this server refuses the scratch trigger
+ */
+export async function reprintTriggerWhen(
+  runner: CatalogQuery,
+  expression: string,
+  trigger: ReprintTrigger,
+  columns: readonly ReprintCheckColumn[],
+  types: readonly ReprintType[] = [],
+): Promise<string | undefined> {
+  const table = scratchName("okm_when");
+  const fn = scratchName("okm_when_fn");
+  const standIns = await createStandIns(
+    runner,
+    columns.map((column) => column.dataType),
+    types,
+  );
+  try {
+    const defs =
+      columns.length > 0
+        ? columns
+            .map((column) => `${quoteIdent(column.name)} ${standInType(column.dataType, types)}`)
+            .join(", ")
+        : "id integer";
+    await runner.query(`create temp table ${table} (${defs})`);
+    await runner.query(
+      `create function pg_temp.${fn}() returns trigger language plpgsql as 'begin return null; end'`,
+    );
+    await runner.query(
+      `create trigger okm_when_trigger ${trigger.timing === "instead" ? "instead of" : trigger.timing} ${trigger.events.join(" or ")} on pg_temp.${table} for each ${trigger.level} when (${expression}) execute function pg_temp.${fn}()`,
+    );
+    const rows = await runner.query(
+      `select pg_get_triggerdef(oid) as definition
+       from pg_trigger
+       where tgrelid = $1::regclass and tgname = 'okm_when_trigger'`,
+      [`pg_temp.${table}`],
+    );
+    const match = /WHEN \(([\s\S]*)\) EXECUTE/.exec(text(rows[0] ?? {}, "definition"));
+    return match?.[1] === undefined ? undefined : unwrapTriggerWhen(match[1]);
+  } catch {
+    return undefined;
+  } finally {
+    await runDrops(runner, [
+      `drop table if exists pg_temp.${table}`,
+      `drop function if exists pg_temp.${fn}()`,
+      ...standIns,
+    ]);
+  }
+}
+
 /**
  * Creates a temporary domain and reads the check Postgres stores.
  *
@@ -1408,8 +1478,11 @@ function actionAfter(
   definition: string,
   event: "delete" | "update",
 ): ReferentialAction | undefined {
-  const match = new RegExp(`on ${event} ([a-z ]+)`, "i").exec(definition);
-  const words = match?.[1]?.trim().toLowerCase() ?? "";
+  const match = new RegExp(
+    `on ${event} (cascade|restrict|no action|set null|set default)\\b`,
+    "i",
+  ).exec(definition);
+  const words = match?.[1]?.toLowerCase() ?? "";
   if (words.length === 0 || words === "no action") return undefined;
   return referentialAction(words);
 }
