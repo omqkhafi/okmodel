@@ -232,6 +232,53 @@ test("a table drop and add without renamedFrom is OKM1530", () => {
   );
   expect(error.code).toBe("OKM1530");
   expect(error.fix.summary).toContain('renamedFrom: "tasks"');
+  expect(error.message).not.toContain("casing");
+});
+
+test("a casing change names casing as the cause of OKM1530", () => {
+  const columnBefore = schema({
+    tables: [table("notes", { id: t.identity(), publishedAt: t.timestamptz().nullable() })],
+  });
+  const columnAfter = schema({
+    tables: [table("notes", { id: t.identity(), publishedAt: t.timestamptz().nullable() })],
+    casing: "snake",
+  });
+  const column = capture(() =>
+    planMigration({ before: columnBefore.catalog, after: columnAfter.catalog, name: "casing" }),
+  );
+  expect(column.code).toBe("OKM1530");
+  expect(column.message).toContain("caused by casing");
+  expect(column.message).toContain('.sqlName("publishedAt")');
+  expect(column.message).toContain('.renamedFrom("publishedAt")');
+  expect(column.fix.summary).toContain('.sqlName("publishedAt")');
+  expect(column.fix.summary).toContain('.renamedFrom("publishedAt")');
+
+  const tableBefore = schema({
+    tables: [table("userNotes", { id: t.identity() })],
+  });
+  const tableAfter = schema({
+    tables: [table("userNotes", { id: t.identity() })],
+    casing: "snake",
+  });
+  const renamed = capture(() =>
+    planMigration({ before: tableBefore.catalog, after: tableAfter.catalog, name: "casing" }),
+  );
+  expect(renamed.code).toBe("OKM1530");
+  expect(renamed.message).toContain("caused by casing");
+  expect(renamed.message).toContain('.sqlName("userNotes")');
+  expect(renamed.message).toContain('sqlName: "userNotes"');
+  expect(renamed.message).toContain('.renamedFrom("userNotes")');
+  expect(renamed.message).toContain('renamedFrom: "userNotes"');
+
+  const camel = schema({
+    tables: [table("user_notes", { id: t.identity(), user_id: t.bigint() })],
+    casing: "camel",
+  });
+  const fromSnake = capture(() =>
+    planMigration({ before: tableAfter.catalog, after: camel.catalog, name: "camel" }),
+  );
+  expect(fromSnake.code).toBe("OKM1530");
+  expect(fromSnake.message).toContain("caused by casing");
 });
 
 test("a declared table rename renames default dependents and leaves a custom name", () => {

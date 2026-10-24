@@ -56,6 +56,7 @@ import { sqlQuoteOpen } from "./sql-lex.js";
 import { canonicalTypeName } from "./type-name.js";
 import type { DdlDialect, DdlStep } from "../../dialects/ddl.js";
 import { ddlStep as step } from "../../dialects/ddl-step.js";
+import { caseName } from "../../dialects/pg/casing.js";
 import { postgresDialect } from "./postgres-dialect.js";
 import { assertNoChains, type Replacement } from "./values.js";
 
@@ -1088,13 +1089,46 @@ function assertUnambiguous(
     if (gone === undefined || gone.length === 0 || names.length === 0) continue;
     const from = gone[0] ?? "";
     const to = names[0] ?? "";
-    const line = group.startsWith("table:")
-      ? `Add renamedFrom: "${from}" on ${to}.`
-      : `Add .renamedFrom("${from}") on ${to}.`;
-    throw new OkmError("OKM1530", `Drop ${from} and add ${to} could be a rename. ${line}`, {
-      fix: { summary: line },
-    });
+    const guard = renameGuard(group, from, to);
+    throw new OkmError("OKM1530", guard.message, { fix: { summary: guard.summary } });
   }
+}
+
+/**
+ * A drop and an add whose names are one casing of each other.
+ *
+ * The catalog does not store the casing that produced a name. `caseName`
+ * either way is enough: `publishedAt` and `published_at` are the snake pair,
+ * and `user_notes` and `userNotes` are the camel pair.
+ */
+function casingPair(from: string, to: string): boolean {
+  return (
+    caseName("snake", from) === to ||
+    caseName("camel", from) === to ||
+    caseName("snake", to) === from ||
+    caseName("camel", to) === from
+  );
+}
+
+function renameGuard(
+  group: string,
+  from: string,
+  to: string,
+): { readonly message: string; readonly summary: string } {
+  const table = group.startsWith("table:");
+  if (casingPair(from, to)) {
+    const summary = table
+      ? `Keep the stored name with .sqlName("${from}") (or sqlName: "${from}" on the table), or declare the rename with .renamedFrom("${from}") (or renamedFrom: "${from}" on the table).`
+      : `Keep the stored name with .sqlName("${from}"), or declare the rename with .renamedFrom("${from}").`;
+    return {
+      message: `Drop ${from} and add ${to} could be a rename caused by casing. ${summary}`,
+      summary,
+    };
+  }
+  const summary = table
+    ? `Add renamedFrom: "${from}" on ${to}.`
+    : `Add .renamedFrom("${from}") on ${to}.`;
+  return { message: `Drop ${from} and add ${to} could be a rename. ${summary}`, summary };
 }
 
 function anchoredName(object: CatalogObject): string | undefined {
