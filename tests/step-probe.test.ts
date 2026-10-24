@@ -15,7 +15,11 @@ import { index, schema, table, t } from "../src/dialects/pg/index.js";
 import { lintPlan } from "../src/tooling/migrate/lint.js";
 import { planDocument, type PlanDocument } from "../src/tooling/migrate/plan-json.js";
 import { postgresStepEngine } from "../src/tooling/migrate/pg-probe.js";
-import { resumeCommittedStep, type CommittedStep } from "../src/tooling/migrate/step-engine.js";
+import {
+  PartialCleanupError,
+  resumeCommittedStep,
+  type CommittedStep,
+} from "../src/tooling/migrate/step-engine.js";
 import {
   formatPlan,
   parsePlan,
@@ -197,6 +201,107 @@ test("cleanup names an unqualified mixed-case index, an escaped quote, and anoth
   expect(await dropSql('create index concurrently "other"."idx" on "other"."tasks" (id)')).toBe(
     'drop index concurrently if exists "other"."idx"',
   );
+});
+
+test("cleanup matches this index and not another build on the same table", async () => {
+  const sql = 'create index concurrently mine on "app"."tasks" (id)';
+  const seen: string[] = [];
+  const connection = {
+    execute(text: string, params?: readonly unknown[]) {
+      seen.push(text);
+      if (text.includes("pg_stat_activity")) {
+        const first = params?.[0];
+        const pattern = typeof first === "string" ? first : "";
+        expect(pattern).toContain("mine");
+        expect(pattern).not.toContain("tasks");
+        return Promise.resolve(done([]));
+      }
+      return Promise.resolve(done([]));
+    },
+    batch: () => Promise.resolve([]),
+    release: () => Promise.resolve(),
+  } as DriverConnection;
+  await postgresStepEngine(connection, { kind: "create-index", sql, lockTimeoutMs: 1_000 }, () =>
+    Promise.resolve(),
+  ).cleanup();
+  expect(seen.some((text) => text.startsWith("drop index concurrently"))).toBe(true);
+
+  const blocked = {
+    execute(text: string) {
+      if (text.includes("pg_stat_activity")) return Promise.resolve(done([["42"]]));
+      return Promise.resolve(done([]));
+    },
+    batch: () => Promise.resolve([]),
+    release: () => Promise.resolve(),
+  } as DriverConnection;
+  const stopped = await rejection(
+    postgresStepEngine(blocked, { kind: "create-index", sql, lockTimeoutMs: 1_000 }, () =>
+      Promise.resolve(),
+    ).cleanup(),
+  );
+  expect(stopped).toBeInstanceOf(PartialCleanupError);
+  if (stopped instanceof PartialCleanupError) {
+    expect(stopped.detail).toContain('Index "mine" is INVALID.');
+    expect(stopped.fix).toBe(
+      'DROP INDEX CONCURRENTLY "app"."mine". Then run apply again. Finished steps are not repeated.',
+    );
+  }
+});
+
+test("a concurrent index failure ends the driver sentence with a period", async () => {
+  const sql = 'create unique index concurrently mine on "app"."tasks" (id)';
+  const cause = 'could not create unique index "mine"';
+  const committed: CommittedStep = {
+    migrationId: "0002_idx",
+    stepIndex: 0,
+    kind: "create-index",
+    sql,
+    sqlHash: stepSqlHash(sql),
+    stepClass: "expand",
+    catalogHash: "hash",
+    finishes: false,
+  };
+  const connection = {
+    execute() {
+      return Promise.resolve(done([]));
+    },
+    batch: () => Promise.resolve([]),
+    release: () => Promise.resolve(),
+  } as DriverConnection;
+  const error = await rejection(
+    resumeCommittedStep(
+      committed,
+      {
+        async read() {
+          return {
+            migrationId: "0002_idx",
+            stepIndex: 0,
+            kind: "create-index",
+            sqlHash: stepSqlHash(sql),
+            state: "failed",
+            attempt: 1,
+          };
+        },
+        async start() {},
+        async fail() {},
+        async complete() {},
+      },
+      postgresStepEngine(connection, { kind: "create-index", sql, lockTimeoutMs: 1_000 }, () =>
+        Promise.reject(new Error(cause)),
+      ),
+      {
+        retries: 0,
+        wrap: (caught) =>
+          new OkmError("invalid", `Migration 0002_idx failed at step 1: ${cause}`, {
+            cause: caught,
+          }),
+      },
+    ),
+  );
+  expect(error).toBeInstanceOf(OkmError);
+  if (error instanceof OkmError) {
+    expect(error.message).toContain('could not create unique index "mine".');
+  }
 });
 
 test("a lost connection during create index concurrently names the index", async () => {

@@ -228,6 +228,36 @@ export function stepFailureMessage(input: {
 }
 
 /**
+ * Puts a period on the first line of a concurrent-index failure.
+ *
+ * The driver text (`could not create unique index "tasks_title_idx"`) is not
+ * a sentence. The kind may be `raw-sql` when the step did not name one.
+ *
+ * @param message - The three-line failure
+ * @returns The same message with the first line closed
+ */
+function periodOnFirstLine(message: string): string {
+  const breakAt = message.indexOf("\n");
+  const first = breakAt === -1 ? message : message.slice(0, breakAt);
+  const rest = breakAt === -1 ? "" : message.slice(breakAt);
+  return `${sentence(first)}${rest}`;
+}
+
+/**
+ * Ends a failure sentence before another sentence is appended.
+ *
+ * @param text - Failure text
+ * @returns The same text when it already ends a sentence
+ */
+function sentence(text: string): string {
+  const trimmed = text.trimEnd();
+  if (trimmed.length === 0) return text;
+  const last = trimmed.at(-1);
+  if (last === "." || last === "!" || last === "?") return text;
+  return `${trimmed}.`;
+}
+
+/**
  * Resumes or runs one committed step.
  *
  * No marker runs the step. `started` and `failed` follow the probe.
@@ -369,14 +399,17 @@ function presentFailure(
     ...(probe !== undefined ? { probe } : {}),
     next,
   });
+  if (/^\s*create\s+(?:unique\s+)?index\s+concurrently\b/i.test(step.sql)) {
+    message = periodOnFirstLine(message);
+  }
   let fix = wrapped.fix;
   if (cleanup !== undefined) {
-    message = `${message}${cleanup.detail}`;
+    message = `${sentence(message)}${cleanup.detail}`;
     fix = { summary: cleanup.fix };
   } else if (indexLabel !== undefined && wrapped.kind === "unavailable") {
-    message = `${message} Index ${indexLabel} may be INVALID.`;
+    message = `${sentence(message)} Index ${indexLabel} may be INVALID.`;
     fix = {
-      summary: `DROP INDEX CONCURRENTLY ${indexLabel}; then run apply again. Finished steps are not repeated.`,
+      summary: `DROP INDEX CONCURRENTLY ${indexLabel}. Then run apply again. Finished steps are not repeated.`,
     };
   }
   return new OkmError(wrapped.code, message, {
