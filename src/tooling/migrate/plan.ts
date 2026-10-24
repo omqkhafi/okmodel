@@ -42,7 +42,13 @@ import {
   resolveBatchSize,
   type BackfillSpec,
 } from "./backfill.js";
-import { isStepKind, strictestClass, type MigrationClass, type StepKind } from "./classify.js";
+import {
+  classOf,
+  isStepKind,
+  strictestClass,
+  type MigrationClass,
+  type StepKind,
+} from "./classify.js";
 import { extensionAlterSteps } from "./extensions.js";
 import { omitManagedObjects } from "./managed.js";
 import { stepsForExistingTable, type SafeStep } from "./safe.js";
@@ -304,7 +310,7 @@ export function planMigration(
   const steps: PlanStep[] = [];
   steps.push(...renameSteps(request.before, renames, schema, dialect));
   steps.push(
-    ...take(
+    ...takeOptional(
       dialect.lower({
         op: "privileges",
         phase: "revoke",
@@ -464,7 +470,7 @@ export function planMigration(
   );
   const emitted = new Set<string>();
   steps.push(
-    ...take(
+    ...takeOptional(
       dialect.lower({
         op: "privileges",
         phase: "prepare",
@@ -601,7 +607,7 @@ export function planMigration(
   }
 
   steps.push(
-    ...take(
+    ...takeOptional(
       dialect.lower({
         op: "privileges",
         phase: "grant",
@@ -639,8 +645,58 @@ export function planMigration(
  * @param dialect - Lowering object for this plan
  * @param catalog - Catalog after managed tables are omitted
  */
+/**
+ * Accepts a dialect result only when it is statements the planner can trust.
+ *
+ * An empty result would drop the change. A class that does not match the
+ * kind would be stored as the dialect wrote it.
+ *
+ * @param lowered - Physical steps from {@link DdlDialect.lower}
+ * @returns Those steps
+ * @throws OkmError OKM1559 when the result is empty, has no SQL, or the class disagrees with the kind
+ */
 function take(lowered: readonly DdlStep[]): readonly PlanStep[] {
+  if (lowered.length === 0) {
+    throw new OkmError("OKM1559", "The dialect returned no statement for a change.", {
+      fix: { summary: "The lowering for this change has to return at least one statement." },
+    });
+  }
+  for (const step of lowered) {
+    if (step.sql.trim().length === 0) {
+      throw new OkmError("OKM1559", "The dialect returned a statement with no SQL.", {
+        fix: { summary: "Each lowered statement has to contain SQL." },
+      });
+    }
+    if (step.kind === undefined) {
+      throw new OkmError(
+        "OKM1559",
+        `A lowered statement has no kind and was classed ${step.class}.`,
+        { fix: { summary: "The statement class has to match its kind." } },
+      );
+    }
+    if (classOf(step.kind) !== step.class) {
+      throw new OkmError(
+        "OKM1559",
+        `Step kind ${step.kind} is ${classOf(step.kind)}, and the statement was classed ${step.class}.`,
+        { fix: { summary: "The statement class has to match its kind." } },
+      );
+    }
+  }
   return lowered;
+}
+
+/**
+ * Accepts a dialect result that may be empty.
+ *
+ * Privilege phases have no statement when the catalogs grant nothing. Every
+ * statement that is present still has to match its kind.
+ *
+ * @param lowered - Physical steps from {@link DdlDialect.lower}
+ * @returns Those steps, or none
+ */
+function takeOptional(lowered: readonly DdlStep[]): readonly PlanStep[] {
+  if (lowered.length === 0) return [];
+  return take(lowered);
 }
 
 function askDialect(dialect: DdlDialect, catalog: Catalog): void {

@@ -42,9 +42,9 @@ import { finishQuiet } from "./lost.js";
 import type { StepBoundary } from "./step-engine.js";
 import {
   catalogQuery,
+  invalidIndexReport,
   managedRoleOptions,
-  sealDomainChecks,
-  sealTableChecks,
+  sealStoredChecks,
   sealTriggerWhens,
 } from "./drift.js";
 import {
@@ -648,16 +648,19 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
         await sql.unsafe(`set search_path to ${quoteIdent(schema)}`);
       }
       const authorViews = await sealViews(runner, request.after);
-      const author = await sealTriggerWhens(
+      const author = await sealTriggerWhens(runner, await sealStoredChecks(runner, authorViews));
+      const live = await sealStoredChecks(
         runner,
-        await sealTableChecks(runner, await sealDomainChecks(runner, authorViews)),
+        await introspectSchema(runner, schema, schema, managedRoleOptions(request.roles)),
       );
-      const live = await introspectSchema(
-        runner,
-        schema,
-        schema,
-        managedRoleOptions(request.roles),
-      );
+      const invalid = await invalidIndexReport(runner, schema);
+      if (invalid.length > 0) {
+        throw new OkmError("OKM1520", invalid.join("\n"), {
+          fix: {
+            summary: "Drop the INVALID index with DROP INDEX CONCURRENTLY, then run apply again.",
+          },
+        });
+      }
       const plan = planMigration({
         before: live,
         after: author,

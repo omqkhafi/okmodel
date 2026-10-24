@@ -55,7 +55,7 @@ export const CHECK_SCHEMA_PREFIX = "okm_check_";
  * exist is not caught by this command.
  */
 export const CHECK_REPLAY_LIMIT =
-  "This check replays empty tables. A step that only fails on real data is not caught: NOT NULL on a populated column, a unique index over duplicates, or a check over existing rows.";
+  "This check replays empty tables. A step that only fails on real data is not caught: NOT NULL on a populated column, a unique index over duplicates, a check over existing rows, a foreign key validation, or a cast.";
 
 const HISTORY_CODE = "OKM1547";
 const PREVIOUS_CODE = "OKM1548";

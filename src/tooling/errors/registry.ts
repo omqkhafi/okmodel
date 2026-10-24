@@ -651,6 +651,13 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     escapeHatches: [hatch("OKM1558", "-- okm-allow")],
   },
   {
+    code: "OKM1559",
+    title: "Lowering refused",
+    summary:
+      "The dialect returned no statement for a change, a statement with no SQL, or a class that does not match the step kind.",
+    fix: "The lowering for that change has to return at least one statement, and the class has to match the kind.",
+  },
+  {
     code: "OKM1601",
     title: "Stale typed SQL",
     summary: RAW_STALE.summary,

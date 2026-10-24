@@ -991,6 +991,15 @@
     ]
   },
   {
+    "code": "OKM1559",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "The dialect returned no statement for a change, a statement with no SQL, or a class that does not match the step kind.",
+    "fix": "The lowering for that change has to return at least one statement, and the class has to match the kind.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1559.md"
+  },
+  {
     "code": "OKM1601",
     "kind": "invalid",
     "category": "input",

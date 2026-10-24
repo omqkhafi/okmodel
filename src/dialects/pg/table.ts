@@ -62,6 +62,14 @@ export type IndexCall = {
    */
   readonly tenantScoped?: boolean;
   /**
+   * SQL name stored on the index.
+   *
+   * Set by {@link IndexCall.name}. Absent means `{table}_{columns}_idx`.
+   * A hand-built call may set this field. The catalog stores it as the
+   * index name and still keeps the column `nameKey`.
+   */
+  readonly sqlName?: string;
+  /**
    * Marks the index unique.
    *
    * On a tenant table the unique includes the tenant key, so two tenants may
@@ -91,6 +99,18 @@ export type IndexCall = {
    * @returns The same columns, prefixed when the table is a tenant table
    */
   scoped?(): IndexCall;
+  /**
+   * Sets the SQL name stored for this index.
+   *
+   * Present on {@link index}. A hand-built call may set {@link IndexCall.sqlName}
+   * instead. An empty name is OKM1060. The generated name stays
+   * `{table}_{columns}_idx` when this is omitted. `okm pull` writes it when
+   * the database name is not that generated name.
+   *
+   * @param sqlName - SQL identifier to store
+   * @returns The same columns, under that name
+   */
+  name?(sqlName: string): IndexCall;
 };
 
 /**
@@ -114,6 +134,13 @@ export interface IndexChain extends IndexCall {
    * @returns The same columns, prefixed when the table is a tenant table
    */
   scoped(): IndexChain;
+  /**
+   * Sets the SQL name stored for this index.
+   *
+   * @param sqlName - SQL identifier to store
+   * @returns The same columns, under that name
+   */
+  name(sqlName: string): IndexChain;
 }
 
 /**
@@ -542,7 +569,7 @@ export function index(...columns: readonly ColumnHandle[]): IndexChain {
 }
 
 /**
- * Builds an index call, including `.unique()`, `.global()`, and `.scoped()`.
+ * Builds an index call, including `.unique()`, `.global()`, `.scoped()`, and `.name()`.
  *
  * Extension `using` tails and trait rewrites share this so the methods stay
  * one implementation. It is not on the `okmodel/pg` barrel.
@@ -557,6 +584,7 @@ export function buildIndex(input: {
   readonly expression?: string | undefined;
   readonly tenantGlobal?: string | undefined;
   readonly tenantScoped?: boolean | undefined;
+  readonly sqlName?: string | undefined;
 }): IndexChain {
   const columns = input.columns;
   const isUnique = input.isUnique === true;
@@ -564,6 +592,7 @@ export function buildIndex(input: {
   const expression = input.expression;
   const tenantGlobal = input.tenantGlobal;
   const tenantScoped = input.tenantScoped === true ? true : undefined;
+  const sqlName = input.sqlName;
   return {
     columns,
     isUnique,
@@ -571,6 +600,7 @@ export function buildIndex(input: {
     ...(expression !== undefined ? { expression } : {}),
     ...(tenantGlobal !== undefined ? { tenantGlobal } : {}),
     ...(tenantScoped === true ? { tenantScoped: true } : {}),
+    ...(sqlName !== undefined ? { sqlName } : {}),
     unique() {
       return buildIndex({
         columns,
@@ -579,6 +609,7 @@ export function buildIndex(input: {
         expression,
         tenantGlobal,
         tenantScoped,
+        sqlName,
       });
     },
     global(reason: string) {
@@ -591,10 +622,32 @@ export function buildIndex(input: {
         predicate,
         expression,
         tenantGlobal: reason.trim(),
+        sqlName,
       });
     },
     scoped() {
-      return buildIndex({ columns, isUnique, predicate, expression, tenantScoped: true });
+      return buildIndex({
+        columns,
+        isUnique,
+        predicate,
+        expression,
+        tenantScoped: true,
+        sqlName,
+      });
+    },
+    name(next: string) {
+      if (next.length === 0) {
+        definition("index().name() must be a non-empty SQL identifier.");
+      }
+      return buildIndex({
+        columns,
+        isUnique,
+        predicate,
+        expression,
+        tenantGlobal,
+        tenantScoped,
+        sqlName: next,
+      });
     },
   };
 }

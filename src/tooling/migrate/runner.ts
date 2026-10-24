@@ -769,9 +769,34 @@ function failStep(unit: RunnableUnit, index: number, error: unknown): OkmError {
     `Migration ${unit.migrationId} failed at step ${String(index + 1)}: ${message}`,
     {
       cause: error,
-      fix: { summary: "Fix the step and run apply again. Finished steps are not repeated." },
+      fix: stepFailureFix(error, "apply"),
     },
   );
+}
+
+/**
+ * Advice for a step that failed while applying or while `migrate check` replayed it.
+ *
+ * A lock timeout is a wait, so the step stays as written. Any other failure
+ * still says to fix the step and run apply again.
+ *
+ * @param error - The driver error, or whatever the step threw
+ * @param again - Which command the person should run
+ * @returns The fix summary
+ */
+export function stepFailureFix(
+  error: unknown,
+  again: "apply" | "check",
+): { readonly summary: string } {
+  if (isLockTimeout(error)) {
+    const command = again === "apply" ? "okm migrate apply" : "okm migrate check";
+    const tail =
+      again === "apply" ? "Finished steps are not repeated." : "The step does not need a change.";
+    return {
+      summary: `A lock timed out. Run ${command} again when that lock is free. ${tail}`,
+    };
+  }
+  return { summary: "Fix the step and run apply again. Finished steps are not repeated." };
 }
 
 function isLockTimeout(error: unknown): boolean {

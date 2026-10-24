@@ -18,9 +18,8 @@ test("a known bug needs the failure message and the feature", () => {
     matchKnownBug(["index-partial"], "history differs from the stored catalog"),
   ).toBeUndefined();
   expect(
-    matchKnownBug(["generated", "identity"], "0001_init: history differs from the stored catalog")
-      ?.id,
-  ).toBe("NEW-2");
+    matchKnownBug(["generated", "identity"], "0001_init: history differs from the stored catalog"),
+  ).toBeUndefined();
 });
 
 test("bugs fixed by #537 and bugs this grammar cannot reach do not match", () => {
@@ -37,6 +36,7 @@ test("bugs fixed by #537 and bugs this grammar cannot reach do not match", () =>
     "N-126",
     "N-135",
     "NEW-1",
+    "NEW-2",
   ]) {
     expect(matchKnownBug([id], id)?.id).not.toBe(id);
   }

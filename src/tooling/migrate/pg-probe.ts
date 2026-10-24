@@ -164,7 +164,13 @@ export function postgresStepEngine(
   const declared = step.probe !== undefined && step.probe.trim().length > 0;
   const probed = builtin || declared;
   const kind = probeKind(step.kind, step.sql);
+  const created = parseCreateIndex(step.sql);
+  const indexLabel =
+    created !== undefined && /\bconcurrently\b/i.test(step.sql)
+      ? qualifiedName(created.schema, created.name)
+      : undefined;
   return {
+    ...(indexLabel !== undefined ? { indexLabel } : {}),
     probed,
     probe: () => {
       if (builtin) return probeStep(connection, kind, step.sql);
@@ -324,25 +330,21 @@ async function cleanupStep(
   if (parsed === undefined) {
     throw new PartialCleanupError(
       " Index cleanup could not read the index name.",
-      "Drop the INVALID index with DROP INDEX CONCURRENTLY, then run apply again.",
+      "Drop the INVALID index with DROP INDEX CONCURRENTLY. Then run apply again.",
     );
   }
   const quoted = quoteIdent(parsed.name);
-  const repair = `DROP INDEX CONCURRENTLY ${qualifiedName(parsed.schema, parsed.name)};`;
+  const repair = indexRepair(qualifiedName(parsed.schema, parsed.name));
   const busy = await connection.execute(
     `select a.pid::text
      from pg_stat_activity a
      where a.pid <> pg_backend_pid()
        and a.state = 'active'
-       and a.query ~* 'create[[:space:]]+(unique[[:space:]]+)?index[[:space:]]+concurrently'
-       and strpos(lower(a.query), lower($1)) > 0`,
-    [parsed.table],
+       and (a.query ~* $1 or a.query ~ $2)`,
+    [bareIndexBuild(parsed.name), quotedIndexBuild(parsed.name)],
   );
   if (busy.rows.length > 0) {
-    throw new PartialCleanupError(
-      ` Index ${quoted} is INVALID.`,
-      `${repair} then run apply again. Finished steps are not repeated.`,
-    );
+    throw new PartialCleanupError(` Index ${quoted} is INVALID.`, repair);
   }
   await connection.execute("select set_config('lock_timeout', $1, false)", [
     String(step.lockTimeoutMs),
@@ -352,11 +354,7 @@ async function cleanupStep(
       `drop index concurrently if exists ${qualifiedName(parsed.schema, parsed.name)}`,
     );
   } catch (error) {
-    throw new PartialCleanupError(
-      ` Index ${quoted} is INVALID.`,
-      `${repair} then run apply again. Finished steps are not repeated.`,
-      error,
-    );
+    throw new PartialCleanupError(` Index ${quoted} is INVALID.`, repair, error);
   }
 }
 
@@ -430,7 +428,8 @@ function parseCreateIndex(sql: string): IndexShape | undefined {
   return {
     unique,
     name: indexName.name,
-    schema: indexName.schema,
+    // An unqualified index is created in the table's schema, not the current one.
+    schema: indexName.schema ?? table.schema,
     table: table.name,
     method,
     columns: rendered,
@@ -667,6 +666,49 @@ function alterTable(sql: string): { schema?: string; table: string; rest: string
 function qualifiedName(schema: string | undefined, name: string): string {
   const quoted = quoteIdent(name);
   return schema === undefined ? quoted : `${quoteIdent(schema)}.${quoted}`;
+}
+
+/**
+ * Advice when this index is still building or the drop failed.
+ *
+ * The statement is its own sentence. A semicolon is not that period.
+ *
+ * @param label - Quoted index, schema-qualified when the table is
+ * @returns The fix
+ */
+function indexRepair(label: string): string {
+  return `DROP INDEX CONCURRENTLY ${label}. Then run apply again. Finished steps are not repeated.`;
+}
+
+/**
+ * Case-insensitive match for an unquoted index name after `CONCURRENTLY`.
+ *
+ * The table name is not part of the pattern. Another session building a
+ * different index on the same table does not match.
+ *
+ * @param name - Folded or preserved index name
+ * @returns A POSIX regular expression
+ */
+function bareIndexBuild(name: string): string {
+  return `${indexBuildLead()}${regexToken(name)}([^[:alnum:]_$]|$)`;
+}
+
+/**
+ * Case-sensitive match for the quoted spelling of this index.
+ *
+ * @param name - Index name
+ * @returns A POSIX regular expression
+ */
+function quotedIndexBuild(name: string): string {
+  return `${indexBuildLead()}${regexToken(quoteIdent(name))}([^[:alnum:]_$]|$)`;
+}
+
+function indexBuildLead(): string {
+  return "create[[:space:]]+(unique[[:space:]]+)?index[[:space:]]+concurrently[[:space:]]+(if[[:space:]]+not[[:space:]]+exists[[:space:]]+)?";
+}
+
+function regexToken(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function keyword(text: string, index: number, word: string): number | undefined {

@@ -875,6 +875,11 @@ export type ReprintType = {
  * A different predicate does not. Column types matter: `IN (...)` on
  * `varchar(n)` reprints differently from the same list on `text`.
  *
+ * The first reprint is not always what a later statement stores. A varchar
+ * `IN` list becomes `ARRAY[...]::text[]`, and applying that text prints a
+ * per-element cast instead. This repeats until the text stops changing, so
+ * the result can be written into DDL and read back as the same string.
+ *
  * The table is a temporary table with a random name, and so is each stand-in
  * for a type in `types` that a column names. Nothing is created in the
  * target schema, so the role needs no `CREATE` on it. Temporary objects are
@@ -894,6 +899,17 @@ export async function reprintCheck(
     { name: "title", dataType: "text" },
   ],
   types: readonly ReprintType[] = [],
+): Promise<string> {
+  return reprintUntilStable(expression, (current) =>
+    reprintCheckOnce(runner, current, columns, types),
+  );
+}
+
+async function reprintCheckOnce(
+  runner: CatalogQuery,
+  expression: string,
+  columns: readonly ReprintCheckColumn[],
+  types: readonly ReprintType[],
 ): Promise<string> {
   const table = scratchName("okm_expr");
   const standIns = await createStandIns(
@@ -999,9 +1015,10 @@ export async function reprintTriggerWhen(
  *
  * Domain checks use `VALUE`, which is not valid on a table check. Two
  * authoring spellings of the same domain predicate compare equal after this.
- * The domain and any stand-in for an enum or domain `base` names are
- * temporary objects with random names. Nothing is created in the target
- * schema.
+ * The reprint repeats until Postgres prints the same text, matching
+ * {@link reprintCheck}. The domain and any stand-in for an enum or domain
+ * `base` names are temporary objects with random names. Nothing is created
+ * in the target schema.
  *
  * @param runner - Database connection
  * @param base - Domain base type, as Postgres `format_type` spells it
@@ -1014,6 +1031,17 @@ export async function reprintDomainCheck(
   base: string,
   expression: string,
   types: readonly ReprintType[] = [],
+): Promise<string> {
+  return reprintUntilStable(expression, (current) =>
+    reprintDomainCheckOnce(runner, base, current, types),
+  );
+}
+
+async function reprintDomainCheckOnce(
+  runner: CatalogQuery,
+  base: string,
+  expression: string,
+  types: readonly ReprintType[],
 ): Promise<string> {
   const domain = scratchName("okm_expr_domain");
   const standIns = await createStandIns(runner, [base], types);
@@ -1031,6 +1059,81 @@ export async function reprintDomainCheck(
   } finally {
     await runDrops(runner, [`drop domain if exists pg_temp.${domain}`, ...standIns]);
   }
+}
+
+/** Passes a scratch reprint is allowed to take before the text is treated as stable. */
+const REPRINT_PASSES = 4;
+
+/**
+ * Creates a scratch generated column and reads the expression Postgres stores.
+ *
+ * `("a" + 1)` is printed `(a + 1)`. The reprint repeats until that text stops
+ * changing, the same way {@link reprintCheck} does. Sibling columns are plain
+ * columns of the same names and types, so the expression resolves. The table
+ * is temporary and is dropped before this returns.
+ *
+ * @param runner - Database connection
+ * @param expression - Generated expression, without the `GENERATED` clause
+ * @param column - Name and type of the generated column
+ * @param columns - Other columns of the same table. The generated column is omitted
+ * @param types - Enums and domains the columns may name
+ * @returns The reprinted expression
+ */
+export async function reprintGenerated(
+  runner: CatalogQuery,
+  expression: string,
+  column: ReprintCheckColumn,
+  columns: readonly ReprintCheckColumn[] = [],
+  types: readonly ReprintType[] = [],
+): Promise<string> {
+  return reprintUntilStable(expression, (current) =>
+    reprintGeneratedOnce(runner, current, column, columns, types),
+  );
+}
+
+async function reprintGeneratedOnce(
+  runner: CatalogQuery,
+  expression: string,
+  column: ReprintCheckColumn,
+  columns: readonly ReprintCheckColumn[],
+  types: readonly ReprintType[],
+): Promise<string> {
+  const table = scratchName("okm_expr_gen");
+  const standIns = await createStandIns(
+    runner,
+    [column.dataType, ...columns.map((item) => item.dataType)],
+    types,
+  );
+  try {
+    const defs = [
+      ...columns.map((item) => `${quoteIdent(item.name)} ${standInType(item.dataType, types)}`),
+      `${quoteIdent(column.name)} ${standInType(column.dataType, types)} generated always as (${expression}) stored`,
+    ].join(", ");
+    await runner.query(`create temp table ${table} (${defs})`);
+    const rows = await runner.query(
+      `select pg_get_expr(ad.adbin, ad.adrelid) as expression
+       from pg_attrdef ad
+       join pg_attribute a on a.attrelid = ad.adrelid and a.attnum = ad.adnum
+       where ad.adrelid = $1::regclass and a.attname = $2`,
+      [`pg_temp.${table}`, column.name],
+    );
+    return flattenSqlWhitespace(text(rows[0] ?? {}, "expression"));
+  } finally {
+    await runDrops(runner, [`drop table if exists pg_temp.${table}`, ...standIns]);
+  }
+}
+
+async function reprintUntilStable(
+  expression: string,
+  reprint: (current: string) => Promise<string>,
+): Promise<string> {
+  let current = expression;
+  for (let pass = 0; pass < REPRINT_PASSES; pass += 1) {
+    const next = await reprint(current);
+    if (next === current) return current;
+    current = next;
+  }
+  return current;
 }
 
 function scratchName(prefix: string): string {
@@ -1226,12 +1329,40 @@ const INDEXES = `
   join pg_namespace n on n.oid = tbl.relnamespace
   join pg_am am on am.oid = idx.relam
   where n.nspname = $1
+    and i.indisvalid
     and not i.indisprimary
     and not exists (select 1 from pg_constraint con where con.conindid = i.indexrelid)
     and not exists (select 1 from pg_inherits inh where inh.inhrelid = tbl.oid)
     and not exists (select 1 from pg_inherits inh where inh.inhrelid = idx.oid)
     and ${member("idx.oid", "pg_class")}
 `;
+
+/**
+ * Indexes whose build did not finish.
+ *
+ * `CREATE INDEX CONCURRENTLY` leaves `indisvalid = false` when the session
+ * dies. Those rows are not catalog objects: a valid index is the only shape
+ * check, push, and baseline compare.
+ *
+ * @param runner - Database connection
+ * @param schema - Concrete schema name
+ * @returns Quoted `schema.name` values, in name order
+ */
+export async function invalidIndexNames(
+  runner: CatalogQuery,
+  schema: string,
+): Promise<readonly string[]> {
+  const rows = await runner.query(
+    `select n.nspname as schema, c.relname as name
+     from pg_index i
+     join pg_class c on c.oid = i.indexrelid
+     join pg_namespace n on n.oid = c.relnamespace
+     where n.nspname = $1 and not i.indisvalid
+     order by c.relname`,
+    [schema],
+  );
+  return rows.map((row) => `${quoteIdent(text(row, "schema"))}.${quoteIdent(text(row, "name"))}`);
+}
 
 const DOMAINS = `
   select t.typname as name,
@@ -1443,7 +1574,69 @@ function sequenceType(value: string): "smallint" | "integer" | "bigint" {
 }
 
 function checkExpression(definition: string): string {
-  return definition.trim().replace(/^check\s+/i, "");
+  // CASE is pretty-printed across lines. Those newlines are control characters,
+  // so reading a check apply already accepted would raise OKM1122. Spaces
+  // inside quotes stay, and the author catalog is not rewritten.
+  return flattenSqlWhitespace(definition.trim().replace(/^check\s+/i, ""));
+}
+
+function flattenSqlWhitespace(value: string): string {
+  let out = "";
+  let index = 0;
+  while (index < value.length) {
+    const char = value[index] ?? "";
+    if (char === "'" || char === '"') {
+      const end = quotedEnd(value, index, char);
+      out += value.slice(index, end);
+      index = end;
+      continue;
+    }
+    if (char === "$") {
+      const tag = dollarTag(value, index);
+      if (tag !== undefined) {
+        const close = value.indexOf(tag, index + tag.length);
+        const end = close === -1 ? value.length : close + tag.length;
+        out += value.slice(index, end);
+        index = end;
+        continue;
+      }
+    }
+    const code = char.charCodeAt(0);
+    if (code < 0x20 || code === 0x7f || (code >= 0x80 && code <= 0x9f)) {
+      out += " ";
+    } else {
+      out += char;
+    }
+    index += 1;
+  }
+  return out;
+}
+
+function quotedEnd(value: string, index: number, quote: string): number {
+  let cursor = index + 1;
+  while (cursor < value.length) {
+    if (value[cursor] !== quote) {
+      cursor += 1;
+      continue;
+    }
+    if (value[cursor + 1] === quote) {
+      cursor += 2;
+      continue;
+    }
+    return cursor + 1;
+  }
+  return value.length;
+}
+
+function dollarTag(value: string, index: number): string | undefined {
+  let end = index + 1;
+  while (end < value.length) {
+    const char = value[end] ?? "";
+    if (char === "$") return value.slice(index, end + 1);
+    if (!/^[A-Za-z0-9_]$/.test(char)) return undefined;
+    end += 1;
+  }
+  return undefined;
 }
 
 /**

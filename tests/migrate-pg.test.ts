@@ -16,6 +16,7 @@ import { renderCatalog } from "../src/dialects/pg/ddl.js";
 import {
   introspectSchema,
   reprintCheck,
+  reprintDomainCheck,
   type CatalogQuery,
 } from "../src/dialects/pg/introspect.js";
 import { schema, sql as sqlText, table as defineTable, t } from "../src/dialects/pg/index.js";
@@ -50,6 +51,20 @@ postgresTest(
       expect(onText).toContain("ARRAY");
       expect(onVarchar).toContain("character varying");
       expect(onText).not.toBe(onVarchar);
+      const columns = [{ name: "status", dataType: "varchar(20)" }];
+      expect(await reprintCheck(runner, onVarchar, columns)).toBe(onVarchar);
+      const domain = await reprintDomainCheck(
+        runner,
+        "character varying(20)",
+        "VALUE IN ('a', 'b')",
+      );
+      expect(await reprintDomainCheck(runner, "character varying(20)", domain)).toBe(domain);
+      const folded = await reprintCheck(
+        runner,
+        "case when id > 0 then title = 'a' else title = 'b' end",
+      );
+      expect(folded).not.toMatch(/[\n\r\t]/);
+      expect(await reprintCheck(runner, folded)).toBe(folded);
     });
   },
   30_000,

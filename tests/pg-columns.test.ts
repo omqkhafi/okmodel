@@ -166,6 +166,19 @@ test("modifiers compile into defaults, checks, flags, and names", () => {
 test("picklist check can be omitted, and arrays record rank", () => {
   const unchecked = compileColumn(varchar(20).picklist(["a", "b"], { check: false }), input);
   expect(unchecked.check).toBeUndefined();
+  expect(
+    compileColumn(text().picklist(["a"], { check: false }).array(), input).check,
+  ).toBeUndefined();
+  expect(
+    compileColumn(text().picklist(["red", "blue"]).array(), input).check?.definition.expression,
+  ).toBe("(value <@ ARRAY['red', 'blue']::text[])");
+  expect(
+    compileColumn(varchar(20).picklist(["red", "blue"]).array(), input).check?.definition
+      .expression,
+  ).toBe("(value <@ ARRAY['red', 'blue']::varchar(20)[])");
+  expect(
+    compileColumn(text().picklist(["red", "blue"]).array(), input).check?.definition.expression,
+  ).toBe("(tags <@ ARRAY['red', 'blue']::text[])".replace("tags", input.name));
   expect(compileColumn(integer().array(), input).column.definition.dataType).toBe("integer[]");
   expect(compileColumn(text().array({ dims: 2 }), input).column.definition.dataType).toBe(
     "text[][]",

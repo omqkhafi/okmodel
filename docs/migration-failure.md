@@ -66,7 +66,7 @@ A hash that does not match the file is OKM1556. Apply runs no SQL.
 
 Postgres can probe these kinds:
 
-- `create-index` with `CONCURRENTLY`. Missing is `absent`. `indisvalid = false` is `partial`, and cleanup is `DROP INDEX CONCURRENTLY` after checking that no build is still running. A valid index is `applied` only when its definition matches the statement. If that cannot be proved, the probe is `unknown`.
+- `create-index` with `CONCURRENTLY`. Missing is `absent`. `indisvalid = false` is `partial`, and cleanup is `DROP INDEX CONCURRENTLY` after checking that no build of this index is still running. Another session building a different index on the same table is not that build. The failure ends the driver sentence with a period, and the drop advice is its own sentence. The index is dropped under the table's schema when its own name is unqualified, including an unquoted mixed-case name and a name that contains a quote. A lost connection names that index. A valid index is `applied` only when its definition matches the statement. If that cannot be proved, the probe is `unknown`. `okm check`, `okm push`, and `okm migrate baseline` do not treat that invalid index as the schema's index. They report it as INVALID, and name an `okm_steps` row that is still `started`.
 - `drop-index` with `CONCURRENTLY`. Present is `absent` (the drop has not happened). Absent is `applied`.
 - `add-constraint`. An equal constraint definition is `applied`. A different definition is `unknown`. Missing is `absent`.
 - `validate-constraint`. `convalidated` true is `applied`. False is `absent`.

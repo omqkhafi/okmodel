@@ -198,13 +198,19 @@ function lintStep(
   texts.forEach((sql, index) => {
     const statement = multi ? withoutKind(step, sql) : withSql(step, sql);
     const hits: Hit[] = [];
+    // Statements earlier in this step sit between the previous step and this
+    // one. A write there is still between ADD COLUMN and VALIDATE.
+    const earlierForStatement = [
+      ...earlierStatements,
+      ...texts.slice(0, index).map((prior) => withoutKind(step, prior)),
+    ];
     for (const rule of STEP_RULES) {
       for (const reason of rule.check({
         step: statement,
         before,
         after,
         existingTables,
-        earlier: earlierStatements,
+        earlier: earlierForStatement,
         later: laterStatements,
       })) {
         const hit = { code: rule.code, severity: rule.severity, reason };

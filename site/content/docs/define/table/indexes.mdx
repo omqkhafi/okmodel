@@ -18,7 +18,7 @@ An empty call is `Index on notes needs a column.` A value that is not a handle i
 
 ### Index
 
-`index(...)` takes column handles, in index order. It needs at least one. You do not pass a name, a predicate, or a `using` method. Each argument is `columns.field`. The first argument is the first column of the index. The index is named `{table}_{columns}_idx`, using the SQL column names joined by `_`.
+`index(...)` takes column handles, in index order. It needs at least one. You do not pass a predicate or a `using` method. Each argument is `columns.field`. The first argument is the first column of the index. The index is named `{table}_{columns}_idx`, using the SQL column names joined by `_`. `.name("lookup_title")` stores that SQL name instead. `okm pull` writes it when the database name is not the generated one, including `sqlName` on a partial index.
 
 #### one
 

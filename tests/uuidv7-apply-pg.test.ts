@@ -121,6 +121,8 @@ postgresTest(
       expect(error.code).toBe("OKM1812");
       expect(error.message).toContain("Column users.id has a uuidv7() default");
       expect(error.message).toContain("0001_migration");
+      expect(error.message).toContain("step 1");
+      expect(error.message).not.toContain("step 0");
       expect(error.message).toContain(`the server is PostgreSQL ${String(major)}`);
       expect(error.message).toContain("has a uuidv7() default");
       expect(error.message).toContain("uuidv7() needs PostgreSQL 18 or higher");

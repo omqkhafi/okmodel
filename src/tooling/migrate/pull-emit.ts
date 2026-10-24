@@ -10,6 +10,7 @@ import { relative, dirname } from "node:path";
 
 import { isDomain } from "../../contracts/catalog/enum.js";
 import { identityKey } from "../../contracts/catalog/identity.js";
+import { deterministicName } from "../../contracts/catalog/identifier.js";
 import { renderCatalog } from "../../dialects/pg/ddl.js";
 import type {
   Catalog,
@@ -874,9 +875,12 @@ function indexCall(index: IndexObject, fields: ReadonlyMap<string, string>): str
     .join(", ");
   const predicate = index.definition.predicate;
   const expression = index.definition.expression;
+  const sqlName = customIndexName(index);
   if (predicate === undefined && expression === undefined) {
-    const call = `index(${columns})`;
-    return index.definition.unique ? `${call}.unique()` : call;
+    let call = `index(${columns})`;
+    if (index.definition.unique) call += ".unique()";
+    if (sqlName !== undefined) call += `.name(${JSON.stringify(sqlName)})`;
+    return call;
   }
   const fieldsText = [
     `columns: [${index.definition.columns.map((name) => `columns.${fields.get(name) ?? name}.name`).join(", ")}]`,
@@ -884,7 +888,24 @@ function indexCall(index: IndexObject, fields: ReadonlyMap<string, string>): str
   ];
   if (predicate !== undefined) fieldsText.push(`predicate: ${JSON.stringify(predicate)}`);
   if (expression !== undefined) fieldsText.push(`expression: ${JSON.stringify(expression)}`);
+  if (sqlName !== undefined) fieldsText.push(`sqlName: ${JSON.stringify(sqlName)}`);
   return `{ ${fieldsText.join(", ")}, unique() { return this; } }`;
+}
+
+/**
+ * The database name when it is not `{table}_{columns}_idx`.
+ *
+ * Pull omits `.name()` for the generated spelling so a default index stays
+ * `index(columns.field)`. `schema()` then stores the same name introspection
+ * read, and baseline has nothing to reconcile.
+ */
+function customIndexName(index: IndexObject): string | undefined {
+  const expected = deterministicName({
+    parent: index.identity.parent.name,
+    purpose: "index",
+    nameKey: index.definition.columns.join("_"),
+  });
+  return index.identity.name === expected ? undefined : index.identity.name;
 }
 
 function plainConstraint(constraint: ConstraintObject): boolean {

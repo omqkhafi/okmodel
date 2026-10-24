@@ -26,17 +26,10 @@ export type KnownBug = {
  * N-35 (varchar picklist / IN check, OKM1520), N-36 (CASE check, OKM1122),
  * N-37 (`picklist().array()`, malformed array literal), N-126 (OKM1531
  * own-column exemption), and N-135 (INVALID index after a killed build) are
- * real bugs this grammar does not generate.
+ * real bugs this grammar does not generate. NEW-2 (quoted generated
+ * expression) is reprinted on a scratch column, so it is not listed.
  */
-export const KNOWN_BUGS: readonly KnownBug[] = [
-  {
-    id: "NEW-2",
-    feature:
-      "generated column whose expression quotes identifiers, generated('(\"a\" + 1)'): Postgres prints it unquoted and migrate check reports history differs forever",
-    tags: ["generated"],
-    messages: ["history differs from the stored catalog"],
-  },
-];
+export const KNOWN_BUGS: readonly KnownBug[] = [];
 
 /**
  * The first known bug that matches a failed case, if any.

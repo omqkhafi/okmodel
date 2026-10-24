@@ -80,7 +80,7 @@ export async function assertUuidV7Available(
   const defined = row?.[1] !== null && row?.[1] !== undefined;
   if (major >= UUIDV7_POSTGRES || defined) return;
   const where = found.column === undefined ? "A column" : `Column ${found.column}`;
-  const message = `${where} has a uuidv7() default (migration ${found.migrationId}, step ${String(found.stepIndex)}), and the server is PostgreSQL ${String(major)}. ${uuidv7NeedsPostgres()} Nothing was changed.`;
+  const message = `${where} has a uuidv7() default (migration ${found.migrationId}, step ${String(found.stepIndex + 1)}), and the server is PostgreSQL ${String(major)}. ${uuidv7NeedsPostgres()} Nothing was changed.`;
   throw new OkmError("OKM1812", message, { fix: { summary: uuidv7NeedsPostgres() } });
 }
 

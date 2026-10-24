@@ -26,9 +26,9 @@ import { ensureMigrationTables } from "./apply.js";
 import { driverUrl } from "./driver-url.js";
 import {
   catalogQuery,
+  invalidIndexReport,
   managedRoleOptions,
-  sealDomainChecks,
-  sealTableChecks,
+  sealStoredChecks,
   sealTriggerWhens,
 } from "./drift.js";
 import { catalogNamespace } from "./export.js";
@@ -295,7 +295,7 @@ async function compareLive(
     const runner = catalogQuery(sql);
     const authorOnServer = await sealTriggerWhens(
       runner,
-      await sealTableChecks(runner, await sealDomainChecks(runner, await sealViews(runner, model))),
+      await sealStoredChecks(runner, await sealViews(runner, model)),
     );
     const live = omitManagedObjects(
       await introspectSchema(runner, namespace, namespace, managedRoleOptions(roles)),
@@ -313,8 +313,9 @@ async function compareLive(
         return !childOfUnmanaged(object, unmanagedKeys);
       }),
     };
+    const invalid = await invalidIndexReport(runner, namespace);
     const plan = planMigration({
-      before: managedLive,
+      before: await sealStoredChecks(runner, managedLive),
       after: authorOnServer,
       name: "baseline",
       schema: namespace,
@@ -329,14 +330,15 @@ async function compareLive(
           ? left.name.localeCompare(right.name)
           : left.kind.localeCompare(right.kind),
       );
-    if (plan.steps.length === 0) return { unmanaged, mismatch: [] };
-    return {
-      unmanaged,
-      mismatch: formatPlan(plan)
-        .trimEnd()
-        .split("\n")
-        .filter((line) => line.length > 0),
-    };
+    const planned =
+      plan.steps.length === 0
+        ? []
+        : formatPlan(plan)
+            .trimEnd()
+            .split("\n")
+            .filter((line) => line.length > 0);
+    if (planned.length === 0 && invalid.length === 0) return { unmanaged, mismatch: [] };
+    return { unmanaged, mismatch: [...invalid, ...planned] };
   } finally {
     await finishQuiet(() => sql.end({ timeout: 5 }));
   }

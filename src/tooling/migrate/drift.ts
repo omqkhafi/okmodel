@@ -17,8 +17,10 @@ import { isDomain } from "../../contracts/catalog/enum.js";
 import type { CatalogObject } from "../../contracts/catalog/types.js";
 import {
   introspectSchema,
+  invalidIndexNames,
   reprintCheck,
   reprintDomainCheck,
+  reprintGenerated,
   reprintTriggerWhen,
   type CatalogQuery,
   type IntrospectOptions,
@@ -73,21 +75,26 @@ export async function assertAuthorDrift(
     const runner = catalogQuery(sql);
     const authorOnServer = await sealTriggerWhens(
       runner,
-      await sealTableChecks(
-        runner,
-        await sealDomainChecks(runner, await sealViews(runner, author)),
-      ),
+      await sealStoredChecks(runner, await sealViews(runner, author)),
     );
-    const live = await introspectSchema(runner, schema, schema, managedRoleOptions(roles));
+    const live = await sealStoredChecks(
+      runner,
+      await introspectSchema(runner, schema, schema, managedRoleOptions(roles)),
+    );
+    const invalid = await invalidIndexReport(runner, schema);
     const plan = planMigration({ before: live, after: authorOnServer, name: "check", schema });
-    if (plan.steps.length === 0) return;
+    if (invalid.length === 0 && plan.steps.length === 0) return;
     const weaker = unvalidatedNotNull(live, authorOnServer);
+    const sqlText = plan.steps.map((step) => step.sql).join("\n");
     throw new OkmError(
       "OKM1520",
-      `The database differs from the schema.\n${plan.steps.map((step) => step.sql).join("\n")}${weaker}`,
+      `The database differs from the schema.\n${[...invalid, sqlText].filter((line) => line.length > 0).join("\n")}${weaker}`,
       {
         fix: {
-          summary: "Change the schema or the database so okm check reports no difference.",
+          summary:
+            invalid.length > 0
+              ? "Drop the INVALID index with DROP INDEX CONCURRENTLY, then run apply again."
+              : "Change the schema or the database so okm check reports no difference.",
         },
       },
     );
@@ -96,6 +103,43 @@ export async function assertAuthorDrift(
   } finally {
     await finishQuiet(() => sql.end({ timeout: 5 }));
   }
+}
+
+/**
+ * Lines for indexes a killed concurrent build left behind, and started steps.
+ *
+ * An invalid index is omitted from the catalog, so a plan would otherwise
+ * try to create it again. The lines name the index and any `okm_steps` row
+ * still in `started`.
+ *
+ * @param runner - Database connection
+ * @param schema - Concrete schema the live catalog was read from
+ * @returns Empty when every index is valid
+ */
+export async function invalidIndexReport(
+  runner: CatalogQuery,
+  schema: string,
+): Promise<readonly string[]> {
+  const names = await invalidIndexNames(runner, schema);
+  if (names.length === 0) return [];
+  const lines = names.map((name) => `Index ${name} is INVALID (pg_index.indisvalid is false).`);
+  const present = await runner.query(`select to_regclass('okm_steps')::text as reg`);
+  if (present[0]?.["reg"] == null) return lines;
+  const steps = await runner.query(
+    `select migration_id, step_index::text as step_index
+     from okm_steps
+     where state = 'started'
+     order by migration_id, step_index`,
+  );
+  for (const row of steps) {
+    const id = row["migration_id"];
+    const index = row["step_index"];
+    if (typeof id !== "string" || (typeof index !== "string" && typeof index !== "number")) {
+      continue;
+    }
+    lines.push(`okm_steps ${id} step ${String(index)} is started.`);
+  }
+  return lines;
 }
 
 /**
@@ -162,12 +206,82 @@ export async function sealDomainChecks(runner: CatalogQuery, source: Catalog): P
 }
 
 /**
+ * Reprints table and domain checks to the text Postgres stores.
+ *
+ * Author and live catalogs both go through this before they are planned
+ * against each other. A check or generated expression applied from author SQL
+ * and the same text applied from an earlier reprint then compare equal. The
+ * catalog hash still uses the author text.
+ *
+ * @param runner - Database connection
+ * @param source - Catalog whose checks may still be author SQL or one reprint
+ * @returns A catalog whose check expressions carry the stable server text
+ */
+export async function sealStoredChecks(runner: CatalogQuery, source: Catalog): Promise<Catalog> {
+  return sealGeneratedColumns(
+    runner,
+    await sealTableChecks(runner, await sealDomainChecks(runner, source)),
+  );
+}
+
+/**
+ * Reprints each generated expression the way this server stores it.
+ *
+ * `("a" + 1)` becomes `(a + 1)`. A plan against a live catalog does not
+ * treat that reprint as a permanent change. The catalog hash still uses the
+ * author text.
+ *
+ * @param runner - Database connection
+ * @param source - Catalog whose generated expressions may still be author SQL
+ * @returns A catalog whose generated expressions carry the server reprint
+ */
+export async function sealGeneratedColumns(
+  runner: CatalogQuery,
+  source: Catalog,
+): Promise<Catalog> {
+  const columnsByTable = tableColumns(source);
+  const types = reprintTypes(source);
+  const objects: CatalogObject[] = [];
+  let changed = false;
+  for (const object of source.objects) {
+    if (object.kind !== "column" || object.definition.generated === undefined) {
+      objects.push(object);
+      continue;
+    }
+    const parent = object.identity.parent.name;
+    const siblings = (columnsByTable.get(parent) ?? []).filter(
+      (column) => column.name !== object.identity.name,
+    );
+    const reprinted = await reprintGenerated(
+      runner,
+      object.definition.generated.expression,
+      { name: object.identity.name, dataType: object.definition.dataType },
+      siblings,
+      types,
+    );
+    if (reprinted === object.definition.generated.expression) {
+      objects.push(object);
+      continue;
+    }
+    changed = true;
+    objects.push({
+      ...object,
+      definition: {
+        ...object.definition,
+        generated: { ...object.definition.generated, expression: reprinted },
+      },
+    });
+  }
+  return changed ? { version: source.version, objects } : source;
+}
+
+/**
  * Reprints each table check the way this server stores it.
  *
  * Picklists and `IN (...)` checks become `= ANY (ARRAY[...])` (and
- * `varchar(n)` adds its casts), so a plan against a live catalog does not
- * treat the reprint as a permanent drop/add. The catalog hash still uses the
- * author text (D128, §19.3).
+ * `varchar(n)` adds its casts). The reprint is the text Postgres stores when
+ * that statement is applied, not the first printer pass, so push and check
+ * agree. The catalog hash still uses the author text (D128, §19.3).
  *
  * @param runner - Database connection
  * @param source - Catalog whose table checks may still be author SQL
