@@ -73,12 +73,12 @@ export async function assertAuthorDrift(
     const runner = catalogQuery(sql);
     const authorOnServer = await sealTriggerWhens(
       runner,
-      await sealTableChecks(
-        runner,
-        await sealDomainChecks(runner, await sealViews(runner, author)),
-      ),
+      await sealStoredChecks(runner, await sealViews(runner, author)),
     );
-    const live = await introspectSchema(runner, schema, schema, managedRoleOptions(roles));
+    const live = await sealStoredChecks(
+      runner,
+      await introspectSchema(runner, schema, schema, managedRoleOptions(roles)),
+    );
     const plan = planMigration({ before: live, after: authorOnServer, name: "check", schema });
     if (plan.steps.length === 0) return;
     const weaker = unvalidatedNotNull(live, authorOnServer);
@@ -162,12 +162,28 @@ export async function sealDomainChecks(runner: CatalogQuery, source: Catalog): P
 }
 
 /**
+ * Reprints table and domain checks to the text Postgres stores.
+ *
+ * Author and live catalogs both go through this before they are planned
+ * against each other. A check applied from author SQL and the same check
+ * applied from an earlier reprint then compare equal. The catalog hash still
+ * uses the author text.
+ *
+ * @param runner - Database connection
+ * @param source - Catalog whose checks may still be author SQL or one reprint
+ * @returns A catalog whose check expressions carry the stable server text
+ */
+export async function sealStoredChecks(runner: CatalogQuery, source: Catalog): Promise<Catalog> {
+  return sealTableChecks(runner, await sealDomainChecks(runner, source));
+}
+
+/**
  * Reprints each table check the way this server stores it.
  *
  * Picklists and `IN (...)` checks become `= ANY (ARRAY[...])` (and
- * `varchar(n)` adds its casts), so a plan against a live catalog does not
- * treat the reprint as a permanent drop/add. The catalog hash still uses the
- * author text (D128, §19.3).
+ * `varchar(n)` adds its casts). The reprint is the text Postgres stores when
+ * that statement is applied, not the first printer pass, so push and check
+ * agree. The catalog hash still uses the author text (D128, §19.3).
  *
  * @param runner - Database connection
  * @param source - Catalog whose table checks may still be author SQL

@@ -106,6 +106,41 @@ for (const item of cases) {
 
 postgresTest(
   gate,
+  "push of a varchar picklist and an IN check leaves check with no difference",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const cwd = mkdtempSync(join(tmpdir(), "okm-picklist-push-"));
+    try {
+      writeFileSync(
+        join(cwd, "schema.ts"),
+        [
+          `import { schema, table, t, sql } from ${source("src/dialects/pg/index.ts")};`,
+          'export const app = schema({ tables: [table("tasks", {',
+          "  id: t.integer().primaryKey(),",
+          '  status: t.varchar(20).picklist(["draft", "active", "done"]).default("draft"),',
+          "  code: t.varchar(10),",
+          "}, {",
+          "  checks: {",
+          "    code_ok: (columns) => sql`${columns.code} IN ('aa', 'bb')`,",
+          "  },",
+          "})] });",
+          "",
+        ].join("\n"),
+      );
+      writeConfig(cwd, database.url);
+      expect(await okm(cwd, ["push"])).toContain("applied");
+      expect(await okm(cwd, ["check"])).toContain("ok");
+      expect(await okm(cwd, ["push"])).toContain("no changes");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  120_000,
+);
+
+postgresTest(
+  gate,
   "picklist added to an existing table with rows applies without override",
   async () => {
     const database = await createIsolatedDatabase();

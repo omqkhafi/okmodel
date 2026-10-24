@@ -22,13 +22,7 @@ import { migrationJournalGrants } from "./managed.js";
 import { sealViews } from "../../dialects/pg/view/scratch.js";
 import { ensureMigrationTables } from "./apply.js";
 import type { MigrateConfig } from "./config.js";
-import {
-  catalogQuery,
-  managedRoleOptions,
-  sealDomainChecks,
-  sealTableChecks,
-  sealTriggerWhens,
-} from "./drift.js";
+import { catalogQuery, managedRoleOptions, sealStoredChecks, sealTriggerWhens } from "./drift.js";
 import { assertUuidV7Available } from "./engine.js";
 import { extensionStatement, type ExtensionStatement } from "./extensions.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
@@ -118,15 +112,17 @@ export async function replayCheckHistory(
       }
       // Seal views, domain checks, and table checks the way this server stores
       // them so a non-canonical author spelling is not OKM1547 when generate is
-      // empty (B-37, D128).
+      // empty (B-37, D128). The live catalog is sealed too: author SQL stores
+      // the first printer pass, and that pass is not always stable.
       const sealed = await sealTriggerWhens(
         runner,
-        await sealTableChecks(
-          runner,
-          await sealDomainChecks(runner, await sealViews(runner, migration.catalog)),
-        ),
+        await sealStoredChecks(runner, await sealViews(runner, migration.catalog)),
       );
-      const back = planMigration({ before: live, after: sealed, name: migration.id });
+      const back = planMigration({
+        before: await sealStoredChecks(runner, live),
+        after: sealed,
+        name: migration.id,
+      });
       if (back.steps.length === 0) continue;
       stop = { index, back };
       return;

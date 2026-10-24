@@ -40,13 +40,7 @@ import { planMigration, type PlanStep } from "./plan.js";
 import type { StoredMigration } from "./files.js";
 import { finishQuiet } from "./lost.js";
 import type { StepBoundary } from "./step-engine.js";
-import {
-  catalogQuery,
-  managedRoleOptions,
-  sealDomainChecks,
-  sealTableChecks,
-  sealTriggerWhens,
-} from "./drift.js";
+import { catalogQuery, managedRoleOptions, sealStoredChecks, sealTriggerWhens } from "./drift.js";
 import {
   assertDirectConnection,
   assertStoreTerminal,
@@ -648,15 +642,10 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
         await sql.unsafe(`set search_path to ${quoteIdent(schema)}`);
       }
       const authorViews = await sealViews(runner, request.after);
-      const author = await sealTriggerWhens(
+      const author = await sealTriggerWhens(runner, await sealStoredChecks(runner, authorViews));
+      const live = await sealStoredChecks(
         runner,
-        await sealTableChecks(runner, await sealDomainChecks(runner, authorViews)),
-      );
-      const live = await introspectSchema(
-        runner,
-        schema,
-        schema,
-        managedRoleOptions(request.roles),
+        await introspectSchema(runner, schema, schema, managedRoleOptions(request.roles)),
       );
       const plan = planMigration({
         before: live,

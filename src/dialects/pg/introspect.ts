@@ -875,6 +875,11 @@ export type ReprintType = {
  * A different predicate does not. Column types matter: `IN (...)` on
  * `varchar(n)` reprints differently from the same list on `text`.
  *
+ * The first reprint is not always what a later statement stores. A varchar
+ * `IN` list becomes `ARRAY[...]::text[]`, and applying that text prints a
+ * per-element cast instead. This repeats until the text stops changing, so
+ * the result can be written into DDL and read back as the same string.
+ *
  * The table is a temporary table with a random name, and so is each stand-in
  * for a type in `types` that a column names. Nothing is created in the
  * target schema, so the role needs no `CREATE` on it. Temporary objects are
@@ -894,6 +899,17 @@ export async function reprintCheck(
     { name: "title", dataType: "text" },
   ],
   types: readonly ReprintType[] = [],
+): Promise<string> {
+  return reprintUntilStable(expression, (current) =>
+    reprintCheckOnce(runner, current, columns, types),
+  );
+}
+
+async function reprintCheckOnce(
+  runner: CatalogQuery,
+  expression: string,
+  columns: readonly ReprintCheckColumn[],
+  types: readonly ReprintType[],
 ): Promise<string> {
   const table = scratchName("okm_expr");
   const standIns = await createStandIns(
@@ -999,9 +1015,10 @@ export async function reprintTriggerWhen(
  *
  * Domain checks use `VALUE`, which is not valid on a table check. Two
  * authoring spellings of the same domain predicate compare equal after this.
- * The domain and any stand-in for an enum or domain `base` names are
- * temporary objects with random names. Nothing is created in the target
- * schema.
+ * The reprint repeats until Postgres prints the same text, matching
+ * {@link reprintCheck}. The domain and any stand-in for an enum or domain
+ * `base` names are temporary objects with random names. Nothing is created
+ * in the target schema.
  *
  * @param runner - Database connection
  * @param base - Domain base type, as Postgres `format_type` spells it
@@ -1014,6 +1031,17 @@ export async function reprintDomainCheck(
   base: string,
   expression: string,
   types: readonly ReprintType[] = [],
+): Promise<string> {
+  return reprintUntilStable(expression, (current) =>
+    reprintDomainCheckOnce(runner, base, current, types),
+  );
+}
+
+async function reprintDomainCheckOnce(
+  runner: CatalogQuery,
+  base: string,
+  expression: string,
+  types: readonly ReprintType[],
 ): Promise<string> {
   const domain = scratchName("okm_expr_domain");
   const standIns = await createStandIns(runner, [base], types);
@@ -1031,6 +1059,22 @@ export async function reprintDomainCheck(
   } finally {
     await runDrops(runner, [`drop domain if exists pg_temp.${domain}`, ...standIns]);
   }
+}
+
+/** Passes a scratch reprint is allowed to take before the text is treated as stable. */
+const REPRINT_PASSES = 4;
+
+async function reprintUntilStable(
+  expression: string,
+  reprint: (current: string) => Promise<string>,
+): Promise<string> {
+  let current = expression;
+  for (let pass = 0; pass < REPRINT_PASSES; pass += 1) {
+    const next = await reprint(current);
+    if (next === current) return current;
+    current = next;
+  }
+  return current;
 }
 
 function scratchName(prefix: string): string {

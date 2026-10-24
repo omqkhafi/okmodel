@@ -24,13 +24,7 @@ import { sealViews } from "../../dialects/pg/view/scratch.js";
 import type { RolesInput } from "../../dialects/pg/role/index.js";
 import { ensureMigrationTables } from "./apply.js";
 import { driverUrl } from "./driver-url.js";
-import {
-  catalogQuery,
-  managedRoleOptions,
-  sealDomainChecks,
-  sealTableChecks,
-  sealTriggerWhens,
-} from "./drift.js";
+import { catalogQuery, managedRoleOptions, sealStoredChecks, sealTriggerWhens } from "./drift.js";
 import { catalogNamespace } from "./export.js";
 import { loadHeadSnapshot } from "./files.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
@@ -295,7 +289,7 @@ async function compareLive(
     const runner = catalogQuery(sql);
     const authorOnServer = await sealTriggerWhens(
       runner,
-      await sealTableChecks(runner, await sealDomainChecks(runner, await sealViews(runner, model))),
+      await sealStoredChecks(runner, await sealViews(runner, model)),
     );
     const live = omitManagedObjects(
       await introspectSchema(runner, namespace, namespace, managedRoleOptions(roles)),
@@ -314,7 +308,7 @@ async function compareLive(
       }),
     };
     const plan = planMigration({
-      before: managedLive,
+      before: await sealStoredChecks(runner, managedLive),
       after: authorOnServer,
       name: "baseline",
       schema: namespace,
