@@ -100,6 +100,33 @@ postgresTest(
 
 postgresTest(
   gate,
+  "a declared pg_trgm extension passes migrate check after apply",
+  async () => {
+    await withProject(async ({ cwd, url }) => {
+      const sql = openPostgres(url);
+      try {
+        const ready = await sql<{ ok: boolean }[]>`
+          select exists (select 1 from pg_available_extensions where name = 'pg_trgm') as ok
+        `;
+        if (ready[0]?.ok !== true) throw new Error("pg_trgm is not available on this server");
+        writeTrigramSchema(cwd);
+        await cli(cwd, ["generate", "trgm"]);
+        await cli(cwd, ["migrate", "apply"]);
+        const after = await capture(["migrate", "check"], cwd);
+        expect(after.startsWith("ok 1 migrations\n")).toBe(true);
+        expect(after.toLowerCase()).not.toContain("already exists");
+        const provision = await capture(["migrate", "check", "--provision"], cwd);
+        expect(provision.startsWith("ok 1 migrations\n")).toBe(true);
+      } finally {
+        await sql.end({ timeout: 5 });
+      }
+    });
+  },
+  90_000,
+);
+
+postgresTest(
+  gate,
   "pgcrypto in schema extensions passes migrate check before and after apply",
   async () => {
     await withProject(async ({ cwd, url }) => {
@@ -728,6 +755,23 @@ function writeSchema(
 ): void {
   writeModule(cwd, `export const app = schema({\n  tables: [${tables}],\n});`);
   if (options?.protected === true) writeConfig(cwd, { protected: true });
+}
+
+function writeTrigramSchema(cwd: string): void {
+  const source = (path: string): string => JSON.stringify(join(root, path));
+  writeFileSync(
+    join(cwd, "schema.ts"),
+    [
+      `import { schema, t, table } from ${source("src/dialects/pg/index.ts")};`,
+      `import { pgTrgm } from ${source("src/dialects/pg/ext/pg-trgm.ts")};`,
+      "const trigram = pgTrgm();",
+      "export const app = schema({",
+      '  tables: [table("docs", { id: t.id(), body: t.text() }, { indexes: (c) => [trigram.gin(c.body.name)] })],',
+      "  extensions: [trigram],",
+      "});",
+      "",
+    ].join("\n"),
+  );
 }
 
 function writePgcryptoSchema(cwd: string): void {
