@@ -21,6 +21,7 @@ import {
   type BackfillSpec,
 } from "./backfill.js";
 import type { PlanStep } from "./plan.js";
+import { ensureExtensionSchemaSql } from "./extensions.js";
 import { sessionFailure } from "./lost.js";
 import { migrationJournalGrants } from "./managed.js";
 import { postgresStepEngine } from "./pg-probe.js";
@@ -468,6 +469,8 @@ async function executePlanStep(
   const created = createdRoleName(item.step.sql);
   const existed = created !== undefined && (await roleExists(connection, created));
   if (created === undefined) {
+    const ensure = ensureExtensionSchemaSql(item.step.sql, run.schema ?? "public");
+    if (ensure !== undefined) await connection.execute(ensure);
     await connection.execute(item.step.sql);
     await assertSchemaUsageLanded(connection, item.step.sql);
   } else if (!existed) await connection.execute(createRoleOnce(item.step.sql));

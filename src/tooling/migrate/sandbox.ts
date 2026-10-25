@@ -24,7 +24,11 @@ import { ensureMigrationTables } from "./apply.js";
 import type { MigrateConfig } from "./config.js";
 import { catalogQuery, managedRoleOptions, sealStoredChecks, sealTriggerWhens } from "./drift.js";
 import { assertUuidV7Available } from "./engine.js";
-import { extensionStatement, type ExtensionStatement } from "./extensions.js";
+import {
+  ensureExtensionSchemaSql,
+  extensionStatement,
+  type ExtensionStatement,
+} from "./extensions.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
 import { lintReprints, type Finding } from "./lint.js";
 import { planMigration, type MigrationPlan, type PlanStep } from "./plan.js";
@@ -75,10 +79,15 @@ type Hosted = {
   version: string;
 };
 
-type Session = { setRole?: string; readonly hosted: Map<string, Hosted | null> };
+type Session = {
+  setRole?: string;
+  readonly hosted: Map<string, Hosted | null>;
+  /** Extensions this replay creates. Recorded after the statement runs. */
+  readonly creating: { name: string; schema: string }[];
+};
 
 function newSession(): Session {
-  return { hosted: new Map() };
+  return { hosted: new Map(), creating: [] };
 }
 
 /**
@@ -472,6 +481,7 @@ async function runSteps(
         if (replaySql.length > 0) {
           await sql.unsafe(replaySql);
           await assertSchemaUsageLanded(connection, replaySql);
+          await rememberCreated(sql, scratch, session);
         }
       } else if (!existed) {
         await sql.unsafe(createRoleOnce(prepared.sql.replace(/;\s*$/, "")));
@@ -564,7 +574,13 @@ async function replayExtension(
     return `drop extension ${parsed.ifExists ? "if exists " : ""}${rest.map(quoteIdent).join(", ")}${tail}`;
   }
   const host = await hostedExtension(sql, session, parsed.name, scratch);
-  if (host === undefined) return statement;
+  if (host === undefined) {
+    if (parsed.kind !== "create") return statement;
+    const schema = parsed.schema ?? scratch;
+    session.creating.push({ name: parsed.name, schema });
+    const ensure = ensureExtensionSchemaSql(statement, scratch);
+    return ensure === undefined ? statement : `${ensure};\n${statement}`;
+  }
   if (parsed.kind === "create") {
     host.present = true;
     host.schema = parsed.schema ?? scratch;
@@ -640,6 +656,35 @@ async function assertNoDependents(sql: Sql, name: string, scratch: string): Prom
   if (rows.length > 0) {
     throw new Error(`cannot drop extension ${name} because other objects depend on it`);
   }
+}
+
+/**
+ * Records an extension this replay just created so introspection sees it.
+ *
+ * The extension is database-wide. Its schema may be the scratch schema or a
+ * declared schema such as `extensions`. The declared schema is what the
+ * catalog comparison uses. The installed schema goes on `search_path`.
+ */
+async function rememberCreated(sql: Sql, scratch: string, session: Session): Promise<void> {
+  if (session.creating.length === 0) return;
+  for (const created of session.creating) {
+    const rows = await sql.unsafe(
+      `select n.nspname as schema, e.extversion as version
+       from pg_extension e
+       join pg_namespace n on n.oid = e.extnamespace
+       where e.extname = $1`,
+      [created.name],
+    );
+    const home = cell(rows[0], "schema") ?? created.schema;
+    session.hosted.set(created.name, {
+      home,
+      present: true,
+      schema: created.schema,
+      version: cell(rows[0], "version") ?? "",
+    });
+  }
+  session.creating.length = 0;
+  await placeHosted(sql, scratch, session);
 }
 
 /** Puts the schemas of the extensions still present after the scratch schema on `search_path`. */

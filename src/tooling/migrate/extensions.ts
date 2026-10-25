@@ -8,6 +8,7 @@
  */
 
 import { OkmError } from "../../contracts/error.js";
+import { quoteIdent } from "../../dialects/pg/ddl.js";
 import {
   compareExtensionVersions,
   isExactVersion,
@@ -38,6 +39,23 @@ const CREATE_EXTENSION =
 export function createExtensionName(sql: string): string | undefined {
   const statement = extensionStatement(sql);
   return statement?.kind === "create" ? statement.name : undefined;
+}
+
+/**
+ * Schema a `CREATE EXTENSION` installs into, when it is not the catalog namespace.
+ *
+ * The check and apply create that schema first. `public` and the scratch
+ * schema already exist, so those names return nothing.
+ *
+ * @param sql - One statement
+ * @param namespace - Catalog schema, or the scratch schema during check
+ * @returns `create schema if not exists`, or `undefined`
+ */
+export function ensureExtensionSchemaSql(sql: string, namespace: string): string | undefined {
+  const statement = extensionStatement(sql);
+  if (statement?.kind !== "create" || statement.schema === undefined) return undefined;
+  if (statement.schema === namespace) return undefined;
+  return `create schema if not exists ${quoteIdent(statement.schema)}`;
 }
 
 /** One statement that creates, drops, or alters an extension. */
