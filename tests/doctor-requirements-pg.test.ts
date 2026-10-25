@@ -85,6 +85,31 @@ postgresTest(
 
 postgresTest(
   gate,
+  "a schema with no migrations does not raise OKM1811 for an available extension",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const sql = openPostgres(database.url);
+    try {
+      if (!(await extensionAvailable(sql, "pg_trgm"))) return;
+      const cwd = project(database.url, trigramSchema());
+      try {
+        expect(await doctorProject(cwd, undefined)).toBe("no triggers\n");
+        const checked = await checkProject(cwd);
+        expect(checked.findings).toEqual([]);
+        expect(checked.notice).toBeUndefined();
+      } finally {
+        rmSync(cwd, { recursive: true, force: true });
+      }
+    } finally {
+      await sql.end({ timeout: 5 });
+      await database.close();
+    }
+  },
+  60_000,
+);
+
+postgresTest(
+  gate,
   "okm doctor refuses a missing required extension with OKM1811",
   async () => {
     const database = await createIsolatedDatabase();

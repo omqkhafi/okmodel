@@ -5,7 +5,9 @@
  * each table's triggers are listed. When a target is configured, the command
  * also connects and checks `minPostgres` and required extensions from
  * `describe()` (D300). An extension an applied or pending migration creates
- * is not OKM1811 (#400). When `roles` is set, it checks that those roles
+ * is not OKM1811 while the package is available, and neither is one the
+ * initial migration will create when the database has no history yet (#400).
+ * When `roles` is set, it checks that those roles
  * exist, that a managed role can be created, and that the application role
  * can reach each managed object.
  */
@@ -29,7 +31,6 @@ import { openProject } from "./project.js";
 import {
   assertSchemaExtensions,
   assertSchemaMajor,
-  extensionsCreatedByMigrations,
   serverChecksSkippedNotice,
 } from "./server-requirements.js";
 
@@ -74,11 +75,9 @@ export async function doctorProject(
   } else if (targets.length === 1 || (targets.length > 1 && flags?.target !== undefined)) {
     const target = selectTarget(opened.config, flags?.target);
     assertTargetPolicy(target, "check", flags?.allowProtected ?? false);
-    const created = extensionsCreatedByMigrations(
-      projectPath(opened.cwd, opened.config.migrations ?? "migrations"),
-    );
+    const directory = projectPath(opened.cwd, opened.config.migrations ?? "migrations");
     await assertSchemaMajor(target.url, opened.built);
-    await assertSchemaExtensions(target.url, opened.built, created);
+    await assertSchemaExtensions(target.url, opened.built, directory);
   }
   if (opened.config.roles !== undefined) {
     const target = selectTarget(opened.config, flags?.target);

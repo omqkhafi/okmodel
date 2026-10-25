@@ -3,7 +3,9 @@
  *
  * Doctor and `okm check` share this. Codes stay OKM1802 / OKM1803 for the
  * major and OKM1811 for a missing extension (D300). An extension an applied
- * or pending migration creates is not OKM1811; apply installs it (#400).
+ * or pending migration creates is not OKM1811 while the package is available.
+ * The same is true when the database has no history and no migration files:
+ * the initial migration will create every required extension (#400).
  */
 
 import { open } from "../../adapters/pg/postgresjs.js";
@@ -48,11 +50,12 @@ export function serverChecksSkippedNotice(count: number): string {
 /**
  * Extension names `CREATE EXTENSION` steps in the migrations directory create.
  *
- * Applied and pending files both count: doctor and check must not raise
- * OKM1811 for those names (#400).
+ * Applied and pending files both count (#400). A directory with no files is
+ * an empty set; the caller treats that as the initial migration when the
+ * database also has no `okm_history`.
  *
  * @param directory - Migrations directory
- * @returns Extension names the history will install
+ * @returns Extension names those files install
  */
 export function extensionsCreatedByMigrations(directory: string): ReadonlySet<string> {
   const names = new Set<string>();
@@ -63,6 +66,30 @@ export function extensionsCreatedByMigrations(directory: string): ReadonlySet<st
     }
   }
   return names;
+}
+
+/**
+ * True when the database has no migration files and no `okm_history`.
+ *
+ * The initial migration will create every required extension. A later apply
+ * installs it, so a missing install is not OKM1811 while the package is
+ * available.
+ *
+ * @param pool - Pool or connection
+ * @param directory - Migrations directory
+ * @returns Whether this database is still before its first migration
+ */
+export async function initialMigrationPending(
+  pool: StatementRunner,
+  directory: string,
+): Promise<boolean> {
+  if (loadMigrations(directory).length > 0) return false;
+  const result = await pool.execute("select to_regclass('okm_history') is not null");
+  return !historyPresent(result.rows[0]?.[0]);
+}
+
+function historyPresent(value: WireValue | undefined): boolean {
+  return value === "t" || value === "true";
 }
 
 /**
@@ -88,17 +115,17 @@ export async function assertSchemaMajor(url: string, schema: RequirementsSchema)
  *
  * @param url - Target URL
  * @param schema - Schema `describe` reads
- * @param createdByMigrations - Names applied or pending migrations create
+ * @param migrationsDirectory - Migrations directory
  * @throws OkmError OKM1811
  */
 export async function assertSchemaExtensions(
   url: string,
   schema: RequirementsSchema,
-  createdByMigrations: ReadonlySet<string> = new Set(),
+  migrationsDirectory: string,
 ): Promise<void> {
   const pool = open({ url: driverUrl(url), max: 1 });
   try {
-    await assertExtensionsAgainstPool(pool, schema, createdByMigrations);
+    await assertExtensionsAgainstPool(pool, schema, migrationsDirectory);
   } catch (error) {
     throw sessionFailure(error) ?? error;
   } finally {
@@ -111,17 +138,17 @@ export async function assertSchemaExtensions(
  *
  * @param url - Target URL
  * @param schema - Schema `describe` reads
- * @param createdByMigrations - Names applied or pending migrations create
+ * @param migrationsDirectory - Migrations directory
  * @throws OkmError OKM1802, OKM1803, or OKM1811
  */
 export async function assertSchemaRequirements(
   url: string,
   schema: RequirementsSchema,
-  createdByMigrations: ReadonlySet<string> = new Set(),
+  migrationsDirectory: string,
 ): Promise<void> {
   const pool = open({ url: driverUrl(url), max: 1 });
   try {
-    await assertAgainstPool(pool, schema, createdByMigrations);
+    await assertAgainstPool(pool, schema, migrationsDirectory);
   } catch (error) {
     throw sessionFailure(error) ?? error;
   } finally {
@@ -134,15 +161,15 @@ export async function assertSchemaRequirements(
  *
  * @param pool - Open connection
  * @param schema - Schema `describe` reads
- * @param createdByMigrations - Names applied or pending migrations create
+ * @param migrationsDirectory - Migrations directory
  */
 export async function assertAgainstPool(
   pool: StatementRunner,
   schema: RequirementsSchema,
-  createdByMigrations: ReadonlySet<string> = new Set(),
+  migrationsDirectory: string,
 ): Promise<void> {
   await assertMajorAgainstPool(pool, schema);
-  await assertExtensionsAgainstPool(pool, schema, createdByMigrations);
+  await assertExtensionsAgainstPool(pool, schema, migrationsDirectory);
 }
 
 /**
@@ -170,36 +197,38 @@ export async function assertMajorAgainstPool(
  *
  * @param pool - Pool or connection
  * @param schema - Schema `describe` reads
- * @param createdByMigrations - Names applied or pending migrations create
+ * @param migrationsDirectory - Migrations directory
  * @throws OkmError OKM1811
  */
 export async function assertExtensionsAgainstPool(
   pool: StatementRunner,
   schema: RequirementsSchema,
-  createdByMigrations: ReadonlySet<string>,
+  migrationsDirectory: string,
 ): Promise<void> {
   const description = describe(schema);
   if (description.requirements.extensions.length === 0) return;
   const names = description.requirements.extensions.map((item) => item.name);
   const installed = await installedExtensions(pool, names);
-  const missingCreated = names.filter(
-    (name) => !installed.has(name) && createdByMigrations.has(name),
+  const createdByMigrations = extensionsCreatedByMigrations(migrationsDirectory);
+  const initial = await initialMigrationPending(pool, migrationsDirectory);
+  const forthcoming = names.filter(
+    (name) => !installed.has(name) && (createdByMigrations.has(name) || initial),
   );
   const available =
-    missingCreated.length === 0
-      ? new Set<string>()
-      : await availableExtensions(pool, missingCreated);
+    forthcoming.length === 0 ? new Set<string>() : await availableExtensions(pool, forthcoming);
   for (const item of description.requirements.extensions) {
     if (installed.has(item.name)) continue;
-    if (createdByMigrations.has(item.name)) {
-      // Not installed yet; an applied or pending migration creates it. Refuse
-      // only when the server cannot install that package (#400).
+    if (createdByMigrations.has(item.name) || initial) {
+      // Not installed yet. A migration creates it, or the initial migration
+      // will. Refuse only when the server cannot install that package.
       if (available.has(item.name)) continue;
-      throw new OkmError("OKM1811", `Extension ${item.name} is not available on the server.`, {
-        fix: {
-          summary: `Run okm migrate apply after the extension package is on the server, or remove the declaration. Needed because ${item.reason}.`,
-        },
-      });
+      if (createdByMigrations.has(item.name)) {
+        throw new OkmError("OKM1811", `Extension ${item.name} is not available on the server.`, {
+          fix: {
+            summary: `Run okm migrate apply after the extension package is on the server, or remove the declaration. Needed because ${item.reason}.`,
+          },
+        });
+      }
     }
     throw new OkmError("OKM1811", `Extension ${item.name} is not installed on the server.`, {
       fix: {

@@ -323,14 +323,11 @@ export async function checkProject(
   const { assertAuthorDrift } = await import("./drift.js");
   const allowPooler = flags?.allowPooler === true || opened.config.allowPooler === true;
   await assertLiveExternal(target.url, opened.built.catalog, loadSnapshots(cwd, opened.config));
-  const { assertSchemaMajor, assertSchemaExtensions, extensionsCreatedByMigrations } =
-    await import("./server-requirements.js");
-  const created = extensionsCreatedByMigrations(
-    projectPath(cwd, opened.config.migrations ?? "migrations"),
-  );
+  const { assertSchemaMajor, assertSchemaExtensions } = await import("./server-requirements.js");
+  const directory = projectPath(cwd, opened.config.migrations ?? "migrations");
   await assertSchemaMajor(target.url, opened.built);
   await assertAuthorDrift(target.url, opened.built.catalog, opened.config.roles, allowPooler);
-  await assertSchemaExtensions(target.url, opened.built, created);
+  await assertSchemaExtensions(target.url, opened.built, directory);
   await rawOnlineCheck(cwd, opened.config, target.url, allowPooler);
   return finish({ findings });
 }
