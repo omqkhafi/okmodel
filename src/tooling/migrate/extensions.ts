@@ -8,6 +8,7 @@
  */
 
 import { OkmError } from "../../contracts/error.js";
+import { quoteIdent } from "../../dialects/pg/ddl.js";
 import {
   compareExtensionVersions,
   isExactVersion,
@@ -25,19 +26,36 @@ type MigrationSql = {
 
 const CREATE_EXTENSION =
   /^\s*create\s+extension\s+(?:if\s+not\s+exists\s+)?(?:"([^"]+)"|([A-Za-z_][\w$]*))/i;
-const UPDATE_EXTENSION =
-  /^\s*alter\s+extension\s+(?:"([^"]+)"|([A-Za-z_][\w$]*))\s+update\s+to\s+'([^']*)'/i;
 
 /**
  * Extension name a statement creates, when it is `CREATE EXTENSION`.
+ *
+ * `IF NOT EXISTS` is not the name. An unquoted name is folded, the same way
+ * Postgres folds it. A quoted name keeps its case.
  *
  * @param sql - One plan step
  * @returns The extension name, or `undefined`
  */
 export function createExtensionName(sql: string): string | undefined {
-  const created = CREATE_EXTENSION.exec(sql);
-  const name = created?.[1] ?? created?.[2];
-  return name === undefined ? undefined : name.replaceAll('""', '"');
+  const statement = extensionStatement(sql);
+  return statement?.kind === "create" ? statement.name : undefined;
+}
+
+/**
+ * Schema a `CREATE EXTENSION` installs into, when it is not the catalog namespace.
+ *
+ * The check and apply create that schema first. `public` and the scratch
+ * schema already exist, so those names return nothing.
+ *
+ * @param sql - One statement
+ * @param namespace - Catalog schema, or the scratch schema during check
+ * @returns `create schema if not exists`, or `undefined`
+ */
+export function ensureExtensionSchemaSql(sql: string, namespace: string): string | undefined {
+  const statement = extensionStatement(sql);
+  if (statement?.kind !== "create" || statement.schema === undefined) return undefined;
+  if (statement.schema === namespace) return undefined;
+  return `create schema if not exists ${quoteIdent(statement.schema)}`;
 }
 
 /** One statement that creates, drops, or alters an extension. */
@@ -159,13 +177,10 @@ export async function assertExtensionsAvailable(
   const updates: { readonly name: string; readonly version: string }[] = [];
   for (const migration of migrations) {
     for (const step of migration.steps) {
-      const name = createExtensionName(step.sql);
-      if (name !== undefined) creates.add(name);
-      const updated = UPDATE_EXTENSION.exec(step.sql);
-      const updateName = updated?.[1] ?? updated?.[2];
-      const version = updated?.[3];
-      if (updateName !== undefined && version !== undefined) {
-        updates.push({ name: updateName.replaceAll('""', '"'), version });
+      const statement = extensionStatement(step.sql);
+      if (statement?.kind === "create") creates.add(statement.name);
+      if (statement?.kind === "update") {
+        updates.push({ name: statement.name, version: statement.version });
       }
     }
   }

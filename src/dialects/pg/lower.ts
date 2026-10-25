@@ -25,8 +25,8 @@ import type {
   TypeObject,
   ViewObject,
 } from "../../contracts/catalog/types.js";
+import { sealLowered, type DdlStep, type LogicalChange, type LoweredStep } from "../ddl.js";
 import { ddlStep } from "../ddl-step.js";
-import type { DdlStep, LogicalChange } from "../ddl.js";
 import { classOf, type StepKind } from "../step-class.js";
 import {
   alterColumnSql,
@@ -54,10 +54,17 @@ const ROW = "ROW EXCLUSIVE";
 /**
  * Lowers one logical change to Postgres statements.
  *
+ * Every returned step has non-empty SQL, a kind, and the class of that kind.
+ *
  * @param change - Logical change from the planner
  * @returns Physical steps in apply order
+ * @throws OkmError OKM1559 when a step breaks that contract
  */
-export function lowerPostgres(change: LogicalChange): readonly DdlStep[] {
+export function lowerPostgres(change: LogicalChange): readonly LoweredStep[] {
+  return sealLowered(lowerChange(change));
+}
+
+function lowerChange(change: LogicalChange): readonly DdlStep[] {
   switch (change.op) {
     case "pending":
       return [];

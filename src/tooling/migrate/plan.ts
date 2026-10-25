@@ -42,19 +42,13 @@ import {
   resolveBatchSize,
   type BackfillSpec,
 } from "./backfill.js";
-import {
-  classOf,
-  isStepKind,
-  strictestClass,
-  type MigrationClass,
-  type StepKind,
-} from "./classify.js";
+import { isStepKind, strictestClass, type MigrationClass, type StepKind } from "./classify.js";
 import { extensionAlterSteps } from "./extensions.js";
 import { omitManagedObjects } from "./managed.js";
 import { stepsForExistingTable, type SafeStep } from "./safe.js";
 import { sqlQuoteOpen } from "./sql-lex.js";
 import { canonicalTypeName } from "./type-name.js";
-import type { DdlDialect, DdlStep } from "../../dialects/ddl.js";
+import { sealLowered, type DdlDialect, type DdlStep } from "../../dialects/ddl.js";
 import { ddlStep as step } from "../../dialects/ddl-step.js";
 import { postgresDialect } from "./postgres-dialect.js";
 import { assertNoChains, type Replacement } from "./values.js";
@@ -219,7 +213,6 @@ export function planMigration(
     before: omitManagedObjects(input.before),
     after: omitManagedObjects(input.after),
   };
-  askDialect(dialect, request.after);
   const schema = request.schema ?? "public";
   const batchSize = resolveBatchSize(request.batchSize);
   const renames = request.renames ?? [];
@@ -637,6 +630,26 @@ export function planMigration(
 }
 
 /**
+ * Plans a new statement after the dialect has accepted the catalog.
+ *
+ * A refused feature throws OKM1860 from the dialect. {@link planMigration}
+ * does not ask: history replay, drift, and `okm migrate check` compare
+ * catalogs that were already planned. `okm generate`, `okm migrate plan`,
+ * and `okm push` call this.
+ *
+ * @param input - Catalogs, declared renames, and `--replace` flags
+ * @param dialect - DDL lowering. Defaults to Postgres
+ * @returns Steps in apply order, with one class for the plan
+ */
+export function planStatements(
+  input: PlanRequest,
+  dialect: DdlDialect = postgresDialect,
+): MigrationPlan {
+  askDialect(dialect, omitManagedObjects(input.after));
+  return planMigration(input, dialect);
+}
+
+/**
  * Asks the dialect which features `catalog` uses.
  *
  * A refused feature throws OKM1860 from the dialect. Native features do not
@@ -645,6 +658,12 @@ export function planMigration(
  * @param dialect - Lowering object for this plan
  * @param catalog - Catalog after managed tables are omitted
  */
+function askDialect(dialect: DdlDialect, catalog: Catalog): void {
+  const features = dialect.featuresUsed(catalog);
+  const refused = features.filter((feature) => dialect.support(feature) === "refused");
+  dialect.refuseUnsupported(refused.length > 0 ? refused : features);
+}
+
 /**
  * Accepts a dialect result only when it is statements the planner can trust.
  *
@@ -661,28 +680,7 @@ function take(lowered: readonly DdlStep[]): readonly PlanStep[] {
       fix: { summary: "The lowering for this change has to return at least one statement." },
     });
   }
-  for (const step of lowered) {
-    if (step.sql.trim().length === 0) {
-      throw new OkmError("OKM1559", "The dialect returned a statement with no SQL.", {
-        fix: { summary: "Each lowered statement has to contain SQL." },
-      });
-    }
-    if (step.kind === undefined) {
-      throw new OkmError(
-        "OKM1559",
-        `A lowered statement has no kind and was classed ${step.class}.`,
-        { fix: { summary: "The statement class has to match its kind." } },
-      );
-    }
-    if (classOf(step.kind) !== step.class) {
-      throw new OkmError(
-        "OKM1559",
-        `Step kind ${step.kind} is ${classOf(step.kind)}, and the statement was classed ${step.class}.`,
-        { fix: { summary: "The statement class has to match its kind." } },
-      );
-    }
-  }
-  return lowered;
+  return sealLowered(lowered);
 }
 
 /**
@@ -697,12 +695,6 @@ function take(lowered: readonly DdlStep[]): readonly PlanStep[] {
 function takeOptional(lowered: readonly DdlStep[]): readonly PlanStep[] {
   if (lowered.length === 0) return [];
   return take(lowered);
-}
-
-function askDialect(dialect: DdlDialect, catalog: Catalog): void {
-  const features = dialect.featuresUsed(catalog);
-  const refused = features.filter((feature) => dialect.support(feature) === "refused");
-  dialect.refuseUnsupported(refused.length > 0 ? refused : features);
 }
 
 /**

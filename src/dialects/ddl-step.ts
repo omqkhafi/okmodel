@@ -7,7 +7,7 @@
 
 import type { StepKind } from "./step-class.js";
 import { classOf } from "./step-class.js";
-import type { DdlStep } from "./ddl.js";
+import type { DdlStep, LoweredStep } from "./ddl.js";
 
 const TABLE_PREFIX =
   /\b(?:create|alter|drop)\s+table(?:\s+if\s+exists)?\s+|\bupdate\s+|\binsert\s+into\s+|\breferences\s+|\bon\s+table\s+|\bon\s+/gi;
@@ -21,7 +21,7 @@ const TABLE_PREFIX =
  * @param lock - Lock comment
  * @param transactional - Whether the step can share a transaction
  * @param extraTables - Tables the SQL does not name
- * @returns The step
+ * @returns The step, with the class of `kind`
  */
 export function ddlStep(
   sql: string,
@@ -30,7 +30,7 @@ export function ddlStep(
   lock: string,
   transactional = true,
   extraTables?: readonly string[],
-): DdlStep {
+): LoweredStep {
   const tables = touchedTables(sql, lock, extraTables);
   return {
     sql,

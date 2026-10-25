@@ -21,6 +21,7 @@ import type {
 import type { DriverConnection } from "../../contracts/driver.js";
 import { roleExists } from "../../dialects/pg/role/check.js";
 import { changesRole, createdRoleName, createRoleOnce } from "../../dialects/pg/role/sql.js";
+import { ensureExtensionSchemaSql } from "./extensions.js";
 import { migrationJournalGrants } from "./managed.js";
 import { catalogsEqual } from "./equal.js";
 import { omitManagedObjects } from "./managed.js";
@@ -215,6 +216,14 @@ export async function installSnapshot(
         continue;
       }
       const sql = created === undefined ? step.sql : createRoleOnce(step.sql);
+      const ensure = created === undefined ? ensureExtensionSchemaSql(sql, schema) : undefined;
+      if (ensure !== undefined) {
+        if (step.transactional && !statementOutsideTransaction(step.sql)) batch.push(ensure);
+        else {
+          await flush();
+          await connection.execute(ensure);
+        }
+      }
       if (step.transactional && !statementOutsideTransaction(step.sql)) {
         batch.push(sql);
       } else {

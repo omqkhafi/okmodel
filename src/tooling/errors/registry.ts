@@ -790,8 +790,8 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     code: "OKM1814",
     title: "Extension change refused",
     summary:
-      "The plan would downgrade an extension, move a non-relocatable one, or drop one that still has dependents.",
-    fix: "Drop or move the dependents first. Postgres cannot lower an extension version.",
+      "The plan would downgrade an extension, move a non-relocatable one, or drop one that still has dependents. A NOSUPERUSER migration role that does not own the extension hits the same code when a step would alter that extension or one of its types.",
+    fix: "Drop or move the dependents first. Postgres cannot lower an extension version. When the message says the role must be the owner, make the migration role the owner of the extension, or check as that owner.",
   },
   {
     code: "OKM1820",
@@ -1089,6 +1089,14 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     since: "0.10",
   },
   {
+    code: "OKM1896",
+    title: "Reprint needs a writable session",
+    summary:
+      "A check, picklist, domain check, generated column, or btree index expression is reprinted on a temporary table. This connection is read-only, or the role cannot create temporary tables.",
+    fix: "Point the command at a writable primary. The role needs TEMP on the database. It does not need CREATE on the schema. Parallel runs use a random temporary name.",
+    since: "0.10",
+  },
+  {
     code: "OKM2200",
     title: "Observer buffer overflow",
     summary:
@@ -1138,7 +1146,7 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
   // Reserved, not registered (no raising path): version OKM1804–OKM1809,
   // extension OKM1815–OKM1819, feature refusal OKM1861 and OKM1868–OKM1879,
   // adapter capability refusal OKM1880 and OKM1889. OKM1881–OKM1888 (agent files) and
-  // OKM1890–OKM1895 are registered.
+  // OKM1890–OKM1896 are registered.
   // OKM1140–OKM1179 stay reserved (D291).
 ];
 

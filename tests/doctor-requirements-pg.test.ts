@@ -85,6 +85,31 @@ postgresTest(
 
 postgresTest(
   gate,
+  "a schema with no migrations does not raise OKM1811 for an available extension",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const sql = openPostgres(database.url);
+    try {
+      if (!(await extensionAvailable(sql, "pg_trgm"))) return;
+      const cwd = project(database.url, trigramSchema());
+      try {
+        expect(await doctorProject(cwd, undefined)).toBe("no triggers\n");
+        const checked = await checkProject(cwd);
+        expect(checked.findings).toEqual([]);
+        expect(checked.notice).toBeUndefined();
+      } finally {
+        rmSync(cwd, { recursive: true, force: true });
+      }
+    } finally {
+      await sql.end({ timeout: 5 });
+      await database.close();
+    }
+  },
+  60_000,
+);
+
+postgresTest(
+  gate,
   "okm doctor refuses a missing required extension with OKM1811",
   async () => {
     const database = await createIsolatedDatabase();
@@ -150,6 +175,73 @@ postgresTest(
     }
   },
   60_000,
+);
+
+postgresTest(
+  gate,
+  "doctor reports btree_gist for a gist_int8_ops index",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const cwd = project(database.url, gistInt8Schema());
+    try {
+      const error = await refused(() => doctorProject(cwd, undefined));
+      expect(error.code).toBe("OKM1811");
+      expect(error.message).toContain("btree_gist");
+      expect(error.message).toContain("not installed");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  60_000,
+);
+
+postgresTest(
+  gate,
+  "a btree int4_ops index does not require btree_gin",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const cwd = project(database.url, btreeInt4Schema());
+    try {
+      expect(await doctorProject(cwd, undefined)).toBe("no triggers\n");
+      expect((await checkProject(cwd)).findings).toEqual([]);
+      await cli(cwd, ["generate", "init"]);
+      const applied = await cli(cwd, ["migrate", "apply"]);
+      expect(applied).toContain("applied");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  90_000,
+);
+
+postgresTest(
+  gate,
+  "doctor reports pg_trgm after an applied migration and a later drop",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const sql = openPostgres(database.url);
+    try {
+      if (!(await extensionAvailable(sql, "pg_trgm"))) return;
+      const cwd = project(database.url, trigramSchema());
+      try {
+        await cli(cwd, ["generate", "init"]);
+        await cli(cwd, ["migrate", "apply"]);
+        await sql.unsafe("drop extension pg_trgm cascade");
+        const error = await refused(() => doctorProject(cwd, undefined));
+        expect(error.code).toBe("OKM1811");
+        expect(error.message).toContain("pg_trgm");
+        expect(error.message).toContain("not installed");
+      } finally {
+        rmSync(cwd, { recursive: true, force: true });
+      }
+    } finally {
+      await sql.end({ timeout: 5 });
+      await database.close();
+    }
+  },
+  90_000,
 );
 
 postgresTest(
@@ -310,6 +402,46 @@ function trigramSchema(): string {
     "const trgm = pgTrgm();",
     'const docs = table("docs", { id: t.id(), body: t.text() }, { indexes: (c) => [trgm.gin(c.body.name)] });',
     "export const app = schema({ tables: [docs], extensions: [trgm] });",
+    "",
+  ].join("\n");
+}
+
+function gistInt8Schema(): string {
+  return [
+    `import { schema, table, t } from ${JSON.stringify(join(root, "src/dialects/pg/index.ts"))};`,
+    "const docs = table(",
+    '  "docs",',
+    "  { id: t.id(), n: t.integer() },",
+    "  {",
+    "    indexes: () => [{",
+    '      columns: ["n"],',
+    "      isUnique: false,",
+    "      expression: 'using gist (\"n\" gist_int8_ops)',",
+    "      unique() { return this; },",
+    "    }],",
+    "  },",
+    ");",
+    "export const app = schema({ tables: [docs] });",
+    "",
+  ].join("\n");
+}
+
+function btreeInt4Schema(): string {
+  return [
+    `import { schema, table, t } from ${JSON.stringify(join(root, "src/dialects/pg/index.ts"))};`,
+    "const docs = table(",
+    '  "docs",',
+    "  { id: t.id(), n: t.integer() },",
+    "  {",
+    "    indexes: () => [{",
+    '      columns: ["n"],',
+    "      isUnique: false,",
+    "      expression: 'using btree (\"n\" int4_ops)',",
+    "      unique() { return this; },",
+    "    }],",
+    "  },",
+    ");",
+    "export const app = schema({ tables: [docs] });",
     "",
   ].join("\n");
 }

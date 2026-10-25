@@ -101,6 +101,129 @@ test("describe() reports pg_trgm when a later opclass owns it", () => {
   ]);
 });
 
+test("describe() does not require btree_gin for btree int4_ops", () => {
+  const app = schema({
+    tables: [
+      table(
+        "docs",
+        { id: t.id(), n: t.integer() },
+        {
+          indexes: () => [
+            {
+              columns: ["n"],
+              isUnique: false,
+              expression: 'using btree ("n" int4_ops)',
+              unique() {
+                return this;
+              },
+            },
+          ],
+        },
+      ),
+    ],
+  });
+  expect(describe(app).extensions).toEqual([]);
+});
+
+test("describe() ignores an operator class named only inside a string", () => {
+  const app = schema({
+    tables: [
+      table(
+        "docs",
+        { id: t.id(), body: t.text() },
+        {
+          indexes: () => [
+            {
+              columns: ["body"],
+              isUnique: false,
+              expression: `using btree (("body" || 'gin_trgm_ops'))`,
+              unique() {
+                return this;
+              },
+            },
+          ],
+        },
+      ),
+    ],
+  });
+  expect(describe(app).extensions).toEqual([]);
+});
+
+test("describe() reports btree_gist for gist_int8_ops and vector for an hnsw class", () => {
+  const gist = schema({
+    tables: [
+      table(
+        "docs",
+        { id: t.id(), n: t.integer() },
+        {
+          indexes: () => [
+            {
+              columns: ["n"],
+              isUnique: false,
+              expression: 'using gist ("n" gist_int8_ops)',
+              unique() {
+                return this;
+              },
+            },
+          ],
+        },
+      ),
+    ],
+  });
+  expect(describe(gist).extensions).toEqual([
+    { name: "btree_gist", reason: "index docs.docs_n_idx uses btree_gist" },
+  ]);
+  const vector = schema({
+    tables: [
+      table(
+        "docs",
+        { id: t.id(), embedding: t.text() },
+        {
+          indexes: () => [
+            {
+              columns: ["embedding"],
+              isUnique: false,
+              expression: 'using hnsw ("embedding" vector_l2_ops)',
+              unique() {
+                return this;
+              },
+            },
+          ],
+        },
+      ),
+    ],
+  });
+  expect(describe(vector).extensions).toEqual([
+    { name: "vector", reason: "index docs.docs_embedding_idx uses vector" },
+  ]);
+});
+
+test("describe() requires btree_gin for gin int4_ops", () => {
+  const app = schema({
+    tables: [
+      table(
+        "docs",
+        { id: t.id(), n: t.integer() },
+        {
+          indexes: () => [
+            {
+              columns: ["n"],
+              isUnique: false,
+              expression: 'using gin ("n" int4_ops)',
+              unique() {
+                return this;
+              },
+            },
+          ],
+        },
+      ),
+    ],
+  });
+  expect(describe(app).extensions).toEqual([
+    { name: "btree_gin", reason: "index docs.docs_n_idx uses btree_gin" },
+  ]);
+});
+
 test("describe() detects an uppercase GIN_TRGM_OPS opclass", () => {
   const app = schema({
     tables: [
@@ -155,6 +278,20 @@ test("describe({ catalog }) of a minPostgres 18 description keeps 18", () => {
   expect(
     describe({ catalog: description.catalog, minPostgres: description.minPostgres }).minPostgres,
   ).toBe(18);
+});
+
+test("describe({ catalog }) drops a declared floor the features do not imply", () => {
+  const declared = schema({
+    minPostgres: 17,
+    tables: [table("users", { id: t.id(), name: t.text() })],
+  });
+  const description = describe(declared);
+  expect(description.minPostgres).toBe(17);
+  expect(describe({ catalog: description.catalog }).minPostgres).toBe(15);
+  const uuidv7 = schema({
+    tables: [table("users", { id: t.id({ default: "uuidv7" }), name: t.text() })],
+  });
+  expect(describe({ catalog: describe(uuidv7).catalog }).minPostgres).toBe(18);
 });
 
 test("describe() lists citext from a column and the declaration", () => {
@@ -229,6 +366,7 @@ test("describe() refuses a value that has no catalog", () => {
 test("the handbook example round-trips", async () => {
   const example = await loadSchemaApiExample();
   expect(example.description.logical).toEqual({ format: 1, name: "public", namespace: "public" });
+  expect(example.description.minPostgres).toBe(15);
   expect(catalogHash(example.catalog)).toBe(catalogHash(example.app.catalog));
 });
 

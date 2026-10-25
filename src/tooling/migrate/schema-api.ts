@@ -73,7 +73,11 @@ export type { RequiredExtension };
  * the catalog already has, so the catalog hash still changes with placement.
  *
  * @param schema - A `schema()` result, a prior {@link SchemaDescription}, or any
- *   value that carries its catalog (and optionally a numeric `minPostgres`)
+ *   value that carries its catalog (and optionally a numeric `minPostgres`).
+ *   A description keeps `minPostgres` and does not keep `requires`, so
+ *   `describe(describe(schema))` keeps a declared floor. `describe({ catalog })`
+ *   does not: a floor no feature implies falls back to the project floor.
+ *   `uuidv7()` is in the catalog, so that call still reports 18.
  * @returns A description `JSON.stringify` can store
  */
 export function describe(schema: {

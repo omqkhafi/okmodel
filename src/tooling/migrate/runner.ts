@@ -21,6 +21,7 @@ import {
   type BackfillSpec,
 } from "./backfill.js";
 import type { PlanStep } from "./plan.js";
+import { ensureExtensionSchemaSql } from "./extensions.js";
 import { sessionFailure } from "./lost.js";
 import { migrationJournalGrants } from "./managed.js";
 import { postgresStepEngine } from "./pg-probe.js";
@@ -468,6 +469,8 @@ async function executePlanStep(
   const created = createdRoleName(item.step.sql);
   const existed = created !== undefined && (await roleExists(connection, created));
   if (created === undefined) {
+    const ensure = ensureExtensionSchemaSql(item.step.sql, run.schema ?? "public");
+    if (ensure !== undefined) await connection.execute(ensure);
     await connection.execute(item.step.sql);
     await assertSchemaUsageLanded(connection, item.step.sql);
   } else if (!existed) await connection.execute(createRoleOnce(item.step.sql));
@@ -788,6 +791,12 @@ export function stepFailureFix(
   error: unknown,
   again: "apply" | "check",
 ): { readonly summary: string } {
+  if (isExtensionOwner(error)) {
+    return {
+      summary:
+        "The migration role does not own this extension. Make that role the owner, or run okm migrate check as the owner. A NOSUPERUSER role cannot alter an extension or type it does not own.",
+    };
+  }
   if (isLockTimeout(error)) {
     const command = again === "apply" ? "okm migrate apply" : "okm migrate check";
     const tail =
@@ -797,6 +806,11 @@ export function stepFailureFix(
     };
   }
   return { summary: "Fix the step and run apply again. Finished steps are not repeated." };
+}
+
+function isExtensionOwner(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : "";
+  return /must be owner of (extension|type)\b/i.test(message);
 }
 
 function isLockTimeout(error: unknown): boolean {

@@ -39,7 +39,7 @@ import {
 } from "../src/tooling/capabilities/index.js";
 import { featuresUsed } from "../src/tooling/capabilities/used.js";
 import { placeCatalog } from "../src/tooling/migrate/place.js";
-import { planMigration } from "../src/tooling/migrate/plan.js";
+import { planMigration, planStatements } from "../src/tooling/migrate/plan.js";
 
 const closed = closedRegistry();
 
@@ -145,7 +145,8 @@ test("a schema the profile refuses fails in the planner", () => {
       return [];
     },
   };
-  expect(() => planMigration({ name: "probe", before: after, after }, dialect)).toThrow(OkmError);
+  expect(planMigration({ name: "probe", before: after, after }, dialect).steps).toEqual([]);
+  expect(() => planStatements({ name: "probe", before: after, after }, dialect)).toThrow(OkmError);
 });
 
 test("catalog features are refused through featuresUsed", () => {

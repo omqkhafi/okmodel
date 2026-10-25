@@ -36,7 +36,7 @@ import { loadBuiltSchema, loadConfig, projectHead } from "./project.js";
 import { loadHeadSnapshot, loadMigrations } from "./files.js";
 import { readReference, referenceInserts, type ReferenceTable } from "./reference.js";
 import { expandProvisioned, installSnapshot, provisionMark } from "./snapshot.js";
-import { planMigration, type PlanStep } from "./plan.js";
+import { planStatements, type PlanStep } from "./plan.js";
 import type { StoredMigration } from "./files.js";
 import { finishQuiet } from "./lost.js";
 import type { StepBoundary } from "./step-engine.js";
@@ -661,7 +661,7 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
           },
         });
       }
-      const plan = planMigration({
+      const plan = planStatements({
         before: live,
         after: author,
         renames: request.renames,

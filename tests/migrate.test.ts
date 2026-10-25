@@ -34,7 +34,7 @@ import {
   type MigrationPlan,
   type PlanStep,
 } from "../src/tooling/migrate/plan.js";
-import { extensionStatement } from "../src/tooling/migrate/extensions.js";
+import { createExtensionName, extensionStatement } from "../src/tooling/migrate/extensions.js";
 import { retargetSteps } from "../src/tooling/migrate/sandbox.js";
 import { unlistedTableFiles } from "../src/tooling/migrate/project.js";
 import { parseReplace } from "../src/tooling/migrate/values.js";
@@ -90,6 +90,14 @@ test("check replay retargets identifiers only, never a string or a comment (N-99
     `create table "${scratch}"."notes" ("id" int)`,
   ]);
   expect(steps[3]?.backfill?.table).toBe(`"${scratch}"."notes"`);
+});
+
+test("createExtensionName reads IF NOT EXISTS and folds an unquoted name", () => {
+  expect(createExtensionName("create extension if not exists pg_trgm")).toBe("pg_trgm");
+  expect(createExtensionName("CREATE EXTENSION IF NOT EXISTS PG_TRGM")).toBe("pg_trgm");
+  expect(createExtensionName("CREATE EXTENSION PG_TRGM")).toBe("pg_trgm");
+  expect(createExtensionName('CREATE EXTENSION "PG_TRGM"')).toBe("PG_TRGM");
+  expect(createExtensionName("create table notes (id int)")).toBeUndefined();
 });
 
 test("extensionStatement reads every extension form the planner writes", () => {

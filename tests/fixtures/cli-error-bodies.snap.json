@@ -1202,8 +1202,8 @@
     "code": "OKM1814",
     "kind": "invalid",
     "category": "input",
-    "summary": "The plan would downgrade an extension, move a non-relocatable one, or drop one that still has dependents.",
-    "fix": "Drop or move the dependents first. Postgres cannot lower an extension version.",
+    "summary": "The plan would downgrade an extension, move a non-relocatable one, or drop one that still has dependents. A NOSUPERUSER migration role that does not own the extension hits the same code when a step would alter that extension or one of its types.",
+    "fix": "Drop or move the dependents first. Postgres cannot lower an extension version. When the message says the role must be the owner, make the migration role the owner of the extension, or check as that owner.",
     "retryable": false,
     "docs": "docs/errors/OKM1814.md"
   },
@@ -1813,6 +1813,15 @@
     "fix": "`okm --help` lists the commands, and `okm <command> --help` lists that command's flags.",
     "retryable": false,
     "docs": "docs/errors/OKM1895.md"
+  },
+  {
+    "code": "OKM1896",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A check, picklist, domain check, generated column, or btree index expression is reprinted on a temporary table. This connection is read-only, or the role cannot create temporary tables.",
+    "fix": "Point the command at a writable primary. The role needs TEMP on the database. It does not need CREATE on the schema. Parallel runs use a random temporary name.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1896.md"
   },
   {
     "code": "OKM2200",

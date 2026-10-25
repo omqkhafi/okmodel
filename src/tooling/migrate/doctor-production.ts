@@ -19,7 +19,6 @@ import { tagOutcome } from "../cli/outcome.js";
 import { DEFAULT_LOCK_MS, DEFAULT_STATEMENT_MS } from "./apply.js";
 import { driverUrl } from "./driver-url.js";
 import { catalogNamespace } from "./export.js";
-import { extensionsCreatedByMigrations } from "./server-requirements.js";
 import {
   assertExtensionsAgainstPool,
   assertMajorAgainstPool,
@@ -684,14 +683,12 @@ async function extensionFacts(
 ): Promise<ExtensionFacts> {
   const required = describe(opened.built).requirements.extensions.map((item) => item.name);
   if (required.length === 0) return { required, versions: new Map(), refusal: undefined };
-  const created = extensionsCreatedByMigrations(
-    projectPath(opened.cwd, input.config.migrations ?? "migrations"),
-  );
+  const directory = projectPath(opened.cwd, input.config.migrations ?? "migrations");
   return {
     required,
     versions: await installedExtensionVersions(runner, required),
     refusal: await refusal(
-      () => assertExtensionsAgainstPool(runner, opened.built, created),
+      () => assertExtensionsAgainstPool(runner, opened.built, directory),
       input.target.url,
     ),
   };

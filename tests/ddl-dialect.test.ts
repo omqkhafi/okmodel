@@ -1,5 +1,7 @@
 /**
- * The planner asks the dialect about features and does not read the registry.
+ * A new statement asks the dialect about features. A replay does not.
+ * The planner does not read the registry. A lowered step has SQL, a kind,
+ * and the class of that kind.
  */
 
 import { expect, test } from "bun:test";
@@ -7,11 +9,17 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { OkmError } from "../src/contracts/error.js";
-import type { DdlDialect } from "../src/dialects/ddl.js";
+import { sealLowered, type DdlDialect } from "../src/dialects/ddl.js";
 import { ddlStep } from "../src/dialects/ddl-step.js";
+import { classOf } from "../src/dialects/step-class.js";
 import { fn } from "../src/dialects/pg/fn/index.js";
 import { index, schema, table, t } from "../src/dialects/pg/index.js";
-import { formatPlan, parsePlan, planMigration } from "../src/tooling/migrate/plan.js";
+import {
+  formatPlan,
+  parsePlan,
+  planMigration,
+  planStatements,
+} from "../src/tooling/migrate/plan.js";
 import { postgresDialect } from "../src/tooling/migrate/postgres-dialect.js";
 import { repoRoot } from "../scripts/root.js";
 
@@ -26,7 +34,7 @@ test("postgres support is native for a registry key and absent otherwise", () =>
   expect(postgresDialect.lower({ op: "pending" })).toEqual([]);
 });
 
-test("the planner asks the dialect and keeps the postgres plan", () => {
+test("a new statement asks the dialect and a replay does not", () => {
   const asked: string[] = [];
   const before = schema({ tables: [] }).catalog;
   const after = schema({
@@ -40,7 +48,10 @@ test("the planner asks the dialect and keeps the postgres plan", () => {
     },
   };
   const direct = planMigration({ before, after, name: "create" });
-  const through = planMigration({ before, after, name: "create" }, dialect);
+  const replay = planMigration({ before, after, name: "create" }, dialect);
+  expect(asked).toEqual([]);
+  expect(replay).toEqual(direct);
+  const through = planStatements({ before, after, name: "create" }, dialect);
   expect(asked).toContain("schema.core");
   expect(through).toEqual(direct);
 });
@@ -201,7 +212,7 @@ test("one logical function create can lower to two physical steps", () => {
   expect(parsed.class).toBe(plan.class);
 });
 
-test("a dialect that refuses a used feature is OKM1860", () => {
+test("a dialect that refuses a used feature is OKM1860 only for a new statement", () => {
   const after = schema({
     tables: [table("tasks", { id: t.integer().primaryKey() })],
   }).catalog;
@@ -220,13 +231,89 @@ test("a dialect that refuses a used feature is OKM1860", () => {
       return postgresDialect.refuseUnsupported(features);
     },
   };
+  const replay = planMigration(
+    { before: schema({ tables: [] }).catalog, after, name: "refuse" },
+    dialect,
+  );
+  expect(replay.steps.length).toBeGreaterThan(0);
   expect(() =>
-    planMigration({ before: schema({ tables: [] }).catalog, after, name: "refuse" }, dialect),
+    planStatements({ before: schema({ tables: [] }).catalog, after, name: "refuse" }, dialect),
   ).toThrow(OkmError);
   try {
-    planMigration({ before: schema({ tables: [] }).catalog, after, name: "refuse" }, dialect);
+    planStatements({ before: schema({ tables: [] }).catalog, after, name: "refuse" }, dialect);
   } catch (error) {
     expect(error).toBeInstanceOf(OkmError);
     expect((error as OkmError).code).toBe("OKM1860");
   }
 });
+
+test("a lowered step has sql, a kind, and that kind's class", () => {
+  expect(postgresDialect.lower({ op: "pending" })).toEqual([]);
+  const steps = postgresDialect.lower({
+    op: "rename-table",
+    schema: "public",
+    from: "tasks",
+    to: "work",
+  });
+  expect(steps).toHaveLength(1);
+  const step = steps[0];
+  expect(step?.sql).toBe('alter table "public"."tasks" rename to "work"');
+  expect(step?.kind).toBe("rename-table");
+  expect(step?.class).toBe(classOf("rename-table"));
+  expect(sealLowered(steps)).toBe(steps);
+
+  const blank = caught(() => sealLowered([{ ...step!, sql: "  " }]));
+  const missing = caught(() =>
+    sealLowered([
+      {
+        sql: step!.sql,
+        class: step!.class,
+        action: step!.action,
+        lock: step!.lock,
+        transactional: step!.transactional,
+      },
+    ]),
+  );
+  const lied = caught(() => sealLowered([{ ...step!, class: "expand" }]));
+  expect(blank).toBeInstanceOf(OkmError);
+  expect(missing).toBeInstanceOf(OkmError);
+  expect(lied).toBeInstanceOf(OkmError);
+  if (blank instanceof OkmError) expect(blank.code).toBe("OKM1559");
+  if (missing instanceof OkmError) {
+    expect(missing.code).toBe("OKM1559");
+    expect(missing.message).toContain("no kind");
+  }
+  if (lied instanceof OkmError) {
+    expect(lied.code).toBe("OKM1559");
+    expect(lied.message).toContain("rename-table");
+  }
+
+  const before = schema({ tables: [] }).catalog;
+  const after = schema({
+    tables: [table("tasks", { id: t.integer().primaryKey() })],
+  }).catalog;
+  const dialect: DdlDialect = {
+    ...postgresDialect,
+    lower(change) {
+      return postgresDialect
+        .lower(change)
+        .map((item) =>
+          item.kind === "create-table" ? { ...item, class: "contract" as const } : item,
+        );
+    },
+  };
+  const refused = caught(() => planMigration({ before, after, name: "class" }, dialect));
+  expect(refused).toBeInstanceOf(OkmError);
+  if (refused instanceof OkmError) {
+    expect(refused.code).toBe("OKM1559");
+    expect(refused.message).toContain("create-table");
+  }
+});
+
+function caught(run: () => unknown): unknown {
+  try {
+    return run();
+  } catch (error) {
+    return error;
+  }
+}

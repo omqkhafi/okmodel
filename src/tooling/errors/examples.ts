@@ -27,6 +27,7 @@ import {
 } from "../../contracts/internal.js";
 import { decodeBigintNumber } from "../../dialects/pg/integer.js";
 import { mapPostgresError } from "../../dialects/pg/errors.js";
+import { readOnlyReprint } from "../../dialects/pg/introspect.js";
 import { schemaDeclarations } from "../../dialects/pg/declarations.js";
 import { enumColumn } from "../../dialects/pg/enum.js";
 import { extension } from "../../dialects/pg/ext/index.js";
@@ -2077,6 +2078,19 @@ thrown(
   },
   () => {
     parseCli(["build", "--help"]);
+  },
+);
+
+thrown(
+  "OKM1896",
+  () => {
+    const error = readOnlyReprint(
+      new Error("cannot execute CREATE TABLE in a read-only transaction"),
+    );
+    if (error !== undefined) throw error;
+  },
+  () => {
+    readOnlyReprint(new Error('column "status" does not exist'));
   },
 );
 

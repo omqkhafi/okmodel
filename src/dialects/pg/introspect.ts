@@ -8,6 +8,7 @@
  */
 
 import { catalog } from "../../contracts/catalog/build.js";
+import { OkmError } from "../../contracts/error.js";
 import { domainType, enumType } from "../../contracts/catalog/enum.js";
 import { staticNamespace } from "../../contracts/catalog/identity.js";
 import { extensionObject } from "../../contracts/catalog/extension.js";
@@ -935,9 +936,171 @@ async function reprintCheckOnce(
       [`pg_temp.${table}`],
     );
     return checkExpression(text(rows[0] ?? {}, "definition"));
+  } catch (error) {
+    throw readOnlyReprint(error) ?? error;
   } finally {
     await runDrops(runner, [`drop table if exists pg_temp.${table}`, ...standIns]);
   }
+}
+
+/**
+ * Maps a temporary-object failure on a read-only session to OKM1896.
+ *
+ * A check, picklist, domain check, generated column, or btree index
+ * expression is reprinted on a temporary table. A replica or a session with
+ * `default_transaction_read_only` cannot create one, and neither can a role
+ * without `TEMP`. Any other failure is left alone.
+ *
+ * @param error - Failure from the scratch statement
+ * @returns OKM1896, or `undefined` when this is not that refusal
+ */
+export function readOnlyReprint(error: unknown): OkmError | undefined {
+  const message = error instanceof Error ? error.message : "";
+  if (
+    !/read-only transaction/i.test(message) &&
+    !/permission denied to create temporary/i.test(message)
+  ) {
+    return undefined;
+  }
+  return new OkmError(
+    "OKM1896",
+    "A check or picklist is reprinted on a temporary table, and this connection cannot create one.",
+    {
+      cause: error,
+      fix: {
+        summary:
+          "Point the command at a writable primary. The role needs TEMP on the database. It does not need CREATE on the schema.",
+      },
+    },
+  );
+}
+
+/**
+ * What a scratch btree index reads back as.
+ *
+ * `expression` is `pg_get_expr(indexprs)`. `columns` are the key columns
+ * (`indkey` above 0), which is empty for a pure expression. `predicate` is
+ * `pg_get_expr(indpred)`, or empty when the index has none.
+ */
+export type ReprintedIndex = {
+  readonly expression: string;
+  readonly columns: readonly string[];
+  readonly predicate: string;
+};
+
+/**
+ * Creates a scratch btree index and reads the text Postgres stores.
+ *
+ * `lower( email )` reprints as `lower(email)`. A pure expression has no key
+ * column, so `columns` comes back empty even when the declaration named the
+ * column the expression uses. A `using` tail is not an expression Postgres
+ * prints this way; pass it through unchanged.
+ *
+ * The table is temporary, with a random name, and so is each stand-in for a
+ * type in `types`. Nothing is created in the target schema. The index is
+ * created as `((expression))`, which is how a btree expression is emitted,
+ * then read the way introspection reads `indexprs`.
+ *
+ * @param runner - Database connection
+ * @param expression - Index expression, or a `using` tail
+ * @param columns - Columns of the parent table, so the expression resolves
+ * @param types - Enums and domains the columns may name
+ * @param options - Uniqueness and the partial predicate, when the index has one
+ * @returns The reprinted expression, key columns, and predicate
+ */
+export async function reprintIndex(
+  runner: CatalogQuery,
+  expression: string,
+  columns: readonly ReprintCheckColumn[] = [],
+  types: readonly ReprintType[] = [],
+  options?: { readonly unique?: boolean; readonly predicate?: string },
+): Promise<ReprintedIndex> {
+  if (/^using\s/i.test(expression)) {
+    return { expression, columns: [], predicate: options?.predicate ?? "" };
+  }
+  let printed: ReprintedIndex = {
+    expression,
+    columns: [],
+    predicate: options?.predicate ?? "",
+  };
+  for (let pass = 0; pass < REPRINT_PASSES; pass += 1) {
+    const next = await reprintIndexOnce(runner, printed.expression, columns, types, {
+      unique: options?.unique === true,
+      ...(printed.predicate.length > 0 ? { predicate: printed.predicate } : {}),
+    });
+    if (
+      pass > 0 &&
+      next.expression === printed.expression &&
+      next.predicate === printed.predicate &&
+      sameNames(next.columns, printed.columns)
+    ) {
+      return next;
+    }
+    printed = next;
+  }
+  return printed;
+}
+
+async function reprintIndexOnce(
+  runner: CatalogQuery,
+  expression: string,
+  columns: readonly ReprintCheckColumn[],
+  types: readonly ReprintType[],
+  options: { readonly unique: boolean; readonly predicate?: string },
+): Promise<ReprintedIndex> {
+  const table = scratchName("okm_idx");
+  const index = scratchName("okm_idx");
+  const standIns = await createStandIns(
+    runner,
+    columns.map((column) => column.dataType),
+    types,
+  );
+  try {
+    const defs =
+      columns.length > 0
+        ? columns
+            .map((column) => `${quoteIdent(column.name)} ${standInType(column.dataType, types)}`)
+            .join(", ")
+        : "id integer";
+    await runner.query(`create temp table ${table} (${defs})`);
+    const unique = options.unique ? "unique " : "";
+    const where = options.predicate === undefined ? "" : ` where ${options.predicate}`;
+    await runner.query(
+      `create ${unique}index ${quoteIdent(index)} on pg_temp.${table} ((${expression}))${where}`,
+    );
+    const rows = await runner.query(
+      `select pg_get_expr(i.indexprs, i.indrelid) as expression,
+        coalesce(pg_get_expr(i.indpred, i.indrelid), '') as predicate,
+        (
+          select coalesce(string_agg(a.attname, ',' order by cols.ord), '')
+          from unnest(i.indkey) with ordinality as cols(attnum, ord)
+          join pg_attribute a on a.attrelid = i.indrelid and a.attnum = cols.attnum
+          where cols.attnum > 0
+        ) as columns
+       from pg_index i
+       join pg_class idx on idx.oid = i.indexrelid
+       where i.indrelid = $1::regclass and idx.relname = $2`,
+      [`pg_temp.${table}`, index],
+    );
+    const row = rows[0] ?? {};
+    return {
+      expression: text(row, "expression"),
+      columns: list(text(row, "columns")),
+      predicate: text(row, "predicate"),
+    };
+  } catch (error) {
+    throw readOnlyReprint(error) ?? error;
+  } finally {
+    await runDrops(runner, [`drop table if exists pg_temp.${table}`, ...standIns]);
+  }
+}
+
+function sameNames(left: readonly string[], right: readonly string[]): boolean {
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
 }
 
 /** Trigger shape {@link reprintTriggerWhen} needs to build a valid scratch trigger. */
@@ -999,7 +1162,9 @@ export async function reprintTriggerWhen(
     );
     const match = /WHEN \(([\s\S]*)\) EXECUTE/.exec(text(rows[0] ?? {}, "definition"));
     return match?.[1] === undefined ? undefined : unwrapTriggerWhen(match[1]);
-  } catch {
+  } catch (error) {
+    const mapped = readOnlyReprint(error);
+    if (mapped !== undefined) throw mapped;
     return undefined;
   } finally {
     await runDrops(runner, [
@@ -1056,6 +1221,8 @@ async function reprintDomainCheckOnce(
       [`pg_temp.${domain}`],
     );
     return checkExpression(text(rows[0] ?? {}, "definition"));
+  } catch (error) {
+    throw readOnlyReprint(error) ?? error;
   } finally {
     await runDrops(runner, [`drop domain if exists pg_temp.${domain}`, ...standIns]);
   }
@@ -1118,6 +1285,8 @@ async function reprintGeneratedOnce(
       [`pg_temp.${table}`, column.name],
     );
     return flattenSqlWhitespace(text(rows[0] ?? {}, "expression"));
+  } catch (error) {
+    throw readOnlyReprint(error) ?? error;
   } finally {
     await runDrops(runner, [`drop table if exists pg_temp.${table}`, ...standIns]);
   }
