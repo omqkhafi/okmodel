@@ -68,6 +68,7 @@ import { formatPlanJson } from "./plan-json.js";
 import {
   formatPlan,
   planMigration,
+  planStatements,
   staleRenames,
   type MigrationPlan,
   type PlanStep,
@@ -399,7 +400,7 @@ async function prepare(
   readonly after: Catalog;
 }> {
   const opened = await openProject(project);
-  const plan = planMigration({
+  const plan = planStatements({
     before: opened.previous,
     after: opened.built.catalog,
     renames: opened.renames,

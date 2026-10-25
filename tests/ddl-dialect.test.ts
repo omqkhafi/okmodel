@@ -1,5 +1,6 @@
 /**
- * The planner asks the dialect about features and does not read the registry.
+ * A new statement asks the dialect about features. A replay does not.
+ * The planner does not read the registry.
  */
 
 import { expect, test } from "bun:test";
@@ -11,7 +12,12 @@ import type { DdlDialect } from "../src/dialects/ddl.js";
 import { ddlStep } from "../src/dialects/ddl-step.js";
 import { fn } from "../src/dialects/pg/fn/index.js";
 import { index, schema, table, t } from "../src/dialects/pg/index.js";
-import { formatPlan, parsePlan, planMigration } from "../src/tooling/migrate/plan.js";
+import {
+  formatPlan,
+  parsePlan,
+  planMigration,
+  planStatements,
+} from "../src/tooling/migrate/plan.js";
 import { postgresDialect } from "../src/tooling/migrate/postgres-dialect.js";
 import { repoRoot } from "../scripts/root.js";
 
@@ -26,7 +32,7 @@ test("postgres support is native for a registry key and absent otherwise", () =>
   expect(postgresDialect.lower({ op: "pending" })).toEqual([]);
 });
 
-test("the planner asks the dialect and keeps the postgres plan", () => {
+test("a new statement asks the dialect and a replay does not", () => {
   const asked: string[] = [];
   const before = schema({ tables: [] }).catalog;
   const after = schema({
@@ -40,7 +46,10 @@ test("the planner asks the dialect and keeps the postgres plan", () => {
     },
   };
   const direct = planMigration({ before, after, name: "create" });
-  const through = planMigration({ before, after, name: "create" }, dialect);
+  const replay = planMigration({ before, after, name: "create" }, dialect);
+  expect(asked).toEqual([]);
+  expect(replay).toEqual(direct);
+  const through = planStatements({ before, after, name: "create" }, dialect);
   expect(asked).toContain("schema.core");
   expect(through).toEqual(direct);
 });
@@ -201,7 +210,7 @@ test("one logical function create can lower to two physical steps", () => {
   expect(parsed.class).toBe(plan.class);
 });
 
-test("a dialect that refuses a used feature is OKM1860", () => {
+test("a dialect that refuses a used feature is OKM1860 only for a new statement", () => {
   const after = schema({
     tables: [table("tasks", { id: t.integer().primaryKey() })],
   }).catalog;
@@ -220,11 +229,16 @@ test("a dialect that refuses a used feature is OKM1860", () => {
       return postgresDialect.refuseUnsupported(features);
     },
   };
+  const replay = planMigration(
+    { before: schema({ tables: [] }).catalog, after, name: "refuse" },
+    dialect,
+  );
+  expect(replay.steps.length).toBeGreaterThan(0);
   expect(() =>
-    planMigration({ before: schema({ tables: [] }).catalog, after, name: "refuse" }, dialect),
+    planStatements({ before: schema({ tables: [] }).catalog, after, name: "refuse" }, dialect),
   ).toThrow(OkmError);
   try {
-    planMigration({ before: schema({ tables: [] }).catalog, after, name: "refuse" }, dialect);
+    planStatements({ before: schema({ tables: [] }).catalog, after, name: "refuse" }, dialect);
   } catch (error) {
     expect(error).toBeInstanceOf(OkmError);
     expect((error as OkmError).code).toBe("OKM1860");

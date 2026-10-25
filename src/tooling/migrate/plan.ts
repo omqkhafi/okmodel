@@ -219,7 +219,6 @@ export function planMigration(
     before: omitManagedObjects(input.before),
     after: omitManagedObjects(input.after),
   };
-  askDialect(dialect, request.after);
   const schema = request.schema ?? "public";
   const batchSize = resolveBatchSize(request.batchSize);
   const renames = request.renames ?? [];
@@ -637,6 +636,26 @@ export function planMigration(
 }
 
 /**
+ * Plans a new statement after the dialect has accepted the catalog.
+ *
+ * A refused feature throws OKM1860 from the dialect. {@link planMigration}
+ * does not ask: history replay, drift, and `okm migrate check` compare
+ * catalogs that were already planned. `okm generate`, `okm migrate plan`,
+ * and `okm push` call this.
+ *
+ * @param input - Catalogs, declared renames, and `--replace` flags
+ * @param dialect - DDL lowering. Defaults to Postgres
+ * @returns Steps in apply order, with one class for the plan
+ */
+export function planStatements(
+  input: PlanRequest,
+  dialect: DdlDialect = postgresDialect,
+): MigrationPlan {
+  askDialect(dialect, omitManagedObjects(input.after));
+  return planMigration(input, dialect);
+}
+
+/**
  * Asks the dialect which features `catalog` uses.
  *
  * A refused feature throws OKM1860 from the dialect. Native features do not
@@ -645,6 +664,12 @@ export function planMigration(
  * @param dialect - Lowering object for this plan
  * @param catalog - Catalog after managed tables are omitted
  */
+function askDialect(dialect: DdlDialect, catalog: Catalog): void {
+  const features = dialect.featuresUsed(catalog);
+  const refused = features.filter((feature) => dialect.support(feature) === "refused");
+  dialect.refuseUnsupported(refused.length > 0 ? refused : features);
+}
+
 /**
  * Accepts a dialect result only when it is statements the planner can trust.
  *
@@ -697,12 +722,6 @@ function take(lowered: readonly DdlStep[]): readonly PlanStep[] {
 function takeOptional(lowered: readonly DdlStep[]): readonly PlanStep[] {
   if (lowered.length === 0) return [];
   return take(lowered);
-}
-
-function askDialect(dialect: DdlDialect, catalog: Catalog): void {
-  const features = dialect.featuresUsed(catalog);
-  const refused = features.filter((feature) => dialect.support(feature) === "refused");
-  dialect.refuseUnsupported(refused.length > 0 ? refused : features);
 }
 
 /**
