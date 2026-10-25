@@ -32,6 +32,10 @@ export async function runLifecycleCase(
   item: LifecycleCase,
   seed: number,
 ): Promise<LifecycleOutcome> {
+  if (item.initial.stress === "collide" || item.initial.stress === "long") {
+    // schema() refuses these. validity.test.ts checks the code. Apply cannot.
+    return { ok: true };
+  }
   try {
     await runApplyPath(root, item);
     await runPushPath(root, item);

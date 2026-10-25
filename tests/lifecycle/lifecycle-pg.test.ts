@@ -10,12 +10,16 @@
  */
 
 import fc from "fast-check";
+import { expect } from "bun:test";
 
 import { loadPostgresGate, postgresTest } from "../../packages/harness/src/postgres-test.js";
+import { OkmError } from "../../src/contracts/error.js";
+import { schema, table, t } from "../../src/dialects/pg/index.js";
 import { repoRoot } from "../../scripts/root.js";
 import { lifecycleCaseArb } from "./grammar.js";
 import { formatLifecycleReport, knownSkipExceedsBudget, type LifecycleReport } from "./report.js";
 import { runLifecycleCase } from "./run.js";
+import type { ColumnModel, LifecycleCase, LifecycleCasing } from "./model.js";
 
 const gate = await loadPostgresGate();
 const root = repoRoot();
@@ -108,3 +112,86 @@ postgresTest(
   },
   Math.max(180_000, CASES * 15_000),
 );
+
+postgresTest(
+  gate,
+  "a snake schema and a camel schema apply, and a collision or a long name is refused",
+  async () => {
+    const snake = await runLifecycleCase(
+      root,
+      plainCase("snake", "publishedNotes", "publishedAt"),
+      1,
+    );
+    const camel = await runLifecycleCase(
+      root,
+      plainCase("camel", "published_notes", "published_at"),
+      2,
+    );
+    expect(snake.ok).toBe(true);
+    expect(camel.ok).toBe(true);
+    if (!snake.ok) throw new Error(snake.error);
+    if (!camel.ok) throw new Error(camel.error);
+
+    const collision = refused(() =>
+      schema({
+        casing: "snake",
+        tables: [table("notes", { userID: t.text(), user_id: t.text() })],
+      }),
+    );
+    expect(collision.code).toBe("OKM1023");
+    const longKey = `n${"x".repeat(63)}`;
+    const long = refused(() =>
+      schema({
+        casing: "camel",
+        tables: [table("notes", { [longKey]: t.text() })],
+      }),
+    );
+    expect(long.code).toBe("OKM1122");
+    expect(Buffer.byteLength(longKey)).toBeGreaterThan(63);
+  },
+  180_000,
+);
+
+function plainCase(casing: LifecycleCasing, tableName: string, columnName: string): LifecycleCase {
+  const column = (key: string, type: ColumnModel["type"], primaryKey: boolean): ColumnModel => ({
+    key,
+    name: key,
+    type,
+    nullable: false,
+    primaryKey,
+    unique: false,
+    defaultKind: "none",
+  });
+  return {
+    initial: {
+      casing,
+      tenancy: false,
+      trgm: false,
+      tables: [
+        {
+          key: "notes",
+          name: tableName,
+          columns: [column("id", "identity", true), column(columnName, "text", false)],
+          indexes: [],
+          checks: [],
+          archive: false,
+          versioned: false,
+        },
+      ],
+      triggers: [],
+      views: [],
+    },
+    evolutions: [],
+    withRows: false,
+    tags: [`casing-${casing}`],
+  };
+}
+
+function refused(body: () => unknown): OkmError {
+  try {
+    body();
+  } catch (error) {
+    return OkmError.from(error);
+  }
+  throw new Error("expected a rejection");
+}

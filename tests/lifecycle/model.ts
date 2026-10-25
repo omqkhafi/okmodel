@@ -86,22 +86,30 @@ export type ViewModel = {
   readonly columns: readonly string[];
 };
 
+/** Casing the lifecycle grammar draws, including the omitted spelling. */
+export type LifecycleCasing = "omit" | "snake" | "camel";
+
 /**
  * SQL spelling of an authored name under the schema's casing.
  *
- * Omitted casing keeps the name. `snake` uses the same fold as `schema()`.
+ * Omitted casing keeps the name. `snake` and `camel` use the same fold as `schema()`.
  *
  * @param casing - Schema casing
  * @param name - Name passed to `table()` or a column field
  * @returns The name stored in the catalog
  */
-export function sqlName(casing: "omit" | "snake", name: string): string {
-  return casing === "snake" ? caseName("snake", name) : name;
+export function sqlName(casing: LifecycleCasing, name: string): string {
+  return casing === "omit" ? name : caseName(casing, name);
 }
+
+/** A generated name the library refuses, or none. */
+export type NameStress = "none" | "collide" | "long";
 
 /** Full authored schema at one step. */
 export type SchemaModel = {
-  readonly casing: "omit" | "snake";
+  readonly casing: LifecycleCasing;
+  /** Colliding SQL names, or a name over 63 bytes. Omitted means a valid schema. */
+  readonly stress?: NameStress;
   readonly namespace?: string;
   readonly tenancy: boolean;
   readonly trgm: boolean;
@@ -186,7 +194,10 @@ export function tagsFor(
   const tags = new Set<string>();
   if (withRows) tags.add("with-rows");
   if (initial.casing === "snake") tags.add("casing-snake");
+  else if (initial.casing === "camel") tags.add("casing-camel");
   else tags.add("casing-omit");
+  if (initial.stress === "collide") tags.add("casing-collide");
+  if (initial.stress === "long") tags.add("casing-long");
   if (initial.namespace !== undefined) tags.add("namespace");
   if (initial.tenancy) tags.add("tenancy");
   if (initial.trgm) tags.add("index-using");
