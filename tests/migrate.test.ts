@@ -286,9 +286,7 @@ test("a column rename renames the identity sequence derived from that column", (
     tables: [table("notes", { entryId: t.identity(), title: t.text() })],
   });
   const after = schema({
-    tables: [
-      table("notes", { noteId: t.identity().renamedFrom("entryId"), title: t.text() }),
-    ],
+    tables: [table("notes", { noteId: t.identity().renamedFrom("entryId"), title: t.text() })],
   });
   const text = sqlOf(
     planMigration({
