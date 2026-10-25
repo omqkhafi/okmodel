@@ -223,7 +223,7 @@ test("search names the columns you can search", async () => {
 
   const pageOptions = { search: "deploy", limit: 1 };
   try {
-    await db.pages.page(pageOptions);
+    await db.pages.page(pageOptions as never);
     expect(false).toBe(true);
   } catch (error) {
     expect(error).toBeInstanceOf(OkmError);

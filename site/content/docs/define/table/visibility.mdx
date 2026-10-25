@@ -14,7 +14,7 @@ None of the three flags is stored in the catalog, so none of them changes a migr
 
 #### .hidden()
 
-`select` takes keys of the row, so a typed call cannot name the field there. At runtime `where` and `orderBy` refuse it. A root `select` list that names it returns it. An include drops it silently, including when that list names it. `filters()` refuses it in `allow`, `sort`, and `relations`. `groupBy`, `bucket`, `sum`, `avg`, `min`, and `max` refuse it. Search refuses it and says to call `hidden({ filterable: true })`.
+`select` takes keys of the row, so a typed call cannot name the field there. At runtime `where` and `orderBy` refuse it. The type refuses that key on `find`, `one`, and `page` too, including beside a valid key, inside `or()`, and in an include's `where` or `orderBy`. `page` also refuses an unknown option. A root `select` list that names it returns it. An include drops it silently, including when that list names it. `filters()` refuses it in `allow`, `sort`, and `relations`. `groupBy`, `bucket`, `sum`, `avg`, `min`, and `max` refuse it. Search refuses it and says to call `hidden({ filterable: true })`.
 
 ```ts title="users.ts"
 import { connect } from "okmodel/pg/postgresjs";

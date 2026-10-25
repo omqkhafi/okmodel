@@ -75,7 +75,9 @@ postgresTest(gate, "hidden columns stay out of where and orderBy unless filterab
       await expectHidden(a.notes.one({ where: { secret: "a-secret" } } as never));
       await expectHidden(a.notes.one({ orderBy: { secret: "desc" } as never }));
       await expectHidden(a.notes.count({ where: { secret: "b-secret" } as never }));
-      await expectHidden(a.notes.aggregate({ where: { secret: "a-secret" }, count: true }));
+      await expectHidden(
+        a.notes.aggregate({ where: { secret: "a-secret" }, count: true } as never),
+      );
       await expectHidden(
         a.notes.aggregate({ count: true, orderBy: { secret: "asc" }, limit: 5 } as never),
       );
