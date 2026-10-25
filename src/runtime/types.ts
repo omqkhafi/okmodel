@@ -158,24 +158,256 @@ type FilterWhereOf<S extends QuerySchema, K extends keyof S["~byName"], W> = [
 /** The `orderBy` value on a fresh call object. */
 type OrderOfTarget<T> = T extends { readonly orderBy: infer O } ? O : undefined;
 
+/**
+ * `true` when `W` has no key outside `Keys`. Otherwise those keys are `never`.
+ *
+ * A success is `true`, not the field map. Intersecting the call with that map
+ * would rebuild `where` on every read. An `or()` value seals each branch.
+ */
+type WhereSeal<W, Keys extends PropertyKey> = [W] extends [undefined]
+  ? true
+  : string extends keyof NonNullable<W>
+    ? true
+    : [NonNullable<W>] extends [Or<infer B>]
+      ? [ExtraKeys<NonNullable<B>, Keys>] extends [never]
+        ? true
+        : {
+            readonly value: readonly Record<ExtraKeys<NonNullable<B>, Keys>, never>[];
+          }
+      : [ExtraKeys<NonNullable<W>, Keys>] extends [never]
+        ? true
+        : Record<ExtraKeys<NonNullable<W>, Keys>, never>;
+
+/** `true` when `O` has no key outside `Keys`. Otherwise those keys are `never`. */
+type OrderSeal<O, Keys extends PropertyKey> = [O] extends [undefined]
+  ? true
+  : string extends keyof NonNullable<O>
+    ? true
+    : [ExtraKeys<NonNullable<O>, Keys>] extends [never]
+      ? true
+      : Record<ExtraKeys<NonNullable<O>, Keys>, never>;
+
+/** `unknown` when `Seal` passed. Otherwise `Field` carries the `never` keys. */
+type SealField<Seal, Field extends PropertyKey> = [Seal] extends [true]
+  ? unknown
+  : { readonly [K in Field]: Seal };
+
+/** Column and relation keys `where` may name. Filterable hidden columns join when `F` is true. */
+type WhereKeys<
+  S extends QuerySchema,
+  K extends keyof S["~byName"],
+  F extends boolean,
+> = F extends true ? keyof FilterFiltersOf<S, K> : keyof FiltersOf<S, K>;
+
+/** Column keys `orderBy` may name. Relations are not an order. */
+type OrderKeys<
+  S extends QuerySchema,
+  K extends keyof S["~byName"],
+  F extends boolean,
+> = F extends true ? keyof FilterableOf<S, K> : keyof RowOf<S, K>;
+
+/** `where` on this call, sealed, and skipped when the call has no `where`. */
+type WhereField<S extends QuerySchema, K extends keyof S["~byName"], O, F extends boolean> =
+  WhereOfTarget<O> extends infer W
+    ? [W] extends [undefined]
+      ? unknown
+      : SealField<WhereSeal<W, WhereKeys<S, K, F>>, "where">
+    : unknown;
+
+/** `orderBy` on this call, sealed, and skipped when the call has no `orderBy`. */
+type OrderField<S extends QuerySchema, K extends keyof S["~byName"], O, F extends boolean> =
+  OrderOfTarget<O> extends infer B
+    ? [B] extends [undefined]
+      ? unknown
+      : SealField<OrderSeal<B, OrderKeys<S, K, F>>, "orderBy">
+    : unknown;
+
+/** Option names an include object may carry. Nested `include` and `all` stay. */
+type IncludeOpt = "all" | "include" | "limit" | "orderBy" | "select" | "where";
+
+/** One include value: `true`, or an object whose where, order, and nested include are sealed. */
+type IncludeNode<S extends QuerySchema, Rel, V, F extends boolean> = Rel extends {
+  readonly morph: { readonly targets: readonly string[] };
+}
+  ? [V] extends [true]
+    ? true
+    : Record<"select" | "where" | "orderBy" | "limit", never>
+  : [V] extends [true]
+    ? true
+    : V extends Record<string, unknown>
+      ? IncludeNodeObject<S, Rel, V, F>
+      : true;
+
+type IncludeNodeObject<S extends QuerySchema, Rel, V, F extends boolean> = [
+  ExtraKeys<V, IncludeOpt>,
+] extends [never]
+  ? Rel extends { readonly table: infer T extends string }
+    ? T extends keyof S["~byName"]
+      ? IncludeParts<S, T, V, F>
+      : true
+    : true
+  : Record<ExtraKeys<V, IncludeOpt>, never>;
+
+/** `true` when every part of one include object is in range. The first failure is kept. */
+type IncludeParts<S extends QuerySchema, T extends keyof S["~byName"], V, F extends boolean> = [
+  IncludeWhere<S, T, V, F>,
+] extends [true]
+  ? [IncludeOrder<S, T, V, F>] extends [true]
+    ? [IncludeNested<S, T, V, F>] extends [true]
+      ? true
+      : IncludeNested<S, T, V, F>
+    : IncludeOrder<S, T, V, F>
+  : IncludeWhere<S, T, V, F>;
+
+type IncludeWhere<
+  S extends QuerySchema,
+  T extends keyof S["~byName"],
+  V,
+  F extends boolean,
+> = V extends { readonly where: infer W }
+  ? [W] extends [undefined]
+    ? true
+    : WhereSeal<W, WhereKeys<S, T, F>> extends infer Seal
+      ? [Seal] extends [true]
+        ? true
+        : { readonly where: Seal }
+      : true
+  : true;
+
+type IncludeOrder<
+  S extends QuerySchema,
+  T extends keyof S["~byName"],
+  V,
+  F extends boolean,
+> = V extends { readonly orderBy: infer B }
+  ? [B] extends [undefined]
+    ? true
+    : OrderSeal<B, OrderKeys<S, T, F>> extends infer Seal
+      ? [Seal] extends [true]
+        ? true
+        : { readonly orderBy: Seal }
+      : true
+  : true;
+
+type IncludeNested<
+  S extends QuerySchema,
+  T extends keyof S["~byName"],
+  V,
+  F extends boolean,
+> = V extends { readonly include: infer I }
+  ? [I] extends [undefined]
+    ? true
+    : IncludeTree<S, T, NonNullable<I>, F> extends infer Tree
+      ? [Tree] extends [true]
+        ? true
+        : { readonly include: Tree }
+      : true
+  : true;
+
+/** `true` when every relation include is in range. A bad one keeps its `never` keys. */
+type IncludeTree<S extends QuerySchema, K extends keyof S["~byName"], I, F extends boolean> = [
+  I,
+] extends [Record<string, unknown>]
+  ? {
+      readonly [R in keyof I]-?: [R] extends [keyof RelationsOf<S, K>]
+        ? IncludeNode<S, RelationsOf<S, K>[R], I[R], F>
+        : Record<R & string, never>;
+    } extends infer M
+    ? { readonly [R in keyof M]: [M[R]] extends [true] ? never : M[R] }[keyof M] extends never
+      ? true
+      : M
+    : true
+  : true;
+
+/** Seals `include` only when the call passes one. */
+type IncludeField<
+  S extends QuerySchema,
+  K extends keyof S["~byName"],
+  O,
+  F extends boolean,
+> = O extends { readonly include: infer I }
+  ? [I] extends [undefined]
+    ? unknown
+    : IncludeTree<S, K, NonNullable<I>, F> extends infer T
+      ? [T] extends [true]
+        ? unknown
+        : { readonly include: T }
+      : unknown
+  : unknown;
+
+/**
+ * Extra `where`, `orderBy`, and include keys on one read.
+ *
+ * Absent fields stay `unknown`, so a call that does not pass them does not
+ * build the column map. `F` adds `hidden({ filterable: true })` on the later overload.
+ */
+type ReadSeal<
+  S extends QuerySchema,
+  K extends keyof S["~byName"],
+  O,
+  F extends boolean,
+> = WhereField<S, K, O, F> & OrderField<S, K, O, F> & IncludeField<S, K, O, F>;
+
+/** `page` option names. `search` and `lock` are not among them. */
+type PageKey =
+  | "where"
+  | "select"
+  | "orderBy"
+  | "include"
+  | "ignore"
+  | "limit"
+  | "after"
+  | "route"
+  | "signal"
+  | "timeout";
+
+/** `unknown` when `page` options stay inside {@link PageKey}. Otherwise the extra keys are `never`. */
+type PageTop<O> = [ExtraKeys<O, PageKey>] extends [never]
+  ? unknown
+  : Record<ExtraKeys<O, PageKey>, never>;
+
+/** Read seals plus an unknown top-level `page` option. */
+type PageSeal<
+  S extends QuerySchema,
+  K extends keyof S["~byName"],
+  O,
+  F extends boolean,
+> = PageTop<O> & ReadSeal<S, K, O, F>;
+
+/**
+ * `aggregate` `where`, sealed with filterable hidden columns.
+ *
+ * A call with no `where` pays the undefined check only. `orderBy` stays the
+ * group, count, and select names: a hidden column is not one of them.
+ */
+type AggWhere<S extends QuerySchema, K extends keyof S["~byName"], O> = [WhereOfTarget<O>] extends [
+  undefined,
+]
+  ? unknown
+  : SealField<WhereSeal<WhereOfTarget<O>, WhereKeys<S, K, true>>, "where"> & {
+      readonly where?: FilterFiltersOf<S, K> | Or<FilterFiltersOf<S, K>>;
+    };
+
 /** `find` options whose `where` and `orderBy` include `hidden({ filterable: true })`. */
 type FindFilterOptions<S extends QuerySchema, K extends keyof S["~byName"], L> = Omit<
   FindOptions<S, K>,
-  "where" | "orderBy" | "search"
+  "where" | "orderBy" | "search" | "include"
 > &
   L & {
     readonly where?: FilterFiltersOf<S, K> | Or<FilterFiltersOf<S, K>>;
     readonly orderBy?: OrderBy<FilterableOf<S, K>>;
     readonly search?: TextSearch<FilterableOf<S, K>>;
+    readonly include?: IncludeBody<S, K, true>;
   };
 
 /** `one` and `page` options with the same filterable key set. */
 type ReadFilterOptions<S extends QuerySchema, K extends keyof S["~byName"]> = Omit<
   ReadOptions<S, K>,
-  "where" | "orderBy"
+  "where" | "orderBy" | "include"
 > & {
   readonly where?: FilterFiltersOf<S, K> | Or<FilterFiltersOf<S, K>>;
   readonly orderBy?: OrderBy<FilterableOf<S, K>>;
+  readonly include?: IncludeBody<S, K, true>;
 };
 
 /** `count` options with the same filterable key set. */
@@ -272,8 +504,13 @@ type Defaults<S, Key extends keyof Limits> = S extends {
 type IncludeLimit<S> =
   Defaults<S, "include"> extends true ? { readonly limit?: number } : { readonly limit: number };
 
-/** One include. To-many needs `limit`, unless `limits.include` is set. A morph include is `true`. */
-export type IncludeOf<S extends QuerySchema, K extends keyof S["~byName"]> = {
+/**
+ * One include. To-many needs `limit`, unless `limits.include` is set. A morph include is `true`.
+ *
+ * `F` adds `hidden({ filterable: true })` to `where` and `orderBy`. The public
+ * alias keeps the row, so a table that never opted in does not build that map.
+ */
+type IncludeBody<S extends QuerySchema, K extends keyof S["~byName"], F extends boolean> = {
   readonly [R in RelationKeys<RelationsOf<S, K>>]?: RelationsOf<S, K>[R] extends {
     readonly morph: { readonly targets: readonly string[] };
   }
@@ -287,8 +524,8 @@ export type IncludeOf<S extends QuerySchema, K extends keyof S["~byName"]> = {
             | (Defaults<S, "include"> extends true ? true : never)
             | (IncludeLimit<S> & {
                 readonly select?: readonly (keyof RowOf<S, T> & string)[];
-                readonly where?: FieldWhere<RowOf<S, T>>;
-                readonly orderBy?: OrderBy<RowOf<S, T>>;
+                readonly where?: FieldWhere<F extends true ? FilterableOf<S, T> : RowOf<S, T>>;
+                readonly orderBy?: OrderBy<F extends true ? FilterableOf<S, T> : RowOf<S, T>>;
               })
         : never
       : RelationsOf<S, K>[R] extends {
@@ -300,12 +537,19 @@ export type IncludeOf<S extends QuerySchema, K extends keyof S["~byName"]> = {
               | true
               | {
                   readonly select?: readonly (keyof RowOf<S, T> & string)[];
-                  readonly where?: FieldWhere<RowOf<S, T>>;
-                  readonly orderBy?: OrderBy<RowOf<S, T>>;
+                  readonly where?: FieldWhere<F extends true ? FilterableOf<S, T> : RowOf<S, T>>;
+                  readonly orderBy?: OrderBy<F extends true ? FilterableOf<S, T> : RowOf<S, T>>;
                 }
           : never
         : never;
 };
+
+/** One include. To-many needs `limit`, unless `limits.include` is set. A morph include is `true`. */
+export type IncludeOf<S extends QuerySchema, K extends keyof S["~byName"]> = IncludeBody<
+  S,
+  K,
+  false
+>;
 
 /**
  * Rows a morph include can return.
@@ -1176,32 +1420,43 @@ export interface TableExtras<S extends QuerySchema, K extends keyof S["~byName"]
 /** Methods on one table. */
 export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & string, L = unknown> = {
   find<const O extends FindOptions<S, K> & L & { readonly limit: number }>(
-    options: O,
+    options: O & ReadSeal<S, K, O, false>,
   ): Read<readonly ResultRow<S, K, O>[]>;
   find<const O extends FindFilterOptions<S, K, L> & { readonly limit: number }>(
-    options: O,
+    options: O & ReadSeal<S, K, O, true>,
   ): Read<readonly ResultRow<S, K, O>[]>;
   find<const O extends FindFilterOptions<S, K, L>>(
-    options: O,
+    options: O & ReadSeal<S, K, O, true>,
   ): Unbounded<S, "find", Read<readonly ResultRow<S, K, O>[]>>;
   find<const O extends FindOptions<S, K> & L>(
-    options: O,
+    options: O & ReadSeal<S, K, O, false>,
   ): Unbounded<S, "find", Read<readonly ResultRow<S, K, O>[]>>;
-  one<const O extends ReadOptions<S, K>>(options?: O): Read<ResultRow<S, K, O> | null>;
-  one<const O extends ReadFilterOptions<S, K>>(options?: O): Read<ResultRow<S, K, O> | null>;
+  one<const O extends ReadOptions<S, K>>(
+    options?: O & ReadSeal<S, K, O, false>,
+  ): Read<ResultRow<S, K, O> | null>;
+  one<const O extends ReadFilterOptions<S, K>>(
+    options?: O & ReadSeal<S, K, O, true>,
+  ): Read<ResultRow<S, K, O> | null>;
   /**
    * One page of rows and the cursor for the next.
    *
    * Keyset on `orderBy` plus the primary key, so a page is stable while rows
    * are inserted. Pass `next` back as `after` with the same `orderBy`.
    */
-  page<const O extends PageOptions<S, K>>(options: O & NoRank<O>): Query<Page<ResultRow<S, K, O>>>;
-  page<const O extends Omit<PageOptions<S, K>, "where" | "orderBy"> & ReadFilterOptions<S, K>>(
-    options: O & NoRank<O>,
+  page<const O extends PageOptions<S, K>>(
+    options: O & NoRank<O> & PageSeal<S, K, O, false>,
   ): Query<Page<ResultRow<S, K, O>>>;
-  page<const O extends DefaultPage<S, K>>(options: O & NoRank<O>): Query<Page<ResultRow<S, K, O>>>;
+  page<
+    const O extends Omit<PageOptions<S, K>, "where" | "orderBy" | "include"> &
+      ReadFilterOptions<S, K>,
+  >(
+    options: O & NoRank<O> & PageSeal<S, K, O, true>,
+  ): Query<Page<ResultRow<S, K, O>>>;
+  page<const O extends DefaultPage<S, K>>(
+    options: O & NoRank<O> & PageSeal<S, K, O, false>,
+  ): Query<Page<ResultRow<S, K, O>>>;
   page<const O extends DefaultPage<S, K, true>>(
-    options: O & NoRank<O>,
+    options: O & NoRank<O> & PageSeal<S, K, O, true>,
   ): Query<Page<ResultRow<S, K, O>>>;
   /**
    * Counts, sums, averages, and finds extremes, per group.
@@ -1219,7 +1474,7 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
           }
       ),
   >(
-    options: O,
+    options: O & AggWhere<S, K, O>,
   ): Query<readonly AggregateRow<RowOf<S, K>, O>[]>;
   aggregate<
     const O extends AggregateOptions<S, K> & {
@@ -1227,17 +1482,17 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
       readonly having?: CountHaving;
     },
   >(
-    options: O,
+    options: O & AggWhere<S, K, O>,
   ): Unbounded<S, "groupBy", Query<readonly AggregateRow<RowOf<S, K>, O>[]>>;
   aggregate<
     const O extends AggregateOptions<S, K> &
       NamedAggregateOptions<S, K> &
       ({ readonly limit: number } | { readonly groupBy?: undefined; readonly having?: undefined }),
   >(
-    options: O & HavingGuard<RowOf<S, K>, O>,
+    options: O & AggWhere<S, K, O> & HavingGuard<RowOf<S, K>, O>,
   ): Query<readonly AggregateRow<RowOf<S, K>, O>[]>;
   aggregate<const O extends AggregateOptions<S, K> & NamedAggregateOptions<S, K>>(
-    options: O & HavingGuard<RowOf<S, K>, O>,
+    options: O & AggWhere<S, K, O> & HavingGuard<RowOf<S, K>, O>,
   ): Unbounded<S, "groupBy", Query<readonly AggregateRow<RowOf<S, K>, O>[]>>;
   count(
     options?: CallOptions & {

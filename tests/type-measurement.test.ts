@@ -79,20 +79,28 @@ test("the feature-using query probes have their own ceilings (D176)", () => {
   const base = budgetReport(rows);
   const within = {
     ...base,
-    queryValidate: row("query-200-validate", 200, 25_631, 6_604),
-    queryFeatures: [row("query-200+page+aggregate+through", 200, 24_792, 7_146)],
-    queryPresets: row("query-200+presets", 200, 19_755, 7_341),
-    queryTx: row("query-200+tx", 200, 25_011, 7_156),
+    queryValidate: row("query-200-validate", 200, 34_826, 7_130),
+    queryFeatures: [row("query-200+page+aggregate+through", 200, 44_354, 7_817)],
+    queryPresets: row("query-200+presets", 200, 30_118, 7_830),
+    queryTx: row("query-200+tx", 200, 35_841, 7_629),
+    queries: [
+      row("query-200", 200, 26_587, 7_100),
+      row("query-200+extensions", 200, 26_587, 7_100),
+    ],
   };
   expect(ceilingProblems(within)).toEqual([]);
   const over = {
     ...base,
-    queryValidate: row("query-200-validate", 200, 25_632, 6_605),
-    queryFeatures: [row("query-200+page+aggregate+through", 200, 24_793, 7_147)],
-    queryPresets: row("query-200+presets", 200, 19_756, 7_342),
-    queryTx: row("query-200+tx", 200, 25_012, 7_157),
+    queryValidate: row("query-200-validate", 200, 34_827, 7_131),
+    queryFeatures: [row("query-200+page+aggregate+through", 200, 44_355, 7_818)],
+    queryPresets: row("query-200+presets", 200, 30_119, 7_831),
+    queryTx: row("query-200+tx", 200, 35_842, 7_630),
+    queries: [
+      row("query-200", 200, 26_588, 7_101),
+      row("query-200+extensions", 200, 26_588, 7_101),
+    ],
   };
-  expect(ceilingProblems(over)).toHaveLength(8);
+  expect(ceilingProblems(over)).toHaveLength(12);
 });
 
 test("column type ceilings fail when the sample is over the limit", () => {

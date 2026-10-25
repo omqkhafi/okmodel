@@ -89,8 +89,14 @@ export function measureTypeCost(): TypeCostReport {
  * Check time is reported and is not capped.
  */
 export const TYPE_CEILINGS = {
-  /** Q5 / D305: query-200+extensions measured 17,312; plus 3 percent, rounded down. */
+  /** Q5 / D305: 17,312 plus 3 percent, rounded down. Schema probes only. */
   inferred200Instantiations: 17_831,
+  /**
+   * query-200+extensions after sealing hidden and excess keys on `find`, `one`,
+   * and `page`: measured 25,813; plus 3 percent, rounded down.
+   * Split from the schema ceiling so that probe stays at 17,831.
+   */
+  query200Instantiations: 26_587,
   inferred200Types: 6_500,
   inferred500Instantiations: 42_400,
   /** The 250-table probe (R4): measured 17,650 plus 20 percent. */
@@ -99,19 +105,19 @@ export const TYPE_CEILINGS = {
   emittedConsumerTypes: 700,
   /** Query composite probe on 200 tables (D140). Separate from the inferred-schema baseline. */
   queryCompositeTypes: 7_100,
-  /** The query probe with `okmodel/validate` imported (D176): measured 24,885 / 6,412 plus 3 percent, rounded down. */
-  queryValidateInstantiations: 25_631,
-  queryValidateTypes: 6_604,
-  /** The query probe with `page`, `aggregate` and `manyThrough` in use (D176): measured 24,070 / 6,730 plus 3 percent, rounded down. */
-  queryFeaturesInstantiations: 24_792,
-  /** Q5 / D305: query-200+page+aggregate+through measured 6,938 types; plus 3 percent, rounded down. */
-  queryFeaturesTypes: 7_146,
-  /** The query probe with a chain of two presets with arguments, then `find` (D176): measured 19,180 / 7,128 plus 3 percent, rounded down. */
-  queryPresetsInstantiations: 19_755,
-  queryPresetsTypes: 7_341,
-  /** The query probe with a `tx` callback: a locked `find`, an `update`, and `afterCommit` (D176): measured 24,283 / 6,948 plus 3 percent, rounded down. */
-  queryTxInstantiations: 25_011,
-  queryTxTypes: 7_156,
+  /** query-200 with `okmodel/validate` after the read seals: measured 33,812 / 6,923; plus 3 percent, rounded down. */
+  queryValidateInstantiations: 34_826,
+  queryValidateTypes: 7_130,
+  /** query-200+page+aggregate+through after the read seals: measured 43,063; plus 3 percent, rounded down. */
+  queryFeaturesInstantiations: 44_354,
+  /** Same probe, types: measured 7,590; plus 3 percent, rounded down. */
+  queryFeaturesTypes: 7_817,
+  /** query-200+presets after the read seals: measured 29,241 / 7,602; plus 3 percent, rounded down. */
+  queryPresetsInstantiations: 30_118,
+  queryPresetsTypes: 7_830,
+  /** query-200+tx after the read seals: measured 34,798 / 7,407; plus 3 percent, rounded down. */
+  queryTxInstantiations: 35_841,
+  queryTxTypes: 7_629,
   taggedOperatorSurcharge: 800,
   columnInstantiations: 720,
   columnTypes: 1_100,
@@ -441,9 +447,9 @@ export function ceilingProblems(
   const queryExtensions = report.queries?.find((entry) => entry.label === "query-200+extensions");
   for (const row of [query200, queryExtensions]) {
     if (row === undefined) continue;
-    if (row.instantiations > TYPE_CEILINGS.inferred200Instantiations) {
+    if (row.instantiations > TYPE_CEILINGS.query200Instantiations) {
       problems.push(
-        `type-cost: ${row.label} used ${String(row.instantiations)} instantiations, above ${String(TYPE_CEILINGS.inferred200Instantiations)}`,
+        `type-cost: ${row.label} used ${String(row.instantiations)} instantiations, above ${String(TYPE_CEILINGS.query200Instantiations)}`,
       );
     }
     if (row.types > TYPE_CEILINGS.queryCompositeTypes) {
