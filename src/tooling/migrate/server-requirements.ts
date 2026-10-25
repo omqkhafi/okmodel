@@ -97,6 +97,14 @@ async function appliedSteps(
   return { present: true, done: expandProvisioned(migrations, done, ids) };
 }
 
+function declaredExtensions(schema: RequirementsSchema): ReadonlySet<string> {
+  const names = new Set<string>();
+  for (const object of schema.catalog.objects) {
+    if (object.kind === "extension") names.add(object.identity.name);
+  }
+  return names;
+}
+
 function historyPresent(value: WireValue | undefined): boolean {
   return value === "t" || value === "true";
 }
@@ -219,17 +227,19 @@ export async function assertExtensionsAgainstPool(
   const names = description.requirements.extensions.map((item) => item.name);
   const installed = await installedExtensions(pool, names);
   const pending = await pendingExtensionCreates(pool, migrationsDirectory);
-  const forthcoming = names.filter(
-    (name) => !installed.has(name) && (pending.names.has(name) || pending.initial),
-  );
+  const declared = declaredExtensions(schema);
+  const covered = (name: string): boolean =>
+    pending.names.has(name) || (pending.initial && declared.has(name));
+  const forthcoming = names.filter((name) => !installed.has(name) && covered(name));
   const available =
     forthcoming.length === 0 ? new Set<string>() : await availableExtensions(pool, forthcoming);
   for (const item of description.requirements.extensions) {
     if (installed.has(item.name)) continue;
-    if (pending.names.has(item.name) || pending.initial) {
+    if (covered(item.name)) {
       // Not installed yet. A pending step creates it, or the initial
-      // migration will. An applied step does not hide a later drop. Refuse
-      // only when the server cannot install that package.
+      // migration will create a declared extension. An operator class with
+      // no declaration is not created by that migration. An applied step
+      // does not hide a later drop.
       if (available.has(item.name)) continue;
       if (pending.names.has(item.name)) {
         throw new OkmError("OKM1811", `Extension ${item.name} is not available on the server.`, {

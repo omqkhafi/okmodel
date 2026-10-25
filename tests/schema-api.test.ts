@@ -149,6 +149,55 @@ test("describe() ignores an operator class named only inside a string", () => {
   expect(describe(app).extensions).toEqual([]);
 });
 
+test("describe() reports btree_gist for gist_int8_ops and vector for an hnsw class", () => {
+  const gist = schema({
+    tables: [
+      table(
+        "docs",
+        { id: t.id(), n: t.integer() },
+        {
+          indexes: () => [
+            {
+              columns: ["n"],
+              isUnique: false,
+              expression: 'using gist ("n" gist_int8_ops)',
+              unique() {
+                return this;
+              },
+            },
+          ],
+        },
+      ),
+    ],
+  });
+  expect(describe(gist).extensions).toEqual([
+    { name: "btree_gist", reason: "index docs.docs_n_idx uses btree_gist" },
+  ]);
+  const vector = schema({
+    tables: [
+      table(
+        "docs",
+        { id: t.id(), embedding: t.text() },
+        {
+          indexes: () => [
+            {
+              columns: ["embedding"],
+              isUnique: false,
+              expression: 'using hnsw ("embedding" vector_l2_ops)',
+              unique() {
+                return this;
+              },
+            },
+          ],
+        },
+      ),
+    ],
+  });
+  expect(describe(vector).extensions).toEqual([
+    { name: "vector", reason: "index docs.docs_embedding_idx uses vector" },
+  ]);
+});
+
 test("describe() requires btree_gin for gin int4_ops", () => {
   const app = schema({
     tables: [

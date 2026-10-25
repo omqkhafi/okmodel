@@ -179,6 +179,25 @@ postgresTest(
 
 postgresTest(
   gate,
+  "doctor reports btree_gist for a gist_int8_ops index",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const cwd = project(database.url, gistInt8Schema());
+    try {
+      const error = await refused(() => doctorProject(cwd, undefined));
+      expect(error.code).toBe("OKM1811");
+      expect(error.message).toContain("btree_gist");
+      expect(error.message).toContain("not installed");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  60_000,
+);
+
+postgresTest(
+  gate,
   "a btree int4_ops index does not require btree_gin",
   async () => {
     const database = await createIsolatedDatabase();
@@ -383,6 +402,26 @@ function trigramSchema(): string {
     "const trgm = pgTrgm();",
     'const docs = table("docs", { id: t.id(), body: t.text() }, { indexes: (c) => [trgm.gin(c.body.name)] });',
     "export const app = schema({ tables: [docs], extensions: [trgm] });",
+    "",
+  ].join("\n");
+}
+
+function gistInt8Schema(): string {
+  return [
+    `import { schema, table, t } from ${JSON.stringify(join(root, "src/dialects/pg/index.ts"))};`,
+    "const docs = table(",
+    '  "docs",',
+    "  { id: t.id(), n: t.integer() },",
+    "  {",
+    "    indexes: () => [{",
+    '      columns: ["n"],',
+    "      isUnique: false,",
+    "      expression: 'using gist (\"n\" gist_int8_ops)',",
+    "      unique() { return this; },",
+    "    }],",
+    "  },",
+    ");",
+    "export const app = schema({ tables: [docs] });",
     "",
   ].join("\n");
 }

@@ -15,7 +15,7 @@ import {
   UUIDV7_POSTGRES,
   type PostgresMajor,
 } from "../../dialects/pg/floor.js";
-import { EXT_PACKS } from "../../dialects/pg/ext/versions.js";
+import { OPCLASS_EXTENSIONS } from "./opclass-extensions.js";
 
 /**
  * One extension the schema needs.
@@ -119,17 +119,9 @@ function useReason(object: CatalogObject): string {
 }
 
 function opclassExtensions(): ReadonlyMap<string, string> {
-  const owners = new Map<string, string>([
-    // Hand-written packs are not in EXT_PACKS (D281 keeps vector out too).
-    [opclassKey("gin", "gin_trgm_ops"), "pg_trgm"],
-    [opclassKey("gist", "gist_trgm_ops"), "pg_trgm"],
-  ]);
-  for (const pack of EXT_PACKS) {
-    for (const signature of pack.signatures) {
-      if (signature.kind === "opclass") {
-        owners.set(opclassKey(signature.method, signature.name), pack.name);
-      }
-    }
+  const owners = new Map<string, string>();
+  for (const [method, name, extension] of OPCLASS_EXTENSIONS) {
+    owners.set(opclassKey(method, name), extension);
   }
   return owners;
 }
