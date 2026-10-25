@@ -11,6 +11,7 @@ import { join } from "node:path";
 
 import { catalog } from "../src/contracts/catalog/build.js";
 import { OkmError } from "../src/contracts/error.js";
+import { schemaDeclarations } from "../src/dialects/pg/declarations.js";
 import { fn, trigger } from "../src/dialects/pg/fn/index.js";
 import { schema, table, t } from "../src/dialects/pg/index.js";
 import { timestamps } from "../src/runtime/traits/index.js";
@@ -143,6 +144,116 @@ test("overloads are distinct and a plan creates tables, then functions, then tri
     indexOf(sql, "create trigger"),
   );
   expect(sql.some((step) => step.includes("update of"))).toBe(true);
+});
+
+test("a rename recreates a function and a trigger whose body mentions the old name", () => {
+  const notes = table("notes", { id: t.identity(), title: t.text() });
+  const length = fn("title_len", {
+    returns: "integer",
+    language: "sql",
+    body: 'select length("title")',
+    dependsOn: [{ table: notes, column: "title" }],
+  });
+  const named = fn("notes_title_len", {
+    returns: "integer",
+    language: "sql",
+    body: 'select length("title")',
+    dependsOn: [{ table: notes, column: "title" }],
+  });
+  const counted = fn("note_count", {
+    returns: "bigint",
+    language: "sql",
+    body: 'select count(*) from "notes"',
+    dependsOn: [notes],
+  });
+  const guard = fn("guard", {
+    returns: "trigger",
+    language: "plpgsql",
+    body: "begin return new; end",
+    dependsOn: [notes],
+  });
+  const fired = trigger("notes_guard", {
+    on: notes,
+    timing: "before",
+    events: ["update"],
+    level: "row",
+    calls: guard,
+    when: 'OLD."title" is not null',
+  });
+  const before = schema({
+    tables: [notes],
+    functions: [length, named, counted, guard],
+    triggers: [fired],
+  });
+
+  const renamed = table("notes", {
+    id: t.identity(),
+    heading: t.text().renamedFrom("title"),
+  });
+  const lengthAfter = fn("title_len", {
+    returns: "integer",
+    language: "sql",
+    body: 'select length("heading")',
+    dependsOn: [{ table: renamed, column: "heading" }],
+  });
+  const namedAfter = fn("notes_heading_len", {
+    returns: "integer",
+    language: "sql",
+    body: 'select length("heading")',
+    dependsOn: [{ table: renamed, column: "heading" }],
+  });
+  const guardAfter = fn("guard", {
+    returns: "trigger",
+    language: "plpgsql",
+    body: "begin return new; end",
+    dependsOn: [renamed],
+  });
+  const firedAfter = trigger("notes_guard", {
+    on: renamed,
+    timing: "before",
+    events: ["update"],
+    level: "row",
+    calls: guardAfter,
+    when: 'OLD."heading" is not null',
+  });
+  const after = schema({
+    tables: [renamed],
+    functions: [lengthAfter, namedAfter, counted, guardAfter],
+    triggers: [firedAfter],
+  });
+  const sql = planMigration({
+    before: before.catalog,
+    after: after.catalog,
+    renames: schemaDeclarations(after).renames,
+    name: "rename-body",
+  })
+    .steps.map((step) => step.sql)
+    .join("\n");
+  expect(sql).toContain('create or replace function "public"."title_len"');
+  expect(sql).toContain('length("heading")');
+  expect(sql).toContain('drop function "public"."notes_title_len"');
+  expect(sql).toContain('create function "public"."notes_heading_len"');
+  expect(sql).toContain('drop trigger "notes_guard"');
+  expect(sql).toContain('OLD."heading" is not null');
+
+  const posts = table("posts", { id: t.identity() }, { renamedFrom: "notes" });
+  const countedAfter = fn("note_count", {
+    returns: "bigint",
+    language: "sql",
+    body: 'select count(*) from "posts"',
+    dependsOn: [posts],
+  });
+  const moved = schema({ tables: [posts], functions: [countedAfter] });
+  const tableSql = planMigration({
+    before: schema({ tables: [notes], functions: [counted] }).catalog,
+    after: moved.catalog,
+    renames: schemaDeclarations(moved).renames,
+    name: "rename-table-body",
+  })
+    .steps.map((step) => step.sql)
+    .join("\n");
+  expect(tableSql).toContain('create or replace function "public"."note_count"');
+  expect(tableSql).toContain('from "posts"');
 });
 
 test("a compatible body change is create or replace and an incompatible one recreates the trigger", () => {

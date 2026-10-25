@@ -68,7 +68,7 @@ export function renderSchema(model: SchemaModel, root: string): string {
 
   const tableKeys = model.tables.map((table) => table.key).join(", ");
   const schemaFields: string[] = [`tables: [${tableKeys}]`];
-  if (model.casing === "snake") schemaFields.push('casing: "snake"');
+  if (model.casing !== "omit") schemaFields.push(`casing: ${JSON.stringify(model.casing)}`);
   if (model.tenancy) {
     schemaFields.push('tenancy: columnTenancy({ key: "tenantId", type: "uuid" })');
   }

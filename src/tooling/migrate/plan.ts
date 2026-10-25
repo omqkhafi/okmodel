@@ -230,7 +230,7 @@ export function planMigration(
   const afterList = index(request.after);
   const beforeBy = new Map(beforeList.map((item) => [item.key, item.object]));
   const afterBy = new Map(afterList.map((item) => [item.key, item.object]));
-  assertUnambiguous(beforeBy, afterBy);
+  assertUnambiguous(beforeBy, afterBy, dialect);
 
   const dropKeys = new Set<string>();
   const createKeys = new Set<string>();
@@ -934,8 +934,43 @@ function renameSteps(
         }),
       ),
     );
+    steps.push(...columnSequenceRenames(source, previousTable, rename, schema, dialect));
   }
   return steps;
+}
+
+/**
+ * Renames the identity sequence when the column that owns it is renamed.
+ *
+ * The sequence is `{table}_{column}_seq`. A table rename in the same plan
+ * has already moved it to the new table name, so this step starts from that
+ * name and finishes at the new column name. A column with no identity
+ * sequence is left alone.
+ */
+function columnSequenceRenames(
+  source: Catalog,
+  previousTable: string,
+  rename: { readonly table: string; readonly from: string; readonly to: string },
+  schema: string,
+  dialect: DdlDialect,
+): readonly PlanStep[] {
+  const owned = source.objects.some(
+    (object) =>
+      object.kind === "column" &&
+      object.definition.identity !== undefined &&
+      object.identity.parent.name === previousTable &&
+      object.identity.name === rename.from &&
+      source.objects.some(
+        (item) =>
+          item.kind === "sequence" &&
+          item.identity.name === identitySequenceName(previousTable, rename.from),
+      ),
+  );
+  if (!owned) return [];
+  const fromName = identitySequenceName(rename.table, rename.from);
+  const toName = identitySequenceName(rename.table, rename.to);
+  if (fromName === toName) return [];
+  return take(dialect.lower({ op: "rename-sequence", schema, from: fromName, to: toName }));
 }
 
 function sequenceRenames(
@@ -1060,6 +1095,7 @@ function renameShapeStep(
 function assertUnambiguous(
   beforeBy: ReadonlyMap<string, CatalogObject>,
   afterBy: ReadonlyMap<string, CatalogObject>,
+  dialect: DdlDialect,
 ): void {
   const dropped = new Map<string, string[]>();
   const added = new Map<string, string[]>();
@@ -1088,13 +1124,42 @@ function assertUnambiguous(
     if (gone === undefined || gone.length === 0 || names.length === 0) continue;
     const from = gone[0] ?? "";
     const to = names[0] ?? "";
-    const line = group.startsWith("table:")
-      ? `Add renamedFrom: "${from}" on ${to}.`
-      : `Add .renamedFrom("${from}") on ${to}.`;
-    throw new OkmError("OKM1530", `Drop ${from} and add ${to} could be a rename. ${line}`, {
-      fix: { summary: line },
-    });
+    const guard = renameGuard(group, from, to, dialect);
+    throw new OkmError("OKM1530", guard.message, { fix: { summary: guard.summary } });
   }
+}
+
+/**
+ * A drop and an add whose names are one casing of each other.
+ *
+ * The catalog does not store the casing that produced a name. The dialect
+ * answers: `publishedAt` and `published_at` are the snake pair, and
+ * `user_notes` and `userNotes` are the camel pair.
+ */
+function casingPair(from: string, to: string, dialect: DdlDialect): boolean {
+  return dialect.sameCasing?.(from, to) === true;
+}
+
+function renameGuard(
+  group: string,
+  from: string,
+  to: string,
+  dialect: DdlDialect,
+): { readonly message: string; readonly summary: string } {
+  const table = group.startsWith("table:");
+  if (casingPair(from, to, dialect)) {
+    const summary = table
+      ? `Keep the stored name with .sqlName("${from}") (or sqlName: "${from}" on the table), or declare the rename with .renamedFrom("${from}") (or renamedFrom: "${from}" on the table).`
+      : `Keep the stored name with .sqlName("${from}"), or declare the rename with .renamedFrom("${from}").`;
+    return {
+      message: `Drop ${from} and add ${to} could be a rename caused by casing. ${summary}`,
+      summary,
+    };
+  }
+  const summary = table
+    ? `Add renamedFrom: "${from}" on ${to}.`
+    : `Add .renamedFrom("${from}") on ${to}.`;
+  return { message: `Drop ${from} and add ${to} could be a rename. ${summary}`, summary };
 }
 
 function anchoredName(object: CatalogObject): string | undefined {

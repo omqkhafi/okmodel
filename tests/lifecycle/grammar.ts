@@ -6,6 +6,8 @@ import fc from "fast-check";
 
 import {
   sqlName,
+  type LifecycleCasing,
+  type NameStress,
   tagsFor,
   type ColumnModel,
   type ColumnTypeKind,
@@ -55,7 +57,19 @@ const keyArb = fc.integer({ min: 0, max: 9999 }).map((n) => `k${String(n)}`);
  */
 export const lifecycleCaseArb: fc.Arbitrary<LifecycleCase> = fc
   .record({
-    casing: fc.constantFrom("omit", "snake") as fc.Arbitrary<"omit" | "snake">,
+    casing: fc.constantFrom("omit", "snake", "camel"),
+    nameStress: fc.constantFrom(
+      "none",
+      "none",
+      "none",
+      "none",
+      "none",
+      "none",
+      "none",
+      "none",
+      "collide",
+      "long",
+    ),
     namespace: fc.option(fc.constantFrom("appns", "tenant_a"), { nil: undefined }),
     tenancy: fc.boolean(),
     trgm: fc.boolean(),
@@ -84,13 +98,15 @@ export const lifecycleCaseArb: fc.Arbitrary<LifecycleCase> = fc
   })
   .chain((pick) =>
     nameArb.chain((taskName) => {
+      const casing: LifecycleCasing =
+        pick.nameStress === "collide" && pick.casing === "omit" ? "snake" : pick.casing;
       const needsParent = pick.featurePack === "fk" || pick.evolutionKind === "addFk";
       const renaming = pick.evolutionKind === "renameTable";
       const reserved = [
         ...(needsParent ? ["authors"] : []),
         ...(pick.featurePack === "view" ? ["task_ids"] : []),
       ];
-      const taskTableName = distinctTableName(taskName, reserved, pick.casing);
+      const taskTableName = distinctTableName(taskName, reserved, casing);
       const parent = baseTable("authors", "authors", {
         id: {
           key: "id",
@@ -108,6 +124,7 @@ export const lifecycleCaseArb: fc.Arbitrary<LifecycleCase> = fc
         title: textColumn("title", "title"),
       });
       child = applyPack(child, pick.featurePack, parent);
+      child = applyStress(child, casing, pick.nameStress);
       const tables: TableModel[] = needsParent ? [parent, child] : [child];
       // A rename under defineConfig({ namespace }) is not a schema the planner
       // accepts: the snapshot lives in that schema and the rename looks in public.
@@ -117,7 +134,8 @@ export const lifecycleCaseArb: fc.Arbitrary<LifecycleCase> = fc
           ? (pick.namespace ?? "appns")
           : pick.namespace;
       const initial: SchemaModel = {
-        casing: pick.casing,
+        casing,
+        ...(pick.nameStress === "none" ? {} : { stress: pick.nameStress }),
         ...(namespace === undefined ? {} : { namespace }),
         tenancy: pick.tenancy && pick.featurePack !== "fk" && !needsParent,
         trgm: pick.trgm && pick.featurePack === "index",
@@ -182,6 +200,26 @@ function textColumn(key: string, name: string): ColumnModel {
     primaryKey: false,
     unique: false,
     defaultKind: "none",
+  };
+}
+
+/**
+ * Adds a name `schema()` refuses.
+ *
+ * `collide` is two fields that fold to one SQL name. `long` is one field
+ * over the 63-byte identifier limit. `none` leaves the table alone.
+ */
+function applyStress(table: TableModel, casing: LifecycleCasing, stress: NameStress): TableModel {
+  if (stress === "none") return table;
+  if (stress === "long") {
+    const key = `n${"x".repeat(63)}`;
+    return { ...table, columns: [...table.columns, textColumn(key, key)] };
+  }
+  const pair =
+    casing === "camel" ? (["user_id", "userId"] as const) : (["userID", "user_id"] as const);
+  return {
+    ...table,
+    columns: [...table.columns, textColumn(pair[0], pair[0]), textColumn(pair[1], pair[1])],
   };
 }
 
@@ -397,7 +435,11 @@ function buildEvolutions(initial: SchemaModel, kind: string): readonly Evolution
     }
     case "dropColumnAddIndex": {
       const droppable = table.columns.find(
-        (column) => !column.primaryKey && column.key !== "title" && column.generated === undefined,
+        (column) =>
+          !column.primaryKey &&
+          column.key !== "title" &&
+          column.generated === undefined &&
+          !generatedDependsOn(table, column),
       );
       if (droppable === undefined) return [];
       const remaining: TableModel = {
@@ -446,6 +488,22 @@ function buildEvolutions(initial: SchemaModel, kind: string): readonly Evolution
  * @param table - Table the evolution would change
  * @returns Column key, or undefined when every column is already indexed
  */
+/**
+ * Whether a generated column still quotes this column.
+ *
+ * Postgres refuses to drop the source while that expression remains.
+ *
+ * @param table - Table the drop would change
+ * @param column - Candidate source column
+ * @returns `true` when some generated expression quotes the column
+ */
+function generatedDependsOn(table: TableModel, column: ColumnModel): boolean {
+  const quoted = `"${column.name}"`;
+  return table.columns.some(
+    (other) => other.generated !== undefined && other.generated.includes(quoted),
+  );
+}
+
 function freeIndexColumn(table: TableModel): string | undefined {
   const taken = new Set(table.indexes.map((index) => index.columns.join("\0")));
   const candidates = table.columns.filter((column) => column.generated === undefined);
@@ -457,8 +515,8 @@ function freeIndexColumn(table: TableModel): string | undefined {
 /**
  * Picks a table name whose SQL spelling is not already used.
  *
- * Two `table()` calls with the same name, or two names that `snake` folds
- * together, are rejected by `schema()`.
+ * Two `table()` calls with the same name, or two names that `snake` or `camel`
+ * folds together, are rejected by `schema()`.
  *
  * @param name - Candidate authored name
  * @param reserved - Names already used by other tables or views
@@ -468,7 +526,7 @@ function freeIndexColumn(table: TableModel): string | undefined {
 export function distinctTableName(
   name: string,
   reserved: readonly string[],
-  casing: "omit" | "snake",
+  casing: LifecycleCasing,
 ): string {
   const used = new Set(reserved.map((item) => sqlName(casing, item)));
   if (!used.has(sqlName(casing, name))) return name;

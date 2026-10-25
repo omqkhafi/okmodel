@@ -232,6 +232,121 @@ test("a table drop and add without renamedFrom is OKM1530", () => {
   );
   expect(error.code).toBe("OKM1530");
   expect(error.fix.summary).toContain('renamedFrom: "tasks"');
+  expect(error.message).not.toContain("casing");
+});
+
+test("a casing change names casing as the cause of OKM1530", () => {
+  const columnBefore = schema({
+    tables: [table("notes", { id: t.identity(), publishedAt: t.timestamptz().nullable() })],
+  });
+  const columnAfter = schema({
+    tables: [table("notes", { id: t.identity(), publishedAt: t.timestamptz().nullable() })],
+    casing: "snake",
+  });
+  const column = capture(() =>
+    planMigration({ before: columnBefore.catalog, after: columnAfter.catalog, name: "casing" }),
+  );
+  expect(column.code).toBe("OKM1530");
+  expect(column.message).toContain("caused by casing");
+  expect(column.message).toContain('.sqlName("publishedAt")');
+  expect(column.message).toContain('.renamedFrom("publishedAt")');
+  expect(column.fix.summary).toContain('.sqlName("publishedAt")');
+  expect(column.fix.summary).toContain('.renamedFrom("publishedAt")');
+
+  const tableBefore = schema({
+    tables: [table("userNotes", { id: t.identity() })],
+  });
+  const tableAfter = schema({
+    tables: [table("userNotes", { id: t.identity() })],
+    casing: "snake",
+  });
+  const renamed = capture(() =>
+    planMigration({ before: tableBefore.catalog, after: tableAfter.catalog, name: "casing" }),
+  );
+  expect(renamed.code).toBe("OKM1530");
+  expect(renamed.message).toContain("caused by casing");
+  expect(renamed.message).toContain('.sqlName("userNotes")');
+  expect(renamed.message).toContain('sqlName: "userNotes"');
+  expect(renamed.message).toContain('.renamedFrom("userNotes")');
+  expect(renamed.message).toContain('renamedFrom: "userNotes"');
+
+  const camel = schema({
+    tables: [table("user_notes", { id: t.identity(), user_id: t.bigint() })],
+    casing: "camel",
+  });
+  const fromSnake = capture(() =>
+    planMigration({ before: tableAfter.catalog, after: camel.catalog, name: "camel" }),
+  );
+  expect(fromSnake.code).toBe("OKM1530");
+  expect(fromSnake.message).toContain("caused by casing");
+});
+
+test("a column rename renames the identity sequence derived from that column", () => {
+  const before = schema({
+    tables: [table("notes", { entryId: t.identity(), title: t.text() })],
+  });
+  const after = schema({
+    tables: [table("notes", { noteId: t.identity().renamedFrom("entryId"), title: t.text() })],
+  });
+  const text = sqlOf(
+    planMigration({
+      before: before.catalog,
+      after: after.catalog,
+      renames: schemaDeclarations(after).renames,
+      name: "rename-column",
+    }),
+  );
+  expect(text).toContain('rename column "entryid" to "noteid"');
+  expect(text).toContain(
+    'alter sequence "public"."notes_entryid_seq" rename to "notes_noteid_seq"',
+  );
+  expect(text).not.toContain("drop sequence");
+  expect(text).not.toContain("create sequence");
+
+  const moved = schema({
+    tables: [
+      table(
+        "items",
+        { noteId: t.identity().renamedFrom("entryId"), title: t.text() },
+        { renamedFrom: "notes" },
+      ),
+    ],
+  });
+  const both = sqlOf(
+    planMigration({
+      before: before.catalog,
+      after: moved.catalog,
+      renames: schemaDeclarations(moved).renames,
+      name: "rename-both",
+    }),
+  );
+  const tableSequence = both.indexOf(
+    'alter sequence "public"."notes_entryid_seq" rename to "items_entryid_seq"',
+  );
+  const columnSequence = both.indexOf(
+    'alter sequence "public"."items_entryid_seq" rename to "items_noteid_seq"',
+  );
+  expect(tableSequence).toBeGreaterThanOrEqual(0);
+  expect(columnSequence).toBeGreaterThan(tableSequence);
+
+  const plain = schema({
+    tables: [table("notes", { entryId: t.bigint().primaryKey(), title: t.text() })],
+  });
+  const renamedPlain = schema({
+    tables: [
+      table("notes", { noteId: t.bigint().primaryKey().renamedFrom("entryId"), title: t.text() }),
+    ],
+  });
+  const plainText = sqlOf(
+    planMigration({
+      before: plain.catalog,
+      after: renamedPlain.catalog,
+      renames: schemaDeclarations(renamedPlain).renames,
+      name: "rename-plain",
+    }),
+  );
+  expect(plainText).toContain('rename column "entryid" to "noteid"');
+  expect(plainText).not.toContain("sequence");
 });
 
 test("a declared table rename renames default dependents and leaves a custom name", () => {

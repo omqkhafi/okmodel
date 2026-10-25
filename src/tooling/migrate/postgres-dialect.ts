@@ -7,6 +7,7 @@
  */
 
 import type { DdlDialect, DdlSupport } from "../../dialects/ddl.js";
+import { caseName } from "../../dialects/pg/casing.js";
 import { lowerPostgres } from "../../dialects/pg/lower.js";
 import { assertSupported } from "../capabilities/check.js";
 import { POSTGRES_FEATURES, type PostgresFeature } from "../capabilities/postgres.js";
@@ -41,4 +42,12 @@ export const postgresDialect: DdlDialect = {
     return assertSupported(features, POSTGRES_FEATURES, "postgres");
   },
   lower: lowerPostgres,
+  sameCasing(from, to) {
+    return (
+      caseName("snake", from) === to ||
+      caseName("camel", from) === to ||
+      caseName("snake", to) === from ||
+      caseName("camel", to) === from
+    );
+  },
 };

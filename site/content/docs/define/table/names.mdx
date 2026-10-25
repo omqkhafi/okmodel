@@ -72,7 +72,7 @@ Two tables that store the same SQL name are refused. The message lists the table
 
 ### Previous name
 
-A migration plans `ALTER TABLE … RENAME TO` or `RENAME COLUMN`. Dropping one name and adding another, with no `renamedFrom`, is refused and the fix names the line to add. A previous name that the last snapshot does not contain is refused. Remove `renamedFrom` once the migration that used it has been applied. With no snapshot, that check does not run.
+A migration plans `ALTER TABLE … RENAME TO` or `RENAME COLUMN`. Renaming an identity column also renames the sequence `{table}_{column}_seq`. A table rename does the same for each identity column. Dropping one name and adding another, with no `renamedFrom`, is refused and the fix names the line to add. A previous name that the last snapshot does not contain is refused. Remove `renamedFrom` once the migration that used it has been applied. With no snapshot, that check does not run.
 
 | Call | Result |
 | --- | --- |

@@ -1566,7 +1566,7 @@ test("today view runs one query", async () => {
 | More than one `Register` | `okm check` | OKM1025 |
 | Dependency cycle in the catalog | schema | OKM1026 |
 | Catalog document this version cannot read (unknown version or malformed) | load | OKM1027 |
-| Invalid column definition: length, precision, scale, array rank, interval qualifier, empty or duplicate picklist or enum values | schema | OKM1060 |
+| Invalid column definition, `.unique()` on a gin or gist index, or a `schema()` casing other than snake or camel | schema | OKM1060 |
 | A table or schema option that exists in the types but is not available in this version (reserved slot) | schema | OKM1061 |
 | A codec rejects a value (not numeric text, not a valid temporal value, wrong shape) | runtime | OKM1210 |
 | Validation failed. `issues` lists each path and message key | runtime | OKM1200 |
