@@ -63,6 +63,8 @@ async function shapes(url: string): Promise<void> {
     limit: 1,
   });
   await db.pages.page({ limit: 1 });
+  // @ts-expect-error page refuses relevance(); the cursor cannot encode a rank
+  await db.pages.page({ orderBy: { body: relevance("deploy") }, limit: 1 });
   await db.pages.one({
     // @ts-expect-error one does not take search
     search: "deploy",

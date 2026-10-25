@@ -598,6 +598,9 @@ export class ColumnBuilder<TValue, TFlags extends ColumnFlags> {
   hidden(options: {
     readonly filterable: true;
   }): ColumnBuilder<TValue, FlagTrue<TFlags, "hidden"> & { readonly "~filter": true }>;
+  hidden(options: {
+    readonly filterable?: boolean;
+  }): ColumnBuilder<TValue, FlagTrue<TFlags, "hidden">>;
   hidden(options?: {
     readonly filterable?: boolean;
   }): ColumnBuilder<TValue, FlagTrue<TFlags, "hidden">> {

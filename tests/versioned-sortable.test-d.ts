@@ -123,12 +123,11 @@ void claimHidden({
   version: "any",
 });
 void update({
-  // @ts-expect-error version: "any" where rejects an unknown field, same as an integer update
+  // @ts-expect-error an unknown where field rejects the call, including version: "any"
   where: { id: "1", nope: true },
   set: { title: "b" },
   limit: 1,
   lock: "skip",
-  // @ts-expect-error the integer overload does not take version: "any"
   version: "any",
 });
 type UpdateParam = Parameters<Api["update"]>[0];

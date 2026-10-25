@@ -147,6 +147,14 @@ export type Not<V> = Tagged<"not", V>;
 /** Disjunction. Each branch is a where object. */
 export type Or<V> = Tagged<"or", readonly V[]>;
 
+/**
+ * `T`, and not a tagged operator.
+ *
+ * `or()` carries {@link brand}. A plain where object does not, so an early
+ * overload can refuse `or()` and leave the branch check to a later one.
+ */
+export type Untagged<T> = T & { readonly [brand]?: never };
+
 /** A relation filter. The value is the related table's where. */
 export type RelationFilter<Name extends "has" | "none" | "every", V> = Tagged<Name, V>;
 
