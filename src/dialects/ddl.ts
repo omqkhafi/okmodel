@@ -423,4 +423,15 @@ export type DdlDialect = {
    * @returns Steps in apply order. Empty when the change needs no statement
    */
   lower(change: LogicalChange): readonly DdlStep[];
+  /**
+   * Whether `from` and `to` are one casing of each other.
+   *
+   * Absent when the dialect does not spell names. The planner uses it to
+   * name casing as the cause of an unexplained rename.
+   *
+   * @param from - Name that would be dropped
+   * @param to - Name that would be added
+   * @returns `true` when one casing of either name is the other
+   */
+  sameCasing?(from: string, to: string): boolean;
 };
