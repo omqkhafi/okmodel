@@ -42,19 +42,13 @@ import {
   resolveBatchSize,
   type BackfillSpec,
 } from "./backfill.js";
-import {
-  classOf,
-  isStepKind,
-  strictestClass,
-  type MigrationClass,
-  type StepKind,
-} from "./classify.js";
+import { isStepKind, strictestClass, type MigrationClass, type StepKind } from "./classify.js";
 import { extensionAlterSteps } from "./extensions.js";
 import { omitManagedObjects } from "./managed.js";
 import { stepsForExistingTable, type SafeStep } from "./safe.js";
 import { sqlQuoteOpen } from "./sql-lex.js";
 import { canonicalTypeName } from "./type-name.js";
-import type { DdlDialect, DdlStep } from "../../dialects/ddl.js";
+import { sealLowered, type DdlDialect, type DdlStep } from "../../dialects/ddl.js";
 import { ddlStep as step } from "../../dialects/ddl-step.js";
 import { postgresDialect } from "./postgres-dialect.js";
 import { assertNoChains, type Replacement } from "./values.js";
@@ -686,28 +680,7 @@ function take(lowered: readonly DdlStep[]): readonly PlanStep[] {
       fix: { summary: "The lowering for this change has to return at least one statement." },
     });
   }
-  for (const step of lowered) {
-    if (step.sql.trim().length === 0) {
-      throw new OkmError("OKM1559", "The dialect returned a statement with no SQL.", {
-        fix: { summary: "Each lowered statement has to contain SQL." },
-      });
-    }
-    if (step.kind === undefined) {
-      throw new OkmError(
-        "OKM1559",
-        `A lowered statement has no kind and was classed ${step.class}.`,
-        { fix: { summary: "The statement class has to match its kind." } },
-      );
-    }
-    if (classOf(step.kind) !== step.class) {
-      throw new OkmError(
-        "OKM1559",
-        `Step kind ${step.kind} is ${classOf(step.kind)}, and the statement was classed ${step.class}.`,
-        { fix: { summary: "The statement class has to match its kind." } },
-      );
-    }
-  }
-  return lowered;
+  return sealLowered(lowered);
 }
 
 /**

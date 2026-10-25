@@ -25,7 +25,8 @@ import type {
   TypeObject,
   ViewObject,
 } from "../contracts/catalog/types.js";
-import type { MigrationClass, StepKind } from "./step-class.js";
+import { OkmError } from "../contracts/error.js";
+import { classOf, type MigrationClass, type StepKind } from "./step-class.js";
 
 /** How a dialect provides a feature. Matches the feature registry. */
 export type DdlSupport = "native" | "emulated" | "refused";
@@ -116,6 +117,51 @@ export type DdlStep = {
    */
   readonly allows?: readonly DdlAllow[];
 };
+
+/**
+ * One physical step {@link DdlDialect.lower} may return.
+ *
+ * `kind` is required. The class is {@link classOf} of that kind, and `sql`
+ * is non-empty. {@link sealLowered} checks the class and the text.
+ */
+export type LoweredStep = Omit<DdlStep, "kind"> & {
+  readonly kind: StepKind;
+};
+
+/**
+ * Refuses a lowering the planner cannot trust.
+ *
+ * An empty list is a change with no statement. Every step that is present
+ * needs SQL, a kind, and the class of that kind.
+ *
+ * @param steps - Steps from {@link DdlDialect.lower}
+ * @returns The same steps
+ * @throws OkmError OKM1559 when SQL is blank, the kind is missing, or the class disagrees
+ */
+export function sealLowered(steps: readonly DdlStep[]): readonly LoweredStep[] {
+  for (const step of steps) {
+    if (step.sql.trim().length === 0) {
+      throw new OkmError("OKM1559", "The dialect returned a statement with no SQL.", {
+        fix: { summary: "Each lowered statement has to contain SQL." },
+      });
+    }
+    if (step.kind === undefined) {
+      throw new OkmError(
+        "OKM1559",
+        `A lowered statement has no kind and was classed ${step.class}.`,
+        { fix: { summary: "The statement class has to match its kind." } },
+      );
+    }
+    if (classOf(step.kind) !== step.class) {
+      throw new OkmError(
+        "OKM1559",
+        `Step kind ${step.kind} is ${classOf(step.kind)}, and the statement was classed ${step.class}.`,
+        { fix: { summary: "The statement class has to match its kind." } },
+      );
+    }
+  }
+  return steps as readonly LoweredStep[];
+}
 
 /**
  * One logical catalog change.
@@ -419,10 +465,14 @@ export type DdlDialect = {
   /**
    * Physical steps for one logical change.
    *
+   * Each step has non-empty SQL, a kind, and the class of that kind.
+   * {@link sealLowered} refuses anything else with OKM1559.
+   *
    * @param change - What changed. The dialect decides how many statements that is
    * @returns Steps in apply order. Empty when the change needs no statement
+   * @throws OkmError OKM1559 when a step has no SQL, no kind, or a class that disagrees with the kind
    */
-  lower(change: LogicalChange): readonly DdlStep[];
+  lower(change: LogicalChange): readonly LoweredStep[];
   /**
    * Whether `from` and `to` are one casing of each other.
    *
