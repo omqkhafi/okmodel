@@ -8,6 +8,7 @@
  */
 
 import { catalog } from "../../contracts/catalog/build.js";
+import { OkmError } from "../../contracts/error.js";
 import { domainType, enumType } from "../../contracts/catalog/enum.js";
 import { staticNamespace } from "../../contracts/catalog/identity.js";
 import { extensionObject } from "../../contracts/catalog/extension.js";
@@ -935,9 +936,43 @@ async function reprintCheckOnce(
       [`pg_temp.${table}`],
     );
     return checkExpression(text(rows[0] ?? {}, "definition"));
+  } catch (error) {
+    throw readOnlyReprint(error) ?? error;
   } finally {
     await runDrops(runner, [`drop table if exists pg_temp.${table}`, ...standIns]);
   }
+}
+
+/**
+ * Maps a temporary-object failure on a read-only session to OKM1896.
+ *
+ * A check, picklist, domain check, generated column, or btree index
+ * expression is reprinted on a temporary table. A replica or a session with
+ * `default_transaction_read_only` cannot create one, and neither can a role
+ * without `TEMP`. Any other failure is left alone.
+ *
+ * @param error - Failure from the scratch statement
+ * @returns OKM1896, or `undefined` when this is not that refusal
+ */
+export function readOnlyReprint(error: unknown): OkmError | undefined {
+  const message = error instanceof Error ? error.message : "";
+  if (
+    !/read-only transaction/i.test(message) &&
+    !/permission denied to create temporary/i.test(message)
+  ) {
+    return undefined;
+  }
+  return new OkmError(
+    "OKM1896",
+    "A check or picklist is reprinted on a temporary table, and this connection cannot create one.",
+    {
+      cause: error,
+      fix: {
+        summary:
+          "Point the command at a writable primary. The role needs TEMP on the database. It does not need CREATE on the schema.",
+      },
+    },
+  );
 }
 
 /**
@@ -1053,6 +1088,8 @@ async function reprintIndexOnce(
       columns: list(text(row, "columns")),
       predicate: text(row, "predicate"),
     };
+  } catch (error) {
+    throw readOnlyReprint(error) ?? error;
   } finally {
     await runDrops(runner, [`drop table if exists pg_temp.${table}`, ...standIns]);
   }
@@ -1125,7 +1162,9 @@ export async function reprintTriggerWhen(
     );
     const match = /WHEN \(([\s\S]*)\) EXECUTE/.exec(text(rows[0] ?? {}, "definition"));
     return match?.[1] === undefined ? undefined : unwrapTriggerWhen(match[1]);
-  } catch {
+  } catch (error) {
+    const mapped = readOnlyReprint(error);
+    if (mapped !== undefined) throw mapped;
     return undefined;
   } finally {
     await runDrops(runner, [
@@ -1182,6 +1221,8 @@ async function reprintDomainCheckOnce(
       [`pg_temp.${domain}`],
     );
     return checkExpression(text(rows[0] ?? {}, "definition"));
+  } catch (error) {
+    throw readOnlyReprint(error) ?? error;
   } finally {
     await runDrops(runner, [`drop domain if exists pg_temp.${domain}`, ...standIns]);
   }
@@ -1244,6 +1285,8 @@ async function reprintGeneratedOnce(
       [`pg_temp.${table}`, column.name],
     );
     return flattenSqlWhitespace(text(rows[0] ?? {}, "expression"));
+  } catch (error) {
+    throw readOnlyReprint(error) ?? error;
   } finally {
     await runDrops(runner, [`drop table if exists pg_temp.${table}`, ...standIns]);
   }
