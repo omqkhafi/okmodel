@@ -25,6 +25,8 @@ Finish each command before the next one.
 
 `okm check` lints and compares one target. `okm migrate plan` prints the plan. `okm migrate check` replays history in a scratch schema. `okm migrate apply` is the step that writes the target.
 
+Do not assume Drizzle or Prisma casing. The default is verbatim.
+
 ## Never
 
 - Never bypass guards (`--allow-protected`, `--accept-unverified`, `--allow-pooler`) or add a `-- okm-allow` line to a migration file unless the human said so in this conversation.

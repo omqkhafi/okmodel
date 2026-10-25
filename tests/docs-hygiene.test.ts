@@ -19,6 +19,7 @@ import {
 } from "../scripts/docs-pack.js";
 import { INDEX_CAP, renderDocsIndex } from "../scripts/docs-index.js";
 import {
+  bannedCasingPhrases,
   fenceProblems,
   frontMatterProblems,
   hiddenCharsIn,
@@ -38,6 +39,13 @@ test("every docs file is public or internal, and the repository is clean", () =>
   expect(docClass("capabilities.md")).toBe("public");
   expect(classificationProblems(root)).toEqual([]);
   expect(hygieneProblems(root, "0.10.0-next.47")).toEqual([]);
+  expect(bannedCasingPhrases('casing: "snake"', "docs/example.md")).toEqual([]);
+  expect(bannedCasingPhrases("snake-legacy", "site/content/docs/a.mdx")).toEqual([
+    "site/content/docs/a.mdx: snake-legacy",
+  ]);
+  expect(bannedCasingPhrases('casing: "preserve"', "docs/example.md")).toEqual([
+    'docs/example.md: casing: "preserve"',
+  ]);
 });
 
 test("the index is the train version, under 8 KB, and bump does not list docs", () => {
