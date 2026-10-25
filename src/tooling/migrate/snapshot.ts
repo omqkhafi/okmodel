@@ -21,7 +21,7 @@ import type {
 import type { DriverConnection } from "../../contracts/driver.js";
 import { roleExists } from "../../dialects/pg/role/check.js";
 import { changesRole, createdRoleName, createRoleOnce } from "../../dialects/pg/role/sql.js";
-import { ensureExtensionSchemaSql } from "./extensions.js";
+import { ensureExtensionSchemaSql, extensionSearchPathSql } from "./extensions.js";
 import { migrationJournalGrants } from "./managed.js";
 import { catalogsEqual } from "./equal.js";
 import { omitManagedObjects } from "./managed.js";
@@ -178,6 +178,7 @@ export async function installSnapshot(
   const plan = planMigration({ before: catalog([]), after: head, schema, name: "provision" });
   let began = false;
   const batch: string[] = [];
+  const extensionSchemas = new Set<string>();
   const flush = async (): Promise<void> => {
     if (batch.length === 0) return;
     await connection.execute("begin");
@@ -224,12 +225,17 @@ export async function installSnapshot(
           await connection.execute(ensure);
         }
       }
+      const home = extensionSearchPathSql(sql, schema);
+      const remember = home !== undefined && !extensionSchemas.has(home);
+      if (remember) extensionSchemas.add(home);
       if (step.transactional && !statementOutsideTransaction(step.sql)) {
         batch.push(sql);
+        if (remember && home !== undefined) batch.push(home);
       } else {
         await flush();
         await connection.execute(sql);
         await assertSchemaUsageLanded(connection, sql);
+        if (remember && home !== undefined) await connection.execute(home);
       }
       if (created !== undefined && created === migrationRole) {
         await flush();
